@@ -1,6 +1,7 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import io
 import os
 import json
 from typing import Any, Union
@@ -30,7 +31,7 @@ def prepare_default_data(num_samples=None):
         .filter(lambda example: example["source_img"] is not None)
         .take(NUM_SAMPLES)
     )
-    return [example["source_img"] for example in default_dataset]
+    return [(example["img_id"], example["source_img"]) for example in default_dataset]
 
 
 @register_evaluator("image-to-video")
@@ -79,10 +80,16 @@ class Image2VideoEvaluator(Text2VideoEvaluator):
 
         num = self.num_samples if self.num_samples is not None else len(prompts)
         with patched_parquet(parquet_generate_tables):
-            images = prepare_default_data(num_samples=num)
+            samples = prepare_default_data(num_samples=min(num, len(prompts)))
+
         # The dataset is streamed and filtered, so it may yield fewer images than requested.
-        # Cycle the prompts to match however many images we actually got.
-        selected = [prompts[i % len(prompts)] for i in range(len(images))]
+        selected = prompts[: len(samples)]
+        for prompt, (img_id, _) in zip(selected, samples):
+            if prompt["img_id"] != img_id:
+                raise RuntimeError(
+                    f"Expected conditioning image {prompt['img_id']} but got {img_id}: "
+                    "the default dataset no longer matches image_to_video_prompts.json"
+                )
 
         return {
             "prompt": [p["prompt"] for p in selected],
@@ -90,7 +97,7 @@ class Image2VideoEvaluator(Text2VideoEvaluator):
             "width": [p["width"] for p in selected],
             "height": [p["height"] for p in selected],
             "guidance_scale": [p["guidance_scale"] for p in selected],
-            "images": images,
+            "images": [image for _, image in samples],
         }
 
     def _resolve_image(self, row, index):
@@ -109,6 +116,11 @@ class Image2VideoEvaluator(Text2VideoEvaluator):
             return spec.convert("RGB")
         if isinstance(spec, np.ndarray):
             return Image.fromarray(spec).convert("RGB")
+        if isinstance(spec, dict):
+            # undecoded datasets.Image feature ({"bytes", "path"}), e.g. from streaming with datasets>=5
+            if spec.get("bytes"):
+                return Image.open(io.BytesIO(spec["bytes"])).convert("RGB")
+            spec = spec.get("path")
         if isinstance(spec, str):
             if not os.path.isabs(spec) and self.image_dir:
                 spec = os.path.join(self.image_dir, spec)
