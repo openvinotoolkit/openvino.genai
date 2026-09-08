@@ -161,7 +161,6 @@ DecodedResults StatefulLLMPipeline::generate(
     auto start_time = std::chrono::steady_clock::now();
 
     GenerationConfig config = resolve_generation_config(generation_config);
-    NPUTurnGuard npu_turn_guard(*this);
 
     TokenizedInputs encoded_input;
     auto tokenization_start_time = start_time;
@@ -250,7 +249,6 @@ DecodedResults StatefulLLMPipeline::generate(
         tokenization_start_time,
         chat_template_duration_us
     );
-    npu_turn_guard.disarm();
 
     if (is_chat_conversation) {
         if (m_chat_generation_finish_status == ov::genai::GenerationStatus::CANCEL) {
@@ -284,8 +282,6 @@ DecodedResults StatefulLLMPipeline::generate(
     auto start_time = std::chrono::steady_clock::now();
 
     GenerationConfig config = resolve_generation_config(generation_config);
-    // Snapshots the pre-turn history before it is replaced below.
-    NPUTurnGuard npu_turn_guard(*this);
 
     OPENVINO_ASSERT(config.apply_chat_template, "Chat template must be applied when using ChatHistory in generate method.");
     OPENVINO_ASSERT(!m_tokenizer.get_chat_template().empty(), "Chat template must not be empty when using ChatHistory in generate method.");
@@ -324,7 +320,7 @@ DecodedResults StatefulLLMPipeline::generate(
             negotiate_npu_history_reuse(new_chat_tokens.input_ids.get_shape().at(1), config);
         encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_cache_state);
     }
-    auto decoded_results = get_decoded_results(
+    return get_decoded_results(
         encoded_input,
         config,
         streamer,
@@ -332,8 +328,6 @@ DecodedResults StatefulLLMPipeline::generate(
         tokenization_start_time,
         PerfMetrics::get_microsec(tokenization_start_time - template_start_time)
     );
-    npu_turn_guard.disarm();
-    return decoded_results;
 }
 
 EncodedResults StatefulLLMPipeline::generate(
@@ -387,10 +381,7 @@ EncodedResults StatefulLLMPipeline::generate(
         data->attention_mask.copy_to(attention_mask);
     }
 
-    // The turn guard must arm before the alignment block so it snapshots the
-    // history before this turn grows it.
     GenerationConfig config = resolve_generation_config(generation_config);
-    NPUTurnGuard npu_turn_guard(*this);
 
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS)
         std::copy(input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_size(), std::back_inserter(m_tokenized_chat_history));
@@ -531,11 +522,6 @@ EncodedResults StatefulLLMPipeline::generate(
     ov::genai::EncodedResults& result = finish_info.results;
     m_chat_generation_finish_status = finish_info.streaming_finish_status;
 
-    // Inference completed, including a cancelled one, which is a successful physically
-    // committed operation and must not go through the failure rollback.
-    npu_turn_guard.disarm();
-    m_forced_full_prefill = false;
-
     if (is_chat_conversation) {
         m_cache_state.num_tokens_to_trim = 0;
 
@@ -594,13 +580,6 @@ void StatefulLLMPipeline::init_npu_continuous_prefill(const ov::CompiledModel& c
 void StatefulLLMPipeline::negotiate_npu_history_reuse(size_t full_history_len, const GenerationConfig& config) {
     OPENVINO_ASSERT(m_npu_continuous_prefill);
 
-    if (m_forced_full_prefill) {
-        // Recovery turn after a failure. The plugin has a pending reset and requires
-        // the complete prompt at cache position zero, and the cache state is already
-        // empty, so no proposal is made.
-        return;
-    }
-
     // Validate the complete request while the full tokenized history is still in
     // scope. A failure here must not leave a pending plugin command, so it happens
     // before the proposal.
@@ -656,29 +635,6 @@ void StatefulLLMPipeline::negotiate_npu_history_reuse(size_t full_history_len, c
     // tokenized history is still available to the caller.
     state.resize(static_cast<size_t>(granted));
     m_cache_state.num_tokens_to_trim = 0;
-}
-
-void StatefulLLMPipeline::on_npu_turn_failure(ChatHistory history_snapshot,
-                                              std::vector<int64_t> tokenized_history_snapshot) {
-    // One recovery path for every failure point. This deliberately gives up the old
-    // cache even when the plugin rejected during preflight and its cache is intact,
-    // in exchange for a single wire-level recovery sequence. The forced flag comes
-    // first so recovery intent survives even if touching the runner throws again.
-    m_forced_full_prefill = true;
-    m_history = std::move(history_snapshot);
-    m_tokenized_chat_history = std::move(tokenized_history_snapshot);
-    m_cache_state.reset_state();
-    try {
-        for (auto& st : m_model_runner.query_state()) {
-            if (st.get_name() == "npuw_stored_tokens_state") {
-                st.reset();
-                break;
-            }
-        }
-        m_model_runner.get_tensor("attention_mask").set_shape({1, 0});
-    } catch (...) {
-        // Touching the runner must not mask the original failure.
-    }
 }
 
 void StatefulLLMPipeline::reset_state() {
