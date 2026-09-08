@@ -1518,10 +1518,12 @@ struct AdapterControllerImpl {
         set_new_adapter_tensors(infer_request, /*alpha_only=*/true);
     }
 
-    // Checks whether two configs would produce the same prepared tensors, making one reusable for the other.
-    // Prepared A/B tensors don't depend on alpha (only the separately-uploaded alpha tensor does), so the
-    // key compares adapter identity only; keying on get_adapters_and_alphas() would miss the cache on every
-    // alpha-only change and force a full A/B recompute for what should be a cheap alpha update.
+    // Checks whether two configs would produce the same prepared A/B tensors, making one reusable for
+    // the other. Prepared A/B tensors don't depend on alpha (only the separately-uploaded alpha tensor
+    // does), so the key compares adapter identity only; keying on get_adapters_and_alphas() would miss
+    // the cache on every alpha-only change and force a full A/B recompute for what should be a cheap
+    // alpha update. Since a hit therefore says nothing about alpha, get_or_prepare_config_tensors()
+    // re-evaluates the alpha tensors whenever the hit entry was built with different alphas.
     bool same_prepared_tensor_cache_key(const AdapterConfig& lhs, const AdapterConfig& rhs) const {
         return lhs.get_mode() == rhs.get_mode() &&
                lhs.get_tensor_name_prefix() == rhs.get_tensor_name_prefix() &&
@@ -1638,10 +1640,12 @@ struct AdapterControllerImpl {
         OPENVINO_ASSERT(variable_info.data_shape.compatible(ov::PartialShape(tensor.get_shape())));
     }
 
-    // Evaluates and validates the alpha/A/B tensors for every LoRA-applicable layer for a given config.
+    // Evaluates and validates the alpha (and, unless alpha_only, A/B) tensors for every
+    // LoRA-applicable layer for a given config.
     std::vector<LoRAParts<ov::Tensor>> prepare_config_tensors(
         const AdapterConfig& config,
-        const std::vector<LoRAWeightGetter>& weight_getters) {
+        const std::vector<LoRAWeightGetter>& weight_getters,
+        bool alpha_only = false) {
         std::vector<LoRAParts<ov::Tensor>> prepared_tensors;
         prepared_tensors.reserve(variable_ids.size());
         for (const auto& lora_var_ids : variable_ids) {
@@ -1650,17 +1654,19 @@ struct AdapterControllerImpl {
                                                 weight_getters,
                                                 output_tensors,
                                                 /*set_empty_adapters=*/true,
-                                                /*alpha_only=*/false,
+                                                alpha_only,
                                                 config);
             validate_prepared_tensor(tensors.alpha,
                                      lora_var_ids.second.alpha,
                                      state_output_type(lora_var_ids.second.alpha));
-            validate_prepared_tensor(tensors.A,
-                                     lora_var_ids.second.A,
-                                     state_output_type(lora_var_ids.second.A));
-            validate_prepared_tensor(tensors.B,
-                                     lora_var_ids.second.B,
-                                     state_output_type(lora_var_ids.second.B));
+            if (!alpha_only) {
+                validate_prepared_tensor(tensors.A,
+                                         lora_var_ids.second.A,
+                                         state_output_type(lora_var_ids.second.A));
+                validate_prepared_tensor(tensors.B,
+                                         lora_var_ids.second.B,
+                                         state_output_type(lora_var_ids.second.B));
+            }
             prepared_tensors.push_back(std::move(tensors));
         }
         return prepared_tensors;
@@ -1677,6 +1683,15 @@ struct AdapterControllerImpl {
         return result;
     }
 
+    // Returns whether both configs assign the same alpha to every adapter. Callers must have
+    // already established that the adapter lists match (see same_prepared_tensor_cache_key).
+    bool same_alphas(const AdapterConfig& lhs, const AdapterConfig& rhs) const {
+        const auto& adapters = lhs.get_adapters();
+        return std::all_of(adapters.begin(), adapters.end(), [&](const Adapter& adapter) {
+            return lhs.get_alpha(adapter) == rhs.get_alpha(adapter);
+        });
+    }
+
     // Returns cached prepared tensors for a config if present, otherwise prepares and caches them, evicting LRU entries as needed.
     const std::vector<LoRAParts<ov::Tensor>>& get_or_prepare_config_tensors(
         const AdapterConfig& config,
@@ -1684,7 +1699,27 @@ struct AdapterControllerImpl {
         for (auto it = prepared_tensor_cache.begin(); it != prepared_tensor_cache.end(); ++it) {
             if (same_prepared_tensor_cache_key(it->config, config)) {
                 prepared_tensor_cache.splice(prepared_tensor_cache.begin(), prepared_tensor_cache, it);
-                return prepared_tensor_cache.front().tensors;
+                auto& entry = prepared_tensor_cache.front();
+                // The cache key covers adapter identity only, because A/B don't depend on alpha.
+                // The entry's alpha tensors, however, were evaluated under the alphas of the config
+                // that created it, so a hit from a config that differs only by alpha would otherwise
+                // apply a stale alpha. Re-evaluate just the alpha tensors in that case and keep the
+                // cached A/B: alpha is a small broadcast, while A/B are the expensive part.
+                if (!same_alphas(entry.config, config)) {
+                    auto fresh_alphas = prepare_config_tensors(config, weight_getters, /*alpha_only=*/true);
+                    OPENVINO_ASSERT(fresh_alphas.size() == entry.tensors.size());
+                    for (size_t i = 0; i < entry.tensors.size(); ++i) {
+                        entry.tensors[i].alpha = std::move(fresh_alphas[i].alpha);
+                    }
+                    entry.config = config;
+                    // Alpha shapes are alpha-independent today, but empty_adapters() can resize them,
+                    // so re-measure instead of assuming the entry's footprint is unchanged.
+                    const auto refreshed_byte_size = prepared_tensors_byte_size(entry.tensors);
+                    prepared_tensor_cache_byte_size -= entry.byte_size;
+                    prepared_tensor_cache_byte_size += refreshed_byte_size;
+                    entry.byte_size = refreshed_byte_size;
+                }
+                return entry.tensors;
             }
         }
 
@@ -1772,8 +1807,18 @@ struct AdapterControllerImpl {
             state_name_to_index[name] = i;
         }
 
-        // Prepare an unseen config once, then upload cached evaluator outputs.
-        const auto& prepared_tensors = get_or_prepare_config_tensors(current_config, weight_getters);
+        // An alpha-only update needs neither the cached A/B nor a new cache entry, so evaluate
+        // just the alpha tensors directly. The full path goes through the cache, which refreshes
+        // stale alpha tensors on a hit (see get_or_prepare_config_tensors).
+        std::vector<LoRAParts<ov::Tensor>> alpha_only_tensors;
+        const std::vector<LoRAParts<ov::Tensor>>* prepared_tensors_ptr;
+        if (alpha_only) {
+            alpha_only_tensors = prepare_config_tensors(current_config, weight_getters, /*alpha_only=*/true);
+            prepared_tensors_ptr = &alpha_only_tensors;
+        } else {
+            prepared_tensors_ptr = &get_or_prepare_config_tensors(current_config, weight_getters);
+        }
+        const auto& prepared_tensors = *prepared_tensors_ptr;
 
         auto prepared_tensor_it = prepared_tensors.begin();
         for(const auto& lora_var_ids : variable_ids) {

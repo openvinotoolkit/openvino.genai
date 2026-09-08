@@ -249,6 +249,15 @@ class TestLora:
         result_b = pipe.generate(prompt, images=[image_tensor], generation_config=generation_config, adapters=config_b)
         assert len(result_b.texts[0]) > 0, "Generation with config B should produce output"
 
+        # A and B share the same adapter and differ only by alpha. The prepared-tensor cache is keyed
+        # on adapter identity alone, so a stale cached alpha would make B silently reuse A's scaling.
+        # Asserting the outputs differ is what makes the A -> B -> A check below meaningful: without
+        # it, ignoring alpha entirely would still satisfy every other assertion in this test.
+        assert result_b.texts[0] != result_a_first.texts[0], (
+            "Config B (alpha=0.5) should not reproduce config A (alpha=2.0) output; "
+            "identical output suggests the alpha update was ignored"
+        )
+
         result_a_second = pipe.generate(
             prompt, images=[image_tensor], generation_config=generation_config, adapters=config_a
         )
