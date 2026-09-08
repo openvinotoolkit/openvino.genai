@@ -1331,7 +1331,7 @@ struct AdapterControllerImpl {
             if (env[0] != '\0') {
                 std::string requested_device(env);
                 if (requested_device == "INFER" || requested_device == "infer") {
-                    return infer_device;
+                    return infer_device.empty() ? "CPU" : infer_device;
                 }
                 return requested_device;
             }
