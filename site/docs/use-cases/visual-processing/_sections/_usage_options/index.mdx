@@ -131,6 +131,26 @@ LoRA adapters that target the vision encoder or other multimodal components are 
 
 Refer to the [LoRA Adapters](/docs/guides/lora-adapters) guide for more details on working with LoRA adapters.
 
+### Performance Metrics
+
+`VLMPipeline` returns `VLMDecodedResults` with a `perf_metrics` field of type `VLMPerfMetrics`, which extends the standard [`PerfMetrics`](/docs/guides/performance-metrics).
+
+In addition to common metrics (TTFT, TPOT, throughput, etc.), `VLMPerfMetrics` provides:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `get_prepare_embeddings_duration()` | `MeanStdPair`, ms | Total time for all embedding preparation steps before LM inference (includes pre-processing, vision/audio encoding, text embedding, merging etc.) |
+| `get_vision_encoding_duration()` | `MeanStdPair`, ms | Time spent encoding images and video frames through the vision encoder |
+| `get_audio_encoding_duration()` | `MeanStdPair`, ms | Time spent encoding audio inputs (applicable to audio-capable models like Qwen3-Omni) |
+| `get_text_embedding_duration()` | `MeanStdPair`, ms | Time spent computing token embeddings from the text embedding model |
+| `get_total_image_slice_count()` | integer | Total number of image slices processed across all input images |
+
+Raw values are available in `perf_metrics.vlm_raw_metrics`.
+
+:::tip
+For more details, refer to the [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/visual_language_chat/benchmark_vlm.py) and [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/visual_language_chat/benchmark_vlm.cpp) VLM benchmark samples.
+:::
+
 <ChatScenario />
 
 <Streaming />

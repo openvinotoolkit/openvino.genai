@@ -22,6 +22,7 @@
 #include "continuous_batching/cache/block_manager.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
 #include "continuous_batching/cache/linear_attention_cache_manager.hpp"
+#include "logger.hpp"
 
 namespace ov::genai {
 
@@ -810,19 +811,30 @@ private:
                         "Prefix caching for hybrid (linear-attention) models requires the model to expose KV cache inputs, but no KV cache manager is registered");
         const size_t kv_block_size = kv_manager->get_block_size();
 
-        // An explicit user multiplier is always honoured.
+        size_t multiplier = 0;
+        const char* multiplier_source = nullptr;
         if (config.cache_interval_multiplier.has_value()) {
-            return config.get_cache_interval(kv_block_size);
+            multiplier = config.cache_interval_multiplier.value();
+            multiplier_source = "configured";
+        } else {
+            multiplier = adaptive_cache_interval_multiplier(la_manager->get_block_size_in_bytes(),
+                                                            kv_manager->get_block_size_in_bytes());
+            multiplier_source = "auto";
         }
 
-        const size_t multiplier = adaptive_cache_interval_multiplier(la_manager->get_block_size_in_bytes(),
-                                                                     kv_manager->get_block_size_in_bytes());
-        // Keep the same overflow guard as SchedulerConfig::get_cache_interval() for consistency.
         OPENVINO_ASSERT(multiplier == 0 ||
                             kv_block_size <= std::numeric_limits<std::size_t>::max() / multiplier,
-                        "Derived cache_interval_multiplier is too large for KV cache block size. multiplier: ",
+                        "Linear-attention cache_interval_multiplier is too large for KV cache block size. multiplier: ",
                         multiplier, ", kv_block_size: ", kv_block_size);
-        return kv_block_size * multiplier;
+        const size_t cache_interval = kv_block_size * multiplier;
+        GENAI_INFO("Linear-attention prefix cache checkpoint interval: %zu tokens "
+                   "(cache_interval_multiplier=%zu, %s; LA checkpoint size=%zu bytes; KV block size=%zu bytes)",
+                   cache_interval,
+                   multiplier,
+                   multiplier_source,
+                   la_manager->get_block_size_in_bytes(),
+                   kv_manager->get_block_size_in_bytes());
+        return cache_interval;
     }
 
     /**
