@@ -561,13 +561,16 @@ void StatefulLLMPipeline::start_chat(const std::string& system_message) {
 void StatefulLLMPipeline::init_npu_continuous_prefill(const ov::CompiledModel& compiled_model) {
     // The capability must come from the read-only property. It must not be probed by
     // looking for npuw_stored_tokens_state in query_state(), because every existing
-    // plugin build publishes that state and would give a false positive. A plugin
-    // that predates the feature has no such property, which keeps the existing
-    // full-history behaviour automatically.
+    // plugin build publishes that state and would give a false positive. The property
+    // is computed on demand and is not listed in supported_properties either, so
+    // asking for it is the only way to probe it. A plugin that predates the feature
+    // answers with an ov::Exception for an unsupported configuration key, which keeps
+    // the existing full-history behaviour automatically and is the only failure
+    // expected here; anything else propagates.
     bool supported = false;
     try {
         supported = compiled_model.get_property("NPUW_LLM_CONTINUOUS_PREFILL_SUPPORTED").as<bool>();
-    } catch (...) {
+    } catch (const ov::Exception&) {
         supported = false;
     }
     m_npu_continuous_prefill = supported;
@@ -593,10 +596,14 @@ void StatefulLLMPipeline::negotiate_npu_history_reuse(size_t full_history_len, c
     // decoding loop caps generation against the KV capacity exactly as it does
     // without continuation.
     if (config.max_new_tokens != SIZE_MAX || config.max_length != SIZE_MAX) {
+        const size_t response_budget = config.get_max_new_tokens(full_history_len);
         // The final sampled token is returned without being fed through the model and
-        // has no KV entry, hence the minus one on the response budget.
-        const size_t response_budget = std::max<size_t>(config.get_max_new_tokens(full_history_len), 1u);
-        OPENVINO_ASSERT(full_history_len + response_budget - 1 <= m_kv_cache_capacity,
+        // has no KV entry, hence the minus one on the response budget. The comparison
+        // is written as a subtraction because the budget has no upper bound and the
+        // sum could otherwise wrap around.
+        const size_t kv_entries_needed = response_budget > 0 ? response_budget - 1 : 0;
+        OPENVINO_ASSERT(full_history_len <= m_kv_cache_capacity &&
+                        kv_entries_needed <= m_kv_cache_capacity - full_history_len,
             "The requested history of ", full_history_len, " tokens plus the response budget of ",
             response_budget, " tokens does not fit into the NPU KV cache capacity of ",
             m_kv_cache_capacity, " tokens.");
