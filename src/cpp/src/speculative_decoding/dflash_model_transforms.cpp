@@ -274,6 +274,10 @@ DFlashRTInfo extract_dflash_info_from_config(ov::AnyMap& config) {
     auto offset_it = config.find("dflash_candidate_position_offset");
     if (offset_it != config.end()) {
         info.candidate_position_offset = offset_it->second.as<size_t>();
+        OPENVINO_ASSERT(info.candidate_position_offset == 0 || info.candidate_position_offset == 1,
+                        "DFlash candidate_position_offset must be 0 or 1, got ",
+                        info.candidate_position_offset,
+                        ".");
         config.erase(offset_it);
     } else {
         info.candidate_position_offset = 1;

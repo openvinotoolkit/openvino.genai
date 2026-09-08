@@ -222,6 +222,13 @@ TEST(DFlashModelTransforms, AppliesAndExtractsDraftRtInfo) {
     auto deepspec_rt_info = ov::genai::utils::dflash::extract_dflash_info_from_config(properties);
     ASSERT_EQ(deepspec_rt_info.candidate_position_offset, 0);
     ASSERT_TRUE(properties.empty());
+
+    // Verify invalid values throw in extraction
+    properties["dflash_mode"] = true;
+    properties["dflash_mask_token_id"] = int64_t(151669);
+    properties["dflash_target_layer_ids"] = std::vector<int32_t>{1, 12, 23, 34, 45};
+    properties["dflash_candidate_position_offset"] = size_t(2);
+    EXPECT_THROW(ov::genai::utils::dflash::extract_dflash_info_from_config(properties), ov::Exception);
 }
 
 TEST(DFlashModelTransforms, FallsBackToEagle3LayerPatternWithoutAnnotations) {
