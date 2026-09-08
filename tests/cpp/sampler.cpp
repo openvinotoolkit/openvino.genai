@@ -107,7 +107,12 @@ void inject_transformer(Sampler& sampler,
     sampler.get_logit_processor(request_id) = std::move(test_processor);
 }
 
+<<<<<<< HEAD
 SequenceGroup::Ptr make_scheduled_group(uint64_t request_id, GenerationConfig sampling_config = ov::genai::utils::get_greedy_config()) {
+=======
+SequenceGroup::Ptr make_scheduled_group(uint64_t request_id) {
+    const GenerationConfig sampling_config = ov::genai::utils::get_greedy_config();
+>>>>>>> e54962f60 (Harden sampler worker lifetime and generation stream failures)
     const std::vector<int64_t> prompt{0};
     ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, prompt.size()}, prompt.data());
     auto sequence_group = std::make_shared<SequenceGroup>(request_id, input_tensor, sampling_config);
@@ -233,6 +238,7 @@ TEST(SamplerWorkerJoiningTest, preserves_successful_multi_request_results) {
     EXPECT_EQ(output.num_generated_tokens_per_request.at(1), 1);
     EXPECT_EQ(first_group->get_sequences().front()->get_generated_ids(), TokenIds({1}));
     EXPECT_EQ(second_group->get_sequences().front()->get_generated_ids(), TokenIds({1}));
+<<<<<<< HEAD
     EXPECT_TRUE(first_group->get_generation_stream()->can_read());
     EXPECT_TRUE(second_group->get_generation_stream()->can_read());
 }
@@ -312,6 +318,8 @@ TEST(SamplerNotificationTest, deferredEchoUsesPreCounterUpdateRange) {
     const GenerationOutputs outputs = sequence_group->get_generation_stream()->read();
     EXPECT_EQ(outputs.at(0).generated_ids, TokenIds({4}));
     EXPECT_EQ(outputs.at(0).generated_log_probs, LogProbs({1.0f}));
+=======
+>>>>>>> e54962f60 (Harden sampler worker lifetime and generation stream failures)
 }
 
 TEST(SamplerStopTokenIdsTest, single_stop_token_match) {
