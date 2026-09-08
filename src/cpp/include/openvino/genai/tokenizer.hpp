@@ -30,6 +30,32 @@ struct TokenizedInputs {
 };
 
 /**
+ * @brief GGUF tokenizer metadata a Tokenizer can be built from: the `tokenizer.*` keys of a
+ * .gguf file.
+ *
+ * `config` is keyed by the metadata sub-key -- the part after the last dot of `tokenizer.ggml.*` /
+ * `tokenizer.chat_template`, e.g. "model", "tokens", "merges", "scores", "token_type", "pre",
+ * "bos_token_id", "eos_token_id", "chat_template". Each value holds one of std::string,
+ * std::vector<std::string> or ov::Tensor, mirroring the GGUF metadata variant.
+ */
+struct OPENVINO_GENAI_EXPORTS GGUFTokenizerParameters {
+    /// tokenizer sub-key -> value (string / vector<string> / Tensor)
+    ov::AnyMap config;
+
+    GGUFTokenizerParameters() = default;
+    explicit GGUFTokenizerParameters(ov::AnyMap config) : config(std::move(config)) {}
+
+    /**
+     * @brief Read the parameters out of a model converted by the OpenVINO GGUF frontend, which
+     * attaches them to the model's runtime info so the .gguf need not be re-opened.
+     * @param gguf_model model produced by reading a .gguf through the GGUF frontend.
+     * @throws ov::Exception if the model carries no GGUF tokenizer metadata (e.g. a plain IR or
+     *         one built by the legacy GGUF reader).
+     */
+    static GGUFTokenizerParameters from_model(const std::shared_ptr<ov::Model>& gguf_model);
+};
+
+/**
  * @brief The class is used to encode prompts and decode resulting tokens
  *
  * Chat template is initialized from sources in the following order
@@ -49,6 +75,16 @@ public:
      * @param properties Properties passed to ov::Core::compile_model
      */
     explicit Tokenizer(const std::filesystem::path& tokenizer_path, const ov::AnyMap& properties = {});
+
+    /**
+     * @brief ov::genai::Tokenizer constructor from GGUF tokenizer metadata.
+     *
+     * Builds the tokenizer/detokenizer from a .gguf file's `tokenizer.*` metadata, so the file
+     * need not be re-opened when the language model was already read from it.
+     * @param gguf_tokenizer_parameters GGUF tokenizer metadata; see GGUFTokenizerParameters::from_model()
+     * @param properties Properties passed to ov::Core::compile_model
+     */
+    explicit Tokenizer(const GGUFTokenizerParameters& gguf_tokenizer_parameters, const ov::AnyMap& properties = {});
 
     /**
      * @brief ov::genai::Tokenizer constructor to initialize directly from model and weights

@@ -21,6 +21,14 @@ Tokenizer::Tokenizer(const std::filesystem::path& tokenizer_path, const ov::AnyM
     m_pimpl = std::make_shared<Tokenizer::TokenizerImpl>(tokenizer_path, properties);
 }
 
+GGUFTokenizerParameters GGUFTokenizerParameters::from_model(const std::shared_ptr<ov::Model>& gguf_model) {
+    return GGUFTokenizerParameters(gguf_tokenizer_metadata_from_model(gguf_model));
+}
+
+Tokenizer::Tokenizer(const GGUFTokenizerParameters& gguf_tokenizer_parameters, const ov::AnyMap& properties) {
+    m_pimpl = std::make_shared<Tokenizer::TokenizerImpl>(gguf_tokenizer_parameters, properties);
+}
+
 Tokenizer::Tokenizer(
     const std::string& tokenizer_model_str,
     const ov::Tensor& tokenizer_weights_tensor,

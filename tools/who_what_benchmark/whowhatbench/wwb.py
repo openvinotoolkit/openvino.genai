@@ -567,9 +567,21 @@ def load_tokenizer(args):
                     args.tokenizer, trust_remote_code=False, **kwargs
                 )
             except Exception:
-                tokenizer = AutoTokenizer.from_pretrained(
-                    args.tokenizer, trust_remote_code=True, **kwargs
-                )
+                try:
+                    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer, trust_remote_code=True, **kwargs)
+                except Exception:
+                    # For a GenAI .gguf target the pipeline carries its own tokenizer built from
+                    # the gguf, so an external HF tokenizer is optional. transformers can't read
+                    # every gguf tokenizer (e.g. gemma's), so degrade gracefully instead of failing.
+                    if args.genai and args.gguf_file:
+                        logger.warning(
+                            "Could not load an external tokenizer for %s (gguf-file %s); "
+                            "relying on the GenAI pipeline's built-in gguf tokenizer.",
+                            args.tokenizer,
+                            args.gguf_file,
+                        )
+                    else:
+                        raise
     elif args.base_model is not None:
         try:
             tokenizer = AutoTokenizer.from_pretrained(
@@ -754,7 +766,15 @@ def llamacpp_gen_text(
         output = model.create_chat_completion(messages=[{"role": "user", "content": question}], max_tokens=max_new_tokens, temperature=0.0)
         return output["choices"][0]["message"]["content"]
     else:
-        output = model(question, max_tokens=max_new_tokens, echo=False, temperature=0.0)
+        # Use the GGUF tokenizer's special-token policy. llama-cpp-python's string
+        # completion wrapper can append a separator even when add_eos_token is false
+        # (e.g. Hunyuan), changing the prompt compared with native GGUF generation.
+        prompt_tokens = model.tokenize(
+            question.encode("utf-8"), add_bos=True, special=True
+        )
+        output = model(
+            prompt_tokens, max_tokens=max_new_tokens, echo=False, temperature=0.0
+        )
         return output["choices"][0]["text"]
 
 
