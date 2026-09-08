@@ -1476,7 +1476,8 @@ process_stop_strings(const std::set<std::string>& stop_strings, Tokenizer& token
 
 SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr sequence_group, ov::Tensor sequence_group_logits, 
                                                               RequestSamplerContext& ctx,
-                                                              bool is_validation_mode_enabled) {
+                                                              bool is_validation_mode_enabled,
+                                                              bool notify_handle) {
     SequenceGroupSamplingInfo sg_sampling_info;
     // Assistant pipeline info is relevant for speculative and prompt lookup decoding
     AssistingPipelineInfo& assisting_pipeline_info = sg_sampling_info.get_assisting_pipeline_info();
@@ -1701,12 +1702,21 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
         OPENVINO_THROW("Unsupported sampling method");
     }
     OPENVINO_ASSERT(num_generated_tokens_to_validate >= assisting_pipeline_info.max_removed_tokens_per_request);
+    if (notify_handle) {
+        try {
+            sequence_group->notify_handle();
+        } catch (...) {
+            sequence_group->fail_generation(std::current_exception());
+            throw;
+        }
+    }
     return sg_sampling_info;
 }
 
 SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_groups,
                               ov::Tensor logits,
-                              bool is_validation_mode_enabled) {
+                              bool is_validation_mode_enabled,
+                              bool notify_handles) {
     const float * logits_data = logits.data<float>();
     ov::Shape logits_shape = logits.get_shape();
     OPENVINO_ASSERT(logits_shape.size() == 3);
@@ -1771,7 +1781,8 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
                                                      sequence_group,
                                                      sequence_group_logits,
                                                      std::ref(ctx),
-                                                     is_validation_mode_enabled);
+                                                     is_validation_mode_enabled,
+                                                     notify_handles);
         } else {
             // we are in prompt processing phase when prompt is split into chunks and processed step by step
         }

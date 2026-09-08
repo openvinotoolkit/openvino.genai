@@ -107,8 +107,7 @@ void inject_transformer(Sampler& sampler,
     sampler.get_logit_processor(request_id) = std::move(test_processor);
 }
 
-SequenceGroup::Ptr make_scheduled_group(uint64_t request_id) {
-    const GenerationConfig sampling_config = ov::genai::utils::get_greedy_config();
+SequenceGroup::Ptr make_scheduled_group(uint64_t request_id, GenerationConfig sampling_config = ov::genai::utils::get_greedy_config()) {
     const std::vector<int64_t> prompt{0};
     ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, prompt.size()}, prompt.data());
     auto sequence_group = std::make_shared<SequenceGroup>(request_id, input_tensor, sampling_config);
@@ -234,6 +233,85 @@ TEST(SamplerWorkerJoiningTest, preserves_successful_multi_request_results) {
     EXPECT_EQ(output.num_generated_tokens_per_request.at(1), 1);
     EXPECT_EQ(first_group->get_sequences().front()->get_generated_ids(), TokenIds({1}));
     EXPECT_EQ(second_group->get_sequences().front()->get_generated_ids(), TokenIds({1}));
+    EXPECT_TRUE(first_group->get_generation_stream()->can_read());
+    EXPECT_TRUE(second_group->get_generation_stream()->can_read());
+}
+
+TEST(SamplerNotificationTest, defers_generated_output_until_explicit_notification) {
+    SequenceGroup::Ptr sequence_group = make_scheduled_group(0);
+    std::vector<SequenceGroup::Ptr> sequence_groups{sequence_group};
+    Sampler sampler;
+
+    const SamplerOutput output = sampler.sample(sequence_groups, make_logits(1), false, false);
+
+    ASSERT_EQ(output.num_generated_tokens, 1);
+    EXPECT_EQ(sequence_group->get_sequences().front()->get_generated_ids(), TokenIds({1}));
+    EXPECT_FALSE(sequence_group->get_generation_stream()->can_read());
+
+    sequence_group->notify_handle();
+    ASSERT_TRUE(sequence_group->get_generation_stream()->can_read());
+    const GenerationOutputs generation_outputs = sequence_group->get_generation_stream()->read();
+    EXPECT_EQ(generation_outputs.at(0).generated_ids, TokenIds({1}));
+}
+
+TEST(SamplerNotificationTest, defers_terminal_output_until_explicit_notification) {
+    GenerationConfig sampling_config = ov::genai::utils::get_greedy_config();
+    sampling_config.max_new_tokens = 1;
+    SequenceGroup::Ptr sequence_group = make_scheduled_group(0, sampling_config);
+    std::vector<SequenceGroup::Ptr> sequence_groups{sequence_group};
+    Sampler sampler;
+
+    const SamplerOutput output = sampler.sample(sequence_groups, make_logits(1), false, false);
+
+    ASSERT_EQ(output.m_dropped_sequences.size(), 1);
+    EXPECT_TRUE(sequence_group->has_finished());
+    EXPECT_EQ(sequence_group->get_generation_stream()->get_status(), GenerationStatus::RUNNING);
+    EXPECT_FALSE(sequence_group->get_generation_stream()->can_read());
+
+    sequence_group->notify_handle();
+    EXPECT_EQ(sequence_group->get_generation_stream()->get_status(), GenerationStatus::FINISHED);
+    ASSERT_TRUE(sequence_group->get_generation_stream()->can_read());
+    EXPECT_EQ(sequence_group->get_generation_stream()->read().at(0).generated_ids, TokenIds({1}));
+}
+
+TEST(SamplerNotificationTest, precommitFailurePublishesNoGeneratedOutputAndPreservesException) {
+    SequenceGroup::Ptr sequence_group = make_scheduled_group(0);
+    std::vector<SequenceGroup::Ptr> sequence_groups{sequence_group};
+    Sampler sampler;
+    sampler.sample(sequence_groups, make_logits(1), false, false);
+    ASSERT_FALSE(sequence_group->get_generation_stream()->can_read());
+
+    const std::exception_ptr failure = std::make_exception_ptr(std::runtime_error("injected precommit failure"));
+    sequence_group->fail_generation(failure);
+
+    std::exception_ptr reader_failure;
+    try {
+        sequence_group->get_generation_stream()->read();
+    } catch (...) {
+        reader_failure = std::current_exception();
+    }
+    EXPECT_EQ(reader_failure, failure);
+}
+
+TEST(SamplerNotificationTest, deferredEchoUsesPreCounterUpdateRange) {
+    GenerationConfig sampling_config = ov::genai::utils::get_greedy_config();
+    sampling_config.echo = true;
+    sampling_config.max_new_tokens = 0;
+    const std::vector<int64_t> prompt{4, 5};
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, prompt.size()}, prompt.data());
+    SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, input_tensor, sampling_config);
+    sequence_group->schedule_tokens(1);
+    sequence_group->append_prompt_log_prob(1.0f);
+    sequence_group->append_prompt_log_prob(2.0f);
+    const size_t first_token_position = sequence_group->get_num_processed_tokens();
+    const size_t last_token_position = sequence_group->get_context_len();
+    sequence_group->finish_iteration();
+
+    sequence_group->notify_handle_echo_only(first_token_position, last_token_position);
+
+    const GenerationOutputs outputs = sequence_group->get_generation_stream()->read();
+    EXPECT_EQ(outputs.at(0).generated_ids, TokenIds({4}));
+    EXPECT_EQ(outputs.at(0).generated_log_probs, LogProbs({1.0f}));
 }
 
 TEST(SamplerStopTokenIdsTest, single_stop_token_match) {
