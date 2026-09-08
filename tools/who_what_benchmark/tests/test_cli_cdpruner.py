@@ -74,6 +74,11 @@ def run_test(model_id, model_type, tmp_path, pruning_ratio, relevance_weight):
     assert pruner_info in output
 
 
+@pytest.mark.xfail(
+    sys.platform == "linux",
+    reason="wwb aborts at interpreter shutdown with PyGILState_Release. Ticket 194373",
+    strict=False,
+)
 @pytest.mark.parametrize(
     ("model_id", "model_type", "pruning_ratio", "relevance_weight"),
     [
