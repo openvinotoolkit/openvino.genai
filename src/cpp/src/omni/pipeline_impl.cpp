@@ -48,8 +48,21 @@ public:
         if (!m_channel) {
             return;
         }
+        // Closing the read end here rather than inside TalkerBase keeps it off the contract every
+        // talker implementation would otherwise have to honour to avoid stranding the thinker.
         m_result = std::async(std::launch::async, [this] {
-            return m_talker->generate(m_channel, m_talker_speech_config, m_speech_streamer);
+            try {
+                TalkerResults results = m_talker->generate(m_channel, m_talker_speech_config, m_speech_streamer);
+                // A talker that returned while the thinker is still going wants no more tokens,
+                // but the caller still wants the text, so this must not stop generation.
+                m_channel->detach();
+                return results;
+            } catch (...) {
+                // Nothing will consume the rest of the response. The exception itself rides the
+                // future and surfaces from finish() on the caller's thread.
+                m_channel->abort();
+                throw;
+            }
         });
     }
 

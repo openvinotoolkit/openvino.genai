@@ -28,8 +28,13 @@ namespace ov::genai {
  * thinker costs memory rather than stalling text generation — the same memory the non-streaming
  * path spends accumulating VLMDecodedResults::intermediate_hidden_states.
  *
- * write() always returns RUNNING: a channel never asks the thinker to stop. Cancellation stays
- * with the caller's own StreamerVariant.
+ * The reader closes its own end with detach() when it stops listening and with abort() when it
+ * fails. Both drop the queue, which is what keeps a reader that is gone from turning the rest of
+ * the generation into unbounded growth. They differ in what write() then tells the thinker:
+ * detach() leaves it RUNNING so the text still finishes, while abort() returns STOP because
+ * nobody will hear the rest. Until one of them is called write() returns RUNNING — a healthy
+ * channel never asks the thinker to stop, and caller-driven cancellation stays with the caller's
+ * own StreamerVariant.
  *
  * Thread safety: unlike bare OmniStreamerBase implementations, this class is safe to use from two
  * threads — one writing, one reading — which is the point of the bridge. Multiple concurrent
@@ -45,7 +50,8 @@ public:
 
     /// @brief Queue one VLM decode step. Keys are documented on OmniStreamerBase; the payload is
     ///        stored as-is, so ov::Tensor values are kept as ref-counted handles, not deep-copied.
-    /// @return Always RUNNING.
+    ///        Once the reader has closed its end the payload is dropped instead of queued.
+    /// @return RUNNING, or STOP once the reader has called abort().
     StreamingStatus write(const ov::AnyMap& data) override;
 
     /// @brief Close the write end. Idempotent. Wakes any reader waiting on the channel so a VLM
@@ -53,8 +59,21 @@ public:
     void end() override;
 
     /// @brief Take the oldest queued step, blocking until one is queued or the write end closes.
-    /// @return The step, or nullopt once end() has been called and the queue is drained.
+    /// @return The step, or nullopt once end() has been called and the queue is drained, or once
+    ///         this end was closed by detach() or abort().
     std::optional<ov::AnyMap> read() override;
+
+    /// @brief Close the read end: no more steps are wanted, and that is not an error. The thinker
+    ///        keeps generating, so a talker that finished early — codec EOS, its own token budget,
+    ///        a speech streamer that asked to stop — still leaves the caller with the full text.
+    ///        Idempotent, and callable after abort(), which it does not undo.
+    void detach();
+
+    /// @brief Close the read end after a failure: the talker gave up, so the rest of the response
+    ///        is pointless and write() starts returning STOP. Idempotent, and takes precedence
+    ///        over detach(). The failure itself does not travel on the channel — OmniPipeline
+    ///        carries it on the talker's std::future and rethrows it on the caller's thread.
+    void abort();
 
 private:
     class Impl;

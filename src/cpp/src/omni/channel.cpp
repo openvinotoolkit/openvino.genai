@@ -16,11 +16,21 @@ namespace genai {
 /// @brief Queue behind OmniChannel. Pimpl'd so <mutex> / <condition_variable> stay out of the
 /// public header — a std::mutex member would otherwise cross the shared-library boundary.
 class OmniChannel::Impl {
+    /// @brief How the read end stands. Monotone toward the stronger state: detach() cannot soften a
+    /// prior abort(), so a failure can never be downgraded by a talker still winding down.
+    enum class ReaderState { OPEN, DETACHED, ABORTED };
+
 public:
     StreamingStatus write(const ov::AnyMap& data) {
         size_t depth = 0;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
+            if (m_reader_state != ReaderState::OPEN) {
+                // Dropping instead of queueing is the whole point: nobody is going to read this,
+                // and the queue is unbounded.
+                return m_reader_state == ReaderState::ABORTED ? StreamingStatus::STOP
+                                                              : StreamingStatus::RUNNING;
+            }
             m_queue.push_back(data);
             depth = m_queue.size();
         }
@@ -44,12 +54,34 @@ public:
         // Queued steps win over m_finished, so end() never discards what was already written:
         // the reader keeps draining and only sees the end of the stream once the queue is empty.
         m_cv.wait(lock, [this] {
-            return !m_queue.empty() || m_finished;
+            return !m_queue.empty() || m_finished || m_reader_state != ReaderState::OPEN;
         });
+        if (m_reader_state != ReaderState::OPEN) {
+            return std::nullopt;
+        }
         return pop(lock);
     }
 
+    void detach() {
+        close_read(ReaderState::DETACHED);
+    }
+
+    void abort() {
+        close_read(ReaderState::ABORTED);
+    }
+
 private:
+    void close_read(ReaderState state) {
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            if (m_reader_state != ReaderState::ABORTED) {
+                m_reader_state = state;
+            }
+            m_queue.clear();
+        }
+        m_cv.notify_all();
+    }
+
     // TODO: temporary — remove together with the trace_write() call in write().
     void trace_write(const ov::AnyMap& data, size_t queue_depth) {
         const auto tokens_it = data.find(omni_stream::tokens.name());
@@ -90,6 +122,7 @@ private:
     std::mutex m_mutex;
     std::condition_variable m_cv;
     bool m_finished = false;
+    ReaderState m_reader_state = ReaderState::OPEN;
     size_t m_written = 0;  // TODO: temporary, only used by trace_write().
 };
 
@@ -107,6 +140,14 @@ void OmniChannel::end() {
 
 std::optional<ov::AnyMap> OmniChannel::read() {
     return m_impl->read();
+}
+
+void OmniChannel::detach() {
+    m_impl->detach();
+}
+
+void OmniChannel::abort() {
+    m_impl->abort();
 }
 
 }  // namespace genai
