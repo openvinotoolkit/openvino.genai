@@ -125,6 +125,7 @@ def run_text_to_speech_generation_optimum(
     )
     tts_audio_metrics = _build_tts_audio_metrics(out_size, sample_rate, generation_time)
     iter_data["tts_output_duration_s"] = tts_audio_metrics["duration_s"]
+    iter_data["tts_sample_rate"] = tts_audio_metrics["sample_rate"]
     iter_data["tts_rtf"] = tts_audio_metrics["rtf"]
     iter_data_list.append(iter_data)
     metrics_print.print_metrics(
@@ -234,6 +235,7 @@ def run_text_to_speech_generation_genai(
     )
     tts_audio_metrics = _build_tts_audio_metrics(out_size, sample_rate, generation_time)
     iter_data["tts_output_duration_s"] = tts_audio_metrics["duration_s"]
+    iter_data["tts_sample_rate"] = tts_audio_metrics["sample_rate"]
     iter_data["tts_rtf"] = tts_audio_metrics["rtf"]
     iter_data_list.append(iter_data)
     metrics_print.print_metrics(
@@ -289,6 +291,7 @@ def _record_omni_iter(
     )
     tts_audio_metrics = _build_tts_audio_metrics(out_size, sample_rate, generation_time)
     iter_data["tts_output_duration_s"] = tts_audio_metrics["duration_s"]
+    iter_data["tts_sample_rate"] = tts_audio_metrics["sample_rate"]
     iter_data["tts_rtf"] = tts_audio_metrics["rtf"]
     iter_data_list.append(iter_data)
     metrics_print.print_metrics(
