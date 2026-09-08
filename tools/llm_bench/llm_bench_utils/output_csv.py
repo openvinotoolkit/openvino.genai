@@ -52,9 +52,9 @@ def output_comments(result, use_case, writer):
     comment_list.append('tokenization_time: Tokenizer encode time')
     comment_list.append('detokenization_time: Tokenizer decode time')
     if use_case == "text_to_speech":
-        comment_list.append('tts_output_duration: Generated audio duration in seconds (output_size / tts_sample_rate)')
-        comment_list.append('tts_sample_rate: Generated audio sample rate in Hz')
-        comment_list.append('tts_rtf: Real-time factor for TTS (generation_time / tts_output_duration)')
+        comment_list.append('tts_output_duration(s): Generated audio duration in seconds (output_size / tts_sample_rate(hz))')
+        comment_list.append('tts_sample_rate(hz): Generated audio sample rate in Hz')
+        comment_list.append('tts_rtf: Real-time factor for TTS (generation_time / tts_output_duration(s))')
     comment_list.append('pretrain_time: Total time of load model and compile model')
     comment_list.append('generation_time: Time for one interaction. (e.g. The duration of  answering one question or generating one picture)')
     comment_list.append('iteration=0: warm-up; iteration=avg: average (exclude warm-up);iteration=mini: minimum value (exclude warm-up);'
