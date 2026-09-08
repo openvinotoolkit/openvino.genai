@@ -260,6 +260,17 @@ class TestLora:
             "identical output suggests the alpha update was ignored"
         )
 
+        # The check above only shows B's output differs from A's, which greedy decoding could in
+        # principle satisfy even if alpha=0.0 weren't fully zeroing the adapter's contribution.
+        # Alpha=0.0 must exactly zero out the adapter's contribution, so its output should match a
+        # pipeline with no adapter applied at all; this is a stronger, decoding-independent check.
+        result_no_adapter = pipe.generate(
+            prompt, images=[image_tensor], generation_config=generation_config, adapters=ov_genai.AdapterConfig()
+        )
+        assert result_b.texts[0] == result_no_adapter.texts[0], (
+            "Config B (alpha=0.0) should exactly match a no-adapter baseline"
+        )
+
         result_a_second = pipe.generate(
             prompt, images=[image_tensor], generation_config=generation_config, adapters=config_a
         )
