@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "utils.hpp"
+#include "logger.hpp"
 #include "model_desc.hpp"
 
 #include <algorithm>
@@ -1024,6 +1025,16 @@ void extract_extensions_to_core(ov::AnyMap& properties) {
             singleton_core().add_extension(std::get<std::shared_ptr<ov::Extension>>(extension));
         }
     }
+}
+
+void log_attention_backend(const std::string& attention_backend) {
+    GENAI_INFO("%s backend is enabled.", attention_backend.c_str());
+}
+
+void log_paged_attention_fallback(const ov::Exception& exception) {
+    GENAI_INFO("Paged Attention backend initialization failed. Falling back to SDPA backend. "
+                "Set ATTENTION_BACKEND=\"SDPA\" to skip Paged Attention initialization.");
+    GENAI_DEBUG("Paged Attention backend initialization error: %s", exception.what());
 }
 
 void release_core_plugin(const std::string& device) {

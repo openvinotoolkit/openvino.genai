@@ -16,14 +16,12 @@ GenerationHandle
 ContinuousBatchingPipeline::PromptLookupImpl::add_request(uint64_t request_id,
                                                           const ov::Tensor& input_ids,
                                                           const ov::genai::GenerationConfig& sampling_params,
-                                                          std::optional<ov::Tensor> token_type_ids,
                                                           std::optional<ov::Tensor> prompt_ids,
                                                           std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     OPENVINO_ASSERT(sampling_params.is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`");
     return m_pipeline->add_request(request_id,
                                    input_ids,
                                    sampling_params,
-                                   token_type_ids,
                                    prompt_ids,
                                    lm_extra_inputs);
 }
@@ -97,7 +95,6 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                        const std::vector<GenerationConfig>& sampling_params,
                                                        const StreamerVariant& streamer,
-                                                       const std::optional<std::vector<ov::Tensor>>& token_type_ids,
                                                        const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids,
                                                        const std::optional<std::vector<ov::Tensor>>& prompt_ids,
                                                        const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list) {
@@ -131,14 +128,12 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");   
         OPENVINO_ASSERT(sampling_params[request_id].is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`"); 
 
-        bool has_valid_ttid = token_type_ids.has_value() && request_id < token_type_ids->size();
         bool has_valid_pid = prompt_ids.has_value() && request_id < prompt_ids->size();
         bool has_valid_lm_extra_inputs = lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
         generations.push_back(m_pipeline->add_request(
             request_id,
             input_ids[request_id],
             sampling_params[request_id],
-            has_valid_ttid ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt,
             has_valid_pid ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
             has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt
         ));

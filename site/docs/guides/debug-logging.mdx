@@ -13,7 +13,7 @@ There are six log levels, which can be called explicitly or set via the `OPENVIN
 - 3 - `ov::log::Level::DEBUG`
 - 4 - `ov::log::Level::TRACE`
 
-When setting the environment variable `OPENVINO_LOG_LEVEL` > `ov::log::Level::DEBUG`, the properties of the compiled model will be printed.
+When setting the environment variable `OPENVINO_LOG_LEVEL` > `ov::log::Level::WARNING`, the additional information will be printed.
 
 <Tabs groupId="os">
     <TabItem label="Linux & macOS" value="linux_macos">
@@ -87,4 +87,11 @@ When a GGUF model is passed to the pipeline, the detailed debug info will also b
 [GGUF Reader]: Start generating OpenVINO model...
 [GGUF Reader]: Save generated OpenVINO model to: gguf_models/openvino_model.xml done. Time: 466 ms
 [GGUF Reader]: Model generation done. Time: 757ms
+```
+
+When setting the environment variable `OPENVINO_LOG_LEVEL` >= `ov::log::Level::INFO`, the information about which backend is used (PA/SDPA) will be displayed.
+
+For example, after PagedAttention transformation is applied successfully, the following message is printed to the console in case of `LLMPipeline` or `VLMPipeline`:
+```sh title="Output:"
+[INFO] PA backend is enabled.
 ```
