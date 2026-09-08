@@ -825,33 +825,18 @@ private:
         const std::chrono::steady_clock::time_point& embeddings_start_time
     ) {
         ov::Tensor inputs_embeds;
-        std::optional<ov::Tensor> token_type_ids;
         bool recalculate_merged_embeddings = encoded_images.size() > 0 || encoded_videos.size() > 0;
 
-        if (m_inputs_embedder->has_token_type_ids()) {
-            std::tie(inputs_embeds, token_type_ids) =
-                m_inputs_embedder->get_inputs_embeds_with_token_type_ids(
-                    unified_prompt,
-                    encoded_images,
-                    encoded_videos,
-                    perf_metrics,
-                    recalculate_merged_embeddings,
-                    image_sequence,
-                    video_sequence,
-                    history_vision_count
-                );
-        } else {
-            inputs_embeds = m_inputs_embedder->get_inputs_embeds(
-                unified_prompt,
-                encoded_images,
-                encoded_videos,
-                perf_metrics,
-                recalculate_merged_embeddings,
-                image_sequence,
-                video_sequence,
-                history_vision_count
-            );
-        }
+        inputs_embeds = m_inputs_embedder->get_inputs_embeds(
+            unified_prompt,
+            encoded_images,
+            encoded_videos,
+            perf_metrics,
+            recalculate_merged_embeddings,
+            image_sequence,
+            video_sequence,
+            history_vision_count
+        );
         PerfMetrics::emplace_duration(perf_metrics.vlm_raw_metrics.prepare_embeddings_durations, embeddings_start_time);
 
         if (m_is_npu) {
@@ -925,21 +910,22 @@ private:
         if (m_is_npu) {
             max_kv_cache_size = ov::genai::utils::get_npu_kv_cache_capacity(m_language.get_compiled_model());
         }
-        return ov::genai::get_lm_encoded_results(m_language,
-                                                 inputs_embeds,
-                                                 new_atten_mask,
-                                                 streamer_ptr,
-                                                 m_sampler,
-                                                 std::move(requests),
-                                                 position_ids,
-                                                 token_type_ids,
-                                                 cache_state,
-                                                 m_embedding,
-                                                 rope_delta,
-                                                 max_kv_cache_size,
-                                                 use_intermediate_remote_tensor,
-                                                 lm_extra_inputs,
-                                                 std::move(per_layer_callback));
+        return ov::genai::get_lm_encoded_results(
+            m_language,
+            inputs_embeds,
+            new_atten_mask,
+            streamer_ptr,
+            m_sampler,
+            std::move(requests),
+            position_ids,
+            cache_state,
+            m_embedding,
+            rope_delta,
+            max_kv_cache_size,
+            use_intermediate_remote_tensor,
+            lm_extra_inputs,
+            std::move(per_layer_callback)
+        );
     }
 };
 
