@@ -923,9 +923,12 @@ private:
 };
 
 bool requires_sdpa(const std::filesystem::path& models_dir) {
-    // Force models to use SDPA backend by default until PA is supported. Example:
-    // auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    // vlm_config.model_type == VLMModelType::GEMMA3;
+    // LFM2-VL uses a hybrid conv + attention language model whose short-conv state
+    // is not representable by PagedAttention. Force the SDPA backend for it.
+    auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
+    if (vlm_config.model_type == VLMModelType::LFM2_VL) {
+        return true;
+    }
     return false;
 }
 

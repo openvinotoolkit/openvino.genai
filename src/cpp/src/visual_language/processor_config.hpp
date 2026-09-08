@@ -75,6 +75,16 @@ public:
     size_t max_patches = 6;
     std::array<uint8_t, 3> background_color{127, 127, 127};
 
+    // LFM2-VL (Lfm2VlImageProcessor) specific params
+    size_t downsample_factor = 2;
+    size_t min_tiles = 2;
+    size_t max_tiles = 10;
+    bool use_thumbnail = true;
+    bool do_image_splitting = true;
+    size_t min_image_tokens = 64;
+    size_t encoder_patch_size = 16;
+    float max_pixels_tolerance = 2.0f;
+
     /// @brief Default constructor
     ProcessorConfig() = default;
 
