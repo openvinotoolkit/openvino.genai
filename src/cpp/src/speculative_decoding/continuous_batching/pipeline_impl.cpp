@@ -347,7 +347,9 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::init_r
         }
         
         UpdateRequestResult result;
-        m_sampler->create_logit_processor(request_id, request->get_sampling_parameters(), request->get_prompt_ids());
+        m_sampler->create_logit_processor(request_id,
+                                          request->get_sampling_parameters(),
+                                          request->get_prompt_token_ids());
         auto& logit_processor = m_sampler->get_logit_processor(request_id);
         result.inserted_tokens_cnt = init_request(request, candidates, logit_processor, true, true);
         request->set_num_validated_tokens(result.inserted_tokens_cnt);
@@ -400,7 +402,9 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         const bool should_pause_for_missing_main_hidden_state =
             requires_main_hidden_state && !main_published_hidden_state;
         if (running_sequences.front()->get_generated_len() == 0 && !request->get_num_tokens_to_validate()) {
-            m_sampler->create_logit_processor(request_id, request->get_sampling_parameters(), request->get_prompt_ids());
+            m_sampler->create_logit_processor(request_id,
+                                              request->get_sampling_parameters(),
+                                              request->get_prompt_token_ids());
             auto& logit_processor = m_sampler->get_logit_processor(request_id);
             result.inserted_tokens_cnt = init_request(request, candidates, logit_processor, is_update_logit_processor);
             min_generated_tokens = result.inserted_tokens_cnt;

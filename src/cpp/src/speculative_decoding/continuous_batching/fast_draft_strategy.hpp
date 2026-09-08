@@ -144,7 +144,7 @@ std::vector<EncodedGenerationResult> generate_common(
                         seq->get_cumulative_log_prob();
             const auto& gen_ids = seq->get_generated_ids();
             if (cfg.echo) {
-                result.m_generation_ids[i] = request->get_prompt_ids();
+                result.m_generation_ids[i] = request->get_prompt_token_ids();
             }
             std::copy(gen_ids.begin(), gen_ids.end(),
                     std::back_inserter(result.m_generation_ids[i]));

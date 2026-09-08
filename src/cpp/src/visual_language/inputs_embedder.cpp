@@ -185,11 +185,6 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_encoded_input_ids(const std::str
     return new_input_ids;
 }
 
-// For prompt lookup, encode original prompt as lookup table.
-ov::Tensor InputsEmbedder::IInputsEmbedder::encode_prompt(const std::string& original_prompt) {
-    return m_tokenizer.encode(original_prompt).input_ids;
-}
-
 ov::Tensor InputsEmbedder::IInputsEmbedder::sample_video_if_needed(
     const ov::Tensor& video,
     const VideoMetadata& video_metadata
@@ -538,10 +533,6 @@ void InputsEmbedder::encode_audios(const std::vector<ov::Tensor>& audios) {
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
     return m_impl->get_position_ids(inputs_embeds_size, history_size);
-}
-
-ov::Tensor InputsEmbedder::encode_prompt(const std::string& original_prompt) {
-    return m_impl->encode_prompt(original_prompt);
 }
 
 void InputsEmbedder::set_position_ids(const ov::Tensor& position_ids) {

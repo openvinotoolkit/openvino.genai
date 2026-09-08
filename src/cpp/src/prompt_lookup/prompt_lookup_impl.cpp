@@ -187,7 +187,7 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
             const auto & generated_ids = sequence->get_generated_ids();
 
             if (sampling_params.echo) {
-                result.m_generation_ids[i] = request->get_prompt_ids();
+                result.m_generation_ids[i] = request->get_prompt_token_ids();
             }
             std::copy(generated_ids.begin(), generated_ids.end(), std::back_inserter(result.m_generation_ids[i]));
             result.m_scores[i] = score;

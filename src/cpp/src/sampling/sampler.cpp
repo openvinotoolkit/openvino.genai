@@ -372,7 +372,7 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
             }
 
             // apply n_gramm
-            std::vector<int64_t> full_text{m_sequence_group->get_prompt_ids()};
+            std::vector<int64_t> full_text{m_sequence_group->get_prompt_token_ids()};
             full_text.insert(full_text.end(), beam.m_sequence->get_generated_ids().begin(), beam.m_sequence->get_generated_ids().end());
             if (full_text.size() > 1 && full_text.size() >= m_parameters.no_repeat_ngram_size) {
                 auto tail_start = full_text.end() - ptrdiff_t(m_parameters.no_repeat_ngram_size) + 1;
@@ -1732,7 +1732,7 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
             if (m_tokenizer.m_pimpl != nullptr) {
                 structured_output_controller = m_tokenizer.m_pimpl->get_structured_output_controller(vocab_size);
             }
-            LogitProcessor lp(sampling_params, sequence_group->get_prompt_ids(), structured_output_controller);
+            LogitProcessor lp(sampling_params, sequence_group->get_prompt_token_ids(), structured_output_controller);
             m_request_contexts.emplace(
                 std::piecewise_construct,
                 std::forward_as_tuple(request_id),
