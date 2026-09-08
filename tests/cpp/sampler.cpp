@@ -2,12 +2,239 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <gtest/gtest.h>
+#include <atomic>
+#include <chrono>
+#include <future>
+#include <stdexcept>
 #include "sampling/sampler.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "utils.hpp"
 
 
 using namespace ov::genai;
+
+namespace {
+
+using namespace std::chrono_literals;
+
+class WorkerGate {
+public:
+    WorkerGate() : m_release_future(m_release_promise.get_future().share()) {}
+
+    ~WorkerGate() {
+        release();
+    }
+
+    std::shared_future<void> get_release_future() const {
+        return m_release_future;
+    }
+
+    void release() {
+        if (!m_released.exchange(true)) {
+            m_release_promise.set_value();
+        }
+    }
+
+private:
+    std::promise<void> m_release_promise;
+    std::shared_future<void> m_release_future;
+    std::atomic<bool> m_released{false};
+};
+
+class WorkerGateReleaseGuard {
+public:
+    explicit WorkerGateReleaseGuard(WorkerGate& worker_gate) : m_worker_gate(worker_gate) {}
+
+    ~WorkerGateReleaseGuard() {
+        m_worker_gate.release();
+    }
+
+private:
+    WorkerGate& m_worker_gate;
+};
+
+class BlockingLogitTransformer : public LogitTransformers::ILogitTransformer {
+public:
+    BlockingLogitTransformer(std::promise<void>& entered_promise, std::shared_future<void> release_future) :
+        m_entered_promise(entered_promise),
+        m_release_future(std::move(release_future)) {}
+
+    void apply(Logits&) override {
+        m_entered_promise.set_value();
+        m_release_future.wait();
+    }
+
+private:
+    std::promise<void>& m_entered_promise;
+    std::shared_future<void> m_release_future;
+};
+
+class ThrowingLogitTransformer : public LogitTransformers::ILogitTransformer {
+public:
+    ThrowingLogitTransformer(std::shared_future<void> blocking_worker_entered,
+                             std::promise<void>& throwing_worker_entered) :
+        m_blocking_worker_entered(std::move(blocking_worker_entered)),
+        m_throwing_worker_entered(throwing_worker_entered) {}
+
+    void apply(Logits&) override {
+        m_blocking_worker_entered.wait();
+        m_throwing_worker_entered.set_value();
+        OPENVINO_THROW("injected sampler worker failure");
+    }
+
+private:
+    std::shared_future<void> m_blocking_worker_entered;
+    std::promise<void>& m_throwing_worker_entered;
+};
+
+class TestLogitProcessor : public LogitProcessor {
+public:
+    using LogitProcessor::LogitProcessor;
+
+    void set_transformer(std::shared_ptr<LogitTransformers::ILogitTransformer> transformer) {
+        m_logit_transformers = {std::move(transformer)};
+    }
+};
+
+void inject_transformer(Sampler& sampler,
+                        uint64_t request_id,
+                        const SequenceGroup::Ptr& sequence_group,
+                        std::shared_ptr<LogitTransformers::ILogitTransformer> transformer) {
+    const GenerationConfig& sampling_config = sequence_group->get_sampling_parameters();
+    sampler.create_logit_processor(request_id, sampling_config, sequence_group->get_prompt_ids());
+    TestLogitProcessor test_processor(sampling_config, sequence_group->get_prompt_ids());
+    test_processor.set_transformer(std::move(transformer));
+    sampler.get_logit_processor(request_id) = std::move(test_processor);
+}
+
+SequenceGroup::Ptr make_scheduled_group(uint64_t request_id) {
+    const GenerationConfig sampling_config = ov::genai::utils::get_greedy_config();
+    const std::vector<int64_t> prompt{0};
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, prompt.size()}, prompt.data());
+    auto sequence_group = std::make_shared<SequenceGroup>(request_id, input_tensor, sampling_config);
+    sequence_group->schedule_tokens(sequence_group->get_num_available_tokens_for_batching());
+    return sequence_group;
+}
+
+ov::Tensor make_logits(size_t num_tokens) {
+    constexpr size_t vocab_size = 2;
+    ov::Tensor logits(ov::element::f32, ov::Shape{num_tokens, 1, vocab_size});
+    std::fill_n(logits.data<float>(), logits.get_size(), 0.0f);
+    for (size_t token_id = 0; token_id < num_tokens; ++token_id) {
+        logits.data<float>()[token_id * vocab_size + 1] = 1.0f;
+    }
+    return logits;
+}
+
+}  // namespace
+
+TEST(SamplerWorkerJoiningTest, waits_for_blocked_worker_and_preserves_worker_exception) {
+    SequenceGroup::Ptr failing_group = make_scheduled_group(0);
+    SequenceGroup::Ptr blocked_group = make_scheduled_group(1);
+    std::vector<SequenceGroup::Ptr> sequence_groups{failing_group, blocked_group};
+    ov::Tensor logits = make_logits(2);
+    WorkerGate worker_gate;
+    std::promise<void> blocking_worker_entered_promise;
+    std::shared_future<void> blocking_worker_entered = blocking_worker_entered_promise.get_future().share();
+    std::promise<void> throwing_worker_entered_promise;
+    std::future<void> throwing_worker_entered = throwing_worker_entered_promise.get_future();
+    {
+        Sampler sampler(2);
+        inject_transformer(
+            sampler,
+            blocked_group->get_request_id(),
+            blocked_group,
+            std::make_shared<BlockingLogitTransformer>(blocking_worker_entered_promise,
+                                                        worker_gate.get_release_future()));
+        inject_transformer(
+            sampler,
+            failing_group->get_request_id(),
+            failing_group,
+            std::make_shared<ThrowingLogitTransformer>(blocking_worker_entered, throwing_worker_entered_promise));
+
+        std::future<SamplerOutput> sampling_result = std::async(std::launch::async, [&] {
+            return sampler.sample(sequence_groups, logits, false);
+        });
+        WorkerGateReleaseGuard worker_gate_release_guard(worker_gate);
+
+        EXPECT_EQ(throwing_worker_entered.wait_for(5s), std::future_status::ready);
+        EXPECT_EQ(sampling_result.wait_for(100ms), std::future_status::timeout);
+        worker_gate.release();
+        EXPECT_THROW(
+            {
+                try {
+                    sampling_result.get();
+                } catch (const ov::Exception& exception) {
+                    EXPECT_NE(std::string(exception.what()).find("injected sampler worker failure"), std::string::npos);
+                    throw;
+                }
+            },
+            ov::Exception);
+
+        sampler.clear_request_info(0);
+        sampler.clear_request_info(1);
+    }
+
+    EXPECT_EQ(blocked_group->get_sequences().front()->get_generated_ids(), TokenIds({1}));
+}
+
+TEST(SamplerWorkerJoiningTest, waits_for_submitted_worker_on_submission_loop_failure) {
+    SequenceGroup::Ptr submitted_group = make_scheduled_group(0);
+    SequenceGroup::Ptr duplicate_group = make_scheduled_group(0);
+    std::vector<SequenceGroup::Ptr> sequence_groups{submitted_group, duplicate_group};
+    ov::Tensor logits = make_logits(2);
+    WorkerGate worker_gate;
+    std::promise<void> blocking_worker_entered_promise;
+    std::future<void> blocking_worker_entered = blocking_worker_entered_promise.get_future();
+    {
+        Sampler sampler(1);
+        inject_transformer(
+            sampler,
+            submitted_group->get_request_id(),
+            submitted_group,
+            std::make_shared<BlockingLogitTransformer>(blocking_worker_entered_promise,
+                                                        worker_gate.get_release_future()));
+
+        std::future<SamplerOutput> sampling_result = std::async(std::launch::async, [&] {
+            return sampler.sample(sequence_groups, logits, false);
+        });
+        WorkerGateReleaseGuard worker_gate_release_guard(worker_gate);
+
+        EXPECT_EQ(blocking_worker_entered.wait_for(5s), std::future_status::ready);
+        EXPECT_EQ(sampling_result.wait_for(100ms), std::future_status::timeout);
+        worker_gate.release();
+        EXPECT_THROW(
+            {
+                try {
+                    sampling_result.get();
+                } catch (const std::exception& exception) {
+                    EXPECT_NE(std::string(exception.what()).find("already submitted"), std::string::npos);
+                    throw;
+                }
+            },
+            std::exception);
+
+        sampler.clear_request_info(0);
+    }
+
+    EXPECT_EQ(submitted_group->get_sequences().front()->get_generated_ids(), TokenIds({1}));
+}
+
+TEST(SamplerWorkerJoiningTest, preserves_successful_multi_request_results) {
+    SequenceGroup::Ptr first_group = make_scheduled_group(0);
+    SequenceGroup::Ptr second_group = make_scheduled_group(1);
+    std::vector<SequenceGroup::Ptr> sequence_groups{first_group, second_group};
+    ov::Tensor logits = make_logits(2);
+    Sampler sampler(2);
+
+    const SamplerOutput output = sampler.sample(sequence_groups, logits, false);
+
+    EXPECT_EQ(output.num_generated_tokens, 2);
+    EXPECT_EQ(output.num_generated_tokens_per_request.at(0), 1);
+    EXPECT_EQ(output.num_generated_tokens_per_request.at(1), 1);
+    EXPECT_EQ(first_group->get_sequences().front()->get_generated_ids(), TokenIds({1}));
+    EXPECT_EQ(second_group->get_sequences().front()->get_generated_ids(), TokenIds({1}));
+}
 
 TEST(SamplerStopTokenIdsTest, single_stop_token_match) {
     std::vector<int64_t> generated_tokens = {3, 4, 5, 6, 7, 8, 9};
