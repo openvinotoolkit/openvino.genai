@@ -37,7 +37,7 @@ add_executable(omni_chat omni_chat.cpp
     ../visual_language_chat/load_image.cpp
     ../visual_language_chat/load_video.cpp)
 target_include_directories(omni_chat PRIVATE "${CMAKE_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/.." "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
-ov_genai_link_opencv(omni_chat core videoio)
+ov_genai_link_opencv(omni_chat core imgproc videoio)
 target_link_libraries(omni_chat PRIVATE openvino::genai)
 
 set_target_properties(omni_chat PROPERTIES
