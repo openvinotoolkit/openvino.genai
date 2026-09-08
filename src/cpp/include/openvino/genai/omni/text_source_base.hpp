@@ -21,8 +21,9 @@ namespace ov::genai {
  * one; OmniPipeline hands the same object to the VLM as a sink and to the talker as a source.
  *
  * read() blocks until a step is available or the stream ends, so the talker thread parks instead of
- * spinning. It must not block forever on a VLM that stopped early or threw: OmniStreamerBase::end()
- * is always called and must release the reader.
+ * spinning. It must not block forever on a VLM that stopped early or threw: one of
+ * OmniStreamerBase::end() or OmniStreamerBase::abandon() is always called and must release the
+ * reader. Which of the two it was is what truncated() reports.
  *
  * @note This is a preview API and is subject to change.
  */
@@ -32,6 +33,12 @@ public:
     /// @return The step payload, or std::nullopt once the write end has called end() and every
     ///         queued step has been read. nullopt is final: further reads keep returning nullopt.
     virtual std::optional<ov::AnyMap> read() = 0;
+
+    /// @brief Whether the producer died rather than finished, i.e. called OmniStreamerBase::abandon()
+    ///        instead of end(). Only meaningful once read() has returned std::nullopt; a consumer
+    ///        that sees true is holding a prefix of a response nobody is going to complete, and
+    ///        should give up rather than pad it out to a plausible-sounding whole.
+    virtual bool truncated() const = 0;
 
     virtual ~OmniTextSourceBase();
 };

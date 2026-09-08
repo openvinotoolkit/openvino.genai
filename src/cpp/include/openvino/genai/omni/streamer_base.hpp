@@ -19,8 +19,8 @@ namespace ov::genai {
  * with that step's tokens and thinker hidden states, so the talker can start speaking before
  * text generation finishes.
  *
- * Inherit and implement write() and end(). A typical implementation is a queue that also inherits
- * OmniTextSourceBase, so the same object is the VLM's sink and the talker's source. OmniPipeline
+ * Inherit and implement write(), end() and abandon(). A typical implementation is a queue that also
+ * inherits OmniTextSourceBase, so the same object is the VLM's sink and the talker's source. OmniPipeline
  * builds its own bridge and takes none from the caller, so a custom one is for driving the two
  * stages yourself: pass it to the VLMPipeline::generate() overload that takes an omni_streamer,
  * and to TalkerBase::generate() as the text source.
@@ -64,9 +64,10 @@ namespace ov::genai {
  *
  * Lifecycle:
  *   1. write() is called zero or more times.
- *   2. end() is always called exactly once after the last write(), even if generation stopped or
- *      was cancelled early, or if an error occurred. Readers blocked in read() must be released by
- *      end(), otherwise the talker deadlocks on a failed VLM stage.
+ *   2. Exactly one of end() or abandon() is called, exactly once, after the last write(): end() when
+ *      the VLM stage finished, including an early stop or cancel, abandon() when it threw. Both are
+ *      always reached, and both must release readers blocked in OmniTextSourceBase::read(),
+ *      otherwise the talker deadlocks on a failed VLM stage.
  *
  * Return values from write():
  *   - RUNNING -- continue generating.
@@ -82,9 +83,15 @@ public:
     /// @return StreamingStatus to continue (RUNNING), stop (STOP), or cancel (CANCEL) the VLM.
     virtual StreamingStatus write(const ov::AnyMap& data) = 0;
 
-    /// @brief Called exactly once when the VLM stage ends. Always called, even on early
-    ///        stop/cancel or error. Must release any reader blocked in OmniTextSourceBase::read().
+    /// @brief Called exactly once when the VLM stage ends, including on an early stop or cancel.
+    ///        Must release any reader blocked in OmniTextSourceBase::read().
     virtual void end() = 0;
+
+    /// @brief Called instead of end() when the VLM stage threw: what was written is a prefix of a
+    ///        response that will never be completed. Same obligation to release readers.
+    ///        Implement it as end() to not distinguish the two, at the cost of a reader that
+    ///        cannot tell a finished stream from a dead one.
+    virtual void abandon() = 0;
 
     virtual ~OmniStreamerBase();
 };

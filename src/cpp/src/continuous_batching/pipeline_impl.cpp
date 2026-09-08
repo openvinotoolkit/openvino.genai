@@ -739,6 +739,15 @@ public:
         }
     }
 
+    /// @brief Close the write end after the decode loop threw, so the talker can tell the tokens it
+    /// got are a prefix and stop instead of speaking a half sentence to its end. @see end.
+    void abandon() {
+        if (m_streamer) {
+            m_streamer->abandon();
+            m_streamer.reset();
+        }
+    }
+
 private:
     std::shared_ptr<OmniStreamerBase> m_streamer;
     Sequence::Ptr m_sequence;
@@ -877,7 +886,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
             drop_requests();  // remove all requests from pipeline state in case of exception
             streamer_ptr->end();
             // Release the talker too, otherwise it blocks forever on a thinker that threw.
-            omni_forwarder.end();
+            omni_forwarder.abandon();
             std::rethrow_exception(std::current_exception());
         }
         stream_tokens(streamer_ptr, generation);

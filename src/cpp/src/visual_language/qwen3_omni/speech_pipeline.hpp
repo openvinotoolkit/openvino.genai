@@ -142,8 +142,9 @@ public:
         virtual ~TrailingSupply() = default;
 
         /// @brief `talker_hidden_size` floats for decode step `t`, valid until the next call.
-        /// Never null: the supply pads itself (tts_eos then tts_pad) once the text runs out, so the
-        /// decode loop can keep asking for as many steps as the talker wants to take.
+        /// The supply pads itself (tts_eos then tts_pad) once the text runs out, so the decode loop
+        /// can keep asking for as many steps as the talker wants to take. Null only when the text
+        /// ran out because the thinker died: there is no response left to finish, so the loop stops.
         virtual const float* row(size_t t) = 0;
     };
 

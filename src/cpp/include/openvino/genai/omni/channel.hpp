@@ -36,6 +36,11 @@ namespace ov::genai {
  * channel never asks the thinker to stop, and caller-driven cancellation stays with the caller's
  * own StreamerVariant.
  *
+ * The writer closes with end() or abandon(), and the difference travels to the reader as
+ * truncated(). abandon() also drops the queue: a talker that keeps consuming a backlog the thinker
+ * never finished would spend a full inference on speech nobody will hear, and delay the thinker's
+ * exception by exactly that long.
+ *
  * Thread safety: unlike bare OmniStreamerBase implementations, this class is safe to use from two
  * threads — one writing, one reading — which is the point of the bridge. Multiple concurrent
  * writers are not supported (the VLM decode loop is single-threaded).
@@ -58,10 +63,17 @@ public:
     ///        stage that stopped early — or threw — can't leave the talker blocked forever.
     void end() override;
 
+    /// @brief Close the write end after the VLM stage threw, dropping whatever is still queued.
+    ///        The next read() returns nullopt and truncated() then reports true.
+    void abandon() override;
+
     /// @brief Take the oldest queued step, blocking until one is queued or the write end closes.
     /// @return The step, or nullopt once end() has been called and the queue is drained, or once
     ///         this end was closed by detach() or abort().
     std::optional<ov::AnyMap> read() override;
+
+    /// @brief Whether the write end closed with abandon() rather than end().
+    bool truncated() const override;
 
     /// @brief Close the read end: no more steps are wanted, and that is not an error. The thinker
     ///        keeps generating, so a talker that finished early — codec EOS, its own token budget,

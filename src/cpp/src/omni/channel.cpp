@@ -49,6 +49,18 @@ public:
         m_cv.notify_all();
     }
 
+    void abandon() {
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_finished = true;
+            m_truncated = true;
+            // Unlike end(), which lets the reader drain first: the response is never going to be
+            // completed, so draining only buys speech nobody will hear.
+            m_queue.clear();
+        }
+        m_cv.notify_all();
+    }
+
     std::optional<ov::AnyMap> read() {
         std::unique_lock<std::mutex> lock(m_mutex);
         // Queued steps win over m_finished, so end() never discards what was already written:
@@ -60,6 +72,11 @@ public:
             return std::nullopt;
         }
         return pop(lock);
+    }
+
+    bool truncated() const {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_truncated;
     }
 
     void detach() {
@@ -119,9 +136,10 @@ private:
 
 
     std::deque<ov::AnyMap> m_queue;
-    std::mutex m_mutex;
+    mutable std::mutex m_mutex;
     std::condition_variable m_cv;
     bool m_finished = false;
+    bool m_truncated = false;
     ReaderState m_reader_state = ReaderState::OPEN;
     size_t m_written = 0;  // TODO: temporary, only used by trace_write().
 };
@@ -138,8 +156,16 @@ void OmniChannel::end() {
     m_impl->end();
 }
 
+void OmniChannel::abandon() {
+    m_impl->abandon();
+}
+
 std::optional<ov::AnyMap> OmniChannel::read() {
     return m_impl->read();
+}
+
+bool OmniChannel::truncated() const {
+    return m_impl->truncated();
 }
 
 void OmniChannel::detach() {

@@ -78,8 +78,8 @@ ov::genai::TalkerResults build_speech_result(ov::Tensor waveform,
     return result;
 }
 
-/// @brief Give up before generating any codes: close the speech streamer, if one is listening, and
-/// hand back an empty but timed result. The caller logs why.
+/// @brief Give up on speech: close the speech streamer, if one is listening, and hand back an empty
+/// but timed result. Whatever was generated so far is dropped. The caller logs why.
 ov::genai::TalkerResults abandon_speech(const ov::genai::OmniSpeechStreamerVariant& streamer,
                                        std::chrono::steady_clock::time_point start_time) {
     if (is_speech_streamer_active(streamer)) {
@@ -895,6 +895,11 @@ public:
         return m_ended;
     }
 
+    /// @brief Whether the stream ended because the thinker threw. Only set once ended().
+    bool truncated() const {
+        return m_truncated;
+    }
+
     /// @brief Drop the hidden states and stop collecting more. Only the talker prefix reads them, and
     /// only at prompt positions, so everything the rest of the run needs is already projected by the
     /// time this is called — holding the tail of a long generation would be pure memory growth.
@@ -915,6 +920,7 @@ private:
         const std::optional<ov::AnyMap> step = m_source->read();
         if (!step) {
             m_ended = true;
+            m_truncated = m_source->truncated();
             return false;
         }
         const auto tokens_it = step->find(omni_stream::tokens.name());
@@ -939,6 +945,7 @@ private:
     std::vector<ov::Tensor> m_hidden_states;
     bool m_collect_hidden_states = true;
     bool m_ended = false;
+    bool m_truncated = false;
 };
 
 /// @brief Trailing rows straight out of the tensor build_trailing() precomputed.
@@ -982,6 +989,13 @@ public:
         if (m_stream.ensure_tokens(pos + 1)) {
             m_row = m_pipeline.project_thinker_token(m_stream.tokens()[pos]);
             return m_row.data<const float>();
+        }
+
+        // The thinker threw, so the text stops mid-sentence and will never be completed. Padding it
+        // out would speak a plausible ending to a request that is about to throw on the caller's
+        // thread anyway, and delay that throw by a whole talker inference.
+        if (m_stream.truncated()) {
+            return nullptr;
         }
 
         // The thinker is done and the text is spent. tts_eos closes the trailing where the batch path
@@ -1298,6 +1312,10 @@ TalkerResults Qwen3OmniSpeechPipeline::run_talker(const ov::Tensor& talker_input
         // iteration and never skips this point (both breaks above leave the function). The supply
         // pads itself past the end of the text, so there is nothing to bound here.
         const auto* trail_data = trailing.row(step);
+        if (!trail_data) {
+            GENAI_WARN("Speech: thinker stream truncated at step %zu, discarding the speech", step);
+            return abandon_speech(audio_streamer, speech_start_time);
+        }
         for (size_t i = 0; i < hidden_size; i++) {
             next_data[i] += trail_data[i];
         }
