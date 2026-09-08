@@ -1009,7 +1009,11 @@ public:
         m_generation_stream->push({});
     }
 
-    void push_finished_hidden_states() {
+    void fail_generation(std::exception_ptr error) {
+        m_generation_stream->fail(std::move(error));
+    }
+
+    void push_finished_hidden_states(GenerationStatus terminal_status = GenerationStatus::RUNNING) {
         GenerationOutputs outputs;
         for (auto& sequence : m_sequences) {
             if (!sequence->has_finished()) {
@@ -1025,10 +1029,14 @@ public:
             output.intermediate_hidden_states = hidden_states;
             outputs.emplace(sequence->get_grouped_id(), output);
         }
-        m_generation_stream->push(std::move(outputs));
+        if (terminal_status == GenerationStatus::RUNNING) {
+            m_generation_stream->push(std::move(outputs));
+        } else {
+            m_generation_stream->push_and_close(std::move(outputs), terminal_status);
+        }
     }
 
-    void push_outputs() {
+    void push_outputs(GenerationStatus terminal_status = GenerationStatus::RUNNING) {
         GenerationOutputs outputs;
         for (auto& sequence: m_sequences) {
             GenerationOutput output;
@@ -1043,10 +1051,14 @@ public:
             output.intermediate_hidden_states = sequence->get_all_intermediate_hidden_states();
             outputs.emplace(sequence->get_grouped_id(), output);
         }
-        m_generation_stream->push(std::move(outputs));
+        if (terminal_status == GenerationStatus::RUNNING) {
+            m_generation_stream->push(std::move(outputs));
+        } else {
+            m_generation_stream->push_and_close(std::move(outputs), terminal_status);
+        }
     }
 
-    void push_partial_outputs(size_t token_cnt = 1) {
+    void push_partial_outputs(size_t token_cnt = 1, GenerationStatus terminal_status = GenerationStatus::RUNNING) {
         GenerationOutputs outputs;
         for (auto& sequence : m_sequences) {
             // todo: check seq.is_finished() to generate without several </s>
@@ -1063,7 +1075,11 @@ public:
             outputs.emplace(sequence->get_grouped_id(), output);
         }
         m_has_echoed = true;
-        m_generation_stream->push(std::move(outputs));
+        if (terminal_status == GenerationStatus::RUNNING) {
+            m_generation_stream->push(std::move(outputs));
+        } else {
+            m_generation_stream->push_and_close(std::move(outputs), terminal_status);
+        }
     }
 
     // Convenience dispatcher for callers that don't know the terminal state in advance (e.g. non-CB pipelines).

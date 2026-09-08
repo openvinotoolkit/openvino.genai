@@ -1714,6 +1714,19 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
 
     SamplerOutput sampler_output;
     std::unordered_map<uint64_t, std::future<SequenceGroupSamplingInfo>> sg_sampling_future_map;
+    struct SamplingFuturesWaiter {
+        std::unordered_map<uint64_t, std::future<SequenceGroupSamplingInfo>>& futures;
+
+        ~SamplingFuturesWaiter() {
+            for (auto& future_entry : futures) {
+                auto& future = future_entry.second;
+                if (future.valid()) {
+                    future.wait();
+                }
+            }
+        }
+    } sampling_futures_waiter{sg_sampling_future_map};
+
     for (size_t sequence_group_id = 0, currently_processed_tokens = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
         SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
         if (!sequence_group->is_scheduled())
@@ -1749,8 +1762,16 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
         ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, output_seq_len, vocab_size}, (void *)sequence_group_logits_data);
         if (sequence_group->requires_sampling()) {
             // Call sample_from_sequence_group asynchronously
-            sg_sampling_future_map[request_id] = m_thread_pool.submit(&Sampler::sample_from_sequence_group, this, sequence_group, sequence_group_logits,
-                                                                      std::ref(ctx), is_validation_mode_enabled);
+            auto [future_it, inserted] = sg_sampling_future_map.emplace(
+                request_id,
+                std::future<SequenceGroupSamplingInfo>{});
+            OPENVINO_ASSERT(inserted, "A sampler task is already submitted for request ", request_id);
+            future_it->second = m_thread_pool.submit(&Sampler::sample_from_sequence_group,
+                                                     this,
+                                                     sequence_group,
+                                                     sequence_group_logits,
+                                                     std::ref(ctx),
+                                                     is_validation_mode_enabled);
         } else {
             // we are in prompt processing phase when prompt is split into chunks and processed step by step
         }
