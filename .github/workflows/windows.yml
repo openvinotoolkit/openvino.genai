@@ -479,7 +479,13 @@ jobs:
           $pythonCommand = "py -${{ matrix.python-version }} -c `"import sys; print(f'{sys.executable}')`""
           $pythonExecutablePath = & cmd /c $pythonCommand
 
-          & $pythonExecutablePath -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} `
+          # Pre-install build requirements so OpenVINO resolves to a stable site-packages path instead of pip's random build-isolation dir, which keeps ccache hashes stable across runs.
+          & $pythonExecutablePath -m pip install `
+            "py-build-cmake==0.5.0" "pybind11-stubgen==2.5.5" "cmake~=3.26.0" `
+            ${{ needs.openvino_download.outputs.ov_wheel_source }} `
+            openvino
+
+          & $pythonExecutablePath -m pip wheel -v --no-deps --no-build-isolation --wheel-dir ${{ env.WHEELS_DIR }} `
             --config-settings=override=cmake.generator='Ninja' `
             --config-settings=override=cmake.build_path='${{ env.BUILD_DIR }}/genai' `
             --config-settings='override=wheel.build_tag="${{ github.run_number }}"' `
