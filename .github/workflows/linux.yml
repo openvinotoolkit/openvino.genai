@@ -332,6 +332,8 @@ jobs:
       WHEELS_DIR: ${{ github.workspace }}/install/wheels
       SRC_DIR: ${{ github.workspace }}/src
       OpenVINODeveloperPackage_DIR: ${{ github.workspace }}/ov/developer_package/cmake
+      # Per-Python-version cache prefix so each matrix leg keeps its own sccache entries.
+      SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64/py${{ matrix.python-version }}
     steps:
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -362,6 +364,8 @@ jobs:
       - name: Build GenAI Wheel
         run: |
           python_exec_path=$(python${{ matrix.python-version }} -c "import sys; print(sys.executable)")
+          # Put the interpreter's console-scripts dir on PATH so CMake's find_program locates pybind11-stubgen with --no-build-isolation.
+          export PATH="$(dirname "$python_exec_path"):$PATH"
 
           # Pre-install build requirements so OpenVINO resolves to a stable site-packages path instead of pip's random build-isolation dir, which keeps sccache hashes stable across runs.
           # The openvino spec must match pyproject [build-system].requires so pip picks the dev build from ov_wheel_source, not the stable PyPI release.
