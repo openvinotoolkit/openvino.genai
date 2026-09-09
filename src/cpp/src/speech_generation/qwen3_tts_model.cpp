@@ -72,11 +72,6 @@ std::string default_device_for_role(const std::string& base_device, bool is_npu,
         return "CPU";
     }
 
-    // There seems to be accuracy issues running code predictor on GPU, so force it to CPU for now.
-    if( base_device.find("GPU") != std::string::npos && role == roles::CODE_PREDICTOR) {
-        return "CPU";
-    }
-
     if (!is_npu) {
         return base_device;
     }
@@ -534,6 +529,16 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
     {
         auto [predictor_device, predictor_properties] =
             resolve_component_target(device, m_is_npu, device_properties, base_properties, roles::CODE_PREDICTOR);
+
+        // The code predictor is additionally pinned to f32 arithmetic. It runs `num_code_groups - 1`
+        // steps inside every talker frame off a cache that is reset each frame, and in f16 - the GPU
+        // plugin's default inference precision - its logits go non-finite within the first few frames,
+        // which surfaces as `probability tensor contains either inf, nan or element < 0` out of the
+        // multinomial sampling in `code_predictor.generate`. The talker stack is unaffected and keeps
+        // the device default, so the bulk of the compute (28 layers vs 5) still runs in f16 on GPU.
+        if (predictor_device.find("GPU") != std::string::npos) {
+            predictor_properties["INFERENCE_PRECISION_HINT"] = std::string("f32");
+        }
 
         const auto predictor_path = models_path / CODE_PREDICTOR_NAME;
         auto predictor_model = ov::genai::utils::singleton_core().read_model(predictor_path);
