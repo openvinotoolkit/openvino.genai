@@ -1486,6 +1486,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
     // get number of tokens to be validated
     size_t num_tokens_to_process = sequence_group->get_num_tokens_to_validate();
     size_t num_generated_tokens_to_validate = num_tokens_to_process;
+    std::optional<std::pair<uint64_t, size_t>> greedy_acceptance;
 
     LogitProcessor& logit_processor = ctx.logit_processor;
     const std::pair<size_t, std::set<std::string>>& stop_strings = ctx.stop_strings;
@@ -1586,6 +1587,9 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                     }
                 }
                 register_new_token(sampled_token, running_sequences[running_sequence_id], logit_processor, is_extend_sequence, is_validation_mode_enabled);
+                if (is_validation_mode_enabled && sampling_params.is_greedy_decoding()) {
+                    greedy_acceptance = std::make_pair(running_sequence->get_id(), i + 1);
+                }
                                
                 // to exit from sampling in case of failed token validation
                 if (!is_validation_passed) {
@@ -1702,6 +1706,15 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
         OPENVINO_THROW("Unsupported sampling method");
     }
     OPENVINO_ASSERT(num_generated_tokens_to_validate >= assisting_pipeline_info.max_removed_tokens_per_request);
+    if (is_validation_mode_enabled && num_generated_tokens_to_validate > 0) {
+        if (sampling_params.is_greedy_decoding()) {
+            OPENVINO_ASSERT(greedy_acceptance.has_value(),
+                            "Greedy speculative validation produced no acceptance decision");
+            sg_sampling_info.sampler_output.acceptance_by_sequence.emplace(
+                greedy_acceptance->first,
+                SamplerOutput::AcceptanceResult{greedy_acceptance->second});
+        }
+    }
     if (notify_handle) {
         try {
             sequence_group->notify_handle();
@@ -1802,6 +1815,9 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
             sampler_output.num_generated_tokens += sg_sampling_info.sampler_output.num_generated_tokens;
             sampler_output.num_generated_tokens_per_request[request_id] =
                 sg_sampling_info.sampler_output.num_generated_tokens;
+            sampler_output.acceptance_by_sequence.insert(
+                sg_sampling_info.sampler_output.acceptance_by_sequence.begin(),
+                sg_sampling_info.sampler_output.acceptance_by_sequence.end());
 
             // Merge sampler output from sequence group to the main one
             sampler_output.m_dropped_sequences.insert(

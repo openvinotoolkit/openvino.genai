@@ -51,6 +51,10 @@ inline bool is_stop_token_id_hit_in_sequence_group(SequenceGroup::Ptr sequence_g
 std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx);
 
 struct SamplerOutput {
+    struct AcceptanceResult {
+        size_t accepted_depth = 0;
+    };
+
     // IDs of sequences that need to be dropped
     std::vector<uint64_t> m_dropped_sequences;
     // IDs of sequences that need to be forked (note, the same sequence can be forked multiple times)
@@ -61,6 +65,7 @@ struct SamplerOutput {
     // Number of tokens actually generated for each request in this sampling step.
     // Requests in a chunked-prefill step are present with a zero count.
     std::unordered_map<uint64_t, size_t> num_generated_tokens_per_request;
+    std::unordered_map<uint64_t, AcceptanceResult> acceptance_by_sequence;
 };
 
 struct AssistingPipelineInfo {
