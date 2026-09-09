@@ -248,7 +248,7 @@ if Version(transformers_version) < Version("5.0.0"):
             "visual-video-text",
             marks=pytest.mark.xfail(
                 sys.platform == "win32",
-                reason="PyAV DLL load failure on Windows. Ticket 178790",
+                reason="PyAV DLL load failure on Windows. Ticket CVS-183222",
                 run=False,
             ),
         ),
