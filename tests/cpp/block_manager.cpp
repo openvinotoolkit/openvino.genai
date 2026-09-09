@@ -1126,7 +1126,8 @@ TEST(TestBlockManager, PrefixCachingIncompleteCheckpointUsesCopyOnWriteWhenTable
 
 TEST(TestBlockManager, PrefixCachingCopyOnWriteAndTableGrowthShareCapacityBudget) {
     constexpr size_t block_size = 4;
-    ov::genai::BlockManager block_manager(3, true, block_size);
+    constexpr size_t num_layers = 2;
+    ov::genai::BlockManager block_manager(3, true, block_size, num_layers);
 
     auto sequence_group = create_sequence_group(std::vector<int64_t>{0, 1, 2, 3, 4}, 39);
     sequence_group->schedule_tokens(2);
@@ -1157,14 +1158,151 @@ TEST(TestBlockManager, PrefixCachingCopyOnWriteAndTableGrowthShareCapacityBudget
     ASSERT_EQ(copy_map.at(static_cast<size_t>(shared_index)).size(), 1);
     const int destination_index = static_cast<int>(copy_map.at(static_cast<size_t>(shared_index)).front());
     for (const auto& sequence : sequence_group->get_running_sequences()) {
-        const auto& block_table = block_manager.get_block_table(sequence->get_id(), 0);
-        ASSERT_EQ(block_table.size(), 2);
-        if (block_table.front()->get_index() == destination_index) {
-            EXPECT_EQ(block_table.front()->get_references_count(), 1);
-            EXPECT_FALSE(block_table.front()->has_published_hash());
+        for (size_t layer_idx = 0; layer_idx < num_layers; ++layer_idx) {
+            const auto& block_table = block_manager.get_block_table(sequence->get_id(), layer_idx);
+            ASSERT_EQ(block_table.size(), 2);
+            if (block_table.front()->get_index() == destination_index) {
+                EXPECT_EQ(block_table.front()->get_references_count(), 1);
+                EXPECT_FALSE(block_table.front()->has_published_hash());
+            }
         }
         block_manager.free_sequence(sequence->get_id());
     }
+}
+
+TEST(TestBlockManager, PrefixCachingUniquePublishedSameIntervalRequiresWritableCopy) {
+    constexpr size_t block_size = 4;
+    constexpr size_t num_layers = 2;
+    ov::genai::BlockManager block_manager(
+        /*num_blocks=*/3,
+        /*enable_prefix_caching=*/true,
+        block_size,
+        num_layers,
+        /*fixed_blocks_per_sequence=*/0,
+        /*restore_latest_prefix_block_only=*/true);
+
+    const std::vector<int64_t> producer_tokens = {0, 1, 2, 3, 4, 5};
+    auto producer_group = create_sequence_group(producer_tokens, 87);
+    producer_group->schedule_tokens(producer_tokens.size());
+    block_manager.append_slots(producer_group);
+    producer_group->finish_iteration();
+    const auto producer = producer_group->get_running_sequences().front();
+    const int published_index = block_manager.get_block_table(producer->get_id(), 0).back()->get_index();
+    block_manager.free_sequence(producer->get_id());
+
+    auto consumer_group = create_sequence_group(std::vector<int64_t>{0, 1, 2, 3, 4, 5, 6}, 88);
+    ASSERT_TRUE(block_manager.restore_cached_blocks(consumer_group));
+    const auto consumer = consumer_group->get_running_sequences().front();
+    ASSERT_EQ(consumer_group->get_num_processed_tokens(), producer_tokens.size());
+    ASSERT_TRUE(block_manager.get_block_table(consumer->get_id(), 0).back()->has_published_hash());
+    ASSERT_EQ(block_manager.get_block_table(consumer->get_id(), 0).back()->get_references_count(), 2);
+
+    consumer_group->schedule_tokens(1);
+    EXPECT_EQ(block_manager.required_blocks_count(consumer_group), 1);
+    EXPECT_TRUE(block_manager.can_append_slots(consumer_group));
+    const auto copy_map = block_manager.append_slots(consumer_group);
+
+    ASSERT_EQ(copy_map.count(static_cast<size_t>(published_index)), 1);
+    ASSERT_EQ(copy_map.at(static_cast<size_t>(published_index)).size(), 1);
+    for (size_t layer_idx = 0; layer_idx < num_layers; ++layer_idx) {
+        const auto& writable_row = block_manager.get_block_table(consumer->get_id(), layer_idx).back();
+        EXPECT_NE(writable_row->get_index(), published_index);
+        EXPECT_FALSE(writable_row->has_published_hash());
+        EXPECT_EQ(writable_row->get_references_count(), 2);
+    }
+
+    block_manager.free_sequence(consumer->get_id());
+}
+
+TEST(TestBlockManager, PrefixCachingRestoredLiveCheckpointRejectsCombinedDeficitBeforeMutation) {
+    constexpr size_t block_size = 4;
+    ov::genai::BlockManager block_manager(3, true, block_size, 1, 0, true);
+
+    std::vector<int64_t> tokens(12);
+    std::iota(tokens.begin(), tokens.end(), 0);
+    auto producer_group = create_sequence_group(tokens, 89);
+    producer_group->schedule_tokens(tokens.size());
+    block_manager.append_slots(producer_group);
+    producer_group->finish_iteration();
+    block_manager.free_sequence(producer_group->get_running_sequences().front()->get_id());
+
+    auto pressure_group = create_sequence_group(std::vector<int64_t>{20, 21, 22, 23}, 90);
+    pressure_group->schedule_tokens(4);
+    block_manager.append_slots(pressure_group);
+    pressure_group->finish_iteration();
+
+    std::vector<int64_t> active_tokens(14);
+    std::iota(active_tokens.begin(), active_tokens.end(), 0);
+    auto active_group = create_sequence_group(active_tokens, 91);
+    ASSERT_TRUE(block_manager.restore_cached_blocks(active_group));
+    const auto active_sequence = active_group->get_running_sequences().front();
+    block_manager.free_sequence(pressure_group->get_running_sequences().front()->get_id());
+    active_group->update_processed_tokens_num(11);
+    active_group->schedule_tokens(3);
+
+    const auto original_table = block_manager.get_block_table(active_sequence->get_id(), 0);
+    const auto original_live_state = block_manager.get_linear_attention_live_state(active_sequence->get_id());
+    ASSERT_EQ(original_live_state.endpoint, 12);
+    ASSERT_EQ(block_manager.required_blocks_count(active_group), 2);
+    ASSERT_EQ(block_manager.num_free_blocks(), 1);
+    EXPECT_FALSE(block_manager.can_append_slots(active_group));
+    EXPECT_THROW(block_manager.append_slots(active_group), ov::Exception);
+    EXPECT_EQ(block_manager.get_block_table(active_sequence->get_id(), 0), original_table);
+    const auto& live_state_after_failure = block_manager.get_linear_attention_live_state(active_sequence->get_id());
+    EXPECT_EQ(live_state_after_failure.endpoint, original_live_state.endpoint);
+    EXPECT_EQ(live_state_after_failure.rows, original_live_state.rows);
+
+    auto restore_group = create_sequence_group(tokens, 92);
+    ASSERT_TRUE(block_manager.restore_cached_blocks(restore_group));
+    EXPECT_EQ(restore_group->get_num_processed_tokens(), 11);
+    block_manager.free_sequence(active_sequence->get_id());
+    block_manager.free_sequence(restore_group->get_running_sequences().front()->get_id());
+}
+
+TEST(TestBlockManager, PrefixCachingRestoredLiveCheckpointWithSufficientCapacitySurvivesRollback) {
+    constexpr size_t block_size = 4;
+    ov::genai::BlockManager block_manager(4, true, block_size, 1, 0, true);
+
+    std::vector<int64_t> tokens(12);
+    std::iota(tokens.begin(), tokens.end(), 0);
+    auto producer_group = create_sequence_group(tokens, 93);
+    producer_group->schedule_tokens(tokens.size());
+    block_manager.append_slots(producer_group);
+    producer_group->finish_iteration();
+    block_manager.free_sequence(producer_group->get_running_sequences().front()->get_id());
+
+    auto pressure_group = create_sequence_group(std::vector<int64_t>{20, 21, 22, 23, 24, 25, 26, 27}, 94);
+    pressure_group->schedule_tokens(8);
+    block_manager.append_slots(pressure_group);
+    pressure_group->finish_iteration();
+
+    auto active_group = create_sequence_group(tokens, 95);
+    ASSERT_TRUE(block_manager.restore_cached_blocks(active_group));
+    const auto active_sequence = active_group->get_running_sequences().front();
+    block_manager.free_sequence(pressure_group->get_running_sequences().front()->get_id());
+    const int canonical_index = block_manager.get_block_table(active_sequence->get_id(), 0).back()->get_index();
+    active_sequence->append_token(12, 0.0f);
+    active_sequence->append_token(13, 0.0f);
+    active_group->update_processed_tokens_num(11);
+    active_group->schedule_tokens(3);
+
+    ASSERT_EQ(block_manager.required_blocks_count(active_group), 2);
+    ASSERT_EQ(block_manager.num_free_blocks(), 2);
+    ASSERT_TRUE(block_manager.can_append_slots(active_group));
+    const auto copy_map = block_manager.append_slots(active_group);
+    ASSERT_EQ(copy_map.at(static_cast<size_t>(canonical_index)).size(), 1);
+    active_group->finish_iteration();
+    active_sequence->remove_last_tokens(1);
+    active_group->update_processed_tokens_num(13);
+    block_manager.free_empty_physical_blocks(active_group);
+
+    auto restore_group = create_sequence_group(tokens, 96);
+    ASSERT_TRUE(block_manager.restore_cached_blocks(restore_group));
+    EXPECT_EQ(restore_group->get_num_processed_tokens(), 11);
+    EXPECT_EQ(block_manager.get_block_table(restore_group->get_running_sequences().front()->get_id(), 0).back()->get_index(),
+              canonical_index);
+    block_manager.free_sequence(active_sequence->get_id());
+    block_manager.free_sequence(restore_group->get_running_sequences().front()->get_id());
 }
 
 TEST(TestBlockManager, PrefixCachingCompletedCopyOnWriteRowIsPublishedOnlyAtAcceptedBoundary) {
