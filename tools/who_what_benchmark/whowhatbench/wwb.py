@@ -992,7 +992,10 @@ def genai_gen_embedding(model, tokenizer, processor, texts, images, videos, prom
         for video in videos:
             media_inputs["videos"].append(ov.Tensor(np.stack(video, axis=0)))
 
-    return np.asarray(model.embed(*text_input, **media_inputs).embeddings.data, dtype=np.float32)
+    if "TextEmbeddingPipeline" in str(type(model.model)):
+        return np.asarray(model.embed_documents(*text_input), dtype=np.float32)
+    else:
+        return np.asarray(model.embed(texts=text_input[0]).embeddings.data, dtype=np.float32)
 
 
 def genai_gen_reranking(model, tokenizer, query, documents):

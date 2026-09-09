@@ -775,7 +775,7 @@ def load_embedding_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwa
     config.pad_to_max_length = True
     config.batch_size = kwargs.get("embeds_batch_size", config.batch_size)
 
-    logger.info("Using OpenVINO GenAI TextEmbeddingPipeline API")
+    logger.info("Using OpenVINO GenAI EmbeddingPipeline API")
     if hasattr(openvino_genai, "EmbeddingPipeline"):
         pipeline = openvino_genai.EmbeddingPipeline(
             model_dir, device.upper(), text_embedding_config=config, **ov_config
