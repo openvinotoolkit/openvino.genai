@@ -1802,18 +1802,24 @@ public:
      */
     size_t required_blocks_count(SequenceGroup::CPtr seq_group) {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        return required_blocks_count_unlocked(std::move(seq_group));
+    }
+
+private:
+    size_t required_blocks_count_unlocked(SequenceGroup::CPtr seq_group) const {
         std::vector<Sequence::CPtr> running_sequences = seq_group->get_running_sequences();
         size_t blocks_count = 0; // total number of needed blocks for sequence group
         std::set<size_t> last_block_ids; // unique last block indices
 
         for (auto seq: running_sequences) {
             auto seq_id = seq->get_id();
-            if (m_block_table.find(seq_id) == m_block_table.end()) {
+            const auto table_it = m_block_table.find(seq_id);
+            if (table_it == m_block_table.end()) {
                 // the block table is empty, so we need to allocate the number of blocks equal to number of logical blocks
                 blocks_count += get_num_logical_blocks(seq_group);
                 continue;
             }
-            auto& block_table = m_block_table[seq_id][0];
+            const auto& block_table = table_it->second[0];
             size_t num_physical_blocks = block_table.size();
             const size_t num_required_blocks = get_num_required_stored_blocks(seq_group, seq_id);
             OPENVINO_ASSERT(num_physical_blocks > 0);
@@ -1862,6 +1868,8 @@ public:
         return blocks_count;
     }
 
+public:
+
     /**
      * @param seq_group Pointer to a sequence group.
      * @return The number of tokens corresponding to the block deficit for the group (required_blocks * block_size).
@@ -1907,6 +1915,10 @@ public:
      */
     std::map<size_t, std::list<size_t>> append_slots(SequenceGroup::Ptr seq_group) {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        if (m_enable_prefix_caching) {
+            OPENVINO_ASSERT(required_blocks_count_unlocked(seq_group) <= m_allocator.num_free_blocks(0),
+                            "Insufficient cache blocks to append sequence group slots");
+        }
         // Will always allocate the identical number of new blocks (if any) to each of the "layers" to keep the
         // number of blocks occupied by each "layer" identical at all times.
         const size_t num_logical_blocks = get_num_logical_blocks(seq_group);
@@ -2372,13 +2384,13 @@ private:
         return num_logical_blocks > logical_start ? num_logical_blocks - logical_start : 0;
     }
 
-    bool last_block_requires_copy_on_write(const Sequence::Ptr& sequence,
+    bool last_block_requires_copy_on_write(const Sequence::CPtr& sequence,
                                            size_t num_processed_tokens) const {
         auto table_it = m_block_table.find(sequence->get_id());
         if (table_it == m_block_table.end() || table_it->second.empty() || table_it->second[0].empty()) {
             return false;
         }
-        if (num_processed_tokens % m_block_size == 0) {
+        if (m_fixed_blocks_per_sequence == 0 && num_processed_tokens % m_block_size == 0) {
             return false;
         }
         const auto& last_block = table_it->second[0].back();
@@ -2394,23 +2406,27 @@ private:
         if (!m_enable_prefix_caching || seq_group->get_num_processed_tokens() % m_block_size == 0) {
             return 0;
         }
-        std::map<size_t, size_t> owners_per_block;
-        std::map<size_t, size_t> references_per_block;
+        std::map<size_t, size_t> required_copies_per_block;
         for (const auto& sequence : seq_group->get_running_sequences()) {
             auto table_it = m_block_table.find(sequence->get_id());
             if (table_it == m_block_table.end() || table_it->second.empty() || table_it->second[0].empty()) {
                 continue;
             }
             const auto& last_block = table_it->second[0].back();
-            if (last_block->copy_on_write()) {
-                const size_t block_index = static_cast<size_t>(last_block->get_index());
-                ++owners_per_block[block_index];
-                references_per_block[block_index] = static_cast<size_t>(last_block->get_references_count());
+            if (!last_block_requires_copy_on_write(sequence,
+                                                   seq_group->get_num_processed_tokens())) {
+                continue;
             }
+            const size_t block_index = static_cast<size_t>(last_block->get_index());
+            const size_t maximum_shared_copies = last_block->copy_on_write()
+                                                     ? static_cast<size_t>(last_block->get_references_count() - 1)
+                                                     : 1;
+            required_copies_per_block[block_index] = std::min(required_copies_per_block[block_index] + 1,
+                                                               maximum_shared_copies);
         }
         size_t required_blocks = 0;
-        for (const auto& [block_index, owners] : owners_per_block) {
-            required_blocks += std::min(owners, references_per_block.at(block_index) - 1);
+        for (const auto& [block_index, required_copies] : required_copies_per_block) {
+            required_blocks += required_copies;
         }
         return required_blocks;
     }
@@ -2471,14 +2487,16 @@ private:
         std::map<size_t, size_t> staged_replacements_per_source;
         try {
             for (const auto& sequence : sequences) {
-                if (!last_block_requires_copy_on_write(sequence, num_processed_tokens)) {
+                if (!last_block_requires_copy_on_write(sequence,
+                                                       num_processed_tokens)) {
                     continue;
                 }
                 const uint64_t sequence_id = sequence->get_id();
                 const auto& source_block = m_block_table[sequence_id][0].back();
                 const size_t source_index = static_cast<size_t>(source_block->get_index());
-                const size_t maximum_replacements =
-                    static_cast<size_t>(source_block->get_references_count() - 1);
+                const size_t maximum_replacements = source_block->copy_on_write()
+                                                        ? static_cast<size_t>(source_block->get_references_count() - 1)
+                                                        : 1;
                 if (staged_replacements_per_source[source_index] >= maximum_replacements) {
                     continue;
                 }
