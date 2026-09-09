@@ -72,12 +72,8 @@ private:
     // Single-token step against the static all-heads code predictor. Manages the
     // host-side explicit KV cache and absolute-position counter internally; pass
     // reset_state=true at the start of each per-frame code-group prediction.
-    // Returns stacked logits [num_heads,1,1,vocab] for legacy static predictor,
-    // or [1,T,vocab] for stateful predictor.
+    // Returns [1,T,vocab] for stateful predictor or [1,1,vocab] for static predictor.
     ov::Tensor infer_predictor(const ov::Tensor& inputs_embeds, bool reset_state, int64_t step = 0);
-    // Slice one MTP head (0-based, = code_group-1) out of stacked all-heads logits
-    // into a [1, 1, vocab] tensor for sample_token_from_logits.
-    ov::Tensor select_predictor_head(const ov::Tensor& all_logits, size_t head) const;
     // Read static-predictor dims from the IR and (re)allocate host KV buffers.
     void init_static_predictor_meta(const std::shared_ptr<ov::Model>& model);
     // Reshape a dynamically-exported code predictor IR to the required static
@@ -138,14 +134,10 @@ private:
     size_t m_talker_hidden_size = 1024;  // talker hidden_size; predictor inputs_embeds width
 
     ov::InferRequest m_talker;
-    bool m_talker_baked = false;  // true when using 4D float attention_mask and last_hidden_state output (updated_optimum layout)
     ov::InferRequest m_talker_embedding;
     ov::InferRequest m_talker_text_embedding;
-    ov::InferRequest m_talker_text_projection;
-    bool m_text_projection_baked = false;  // true when projection is folded into text embedding rows
     ov::InferRequest m_talker_code_predictor;
-    bool m_predictor_stateful = false;  // true for openvino_code_predictor_model.xml (updated_optimum layout)
-    bool m_predictor_new_static = false;  // true for updated predictor converted to stateless+static at runtime
+    bool m_predictor_static = false;  // true when predictor is converted to stateless+static at runtime
     bool m_predictor_has_beam_idx = false;
     ov::InferRequest m_talker_code_predictor_embedding;
 
@@ -169,7 +161,6 @@ private:
     ov::Tensor m_pred_emb_ids;  // token ids input, reused across calls
     ov::Tensor m_pred_emb_step;  // generation_steps input, reused across calls
     ov::InferRequest m_speech_tokenizer_decoder;
-    bool m_codec_decoder_baked = false;  // true when using [B,Q,T] layout with waveform output (updated_optimum layout)
     ov::InferRequest m_qwen3_mel_preprocess;
     ov::InferRequest m_speaker_encoder;
     ov::InferRequest m_speech_tokenizer_encoder;
