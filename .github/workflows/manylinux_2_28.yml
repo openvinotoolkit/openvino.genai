@@ -343,13 +343,28 @@ jobs:
           build_type: Release
           save_to: ${{ github.workspace }}
 
+      - name: Clean sccache stats
+        run: ${SCCACHE_PATH} --zero-stats
+
       - name: Build GenAI Wheel
         run: |
           python_exec_path=$(python${{ matrix.python-version }} -c "import sys; print(sys.executable)")
-          $python_exec_path -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+
+          # Pre-install build requirements so OpenVINO resolves to a stable site-packages path instead of pip's random build-isolation dir, which keeps sccache hashes stable across runs.
+          # The openvino spec must match pyproject [build-system].requires so pip picks the dev build from ov_wheel_source, not the stable PyPI release.
+          $python_exec_path -m pip install \
+              "py-build-cmake==0.5.0" "pybind11-stubgen==2.5.5" "cmake~=3.26.0" \
+              ${{ needs.openvino_download.outputs.ov_wheel_source }} \
+              "openvino~=2026.5.0.0.dev"
+
+          $python_exec_path -m pip wheel -v --no-deps --no-build-isolation --wheel-dir ${{ env.WHEELS_DIR }} \
+              --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_C_COMPILER_LAUNCHER=sccache" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}
         working-directory: ${{ env.OV_INSTALL_DIR }}
+
+      - name: Show sccache stats
+        run: ${SCCACHE_PATH} --show-stats
 
       - name: Upload GenAI Wheel
         if: ${{ always() }}
