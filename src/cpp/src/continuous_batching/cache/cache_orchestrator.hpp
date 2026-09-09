@@ -39,6 +39,85 @@ namespace ov::genai {
  */
 class CacheOrchestrator {
 public:
+    class LinearAttentionScratchLease {
+    public:
+        enum class State { ACTIVE, COMMITTED, ABORTED };
+
+        LinearAttentionScratchLease() = default;
+        LinearAttentionScratchLease(CacheOrchestrator& owner,
+                                    uint64_t seq_id,
+                                    size_t base_endpoint,
+                                    size_t base_generation,
+                                    std::vector<int> block_indices)
+            : m_owner(&owner),
+              m_seq_id(seq_id),
+              m_base_endpoint(base_endpoint),
+              m_base_generation(base_generation),
+              m_block_indices(std::move(block_indices)),
+              m_state(State::ACTIVE) {}
+
+        LinearAttentionScratchLease(const LinearAttentionScratchLease&) = delete;
+        LinearAttentionScratchLease& operator=(const LinearAttentionScratchLease&) = delete;
+
+        LinearAttentionScratchLease(LinearAttentionScratchLease&& other) noexcept {
+            *this = std::move(other);
+        }
+
+        LinearAttentionScratchLease& operator=(LinearAttentionScratchLease&& other) noexcept {
+            if (this != &other) {
+                abort();
+                m_owner = std::exchange(other.m_owner, nullptr);
+                m_seq_id = other.m_seq_id;
+                m_base_endpoint = other.m_base_endpoint;
+                m_base_generation = other.m_base_generation;
+                m_block_indices = std::move(other.m_block_indices);
+                m_state = other.m_state;
+                other.m_state = State::ABORTED;
+            }
+            return *this;
+        }
+
+        ~LinearAttentionScratchLease() {
+            abort();
+        }
+
+        const std::vector<int>& block_indices() const {
+            return m_block_indices;
+        }
+
+        size_t commit(size_t accepted_depth) {
+            OPENVINO_ASSERT(m_state == State::ACTIVE && m_owner != nullptr,
+                            "Linear-attention scratch lease is not active");
+            auto& block_manager = m_owner->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+            const size_t promoted = block_manager.promote_temporary_block(
+                m_seq_id, accepted_depth, m_base_endpoint, m_base_generation);
+            m_owner = nullptr;
+            m_state = State::COMMITTED;
+            return promoted;
+        }
+
+        void abort() noexcept {
+            if (m_state != State::ACTIVE || m_owner == nullptr) {
+                return;
+            }
+            m_owner->release_linear_attention_temporary_blocks(m_seq_id);
+            m_owner = nullptr;
+            m_state = State::ABORTED;
+        }
+
+        State state() const noexcept {
+            return m_state;
+        }
+
+    private:
+        CacheOrchestrator* m_owner = nullptr;
+        uint64_t m_seq_id = 0;
+        size_t m_base_endpoint = 0;
+        size_t m_base_generation = 0;
+        std::vector<int> m_block_indices;
+        State m_state = State::ABORTED;
+    };
+
     CacheOrchestrator() = default;
 
     /**
@@ -232,7 +311,22 @@ public:
         return min_free;
     }
 
+    bool has_active_scratch_leases(const SequenceGroup::Ptr& sequence_group) {
+        for (const auto& sequence : sequence_group->get_not_finished_sequences()) {
+            for (const auto& [type, block_manager] : m_block_managers) {
+                if (block_manager->has_temporary_blocks(sequence->get_id())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     void free_sequence(uint64_t seq_id) {
+        for (const auto& [type, block_mgr] : m_block_managers) {
+            OPENVINO_ASSERT(!block_mgr->has_temporary_blocks(seq_id),
+                            "Cannot free sequence ", seq_id, " while a cache scratch lease is active");
+        }
         for (auto& [type, block_mgr] : m_block_managers) {
             if (block_mgr->has_block_table(seq_id)) {
                 block_mgr->free_sequence(seq_id);
@@ -422,6 +516,7 @@ public:
      * variable-size cache types.
      */
     size_t free_group_partially_for_target(SequenceGroup::Ptr victim, SequenceGroup::CPtr target) {
+        assert_no_active_scratch_leases(victim);
         size_t tokens_to_release = 0;
 
         for (const auto& [type, block_mgr] : m_block_managers) {
@@ -469,6 +564,7 @@ public:
      * variable-size cache types.
      */
     size_t free_partially_beam_search_group_for_target(SequenceGroup::Ptr victim, SequenceGroup::CPtr target) {
+        assert_no_active_scratch_leases(victim);
         size_t tokens_to_release = 0;
 
         for (const auto& [type, block_mgr] : m_block_managers) {
@@ -691,11 +787,20 @@ public:
         return m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->reserve_temporary_blocks(seq_id, num_blocks);
     }
 
+    LinearAttentionScratchLease prepare_linear_attention_scratch(uint64_t seq_id, size_t num_blocks) {
+        auto& block_manager = get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+        auto prepared = block_manager.prepare_temporary_blocks(seq_id, num_blocks);
+        return LinearAttentionScratchLease{
+            *this, seq_id, prepared.endpoint, prepared.generation, std::move(prepared.block_indices)};
+    }
+
     /// @return Physical block index that became the sequence's committed linear-attention row.
     size_t promote_linear_attention_temporary_block(uint64_t seq_id, size_t checkpoint_slot) {
         OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
-        const size_t promoted_index =
-            m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->promote_temporary_block(seq_id, checkpoint_slot);
+        auto& block_manager = *m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE);
+        const auto& live_state = block_manager.get_linear_attention_live_state(seq_id);
+        const size_t promoted_index = block_manager.promote_temporary_block(
+            seq_id, checkpoint_slot, live_state.endpoint, live_state.generation);
         return promoted_index;
     }
 
@@ -722,9 +827,13 @@ public:
                 completed_boundary += block_size;
             }
         }
+        if (has_linear_attention_cache()) {
+            m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)
+                ->advance_linear_attention_live_state(sequence->get_id(), processed_after);
+        }
     }
 
-    void release_linear_attention_temporary_blocks(uint64_t seq_id) {
+    void release_linear_attention_temporary_blocks(uint64_t seq_id) noexcept {
         if (!has_linear_attention_cache()) {
             return;
         }
@@ -811,6 +920,16 @@ public:
     }
 
 private:
+    void assert_no_active_scratch_leases(const SequenceGroup::Ptr& sequence_group) {
+        for (const auto& sequence : sequence_group->get_not_finished_sequences()) {
+            const uint64_t seq_id = sequence->get_id();
+            for (const auto& [type, block_manager] : m_block_managers) {
+                OPENVINO_ASSERT(!block_manager->has_temporary_blocks(seq_id),
+                                "Cannot preempt sequence ", seq_id, " while a cache scratch lease is active");
+            }
+        }
+    }
+
     bool has_registered_types() const {
         return !m_cache_managers.empty();
     }

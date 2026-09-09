@@ -127,10 +127,10 @@ private:
                                     seq_id);
                     group_reservation.sequence_ids.push_back(seq_id);
                     auto [reservation_it, inserted] =
-                        m_reservations.emplace(seq_id, std::vector<int>{});
+                        m_reservations.emplace(seq_id, nullptr);
                     OPENVINO_ASSERT(inserted);
-                    reservation_it->second =
-                        m_cache_orchestrator.reserve_linear_attention_temporary_blocks(seq_id, num_blocks);
+                    reservation_it->second = std::make_unique<CacheOrchestrator::LinearAttentionScratchLease>(
+                        m_cache_orchestrator.prepare_linear_attention_scratch(seq_id, num_blocks));
                 }
             } catch (...) {
                 release_group(group_reservation);
@@ -150,11 +150,12 @@ private:
             OPENVINO_ASSERT(reservation_it != m_reservations.end(),
                             "No linear-attention temporary-row reservation for speculative sequence ",
                             seq_id);
-            return reservation_it->second;
+            return reservation_it->second->block_indices();
         }
 
-        void disarm() {
+        std::map<uint64_t, std::unique_ptr<CacheOrchestrator::LinearAttentionScratchLease>> take() {
             m_armed = false;
+            return std::move(m_reservations);
         }
 
     private:
@@ -163,7 +164,6 @@ private:
             if (reservation_it == m_reservations.end()) {
                 return;
             }
-            m_cache_orchestrator.release_linear_attention_temporary_blocks(seq_id);
             m_reservations.erase(reservation_it);
         }
 
@@ -174,7 +174,7 @@ private:
         }
 
         CacheOrchestrator& m_cache_orchestrator;
-        std::map<uint64_t, std::vector<int>> m_reservations;
+        std::map<uint64_t, std::unique_ptr<CacheOrchestrator::LinearAttentionScratchLease>> m_reservations;
         bool m_armed = true;
     };
 
@@ -204,6 +204,8 @@ public:
         std::vector<uint64_t> m_scheduled_sequence_groups_ids;
         std::map<uint64_t, KVPagedAttentionData> m_kv_paged_attention_data;
         std::map<uint64_t, LinearAttentionPagingData> m_linear_attention_paging_data;
+        std::map<uint64_t, std::unique_ptr<CacheOrchestrator::LinearAttentionScratchLease>>
+            m_linear_attention_scratch_leases;
         std::shared_ptr<const KVPagedAttentionGlobalData> m_kv_paged_attention_global_data;
 
         // total number of scheduled tokens
@@ -381,7 +383,7 @@ public:
         m_cache_orchestrator->sample_linear_attention_pool_blocks_high_water();
 
         m_cache_orchestrator->copy_blocks(typed_block_copy_map);
-        linear_attention_reservations.disarm();
+        scheduler_output.m_linear_attention_scratch_leases = linear_attention_reservations.take();
         return scheduler_output;
     }
 
@@ -463,10 +465,6 @@ public:
     }
 
     void free_sequence(uint64_t seq_id) {
-        // Release explicitly so an outstanding window is counted as aborted.
-        if (m_cache_orchestrator->has_linear_attention_cache()) {
-            m_cache_orchestrator->release_linear_attention_temporary_blocks(seq_id);
-        }
         m_cache_orchestrator->free_sequence(seq_id);
     }
 
@@ -604,11 +602,12 @@ private:
         return m_cache_orchestrator->num_free_blocks() > prev_blocks_count;
     }
 
-    static size_t _get_low_priority_sequence_group_id(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
+    size_t _get_low_priority_sequence_group_id(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
         for (size_t seq_group_id = 0, num_groups = sequence_groups.size(); seq_group_id < num_groups; ++seq_group_id) {
             size_t group_idx = num_groups - seq_group_id - 1;
-            SequenceGroup::CPtr sequence_group = sequence_groups[group_idx];
-            if (sequence_group->get_num_processed_tokens() > 0) {
+            SequenceGroup::Ptr sequence_group = sequence_groups[group_idx];
+            if (sequence_group->get_num_processed_tokens() > 0 &&
+                !m_cache_orchestrator->has_active_scratch_leases(sequence_group)) {
                 // we are here, because current sequence group has some reserved KV blocks in block manager
                 // which can be freed
                 return group_idx;

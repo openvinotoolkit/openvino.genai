@@ -113,7 +113,8 @@ protected:
     }
 
     /// Commits speculative LA checkpoint transactions after sampling.
-    virtual void _commit_linear_attention_checkpoint_transactions(const Scheduler::Output& scheduler_output);
+    virtual void _commit_linear_attention_checkpoint_transactions(Scheduler::Output& scheduler_output,
+                                                                  const SamplerOutput& sampler_output);
 
     /// Mirrors the scheduler's cumulative speculative LA counters into the pipeline metrics.
     void _publish_linear_attention_pool_metric();

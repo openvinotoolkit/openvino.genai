@@ -490,15 +490,14 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_publish_completed_cach
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_linear_attention_checkpoint_transactions(
-    const Scheduler::Output& scheduler_output) {
+    Scheduler::Output& scheduler_output,
+    const SamplerOutput& sampler_output) {
     if (!m_scheduler->has_linear_attention_cache()) {
         return;
     }
 
     for (size_t seq_group_id : scheduler_output.m_scheduled_sequence_groups_ids) {
         const SequenceGroup::Ptr& sequence_group = m_requests[seq_group_id];
-        const size_t processed_after = sequence_group->get_num_processed_tokens();
-
         for (const auto& sequence : sequence_group->get_sequences()) {
             const uint64_t seq_id = sequence->get_id();
             if (!scheduler_output.has_linear_attention_paging_data(seq_id)) {
@@ -509,14 +508,29 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_linear_attentio
                 continue;
             }
 
-            OPENVINO_ASSERT(processed_after >= paging_data.num_processed_tokens_before,
-                            "Linear-attention checkpoint commit: processed tokens cannot decrease below the pre-forward count (processed_after=",
-                            processed_after, ", processed_before=", paging_data.num_processed_tokens_before, ").");
-            const size_t checkpoint_slot = processed_after - paging_data.num_processed_tokens_before;
+            const bool uses_explicit_greedy_acceptance =
+                sequence_group->get_sampling_parameters().is_greedy_decoding() &&
+                sequence_group->num_total_seqs() == 1;
+            size_t checkpoint_slot = 0;
+            if (uses_explicit_greedy_acceptance) {
+                const auto acceptance_it = sampler_output.acceptance_by_sequence.find(seq_id);
+                OPENVINO_ASSERT(acceptance_it != sampler_output.acceptance_by_sequence.end(),
+                                "Missing explicit linear-attention acceptance result for greedy sequence ", seq_id);
+                checkpoint_slot = acceptance_it->second.accepted_depth;
+            } else {
+                const size_t processed_after = sequence_group->get_num_processed_tokens();
+                OPENVINO_ASSERT(processed_after > paging_data.num_processed_tokens_before,
+                                "Linear-attention speculative verification did not advance sequence ", seq_id);
+                checkpoint_slot = processed_after - paging_data.num_processed_tokens_before;
+            }
             OPENVINO_ASSERT(checkpoint_slot > 0,
                             "Linear-attention speculative verification must advance through at least the seed token "
                             "for sequence ", seq_id);
-            m_scheduler->promote_linear_attention_checkpoint(seq_id, checkpoint_slot);
+            const auto lease_it = scheduler_output.m_linear_attention_scratch_leases.find(seq_id);
+            OPENVINO_ASSERT(lease_it != scheduler_output.m_linear_attention_scratch_leases.end(),
+                            "Missing linear-attention scratch lease for sequence ", seq_id);
+            lease_it->second->commit(checkpoint_slot);
+            scheduler_output.m_linear_attention_scratch_leases.erase(lease_it);
         }
     }
 }
@@ -677,7 +691,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
 
     // Promote the committed linear-attention state to the correct physical row for any
     // Commit after sampling rewinds the accepted prefix and before fork/free can release LA rows.
-    _commit_linear_attention_checkpoint_transactions(scheduler_output);
+    _commit_linear_attention_checkpoint_transactions(scheduler_output, sampler_output);
     borrowed_rows_guard.m_armed = false;
 
     // process sampler_output (e.g. fork or drop sequences from BlockScheduler)
