@@ -404,6 +404,9 @@ jobs:
       WHEELS_DIR: ${{ github.workspace }}\genai\wheels
       CCACHE_DIR: ${{ github.workspace }}\ccache
       CCACHE_MAXSIZE: 1.5Gi
+      # TODO: CCACHE_DEBUG is temporary to diagnose cache misses; remove with the debug-log upload step afterwards.
+      CCACHE_DEBUG: '1'
+      CCACHE_DEBUGDIR: ${{ github.workspace }}\ccache_debug
       # pip build isolation compiles from a fresh temp source dir each run; these make ccache hashing path-independent so caches hit across runs.
       CCACHE_BASEDIR: ${{ github.workspace }}
       CCACHE_NOHASHDIR: 'true'
@@ -495,6 +498,15 @@ jobs:
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release-genai-wheel-${{ matrix.python-version }}-test-${{ github.sha }}
           path: ${{ env.CCACHE_DIR }}
+
+      - name: Upload ccache debug log
+        # TODO: temporary diagnostic; remove together with CCACHE_DEBUG env.
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ccache_debug_genai_wheel_python_${{ matrix.python-version }}
+          path: ${{ env.CCACHE_DEBUGDIR }}
+          if-no-files-found: 'warn'
 
       - name: Upload GenAI wheel
         if: ${{ always() }}
