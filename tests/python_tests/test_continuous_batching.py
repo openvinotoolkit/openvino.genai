@@ -596,6 +596,18 @@ A:""",
     )
 ]
 
+# transform_hidden_state matches the MoE MLP pattern (Reshape(ReduceSum(...))) separately from the
+# dense one; before that fix the pipeline silently exposed no `last_hidden_state` and generate()
+# failed with "Port for tensor name last_hidden_state was not found".
+eagle_sd_string_input_models = eagle_models_and_input + [
+    pytest.param(
+        "xf2022/tiny-random-qwen3moe-layer10",
+        "xf2022/tiny-random-qwen3moe-eagle3",
+        "Why is the sun yellow?",
+        id="tiny-random-qwen3moe",
+    ),
+]
+
 speculative_cases = [
     ("TinyLlama/TinyLlama-1.1B-Chat-v1.0", None, "Why is the Sun yellow?"),
     eagle_models_and_input[0],
@@ -740,7 +752,7 @@ def test_speculative_decoding_extended_perf_metrics(
 devices = [("CPU", "CPU")]
 
 
-@pytest.mark.parametrize("main_model,draft_model,prompt", eagle_models_and_input)
+@pytest.mark.parametrize("main_model,draft_model,prompt", eagle_sd_string_input_models)
 @pytest.mark.parametrize("main_device,draft_device", devices)
 @pytest.mark.parametrize("kv_cache_precision", kv_cache_precisions, ids=kv_cache_precision_id)
 def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_device, prompt, kv_cache_precision):

@@ -15,6 +15,8 @@
 #include "openvino/op/matmul.hpp"
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/parameter.hpp"
+#include "openvino/op/reduce_sum.hpp"
+#include "openvino/op/reshape.hpp"
 #include "openvino/op/result.hpp"
 #include "openvino/op/scaled_dot_product_attention.hpp"
 #include "openvino/op/scatter_update.hpp"
@@ -233,15 +235,22 @@ std::shared_ptr<ov::op::v0::Constant> extract_d2t_mapping_table(const std::share
 namespace {
 
 bool is_hidden_state_residual_node(const std::shared_ptr<ov::Node>& node) {
-    if (const auto& add = ov::as_type_ptr<ov::op::v1::Add>(node)) {
-        auto input1 = add->get_input_node_shared_ptr(1);
-        auto matmul = ov::as_type_ptr<ov::op::v0::MatMul>(input1);
-        if (!matmul) 
-            return false;
+    const auto& add = ov::as_type_ptr<ov::op::v1::Add>(node);
+    if (!add)
+        return false;
+    auto mlp_output = add->get_input_node_shared_ptr(1);
+    // Dense SwiGLU MLP: MatMul(Multiply(...)) from down_proj(act(gate_proj(x)) * up_proj(x))
+    if (const auto& matmul = ov::as_type_ptr<ov::op::v0::MatMul>(mlp_output)) {
         auto matmul_input = matmul->get_input_node_shared_ptr(0);
         return matmul_input && ov::is_type<ov::op::v1::Multiply>(matmul_input);
     }
-    return false;
+    // Routed MoE MLP: weighted expert outputs are summed over the experts axis.
+    // Exporters may add a Reshape afterward to restore the decoder hidden-state layout.
+    // A shared-expert MoE adds the shared-expert output through another Add; that form is not recognized here.
+    if (ov::is_type<ov::op::v1::Reshape>(mlp_output)) {
+        mlp_output = mlp_output->get_input_node_shared_ptr(0);
+    }
+    return ov::is_type<ov::op::v1::ReduceSum>(mlp_output);
 }
 
 std::vector<ov::Output<ov::Node>> find_hidden_state_outputs_by_patterns(
@@ -310,25 +319,24 @@ void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector
         residual_outputs = find_hidden_state_outputs_by_patterns(model, patterns);
     }
 
-    if (!residual_outputs.empty()) {
-        OPENVINO_ASSERT(residual_outputs.size() == patterns.size(),
-                        "Number of extracted hidden states does not match the requested number.");
-        std::shared_ptr<ov::Node> node_to_operate;
-        if (residual_outputs.size() > 1) {
-            auto concat = std::make_shared<ov::op::v0::Concat>(residual_outputs, -1);
-            concat->set_friendly_name("eagle3_hidden_states_concat");
-            node_to_operate = concat;
-        } else {
-            node_to_operate = residual_outputs[0].get_node_shared_ptr();
-        }
-        auto result = std::make_shared<ov::op::v0::Result>(node_to_operate);
-        const std::string output_name = "last_hidden_state";
-        result->output(0).set_names({output_name});
-        result->set_friendly_name(output_name);
-        // NPUW use this info to identify manually added outputs
-        result->get_rt_info()["manually_added_output"] = true;
-        model->add_results({result});
+    OPENVINO_ASSERT(residual_outputs.size() == patterns.size(),
+                    "Failed to locate a hidden state residual node for every requested decoder layer. "
+                    "The model's decoder layer structure is not recognized by is_hidden_state_residual_node.");
+    std::shared_ptr<ov::Node> node_to_operate;
+    if (residual_outputs.size() > 1) {
+        auto concat = std::make_shared<ov::op::v0::Concat>(residual_outputs, -1);
+        concat->set_friendly_name("eagle3_hidden_states_concat");
+        node_to_operate = concat;
+    } else {
+        node_to_operate = residual_outputs[0].get_node_shared_ptr();
     }
+    auto result = std::make_shared<ov::op::v0::Result>(node_to_operate);
+    const std::string output_name = "last_hidden_state";
+    result->output(0).set_names({output_name});
+    result->set_friendly_name(output_name);
+    // NPUW use this info to identify manually added outputs
+    result->get_rt_info()["manually_added_output"] = true;
+    model->add_results({result});
 }
 
 ov::Tensor slice_hidden_state_for_last_token(const ov::Tensor& hidden_features) {
