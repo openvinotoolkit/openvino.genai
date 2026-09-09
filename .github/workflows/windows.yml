@@ -475,12 +475,10 @@ jobs:
           $pythonCommand = "py -${{ matrix.python-version }} -c `"import sys; print(f'{sys.executable}')`""
           $pythonExecutablePath = & cmd /c $pythonCommand
 
-          # Pre-install build requirements so OpenVINO resolves to a stable site-packages path instead of pip's random build-isolation dir, which keeps ccache hashes stable across runs.
-          # The openvino spec must match pyproject [build-system].requires so pip picks the dev build from ov_wheel_source, not the stable PyPI release
-          & $pythonExecutablePath -m pip install `
-            "py-build-cmake==0.5.0" "pybind11-stubgen==2.5.5" "cmake~=3.26.0" `
-            ${{ needs.openvino_download.outputs.ov_wheel_source }} `
-            "openvino~=2026.5.0.0.dev"
+          # Install build requirements read from pyproject so the list isn't duplicated here; --no-build-isolation skips pip's auto build-deps and a stable OpenVINO path keeps ccache warm.
+          & $pythonExecutablePath -m pip install tomli
+          $buildReqs = @(& $pythonExecutablePath -c "import sys, tomli; print('\n'.join(tomli.load(open(sys.argv[1], 'rb'))['build-system']['requires']))" "${{ env.SRC_DIR }}/pyproject.toml")
+          & $pythonExecutablePath -m pip install @buildReqs ${{ needs.openvino_download.outputs.ov_wheel_source }}
 
           & $pythonExecutablePath -m pip wheel -v --no-deps --no-build-isolation --wheel-dir ${{ env.WHEELS_DIR }} `
             --config-settings=override=cmake.generator='Ninja' `
