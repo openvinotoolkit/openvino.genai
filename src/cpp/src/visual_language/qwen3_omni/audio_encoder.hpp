@@ -4,6 +4,7 @@
 #pragma once
 
 #include <filesystem>
+#include <vector>
 
 #include "whisper/feature_extractor.hpp"
 #include "circular_buffer_queue.hpp"
@@ -51,16 +52,14 @@ public:
     /// @return Audio features tensor [total_tokens, output_dim].
     ov::Tensor encode(const ov::Tensor& audio_raw);
 
-private:
-    VLMConfig m_config;
-    WhisperFeatureExtractor m_feature_extractor;
-    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue;
-
-    /// @brief Preprocess audio: mel spectrogram -> chunk into windows -> pad.
-    /// @return Tuple of (padded_feature, padded_mask_after_cnn, aftercnn_lens, cu_seqlens).
-    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> preprocess_audio(const ov::Tensor& audio_raw);
+    /// @brief Split @p n_frames mel frames into disjoint chunks of (n_window * 2) frames.
+    /// Chunks must not overlap: the model would hear the same audio twice and
+    /// transcribe it twice (CVS-193623). Public so tests can check the split.
+    static std::vector<size_t> plan_chunk_frame_lens(size_t n_frames, size_t n_window);
 
     /// @brief Compute CNN output length after 8x total downsampling (three stride-2 Conv2d stages).
+    /// Applied per chunk; summing over the chunks of an utterance must equal
+    /// `_get_feat_extract_output_lengths(n_frames)` in transformers.
     static constexpr size_t get_feat_extract_output_length(size_t input_length) {
         // Three Conv2d layers with kernel=3, stride=2, padding=1: out = ceil(in / 2)
         size_t len = input_length;
@@ -69,6 +68,15 @@ private:
         len = (len + 1) / 2;
         return len;
     }
+
+private:
+    VLMConfig m_config;
+    WhisperFeatureExtractor m_feature_extractor;
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue;
+
+    /// @brief Preprocess audio: mel spectrogram -> chunk into windows -> pad.
+    /// @return Tuple of (padded_feature, padded_mask_after_cnn, aftercnn_lens, cu_seqlens).
+    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> preprocess_audio(const ov::Tensor& audio_raw);
 };
 
 }  // namespace ov::genai
