@@ -14,11 +14,11 @@ concurrency:
   group: gh-aw-${{ github.workflow }}
 
 # Only allow a select few users to invoke /ci-doctor
-if: ${{ contains(fromJSON('["akashchi","as-suvorov", "Wovchena", "sbalandi", "avasenin-14"]'), github.actor) }}
+if: ${{ contains(fromJSON('["akashchi","as-suvorov", "Wovchena", "sbalandi", "avasenin-14", "sgonorov", "likholat", "pavel-esir", "apaniukov", "yatarkan"]'), github.actor) }}
 
 permissions: read-all
 
-model: claude-sonnet-4.6
+model: copilot/gpt-5.4-mini
 engine:
   id: copilot
 network: defaults

@@ -33,7 +33,6 @@ std::vector<EncodedGenerationResult> generate_common(
     const std::vector<ov::Tensor>& input_ids,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer,
-    std::optional<std::vector<ov::Tensor>> token_type_ids,
     std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>> position_ids,
     std::optional<std::vector<ov::Tensor>> prompt_ids,
     const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list,
@@ -74,12 +73,12 @@ std::vector<EncodedGenerationResult> generate_common(
                                 main_cfg, draft_cfg,
                                 main_in, draft_in);
 
-        const bool has_valid_token_type_ids = token_type_ids.has_value() && rid < token_type_ids->size();
         const bool has_valid_prompt_ids = prompt_ids.has_value() && rid < prompt_ids->size();
 
         if (position_ids.has_value() && self->m_inputs_embedder) {
             const auto [position_ids_tensor, rope_delta] = (*position_ids)[rid];
             self->m_inputs_embedder->set_position_ids(position_ids_tensor);
+            // TODO: The rope_delta here has to be recomputed, if rope_delta is not provided then a stale value is used
             if (rope_delta.has_value()) {
                 self->m_inputs_embedder->set_rope_delta(*rope_delta);
             }
@@ -89,7 +88,6 @@ std::vector<EncodedGenerationResult> generate_common(
             rid,
             main_in,
             main_cfg,
-            has_valid_token_type_ids ? std::make_optional((*token_type_ids)[rid]) : std::nullopt,
             has_valid_prompt_ids ? std::make_optional((*prompt_ids)[rid]) : std::nullopt,
             lm_extra_inputs_list.has_value() ? std::make_optional((*lm_extra_inputs_list)[rid]) : std::nullopt));
     }
@@ -157,6 +155,7 @@ std::vector<EncodedGenerationResult> generate_common(
         self->perf_metrics().raw_metrics.generate_durations.clear();
         self->perf_metrics().raw_metrics.generate_durations.emplace_back(generate_duration_us);
         self->perf_metrics().num_input_tokens = request->get_prompt_len();
+        self->perf_metrics().num_prefix_cache_hit_tokens = request->get_num_prefix_cache_hit_tokens();
         self->perf_metrics().evaluate_statistics(t_start);
 
         result.perf_metrics = self->perf_metrics();
@@ -185,8 +184,13 @@ protected:
         m_draft_pipeline->raw_perf_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
     }
 
+    static int64_t compute_rope_delta(const ov::Tensor& position_ids);
     void drop_requests();
     virtual void align_request_pair_processed_prefix(uint64_t) {}
+    virtual void validate_awaiting_requests(const std::vector<SequenceGroup::Ptr>& main_awaiting_requests,
+                                            const std::vector<SequenceGroup::Ptr>& draft_awaiting_requests) const {
+        OPENVINO_ASSERT(main_awaiting_requests.size() == draft_awaiting_requests.size());
+    }
     bool is_requests_empty();
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
     std::pair<ov::genai::SchedulerConfig, ov::genai::SchedulerConfig> init_speculative_models(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc);
@@ -197,7 +201,6 @@ public:
             const std::vector<ov::Tensor>& input_ids,
             const std::vector<GenerationConfig>& sampling_params,
             const StreamerVariant& streamer,
-            std::optional<std::vector<ov::Tensor>> token_type_ids,
             std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>> position_ids,
             std::optional<std::vector<ov::Tensor>> prompt_ids,
             const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list,
@@ -209,7 +212,6 @@ public:
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
                                  const ov::genai::GenerationConfig& sampling_params,
-                                 std::optional<ov::Tensor> token_type_ids = std::nullopt,
                                  std::optional<ov::Tensor> prompt_ids = std::nullopt,
                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs = std::nullopt) override;
     GenerationHandle add_request(uint64_t request_id,
@@ -224,7 +226,6 @@ public:
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer,
-             const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt,
              const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt,
              const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
              const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) override;

@@ -19,8 +19,6 @@ logger = logging.getLogger(__name__)
 def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path):
     if sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
-    if sys.platform == "win32":
-        pytest.xfail("Ticket 178790")
 
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = convert_model(model_id)
@@ -106,8 +104,6 @@ def run_test_with_lora(
 ):
     if sys.platform == "darwin":
         pytest.xfail("Ticket 173169")
-    if sys.platform == "win32":
-        pytest.xfail("Ticket 178790")
 
     gt_file = tmp_path / "gt.csv"
     model_path = convert_model(model_id)
@@ -200,6 +196,16 @@ def test_vlm_chat(model_id, model_type, tmp_path):
     run_test(model_id, model_type, None, None, tmp_path)
 
 
+@pytest.mark.parametrize(
+    ("model_id", "model_type"),
+    [
+        ("optimum-intel-internal-testing/tiny-random-llava", "visual-text-only"),
+    ],
+)
+def test_vlm_text_only(model_id, model_type, tmp_path):
+    run_test(model_id, model_type, None, None, tmp_path)
+
+
 # The optimum-intel-internal-testing/tiny-random-qwen3-omni model has to be regenerated upstream
 # its chat_template emits <|image_pad|> while image_token_id refers to <|IMAGE|>,
 # and its tokenizer.json ships an empty BPE vocab.
@@ -237,7 +243,15 @@ if Version(transformers_version) < Version("5.0.0"):
     # videochat_flash_qwen is incompatible with transformers >= 5.0.0
     VISUAL_VIDEO_TEXT_MODELS = [
         ("optimum-intel-internal-testing/tiny-random-llava-next-video", "visual-video-text"),
-        ("optimum-intel-internal-testing/tiny-videochat-flash-qwen", "visual-video-text"),
+        pytest.param(
+            "optimum-intel-internal-testing/tiny-videochat-flash-qwen",
+            "visual-video-text",
+            marks=pytest.mark.xfail(
+                sys.platform == "win32",
+                reason="PyAV DLL load failure on Windows. Ticket CVS-183222",
+                run=False,
+            ),
+        ),
     ]
 else:
     VISUAL_VIDEO_TEXT_MODELS = [

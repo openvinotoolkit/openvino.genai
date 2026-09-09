@@ -79,7 +79,7 @@ class TestOmniTalkerSpeechConfig:
 
         assert cfg.return_audio is True, "return_audio default must be True"
         assert cfg.speaker == "", "speaker default must be empty (model default)"
-        assert cfg.audio_chunk_frames == 1, "audio_chunk_frames default must be 1"
+        assert cfg.audio_chunk_frames == 4, "audio_chunk_frames default must be 4"
         assert cfg.rng_seed == 0, "rng_seed default must be 0"
         # talker_*/cp_* sampling overrides are std::optional<T> — exposed as None when unset.
         assert cfg.talker_temperature is None
@@ -87,7 +87,6 @@ class TestOmniTalkerSpeechConfig:
         assert cfg.talker_repetition_penalty is None
         assert cfg.cp_temperature is None
         assert cfg.cp_top_k is None
-        assert cfg.cp_repetition_penalty is None
 
     def test_direct_field_assignment(self) -> None:
         """Direct field assignment sets the speech-side fields."""
@@ -136,3 +135,28 @@ class TestOmniPipelineAccessors:
         # Speaker APIs live on the Talker, accessed via get_talker()
         for method in ("list_speakers", "get_speaker_embedding"):
             assert hasattr(ov_genai.TalkerBase, method), f"TalkerBase.{method}() missing from public surface"
+
+    def test_speech_config_accessors_live_on_base(self) -> None:
+        """get/set_speech_config are part of the TalkerBase interface every backend implements.
+
+        TalkerBase declares them pure virtual, so the accessors and the property-bag generate()
+        overload that seeds from them are part of the contract for every backend, not just the
+        default Qwen3-Omni Talker, which stores the config itself.
+        """
+        for method in ("get_speech_config", "set_speech_config"):
+            assert hasattr(ov_genai.TalkerBase, method), f"TalkerBase.{method}() missing from public surface"
+            assert hasattr(ov_genai.Talker, method), f"Talker.{method}() missing from public surface"
+
+    def test_talker_blob_ctor_signature(self) -> None:
+        """Talker exposes the ModelsMap/device_mapping blob constructor (slide 10 spec).
+
+        Calling with a bogus models_map must raise (missing submodels), not TypeError — that
+        proves the overload resolves and reaches C++ construction rather than being absent.
+        The disk-path constructor stays available alongside it.
+        """
+        empty_models_map: dict[str, object] = {}
+        empty_device_mapping: dict[str, str] = {}
+        with pytest.raises(Exception) as exc_info:
+            ov_genai.Talker(empty_models_map, ov_genai.OmniTalkerSpeechConfig(), ".", empty_device_mapping)
+        # Must not be a signature-resolution failure — the overload has to exist.
+        assert not isinstance(exc_info.value, TypeError), f"blob ctor overload did not resolve: {exc_info.value}"

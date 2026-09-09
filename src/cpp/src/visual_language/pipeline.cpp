@@ -7,7 +7,6 @@
 #include <random>
 
 #include "lm_encoding.hpp"
-#include "logger.hpp"
 #include "lora/helper.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "openvino/genai/tokenizer.hpp"
@@ -28,12 +27,6 @@
 using namespace ov::genai;
 
 namespace {
-void log_paged_attention_fallback(const ov::Exception& exception) {
-    GENAI_WARN("Paged Attention backend initialization failed. Falling back to SDPA backend. "
-                "Set ATTENTION_BACKEND=\"SDPA\" to skip Paged Attention initialization.");
-    GENAI_DEBUG("Paged Attention backend initialization error: %s", exception.what());
-}
-
 void update_npu_properties(const std::filesystem::path& models_dir, ov::AnyMap& properties) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
     switch (vlm_config.model_type) {
@@ -363,10 +356,18 @@ public:
                                                            generation_config.relevance_weight);
 
         const auto embeddings_start_time = std::chrono::steady_clock::now();
+        
+        const auto audio_encoding_start = std::chrono::steady_clock::now();
         m_inputs_embedder->encode_audios(audios);
+        PerfMetrics::emplace_duration(perf_metrics.vlm_raw_metrics.audio_encoding_durations, audio_encoding_start);
+
+        const auto vision_encoding_start = std::chrono::steady_clock::now();
         auto encoded_images = m_inputs_embedder->encode_images(images);
-        vlm_utils::update_image_slice_counts(perf_metrics, encoded_images);
         auto encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
+        PerfMetrics::emplace_duration(perf_metrics.vlm_raw_metrics.vision_encoding_durations, vision_encoding_start);
+
+        vlm_utils::update_image_slice_counts(perf_metrics, encoded_images);
+
         auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
 
         if (m_is_chat_conversation) {
@@ -374,7 +375,7 @@ public:
 
             const auto template_start = std::chrono::steady_clock::now();
             unified_prompt = m_tokenizer.apply_chat_template(m_history, true);
-            raw_counters.chat_template_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start));
+            PerfMetrics::emplace_duration(raw_counters.chat_template_durations, template_start);
 
             if (m_use_full_chat_history) {
                 m_history_vision_count.emplace_back(std::make_pair(video_sequence.size(), image_sequence.size()));
@@ -483,8 +484,9 @@ public:
         auto& res_raw_counters = decoded.perf_metrics.raw_metrics;
         decoded.perf_metrics.num_input_tokens = perf_metrics.num_input_tokens;
         decoded.perf_metrics.load_time = this->get_load_time();
-        res_raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(generate_end_time - generate_start_time));
-        res_raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
+        PerfMetrics::emplace_duration(res_raw_counters.generate_durations, generate_start_time, generate_end_time);
+        PerfMetrics::emplace_duration(res_raw_counters.detokenization_durations, decode_start_time, decode_end_time);
+        
         res_raw_counters.tokenization_durations.insert(res_raw_counters.tokenization_durations.end(), raw_counters.tokenization_durations.begin(), raw_counters.tokenization_durations.end());
         res_raw_counters.chat_template_durations.insert(res_raw_counters.chat_template_durations.end(), raw_counters.chat_template_durations.begin(), raw_counters.chat_template_durations.end());
 
@@ -494,6 +496,25 @@ public:
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.begin(),
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end()
         );
+
+        decoded.perf_metrics.vlm_raw_metrics.vision_encoding_durations.insert(
+            decoded.perf_metrics.vlm_raw_metrics.vision_encoding_durations.end(),
+            perf_metrics.vlm_raw_metrics.vision_encoding_durations.begin(),
+            perf_metrics.vlm_raw_metrics.vision_encoding_durations.end()
+        );
+
+        decoded.perf_metrics.vlm_raw_metrics.audio_encoding_durations.insert(
+            decoded.perf_metrics.vlm_raw_metrics.audio_encoding_durations.end(),
+            perf_metrics.vlm_raw_metrics.audio_encoding_durations.begin(),
+            perf_metrics.vlm_raw_metrics.audio_encoding_durations.end()
+        );
+
+        decoded.perf_metrics.vlm_raw_metrics.text_embedding_durations.insert(
+            decoded.perf_metrics.vlm_raw_metrics.text_embedding_durations.end(),
+            perf_metrics.vlm_raw_metrics.text_embedding_durations.begin(),
+            perf_metrics.vlm_raw_metrics.text_embedding_durations.end()
+        );
+        
         decoded.perf_metrics.vlm_raw_metrics.per_image_slice_counts.insert(
             decoded.perf_metrics.vlm_raw_metrics.per_image_slice_counts.end(),
             perf_metrics.vlm_raw_metrics.per_image_slice_counts.begin(),
@@ -558,6 +579,8 @@ public:
 
         auto processed_chat_data = chat_context.process(images, videos, videos_metadata);
 
+        perf_metrics.vlm_raw_metrics.vision_encoding_durations.emplace_back(processed_chat_data.vision_encoding_duration);
+
         bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history;
 
         if (use_full_history) {
@@ -571,7 +594,7 @@ public:
             processed_chat_data.normalized_history,
             true
         );
-        raw_counters.chat_template_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start));
+        PerfMetrics::emplace_duration(raw_counters.chat_template_durations, template_start);
 
         ov::genai::utils::GenerationFinishInfo generation_finish_info;
 
@@ -638,8 +661,8 @@ public:
         auto& res_raw_counters = decoded.perf_metrics.raw_metrics;
         decoded.perf_metrics.num_input_tokens = perf_metrics.num_input_tokens;
         decoded.perf_metrics.load_time = this->get_load_time();
-        res_raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(generate_end_time - generate_start_time));
-        res_raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
+        PerfMetrics::emplace_duration(res_raw_counters.generate_durations, generate_start_time, generate_end_time);
+        PerfMetrics::emplace_duration(res_raw_counters.detokenization_durations, decode_start_time, decode_end_time);
         res_raw_counters.tokenization_durations.insert(res_raw_counters.tokenization_durations.end(), raw_counters.tokenization_durations.begin(), raw_counters.tokenization_durations.end());
         res_raw_counters.chat_template_durations.insert(res_raw_counters.chat_template_durations.end(), raw_counters.chat_template_durations.begin(), raw_counters.chat_template_durations.end());
 
@@ -649,6 +672,25 @@ public:
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.begin(),
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end()
         );
+
+        decoded.perf_metrics.vlm_raw_metrics.vision_encoding_durations.insert(
+            decoded.perf_metrics.vlm_raw_metrics.vision_encoding_durations.end(),
+            perf_metrics.vlm_raw_metrics.vision_encoding_durations.begin(),
+            perf_metrics.vlm_raw_metrics.vision_encoding_durations.end()
+        );
+
+        decoded.perf_metrics.vlm_raw_metrics.audio_encoding_durations.insert(
+            decoded.perf_metrics.vlm_raw_metrics.audio_encoding_durations.end(),
+            perf_metrics.vlm_raw_metrics.audio_encoding_durations.begin(),
+            perf_metrics.vlm_raw_metrics.audio_encoding_durations.end()
+        );
+
+        decoded.perf_metrics.vlm_raw_metrics.text_embedding_durations.insert(
+            decoded.perf_metrics.vlm_raw_metrics.text_embedding_durations.end(),
+            perf_metrics.vlm_raw_metrics.text_embedding_durations.begin(),
+            perf_metrics.vlm_raw_metrics.text_embedding_durations.end()
+        );
+
         decoded.perf_metrics.vlm_raw_metrics.per_image_slice_counts.insert(
             decoded.perf_metrics.vlm_raw_metrics.per_image_slice_counts.end(),
             perf_metrics.vlm_raw_metrics.per_image_slice_counts.begin(),
@@ -776,35 +818,19 @@ private:
         const std::chrono::steady_clock::time_point& embeddings_start_time
     ) {
         ov::Tensor inputs_embeds;
-        std::optional<ov::Tensor> token_type_ids;
         bool recalculate_merged_embeddings = encoded_images.size() > 0 || encoded_videos.size() > 0;
 
-        if (m_inputs_embedder->has_token_type_ids()) {
-            std::tie(inputs_embeds, token_type_ids) =
-                m_inputs_embedder->get_inputs_embeds_with_token_type_ids(
-                    unified_prompt,
-                    encoded_images,
-                    encoded_videos,
-                    perf_metrics,
-                    recalculate_merged_embeddings,
-                    image_sequence,
-                    video_sequence,
-                    history_vision_count
-                );
-        } else {
-            inputs_embeds = m_inputs_embedder->get_inputs_embeds(
-                unified_prompt,
-                encoded_images,
-                encoded_videos,
-                perf_metrics,
-                recalculate_merged_embeddings,
-                image_sequence,
-                video_sequence,
-                history_vision_count
-            );
-        }
-        const auto embeddings_end_time = std::chrono::steady_clock::now();
-        perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(embeddings_end_time - embeddings_start_time));
+        inputs_embeds = m_inputs_embedder->get_inputs_embeds(
+            unified_prompt,
+            encoded_images,
+            encoded_videos,
+            perf_metrics,
+            recalculate_merged_embeddings,
+            image_sequence,
+            video_sequence,
+            history_vision_count
+        );
+        PerfMetrics::emplace_duration(perf_metrics.vlm_raw_metrics.prepare_embeddings_durations, embeddings_start_time);
 
         if (m_is_npu) {
             // Prefill model in NPU is reshaped to NPUW_LLM_MAX_PROMPT_LEN x NPUW_LLM_MAX_PROMPT_LEN
@@ -877,21 +903,22 @@ private:
         if (m_is_npu) {
             max_kv_cache_size = ov::genai::utils::get_npu_kv_cache_capacity(m_language.get_compiled_model());
         }
-        return ov::genai::get_lm_encoded_results(m_language,
-                                                 inputs_embeds,
-                                                 new_atten_mask,
-                                                 streamer_ptr,
-                                                 m_sampler,
-                                                 std::move(requests),
-                                                 position_ids,
-                                                 token_type_ids,
-                                                 cache_state,
-                                                 m_embedding,
-                                                 rope_delta,
-                                                 max_kv_cache_size,
-                                                 use_intermediate_remote_tensor,
-                                                 lm_extra_inputs,
-                                                 std::move(per_layer_callback));
+        return ov::genai::get_lm_encoded_results(
+            m_language,
+            inputs_embeds,
+            new_atten_mask,
+            streamer_ptr,
+            m_sampler,
+            std::move(requests),
+            position_ids,
+            cache_state,
+            m_embedding,
+            rope_delta,
+            max_kv_cache_size,
+            use_intermediate_remote_tensor,
+            lm_extra_inputs,
+            std::move(per_layer_callback)
+        );
     }
 };
 
@@ -936,7 +963,7 @@ VLMPipeline::VLMPipeline(
                 m_pimpl = std::make_shared<VLMContinuousBatchingAdapter>(language_model, models_dir, scheduler_config, device, plugin_properties);
 #endif
             } catch (const ov::Exception& exception) {
-                log_paged_attention_fallback(exception);
+                utils::log_paged_attention_fallback(exception);
                 language_model = utils::singleton_core().read_model(language_model_path, {}, properties);
             }
         }
@@ -946,6 +973,7 @@ VLMPipeline::VLMPipeline(
         }
     }
 
+    utils::log_attention_backend(m_pimpl->get_attention_backend());
     auto stop_time = std::chrono::steady_clock::now();
     m_pimpl->set_load_time(std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count());
 }
@@ -986,7 +1014,7 @@ VLMPipeline::VLMPipeline(
                 m_pimpl = std::make_shared<VLMContinuousBatchingAdapter>(language_model, models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
     #endif
             } catch (const ov::Exception& exception) {
-                log_paged_attention_fallback(exception);
+                utils::log_paged_attention_fallback(exception);
                 language_model = utils::singleton_core().read_model(model_str, weights);
             }
         }
@@ -997,6 +1025,7 @@ VLMPipeline::VLMPipeline(
 
     }
 
+    utils::log_attention_backend(m_pimpl->get_attention_backend());
     auto stop_time = std::chrono::steady_clock::now();
     m_pimpl->set_load_time(std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count());
 }

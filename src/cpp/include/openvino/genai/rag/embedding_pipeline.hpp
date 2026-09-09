@@ -19,6 +19,8 @@
 namespace ov {
 namespace genai {
 
+class EmbeddingPipelineImpl;
+
 /**
  * @brief Result of an embedding computation.
  */
@@ -87,7 +89,6 @@ public:
     ~EmbeddingPipeline();
 
 private:
-    class EmbeddingPipelineImpl;
     std::unique_ptr<EmbeddingPipelineImpl> m_impl;
 };
 

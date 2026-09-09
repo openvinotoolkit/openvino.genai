@@ -10,6 +10,7 @@
 
 #include "openvino/core/type/element_type.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
 #include "openvino/genai/image_generation/image_generation_perf_metrics.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
@@ -163,6 +164,9 @@ ov::genai::WhisperPerfMetrics& unwrap<ov::genai::WhisperPerfMetrics>(const Napi:
                                                                       const Napi::Value& value);
 
 template <>
+ov::genai::ASRPerfMetrics& unwrap<ov::genai::ASRPerfMetrics>(const Napi::Env& env, const Napi::Value& value);
+
+template <>
 ov::genai::SpeechGenerationPerfMetrics& unwrap<ov::genai::SpeechGenerationPerfMetrics>(const Napi::Env& env,
                                                                                         const Napi::Value& value);
 
@@ -281,6 +285,11 @@ Napi::Value cpp_to_js<ov::genai::WhisperGenerationConfig, Napi::Value>(
     const Napi::Env& env,
     const ov::genai::WhisperGenerationConfig& config);
 
+/** @brief  A template specialization for TargetType Napi::Value and SourceType ov::genai::ASRGenerationConfig */
+template <>
+Napi::Value cpp_to_js<ov::genai::ASRGenerationConfig, Napi::Value>(const Napi::Env& env,
+                                                                   const ov::genai::ASRGenerationConfig& config);
+
 /** @brief  A template specialization for TargetType Napi::Value and SourceType ov::genai::SpeechGenerationConfig */
 template <>
 Napi::Value cpp_to_js<ov::genai::SpeechGenerationConfig, Napi::Value>(
@@ -342,5 +351,7 @@ Napi::Object to_decoded_result(const Napi::Env& env, const ov::genai::DecodedRes
 Napi::Object to_vlm_decoded_result(const Napi::Env& env, const ov::genai::VLMDecodedResults& results);
 
 Napi::Object to_whisper_decoded_result(const Napi::Env& env, const ov::genai::WhisperDecodedResults& results);
+
+Napi::Object to_asr_decoded_result(const Napi::Env& env, const ov::genai::ASRDecodedResults& results);
 
 Napi::Object to_text2speech_decoded_result(const Napi::Env& env, const ov::genai::Text2SpeechDecodedResults& results);

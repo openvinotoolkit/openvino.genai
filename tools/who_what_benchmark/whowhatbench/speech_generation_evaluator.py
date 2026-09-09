@@ -17,11 +17,11 @@ from importlib.resources import files
 from tqdm import tqdm
 
 from .registry import register_evaluator, BaseEvaluator
+from .utils import normalize_text
 from .tts_similarity import (
     ScoringConfig,
     TTSSimilarityEvaluator,
     linear_distance_score,
-    normalize_text,
     safe_float,
 )
 

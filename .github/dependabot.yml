@@ -9,7 +9,7 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
-      time: "09:00"
+      time: "08:00"
       timezone: "Europe/Dublin"
     open-pull-requests-limit: 3
     ignore:
@@ -32,7 +32,7 @@ updates:
       - "/.github/actions/install_wheel"
     schedule:
       interval: "daily"
-      time: "09:00"
+      time: "02:00"
       timezone: "Europe/Dublin"
     open-pull-requests-limit: 3
     versioning-strategy: increase-if-necessary
@@ -54,7 +54,7 @@ updates:
       - "/samples/js"
     schedule:
       interval: "daily"
-      time: "09:00"
+      time: "04:00"
       timezone: "Europe/Dublin"
     open-pull-requests-limit: 3
     versioning-strategy: lockfile-only
@@ -75,7 +75,7 @@ updates:
       - "./tools/who_what_benchmark/"
     schedule:
       interval: "daily"
-      time: "09:00"
+      time: "06:00"
       timezone: "Europe/Dublin"
     versioning-strategy: increase-if-necessary
     ignore:
@@ -96,8 +96,14 @@ updates:
       - dependency-name: "huggingface-hub"
       # update transformers version is dependent on optimum-intel for now and required more precise changes in repo
       - dependency-name: "transformers"
+        versions:
+          - ">=5.6"
       # update required more precise changes in repo and made upon request
       - dependency-name: "optimum-intel"
+      # librosa >= 1.0.0 requires python3.12
+      - dependency-name: "librosa"
+        versions:
+          - ">=1.0.0"
     groups:
       pip-dependencies:
         patterns:

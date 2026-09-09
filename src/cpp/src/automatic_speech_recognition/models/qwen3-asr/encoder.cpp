@@ -79,8 +79,26 @@ ov::Tensor Qwen3ASREncoder::chunk_mel_features(const WhisperFeatures& features) 
 }
 
 size_t Qwen3ASREncoder::get_remainder_output_tokens(const size_t remainder_frames, const size_t tokens_per_full_chunk) {
-    // Integer ceil of: remainder_frames * tokens_per_full_chunk / m_encoder_chunk_frames.
-    return (remainder_frames * tokens_per_full_chunk + m_encoder_chunk_frames - 1) / m_encoder_chunk_frames;
+    // The encoder downsamples time with three Conv2d stages (kernel=3, stride=2, padding=1), each
+    // yielding out = ceil(in / 2). Mirrors _get_feat_extract_output_lengths() in the original Qwen
+    // ASR implementation.
+    size_t output_tokens = remainder_frames;
+    for (size_t i = 0; i < 3; ++i) {
+        output_tokens = (output_tokens + 1) / 2;
+    }
+
+    OPENVINO_ASSERT(output_tokens <= tokens_per_full_chunk,
+                    "Qwen3-ASR encoder tail chunk yields more tokens than a full chunk: ",
+                    output_tokens,
+                    " > ",
+                    tokens_per_full_chunk,
+                    " (remainder_frames=",
+                    remainder_frames,
+                    ", encoder_chunk_frames=",
+                    m_encoder_chunk_frames,
+                    "). Check that the model config matches the exported encoder geometry.");
+
+    return output_tokens;
 }
 
 ov::Tensor Qwen3ASREncoder::merge_chunked_encoder_output(const ov::Tensor& chunked_output, size_t remainder_frames) {

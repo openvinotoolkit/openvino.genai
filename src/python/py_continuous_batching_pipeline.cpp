@@ -464,7 +464,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def_readonly("avg_cache_usage", &PipelineMetrics::avg_cache_usage)
             .def_readonly("cache_size_in_bytes", &PipelineMetrics::cache_size_in_bytes)
             .def_property_readonly("kv_cache_size_in_bytes", [](const PipelineMetrics& self) { return self.kv_cache_size_in_bytes; })
-            .def_readonly("max_cache_usage", &PipelineMetrics::max_cache_usage);
+            .def_readonly("max_cache_usage", &PipelineMetrics::max_cache_usage)
+            .def_readonly("la_peak_pool_blocks", &PipelineMetrics::la_peak_pool_blocks);
 
     py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline", "This class is used for generation with LLMs with continuous batchig")
         .def(py::init([](const std::filesystem::path& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config,

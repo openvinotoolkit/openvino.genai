@@ -110,7 +110,7 @@ void init_ltx_video_transformer_3d_model(py::module_& m) {
                 Pass an empty AdapterConfig() to disable all adapters.
             )")
         .def("infer",
-             &ov::genai::LTXVideoTransformer3DModel::infer,
+             py::overload_cast<const ov::Tensor&, const ov::Tensor&>(&ov::genai::LTXVideoTransformer3DModel::infer),
              py::call_guard<py::gil_scoped_release>(),
              py::arg("latent"),
              py::arg("timestep"),
@@ -221,6 +221,23 @@ void init_autoencoder_kl_ltx_video(py::module_& m) {
                 num_frames (int): Number of video frames.
                 height (int): Video height.
                 width (int): Video width.
+            )")
+        .def("encode",
+             [](ov::genai::AutoencoderKLLTXVideo& self,
+                const ov::Tensor& video,
+                std::shared_ptr<ov::genai::Generator> generator) {
+                 py::gil_scoped_release release;
+                 return self.encode(video, generator);
+             },
+             py::arg("video"),
+             py::arg("generator") = py::none(),
+             R"(
+                Encodes a video tensor to latent space.
+                video (ov.Tensor): Input video tensor [B, C, F, H, W].
+                generator (Generator, optional): Random generator for sampling from the latent
+                    distribution. Required only when the encoder outputs latent parameters
+                    (mean + logvar); unused when it outputs a latent sample directly.
+                Returns: Normalized latent tensor.
             )")
         .def("decode",
              &ov::genai::AutoencoderKLLTXVideo::decode,

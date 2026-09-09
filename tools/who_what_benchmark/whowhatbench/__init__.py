@@ -13,6 +13,7 @@ from .reranking_evaluator import RerankingEvaluator
 from .text2video_evaluator import Text2VideoEvaluator
 from .chat_text_evaluator import ChatTextEvaluator
 from .speech_generation_evaluator import SpeechGenerationEvaluator
+from .speech_recognition_evaluator import SpeechRecognitionEvaluator
 from .chat_visualtext_evaluator import ChatVisualTextEvaluator
 
 
@@ -29,6 +30,7 @@ __all__ = [
     "Text2VideoEvaluator",
     "ChatTextEvaluator",
     "SpeechGenerationEvaluator",
+    "SpeechRecognitionEvaluator",
     "ChatVisualTextEvaluator",
     "EVALUATOR_REGISTRY",
 ]

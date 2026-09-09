@@ -59,7 +59,8 @@ auto vlm_generate_common_params = R"(
         Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
     :type audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
 
-    :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+    :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
+        Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
         Ignored when audio_streamer is not provided.
     :type audio_chunk_frames: int
 
@@ -82,7 +83,7 @@ auto vlm_generate_kwargs_param = R"(
     generation_config: GenerationConfig,
     streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped,
     audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None] or OmniSpeechStreamerBase - callback to receive audio chunks during speech generation,
-    audio_chunk_frames: int - number of codec frames per streaming chunk (default 1, must be >= 1). Ignored when audio_streamer is not provided.
+    audio_chunk_frames: int - number of codec frames per streaming chunk (default 4, must be >= 1). Ignored when audio_streamer is not provided.
 
     :return: return results in decoded form
     :rtype: VLMDecodedResults
@@ -109,6 +110,18 @@ auto raw_perf_metrics_docstring = R"(
 
     :param prepare_embeddings_durations: Durations of embeddings preparation.
     :type prepare_embeddings_durations: list[MicroSeconds]
+
+    :param vision_encoding_durations: Durations of vision encoding.
+    :type vision_encoding_durations: list[MicroSeconds]
+
+    :param audio_encoding_durations: Durations of audio encoding.
+    :type audio_encoding_durations: list[MicroSeconds]
+
+    :param text_embedding_durations: Durations of text embedding.
+    :type text_embedding_durations: list[MicroSeconds]
+
+    :param per_image_slice_counts: Number of image slices processed for each input image.
+    :type per_image_slice_counts: list[int]
 )";
 
 auto perf_metrics_docstring = R"(
@@ -116,6 +129,18 @@ auto perf_metrics_docstring = R"(
 
     :param get_prepare_embeddings_duration: Returns mean and standard deviation of embeddings preparation duration in milliseconds
     :type get_prepare_embeddings_duration: MeanStdPair
+
+    :param get_vision_encoding_duration: Returns mean and standard deviation of vision encoding duration in milliseconds
+    :type get_vision_encoding_duration: MeanStdPair
+
+    :param get_audio_encoding_duration: Returns mean and standard deviation of audio encoding duration in milliseconds
+    :type get_audio_encoding_duration: MeanStdPair
+
+    :param get_text_embedding_duration: Returns mean and standard deviation of text embedding duration in milliseconds
+    :type get_text_embedding_duration: MeanStdPair
+
+    :param get_total_image_slice_count: Total number of image slices produced for the request.
+    :type get_total_image_slice_count: int
 
     :param vlm_raw_metrics: VLM specific raw metrics
     :type VLMRawPerfMetrics:
@@ -257,11 +282,23 @@ void init_vlm_pipeline(py::module_& m) {
         .def_property_readonly("prepare_embeddings_durations", [](const ov::genai::VLMRawPerfMetrics& rw) {
             return common_utils::get_ms(rw, &ov::genai::VLMRawPerfMetrics::prepare_embeddings_durations);
         })
+        .def_property_readonly("vision_encoding_durations", [](const ov::genai::VLMRawPerfMetrics& rw) {
+            return common_utils::get_ms(rw, &ov::genai::VLMRawPerfMetrics::vision_encoding_durations);
+        })
+        .def_property_readonly("audio_encoding_durations", [](const ov::genai::VLMRawPerfMetrics& rw) {
+            return common_utils::get_ms(rw, &ov::genai::VLMRawPerfMetrics::audio_encoding_durations);
+        })
+        .def_property_readonly("text_embedding_durations", [](const ov::genai::VLMRawPerfMetrics& rw) {
+            return common_utils::get_ms(rw, &ov::genai::VLMRawPerfMetrics::text_embedding_durations);
+        })
         .def_readonly("per_image_slice_counts", &ov::genai::VLMRawPerfMetrics::per_image_slice_counts);
 
     py::class_<ov::genai::VLMPerfMetrics, ov::genai::PerfMetrics>(m, "VLMPerfMetrics", perf_metrics_docstring)
         .def(py::init<>())
         .def("get_prepare_embeddings_duration", &ov::genai::VLMPerfMetrics::get_prepare_embeddings_duration)
+        .def("get_vision_encoding_duration", &ov::genai::VLMPerfMetrics::get_vision_encoding_duration)
+        .def("get_audio_encoding_duration", &ov::genai::VLMPerfMetrics::get_audio_encoding_duration)
+        .def("get_text_embedding_duration", &ov::genai::VLMPerfMetrics::get_text_embedding_duration)
         .def("get_total_image_slice_count", &ov::genai::VLMPerfMetrics::get_total_image_slice_count,
              R"(Returns the total number of image slices processed for the request.
 An input image without explicit slicing metadata counts as one slice.)")

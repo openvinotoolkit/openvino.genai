@@ -65,6 +65,14 @@ llm_chat_json = [
         "prompt": ["Tell me the plot of Mulan.", "Who is the main character?"],
     }
 ]
+vlm_chat_json = [
+    {
+        "prompt": "What animal is this?",
+        "media": [
+            "cat.png",
+        ],
+    }
+]
 
 
 @pytest.fixture(scope="module")
@@ -151,13 +159,20 @@ class TestBenchmarkLLM:
 
     @pytest.mark.samples
     @pytest.mark.parametrize(
-        "convert_model, convert_draft_model",
+        "convert_model, convert_draft_model, sd_sample_args",
         [
-            pytest.param("tiny-random-qwen3-layer10", "tiny-random-qwen3-eagle3"),
+            pytest.param("tiny-random-qwen3-layer10", "tiny-random-qwen3-eagle3", {"num_assistant_tokens": 5}),
+            pytest.param(
+                "tiny-random-qwen3-layer10",
+                "tiny-random-qwen3-eagle3",
+                {"num_assistant_tokens": 10, "branching_factor": 4, "tree_depth": 3},
+            ),
         ],
         indirect=["convert_model", "convert_draft_model"],
     )
-    def test_python_tool_llm_benchmark_sd_generation_config(self, convert_model, convert_draft_model, tmp_path):
+    def test_python_tool_llm_benchmark_sd_generation_config(
+        self, convert_model, convert_draft_model, sd_sample_args, tmp_path
+    ):
         """
         Test --sd_generation_config JSON file parsing for Speculative Decoding.
         Verifies that JSON config is parsed and applied with EAGLE3 draft model.
@@ -166,7 +181,7 @@ class TestBenchmarkLLM:
 
         config_path = tmp_path / "sd_config.json"
         with open(config_path, "w") as f:
-            json.dump({"num_assistant_tokens": 5}, f)
+            json.dump(sd_sample_args, f)
 
         benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
         benchmark_py_command = [
@@ -189,7 +204,10 @@ class TestBenchmarkLLM:
             "--sd_generation_config",
             str(config_path),
         ]
-        run_sample(benchmark_py_command)
+        result = run_sample(benchmark_py_command)
+        assert "Speculative Decoding is activated" in result.stdout, (
+            "Expected log message `Speculative Decoding is activated`not found in output"
+        )
 
     @pytest.mark.samples
     @pytest.mark.parametrize(
@@ -224,49 +242,10 @@ class TestBenchmarkLLM:
             "--sd_generation_config",
             '{"num_assistant_tokens": 6, "branching_factor": 2, "tree_depth": 3}',
         ]
-        run_sample(benchmark_py_command)
-
-    @pytest.mark.samples
-    @pytest.mark.parametrize(
-        "convert_model, convert_draft_model",
-        [
-            pytest.param("tiny-random-qwen3-layer10", "tiny-random-qwen3-eagle3"),
-        ],
-        indirect=["convert_model", "convert_draft_model"],
-    )
-    def test_python_tool_llm_benchmark_sd_generation_config_topk(self, convert_model, convert_draft_model, tmp_path):
-        """
-        Test --sd_generation_config with EAGLE3 Top-K parameters.
-        """
-        import json
-
-        config_path = tmp_path / "sd_topk_config.json"
-        with open(config_path, "w") as f:
-            json.dump({"num_assistant_tokens": 10, "branching_factor": 4, "tree_depth": 3}, f)
-
-        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
-        benchmark_py_command = [
-            sys.executable,
-            benchmark_script,
-            "-m",
-            convert_model,
-            "--draft_model",
-            convert_draft_model,
-            "-p",
-            "Why is the Sun yellow?",
-            "-d",
-            "cpu",
-            "--draft_device",
-            "cpu",
-            "-n",
-            "1",
-            "-ic",
-            "20",
-            "--sd_generation_config",
-            str(config_path),
-        ]
-        run_sample(benchmark_py_command)
-
+        result = run_sample(benchmark_py_command)
+        assert "Speculative Decoding is activated" in result.stdout, (
+            "Expected log message `Speculative Decoding is activated`not found in output"
+        )
 
     @pytest.mark.samples
     @pytest.mark.parametrize("sample_args",
@@ -978,6 +957,116 @@ class TestBenchmarkLLM:
         self, convert_model, generate_llm_bench_input_generation_jsonl, sample_args
     ):
         prompt_args = [] if "-p" in sample_args else ["-pf", generate_llm_bench_input_generation_jsonl]
+        # Run Python benchmark
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [sys.executable, benchmark_script, "-m", convert_model, *prompt_args] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.parametrize(
+        "convert_model, sample_args, prefill_info_log_msg",
+        [
+            pytest.param(
+                "tiny-random-qwen2",
+                ["--num_prefill_tokens", "4"],
+                "Amount of token for prefill is 4tokens. Prompt was trimmed.",
+            ),
+            pytest.param(
+                "tiny-random-qwen2",
+                ["-np", "30"],
+                "The reqested number num_prefill_tokens(30tokens) is larger than the actual number of input tokens in prompt",
+            ),
+            pytest.param(
+                "tiny-random-qwen2",
+                ["--optimum", "-np", "4"],
+                "Amount of token for prefill is 4tokens. Prompt was trimmed.",
+            ),
+            pytest.param(
+                "tiny-random-qwen2",
+                ["--optimum", "--num_prefill_tokens", "30"],
+                "The reqested number num_prefill_tokens(30tokens) is larger than the actual number of input tokens in prompt",
+            ),
+        ],
+        indirect=["convert_model"],
+    )
+    def test_python_tool_llm_benchmark_convert_model(self, convert_model, sample_args, prefill_info_log_msg):
+        # Run Python benchmark
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "-d",
+            "cpu",
+            "-n",
+            "1",
+            "-ic",
+            "4",
+            "--task",
+            "text_gen",
+            "-p",
+            "Why is the Sun yellow?",
+        ] + sample_args
+        result = run_sample(benchmark_py_command)
+        assert "Prefill Time: " in result.stdout, "Expected log message `Prefill Time: ` not found in output"
+        assert prefill_info_log_msg in result.stdout, (
+            f"Expected log message `{prefill_info_log_msg}` not found in output"
+        )
+
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            [
+                "-d",
+                "cpu",
+                "-n",
+                "1",
+                "-ic",
+                "10",
+                "--task",
+                "visual_text_gen_chat",
+                "--optimum",
+                "-p",
+                "Describe these image in detail",
+                "--chat_iter",
+                "2",
+            ],
+            ["-d", "cpu", "-n", "1", "-ic", "10", "--task", "visual_text_gen_chat", "--optimum"],
+            [
+                "-d",
+                "cpu",
+                "-n",
+                "1",
+                "-ic",
+                "10",
+                "--task",
+                "visual_text_gen_chat",
+                "--genai",
+                "-p",
+                "Describe these image in detail",
+                "--chat_iter",
+                "3",
+            ],
+            ["-d", "cpu", "-n", "1", "-ic", "10", "--task", "visual_text_gen_chat", "--genai"],
+        ],
+    )
+    @pytest.mark.parametrize("download_test_content", ["cat"], indirect=True)
+    @pytest.mark.parametrize("convert_model", ["tiny-random-llava"], indirect=True)
+    @pytest.mark.parametrize(
+        "generate_llm_bench_input_generation_jsonl", [("vlm_chat_json.jsonl", vlm_chat_json)], indirect=True
+    )
+    def test_python_tool_llm_benchmark_vlm_chat(
+        self, convert_model, download_test_content, generate_llm_bench_input_generation_jsonl, sample_args
+    ):
+        # to use the relative media and mask_image paths
+        os.chdir(os.path.dirname(download_test_content))
+
+        prompt_args = (
+            ["--media", download_test_content]
+            if "-p" in sample_args
+            else ["-pf", generate_llm_bench_input_generation_jsonl]
+        )
         # Run Python benchmark
         benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
         benchmark_py_command = [sys.executable, benchmark_script, "-m", convert_model, *prompt_args] + sample_args

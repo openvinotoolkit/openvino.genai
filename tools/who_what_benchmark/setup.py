@@ -47,6 +47,7 @@ setup(
     entry_points={"console_scripts": ["wwb=whowhatbench.wwb:main"]},
     package_data={"whowhatbench": ["prompts/*.yaml", "prompts/*.json"]},
     extras_require={
+        "funasr": ["funasr==1.4.2"],
         "minicpm-o-2_6": [
             "torch==2.13.0",
             "torchvision==0.28.0",

@@ -293,7 +293,6 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     uint64_t request_id,
     const ov::Tensor& input_ids,
     const ov::genai::GenerationConfig& sampling_params,
-    std::optional<ov::Tensor> token_type_ids,
     std::optional<ov::Tensor> prompt_ids,
     std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     auto sampling_params_copy = sampling_params;
@@ -319,7 +318,6 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
         sequence_group = std::make_shared<SequenceGroup>(request_id,
                                                          input_ids,
                                                          sampling_params_copy,
-                                                         token_type_ids,
                                                          lm_extra_inputs,
                                                          position_ids,
                                                          rope_delta,
@@ -328,8 +326,7 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     else {
         sequence_group = std::make_shared<SequenceGroup>(request_id,
                                                          input_ids,
-                                                         sampling_params_copy,
-                                                         token_type_ids);
+                                                         sampling_params_copy);
     }
 
     // Enable hidden state accumulation for speech output (Qwen3-Omni).
@@ -340,6 +337,7 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
 
     if (m_scheduler->get_config().enable_prefix_caching) {
         m_scheduler->restore_cached_blocks(sequence_group);
+        sequence_group->set_num_prefix_cache_hit_tokens(sequence_group->get_num_processed_tokens());
     }
 
     {
@@ -375,11 +373,113 @@ bool ContinuousBatchingPipeline::ContinuousBatchingImpl::has_non_finished_reques
     return !m_awaiting_requests.empty() || !m_requests.empty();
 }
 
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_validate_linear_verifier_constraints() const {
+    if (!m_scheduler->has_linear_attention_cache()) {
+        return;
+    }
+
+    for (const auto& sequence_group : m_requests) {
+        if (sequence_group->get_num_tokens_to_validate() == 0) {
+            continue;
+        }
+
+        OPENVINO_ASSERT(!m_scheduler->get_config().enable_prefix_caching,
+                        "Linear-attention verifier speculative decoding requires enable_prefix_caching=false (not yet supported).");
+
+        const auto& sampling_params = sequence_group->get_sampling_parameters();
+        OPENVINO_ASSERT(sampling_params.assistant_confidence_threshold == 0.f,
+                        "Linear-attention verifier speculative decoding supports a static candidate count only; assistant_confidence_threshold>0 (dynamic candidate count) is not yet supported.");
+        OPENVINO_ASSERT(sampling_params.num_return_sequences == 1,
+                        "Linear-attention verifier speculative decoding requires num_return_sequences=1; parallel sampling / fork is not yet supported.");
+    }
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_reserve_linear_attention_scratch() {
+    if (!m_scheduler->has_linear_attention_cache()) {
+        return;
+    }
+
+    size_t max_num_assistant_tokens = 0;
+    size_t num_verifying_sequences = 0;
+    // Non-verifying sequences also hold one committed row.
+    size_t num_live_sequences = 0;
+    for (const auto& sequence_group : m_requests) {
+        const auto& params = sequence_group->get_sampling_parameters();
+        num_live_sequences += sequence_group->num_running_seqs();
+        if (params.is_prompt_lookup() || params.is_assisting_generation()) {
+            max_num_assistant_tokens = std::max(max_num_assistant_tokens, params.num_assistant_tokens.value_or(0));
+            num_verifying_sequences += sequence_group->num_running_seqs();
+        }
+    }
+    if (max_num_assistant_tokens == 0) {
+        return;
+    }
+
+    // Pre-size for committed rows plus every verifier's full scratch window.
+    const size_t window_blocks = 1 + max_num_assistant_tokens;
+    m_scheduler->check_linear_attention_borrow_pool_floor(num_live_sequences, window_blocks);
+    const size_t required_pool_blocks = num_live_sequences + num_verifying_sequences * window_blocks;
+    m_scheduler->ensure_linear_attention_pool_blocks(required_pool_blocks);
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_publish_linear_attention_pool_metric() {
+    m_pipeline_metrics.la_peak_pool_blocks = m_scheduler->get_linear_attention_pool_blocks_high_water();
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_release_linear_attention_borrowed_rows(
+    const Scheduler::Output& scheduler_output) {
+    if (!m_scheduler->has_linear_attention_cache()) {
+        return;
+    }
+
+    // Sampling may finish a sequence before throwing. Release from the immutable
+    // schedule instead of consulting mutable post-sampling sequence status.
+    for (const auto& [seq_id, paging_data] : scheduler_output.m_linear_attention_paging_data) {
+        if (paging_data.is_speculative) {
+            m_scheduler->release_linear_attention_checkpoints(seq_id);
+        }
+    }
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_linear_attention_checkpoint_transactions(
+    const Scheduler::Output& scheduler_output) {
+    if (!m_scheduler->has_linear_attention_cache()) {
+        return;
+    }
+
+    for (size_t seq_group_id : scheduler_output.m_scheduled_sequence_groups_ids) {
+        const SequenceGroup::Ptr& sequence_group = m_requests[seq_group_id];
+        const size_t processed_after = sequence_group->get_num_processed_tokens();
+
+        for (const auto& sequence : sequence_group->get_running_sequences()) {
+            const uint64_t seq_id = sequence->get_id();
+            if (!scheduler_output.has_linear_attention_paging_data(seq_id)) {
+                continue;
+            }
+            const auto& paging_data = scheduler_output.get_linear_attention_paging_data(seq_id);
+            if (!paging_data.is_speculative) {
+                continue;
+            }
+
+            OPENVINO_ASSERT(processed_after >= paging_data.num_processed_tokens_before,
+                            "Linear-attention checkpoint commit: processed tokens cannot decrease below the pre-forward count (processed_after=",
+                            processed_after, ", processed_before=", paging_data.num_processed_tokens_before, ").");
+            const size_t checkpoint_slot = processed_after - paging_data.num_processed_tokens_before;
+            OPENVINO_ASSERT(checkpoint_slot > 0,
+                            "Linear-attention speculative verification must advance through at least the seed token "
+                            "for sequence ", seq_id);
+            m_scheduler->promote_linear_attention_checkpoint(seq_id, checkpoint_slot);
+        }
+    }
+}
+
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     static ManualTimer step_timer("step()");
     step_timer.start();
 
     _pull_awaiting_requests();
+    _validate_linear_verifier_constraints();
+    _reserve_linear_attention_scratch();
 
     Scheduler::Output scheduler_output;
 
@@ -396,6 +496,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
             std::max(m_pipeline_metrics.max_cache_usage, scheduler_output.m_cache_usage);
         _register_step_cache_usage(scheduler_output.m_cache_usage);
         m_pipeline_metrics.avg_cache_usage = _get_current_running_average_cache_usage();
+        _publish_linear_attention_pool_metric();
 
         const auto& sched_config = m_scheduler->get_config();
         if (sched_config.use_cache_eviction) {
@@ -419,6 +520,23 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         _free_non_running_requests();
         return;
     }
+
+    // Return borrowed rows if forward or sampling fails before commit.
+    struct BorrowedLinearAttentionRowsGuard {
+        ContinuousBatchingImpl& m_impl;
+        const Scheduler::Output& m_scheduler_output;
+        bool m_armed = true;
+
+        ~BorrowedLinearAttentionRowsGuard() {
+            if (m_armed) {
+                m_impl._release_linear_attention_borrowed_rows(m_scheduler_output);
+            }
+        }
+        BorrowedLinearAttentionRowsGuard(const BorrowedLinearAttentionRowsGuard&) = delete;
+        BorrowedLinearAttentionRowsGuard& operator=(const BorrowedLinearAttentionRowsGuard&) = delete;
+    };
+    BorrowedLinearAttentionRowsGuard borrowed_rows_guard{*this, scheduler_output};
+
     ov::Tensor logits;
 
     {
@@ -462,6 +580,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         m_batch_size = sampler_output.num_generated_tokens;
         timer.end();
     }
+
+    // Promote the committed linear-attention state to the correct physical row for any
+    // Commit after sampling rewinds the accepted prefix and before fork/free can release LA rows.
+    _commit_linear_attention_checkpoint_transactions(scheduler_output);
+    borrowed_rows_guard.m_armed = false;
 
     // process sampler_output (e.g. fork or drop sequences from BlockScheduler)
     {
@@ -542,7 +665,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
     const std::vector<ov::Tensor>& input_ids,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer,
-    const std::optional<std::vector<ov::Tensor>>& token_type_ids,
     const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list,
     const std::optional<std::vector<ov::Tensor>>& prompt_ids,
     const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list) {
@@ -618,7 +740,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
                 m_inputs_embedder->set_rope_delta(*rope_delta);
             }
         }
-        const bool has_valid_token_type_ids = token_type_ids.has_value() && request_id < token_type_ids->size();
+
         const bool has_valid_prompt_ids = prompt_ids.has_value() && request_id < prompt_ids->size();
         const bool has_valid_lm_extra_inputs =
             lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
@@ -627,7 +749,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
             request_id,
             input_ids[request_id],
             sampling_params[request_id],
-            has_valid_token_type_ids ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt,
             has_valid_prompt_ids ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
             has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt));
     }
@@ -728,6 +849,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
         perf_metrics.raw_metrics.generate_durations.emplace_back(
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
         perf_metrics.num_input_tokens = request->get_prompt_len();
+        perf_metrics.num_prefix_cache_hit_tokens = request->get_num_prefix_cache_hit_tokens();
         perf_metrics.evaluate_statistics(start_time);
 
         result.perf_metrics = perf_metrics;
