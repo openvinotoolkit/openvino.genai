@@ -1590,11 +1590,7 @@ TEST(TestScheduler, hybrid_prefix_caching_reuses_active_incomplete_linear_attent
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
     ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     std::vector<SequenceGroup::Ptr> producer_requests = {producer_group};
-<<<<<<< HEAD
     const ContinuousBatchingScheduler::Output producer_output = scheduler.schedule(producer_requests);
-=======
-    const Scheduler::Output producer_output = scheduler.schedule(producer_requests);
->>>>>>> 4fb14eb2b (Checkpoint LA live-state and scratch transition implementation)
     producer_group->finish_iteration();
     const Sequence::Ptr producer_sequence = producer_group->get_running_sequences()[0];
     scheduler.publish_completed_blocks(
@@ -2899,21 +2895,12 @@ TEST(TestScheduler, ActiveScratchLeaseDefersCachePressureWithoutPreemptingVictim
     std::vector<SequenceGroup::Ptr> requests = {target, victim};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-<<<<<<< HEAD
     ContinuousBatchingScheduler scheduler(orchestrator, scheduler_config);
     ContinuousBatchingScheduler::Output prompt_output = scheduler.schedule(requests);
     for (const auto& sequence_group : requests) {
         sequence_group->finish_iteration();
     }
     ContinuousBatchingScheduler::Output generation_output = scheduler.schedule(requests);
-=======
-    Scheduler scheduler(orchestrator, scheduler_config);
-    Scheduler::Output prompt_output = scheduler.schedule(requests);
-    for (const auto& sequence_group : requests) {
-        sequence_group->finish_iteration();
-    }
-    Scheduler::Output generation_output = scheduler.schedule(requests);
->>>>>>> 4fb14eb2b (Checkpoint LA live-state and scratch transition implementation)
     for (const auto& sequence_group : requests) {
         sequence_group->get_running_sequences().front()->append_token(16, 0.9f);
         sequence_group->finish_iteration();
@@ -2923,22 +2910,14 @@ TEST(TestScheduler, ActiveScratchLeaseDefersCachePressureWithoutPreemptingVictim
     const auto victim_table_before = scheduler.get_kv_block_tables(*victim->get_running_sequences().front());
     const size_t victim_processed_before = victim->get_num_processed_tokens();
     const size_t free_before = orchestrator->get_block_manager(CacheType::KV_CACHE).num_free_blocks();
-<<<<<<< HEAD
     ContinuousBatchingScheduler::Output lease_owner;
-=======
-    Scheduler::Output lease_owner;
->>>>>>> 4fb14eb2b (Checkpoint LA live-state and scratch transition implementation)
     lease_owner.m_linear_attention_scratch_leases.emplace(
         victim_id,
         std::make_unique<CacheOrchestrator::LinearAttentionScratchLease>(
             orchestrator->prepare_linear_attention_scratch(victim_id, 1)));
     victim->set_num_validated_tokens(1);
 
-<<<<<<< HEAD
     ContinuousBatchingScheduler::Output pressured_output;
-=======
-    Scheduler::Output pressured_output;
->>>>>>> 4fb14eb2b (Checkpoint LA live-state and scratch transition implementation)
     ASSERT_NO_THROW(pressured_output = scheduler.schedule(requests));
     EXPECT_EQ(pressured_output.m_total_num_scheduled_tokens, 0u);
     EXPECT_TRUE(pressured_output.m_scheduled_sequence_groups_ids.empty());
