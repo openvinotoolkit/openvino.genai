@@ -22,6 +22,7 @@ namespace ov::genai {
 
 class CacheBlock {
     int m_ref_count;
+    int m_live_ref_count;
     int m_index;
     size_t m_hash;
     bool m_has_published_hash;
@@ -30,6 +31,7 @@ public:
     using Ptr = std::shared_ptr<CacheBlock>;
     explicit CacheBlock(int index)
         : m_ref_count(0),
+          m_live_ref_count(0),
           m_index(index),
           m_hash(0),
           m_has_published_hash(false),
@@ -52,8 +54,22 @@ public:
         --m_ref_count;
     }
 
+    void release_prevalidated() noexcept {
+        --m_ref_count;
+    }
+
+    void increment_live() noexcept {
+        ++m_ref_count;
+        ++m_live_ref_count;
+    }
+
+    void release_live() noexcept {
+        --m_ref_count;
+        --m_live_ref_count;
+    }
+
     bool copy_on_write() const {
-        return m_ref_count > 1;
+        return m_ref_count - m_live_ref_count > 1;
     }
 
     int get_references_count() const {
@@ -218,6 +234,11 @@ class BlockAllocator {
     bool m_enable_prefix_caching;
     ov::genai::OverwritableBlocksHashStore m_overwriteable_blocks;
 public:
+    struct UncachedBlockAllocation {
+        BlocksPerLayer blocks;
+        std::vector<std::list<CacheBlock::Ptr>> free_nodes;
+    };
+
     struct CacheBlockAllocationResult {
         BlocksPerLayer blocks;
         std::optional<uint64_t> evicted_hash;
@@ -390,23 +411,42 @@ public:
      * hash bookkeeping. Intended for transient state checkpoints that are
      * overwritten before they become visible as sequence cache.
      */
-    BlocksPerLayer allocate_uncached_block() {
+    UncachedBlockAllocation allocate_uncached_block() {
         if (!std::all_of(m_free_blocks_num.begin(),
                          m_free_blocks_num.end(),
                          [](size_t free_blocks) { return free_blocks > 0; })) {
             return {};
         }
-        BlocksPerLayer allocated_blocks;
-        allocated_blocks.reserve(m_num_layers);
+        UncachedBlockAllocation allocation;
+        allocation.blocks.reserve(m_num_layers);
+        allocation.free_nodes.resize(m_num_layers);
         for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
             CacheBlock::Ptr allocated_block = m_free_blocks[layer_idx].front();
             allocated_block->increment();
             allocated_block->clear_published_hash();
-            allocated_blocks.push_back(allocated_block);
-            m_free_blocks[layer_idx].pop_front();
+            allocation.blocks.push_back(allocated_block);
+            allocation.free_nodes[layer_idx].splice(allocation.free_nodes[layer_idx].end(),
+                                                     m_free_blocks[layer_idx],
+                                                     m_free_blocks[layer_idx].begin());
             --m_free_blocks_num[layer_idx];
         }
-        return allocated_blocks;
+        return allocation;
+    }
+
+    void free_uncached(UncachedBlockAllocation& allocation) noexcept {
+        for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+            CacheBlock::Ptr& block = allocation.blocks[layer_idx];
+            allocation.free_nodes[layer_idx].front() = block;
+            block->release_prevalidated();
+            if (block->is_free()) {
+                m_free_blocks[layer_idx].splice(m_free_blocks[layer_idx].end(),
+                                                allocation.free_nodes[layer_idx]);
+                ++m_free_blocks_num[layer_idx];
+            } else {
+                allocation.free_nodes[layer_idx].clear();
+            }
+        }
+        allocation.blocks.clear();
     }
 
     CacheBlockAllocationResult acquire_unpublished_block(std::map<uint64_t, BlocksPerLayer>& cached_blocks) {
@@ -712,6 +752,38 @@ public:
  * blocks within the block table being associated with "logical" block indices.
  */
 class BlockManager {
+public:
+    struct LinearAttentionLiveState {
+        size_t endpoint = 0;
+        BlocksPerLayer rows;
+        size_t generation = 0;
+        bool is_empty = true;
+    };
+
+private:
+    using TemporaryBlockTable = std::vector<BlockAllocator::UncachedBlockAllocation>;
+
+    void replace_linear_attention_live_rows(LinearAttentionLiveState& live_state,
+                                            const BlocksPerLayer& rows) noexcept {
+        for (const auto& row : rows) {
+            row->increment_live();
+        }
+        for (auto& row : live_state.rows) {
+            row->release_live();
+        }
+        live_state.rows = rows;
+    }
+
+    void release_linear_attention_live_rows(uint64_t seq_id) noexcept {
+        const auto live_state_it = m_linear_attention_live_states.find(seq_id);
+        if (live_state_it == m_linear_attention_live_states.end()) {
+            return;
+        }
+        for (auto& row : live_state_it->second.rows) {
+            row->release_live();
+        }
+        m_linear_attention_live_states.erase(live_state_it);
+    }
     friend class CacheStateDumper;
     BlockAllocator m_allocator;
     bool m_enable_prefix_caching;
@@ -728,8 +800,10 @@ class BlockManager {
     // stores blocks for each sequence (not sequence group)
     // the same block can be seen in multiple block_tables for different sequences
     std::map<uint64_t, std::vector<BlocksPerLayer>> m_block_table;
-    std::map<uint64_t, std::vector<BlocksPerLayer>> m_temporary_block_table;
+    std::map<uint64_t, TemporaryBlockTable> m_temporary_block_table;
     std::map<uint64_t, size_t> m_block_table_logical_start;
+
+    std::map<uint64_t, LinearAttentionLiveState> m_linear_attention_live_states;
 
     std::mutex m_cached_blocks_map_mutex;
 public:
@@ -742,6 +816,12 @@ public:
         bool empty() const {
             return block_content_lengths.empty();
         }
+    };
+
+    struct PreparedTemporaryBlocks {
+        size_t endpoint;
+        size_t generation;
+        std::vector<int> block_indices;
     };
 
     /**
@@ -802,6 +882,68 @@ public:
         return m_block_table.at(seq_id);
     }
 
+    const LinearAttentionLiveState& get_linear_attention_live_state(uint64_t seq_id) const {
+        const auto live_state_it = m_linear_attention_live_states.find(seq_id);
+        OPENVINO_ASSERT(live_state_it != m_linear_attention_live_states.end(),
+                        "No linear-attention live-state handle for sequence ", seq_id);
+        return live_state_it->second;
+    }
+
+    void set_linear_attention_live_state(uint64_t seq_id, size_t endpoint, const BlocksPerLayer& rows) {
+        OPENVINO_ASSERT(rows.size() == m_num_layers,
+                        "Linear-attention live-state handle requires one row per layer for sequence ", seq_id,
+                        ": expected ", m_num_layers, ", got ", rows.size());
+        auto& live_state = m_linear_attention_live_states[seq_id];
+        replace_linear_attention_live_rows(live_state, rows);
+        live_state.endpoint = endpoint;
+        ++live_state.generation;
+        live_state.is_empty = endpoint == 0;
+    }
+
+    void set_empty_linear_attention_live_state(uint64_t seq_id, const BlocksPerLayer& rows) {
+        OPENVINO_ASSERT(rows.size() == m_num_layers,
+                        "Empty linear-attention live-state handle requires one row per layer for sequence ", seq_id);
+        auto& live_state = m_linear_attention_live_states[seq_id];
+        replace_linear_attention_live_rows(live_state, rows);
+        live_state.endpoint = 0;
+        ++live_state.generation;
+        live_state.is_empty = true;
+    }
+
+    void advance_linear_attention_live_state(uint64_t seq_id, size_t endpoint) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        auto live_state_it = m_linear_attention_live_states.find(seq_id);
+        OPENVINO_ASSERT(live_state_it != m_linear_attention_live_states.end(),
+                        "No linear-attention live-state handle for sequence ", seq_id);
+        auto table_it = m_block_table.find(seq_id);
+        OPENVINO_ASSERT(table_it != m_block_table.end() && table_it->second.size() == m_num_layers,
+                        "No complete linear-attention block table for sequence ", seq_id);
+        auto& live_state = live_state_it->second;
+        OPENVINO_ASSERT(live_state.rows.size() == m_num_layers,
+                        "Linear-attention live-state row count changed for sequence ", seq_id);
+
+        size_t physical_position = 0;
+        if (m_enable_prefix_caching && endpoint > 0) {
+            const size_t logical_position = (endpoint - 1) / m_block_size;
+            const size_t logical_start = get_block_table_logical_start_unlocked(seq_id);
+            OPENVINO_ASSERT(logical_position >= logical_start,
+                            "Linear-attention endpoint precedes the retained table for sequence ", seq_id);
+            physical_position = logical_position - logical_start;
+        }
+        for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+            OPENVINO_ASSERT(physical_position < table_it->second[layer_idx].size(),
+                            "Linear-attention endpoint has no represented row for sequence ", seq_id);
+            table_it->second[layer_idx][physical_position]->increment_live();
+        }
+        for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+            live_state.rows[layer_idx]->release_live();
+            live_state.rows[layer_idx] = table_it->second[layer_idx][physical_position];
+        }
+        live_state.endpoint = endpoint;
+        ++live_state.generation;
+        live_state.is_empty = endpoint == 0;
+    }
+
     size_t get_block_table_logical_start(uint64_t seq_id) const {
         auto it = m_block_table_logical_start.find(seq_id);
         return it == m_block_table_logical_start.end() ? 0 : it->second;
@@ -833,6 +975,13 @@ public:
 
     /// Returns the latest row represented by an append-only table.
     const CacheBlock::Ptr& get_latest_represented_block(uint64_t seq_id, size_t layer_idx) const {
+        const auto live_state_it = m_linear_attention_live_states.find(seq_id);
+        if (live_state_it != m_linear_attention_live_states.end() && !live_state_it->second.rows.empty()) {
+            OPENVINO_ASSERT(layer_idx < live_state_it->second.rows.size(),
+                            "Linear-attention live-state layer ", layer_idx,
+                            " is out of range for sequence ", seq_id);
+            return live_state_it->second.rows[layer_idx];
+        }
         const auto table_it = m_block_table.find(seq_id);
         OPENVINO_ASSERT(table_it != m_block_table.end(), "No block table for sequence ", seq_id);
         OPENVINO_ASSERT(layer_idx < table_it->second.size(),
@@ -1121,7 +1270,7 @@ public:
     /// @return Whether reserve_temporary_blocks(seq_id, num_blocks) would succeed.
     bool can_reserve_temporary_blocks(uint64_t seq_id, size_t num_blocks) {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
-        if (m_block_table.count(seq_id) == 0 || m_num_layers != 1) {
+        if (m_block_table.count(seq_id) == 0) {
             return false;
         }
         // Avoid operator[] so this predicate does not create an empty reservation.
@@ -1136,8 +1285,6 @@ public:
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         OPENVINO_ASSERT(m_block_table.count(seq_id) > 0,
                         "Cannot reserve temporary cache blocks for unknown sequence ", seq_id);
-        OPENVINO_ASSERT(m_num_layers == 1,
-                        "Temporary cache checkpoint reservation expects a shared one-layer block table");
         const auto existing_temporary_it = m_temporary_block_table.find(seq_id);
         OPENVINO_ASSERT(existing_temporary_it == m_temporary_block_table.end() ||
                             existing_temporary_it->second.empty(),
@@ -1146,16 +1293,16 @@ public:
                         "Not enough cache blocks to reserve ", num_blocks,
                         " temporary checkpoints for sequence ", seq_id);
 
-        std::vector<BlocksPerLayer> temporary_blocks;
+        TemporaryBlockTable temporary_blocks;
         temporary_blocks.reserve(num_blocks);
         std::vector<int> block_indices;
         block_indices.reserve(num_blocks);
         try {
             for (size_t idx = 0; idx < num_blocks; ++idx) {
-                BlocksPerLayer blocks = m_allocator.allocate_uncached_block();
-                OPENVINO_ASSERT(!blocks.empty(), "Temporary cache block allocation returned no blocks");
-                const int block_index = blocks.front()->get_index();
-                temporary_blocks.push_back(std::move(blocks));
+                auto allocation = m_allocator.allocate_uncached_block();
+                OPENVINO_ASSERT(!allocation.blocks.empty(), "Temporary cache block allocation returned no blocks");
+                const int block_index = allocation.blocks.front()->get_index();
+                temporary_blocks.push_back(std::move(allocation));
                 block_indices.push_back(block_index);
             }
             if (existing_temporary_it == m_temporary_block_table.end()) {
@@ -1164,29 +1311,93 @@ public:
                 existing_temporary_it->second = std::move(temporary_blocks);
             }
         } catch (...) {
-            for (const auto& blocks : temporary_blocks) {
-                m_allocator.free_uncached(blocks);
+            for (auto& allocation : temporary_blocks) {
+                m_allocator.free_uncached(allocation);
             }
             throw;
         }
         return block_indices;
     }
 
-    void release_temporary_blocks(uint64_t seq_id) {
+    PreparedTemporaryBlocks prepare_temporary_blocks(uint64_t seq_id, size_t num_blocks) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        OPENVINO_ASSERT(num_blocks > 0, "Cannot prepare zero temporary cache blocks");
+        const auto table_it = m_block_table.find(seq_id);
+        OPENVINO_ASSERT(table_it != m_block_table.end(),
+                        "Cannot prepare temporary cache blocks for unknown sequence ", seq_id);
+        const auto& block_table = table_it->second;
+        OPENVINO_ASSERT(m_fixed_blocks_per_sequence == 1 && block_table.size() == m_num_layers,
+                        "Linear-attention scratch preparation requires a fixed one-row table for sequence ", seq_id);
+        const auto live_state_it = m_linear_attention_live_states.find(seq_id);
+        OPENVINO_ASSERT(live_state_it != m_linear_attention_live_states.end(),
+                        "No linear-attention live-state handle for sequence ", seq_id);
+        const auto& live_state = live_state_it->second;
+        OPENVINO_ASSERT(live_state.rows.size() == m_num_layers,
+                        "Linear-attention live-state row count changed for sequence ", seq_id);
+        for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+            OPENVINO_ASSERT(block_table[layer_idx].size() == 1,
+                            "Linear-attention scratch preparation requires one table row per layer for sequence ",
+                            seq_id);
+            OPENVINO_ASSERT(live_state.rows[layer_idx] == block_table[layer_idx][0],
+                            "Linear-attention live-state row does not match the committed table for sequence ", seq_id,
+                            ", layer ", layer_idx);
+        }
+        OPENVINO_ASSERT(num_blocks <= std::numeric_limits<size_t>::max() - live_state.endpoint,
+                        "Linear-attention scratch endpoint exceeds size_t range for sequence ", seq_id);
+        const auto existing_temporary_it = m_temporary_block_table.find(seq_id);
+        OPENVINO_ASSERT(existing_temporary_it == m_temporary_block_table.end() ||
+                            existing_temporary_it->second.empty(),
+                        "Temporary cache blocks are already reserved for sequence ", seq_id);
+        OPENVINO_ASSERT(can_allocate_blocks(num_blocks),
+                        "Not enough cache blocks to reserve ", num_blocks,
+                        " temporary checkpoints for sequence ", seq_id);
+
+        TemporaryBlockTable temporary_blocks;
+        temporary_blocks.reserve(num_blocks);
+        std::vector<int> block_indices;
+        block_indices.reserve(num_blocks);
+        try {
+            for (size_t idx = 0; idx < num_blocks; ++idx) {
+                auto allocation = m_allocator.allocate_uncached_block();
+                OPENVINO_ASSERT(allocation.blocks.size() == m_num_layers,
+                                "Temporary cache row count changed for sequence ", seq_id);
+                OPENVINO_ASSERT(allocation.free_nodes.size() == m_num_layers,
+                                "Temporary cache release metadata changed for sequence ", seq_id);
+                const int block_index = allocation.blocks.front()->get_index();
+                OPENVINO_ASSERT(block_index >= 0,
+                                "Temporary cache block for sequence ", seq_id,
+                                " has a negative physical index: ", block_index);
+                temporary_blocks.push_back(std::move(allocation));
+                block_indices.push_back(block_index);
+            }
+            m_temporary_block_table.emplace(seq_id, std::move(temporary_blocks));
+        } catch (...) {
+            for (auto& allocation : temporary_blocks) {
+                m_allocator.free_uncached(allocation);
+            }
+            throw;
+        }
+        return {live_state.endpoint, live_state.generation, std::move(block_indices)};
+    }
+
+    void release_temporary_blocks(uint64_t seq_id) noexcept {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         auto it = m_temporary_block_table.find(seq_id);
         if (it == m_temporary_block_table.end()) {
             return;
         }
-        for (const auto& blocks : it->second) {
-            m_allocator.free_uncached(blocks);
+        for (auto& allocation : it->second) {
+            m_allocator.free_uncached(allocation);
         }
         m_temporary_block_table.erase(it);
     }
 
     /// Promotes a one-based temporary slot and frees the old committed row and losing temporaries.
     /// @return Physical index of the promoted block.
-    size_t promote_temporary_block(uint64_t seq_id, size_t checkpoint_slot) {
+    size_t promote_temporary_block(uint64_t seq_id,
+                                   size_t checkpoint_slot,
+                                   size_t expected_endpoint,
+                                   size_t expected_generation) {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         OPENVINO_ASSERT(checkpoint_slot > 0,
                         "Checkpoint slot is one-based and must be greater than zero");
@@ -1210,14 +1421,41 @@ public:
         }
 
         const size_t selected_index = checkpoint_slot - 1;
-        BlocksPerLayer selected_blocks = temporary_blocks[selected_index];
-        BlocksPerLayer previous_blocks;
-        previous_blocks.reserve(m_num_layers);
-        for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
-            previous_blocks.push_back(block_table[layer_idx][0]);
-            block_table[layer_idx][0] = selected_blocks[layer_idx];
+        auto& selected_allocation = temporary_blocks[selected_index];
+        BlocksPerLayer& selected_blocks = selected_allocation.blocks;
+        auto live_state_it = m_linear_attention_live_states.find(seq_id);
+        OPENVINO_ASSERT(live_state_it != m_linear_attention_live_states.end(),
+                        "No linear-attention live-state handle for sequence ", seq_id);
+        auto& live_state = live_state_it->second;
+        OPENVINO_ASSERT(live_state.rows.size() == m_num_layers,
+                        "Linear-attention live-state row count changed for sequence ", seq_id);
+        OPENVINO_ASSERT(live_state.endpoint == expected_endpoint && live_state.generation == expected_generation,
+                        "Stale linear-attention scratch lease for sequence ", seq_id);
+        OPENVINO_ASSERT(checkpoint_slot <= std::numeric_limits<size_t>::max() - expected_endpoint,
+                "Linear-attention checkpoint endpoint exceeds size_t range for sequence ", seq_id);
+        for (const auto& allocation : temporary_blocks) {
+            OPENVINO_ASSERT(allocation.blocks.size() == m_num_layers,
+                            "Temporary cache row count changed for sequence ", seq_id);
+            OPENVINO_ASSERT(allocation.free_nodes.size() == m_num_layers,
+                            "Temporary cache release metadata changed for sequence ", seq_id);
         }
-        m_allocator.free_uncached(previous_blocks);
+        const int promoted_index = selected_blocks.front()->get_index();
+        OPENVINO_ASSERT(promoted_index >= 0,
+                        "Promoted temporary cache block for sequence ", seq_id,
+                        " has a negative physical index: ", promoted_index);
+        const size_t base_endpoint = live_state.endpoint;
+        for (const auto& block : selected_blocks) {
+            block->increment_live();
+        }
+        for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+            live_state.rows[layer_idx]->release_live();
+            std::swap(block_table[layer_idx][0], selected_blocks[layer_idx]);
+            live_state.rows[layer_idx] = block_table[layer_idx][0];
+        }
+        live_state.endpoint = base_endpoint + checkpoint_slot;
+        ++live_state.generation;
+        live_state.is_empty = false;
+        m_allocator.free_uncached(selected_allocation);
 
         for (size_t idx = 0; idx < temporary_blocks.size(); ++idx) {
             if (idx == selected_index) {
@@ -1227,10 +1465,6 @@ public:
         }
         m_temporary_block_table.erase(temporary_it);
 
-        const int promoted_index = selected_blocks.front()->get_index();
-        OPENVINO_ASSERT(promoted_index >= 0,
-                        "Promoted temporary cache block for sequence ", seq_id,
-                        " has a negative physical index: ", promoted_index);
         return static_cast<size_t>(promoted_index);
     }
 
@@ -1400,6 +1634,8 @@ public:
      */
     void fork_sequence(uint64_t parent_id, uint64_t child_id) {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        OPENVINO_ASSERT(m_temporary_block_table.count(parent_id) == 0,
+                        "Cannot fork linear-attention sequence ", parent_id, " while a scratch lease is active");
         OPENVINO_ASSERT(m_block_table.count(child_id) == 0);
         m_block_table[child_id].resize(m_num_layers);
         m_block_table_logical_start[child_id] = get_block_table_logical_start(parent_id);
@@ -1410,6 +1646,13 @@ public:
                 m_block_table[child_id][layer_idx].push_back(block);
             }
         }
+        const auto live_state_it = m_linear_attention_live_states.find(parent_id);
+        if (live_state_it != m_linear_attention_live_states.end()) {
+            for (const auto& row : live_state_it->second.rows) {
+                row->increment_live();
+            }
+            m_linear_attention_live_states.emplace(child_id, live_state_it->second);
+        }
     }
 
     /**
@@ -1418,15 +1661,11 @@ public:
      */
     void free_sequence(size_t seq_id) {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
-        auto temporary_it = m_temporary_block_table.find(seq_id);
-        if (temporary_it != m_temporary_block_table.end()) {
-            for (const auto& blocks : temporary_it->second) {
-                m_allocator.free_uncached(blocks);
-            }
-            m_temporary_block_table.erase(temporary_it);
-        }
+        OPENVINO_ASSERT(m_temporary_block_table.count(seq_id) == 0,
+                        "Cannot free linear-attention sequence ", seq_id, " while a scratch lease is active");
         OPENVINO_ASSERT(m_block_table.find(seq_id) != m_block_table.end(), "sequence with id ", seq_id,
                         " not found in BlockManager, but requested to free");
+        release_linear_attention_live_rows(seq_id);
         auto& block_table = m_block_table[seq_id];
         size_t effective_num_layers = block_table.size();
         size_t num_allocated_blocks = block_table[0].size();
@@ -1891,6 +2130,12 @@ private:
 
         if (m_restore_latest_prefix_block_only) {
             m_block_table_logical_start[seq_id] = plan.logical_block_start;
+            BlocksPerLayer live_rows;
+            live_rows.reserve(m_num_layers);
+            for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+                live_rows.push_back(block_table[layer_idx].back());
+            }
+            set_linear_attention_live_state(seq_id, plan.cache_token_position, live_rows);
         } else {
             m_block_table_logical_start.erase(seq_id);
         }
@@ -2127,14 +2372,22 @@ private:
         return num_logical_blocks > logical_start ? num_logical_blocks - logical_start : 0;
     }
 
-    bool last_block_requires_copy_on_write(const Sequence::CPtr& sequence,
+    bool last_block_requires_copy_on_write(const Sequence::Ptr& sequence,
                                            size_t num_processed_tokens) const {
-        if (m_enable_prefix_caching && num_processed_tokens % m_block_size == 0) {
+        auto table_it = m_block_table.find(sequence->get_id());
+        if (table_it == m_block_table.end() || table_it->second.empty() || table_it->second[0].empty()) {
             return false;
         }
-        auto table_it = m_block_table.find(sequence->get_id());
-        return table_it != m_block_table.end() && !table_it->second.empty() &&
-               !table_it->second[0].empty() && table_it->second[0].back()->copy_on_write();
+        if (num_processed_tokens % m_block_size == 0) {
+            return false;
+        }
+        const auto& last_block = table_it->second[0].back();
+        const auto live_state_it = m_linear_attention_live_states.find(sequence->get_id());
+        const bool is_published_linear_attention_live_row =
+            m_restore_latest_prefix_block_only && last_block->has_published_hash() &&
+            live_state_it != m_linear_attention_live_states.end() && !live_state_it->second.rows.empty() &&
+            live_state_it->second.rows[0] == last_block;
+        return last_block->copy_on_write() || is_published_linear_attention_live_row;
     }
 
     size_t get_required_copy_on_write_blocks(SequenceGroup::CPtr seq_group) const {
@@ -2193,6 +2446,12 @@ private:
         for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
             m_block_table[replacement.sequence_id][layer_idx].back() = replacement.previous_blocks[layer_idx];
         }
+        const auto live_state_it = m_linear_attention_live_states.find(replacement.sequence_id);
+        if (live_state_it != m_linear_attention_live_states.end()) {
+            set_linear_attention_live_state(replacement.sequence_id,
+                                            live_state_it->second.endpoint,
+                                            replacement.previous_blocks);
+        }
         const std::optional<uint64_t> erased_hash = replacement.allocation.erased_hash;
         const std::optional<size_t> erased_content_length = replacement.erased_content_length;
         m_allocator.rollback_uncached_block(std::move(replacement.allocation),
@@ -2241,6 +2500,12 @@ private:
                 auto& replacement = replacements.back();
                 for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
                     m_block_table[sequence_id][layer_idx].back() = replacement.allocation.blocks[layer_idx];
+                }
+                const auto live_state_it = m_linear_attention_live_states.find(sequence_id);
+                if (live_state_it != m_linear_attention_live_states.end()) {
+                    set_linear_attention_live_state(sequence_id,
+                                                    live_state_it->second.endpoint,
+                                                    replacement.allocation.blocks);
                 }
                 staged_copy_blocks_map[replacement.previous_blocks[0]->get_index()].push_back(
                     replacement.allocation.blocks[0]->get_index());
@@ -2340,6 +2605,14 @@ private:
                     m_block_table[sequence_id][layer_idx].push_back(block);
                 }
             }
+            if (m_fixed_blocks_per_sequence > 0) {
+                BlocksPerLayer live_rows;
+                live_rows.reserve(m_num_layers);
+                for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+                    live_rows.push_back(m_block_table[sequence_id][layer_idx].back());
+                }
+                set_empty_linear_attention_live_state(sequence_id, live_rows);
+            }
         } else {
             if (block_table.size() > 0 && block_table.back()->has_published_hash()) {
                 CacheBlock::Ptr last_block = block_table.back();
@@ -2370,6 +2643,14 @@ private:
                 for (size_t layer_idx = 0; layer_idx < blocks_for_all_layers.size(); layer_idx++) {
                     m_block_table[sequence_id][layer_idx].push_back(blocks_for_all_layers[layer_idx]);
                 }
+            }
+            if (m_restore_latest_prefix_block_only && m_linear_attention_live_states.count(sequence_id) == 0) {
+                BlocksPerLayer live_rows;
+                live_rows.reserve(m_num_layers);
+                for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+                    live_rows.push_back(m_block_table[sequence_id][layer_idx].front());
+                }
+                set_empty_linear_attention_live_state(sequence_id, live_rows);
             }
         }
     }

@@ -376,13 +376,15 @@ TEST(SamplerValidationMode, gen_phase_to_cut_whole_seq) {
     ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{4, 1, 5}, logits.data());
 
     Sampler sampler;
-    sampler.sample(sequence_groups, gen_input_ids, true);
+    const SamplerOutput output = sampler.sample(sequence_groups, gen_input_ids, true);
 
     TokenIds actual = sequence_groups.front()->get_sequences().front()->get_generated_ids(),
              expected{0, 1};
     ASSERT_EQ(sequence_groups.front()->get_sequences().front()->get_generated_ids(), expected);
     EXPECT_EQ(sequence_groups.front()->get_num_processed_tokens(), processed_before + 1)
         << "Full rejection must retain the target replacement token as accepted depth one";
+    const uint64_t sequence_id = sequence_groups.front()->get_sequences().front()->get_id();
+    EXPECT_EQ(output.acceptance_by_sequence.at(sequence_id).accepted_depth, 1u);
 }
 
 TEST(SamplerValidationMode, gen_phase_to_cut_part_seq) {
@@ -423,11 +425,13 @@ TEST(SamplerValidationMode, gen_phase_to_cut_part_seq) {
     ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{4, 1, 5}, logits.data());
 
     Sampler sampler;
-    sampler.sample(sequence_groups, gen_input_ids, true);
+    const SamplerOutput output = sampler.sample(sequence_groups, gen_input_ids, true);
 
     TokenIds actual = sequence_groups.front()->get_sequences().front()->get_generated_ids(),
              expected{0, 1, 2, 3};
     ASSERT_EQ(sequence_groups.front()->get_sequences().front()->get_generated_ids(), expected);
+    const uint64_t sequence_id = sequence_groups.front()->get_sequences().front()->get_id();
+    EXPECT_EQ(output.acceptance_by_sequence.at(sequence_id).accepted_depth, 3u);
 }
 
 TEST(SamplerValidationMode, gen_phase) {
@@ -467,11 +471,79 @@ TEST(SamplerValidationMode, gen_phase) {
     ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{4, 1, 5}, logits.data());
 
     Sampler sampler;
-    sampler.sample(sequence_groups, gen_input_ids, true);
+    const SamplerOutput output = sampler.sample(sequence_groups, gen_input_ids, true);
 
     TokenIds actual = sequence_groups.front()->get_sequences().front()->get_generated_ids(),
              expected{0, 1, 2, 3, 4};
     ASSERT_EQ(sequence_groups.front()->get_sequences().front()->get_generated_ids(), expected);
+    const uint64_t sequence_id = sequence_groups.front()->get_sequences().front()->get_id();
+    EXPECT_EQ(output.acceptance_by_sequence.at(sequence_id).accepted_depth, 4u);
+}
+
+TEST(SamplerValidationMode, terminal_stop_token_preserves_acceptance_result) {
+    auto sampling_config = ov::genai::utils::get_greedy_config();
+    sampling_config.stop_token_ids = {2};
+    const std::vector<int64_t> prompt{0, 1, 2, 3, 4};
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, prompt.size()}, const_cast<int64_t*>(prompt.data()));
+    auto sequence_group = std::make_shared<SequenceGroup>(0, input_tensor, sampling_config);
+    Sequence::Ptr sequence = sequence_group->get_sequences().front();
+    sequence->append_token(0, 1.f);
+    sequence_group->update_processed_tokens_num(prompt.size());
+    for (int64_t token_id = 1; token_id <= 3; ++token_id) {
+        sequence->append_token(token_id, 1.f);
+    }
+    sequence_group->set_num_validated_tokens(3);
+    sequence_group->schedule_tokens(sequence_group->get_num_available_tokens_for_batching());
+
+    std::vector<float> logits{
+        0, 1.f, 0, 0, 0,
+        0, 0, 1.f, 0, 0,
+        0, 0, 0, 1.f, 0,
+        0, 0, 0, 0, 1.f,
+    };
+    ov::Tensor validation_logits(ov::element::f32, ov::Shape{4, 1, 5}, logits.data());
+    const uint64_t sequence_id = sequence->get_id();
+
+    Sampler sampler;
+    const SamplerOutput output = sampler.sample({sequence_group}, validation_logits, true);
+
+    EXPECT_TRUE(sequence->has_finished());
+    EXPECT_EQ(sequence->get_finish_reason(), GenerationFinishReason::STOP);
+    ASSERT_EQ(output.acceptance_by_sequence.count(sequence_id), 1u);
+    EXPECT_EQ(output.acceptance_by_sequence.at(sequence_id).accepted_depth, 2u);
+}
+
+TEST(SamplerValidationMode, terminal_length_limit_preserves_acceptance_result) {
+    auto sampling_config = ov::genai::utils::get_greedy_config();
+    sampling_config.max_new_tokens = 3;
+    const std::vector<int64_t> prompt{0, 1, 2, 3, 4};
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, prompt.size()}, const_cast<int64_t*>(prompt.data()));
+    auto sequence_group = std::make_shared<SequenceGroup>(0, input_tensor, sampling_config);
+    Sequence::Ptr sequence = sequence_group->get_sequences().front();
+    sequence->append_token(0, 1.f);
+    sequence_group->update_processed_tokens_num(prompt.size());
+    for (int64_t token_id = 1; token_id <= 3; ++token_id) {
+        sequence->append_token(token_id, 1.f);
+    }
+    sequence_group->set_num_validated_tokens(3);
+    sequence_group->schedule_tokens(sequence_group->get_num_available_tokens_for_batching());
+
+    std::vector<float> logits{
+        0, 1.f, 0, 0, 0,
+        0, 0, 1.f, 0, 0,
+        0, 0, 0, 1.f, 0,
+        0, 0, 0, 0, 1.f,
+    };
+    ov::Tensor validation_logits(ov::element::f32, ov::Shape{4, 1, 5}, logits.data());
+    const uint64_t sequence_id = sequence->get_id();
+
+    Sampler sampler;
+    const SamplerOutput output = sampler.sample({sequence_group}, validation_logits, true);
+
+    EXPECT_TRUE(sequence->has_finished());
+    EXPECT_EQ(sequence->get_finish_reason(), GenerationFinishReason::LENGTH);
+    ASSERT_EQ(output.acceptance_by_sequence.count(sequence_id), 1u);
+    EXPECT_EQ(output.acceptance_by_sequence.at(sequence_id).accepted_depth, 2u);
 }
 
 TEST(SamplerValidationMode, prompt_phase_to_cut_part_seq) {

@@ -322,25 +322,48 @@ TEST(TestBlockManager, TemporaryBlocksPromoteSelectedCheckpoint) {
         /*num_blocks=*/4,
         /*enable_prefix_caching=*/false,
         /*block_size=*/1,
-        /*num_layers=*/1,
+        /*num_layers=*/2,
         /*fixed_blocks_per_sequence=*/1);
 
     auto sequence_group = create_sequence_group(17);
     auto sequence = sequence_group->get_running_sequences().at(0);
     bm.allocate_tokens(sequence, sequence_group, /*num_tokens=*/1, sequence_group->get_prompt_len());
     const auto seq_id = sequence->get_id();
-    const int committed_block = bm.get_block_table(seq_id, 0).front()->get_index();
-    EXPECT_EQ(bm.get_block_at_logical_position(seq_id, 0, 0)->get_index(), committed_block);
+    const int committed_block_layer_0 = bm.get_block_table(seq_id, 0).front()->get_index();
+    const int committed_block_layer_1 = bm.get_block_table(seq_id, 1).front()->get_index();
+    const auto& empty_live_state = bm.get_linear_attention_live_state(seq_id);
+    EXPECT_TRUE(empty_live_state.is_empty);
+    EXPECT_EQ(empty_live_state.endpoint, 0u);
+    ASSERT_EQ(empty_live_state.rows.size(), 2u);
+    EXPECT_EQ(empty_live_state.rows[0]->get_index(), committed_block_layer_0);
+    EXPECT_EQ(empty_live_state.rows[1]->get_index(), committed_block_layer_1);
+    bm.set_linear_attention_live_state(seq_id, 7, empty_live_state.rows);
+    const size_t initial_generation = bm.get_linear_attention_live_state(seq_id).generation;
+    EXPECT_EQ(bm.get_block_at_logical_position(seq_id, 0, 0)->get_index(), committed_block_layer_0);
+    EXPECT_EQ(bm.get_block_at_logical_position(seq_id, 1, 0)->get_index(), committed_block_layer_1);
 
     const auto checkpoint_blocks = bm.reserve_temporary_blocks(seq_id, /*num_blocks=*/3);
     ASSERT_EQ(checkpoint_blocks.size(), 3);
     EXPECT_EQ(bm.num_free_blocks(), 0);
 
-    bm.promote_temporary_block(seq_id, /*checkpoint_slot=*/2);
+    bm.promote_temporary_block(seq_id,
+                               /*checkpoint_slot=*/2,
+                               /*expected_endpoint=*/7,
+                               initial_generation);
 
     EXPECT_EQ(bm.get_block_table(seq_id, 0).front()->get_index(), checkpoint_blocks[1]);
-    EXPECT_NE(bm.get_block_table(seq_id, 0).front()->get_index(), committed_block);
+    EXPECT_NE(bm.get_block_table(seq_id, 0).front()->get_index(), committed_block_layer_0);
+    EXPECT_NE(bm.get_block_table(seq_id, 1).front()->get_index(), committed_block_layer_1);
+    EXPECT_EQ(bm.get_block_table(seq_id, 0).front()->get_index(), checkpoint_blocks[1]);
+    EXPECT_EQ(bm.get_block_table(seq_id, 1).front()->get_index(), checkpoint_blocks[1]);
     EXPECT_EQ(bm.num_free_blocks(), 3);
+    const auto& committed_live_state = bm.get_linear_attention_live_state(seq_id);
+    EXPECT_FALSE(committed_live_state.is_empty);
+    EXPECT_EQ(committed_live_state.endpoint, 9u);
+    EXPECT_EQ(committed_live_state.generation, initial_generation + 1);
+    ASSERT_EQ(committed_live_state.rows.size(), 2u);
+    EXPECT_EQ(committed_live_state.rows[0]->get_index(), checkpoint_blocks[1]);
+    EXPECT_EQ(committed_live_state.rows[1]->get_index(), checkpoint_blocks[1]);
 
     bm.free_sequence(seq_id);
     EXPECT_EQ(bm.num_free_blocks(), 4);
@@ -1066,7 +1089,8 @@ TEST(TestBlockManager, PrefixCachingIncompleteCheckpointUsesCopyOnWriteWhenTable
     EXPECT_EQ(block_manager.get_block_table_logical_start(consumer_seq_id), 1);
     EXPECT_EQ(block_manager.get_block_table(consumer_seq_id, 0).at(0)->get_index(),
               incomplete_checkpoint_idx);
-    EXPECT_EQ(block_manager.get_block_table(consumer_seq_id, 0).at(0)->get_references_count(), 2);
+    EXPECT_EQ(block_manager.get_block_table(consumer_seq_id, 0).at(0)->get_references_count(), 3);
+    EXPECT_TRUE(block_manager.get_block_table(consumer_seq_id, 0).at(0)->copy_on_write());
 
     consumer_group->schedule_tokens(4);
     const auto copy_map = block_manager.append_slots(consumer_group);
@@ -1080,7 +1104,8 @@ TEST(TestBlockManager, PrefixCachingIncompleteCheckpointUsesCopyOnWriteWhenTable
               incomplete_checkpoint_idx);
     EXPECT_NE(block_manager.get_block_table(consumer_seq_id, 0).at(1)->get_index(),
               incomplete_checkpoint_idx);
-    EXPECT_EQ(block_manager.get_block_table(consumer_seq_id, 0).at(0)->get_references_count(), 1);
+    EXPECT_EQ(block_manager.get_block_table(consumer_seq_id, 0).at(0)->get_references_count(), 2);
+    EXPECT_FALSE(block_manager.get_block_table(consumer_seq_id, 0).at(0)->copy_on_write());
     EXPECT_FALSE(block_manager.get_block_table(consumer_seq_id, 0).at(0)->has_published_hash());
     EXPECT_EQ(block_manager.get_block_table(producer_seq_id, 0).at(1)->get_index(),
               incomplete_checkpoint_idx);
@@ -1191,6 +1216,41 @@ TEST(TestBlockManager, PrefixCachingCompletedCopyOnWriteRowIsPublishedOnlyAtAcce
     const uint64_t restored_id = completed_restore_group->get_running_sequences().front()->get_id();
     EXPECT_EQ(block_manager.get_block_table(restored_id, 0).back()->get_index(), cow_index);
     block_manager.free_sequence(restored_id);
+}
+
+TEST(TestBlockManager, PublishedLinearAttentionLiveRowStagesPrivateWritesAndKeepsCanonicalIdentity) {
+    constexpr size_t block_size = 4;
+    ov::genai::BlockManager block_manager(/*num_blocks=*/4,
+                                         /*enable_prefix_caching=*/true,
+                                         block_size,
+                                         /*num_layers=*/1,
+                                         /*fixed_blocks_per_sequence=*/0,
+                                         /*restore_latest_prefix_block_only=*/true);
+
+    const std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5};
+    auto owner_group = create_sequence_group(tokens, 50);
+    owner_group->schedule_tokens(tokens.size());
+    block_manager.append_slots(owner_group);
+    owner_group->finish_iteration();
+    const auto owner = owner_group->get_running_sequences().front();
+    const uint64_t owner_id = owner->get_id();
+    const auto canonical_row = block_manager.get_block_table(owner_id, 0).back();
+    const size_t canonical_hash = canonical_row->get_hash();
+    block_manager.set_linear_attention_live_state(owner_id, tokens.size(), {canonical_row});
+    ASSERT_EQ(canonical_row->get_references_count(), 2);
+
+    owner_group->schedule_tokens(1);
+    const auto copy_map = block_manager.append_slots(owner_group);
+    const auto private_row = block_manager.get_block_table(owner_id, 0).back();
+    ASSERT_NE(private_row, canonical_row);
+    EXPECT_FALSE(private_row->has_published_hash());
+    ASSERT_EQ(copy_map.at(static_cast<size_t>(canonical_row->get_index())).size(), 1u);
+    EXPECT_EQ(copy_map.at(static_cast<size_t>(canonical_row->get_index())).front(), private_row->get_index());
+    EXPECT_TRUE(canonical_row->has_published_hash());
+    EXPECT_EQ(canonical_row->get_hash(), canonical_hash);
+    EXPECT_EQ(block_manager.get_linear_attention_live_state(owner_id).rows.front(), private_row);
+
+    block_manager.free_sequence(owner_id);
 }
 
 TEST(TestBlockManager, PrefixCachingCompletedCopyOnWriteKeepsExistingVerifiedIdentity) {
@@ -1388,7 +1448,8 @@ TEST(TestBlockManager, PrefixCachingLatestOnlyRestoreKeepsLatestBlockWithLogical
     EXPECT_EQ(block_manager.get_block_table(consumer_seq_id, 0).at(1)->get_index(), latest_checkpoint_idx);
     EXPECT_EQ(block_manager.get_block_table_logical_start(consumer_seq_id), 0);
     EXPECT_EQ(older_checkpoint->get_references_count(), 1);
-    EXPECT_EQ(latest_checkpoint->get_references_count(), 1);
+    EXPECT_EQ(latest_checkpoint->get_references_count(), 2);
+    EXPECT_FALSE(latest_checkpoint->copy_on_write());
     EXPECT_EQ(consumer_group->get_num_processed_tokens(), tokens.size() - 1);
     consumer_group->set_num_prefix_cache_hit_tokens(consumer_group->get_num_processed_tokens());
 
@@ -1442,8 +1503,10 @@ TEST(TestBlockManager, PrefixCachingLatestOnlyRestoreKeepsLogicalOffsetWhenOlder
     EXPECT_EQ(block_manager.get_block_table(consumer_seq_id, 0).at(0)->get_index(), latest_checkpoint_idx);
     EXPECT_EQ(block_manager.get_block_table_logical_start(consumer_seq_id), 1);
     EXPECT_EQ(block_manager.get_block_at_logical_position(consumer_seq_id, 0, 1)->get_index(), latest_checkpoint_idx);
-    EXPECT_EQ(older_checkpoint->get_references_count(), 1);
-    EXPECT_EQ(latest_checkpoint->get_references_count(), 1);
+    EXPECT_EQ(older_checkpoint->get_references_count(), 2);
+    EXPECT_EQ(latest_checkpoint->get_references_count(), 2);
+    EXPECT_FALSE(older_checkpoint->copy_on_write());
+    EXPECT_FALSE(latest_checkpoint->copy_on_write());
     EXPECT_EQ(consumer_group->get_num_processed_tokens(), tokens.size() - 1);
 
     block_manager.free_sequence(pressure_seq_id);
