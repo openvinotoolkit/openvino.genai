@@ -461,13 +461,12 @@ public:
 
     // const_cast is safe as ov::Tensor only views the data and doesn't modify it.
     SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const ov::genai::GenerationConfig& sampling_params)
-        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, const_cast<int64_t*>(input_ids.data())), sampling_params, std::nullopt, std::nullopt) {
+        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, const_cast<int64_t*>(input_ids.data())), sampling_params, std::nullopt) {
     }
 
     SequenceGroup(uint64_t request_id,
                   const ov::Tensor& input_ids,
                   const ov::genai::GenerationConfig& sampling_params,
-                  const std::optional<ov::Tensor>& token_type_ids = std::nullopt,
                   const std::optional<std::unordered_map<std::string, ov::Tensor>>& lm_extra_inputs = std::nullopt,
                   const std::optional<ov::Tensor>& position_ids = std::nullopt,
                   const std::optional<int64_t>& rope_delta = std::nullopt,
@@ -493,11 +492,6 @@ public:
                 m_input_embeds[i].resize(hidden_size);
                 std::copy_n(input_ids.data<const float>() + i * hidden_size, hidden_size, m_input_embeds[i].begin());
             }
-            if (token_type_ids.has_value()) {
-                const ov::Tensor& tokens = token_type_ids.value();
-                m_token_type_ids = std::vector<int64_t>(tokens.get_size());
-                std::copy_n(tokens.data<const int64_t>(), tokens.get_size(), m_token_type_ids->begin());
-            }
             if (prompt_ids.has_value()) {
                 const ov::Tensor& tokens = prompt_ids.value();
                 OPENVINO_ASSERT(tokens.get_element_type() == ov::element::i64);
@@ -519,6 +513,11 @@ public:
                             "per_layer_inputs must have shape [1, tokens, num_hidden_layers, hidden_size]");
                         m_per_layer_inputs = ov::Tensor(tensor.get_element_type(), shape);
                         tensor.copy_to(m_per_layer_inputs);
+                    } else if (input_name == "token_type_ids") {
+                        m_token_type_ids = std::vector<int64_t>(
+                            tensor.data<const int64_t>(),
+                            tensor.data<const int64_t>() + tensor.get_size()
+                        );
                     } else {
                         OPENVINO_THROW("Unsupported extra input for LLM: " + input_name);
                     }
