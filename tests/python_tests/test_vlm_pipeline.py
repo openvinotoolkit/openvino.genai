@@ -2306,11 +2306,8 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
     if optimum_model.config.model_type == "llava-qwen2":
         assert tokenizer is not None, "Tokenizer should be set for llava-qwen2 models."
         optimum_text = tokenizer.decode(generated_ids[0], skip_special_tokens=True).strip()
-    elif optimum_model.config.model_type == "videochat_flash_qwen":
-        assert tokenizer is not None, "Tokenizer should be set for videochat_flash_qwen models."
-        optimum_text = tokenizer.decode(generated_ids[0], skip_special_tokens=True)
-    elif optimum_model.config.model_type == "minicpmv":
-        assert tokenizer is not None, "Tokenizer should be set for minicpmv models."
+    elif optimum_model.config.model_type in ("videochat_flash_qwen", "minicpmv"):
+        assert tokenizer is not None, f"Tokenizer should be set for {optimum_model.config.model_type} models."
         optimum_text = tokenizer.decode(generated_ids[0], skip_special_tokens=True)
     else:
         optimum_output = processor.batch_decode(
