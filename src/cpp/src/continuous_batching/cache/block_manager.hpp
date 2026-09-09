@@ -3018,7 +3018,7 @@ private:
         return num_logical_blocks > logical_start ? num_logical_blocks - logical_start : 0;
     }
 
-    bool last_block_requires_copy_on_write(const Sequence::CPtr& sequence,
+    bool last_block_requires_copy_on_write(const Sequence::Ptr& sequence,
                                            size_t num_processed_tokens) const {
         auto table_it = m_block_table.find(sequence->get_id());
         if (table_it == m_block_table.end() || table_it->second.empty() || table_it->second[0].empty()) {

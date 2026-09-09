@@ -884,9 +884,13 @@ public:
                 completed_boundary += block_size;
             }
         }
+        if (has_linear_attention_cache()) {
+            m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)
+                ->advance_linear_attention_live_state(sequence->get_id(), processed_after);
+        }
     }
 
-    void release_linear_attention_temporary_blocks(uint64_t seq_id) {
+    void release_linear_attention_temporary_blocks(uint64_t seq_id) noexcept {
         if (!has_linear_attention_cache()) {
             return;
         }
