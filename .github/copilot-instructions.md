@@ -67,3 +67,4 @@ When performing a code review on a Pull Request, additionally follow this protoc
 9. Helper scripts shouldn't be committed.
 10. ABI stability isn't required.
 11. If a PR aims to improve accuracy or performance, the PR description must include corresponding metrics. Performance-oriented PRs require both accuracy and performance metrics.
+12. GitHub Actions CI validates only CPU and NPUW with CPU fallback. Reject new tests that require actual GPU hardware (or other non-CPU devices) because they would be dead code.
