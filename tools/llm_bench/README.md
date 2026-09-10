@@ -114,6 +114,27 @@ python benchmark.py -m models/llama-2-7b-chat/ -pf prompts/llama-2-7b-chat_l.jso
 python ./benchmark.py -h # for more information
 ```
 
+**Report fields (CSV columns / JSON keys):**
+
+Each record is identified by:
+
+- `iteration`: iteration number; `0` is the warm-up (excluded from averages). Aggregate rows use `avg` / `min` / `median`.
+- `prompt_idx`: zero-based index of the prompt the record belongs to, in the order given by `-p` / `-pf`. When `--prompt_index` selects a subset, `prompt_idx` keeps the original indices. (`chat_idx` is the analogous per-chat index used by the chat pipeline.)
+
+Input/output descriptors — `input_size` and `output_size` are the **raw** numeric sizes the pipeline records; `input_tokens`, `prompt_repr` and `output_repr` are **derived** from them (or from the prompt/output text) for readability:
+
+- `input_size`: **Raw**, **batch-total** count of input tokens the model sequence processed (`= per-prompt tokens × batch_size`).
+- `input_tokens`: **Derived**, **per-prompt** (`= input_size / batch_size`; equals `input_size` when `batch_size == 1`). Counts every token in the model's input sequence **after tokenization** — for visual-language models this **includes image/video tokens**, not just text. Empty for tasks whose input is not tokenized into a sequence (speech-to-text audio, super-resolution image); their input size is given by `prompt_repr` instead.
+- `prompt_repr`: **Derived** human-readable **input** summary of a single prompt: text as a whitespace word count (`w` suffix), media as dimensions. Examples: `text:7w`, `text:7w + image:512x512`, `audio:30.0s@44100Hz`, `image:128x128` (super-resolution low-res input). A pre-tokenization hint (stays in `w` across all iterations); use `input_tokens` for the exact token count.
+- `output_size`: **Raw**, **batch-total** generated output size — generated text tokens for text/VLM/speech-to-text, **audio samples** for text-to-speech, empty for image/video generation.
+- `output_repr`: **Derived** human-readable **output** summary of a single item, symmetric with `prompt_repr`: generated text as a word count (`text:<N>w`), media as dimensions (`image:512x512` — super-resolution upscaled output, `audio:48000sa@22050Hz`, `video:640x480@16f`).
+
+> **Batch size:** the `*_size` fields are **batch totals** (× `batch_size`), while `input_tokens` and the `*_repr` strings describe a **single** prompt/item. The reprs are intentionally *not* prefixed with a batch count (e.g. no `4×(text:7w)`): the factor is already recoverable as `input_size / input_tokens`, and batching differs per task (text pipelines replicate the same prompt `batch_size` times, whereas image generation produces `batch_size` images from one prompt), so a single multiplier on the repr would be misleading.
+
+> **`input_tokens` — why VLM counts media but super-resolution does not:** a VLM is a token model — its image is encoded into embedding tokens that sit in the same sequence as the text, so they are genuinely counted. Diffusion (image/video/super-resolution) and audio (speech-to-text) inputs are processed as latents/waveforms, never as a token sequence, so there is nothing to count and `input_tokens` stays empty; their size is reported by `prompt_repr` (e.g. `image:128x128`, `audio:30.0s@44100Hz`).
+
+> **Note (text-to-speech):** TTS has no discrete output "tokens" — `output_size` reports the number of generated **audio samples**, and `output_repr` shows `audio:<samples>sa@<rate>Hz`. Divide samples by the sample rate for the duration in seconds.
+
 #### Benchmarking the Original PyTorch Model:
 To benchmark the original PyTorch model, first download the model locally and then run benchmark by specifying PyTorch as the framework with parameter `-f pt`
 
