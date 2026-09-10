@@ -486,6 +486,10 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
         return fallback_device;
     };
 
+    auto is_cpu_or_gpu = [](const std::string& target_device) {
+        return target_device.rfind("CPU", 0) == 0 || target_device.rfind("GPU", 0) == 0;
+    };
+
     // The talker stays on the requested device. On NPU it is routed through the
     // NPUW LLM compile path (stateful decoder -> static); every other device
     // keeps the generic path.
@@ -512,6 +516,9 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
             m_perf_device["talker_prefill"] = device_of(m_talker, "NPU");
             m_perf_device["talker_generate"] = m_perf_device["talker_prefill"];
         } else {
+            if (is_cpu_or_gpu(talker_device)) {
+                talker_properties["KV_CACHE_PRECISION"] = std::string("f32");
+            }
             const auto talker_path = models_path / TALKER_NAME;
             m_talker = compile_request(talker_path, "qwen3_tts talker", talker_device, talker_properties);
             m_perf_device["talker_prefill"] = device_of(m_talker, talker_device);
@@ -530,12 +537,16 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
         auto [predictor_device, predictor_properties] =
             resolve_component_target(device, m_is_npu, device_properties, base_properties, roles::CODE_PREDICTOR);
 
-        // The code predictor is additionally pinned to f32 arithmetic. It runs `num_code_groups - 1`
+        if (is_cpu_or_gpu(predictor_device)) {
+            predictor_properties["KV_CACHE_PRECISION"] = std::string("f32");
+        }
+
+        // The code predictor is additionally pinned to f32 arithmetic on GPU. It runs `num_code_groups - 1`
         // steps inside every talker frame off a cache that is reset each frame, and in f16 - the GPU
         // plugin's default inference precision - its logits go non-finite within the first few frames,
         // which surfaces as `probability tensor contains either inf, nan or element < 0` out of the
-        // multinomial sampling in `code_predictor.generate`. The talker stack is unaffected and keeps
-        // the device default, so the bulk of the compute (28 layers vs 5) still runs in f16 on GPU.
+        // multinomial sampling in `code_predictor.generate`. The talker keeps default inference
+        // precision, so the bulk of the compute (28 layers vs 5) still runs in f16 on GPU.
         if (predictor_device.find("GPU") != std::string::npos) {
             predictor_properties["INFERENCE_PRECISION_HINT"] = std::string("f32");
         }
