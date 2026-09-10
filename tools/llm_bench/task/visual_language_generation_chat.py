@@ -15,9 +15,8 @@ import llm_bench_utils.pt_utils
 import llm_bench_utils.output_file
 import llm_bench_utils.model_utils as model_utils
 import llm_bench_utils.metrics_print as metrics_print
-from llm_bench_utils.prompt_utils import get_vlm_prompt
 import llm_bench_utils.gen_output_data as gen_output_data
-from llm_bench_utils.prompt_utils import extract_prompt_data
+from llm_bench_utils.prompt_utils import BenchPrompter, extract_prompt_data
 from task.text_generation_chat import (
     get_kv_axes_pos,
     OptimumTextGenerationChatAdapter,
@@ -376,21 +375,6 @@ class GenAIVLMGenerationChatAdapter(GenAITextGenerationChatAdapter):
 
 
 # ===== Common Utils =====
-def get_chat_input_data(input_text: list | dict, args: dict):
-    # if prompts are set as list, let's use it
-    # if prompt is set as single string, let's create chat where prompt will repeat chat_iter times
-    input_data = input_text
-    if args.get("chat_iter"):
-        if len(input_text) == 1:
-            input_data = input_text * args["chat_iter"]
-        else:
-            log.warning(
-                f"Chat mode is enabled and chat_iter is {args['chat_iter']}, but input data is set as list."
-                "`chat_iter` will be ignored. Chat will be run based on the provided list."
-            )
-    return input_data
-
-
 def run_visual_language_generation_chat_common(
     pipeline: ChatGenerationAdapter,
     input_data,
@@ -403,21 +387,18 @@ def run_visual_language_generation_chat_common(
     model_precision,
     proc_id,
     mem_consumption,
+    prefix,
 ):
     if args["batch_size"] != 1:
         log.warning("Batch size is not applicable for VLM chat scenario. Parameter will be ignored and set to 1.")
         args["batch_size"] = 1
 
     # ===== Prepare Input Data =====
-    input_data = get_chat_input_data(input_data, args)
-    save_input_data_to_file(
-        [i["prompt"] for i in input_data], args, model_precision, chat_index, iter_num, proc_id, is_chat=True
-    )
+    # Turns were already expanded by BenchPrompter (honouring --chat_iter).
+    save_input_data_to_file(input_data.prompts, args, model_precision, chat_index, iter_num, proc_id, is_chat=True)
 
     # ===== Prepare Config, Additional Args and Chat Managing Variables =====
     pipeline.init_chat()
-
-    prefix = f"[warm-up][C{chat_index}]" if iter_num == 0 else f"[{iter_num}][C{chat_index}]"
 
     chat_iter_data_list = []
     mem_consumption.start(iter_num)
@@ -515,24 +496,18 @@ def run_visual_language_generation_benchmark(model_path, framework, device, args
     mem_consumption.activate_cooldown("after model compilation")
     model, processor_config, pretrain_time, bench_hook, use_genai = outs
     model_precision = model_utils.get_model_precision(model_path.parts)
-    input_chat_list = get_vlm_prompt(args)
+    # Build the chat schedule via BenchPrompter, which reads and parses the
+    # prompt file, resolves media paths, expands each entry into its turns
+    # (honouring --chat_iter), honours --prompt_index, and drives both
+    # subsequent=False (iter-major) and subsequent=True (chat-major) scheduling
+    # from one iter_schedule() loop. require_active() keeps this pipeline's
+    # historical error when --prompt_index selects nothing.
+    prompter = BenchPrompter(args).require_active()
+    input_idx_list = prompter.active_indices
+    chat_list = prompter.active_items
 
     iter_data_list = []
     md5_list = {num: {} for num in range(num_iters + 1)}
-
-    if args["prompt_index"] is None:
-        input_idx_list = [idx for idx, _ in enumerate(input_chat_list)]
-        chat_list = input_chat_list
-    else:
-        input_idx_list = []
-        chat_list = []
-        for i in args["prompt_index"]:
-            if 0 <= i < len(input_chat_list):
-                chat_list.append(input_chat_list[i])
-                input_idx_list.append(i)
-
-    if len(chat_list) == 0 or any(len(chat_turns) == 0 for chat_turns in chat_list):
-        raise RuntimeError("==Failure prompts is empty ==")
 
     log.info(
         f"Numbeams: {args['num_beams']}, benchmarking iter nums(exclude warm-up): {num_iters}, "
@@ -551,69 +526,34 @@ def run_visual_language_generation_benchmark(model_path, framework, device, args
         )
 
     proc_id = os.getpid()
-    iter_alias = "C"
     iter_timestamp = model_utils.init_timestamp(num_iters, chat_list, input_idx_list)
 
-    if args["subsequent"] is False:
-        for num in range(num_iters + 1):
-            for idx, chat_turns in enumerate(chat_list):
-                chat_idx = input_idx_list[idx]
-                mem_consumption.update_marker(f"step-{num}-{chat_idx}")
-                if num == 0:
-                    metrics_print.print_unicode(
-                        f"[warm-up][{iter_alias}{chat_idx}] Input text: {chat_turns}",
-                        f"[warm-up][{iter_alias}{chat_idx}] Unable print input text",
-                        max_output=metrics_print.MAX_INPUT_TXT_IN_LOG,
-                    )
-                iter_timestamp[num][chat_idx]["start"] = datetime.datetime.now().isoformat()
-                run_visual_language_generation_chat_common(
-                    pipeline,
-                    chat_turns,
-                    num,
-                    args,
-                    iter_data_list,
-                    md5_list,
-                    chat_idx,
-                    bench_hook,
-                    model_precision,
-                    proc_id,
-                    mem_consumption,
-                )
-                iter_timestamp[num][chat_idx]["end"] = datetime.datetime.now().isoformat()
-                prefix = f"[warm-up][{iter_alias}{chat_idx}]" if num == 0 else f"[{num}][{iter_alias}{chat_idx}]"
-                log.info(
-                    f"{prefix} start: {iter_timestamp[num][chat_idx]['start']}, end: {iter_timestamp[num][chat_idx]['end']}"
-                )
-    else:
-        for idx, chat_turns in enumerate(chat_list):
-            chat_idx = input_idx_list[idx]
-            for num in range(num_iters + 1):
-                mem_consumption.update_marker(f"step-{num}-{chat_idx}")
-                if num == 0:
-                    metrics_print.print_unicode(
-                        f"[warm-up][{iter_alias}{chat_idx}] Input text: {chat_turns}",
-                        f"[warm-up][{iter_alias}{chat_idx}] Unable print input text",
-                        max_output=metrics_print.MAX_INPUT_TXT_IN_LOG,
-                    )
-                iter_timestamp[num][chat_idx]["start"] = datetime.datetime.now().isoformat()
-                run_visual_language_generation_chat_common(
-                    pipeline,
-                    chat_turns,
-                    num,
-                    args,
-                    iter_data_list,
-                    md5_list,
-                    chat_idx,
-                    bench_hook,
-                    model_precision,
-                    proc_id,
-                    mem_consumption,
-                )
-                iter_timestamp[num][chat_idx]["end"] = datetime.datetime.now().isoformat()
-                prefix = f"[warm-up][{iter_alias}{chat_idx}]" if num == 0 else f"[{num}][{iter_alias}{chat_idx}]"
-                log.info(
-                    f"{prefix} start: {iter_timestamp[num][chat_idx]['start']}, end: {iter_timestamp[num][chat_idx]['end']}"
-                )
+    for num, chat_idx, chat_prompt in prompter.iter_schedule(num_iters):
+        mem_consumption.update_marker(f"step-{num}-{chat_idx}")
+        prefix = prompter.get_prefix(num, chat_idx)
+        chat_prompt.introduce_in_stdout(num, prefix)
+        iter_timestamp[num][chat_idx]["start"] = datetime.datetime.now().isoformat()
+        before = len(iter_data_list)
+        run_visual_language_generation_chat_common(
+            pipeline,
+            chat_prompt,
+            num,
+            args,
+            iter_data_list,
+            md5_list,
+            chat_idx,
+            bench_hook,
+            model_precision,
+            proc_id,
+            mem_consumption,
+            prefix,
+        )
+        # Tag each turn's record with that turn's own prompt_repr / input_tokens.
+        chat_prompt.stamp_repr(iter_data_list, before, args["batch_size"])
+        iter_timestamp[num][chat_idx]["end"] = datetime.datetime.now().isoformat()
+        log.info(
+            f"{prefix} start: {iter_timestamp[num][chat_idx]['start']}, end: {iter_timestamp[num][chat_idx]['end']}"
+        )
 
     metrics_print.print_average(iter_data_list, input_idx_list, args["batch_size"], True, chat_mode=True)
     return iter_data_list, pretrain_time, iter_timestamp
