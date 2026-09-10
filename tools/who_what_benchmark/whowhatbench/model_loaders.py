@@ -545,6 +545,11 @@ def load_visual_text_model(
             elif config.model_type == "gemma3n":
                 model_cls = AutoModelForCausalLM
                 model_kwargs.update({"torch_dtype": torch.float32})
+            elif config.model_type == "deepseek_ocr2":
+                from transformers import AutoModelForImageTextToText
+
+                model_cls = AutoModelForImageTextToText
+                model_kwargs.update({"torch_dtype": torch.float32})
             elif transformers_version < Version("5.0.0"):
                 from transformers import AutoModelForVision2Seq
 
