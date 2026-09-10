@@ -10,7 +10,6 @@ import numpy as np
 import urllib.request
 import logging as log
 from pathlib import Path
-from llm_bench_utils.config_class import PA_ATTENTION_BACKEND
 from llm_bench_utils.tts_utils import (
     SPEECHT5_SPEAKER_EMB_SHAPE,
     KOKORO_SPEAKER_EMB_SHAPE,
@@ -256,9 +255,6 @@ def analyze_args(args):
             model_args["config"] = config
     if model_framework == "ov":
         set_default_param_for_ov_config(model_args["config"])
-        if "ATTENTION_BACKEND" not in model_args["config"] and not optimum and args.device != "NPU":
-            if use_case.task in ["text_gen", "text_gen_chat", "visual_text_gen", "visual_text_gen_chat"]:
-                model_args["config"]["ATTENTION_BACKEND"] = PA_ATTENTION_BACKEND
         log.info(f"OV Config={model_args['config']}")
     elif model_framework == 'pt':
         log.info(f"PT Config={model_args['config']}")
@@ -269,7 +265,7 @@ def analyze_args(args):
         cb_config = get_config(args.cb_config)
     model_args["cb_config"] = cb_config
     if args.draft_model:
-        if (args.draft_device != "NPU" and args.device != "NPU" and model_args['config']['ATTENTION_BACKEND'] != PA_ATTENTION_BACKEND):
+        if (args.draft_device != "NPU" and args.device != "NPU" and model_args['config'].get('ATTENTION_BACKEND') == "SDPA"):
             log.warning("Speculative Decoding is supported only with Paged Attention Backend for non-NPU devices")
             args.draft_model = None
     model_args['draft_model'] = args.draft_model
