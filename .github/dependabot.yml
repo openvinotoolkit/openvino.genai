@@ -105,7 +105,8 @@ updates:
       - dependency-name: "diffusers"
         versions:
           - ">=0.40.0"
-      # numpy >2.5.1 changes license to incompatible with our policy.
+      # NumPy constraint updates trigger SDL dependency review, but its composite
+      # license includes Zlib and CC0-1.0, which are not currently allowlisted.
       - dependency-name: "numpy"
         versions:
           - ">2.5.1"
