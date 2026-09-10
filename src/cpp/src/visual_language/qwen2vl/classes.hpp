@@ -23,7 +23,7 @@ public:
     EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames) override;
 
 protected:
-    // Config-only constructor for subclasses where vision encoder is merged with merger
+    // Loads processor configuration while deferring model compilation to subclasses.
     VisionEncoderQwen2VL(const std::filesystem::path& config_dir, ConfigOnlyTag);
     VisionEncoderQwen2VL(const ModelsMap& models_map, const std::filesystem::path& config_dir, ConfigOnlyTag);
 
