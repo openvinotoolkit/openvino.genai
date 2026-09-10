@@ -320,7 +320,8 @@ void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector
     }
 
     OPENVINO_ASSERT(residual_outputs.size() == patterns.size(),
-                    "Failed to locate a hidden state residual node for every requested decoder layer. "
+                    "Failed to locate a hidden state residual node for every requested decoder layer: expected ",
+                    patterns.size(), ", found ", residual_outputs.size(), ". ",
                     "The model's decoder layer structure is not recognized by is_hidden_state_residual_node.");
     std::shared_ptr<ov::Node> node_to_operate;
     if (residual_outputs.size() > 1) {
