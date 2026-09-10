@@ -271,13 +271,13 @@ class BenchPrompt(dict):
             return
         self._probed = True
 
-        # Image probing is skipped when the prompt carries audio. speech_to_text
-        # prompts store their audio path under the 'audio' key (populated by
-        # BenchPrompter._load_prompts); a 'media' key on such a prompt would be
-        # an audio path, not an image, and PIL-probing it would emit spurious
-        # warnings and waste work. Guarding on 'audio' keeps probe() correct
-        # regardless of which key the audio path arrives under.
-        if self.get("media") and not self.get("audio"):
+        # 'media' always holds an image: speech_to_text routes its audio path to
+        # the 'audio' key on both the JSONL and CLI branches (see the rename /
+        # nonjson_wrap in _PROMPT_SPECS), and ldm_super_resolution's rename puts
+        # its low-res input image there. A VLM prompt may legitimately carry an
+        # image AND audio at once (doc/PROMPT.md section 5 lists them as
+        # independent keys), so the two are probed independently.
+        if self.get("media"):
             self._image_size = self._get_image_size(self["media"])
 
         if self.get("video"):
@@ -397,9 +397,9 @@ class BenchPrompt(dict):
             parts.append(f"text:{word_count}w")
 
         # ---- image (optionally decorated with mask coverage fraction) ----
-        # Mirror probe(): a prompt carrying audio treats 'media' as audio, not
-        # an image, so it is not rendered as an image modality here.
-        if self.get("media") and not self.get("audio"):
+        # Mirrors probe(): 'media' is always an image, and is rendered
+        # independently of any audio the prompt also carries.
+        if self.get("media"):
             if self._image_size:
                 w, h = self._image_size
                 if self.get("mask_image"):
