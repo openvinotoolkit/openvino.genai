@@ -26,26 +26,6 @@ import math
 import cv2
 
 
-def get_text_prompt(args):
-    """Load plain-text prompts.
-
-    Retained as a module-level helper for the chat pipeline
-    (``task/text_generation_chat.py``), which consumes raw strings rather than
-    :class:`BenchPrompt` objects. Single-turn text generation goes through
-    :class:`BenchPrompter` instead.
-    """
-    text_list = []
-    output_data_list, is_json_data = get_param_from_file(args, 'prompt')
-    if is_json_data is True:
-        text_param_list = parse_text_json_data(output_data_list)
-        if len(text_param_list) > 0:
-            for text in text_param_list:
-                text_list.append(text)
-    else:
-        text_list.append(output_data_list[0])
-    return text_list
-
-
 def print_video_frames_number_and_convert_to_tensor(func):
     def inner(video_path, decim_frames, genai_flag):
         log.info(f"Input video file: {video_path}")
@@ -200,43 +180,6 @@ def extract_prompt_data(inputs, required_frames, genai_flag):
         # and never raises KeyError.
         prompts.append(input_data.get("prompt", ""))
     return prompts, images, videos, audios
-
-
-def _resolve_media_path(input_item, prompt_file_path):
-    """Resolve every media path in *input_item* against the prompt file."""
-    for media_key in ("media", "video", "audio"):
-        value = input_item.get(media_key)
-        if value is None:
-            continue
-        if isinstance(value, list):
-            input_item[media_key] = [resolve_media_file_path(item, prompt_file_path) for item in value]
-        else:
-            input_item[media_key] = resolve_media_file_path(value, prompt_file_path)
-
-
-def get_vlm_prompt(args):
-    """Load VLM prompts, including the chat form (a list of turns per entry).
-
-    Retained as a module-level helper because the chat pipeline
-    (``task/visual_language_generation_chat.py``) consumes raw entries rather
-    than :class:`BenchPrompt` objects. Single-turn VLM benchmarking goes
-    through :class:`BenchPrompter` instead.
-    """
-    vlm_file_list = []
-    output_data_list, is_json_data = get_param_from_file(args, ["video", "media", "prompt"])
-    if is_json_data:
-        vlm_param_list = parse_vlm_json_data(output_data_list)
-        if len(vlm_param_list) > 0:
-            for vlm_file in vlm_param_list:
-                if isinstance(vlm_file, list):
-                    for chat_iter in vlm_file:
-                        _resolve_media_path(chat_iter, args["prompt_file"][0])
-                else:
-                    _resolve_media_path(vlm_file, args["prompt_file"][0])
-                vlm_file_list.append(vlm_file)
-    else:
-        vlm_file_list.append(output_data_list)
-    return vlm_file_list
 
 
 # ---------------------------------------------------------------------------
