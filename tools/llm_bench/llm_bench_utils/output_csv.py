@@ -11,7 +11,7 @@ from llm_bench_utils.memory_monitor import MemThreadHandler, MemoryUnit
 
 def output_comments(result, use_case, writer):
     for key in result.keys():
-        result[key] = ''
+        result[key] = ""
     writer.writerow(result)
 
     comment_list = []
@@ -78,20 +78,20 @@ def output_comments(result, use_case, writer):
     )
 
     for comments in comment_list:
-        result['iteration'] = comments
+        result["iteration"] = comments
         writer.writerow(result)
 
 
 def output_avg_min_median(iter_data_list, include_tts_metrics=False):
     prompt_idxs = []
     for iter_data in iter_data_list:
-        prompt_idxs.append(iter_data['prompt_idx'])
+        prompt_idxs.append(iter_data["prompt_idx"])
     prompt_idxs = list(set(prompt_idxs))
     result = {}
     for prompt_idx in prompt_idxs:
         same_prompt_datas = []
         for iter_data in iter_data_list:
-            if iter_data['prompt_idx'] == prompt_idx and iter_data['iteration'] > 0:
+            if iter_data["prompt_idx"] == prompt_idx and iter_data["iteration"] > 0:
                 same_prompt_datas.append(iter_data)
         key_word = [
             "input_size",
@@ -109,10 +109,10 @@ def output_avg_min_median(iter_data_list, include_tts_metrics=False):
         if include_tts_metrics:
             key_word.extend(["tts_output_duration_s", "tts_sample_rate", "tts_rtf"])
         if len(same_prompt_datas) > 0:
-            iters_idx = ['avg', 'mini', 'median']
+            iters_idx = ["avg", "mini", "median"]
             result[prompt_idx] = [copy.deepcopy(same_prompt_datas[0]) for i in range(3)]
             for i in range(len(iters_idx)):
-                result[prompt_idx][i]['iteration'] = iters_idx[i]
+                result[prompt_idx][i]["iteration"] = iters_idx[i]
             for key in key_word:
                 values = []
                 for prompt in same_prompt_datas:
@@ -155,31 +155,42 @@ def gen_data_to_csv(
     result["infer_count"] = iter_data["infer_count"]
     result["generation_time(s)"] = round(generation_time, 5) if generation_time != "" else generation_time
     result["output_size"] = iter_data["output_size"]
+    result["output_repr"] = iter_data.get("output_repr", "")  # symmetric with prompt_repr
     result["latency(ms)"] = round(latency, 5) if latency != "" else latency
     result["result_md5"] = iter_data["result_md5"]
     if first_latency < 0:
-        result['1st_latency(ms)'] = 'NA'
+        result["1st_latency(ms)"] = "NA"
     else:
-        result['1st_latency(ms)'] = round(first_latency, 5) if first_latency != '' else first_latency
+        result["1st_latency(ms)"] = round(first_latency, 5) if first_latency != "" else first_latency
     if other_latency < 0:
-        result['2nd_avg_latency(ms)'] = 'NA'
+        result["2nd_avg_latency(ms)"] = "NA"
     else:
-        result['2nd_avg_latency(ms)'] = round(other_latency, 5) if other_latency != '' else other_latency
+        result["2nd_avg_latency(ms)"] = round(other_latency, 5) if other_latency != "" else other_latency
     if first_token_infer_latency < 0:
-        result['1st_infer_latency(ms)'] = 'NA'
+        result["1st_infer_latency(ms)"] = "NA"
     else:
-        result['1st_infer_latency(ms)'] = round(first_token_infer_latency, 5) if first_token_infer_latency != '' else first_token_infer_latency
+        result["1st_infer_latency(ms)"] = (
+            round(first_token_infer_latency, 5) if first_token_infer_latency != "" else first_token_infer_latency
+        )
     if other_token_infer_latency < 0:
-        result['2nd_infer_avg_latency(ms)'] = 'NA'
+        result["2nd_infer_avg_latency(ms)"] = "NA"
     else:
-        result['2nd_infer_avg_latency(ms)'] = round(other_token_infer_latency, 5) if other_token_infer_latency != '' else other_token_infer_latency
-    result[f'max_rss_mem({mem_unit.value})'] = round(rss_mem, 5) if rss_mem != '' else rss_mem
-    result[f'max_sys_mem({mem_unit.value})'] = round(sys_mem, 5) if sys_mem != '' else sys_mem
-    result[f'max_increase_rss_mem({mem_unit.value})'] = round(rss_mem_increase, 5) if rss_mem_increase != '' else rss_mem_increase
-    result[f'max_increase_sys_mem({mem_unit.value})'] = round(sys_mem_increase, 5) if sys_mem_increase != '' else sys_mem_increase
-    result['prompt_idx'] = iter_data['prompt_idx']
+        result["2nd_infer_avg_latency(ms)"] = (
+            round(other_token_infer_latency, 5) if other_token_infer_latency != "" else other_token_infer_latency
+        )
+    result[f"max_rss_mem({mem_unit.value})"] = round(rss_mem, 5) if rss_mem != "" else rss_mem
+    result[f"max_sys_mem({mem_unit.value})"] = round(sys_mem, 5) if sys_mem != "" else sys_mem
+    result[f"max_increase_rss_mem({mem_unit.value})"] = (
+        round(rss_mem_increase, 5) if rss_mem_increase != "" else rss_mem_increase
+    )
+    result[f"max_increase_sys_mem({mem_unit.value})"] = (
+        round(sys_mem_increase, 5) if sys_mem_increase != "" else sys_mem_increase
+    )
+    result["prompt_idx"] = iter_data["prompt_idx"]
     chat_idx = iter_data.get("chat_idx", "")
     result["chat_idx"] = chat_idx
+    result["prompt_repr"] = iter_data.get("prompt_repr", "")
+    result["input_tokens"] = iter_data.get("input_tokens", "")
     result["tokenization_time"] = round(token_time, 5) if token_time != "" else token_time
     result["detokenization_time"] = round(detoken_time, 5) if detoken_time != "" else detoken_time
     if include_tts_metrics:
@@ -226,6 +237,7 @@ def write_result(
         "infer_count",
         "generation_time(s)",
         "output_size",
+        "output_repr",
         "latency(ms)",
         f"1st_latency({first_latenct_unit})",
         "2nd_avg_latency(ms)",
@@ -236,6 +248,8 @@ def write_result(
         f"max_increase_sys_mem({mem_unit.value})",
         "prompt_idx",
         "chat_idx",
+        "prompt_repr",
+        "input_tokens",
         f"1st_infer_latency({first_latenct_unit})",
         "2nd_infer_avg_latency(ms)",
         "num_beams",
@@ -257,7 +271,7 @@ def write_result(
     out_file = Path(report_file)
 
     if len(iter_data_list) > 0:
-        with open(out_file, 'w+', newline='') as f:
+        with open(out_file, "w+", newline="") as f:
             writer = csv.DictWriter(f, header)
             writer.writeheader()
             result = {}

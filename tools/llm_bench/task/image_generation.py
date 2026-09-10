@@ -13,8 +13,7 @@ import llm_bench_utils
 import llm_bench_utils.model_utils as model_utils
 import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.gen_output_data as gen_output_data
-from llm_bench_utils.prompt_utils import get_image_prompt
-from .pipeline_utils import collect_prompts_step
+from llm_bench_utils.prompt_utils import BenchPrompter
 from transformers.image_utils import load_image
 import openvino as ov
 import numpy as np
@@ -107,6 +106,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
     for bs_idx in range(args['batch_size']):
         rslt_img_fn = llm_bench_utils.output_file.output_gen_image(res[bs_idx], args, image_id, num, bs_idx, proc_id, '.png')
         result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes(), usedforsecurity=False).hexdigest())
+    out_w, out_h = res[0].size  # PIL images -> (width, height)
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
         in_size=input_token_size * args['batch_size'],
@@ -114,6 +114,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
         gen_time=generation_time,
         res_md5=result_md5_list,
         prompt_idx=image_id,
+        output_repr=f"image:{out_w}x{out_h}",
         **memory_metrics,
     )
     iter_data_list.append(iter_data)
@@ -174,6 +175,7 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
         rslt_img_fn = llm_bench_utils.output_file.output_gen_image(image, args, image_id, num, bs_idx, proc_id, '.png')
         result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes(), usedforsecurity=False).hexdigest())
     generation_time = end - start
+    out_h, out_w = res[0].shape[0], res[0].shape[1]  # genai returns HxWxC arrays
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
         in_size=input_token_size * args['batch_size'],
@@ -181,6 +183,7 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
         gen_time=generation_time,
         res_md5=result_md5_list,
         prompt_idx=image_id,
+        output_repr=f"image:{out_w}x{out_h}",
         **memory_metrics,
     )
     iter_data_list.append(iter_data)
@@ -196,7 +199,12 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
 
 
 def run_image_generation_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
-    image_list, prompt_idx_list = collect_prompts_step(args, get_image_prompt)
+    # Build the prompt schedule via BenchPrompter, which handles both
+    # subsequent=False (iter-major) and subsequent=True (prompt-major) modes
+    # in a single unified iter_schedule() loop.
+    prompter = BenchPrompter(args)
+    prompt_idx_list = prompter.active_indices
+    image_list = prompter.active_items
 
     # If --static_reshape is specified, we need to get width, height, and guidance scale to drop into args
     # as genai's create_image_gen_model implementation will need those to reshape the pipeline before compile().
@@ -228,26 +236,16 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
     proc_id = os.getpid()
     mem_consumption.activate_cooldown("after model compilation")
     iter_timestamp = model_utils.init_timestamp(num_iters, image_list, prompt_idx_list)
-    if args['subsequent'] is False:
-        for num in range(num_iters + 1):
-            for image_id, image_param in enumerate(image_list):
-                p_idx = prompt_idx_list[image_id]
-                mem_consumption.update_marker(f"step-{num}-{p_idx}")
-                iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
-                image_gen_fn(image_param, num, prompt_idx_list[image_id], pipe, args, iter_data_list, proc_id, mem_consumption, callback)
-                iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
-                prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
-                log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
-    else:
-        for image_id, image_param in enumerate(image_list):
-            p_idx = prompt_idx_list[image_id]
-            for num in range(num_iters + 1):
-                mem_consumption.update_marker(f"step-{num}-{image_id}")
-                iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
-                image_gen_fn(image_param, num, p_idx, pipe, args, iter_data_list, proc_id, mem_consumption)
-                iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
-                prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
-                log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
+    for num, p_idx, prompt in prompter.iter_schedule(num_iters):
+        mem_consumption.update_marker(f"step-{num}-{p_idx}")
+        prefix = prompter.get_prefix(num, p_idx)
+        prompt.introduce_in_stdout(num, prefix)
+        iter_timestamp[num][p_idx]["start"] = datetime.datetime.now().isoformat()
+        before = len(iter_data_list)
+        image_gen_fn(prompt, num, p_idx, pipe, args, iter_data_list, proc_id, mem_consumption, callback)
+        prompt.stamp_repr(iter_data_list, before, args["batch_size"])
+        iter_timestamp[num][p_idx]["end"] = datetime.datetime.now().isoformat()
+        log.info(f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], False)
     return iter_data_list, pretrain_time, iter_timestamp
