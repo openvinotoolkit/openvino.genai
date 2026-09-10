@@ -188,6 +188,7 @@ def test_text_gguf_genai_vs_llamacpp(arch, hf_id, gguf, tmp_path):
     # TinyLlama still falls below the threshold with production Q4_K requantization.
     # Limit the source-weight validation mode from openvinotoolkit/openvino#37924 to it.
     strict_q4_k = hf_id == "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"
+    # Keep inference precision independent of the runner's CPU capabilities.
     output = run_wwb(
         [
             "--target-model",
@@ -208,7 +209,7 @@ def test_text_gguf_genai_vs_llamacpp(arch, hf_id, gguf, tmp_path):
             "--omit-chat-template",
             "--genai",
             "--ov-config",
-            '{"GGUF_READER": "FRONTEND"}',
+            '{"GGUF_READER": "FRONTEND", "INFERENCE_PRECISION_HINT": "f32"}',
             "--output",
             str(tmp_path / "target"),
         ],

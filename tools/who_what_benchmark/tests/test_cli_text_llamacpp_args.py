@@ -26,27 +26,16 @@ def test_llamacpp_raw_completion_preserves_gguf_prompt_tokens():
 
     assert llamacpp_gen_text(model, None, "Who is Mark Twain?", 32, True) == "answer"
 
-    model.tokenize.assert_called_once_with(
-        b"Who is Mark Twain?", add_bos=True, special=True
-    )
-    model.assert_called_once_with(
-        prompt_tokens, max_tokens=32, echo=False, temperature=0.0
-    )
+    model.tokenize.assert_called_once_with(b"Who is Mark Twain?", add_bos=True, special=True)
+    model.assert_called_once_with(prompt_tokens, max_tokens=32, echo=False, temperature=0.0)
     model.create_chat_completion.assert_not_called()
 
 
 def test_llamacpp_chat_completion_uses_chat_template():
     model = Mock()
-    model.create_chat_completion.return_value = {
-        "choices": [{"message": {"content": "answer"}}]
-    }
+    model.create_chat_completion.return_value = {"choices": [{"message": {"content": "answer"}}]}
 
-    assert (
-        llamacpp_gen_text(
-            model, None, "Who is Mark Twain?", 32, True, use_chat_template=True
-        )
-        == "answer"
-    )
+    assert llamacpp_gen_text(model, None, "Who is Mark Twain?", 32, True, use_chat_template=True) == "answer"
 
     model.create_chat_completion.assert_called_once_with(
         messages=[{"role": "user", "content": "Who is Mark Twain?"}],

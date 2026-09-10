@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Any
+from gguf import GGUFReader
+from tokenizers.processors import TemplateProcessing
 
 import openvino as ov
 import openvino_genai as ov_genai
@@ -56,6 +58,18 @@ def model_gguf(request: pytest.FixtureRequest) -> ModelInfo:
     opt_model = load_hf_model_from_gguf(gguf_model_id, gguf_filename)
     hf_tokenizer = load_hf_tokenizer_from_gguf(gguf_model_id, gguf_filename)
     gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
+    # HF's Qwen GGUF converter does not honor the file's BOS/EOS insertion policy.
+    fields = GGUFReader(gguf_full_path).fields
+    template = ["$A"]
+    special_tokens = []
+    for token in ("bos", "eos"):
+        flag = fields.get(f"tokenizer.ggml.add_{token}_token")
+        add_token = flag.contents() if flag is not None else getattr(hf_tokenizer, f"add_{token}_token", False)
+        if add_token:
+            token_id = fields[f"tokenizer.ggml.{token}_token_id"].contents()
+            special_tokens.append((token.upper(), token_id))
+            template.insert(0 if token == "bos" else len(template), token.upper())
+    hf_tokenizer.backend_tokenizer.post_processor = TemplateProcessing(single=template, special_tokens=special_tokens)
     return ModelInfo(
         gguf_model_id=gguf_model_id,
         gguf_filename=gguf_filename,
@@ -123,7 +137,17 @@ def test_pipelines_with_gguf_generate(
 
 
 @pytest.mark.parametrize("pipeline_type", GGUF_PIPELINE_TYPES)
-@pytest.mark.parametrize("gguf_reader", GGUF_READERS)
+@pytest.mark.parametrize(
+    "gguf_reader",
+    [
+        pytest.param("FRONTEND", id="frontend"),
+        pytest.param(
+            "LEGACY",
+            id="legacy",
+            marks=pytest.mark.xfail(sys.platform == "linux", reason="CVS-179725"),
+        ),
+    ],
+)
 @pytest.mark.parametrize("enable_save_ov_model", [False, True])
 @pytest.mark.parametrize(
     "prompt",
@@ -155,9 +179,6 @@ def test_full_gguf_pipeline(
     if gguf_model_id == "sammysun0711/tiny-random-deepseek-distill-qwen-gguf" and "<|endoftext|>" in prompt:
         pytest.skip(reason="Prompts to test special tokens for this model fail on HF side")
 
-    # TODO: remove explicit switch-off of bos token
-    hf_tokenizer.add_bos_token = False
-
     ov_generation_config = ov_genai.GenerationConfig()
     ov_generation_config.max_new_tokens = 30
     ov_generation_config.apply_chat_template = False
@@ -187,6 +208,7 @@ def test_full_gguf_pipeline(
         dynamic_quantization_group_size=dynamic_quantization_group_size,
         gguf_reader=gguf_reader,
     )
+    assert ov_pipe_gguf.get_tokenizer().encode(prompt).input_ids.data.tolist() == input_ids.tolist()
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
 
     # Check that eos_token, bos_token string representations are loaded correctly from gguf file
@@ -198,9 +220,15 @@ def test_full_gguf_pipeline(
 
     if enable_save_ov_model:
         gguf_full_path = Path(gguf_full_path)
-        # The saved IR is reloaded as a plain OpenVINO model, not a .gguf -- gguf_reader has no
-        # effect on this path since it's stripped by read_model() regardless of the source format.
-        ov_pipe_native = create_ov_pipeline(gguf_full_path.parent, pipeline_type=pipeline_type, dynamic_quantization_group_size=dynamic_quantization_group_size)
+        # The frontend currently forces SDPA for .gguf inputs. Reload with the same backend:
+        # a plain IR does not retain that override, and PA has different numerical behavior.
+        saved_pipeline_type = PipelineType.STATEFUL if gguf_reader == "FRONTEND" else pipeline_type
+        ov_pipe_native = create_ov_pipeline(
+            gguf_full_path.parent,
+            pipeline_type=saved_pipeline_type,
+            dynamic_quantization_group_size=dynamic_quantization_group_size,
+        )
+        assert ov_pipe_native.get_tokenizer().encode(prompt).input_ids.data.tolist() == input_ids.tolist()
         res_string_input_3  = ov_pipe_native.generate(prompt, generation_config=ov_generation_config)
         del ov_pipe_native
         gc.collect()

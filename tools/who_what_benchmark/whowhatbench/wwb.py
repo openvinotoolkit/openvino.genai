@@ -769,12 +769,8 @@ def llamacpp_gen_text(
         # Use the GGUF tokenizer's special-token policy. llama-cpp-python's string
         # completion wrapper can append a separator even when add_eos_token is false
         # (e.g. Hunyuan), changing the prompt compared with native GGUF generation.
-        prompt_tokens = model.tokenize(
-            question.encode("utf-8"), add_bos=True, special=True
-        )
-        output = model(
-            prompt_tokens, max_tokens=max_new_tokens, echo=False, temperature=0.0
-        )
+        prompt_tokens = model.tokenize(question.encode("utf-8"), add_bos=True, special=True)
+        output = model(prompt_tokens, max_tokens=max_new_tokens, echo=False, temperature=0.0)
         return output["choices"][0]["text"]
 
 

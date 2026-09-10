@@ -276,13 +276,6 @@ ov::genai::LLMPipeline::LLMPipeline(
     bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
     utils::extract_extensions_to_core(properties);
 
-    // GGUF models convert to a stateful SDPA decoder (see gguf_requires_sdpa above); default to
-    // SDPA unless the user explicitly picked a backend.
-    if (models_path.extension() == ".gguf" && !is_npu_requested &&
-        user_properties.find("ATTENTION_BACKEND") == user_properties.end()) {
-        attention_backend = SDPA_BACKEND;
-    }
-
     // read_model() consumes the GGUF-specific properties (and strips them before they reach the
     // plugin); read them here too, because which reader ran decides the branches below.
     const bool use_legacy_reader = utils::extract_gguf_properties(properties).use_legacy_reader();
@@ -337,13 +330,6 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
     utils::extract_extensions_to_core(properties);
     bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
-
-    // GGUF models are converted to a stateful SDPA decoder (see the GGUF-path comment in the
-    // tokenizer-aware constructor above); default them to SDPA unless the user chose a backend.
-    if (models_path.extension() == ".gguf" && !is_npu_requested &&
-        user_properties.find("ATTENTION_BACKEND") == user_properties.end()) {
-        attention_backend = SDPA_BACKEND;
-    }
 
     // read_model() consumes the GGUF-specific properties (and strips them before they reach the
     // plugin); read them here too, because which reader ran decides the branches below.
