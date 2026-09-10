@@ -530,9 +530,61 @@ def check_args(args):
         args.dataset_field = "text"
 
 
+def _load_local_csv_prompts(path):
+    """Load a local CSV dataset for (visual-)text tasks.
+
+    The CSV is treated as *input data only*: WWB still generates the ground
+    truth. Recognized columns:
+      - "prompts" (required): text prompt per row.
+      - "images"  (optional): path to an image file, resolved relative to the
+        CSV location when not absolute. Empty values become None.
+      - "videos"  (optional): path to a video, resolved the same way.
+
+    Returns a dict with "prompts" and, when present, "images"/"videos" so it can
+    be passed straight through WWB's dataset interface (test_data).
+    """
+    import pandas as pd
+    from PIL import Image
+
+    csv_dir = os.path.dirname(os.path.abspath(path))
+    df = pd.read_csv(path)
+    if "prompts" not in df.columns:
+        raise ValueError(
+            f"Local dataset CSV '{path}' must contain a 'prompts' column, got columns: {list(df.columns)}"
+        )
+
+    def _resolve(rel_path):
+        if rel_path is None:
+            return None
+        if isinstance(rel_path, float) and pd.isna(rel_path):
+            return None
+        rel_path = str(rel_path).strip()
+        if rel_path == "" or rel_path.lower() == "nan":
+            return None
+        return rel_path if os.path.isabs(rel_path) else os.path.join(csv_dir, rel_path)
+
+    res = {"prompts": list(df["prompts"])}
+
+    if "images" in df.columns:
+        images = []
+        for value in df["images"]:
+            resolved = _resolve(value)
+            images.append(Image.open(resolved).convert("RGB") if resolved is not None else None)
+        res["images"] = images
+
+    if "videos" in df.columns:
+        res["videos"] = [_resolve(value) for value in df["videos"]]
+
+    return res
+
+
 def load_prompts(args):
     if args.dataset is None:
         return None
+    # Support a deterministic local CSV dataset (prompts/images/videos columns),
+    # e.g. when the default remote dataset is unavailable or too slow.
+    if "," not in args.dataset and os.path.isfile(args.dataset) and args.dataset.lower().endswith(".csv"):
+        return _load_local_csv_prompts(args.dataset)
     split = "validation"
     if args.split is not None:
         split = args.split

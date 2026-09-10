@@ -92,6 +92,13 @@ Apply https://huggingface.co/microsoft/Phi-4-multimodal-instruct/discussions/78/
 2. The model has no built-in chat template. A template is only applied if one is explicitly set on the tokenizer via `pipe.get_tokenizer().set_chat_template(...)`.
 3. The model requires `transformers==5.11.0` for the export with `optimum-cli`.
 
+#### Unlimited-OCR {#unlimited-ocr-notes}
+
+1. Accepts exactly one image per request; multi-image input is not supported.
+2. The model has no built-in chat template. A template is only applied if one is explicitly set on the tokenizer via `pipe.get_tokenizer().set_chat_template(...)`.
+3. The model's `trust_remote_code` implementation requires `transformers<5.0` (the 4.5x line) for loading and export with `optimum-cli`.
+4. Only the default SDPA/stateful attention backend is supported. The PagedAttention backend is not available because the DeepSeek-V2 MoE language model export does not contain a ScaledDotProductAttention operation.
+
 #### Gemma 4 {#gemma4-notes}
 
 Gemma 4 implementation supports text, image and video inputs.

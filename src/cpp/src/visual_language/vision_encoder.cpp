@@ -25,6 +25,7 @@
 #include "visual_language/gemma3n/classes.hpp"
 #include "visual_language/gemma4/classes.hpp"
 #include "visual_language/deepseek_ocr2/classes.hpp"
+#include "visual_language/unlimited_ocr/classes.hpp"
 #include "visual_language/videochat_flash/classes.hpp"
 #include "visual_language/muse_glimmer/classes.hpp"
 
@@ -150,6 +151,8 @@ VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir,
         return std::make_shared<VisionEncoderVideoChatFlashQwen>(model_dir, device, properties);
     } else if (model_type == VLMModelType::DEEPSEEK_OCR2) {
         return std::make_shared<VisionEncoderDeepseekOCR2>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::UNLIMITED_OCR) {
+        return std::make_shared<VisionEncoderUnlimitedOCR>(model_dir, device, properties);
     } else if (model_type == VLMModelType::MUSE_GLIMMER) {
         return std::make_shared<VisionEncoderMuseGlimmer>(model_dir, device, properties);
     } else {
@@ -201,6 +204,8 @@ VisionEncoder::Ptr VisionEncoder::create(
         return std::make_shared<VisionEncoderVideoChatFlashQwen>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::DEEPSEEK_OCR2) {
         return std::make_shared<VisionEncoderDeepseekOCR2>(models_map, config_dir_path, device, device_config);
+    } else if (model_type == VLMModelType::UNLIMITED_OCR) {
+        return std::make_shared<VisionEncoderUnlimitedOCR>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::MUSE_GLIMMER) {
         return std::make_shared<VisionEncoderMuseGlimmer>(models_map, config_dir_path, device, device_config);
     } else {

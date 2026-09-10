@@ -30,6 +30,7 @@ from .utils import (
     mock_torch_cuda_is_available,
     mock_AwqQuantizer_validate_environment,
     disable_diffusers_model_progress_bar,
+    enable_cpu_fallback_for_cuda_hardcoded_models,
     get_json_config,
     normalize_lora_adapters_and_alphas,
 )
@@ -512,6 +513,11 @@ def load_visual_text_model(
 ):
     if use_hf:
         logger.info("Using HF Transformers API")
+
+        # Some remote-code VLMs hardcode `.cuda()` in their forward; on a CPU-only
+        # torch build such calls can only raise. Enable a safe CPU fallback so HF
+        # baseline/ground-truth generation can run on CPU (no-op on CUDA setups).
+        enable_cpu_fallback_for_cuda_hardcoded_models(device)
 
         trust_remote_code = False
         try:
