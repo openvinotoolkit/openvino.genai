@@ -76,13 +76,14 @@ private:
     size_t m_initial_base_video_index = 0;
     size_t m_initial_base_audio_index = 0;
 
-    /// @return Per-encode audio durations, one entry per cache miss.
-    std::vector<MicroSeconds> encode_visions_if_needed(
+    void encode_visions_if_needed(
         const std::vector<size_t>& image_indices,
         const std::vector<size_t>& video_indices,
-        const std::vector<VideoMetadata>& videos_metadata = {},
-        const std::vector<size_t>& audio_indices = {}
+        const std::vector<VideoMetadata>& videos_metadata = {}
     );
+
+    /// @return Per-encode audio durations, one entry per cache miss.
+    std::vector<MicroSeconds> encode_audios_if_needed(const std::vector<size_t>& audio_indices);
                 
     void fill_messages_metadata(
         size_t start_index,
