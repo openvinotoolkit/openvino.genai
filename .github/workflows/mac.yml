@@ -226,6 +226,10 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
       CMAKE_C_COMPILER_LAUNCHER: ccache
+      # Normalize workspace paths and volatile time macros so ccache hits across runs.
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_NOHASHDIR: 'true'
+      CCACHE_SLOPPINESS: pch_defines,time_macros,include_file_mtime,include_file_ctime
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       INSTALL_DIR: ${{ github.workspace }}/install
       WHEELS_DIR: ${{ github.workspace }}/install/wheels
@@ -286,7 +290,12 @@ jobs:
 
       - name: Build GenAI Wheel
         run: |
-          python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+          # Install build requirements read from pyproject so the list isn't duplicated here; --no-build-isolation skips pip's auto build-deps and a stable OpenVINO path keeps ccache warm.
+          build_reqs=()
+          while IFS= read -r req; do build_reqs+=("$req"); done < <(python -c "import sys, tomllib; print('\n'.join(tomllib.load(open(sys.argv[1], 'rb'))['build-system']['requires']))" "${{ env.SRC_DIR }}/pyproject.toml")
+          python -m pip install "${build_reqs[@]}" ${{ needs.openvino_download.outputs.ov_wheel_source }}
+
+          python -m pip wheel -v --no-deps --no-build-isolation --wheel-dir ${{ env.WHEELS_DIR }} \
               --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache" \
               --config-settings=override=cmake.generator="Ninja" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \

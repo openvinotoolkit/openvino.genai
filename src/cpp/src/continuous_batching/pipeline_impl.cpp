@@ -306,7 +306,6 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     uint64_t request_id,
     const ov::Tensor& input_ids,
     const ov::genai::GenerationConfig& sampling_params,
-    std::optional<ov::Tensor> token_type_ids,
     std::optional<ov::Tensor> prompt_ids,
     std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs
 ) {
@@ -356,7 +355,6 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::_add_reques
         sequence_group = std::make_shared<SequenceGroup>(request_id,
                                                          input_ids,
                                                          sampling_params_copy,
-                                                         token_type_ids,
                                                          lm_extra_inputs,
                                                          position_ids,
                                                          rope_delta,
@@ -365,8 +363,7 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::_add_reques
     else {
         sequence_group = std::make_shared<SequenceGroup>(request_id,
                                                          input_ids,
-                                                         sampling_params_copy,
-                                                         token_type_ids);
+                                                         sampling_params_copy);
     }
 
     // Enable hidden state accumulation for speech output (Qwen3-Omni).
@@ -705,7 +702,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
     const std::vector<ov::Tensor>& input_ids,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer,
-    const std::optional<std::vector<ov::Tensor>>& token_type_ids,
     const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list,
     const std::optional<std::vector<ov::Tensor>>& prompt_ids,
     const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list) {
@@ -785,7 +781,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
                 m_inputs_embedder->set_rope_delta(*rope_delta);
             }
         }
-        const bool has_valid_token_type_ids = token_type_ids.has_value() && request_id < token_type_ids->size();
+
         const bool has_valid_prompt_ids = prompt_ids.has_value() && request_id < prompt_ids->size();
         const bool has_valid_lm_extra_inputs =
             lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
@@ -794,7 +790,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
             request_id,
             input_ids[request_id],
             request_sampling_params[request_id],
-            has_valid_token_type_ids ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt,
             has_valid_prompt_ids ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
             has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt,
             false));
