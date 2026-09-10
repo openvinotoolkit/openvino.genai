@@ -419,7 +419,7 @@ def parse_args():
         type=str,
         default="",
         help="Speech-generation language. For Qwen3 this can be values such as English, Chinese, or Auto. "
-        "For Kokoro this can be values such as en-us, en-gb, es, fr-fr, hi, it, pt-br, ja, or zh.",
+        "For Kokoro this can be values such as en-us, en-gb, es, fr-fr, hi, it, pt-br, ja, or zh."
         "For speech-recognition: the language forced during transcription, in the form the model expects. "
         "FunASR takes a code such as 'en', 'zh' or 'ja' and defaults to 'en'; audio VLMs take a name such as "
         "'English' or 'Japanese' and default to 'English'.",
