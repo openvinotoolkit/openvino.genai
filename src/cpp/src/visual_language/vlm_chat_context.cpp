@@ -47,9 +47,12 @@ VLMChatContext::ProcessedChatData VLMChatContext::process(
     
     ManualTimer vision_encoding_timer("Vision Encoding");
     vision_encoding_timer.start();
-    result.audio_encoding_durations =
-        encode_visions_if_needed(new_image_indices, new_video_indices, new_videos_metadata, new_audio_indices);
+    encode_visions_if_needed(new_image_indices, new_video_indices, new_videos_metadata);
     vision_encoding_timer.end();
+
+    // Timed separately: folding audio into vision_encoding_duration would both mis-attribute it
+    // and count it twice, since encode_audios_if_needed() already reports its own durations.
+    result.audio_encoding_durations = encode_audios_if_needed(new_audio_indices);
     
     fill_messages_metadata(matching_history_length, new_image_indices, new_video_indices, new_audio_indices);
     
@@ -97,13 +100,11 @@ void VLMChatContext::rollback() {
      m_initial_base_audio_index = m_history_state->get_base_audio_index();
 }
 
-std::vector<MicroSeconds> VLMChatContext::encode_visions_if_needed(
+void VLMChatContext::encode_visions_if_needed(
     const std::vector<size_t>& image_indices,
     const std::vector<size_t>& video_indices,
-    const std::vector<VideoMetadata>& videos_metadata,
-    const std::vector<size_t>& audio_indices
+    const std::vector<VideoMetadata>& videos_metadata
 ) {
-    std::vector<MicroSeconds> audio_encoding_durations;
     for (size_t idx : image_indices) {
         VisionID id = m_history_state->get_image_vision_id(idx);
         if (!m_vision_registry->has_encoded_image(id)) {
@@ -131,9 +132,12 @@ std::vector<MicroSeconds> VLMChatContext::encode_visions_if_needed(
             m_vision_registry->set_encoded_video(id, std::move(encoded[0]));
         }
     }
+}
 
-    // Content-hash cache hit means an identical tensor re-sent on a later turn is not re-encoded,
-    // which is the whole point of routing audio through the registry.
+// Content-hash cache hit means an identical tensor re-sent on a later turn is not re-encoded,
+// which is the whole point of routing audio through the registry.
+std::vector<MicroSeconds> VLMChatContext::encode_audios_if_needed(const std::vector<size_t>& audio_indices) {
+    std::vector<MicroSeconds> audio_encoding_durations;
     for (size_t idx : audio_indices) {
         VisionID id = m_history_state->get_audio_vision_id(idx);
         if (!m_vision_registry->has_encoded_audio(id)) {
