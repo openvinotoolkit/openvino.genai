@@ -74,9 +74,9 @@ public:
         const std::vector<size_t>& videos_sequence = {},
         const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
-    // returns the draft-specific input embeddings prepared for speculative (eagle3) decoding,
-    // or an empty tensor when the embedder does not provide a dedicated draft embedding.
-    // aligned with VLLM implementation
+    // Returns draft-specific input embeddings prepared for speculative (Eagle3) decoding,
+    // or an empty tensor when the embedder does not provide dedicated draft embeddings.
+    // Aligned with the vLLM implementation.
     ov::Tensor get_draft_inputs_embeds() const;
 
     bool has_token_type_ids() const;
