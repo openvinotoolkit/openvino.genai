@@ -1079,6 +1079,48 @@ def load_qwen3_base_hf_pipeline(model_id, device="CPU", **kwargs):
     return Qwen3BaseWrapper(model)
 
 
+def load_qwen3_custom_voice_optimum_pipeline(model_id, device="CPU", ov_config=None, **kwargs):
+    from optimum.intel.openvino import OVModelForTextToSpeechSeq2Seq
+
+    from .speech_generation_evaluator import Qwen3CustomVoiceWrapper
+
+    model = OVModelForTextToSpeechSeq2Seq.from_pretrained(
+        model_id,
+        device=device,
+        ov_config=ov_config,
+        trust_remote_code=True,
+    )
+    return Qwen3CustomVoiceWrapper(model)
+
+
+def load_qwen3_voice_design_optimum_pipeline(model_id, device="CPU", ov_config=None, **kwargs):
+    from optimum.intel.openvino import OVModelForTextToSpeechSeq2Seq
+
+    from .speech_generation_evaluator import Qwen3VoiceDesignWrapper
+
+    model = OVModelForTextToSpeechSeq2Seq.from_pretrained(
+        model_id,
+        device=device,
+        ov_config=ov_config,
+        trust_remote_code=True,
+    )
+    return Qwen3VoiceDesignWrapper(model)
+
+
+def load_qwen3_base_optimum_pipeline(model_id, device="CPU", ov_config=None, **kwargs):
+    from optimum.intel.openvino import OVModelForTextToSpeechSeq2Seq
+
+    from .speech_generation_evaluator import Qwen3BaseWrapper
+
+    model = OVModelForTextToSpeechSeq2Seq.from_pretrained(
+        model_id,
+        device=device,
+        ov_config=ov_config,
+        trust_remote_code=True,
+    )
+    return Qwen3BaseWrapper(model)
+
+
 def load_qwen3_custom_voice_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     import openvino_genai
 
@@ -1191,7 +1233,7 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
         vocoder = _load_speecht5_hifigan_vocoder(vocoder_path)
         return SpeechT5Wrapper(model, processor, vocoder)
 
-    if use_genai or is_qwen3_custom_voice or is_qwen3_voice_design or is_qwen3_base:
+    if use_genai:
         if is_qwen3_custom_voice:
             logger.info("Using OpenVINO GenAI API for Qwen3 CustomVoice")
             return load_qwen3_custom_voice_genai_pipeline(model_id, device, ov_config, **kwargs)
@@ -1206,6 +1248,18 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
 
         logger.info("Using OpenVINO GenAI API")
         return load_speech_generation_genai_pipeline(model_id, device, ov_config, **kwargs)
+
+    if is_qwen3_custom_voice:
+        logger.info("Using Optimum API for Qwen3 CustomVoice")
+        return load_qwen3_custom_voice_optimum_pipeline(model_id, device, ov_config, **kwargs)
+
+    if is_qwen3_voice_design:
+        logger.info("Using Optimum API for Qwen3 VoiceDesign")
+        return load_qwen3_voice_design_optimum_pipeline(model_id, device, ov_config, **kwargs)
+
+    if is_qwen3_base:
+        logger.info("Using Optimum API for Qwen3 Base")
+        return load_qwen3_base_optimum_pipeline(model_id, device, ov_config, **kwargs)
 
     logger.info("Using Optimum API")
     from optimum.intel.openvino import OVModelForTextToSpeechSeq2Seq

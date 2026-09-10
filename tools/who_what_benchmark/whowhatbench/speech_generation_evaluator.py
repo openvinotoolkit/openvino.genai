@@ -564,6 +564,7 @@ class Qwen3CustomVoiceWrapper:
         # Keep WWB speech comparisons deterministic for Qwen3 unless explicitly overridden.
         kwargs.setdefault("do_sample", False)
         kwargs.setdefault("subtalker_dosample", False)
+        kwargs.setdefault("non_streaming_mode", True)
         kwargs.setdefault("repetition_penalty", 1.2)
 
         if os.getenv("WWB_QWEN3_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}:
@@ -601,17 +602,26 @@ class Qwen3CustomVoiceWrapper:
                 instruct=selected_instruct,
                 **kwargs,
             )
-
-            class _Speech:
-                def __init__(self, data):
-                    self.data = data
-
-            class _SpeechResult:
-                def __init__(self, data, output_sample_rate):
-                    self.speeches = [_Speech(data)]
-                    self.output_sample_rate = output_sample_rate
-
             return _SpeechResult(np.array(wavs[0]).reshape(-1), sample_rate)
+
+        if hasattr(self.model, "preprocess_input"):
+            preprocess_kwargs = {
+                "text": [prompt],
+                "language": [selected_language or "English"],
+                "speaker": selected_speaker,
+            }
+            if selected_instruct:
+                preprocess_kwargs["instruct"] = selected_instruct
+            inputs = self.model.preprocess_input(**preprocess_kwargs)
+            speeches = self.model.generate(**inputs, **kwargs)
+
+            if isinstance(speeches, list):
+                speech = speeches[0]
+            else:
+                speech = speeches
+
+            waveform = speech.numpy() if hasattr(speech, "numpy") else np.asarray(speech)
+            return _SpeechResult(np.asarray(waveform, dtype=np.float32).reshape(-1), int(self.model.sampling_rate))
 
         generation_properties = {"speaker": selected_speaker}
         if selected_language:
@@ -653,6 +663,7 @@ class Qwen3VoiceDesignWrapper:
         # Keep WWB speech comparisons deterministic for Qwen3 unless explicitly overridden.
         kwargs.setdefault("do_sample", False)
         kwargs.setdefault("subtalker_dosample", False)
+        kwargs.setdefault("non_streaming_mode", True)
         kwargs.setdefault("repetition_penalty", 1.2)
 
         if os.getenv("WWB_QWEN3_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}:
@@ -671,17 +682,25 @@ class Qwen3VoiceDesignWrapper:
                 instruct=selected_instruct,
                 **kwargs,
             )
-
-            class _Speech:
-                def __init__(self, data):
-                    self.data = data
-
-            class _SpeechResult:
-                def __init__(self, data, output_sample_rate):
-                    self.speeches = [_Speech(data)]
-                    self.output_sample_rate = output_sample_rate
-
             return _SpeechResult(np.array(wavs[0]).reshape(-1), sample_rate)
+
+        if hasattr(self.model, "preprocess_input"):
+            preprocess_kwargs = {
+                "text": [prompt],
+                "language": [selected_language or "English"],
+            }
+            if selected_instruct:
+                preprocess_kwargs["instruct"] = selected_instruct
+            inputs = self.model.preprocess_input(**preprocess_kwargs)
+            speeches = self.model.generate(**inputs, **kwargs)
+
+            if isinstance(speeches, list):
+                speech = speeches[0]
+            else:
+                speech = speeches
+
+            waveform = speech.numpy() if hasattr(speech, "numpy") else np.asarray(speech)
+            return _SpeechResult(np.asarray(waveform, dtype=np.float32).reshape(-1), int(self.model.sampling_rate))
 
         generation_properties = {}
         if selected_language:
@@ -760,17 +779,32 @@ class Qwen3BaseWrapper:
                 ref_text=selected_ref_text if selected_ref_text else None,
                 **kwargs,
             )
-
-            class _Speech:
-                def __init__(self, data):
-                    self.data = data
-
-            class _SpeechResult:
-                def __init__(self, data, output_sample_rate):
-                    self.speeches = [_Speech(data)]
-                    self.output_sample_rate = output_sample_rate
-
             return _SpeechResult(np.array(wavs[0]).reshape(-1), sample_rate)
+
+        if hasattr(self.model, "preprocess_input"):
+            preprocess_kwargs = {
+                "text": [prompt],
+                "language": [selected_language or "English"],
+                "ref_audio": selected_ref_audio,
+            }
+            if selected_ref_text:
+                preprocess_kwargs["ref_text"] = selected_ref_text
+            else:
+                preprocess_kwargs["x_vector_only_mode"] = True
+
+            # x_vector_only_mode is consumed by preprocess_input in Optimum, not generate.
+            kwargs.pop("x_vector_only_mode", None)
+
+            inputs = self.model.preprocess_input(**preprocess_kwargs)
+            speeches = self.model.generate(**inputs, **kwargs)
+
+            if isinstance(speeches, list):
+                speech = speeches[0]
+            else:
+                speech = speeches
+
+            waveform = speech.numpy() if hasattr(speech, "numpy") else np.asarray(speech)
+            return _SpeechResult(np.asarray(waveform, dtype=np.float32).reshape(-1), int(self.model.sampling_rate))
 
         generation_properties = {}
         if selected_language:
