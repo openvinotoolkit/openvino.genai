@@ -529,12 +529,18 @@ class BenchPrompt(dict):
           not record a token ``input_size`` (e.g. speech_to_text,
           super_resolution).
         """
-        new_records = iter_data_list[start_index:]
+        self._stamp_records(iter_data_list[start_index:], batch_size)
 
+    def _stamp_records(self, records, batch_size=1):
+        """Write ``prompt_repr`` / ``input_tokens`` onto an explicit record list.
+
+        Split out of :meth:`stamp_repr` so :class:`BenchChatPrompt` can stamp a
+        single turn's record without re-slicing ``iter_data_list``.
+        """
         if batch_size:
             sizes = [
                 r["input_size"]
-                for r in new_records
+                for r in records
                 if isinstance(r.get("input_size"), (int, float)) and r["input_size"] > 0
             ]
             if sizes:
@@ -542,9 +548,93 @@ class BenchPrompt(dict):
 
         prompt_repr = repr(self)
         input_tokens = self._input_tokens if self._input_tokens is not None else ""
-        for record in new_records:
+        for record in records:
             record["prompt_repr"] = prompt_repr
             record["input_tokens"] = input_tokens
+
+
+class BenchChatPrompt(list):
+    """A multi-turn chat prompt: an ordered list of :class:`BenchPrompt` turns.
+
+    Built by :class:`BenchPrompter` for the chat tasks (``text_gen_chat``,
+    ``visual_text_gen_chat``) in place of a single :class:`BenchPrompt`, so the
+    chat pipelines keep iterating with ``for turn_idx, turn in enumerate(chat)``
+    and reading ``len(chat)``.
+
+    Exposes the same ``introduce_in_stdout`` / ``stamp_repr`` pair as
+    :class:`BenchPrompt`, so both kinds of prompt are interchangeable inside
+    :meth:`BenchPrompter.iter_schedule`.
+
+    Parameters
+    ----------
+    turns : list
+        One entry per user turn — a ``str`` (text chat) or a ``dict`` (VLM
+        chat), as produced by the spec's ``chat_turns`` expander.
+    args : dict, optional
+        Global benchmark args, forwarded to each turn's :class:`BenchPrompt`.
+    """
+
+    def __init__(self, turns, args=None):
+        list.__init__(self)
+        self._args = args or {}
+        for turn in turns:
+            self.append(BenchPrompt(turn, args))
+        if not self:
+            # A chat with no turns cannot be benchmarked. This is where the
+            # pipelines' inline `any(len(chat_turns) == 0 for ...)` check moved.
+            raise RuntimeError("==Failure prompts is empty ==")
+
+    def append(self, turn):
+        """Only :class:`BenchPrompt` turns may be appended."""
+        if not isinstance(turn, BenchPrompt):
+            raise TypeError(f"BenchChatPrompt only accepts BenchPrompt turns, got {type(turn)!r}")
+        super().append(turn)
+
+    @property
+    def prompts(self):
+        """Text of every turn, in order (used for the input-data dumps)."""
+        return [turn.get("prompt", "") for turn in self]
+
+    def __repr__(self):
+        if not self:
+            return "<empty chat>"
+        return f"chat:{len(self)}t[" + " | ".join(repr(turn) for turn in self) + "]"
+
+    def introduce_in_stdout(self, num, prefix):
+        if num == 0:
+            for turn_idx, turn in enumerate(self):
+                if turn.get("prompt"):
+                    metrics_print.print_unicode(
+                        f"{prefix}[P{turn_idx}] Input text: {turn['prompt']}",
+                        f"{prefix}[P{turn_idx}] Unable print input text",
+                        max_output=metrics_print.MAX_INPUT_TXT_IN_LOG,
+                    )
+        log.info(f"{prefix} Prompt: {repr(self)}")
+
+    def stamp_repr(self, iter_data_list, start_index, batch_size=1):
+        """Tag each new record with **its own turn's** repr.
+
+        The chat pipelines append exactly one record per turn and set that
+        record's ``prompt_idx`` to the turn index, so records are matched back
+        to turns by ``prompt_idx`` rather than by position. A record whose
+        ``prompt_idx`` is not a valid turn index is left untouched, so a future
+        change appending a different number of records degrades to "not
+        stamped" rather than "mislabelled".
+
+        Note on ``input_tokens`` for chat: a turn's ``input_size`` is normally
+        the *incremental* input for that turn, which is why
+        ``metrics_print.output_avg_statis_tokens`` lists chat input sizes
+        instead of averaging them. Under ``--full_chat`` (forced on for NPU and
+        for the model types in ``FULL_CHAT_MODEL_TYPES``) it is instead the
+        cumulative conversation length, so ``input_tokens`` becomes cumulative
+        while ``prompt_repr`` stays per-turn. That asymmetry is inherited from
+        how the pipelines record ``input_size``; it is reported as-is rather
+        than normalised here.
+        """
+        for record in iter_data_list[start_index:]:
+            turn_idx = record.get("prompt_idx")
+            if isinstance(turn_idx, int) and 0 <= turn_idx < len(self):
+                self[turn_idx]._stamp_records([record], batch_size)
 
 
 # ---------------------------------------------------------------------------
@@ -581,6 +671,50 @@ class _PromptSpec:
     #: None the raw values are used as-is.  Used by speech_to_text to wrap a
     #: bare audio path into ``{"audio": path}``.
     nonjson_wrap: Optional[Callable] = None
+    #: Marks a CHAT task.  ``fn(entry, args) -> list`` expands one parsed entry
+    #: into its list of user turns; each entry then becomes a
+    #: :class:`BenchChatPrompt` instead of a :class:`BenchPrompt`.  The two chat
+    #: tasks disagree on how a non-list entry and ``--chat_iter`` interact, so
+    #: each supplies its own expander rather than BenchPrompter branching on the
+    #: task name.
+    chat_turns: Optional[Callable] = None
+    #: Letter used by :meth:`BenchPrompter.get_prefix` in log prefixes: ``"P"``
+    #: for prompts, ``"C"`` for chats (matching metrics_print's chat_mode alias).
+    prefix_alias: str = "P"
+
+
+def _text_chat_turns(entry, args):
+    """Expand one ``text_gen_chat`` entry into its user turns.
+
+    A JSONL ``{"prompt": ["turn1", "turn2"]}`` entry is already a turn list and
+    is used verbatim (``--chat_iter`` is ignored). A scalar prompt is replicated
+    ``--chat_iter`` times; without ``--chat_iter`` it cannot form a chat at all.
+    See doc/PROMPT.md section 1.
+    """
+    if isinstance(entry, list):
+        return entry
+    if args.get("chat_iter"):
+        return [entry] * args["chat_iter"]
+    raise RuntimeError("Chat mode can't be started due to incompatible input prompts")
+
+
+def _vlm_chat_turns(entry, args):
+    """Expand one ``visual_text_gen_chat`` entry into its user turns.
+
+    A JSONL line that is a JSON array is already a turn list; a single turn dict
+    — a bare JSONL object, or the one assembled from ``--media`` / ``--prompt``
+    — becomes a one-turn chat. ``--chat_iter`` replicates a one-turn chat and is
+    ignored (with a warning) for a multi-turn one. See doc/PROMPT.md section 5.
+    """
+    turns = entry if isinstance(entry, list) else [entry]
+    if args.get("chat_iter"):
+        if len(turns) == 1:
+            return turns * args["chat_iter"]
+        log.warning(
+            f"Chat mode is enabled and chat_iter is {args['chat_iter']}, but input data is set as list."
+            "`chat_iter` will be ignored. Chat will be run based on the provided list."
+        )
+    return turns
 
 
 def _image_gen_input_key(args):
@@ -616,6 +750,21 @@ def _video_gen_input_key(args):
 _PROMPT_SPECS = {
     "visual_text_gen": _PromptSpec(
         ["video", "media", "prompt"], parse_vlm_json_data, path_keys=("media", "video", "audio")
+    ),
+    # Chat tasks: one entry is a whole conversation, so it is expanded into
+    # turns and wrapped in a BenchChatPrompt. Prefixes read [warm-up][C0].
+    "text_gen_chat": _PromptSpec(
+        "prompt",
+        parse_text_json_data,
+        chat_turns=_text_chat_turns,
+        prefix_alias="C",
+    ),
+    "visual_text_gen_chat": _PromptSpec(
+        ["video", "media", "prompt"],
+        parse_vlm_json_data,
+        path_keys=("media", "video", "audio"),
+        chat_turns=_vlm_chat_turns,
+        prefix_alias="C",
     ),
     # Embedding models may be multimodal (Qwen3-VL-Embedding), so they read the
     # VLM key set — but unlike text generation the text prompt is optional, an
@@ -656,8 +805,9 @@ class BenchPrompter(list):
     Container for multiple :class:`BenchPrompt` objects.
 
     Parses command-line arguments and/or ``.jsonl`` prompt files, wraps
-    every entry in a :class:`BenchPrompt`, and exposes an iterator over
-    ``(iteration_num, prompt_idx, BenchPrompt)`` triples whose order
+    every entry in a :class:`BenchPrompt` — or, for the chat tasks, a
+    :class:`BenchChatPrompt` — and exposes an iterator over
+    ``(iteration_num, prompt_idx, prompt)`` triples whose order
     respects the ``'subsequent'`` scheduling flag.
 
     Scheduling modes
@@ -693,18 +843,43 @@ class BenchPrompter(list):
     def __init__(self, args, prompts=None):
         list.__init__(self)
         self._args = args
+        # The spec is resolved here rather than in _load_prompts() so that
+        # get_prefix() can read prefix_alias on the prompts=-supplied path too.
+        # An unknown/absent task falls back to the default spec, i.e. "P".
+        use_case = args.get("use_case")
+        self._task = getattr(use_case, "task", None) if use_case else None
+        self._spec = _PROMPT_SPECS.get(self._task, _DEFAULT_PROMPT_SPEC)
         if prompts is None:
             self._load_prompts()
         else:
             for entry in prompts:
-                self.append(BenchPrompt(entry, args))
+                self.append(self._wrap(entry, args))
         if not self:
             raise RuntimeError("==Failure prompts is empty ==")
 
+    def _wrap(self, entry, args):
+        """Wrap one parsed entry per the task's spec: a chat or a single prompt."""
+        if self._spec.chat_turns is not None:
+            return BenchChatPrompt(self._spec.chat_turns(entry, args), args)
+        return BenchPrompt(entry, args)
+
+    def require_active(self):
+        """Raise when ``args['prompt_index']`` selected no prompt at all.
+
+        Returns ``self`` so it can be chained onto the constructor. Only the VLM
+        chat pipeline historically validated the *filtered* list; the others run
+        zero iterations instead. That difference is preserved here rather than
+        harmonised, which would be a behaviour change beyond this refactor.
+        """
+        if not self.active_pairs:
+            raise RuntimeError("==Failure prompts is empty ==")
+        return self
+
     def get_prefix(self, num, p_idx):
+        alias = self._spec.prefix_alias
         if num == 0:
-            return f"[warm-up][P{p_idx}]"
-        return f"[{num}][P{p_idx}]"
+            return f"[warm-up][{alias}{p_idx}]"
+        return f"[{num}][{alias}{p_idx}]"
 
     # ------------------------------------------------------------------ #
     # Loading                                                              #
@@ -712,21 +887,21 @@ class BenchPrompter(list):
 
     def _load_prompts(self):
         """
-        Populate the list with :class:`BenchPrompt` objects.
+        Populate the list with :class:`BenchPrompt` / :class:`BenchChatPrompt`
+        objects.
 
         The task type (``args['use_case'].task``) selects a declarative
         :class:`_PromptSpec` (see ``_PROMPT_SPECS``) that drives every
         task-specific decision: which ``input_key`` to read, how to parse
         JSONL entries, which entry keys hold media paths to resolve, any key
-        renames, and how to wrap bare CLI values.
+        renames, how to wrap bare CLI values, and — for the chat tasks — how to
+        expand an entry into its turns.
         """
         args = self._args
-        use_case = args.get("use_case")
-        task = getattr(use_case, "task", None) if use_case else None
-        if task is None:
+        if self._task is None:
             raise ValueError("(obligatory) task is not specified!")
 
-        spec = _PROMPT_SPECS.get(task, _DEFAULT_PROMPT_SPEC)
+        spec = self._spec
         input_key = spec.input_key(args) if callable(spec.input_key) else spec.input_key
 
         if spec.default_prompt_file is not None and all(
@@ -751,19 +926,27 @@ class BenchPrompter(list):
             prompt_file = args.get("prompt_file")
             base = prompt_file[0] if prompt_file else None
             for entry in raw_list:
-                if base is not None:
-                    for key in spec.path_keys:
-                        if key not in entry:
-                            continue
-                        value = entry[key]
-                        # A media key may hold a single path or a list of them.
-                        if isinstance(value, list):
-                            entry[key] = [resolve_media_file_path(item, base) for item in value]
-                        else:
-                            entry[key] = resolve_media_file_path(value, base)
-                for src, dst in spec.rename.items():
-                    if src in entry:
-                        entry[dst] = entry.pop(src)
+                # A chat entry is a list of turn dicts, a single-prompt entry is
+                # one dict (or a plain string, from parse_text_json_data).
+                # Resolving per leaf dict keeps both on one code path.  This
+                # runs BEFORE the spec's chat_turns expansion, so a replicated
+                # turn resolves its paths once rather than once per copy.
+                for item in entry if isinstance(entry, list) else [entry]:
+                    if not isinstance(item, dict):
+                        continue
+                    if base is not None:
+                        for key in spec.path_keys:
+                            if key not in item:
+                                continue
+                            value = item[key]
+                            # A media key may hold a single path or a list of them.
+                            if isinstance(value, list):
+                                item[key] = [resolve_media_file_path(sub, base) for sub in value]
+                            else:
+                                item[key] = resolve_media_file_path(value, base)
+                    for src, dst in spec.rename.items():
+                        if src in item:
+                            item[dst] = item.pop(src)
         elif spec.nonjson_wrap is not None:
             raw_list = [spec.nonjson_wrap(item) for item in output_data_list]
         else:
@@ -773,16 +956,16 @@ class BenchPrompter(list):
             raise RuntimeError("BenchPrompter: prompt list is empty")
 
         for entry in raw_list:
-            self.append(BenchPrompt(entry, args))
+            self.append(self._wrap(entry, args))
 
     # ------------------------------------------------------------------ #
     # List interface                                                       #
     # ------------------------------------------------------------------ #
 
     def append(self, prompt):
-        """Only :class:`BenchPrompt` objects may be appended."""
-        if not isinstance(prompt, BenchPrompt):
-            raise TypeError(f"BenchPrompter only accepts BenchPrompt objects, got {type(prompt)!r}")
+        """Only :class:`BenchPrompt` / :class:`BenchChatPrompt` may be appended."""
+        if not isinstance(prompt, (BenchPrompt, BenchChatPrompt)):
+            raise TypeError(f"BenchPrompter only accepts BenchPrompt or BenchChatPrompt objects, got {type(prompt)!r}")
         super().append(prompt)
 
     # ------------------------------------------------------------------ #
