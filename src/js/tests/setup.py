@@ -77,9 +77,7 @@ def _align_qwen3_omni_video_patch_size(model_path: Path) -> None:
     image_processor = processor_config.get("image_processor")
     video_processor = processor_config.get("video_processor")
     if not isinstance(image_processor, dict) or not isinstance(video_processor, dict):
-        raise RuntimeError(
-            "Qwen3-Omni processor_config.json must contain image_processor and video_processor objects"
-        )
+        raise RuntimeError("Qwen3-Omni processor_config.json must contain image_processor and video_processor objects")
 
     image_patch_size = image_processor.get("patch_size")
     if video_processor.get("patch_size") == image_patch_size:
