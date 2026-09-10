@@ -1413,7 +1413,11 @@ Napi::Value cpp_to_js<ov::genai::GenerationConfig, Napi::Value>(const Napi::Env&
     // Assisting generation parameters
     obj.Set("assistant_confidence_threshold",
             cpp_to_js<float, Napi::Value>(env, config.assistant_confidence_threshold));
-    obj.Set("num_assistant_tokens", cpp_to_js<size_t, Napi::Value>(env, config.num_assistant_tokens));
+    if (config.num_assistant_tokens.has_value()) {
+        obj.Set("num_assistant_tokens", cpp_to_js<size_t, Napi::Value>(env, config.num_assistant_tokens.value()));
+    } else {
+        obj.Set("num_assistant_tokens", env.Undefined());
+    }
     obj.Set("max_ngram_size", cpp_to_js<size_t, Napi::Value>(env, config.max_ngram_size));
 
     // Structured output parameters

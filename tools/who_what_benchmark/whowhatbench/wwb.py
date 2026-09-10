@@ -21,7 +21,7 @@ from whowhatbench.model_loaders import load_model
 from whowhatbench import EVALUATOR_REGISTRY
 from whowhatbench.utils import fix_phi3_v_eos_token_id
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
-from whowhatbench.utils import get_json_config
+from whowhatbench.utils import get_json_config, load_audio_dataset
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -142,6 +142,7 @@ def parse_args():
             "image-embedding",
             "video-embedding",
             "text-reranking",
+            "speech-recognition",
         ],
         default="text",
         help="Indicates the model type:\n"
@@ -159,7 +160,9 @@ def parse_args():
         "text-embedding - for creation of embedding for a list of texts, \n"
         "image-embedding - for creation of embedding for a list of texts and images, \n"
         "video-embedding - for creation of embedding for a list of texts and videos, \n"
-        "speech-generation - for text to speech generation ",
+        "speech-generation - for text to speech generation, \n"
+        "speech-recognition - for speech to text generation, with native ASR models (FunASR) "
+        "or audio-capable multimodal models",
     )
     parser.add_argument(
         "--data-encoder",
@@ -175,13 +178,14 @@ def parse_args():
         default=None,
         help="Name of the dataset with prompts. The interface for dataset is load_dataset from datasets library."
         " Please provide this argument in format path,name (for example wikitext,wikitext-2-v1)."
-        " If None then internal list of prompts will be used.",
+        " If omitted, task-specific default dataset will be used.",
     )
     parser.add_argument(
         "--dataset-field",
         type=str,
-        default="text",
+        default=None,
         help="The name of field in dataset for prompts. For example question or context in squad."
+        " Defaults to 'text' for prompt-based tasks and to the audio column for speech-recognition."
         " Will be used only if dataset is defined.",
     )
     parser.add_argument(
@@ -414,8 +418,11 @@ def parse_args():
         "--speech-language",
         type=str,
         default="",
-        help="Speech-generation language code. This is currently used only for Kokoro. "
-        "If omitted, the default language used is 'en-us'.",
+        help="For speech-generation: language code, currently used only for Kokoro. "
+        "If omitted, the default language used is 'en-us'. \n"
+        "For speech-recognition: the language forced during transcription, in the form the model expects. "
+        "FunASR takes a code such as 'en', 'zh' or 'ja' and defaults to 'en'; audio VLMs take a name such as "
+        "'English' or 'Japanese' and default to 'English'.",
     )
     parser.add_argument(
         "--speech-voice",
@@ -518,6 +525,9 @@ def check_args(args):
 
     if args.llamacpp_chat and not args.llamacpp:
         raise ValueError("--llamacpp-chat requires --llamacpp")
+
+    if args.dataset_field is None and args.model_type != "speech-recognition":
+        args.dataset_field = "text"
 
 
 def load_prompts(args):
@@ -1006,7 +1016,7 @@ def create_evaluator(base_model, args):
 
     try:
         EvaluatorCLS = EVALUATOR_REGISTRY[task]
-        prompts = load_prompts(args)
+        prompts = load_prompts(args) if task != "speech-recognition" else None
 
         if task == "text":
             tokenizer = load_tokenizer(args) if not args.llamacpp else None
@@ -1102,6 +1112,7 @@ def create_evaluator(base_model, args):
                 max_new_tokens=args.max_new_tokens,
                 gen_answer_fn=genai_gen_visual_text if args.genai else None,
                 processor=processor,
+                config=config,
                 crop_question=crop_question,
                 task_type=task,
                 frames_num=args.video_frames_num,
@@ -1234,9 +1245,22 @@ def create_evaluator(base_model, args):
                 device=args.device,
                 generation_config_extra=args.generation_config_extra,
             )
+        elif task == "speech-recognition":
+            needs_audio = args.base_model is not None or args.target_model is not None
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                test_data=load_audio_dataset(args) if needs_audio else None,
+                max_new_tokens=args.max_new_tokens,
+                num_samples=args.num_samples,
+                speech_language=args.speech_language,
+            )
         else:
             raise ValueError(f"Unsupported task: {task}")
     except KeyError as e:
+        # A registered task means the KeyError came from the evaluator body, not this lookup.
+        if task in EVALUATOR_REGISTRY:
+            raise
         raise ValueError(
             f"Attempted to load evaluator for '{task}', but no evaluator for this model type found! "
             f"Supported model types: {', '.join(EVALUATOR_REGISTRY.keys())}. Details:\n",
@@ -1471,6 +1495,9 @@ def main():
     if args.model_type == "speech-generation" and args.vocoder_path is not None:
         kwargs["vocoder_path"] = args.vocoder_path
 
+    if args.model_type == "speech-recognition":
+        kwargs["speech_language"] = args.speech_language
+
     kwargs["llamacpp_n_ctx"] = args.llamacpp_n_ctx
 
     if args.base_model is not None:
@@ -1559,6 +1586,7 @@ def main():
             "visual-text",
             "visual-video-text",
             "visual-text-chat",
+            "speech-recognition",
             "visual-text-only",
         ]:
             print_text_results(evaluator)

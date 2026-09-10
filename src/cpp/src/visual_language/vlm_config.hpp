@@ -32,6 +32,7 @@ enum class VLMModelType {
     GEMMA4_UNIFIED,
     VIDEOCHAT_FLASH_QWEN,
     QWEN3_OMNI,
+    DEEPSEEK_OCR2,
     MUSE_GLIMMER,
 };
 
@@ -70,7 +71,7 @@ public:
     std::string im_id_end = "</image_id>";
     /// @brief A placeholder for image embeddings in text.
     std::string unk = "<unk>";
-    
+
     // llava_next specific config params
     std::vector<float> image_newline;
     size_t vision_config_patch_size = 14;
@@ -117,6 +118,9 @@ public:
 
     /// @brief Hidden size of Gemma4 per-layer embedding input used during inference.
     size_t hidden_size_per_layer_input = 0;
+
+    /// @brief Learnable separator appended after DeepSeek-OCR-2 image features.
+    std::vector<float> view_separator;
 
     /// @brief Selects bidirectional attention scope for Gemma4 (e.g. "vision" enables
     /// bidirectional masking for image tokens which requires `token_type_ids` as an LM input).
