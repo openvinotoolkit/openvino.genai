@@ -85,6 +85,12 @@ public:
     Tokenizer get_tokenizer();
 
     /**
+     * Returns LoRA adapters the pipeline itself was constructed with.
+     * Wrapper pipelines forward the call to the pipeline actually holding the adapters.
+     */
+    virtual std::optional<AdapterConfig> get_pipeline_adapters() const;
+
+    /**
      * Adds requests to awaiting queue using encoded inputs.
      * @note LoRA adapters are only supported in MODE_STATIC or MODE_FUSE modes.
      *       MODE_DYNAMIC, MODE_AUTO and MODE_STATIC_RANK are not supported in the add_request() + step() flow.

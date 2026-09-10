@@ -70,19 +70,6 @@ struct overloaded : Ts... {
 template <class... Ts>
 overloaded(Ts...) -> overloaded<Ts...>;
 
-namespace {
-
-void assert_supported_add_request_lora_mode(const std::optional<AdapterConfig>& adapters) {
-    if (adapters && static_cast<bool>(*adapters)) {
-        const auto mode = adapters->get_mode();
-        OPENVINO_ASSERT(mode != AdapterConfig::MODE_DYNAMIC && mode != AdapterConfig::MODE_AUTO && mode != AdapterConfig::MODE_STATIC_RANK,
-            "MODE_DYNAMIC, MODE_AUTO, and MODE_STATIC_RANK LoRA adapters are not supported in the add_request() + step() flow. "
-            "Use MODE_STATIC or MODE_FUSE instead.");
-    }
-}
-
-}  // namespace
-
 void prepare_model_for_paged_attention(const std::shared_ptr<ov::Model>& model,
                                        const SchedulerConfig& scheduler_config) {
     const bool need_per_layer_kv_cache_control = scheduler_config.use_cache_eviction;
@@ -307,31 +294,7 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     const ov::Tensor& input_ids,
     const ov::genai::GenerationConfig& sampling_params,
     std::optional<ov::Tensor> prompt_ids,
-    std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs
-) {
-    return _add_request(request_id,
-                        input_ids,
-                        sampling_params,
-                        token_type_ids,
-                        prompt_ids,
-                        lm_extra_inputs,
-                        true);
-}
-
-GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::_add_request(
-    uint64_t request_id,
-    const ov::Tensor& input_ids,
-    const ov::genai::GenerationConfig& sampling_params,
-    std::optional<ov::Tensor> token_type_ids,
-    std::optional<ov::Tensor> prompt_ids,
-    std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs,
-    bool validate_pipeline_lora_mode
-) {
-    if (validate_pipeline_lora_mode) {
-        assert_supported_add_request_lora_mode(m_generation_config.adapters);
-    }
-    assert_supported_add_request_lora_mode(sampling_params.adapters);
-
+    std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     auto sampling_params_copy = sampling_params;
     // If stop_token_ids were not provided, take value from default m_generation_config
     if (sampling_params_copy.stop_token_ids.empty())
@@ -732,10 +695,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
                         "LoRA adapters value must be the same for all requests");
     }
     set_adapters(sampling_params[0].adapters);
-    std::vector<GenerationConfig> request_sampling_params = sampling_params;
-    for (auto& request_sampling_param : request_sampling_params) {
-        request_sampling_param.adapters = std::nullopt;
-    }
 
     // RAII guard so the flag is restored on every exit path (including exceptions).
     struct HiddenStateExportGuard {
@@ -786,13 +745,12 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
         const bool has_valid_lm_extra_inputs =
             lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
 
-        generations.push_back(_add_request(
+        generations.push_back(add_request(
             request_id,
             input_ids[request_id],
-            request_sampling_params[request_id],
+            sampling_params[request_id],
             has_valid_prompt_ids ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
-            has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt,
-            false));
+            has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt));
     }
 
     auto all_requests =
