@@ -651,7 +651,9 @@ Sampler::TreeSearcher::TreeSearcher(SequenceGroup::Ptr sequence_group, ov::Tenso
 }
 
 void Sampler::TreeSearcher::tree_reset() {
-    const size_t num_tree_nodes = m_parameters.num_assistant_tokens;
+    OPENVINO_ASSERT(m_parameters.num_assistant_tokens.has_value(),
+                    "num_assistant_tokens must be set for tree search.");
+    const size_t num_tree_nodes = m_parameters.num_assistant_tokens.value();
     OPENVINO_ASSERT(num_tree_nodes > 0,
                     "num_assistant_tokens must be greater than 0 for tree search, got ", num_tree_nodes);
     m_candidate_graph.emplace(-1, 0.0f, num_tree_nodes, m_parameters.tree_depth);

@@ -52,7 +52,7 @@ protected:
      * @brief Ensures num_assistant_tokens is set and validates generation config.
      *
      * This function validates that assistant_confidence_threshold is 0 (unsupported in stateful mode)
-     * and sets num_assistant_tokens to DEFAULT_NUM_ASSISTANT_TOKENS if not already specified.
+    * and sets num_assistant_tokens to DEFAULT_NUM_ASSISTANT_TOKENS if unset or equal to 0.
      *
      * @param config Generation configuration to validate and potentially modify.
      * @throws Exception if assistant_confidence_threshold is non-zero.

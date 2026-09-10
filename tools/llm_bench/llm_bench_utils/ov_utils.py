@@ -603,7 +603,7 @@ def create_ldm_super_resolution_model(model_path, device, memory_data_collector,
 def create_genai_speech_2_txt_model(model_path, device, memory_data_collector, processor, **kwargs):
     import openvino_genai as ov_genai
 
-    ov_config = kwargs['config']
+    ov_config = kwargs["config"]
     pipeline_class = ov_genai.ASRPipeline if hasattr(ov_genai, "ASRPipeline") else ov_genai.WhisperPipeline
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()

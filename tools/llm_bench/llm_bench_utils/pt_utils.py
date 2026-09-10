@@ -638,7 +638,7 @@ def create_video_gen_model(model_path, device, memory_data_collector, **kwargs):
             pipe, backend, memory_data_collector if kwargs.get("mem_consumption") else None
         )
         pipe = compiled_model
-    tokenizer = None
+
     bench_hook = None
     use_genai = False
-    return pipe, tokenizer, from_pretrain_time, bench_hook, use_genai
+    return pipe, pipe.tokenizer, from_pretrain_time, bench_hook, use_genai

@@ -85,9 +85,7 @@ jobs:
         platform: macos_14_7
         arch: 'arm64'
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
-        # Workaround for ScatterNDUpdate exception.
-        # The ticket for tracking: CVS-192302
-        revision: aa154b5f870b9b1c118dabc970989f9c7de163d3
+        revision: latest_available_commit
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
         # event_name: pull_request
@@ -751,6 +749,10 @@ jobs:
 
       - name: Install Optimum Intel with Qwen3-Omni support
         run: python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@6898d97242498b7dc4367a12555e4f7e52b01d16
+
+      # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
+      - name: Install Transformers compatibility version
+        run: python -m pip install transformers==5.0.0
 
       - name: Run npm package tests
         working-directory: ${{ env.SRC_DIR }}/src/js
