@@ -1,6 +1,7 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+import os from "node:os";
 import assert from "node:assert";
 import { describe, it, before } from "node:test";
 import { addon as ov } from "openvino-node";
@@ -22,11 +23,8 @@ const deterministicSpeechConfig = {
   cp_top_k: 1,
 };
 
-// Functional tests require a Qwen3-Omni model exported with audio output. Speech output
-// uses the continuous-batching backend, which OmniPipeline enables by default. When
-// OMNI_PATH is not provided the suite is skipped so the shared JS test run is not blocked
-// by the large checkpoint.
-describe("OmniPipeline", { skip: !OMNI_PATH }, () => {
+// Skip for macOS due to continuous batching backend requires PagedAttention operation support
+describe("OmniPipeline", { skip: os.platform() === "darwin" }, () => {
   let pipeline, testImage, testAudio, testVideo;
 
   before(async () => {
