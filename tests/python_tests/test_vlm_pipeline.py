@@ -2479,31 +2479,32 @@ def test_tags_interleaved_reversed_order(
 ):
     """Swapping the two universal indices must swap where the media land, not be normalized away.
 
-    The two media items differ, so a pipeline that binds by tag position instead of by tag index
-    produces the forward-order output for the reversed-order prompt.
+    Reversing the tag indices over media [first, second] has to mean the same thing as keeping the
+    tags in order and reversing the media list. A pipeline that binds by tag position instead of by
+    tag index leaves the media where they were, so only the second form swaps them and the two
+    outputs diverge.
     """
     ov_pipe = ov_pipe_model.pipeline
     _setup_interleaved_config(ov_pipe)
 
-    media_kwargs = get_media_inputs_kwargs(_interleaved_media_pair(modality_type, request), modality_type)
+    first, second = _interleaved_media_pair(modality_type, request)
 
-    forward_prompt = (
-        "First " + get_universal_tag(modality_type, 0) + " then " + get_universal_tag(modality_type, 1) + " done"
-    )
-    reversed_prompt = (
-        "First " + get_universal_tag(modality_type, 1) + " then " + get_universal_tag(modality_type, 0) + " done"
-    )
+    def workaround_inconsistent_inference():
+        __tracebackhide__ = True
+        reversed_tags = ov_pipe.generate(
+            "First " + get_universal_tag(modality_type, 1) + " then " + get_universal_tag(modality_type, 0) + " done",
+            **get_media_inputs_kwargs([first, second], modality_type),
+            do_sample=False,
+        )
+        reversed_media = ov_pipe.generate(
+            "First " + get_universal_tag(modality_type, 0) + " then " + get_universal_tag(modality_type, 1) + " done",
+            **get_media_inputs_kwargs([second, first], modality_type),
+            do_sample=False,
+        )
+        assert reversed_tags.texts == reversed_media.texts
+        assert reversed_tags.scores == reversed_media.scores
 
-    # Check reproducibility first: a flaky run would satisfy the inequality below for reasons
-    # unrelated to tag order, and the test would pass while proving nothing.
-    forward = ov_pipe.generate(forward_prompt, **media_kwargs, do_sample=False)
-    forward_again = ov_pipe.generate(forward_prompt, **media_kwargs, do_sample=False)
-    if forward.texts[0] != forward_again.texts[0]:
-        pytest.skip("model output is not reproducible run-to-run; the inequality below would be meaningless")
-
-    reversed_order = ov_pipe.generate(reversed_prompt, **media_kwargs, do_sample=False)
-
-    assert reversed_order.texts[0] != forward.texts[0]
+    retry(workaround_inconsistent_inference)
 
 
 def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):

@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <string_view>
+
 #include "visual_language/qwen3_omni/audio_encoder.hpp"
 #include "visual_language/qwen3_vl/classes.hpp"
 

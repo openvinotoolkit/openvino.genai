@@ -190,7 +190,8 @@ public:
 
     /// @brief videos_metadata-aware generate. Forwards to the backing implementation; used by
     /// OmniPipeline to drive Qwen3-VL-style timestamp prompts. `audios` carries raw audio inputs
-    /// (Qwen3-Omni); conventional VLM implementations ignore it.
+    /// (Qwen3-Omni). A model with no audio tower throws instead of dropping the audio, so a
+    /// non-empty `audios` on a conventional VLM implementation is an error, not a no-op.
     virtual VLMDecodedResults generate(const std::string& prompt,
                                        const std::vector<ov::Tensor>& images,
                                        const std::vector<ov::Tensor>& videos,
@@ -418,7 +419,8 @@ public:
 
     /// @brief videos_metadata-aware generate. Forwards to the backing implementation; used by
     /// OmniPipeline to drive Qwen3-VL-style timestamp prompts. `audios` carries raw audio inputs
-    /// (Qwen3-Omni); conventional VLM implementations ignore it.
+    /// (Qwen3-Omni). A model with no audio tower throws instead of dropping the audio, so a
+    /// non-empty `audios` on a conventional VLM implementation is an error, not a no-op.
     VLMDecodedResults generate(
         const std::string& prompt,
         const std::vector<ov::Tensor>& images,
