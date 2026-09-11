@@ -7,98 +7,9 @@
 #include <memory>
 #include <thread>
 
+#include "include/base/inference_thread.hpp"
 #include "include/helper.hpp"
 #include "include/text2speech_pipeline/init_worker.hpp"
-
-struct Text2SpeechTsfnContext {
-    Text2SpeechTsfnContext(ov::genai::StringInputs inputs,
-                           ov::Tensor speaker_embedding,
-                           ov::AnyMap properties,
-                           std::shared_ptr<std::atomic<bool>> is_generating)
-        : inputs(std::move(inputs)),
-          speaker_embedding(std::move(speaker_embedding)),
-          properties(std::move(properties)),
-          is_generating(is_generating) {}
-    ~Text2SpeechTsfnContext() = default;
-
-    std::thread native_thread;
-    Napi::ThreadSafeFunction callback_tsfn;
-
-    ov::genai::StringInputs inputs;
-    ov::Tensor speaker_embedding;
-    ov::AnyMap properties;
-    std::shared_ptr<std::atomic<bool>> is_generating;
-    std::shared_ptr<ov::genai::Text2SpeechPipeline> pipe = nullptr;
-};
-
-void text2speechPerformInferenceThread(Text2SpeechTsfnContext* context) {
-    auto report_error = [context](const std::string& message) {
-        auto status = context->callback_tsfn.BlockingCall([message](Napi::Env env, Napi::Function js_callback) {
-            try {
-                js_callback.Call(
-                    {Napi::Error::New(env, "text2speechPerformInferenceThread error. " + message).Value(), env.Null()});
-            } catch (const std::exception& err) {
-                std::cerr
-                    << "The callback failed when attempting to return an error from text2speechPerformInferenceThread. "
-                       "Details:\n"
-                    << err.what() << std::endl;
-                std::cerr << "Original error message:\n" << message << std::endl;
-            }
-        });
-        if (status != napi_ok) {
-            std::cerr << "The BlockingCall failed with status " << status
-                      << " when trying to return an error from text2speechPerformInferenceThread." << std::endl;
-            std::cerr << "Original error message:\n" << message << std::endl;
-        }
-    };
-    auto finalize = [context]() {
-        context->callback_tsfn.Release();
-    };
-
-    ov::genai::Text2SpeechDecodedResults result;
-
-    try {
-        const auto& speaker = context->speaker_embedding;
-        const auto& props = context->properties;
-        std::visit(overloaded{[context, &result, &speaker, &props](const std::string& text) {
-                                  result = context->pipe->generate(text, speaker, props);
-                              },
-                              [context, &result, &speaker, &props](const std::vector<std::string>& texts) {
-                                  result = context->pipe->generate(texts, speaker, props);
-                              }},
-                   context->inputs);
-    } catch (const std::exception& e) {
-        context->is_generating->store(false);
-        report_error(e.what());
-        finalize();
-        return;
-    }
-
-    context->is_generating->store(false);
-
-    try {
-        std::shared_ptr<ov::genai::Text2SpeechDecodedResults> final_result =
-            std::make_shared<ov::genai::Text2SpeechDecodedResults>(std::move(result));
-        std::shared_ptr<std::string> final_callback_error = std::make_shared<std::string>();
-
-        napi_status status = context->callback_tsfn.BlockingCall(
-            [final_result, final_callback_error](Napi::Env env, Napi::Function js_callback) {
-                try {
-                    js_callback.Call({env.Null(), to_text2speech_decoded_result(env, *final_result)});
-                } catch (const std::exception& err) {
-                    *final_callback_error = "The final callback failed. Details:\n" + std::string(err.what());
-                }
-            });
-        if (status != napi_ok) {
-            report_error("The final BlockingCall failed with status " + std::to_string(static_cast<int>(status)));
-        } else if (!final_callback_error->empty()) {
-            report_error(*final_callback_error);
-        }
-    } catch (const std::exception& e) {
-        report_error(e.what());
-    }
-    finalize();
-}
 
 Text2SpeechPipelineWrapper::Text2SpeechPipelineWrapper(const Napi::CallbackInfo& info)
     : Napi::ObjectWrap<Text2SpeechPipelineWrapper>(info) {}
@@ -165,17 +76,34 @@ Napi::Value Text2SpeechPipelineWrapper::generate(const Napi::CallbackInfo& info)
         OPENVINO_ASSERT(info[3].IsFunction(), "generate callback is not a function");
         Napi::Function callback = info[3].As<Napi::Function>();
 
-        auto* context =
-            new Text2SpeechTsfnContext(std::move(inputs), std::move(speaker_embedding), std::move(properties), this->is_generating);
-        context->pipe = this->pipe;
+        auto* context = new InferenceThreadContext(this->is_generating,
+                                                   "text2speechPerformInferenceThread",
+                                                   "Streamer exceptions occurred:");
+        auto pipe = this->pipe;
+        context->run_generate = [pipe, inputs = std::move(inputs), speaker_embedding = std::move(speaker_embedding),
+                                 properties = std::move(properties)]() mutable -> JsResultProducer {
+            ov::genai::Text2SpeechDecodedResults result;
+            std::visit(overloaded{[&](const std::string& text) {
+                                      result = pipe->generate(text, speaker_embedding, properties);
+                                  },
+                                  [&](const std::vector<std::string>& texts) {
+                                      result = pipe->generate(texts, speaker_embedding, properties);
+                                  }},
+                       inputs);
+            return [result = std::move(result)](Napi::Env env) -> Napi::Value {
+                return to_text2speech_decoded_result(env, result);
+            };
+        };
 
         context->callback_tsfn =
             Napi::ThreadSafeFunction::New(env, callback, "Text2Speech_generate_callback", 0, 1, [context](Napi::Env) {
-                context->native_thread.join();
+                if (context->native_thread.joinable()) {
+                    context->native_thread.join();
+                }
                 delete context;
             });
 
-        context->native_thread = std::thread(text2speechPerformInferenceThread, context);
+        context->native_thread = std::thread(perform_generate_thread, context);
     } catch (const std::exception& ex) {
         this->is_generating->store(false);
         Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
