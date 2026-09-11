@@ -873,7 +873,8 @@ private:
         if (m_is_chat_conversation) {
             if (m_use_full_chat_history) {
                 cache_state.reset_state();
-                m_language.reset_state();
+                // Keep LoRA state: reset_state() would clear it and apply() below does not restore it.
+                reset_language_state();
                 m_language.get_tensor("attention_mask").set_shape({1, 0});
             } else {
                 bool needs_full_reset = cache_state.needs_reset();
