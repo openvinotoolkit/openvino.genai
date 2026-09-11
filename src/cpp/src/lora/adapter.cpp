@@ -1286,6 +1286,107 @@ bool operator== (const Adapter& a, const Adapter& b) {
 }
 
 
+// Holds prepared LoRA concat evaluator outputs so that switching back to a config already
+// seen does not have to evaluate them again. Preparing the tensors is the caller's job; this
+// class only stores them and drops the least recently used entries when a limit is reached.
+class PreparedTensorCache {
+public:
+    using Tensors = std::vector<LoRAParts<ov::Tensor>>;
+
+    // Returns the entry matching the config, or nullptr on a miss. A hit is moved to the front,
+    // so the back of the list is always the least recently used entry.
+    Tensors* find(const AdapterConfig& config) {
+        for (auto it = m_entries.begin(); it != m_entries.end(); ++it) {
+            if (!same_key(it->config, config)) {
+                continue;
+            }
+            m_entries.splice(m_entries.begin(), m_entries, it);
+            return &m_entries.front().tensors;
+        }
+        return nullptr;
+    }
+
+    // Returns the config that produced the cached tensors. The key ignores alpha, so this is
+    // how the caller finds out whether the entry was built with different alphas.
+    const AdapterConfig& front_config() const {
+        return m_entries.front().config;
+    }
+
+    // Called after the caller refreshed the alpha tensors of a hit entry in place. Alpha keeps
+    // the shape and type declared by the variable, so the stored byte size stays valid.
+    void update_front_config(const AdapterConfig& config) {
+        m_entries.front().config = config;
+    }
+
+    Tensors& insert(const AdapterConfig& config, Tensors tensors) {
+        const size_t byte_size = total_byte_size(tensors);
+
+        // Retain a single oversized entry so a valid config still benefits from caching.
+        // Otherwise evict least-recently-used entries until both limits are satisfied.
+        while (!m_entries.empty() &&
+               (m_entries.size() >= capacity ||
+                byte_size > max_bytes ||
+                m_byte_size > max_bytes - byte_size)) {
+            m_byte_size -= m_entries.back().byte_size;
+            m_entries.pop_back();
+        }
+        m_entries.push_front({config, std::move(tensors), byte_size});
+        m_byte_size += byte_size;
+        return m_entries.front().tensors;
+    }
+
+    void clear() {
+        m_entries.clear();
+        m_byte_size = 0;
+    }
+
+    // Checks whether two configs would produce the same prepared A/B tensors, making one reusable for
+    // the other. Prepared A/B tensors don't depend on alpha (only the separately-uploaded alpha tensor
+    // does), so the key compares adapter identity only; keying on get_adapters_and_alphas() would miss
+    // the cache on every alpha-only change and force a full A/B recompute for what should be a cheap
+    // alpha update. Since a hit therefore says nothing about alpha, the caller re-evaluates the alpha
+    // tensors whenever the hit entry was built with different alphas.
+    static bool same_key(const AdapterConfig& lhs, const AdapterConfig& rhs) {
+        return lhs.get_mode() == rhs.get_mode() &&
+               lhs.get_tensor_name_prefix() == rhs.get_tensor_name_prefix() &&
+               lhs.get_adapters() == rhs.get_adapters();
+    }
+
+private:
+    struct Entry {
+        AdapterConfig config;
+        Tensors tensors;
+        size_t byte_size = 0;
+    };
+
+    // Sums the byte size of all alpha/A/B tensors, used to track the cache against its byte limit.
+    static size_t total_byte_size(const Tensors& tensors) {
+        size_t result = 0;
+        for (const auto& tensor_parts : tensors) {
+            result += tensor_parts.alpha.get_byte_size();
+            result += tensor_parts.A.get_byte_size();
+            result += tensor_parts.B.get_byte_size();
+        }
+        return result;
+    }
+
+    // The cache owns evaluator output tensors for the controller lifetime. Keep a small
+    // LRU bound because every entry contains alpha/A/B outputs for every transformed layer.
+    // Sized from measured LoRA adapters (r=64, BF16): a full adapter's prepared A/B tensors
+    // are ~252 MB, so 512 MiB covers roughly two full adapter configs before eviction kicks
+    // in; 8 entries bounds the config count for setups with many small/lightweight adapters,
+    // where the byte cap alone wouldn't trigger eviction soon enough. These numbers are
+    // model-dependent (rank, hidden size, and layer count all scale adapter size) and were
+    // not tuned per model; if a use case needs a different bound, exposing these as
+    // configurable properties is the natural next step.
+    static constexpr size_t capacity = 8;
+    static constexpr size_t max_bytes = 512 * 1024 * 1024;
+
+    std::list<Entry> m_entries;
+    size_t m_byte_size = 0;
+};
+
+
 struct AdapterControllerImpl {
     LoRAVarMap variable_ids;
     std::map<std::string, ov::op::util::VariableInfo> constant_variable_ids;
@@ -1301,25 +1402,7 @@ struct AdapterControllerImpl {
     std::optional<ov::element::Type> state_output_type_override;
     InferRequestSignatureCache lora_state_evaluators;
 
-    struct PreparedTensorCacheEntry {
-        AdapterConfig config;
-        std::vector<LoRAParts<ov::Tensor>> tensors;
-        size_t byte_size = 0;
-    };
-
-    // The cache owns evaluator output tensors for the controller lifetime. Keep a small
-    // LRU bound because every entry contains alpha/A/B outputs for every transformed layer.
-    // Sized from measured LoRA adapters (r=64, BF16): a full adapter's prepared A/B tensors
-    // are ~252 MB, so 512 MiB covers roughly two full adapter configs before eviction kicks
-    // in; 8 entries bounds the config count for setups with many small/lightweight adapters,
-    // where the byte cap alone wouldn't trigger eviction soon enough. These numbers are
-    // model-dependent (rank, hidden size, and layer count all scale adapter size) and were
-    // not tuned per model; if a use case needs a different bound, exposing these as
-    // configurable properties is the natural next step.
-    static constexpr size_t prepared_tensor_cache_capacity = 8;
-    static constexpr size_t prepared_tensor_cache_max_bytes = 512 * 1024 * 1024;
-    std::list<PreparedTensorCacheEntry> prepared_tensor_cache;
-    size_t prepared_tensor_cache_byte_size = 0;
+    PreparedTensorCache prepared_tensor_cache;
 
     // Stores the actual LoRA weight getter used for Constant tensor replacement
     // Needed to track which LoRA tensors were actually applied to suppress unused tensor warnings
@@ -1502,18 +1585,6 @@ struct AdapterControllerImpl {
         set_new_adapter_tensors(infer_request, /*alpha_only=*/true);
     }
 
-    // Checks whether two configs would produce the same prepared A/B tensors, making one reusable for
-    // the other. Prepared A/B tensors don't depend on alpha (only the separately-uploaded alpha tensor
-    // does), so the key compares adapter identity only; keying on get_adapters_and_alphas() would miss
-    // the cache on every alpha-only change and force a full A/B recompute for what should be a cheap
-    // alpha update. Since a hit therefore says nothing about alpha, get_or_prepare_config_tensors()
-    // re-evaluates the alpha tensors whenever the hit entry was built with different alphas.
-    bool same_prepared_tensor_cache_key(const AdapterConfig& lhs, const AdapterConfig& rhs) const {
-        return lhs.get_mode() == rhs.get_mode() &&
-               lhs.get_tensor_name_prefix() == rhs.get_tensor_name_prefix() &&
-               lhs.get_adapters() == rhs.get_adapters();
-    }
-
     // Returns the inference precision shared by all execution devices, or nullopt if it can't be determined or differs across devices.
     std::optional<ov::element::Type> get_inference_precision(
         const ov::CompiledModel& compiled_model,
@@ -1590,7 +1661,6 @@ struct AdapterControllerImpl {
         state_output_type_override = new_output_type;
         output_type_initialized = true;
         prepared_tensor_cache.clear();
-        prepared_tensor_cache_byte_size = 0;
         lora_state_evaluators.clear();
 
         prepare_initial_configs();
@@ -1683,19 +1753,8 @@ struct AdapterControllerImpl {
         return prepared_tensors;
     }
 
-    // Sums the byte size of all alpha/A/B tensors, used to track the prepared tensor cache against its byte limit.
-    size_t prepared_tensors_byte_size(const std::vector<LoRAParts<ov::Tensor>>& tensors) const {
-        size_t result = 0;
-        for (const auto& tensor_parts : tensors) {
-            result += tensor_parts.alpha.get_byte_size();
-            result += tensor_parts.A.get_byte_size();
-            result += tensor_parts.B.get_byte_size();
-        }
-        return result;
-    }
-
     // Returns whether both configs assign the same alpha to every adapter. Callers must have
-    // already established that the adapter lists match (see same_prepared_tensor_cache_key).
+    // already established that the adapter lists match (see PreparedTensorCache::same_key).
     bool same_alphas(const AdapterConfig& lhs, const AdapterConfig& rhs) const {
         const auto& adapters = lhs.get_adapters();
         return std::all_of(adapters.begin(), adapters.end(), [&](const Adapter& adapter) {
@@ -1703,47 +1762,28 @@ struct AdapterControllerImpl {
         });
     }
 
-    // Returns cached prepared tensors for a config if present, otherwise prepares and caches them, evicting LRU entries as needed.
+    // Returns cached prepared tensors for a config if present, otherwise prepares and caches them.
     const std::vector<LoRAParts<ov::Tensor>>& get_or_prepare_config_tensors(
         const AdapterConfig& config,
         const std::vector<LoRAWeightGetter>& weight_getters) {
-        for (auto it = prepared_tensor_cache.begin(); it != prepared_tensor_cache.end(); ++it) {
-            if (!same_prepared_tensor_cache_key(it->config, config)) {
-                continue;
-            }
+        if (auto* cached = prepared_tensor_cache.find(config)) {
             // The cache key covers adapter identity only, because A/B don't depend on alpha. The
             // entry's alpha tensors, however, were evaluated under the alphas of the config that
             // created it, so a hit from a config that differs only by alpha would otherwise apply a
             // stale alpha. Re-evaluate just the alpha tensors in that case and keep the cached A/B:
-            // alpha is a small broadcast, while A/B are the expensive part. Alpha tensors keep the
-            // shape and type declared by the variable, so the entry's byte size is unaffected.
-            if (!same_alphas(it->config, config)) {
+            // alpha is a small broadcast, while A/B are the expensive part.
+            if (!same_alphas(prepared_tensor_cache.front_config(), config)) {
                 auto fresh_alphas = prepare_config_tensors(config, weight_getters, /*alpha_only=*/true);
-                OPENVINO_ASSERT(fresh_alphas.size() == it->tensors.size());
-                for (size_t i = 0; i < it->tensors.size(); ++i) {
-                    it->tensors[i].alpha = std::move(fresh_alphas[i].alpha);
+                OPENVINO_ASSERT(fresh_alphas.size() == cached->size());
+                for (size_t i = 0; i < cached->size(); ++i) {
+                    (*cached)[i].alpha = std::move(fresh_alphas[i].alpha);
                 }
-                it->config = config;
+                prepared_tensor_cache.update_front_config(config);
             }
-            prepared_tensor_cache.splice(prepared_tensor_cache.begin(), prepared_tensor_cache, it);
-            return prepared_tensor_cache.front().tensors;
+            return *cached;
         }
 
-        auto tensors = prepare_config_tensors(config, weight_getters);
-        auto byte_size = prepared_tensors_byte_size(tensors);
-
-        // Retain a single oversized entry so a valid config still benefits from caching.
-        // Otherwise evict least-recently-used entries until both limits are satisfied.
-        while (!prepared_tensor_cache.empty() &&
-               (prepared_tensor_cache.size() >= prepared_tensor_cache_capacity ||
-                byte_size > prepared_tensor_cache_max_bytes ||
-                prepared_tensor_cache_byte_size > prepared_tensor_cache_max_bytes - byte_size)) {
-            prepared_tensor_cache_byte_size -= prepared_tensor_cache.back().byte_size;
-            prepared_tensor_cache.pop_back();
-        }
-        prepared_tensor_cache.push_front({config, std::move(tensors), byte_size});
-        prepared_tensor_cache_byte_size += byte_size;
-        return prepared_tensor_cache.front().tensors;
+        return prepared_tensor_cache.insert(config, prepare_config_tensors(config, weight_getters));
     }
 
     void prepare_initial_configs() {
