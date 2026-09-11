@@ -29,12 +29,14 @@ namespace ov::genai {
  * path spends accumulating VLMDecodedResults::intermediate_hidden_states.
  *
  * The reader closes its own end with detach() when it stops listening and with abort() when it
- * fails. Both drop the queue, which is what keeps a reader that is gone from turning the rest of
- * the generation into unbounded growth. They differ in what write() then tells the thinker:
- * detach() leaves it RUNNING so the text still finishes, while abort() returns STOP because
- * nobody will hear the rest. Until one of them is called write() returns RUNNING — a healthy
- * channel never asks the thinker to stop, and caller-driven cancellation stays with the caller's
- * own StreamerVariant.
+ * fails. Both drop the queue, which is what keeps a reader that is gone from turning the rest ofl
+ * the generation into unbounded growth, and both are idempotent, with abort() taking precedence.
+ * They differ in what write() then tells the thinker: detach() leaves it RUNNING so the text still
+ * finishes, while abort() returns STOP because nobody will hear the rest. The failure itself never
+ * travels on the channel — OmniPipeline carries it on the talker's std::future and rethrows it on
+ * the caller's thread. Until one of them is called write() returns RUNNING — a healthy channel
+ * never asks the thinker to stop, and caller-driven cancellation stays with the caller's own
+ * StreamerVariant.
  *
  * The writer closes with end() or abandon(), and the difference travels to the reader as
  * truncated(). abandon() also drops the queue: a talker that keeps consuming a backlog the thinker
@@ -75,16 +77,10 @@ public:
     /// @brief Whether the write end closed with abandon() rather than end().
     bool truncated() const override;
 
-    /// @brief Close the read end: no more steps are wanted, and that is not an error. The thinker
-    ///        keeps generating, so a talker that finished early — codec EOS, its own token budget,
-    ///        a speech streamer that asked to stop — still leaves the caller with the full text.
-    ///        Idempotent, and callable after abort(), which it does not undo.
+    /// @brief Close the read end: the talker stopped gracefully, so it is not going to read anymore.
     void detach();
 
-    /// @brief Close the read end after a failure: the talker gave up, so the rest of the response
-    ///        is pointless and write() starts returning STOP. Idempotent, and takes precedence
-    ///        over detach(). The failure itself does not travel on the channel — OmniPipeline
-    ///        carries it on the talker's std::future and rethrows it on the caller's thread.
+    /// @brief Close the read end because the talker failed.
     void abort();
 
 private:
