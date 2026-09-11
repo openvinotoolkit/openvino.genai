@@ -7,10 +7,17 @@ from conftest import convert_model, run_wwb
 @pytest.mark.xfail(sys.platform == "darwin", reason="Not enough memory on macOS CI runners. Ticket CVS-179749")
 @pytest.mark.xfail(sys.platform == "win32", reason="Access violation in OVLTXPipeline on Windows. Ticket CVS-179750")
 @pytest.mark.parametrize(
-    ("model_id", "model_type"),
-    [("optimum-intel-internal-testing/tiny-random-ltx-video", "text-to-video")],
+    ("model_id", "model_type", "genai_args"),
+    [
+        (
+            "optimum-intel-internal-testing/tiny-random-ltx-video",
+            "text-to-video",
+            ["--taylorseer-config", '{"disable_cache_after_step": 0}'],
+        ),
+        ("optimum-intel-internal-testing/tiny-random-ltx2", "text-to-video", []),
+    ],
 )
-def test_video_model_genai(model_id, model_type, tmp_path):
+def test_video_model_genai(model_id, model_type, genai_args, tmp_path):
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = convert_model(model_id)
 
@@ -54,8 +61,7 @@ def test_video_model_genai(model_id, model_type, tmp_path):
             "9",
             "--output",
             tmp_path,
-            "--taylorseer-config",
-            '{"disable_cache_after_step": 0}',
+            *genai_args,
         ]
     )
 

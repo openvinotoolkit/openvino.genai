@@ -21,16 +21,7 @@
 #include "json_utils.hpp"
 namespace {
 
-const std::string get_class_name(const std::filesystem::path& root_dir) {
-    const std::filesystem::path model_index_path = root_dir / "model_index.json";
-    std::ifstream file(model_index_path);
-    OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
-
-    nlohmann::json data = nlohmann::json::parse(file);
-    using ov::genai::utils::read_json_param;
-
-    return data["_class_name"].get<std::string>();
-}
+using ov::genai::utils::get_class_name;
 
 ov::Tensor get_guidance_scale_embedding(float guidance_scale, uint32_t embedding_dim) {
     float w = guidance_scale * 1000;
