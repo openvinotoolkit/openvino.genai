@@ -586,6 +586,16 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_linear_attentio
                 promotion.processed_tokens_after);
         }
     }
+    if (pending_promotions.empty()) {
+        return;
+    }
+    auto prepared = CacheOrchestrator::LinearAttentionScratchLease::prepare_promotions(
+        promotion_leases, promotion_requests);
+    std::ignore = prepared.apply();
+    for (const PendingPromotion& promotion : pending_promotions) {
+        promotion.lease->mark_committed();
+        scheduler_output.m_linear_attention_scratch_leases.erase(promotion.seq_id);
+    }
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
