@@ -34,6 +34,7 @@ enum class VLMModelType {
     QWEN3_OMNI,
     DEEPSEEK_OCR2,
     MUSE_GLIMMER,
+    MISTRAL3,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to
