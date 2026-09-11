@@ -369,6 +369,66 @@ TEST(TestBlockManager, TemporaryBlocksPromoteSelectedCheckpoint) {
     EXPECT_EQ(bm.num_free_blocks(), 4);
 }
 
+TEST(TestBlockManager, TemporaryReservationExcludesEvictableCheckpointsFromWritableCapacity) {
+    for (const size_t num_layers : {1u, 2u}) {
+        SCOPED_TRACE(num_layers);
+        ov::genai::BlockManager manager(4, true, 4, num_layers, 0, true, 4);
+        auto producer = create_sequence_group({1, 2, 3, 4}, 0);
+        auto active = create_sequence_group({5, 6, 7, 8}, 1);
+        const uint64_t producer_id = producer->get_sequences().front()->get_id();
+        const uint64_t active_id = active->get_sequences().front()->get_id();
+        producer->schedule_tokens(4);
+        manager.append_slots(producer);
+        producer->finish_iteration();
+        const auto published = manager.get_block_table(producer_id, 0).front();
+        const auto published_hash = published->get_hash();
+        manager.free_sequence(producer_id);
+        active->schedule_tokens(4);
+        manager.append_slots(active);
+        active->finish_iteration();
+        ASSERT_TRUE(published->has_published_hash());
+        ASSERT_EQ(published->get_references_count(), 0u);
+        ASSERT_EQ(manager.num_free_blocks(), 3u);
+
+        EXPECT_FALSE(manager.can_reserve_temporary_blocks(active_id, 0));
+        EXPECT_FALSE(manager.can_reserve_temporary_blocks(active_id, 3));
+        EXPECT_THROW(std::ignore = manager.reserve_temporary_blocks(active_id, 3), ov::Exception);
+        EXPECT_FALSE(manager.has_temporary_blocks(active_id));
+        EXPECT_EQ(manager.num_free_blocks(), 3u);
+        EXPECT_EQ(published->get_hash(), published_hash);
+
+        ASSERT_TRUE(manager.can_reserve_temporary_blocks(active_id, 2));
+        const auto scratch = manager.reserve_temporary_blocks(active_id, 2);
+        ASSERT_EQ(scratch.size(), 2u);
+        EXPECT_EQ(manager.num_free_blocks(), 1u);
+        EXPECT_FALSE(manager.can_reserve_temporary_blocks(active_id, 1));
+        for (const int row : scratch) {
+            EXPECT_NE(row, published->get_index());
+        }
+        auto consumer = create_sequence_group({1, 2, 3, 4, 9}, 2);
+        const uint64_t consumer_id = consumer->get_sequences().front()->get_id();
+        manager.restore_cached_blocks(consumer);
+        ASSERT_TRUE(manager.has_block_table(consumer_id));
+        EXPECT_EQ(manager.get_block_table(consumer_id, 0).front(), published);
+        EXPECT_EQ(manager.get_total_block_count(), 4u);
+        consumer->schedule_tokens(1);
+        EXPECT_FALSE(manager.can_append_slots(consumer));
+        EXPECT_EQ(published->get_hash(), published_hash);
+        EXPECT_EQ(manager.get_block_table(consumer_id, 0).front(), published);
+
+        manager.release_temporary_blocks(active_id);
+        EXPECT_FALSE(manager.has_temporary_blocks(active_id));
+        EXPECT_TRUE(manager.can_reserve_temporary_blocks(active_id, 2));
+        EXPECT_TRUE(manager.can_append_slots(consumer));
+        std::ignore = manager.append_slots(consumer);
+        EXPECT_EQ(manager.get_total_block_count(), 4u);
+        EXPECT_EQ(published->get_hash(), published_hash);
+        manager.free_sequence(consumer_id);
+        manager.free_sequence(active_id);
+        EXPECT_EQ(manager.num_free_blocks(), 4u);
+    }
+}
+
 TEST(TestBlockManager, TemporaryBlocksReleaseWithoutPromotion) {
     ov::genai::BlockManager bm = ov::genai::BlockManager(
         /*num_blocks=*/3,
