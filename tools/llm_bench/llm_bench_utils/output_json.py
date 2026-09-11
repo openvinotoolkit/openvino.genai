@@ -81,7 +81,6 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             "prompt_idx": prompt_idx,
             "chat_idx": chat_idx,
             "prompt_repr": iter_data.get("prompt_repr", ""),
-            "input_tokens": iter_data.get("input_tokens", ""),
             "result_md5": result_md5,
             "start": timestamp_start,
             "end": timestamp_end,

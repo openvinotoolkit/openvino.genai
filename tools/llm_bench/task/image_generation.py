@@ -243,7 +243,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
         iter_timestamp[num][p_idx]["start"] = datetime.datetime.now().isoformat()
         before = len(iter_data_list)
         image_gen_fn(prompt, num, p_idx, pipe, args, iter_data_list, proc_id, mem_consumption, callback)
-        prompt.stamp_repr(iter_data_list, before, args["batch_size"])
+        prompt.stamp_repr(iter_data_list, before)
         iter_timestamp[num][p_idx]["end"] = datetime.datetime.now().isoformat()
         log.info(f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
 
