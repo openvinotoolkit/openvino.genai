@@ -107,6 +107,22 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         generations.push_back(std::make_shared<GenerationHandleImpl>(sequence_group->get_generation_stream(), sequence_group->get_sampling_parameters()));
     }
 
+    // Some language models (e.g. LFM2 hybrid short-conv + attention) do not expose a
+    // "position_ids" input and derive positions internally from the attention mask / state.
+    // Skip position_ids handling entirely when the model has no such input.
+    if (position_ids.has_value()) {
+        bool model_has_position_ids = false;
+        for (const auto& port : m_llm.get_compiled_model().inputs()) {
+            if (port.get_names().count("position_ids")) {
+                model_has_position_ids = true;
+                break;
+            }
+        }
+        if (!model_has_position_ids) {
+            position_ids.reset();
+        }
+    }
+
     auto active_sequence_groups{sequence_groups};
 
     auto stream_generated_tokens = [&streamer_ptr, &generations, &active_sequence_groups]() {

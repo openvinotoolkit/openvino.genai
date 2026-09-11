@@ -530,6 +530,14 @@ def load_visual_text_model(
             return load_omni_hf_pipeline(model_id, device, config, trust_remote_code, **kwargs)
 
         model_kwargs = {"trust_remote_code": trust_remote_code}
+        # Some architectures ship with a bfloat16 default dtype. On near-tie
+        # next-token distributions bf16 rounding can flip the argmax relative to
+        # the fp16/fp32 OpenVINO export, producing spurious ground-truth
+        # mismatches during WWB comparison. Force fp32 for the HF reference so it
+        # matches the exported model (mirrors the gemma3n handling below). Keyed
+        # on architecture metadata, not a specific Hub repo id.
+        if getattr(config, "model_type", None) == "lfm2_vl":
+            model_kwargs.update({"torch_dtype": torch.float32})
         try:
             model_cls = None
 

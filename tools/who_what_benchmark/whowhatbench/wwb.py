@@ -540,9 +540,78 @@ def check_args(args):
         args.dataset_field = "text"
 
 
+VISUAL_TEXT_TASKS = (
+    "visual-text",
+    "visual-video-text",
+    "visual-text-only",
+    "visual-text-chat",
+    "visual-video-text-chat",
+)
+
+
+def load_visual_text_prompts_from_csv(path):
+    """Load a local CSV dataset for visual-text tasks.
+
+    The CSV must contain a ``prompts`` column and may contain ``images`` and
+    ``videos`` columns. Image/video entries are file paths (resolved relative to
+    the CSV location when not absolute) or empty for text-only rows. Images are
+    loaded into PIL objects so they can be consumed directly by the visual-text
+    evaluators. This keeps the behavior generic and model-agnostic.
+    """
+    from transformers.image_utils import load_image
+
+    df = pd.read_csv(path, keep_default_na=False)
+    if "prompts" not in df.columns:
+        raise ValueError(
+            f"Local visual-text dataset '{path}' must contain a 'prompts' column."
+        )
+
+    base_dir = os.path.dirname(os.path.abspath(path))
+
+    def _resolve(entry):
+        if entry is None:
+            return None
+        entry = str(entry).strip()
+        if not entry:
+            return None
+        if not os.path.isabs(entry):
+            candidate = os.path.join(base_dir, entry)
+            if os.path.exists(candidate):
+                return candidate
+        return entry
+
+    prompts = [str(p) for p in df["prompts"].tolist()]
+
+    images = None
+    if "images" in df.columns:
+        images = []
+        for entry in df["images"].tolist():
+            resolved = _resolve(entry)
+            images.append(load_image(resolved) if resolved is not None else None)
+
+    videos = None
+    if "videos" in df.columns:
+        videos = [_resolve(entry) for entry in df["videos"].tolist()]
+
+    res = {"prompts": prompts}
+    res["images"] = images if images is not None else [None] * len(prompts)
+    res["videos"] = videos if videos is not None else [None] * len(prompts)
+    return res
+
+
 def load_prompts(args):
     if args.dataset is None:
         return None
+    # For visual-text tasks, allow a local CSV dataset carrying prompts along
+    # with per-row image/video paths, resolved deterministically. This avoids a
+    # dependency on the default remote dataset while staying generic.
+    if (
+        args.model_type in VISUAL_TEXT_TASKS
+        and isinstance(args.dataset, str)
+        and args.dataset.lower().endswith(".csv")
+        and os.path.isfile(args.dataset)
+    ):
+        return load_visual_text_prompts_from_csv(args.dataset)
     split = "validation"
     if args.split is not None:
         split = args.split
