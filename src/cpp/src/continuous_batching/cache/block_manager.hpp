@@ -449,6 +449,17 @@ public:
         allocation.blocks.clear();
     }
 
+    void free_prepared(CacheBlock::Ptr& block,
+                       std::list<CacheBlock::Ptr>& free_node,
+                       size_t layer_index) noexcept {
+        block->release_prevalidated();
+        if (block->is_free()) {
+            free_node.front() = block;
+            m_free_blocks[layer_index].splice(m_free_blocks[layer_index].end(), free_node);
+            ++m_free_blocks_num[layer_index];
+        }
+    }
+
     CacheBlockAllocationResult acquire_unpublished_block(std::map<uint64_t, BlocksPerLayer>& cached_blocks) {
         CacheBlockAllocationResult result;
         if (m_free_blocks_num[0] > 0) {
@@ -831,19 +842,73 @@ public:
         size_t expected_generation;
     };
 
+    struct TailReleaseTarget {
+        uint64_t seq_id;
+        size_t endpoint;
+    };
+
+    class PreparedTailReleases {
+    public:
+        PreparedTailReleases(const PreparedTailReleases&) = delete;
+        PreparedTailReleases& operator=(const PreparedTailReleases&) = delete;
+        PreparedTailReleases(PreparedTailReleases&&) noexcept = default;
+        PreparedTailReleases& operator=(PreparedTailReleases&&) = delete;
+
+        void apply() {
+            OPENVINO_ASSERT(m_lock.owns_lock(), "Prepared KV tail releases were already applied or moved");
+            for (PreparedRelease& release : m_releases) {
+                for (size_t block_index = 0; block_index < release.blocks.size(); ++block_index) {
+                    for (size_t layer_index = 0; layer_index < m_owner->m_num_layers; ++layer_index) {
+                        CacheBlock::Ptr& block = release.blocks[block_index][layer_index];
+                        m_owner->m_allocator.free_prepared(
+                            block, release.free_nodes[block_index][layer_index], layer_index);
+                    }
+                }
+                for (auto& layer_table : release.table_it->second) {
+                    layer_table.resize(layer_table.size() - release.blocks.size());
+                }
+                if (release.table_it->second.front().empty()) {
+                    m_owner->m_block_table_logical_start.erase(release.seq_id);
+                    m_owner->m_block_table.erase(release.table_it);
+                }
+            }
+            m_lock.unlock();
+        }
+
+    private:
+        using TableIterator = std::map<uint64_t, std::vector<BlocksPerLayer>>::iterator;
+        struct PreparedRelease {
+            uint64_t seq_id;
+            TableIterator table_it;
+            std::vector<BlocksPerLayer> blocks;
+            std::vector<std::vector<std::list<CacheBlock::Ptr>>> free_nodes;
+        };
+
+        friend class BlockManager;
+        PreparedTailReleases(BlockManager& owner,
+                             std::unique_lock<std::mutex> lock,
+                             std::vector<PreparedRelease> releases)
+            : m_owner(&owner), m_lock(std::move(lock)), m_releases(std::move(releases)) {}
+
+        BlockManager* m_owner;
+        std::unique_lock<std::mutex> m_lock;
+        std::vector<PreparedRelease> m_releases;
+    };
+
     class PreparedTemporaryPromotions {
     public:
         PreparedTemporaryPromotions(const PreparedTemporaryPromotions&) = delete;
         PreparedTemporaryPromotions& operator=(const PreparedTemporaryPromotions&) = delete;
-            PreparedTemporaryPromotions(PreparedTemporaryPromotions&& other) noexcept
-                : m_owner(std::exchange(other.m_owner, nullptr)),
-                  m_lock(std::move(other.m_lock)),
-                  m_promotions(std::move(other.m_promotions)),
-                  m_promoted_indices(std::move(other.m_promoted_indices)) {}
-            PreparedTemporaryPromotions& operator=(PreparedTemporaryPromotions&&) = delete;
+                PreparedTemporaryPromotions(PreparedTemporaryPromotions&& other) noexcept
+                        : m_owner(std::exchange(other.m_owner, nullptr)),
+                            m_lock(std::move(other.m_lock)),
+                            m_promotions(std::move(other.m_promotions)),
+                            m_promoted_indices(std::move(other.m_promoted_indices)) {}
+                PreparedTemporaryPromotions& operator=(PreparedTemporaryPromotions&&) = delete;
 
-            const std::vector<size_t>& apply() {
-            OPENVINO_ASSERT(m_owner != nullptr, "Temporary promotions were already applied");
+                const std::vector<size_t>& apply() {
+                        OPENVINO_ASSERT(m_owner != nullptr && m_lock.owns_lock(),
+                                                        "Temporary promotions were already applied or moved");
             for (const PreparedPromotion& promotion : m_promotions) {
                 auto& temporary_blocks = promotion.temporary_it->second;
                 auto& selected_allocation = temporary_blocks[promotion.selected_index];
@@ -1982,6 +2047,63 @@ public:
             }
             invalidate_rolled_back_last_block(seq_id, seq_group->get_context_len());
         }
+    }
+
+    PreparedTailReleases prepare_tail_releases(const std::vector<TailReleaseTarget>& targets) {
+        std::unique_lock<std::mutex> lock(m_cached_blocks_map_mutex);
+        OPENVINO_ASSERT(!m_enable_prefix_caching,
+                        "Prepared KV tail release is supported only when prefix caching is disabled");
+        OPENVINO_ASSERT(m_fixed_blocks_per_sequence == 0,
+                        "Prepared KV tail release is supported only without fixed cache blocks");
+        std::set<uint64_t> target_ids;
+        for (const TailReleaseTarget& target : targets) {
+            OPENVINO_ASSERT(target_ids.insert(target.seq_id).second,
+                            "Duplicate prepared KV tail release target for sequence ", target.seq_id);
+            const auto table_it = m_block_table.find(target.seq_id);
+            OPENVINO_ASSERT(table_it != m_block_table.end(),
+                            "Missing KV block table for prepared tail release sequence ", target.seq_id);
+            OPENVINO_ASSERT(table_it->second.size() == m_num_layers,
+                            "KV block table layer count mismatch for prepared tail release sequence ", target.seq_id);
+            const size_t allocated_blocks = table_it->second.front().size();
+            for (const BlocksPerLayer& layer_table : table_it->second) {
+                OPENVINO_ASSERT(layer_table.size() == allocated_blocks,
+                                "KV block tables across layers must have equal size");
+            }
+            const size_t required_blocks = target.endpoint == 0 ? 0 : 1 + (target.endpoint - 1) / m_block_size;
+            OPENVINO_ASSERT(required_blocks <= allocated_blocks,
+                            "Prepared KV tail release endpoint exceeds allocated slots for sequence ", target.seq_id);
+        }
+
+        std::vector<PreparedTailReleases::PreparedRelease> releases;
+        releases.reserve(targets.size());
+        for (const TailReleaseTarget& target : targets) {
+            auto table_it = m_block_table.find(target.seq_id);
+            const size_t allocated_blocks = table_it->second.front().size();
+            const size_t required_blocks = target.endpoint == 0 ? 0 : 1 + (target.endpoint - 1) / m_block_size;
+            if (allocated_blocks <= required_blocks) {
+                continue;
+            }
+            const size_t release_count = allocated_blocks - required_blocks;
+            PreparedTailReleases::PreparedRelease release{target.seq_id, table_it, {}, {}};
+            release.blocks.reserve(release_count);
+            release.free_nodes.resize(release_count);
+            for (size_t block_offset = 0; block_offset < release_count; ++block_offset) {
+                BlocksPerLayer blocks;
+                blocks.reserve(m_num_layers);
+                release.free_nodes[block_offset].resize(m_num_layers);
+                for (size_t layer_index = 0; layer_index < m_num_layers; ++layer_index) {
+                    const CacheBlock::Ptr& block =
+                        table_it->second[layer_index][allocated_blocks - block_offset - 1];
+                    OPENVINO_ASSERT(block->get_references_count() > 0,
+                                    "Prepared KV tail block must have a live reference");
+                    blocks.push_back(block);
+                    release.free_nodes[block_offset][layer_index].emplace_back();
+                }
+                release.blocks.push_back(std::move(blocks));
+            }
+            releases.push_back(std::move(release));
+        }
+        return PreparedTailReleases{*this, std::move(lock), std::move(releases)};
     }
 
 

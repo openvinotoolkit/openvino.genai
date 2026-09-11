@@ -53,6 +53,7 @@ std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx);
 struct SamplerOutput {
     struct AcceptanceResult {
         size_t accepted_depth = 0;
+        size_t processed_tokens_after = 0;
     };
 
     // IDs of sequences that need to be dropped
@@ -189,7 +190,8 @@ public:
     SamplerOutput sample(const std::vector<SequenceGroup::Ptr>& sequence_groups,
                          ov::Tensor logits,
                          bool is_validation_mode_enabled = false,
-                         bool notify_handles = true);
+                         bool notify_handles = true,
+                         bool defer_sequence_group_updates = false);
 
     // Non-CB pipelines required API for seed. The CB path uses per-request engines from m_request_contexts.
     void set_seed(size_t new_seed) { m_default_seed = new_seed; }

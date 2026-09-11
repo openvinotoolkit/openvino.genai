@@ -25,6 +25,8 @@ file(GLOB tests_src "*.cpp")
 set(TEST_TARGET_NAME "tests_continuous_batching")
 
 add_executable(${TEST_TARGET_NAME} ${tests_src} $<TARGET_OBJECTS:openvino_genai_obj>)
+add_executable(tests_cache_allocation_failure allocation_failure/prepared_cache.cpp
+               $<TARGET_OBJECTS:openvino_genai_obj>)
 
 add_subdirectory(custom_op)
 
@@ -36,17 +38,25 @@ if(ENABLE_SYSTEM_OPENCL)
     if(TARGET OpenCL::OpenCL)
         target_link_libraries(${TEST_TARGET_NAME} PRIVATE OpenCL::OpenCL)
         target_compile_definitions(${TEST_TARGET_NAME} PRIVATE ENABLE_OPENCL_DPP)
+      target_link_libraries(tests_cache_allocation_failure PRIVATE OpenCL::OpenCL)
+      target_compile_definitions(tests_cache_allocation_failure PRIVATE ENABLE_OPENCL_DPP)
     endif()
 endif()
 
 target_include_directories(${TEST_TARGET_NAME} PRIVATE "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src"
                                                        $<TARGET_PROPERTY:openvino::genai,INTERFACE_INCLUDE_DIRECTORIES>)
 
+target_link_libraries(tests_cache_allocation_failure PRIVATE
+                      $<TARGET_PROPERTY:openvino::genai,LINK_LIBRARIES> gtest_main gmock)
+target_include_directories(tests_cache_allocation_failure PRIVATE "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src"
+                          $<TARGET_PROPERTY:openvino::genai,INTERFACE_INCLUDE_DIRECTORIES>)
+
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
   target_link_options(${TEST_TARGET_NAME} PRIVATE /IGNORE:4207,4286)
+  target_link_options(tests_cache_allocation_failure PRIVATE /IGNORE:4207,4286)
 endif()
 
-install(TARGETS ${TEST_TARGET_NAME}
+install(TARGETS ${TEST_TARGET_NAME} tests_cache_allocation_failure
         RUNTIME DESTINATION tests/
         COMPONENT tests
         EXCLUDE_FROM_ALL)

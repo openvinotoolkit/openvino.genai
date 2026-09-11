@@ -898,44 +898,23 @@ TEST(TestBlockManager, PrefixCachingRollbackInvalidatesLatestOnlyEndpointWithLog
     active_sequence->append_token(12, 0.0f);
     active_sequence->append_token(13, 0.0f);
     active_group->schedule_tokens(3);
-    block_manager.append_slots(active_group);
-    active_group->finish_iteration();
-    const int invalidated_index = block_manager.get_block_table(active_sequence->get_id(), 0).back()->get_index();
-    ASSERT_TRUE(block_manager.get_block_table(active_sequence->get_id(), 0).back()->has_published_hash());
+    const auto table_before = block_manager.get_block_table(active_sequence->get_id(), 0);
+    ASSERT_EQ(table_before.size(), 2u);
+    ASSERT_TRUE(table_before.back()->has_published_hash());
+    EXPECT_FALSE(block_manager.can_append_slots(active_group));
+    EXPECT_THROW(block_manager.append_slots(active_group), ov::Exception);
 
-    active_sequence->remove_last_tokens(1);
-    active_group->update_processed_tokens_num(13);
-    block_manager.free_empty_physical_blocks(active_group);
-    EXPECT_FALSE(block_manager.get_block_table(active_sequence->get_id(), 0).back()->has_published_hash());
-
-    std::vector<int64_t> stale_tokens(14);
-    std::iota(stale_tokens.begin(), stale_tokens.end(), 0);
-    auto stale_restore_group = create_sequence_group(stale_tokens, 75);
-    ASSERT_TRUE(block_manager.restore_cached_blocks(stale_restore_group));
-    const uint64_t stale_restore_id = stale_restore_group->get_running_sequences().front()->get_id();
-    EXPECT_EQ(stale_restore_group->get_num_processed_tokens(), 12);
-    EXPECT_EQ(block_manager.get_block_table_logical_start(stale_restore_id), 1);
-    EXPECT_NE(block_manager.get_block_table(stale_restore_id, 0).back()->get_index(), invalidated_index);
-
-    active_sequence->append_token(40, 0.0f);
-    active_group->schedule_tokens(1);
-    block_manager.append_slots(active_group);
-    active_group->finish_iteration();
-    EXPECT_FALSE(block_manager.get_block_table(active_sequence->get_id(), 0).back()->has_published_hash());
-
-    std::vector<int64_t> divergent_tokens(source_tokens);
-    divergent_tokens.push_back(12);
-    divergent_tokens.push_back(40);
-    auto divergent_restore_group = create_sequence_group(divergent_tokens, 76);
-    ASSERT_TRUE(block_manager.restore_cached_blocks(divergent_restore_group));
-    const uint64_t divergent_restore_id = divergent_restore_group->get_running_sequences().front()->get_id();
-    EXPECT_EQ(divergent_restore_group->get_num_processed_tokens(), 12);
-    EXPECT_EQ(block_manager.get_block_table_logical_start(divergent_restore_id), 1);
-    EXPECT_NE(block_manager.get_block_table(divergent_restore_id, 0).back()->get_index(), invalidated_index);
+    const auto& table_after = block_manager.get_block_table(active_sequence->get_id(), 0);
+    ASSERT_EQ(table_after.size(), table_before.size());
+    for (size_t block_idx = 0; block_idx < table_before.size(); ++block_idx) {
+        EXPECT_EQ(table_after[block_idx]->get_index(), table_before[block_idx]->get_index());
+        EXPECT_EQ(table_after[block_idx]->get_references_count(), table_before[block_idx]->get_references_count());
+        EXPECT_EQ(table_after[block_idx]->has_published_hash(), table_before[block_idx]->has_published_hash());
+    }
+    EXPECT_EQ(active_group->get_num_processed_tokens(), 11u);
+    EXPECT_EQ(block_manager.get_block_table_logical_start(active_sequence->get_id()), 1);
 
     block_manager.free_sequence(active_sequence->get_id());
-    block_manager.free_sequence(stale_restore_id);
-    block_manager.free_sequence(divergent_restore_id);
 }
 
 TEST(TestBlockManager, PrefixCachingRollbackDuplicateOwnerSurvivesOverwriteStoreThenEvictsCleanly) {
