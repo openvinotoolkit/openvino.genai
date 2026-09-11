@@ -2,6 +2,26 @@
 
 ## Current Handoff (2026-09-11)
 
+The first P4 capacity slice is now committed as `f06a67b11`:
+`Bound prefix linear-attention capacity and defer blocked admission`.
+
+The following reservation-admission slice is implemented and uncommitted. Scratch
+admission, legacy reservation and prepared lease acquisition now use the same raw
+writable-row capacity check. Evictable prefix checkpoints still count toward ordinary
+cache capacity, but not toward a scratch allocation that cannot evict them. Zero-row
+reservations are rejected. A capped one/two-layer regression verifies an oversized
+reservation fails before mutation, a fitting reservation preserves cached lookup,
+competing restored continuation cannot consume reserved rows, and release restores
+continuation capacity without modifying the checkpoint hash.
+
+Validation after this slice: 753 selected C++ tests, six allocation-failure tests and
+five LFM Python regressions passed against the rebuilt native library. CSV-backed
+model suites were excluded. Prepared checkpoint eviction and retained next-window
+headroom are not implemented by this correction; publication and atomic restore also
+remain P4 gates. Prefix verification is still guarded.
+
+### Previous Capacity Handoff
+
 P1-P3 committed at user request as `0ce159919`:
 `Prepare coherent KV and linear-attention commits with allocation failure coverage`.
 Hooks passed after end-of-file formatting. Unrelated worktree changes were excluded.

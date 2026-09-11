@@ -433,6 +433,12 @@ public:
         return can_allocate_blocks(num_blocks);
     }
 
+    bool can_allocate_temporary_blocks(size_t num_blocks) const {
+        return num_blocks > 0 &&
+               std::all_of(m_free_blocks_num.begin(), m_free_blocks_num.end(),
+                           [num_blocks](size_t free_blocks) { return free_blocks >= num_blocks; });
+    }
+
     /**
      * Frees a given block for a given layer. If no sequence is associated with the block after freeing, the block
      * is returned to the "free" pool.
