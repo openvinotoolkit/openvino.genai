@@ -525,19 +525,23 @@ InputsEmbedderQwen3Omni::InputsEmbedderQwen3Omni(const VLMConfig& vlm_config,
     }
 }
 
-void InputsEmbedderQwen3Omni::encode_audios(const std::vector<ov::Tensor>& audios) {
-    if (audios.empty() || !has_audio_encoder()) {
-        m_audio_embeddings = ov::Tensor();
-        return;
+std::vector<ov::genai::EncodedAudio> InputsEmbedderQwen3Omni::encode_audios(const std::vector<ov::Tensor>& audios) {
+    if (audios.empty()) {
+        return {};
     }
+    OPENVINO_ASSERT(has_audio_encoder(),
+                    "Audio input was provided but this model has no audio encoder. Export the model with its "
+                    "audio tower (openvino_audio_encoder_model.xml) to use audio.");
 
-    std::vector<ov::Tensor> all_features;
-    size_t total_tokens = 0;
+    std::vector<ov::genai::EncodedAudio> encoded;
+    encoded.reserve(audios.size());
     size_t hidden_size = 0;
 
     for (const auto& audio : audios) {
-        // Empty audio tensors are silently skipped so callers can pass placeholders.
+        // An empty input keeps its slot as a zero-token entry: dropping it would shift every
+        // later <ov_genai_audio_N> index by one.
         if (audio.get_size() == 0) {
+            encoded.push_back({ov::Tensor(), 0});
             continue;
         }
 
@@ -551,9 +555,11 @@ void InputsEmbedderQwen3Omni::encode_audios(const std::vector<ov::Tensor>& audio
                         "Audio encoder output element type must be f32, got ",
                         features.get_element_type());
 
-        const size_t num_tokens = feature_shape[0];
         const size_t current_hidden_size = feature_shape[1];
-        if (all_features.empty()) {
+        OPENVINO_ASSERT(current_hidden_size > 0,
+                        "Audio encoder produced a zero-width feature tensor, which cannot be merged into the "
+                        "language model's embeddings. Re-export the audio encoder.");
+        if (hidden_size == 0) {
             hidden_size = current_hidden_size;
         } else {
             OPENVINO_ASSERT(current_hidden_size == hidden_size,
@@ -563,17 +569,10 @@ void InputsEmbedderQwen3Omni::encode_audios(const std::vector<ov::Tensor>& audio
                             current_hidden_size);
         }
 
-        total_tokens += num_tokens;
-        all_features.push_back(features);
+        encoded.push_back({features, feature_shape[0]});
     }
 
-    m_audio_embeddings = ov::Tensor(ov::element::f32, {total_tokens, hidden_size});
-    auto* dst = m_audio_embeddings.data<float>();
-    for (const auto& feat : all_features) {
-        auto byte_size = feat.get_byte_size();
-        std::memcpy(dst, feat.data<float>(), byte_size);
-        dst += feat.get_size();
-    }
+    return encoded;
 }
 
 ov::Tensor InputsEmbedderQwen3Omni::get_inputs_embeds(
@@ -594,36 +593,97 @@ ov::Tensor InputsEmbedderQwen3Omni::get_inputs_embeds(
                                                                  videos_sequence,
                                                                  history_vision_count);
 
-    // Capture input_ids set by parent's get_inputs_embeds() into a local variable,
-    // making the cross-class data dependency explicit rather than relying on
-    // implicit ordering of m_last_input_ids population.
+    return input_embeds;
+}
+
+ov::Tensor InputsEmbedderQwen3Omni::get_inputs_embeds(
+    const std::string& prompt,
+    const std::vector<ov::genai::EncodedImage>& images,
+    const std::vector<ov::genai::EncodedVideo>& videos,
+    const std::vector<ov::genai::EncodedAudio>& audios,
+    ov::genai::VLMPerfMetrics& metrics,
+    bool recalculate_merged_embeddings,
+    const std::vector<size_t>& image_sequence,
+    const std::vector<size_t>& videos_sequence,
+    const std::vector<size_t>& audios_sequence,
+    size_t base_audio_id,
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
+    auto input_embeds = get_inputs_embeds(prompt,
+                                          images,
+                                          videos,
+                                          metrics,
+                                          recalculate_merged_embeddings,
+                                          image_sequence,
+                                          videos_sequence,
+                                          history_vision_count);
+
+    if (audios_sequence.empty()) {
+        return input_embeds;
+    }
+
+    // Copy locally to make the dependency on the parent's m_last_input_ids explicit.
     std::vector<int64_t> input_ids_vec(m_last_input_ids.data<int64_t>(),
                                        m_last_input_ids.data<int64_t>() + m_last_input_ids.get_size());
 
-    // If we have audio embeddings, replace audio token positions
-    if (m_audio_embeddings && m_audio_embeddings.get_size() > 0 && m_audio_token_id >= 0) {
-        merge_audio_embeddings(input_embeds, input_ids_vec);
-    }
+    merge_audio_embeddings(input_embeds, input_ids_vec, audios, audios_sequence, base_audio_id);
 
     return input_embeds;
 }
 
-void InputsEmbedderQwen3Omni::merge_audio_embeddings(ov::Tensor& input_embeds, const std::vector<int64_t>& input_ids) {
-    if (!m_audio_embeddings || m_audio_embeddings.get_size() == 0) {
+void InputsEmbedderQwen3Omni::expand_audio_tags_in_prompt(std::string& prompt,
+                                                          const std::vector<ov::genai::EncodedAudio>& audios,
+                                                          const std::vector<size_t>& audios_sequence,
+                                                          size_t base_audio_id) const {
+    const std::string native_tag = std::string(qwen3_omni::AUDIO_START_TAG) +
+                                   std::string(qwen3_omni::AUDIO_PAD_TAG) + std::string(qwen3_omni::AUDIO_END_TAG);
+
+    size_t searched_pos = 0;
+    for (size_t k = 0; k < audios_sequence.size(); k++) {
+        const size_t relative_id = audios_sequence[k] - base_audio_id;
+        OPENVINO_ASSERT(relative_id < audios.size(),
+                        "Audio index ",
+                        audios_sequence[k],
+                        " is out of range for ",
+                        audios.size(),
+                        " provided audios.");
+
+        const size_t pos = prompt.find(native_tag, searched_pos);
+        OPENVINO_ASSERT(pos != std::string::npos,
+                        "Expected ",
+                        audios_sequence.size(),
+                        " native audio tags in the prompt but found only ",
+                        k,
+                        ".");
+
+        std::string expanded;
+        const size_t pad_count = audios[relative_id].num_audio_tokens;
+        expanded.reserve(qwen3_omni::AUDIO_START_TAG.size() + qwen3_omni::AUDIO_PAD_TAG.size() * pad_count +
+                         qwen3_omni::AUDIO_END_TAG.size());
+        expanded.append(qwen3_omni::AUDIO_START_TAG);
+        for (size_t i = 0; i < pad_count; i++) {
+            expanded.append(qwen3_omni::AUDIO_PAD_TAG);
+        }
+        expanded.append(qwen3_omni::AUDIO_END_TAG);
+
+        prompt.replace(pos, native_tag.length(), expanded);
+        // Resume past what we just wrote. Restarting from 0 would re-find this same tag whenever
+        // pad_count == 1, because the expansion is then byte-identical to the tag.
+        searched_pos = pos + expanded.length();
+    }
+}
+
+void InputsEmbedderQwen3Omni::merge_audio_embeddings(ov::Tensor& input_embeds,
+                                                     const std::vector<int64_t>& input_ids,
+                                                     const std::vector<ov::genai::EncodedAudio>& audios,
+                                                     const std::vector<size_t>& audios_sequence,
+                                                     size_t base_audio_id) const {
+    if (audios_sequence.empty() || m_audio_token_id < 0) {
         return;
     }
 
     const auto& shape = input_embeds.get_shape();
     const auto seq_len = shape[1];
     const auto hidden_size = shape[2];
-
-    const auto audio_hidden_size = m_audio_embeddings.get_shape()[1];
-    OPENVINO_ASSERT(audio_hidden_size == hidden_size,
-                    "Audio embedding hidden_size (",
-                    audio_hidden_size,
-                    ") must match input embedding hidden_size (",
-                    hidden_size,
-                    "). Check that audio encoder output dimension matches the language model.");
 
     OPENVINO_ASSERT(input_ids.size() >= seq_len,
                     "input_ids size (",
@@ -633,26 +693,84 @@ void InputsEmbedderQwen3Omni::merge_audio_embeddings(ov::Tensor& input_embeds, c
                     "). Ensure input_ids are not from a stale or re-tokenized source.");
 
     auto* embed_data = input_embeds.data<float>();
-    const auto* audio_data = m_audio_embeddings.data<const float>();
-    const auto audio_total_tokens = m_audio_embeddings.get_shape()[0];
     const size_t bytes_per_token = hidden_size * sizeof(float);
-    size_t audio_idx = 0;
 
-    for (size_t i = 0; i < seq_len && audio_idx < audio_total_tokens; i++) {
-        if (input_ids[i] == m_audio_token_id) {
-            std::memcpy(embed_data + i * hidden_size, audio_data + audio_idx * hidden_size, bytes_per_token);
-            audio_idx++;
+    size_t run_index = 0;
+    for (size_t i = 0; i < seq_len;) {
+        if (input_ids[i] != m_audio_token_id) {
+            i++;
+            continue;
         }
+
+        size_t run_end = i;
+        while (run_end < seq_len && input_ids[run_end] == m_audio_token_id) {
+            run_end++;
+        }
+        const size_t run_length = run_end - i;
+
+        // A zero-token audio expands to start+end with no pads, so it contributes no run. Skip
+        // over those entries or run k stops lining up with audios_sequence[k].
+        while (run_index < audios_sequence.size() &&
+               audios[audios_sequence[run_index] - base_audio_id].num_audio_tokens == 0) {
+            run_index++;
+        }
+
+        OPENVINO_ASSERT(run_index < audios_sequence.size(),
+                        "Found more audio placeholder runs in the prompt than provided audios (",
+                        audios_sequence.size(),
+                        "). A literal audio marker in user text would do this.");
+
+        const size_t relative_id = audios_sequence[run_index] - base_audio_id;
+        OPENVINO_ASSERT(relative_id < audios.size(),
+                        "Audio index ",
+                        audios_sequence[run_index],
+                        " is out of range for ",
+                        audios.size(),
+                        " provided audios.");
+        const auto& audio = audios[relative_id];
+
+        OPENVINO_ASSERT(run_length == audio.num_audio_tokens,
+                        "Audio placeholder run ",
+                        run_index,
+                        " holds ",
+                        run_length,
+                        " tokens but audio ",
+                        audios_sequence[run_index],
+                        " encodes to ",
+                        audio.num_audio_tokens,
+                        ". The prompt expansion and the encoder disagree - this is an internal "
+                        "inconsistency, please report it with the prompt that triggered it.");
+
+        const auto audio_hidden_size = audio.audio_features.get_shape()[1];
+        OPENVINO_ASSERT(audio_hidden_size == hidden_size,
+                        "Audio embedding hidden_size (",
+                        audio_hidden_size,
+                        ") must match input embedding hidden_size (",
+                        hidden_size,
+                        "). Check that audio encoder output dimension matches the language model.");
+
+        const auto* audio_data = audio.audio_features.data<const float>();
+        for (size_t t = 0; t < run_length; t++) {
+            std::memcpy(embed_data + (i + t) * hidden_size, audio_data + t * hidden_size, bytes_per_token);
+        }
+
+        run_index++;
+        i = run_end;
     }
 
-    OPENVINO_ASSERT(audio_idx == audio_total_tokens,
-                    "Audio token count mismatch: placed ",
-                    audio_idx,
-                    " embeddings but encoder produced ",
-                    audio_total_tokens,
-                    " tokens. Ensure the prompt contains exactly ",
-                    audio_total_tokens,
-                    " audio placeholder tokens.");
+    // Trailing zero-token audios also have no run, so consume them before the final check.
+    while (run_index < audios_sequence.size() &&
+           audios[audios_sequence[run_index] - base_audio_id].num_audio_tokens == 0) {
+        run_index++;
+    }
+
+    OPENVINO_ASSERT(run_index == audios_sequence.size(),
+                    "Placed ",
+                    run_index,
+                    " of ",
+                    audios_sequence.size(),
+                    " audios: the prompt has fewer audio placeholder runs than tags resolved. This is an "
+                    "internal inconsistency, please report it with the prompt that triggered it.");
 }
 
 NormalizedPrompt InputsEmbedderQwen3Omni::normalize_prompt(const std::string& prompt,
@@ -667,27 +785,36 @@ NormalizedPrompt InputsEmbedderQwen3Omni::normalize_prompt(const std::string& pr
                                                            size_t video_base_id,
                                                            const std::vector<EncodedImage>& images,
                                                            const std::vector<EncodedVideo>& videos) const {
+    // Vision-only overload: callers with audio use the 7-argument one below, which needs the
+    // encoded audios to size each placeholder run. Nothing here consults audio state.
+    return InputsEmbedderQwen3VL::normalize_prompt(prompt, image_base_id, video_base_id, images, videos);
+}
+
+NormalizedPrompt InputsEmbedderQwen3Omni::normalize_prompt(const std::string& prompt,
+                                                           size_t image_base_id,
+                                                           size_t video_base_id,
+                                                           size_t audio_base_id,
+                                                           const std::vector<EncodedImage>& images,
+                                                           const std::vector<EncodedVideo>& videos,
+                                                           const std::vector<ov::genai::EncodedAudio>& audios) const {
     auto result = InputsEmbedderQwen3VL::normalize_prompt(prompt, image_base_id, video_base_id, images, videos);
 
-    if (m_audio_embeddings && m_audio_embeddings.get_size() > 0) {
-        const auto num_audio_tokens = m_audio_embeddings.get_shape()[0];
+    // Runs even when audios is empty: a prompt carrying <ov_genai_audio_0> with no audio supplied
+    // must be rejected by verify_ids, and returning early here would let it through silently.
+    const std::string native_tag = std::string(qwen3_omni::AUDIO_START_TAG) +
+                                   std::string(qwen3_omni::AUDIO_PAD_TAG) + std::string(qwen3_omni::AUDIO_END_TAG);
 
-        const std::string audio_start = "<|audio_start|>";
-        const std::string audio_pad = "<|audio_pad|>";
-        const std::string audio_end = "<|audio_end|>";
-
-        if (result.unified_prompt.find(audio_start) == std::string::npos) {
-            std::string audio_tag;
-            audio_tag.reserve(audio_start.size() + audio_pad.size() * num_audio_tokens + audio_end.size());
-            audio_tag.append(audio_start);
-            for (size_t i = 0; i < num_audio_tokens; ++i) {
-                audio_tag.append(audio_pad);
-            }
-            audio_tag.append(audio_end);
-            result.unified_prompt = audio_tag + result.unified_prompt;
-        }
-    }
-
+    // Same policy as images and video, so audio inherits the mixing and range checks. One pad
+    // each here; the expansion pass below grows them to the encoder-derived length.
+    auto [audio_prompt, audios_sequence] = normalize_media_tags(result.unified_prompt,
+                                                                native_tag,
+                                                                native_tag,
+                                                                audio_base_id,
+                                                                audios.size(),
+                                                                ModalityType::AUDIO);
+    result.unified_prompt = std::move(audio_prompt);
+    result.audios_sequence = std::move(audios_sequence);
+    expand_audio_tags_in_prompt(result.unified_prompt, audios, result.audios_sequence, audio_base_id);
     return result;
 }
 
@@ -842,16 +969,6 @@ ov::Tensor InputsEmbedderQwen3Omni::get_rotary_pos_emb(const std::vector<std::ar
     }
 
     return rotary_pos_emb;
-}
-
-void InputsEmbedderQwen3Omni::start_chat(const std::string& system_message) {
-    InputsEmbedderQwen3VL::start_chat(system_message);
-    m_audio_embeddings = ov::Tensor();
-}
-
-void InputsEmbedderQwen3Omni::finish_chat() {
-    InputsEmbedderQwen3VL::finish_chat();
-    m_audio_embeddings = ov::Tensor();
 }
 
 std::pair<ov::Tensor, int64_t> InputsEmbedderQwen3Omni::create_position_ids(

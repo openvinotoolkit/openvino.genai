@@ -40,7 +40,35 @@ Model's native video tag can be used to refer to a video. These tags are:
 6. gemma4: `<|video|>`
 7. Muse Glimmer: `<|video|>`
 
-If the prompt doesn't contain image or video tags, but images or videos are provided, the tags are prepended to the prompt.
+Audio follows the same scheme for models with an audio tower (Qwen3-Omni). Refer to an audio with
+the universal tag `<ov_genai_audio_i>`, or with the model's native tag
+`<|audio_start|><|audio_pad|><|audio_end|>`. Each audio expands to as many placeholder tokens as its
+duration requires, so you do not write the pad count yourself.
+
+If the prompt doesn't contain image, video or audio tags, but images, videos or audios are provided, the tags are prepended to the prompt.
+
+Tags let you place media anywhere, including between spans of text:
+
+```python
+# Audio between two pieces of text, and two audios referenced by index.
+pipe.generate("Compare <ov_genai_audio_0> against <ov_genai_audio_1> and explain", audios=[first, second])
+```
+
+Qwen3-Omni is trained with media placed before the text of a turn, so prepending — the default when
+you supply no tags — is the recommended form. Interleaving is supported but off-distribution.
+
+:::warning Audio and video in the same prompt
+
+Audio placeholders are positioned as text tokens, while image and video placeholders feed the 4D
+mRoPE position ids. Moving audio away from the front of the prompt therefore shifts where those
+text-positioned tokens sit relative to the vision tokens.
+
+Prompts with audio alone are unaffected, and so are prompts that leave the audio prepended. A
+prompt that interleaves audio with video has not been validated for output quality: the token
+accounting is correct and nothing raises, but generation quality may differ from the reference
+implementation. If you need that combination, compare against `transformers` on your own data
+before relying on it.
+:::
 
 ### Use Different Generation Parameters
 
