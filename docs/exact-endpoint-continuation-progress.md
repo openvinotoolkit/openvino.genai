@@ -1,5 +1,28 @@
 # Exact-Endpoint Continuation Progress
 
+## Current Handoff (2026-09-11)
+
+P1-P3 committed at user request as `0ce159919`:
+`Prepare coherent KV and linear-attention commits with allocation failure coverage`.
+Hooks passed after end-of-file formatting. Unrelated worktree changes were excluded.
+
+The next P4 capacity slice is implemented and uncommitted:
+
+- Production prefix-LA registration now retains an explicitly configured hard row
+  ceiling; inferred limits keep their previous growth behavior.
+- Dynamic admission stops unrelated KV growth when the capped LA pool blocks the
+  target. Both prompt modes defer before forward without changing protected rows,
+  hashes, counters or ownership; scheduling resumes when the owner releases its row.
+- Split-fuse can still schedule a partial prefill within the available LA capacity.
+- Three focused tests, 752 selected C++ tests, six allocation-failure tests and five
+  local LFM Python regressions pass. The Python process loaded the rebuilt native
+  library through `LD_PRELOAD`; CSV-backed model suites remained excluded.
+
+P4 is not complete: explicit reservations/headroom, optional no-gap publication,
+duplicate canonicalization, pinned atomic restore and rewind gates remain. P5 guard
+decisions have not started. Final Qwen3.5 MTP acceptance still requires VLM/media.
+The sections below preserve the earlier P1-P3 handoff and validation history.
+
 ## Active Milestone Contract
 
 Updated 2026-09-11. Baseline: `d06001c43`. Execute P1-P3 as one implementation

@@ -1,6 +1,6 @@
 # Incremental Linear-Attention Live-Tail and Commit Refactor Plan
 
-**Status:** P0 accepted; P1-P3 exit gates passed locally; P4-P8 not started
+**Status:** P0 accepted; P1-P3 committed; P4 capacity slice verified; remaining P4 and P5-P8 pending
 **Date:** 2026-09-07
 **Last updated:** 2026-09-11
 **Decision record:** [ADR-0005](adr/0005-prefix-caching-for-qwen35-mtp-with-paged-linear-attention.md)
@@ -32,6 +32,23 @@ now verifies safe capacity deferral and unchanged published ownership, not exact
 continuation or cached-logit sampling.
 
 ## Goal and Boundary
+
+### Current P4 Progress (2026-09-11)
+
+P1-P3 was committed as `0ce159919`. The first subsequent P4 slice preserves the
+explicit `num_linear_attention_blocks` ceiling in production prefix-LA registration.
+Dynamic scheduler admission no longer grows KV indefinitely when capped LA capacity
+is the limiting resource. Both prompt scheduling modes defer without touching a
+protected checkpoint, then resume after its owner is freed. Split-fuse still permits
+a partial prefill that fits the remaining LA capacity. Unspecified limits retain
+their existing dynamic-growth behavior.
+
+Validation: three new focused tests passed, followed by 752 selected C++ tests,
+six allocation-failure tests, and five LFM hybrid Python regressions using the rebuilt
+native library. CSV-backed model suites were excluded. The P4 changes remain
+uncommitted. Reservation accounting, checkpoint-set publication/canonicalization,
+prepared pinned restore and rewind remain unimplemented P4 gates. No prefix-verifier
+guard was removed; Qwen3.5 VLM/media remains mandatory for later MTP acceptance.
 
 Refactor internal linear-attention (LA) state coordination incrementally so prefix
 checkpoints, a sequence's current recurrent state, and speculative state have separate
