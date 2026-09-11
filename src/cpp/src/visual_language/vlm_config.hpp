@@ -34,6 +34,7 @@ enum class VLMModelType {
     QWEN3_OMNI,
     DEEPSEEK_OCR2,
     MUSE_GLIMMER,
+    LFM2_VL,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to
@@ -128,6 +129,11 @@ public:
 
     /// @brief A string token denoting start of video embeddings
     std::string video_start = "<video>";
+
+    /// @brief A string token denoting start of image embeddings for LFM2-VL model.
+    std::string lfm2_vl_image_start_token = "<|image_start|>";
+    /// @brief A string token denoting end of image embeddings for LFM2-VL model.
+    std::string lfm2_vl_image_end_token = "<|image_end|>";
 
     // Qwen3-VL specific config
     /// @brief Number of position embeddings in vision encoder for Qwen3-VL model.
