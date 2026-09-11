@@ -453,10 +453,13 @@ def download_gguf_model(
 
 
 def load_hf_model_from_gguf(gguf_model_id, gguf_filename):
-    model_cached = snapshot_download(gguf_model_id)  # required to avoid HF rate limits
-    return retry_request(lambda: AutoModelForCausalLM.from_pretrained(model_cached, gguf_file=gguf_filename))
+    # Download only the requested GGUF file rather than the whole repo: multi-quant
+    # GGUF repos can be many GB, which slows down and flakes CI. transformers reads the
+    # config/tokenizer from the GGUF itself, so the containing directory is enough.
+    gguf_path = Path(retry_request(lambda: hf_hub_download(repo_id=gguf_model_id, filename=gguf_filename)))
+    return retry_request(lambda: AutoModelForCausalLM.from_pretrained(str(gguf_path.parent), gguf_file=gguf_filename))
 
 
 def load_hf_tokenizer_from_gguf(gguf_model_id, gguf_filename):
-    model_cached = snapshot_download(gguf_model_id)  # required to avoid HF rate limits
-    return retry_request(lambda: AutoTokenizer.from_pretrained(model_cached, gguf_file=gguf_filename))
+    gguf_path = Path(retry_request(lambda: hf_hub_download(repo_id=gguf_model_id, filename=gguf_filename)))
+    return retry_request(lambda: AutoTokenizer.from_pretrained(str(gguf_path.parent), gguf_file=gguf_filename))
