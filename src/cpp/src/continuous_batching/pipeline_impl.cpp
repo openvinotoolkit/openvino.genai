@@ -496,6 +496,16 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_linear_attentio
         return;
     }
 
+    struct PendingPromotion {
+        CacheOrchestrator::LinearAttentionScratchLease* lease;
+        uint64_t seq_id;
+    };
+    std::vector<PendingPromotion> pending_promotions;
+    pending_promotions.reserve(scheduler_output.m_linear_attention_scratch_leases.size());
+    std::vector<CacheOrchestrator::LinearAttentionScratchLease*> promotion_leases;
+    promotion_leases.reserve(scheduler_output.m_linear_attention_scratch_leases.size());
+    std::vector<BlockManager::TemporaryPromotionRequest> promotion_requests;
+    promotion_requests.reserve(scheduler_output.m_linear_attention_scratch_leases.size());
     for (size_t seq_group_id : scheduler_output.m_scheduled_sequence_groups_ids) {
         const SequenceGroup::Ptr& sequence_group = m_requests[seq_group_id];
         for (const auto& sequence : sequence_group->get_sequences()) {
@@ -529,9 +539,20 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_linear_attentio
             const auto lease_it = scheduler_output.m_linear_attention_scratch_leases.find(seq_id);
             OPENVINO_ASSERT(lease_it != scheduler_output.m_linear_attention_scratch_leases.end(),
                             "Missing linear-attention scratch lease for sequence ", seq_id);
-            lease_it->second->commit(checkpoint_slot);
-            scheduler_output.m_linear_attention_scratch_leases.erase(lease_it);
+            pending_promotions.push_back({lease_it->second.get(), seq_id});
+            promotion_leases.push_back(lease_it->second.get());
+            promotion_requests.push_back(lease_it->second->promotion_request(checkpoint_slot));
         }
+    }
+    if (pending_promotions.empty()) {
+        return;
+    }
+    auto prepared = CacheOrchestrator::LinearAttentionScratchLease::prepare_promotions(
+        promotion_leases, promotion_requests);
+    std::ignore = prepared.apply();
+    for (const PendingPromotion& promotion : pending_promotions) {
+        promotion.lease->mark_committed();
+        scheduler_output.m_linear_attention_scratch_leases.erase(promotion.seq_id);
     }
 }
 

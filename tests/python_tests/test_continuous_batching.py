@@ -641,6 +641,112 @@ def test_preemption_with_multinomial_n_seq(model_facebook_opt_125m: OVConvertedM
     )
 
 
+@pytest.mark.parametrize("num_assistant_tokens", [1, 4])
+@pytest.mark.parametrize("enable_prefix_caching", [False, True])
+def test_local_hybrid_prompt_lookup_cache_contract(num_assistant_tokens, enable_prefix_caching):
+    model_path = os.environ.get("OV_GENAI_HYBRID_MODEL")
+    if not model_path:
+        pytest.skip("OV_GENAI_HYBRID_MODEL must name a local hybrid OpenVINO IR")
+    assert Path(model_path).is_dir()
+    scheduler_config = dict_to_scheduler_config(
+        {
+            "enable_prefix_caching": enable_prefix_caching,
+            "dynamic_split_fuse": False,
+            "max_num_batched_tokens": 256,
+            "cache_size": 1,
+        }
+    )
+    lookup_pipe = create_ov_pipeline(
+        Path(model_path),
+        pipeline_type=PipelineType.PROMPT_LOOKUP_DECODING,
+        scheduler_config=scheduler_config,
+    )
+    input_ids = (
+        lookup_pipe.get_tokenizer()
+        .encode(
+            "Repeat this sequence: one two three four. one two three four. one two three four.",
+            add_special_tokens=True,
+        )
+        .input_ids
+    )
+    lookup_config = GenerationConfig(
+        do_sample=False,
+        max_new_tokens=16,
+        ignore_eos=True,
+        apply_chat_template=False,
+        num_assistant_tokens=num_assistant_tokens,
+        max_ngram_size=3,
+    )
+    if enable_prefix_caching:
+        with pytest.raises(RuntimeError, match="requires enable_prefix_caching=false"):
+            lookup_pipe.generate(input_ids, lookup_config)
+        return
+    reference_pipe = create_ov_pipeline(
+        Path(model_path),
+        pipeline_type=PipelineType.PAGED_ATTENTION,
+        scheduler_config=scheduler_config,
+    )
+    reference_config = GenerationConfig(
+        do_sample=False,
+        max_new_tokens=16,
+        ignore_eos=True,
+        apply_chat_template=False,
+    )
+    reference = reference_pipe.generate(input_ids, reference_config)
+    for _ in range(2):
+        result = lookup_pipe.generate(input_ids, lookup_config)
+        assert result.tokens == reference.tokens
+        assert len(result.tokens[0]) == 16
+
+
+def test_local_hybrid_cached_prefix_with_new_input():
+    model_path = os.environ.get("OV_GENAI_HYBRID_MODEL")
+    if not model_path:
+        pytest.skip("OV_GENAI_HYBRID_MODEL must name a local hybrid OpenVINO IR")
+    assert Path(model_path).is_dir()
+    scheduler_config = dict_to_scheduler_config(
+        {
+            "enable_prefix_caching": True,
+            "dynamic_split_fuse": False,
+            "max_num_batched_tokens": 256,
+            "cache_interval_multiplier": 1,
+            "cache_size": 1,
+        }
+    )
+    cached_pipe = create_ov_pipeline(
+        Path(model_path),
+        pipeline_type=PipelineType.PAGED_ATTENTION,
+        scheduler_config=scheduler_config,
+    )
+    scheduler_config.enable_prefix_caching = False
+    reference_pipe = create_ov_pipeline(
+        Path(model_path),
+        pipeline_type=PipelineType.PAGED_ATTENTION,
+        scheduler_config=scheduler_config,
+    )
+    prefix_ids = _build_input_ids_with_exact_token_count(cached_pipe.get_tokenizer(), 128)
+    producer_config = GenerationConfig(
+        do_sample=False,
+        max_new_tokens=1,
+        ignore_eos=True,
+        apply_chat_template=False,
+    )
+    cached_pipe.generate(prefix_ids, producer_config)
+    generation_config = GenerationConfig(
+        do_sample=False,
+        max_new_tokens=16,
+        ignore_eos=True,
+        apply_chat_template=False,
+    )
+    for suffix in (" Explain the result.", " Describe a different example."):
+        suffix_ids = cached_pipe.get_tokenizer().encode(suffix, add_special_tokens=False).input_ids
+        input_ids = ov.Tensor(np.concatenate((prefix_ids.data, suffix_ids.data), axis=1))
+        reference = reference_pipe.generate(input_ids, generation_config)
+        result = cached_pipe.generate(input_ids, generation_config)
+        assert result.tokens == reference.tokens
+        assert len(result.tokens[0]) == 16
+
+
 def test_dynamic_split_fuse_doesnt_affect_generated_text():
     model_id : str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
     pipeline_type = PipelineType.PROMPT_LOOKUP_DECODING

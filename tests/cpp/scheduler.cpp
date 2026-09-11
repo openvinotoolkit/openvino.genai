@@ -1423,6 +1423,9 @@ TEST(TestScheduler, hybrid_prefix_caching_reuses_active_complete_linear_attentio
     scheduler.restore_cached_blocks(consumer_group);
     ASSERT_EQ(orchestrator->get_linear_attention_block_table(consumer_seq_id).size(), 1);
     EXPECT_EQ(orchestrator->get_linear_attention_block_table(consumer_seq_id).at(0)->get_index(), shared_checkpoint_idx);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE)
+                  .get_linear_attention_live_state(consumer_seq_id).endpoint,
+              producer_tokens.size());
     EXPECT_EQ(consumer_group->get_num_processed_tokens(), producer_tokens.size());
 
     std::vector<SequenceGroup::Ptr> consumer_requests = {consumer_group};
@@ -3802,36 +3805,266 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrowed_speculative_emit
     }
 }
 
-TEST_F(CBPublicationTest, terminal_sequence_promotes_linear_attention_checkpoint_before_free) {
-    constexpr size_t accepted_depth = 2;
-    SchedulerConfig scheduler_config = make_speculative_linear_attention_scheduler_config();
-    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config,
-                                                       TEST_BLOCK_SIZE,
-                                                       /*kv_num_layers=*/1,
-                                                       /*la_num_layers=*/1);
-    auto scheduler = std::make_shared<Scheduler>(orchestrator, scheduler_config);
-    scheduler->ensure_linear_attention_pool_blocks(1 + (1 + accepted_depth));
-    std::vector<SequenceGroup::Ptr> requests;
-    SequenceGroup::Ptr sequence_group = make_prompt_processed_sequence_group(*scheduler, requests, {0, 1, 2, 3});
-    Sequence::Ptr sequence = sequence_group->get_running_sequences().front();
-    const uint64_t sequence_id = sequence->get_id();
-    sequence_group->set_num_validated_tokens(accepted_depth);
-    Scheduler::Output scheduler_output = scheduler->schedule(requests);
-    const auto& paging_data = scheduler_output.get_linear_attention_paging_data(sequence_id);
-    ASSERT_TRUE(paging_data.is_speculative);
-    const size_t promoted_row = static_cast<size_t>(paging_data.block_indices.at(accepted_depth));
+TEST_F(CBPublicationTest, real_sampler_acceptance_promotes_linear_attention_checkpoint_before_terminal_free) {
+    struct AcceptanceCase {
+        std::vector<int64_t> candidates;
+        size_t expected_depth;
+        bool stop_on_second_token;
+    };
+    const std::vector<AcceptanceCase> cases{
+        {{4, 2, 3}, 1, false},
+        {{1, 4, 3}, 2, false},
+        {{1, 2, 3}, 4, false},
+        {{1, 2, 3}, 2, true},
+    };
+    const std::vector<float> logits{
+        0, 1.f, 0, 0, 0,
+        0, 0, 1.f, 0, 0,
+        0, 0, 0, 1.f, 0,
+        0, 0, 0, 0, 1.f,
+    };
 
-    sequence_group->update_processed_tokens_num(paging_data.num_processed_tokens_before + accepted_depth);
-    sequence->set_status(SequenceStatus::FINISHED);
+    for (const AcceptanceCase& acceptance_case : cases) {
+        SCOPED_TRACE(acceptance_case.expected_depth);
+        SchedulerConfig scheduler_config = make_speculative_linear_attention_scheduler_config();
+        auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config,
+                                                           TEST_BLOCK_SIZE,
+                                                           /*kv_num_layers=*/1,
+                                                           /*la_num_layers=*/1);
+        auto scheduler = std::make_shared<Scheduler>(orchestrator, scheduler_config);
+        scheduler->ensure_linear_attention_pool_blocks(5);
+
+        GenerationConfig generation_config = utils::get_greedy_config();
+        if (acceptance_case.stop_on_second_token) {
+            generation_config.stop_token_ids = {2};
+        }
+        const std::vector<int64_t> prompt{0, 1, 2, 3};
+        auto sequence_group = std::make_shared<SequenceGroup>(0, prompt, generation_config);
+        std::vector<SequenceGroup::Ptr> requests{sequence_group};
+        Scheduler::Output prefill_output = scheduler->schedule(requests);
+        sequence_group->finish_iteration();
+        PipelineTestInstance pipeline;
+        pipeline.publish_completed_cache_blocks(scheduler, requests, prefill_output);
+        Sequence::Ptr sequence = sequence_group->get_running_sequences().front();
+        sequence->append_token(0, 1.f);
+        sequence_group->update_processed_tokens_num(prompt.size());
+        for (const int64_t token_id : acceptance_case.candidates) {
+            sequence->append_token(token_id, 1.f);
+        }
+        sequence_group->set_num_validated_tokens(acceptance_case.candidates.size());
+
+        Scheduler::Output scheduler_output = scheduler->schedule(requests);
+        const uint64_t sequence_id = sequence->get_id();
+        const auto& paging_data = scheduler_output.get_linear_attention_paging_data(sequence_id);
+        ASSERT_TRUE(paging_data.is_speculative);
+        ov::Tensor validation_logits(ov::element::f32, ov::Shape{4, 1, 5});
+        std::copy(logits.begin(), logits.end(), validation_logits.data<float>());
+        Sampler sampler;
+        const SamplerOutput sampler_output = sampler.sample(requests, validation_logits, true, false);
+
+        ASSERT_EQ(sampler_output.acceptance_by_sequence.count(sequence_id), 1u);
+        ASSERT_EQ(sampler_output.acceptance_by_sequence.at(sequence_id).accepted_depth,
+                  acceptance_case.expected_depth);
+        const size_t promoted_row = static_cast<size_t>(paging_data.block_indices.at(acceptance_case.expected_depth));
+        pipeline.commit_linear_attention_checkpoint_transactions(scheduler, requests, scheduler_output, sampler_output);
+
+        auto& la_block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+        EXPECT_EQ(orchestrator->get_linear_attention_latest_row(sequence_id), promoted_row);
+        EXPECT_EQ(la_block_manager.get_linear_attention_live_state(sequence_id).endpoint,
+                  sequence_group->get_num_processed_tokens());
+        EXPECT_EQ(sequence_group->get_num_processed_tokens(), prompt.size() + acceptance_case.expected_depth);
+        EXPECT_FALSE(la_block_manager.has_temporary_blocks(sequence_id));
+        const auto& kv_block_tables = orchestrator->get_kv_block_tables(sequence_id);
+        ASSERT_FALSE(kv_block_tables.empty());
+        EXPECT_FALSE(kv_block_tables.front().empty());
+        EXPECT_EQ(sequence->has_finished(), acceptance_case.stop_on_second_token);
+        if (acceptance_case.stop_on_second_token) {
+            EXPECT_EQ(sequence->get_finish_reason(), GenerationFinishReason::STOP);
+        }
+        scheduler->free_sequence(sequence_id);
+    }
+}
+
+TEST_F(CBPublicationTest, missing_second_acceptance_does_not_promote_first_linear_attention_checkpoint) {
+    constexpr size_t accepted_depth = 1;
+    SchedulerConfig scheduler_config = make_speculative_linear_attention_scheduler_config();
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
+    auto scheduler = std::make_shared<Scheduler>(orchestrator, scheduler_config);
+    scheduler->ensure_linear_attention_pool_blocks(6);
+    auto first_group = std::make_shared<SequenceGroup>(
+        0, std::vector<int64_t>{0, 1, 2, 3}, utils::get_greedy_config());
+    auto second_group = std::make_shared<SequenceGroup>(
+        1, std::vector<int64_t>{4, 5, 6, 7}, utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> requests{first_group, second_group};
+    std::ignore = scheduler->schedule(requests);
+    first_group->finish_iteration();
+    second_group->finish_iteration();
+    for (const auto& sequence_group : requests) {
+        sequence_group->get_running_sequences().front()->append_token(42, 0.f);
+        sequence_group->update_processed_tokens_num(4);
+        sequence_group->set_num_validated_tokens(accepted_depth);
+    }
+
+    Scheduler::Output output = scheduler->schedule(requests);
+    const uint64_t first_id = first_group->get_running_sequences().front()->get_id();
+    const uint64_t second_id = second_group->get_running_sequences().front()->get_id();
+    auto& block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+    const auto first_state_before = block_manager.get_linear_attention_live_state(first_id);
+    const auto second_state_before = block_manager.get_linear_attention_live_state(second_id);
+    const size_t free_rows_before = block_manager.num_free_blocks();
+    ASSERT_TRUE(block_manager.has_temporary_blocks(first_id));
+    ASSERT_TRUE(block_manager.has_temporary_blocks(second_id));
+
     SamplerOutput sampler_output;
     sampler_output.acceptance_by_sequence.emplace(
-        sequence_id, SamplerOutput::AcceptanceResult{accepted_depth});
+        first_id, SamplerOutput::AcceptanceResult{accepted_depth});
     PipelineTestInstance pipeline;
-    pipeline.commit_linear_attention_checkpoint_transactions(scheduler, requests, scheduler_output, sampler_output);
+    EXPECT_THROW(
+        pipeline.commit_linear_attention_checkpoint_transactions(scheduler, requests, output, sampler_output),
+        ov::Exception);
 
-    EXPECT_EQ(orchestrator->get_linear_attention_latest_row(sequence_id), promoted_row);
-    EXPECT_FALSE(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE)
-                     .has_temporary_blocks(sequence_id));
+    const auto& first_state_after = block_manager.get_linear_attention_live_state(first_id);
+    const auto& second_state_after = block_manager.get_linear_attention_live_state(second_id);
+    EXPECT_EQ(first_state_after.endpoint, first_state_before.endpoint);
+    EXPECT_EQ(first_state_after.generation, first_state_before.generation);
+    EXPECT_EQ(first_state_after.rows, first_state_before.rows);
+    EXPECT_EQ(second_state_after.endpoint, second_state_before.endpoint);
+    EXPECT_EQ(second_state_after.generation, second_state_before.generation);
+    EXPECT_EQ(second_state_after.rows, second_state_before.rows);
+    EXPECT_TRUE(block_manager.has_temporary_blocks(first_id));
+    EXPECT_TRUE(block_manager.has_temporary_blocks(second_id));
+    EXPECT_EQ(block_manager.num_free_blocks(), free_rows_before);
+
+    const auto first_promoted_row = output.get_linear_attention_paging_data(first_id).block_indices.at(1);
+    const auto second_promoted_row = output.get_linear_attention_paging_data(second_id).block_indices.at(2);
+    sampler_output.acceptance_by_sequence.emplace(second_id, SamplerOutput::AcceptanceResult{2});
+    pipeline.commit_linear_attention_checkpoint_transactions(scheduler, requests, output, sampler_output);
+    EXPECT_EQ(block_manager.get_linear_attention_live_state(first_id).endpoint, first_state_before.endpoint + 1);
+    EXPECT_EQ(block_manager.get_linear_attention_live_state(second_id).endpoint, second_state_before.endpoint + 2);
+    EXPECT_EQ(block_manager.get_linear_attention_live_state(first_id).generation, first_state_before.generation + 1);
+    EXPECT_EQ(block_manager.get_linear_attention_live_state(second_id).generation, second_state_before.generation + 1);
+    EXPECT_EQ(orchestrator->get_linear_attention_latest_row(first_id), first_promoted_row);
+    EXPECT_EQ(orchestrator->get_linear_attention_latest_row(second_id), second_promoted_row);
+    EXPECT_TRUE(output.m_linear_attention_scratch_leases.empty());
+    EXPECT_EQ(block_manager.num_free_blocks(), free_rows_before + 4);
+    EXPECT_FALSE(block_manager.has_temporary_blocks(first_id));
+    EXPECT_FALSE(block_manager.has_temporary_blocks(second_id));
+    scheduler->free_sequence(first_id);
+    scheduler->free_sequence(second_id);
+}
+
+TEST_F(CBPublicationTest, invalid_second_slot_does_not_promote_first_linear_attention_checkpoint) {
+    SchedulerConfig scheduler_config = make_speculative_linear_attention_scheduler_config();
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
+    auto scheduler = std::make_shared<Scheduler>(orchestrator, scheduler_config);
+    scheduler->ensure_linear_attention_pool_blocks(6);
+    auto first_group = std::make_shared<SequenceGroup>(
+        0, std::vector<int64_t>{0, 1, 2, 3}, utils::get_greedy_config());
+    auto second_group = std::make_shared<SequenceGroup>(
+        1, std::vector<int64_t>{4, 5, 6, 7}, utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> requests{first_group, second_group};
+    std::ignore = scheduler->schedule(requests);
+    first_group->finish_iteration();
+    second_group->finish_iteration();
+    for (const auto& sequence_group : requests) {
+        sequence_group->get_running_sequences().front()->append_token(42, 0.f);
+        sequence_group->update_processed_tokens_num(4);
+        sequence_group->set_num_validated_tokens(1);
+    }
+
+    Scheduler::Output output = scheduler->schedule(requests);
+    const uint64_t first_id = first_group->get_running_sequences().front()->get_id();
+    const uint64_t second_id = second_group->get_running_sequences().front()->get_id();
+    auto& block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+    const auto first_state_before = block_manager.get_linear_attention_live_state(first_id);
+    const auto second_state_before = block_manager.get_linear_attention_live_state(second_id);
+    const size_t free_rows_before = block_manager.num_free_blocks();
+    SamplerOutput sampler_output;
+    sampler_output.acceptance_by_sequence.emplace(first_id, SamplerOutput::AcceptanceResult{1});
+    sampler_output.acceptance_by_sequence.emplace(second_id, SamplerOutput::AcceptanceResult{3});
+
+    PipelineTestInstance pipeline;
+    EXPECT_THROW(
+        pipeline.commit_linear_attention_checkpoint_transactions(scheduler, requests, output, sampler_output),
+        ov::Exception);
+
+    const auto& first_state_after = block_manager.get_linear_attention_live_state(first_id);
+    const auto& second_state_after = block_manager.get_linear_attention_live_state(second_id);
+    EXPECT_EQ(first_state_after.endpoint, first_state_before.endpoint);
+    EXPECT_EQ(first_state_after.generation, first_state_before.generation);
+    EXPECT_EQ(first_state_after.rows, first_state_before.rows);
+    EXPECT_EQ(second_state_after.endpoint, second_state_before.endpoint);
+    EXPECT_EQ(second_state_after.generation, second_state_before.generation);
+    EXPECT_EQ(second_state_after.rows, second_state_before.rows);
+    EXPECT_TRUE(block_manager.has_temporary_blocks(first_id));
+    EXPECT_TRUE(block_manager.has_temporary_blocks(second_id));
+    EXPECT_EQ(block_manager.num_free_blocks(), free_rows_before);
+
+    output.m_linear_attention_scratch_leases.clear();
+    EXPECT_FALSE(block_manager.has_temporary_blocks(first_id));
+    EXPECT_FALSE(block_manager.has_temporary_blocks(second_id));
+    scheduler->free_sequence(first_id);
+    scheduler->free_sequence(second_id);
+}
+
+TEST_F(CBPublicationTest, abandoned_moved_prepared_promotion_preserves_scratch_until_lease_cleanup) {
+    SchedulerConfig scheduler_config = make_speculative_linear_attention_scheduler_config();
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config, TEST_BLOCK_SIZE, 1, 2);
+    auto scheduler = std::make_shared<Scheduler>(orchestrator, scheduler_config);
+    scheduler->ensure_linear_attention_pool_blocks(3);
+    auto sequence_group = std::make_shared<SequenceGroup>(
+        0, std::vector<int64_t>{0, 1, 2, 3}, utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> requests{sequence_group};
+    std::ignore = scheduler->schedule(requests);
+    sequence_group->finish_iteration();
+    sequence_group->get_running_sequences().front()->append_token(42, 0.f);
+    sequence_group->update_processed_tokens_num(4);
+    sequence_group->set_num_validated_tokens(1);
+    Scheduler::Output output = scheduler->schedule(requests);
+    const uint64_t sequence_id = sequence_group->get_running_sequences().front()->get_id();
+    auto& block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+    const auto state_before = block_manager.get_linear_attention_live_state(sequence_id);
+    const size_t free_rows_before = block_manager.num_free_blocks();
+    auto* lease = output.m_linear_attention_scratch_leases.at(sequence_id).get();
+    const std::vector<CacheOrchestrator::LinearAttentionScratchLease*> leases{lease};
+    const std::vector<BlockManager::TemporaryPromotionRequest> promotion_requests{
+        lease->promotion_request(1)};
+    auto mismatched_requests = promotion_requests;
+    ++mismatched_requests.front().expected_generation;
+    EXPECT_THROW(CacheOrchestrator::LinearAttentionScratchLease::prepare_promotions(leases, mismatched_requests),
+                 ov::Exception);
+    {
+        auto prepared = CacheOrchestrator::LinearAttentionScratchLease::prepare_promotions(
+            leases, promotion_requests);
+        auto moved = std::move(prepared);
+        EXPECT_THROW(prepared.apply(), ov::Exception);
+    }
+
+    const auto& state_after = block_manager.get_linear_attention_live_state(sequence_id);
+    EXPECT_EQ(state_after.endpoint, state_before.endpoint);
+    EXPECT_EQ(state_after.generation, state_before.generation);
+    EXPECT_EQ(state_after.rows, state_before.rows);
+    EXPECT_TRUE(block_manager.has_temporary_blocks(sequence_id));
+    EXPECT_EQ(block_manager.num_free_blocks(), free_rows_before);
+    {
+        auto prepared = CacheOrchestrator::LinearAttentionScratchLease::prepare_promotions(
+            leases, promotion_requests);
+        const auto& promoted_indices = prepared.apply();
+        ASSERT_EQ(promoted_indices.size(), 1u);
+        const auto& committed_state = block_manager.get_linear_attention_live_state(sequence_id);
+        EXPECT_EQ(committed_state.endpoint, state_before.endpoint + 1);
+        EXPECT_EQ(committed_state.generation, state_before.generation + 1);
+        ASSERT_EQ(committed_state.rows.size(), 1u);
+        for (const auto& row : committed_state.rows) {
+            EXPECT_EQ(row->get_index(), promoted_indices.front());
+            EXPECT_EQ(row->get_references_count(), 2u);
+        }
+        EXPECT_THROW(prepared.apply(), ov::Exception);
+        lease->mark_committed();
+    }
+    output.m_linear_attention_scratch_leases.clear();
+    EXPECT_FALSE(block_manager.has_temporary_blocks(sequence_id));
+    EXPECT_EQ(block_manager.num_free_blocks(), free_rows_before + 2);
     scheduler->free_sequence(sequence_id);
 }
 

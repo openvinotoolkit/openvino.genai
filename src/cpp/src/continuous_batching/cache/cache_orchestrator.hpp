@@ -85,14 +85,47 @@ public:
             return m_block_indices;
         }
 
-        size_t commit(size_t accepted_depth) {
+        BlockManager::TemporaryPromotionRequest promotion_request(size_t accepted_depth) const {
             OPENVINO_ASSERT(m_state == State::ACTIVE && m_owner != nullptr,
                             "Linear-attention scratch lease is not active");
-            auto& block_manager = m_owner->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
-            const size_t promoted = block_manager.promote_temporary_block(
-                m_seq_id, accepted_depth, m_base_endpoint, m_base_generation);
+            return {m_seq_id, accepted_depth, m_base_endpoint, m_base_generation};
+        }
+
+        void mark_committed() noexcept {
             m_owner = nullptr;
             m_state = State::COMMITTED;
+        }
+
+        static BlockManager::PreparedTemporaryPromotions prepare_promotions(
+            const std::vector<LinearAttentionScratchLease*>& leases,
+            const std::vector<BlockManager::TemporaryPromotionRequest>& requests) {
+            OPENVINO_ASSERT(!leases.empty() && leases.size() == requests.size(),
+                            "Linear-attention promotion leases and requests must be non-empty and aligned");
+            OPENVINO_ASSERT(leases.front() != nullptr, "Linear-attention scratch lease must not be null");
+            CacheOrchestrator* owner = leases.front()->m_owner;
+            OPENVINO_ASSERT(owner != nullptr, "Linear-attention scratch lease is not active");
+            for (size_t lease_index = 0; lease_index < leases.size(); ++lease_index) {
+                const LinearAttentionScratchLease* lease = leases[lease_index];
+                OPENVINO_ASSERT(lease != nullptr && lease->m_state == State::ACTIVE && lease->m_owner == owner,
+                                "Linear-attention scratch leases must be active and share one cache owner");
+                const auto& request = requests[lease_index];
+                OPENVINO_ASSERT(request.seq_id == lease->m_seq_id &&
+                                    request.expected_endpoint == lease->m_base_endpoint &&
+                                    request.expected_generation == lease->m_base_generation,
+                                "Linear-attention promotion request does not match its scratch lease");
+            }
+            return owner->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE)
+                .prepare_temporary_promotions(requests);
+        }
+
+        size_t commit(size_t accepted_depth) {
+            const auto request = promotion_request(accepted_depth);
+            auto& block_manager = m_owner->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+            const size_t promoted = block_manager.promote_temporary_block(request.seq_id,
+                                                                          request.checkpoint_slot,
+                                                                          request.expected_endpoint,
+                                                                          request.expected_generation);
+            mark_committed();
             return promoted;
         }
 
