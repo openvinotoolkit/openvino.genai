@@ -198,11 +198,6 @@ public:
         ov::CompiledModel compiled_model;
         if (device.find("NPU") != std::string::npos && m_has_beam_idx) {
             ov::AnyMap npu_properties = properties;
-            // The reranker only scores the prompt and never generates a token, so the
-            // smallest response window keeps the (unused) generate model minimal.
-            if (npu_properties.count("MIN_RESPONSE_LEN") == 0) {
-                npu_properties["MIN_RESPONSE_LEN"] = 2;
-            }
             // Size the prefill to the tokenizer limit when one is configured, so documents
             // up to max_length tokens fit (the NPUW default prompt length is 1024).
             if (m_config.max_length && npu_properties.count("MAX_PROMPT_LEN") == 0) {
@@ -212,24 +207,12 @@ public:
             // its batched element, which unrolls a [N, L] batch over the batch-1 model
             // (KV-cache reset between rows) and stacks the scores back into [N, ...],
             // so the scoring code below stays device-agnostic. The tag survives blob
-            // export/import together with the rest of the model config.
+            // export/import.
             npu_properties["NPUW_TEXT_RERANK"] = "YES";
             compiled_model = utils::compile_decoder_for_npu(model, npu_properties, utils::get_kv_axes_pos(model)).first;
         } else {
             compiled_model = core.compile_model(model, device, properties);
         }
-
-        // NPUW rewrites the stateful model: beam_idx is consumed by the state machinery
-        // and disappears from the compiled I/O. Re-derive the input flags from what was
-        // actually compiled so the infer path binds only inputs that exist.
-        const auto has_compiled_input = [&compiled_model](const std::string& name) {
-            const auto& compiled_inputs = compiled_model.inputs();
-            return std::any_of(compiled_inputs.begin(), compiled_inputs.end(), [&name](const auto& input) {
-                return input.get_names().count(name) > 0;
-            });
-        };
-        m_has_position_ids = has_compiled_input("position_ids");
-        m_has_beam_idx = has_compiled_input("beam_idx");
 
         utils::print_compiled_model_properties(compiled_model, "text rerank model");
         m_request = compiled_model.create_infer_request();
