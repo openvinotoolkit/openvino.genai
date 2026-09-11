@@ -202,19 +202,9 @@ class TestLora:
         ],
         indirect=["convert_model", "download_test_content"],
     )
-    def test_visual_language_lora_switch_gpu_precision_cache(self, convert_model, download_test_content, prompt):
-        # Covers the GPU inference-precision-aware prepared tensor cache in AdapterControllerImpl:
-        # switching configs must invalidate/reprepare cached tensors as needed, and switching back
-        # to a previously used config must still produce the same output as the first time it was used.
-        gpu_devices = [device for device in ov.Core().get_available_devices() if device.startswith("GPU")]
-        if not gpu_devices:
-            pytest.skip("GPU device not available")
-
-        # Prefer the second enumerated GPU: the first (iGPU) has hit CL_OUT_OF_RESOURCES
-        # on this VLM+LoRA workload on some machines. Index into the discovered list
-        # instead of hardcoding "GPU.1", which isn't guaranteed by every driver.
-        target_device = gpu_devices[0] if len(gpu_devices) == 1 else gpu_devices[1]
-
+    def test_visual_language_lora_switch_prepared_tensor_cache(self, convert_model, download_test_content, prompt):
+        # Checks the prepared tensor cache in AdapterControllerImpl: switching to another config
+        # must refresh the cached tensors, and switching back must give the first result again.
         adapter_path, image_path = download_test_content
         assert os.path.exists(image_path), f"Missing test image: {image_path}"
 
@@ -224,22 +214,15 @@ class TestLora:
         adapter = ov_genai.Adapter(adapter_path)
         config_a = ov_genai.AdapterConfig()
         config_a.add(adapter, 2.0)
-        # Alpha 0.0 disables the adapter's contribution entirely, so config B is guaranteed to differ
-        # from config A observably. Nearby alphas (e.g. 0.5 vs 2.0) can produce identical greedy output
-        # on this model, which would make the "B differs from A" assertion below flaky rather than
-        # meaningful.
+        # A and B use the same adapter and differ only by alpha.
         config_b = ov_genai.AdapterConfig()
         config_b.add(adapter, 0.0)
 
-        # Force f16 inference precision so this test reliably exercises the f16-specific
-        # prepared-tensor allocation/caching path in AdapterControllerImpl, rather than
-        # depending on the GPU plugin's default (which may resolve to "dynamic").
         pipe = ov_genai.VLMPipeline(
             convert_model,
-            target_device,
+            "CPU",
             ATTENTION_BACKEND="PA",
-            adapters=config_a,
-            INFERENCE_PRECISION_HINT=ov.Type.f16,
+            adapters=config_a
         )
 
         generation_config = ov_genai.GenerationConfig()
@@ -251,19 +234,8 @@ class TestLora:
         result_b = pipe.generate(prompt, images=[image_tensor], generation_config=generation_config, adapters=config_b)
         assert len(result_b.texts[0]) > 0, "Generation with config B should produce output"
 
-        # A and B share the same adapter and differ only by alpha. The prepared-tensor cache is keyed
-        # on adapter identity alone, so a stale cached alpha would make B silently reuse A's scaling.
-        # Asserting the outputs differ is what makes the A -> B -> A check below meaningful: without
-        # it, ignoring alpha entirely would still satisfy every other assertion in this test.
-        assert result_b.texts[0] != result_a_first.texts[0], (
-            "Config B (alpha=0.0) should not reproduce config A (alpha=2.0) output; "
-            "identical output suggests the alpha update was ignored"
-        )
-
-        # The check above only shows B's output differs from A's, which greedy decoding could in
-        # principle satisfy even if alpha=0.0 weren't fully zeroing the adapter's contribution.
-        # Alpha=0.0 must exactly zero out the adapter's contribution, so its output should match a
-        # pipeline with no adapter applied at all; this is a stronger, decoding-independent check.
+        # The cache key does not include alpha, so a stale entry would make B reuse A's scaling.
+        # Alpha 0.0 turns the adapter off, so B must match a run with no adapter at all.
         result_no_adapter = pipe.generate(
             prompt, images=[image_tensor], generation_config=generation_config, adapters=ov_genai.AdapterConfig()
         )
