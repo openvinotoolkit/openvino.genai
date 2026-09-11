@@ -28,6 +28,7 @@ from samples.conftest import TEST_FILES
 EMBEDDINGS_TEST_MODELS = [
     "BAAI/bge-small-en-v1.5",
     "mixedbread-ai/mxbai-embed-xsmall-v1",
+    "jhu-clsp/mmBERT-small",
 ]
 
 MULTIMODAL_EMBEDDINGS_TEST_MODELS = [

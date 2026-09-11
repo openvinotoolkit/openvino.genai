@@ -25,6 +25,15 @@ export const EMBEDDING_MODELS: EmbeddingModelType[] = [
     ],
   },
   {
+    architecture: 'ModernBertModel',
+    modalities: ['Text'],
+    models: [
+      {
+        links: ['https://huggingface.co/jhu-clsp/mmBERT-small'],
+      },
+    ],
+  },
+  {
     architecture: 'MPNetForMaskedLM',
     modalities: ['Text'],
     models: [
