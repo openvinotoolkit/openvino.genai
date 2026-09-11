@@ -178,7 +178,7 @@ jobs:
 
       - name: Setup ccache
         id: ccache-restore
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-${{ matrix.build-type }}-cpack-${{ github.sha }}
           restore-keys: |
@@ -253,7 +253,7 @@ jobs:
         if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
+          key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-${{ matrix.build-type }}-cpack-${{ github.sha }}
           path: ${{ env.CCACHE_DIR }}
 
       - name: Upload cpack package
@@ -341,7 +341,7 @@ jobs:
 
       - name: Setup ccache
         id: ccache-restore
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release-wheels-${{ github.sha }}
           restore-keys: |
@@ -376,7 +376,7 @@ jobs:
         if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
+          key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release-wheels-${{ github.sha }}
           path: ${{ env.CCACHE_DIR }}
 
       - name: Upload wheels
@@ -407,6 +407,10 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}\genai
       WHEELS_DIR: ${{ github.workspace }}\genai\wheels
       CCACHE_DIR: ${{ github.workspace }}\ccache
+      # Normalize workspace paths and volatile time macros so ccache hits across runs.
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_NOHASHDIR: 'true'
+      CCACHE_SLOPPINESS: pch_defines,time_macros,include_file_mtime,include_file_ctime
       OpenVINODeveloperPackage_DIR: ${{ github.workspace }}\install\ov\developer_package\cmake
 
     steps:
@@ -445,7 +449,7 @@ jobs:
 
       - name: Setup ccache
         id: ccache-restore
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release-genai-wheel-${{ matrix.python-version }}-${{ github.sha }}
           restore-keys: |
@@ -475,7 +479,12 @@ jobs:
           $pythonCommand = "py -${{ matrix.python-version }} -c `"import sys; print(f'{sys.executable}')`""
           $pythonExecutablePath = & cmd /c $pythonCommand
 
-          & $pythonExecutablePath -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} `
+          # Install build requirements read from pyproject so the list isn't duplicated here; --no-build-isolation skips pip's auto build-deps and a stable OpenVINO path keeps ccache warm.
+          & $pythonExecutablePath -m pip install tomli
+          $buildReqs = @(& $pythonExecutablePath -c "import sys, tomli; print('\n'.join(tomli.load(open(sys.argv[1], 'rb'))['build-system']['requires']))" "${{ env.SRC_DIR }}/pyproject.toml")
+          & $pythonExecutablePath -m pip install @buildReqs ${{ needs.openvino_download.outputs.ov_wheel_source }}
+
+          & $pythonExecutablePath -m pip wheel -v --no-deps --no-build-isolation --wheel-dir ${{ env.WHEELS_DIR }} `
             --config-settings=override=cmake.generator='Ninja' `
             --config-settings=override=cmake.build_path='${{ env.BUILD_DIR }}/genai' `
             --config-settings='override=wheel.build_tag="${{ github.run_number }}"' `
@@ -490,7 +499,7 @@ jobs:
         if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
+          key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release-genai-wheel-${{ matrix.python-version }}-${{ github.sha }}
           path: ${{ env.CCACHE_DIR }}
 
       - name: Upload GenAI wheel
