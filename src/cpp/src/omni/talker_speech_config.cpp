@@ -10,6 +10,7 @@
 #include <nlohmann/json.hpp>
 
 #include "omni/talker_speech_config_utils.hpp"
+#include "openvino/genai/omni/pipeline.hpp"
 #include "utils.hpp"
 
 namespace ov {
@@ -139,6 +140,53 @@ void validate_omni_talker_speech_config(const OmniTalkerSpeechConfig& config) {
                     config.audio_chunk_frames,
                     ". Max allowed: ",
                     kAudioChunkFramesUpperBound);
+}
+
+namespace {
+
+std::string join_recognized_keys() {
+    std::string joined = "speech_streamer, talker_speech_config";
+    for (const auto& key : omni_talker_speech_config_keys()) {
+        joined += ", ";
+        joined += key;
+    }
+    return joined;
+}
+
+}  // namespace
+
+ResolvedTalkerProperties resolve_talker_properties(const OmniTalkerSpeechConfig& base, const ov::AnyMap& properties) {
+    ResolvedTalkerProperties out{base, std::monostate{}};
+    ov::AnyMap leftover;
+    for (const auto& [key, value] : properties) {
+        if (key == ov::genai::speech_streamer.name()) {
+            // Python kwargs arrive already unwrapped to a concrete alternative, C++ callers pass the variant.
+            if (value.is<std::shared_ptr<OmniSpeechStreamerBase>>()) {
+                out.speech_streamer = value.as<std::shared_ptr<OmniSpeechStreamerBase>>();
+            } else if (value.is<std::function<StreamingStatus(const ov::Tensor&)>>()) {
+                out.speech_streamer = value.as<std::function<StreamingStatus(const ov::Tensor&)>>();
+            } else {
+                out.speech_streamer = value.as<OmniSpeechStreamerVariant>();
+            }
+        } else if (key == ov::genai::talker_speech_config.name()) {
+            out.config = value.as<OmniTalkerSpeechConfig>();
+        } else {
+            OPENVINO_ASSERT(is_omni_talker_speech_config_key(key),
+                            "TalkerBase::generate: unrecognized property '",
+                            key,
+                            "'. Recognized keys: ",
+                            join_recognized_keys(),
+                            ".");
+            leftover.emplace(key, value);
+        }
+    }
+    if (!leftover.empty()) {
+        update_omni_talker_speech_config(out.config, leftover);
+    }
+    // Values supplied via properties bypass set_speech_config(), so this is the only guard
+    // on the AnyMap path.
+    validate_omni_talker_speech_config(out.config);
+    return out;
 }
 
 }  // namespace genai
