@@ -1519,18 +1519,23 @@ struct AdapterControllerImpl {
         const ov::CompiledModel& compiled_model,
         const std::vector<std::string>& execution_devices) const {
         const auto supported_properties = compiled_model.get_property(ov::supported_properties);
+        // Direct devices such as CPU and GPU report the precision themselves.
         if (std::find(supported_properties.begin(),
                       supported_properties.end(),
                       ov::hint::inference_precision) != supported_properties.end()) {
             return compiled_model.get_property(ov::hint::inference_precision);
         }
 
+        // AUTO in CUMULATIVE_THROUGHPUT mode and HETERO do not report it, because the real
+        // work happens on the devices below them. Ask those devices instead.
         if (std::find(supported_properties.begin(),
                       supported_properties.end(),
                       ov::device::properties) == supported_properties.end()) {
             return std::nullopt;
         }
 
+        // Reached only by AUTO and HETERO: collect the precision of every device they run on
+        // and accept it only if all of them agree.
         const auto device_properties = compiled_model.get_property(ov::device::properties);
         std::optional<ov::element::Type> inference_precision;
         for (const auto& device : execution_devices) {
@@ -1545,6 +1550,8 @@ struct AdapterControllerImpl {
                 return std::nullopt;
             }
 
+            // HETERO can mix precisions, for example GPU in f16 and CPU in f32. Picking one
+            // would be wrong for the other device, so give up.
             const auto device_precision = precision_it->second.as<ov::element::Type>();
             if (inference_precision && *inference_precision != device_precision) {
                 return std::nullopt;
@@ -1567,6 +1574,10 @@ struct AdapterControllerImpl {
         if (infer_device_is_gpu) {
             const ov::element::Type inference_precision =
                 get_inference_precision(compiled_model, execution_devices).value_or(ov::element::dynamic);
+            // Only f16 is overridden: it is the case we measured, where adapters come in as bf16
+            // or f32 and the type mismatch makes set_state() fall back to a CPU conversion.
+            // The GPU state type is not readable through a public API, so other precisions would
+            // be a guess and keep the declared VariableInfo types instead.
             if (inference_precision == ov::element::f16) {
                 new_output_type = ov::element::f16;
             }
