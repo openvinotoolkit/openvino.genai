@@ -106,7 +106,7 @@ wwb --target-model qwen2-vl-7b-Instruct --gt-data qwen_video_test/gt.csv --model
 optimum-cli export openvino -m SimianLuo/LCM_Dreamshaper_v7 --weight-format int8 sd-lcm-int8
 # Collect the references and save the mapping in the .csv file.
 # Reference images will be stored in the "reference" subfolder under the same path with .csv.
-wwb --base-model SimianLuo/LCM_Dreamshaper_v7--gt-data lcm_test/gt.csv --model-type text-to-image --hf
+wwb --base-model SimianLuo/LCM_Dreamshaper_v7 --gt-data lcm_test/gt.csv --model-type text-to-image --hf
 # Compute the metric
 # Target images will be stored in the "target" subfolder under the same path with .csv.
 wwb --target-model sd-lcm-int8 --gt-data lcm_test/gt.csv --model-type text-to-image --genai
@@ -207,6 +207,32 @@ wwb --target-model ltx-video-model --gt-data ltx_lora_test/gt.csv --model-type t
 wwb --target-model ltx-video-model --gt-data ltx_lora_test/gt.csv --model-type text-to-video --adapters path/to/lora.safetensors --alphas 0.9 --genai --empty_adapters
 ```
 
+### Compare Image-to-video models
+
+Every sample is conditioned on an input image in addition to the prompt. By default the conditioning images come from the [paint-by-inpaint/PIPE](https://huggingface.co/datasets/paint-by-inpaint/PIPE) dataset, so no extra setup is needed.
+
+```sh
+# Export model to OpenVINO, you can specify weight format with --weight-format option, for example --weight-format fp32/fp16/int8
+optimum-cli export openvino -m Lightricks/LTX-Video --weight-format fp32 ltx-video-model
+# Collect the references and save the mapping in the .csv file.
+# Reference videos will be stored in the "reference" subfolder under the same path with .csv.
+wwb --base-model Lightricks/LTX-Video --gt-data i2v_test/gt.csv --model-type image-to-video --hf
+# Compute the metric
+# Target video will be stored in the "target" subfolder under the same path with .csv.
+# compute metrics with optimum-intel
+wwb --target-model ltx-video-model --gt-data i2v_test/gt.csv --model-type image-to-video --output ltx_i2v_optimum
+# compute metrics with GenAI
+wwb --target-model ltx-video-model --gt-data i2v_test/gt.csv --model-type image-to-video --genai --output ltx_i2v_genai
+```
+
+To condition on your own images, point `--image-dir` at the directory holding them. Relative filenames in the test data's `images`/`image` column are resolved against it; if the column is missing, the images are looked up as `0.png`, `1.png`, ... matching the prompt order.
+
+```sh
+wwb --base-model Lightricks/LTX-Video --gt-data i2v_test/gt.csv --model-type image-to-video --image-dir path/to/images --hf
+```
+
+LoRA adapters work the same way as for text-to-video, via `--adapters`/`--alphas` (and `--empty_adapters` to compare against a plain baseline).
+
 ### Compare Speech-generation models
 
 #### SpeechT5
@@ -265,8 +291,40 @@ The speech-generation evaluator reports these metrics:
 * `speaker score` - speaker similarity based on SpeechBrain speaker verification.
 * `content score` - transcript similarity between base model and target model output, based on whisper transcription and normalized text comparison.
 * `acoustic score` - overall sound-character similarity based on spectral features (RMS, log-mel DTW, spectral rolloff)
-* `duration score` - relative utterance length similarity between target and reference.
+* `duration score` - relative audio length similarity between target and reference.
 * `overall similarity` - aggregate score used for sorting worst examples.
+
+### Compare Speech-recognition models (ASR)
+
+`speech-recognition` works with native ASR models, for example
+[FunAudioLLM/Fun-ASR-Nano-2512](https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512).
+
+The metric is `similarity = max(0, 1 - error rate)` between the normalized target and `--base-model`
+transcripts, where 1 is a perfect match and 0 is completely different. WWB uses character error rate
+(CER) when `--speech-language` is `zh`, `ja`, `Chinese`, or `Japanese`, and word error rate (WER) otherwise.
+
+#### FunASR
+
+```sh
+pip install .[funasr]
+
+# Collect ground truth from the baseline funasr model
+wwb --base-model FunAudioLLM/Fun-ASR-Nano-2512 --gt-data gt.csv --model-type speech-recognition --hf
+
+# Convert model to Optimum-Intel
+optimum-cli export openvino -m FunAudioLLM/Fun-ASR-Nano-2512 fun-asr-openvino
+
+# Measure similarity with the Optimum-OpenVINO inference backend
+wwb --target-model fun-asr-openvino --gt-data gt.csv --model-type speech-recognition
+
+# Measure similarity with the OpenVINO GenAI inference backend
+wwb --target-model fun-asr-openvino --gt-data gt.csv --model-type speech-recognition --genai
+```
+
+`--speech-language` forces the transcription language as a code (Fun-ASR-Nano-2512 supports `en`, `zh`,
+and `ja`). WWB defaults to `en`.
+
+> **NOTE**: when overriding the default, pass the same `--speech-language` to the baseline and to the targets.
 
 ### API
 The API provides a way to access to investigate the worst generated text examples.

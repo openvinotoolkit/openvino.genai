@@ -61,25 +61,10 @@ public:
                                  const std::vector<size_t>& videos_sequence = {},
                                  const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
-    // compute input embedding and token_type_ids
-    std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
-
-    std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(
-        const std::string& prompt,
-        const std::vector<ov::genai::EncodedImage>& images,
-        const std::vector<ov::genai::EncodedVideo>& videos,
-        ov::genai::VLMPerfMetrics& metrics,
-        bool recalculate_merged_embeddings = true,
-        const std::vector<size_t>& image_sequence = {},
-        const std::vector<size_t>& videos_sequence = {},
-        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
-
     // Returns draft-specific input embeddings prepared for speculative (Eagle3) decoding,
     // or an empty tensor when the embedder does not provide dedicated draft embeddings.
     // Aligned with the vLLM implementation.
     ov::Tensor get_draft_inputs_embeds() const;
-
-    bool has_token_type_ids() const;
 
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
 
@@ -200,19 +185,6 @@ private:
                                              const std::vector<size_t>& image_sequence = {},
                                              const std::vector<size_t>& videos_sequence = {},
                                              const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
-
-        virtual std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
-        virtual std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(
-            const std::string& prompt,
-            const std::vector<ov::genai::EncodedImage>& images,
-            const std::vector<ov::genai::EncodedVideo>& videos,
-            ov::genai::VLMPerfMetrics& metrics,
-            bool recalculate_merged_embeddings = true,
-            const std::vector<size_t>& image_sequence = {},
-            const std::vector<size_t>& videos_sequence = {},
-            const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
-
-        virtual bool has_token_type_ids() const;
 
         virtual const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
 
@@ -422,6 +394,7 @@ private:
     friend class InputsEmbedderGemma3;
     friend class InputsEmbedderGemma3n;
     friend class InputsEmbedderGemma4;
+    friend class InputsEmbedderDeepseekOCR2;
     friend class InputsEmbedderVideoChatFlashQwen;
     friend class InputsEmbedderMuseGlimmer;
 };

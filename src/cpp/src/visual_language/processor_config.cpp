@@ -38,6 +38,12 @@ ov::genai::ProcessorConfig::ProcessorConfig(const nlohmann::json& parsed) {
     read_json_param(parsed, "temporal_patch_size", temporal_patch_size);
     read_json_param(parsed, "merge_size", merge_size);
 
+    // Setting DeepSeek-OCR-2 config params
+    read_json_param(parsed, "tile_size", tile_size);
+    read_json_param(parsed, "min_patches", min_patches);
+    read_json_param(parsed, "max_patches", max_patches);
+    read_json_param(parsed, "background_color", background_color);
+
     // Setting qwen3_vl config params
     // qwen3_vl uses size.shortest_edge and size.longest_edge instead of min_pixels and max_pixels
     if (!parsed.contains("min_pixels") && !parsed.contains("max_pixels") ||

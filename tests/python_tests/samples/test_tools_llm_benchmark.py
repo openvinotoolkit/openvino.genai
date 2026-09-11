@@ -65,6 +65,28 @@ llm_chat_json = [
         "prompt": ["Tell me the plot of Mulan.", "Who is the main character?"],
     }
 ]
+vlm_chat_json = [
+    {
+        "prompt": "What animal is this?",
+        "media": [
+            "cat.png",
+        ],
+    }
+]
+
+video_generation_i2v_json = [
+    {
+        "num_steps": "25",
+        "width": 256,
+        "height": 256,
+        "guidance_scale": 3.0,
+        "prompt": "The cat stretches, blinks, and slowly turns its head toward the camera while its tail sways.",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "num_frames": 9,
+        "frame_rate": 25,
+        "media": "cat.png",
+    }
+]
 
 
 @pytest.fixture(scope="module")
@@ -955,6 +977,103 @@ class TestBenchmarkLLM:
         run_sample(benchmark_py_command)
 
     @pytest.mark.samples
+    @pytest.mark.parametrize("download_test_content", ["cat.png"], indirect=True)
+    @pytest.mark.parametrize(
+        "convert_model, sample_args",
+        [
+            pytest.param(
+                "tiny-random-ltx-video",
+                [
+                    "-d",
+                    "cpu",
+                    "-n",
+                    "1",
+                    "--optimum",
+                    "--task",
+                    "image-to-video",
+                    "--num_steps",
+                    "5",
+                    "--num_frames",
+                    "9",
+                    "--width",
+                    "256",
+                    "--height",
+                    "256",
+                ],
+            ),
+            pytest.param(
+                "tiny-random-ltx-video",
+                [
+                    "-d",
+                    "cpu",
+                    "-n",
+                    "1",
+                    "--genai",
+                    "--task",
+                    "image-to-video",
+                    "--num_steps",
+                    "5",
+                    "--num_frames",
+                    "9",
+                    "--width",
+                    "256",
+                    "--height",
+                    "256",
+                ],
+            ),
+        ],
+        indirect=["convert_model"],
+    )
+    def test_python_tool_llm_benchmark_image2video(self, download_test_content, convert_model, sample_args):
+        benchmark_script = os.path.join(SAMPLES_PY_DIR, "llm_bench/benchmark.py")
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "--media",
+            download_test_content,
+            "--prompt",
+            "The cat stretches, blinks, and slowly turns its head toward the camera while its tail sways.",
+            "--negative_prompt",
+            "worst quality, inconsistent motion, blurry, jittery, distorted",
+        ]
+        benchmark_py_command.extend(sample_args)
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "--num_steps", "4", "--task", "image-to-video", "--optimum"],
+            ["-d", "cpu", "-n", "1", "--num_steps", "4", "--task", "image-to-video", "--genai"],
+        ],
+    )
+    @pytest.mark.parametrize("convert_model", ["tiny-random-ltx-video"], indirect=True)
+    @pytest.mark.parametrize("download_test_content", ["cat.png"], indirect=True)
+    @pytest.mark.parametrize(
+        "generate_llm_bench_input_generation_jsonl",
+        [("video_generation_i2v.jsonl", video_generation_i2v_json)],
+        indirect=True,
+    )
+    def test_python_tool_llm_benchmark_image2video_json(
+        self, convert_model, download_test_content, generate_llm_bench_input_generation_jsonl, sample_args
+    ):
+        # to use the relative media path
+        os.chdir(os.path.dirname(download_test_content))
+
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "-pf",
+            generate_llm_bench_input_generation_jsonl,
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
     @pytest.mark.parametrize(
         "convert_model, sample_args, prefill_info_log_msg",
         [
@@ -1005,3 +1124,61 @@ class TestBenchmarkLLM:
         assert prefill_info_log_msg in result.stdout, (
             f"Expected log message `{prefill_info_log_msg}` not found in output"
         )
+
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            [
+                "-d",
+                "cpu",
+                "-n",
+                "1",
+                "-ic",
+                "10",
+                "--task",
+                "visual_text_gen_chat",
+                "--optimum",
+                "-p",
+                "Describe these image in detail",
+                "--chat_iter",
+                "2",
+            ],
+            ["-d", "cpu", "-n", "1", "-ic", "10", "--task", "visual_text_gen_chat", "--optimum"],
+            [
+                "-d",
+                "cpu",
+                "-n",
+                "1",
+                "-ic",
+                "10",
+                "--task",
+                "visual_text_gen_chat",
+                "--genai",
+                "-p",
+                "Describe these image in detail",
+                "--chat_iter",
+                "3",
+            ],
+            ["-d", "cpu", "-n", "1", "-ic", "10", "--task", "visual_text_gen_chat", "--genai"],
+        ],
+    )
+    @pytest.mark.parametrize("download_test_content", ["cat"], indirect=True)
+    @pytest.mark.parametrize("convert_model", ["tiny-random-llava"], indirect=True)
+    @pytest.mark.parametrize(
+        "generate_llm_bench_input_generation_jsonl", [("vlm_chat_json.jsonl", vlm_chat_json)], indirect=True
+    )
+    def test_python_tool_llm_benchmark_vlm_chat(
+        self, convert_model, download_test_content, generate_llm_bench_input_generation_jsonl, sample_args
+    ):
+        # to use the relative media and mask_image paths
+        os.chdir(os.path.dirname(download_test_content))
+
+        prompt_args = (
+            ["--media", download_test_content]
+            if "-p" in sample_args
+            else ["-pf", generate_llm_bench_input_generation_jsonl]
+        )
+        # Run Python benchmark
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [sys.executable, benchmark_script, "-m", convert_model, *prompt_args] + sample_args
+        run_sample(benchmark_py_command)

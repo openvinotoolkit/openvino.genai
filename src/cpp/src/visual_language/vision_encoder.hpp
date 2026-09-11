@@ -158,8 +158,7 @@ protected:
     void resolve_processor_configs(const std::filesystem::path& config_dir_path);
     
     VisionEncoder() = default;
-    // Config-only constructor tag for subclasses where vision encoder is merged
-    // into a single model (loads only config files, skips model compilation)
+    // Loads processor configuration while deferring model compilation to derived encoders.
     struct ConfigOnlyTag {};
     VisionEncoder(const std::filesystem::path& config_dir, ConfigOnlyTag);
     VisionEncoder(const ModelsMap& models_map, const std::filesystem::path& config_dir, ConfigOnlyTag);

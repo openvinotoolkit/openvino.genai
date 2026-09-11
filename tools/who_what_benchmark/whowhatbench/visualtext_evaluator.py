@@ -23,6 +23,7 @@ from .utils import (
 from .inputs_preprocessors import MODEL_TYPE_TO_CLS_MAPPING
 
 DEF_VIDEO_FRAMES_AMOUNT = 10
+DEF_VIDEO_FRAMES_AMOUNT_GEMMA4 = 32
 
 
 @register_evaluator("visual-text", "visual-video-text", "visual-text-only")
@@ -32,6 +33,7 @@ class VisualTextEvaluator(TextEvaluator):
         base_model: Any = None,
         tokenizer: Any = None,
         processor: Any = None,
+        config: Any = None,
         gt_data: str = None,
         test_data: Union[str, list] = None,
         similarity_model_id: str = "sentence-transformers/all-mpnet-base-v2",
@@ -52,7 +54,7 @@ class VisualTextEvaluator(TextEvaluator):
         self.processor = processor
         self.is_image_input = task_type == "visual-text"
         self.is_text_only = task_type == "visual-text-only"
-        self.frames_num = frames_num or DEF_VIDEO_FRAMES_AMOUNT
+        self.frames_num = self._resolve_frames_num(frames_num, config)
         self.pruning_ratio = pruning_ratio
         self.relevance_weight = relevance_weight
         self.generation_config_extra = generation_config_extra or {}
@@ -266,3 +268,15 @@ class VisualTextEvaluator(TextEvaluator):
             # likely due to image complexity and small model size.
             prompt_to_skip = 'Extract the letters in the words "Bus Stop" that fall between the wheels of the bus logo drawn above it.'
             data.drop(data[data["prompts"] == prompt_to_skip].index, inplace=True)
+
+    def _resolve_frames_num(self, frames_num: int | None, config: Any | None) -> int:
+        """
+        Resolve the number of frames to use for video input based on the model config.
+        """
+        if frames_num is not None:
+            return frames_num
+
+        if getattr(config, "model_type", None) in ("gemma4", "gemma4_unified"):
+            return DEF_VIDEO_FRAMES_AMOUNT_GEMMA4
+
+        return DEF_VIDEO_FRAMES_AMOUNT

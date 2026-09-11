@@ -113,26 +113,27 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     ov::genai::ModelDesc kv_model_desc;
     kv_model_desc.model = kv_model;
     kv_model_desc.device = std::move(main_device);
+    // as of now, only kv cache information is needed for kv update model
+    if (main_model_desc.properties.count(ov::hint::kv_cache_precision.name()) > 0) {
+        kv_model_desc.properties[ov::hint::kv_cache_precision.name()] =
+            main_model_desc.properties.at(ov::hint::kv_cache_precision.name());
+    } else {
+        GENAI_INFO("kv cache precision not specified in main model properties. Leave to the plugin for default precision.");
+    }
 
-    // Read the KV cache precision from the compiled main model's key_cache input port rather than
-    // the ov::hint::kv_cache_precision property: plugins may resolve the actual cache precision
-    // (e.g. CPU promoting to bf16 based on inference precision) independently of that hint, and the
-    // reorder model must match the precision of the tensors actually bound by the scheduler.
-    auto kv_cache_precision = m_main_pipeline->get_kv_cache_element_type();
+    // Read the runtime KV cache precision from the compiled main model's key_cache input port: plugins may resolve the
+    // actual cache precision independently of that hint (e.g. CPU promoting to bf16 when kv cache precision hint is
+    // fp16, GPU promoting to i8 when kv cache precision hint is u8, and for GPU, when the hint is u4, the kv data are
+    // packed as uint8 and be reinterpreted to u4 inside plugin), and the reorder model must match the precision of the
+    // tensors actually bound by the runtime.
+    const auto rt_kv_cache_precision = m_main_pipeline->get_kv_cache_element_type();
+    const auto kv_cache_precision =
+        m_main_pipeline->get_model_property(ov::hint::kv_cache_precision.name()).as<ov::element::Type>();
     // transformation for kv update model: u4 KV cache is stored as u8 internally,
     // so the reorder pass operates on u8 while the original precision is preserved in rt_info.
     kv_model->set_rt_info(kv_cache_precision, "auxiliary_kv_cache_precision");
-    if (kv_cache_precision == ov::element::u4) {
-        kv_cache_precision = ov::element::u8;
-    }
-    ov::pass::PaKVReorderFusion(kv_cache_precision).run_on_model(kv_model);
-    // Pass the resolved (post u4->u8) precision explicitly instead of forwarding the raw
-    // ov::hint::kv_cache_precision value from main_model_desc.properties: for u4 caches that raw
-    // value would still say "u4" while PaKVReorderFusion above already rewrote the key_cache./
-    // value_cache. parameters to u8, and some plugins (e.g. GPU) give an explicitly user-set
-    // kv_cache_precision property priority over the auxiliary_kv_cache_precision rt_info, which
-    // would reintroduce a precision mismatch between the property and the actual parameter type.
-    kv_model_desc.properties[ov::hint::kv_cache_precision.name()] = kv_cache_precision;
+    ov::pass::PaKVReorderFusion(rt_kv_cache_precision).run_on_model(kv_model);
+
     m_kv_update_wrapper = std::make_shared<KVUpdateWrapper>(kv_model_desc);
 
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
@@ -291,7 +292,6 @@ GenerationHandle
 ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
                                                                  const ov::Tensor& input_ids,
                                                                  const ov::genai::GenerationConfig& sampling_params,
-                                                                 std::optional<ov::Tensor> token_type_ids,
                                                                  std::optional<ov::Tensor> prompt_ids,
                                                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
@@ -300,7 +300,6 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
         return m_main_pipeline->add_request(request_id,
                                             input_ids,
                                             sampling_params,
-                                            token_type_ids,
                                             prompt_ids,
                                             lm_extra_inputs);
     }
@@ -316,13 +315,10 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     // refer to: https://github.com/SafeAILab/EAGLE/blob/main/eagle/model/cnets.py#L617
     ov::Tensor draft_input = create_draft_input(
         request_draft_embeddings && request_draft_embeddings.get_size() > 0 ? request_draft_embeddings : input_ids);
-    std::optional<ov::Tensor> draft_token_type_ids = token_type_ids;
     std::optional<ov::Tensor> draft_prompt_ids = prompt_ids;
     ov::Tensor main_position_ids;
     std::optional<int64_t> main_rope_delta;
-    if (draft_token_type_ids.has_value()) {
-        draft_token_type_ids = trim_first_token_sequence_tensor(*draft_token_type_ids, "token_type_ids");
-    }
+
     if (draft_prompt_ids.has_value()) {
         draft_prompt_ids = trim_first_token_sequence_tensor(*draft_prompt_ids, "prompt_ids");
     }
@@ -335,7 +331,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     }
     // The speculative draft path only uses language-model inputs. Multimodal auxiliary inputs such as
     // deepstack/visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
-    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input, draft_sampling_params, draft_token_type_ids, draft_prompt_ids)});
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input, draft_sampling_params, draft_prompt_ids)});
     // Restore main position_ids/rope_delta before adding to the main pipeline.
     if (m_model_input_type == ModelInputType::EMBEDDINGS && m_inputs_embedder && main_position_ids.get_size() > 0) {
         m_inputs_embedder->set_position_ids(main_position_ids);
@@ -344,7 +340,6 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     auto main_generation = m_main_pipeline->add_request(request_id,
                                                         input_ids,
                                                         sampling_params,
-                                                        token_type_ids,
                                                         prompt_ids,
                                                         lm_extra_inputs);
     align_request_pair_processed_prefix(request_id);
@@ -382,7 +377,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
     const std::vector<ov::Tensor>& input_ids,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer,
-    const std::optional<std::vector<ov::Tensor>>& token_type_ids,
     const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids,
     const std::optional<std::vector<ov::Tensor>>& prompt_ids,
     const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list
@@ -415,7 +409,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
         return PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start);
     };
 
-    return generate_common(this, input_ids, sampling_params, streamer, token_type_ids, position_ids, prompt_ids, lm_extra_inputs_list, strategy);
+    return generate_common(this, input_ids, sampling_params, streamer, position_ids, prompt_ids, lm_extra_inputs_list, strategy);
 }
 
 ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::trim_first_token_sequence_tensor(const ov::Tensor& tensor,

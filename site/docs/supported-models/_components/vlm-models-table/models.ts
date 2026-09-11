@@ -218,6 +218,23 @@ export const VLM_MODELS: VLMModelType[] = [
         ],
         notesLink: '#qwen3_5-notes',
       },
+      {
+        name: 'Qwen3.8',
+        links: [
+          'https://huggingface.co/Qwen/Qwen3.8-27B',
+        ],
+        notesLink: '#qwen3_5-notes',
+      },
+    ],
+  },
+  {
+    architecture: 'DeepseekOCR2ForCausalLM',
+    models: [
+      {
+        name: 'DeepSeek-OCR-2',
+        links: ['https://huggingface.co/deepseek-community/DeepSeek-OCR-2'],
+        notesLink: '#deepseek-ocr-2-notes',
+      },
     ],
   },
   {
