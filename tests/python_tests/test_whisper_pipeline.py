@@ -19,6 +19,7 @@ from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 from huggingface_hub import snapshot_download
 import gc
 import json
+import os
 import typing
 import numpy as np
 import pathlib
@@ -1131,3 +1132,209 @@ def test_streamers(sample_from_dataset, pipelines_fixture, streamer_for_test):
 
     assert expected == result_handler.decode(genai_pipe.get_tokenizer())
     result_handler.reset()
+
+
+# Qwen3-ASR forced-aligner integration tests.
+
+QWEN3_ASR_FA_PARAM = get_model_pipeline_pair_params([(QWEN3_ASR_MODEL_ID, PipelineType.ASR)])
+
+
+def forced_aligner_audio():
+    rng = np.random.default_rng(0)
+    return (rng.standard_normal(16000) * 0.01).astype(np.float32).tolist()
+
+
+def prepare_qwen3_asr_model(model_pipeline_pair):
+    model_id, pipeline_type = model_pipeline_pair[:2]
+    model_path = get_ov_cache_converted_models_dir() / model_id.split("/")[-1]
+    read_asr_model((model_id, model_path), pipeline_type=pipeline_type)
+    return model_path
+
+
+def forced_aligner_model_path():
+    path = os.environ.get("QWEN3_FORCED_ALIGNER_MODEL")
+    if not path or not pathlib.Path(path).exists():
+        pytest.skip("Set QWEN3_FORCED_ALIGNER_MODEL to a converted Qwen3-ForcedAligner directory.")
+    return path
+
+
+def make_broken_aligner(aligner_dir, dest, mutate_config):
+    # Reuse the real aligner files and mutate only config.json so the test isolates one config contract.
+    dest.mkdir()
+    for entry in aligner_dir.iterdir():
+        if entry.name != "config.json":
+            (dest / entry.name).symlink_to(entry.resolve())
+    cfg = json.loads((aligner_dir / "config.json").read_text())
+    mutate_config(cfg)
+    (dest / "config.json").write_text(json.dumps(cfg))
+    return dest
+
+
+@pytest.mark.parametrize("model_pipeline_pair", QWEN3_ASR_FA_PARAM)
+def test_qwen3_asr_word_timestamps_requires_forced_aligner(model_pipeline_pair):
+    path = prepare_qwen3_asr_model(model_pipeline_pair)
+    audio = forced_aligner_audio()
+    pipe = ov_genai.ASRPipeline(path, "CPU")
+
+    # No forced aligner is required unless word timestamps are requested.
+    pipe.generate(audio, max_new_tokens=4)
+
+    # Per-call word_timestamps=True requires a configured forced aligner.
+    with pytest.raises(RuntimeError, match="forced aligner"):
+        pipe.generate(audio, word_timestamps=True, max_new_tokens=4)
+
+
+@pytest.mark.parametrize("model_pipeline_pair", QWEN3_ASR_FA_PARAM)
+def test_qwen3_asr_forced_aligner_incomplete_model_raises(model_pipeline_pair, tmp_path):
+    # An explicitly supplied but incomplete forced-aligner directory fails during construction.
+    path = prepare_qwen3_asr_model(model_pipeline_pair)
+    incomplete = tmp_path / "empty-aligner"
+    incomplete.mkdir()
+    with pytest.raises(RuntimeError, match="config.json"):
+        ov_genai.ASRPipeline(path, "CPU", forced_aligner=str(incomplete))
+
+
+@pytest.mark.parametrize("model_pipeline_pair", QWEN3_ASR_FA_PARAM)
+def test_qwen3_asr_normal_model_rejected_as_forced_aligner(model_pipeline_pair):
+    # A valid Qwen3-ASR export is not a forced-aligner model and must be rejected here.
+    path = prepare_qwen3_asr_model(model_pipeline_pair)
+    with pytest.raises(RuntimeError, match="not a Qwen3 forced aligner"):
+        ov_genai.ASRPipeline(path, "CPU", forced_aligner=str(path))
+
+
+# classify_num is config-driven rather than hardcoded to 5000. It must be a positive integer and
+# must match the forced-aligner decoder logits width.
+@pytest.mark.parametrize("mutation", ["missing", "non_positive", "width_mismatch"])
+@pytest.mark.parametrize("model_pipeline_pair", QWEN3_ASR_FA_PARAM)
+def test_qwen3_asr_forced_aligner_invalid_classify_num_rejected(model_pipeline_pair, mutation, tmp_path):
+    base = prepare_qwen3_asr_model(model_pipeline_pair)
+    aligner_dir = pathlib.Path(forced_aligner_model_path())
+
+    def mutate(cfg):
+        if mutation == "missing":
+            cfg["thinker_config"].pop("classify_num", None)
+        elif mutation == "non_positive":
+            cfg["thinker_config"]["classify_num"] = -1
+        else:
+            cfg["thinker_config"]["classify_num"] = int(cfg["thinker_config"]["classify_num"]) + 1
+
+    broken = make_broken_aligner(aligner_dir, tmp_path / "broken-aligner", mutate)
+    with pytest.raises(RuntimeError):
+        ov_genai.ASRPipeline(base, "CPU", forced_aligner=str(broken))
+
+
+# n_window is read from thinker_config.audio_config.n_window; a non-positive or non-integer value must be
+# rejected. In particular a negative JSON integer must not wrap to a large size_t and pass validation.
+@pytest.mark.parametrize("n_window", [0, -1, 50.0])
+@pytest.mark.parametrize("model_pipeline_pair", QWEN3_ASR_FA_PARAM)
+def test_qwen3_asr_forced_aligner_invalid_n_window_rejected(model_pipeline_pair, n_window, tmp_path):
+    base = prepare_qwen3_asr_model(model_pipeline_pair)
+    aligner_dir = pathlib.Path(forced_aligner_model_path())
+
+    def mutate(cfg):
+        cfg["thinker_config"]["audio_config"]["n_window"] = n_window
+
+    broken = make_broken_aligner(aligner_dir, tmp_path / "broken-aligner", mutate)
+    with pytest.raises(RuntimeError):
+        ov_genai.ASRPipeline(base, "CPU", forced_aligner=str(broken))
+
+
+# timestamp_segment_time must be a positive JSON number. A non-positive value and a non-numeric value
+# each exercise a distinct branch of the same validation and must surface a clear forced-aligner diagnostic.
+@pytest.mark.parametrize("value", [0, "fast"])
+@pytest.mark.parametrize("model_pipeline_pair", QWEN3_ASR_FA_PARAM)
+def test_qwen3_asr_forced_aligner_invalid_timestamp_segment_time_rejected(model_pipeline_pair, value, tmp_path):
+    base = prepare_qwen3_asr_model(model_pipeline_pair)
+    aligner_dir = pathlib.Path(forced_aligner_model_path())
+
+    def mutate(cfg):
+        cfg["timestamp_segment_time"] = value
+
+    broken = make_broken_aligner(aligner_dir, tmp_path / "broken-aligner", mutate)
+    with pytest.raises(RuntimeError, match="timestamp_segment_time must be a positive number"):
+        ov_genai.ASRPipeline(base, "CPU", forced_aligner=str(broken))
+
+
+# timestamp_token_id must be a JSON integer; a non-integer value must surface a clear forced-aligner diagnostic.
+@pytest.mark.parametrize("model_pipeline_pair", QWEN3_ASR_FA_PARAM)
+def test_qwen3_asr_forced_aligner_invalid_timestamp_token_id_rejected(model_pipeline_pair, tmp_path):
+    base = prepare_qwen3_asr_model(model_pipeline_pair)
+    aligner_dir = pathlib.Path(forced_aligner_model_path())
+
+    def mutate(cfg):
+        cfg["timestamp_token_id"] = 1.5
+
+    broken = make_broken_aligner(aligner_dir, tmp_path / "broken-aligner", mutate)
+    with pytest.raises(RuntimeError, match="timestamp_token_id must be an integer"):
+        ov_genai.ASRPipeline(base, "CPU", forced_aligner=str(broken))
+
+
+@pytest.mark.parametrize("model_type", ["whisper", "fun_asr"])
+def test_forced_aligner_rejected_for_non_qwen(model_type, tmp_path):
+    # Only model_type is needed because the dispatcher rejects forced_aligner before constructing a non-Qwen backend.
+    model_dir = tmp_path / model_type
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text(json.dumps({"model_type": model_type}))
+    with pytest.raises(RuntimeError, match="only supported for Qwen3-ASR"):
+        ov_genai.ASRPipeline(model_dir, "CPU", forced_aligner="anything")
+
+
+def assert_monotonic_words(result):
+    assert result.words is not None
+    assert isinstance(result.words, list)
+    assert len(result.words) == 1
+    assert len(result.words[0]) > 0
+    for sample_words in result.words:
+        previous_end = -1.0
+        for word in sample_words:
+            assert word.start_ts <= word.end_ts
+            assert word.start_ts >= previous_end - 1e-3
+            assert list(word.token_ids) == []
+            previous_end = word.end_ts
+
+
+@pytest.mark.parametrize("model_pipeline_pair", QWEN3_ASR_FA_PARAM)
+def test_qwen3_asr_forced_aligner_toggle(model_pipeline_pair):
+    path = prepare_qwen3_asr_model(model_pipeline_pair)
+    pipe = ov_genai.ASRPipeline(path, "CPU", forced_aligner=forced_aligner_model_path())
+
+    # word_timestamps=False leaves the configured aligner unused.
+    disabled = pipe.generate(forced_aligner_audio(), word_timestamps=False, max_new_tokens=6)
+    assert disabled.words is None
+
+    # word_timestamps=True runs the aligner and produces word-level timestamps.
+    enabled = pipe.generate(forced_aligner_audio(), word_timestamps=True, language="English", max_new_tokens=6)
+    assert_monotonic_words(enabled)
+    assert enabled.perf_metrics.get_word_level_timestamps_processing_duration().mean > 0
+
+
+@pytest.mark.parametrize(
+    "language,message",
+    [
+        ("Japanese", "not yet implemented by OpenVINO GenAI"),
+        ("Thai", "not supported by this forced-aligner model"),
+        ("Klingon", "invalid or missing language"),
+    ],
+)
+@pytest.mark.parametrize("model_pipeline_pair", QWEN3_ASR_FA_PARAM)
+def test_qwen3_asr_forced_aligner_language_errors(model_pipeline_pair, language, message):
+    path = prepare_qwen3_asr_model(model_pipeline_pair)
+    pipe = ov_genai.ASRPipeline(path, "CPU", forced_aligner=forced_aligner_model_path())
+    with pytest.raises(RuntimeError, match=message):
+        pipe.generate(forced_aligner_audio(), word_timestamps=True, language=language, max_new_tokens=6)
+
+
+@pytest.mark.parametrize("model_pipeline_pair", QWEN3_ASR_FA_PARAM)
+def test_qwen3_asr_forced_aligner_multichunk_global_offsets(model_pipeline_pair):
+    path = prepare_qwen3_asr_model(model_pipeline_pair)
+    pipe = ov_genai.ASRPipeline(path, "CPU", forced_aligner=forced_aligner_model_path())
+    # Cross the 180 s boundary and verify second-chunk timestamps are shifted into full-audio time exactly once.
+    duration_sec = 182
+    audio = (np.random.default_rng(3).standard_normal(16000 * duration_sec) * 0.01).astype(np.float32).tolist()
+    result = pipe.generate(audio, word_timestamps=True, language="English", max_new_tokens=4)
+    assert_monotonic_words(result)
+    assert any(word.start_ts >= 180.0 for sample_words in result.words for word in sample_words)
+    for sample_words in result.words:
+        for word in sample_words:
+            assert 0.0 <= word.start_ts <= duration_sec + 1.0
+            assert word.end_ts <= duration_sec + 1.0

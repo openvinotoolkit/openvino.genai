@@ -104,4 +104,12 @@ public:
     void set_generation_config(const ASRGenerationConfig& config);
 };
 
+/**
+ * @brief Path to a separate Qwen3 forced-aligner model used for word-level timestamps.
+ *
+ * Constructor-only property. When supplied for a Qwen3-ASR pipeline, the forced aligner is loaded eagerly
+ * and used when generation requests ov::genai::word_timestamps(true). Only supported by Qwen3-ASR models.
+ */
+static constexpr ov::Property<std::string> forced_aligner{"forced_aligner"};
+
 }  // namespace ov::genai
