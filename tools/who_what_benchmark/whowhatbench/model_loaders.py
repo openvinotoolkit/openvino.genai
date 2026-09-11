@@ -124,10 +124,16 @@ class GenAIModelWrapper:
     A helper class to store additional attributes for GenAI models
     """
 
-    def __init__(self, model, model_dir, model_type):
+    def __init__(self, model, model_dir, model_type, gguf_file=None):
         self.model = model
         self.model_dir = model_dir
         self.model_type = model_type
+        self.config = None
+
+        # GGUF models have no HF config.json in the directory; the GenAI pipeline carries its
+        # own config from the .gguf, so skip the AutoConfig load (it would raise).
+        if gguf_file:
+            return
 
         if model_type in (
             "text",
@@ -226,7 +232,7 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
         logger.info("Using OpenVINO GenAI LLMPipeline API")
         pipeline = openvino_genai.LLMPipeline(pipeline_path, device=device, adapters=adapter_config, **ov_config)
 
-    return GenAIModelWrapper(pipeline, model_dir, "text")
+    return GenAIModelWrapper(pipeline, model_dir, "text", gguf_file=kwargs.get("gguf_file"))
 
 
 def load_text_llamacpp_pipeline(model_dir, **kwargs):

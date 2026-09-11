@@ -55,9 +55,19 @@ public:
 
     TokenizerImpl(const std::filesystem::path& models_path, const ov::AnyMap& properties);
     TokenizerImpl(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties);
+    // Build the tokenizer from a .gguf file's tokenizer metadata (avoids re-opening the file when
+    // the language model was already read from it).
+    TokenizerImpl(const GGUFTokenizerParameters& gguf_tokenizer_parameters, const ov::AnyMap& properties);
 
     void setup_tokenizer(const std::filesystem::path& models_path, const ov::AnyMap& properties);
     void setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, ov::AnyMap properties);
+
+    void finalize_gguf_tokenizer(const std::shared_ptr<ov::Model>& ov_tokenizer,
+                                 const std::shared_ptr<ov::Model>& ov_detokenizer,
+                                 const std::map<std::string, GGUFMetaData>& tokenizer_config,
+                                 const ov::AnyMap& filtered_properties,
+                                 bool enable_save_ov_model,
+                                 const std::filesystem::path& save_dir);
 
     void read_config(const std::filesystem::path& tokenizer_path);
     void read_special_tokens_map(const std::filesystem::path& tokenizer_path);
