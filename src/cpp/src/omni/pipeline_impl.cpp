@@ -119,6 +119,62 @@ void enforce_text_config_compatible_with_audio(const GenerationConfig& text_conf
                     "); the talker consumes a single hidden-state stream");
 }
 
+/// @brief Body shared by both generate() overloads, which differ only in whether the thinker is fed
+/// a raw prompt or a ChatHistory — VLMPipelineBase overloads on exactly that and nothing else.
+template <typename Prompt>
+OmniDecodedResults generate_impl(const std::shared_ptr<VLMPipelineBase>& vlm,
+                                 const std::shared_ptr<TalkerBase>& talker,
+                                 const Prompt& prompt,
+                                 const std::vector<ov::Tensor>& images,
+                                 const std::vector<ov::Tensor>& videos,
+                                 const std::vector<VideoMetadata>& videos_metadata,
+                                 const std::vector<ov::Tensor>& audios,
+                                 const GenerationConfig& text_config,
+                                 const OmniTalkerSpeechConfig& talker_speech_config,
+                                 const StreamerVariant& streamer,
+                                 const OmniSpeechStreamerVariant& speech_streamer) {
+    validate_omni_talker_speech_config(talker_speech_config);
+    enforce_text_config_compatible_with_audio(text_config, talker_speech_config);
+
+    OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
+                    "OmniPipeline: videos_metadata size (", videos_metadata.size(),
+                    ") must match videos size (", videos.size(), ") or be empty");
+
+    if (talker_speech_config.return_audio) {
+        GenerationConfig text_cfg = text_config;
+        text_cfg.return_omni_outputs = true;
+        const std::shared_ptr<OmniChannel> channel = make_channel_if_streaming(text_cfg);
+        // Declared before the VLM runs: when streaming, this is what puts the talker on its own
+        // thread, and it has to be listening before the thinker starts writing.
+        TalkerStage talker_stage(talker, channel, talker_speech_config, speech_streamer);
+        // Only reach for the streaming overload when there is something to stream: implementing it
+        // is optional for a VLM backend, and calling it with a null streamer would throw on a
+        // backend that supports batch speech but not streaming.
+        VLMDecodedResults vlm_result =
+            channel ? vlm->generate(prompt, images, videos, audios, videos_metadata, text_cfg, streamer, channel)
+                    : vlm->generate(prompt, images, videos, audios, videos_metadata, text_cfg, streamer);
+        TalkerResults talker_result = talker_stage.finish(vlm_result);
+        // TODO: when `channel` is set, vlm_result.intermediate_hidden_states holds a second full
+        // copy of what already travelled through it — the CB backend accumulates every step on the
+        // sequence *and* forwards it. Clearing it here reclaims one copy once the field is no
+        // longer part of the streaming contract. The deeper fix is upstream: with a bridge attached
+        // the backend shouldn't accumulate at all, which means the forwarder in
+        // continuous_batching/pipeline_impl.cpp has to tap the per-step tensor directly instead of
+        // reading out of that same accumulation buffer.
+        OmniDecodedResults omni_result;
+        static_cast<VLMDecodedResults&>(omni_result) = std::move(vlm_result);
+        omni_result.speech_result = std::move(talker_result);
+        return omni_result;
+    }
+
+    // Text-only path: convert VLMDecodedResults to OmniDecodedResults with empty speech_result.
+    VLMDecodedResults vlm_result =
+        vlm->generate(prompt, images, videos, audios, videos_metadata, text_config, streamer);
+    OmniDecodedResults omni_result;
+    static_cast<VLMDecodedResults&>(omni_result) = std::move(vlm_result);
+    return omni_result;
+}
+
 }  // namespace
 
 OmniPipeline::OmniPipelineImpl::OmniPipelineImpl(const std::shared_ptr<VLMPipelineBase>& vlm,
@@ -149,46 +205,8 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const std::string& p
                                                              const OmniTalkerSpeechConfig& talker_speech_config,
                                                              const StreamerVariant& streamer,
                                                              const OmniSpeechStreamerVariant& speech_streamer) {
-    validate_omni_talker_speech_config(talker_speech_config);
-    enforce_text_config_compatible_with_audio(text_config, talker_speech_config);
-
-    OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
-                    "OmniPipeline: videos_metadata size (", videos_metadata.size(),
-                    ") must match videos size (", videos.size(), ") or be empty");
-
-    if (talker_speech_config.return_audio) {
-        GenerationConfig text_cfg = text_config;
-        text_cfg.return_omni_outputs = true;
-        const std::shared_ptr<OmniChannel> channel = make_channel_if_streaming(text_cfg);
-        // Declared before the VLM runs: when streaming, this is what puts the talker on its own
-        // thread, and it has to be listening before the thinker starts writing.
-        TalkerStage talker_stage(m_talker, channel, talker_speech_config, speech_streamer);
-        // Only reach for the streaming overload when there is something to stream: implementing it
-        // is optional for a VLM backend, and calling it with a null streamer would throw on a
-        // backend that supports batch speech but not streaming.
-        VLMDecodedResults vlm_result =
-            channel ? m_vlm->generate(prompt, images, videos, audios, videos_metadata, text_cfg, streamer, channel)
-                    : m_vlm->generate(prompt, images, videos, audios, videos_metadata, text_cfg, streamer);
-        TalkerResults talker_result = talker_stage.finish(vlm_result);
-        // TODO: when `channel` is set, vlm_result.intermediate_hidden_states holds a second full
-        // copy of what already travelled through it — the CB backend accumulates every step on the
-        // sequence *and* forwards it. Clearing it here (and in the ChatHistory overload below)
-        // reclaims one copy once the field is no longer part of the streaming contract. The deeper
-        // fix is upstream: with a bridge attached the backend shouldn't accumulate at all, which
-        // means the forwarder in continuous_batching/pipeline_impl.cpp has to tap the per-step
-        // tensor directly instead of reading out of that same accumulation buffer.
-        OmniDecodedResults omni_result;
-        static_cast<VLMDecodedResults&>(omni_result) = std::move(vlm_result);
-        omni_result.speech_result = std::move(talker_result);
-        return omni_result;
-    }
-
-    // Text-only path: convert VLMDecodedResults to OmniDecodedResults with empty speech_result.
-    VLMDecodedResults vlm_result =
-        m_vlm->generate(prompt, images, videos, audios, videos_metadata, text_config, streamer);
-    OmniDecodedResults omni_result;
-    static_cast<VLMDecodedResults&>(omni_result) = std::move(vlm_result);
-    return omni_result;
+    return generate_impl(m_vlm, m_talker, prompt, images, videos, videos_metadata, audios, text_config,
+                         talker_speech_config, streamer, speech_streamer);
 }
 
 OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const ChatHistory& history,
@@ -200,41 +218,11 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const ChatHistory& h
                                                              const OmniTalkerSpeechConfig& talker_speech_config,
                                                              const StreamerVariant& streamer,
                                                              const OmniSpeechStreamerVariant& speech_streamer) {
-    validate_omni_talker_speech_config(talker_speech_config);
-    enforce_text_config_compatible_with_audio(text_config, talker_speech_config);
-
-    OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
-                    "OmniPipeline: videos_metadata size (", videos_metadata.size(),
-                    ") must match videos size (", videos.size(), ") or be empty");
-
-    if (talker_speech_config.return_audio) {
-        GenerationConfig text_cfg = text_config;
-        text_cfg.return_omni_outputs = true;
-        // Keep multimodal normalization inside the ChatHistory path. Applying the chat template
-        // first and routing the resulting string through the prompt overload would place image
-        // and audio tags outside the user message and change the Thinker output.
-        const std::shared_ptr<OmniChannel> channel = make_channel_if_streaming(text_cfg);
-        TalkerStage talker_stage(m_talker, channel, talker_speech_config, speech_streamer);
-        // Only reach for the streaming overload when there is something to stream: implementing it
-        // is optional for a VLM backend, and calling it with a null streamer would throw on a
-        // backend that supports batch speech but not streaming.
-        VLMDecodedResults vlm_result =
-            channel ? m_vlm->generate(history, images, videos, audios, videos_metadata, text_cfg, streamer, channel)
-                    : m_vlm->generate(history, images, videos, audios, videos_metadata, text_cfg, streamer);
-        // TODO: same duplicated hidden states as in the prompt overload above; see the note there.
-        TalkerResults talker_result = talker_stage.finish(vlm_result);
-        OmniDecodedResults omni_result;
-        static_cast<VLMDecodedResults&>(omni_result) = std::move(vlm_result);
-        omni_result.speech_result = std::move(talker_result);
-        return omni_result;
-    }
-
-    // Text-only path: convert VLMDecodedResults to OmniDecodedResults with empty speech_result.
-    VLMDecodedResults vlm_result =
-        m_vlm->generate(history, images, videos, audios, videos_metadata, text_config, streamer);
-    OmniDecodedResults omni_result;
-    static_cast<VLMDecodedResults&>(omni_result) = std::move(vlm_result);
-    return omni_result;
+    // The history reaches the VLM as a history: applying the chat template here and routing the
+    // resulting string through the prompt overload would place image and audio tags outside the
+    // user message and change the Thinker output.
+    return generate_impl(m_vlm, m_talker, history, images, videos, videos_metadata, audios, text_config,
+                         talker_speech_config, streamer, speech_streamer);
 }
 
 }  // namespace ov::genai
