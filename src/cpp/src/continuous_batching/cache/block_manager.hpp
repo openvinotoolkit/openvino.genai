@@ -824,6 +824,82 @@ public:
         std::vector<int> block_indices;
     };
 
+    struct TemporaryPromotionRequest {
+        uint64_t seq_id;
+        size_t checkpoint_slot;
+        size_t expected_endpoint;
+        size_t expected_generation;
+    };
+
+    class PreparedTemporaryPromotions {
+    public:
+        PreparedTemporaryPromotions(const PreparedTemporaryPromotions&) = delete;
+        PreparedTemporaryPromotions& operator=(const PreparedTemporaryPromotions&) = delete;
+            PreparedTemporaryPromotions(PreparedTemporaryPromotions&& other) noexcept
+                : m_owner(std::exchange(other.m_owner, nullptr)),
+                  m_lock(std::move(other.m_lock)),
+                  m_promotions(std::move(other.m_promotions)),
+                  m_promoted_indices(std::move(other.m_promoted_indices)) {}
+            PreparedTemporaryPromotions& operator=(PreparedTemporaryPromotions&&) = delete;
+
+            const std::vector<size_t>& apply() {
+            OPENVINO_ASSERT(m_owner != nullptr, "Temporary promotions were already applied");
+            for (const PreparedPromotion& promotion : m_promotions) {
+                auto& temporary_blocks = promotion.temporary_it->second;
+                auto& selected_allocation = temporary_blocks[promotion.selected_index];
+                BlocksPerLayer& selected_blocks = selected_allocation.blocks;
+                auto& block_table = promotion.table_it->second;
+                auto& live_state = promotion.live_state_it->second;
+                for (const auto& block : selected_blocks) {
+                    block->increment_live();
+                }
+                for (size_t layer_idx = 0; layer_idx < m_owner->m_num_layers; ++layer_idx) {
+                    live_state.rows[layer_idx]->release_live();
+                    std::swap(block_table[layer_idx][0], selected_blocks[layer_idx]);
+                    live_state.rows[layer_idx] = block_table[layer_idx][0];
+                }
+                live_state.endpoint = promotion.endpoint;
+                ++live_state.generation;
+                live_state.is_empty = false;
+                for (auto& allocation : temporary_blocks) {
+                    m_owner->m_allocator.free_uncached(allocation);
+                }
+                m_owner->m_temporary_block_table.erase(promotion.temporary_it);
+            }
+            m_owner = nullptr;
+            m_lock.unlock();
+            return m_promoted_indices;
+        }
+
+    private:
+        using TemporaryIterator = std::map<uint64_t, TemporaryBlockTable>::iterator;
+        using TableIterator = std::map<uint64_t, std::vector<BlocksPerLayer>>::iterator;
+        using LiveStateIterator = std::map<uint64_t, LinearAttentionLiveState>::iterator;
+
+        struct PreparedPromotion {
+            TemporaryIterator temporary_it;
+            TableIterator table_it;
+            LiveStateIterator live_state_it;
+            size_t selected_index;
+            size_t endpoint;
+        };
+
+        friend class BlockManager;
+        PreparedTemporaryPromotions(BlockManager& owner,
+                                    std::unique_lock<std::mutex> lock,
+                                    std::vector<PreparedPromotion> promotions,
+                                    std::vector<size_t> promoted_indices)
+            : m_owner(&owner),
+              m_lock(std::move(lock)),
+              m_promotions(std::move(promotions)),
+              m_promoted_indices(std::move(promoted_indices)) {}
+
+        BlockManager* m_owner;
+        std::unique_lock<std::mutex> m_lock;
+        std::vector<PreparedPromotion> m_promotions;
+        std::vector<size_t> m_promoted_indices;
+    };
+
     /**
      * Constructs the BlockManager.
      * @param num_blocks Number of cache blocks available for assignment to the sequences.
@@ -1398,74 +1474,78 @@ public:
                                    size_t checkpoint_slot,
                                    size_t expected_endpoint,
                                    size_t expected_generation) {
-        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
-        OPENVINO_ASSERT(checkpoint_slot > 0,
-                        "Checkpoint slot is one-based and must be greater than zero");
-        auto temporary_it = m_temporary_block_table.find(seq_id);
-        OPENVINO_ASSERT(temporary_it != m_temporary_block_table.end(),
-                        "No temporary cache blocks reserved for sequence ", seq_id);
-        auto& temporary_blocks = temporary_it->second;
-        OPENVINO_ASSERT(checkpoint_slot <= temporary_blocks.size(),
-                        "Checkpoint slot ", checkpoint_slot, " is out of range for sequence ", seq_id,
-                        ", reserved checkpoints: ", temporary_blocks.size());
+        std::vector<TemporaryPromotionRequest> requests{
+            {seq_id, checkpoint_slot, expected_endpoint, expected_generation}};
+        auto prepared = prepare_temporary_promotions(requests);
+        return prepared.apply().front();
+    }
 
-        auto table_it = m_block_table.find(seq_id);
-        OPENVINO_ASSERT(table_it != m_block_table.end(),
-                        "Cannot promote temporary cache block for unknown sequence ", seq_id);
-        auto& block_table = table_it->second;
-        OPENVINO_ASSERT(block_table.size() == m_num_layers,
-                        "Temporary cache promotion expects one block table per layer");
-        for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
-            OPENVINO_ASSERT(block_table[layer_idx].size() == 1,
-                            "Temporary cache promotion supports fixed one-block sequence state only");
-        }
-
-        const size_t selected_index = checkpoint_slot - 1;
-        auto& selected_allocation = temporary_blocks[selected_index];
-        BlocksPerLayer& selected_blocks = selected_allocation.blocks;
-        auto live_state_it = m_linear_attention_live_states.find(seq_id);
-        OPENVINO_ASSERT(live_state_it != m_linear_attention_live_states.end(),
-                        "No linear-attention live-state handle for sequence ", seq_id);
-        auto& live_state = live_state_it->second;
-        OPENVINO_ASSERT(live_state.rows.size() == m_num_layers,
-                        "Linear-attention live-state row count changed for sequence ", seq_id);
-        OPENVINO_ASSERT(live_state.endpoint == expected_endpoint && live_state.generation == expected_generation,
-                        "Stale linear-attention scratch lease for sequence ", seq_id);
-        OPENVINO_ASSERT(checkpoint_slot <= std::numeric_limits<size_t>::max() - expected_endpoint,
-                "Linear-attention checkpoint endpoint exceeds size_t range for sequence ", seq_id);
-        for (const auto& allocation : temporary_blocks) {
-            OPENVINO_ASSERT(allocation.blocks.size() == m_num_layers,
-                            "Temporary cache row count changed for sequence ", seq_id);
-            OPENVINO_ASSERT(allocation.free_nodes.size() == m_num_layers,
-                            "Temporary cache release metadata changed for sequence ", seq_id);
-        }
-        const int promoted_index = selected_blocks.front()->get_index();
-        OPENVINO_ASSERT(promoted_index >= 0,
-                        "Promoted temporary cache block for sequence ", seq_id,
-                        " has a negative physical index: ", promoted_index);
-        const size_t base_endpoint = live_state.endpoint;
-        for (const auto& block : selected_blocks) {
-            block->increment_live();
-        }
-        for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
-            live_state.rows[layer_idx]->release_live();
-            std::swap(block_table[layer_idx][0], selected_blocks[layer_idx]);
-            live_state.rows[layer_idx] = block_table[layer_idx][0];
-        }
-        live_state.endpoint = base_endpoint + checkpoint_slot;
-        ++live_state.generation;
-        live_state.is_empty = false;
-        m_allocator.free_uncached(selected_allocation);
-
-        for (size_t idx = 0; idx < temporary_blocks.size(); ++idx) {
-            if (idx == selected_index) {
-                continue;
+    PreparedTemporaryPromotions prepare_temporary_promotions(
+        const std::vector<TemporaryPromotionRequest>& requests) {
+        std::unique_lock<std::mutex> lock(m_cached_blocks_map_mutex);
+        std::vector<PreparedTemporaryPromotions::PreparedPromotion> promotions;
+        std::vector<size_t> promoted_indices;
+        promotions.reserve(requests.size());
+        promoted_indices.reserve(requests.size());
+        std::set<uint64_t> sequence_ids;
+        for (const TemporaryPromotionRequest& request : requests) {
+            OPENVINO_ASSERT(sequence_ids.insert(request.seq_id).second,
+                            "Duplicate temporary promotion for sequence ", request.seq_id);
+            OPENVINO_ASSERT(request.checkpoint_slot > 0,
+                            "Checkpoint slot is one-based and must be greater than zero");
+            auto temporary_it = m_temporary_block_table.find(request.seq_id);
+            OPENVINO_ASSERT(temporary_it != m_temporary_block_table.end(),
+                            "No temporary cache blocks reserved for sequence ", request.seq_id);
+            auto& temporary_blocks = temporary_it->second;
+            OPENVINO_ASSERT(request.checkpoint_slot <= temporary_blocks.size(),
+                            "Checkpoint slot ", request.checkpoint_slot, " is out of range for sequence ", request.seq_id,
+                            ", reserved checkpoints: ", temporary_blocks.size());
+            auto table_it = m_block_table.find(request.seq_id);
+            OPENVINO_ASSERT(table_it != m_block_table.end(),
+                            "Cannot promote temporary cache block for unknown sequence ", request.seq_id);
+            auto& block_table = table_it->second;
+            OPENVINO_ASSERT(block_table.size() == m_num_layers,
+                            "Temporary cache promotion expects one block table per layer");
+            for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+                OPENVINO_ASSERT(block_table[layer_idx].size() == 1,
+                                "Temporary cache promotion supports fixed one-block sequence state only");
             }
-            m_allocator.free_uncached(temporary_blocks[idx]);
+            auto live_state_it = m_linear_attention_live_states.find(request.seq_id);
+            OPENVINO_ASSERT(live_state_it != m_linear_attention_live_states.end(),
+                            "No linear-attention live-state handle for sequence ", request.seq_id);
+            auto& live_state = live_state_it->second;
+            OPENVINO_ASSERT(live_state.rows.size() == m_num_layers,
+                            "Linear-attention live-state row count changed for sequence ", request.seq_id);
+            OPENVINO_ASSERT(live_state.endpoint == request.expected_endpoint &&
+                                live_state.generation == request.expected_generation,
+                            "Stale linear-attention scratch lease for sequence ", request.seq_id);
+            OPENVINO_ASSERT(request.checkpoint_slot <=
+                                std::numeric_limits<size_t>::max() - request.expected_endpoint,
+                            "Linear-attention checkpoint endpoint exceeds size_t range for sequence ", request.seq_id);
+            for (const auto& allocation : temporary_blocks) {
+                OPENVINO_ASSERT(allocation.blocks.size() == m_num_layers,
+                                "Temporary cache row count changed for sequence ", request.seq_id);
+                OPENVINO_ASSERT(allocation.free_nodes.size() == m_num_layers,
+                                "Temporary cache release metadata changed for sequence ", request.seq_id);
+                for (const auto& free_node : allocation.free_nodes) {
+                    OPENVINO_ASSERT(free_node.size() == 1,
+                                    "Temporary cache release node changed for sequence ", request.seq_id);
+                }
+            }
+            const size_t selected_index = request.checkpoint_slot - 1;
+            const int promoted_index = temporary_blocks[selected_index].blocks.front()->get_index();
+            OPENVINO_ASSERT(promoted_index >= 0,
+                            "Promoted temporary cache block for sequence ", request.seq_id,
+                            " has a negative physical index: ", promoted_index);
+            promotions.push_back({temporary_it,
+                                  table_it,
+                                  live_state_it,
+                                  selected_index,
+                                  request.expected_endpoint + request.checkpoint_slot});
+            promoted_indices.push_back(static_cast<size_t>(promoted_index));
         }
-        m_temporary_block_table.erase(temporary_it);
-
-        return static_cast<size_t>(promoted_index);
+        return PreparedTemporaryPromotions{
+            *this, std::move(lock), std::move(promotions), std::move(promoted_indices)};
     }
 
     /**
