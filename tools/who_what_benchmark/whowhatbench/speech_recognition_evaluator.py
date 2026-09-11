@@ -26,6 +26,7 @@ FUNASR_TOKENIZER_SUBFOLDER = (
 )
 ASR_MODEL_TYPES = {"funasr", "fun_asr"}
 AUDIO_VLM_MODEL_TYPES = {"gemma4", "gemma4_unified"}
+QWEN_ASR_MODEL_TYPES = {"qwen3_asr"}
 
 DEFAULT_ASR_INSTRUCTION = "Transcribe this audio."
 # Language specific prompt https://huggingface.co/google/gemma-4-12B#6-audio
@@ -60,6 +61,9 @@ class MultimodalTranscriber:
             self.processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
         self.instruction = asr_instruction(language)
 
+    def prepare_generation_inputs(self, inputs):
+        return inputs
+
     def transcribe(self, audio, max_new_tokens: int) -> str:
         import torch
 
@@ -85,9 +89,26 @@ class MultimodalTranscriber:
             inputs = inputs.to(device)
 
         prompt_len = inputs["input_ids"].shape[-1]
+        generation_inputs = self.prepare_generation_inputs(inputs)
         with torch.inference_mode():
-            tokens = self.model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+            tokens = self.model.generate(**generation_inputs, max_new_tokens=max_new_tokens, do_sample=False)
+        tokens = getattr(tokens, "sequences", tokens)
         return self.processor.batch_decode(tokens[:, prompt_len:], skip_special_tokens=True)[0]
+
+
+class Qwen3ASROptimumTranscriber(MultimodalTranscriber):
+    def prepare_generation_inputs(self, inputs):
+        if hasattr(self.model, "audio_encoder"):
+            return inputs
+        tokenizer = self.processor.tokenizer
+        return {
+            "input_features": inputs["input_features"],
+            "decoder_input_ids": inputs["input_ids"],
+            "attention_mask": inputs.get("feature_attention_mask"),
+            "decoder_start_token_id": self.model.config.decoder_start_token_id,
+            "eos_token_id": [tokenizer.pad_token_id, tokenizer.eos_token_id],
+            "pad_token_id": tokenizer.pad_token_id,
+        }
 
 
 class GenAIMultimodalTranscriber:
@@ -202,10 +223,28 @@ def _load_multimodal_model(model_id, device, ov_config, use_hf, use_genai, **kwa
     return load_visual_text_model(model_id, device, ov_config, use_hf, use_genai, **kwargs)
 
 
+def _register_model_backend(model_type: str) -> None:
+    if model_type in QWEN_ASR_MODEL_TYPES:
+        try:
+            import qwen_asr  # noqa: F401
+        except ImportError as error:
+            raise ModuleNotFoundError(
+                "The `qwen-asr` package is required to evaluate Qwen3-ASR models. "
+                "Please install it with `pip install qwen-asr`."
+            ) from error
+
+
+def _load_optimum_speech_model(model_id, device, ov_config):
+    from optimum.intel.openvino import OVModelForSpeechSeq2Seq
+
+    return OVModelForSpeechSeq2Seq.from_pretrained(model_id, device=device, ov_config=ov_config)
+
+
 class ASRHFTranscriber:
     @staticmethod
     def create(model_id, device="CPU", ov_config=None, language="", **kwargs):
-        if _get_asr_model_type(model_id) in ASR_MODEL_TYPES:
+        model_type = _get_asr_model_type(model_id)
+        if model_type in ASR_MODEL_TYPES:
             logger.info("Using FunASR API")
             return FunASRSourceTranscriber(
                 model_id,
@@ -213,6 +252,7 @@ class ASRHFTranscriber:
                 torch_dtype=kwargs.get("torch_dtype"),
             )
 
+        _register_model_backend(model_type)
         model = _load_multimodal_model(model_id, device, ov_config, True, False, **kwargs)
         return MultimodalTranscriber(model, model_id, language or "English")
 
@@ -240,13 +280,17 @@ class ASROptimumTranscriber:
         model_type = _get_asr_model_type(model_id)
         if model_type in ASR_MODEL_TYPES:
             logger.info("Using Optimum API")
-            from optimum.intel.openvino import OVModelForSpeechSeq2Seq
             from transformers import AutoTokenizer
 
-            model = OVModelForSpeechSeq2Seq.from_pretrained(model_id, device=device, ov_config=ov_config)
+            model = _load_optimum_speech_model(model_id, device, ov_config)
             subfolder = FUNASR_TOKENIZER_SUBFOLDER if model_type == "funasr" else ""
             tokenizer = AutoTokenizer.from_pretrained(str(model_id), subfolder=subfolder)
             return FunASROptimumTranscriber(model, tokenizer, language or "en")
+
+        _register_model_backend(model_type)
+        if model_type in QWEN_ASR_MODEL_TYPES:
+            model = _load_optimum_speech_model(model_id, device, ov_config)
+            return Qwen3ASROptimumTranscriber(model, model_id, language or "English")
 
         model = _load_multimodal_model(model_id, device, ov_config, False, False, **kwargs)
         return MultimodalTranscriber(model, model_id, language or "English")
