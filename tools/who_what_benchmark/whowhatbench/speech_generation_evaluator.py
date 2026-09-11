@@ -204,6 +204,11 @@ class SpeechT5Wrapper:
         if emb.ndim == 1:
             emb = emb.unsqueeze(0)
 
+        # Align HF inputs with the model; keep FP32 inputs for the Optimum OpenVINO backend.
+        if isinstance(self.model, torch.nn.Module):
+            input_tokens = input_tokens.to(device=self.model.device)
+            emb = emb.to(device=self.model.device, dtype=self.model.dtype)
+
         generation_kwargs = {"speaker_embeddings": emb}
         if self.vocoder is not None:
             generation_kwargs["vocoder"] = self.vocoder
@@ -212,10 +217,8 @@ class SpeechT5Wrapper:
             output = self.model.generate(input_tokens, **generation_kwargs)
             if isinstance(output, tuple):
                 output = output[0]
-            if isinstance(output, torch.Tensor):
-                speech = output.detach().cpu().reshape(-1).numpy()
-            else:
-                speech = torch.as_tensor(output).cpu().reshape(-1).numpy()
+            # Convert audio to FP32 because PyTorch cannot export BF16 tensors to NumPy.
+            speech = torch.as_tensor(output).detach().float().cpu().reshape(-1).numpy()
 
         return _SpeechResult(speech, 16000)
 
@@ -227,7 +230,14 @@ class KokoroModelWrapper:
     Optimum path uses OVModelForTextToSpeechSeq2Seq preprocess_input() + generate().
     """
 
-    def __init__(self, model_id, ov_model=None):
+    def __init__(self, model_id, ov_model=None, torch_dtype=None):
+        import torch
+
+        if torch_dtype not in (None, torch.float32):
+            raise ValueError("Kokoro source models support only float32 for --torch-dtype.")
+        if ov_model is not None and torch_dtype is not None:
+            raise ValueError("--torch-dtype is not supported when ov_model is provided.")
+
         from kokoro import KPipeline
         from kokoro.model import KModel
 
@@ -249,6 +259,9 @@ class KokoroModelWrapper:
             else:
                 # if model_id is not a local directory, KModel will fetch config using repo_id.
                 self._kmodel = KModel(repo_id=self._model_id)
+
+            if torch_dtype is not None:
+                self._kmodel.to(dtype=torch_dtype)
 
             self._pipeline = KPipeline(lang_code=self._lang_code, model=self._kmodel)
 
