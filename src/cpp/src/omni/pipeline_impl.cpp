@@ -67,17 +67,15 @@ public:
     }
 
     /// @brief Close the bridge, then wait for the talker thread (the future's destructor blocks,
-    /// and members die after this body). Ending here covers the paths that never reach finish():
-    /// a thinker that threw before it could close its own write end would otherwise leave the
-    /// talker blocked on a read that can never be satisfied, and the wait would deadlock. Ending
-    /// twice is harmless, and a reader still drains whatever was written before the end.
-    ///
-    /// The talker then runs a full inference over a truncated stream just to be discarded, which
-    /// is wasteful during unwinding but keeps the failure path simple: whatever it throws stays in
-    /// the future and never competes with the exception already in flight.
+    /// and members die after this body). Closing here is what keeps a thinker that threw before it
+    /// could close its own write end from leaving the talker blocked on a read that can never be
+    /// satisfied. abandon() rather than end() because reaching the destructor without finish()
+    /// means nothing will consume the talker's output, so it should stop at its next step instead
+    /// of padding out a stream nobody will hear while an exception unwinds. Whatever it throws on
+    /// the way out stays in the future and never competes with the exception already in flight.
     ~TalkerStage() {
         if (m_channel) {
-            m_channel->end();
+            m_channel->abandon();
         }
     }
 
