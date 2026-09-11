@@ -17,7 +17,7 @@ namespace {
 /// @brief Bridge the thinker and the talker when the caller opted into streaming. Null otherwise,
 /// which keeps the VLM on its batch path: the talker then consumes the finished VLMDecodedResults.
 std::shared_ptr<OmniChannel> make_channel_if_streaming(const GenerationConfig& text_config) {
-    return text_config.text2audio_stream ? std::make_shared<OmniChannel>() : nullptr;
+    return text_config.stream_text2speech ? std::make_shared<OmniChannel>() : nullptr;
 }
 
 /// @brief Owns the talker half of one generate() call and decides where it runs.
@@ -105,8 +105,8 @@ private:
 /// candidates, no speculative draft tokens.
 void enforce_text_config_compatible_with_audio(const GenerationConfig& text_config,
                                                const OmniTalkerSpeechConfig& talker_speech_config) {
-    OPENVINO_ASSERT(!text_config.text2audio_stream || talker_speech_config.return_audio,
-                    "OmniPipeline: text_config.text2audio_stream streams the thinker's output to the talker, "
+    OPENVINO_ASSERT(!text_config.stream_text2speech || talker_speech_config.return_audio,
+                    "OmniPipeline: text_config.stream_text2speech streams the thinker's output to the talker, "
                     "so it requires talker_speech_config.return_audio == true");
     if (!talker_speech_config.return_audio) {
         return;

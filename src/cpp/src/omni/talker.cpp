@@ -91,15 +91,15 @@ TalkerResults TalkerBase::generate(const std::shared_ptr<OmniTextSourceBase>& /*
     // VLMDecodedResults overload expects, forward to it — but it would be a lie by omission. That
     // default cannot speak before the thinker finishes: this interface's only inference entry point
     // takes a complete sequence and returns a complete waveform, so there is no mid-stream lever a
-    // generic implementation could pull. It would make text2audio_stream strictly worse than
+    // generic implementation could pull. It would make stream_text2speech strictly worse than
     // leaving it off — a bridge, a thread, and a per-step allocation in the decode loop, all to
     // arrive at exactly the batch result, slightly later. Refusing is more honest than silently
     // absorbing that cost.
     OPENVINO_THROW_NOT_IMPLEMENTED(
         "This talker does not implement streaming the thinker's output. Implementing this "
         "generate() overload is optional: it is needed only to support "
-        "GenerationConfig::text2audio_stream. A talker without it still produces speech normally "
-        "from the finished thinker output — unset text2audio_stream to use that path.");
+        "GenerationConfig::stream_text2speech. A talker without it still produces speech normally "
+        "from the finished thinker output — unset stream_text2speech to use that path.");
 }
 
 class Talker::Impl {

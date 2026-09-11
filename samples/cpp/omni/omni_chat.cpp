@@ -31,7 +31,7 @@ int main(int argc, char* argv[]) try {
     text_config.max_new_tokens = 256;
     // Hand the thinker's tokens and hidden states to the talker as they are produced.
     // OmniPipeline creates the bridge between the two stages.
-    text_config.text2audio_stream = true;
+    text_config.stream_text2speech = true;
 
     ov::genai::OmniTalkerSpeechConfig talker_speech_config(models_path);
     talker_speech_config.return_audio = true;

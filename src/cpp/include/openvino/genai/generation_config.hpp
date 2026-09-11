@@ -639,14 +639,14 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  *        states and full token ids in the result so a Qwen3-Omni talker can consume them. Only the
  *        continuous-batching backend supports this; OmniPipeline sets it internally on the audio path.
  *
- * @param text2audio_stream if set to true, OmniPipeline streams the thinker's tokens and hidden states
+ * @param stream_text2speech if set to true, OmniPipeline streams the thinker's tokens and hidden states
  *        to the talker as they are produced instead of handing over the whole sequence once text
  *        generation has finished, so speech starts before the text is complete. Requires
  *        talker_speech_config.return_audio and the continuous-batching backend.
  *        Interaction with stop_strings: a token is streamed to the talker at the step it is sampled,
  *        which is before a stop string spanning it can be matched. Tokens rewound out of the text
  *        afterwards have already reached the talker, so the speech may voice up to one stop string
- *        more than the returned text shows. Leave text2audio_stream off if the two must agree
+ *        more than the returned text shows. Leave stream_text2speech off if the two must agree
  *        exactly.
  */
 class OPENVINO_GENAI_EXPORTS GenerationConfig {
@@ -725,7 +725,7 @@ public:
     // Combined with stop_strings, the speech can run up to one stop string past the returned text;
     // see the class doc above.
     // Preview API: subject to change.
-    bool text2audio_stream = false;
+    bool stream_text2speech = false;
 
     /** @brief sets eos_token_id to tokenizer_eos_token_id if eos_token_id is less than 0.
      * Otherwise verifies eos_token_id == tokenizer_eos_token_id.
@@ -810,7 +810,7 @@ static constexpr ov::Property<bool> apply_chat_template{"apply_chat_template"};
 static constexpr ov::Property<bool> return_omni_outputs{"return_omni_outputs"};
 
 // Preview API: subject to change.
-static constexpr ov::Property<bool> text2audio_stream{"text2audio_stream"};
+static constexpr ov::Property<bool> stream_text2speech{"stream_text2speech"};
 
 }  // namespace genai
 }  // namespace ov

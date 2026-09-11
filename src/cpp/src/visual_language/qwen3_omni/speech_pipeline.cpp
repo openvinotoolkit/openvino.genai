@@ -857,7 +857,7 @@ ov::Tensor Qwen3OmniSpeechPipeline::codes_to_wav(const ov::Tensor& codes) {
 /// it is sampled, and a stop string spanning it is only matched afterwards, so no consumer can avoid
 /// this — fixing it would mean withholding tokens here for as long as the longest stop string, which
 /// costs exactly the time-to-first-audio that streaming exists to buy. Accepted and documented on
-/// GenerationConfig::text2audio_stream; only the batch path, which reads full_token_ids after the
+/// GenerationConfig::stream_text2speech; only the batch path, which reads full_token_ids after the
 /// rewind, is exact.
 class Qwen3OmniSpeechPipeline::ThinkerStream {
 public:

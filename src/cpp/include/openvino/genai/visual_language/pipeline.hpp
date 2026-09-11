@@ -217,7 +217,7 @@ public:
     /// OmniPipeline; `omni_streamer` is null for conventional VLM use.
     ///
     /// Overriding is optional: this overload exists only to serve
-    /// `GenerationConfig::text2audio_stream`, so the default throws `ov::NotImplemented` rather than
+    /// `GenerationConfig::stream_text2speech`, so the default throws `ov::NotImplemented` rather than
     /// quietly dropping the streamer and producing no speech. A backend that skips it still supports
     /// non-streaming speech output in full — OmniPipeline calls the non-streaming overload above when
     /// streaming is off, and never routes a null `omni_streamer` here.
@@ -276,7 +276,7 @@ protected:
         OPENVINO_THROW_NOT_IMPLEMENTED(
             "This VLM backend does not implement streaming the thinker's output to a talker. "
             "Implementing this generate() overload is optional: it is needed only to support "
-            "GenerationConfig::text2audio_stream. A backend without it still produces speech "
+            "GenerationConfig::stream_text2speech. A backend without it still produces speech "
             "normally, because OmniPipeline then runs the talker over the finished text instead.");
     }
 };

@@ -101,7 +101,7 @@ public:
     virtual void set_speech_config(const OmniTalkerSpeechConfig& config) = 0;
 
     /// @brief Run speech generation against a live thinker -> talker bridge instead of a finished
-    ///        VLM result. OmniPipeline calls this when `GenerationConfig::text2audio_stream` is set,
+    ///        VLM result. OmniPipeline calls this when `GenerationConfig::stream_text2speech` is set,
     ///        handing over the read end of the same object it gave the VLM as an OmniStreamerBase.
     ///
     /// The talker decides how much of the stream it needs before doing work — the bridge only
@@ -112,12 +112,12 @@ public:
     /// A speech streamer passed here is therefore invoked from that worker thread.
     ///
     /// Overriding is optional: this overload exists only to serve
-    /// `GenerationConfig::text2audio_stream`, so the default throws `ov::NotImplemented` rather than
+    /// `GenerationConfig::stream_text2speech`, so the default throws `ov::NotImplemented` rather than
     /// draining the bridge and falling back to the VLMDecodedResults overload. That fallback would
     /// be correct but pointless — it cannot speak before the thinker finishes, so it would pay for a
     /// bridge, a thread and a per-step allocation to reach exactly the non-streaming result. A
     /// talker that skips this overload still supports speech output in full; callers get it by
-    /// leaving `text2audio_stream` off, and OmniPipeline then runs the talker over the finished
+    /// leaving `stream_text2speech` off, and OmniPipeline then runs the talker over the finished
     /// thinker output.
     ///
     /// @param text_source Read end of the bridge; read() blocks until a step arrives or the thinker

@@ -56,7 +56,7 @@ namespace ov::genai {
  * A token is written at the step it is sampled, which is before a stop string spanning it can be
  * matched, so a stop string rewound out of the returned text has already been written here. Readers
  * that must agree exactly with the text cannot use this interface; see
- * GenerationConfig::text2audio_stream.
+ * GenerationConfig::stream_text2speech.
  *
  * Thread safety: write() and end() are called sequentially from the thread running the VLM decode
  * loop; no concurrent calls are made from that side. When the talker consumes the stream on
