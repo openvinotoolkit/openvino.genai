@@ -228,8 +228,7 @@ class BenchPrompt(dict):
         self._image_size = None  # (width, height) | None
         self._video_shape = None  # (frames, height, width) | None
         self._audio_info = None  # (duration_sec, sample_rate) | None
-        self._mask_fraction = None  # float | None  cached mask coverage % (extra feedback fix)
-        self._input_tokens = None  # int | None  true input token count incl. media (set by stamp_repr)
+        self._mask_fraction = None  # float | None  cached mask coverage %
         self._probed = False
         self._load(data)
 
@@ -379,19 +378,16 @@ class BenchPrompt(dict):
             text:7w + image:1024x768 + video:640x480@16f
             audio:30.0s@44100Hz      <- no text prompt
 
-        This is a *size* summary: the text is shown as a whitespace word count
-        (``w`` suffix), images/videos as pixel dimensions, audio as duration.
-        The tokenized length of all inputs combined (text + media) is a
-        separate metric reported as ``input_tokens`` (see :meth:`stamp_repr`),
-        not part of this string.
+        This is a pre-tokenization *size* summary: the text is shown as a
+        whitespace word count (``w`` suffix), images/videos as pixel
+        dimensions, audio as duration. The tokenized length is reported
+        separately by the pipelines as ``input_size``.
         """
         self.probe()
         parts = []
 
         # ---- text (optional) ----
         # prompt_repr describes input *sizes*; the text size is its word count.
-        # The tokenized length of all inputs (text + media) is reported
-        # separately as input_tokens (see stamp_repr).
         if self.get("prompt"):
             word_count = len(self["prompt"].split())
             parts.append(f"text:{word_count}w")
@@ -442,8 +438,8 @@ class BenchPrompt(dict):
         prompt_repr = repr(self)
         log.info(f"{prefix} Prompt: {prompt_repr}")
 
-    def stamp_repr(self, iter_data_list, start_index, batch_size=1):
-        """Tag ``prompt_repr`` and ``input_tokens`` onto the new records.
+    def stamp_repr(self, iter_data_list, start_index):
+        """Tag ``prompt_repr`` onto the records appended since *start_index*.
 
         Callers capture ``len(iter_data_list)`` **before** invoking the
         generation function, then pass that length here afterwards. This tags
@@ -457,43 +453,18 @@ class BenchPrompt(dict):
         This replaces the fragile ``iter_data_list[-1]["prompt_repr"] = ...``
         positional assignment, which silently mis-attributed the value whenever
         a call appended a number of records other than exactly one.
-
-        Two fields are written to each new record:
-
-        * ``prompt_repr`` — the input *size* summary string (``repr(self)``:
-          text word count + media dimensions).
-        * ``input_tokens`` — the true total token count of **all** inputs
-          combined (text + image/video/audio tokens). Sourced from the
-          post-tokenization ``iter_data["input_size"]`` the generation function
-          records (``= per-prompt tokens * batch_size``); ``batch_size`` divides
-          it back to a per-prompt figure. For visual-language models this
-          already includes image/video tokens. The mask image is never
-          tokenized, so it is naturally excluded. Left empty for tasks that do
-          not record a token ``input_size`` (e.g. speech_to_text,
-          super_resolution).
         """
-        self._stamp_records(iter_data_list[start_index:], batch_size)
+        self._stamp_records(iter_data_list[start_index:])
 
-    def _stamp_records(self, records, batch_size=1):
-        """Write ``prompt_repr`` / ``input_tokens`` onto an explicit record list.
+    def _stamp_records(self, records):
+        """Write ``prompt_repr`` onto an explicit record list.
 
         Split out of :meth:`stamp_repr` so :class:`BenchChatPrompt` can stamp a
         single turn's record without re-slicing ``iter_data_list``.
         """
-        if batch_size:
-            sizes = [
-                r["input_size"]
-                for r in records
-                if isinstance(r.get("input_size"), (int, float)) and r["input_size"] > 0
-            ]
-            if sizes:
-                self._input_tokens = int(max(sizes) // batch_size)
-
         prompt_repr = repr(self)
-        input_tokens = self._input_tokens if self._input_tokens is not None else ""
         for record in records:
             record["prompt_repr"] = prompt_repr
-            record["input_tokens"] = input_tokens
 
 
 class BenchChatPrompt(list):
@@ -554,7 +525,7 @@ class BenchChatPrompt(list):
                     )
         log.info(f"{prefix} Prompt: {repr(self)}")
 
-    def stamp_repr(self, iter_data_list, start_index, batch_size=1):
+    def stamp_repr(self, iter_data_list, start_index):
         """Tag each new record with **its own turn's** repr.
 
         The chat pipelines append exactly one record per turn and set that
@@ -563,21 +534,11 @@ class BenchChatPrompt(list):
         ``prompt_idx`` is not a valid turn index is left untouched, so a future
         change appending a different number of records degrades to "not
         stamped" rather than "mislabelled".
-
-        Note on ``input_tokens`` for chat: a turn's ``input_size`` is normally
-        the *incremental* input for that turn, which is why
-        ``metrics_print.output_avg_statis_tokens`` lists chat input sizes
-        instead of averaging them. Under ``--full_chat`` (forced on for NPU and
-        for the model types in ``FULL_CHAT_MODEL_TYPES``) it is instead the
-        cumulative conversation length, so ``input_tokens`` becomes cumulative
-        while ``prompt_repr`` stays per-turn. That asymmetry is inherited from
-        how the pipelines record ``input_size``; it is reported as-is rather
-        than normalised here.
         """
         for record in iter_data_list[start_index:]:
             turn_idx = record.get("prompt_idx")
             if isinstance(turn_idx, int) and 0 <= turn_idx < len(self):
-                self[turn_idx]._stamp_records([record], batch_size)
+                self[turn_idx]._stamp_records([record])
 
 
 # ---------------------------------------------------------------------------

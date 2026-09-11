@@ -336,7 +336,7 @@ def run_visual_language_generation_benchmark(
             proc_id,
             mem_consumption,
         )
-        prompt.stamp_repr(iter_data_list, before, args["batch_size"])
+        prompt.stamp_repr(iter_data_list, before)
         iter_timestamp[num][p_idx]["end"] = datetime.datetime.now().isoformat()
         log.info(f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
 

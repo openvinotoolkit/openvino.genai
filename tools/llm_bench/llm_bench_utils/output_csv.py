@@ -190,7 +190,6 @@ def gen_data_to_csv(
     chat_idx = iter_data.get("chat_idx", "")
     result["chat_idx"] = chat_idx
     result["prompt_repr"] = iter_data.get("prompt_repr", "")
-    result["input_tokens"] = iter_data.get("input_tokens", "")
     result["tokenization_time"] = round(token_time, 5) if token_time != "" else token_time
     result["detokenization_time"] = round(detoken_time, 5) if detoken_time != "" else detoken_time
     if include_tts_metrics:
@@ -249,7 +248,6 @@ def write_result(
         "prompt_idx",
         "chat_idx",
         "prompt_repr",
-        "input_tokens",
         f"1st_infer_latency({first_latenct_unit})",
         "2nd_infer_avg_latency(ms)",
         "num_beams",
