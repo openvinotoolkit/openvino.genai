@@ -548,8 +548,8 @@ def run_visual_language_generation_benchmark(model_path, framework, device, args
             mem_consumption,
             prefix,
         )
-        # Tag each turn's record with that turn's own prompt_repr / input_tokens.
-        chat_prompt.stamp_repr(iter_data_list, before, args["batch_size"])
+        # Tag each turn's record with that turn's own prompt_repr.
+        chat_prompt.stamp_repr(iter_data_list, before)
         iter_timestamp[num][chat_idx]["end"] = datetime.datetime.now().isoformat()
         log.info(
             f"{prefix} start: {iter_timestamp[num][chat_idx]['start']}, end: {iter_timestamp[num][chat_idx]['end']}"
