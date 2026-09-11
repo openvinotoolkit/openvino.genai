@@ -100,6 +100,11 @@ updates:
           - ">=5.6"
       # update required more precise changes in repo and made upon request
       - dependency-name: "optimum-intel"
+      # diffusers >=0.40.0 requires huggingface-hub>=1.23.0, which conflicts with
+      # the current optimum-intel requiring huggingface-hub<1.22.
+      - dependency-name: "diffusers"
+        versions:
+          - ">=0.40.0"
       # librosa >= 1.0.0 requires python3.12
       - dependency-name: "librosa"
         versions:
