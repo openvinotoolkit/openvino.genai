@@ -111,9 +111,6 @@ class FunASRSourceTranscriber:
     def __init__(self, model_id: str, language: str = "", torch_dtype=None) -> None:
         import torch
 
-        if torch_dtype not in (None, torch.float32):
-            raise ValueError("FunASR source models support only float32 for --torch-dtype.")
-
         try:
             from funasr import AutoModel
         except ImportError as error:
@@ -125,10 +122,11 @@ class FunASRSourceTranscriber:
         self.language = language or None
         precision_kwargs = {}
         if torch_dtype is not None:
+            llm_dtype = {torch.float32: "fp32", torch.float16: "fp16", torch.bfloat16: "bf16"}[torch_dtype]
             precision_kwargs = {
                 "fp16": False,
                 "bf16": False,
-                "llm_dtype": "fp32",
+                "llm_dtype": llm_dtype,
             }
 
         with _silenced_output():
@@ -142,7 +140,8 @@ class FunASRSourceTranscriber:
             )
 
         if torch_dtype is not None:
-            self.model.model.to(dtype=torch_dtype)
+            # Cast only the decoder: casting the audio encoder breaks inference with its FP32 inputs.
+            self.model.model.llm.to(dtype=torch_dtype)
 
     def transcribe(self, audio, max_new_tokens: int) -> str:
         import torch

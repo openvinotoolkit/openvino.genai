@@ -248,7 +248,7 @@ def parse_args():
         type=str,
         choices=TORCH_DTYPES,
         default=None,
-        help="Data type used to load PyTorch model weights with --hf. If omitted, the model-specific default is used.",
+        help="PyTorch weight dtype with --hf. If omitted, the model-specific default is used.",
     )
     parser.add_argument(
         "--genai",

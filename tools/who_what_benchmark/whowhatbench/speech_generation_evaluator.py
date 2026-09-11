@@ -234,7 +234,9 @@ class KokoroModelWrapper:
         import torch
 
         if torch_dtype not in (None, torch.float32):
-            raise ValueError("Kokoro source models support only float32 for --torch-dtype.")
+            raise ValueError(
+                "Kokoro creates FP32 intermediate tensors that conflict with FP16/BF16 weights. Use --torch-dtype fp32."
+            )
         if ov_model is not None and torch_dtype is not None:
             raise ValueError("--torch-dtype is not supported when ov_model is provided.")
 
