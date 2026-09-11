@@ -8,6 +8,7 @@
 
 #include <filesystem>
 
+#include "openvino/genai/video_generation/image2video_pipeline.hpp"
 #include "openvino/genai/video_generation/text2video_pipeline.hpp"
 #include "py_utils.hpp"
 #include "tokenizer/tokenizers_path.hpp"
@@ -99,4 +100,76 @@ void init_video_generation_pipelines(py::module_& m) {
                 return result;
             },
             py::arg("prompt"));
+
+    py::class_<ov::genai::Image2VideoPipeline>(m, "Image2VideoPipeline")
+        .def(py::init([](const std::filesystem::path& models_path) {
+                 ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+                 return std::make_unique<ov::genai::Image2VideoPipeline>(models_path);
+             }),
+             py::arg("models_path"))
+        .def(
+            py::init([](const std::filesystem::path& models_path, const std::string& device, const py::kwargs& kwargs) {
+                ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+                return std::make_unique<ov::genai::Image2VideoPipeline>(models_path,
+                                                                        device,
+                                                                        pyutils::kwargs_to_any_map(kwargs));
+            }),
+            py::arg("models_path"),
+            py::arg("device"))
+        .def("get_generation_config",
+             &ov::genai::Image2VideoPipeline::get_generation_config,
+             py::return_value_policy::copy)
+        .def("set_generation_config", &ov::genai::Image2VideoPipeline::set_generation_config, py::arg("config"))
+        .def("reshape",
+             &ov::genai::Image2VideoPipeline::reshape,
+             py::arg("num_videos_per_prompt"),
+             py::arg("num_frames"),
+             py::arg("height"),
+             py::arg("width"),
+             py::arg("guidance_scale"))
+        .def(
+            "compile",
+            [](ov::genai::Image2VideoPipeline& pipe, const std::string& device, const py::kwargs& kwargs) {
+                auto properties = pyutils::kwargs_to_any_map(kwargs);
+                py::gil_scoped_release rel;
+                pipe.compile(device, properties);
+            },
+            py::arg("device"))
+        .def(
+            "compile",
+            [](ov::genai::Image2VideoPipeline& pipe,
+               const std::string& text_encode_device,
+               const std::string& denoise_device,
+               const std::string& vae_device,
+               const py::kwargs& kwargs) {
+                auto properties = pyutils::kwargs_to_any_map(kwargs);
+                py::gil_scoped_release rel;
+                pipe.compile(text_encode_device, denoise_device, vae_device, properties);
+            },
+            py::arg("text_encode_device"),
+            py::arg("denoise_device"),
+            py::arg("vae_device"))
+        .def(
+            "generate",
+            [](ov::genai::Image2VideoPipeline& pipe,
+               const ov::Tensor& image,
+               const std::string& prompt,
+               const py::kwargs& kwargs) {
+                auto properties = pyutils::kwargs_to_any_map(kwargs);
+                ov::genai::VideoGenerationResult result;
+                {
+                    py::gil_scoped_release rel;
+                    result = pipe.generate(image, prompt, properties);
+                }
+                return result;
+            },
+            py::arg("image"),
+            py::arg("prompt"))
+        .def("decode",
+             [](ov::genai::Image2VideoPipeline& pipe, const ov::Tensor& latent) {
+                 py::gil_scoped_release rel;
+                 return pipe.decode(latent);
+             },
+             py::arg("latent"))
+        .def("get_performance_metrics", &ov::genai::Image2VideoPipeline::get_performance_metrics);
 }

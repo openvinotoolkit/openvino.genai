@@ -5,6 +5,7 @@ from transformers import (
     PreTrainedTokenizer,
 )
 from .vlm_inputs_preprocessor import VLMInputsPreprocessor
+from ..utils import no_double_bos
 from typing import TYPE_CHECKING, Optional, Union, Any
 import torch
 
@@ -58,15 +59,8 @@ class Gemma3InputsPreprocessor(VLMInputsPreprocessor):
 
         text_prompt = processor.apply_chat_template(conversation, add_generation_prompt=True, tokenize=False)
 
-        # switch off add_bos_token if chat template already includes it
-        orig_add_bos_token = processor.tokenizer.add_bos_token
-        if getattr(processor.tokenizer, "chat_template", None) and "bos_token" in processor.tokenizer.chat_template:
-            processor.tokenizer.add_bos_token = False
-
-        inputs = processor(images=self.images, text=text_prompt, return_tensors="pt")
-
-        # recover add_bos_token flag in tokenizer
-        processor.tokenizer.add_bos_token = orig_add_bos_token
+        with no_double_bos(processor):
+            inputs = processor(images=self.images, text=text_prompt, return_tensors="pt")
 
         return inputs
 

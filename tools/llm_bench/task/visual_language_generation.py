@@ -16,6 +16,10 @@ import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.gen_output_data as gen_output_data
 from llm_bench_utils.prompt_utils import extract_prompt_data
 from llm_bench_utils.prompt_utils import get_vlm_prompt
+from task.text_generation import (
+    save_input_data_to_file,
+    print_generated_output,
+)
 
 
 DEFAULT_OUTPUT_TOKEN_SIZE = 512
@@ -33,19 +37,17 @@ def run_visual_language_generation_optimum(
         log.warning("Only batch size 1 available for benchmarking")
         args["batch_size"] = 1
 
+    # ===== Prepare Input Data =====
     decim_frames = args["video_frames"]
     prompts, images, videos, audios = extract_prompt_data(inputs, decim_frames, False)
-    if args["output_dir"] is not None and num == 0:
-        for bs_index, in_text in enumerate(prompts):
-            llm_bench_utils.output_file.output_input_text(
-                in_text, args, model_precision,
-                prompt_index, bs_index, proc_id)
-    tok_encode_start = time.perf_counter()
+    save_input_data_to_file(prompts, args, model_precision, prompt_index, num, proc_id)
 
     prefix = "[warm-up]" if num == 0 else "[{}]".format(num)
     log.info(f"{prefix}[P{prompt_index}] Input image nums: {len(images)}")
     log.info(f"{prefix}[P{prompt_index}] Input video nums: {len(videos)}")
     log.info(f"{prefix}[P{prompt_index}] Input audio nums: {len(audios)}")
+
+    tok_encode_start = time.perf_counter()
     input_data = model.preprocess_inputs(
         image=images[0] if images else None,
         video=videos[0] if videos else None,
@@ -53,7 +55,6 @@ def run_visual_language_generation_optimum(
         text=prompts[0],
         **processor,
     )
-
     tok_encode_end = time.perf_counter()
     tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
 
@@ -163,14 +164,9 @@ def run_visual_language_generation_optimum(
         batch_size=args['batch_size'],
         prompt_idx=prompt_index
     )
-    if num > 0:
-        prev_md5 = md5_list[num - 1][prompt_index]
-        if result_md5_list != prev_md5:
-            log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
-                        f"is different from md5 of the {num - 1} iteration {prev_md5}")
-            metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
-    else:
-        metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
+    print_generated_output(
+        prompt_index, num, result_md5_list, md5_list, generated_text, enable_prompt_permutations=False
+    )
     if bench_hook is not None:
         bench_hook.clear_time_list()
         bench_hook.clear_time_infer_list()
@@ -184,13 +180,10 @@ def run_visual_language_generation_genai(
         log.warning("Only batch size 1 available for benchmarking")
         args["batch_size"] = 1
 
+    # ===== Prepare Input Data =====
     decim_frames = args["video_frames"]
     prompts, images, videos, audios = extract_prompt_data(inputs, decim_frames, True)
-    if args["output_dir"] is not None and num == 0:
-        for bs_index, in_text in enumerate(prompts):
-            llm_bench_utils.output_file.output_input_text(
-                in_text, args, model_precision,
-                prompt_index, bs_index, proc_id)
+    save_input_data_to_file(prompts, args, model_precision, prompt_index, num, proc_id)
 
     mem_consumption.start(num)
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
@@ -285,14 +278,9 @@ def run_visual_language_generation_genai(
         batch_size=args['batch_size'],
         prompt_idx=prompt_index
     )
-    if num > 0:
-        prev_md5 = md5_list[num - 1][prompt_index]
-        if result_md5_list != prev_md5:
-            log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
-                        f"is different from md5 of the {num - 1} iteration {prev_md5}")
-            metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
-    else:
-        metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
+    print_generated_output(
+        prompt_index, num, result_md5_list, md5_list, generated_text, enable_prompt_permutations=False
+    )
 
 
 def run_visual_language_generation_benchmark(

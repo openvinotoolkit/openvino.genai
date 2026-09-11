@@ -21,7 +21,7 @@ from whowhatbench.model_loaders import load_model
 from whowhatbench import EVALUATOR_REGISTRY
 from whowhatbench.utils import fix_phi3_v_eos_token_id
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
-from whowhatbench.utils import get_json_config
+from whowhatbench.utils import get_json_config, load_audio_dataset
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -131,6 +131,7 @@ def parse_args():
             "text-chat",
             "text-to-image",
             "text-to-video",
+            "image-to-video",
             "speech-generation",
             "visual-text",
             "visual-text-chat",
@@ -142,6 +143,7 @@ def parse_args():
             "image-embedding",
             "video-embedding",
             "text-reranking",
+            "speech-recognition",
         ],
         default="text",
         help="Indicates the model type:\n"
@@ -155,11 +157,14 @@ def parse_args():
         "image-to-image - for image generation based on image and prompt, \n"
         "image-inpainting - for image generation based on image, mask and prompt, \n"
         "text-to-video - for video generation, \n"
+        "image-to-video - for video generation conditioned on an input image and prompt, \n"
         "text-reranking - for reranking a list of texts based on relevance to query, \n"
         "text-embedding - for creation of embedding for a list of texts, \n"
         "image-embedding - for creation of embedding for a list of texts and images, \n"
         "video-embedding - for creation of embedding for a list of texts and videos, \n"
-        "speech-generation - for text to speech generation ",
+        "speech-generation - for text to speech generation, \n"
+        "speech-recognition - for speech to text generation, with native ASR models (FunASR) "
+        "or audio-capable multimodal models",
     )
     parser.add_argument(
         "--data-encoder",
@@ -175,13 +180,14 @@ def parse_args():
         default=None,
         help="Name of the dataset with prompts. The interface for dataset is load_dataset from datasets library."
         " Please provide this argument in format path,name (for example wikitext,wikitext-2-v1)."
-        " If None then internal list of prompts will be used.",
+        " If omitted, task-specific default dataset will be used.",
     )
     parser.add_argument(
         "--dataset-field",
         type=str,
-        default="text",
+        default=None,
         help="The name of field in dataset for prompts. For example question or context in squad."
+        " Defaults to 'text' for prompt-based tasks and to the audio column for speech-recognition."
         " Will be used only if dataset is defined.",
     )
     parser.add_argument(
@@ -392,6 +398,14 @@ def parse_args():
         "Config option assistant_confidence_threshold for Speculative decoding.",
     )
     parser.add_argument(
+        "--image-dir",
+        type=str,
+        default=None,
+        help="Directory holding the conditioning images for image-to-video generation. Relative filenames in the "
+        "test data's 'images'/'image' column are resolved against it; when the column is absent the images are "
+        "looked up as 0.png, 1.png, ... Not needed for the default dataset.",
+    )
+    parser.add_argument(
         "--video-frames-num",
         type=int,
         default=None,
@@ -414,8 +428,11 @@ def parse_args():
         "--speech-language",
         type=str,
         default="",
-        help="Speech-generation language code. This is currently used only for Kokoro. "
-        "If omitted, the default language used is 'en-us'.",
+        help="For speech-generation: language code, currently used only for Kokoro. "
+        "If omitted, the default language used is 'en-us'. \n"
+        "For speech-recognition: the language forced during transcription, in the form the model expects. "
+        "FunASR takes a code such as 'en', 'zh' or 'ja' and defaults to 'en'; audio VLMs take a name such as "
+        "'English' or 'Japanese' and default to 'English'.",
     )
     parser.add_argument(
         "--speech-voice",
@@ -518,6 +535,9 @@ def check_args(args):
 
     if args.llamacpp_chat and not args.llamacpp:
         raise ValueError("--llamacpp-chat requires --llamacpp")
+
+    if args.dataset_field is None and args.model_type != "speech-recognition":
+        args.dataset_field = "text"
 
 
 def load_prompts(args):
@@ -823,6 +843,46 @@ def genai_gen_text2video(
     return [Image.fromarray(frame) for frame in result.video.data[0]]
 
 
+def genai_gen_image2video(
+    model,
+    prompt,
+    image,
+    negative_prompt,
+    num_inference_steps,
+    width=704,
+    height=480,
+    num_frames=25,
+    frame_rate=25,
+    guidance_scale=3,
+    guidance_rescale=0,
+    generator=None,
+    empty_adapters=False,
+):
+    kwargs = {"negative_prompt": negative_prompt} if guidance_scale > 1 else {}
+    if empty_adapters:
+        import openvino_genai
+
+        kwargs["adapters"] = openvino_genai.AdapterConfig()
+    if isinstance(image, Image.Image) and image.size != (width, height):
+        image = image.resize((width, height), Image.Resampling.LANCZOS)
+    image_data = ov.Tensor(np.array(image))
+    result = model.generate(
+        image_data,
+        prompt,
+        num_inference_steps=num_inference_steps,
+        width=width,
+        height=height,
+        num_frames=num_frames,
+        frame_rate=frame_rate,
+        guidance_scale=guidance_scale,
+        guidance_rescale=guidance_rescale,
+        max_sequence_length=256,
+        generator=generator,
+        **kwargs,
+    )
+    return [Image.fromarray(frame) for frame in result.video.data[0]]
+
+
 def _is_voice_pack_enabled_model(model):
     if not hasattr(model, "model_dir"):
         return False
@@ -1006,7 +1066,7 @@ def create_evaluator(base_model, args):
 
     try:
         EvaluatorCLS = EVALUATOR_REGISTRY[task]
-        prompts = load_prompts(args)
+        prompts = load_prompts(args) if task != "speech-recognition" else None
 
         if task == "text":
             tokenizer = load_tokenizer(args) if not args.llamacpp else None
@@ -1072,6 +1132,20 @@ def create_evaluator(base_model, args):
                 seed=args.seed,
                 empty_adapters=args.empty_adapters,
             )
+        elif task == "image-to-video":
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                test_data=prompts,
+                num_samples=args.num_samples,
+                num_inference_steps=args.num_inference_steps,
+                num_frames=args.video_frames_num,
+                gen_video_fn=genai_gen_image2video if args.genai else None,
+                is_genai=args.genai,
+                seed=args.seed,
+                empty_adapters=args.empty_adapters,
+                image_dir=args.image_dir,
+            )
         elif task == "speech-generation":
             return EvaluatorCLS(
                 base_model=base_model,
@@ -1102,6 +1176,7 @@ def create_evaluator(base_model, args):
                 max_new_tokens=args.max_new_tokens,
                 gen_answer_fn=genai_gen_visual_text if args.genai else None,
                 processor=processor,
+                config=config,
                 crop_question=crop_question,
                 task_type=task,
                 frames_num=args.video_frames_num,
@@ -1234,9 +1309,22 @@ def create_evaluator(base_model, args):
                 device=args.device,
                 generation_config_extra=args.generation_config_extra,
             )
+        elif task == "speech-recognition":
+            needs_audio = args.base_model is not None or args.target_model is not None
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                test_data=load_audio_dataset(args) if needs_audio else None,
+                max_new_tokens=args.max_new_tokens,
+                num_samples=args.num_samples,
+                speech_language=args.speech_language,
+            )
         else:
             raise ValueError(f"Unsupported task: {task}")
     except KeyError as e:
+        # A registered task means the KeyError came from the evaluator body, not this lookup.
+        if task in EVALUATOR_REGISTRY:
+            raise
         raise ValueError(
             f"Attempted to load evaluator for '{task}', but no evaluator for this model type found! "
             f"Supported model types: {', '.join(EVALUATOR_REGISTRY.keys())}. Details:\n",
@@ -1456,9 +1544,13 @@ def main():
             logger.info(f"draft_cb_config: {draft_cb_config}")
         kwargs["draft_cb_config"] = draft_cb_config
 
-    # Create TaylorSeerCacheConfig for text-to-image and text-to-video pipelines
+    # Create TaylorSeerCacheConfig for text-to-image, text-to-video, and image-to-video pipelines
     taylorseer_config = None
-    if args.taylorseer_config and args.genai and args.model_type in ["text-to-image", "text-to-video"]:
+    if (
+        args.taylorseer_config
+        and args.genai
+        and args.model_type in ["text-to-image", "text-to-video", "image-to-video"]
+    ):
         ts_cfg = get_json_config(args.taylorseer_config)
         if not isinstance(ts_cfg, dict):
             raise ValueError(f"--taylorseer-config must be a JSON object, got {type(ts_cfg).__name__}")
@@ -1470,6 +1562,9 @@ def main():
 
     if args.model_type == "speech-generation" and args.vocoder_path is not None:
         kwargs["vocoder_path"] = args.vocoder_path
+
+    if args.model_type == "speech-recognition":
+        kwargs["speech_language"] = args.speech_language
 
     kwargs["llamacpp_n_ctx"] = args.llamacpp_n_ctx
 
@@ -1559,6 +1654,7 @@ def main():
             "visual-text",
             "visual-video-text",
             "visual-text-chat",
+            "speech-recognition",
             "visual-text-only",
         ]:
             print_text_results(evaluator)
@@ -1566,6 +1662,7 @@ def main():
             "text-to-image" in args.model_type
             or "image-to-image" in args.model_type
             or "text-to-video" in args.model_type
+            or "image-to-video" in args.model_type
         ):
             print_image_results(evaluator)
         elif args.model_type in ["speech-generation"]:

@@ -25,7 +25,7 @@ public:
     struct OPENVINO_GENAI_EXPORTS Config {
         size_t hidden_size = 2560;
         size_t num_hidden_layers = 36;
-        std::vector<size_t> hidden_states_layers = {9, 18, 27};
+        std::vector<size_t> hidden_states_layers;
 
         explicit Config(const std::filesystem::path& config_path);
     };
@@ -58,7 +58,16 @@ public:
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
-    ov::Tensor infer(const std::string& pos_prompt, const std::string& neg_prompt, const bool do_classifier_free_guidance, const int& max_sequence_length);
+    ov::Tensor infer(const std::string& pos_prompt,
+                     const std::string& neg_prompt,
+                     const bool do_classifier_free_guidance,
+                     const int& max_sequence_length);
+
+    ov::Tensor infer(const std::string& pos_prompt,
+                     const std::string& neg_prompt,
+                     const bool do_classifier_free_guidance,
+                     const int& max_sequence_length,
+                     const std::vector<size_t>& hidden_states_layers);
 
     void set_adapters(const std::optional<AdapterConfig>& adapters);
 

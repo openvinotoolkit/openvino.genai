@@ -147,7 +147,6 @@ GenerationHandle
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t request_id,
                                                                  const ov::Tensor& input_ids,
                                                                  const ov::genai::GenerationConfig& sampling_params,
-                                                                 std::optional<ov::Tensor> token_type_ids,
                                                                  std::optional<ov::Tensor> prompt_ids,
                                                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
@@ -156,11 +155,10 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
     draft_sampling_params.stop_strings = {};
     // The speculative draft path only uses language-model inputs. Multimodal auxiliary inputs such as
     // deepstack/visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
-    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, draft_sampling_params, token_type_ids, prompt_ids)});
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, draft_sampling_params, prompt_ids)});
     return m_main_pipeline->add_request(request_id,
                                         input_ids,
                                         sampling_params,
-                                        token_type_ids,
                                         prompt_ids,
                                         lm_extra_inputs);
 }
@@ -238,6 +236,14 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     auto main_generated_requests = m_main_pipeline->get_generated_requests();
     for (const auto& checked_sequence : main_generated_requests) {
         auto update_result = m_draft_pipeline->update_request(checked_sequence.first, checked_sequence.second, true);
+        const bool is_tree_validation = std::any_of(checked_sequence.second.begin(),
+                                                    checked_sequence.second.end(),
+                                                    [](const auto& sequence) {
+                                                        return sequence.second.tree_metadata != nullptr;
+                                                    });
+        if (is_tree_validation && update_result.removed_tokens_cnt > 0) {
+            --update_result.removed_tokens_cnt;
+        }
         update_sequence_info[checked_sequence.first].removed_tokens_cnt = update_result.removed_tokens_cnt;
     }
     m_draft_pipeline->sync_generated_embeddings();
@@ -253,10 +259,14 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         auto updated_seq_info = update_sequence_info[request_id];
         m_sd_metrics.update_draft_generated_len(request_id, updated_seq_info.inserted_tokens_cnt);
 
-        // several prompt phase
-        if (updated_seq_info.inserted_tokens_cnt == 0 || main_generated_requests.empty()) {
+        // Prompt phase or draft-only update without main-model validation.
+        if (updated_seq_info.inserted_tokens_cnt == 0 || !main_generated_requests.count(request_id)) {
             continue;
         }
+        OPENVINO_ASSERT(updated_seq_info.inserted_tokens_cnt >= updated_seq_info.removed_tokens_cnt,
+                        "Speculative decoding removed more draft tokens than were inserted.");
+        m_perf_metrics.num_draft_tokens += updated_seq_info.inserted_tokens_cnt;
+        m_perf_metrics.num_accepted_tokens += updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt;
         float acceptance_rate = 1 - static_cast<float>(updated_seq_info.removed_tokens_cnt) / updated_seq_info.inserted_tokens_cnt;
         m_sd_metrics.update_acceptance_rate(request_id, acceptance_rate * 100);
         m_sd_metrics.update_draft_accepted_tokens(request_id, (updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt));
@@ -292,7 +302,6 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                               const std::vector<GenerationConfig>& sampling_params,
                                                               const StreamerVariant& streamer,
-                                                              const std::optional<std::vector<ov::Tensor>>& token_type_ids,
                                                               const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids,
                                                               const std::optional<std::vector<ov::Tensor>>& prompt_ids,
                                                               const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list) {
@@ -304,7 +313,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
                                   ov::Tensor& main_in,
                                   ov::Tensor& draft_in) {
         if (main_cfg.assistant_confidence_threshold == 0.f) {
-            if (main_cfg.num_assistant_tokens == 0) {
+            if (!main_cfg.num_assistant_tokens.has_value() || main_cfg.num_assistant_tokens.value() == 0) {
                 main_cfg.num_assistant_tokens = m_main_pipeline->default_num_assistant_tokens;
             }
         }
@@ -326,7 +335,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         return PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start);
     };
 
-    return generate_common(this, input_ids, sampling_params, streamer, token_type_ids, position_ids, prompt_ids, lm_extra_inputs_list, strategy);
+    return generate_common(this, input_ids, sampling_params, streamer, position_ids, prompt_ids, lm_extra_inputs_list, strategy);
 }
 
 SpeculativeDecodingMetrics
@@ -348,7 +357,7 @@ bool ContinuousBatchingPipeline::SpeculativeDecodingImpl::is_requests_empty() {
 std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::SpeculativeDecodingImpl::get_awaiting_requests() {
     auto main_awaiting_requests = m_main_pipeline->get_awaiting_requests();
     auto draft_awaiting_requests = m_draft_pipeline->get_awaiting_requests();
-    OPENVINO_ASSERT(main_awaiting_requests.size() == draft_awaiting_requests.size());
+    validate_awaiting_requests(main_awaiting_requests, draft_awaiting_requests);
     return main_awaiting_requests;
 }
 
