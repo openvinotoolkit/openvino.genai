@@ -390,6 +390,12 @@ public:
         return can_allocate_blocks(num_blocks);
     }
 
+    bool can_allocate_temporary_blocks(size_t num_blocks) const {
+        return num_blocks > 0 &&
+               std::all_of(m_free_blocks_num.begin(), m_free_blocks_num.end(),
+                           [num_blocks](size_t free_blocks) { return free_blocks >= num_blocks; });
+    }
+
     /**
      * Frees a given block for a given layer. If no sequence is associated with the block after freeing, the block
      * is returned to the "free" pool.
@@ -412,9 +418,7 @@ public:
      * overwritten before they become visible as sequence cache.
      */
     UncachedBlockAllocation allocate_uncached_block() {
-        if (!std::all_of(m_free_blocks_num.begin(),
-                         m_free_blocks_num.end(),
-                         [](size_t free_blocks) { return free_blocks > 0; })) {
+        if (!can_allocate_temporary_blocks(1)) {
             return {};
         }
         UncachedBlockAllocation allocation;
@@ -1419,7 +1423,7 @@ public:
         if (temporary_it != m_temporary_block_table.end() && !temporary_it->second.empty()) {
             return false;
         }
-        return can_allocate_blocks(num_blocks);
+        return m_allocator.can_allocate_temporary_blocks(num_blocks);
     }
 
     std::vector<int> reserve_temporary_blocks(uint64_t seq_id, size_t num_blocks) {
@@ -1430,8 +1434,8 @@ public:
         OPENVINO_ASSERT(existing_temporary_it == m_temporary_block_table.end() ||
                             existing_temporary_it->second.empty(),
                         "Temporary cache blocks are already reserved for sequence ", seq_id);
-        OPENVINO_ASSERT(can_allocate_blocks(num_blocks),
-                        "Not enough cache blocks to reserve ", num_blocks,
+        OPENVINO_ASSERT(m_allocator.can_allocate_temporary_blocks(num_blocks),
+                "Not enough writable cache blocks to reserve ", num_blocks,
                         " temporary checkpoints for sequence ", seq_id);
 
         TemporaryBlockTable temporary_blocks;
@@ -1489,8 +1493,8 @@ public:
         OPENVINO_ASSERT(existing_temporary_it == m_temporary_block_table.end() ||
                             existing_temporary_it->second.empty(),
                         "Temporary cache blocks are already reserved for sequence ", seq_id);
-        OPENVINO_ASSERT(can_allocate_blocks(num_blocks),
-                        "Not enough cache blocks to reserve ", num_blocks,
+        OPENVINO_ASSERT(m_allocator.can_allocate_temporary_blocks(num_blocks),
+                "Not enough writable cache blocks to reserve ", num_blocks,
                         " temporary checkpoints for sequence ", seq_id);
 
         TemporaryBlockTable temporary_blocks;

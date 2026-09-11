@@ -1,6 +1,6 @@
 # Incremental Linear-Attention Live-Tail and Commit Refactor Plan
 
-**Status:** P0 accepted; P1-P3 committed; P4 capacity slice verified; remaining P4 and P5-P8 pending
+**Status:** P0 accepted; P1-P3 committed; P4 capacity committed and scratch admission verified; remaining P4 and P5-P8 pending
 **Date:** 2026-09-07
 **Last updated:** 2026-09-11
 **Decision record:** [ADR-0005](adr/0005-prefix-caching-for-qwen35-mtp-with-paged-linear-attention.md)
@@ -43,12 +43,21 @@ protected checkpoint, then resume after its owner is freed. Split-fuse still per
 a partial prefill that fits the remaining LA capacity. Unspecified limits retain
 their existing dynamic-growth behavior.
 
+The capacity slice is committed as `f06a67b11`.
 Validation: three new focused tests passed, followed by 752 selected C++ tests,
 six allocation-failure tests, and five LFM hybrid Python regressions using the rebuilt
-native library. CSV-backed model suites were excluded. The P4 changes remain
-uncommitted. Reservation accounting, checkpoint-set publication/canonicalization,
+native library. CSV-backed model suites were excluded. Reservation accounting, checkpoint-set publication/canonicalization,
 prepared pinned restore and rewind remain unimplemented P4 gates. No prefix-verifier
 guard was removed; Qwen3.5 VLM/media remains mandatory for later MTP acceptance.
+
+The next, uncommitted scratch-admission correction distinguishes raw writable capacity
+from free-but-cached checkpoint capacity. Admission and both scratch acquisition paths
+now agree before any row is taken. The regression covers capped one/two-layer pools,
+rejection without mutation, cached restore while scratch is reserved, blocked competing
+continuation and successful continuation after release. Validation passed 753 selected
+C++ tests, six allocation-failure tests and five real-hybrid Python cases. This does not
+implement prepared eviction or retained next-window headroom; those remain required
+before optional publication can safely consume spare capacity.
 
 Refactor internal linear-attention (LA) state coordination incrementally so prefix
 checkpoints, a sequence's current recurrent state, and speculative state have separate
