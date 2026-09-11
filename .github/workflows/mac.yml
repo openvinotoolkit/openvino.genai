@@ -85,11 +85,7 @@ jobs:
         platform: macos_14_7
         arch: 'arm64'
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
-        # Pinned to the TinyLlama and Hunyuan GGUF frontend accuracy fixes
-        # (openvinotoolkit/openvino#37924), required by the WWB GGUF tests.
-        # Also includes the PagedAttention fix (#37606), ENABLE_OV_GGUF_FRONTEND
-        # defaulting to ON (#37571), and the ScatterNDUpdate fix (#37125).
-        revision: 469d2b98bd84bce00869deb3afb63b6ea6cacd51
+        revision: latest_available_commit
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
         # event_name: pull_request
