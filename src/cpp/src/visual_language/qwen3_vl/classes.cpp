@@ -750,7 +750,6 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
             m_lm_extra_inputs["deepstack_visual_embeds"] = std::move(deepstack_visual_embeds);
         }
 
-        // Cache draft embeddings as text-only inputs for Eagle3 draft model.
         cache_draft_inputs_embeds(text_embeds);
         ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
         std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
@@ -808,8 +807,6 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
         m_lm_extra_inputs["visual_pos_masks"] = create_visual_pos_masks(input_ids, image_pad_token_id, video_pad_token_id);
     }
 
-    // Cache draft embeddings after pruning updates, but before vision/text merge,
-    // so Eagle3 draft path receives sequence-aligned text-only embeddings.
     cache_draft_inputs_embeds(text_embeds);
 
     return qwen2_vl_utils::merge_text_and_video_image_embeddings(input_ids,

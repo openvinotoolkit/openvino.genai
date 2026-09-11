@@ -46,6 +46,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
 
     if (main_model_desc.inputs_embedder) {
         m_inputs_embedder = main_model_desc.inputs_embedder;
+        m_inputs_embedder->set_draft_inputs_embeds_cache_enabled(true);
         m_model_input_type = ModelInputType::EMBEDDINGS;
         m_vision_registry = std::make_shared<VisionRegistry>();
     }
@@ -297,6 +298,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     if (sampling_params.num_assistant_tokens.has_value() && sampling_params.num_assistant_tokens.value() == 0) {
         // No speculative draft for this request: run only the main model.
+        take_request_draft_embeddings(lm_extra_inputs);
         return m_main_pipeline->add_request(request_id,
                                             input_ids,
                                             sampling_params,
