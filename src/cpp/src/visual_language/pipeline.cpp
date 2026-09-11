@@ -176,6 +176,9 @@ private:
 
         m_language = compiled_language_model.create_infer_request();
         m_language.get_tensor("attention_mask").set_shape({1, 0});
+        if (m_adapter_controller) {
+            m_adapter_controller->apply(m_language);
+        }
 
         // Reinsert device_properties so InputsEmbedder sub-models can resolve
         // per-role and per-device overrides via utils::get_model_properties(...).
@@ -227,6 +230,9 @@ private:
         m_language = utils::singleton_core().compile_model(
             language_model, device, lm_properties).create_infer_request();
         m_language.get_tensor("attention_mask").set_shape({1, 0});
+        if (m_adapter_controller) {
+            m_adapter_controller->apply(m_language);
+        }
         finalize_initialization(language_model, kv_pos);
     }
 public:
@@ -845,7 +851,8 @@ private:
         if (m_is_chat_conversation) {
             if (m_use_full_chat_history) {
                 cache_state.reset_state();
-                m_language.reset_state();
+                // Keep LoRA state: reset_state() would clear it and apply() below does not restore it.
+                reset_language_state();
                 m_language.get_tensor("attention_mask").set_shape({1, 0});
             } else {
                 bool needs_full_reset = cache_state.needs_reset();
