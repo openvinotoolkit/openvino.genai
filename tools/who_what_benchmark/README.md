@@ -393,8 +393,8 @@ wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv -
 # Use -v for verbose mode to see the difference in the results
 wwb --target-model /home/user/models/Llama_2_7b_chat_hf_int8 --gt-data llama_2_7b_wwb_gt.csv  --num-samples 10 -v
 
-# Use --hf AutoModelForCausalLM to instantiate the model from model_id/folder
-wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv --hf
+# Load Hugging Face model weights in FP32
+wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv --hf --torch-dtype float32
 
 # Use --language parameter to control the language of prompts
 # Autodetection works for basic Chinese models
