@@ -473,6 +473,19 @@ public:
         }
     }
 
+    void free_empty_physical_blocks(SequenceGroup::Ptr seq_group, CacheType cache_type) {
+        const auto it = m_block_managers.find(cache_type);
+        OPENVINO_ASSERT(it != m_block_managers.end(), "Cache type not registered");
+        it->second->free_empty_physical_blocks(seq_group);
+    }
+
+    BlockManager::PreparedTailReleases prepare_kv_tail_releases(
+        const std::vector<BlockManager::TailReleaseTarget>& targets) {
+        const auto it = m_block_managers.find(CacheType::KV_CACHE);
+        OPENVINO_ASSERT(it != m_block_managers.end(), "KV cache is not registered");
+        return it->second->prepare_tail_releases(targets);
+    }
+
     float get_used_percentage() const {
         float max_usage = 0.0f;
         for (const auto& [type, block_mgr] : m_block_managers) {

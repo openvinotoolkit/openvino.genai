@@ -396,6 +396,11 @@ public:
             m_cache_orchestrator->free_empty_physical_blocks(seq_group);
     }
 
+    BlockManager::PreparedTailReleases prepare_kv_tail_releases(
+        const std::vector<BlockManager::TailReleaseTarget>& targets) {
+        return m_cache_orchestrator->prepare_kv_tail_releases(targets);
+    }
+
     const std::vector<BlocksPerLayer>& get_kv_block_tables(const Sequence& seq) const {
         return m_cache_orchestrator->get_kv_block_tables(seq.get_id());
     }

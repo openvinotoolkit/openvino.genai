@@ -28,6 +28,11 @@ using namespace ov::genai;
 std::shared_ptr<CacheOrchestrator> init_cache_orchestrator(SchedulerConfig scheduler_config,
                                                            size_t block_size,
                                                            size_t num_layers);
+std::shared_ptr<CacheOrchestrator> init_hybrid_cache_orchestrator(SchedulerConfig scheduler_config,
+                                                                  size_t kv_block_size,
+                                                                  size_t kv_num_layers,
+                                                                  size_t la_num_layers,
+                                                                  bool cap_la_pool);
 
 class CBPublicationTest : public testing::Test, public ContinuousBatchingPipeline {
 protected:
@@ -231,7 +236,152 @@ protected:
     };
 };
 
-TEST_F(CBNotificationOrderingTest, PrecommitFailurePublishesNoGeneratedOutputAndPreservesException) {
+class CBLinearAttentionFailureGateTest : public testing::Test, public ContinuousBatchingPipeline {
+protected:
+    class PipelineTestInstance : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
+    public:
+        PipelineTestInstance() {
+            SchedulerConfig scheduler_config;
+            scheduler_config.num_kv_blocks = 16;
+            scheduler_config.num_linear_attention_blocks = 6;
+            scheduler_config.max_num_batched_tokens = 16;
+            scheduler_config.max_num_seqs = 1;
+            scheduler_config.dynamic_split_fuse = false;
+
+            m_orchestrator = init_hybrid_cache_orchestrator(scheduler_config, 4, 1, 1, true);
+            m_scheduler = std::make_shared<Scheduler>(m_orchestrator, scheduler_config);
+            m_sampler = std::make_shared<Sampler>();
+            m_is_validation_mode_enabled = true;
+
+            ov::Core core;
+            const std::shared_ptr<ov::Model> cache_model = get_dummy_hybrid_model(core, 1, 1);
+            ov::ParameterVector parameters = cache_model->get_parameters();
+            const auto add_input = [&parameters](const std::string& name,
+                                                 const ov::element::Type& type,
+                                                 const ov::PartialShape& shape) {
+                auto parameter = std::make_shared<ov::op::v0::Parameter>(type, shape);
+                parameter->output(0).get_tensor().set_names({name});
+                parameters.push_back(parameter);
+            };
+            add_input("input_ids", ov::element::i64, ov::PartialShape::dynamic(1));
+            add_input("position_ids", ov::element::i64, ov::PartialShape::dynamic(1));
+            add_input("past_lens", ov::element::i32, ov::PartialShape::dynamic(1));
+            add_input("subsequence_begins", ov::element::i32, ov::PartialShape::dynamic(1));
+            add_input("block_indices", ov::element::i32, ov::PartialShape::dynamic(1));
+            add_input("block_indices_begins", ov::element::i32, ov::PartialShape::dynamic(1));
+            add_input("max_context_len", ov::element::i32, ov::PartialShape{});
+            add_input("linear_attention_block_indices", ov::element::i32, ov::PartialShape::dynamic(1));
+            add_input("linear_attention_block_indices_begins", ov::element::i32, ov::PartialShape::dynamic(1));
+            add_input("linear_attention_past_lens", ov::element::i32, ov::PartialShape::dynamic(1));
+            add_input("linear_attention_cache_interval", ov::element::i32, ov::PartialShape::dynamic(1));
+            const auto logits = ov::op::v0::Constant::create(ov::element::f32,
+                                                             ov::Shape{3, 1, 8},
+                                                             std::vector<float>{0, 0, 0, 0, 0, 0, 0, 1,
+                                                                                0, 0, 0, 0, 0, 0, 0, 1,
+                                                                                0, 0, 0, 0, 0, 0, 0, 1});
+            logits->output(0).get_tensor().set_names({"logits"});
+            ov::OutputVector outputs = cache_model->outputs();
+            for (size_t output_index = 0; output_index < outputs.size(); ++output_index) {
+                if (outputs[output_index].get_names().empty()) {
+                    outputs[output_index].get_tensor().set_names({"cache_output." + std::to_string(output_index)});
+                }
+            }
+            outputs.push_back(logits);
+            const auto model = std::make_shared<ov::Model>(outputs, parameters);
+            ov::InferRequest request = core.compile_model(model, "CPU").create_infer_request();
+            m_model_runner = std::make_shared<ModelRunner>(request, 4, 1);
+        }
+
+        ~PipelineTestInstance() override {
+            drop_requests();
+        }
+
+        GenerationHandle add_active_request(uint64_t request_id) {
+            GenerationConfig config = utils::get_greedy_config();
+            config.max_new_tokens = 8;
+            config.num_assistant_tokens = 2;
+            const std::vector<int64_t> prompt{1, 2, 3, 4};
+            auto request = std::make_shared<SequenceGroup>(request_id, prompt, config);
+            m_requests.push_back(request);
+            m_sampler->create_logit_processor(request_id, config, request->get_prompt_ids());
+            m_sequence_id = request->get_sequences().front()->get_id();
+            return std::make_shared<GenerationHandleImpl>(request->get_generation_stream(), config);
+        }
+
+        GenerationHandle add_awaiting_request(uint64_t request_id) {
+            GenerationConfig config = utils::get_greedy_config();
+            config.max_new_tokens = 8;
+            auto request = std::make_shared<SequenceGroup>(request_id, std::vector<int64_t>{5}, config);
+            m_awaiting_requests.push_back(request);
+            m_sampler->create_logit_processor(request_id, config, request->get_prompt_ids());
+            return std::make_shared<GenerationHandleImpl>(request->get_generation_stream(), config);
+        }
+
+        void prepare_validation_candidates() {
+            SequenceGroup::Ptr request = m_requests.front();
+            request->get_running_sequences().front()->append_token(7, 0.0f);
+            request->get_running_sequences().front()->append_token(7, 0.0f);
+            request->set_num_validated_tokens(2);
+            m_corrupt_next_transaction = true;
+        }
+
+        bool sampler_acceptance_observed() const {
+            return m_sampler_acceptance_observed;
+        }
+
+        const std::exception_ptr& transaction_failure() const {
+            return m_transaction_failure;
+        }
+
+        bool has_temporary_rows() const {
+            return m_orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE)
+                .has_temporary_blocks(m_sequence_id);
+        }
+
+        bool all_physical_blocks_released() const {
+            for (const CacheType type : {CacheType::KV_CACHE, CacheType::LINEAR_ATTENTION_CACHE}) {
+                const auto& block_manager = m_orchestrator->get_block_manager(type);
+                if (block_manager.num_free_blocks() != block_manager.get_total_block_count()) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+    protected:
+        void _commit_linear_attention_checkpoint_transactions(Scheduler::Output& scheduler_output,
+                                                              const SamplerOutput& sampler_output) override {
+            if (!m_corrupt_next_transaction) {
+                ContinuousBatchingImpl::_commit_linear_attention_checkpoint_transactions(scheduler_output,
+                                                                                          sampler_output);
+                return;
+            }
+            const auto acceptance_it = sampler_output.acceptance_by_sequence.find(m_sequence_id);
+            m_sampler_acceptance_observed = acceptance_it != sampler_output.acceptance_by_sequence.end();
+            OPENVINO_ASSERT(m_sampler_acceptance_observed, "Expected real sampler acceptance before test corruption");
+            OPENVINO_ASSERT(scheduler_output.has_linear_attention_paging_data(m_sequence_id),
+                            "Expected a real linear-attention transition plan before test corruption");
+            OPENVINO_ASSERT(scheduler_output.m_kv_paged_attention_data.erase(m_sequence_id) == 1,
+                            "Expected a real KV transition plan before test corruption");
+            try {
+                ContinuousBatchingImpl::_commit_linear_attention_checkpoint_transactions(scheduler_output,
+                                                                                          sampler_output);
+            } catch (...) {
+                m_transaction_failure = std::current_exception();
+                throw;
+            }
+        }
+
+    private:
+        std::shared_ptr<CacheOrchestrator> m_orchestrator;
+        uint64_t m_sequence_id = 0;
+        bool m_corrupt_next_transaction = false;
+        bool m_sampler_acceptance_observed = false;
+        std::exception_ptr m_transaction_failure;
+    };
+};
+
+TEST_F(CBNotificationOrderingTest, CandidateFailurePublishesNoGeneratedOutputAndPreservesException) {
     for (const size_t max_new_tokens : {0, 1, 2, 3}) {
         SCOPED_TRACE(max_new_tokens);
         PipelineTestInstance pipeline;
@@ -262,6 +412,58 @@ TEST_F(CBNotificationOrderingTest, PrecommitFailurePublishesNoGeneratedOutputAnd
         }
         EXPECT_EQ(reader_failure, pipeline.get_candidate_failure());
     }
+}
+
+TEST_F(CBLinearAttentionFailureGateTest,
+       MissingKvTransitionPlanAfterRealSamplingFailsPipelineAndReleasesHybridCache) {
+    PipelineTestInstance pipeline;
+    GenerationHandle active_handle = pipeline.add_active_request(0);
+    pipeline.step();
+    ASSERT_TRUE(active_handle->can_read());
+    std::ignore = active_handle->read();
+    pipeline.prepare_validation_candidates();
+    GenerationHandle awaiting_handle = pipeline.add_awaiting_request(1);
+
+    std::exception_ptr step_failure;
+    try {
+        pipeline.step();
+    } catch (...) {
+        step_failure = std::current_exception();
+    }
+
+    ASSERT_NE(step_failure, nullptr);
+    EXPECT_EQ(step_failure, pipeline.transaction_failure());
+    EXPECT_TRUE(pipeline.sampler_acceptance_observed());
+    EXPECT_TRUE(active_handle->can_read());
+    EXPECT_TRUE(awaiting_handle->can_read());
+    EXPECT_EQ(active_handle->get_status(), GenerationStatus::FAILED);
+    EXPECT_EQ(awaiting_handle->get_status(), GenerationStatus::FAILED);
+
+    const auto expect_original_failure = [&pipeline](GenerationHandle& handle, bool read_all) {
+        std::exception_ptr reader_failure;
+        try {
+            if (read_all) {
+                std::ignore = handle->read_all();
+            } else {
+                std::ignore = handle->read();
+            }
+        } catch (...) {
+            reader_failure = std::current_exception();
+        }
+        EXPECT_EQ(reader_failure, pipeline.transaction_failure());
+    };
+    expect_original_failure(active_handle, false);
+    expect_original_failure(awaiting_handle, true);
+    EXPECT_FALSE(pipeline.has_temporary_rows());
+    EXPECT_TRUE(pipeline.all_physical_blocks_released());
+
+    std::exception_ptr reuse_failure;
+    try {
+        pipeline.step();
+    } catch (...) {
+        reuse_failure = std::current_exception();
+    }
+    EXPECT_EQ(reuse_failure, pipeline.transaction_failure());
 }
 
 TEST_F(CBNotificationOrderingTest, SuccessfulStepPublishesGeneratedAndTerminalOutputAfterCandidateCommit) {
@@ -3860,29 +4062,70 @@ TEST_F(CBPublicationTest, real_sampler_acceptance_promotes_linear_attention_chec
         ov::Tensor validation_logits(ov::element::f32, ov::Shape{4, 1, 5});
         std::copy(logits.begin(), logits.end(), validation_logits.data<float>());
         Sampler sampler;
-        const SamplerOutput sampler_output = sampler.sample(requests, validation_logits, true, false);
+        const SamplerOutput sampler_output = sampler.sample(requests, validation_logits, true, false, true);
 
         ASSERT_EQ(sampler_output.acceptance_by_sequence.count(sequence_id), 1u);
         ASSERT_EQ(sampler_output.acceptance_by_sequence.at(sequence_id).accepted_depth,
                   acceptance_case.expected_depth);
+        EXPECT_EQ(sequence_group->get_num_processed_tokens(), prompt.size());
+        auto& kv_block_manager = orchestrator->get_block_manager(CacheType::KV_CACHE);
+        const size_t allocated_kv_blocks = kv_block_manager.get_block_tables(sequence_id).front().size();
+        const size_t free_kv_blocks_before = kv_block_manager.num_free_blocks();
         const size_t promoted_row = static_cast<size_t>(paging_data.block_indices.at(acceptance_case.expected_depth));
         pipeline.commit_linear_attention_checkpoint_transactions(scheduler, requests, scheduler_output, sampler_output);
 
         auto& la_block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+        const size_t accepted_endpoint = prompt.size() + acceptance_case.expected_depth;
+        const size_t expected_kv_blocks = 1 + (accepted_endpoint - 1) / TEST_BLOCK_SIZE;
         EXPECT_EQ(orchestrator->get_linear_attention_latest_row(sequence_id), promoted_row);
         EXPECT_EQ(la_block_manager.get_linear_attention_live_state(sequence_id).endpoint,
                   sequence_group->get_num_processed_tokens());
-        EXPECT_EQ(sequence_group->get_num_processed_tokens(), prompt.size() + acceptance_case.expected_depth);
+        EXPECT_EQ(sequence_group->get_num_processed_tokens(), accepted_endpoint);
         EXPECT_FALSE(la_block_manager.has_temporary_blocks(sequence_id));
         const auto& kv_block_tables = orchestrator->get_kv_block_tables(sequence_id);
         ASSERT_FALSE(kv_block_tables.empty());
-        EXPECT_FALSE(kv_block_tables.front().empty());
+        EXPECT_EQ(kv_block_tables.front().size(), expected_kv_blocks);
+        EXPECT_EQ(kv_block_manager.num_free_blocks(),
+              free_kv_blocks_before + allocated_kv_blocks - expected_kv_blocks);
         EXPECT_EQ(sequence->has_finished(), acceptance_case.stop_on_second_token);
         if (acceptance_case.stop_on_second_token) {
             EXPECT_EQ(sequence->get_finish_reason(), GenerationFinishReason::STOP);
         }
         scheduler->free_sequence(sequence_id);
     }
+}
+
+TEST_F(CBPublicationTest, invalid_second_kv_tail_target_leaves_all_tables_and_free_rows_unchanged) {
+    SchedulerConfig scheduler_config = make_speculative_linear_attention_scheduler_config();
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
+    auto scheduler = std::make_shared<Scheduler>(orchestrator, scheduler_config);
+    auto first_group = std::make_shared<SequenceGroup>(
+        0, std::vector<int64_t>{0, 1, 2, 3, 4, 5, 6, 7}, utils::get_greedy_config());
+    auto second_group = std::make_shared<SequenceGroup>(
+        1, std::vector<int64_t>{8, 9, 10, 11, 12, 13, 14, 15}, utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> requests{first_group, second_group};
+    std::ignore = scheduler->schedule(requests);
+
+    const uint64_t first_id = first_group->get_sequences().front()->get_id();
+    const uint64_t second_id = second_group->get_sequences().front()->get_id();
+    auto& kv_block_manager = orchestrator->get_block_manager(CacheType::KV_CACHE);
+    const auto first_table_before = kv_block_manager.get_block_tables(first_id);
+    const auto second_table_before = kv_block_manager.get_block_tables(second_id);
+    const size_t free_blocks_before = kv_block_manager.num_free_blocks();
+    ASSERT_EQ(first_table_before.front().size(), 2u);
+    ASSERT_EQ(second_table_before.front().size(), 2u);
+
+    const std::vector<BlockManager::TailReleaseTarget> targets{
+        {first_id, TEST_BLOCK_SIZE},
+        {second_id, 2 * TEST_BLOCK_SIZE + 1},
+    };
+    EXPECT_THROW(std::ignore = scheduler->prepare_kv_tail_releases(targets), ov::Exception);
+
+    EXPECT_EQ(kv_block_manager.get_block_tables(first_id), first_table_before);
+    EXPECT_EQ(kv_block_manager.get_block_tables(second_id), second_table_before);
+    EXPECT_EQ(kv_block_manager.num_free_blocks(), free_blocks_before);
+    scheduler->free_sequence(first_id);
+    scheduler->free_sequence(second_id);
 }
 
 TEST_F(CBPublicationTest, missing_second_acceptance_does_not_promote_first_linear_attention_checkpoint) {
@@ -3917,7 +4160,7 @@ TEST_F(CBPublicationTest, missing_second_acceptance_does_not_promote_first_linea
 
     SamplerOutput sampler_output;
     sampler_output.acceptance_by_sequence.emplace(
-        first_id, SamplerOutput::AcceptanceResult{accepted_depth});
+        first_id, SamplerOutput::AcceptanceResult{accepted_depth, 4 + accepted_depth});
     PipelineTestInstance pipeline;
     EXPECT_THROW(
         pipeline.commit_linear_attention_checkpoint_transactions(scheduler, requests, output, sampler_output),
@@ -3937,7 +4180,7 @@ TEST_F(CBPublicationTest, missing_second_acceptance_does_not_promote_first_linea
 
     const auto first_promoted_row = output.get_linear_attention_paging_data(first_id).block_indices.at(1);
     const auto second_promoted_row = output.get_linear_attention_paging_data(second_id).block_indices.at(2);
-    sampler_output.acceptance_by_sequence.emplace(second_id, SamplerOutput::AcceptanceResult{2});
+    sampler_output.acceptance_by_sequence.emplace(second_id, SamplerOutput::AcceptanceResult{2, 6});
     pipeline.commit_linear_attention_checkpoint_transactions(scheduler, requests, output, sampler_output);
     EXPECT_EQ(block_manager.get_linear_attention_live_state(first_id).endpoint, first_state_before.endpoint + 1);
     EXPECT_EQ(block_manager.get_linear_attention_live_state(second_id).endpoint, second_state_before.endpoint + 2);
@@ -3980,8 +4223,8 @@ TEST_F(CBPublicationTest, invalid_second_slot_does_not_promote_first_linear_atte
     const auto second_state_before = block_manager.get_linear_attention_live_state(second_id);
     const size_t free_rows_before = block_manager.num_free_blocks();
     SamplerOutput sampler_output;
-    sampler_output.acceptance_by_sequence.emplace(first_id, SamplerOutput::AcceptanceResult{1});
-    sampler_output.acceptance_by_sequence.emplace(second_id, SamplerOutput::AcceptanceResult{3});
+    sampler_output.acceptance_by_sequence.emplace(first_id, SamplerOutput::AcceptanceResult{1, 5});
+    sampler_output.acceptance_by_sequence.emplace(second_id, SamplerOutput::AcceptanceResult{3, 7});
 
     PipelineTestInstance pipeline;
     EXPECT_THROW(
@@ -4005,6 +4248,49 @@ TEST_F(CBPublicationTest, invalid_second_slot_does_not_promote_first_linear_atte
     EXPECT_FALSE(block_manager.has_temporary_blocks(second_id));
     scheduler->free_sequence(first_id);
     scheduler->free_sequence(second_id);
+}
+
+TEST_F(CBPublicationTest, missing_kv_plan_does_not_promote_valid_linear_attention_checkpoint) {
+    constexpr size_t accepted_depth = 2;
+    SchedulerConfig scheduler_config = make_speculative_linear_attention_scheduler_config();
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
+    auto scheduler = std::make_shared<Scheduler>(orchestrator, scheduler_config);
+    scheduler->ensure_linear_attention_pool_blocks(1 + (1 + accepted_depth));
+    auto sequence_group = std::make_shared<SequenceGroup>(
+        0, std::vector<int64_t>{0, 1, 2, 3}, utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> requests{sequence_group};
+    std::ignore = scheduler->schedule(requests);
+    sequence_group->finish_iteration();
+    Sequence::Ptr sequence = sequence_group->get_running_sequences().front();
+    sequence->append_token(42, 0.f);
+    sequence_group->update_processed_tokens_num(4);
+    sequence_group->set_num_validated_tokens(accepted_depth);
+
+    Scheduler::Output output = scheduler->schedule(requests);
+    const uint64_t sequence_id = sequence->get_id();
+    auto& block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+    const auto state_before = block_manager.get_linear_attention_live_state(sequence_id);
+    const size_t free_rows_before = block_manager.num_free_blocks();
+    ASSERT_TRUE(block_manager.has_temporary_blocks(sequence_id));
+    ASSERT_EQ(output.m_kv_paged_attention_data.erase(sequence_id), 1u);
+
+    SamplerOutput sampler_output;
+    sampler_output.acceptance_by_sequence.emplace(
+        sequence_id, SamplerOutput::AcceptanceResult{accepted_depth, 4 + accepted_depth});
+    PipelineTestInstance pipeline;
+    EXPECT_THROW(
+        pipeline.commit_linear_attention_checkpoint_transactions(scheduler, requests, output, sampler_output),
+        ov::Exception);
+
+    const auto& state_after = block_manager.get_linear_attention_live_state(sequence_id);
+    EXPECT_EQ(state_after.endpoint, state_before.endpoint);
+    EXPECT_EQ(state_after.generation, state_before.generation);
+    EXPECT_EQ(state_after.rows, state_before.rows);
+    EXPECT_TRUE(block_manager.has_temporary_blocks(sequence_id));
+    EXPECT_EQ(block_manager.num_free_blocks(), free_rows_before);
+
+    output.m_linear_attention_scratch_leases.clear();
+    scheduler->free_sequence(sequence_id);
 }
 
 TEST_F(CBPublicationTest, abandoned_moved_prepared_promotion_preserves_scratch_until_lease_cleanup) {

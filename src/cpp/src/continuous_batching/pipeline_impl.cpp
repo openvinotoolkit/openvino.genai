@@ -497,6 +497,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_linear_attentio
     struct PendingPromotion {
         CacheOrchestrator::LinearAttentionScratchLease* lease;
         uint64_t seq_id;
+        SequenceGroup::Ptr sequence_group;
+        size_t processed_tokens_after;
     };
     std::vector<PendingPromotion> pending_promotions;
     pending_promotions.reserve(scheduler_output.m_linear_attention_scratch_leases.size());
@@ -525,6 +527,18 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_linear_attentio
                 OPENVINO_ASSERT(acceptance_it != sampler_output.acceptance_by_sequence.end(),
                                 "Missing explicit linear-attention acceptance result for greedy sequence ", seq_id);
                 checkpoint_slot = acceptance_it->second.accepted_depth;
+                const auto kv_data_it = scheduler_output.m_kv_paged_attention_data.find(seq_id);
+                OPENVINO_ASSERT(kv_data_it != scheduler_output.m_kv_paged_attention_data.end(),
+                                "Missing KV transition plan for greedy sequence ", seq_id);
+                OPENVINO_ASSERT(kv_data_it->second.num_processed_tokens_before ==
+                                    paging_data.num_processed_tokens_before,
+                                "KV and linear-attention transition plans disagree for greedy sequence ", seq_id);
+                OPENVINO_ASSERT(sequence_group->get_num_processed_tokens() == paging_data.num_processed_tokens_before,
+                                "Greedy verifier counter changed before cache transition preparation for sequence ", seq_id);
+                OPENVINO_ASSERT(acceptance_it->second.processed_tokens_after ==
+                                    paging_data.num_processed_tokens_before + checkpoint_slot,
+                                "Accepted processed-token endpoint disagrees with the scheduled transition for sequence ",
+                                seq_id);
             } else {
                 const size_t processed_after = sequence_group->get_num_processed_tokens();
                 OPENVINO_ASSERT(processed_after > paging_data.num_processed_tokens_before,
@@ -537,7 +551,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_linear_attentio
             const auto lease_it = scheduler_output.m_linear_attention_scratch_leases.find(seq_id);
             OPENVINO_ASSERT(lease_it != scheduler_output.m_linear_attention_scratch_leases.end(),
                             "Missing linear-attention scratch lease for sequence ", seq_id);
-            pending_promotions.push_back({lease_it->second.get(), seq_id});
+            pending_promotions.push_back({lease_it->second.get(),
+                                          seq_id,
+                                          sequence_group,
+                                          paging_data.num_processed_tokens_before + checkpoint_slot});
             promotion_leases.push_back(lease_it->second.get());
             promotion_requests.push_back(lease_it->second->promotion_request(checkpoint_slot));
         }
@@ -545,8 +562,19 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_linear_attentio
     if (pending_promotions.empty()) {
         return;
     }
+    std::vector<BlockManager::TailReleaseTarget> kv_release_targets;
+    kv_release_targets.reserve(pending_promotions.size());
+    for (const PendingPromotion& promotion : pending_promotions) {
+        kv_release_targets.push_back({promotion.seq_id, promotion.processed_tokens_after});
+    }
+    auto prepared_kv_releases = m_scheduler->prepare_kv_tail_releases(kv_release_targets);
     auto prepared = CacheOrchestrator::LinearAttentionScratchLease::prepare_promotions(
         promotion_leases, promotion_requests);
+    for (const PendingPromotion& promotion : pending_promotions) {
+        promotion.sequence_group->update_processed_tokens_num(promotion.processed_tokens_after);
+        promotion.sequence_group->clear_scheduled_tokens();
+    }
+    prepared_kv_releases.apply();
     std::ignore = prepared.apply();
     for (const PendingPromotion& promotion : pending_promotions) {
         promotion.lease->mark_committed();
@@ -689,7 +717,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
         static ManualTimer timer("sample");
         timer.start();
         const auto sample_start = std::chrono::steady_clock::now();
-        sampler_output = m_sampler->sample(m_requests, logits, m_is_validation_mode_enabled, false);
+        const bool defer_sequence_group_updates =
+            m_scheduler->has_linear_attention_cache() && m_is_validation_mode_enabled;
+        sampler_output = m_sampler->sample(
+            m_requests, logits, m_is_validation_mode_enabled, false, defer_sequence_group_updates);
         m_pipeline_metrics.sampling_duration =
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start);
         m_batch_size = sampler_output.num_generated_tokens;
