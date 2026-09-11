@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <algorithm>
-#include <cstdlib>
 #include <set>
 #include <map>
 #include <string>
@@ -1326,24 +1325,9 @@ struct AdapterControllerImpl {
     // Needed to track which LoRA tensors were actually applied to suppress unused tensor warnings
     std::shared_ptr<LoRAWeightGetterDefault<NodePtr, NodePtr>> const_getter_impl;
 
-    static std::string lora_evaluator_device(const std::string& infer_device) {
-        if (const char* env = std::getenv("OV_LORA_EVALUATOR_DEVICE")) {
-            if (env[0] != '\0') {
-                std::string requested_device(env);
-                if (requested_device == "INFER" || requested_device == "infer") {
-                    return infer_device.empty() ? "CPU" : infer_device;
-                }
-                return requested_device;
-            }
-        }
-        return "CPU";
-    }
-
-    AdapterControllerImpl(std::shared_ptr<ov::Model> model,
-                          const AdapterConfig& config,
-                          const std::string& device = "CPU") :
+    AdapterControllerImpl(std::shared_ptr<ov::Model> model, const AdapterConfig& config) :
         current_config(config),  // FIXME: Compare current and passed configs and change incrementally
-        lora_state_evaluators(lora_evaluator_device(device))
+        lora_state_evaluators("CPU")    // FIXME: Try to run on the same device that is used for model inference
     {
         LoRAConstantGetter const_getter;
         LoRAParametersByWeightGetter params_getter;
@@ -2100,8 +2084,6 @@ struct AdapterControllerImpl {
 
 AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const AdapterConfig& config, std::string device)
 {
-    const std::string infer_device = device;
-
     // If AdapterConfig::MODE_AUTO is used, then set real mode depending on the device capabilities
     // TODO: Remove this code when devices become aligned on their capabilities for LoRA adapters
     if (config.get_mode() == AdapterConfig::MODE_AUTO) {
@@ -2117,7 +2099,7 @@ AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const Ada
         if(default_mode != default_modes.end()) {
             AdapterConfig updated_config = config;
             updated_config.set_mode(default_mode->second);
-            m_pimpl = std::make_shared<AdapterControllerImpl>(model, updated_config, infer_device);
+            m_pimpl = std::make_shared<AdapterControllerImpl>(model, updated_config);
             return;
         } else {
             std::string device_msg;
@@ -2132,7 +2114,7 @@ AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const Ada
                 << "To avoid this warning set one of the AdapterConfig::Mode values except MODE_AUTO.";
         }
     }
-    m_pimpl = std::make_shared<AdapterControllerImpl>(model, config, infer_device);
+    m_pimpl = std::make_shared<AdapterControllerImpl>(model, config);
 }
 
 // Call it every time when adapter config is changed; if adapter was configured as a static one, this call is not required
