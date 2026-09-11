@@ -381,10 +381,42 @@ TEST(SamplerValidationMode, gen_phase_to_cut_whole_seq) {
     TokenIds actual = sequence_groups.front()->get_sequences().front()->get_generated_ids(),
              expected{0, 1};
     ASSERT_EQ(sequence_groups.front()->get_sequences().front()->get_generated_ids(), expected);
-    EXPECT_EQ(sequence_groups.front()->get_num_processed_tokens(), processed_before + 1)
-        << "Full rejection must retain the target replacement token as accepted depth one";
+    EXPECT_EQ(sequence_groups.front()->get_num_processed_tokens(), processed_before + 1);
     const uint64_t sequence_id = sequence_groups.front()->get_sequences().front()->get_id();
     EXPECT_EQ(output.acceptance_by_sequence.at(sequence_id).accepted_depth, 1u);
+    EXPECT_EQ(output.acceptance_by_sequence.at(sequence_id).processed_tokens_after, processed_before + 1)
+        << "Full rejection must prepare the target replacement token as accepted depth one";
+}
+
+TEST(SamplerValidationMode, explicit_deferral_preserves_counters_until_cache_commit) {
+    auto sampling_config = ov::genai::utils::get_greedy_config();
+    const std::vector<int64_t> prompt{0, 1, 2, 3, 4};
+    auto sequence_group = std::make_shared<SequenceGroup>(0, prompt, sampling_config);
+    Sequence::Ptr sequence = sequence_group->get_sequences().front();
+    sequence->append_token(0, 1.f);
+    constexpr size_t processed_before = 5;
+    sequence_group->update_processed_tokens_num(processed_before);
+    for (const int64_t token_id : {2, 3, 4}) {
+        sequence->append_token(token_id, 1.f);
+    }
+    sequence_group->set_num_validated_tokens(3);
+    sequence_group->schedule_tokens(sequence_group->get_num_available_tokens_for_batching());
+    std::vector<float> logits{
+        0, 1.f, 0, 0, 0,
+        0, 0, 1.f, 0, 0,
+        0, 0, 0, 1.f, 0,
+        0, 0, 0, 0, 1.f,
+    };
+    ov::Tensor validation_logits(ov::element::f32, ov::Shape{4, 1, 5}, logits.data());
+
+    Sampler sampler;
+    const SamplerOutput output = sampler.sample(
+        {sequence_group}, validation_logits, true, false, true);
+
+    EXPECT_EQ(sequence_group->get_num_processed_tokens(), processed_before);
+    ASSERT_EQ(output.acceptance_by_sequence.count(sequence->get_id()), 1u);
+    EXPECT_EQ(output.acceptance_by_sequence.at(sequence->get_id()).processed_tokens_after,
+              processed_before + 1);
 }
 
 TEST(SamplerValidationMode, gen_phase_to_cut_part_seq) {
