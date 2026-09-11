@@ -66,6 +66,8 @@ public:
     // Aligned with the vLLM implementation.
     ov::Tensor get_draft_inputs_embeds() const;
 
+    void set_draft_inputs_embeds_cache_enabled(bool enabled);
+
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
 
     // returns per-layer embeddings callback, or nullptr if not available
@@ -172,6 +174,7 @@ private:
         int64_t m_rope_delta = 0;
         // Cached text-only embeddings for speculative (eagle3) draft path.
         ov::Tensor m_draft_inputs_embeds;
+        bool m_draft_inputs_embeds_cache_enabled = false;
         virtual ~IInputsEmbedder() = default;
 
     public:
@@ -279,7 +282,21 @@ private:
             return m_draft_inputs_embeds;
         }
 
+        void set_draft_inputs_embeds_cache_enabled(bool enabled) {
+            m_draft_inputs_embeds_cache_enabled = enabled;
+            if (!enabled) {
+                m_draft_inputs_embeds = ov::Tensor();
+            }
+        }
+
+        bool is_draft_inputs_embeds_cache_enabled() const {
+            return m_draft_inputs_embeds_cache_enabled;
+        }
+
         void cache_draft_inputs_embeds(const ov::Tensor& text_embeds) {
+            if (!m_draft_inputs_embeds_cache_enabled) {
+                return;
+            }
             OPENVINO_ASSERT(text_embeds && text_embeds.get_size() > 0, "Cannot cache an empty draft embeddings tensor");
             if (!m_draft_inputs_embeds || m_draft_inputs_embeds.get_element_type() != text_embeds.get_element_type() ||
                 m_draft_inputs_embeds.get_shape() != text_embeds.get_shape()) {

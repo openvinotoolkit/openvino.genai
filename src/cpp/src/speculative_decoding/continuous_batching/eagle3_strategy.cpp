@@ -46,6 +46,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
 
     if (main_model_desc.inputs_embedder) {
         m_inputs_embedder = main_model_desc.inputs_embedder;
+        m_inputs_embedder->set_draft_inputs_embeds_cache_enabled(true);
         m_model_input_type = ModelInputType::EMBEDDINGS;
         m_vision_registry = std::make_shared<VisionRegistry>();
     }

@@ -500,6 +500,10 @@ ov::Tensor InputsEmbedder::get_draft_inputs_embeds() const {
     return m_impl->get_draft_inputs_embeds();
 }
 
+void InputsEmbedder::set_draft_inputs_embeds_cache_enabled(bool enabled) {
+    m_impl->set_draft_inputs_embeds_cache_enabled(enabled);
+}
+
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta) {
     return m_impl->get_generation_phase_position_ids(inputs_embeds_size, history_size, rope_delta);
 }
