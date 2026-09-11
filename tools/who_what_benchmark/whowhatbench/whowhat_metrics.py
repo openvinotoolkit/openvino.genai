@@ -228,6 +228,42 @@ class TranscriptSimilarity:
         return {"similarity": self._similarity(references, hypotheses)}, {"similarity": per_prompt}
 
 
+class KLDivergency:
+    # ~0 	        distributions are almost identical
+    # 0.001 – 0.05	minor differences
+    # 0.05 – 0.5	noticeable differences in predictions
+    # > 1           significantly different distributions
+    EPSILON = 1e-10
+
+    def evaluate(self, gts, predictions):
+        topk_probs_gold = gts["topk_log_probs_path"].values
+        topk_probs_prediction = predictions["topk_log_probs_path"].values
+
+        metric_per_question = []
+        for gold_path, prediction_path in tqdm(
+            zip(topk_probs_gold, topk_probs_prediction),
+            total=min(len(topk_probs_gold), len(topk_probs_prediction)),
+            desc="KL divergence evaluation",
+        ):
+            with open(gold_path, "rb") as f:
+                gold_probs = torch.from_numpy(np.load(f))
+
+            with open(prediction_path, "rb") as f:
+                prediction_probs = torch.from_numpy(np.load(f))
+
+            if gold_probs.shape != prediction_probs.shape:
+                raise ValueError(
+                    f"Top-k probabilities shape mismatch: {gold_path} has shape {gold_probs.shape}, "
+                    f"but {prediction_path} has shape {prediction_probs.shape}"
+                )
+
+            kl_per_step = F.kl_div(torch.log(prediction_probs + self.EPSILON), gold_probs, reduction="none").sum(dim=-1)
+            metric_per_question.append(kl_per_step.mean().item())
+
+        metric_dict = {"kl_divergency": np.mean(metric_per_question)}
+        return metric_dict, {"kl_divergency": metric_per_question}
+
+
 # Image metrics
 def evaluate_image_similarity(processor, model, data_gold, data_prediction):
     images_gold = data_gold["images"].values
