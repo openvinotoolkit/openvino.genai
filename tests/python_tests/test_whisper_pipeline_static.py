@@ -22,6 +22,7 @@ import pathlib
 # This test suite is designed specifically to validate the functionality
 # and robustness of the WhisperStaticPipeline on NPUW:CPU.
 config = {**NPUW_CPU_PROPERTIES, "STATIC_PIPELINE": True}
+dynamic_config = {**NPUW_CPU_PROPERTIES}
 
 
 def load_and_save_whisper_model(params, stateful=False, **tokenizer_kwargs):
@@ -76,6 +77,16 @@ def get_results_cpu_npu(model_path, audio_sample, **config_kwargs):
     expected = cpu_pipe.generate(audio_sample, **config_kwargs)
 
     npu_pipe = ov_genai.WhisperPipeline(model_path, "NPU", **config)
+    actual_out = npu_pipe.generate(audio_sample, **config_kwargs)
+
+    return expected, actual_out
+
+
+def get_results_cpu_npu_dynamic(model_path, audio_sample, **config_kwargs):
+    cpu_pipe = ov_genai.WhisperPipeline(model_path, "CPU")
+    expected = cpu_pipe.generate(audio_sample, **config_kwargs)
+
+    npu_pipe = ov_genai.WhisperPipeline(model_path, "NPU", **dynamic_config)
     actual_out = npu_pipe.generate(audio_sample, **config_kwargs)
 
     return expected, actual_out
@@ -290,3 +301,17 @@ def test_language_detection_en(model_descr, sample_from_dataset):
     expected, actual_out = get_word_timestamps_results_cpu_npu(model_path, sample_from_dataset)
     compare_results_with_assert(expected, actual_out)
     assert expected.language == actual_out.language == "en"
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+def test_dynamic_whisper_stateful_generation_compare_with_cpu(model_descr, sample_from_dataset):
+    """
+    Regression test for Issue #4222:
+    Validates default dynamic WhisperPipelineStatefulImpl on NPU with NPUW CPU fallback.
+    """
+    model_id, model_path = load_and_save_whisper_model(model_descr, stateful=True)
+
+    expected, actual_out = get_results_cpu_npu_dynamic(model_path, sample_from_dataset)
+
+    compare_results_with_assert(expected, actual_out)
