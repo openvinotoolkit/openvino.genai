@@ -2471,6 +2471,114 @@ TEST(TestScheduler, hybrid_create_explicit_kv_blocks_derives_paged_linear_attent
               expected_la_blocks);
 }
 
+TEST(TestScheduler, hybrid_create_prefix_linear_attention_explicit_ceiling_bounds_every_growth_path) {
+    HybridCreateContext context = create_hybrid_create_context();
+    const auto get_available_memory = [](const std::string&, size_t) {
+        return std::numeric_limits<size_t>::max();
+    };
+    constexpr size_t budget = 4;
+    SchedulerConfig config;
+    config.num_kv_blocks = 64;
+    config.num_linear_attention_blocks = budget;
+    config.enable_prefix_caching = true;
+    config.cache_interval_multiplier = 1;
+    auto orchestrator = CacheOrchestrator::create(context.request, config, get_available_memory);
+    auto& manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+
+    ASSERT_EQ(config.num_linear_attention_blocks, budget);
+    ASSERT_EQ(manager.get_max_total_block_count(), budget);
+    EXPECT_FALSE(manager.can_increase_block_count_to(budget + 1));
+    EXPECT_FALSE(manager.increase_block_count_up_to(budget + 1));
+    EXPECT_FALSE(manager.grow_capacity_by_tokens(context.kv_block_size * 16));
+    manager.ensure_sequence_token_capacity({{context.kv_block_size * 16, 0}});
+    EXPECT_THROW(manager.increase_block_count(budget + 1), ov::Exception);
+    EXPECT_EQ(manager.get_total_block_count(), budget);
+    EXPECT_EQ(manager.num_free_blocks(), budget);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_block_count(), 64u);
+}
+
+TEST(TestScheduler, hybrid_prefix_linear_attention_ceiling_defers_without_unrelated_kv_growth) {
+    for (const bool dynamic_split_fuse : {false, true}) {
+        SCOPED_TRACE(dynamic_split_fuse);
+        HybridCreateContext context = create_hybrid_create_context();
+        const auto get_available_memory = [](const std::string&, size_t) {
+            return std::numeric_limits<size_t>::max();
+        };
+        SchedulerConfig config;
+        config.num_linear_attention_blocks = 1;
+        config.enable_prefix_caching = true;
+        config.dynamic_split_fuse = dynamic_split_fuse;
+        config.cache_interval_multiplier = 1;
+        config.max_num_batched_tokens = context.kv_block_size;
+        config.max_num_seqs = 2;
+        auto orchestrator = CacheOrchestrator::create(context.request, config, get_available_memory);
+        Scheduler scheduler(orchestrator, config);
+        auto& la_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+        auto& kv_manager = orchestrator->get_block_manager(CacheType::KV_CACHE);
+        TokenIds producer_tokens(context.kv_block_size, 1);
+        auto producer = std::make_shared<SequenceGroup>(0, producer_tokens, utils::get_greedy_config());
+        const auto producer_sequence = producer->get_sequences().front();
+        const uint64_t producer_id = producer_sequence->get_id();
+        std::vector<SequenceGroup::Ptr> requests{producer};
+        const auto producer_output = scheduler.schedule(requests);
+        ASSERT_EQ(producer_output.m_total_num_scheduled_tokens, producer_tokens.size());
+        producer->finish_iteration();
+        scheduler.publish_completed_blocks(producer_sequence, 0, producer_tokens.size());
+        const auto published = la_manager.get_block_table(producer_id, 0).front();
+        const auto published_hash = published->get_hash();
+        const size_t references_before = published->get_references_count();
+        const size_t kv_blocks_before = kv_manager.get_total_block_count();
+        auto consumer = std::make_shared<SequenceGroup>(
+            1, TokenIds(context.kv_block_size, 2), utils::get_greedy_config());
+        const uint64_t consumer_id = consumer->get_sequences().front()->get_id();
+        requests = {consumer};
+
+        const auto deferred = scheduler.schedule(requests);
+        EXPECT_EQ(deferred.m_total_num_scheduled_tokens, 0u);
+        EXPECT_EQ(consumer->get_num_processed_tokens(), 0u);
+        EXPECT_EQ(consumer->get_num_scheduled_tokens(), 0u);
+        EXPECT_FALSE(la_manager.has_block_table(consumer_id));
+        EXPECT_EQ(la_manager.get_total_block_count(), 1u);
+        EXPECT_EQ(la_manager.num_free_blocks(), 0u);
+        EXPECT_EQ(kv_manager.get_total_block_count(), kv_blocks_before);
+        EXPECT_EQ(published->get_references_count(), references_before);
+        EXPECT_EQ(published->get_hash(), published_hash);
+        EXPECT_EQ(la_manager.get_block_table(producer_id, 0).front(), published);
+
+        scheduler.free_sequence(producer_id);
+        const auto resumed = scheduler.schedule(requests);
+        EXPECT_EQ(resumed.m_total_num_scheduled_tokens, consumer->get_prompt_len());
+        EXPECT_EQ(la_manager.get_total_block_count(), 1u);
+        EXPECT_EQ(kv_manager.get_total_block_count(), kv_blocks_before);
+        scheduler.free_sequence(consumer_id);
+    }
+}
+
+TEST(TestScheduler, hybrid_prefix_linear_attention_ceiling_allows_partial_prefill) {
+    HybridCreateContext context = create_hybrid_create_context();
+    const auto get_available_memory = [](const std::string&, size_t) {
+        return std::numeric_limits<size_t>::max();
+    };
+    SchedulerConfig config;
+    config.num_linear_attention_blocks = 1;
+    config.enable_prefix_caching = true;
+    config.dynamic_split_fuse = true;
+    config.cache_interval_multiplier = 1;
+    config.max_num_batched_tokens = 2 * context.kv_block_size;
+    config.max_num_seqs = 1;
+    auto orchestrator = CacheOrchestrator::create(context.request, config, get_available_memory);
+    Scheduler scheduler(orchestrator, config);
+    auto group = std::make_shared<SequenceGroup>(
+        0, TokenIds(2 * context.kv_block_size, 1), utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> requests{group};
+    const auto output = scheduler.schedule(requests);
+    EXPECT_EQ(output.m_total_num_scheduled_tokens, context.kv_block_size);
+    EXPECT_EQ(group->get_num_processed_tokens(), 0u);
+    EXPECT_EQ(group->get_num_scheduled_tokens(), context.kv_block_size);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_block_count(), 1u);
+    scheduler.free_sequence(group->get_sequences().front()->get_id());
+}
+
 TEST(TestScheduler, hybrid_create_cache_size_budget_reserves_fixed_linear_attention_bytes_before_kv_blocks) {
     HybridCreateContext context = create_hybrid_create_context();
     auto get_available_memory = [](const std::string&, size_t) {

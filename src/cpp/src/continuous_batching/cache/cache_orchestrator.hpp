@@ -1164,9 +1164,6 @@ private:
                                          size_t cache_interval,
                                          size_t requested_num_la_blocks = 0) {
         std::unique_ptr<BlockManager> la_block_manager;
-        // Prefix-cached LA grows with context length and is not capped here.
-        const size_t max_total_la_blocks =
-            config.enable_prefix_caching ? 0 : requested_num_la_blocks;
         if (config.enable_prefix_caching) {
             OPENVINO_ASSERT(cache_interval > 0,
                             "Internal error: linear attention cache interval must be greater than 0 when prefix caching is enabled");
@@ -1176,7 +1173,8 @@ private:
                 cache_interval,
                 1,
                 0,
-                true);
+                true,
+                requested_num_la_blocks);
         } else {
             // One committed row per sequence; speculative scratch is borrowed per step.
             la_block_manager = std::make_unique<BlockManager>(
@@ -1186,7 +1184,7 @@ private:
                 1,
                 /*fixed_blocks_per_sequence=*/1,
                 /*restore_latest_prefix_block_only=*/false,
-                max_total_la_blocks);
+                requested_num_la_blocks);
         }
 
         // Linear-attention state tensors are per physical layer/group, but share one logical block table.

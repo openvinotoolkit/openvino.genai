@@ -680,7 +680,7 @@ private:
 
                 // apply KV cache limitations
                 while (m_cache_orchestrator->available_token_slots(sequence_group) < num_scheduled_tokens) {
-                    if (!_try_increase_cache(sequence_group)) {
+                    if (!_try_increase_cache(sequence_group, num_scheduled_tokens)) {
                         break;
                     }
                 }
@@ -896,7 +896,7 @@ private:
 
                 // apply KV cache limitations
                 while (!m_cache_orchestrator->can_allocate_tokens(sequence_group, sequence_len)){
-                    if (!_try_increase_cache(sequence_group)) {
+                    if (!_try_increase_cache(sequence_group, sequence_len)) {
                         break;
                     }
                 }
@@ -1027,9 +1027,29 @@ private:
         m_cache_orchestrator->ensure_sequence_token_capacity(sequence_token_targets);
     }
 
-    bool _try_increase_cache(SequenceGroup::CPtr sequence_group = nullptr) {
+    bool _try_increase_cache(SequenceGroup::CPtr sequence_group = nullptr, size_t num_prompt_tokens = 0) {
         if (!m_dynamic_memory_allocation) {
             return false;
+        }
+        if (sequence_group && m_cache_orchestrator->has_linear_attention_cache()) {
+            auto& la_manager = m_cache_orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+            const size_t ceiling = la_manager.get_max_total_block_count();
+            if (ceiling > 0 && la_manager.get_total_block_count() == ceiling) {
+                if (num_prompt_tokens > 0 && m_config.dynamic_split_fuse) {
+                    const size_t useful_token_target =
+                        std::min(num_prompt_tokens, la_manager.available_token_slots(sequence_group));
+                    if (m_cache_orchestrator->available_token_slots(sequence_group) >= useful_token_target) {
+                        return false;
+                    }
+                } else {
+                    const bool can_admit = num_prompt_tokens > 0
+                                               ? la_manager.can_allocate_tokens(sequence_group, num_prompt_tokens)
+                                               : la_manager.can_append_slots(sequence_group);
+                    if (!can_admit) {
+                        return false;
+                    }
+                }
+            }
         }
         bool grew_capacity = false;
         if (sequence_group) {
