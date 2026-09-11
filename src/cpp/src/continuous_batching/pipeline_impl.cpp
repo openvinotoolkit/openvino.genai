@@ -591,6 +591,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_linear_attentio
     }
     auto prepared = CacheOrchestrator::LinearAttentionScratchLease::prepare_promotions(
         promotion_leases, promotion_requests);
+    for (const PendingPromotion& promotion : pending_promotions) {
+        promotion.sequence_group->update_processed_tokens_num(promotion.processed_tokens_after);
+        promotion.sequence_group->clear_scheduled_tokens();
+    }
+    prepared_kv_releases.apply();
     std::ignore = prepared.apply();
     for (const PendingPromotion& promotion : pending_promotions) {
         promotion.lease->mark_committed();
