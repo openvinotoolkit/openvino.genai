@@ -105,11 +105,6 @@ updates:
       - dependency-name: "diffusers"
         versions:
           - ">=0.40.0"
-      # NumPy constraint updates trigger SDL dependency review, but its composite
-      # license includes Zlib and CC0-1.0, which are not currently allowlisted.
-      - dependency-name: "numpy"
-        versions:
-          - ">2.5.1"
       # librosa >= 1.0.0 requires python3.12
       - dependency-name: "librosa"
         versions:
