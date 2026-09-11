@@ -33,6 +33,7 @@ enum class VLMModelType {
     VIDEOCHAT_FLASH_QWEN,
     QWEN3_OMNI,
     DEEPSEEK_OCR2,
+    UNLIMITED_OCR,
     MUSE_GLIMMER,
 };
 

@@ -238,6 +238,16 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'UnlimitedOCRForCausalLM',
+    models: [
+      {
+        name: 'Unlimited-OCR',
+        links: ['https://huggingface.co/baidu/Unlimited-OCR'],
+        notesLink: '#unlimited-ocr-notes',
+      },
+    ],
+  },
+  {
     architecture: 'Gemma3ForConditionalGeneration',
     models: [
       {

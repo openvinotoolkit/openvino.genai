@@ -169,6 +169,7 @@ MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
 MODEL_DEEPSEEK_OCR2 = "optimum-intel-internal-testing/tiny-random-deepseek-ocr-2"
+MODEL_UNLIMITED_OCR = "optimum-intel-internal-testing/tiny-random-unlimited-ocr"
 
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
@@ -183,6 +184,7 @@ if is_transformers_version("<", "5.0"):
         "optimum-intel-internal-testing/tiny-random-gemma3",
         MODEL_GEMMA3N,
         "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
+        MODEL_UNLIMITED_OCR,
         *VIDEO_MODEL_IDS,
     ]
 else:
@@ -212,6 +214,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     MODEL_GEMMA3N: lambda idx: "<image_soft_token>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     MODEL_DEEPSEEK_OCR2: lambda idx: "<image>",
+    MODEL_UNLIMITED_OCR: lambda idx: "<image>",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
@@ -288,10 +291,12 @@ NPU_UNSUPPORTED_MODELS = {
     "optimum-intel-internal-testing/tiny-random-gemma4-unified-it",
     "optimum-intel-internal-testing/tiny-random-gemma4-31B",
     MODEL_DEEPSEEK_OCR2,
+    MODEL_UNLIMITED_OCR,
 }
 
 MODELS_WITHOUT_CHAT_TEMPLATE = {
     MODEL_DEEPSEEK_OCR2,
+    MODEL_UNLIMITED_OCR,
 }
 
 DEFAULT_NPUW_PROPERTIES = {
@@ -453,10 +458,13 @@ def _get_ov_model(model_id: str) -> str:
                     "qnguyen3/nanoLLaVA",
                     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
                     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
+                    MODEL_UNLIMITED_OCR,
                 },
             )
         )
-        if model.config.model_type == "llava-qwen2" or _is_videochat_flash_qwen_model(model_id):
+        if model.config.model_type == "llava-qwen2" or _is_videochat_flash_qwen_model(model_id) or model_id == MODEL_UNLIMITED_OCR:
+            # For Unlimited-OCR the AutoProcessor resolves to a bare tokenizer
+            # (LlamaTokenizerFast); preprocessing is done by GenAI's C++ vision encoder.
             tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
         # For tiny-random-internvl2 processor is actually tokenizer
         elif isinstance(processor, transformers.Qwen2TokenizerFast):
@@ -532,6 +540,14 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
 
     if "qwen3-vl" in ov_model and ov_backend == "SDPA":
         pytest.xfail(QWEN3_VL_SDPA_XFAIL_REASON)
+
+    if ov_model == MODEL_UNLIMITED_OCR and ov_backend == "PA":
+        pytest.skip(
+            "Unlimited-OCR uses a DeepSeek-V2 MoE language model whose OpenVINO export does not "
+            "contain a ScaledDotProductAttention op, so the SDPAToPagedAttention transformation "
+            "cannot run. The PagedAttention backend is therefore unsupported for this model; the "
+            "default SDPA/stateful backend is validated instead."
+        )
 
     models_path = _get_ov_model(ov_model)
 
@@ -811,6 +827,7 @@ def test_images(request: pytest.FixtureRequest):
 
 SINGLE_IMAGE_ONLY_MODELS = {
     MODEL_DEEPSEEK_OCR2,
+    MODEL_UNLIMITED_OCR,
 }
 
 
@@ -2319,7 +2336,9 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
             processor.tokenizer.add_bos_token = False
         if optimum_model.config.model_type == "muse_glimmer":
             processor.tokenizer.add_bos_token = False
-        if optimum_model.config.model_type in ["internvl_chat", "minicpmv"]:
+        if optimum_model.config.model_type in ["internvl_chat", "minicpmv", "unlimited-ocr"]:
+            # Unlimited-OCR's AutoProcessor resolves to a bare tokenizer, so optimum-intel
+            # preprocessing requires an explicit tokenizer (it text-encodes with it directly).
             tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
         if optimum_model.config.model_type == "minicpmv":
             # optimum 1.27.0 will manually apply chat template if processor.chat_template isn't set.
@@ -2440,6 +2459,8 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     "*tiny-videochat-flash-qwen/PA/CPP/text-only": "CVS-183813",
     # deepseek-ocr-2 text-only cases
     "*tiny-random-deepseek-ocr-2/*/text-only": "DeepSeek OCR-2 model requires image input.",
+    # unlimited-ocr text-only cases
+    "*tiny-random-unlimited-ocr/*/text-only": "Unlimited-OCR model requires image input.",
 }
 
 # For these models, we will add both CPP and GRAPH pre-processing tests.

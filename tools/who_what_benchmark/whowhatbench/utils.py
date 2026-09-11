@@ -182,6 +182,40 @@ def get_ignore_parameters_flag():
     return {}
 
 
+def enable_cpu_fallback_for_cuda_hardcoded_models(device):
+    """Make hardcoded ``Tensor.cuda()`` calls fall back to CPU when appropriate.
+
+    Some remote-code models (e.g. OCR/VLM families) hardcode ``.cuda()`` inside
+    their ``forward``/embedding-merge code. When WWB runs such a model on CPU with
+    a CUDA-less torch build, those calls can *only* raise
+    ``AssertionError("Torch not compiled with CUDA enabled")`` - there is no CUDA
+    device they could ever target. Redirecting them to the tensor's current
+    (CPU) device is therefore a safe, generic compatibility shim:
+
+      * It is applied only when the target device is CPU and ``torch.cuda`` is
+        unavailable, so it cannot mask or alter a genuinely working CUDA path.
+      * It is generic (keyed on device/availability, not on any model name/id).
+      * It does not modify cached Hub remote-code sources.
+
+    This is a no-op on GPU/CUDA setups.
+    """
+    import torch
+
+    if str(device).upper() != "CPU":
+        return
+    if torch.cuda.is_available():
+        return
+    if getattr(torch.Tensor, "_wwb_cuda_cpu_fallback", False):
+        return
+
+    def _cuda_to_cpu(self, *args, **kwargs):
+        # Tensor is already on CPU in this configuration; keep it there.
+        return self
+
+    torch.Tensor.cuda = _cuda_to_cpu
+    torch.Tensor._wwb_cuda_cpu_fallback = True
+
+
 def get_json_config(config):
     if config is None or (isinstance(config, str) and config.strip() == ""):
         raise ValueError("Config must be a non-empty string or path to a JSON file.")
