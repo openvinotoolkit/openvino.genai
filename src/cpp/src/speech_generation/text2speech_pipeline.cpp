@@ -11,6 +11,7 @@
 #include "json_utils.hpp"
 #include "kokoro_tts_model.hpp"
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
+#include "qwen3_tts_model.hpp"
 #include "speecht5_tts_model.hpp"
 #include "utils.hpp"
 
@@ -36,12 +37,19 @@ const std::string get_class_name(const std::filesystem::path& root_dir) {
 enum class SpeechBackend {
     SpeechT5,
     Kokoro,
+    Qwen3TTS,
 };
 
 SpeechBackend resolve_backend(const std::filesystem::path& root_dir,
                              const std::string& class_name) {
     if (class_name == "SpeechT5ForTextToSpeech") {
         return SpeechBackend::SpeechT5;
+    }
+
+    const bool architecture_mentions_qwen3_tts = class_name.find("Qwen3TTS") != std::string::npos;
+
+    if (architecture_mentions_qwen3_tts) {
+        return SpeechBackend::Qwen3TTS;
     }
 
     const bool has_openvino_model = std::filesystem::exists(root_dir / "openvino_model.xml");
@@ -81,6 +89,9 @@ Text2SpeechPipeline::Text2SpeechPipeline(const std::filesystem::path& root_dir,
     if (backend == SpeechBackend::SpeechT5) {
         auto tokenizer = ov::genai::Tokenizer(root_dir);
         m_impl = std::make_shared<SpeechT5TTSImpl>(root_dir, device, properties, tokenizer);
+    } else if (backend == SpeechBackend::Qwen3TTS) {
+        auto tokenizer = ov::genai::Tokenizer(root_dir);
+        m_impl = std::make_shared<Qwen3TTSImpl>(root_dir, device, properties, tokenizer);
     } else {
         m_impl = std::make_shared<KokoroTTSImpl>(root_dir, device, properties);
     }
