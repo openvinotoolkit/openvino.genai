@@ -443,11 +443,11 @@ def load_text2image_model(
         from diffusers import DiffusionPipeline
 
         logger.info("Using HF Transformers API")
-        model_kwargs = {"torch_dtype": _resolve_torch_dtype(kwargs.get("torch_dtype")) or torch.float32}
+        torch_dtype = _resolve_torch_dtype(kwargs.get("torch_dtype")) or torch.float32
         try:
-            model = DiffusionPipeline.from_pretrained(model_id, **model_kwargs)
+            model = DiffusionPipeline.from_pretrained(model_id, torch_dtype=torch_dtype)
         except Exception:
-            model = DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True, **model_kwargs)
+            model = DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch_dtype)
         if kwargs.get("adapters") is not None:
             adapters = kwargs["adapters"]
             alphas = kwargs.get("alphas", None)
@@ -944,11 +944,11 @@ def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, 
         from diffusers import LTXPipeline
 
         logger.info("Using HF Transformers API")
-        model_kwargs = {"torch_dtype": _resolve_torch_dtype(kwargs.get("torch_dtype")) or torch.float32}
+        torch_dtype = _resolve_torch_dtype(kwargs.get("torch_dtype")) or torch.float32
         try:
-            model = LTXPipeline.from_pretrained(model_id, **model_kwargs)
+            model = LTXPipeline.from_pretrained(model_id, torch_dtype=torch_dtype)
         except ValueError:
-            model = LTXPipeline.from_pretrained(model_id, trust_remote_code=True, **model_kwargs)
+            model = LTXPipeline.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch_dtype)
         if kwargs.get("adapters") is not None:
             adapters = kwargs["adapters"]
             alphas = kwargs.get("alphas", None)
@@ -1000,11 +1000,11 @@ def load_image2video_model(model_id, device="CPU", ov_config=None, use_hf=False,
         from diffusers import LTXImageToVideoPipeline
 
         logger.info("Using HF Transformers API")
-        model_kwargs = {"torch_dtype": _resolve_torch_dtype(kwargs.get("torch_dtype")) or torch.float32}
+        torch_dtype = _resolve_torch_dtype(kwargs.get("torch_dtype")) or torch.float32
         try:
-            model = LTXImageToVideoPipeline.from_pretrained(model_id, **model_kwargs)
+            model = LTXImageToVideoPipeline.from_pretrained(model_id, torch_dtype=torch_dtype)
         except ValueError:
-            model = LTXImageToVideoPipeline.from_pretrained(model_id, trust_remote_code=True, **model_kwargs)
+            model = LTXImageToVideoPipeline.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch_dtype)
         if kwargs.get("adapters") is not None:
             adapters = kwargs["adapters"]
             alphas = kwargs.get("alphas", None)

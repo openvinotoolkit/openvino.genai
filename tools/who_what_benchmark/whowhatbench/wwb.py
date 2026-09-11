@@ -245,9 +245,7 @@ def parse_args():
     )
     parser.add_argument(
         "--torch-dtype",
-        type=str,
         choices=TORCH_DTYPES,
-        default=None,
         help="PyTorch weight dtype with --hf. If omitted, the model-specific default is used.",
     )
     parser.add_argument(

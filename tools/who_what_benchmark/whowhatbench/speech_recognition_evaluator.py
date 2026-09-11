@@ -122,11 +122,10 @@ class FunASRSourceTranscriber:
         self.language = language or None
         precision_kwargs = {}
         if torch_dtype is not None:
-            llm_dtype = {torch.float32: "fp32", torch.float16: "fp16", torch.bfloat16: "bf16"}[torch_dtype]
             precision_kwargs = {
                 "fp16": False,
                 "bf16": False,
-                "llm_dtype": llm_dtype,
+                "llm_dtype": {torch.float32: "fp32", torch.float16: "fp16", torch.bfloat16: "bf16"}[torch_dtype],
             }
 
         with _silenced_output():
