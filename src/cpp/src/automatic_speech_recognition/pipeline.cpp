@@ -55,7 +55,12 @@ ASRPipeline::ASRPipeline(const std::filesystem::path& models_path,
                          const std::string& device,
                          const ov::AnyMap& properties) {
     const auto start_time = std::chrono::steady_clock::now();
-    switch (read_model_type(models_path)) {
+    const ASRModelType model_type = read_model_type(models_path);
+
+    OPENVINO_ASSERT(!properties.count(ov::genai::forced_aligner.name()) || model_type == ASRModelType::qwen3_asr,
+                    "'forced_aligner' is only supported for Qwen3-ASR models.");
+
+    switch (model_type) {
     case ASRModelType::whisper: {
         m_impl = std::make_unique<WhisperASRPipelineAdapter>(models_path, device, properties);
         break;

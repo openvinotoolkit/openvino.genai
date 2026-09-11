@@ -120,8 +120,8 @@ class ASRGenerationConfig(GenerationConfig):
         :type lang_to_id: dict[str, int]
     
         :param word_timestamps: If `true` the pipeline will return word-level timestamps.
-                                When enabled word_timestamps=True property should be passed to ASRPipeline constructor:
-                                ASRPipeline("model_path", "CPU", word_timestamps=True)
+                                For Whisper, word_timestamps=True must also be passed to the
+                                ASRPipeline constructor.
         :type word_timestamps: bool
     
         :param alignment_heads: Encoder attention alignment heads used for word-level timestamps prediction.
@@ -286,6 +286,11 @@ class ASRPipeline:
                     ASRPipeline class constructor.
                     models_path (os.PathLike): Path to the model file.
                     device (str): Device to run the model on (e.g., CPU, GPU).
+        
+                    Constructor keyword arguments include OpenVINO compile properties and:
+                    forced_aligner (os.PathLike | str): Path to a separate Qwen3 forced-aligner model.
+                        Only supported for Qwen3-ASR. When supplied, generate(..., word_timestamps=True)
+                        returns word-level timestamps.
         """
     def generate(self, audio_inputs: collections.abc.Sequence[typing.SupportsFloat], generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> ASRDecodedResults:
         """
@@ -360,8 +365,8 @@ class ASRPipeline:
             :type lang_to_id: dict[str, int]
         
             :param word_timestamps: If `true` the pipeline will return word-level timestamps.
-                                    When enabled word_timestamps=True property should be passed to ASRPipeline constructor:
-                                    ASRPipeline("model_path", "CPU", word_timestamps=True)
+                                    For Whisper, word_timestamps=True must also be passed to the
+                                    ASRPipeline constructor.
             :type word_timestamps: bool
         
             :param alignment_heads: Encoder attention alignment heads used for word-level timestamps prediction.

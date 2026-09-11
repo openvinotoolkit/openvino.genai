@@ -7,11 +7,13 @@
 #include <string>
 
 #include "openvino/genai/automatic_speech_recognition/generation_config.hpp"
+#include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 
 namespace {
 
 const std::set<std::string> allowed_asr_ctor_properties = {
     ov::genai::word_timestamps.name(),
+    ov::genai::forced_aligner.name(),
 };
 
 }  // namespace
