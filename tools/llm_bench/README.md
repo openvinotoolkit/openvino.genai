@@ -114,6 +114,24 @@ python benchmark.py -m models/llama-2-7b-chat/ -pf prompts/llama-2-7b-chat_l.jso
 python ./benchmark.py -h # for more information
 ```
 
+**Report fields (CSV columns / JSON keys):**
+
+Each record is identified by:
+
+- `iteration`: iteration number; `0` is the warm-up (excluded from averages). Aggregate rows use `avg` / `min` / `median`.
+- `prompt_idx`: zero-based index of the prompt the record belongs to, in the order given by `-p` / `-pf`. When `--prompt_index` selects a subset, `prompt_idx` keeps the original indices. (`chat_idx` is the analogous per-chat index used by the chat pipeline.)
+
+Input/output descriptors — `input_size` and `output_size` are the **raw** numeric sizes the pipeline records; `prompt_repr` and `output_repr` are human-readable summaries derived from the prompt/output itself:
+
+- `input_size`: **batch-total** count of input tokens the model sequence processed (`= per-prompt tokens × batch_size`). For visual-language models this **includes image/video tokens**, not just text. Empty for tasks whose input is not tokenized into a sequence (speech-to-text audio, super-resolution image); their input size is given by `prompt_repr` instead.
+- `prompt_repr`: human-readable **input** summary of a single prompt, taken **before** tokenization: text as a whitespace word count (`w` suffix), media as dimensions. Examples: `text:7w`, `text:7w + image:512x512`, `audio:30.0s@44100Hz`, `image:128x128` (super-resolution low-res input). Use `input_size` for the tokenized length.
+- `output_size`: **batch-total** generated output size — generated text tokens for text/VLM/speech-to-text, **audio samples** for text-to-speech, empty for image/video generation.
+- `output_repr`: human-readable **output** summary of a single item, symmetric with `prompt_repr`: generated text as a word count (`text:<N>w`), media as dimensions (`image:512x512` — super-resolution upscaled output, `audio:48000sa@22050Hz`, `video:640x480@16f`).
+
+> **Batch size:** the `*_size` fields are **batch totals** (× `batch_size`), while the `*_repr` strings describe a **single** prompt/item. Divide by the `batch_size` column for a per-prompt figure. The reprs are intentionally *not* prefixed with a batch count (e.g. no `4×(text:7w)`): batching differs per task — text pipelines replicate the same prompt `batch_size` times, whereas image generation produces `batch_size` images from one prompt — so a single multiplier on the repr would be misleading.
+
+> **Note (text-to-speech):** TTS has no discrete output "tokens" — `output_size` reports the number of generated **audio samples**, and `output_repr` shows `audio:<samples>sa@<rate>Hz`. Divide samples by the sample rate for the duration in seconds.
+
 #### Benchmarking the Original PyTorch Model:
 To benchmark the original PyTorch model, first download the model locally and then run benchmark by specifying PyTorch as the framework with parameter `-f pt`
 
