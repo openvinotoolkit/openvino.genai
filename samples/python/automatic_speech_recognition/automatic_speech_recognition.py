@@ -23,6 +23,10 @@ def main():
     parser.add_argument("model_dir", help="Path to the model directory")
     parser.add_argument("wav_file_path", help="Path to the WAV file")
     parser.add_argument("device", nargs="?", default="CPU", help="Device to run the model on (default: CPU)")
+    parser.add_argument(
+        "--forced_aligner",
+        help="Path to a separate Qwen3 forced-aligner model directory (Qwen3-ASR word timestamps only)",
+    )
     args = parser.parse_args()
 
     ov_config = dict()
@@ -31,23 +35,28 @@ def main():
         # next run. It's not beneficial for CPU.
         ov_config = get_config_for_cache()
 
-    # Word timestamps supported by Whisper models only
-    # Must be passed to ASRPipeline constructor as a property
+    # Word timestamps are supported by Whisper and by Qwen3-ASR for supported languages.
+    # For Whisper, word_timestamps must be passed to the ASRPipeline constructor.
     ov_config["word_timestamps"] = True
+
+    # Qwen3-ASR word timestamps require a separate forced-aligner model directory.
+    # The ASR model and forced aligner are loaded from independent model directories.
+    if args.forced_aligner:
+        ov_config["forced_aligner"] = args.forced_aligner
 
     pipe = openvino_genai.ASRPipeline(args.model_dir, args.device, **ov_config)
 
     config = pipe.get_generation_config()
 
-    # If language is known in advance it can be passed to the pipeline
-    # In the form of "<|en|>" for Whisper models. Supported by multilingual models only
-    # In the form of "English" for Qwen3-ASR models.
-    config.language = "<|en|>"
+    # If the language is known in advance, it can be set via config.language.
 
-    # Whisper models parameters. Ignored for Qwen3-ASR models
+    # Request word-level timestamps. Whisper also requires word_timestamps=True at construction (set above);
+    # Qwen3-ASR also requires a forced aligner.
+    config.word_timestamps = True
+
+    # Whisper-only parameters, ignored for Qwen3-ASR models.
     config.task = "transcribe"
     config.return_timestamps = True
-    config.word_timestamps = True
 
     # Pipeline expects normalized audio with Sample Rate of 16kHz
     raw_speech = read_wav(args.wav_file_path)
