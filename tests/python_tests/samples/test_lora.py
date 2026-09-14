@@ -218,12 +218,7 @@ class TestLora:
         config_b = ov_genai.AdapterConfig()
         config_b.add(adapter, 0.0)
 
-        pipe = ov_genai.VLMPipeline(
-            convert_model,
-            "CPU",
-            ATTENTION_BACKEND="PA",
-            adapters=config_a
-        )
+        pipe = ov_genai.VLMPipeline(convert_model, "CPU", ATTENTION_BACKEND="PA", adapters=config_a)
 
         generation_config = ov_genai.GenerationConfig()
         generation_config.max_new_tokens = 100
