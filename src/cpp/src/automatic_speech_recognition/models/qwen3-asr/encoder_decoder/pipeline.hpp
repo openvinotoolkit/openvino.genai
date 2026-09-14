@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "audio_chunk.hpp"
+#include "automatic_speech_recognition/models/qwen3-asr/audio_chunk.hpp"
 #include "automatic_speech_recognition/pipeline_base.hpp"
 #include "decoder.hpp"
 #include "encoder.hpp"
@@ -16,9 +16,9 @@
 
 namespace ov::genai {
 
-class Qwen3ASR : public ASRPipelineImplBase {
+class Qwen3EncoderDecoderASR : public ASRPipelineImplBase {
 public:
-    Qwen3ASR(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties);
+    Qwen3EncoderDecoderASR(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties);
 
     ASRDecodedResults generate(const AudioInputs& audio_inputs,
                                const std::optional<ASRGenerationConfig>& generation_config,
