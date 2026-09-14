@@ -7,6 +7,7 @@
 
 #include "continuous_batching/cache/block_manager.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
+#include "speculative_decoding/continuous_batching/pipeline_impl.hpp"
 
 namespace {
 
@@ -96,6 +97,16 @@ protected:
         }
     };
 
+    class DraftPipeline : public ContinuousBatchingForSpeculativeDecodingImpl {
+    public:
+        DraftPipeline(const std::shared_ptr<ov::genai::Scheduler>& scheduler,
+                      const SequenceGroup::Ptr& group) {
+            m_scheduler = scheduler;
+            m_requests = {group};
+            m_sampler = std::make_shared<ov::genai::Sampler>();
+        }
+    };
+
     std::shared_ptr<CacheOrchestrator> make_orchestrator() {
         auto orchestrator = std::make_shared<CacheOrchestrator>();
         for (const CacheType type : {CacheType::KV_CACHE, CacheType::LINEAR_ATTENTION_CACHE}) {
@@ -124,6 +135,177 @@ protected:
         manager.set_linear_attention_live_state(sequence->get_id(), 4, rows);
     }
 };
+
+TEST_P(PreparedCacheAllocationFailure, PrefixPromotionPreservesPublishedBaseAndAppliesWithoutAllocation) {
+    BlockManager manager(12, true, 4, GetParam(), 0, true, 12);
+    auto group = make_group(0);
+    group->schedule_tokens(4);
+    manager.append_slots(group);
+    group->finish_iteration();
+    const auto sequence = group->get_sequences().front();
+    const uint64_t seq_id = sequence->get_id();
+    manager.advance_linear_attention_live_state(seq_id, 4);
+    const auto original = manager.get_linear_attention_live_state(seq_id);
+    const auto scratch = manager.prepare_temporary_blocks(seq_id, 5);
+    const std::vector<BlockManager::TemporaryPromotionRequest> requests{{seq_id, 5, 4, original.generation}};
+    bool completed = false;
+    size_t failures = 0;
+    for (size_t allocation_index = 0; allocation_index < 512; ++allocation_index) {
+        SCOPED_TRACE(allocation_index);
+        try {
+            FailAllocation failure(allocation_index);
+            auto prepared = manager.prepare_temporary_promotions(requests);
+            allocations_remaining = 0;
+            const auto& indices = prepared.apply();
+            completed = indices.front() == static_cast<size_t>(scratch.block_indices.back());
+        } catch (const std::bad_alloc&) {
+            ++failures;
+        }
+        if (completed) {
+            break;
+        }
+        EXPECT_EQ(manager.get_linear_attention_live_state(seq_id).rows, original.rows);
+        EXPECT_EQ(manager.get_linear_attention_live_state(seq_id).endpoint, 4u);
+        EXPECT_TRUE(manager.has_temporary_blocks(seq_id));
+        EXPECT_EQ(manager.get_block_tables(seq_id).front().size(), 1u);
+    }
+    ASSERT_TRUE(completed);
+    EXPECT_GT(failures, 0u);
+    EXPECT_EQ(manager.get_linear_attention_live_state(seq_id).endpoint, 9u);
+    EXPECT_EQ(manager.get_block_table_logical_start(seq_id), 1u);
+    EXPECT_EQ(manager.get_block_tables(seq_id).front().size(), 2u);
+    EXPECT_EQ(manager.get_block_tables(seq_id).front().front()->get_index(), scratch.block_indices[3]);
+    EXPECT_FALSE(manager.has_temporary_blocks(seq_id));
+    for (const auto& row : original.rows) {
+        EXPECT_TRUE(row->has_published_hash());
+        EXPECT_EQ(row->get_references_count(), 0);
+    }
+    auto consumer = std::make_shared<SequenceGroup>(
+        1, std::vector<int64_t>{1, 2, 3, 4, 5}, ov::genai::GenerationConfig{});
+    ASSERT_TRUE(manager.restore_cached_blocks(consumer));
+    EXPECT_EQ(consumer->get_num_processed_tokens(), 4u);
+    manager.free_sequence(consumer->get_sequences().front()->get_id());
+    manager.free_sequence(seq_id);
+    EXPECT_EQ(manager.num_free_blocks(), 12u);
+}
+
+TEST_P(PreparedCacheAllocationFailure, HybridDraftRejectionRestoresBeforeRecomputation) {
+    for (const bool prefix_caching : {false, true}) {
+        SCOPED_TRACE(prefix_caching);
+        auto orchestrator = std::make_shared<CacheOrchestrator>();
+        for (const CacheType type : {CacheType::KV_CACHE, CacheType::LINEAR_ATTENTION_CACHE}) {
+            const bool linear_attention = type == CacheType::LINEAR_ATTENTION_CACHE;
+            orchestrator->register_cache_type(type, std::make_unique<testing::NiceMock<RowOnlyCacheManager>>(),
+                std::make_unique<BlockManager>(16, prefix_caching, 4, GetParam(),
+                    linear_attention && !prefix_caching ? 1 : 0, linear_attention && prefix_caching), GetParam() > 1);
+        }
+        ov::genai::SchedulerConfig config;
+        config.enable_prefix_caching = prefix_caching;
+        auto scheduler = std::make_shared<ov::genai::Scheduler>(orchestrator, config, false, 1, false);
+        ov::genai::GenerationConfig generation_config;
+        generation_config.num_assistant_tokens = 4;
+        auto group = std::make_shared<SequenceGroup>(
+            0, std::vector<int64_t>{1, 2, 3, 4, 5}, generation_config);
+        DraftPipeline pipeline(scheduler, group);
+        const ov::genai::GeneratedSequences initial{{0, ov::genai::GeneratedSequence(
+            {10, 11, 12, 13}, {0.1f, 0.1f, 0.1f, 0.1f})}};
+        EXPECT_EQ(pipeline.update_request(0, initial, true).inserted_tokens_cnt, 4u);
+        group->schedule_tokens(8);
+        orchestrator->append_slots(group);
+        group->finish_iteration();
+        const uint64_t seq_id = group->get_sequences().front()->get_id();
+        auto& manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+        manager.advance_linear_attention_live_state(seq_id, 8);
+        const ov::genai::GeneratedSequences accepted{{0, ov::genai::GeneratedSequence(
+            {10, 99}, {0.1f, 0.1f})}};
+        const auto update = pipeline.update_request(0, accepted, true);
+        EXPECT_EQ(update.removed_tokens_cnt, 3u);
+        EXPECT_EQ(update.inserted_tokens_cnt, 1u);
+        EXPECT_EQ(group->get_num_processed_tokens(), prefix_caching ? 4u : 0u);
+        EXPECT_EQ(group->get_num_available_tokens_for_batching(), prefix_caching ? 2u : 6u);
+        EXPECT_EQ(manager.has_block_table(seq_id), prefix_caching);
+        if (prefix_caching) {
+            EXPECT_EQ(manager.get_linear_attention_live_state(seq_id).endpoint, 4u);
+        }
+        orchestrator->free_sequence(seq_id);
+        EXPECT_EQ(manager.num_free_blocks(), 16u);
+    }
+}
+
+TEST_P(PreparedCacheAllocationFailure, AbandonedAndStaleRestorePreparationPreserveOwnership) {
+    BlockManager manager(1, true, 4, GetParam(), 0, true, 1);
+    auto producer = make_group(0);
+    producer->schedule_tokens(4);
+    manager.append_slots(producer);
+    const auto rows = manager.get_block_tables(producer->get_sequences().front()->get_id());
+    manager.free_sequence(producer->get_sequences().front()->get_id());
+    auto consumer = std::make_shared<SequenceGroup>(
+        1, std::vector<int64_t>{1, 2, 3, 4, 5}, ov::genai::GenerationConfig{});
+    const uint64_t seq_id = consumer->get_sequences().front()->get_id();
+    const auto plan = manager.get_prefix_restore_plan(consumer);
+    ASSERT_FALSE(plan.empty());
+    {
+        auto prepared = manager.prepare_prefix_restore(consumer, plan);
+        ASSERT_TRUE(prepared.has_value());
+    }
+    EXPECT_FALSE(manager.has_block_table(seq_id));
+    EXPECT_EQ(manager.num_free_blocks(), 1u);
+    for (const auto& layer : rows) {
+        EXPECT_EQ(layer.front()->get_references_count(), 0);
+    }
+    auto competitor = std::make_shared<SequenceGroup>(
+        2, std::vector<int64_t>{6, 7, 8, 9}, ov::genai::GenerationConfig{});
+    competitor->schedule_tokens(4);
+    manager.append_slots(competitor);
+    EXPECT_FALSE(manager.prepare_prefix_restore(consumer, plan).has_value());
+    EXPECT_FALSE(manager.has_block_table(seq_id));
+    EXPECT_EQ(consumer->get_num_processed_tokens(), 0u);
+    manager.free_sequence(competitor->get_sequences().front()->get_id());
+    EXPECT_EQ(manager.num_free_blocks(), 1u);
+}
+
+TEST_P(PreparedCacheAllocationFailure, HybridRestorePreparationIsAtomic) {
+    auto orchestrator = std::make_shared<CacheOrchestrator>();
+    auto producer = make_group(0);
+    producer->schedule_tokens(4);
+    for (const CacheType type : {CacheType::KV_CACHE, CacheType::LINEAR_ATTENTION_CACHE}) {
+        auto manager = std::make_unique<BlockManager>(8, true, 4, GetParam(), 0,
+                                                      type == CacheType::LINEAR_ATTENTION_CACHE);
+        manager->append_slots(producer);
+        manager->free_sequence(producer->get_sequences().front()->get_id());
+        orchestrator->register_cache_type(type, std::make_unique<testing::NiceMock<RowOnlyCacheManager>>(),
+                                           std::move(manager), GetParam() > 1);
+    }
+    auto consumer = std::make_shared<SequenceGroup>(
+        1, std::vector<int64_t>{1, 2, 3, 4, 5}, ov::genai::GenerationConfig{});
+    const uint64_t seq_id = consumer->get_sequences().front()->get_id();
+    bool completed = false;
+    size_t failures = 0;
+    for (size_t allocation_index = 0; allocation_index < 512; ++allocation_index) {
+        SCOPED_TRACE(allocation_index);
+        try {
+            FailAllocation failure(allocation_index);
+            orchestrator->restore_cached_blocks(consumer);
+            completed = true;
+        } catch (const std::bad_alloc&) {
+            ++failures;
+        }
+        EXPECT_EQ(consumer->get_num_processed_tokens(), completed ? 4u : 0u);
+        for (const CacheType type : {CacheType::KV_CACHE, CacheType::LINEAR_ATTENTION_CACHE}) {
+            auto& manager = orchestrator->get_block_manager(type);
+            EXPECT_EQ(manager.has_block_table(seq_id), completed);
+            EXPECT_EQ(manager.num_free_blocks(), completed ? 7u : 8u);
+        }
+        if (completed) {
+            break;
+        }
+    }
+    ASSERT_TRUE(completed);
+    EXPECT_GT(failures, 0u);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE)
+                  .get_linear_attention_live_state(seq_id).endpoint, 4u);
+    orchestrator->free_sequence(seq_id);
+}
 
 TEST_P(PreparedCacheAllocationFailure, PublicationPreparationPreservesWholeSetOnEveryAllocationFailure) {
     BlockManager manager(8, true, 4, GetParam());
