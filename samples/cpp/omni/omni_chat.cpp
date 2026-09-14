@@ -11,6 +11,7 @@
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/omni/pipeline.hpp"
 #include "openvino/genai/omni/talker_speech_config.hpp"
+#include "openvino/runtime/properties.hpp"
 
 ov::genai::StreamingStatus print_subword(std::string&& subword) {
     std::cout << subword << std::flush;
@@ -48,8 +49,11 @@ int main(int argc, char* argv[]) try {
     // sharing a VLM base across pipelines, or injecting custom TalkerBase implementations.
     // For simpler use cases: ov::genai::OmniPipeline pipe(models_path, "CPU");
 
-    auto vlm = std::make_shared<ov::genai::VLMPipeline>(models_path, "CPU");
-    auto talker = std::make_shared<ov::genai::Talker>(models_path, "CPU");
+    // Pinning off because stream_text2speech has both stages inferring at once, which leaves a
+    // pinned talker confined to a single core for the whole call.
+    auto vlm = std::make_shared<ov::genai::VLMPipeline>(models_path, "CPU", ov::hint::enable_cpu_pinning(false));
+    auto talker =
+        std::make_shared<ov::genai::Talker>(models_path, "CPU", ov::AnyMap{ov::hint::enable_cpu_pinning(false)});
     ov::genai::OmniPipeline pipe(vlm, talker);
 
     std::cout << "OmniPipeline composed successfully.\n";

@@ -648,6 +648,10 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  *        afterwards have already reached the talker, so the speech may voice up to one stop string
  *        more than the returned text shows. Leave stream_text2speech off if the two must agree
  *        exactly.
+ *        Threading: the two stages infer at the same time, which on Linux CPU leaves the talker on a
+ *        single core under the default ov::hint::enable_cpu_pinning(true). Compile both stages with
+ *        ov::hint::enable_cpu_pinning(false). ov::hint::enable_cpu_reservation(true) would be the
+ *        better fix, but compilation currently fails with "proc_type_table is empty. No valid CPU resources available!": TODO ticket.
  */
 class OPENVINO_GENAI_EXPORTS GenerationConfig {
 public:
