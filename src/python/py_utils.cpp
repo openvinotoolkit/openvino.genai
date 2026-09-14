@@ -17,6 +17,7 @@
 #include "openvino/genai/extensions.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/omni/talker_speech_config.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/genai/taylorseer_config.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
@@ -429,6 +430,10 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         return py::cast<ov::genai::SchedulerConfig>(py_obj);
     } else if (py::isinstance<ov::genai::AdapterConfig>(py_obj)) {
         return py::cast<ov::genai::AdapterConfig>(py_obj);
+    } else if (py::isinstance<ov::genai::OmniTalkerSpeechConfig>(py_obj)) {
+        // TalkerBase::generate documents talker_speech_config as a keyword and
+        // resolve_talker_properties() reads it back with as<OmniTalkerSpeechConfig>().
+        return py::cast<ov::genai::OmniTalkerSpeechConfig>(py_obj);
     } else if (py::isinstance<ov::genai::StructuralTagItem>(py_obj)) {
         return py::cast<ov::genai::StructuralTagItem>(py_obj);
     } else if (py::isinstance<ov::genai::StructuralTagsConfig>(py_obj)) {
