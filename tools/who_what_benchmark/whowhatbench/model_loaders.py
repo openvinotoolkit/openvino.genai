@@ -569,6 +569,16 @@ def load_visual_text_model(
             elif config.model_type == "gemma3n":
                 model_cls = AutoModelForCausalLM
                 model_kwargs["torch_dtype"] = model_kwargs["torch_dtype"] or torch.float32
+            elif config.model_type == "deepseek_ocr2":
+                from transformers import AutoModelForImageTextToText
+
+                model_cls = AutoModelForImageTextToText
+                if model_kwargs["torch_dtype"] not in (None, torch.float32):
+                    logger.warning(
+                        "DeepSeek-OCR2 requires torch.float32 in WWB; ignoring requested torch dtype %s.",
+                        model_kwargs["torch_dtype"],
+                    )
+                model_kwargs.update({"torch_dtype": torch.float32})
             elif transformers_version < Version("5.0.0"):
                 from transformers import AutoModelForVision2Seq
 
