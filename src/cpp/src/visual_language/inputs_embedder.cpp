@@ -24,6 +24,7 @@
 #include "visual_language/gemma3/classes.hpp"
 #include "visual_language/gemma3n/classes.hpp"
 #include "visual_language/gemma4/classes.hpp"
+#include "visual_language/deepseek_ocr2/classes.hpp"
 #include "visual_language/videochat_flash/classes.hpp"
 #include "visual_language/muse_glimmer/classes.hpp"
 
@@ -319,31 +320,6 @@ NormalizedPrompt InputsEmbedder::IInputsEmbedder::normalize_prompt(
     return normalize_prompt(prompt, base_image_id, images);
 }
 
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_embeds_with_token_type_ids(
-    const std::string& prompt,
-    const std::vector<EncodedImage>& images,
-    VLMPerfMetrics& metrics,
-    bool recalculate_merged_embeddings,
-    const std::vector<size_t>& image_sequence) {
-    OPENVINO_THROW("This model does not support token_type_ids.");
-}
-
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_embeds_with_token_type_ids(
-    const std::string& prompt,
-    const std::vector<EncodedImage>& images,
-    const std::vector<EncodedVideo>& videos,
-    VLMPerfMetrics& metrics,
-    bool recalculate_merged_embeddings,
-    const std::vector<size_t>& image_sequence,
-    const std::vector<size_t>& videos_sequence,
-    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
-) {
-    throw_if_video_not_implemented(videos);
-    return get_inputs_embeds_with_token_type_ids(prompt, images, metrics, recalculate_merged_embeddings, image_sequence);
-}
-
-bool InputsEmbedder::IInputsEmbedder::has_token_type_ids() const { return false; }
-
 const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::IInputsEmbedder::get_lm_extra_inputs() const {
     static const std::unordered_map<std::string, ov::Tensor> empty_map;
     return empty_map;
@@ -396,6 +372,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderGemma4>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
         m_impl = std::make_shared<InputsEmbedderVideoChatFlashQwen>(vlm_config, model_dir, tokenizer, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::DEEPSEEK_OCR2) {
+        m_impl = std::make_shared<InputsEmbedderDeepseekOCR2>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::MUSE_GLIMMER) {
         m_impl = std::make_shared<InputsEmbedderMuseGlimmer>(vlm_config, model_dir, tokenizer, device, device_config);
     } else {
@@ -446,6 +424,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
         m_impl = std::make_shared<InputsEmbedderGemma4>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
         m_impl = std::make_shared<InputsEmbedderVideoChatFlashQwen>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::DEEPSEEK_OCR2) {
+        m_impl = std::make_shared<InputsEmbedderDeepseekOCR2>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::MUSE_GLIMMER) {
         m_impl = std::make_shared<InputsEmbedderMuseGlimmer>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else {
@@ -473,39 +453,6 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt,
                                      images_sequence,
                                      videos_sequence,
                                      history_vision_count);
-}
-
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::get_inputs_embeds_with_token_type_ids(
-    const std::string& prompt,
-    const std::vector<EncodedImage>& images,
-    VLMPerfMetrics& metrics,
-    bool recalculate_merged_embeddings,
-    const std::vector<size_t>& image_sequence) {
-    return m_impl->get_inputs_embeds_with_token_type_ids(
-        prompt, images, metrics, recalculate_merged_embeddings, image_sequence);
-}
-
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::get_inputs_embeds_with_token_type_ids(
-    const std::string& prompt,
-    const std::vector<EncodedImage>& images,
-    const std::vector<EncodedVideo>& videos,
-    VLMPerfMetrics& metrics,
-    bool recalculate_merged_embeddings,
-    const std::vector<size_t>& image_sequence,
-    const std::vector<size_t>& videos_sequence,
-    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
-    return m_impl->get_inputs_embeds_with_token_type_ids(prompt,
-                                                         images,
-                                                         videos,
-                                                         metrics,
-                                                         recalculate_merged_embeddings,
-                                                         image_sequence,
-                                                         videos_sequence,
-                                                         history_vision_count);
-}
-
-bool InputsEmbedder::has_token_type_ids() const {
-    return m_impl->has_token_type_ids();
 }
 
 const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::get_lm_extra_inputs() const {

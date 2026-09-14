@@ -313,7 +313,8 @@ public:
         const bool do_cfg = do_classifier_free_guidance(generation_config);
 
         auto infer_start = std::chrono::steady_clock::now();
-        ov::Tensor encoder_output = m_text_encoder->infer(positive_prompt, "", do_cfg, generation_config.max_sequence_length);
+        ov::Tensor encoder_output =
+            m_text_encoder->infer(positive_prompt, "", do_cfg, generation_config.max_sequence_length, {9, 18, 27});
         auto infer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - infer_start).count();
         m_perf_metrics.encoder_inference_duration["text_encoder"] = infer_duration;
 

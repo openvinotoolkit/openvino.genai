@@ -97,9 +97,7 @@ jobs:
       with:
         platform: ubuntu22
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
-        # Workaround for ScatterNDUpdate exception.
-        # The ticket for tracking: CVS-192302
-        revision: aa154b5f870b9b1c118dabc970989f9c7de163d3
+        revision: latest_available_commit
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
         # event_name: pull_request
@@ -109,9 +107,7 @@ jobs:
       with:
         repository: 'openvinotoolkit/openvino'
         path: 'openvino'
-        # ref: ${{ env.OV_BRANCH }}
-        # Must match the pinned revision above so the docker image matches the OV artifacts. Ticket: 192302
-        ref: aa154b5f870b9b1c118dabc970989f9c7de163d3
+        ref: ${{ env.OV_BRANCH }}
         sparse-checkout: |
           .github/dockerfiles/docker_tag
 
@@ -336,6 +332,8 @@ jobs:
       WHEELS_DIR: ${{ github.workspace }}/install/wheels
       SRC_DIR: ${{ github.workspace }}/src
       OpenVINODeveloperPackage_DIR: ${{ github.workspace }}/ov/developer_package/cmake
+      # Per-Python-version cache prefix so each matrix leg keeps its own sccache entries.
+      SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64/py${{ matrix.python-version }}
     steps:
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -366,7 +364,12 @@ jobs:
       - name: Build GenAI Wheel
         run: |
           python_exec_path=$(python${{ matrix.python-version }} -c "import sys; print(sys.executable)")
-          $python_exec_path -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+
+          # Install build requirements read from pyproject so the list isn't duplicated here; --no-build-isolation skips pip's auto build-deps and a stable OpenVINO path keeps sccache warm.
+          mapfile -t build_reqs < <(python3.11 -c "import sys, tomllib; print('\n'.join(tomllib.load(open(sys.argv[1], 'rb'))['build-system']['requires']))" "${{ env.SRC_DIR }}/pyproject.toml")
+          $python_exec_path -m pip install "${build_reqs[@]}" ${{ needs.openvino_download.outputs.ov_wheel_source }}
+
+          $python_exec_path -m pip wheel -v --no-deps --no-build-isolation --wheel-dir ${{ env.WHEELS_DIR }} \
               --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
               --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_C_COMPILER_LAUNCHER=sccache" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
@@ -847,12 +850,23 @@ jobs:
         env:
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
 
+      - name: Test LLM Benchmark Tools Image2Video
+        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench }}
+        run: |
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+          # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
+          python -m pip install transformers==5.0.0
+          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and not transformers_lower_v5 and not transformers_higher_v5_1" -k "image2video"
+        env:
+          SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
       - name: Test LLM Benchmark Tools
         if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench }}
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pip install "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
-          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and not transformers_lower_v5 and not transformers_higher_v5_1"
+          # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
+          python -m pip install transformers==5.0.0
+          python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
+          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and not transformers_lower_v5 and not transformers_higher_v5_1" -k "not image2video"
         env:
           SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
       - name: Test LLM Benchmark Tools transformers under 5.0
@@ -868,7 +882,7 @@ jobs:
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           python -m pip install transformers==5.1
-          python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@6898d97242498b7dc4367a12555e4f7e52b01d16
+          python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@6898d97242498b7dc4367a12555e4f7e52b01d16#egg=optimum-intel"
           python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and transformers_higher_v5_1"
         env:
           SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
@@ -943,6 +957,10 @@ jobs:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai"
           requirements_files: "${{ env.SRC_DIR }}/tests/python_tests/requirements.txt"
           local_wheel_dir: ${{ env.PY_INSTALL_DIR }}/wheels
+
+      # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
+      - name: Install Transformers compatibility version
+        run: python -m pip install transformers==5.0.0
 
       # JS pacakges uses the OpenVINO and OpenVINO GenAI libraries from the bin directory.
       # Here we emulate the installation of the openvino-node package from NPM. The latest
@@ -1025,13 +1043,15 @@ jobs:
           PYTHONPATH: "${{ env.BUILD_DIR }}:"
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
+          # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
+          python -m pip install transformers==5.0.0
           python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_llm_pipeline.py -k "not test_perf_metrics_with_structured_output" -m "not transformers_lower_v5"
       - name: Run test_llm_pipeline.py when -DENABLE_XGRAMMAR=OFF and transformers under 5.0
         env:
           PYTHONPATH: "${{ env.BUILD_DIR }}:"
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pip install transformers==4.55.4 diffusers==0.37.1
+          python -m pip install transformers==4.57.6 diffusers==0.37.1
           python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_llm_pipeline.py -m "transformers_lower_v5 or transformers_dependent"
 
   Overall_Status:

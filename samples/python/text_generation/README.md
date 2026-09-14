@@ -163,6 +163,8 @@ Recommended models: meta-llama/Llama-2-13b-hf as main model and TinyLlama/TinyLl
   | `branching_factor` | `1` | ContinuousBatching (EAGLE only) | Number of candidate tokens to consider at each tree level when running tree-based speculative decoding. |
   | `tree_depth` | `0` | ContinuousBatching (EAGLE only) | Depth of the candidate token tree. Tree drafting requires `num_assistant_tokens >= tree_depth`. |
 
+  The sample prints accepted, rejected, and total draft candidate tokens. Draft candidate tokens are the tokens offered to the main model for validation and are the denominator for acceptance rate. Draft model processed tokens come from the draft model performance metrics and can include extra draft-side work such as cache or state alignment.
+
   Example:
   ```python
   config = openvino_genai.GenerationConfig()

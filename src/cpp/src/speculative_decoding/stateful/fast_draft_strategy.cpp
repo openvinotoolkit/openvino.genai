@@ -455,6 +455,8 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
     std::shared_ptr<StreamerBase> streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
     ov::genai::EncodedResults results;
     auto& raw_perf_counters = m_sd_perf_metrics.raw_metrics;
+    m_sd_perf_metrics.num_accepted_tokens = 0;
+    m_sd_perf_metrics.num_draft_tokens = 0;
     // NB: Only batch=1 is supported now.
     // NB: In the case of greedy decoding scores are filled with zeros.
     results.scores.resize(1u);
@@ -637,6 +639,8 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
 
         auto& main_perf_generated_tokens = m_main_request->raw_perf_metrics.m_batch_sizes.back();
         main_perf_generated_tokens -= mismatched_candidates;
+        m_sd_perf_metrics.num_draft_tokens += candidates_to_generate;
+        m_sd_perf_metrics.num_accepted_tokens += accepted_tokens_number;
         m_sd_metrics.update_draft_generated_len(0 /* request_id */, candidates_to_generate);
         m_sd_metrics.update_acceptance_rate(0 /* request_id */, (accepted_tokens_number * 100.f) / candidates_to_generate);
         m_sd_metrics.update_draft_accepted_tokens(0 /* request_id */, accepted_tokens_number);

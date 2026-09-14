@@ -14,7 +14,7 @@ import llm_bench_utils.gen_output_data as gen_output_data
 import llm_bench_utils.parse_json_data as parse_json_data
 from llm_bench_utils.hook_forward_whisper import ASRHook
 
-FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
+FW_UTILS = {"pt": llm_bench_utils.pt_utils, "ov": llm_bench_utils.ov_utils}
 asr_hook = ASRHook()
 
 DEFAULT_OUTPUT_TOKEN_SIZE = 1000

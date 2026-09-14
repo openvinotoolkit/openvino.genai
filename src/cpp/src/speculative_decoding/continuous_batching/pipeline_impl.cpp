@@ -3,6 +3,7 @@
 
 #include "pipeline_impl.hpp"
 #include <numeric>
+#include <optional>
 
 #include "sequence_group.hpp"
 
@@ -98,11 +99,13 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_ge
             if (!(eagle_mode_enabled && m_is_validation_mode_enabled)) {
                 num_processed_tokens = 0;
             }
+            // Publish an initialized empty tensor for unscheduled sequences.
+            const ov::Tensor hidden_state = sequence->get_hidden_state();
             generated_request.insert({{sequence_id,
                                        {sequence->get_generated_ids(),
                                         sequence->get_generated_log_probs(),
                                         num_processed_tokens,
-                                        sequence->get_hidden_state(),
+                                        hidden_state ? hidden_state : ov::Tensor(ov::element::f32, ov::Shape{0, 1, 0}),
                                         std::move(tree_metadata_snapshot)}}});
         }
     }
@@ -152,6 +155,31 @@ ov::Tensor select_rows_by_indices(const ov::Tensor& tensor, const std::vector<si
     }
 
     return result;
+}
+
+detail::MtpDraftUpdatePlan detail::make_mtp_draft_update_plan(size_t main_hidden_state_len,
+                                                              size_t removed_draft_tokens) {
+    OPENVINO_ASSERT(main_hidden_state_len > 0, "MTP requires at least one main-model hidden state.");
+    OPENVINO_ASSERT(removed_draft_tokens < main_hidden_state_len,
+                    "Cannot remove ",
+                    removed_draft_tokens,
+                    " draft tokens with ",
+                    main_hidden_state_len,
+                    " main-model hidden states.");
+
+    if (removed_draft_tokens > 0) {
+        // For N candidates and k accepted candidates, draft KV already ends at candidate k.
+        // Rewind past the rejected KV suffix and forward only the target's replacement token,
+        // pairing it with target hidden[k].
+        return {main_hidden_state_len - removed_draft_tokens - 1, 1, removed_draft_tokens - 1, 0};
+    }
+
+    OPENVINO_ASSERT(main_hidden_state_len >= 2,
+                    "Full MTP acceptance requires hidden states for the last draft candidate and verifier bonus.");
+    // Draft KV ends at candidate N-1. Candidate N and the target's bonus token are the only
+    // unprocessed tokens; one validation token tells the draft sampler to consume both and
+    // sample only after the bonus token.
+    return {main_hidden_state_len - 2, 2, 0, 1};
 }
 
 // Look up a candidate for the given running sequence.
@@ -342,6 +370,35 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         OPENVINO_ASSERT(running_sequences.size() > 0);
         size_t min_generated_tokens, min_candidate_len;
         int num_tokens_needs_kv_update = -1;
+        detail::MtpDraftUpdatePlan mtp_update_plan;
+        bool has_mtp_update_plan = false;
+        // Pause hidden-state-paired drafting when the main request was deferred.
+        const bool requires_main_hidden_state =
+            (eagle_mode_enabled || mtp_mode_enabled) && !m_is_validation_mode_enabled;
+        // get_generated_requests() duplicates this request-level value into every candidate.
+        // Keep one copy here and verify that producer invariant before using it for group-wide alignment.
+        // Only the Eagle paths below read it, so the check stays off other strategies' hot path.
+        std::optional<size_t> main_num_processed_tokens;
+        if (eagle_mode_enabled) {
+            for (const auto& candidate : candidates) {
+                if (!main_num_processed_tokens.has_value()) {
+                    main_num_processed_tokens = candidate.second.num_processed_tokens;
+                } else {
+                    OPENVINO_ASSERT(*main_num_processed_tokens == candidate.second.num_processed_tokens,
+                                    "Candidates from one request must report the same num_processed_tokens. "
+                                    "get_generated_requests() copies one request-level value into every "
+                                    "candidate; a producer that publishes per-sequence progress instead must "
+                                    "also rework the group-wide Eagle alignment and pause decisions here.");
+                }
+            }
+        }
+        const auto published_hidden_state_it =
+            std::find_if(candidates.begin(), candidates.end(), [](const auto& candidate) {
+                return candidate.second.hidden_states && candidate.second.hidden_states.get_size() > 0;
+            });
+        const bool main_published_hidden_state = published_hidden_state_it != candidates.end();
+        const bool should_pause_for_missing_main_hidden_state =
+            requires_main_hidden_state && !main_published_hidden_state;
         if (running_sequences.front()->get_generated_len() == 0 && !request->get_num_tokens_to_validate()) {
             m_sampler->create_logit_processor(request_id, request->get_sampling_parameters(), request->get_prompt_ids());
             auto& logit_processor = m_sampler->get_logit_processor(request_id);
@@ -349,9 +406,14 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
             min_generated_tokens = result.inserted_tokens_cnt;
             running_sequences = request->get_running_sequences();
             min_candidate_len = result.inserted_tokens_cnt;
-            if (eagle_mode_enabled && !m_is_validation_mode_enabled) {
+            if (requires_main_hidden_state && main_published_hidden_state) {
                 m_model_runner->set_initial_hidden_state(request_id,
-                                                     candidates.begin()->second.hidden_states);
+                                                         published_hidden_state_it->second.hidden_states);
+                if (mtp_mode_enabled && m_scheduler) {
+                    m_scheduler->set_expected_num_scheduled_tokens(
+                        request_id,
+                        published_hidden_state_it->second.hidden_states.get_shape()[0]);
+                }
             }
         } else {
             // update existing sequences by the candidates
@@ -383,7 +445,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                     // update hidden states for draft model
                     const auto& hidden_state = candidate_sequence.hidden_states;
                     OPENVINO_ASSERT(
-                        hidden_state.get_size() > 0,
+                        hidden_state && hidden_state.get_size() > 0,
                         "Hidden states are required for eagle mode but the main model returned an empty tensor.");
                     OPENVINO_ASSERT(
                         !hidden_state.get_shape().empty(),
@@ -418,6 +480,25 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                     // Calculate the number of tokens that need KV cache re-generation in draft model
                     // Safe cast: we know indices is not empty (asserted above)
                     num_tokens_needs_kv_update = static_cast<int>(indices.size()) - 1;
+                } else if (mtp_mode_enabled && !m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) {
+                    const auto& hidden_state = candidate_sequence.hidden_states;
+                    OPENVINO_ASSERT(hidden_state && hidden_state.get_size() > 0,
+                                    "Hidden states are required for MTP but the main model returned an empty tensor.");
+                    OPENVINO_ASSERT(!hidden_state.get_shape().empty(),
+                                    "Hidden states are required for MTP but the main model returned a scalar tensor.");
+
+                    mtp_update_plan =
+                        detail::make_mtp_draft_update_plan(hidden_state.get_shape()[0], result.removed_tokens_cnt);
+                    has_mtp_update_plan = true;
+
+                    std::vector<size_t> indices(mtp_update_plan.hidden_state_count);
+                    std::iota(indices.begin(), indices.end(), mtp_update_plan.hidden_state_start);
+                    m_model_runner->set_initial_hidden_state(request_id, select_rows_by_indices(hidden_state, indices));
+                    if (m_scheduler) {
+                        m_scheduler->set_expected_num_scheduled_tokens(request_id,
+                                                                       mtp_update_plan.hidden_state_count);
+                    }
+                    num_tokens_needs_kv_update = static_cast<int>(mtp_update_plan.num_tokens_to_validate);
                 }
                 if (candidate_sequence.tree_metadata && m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) {
                     TreeMetaData merged = *candidate_sequence.tree_metadata;
@@ -441,7 +522,12 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
 
         // Update processed tokens count based on KV cache update requirements
         if (generated_len > 0) {
-            if (num_tokens_needs_kv_update > 0) {
+            if (has_mtp_update_plan) {
+                OPENVINO_ASSERT(mtp_update_plan.processed_tokens_to_rewind <= num_processed_tokens,
+                                "MTP processed-token rewind exceeds the processed prefix.");
+                request->update_processed_tokens_num(num_processed_tokens -
+                                                     mtp_update_plan.processed_tokens_to_rewind);
+            } else if (num_tokens_needs_kv_update > 0) {
                 // rewind to stable KV position accounting for tree structure
                 request->update_processed_tokens_num(num_processed_tokens - result.removed_tokens_cnt + 1 - num_tokens_needs_kv_update);
             } else if (result.removed_tokens_cnt > 0) {
@@ -467,9 +553,9 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         const bool is_prompt_phase = current_num_processed_tokens < prompt_len;
         if (eagle_mode_enabled && !m_is_validation_mode_enabled && m_scheduler &&
             m_scheduler->get_config().dynamic_split_fuse && is_prompt_phase) {
-            const size_t main_num_processed_tokens = candidates.begin()->second.num_processed_tokens;
-            const size_t scheduled_delta = main_num_processed_tokens > current_num_processed_tokens
-                                               ? main_num_processed_tokens - current_num_processed_tokens
+            const size_t main_processed_tokens = main_num_processed_tokens.value_or(0);
+            const size_t scheduled_delta = main_processed_tokens > current_num_processed_tokens
+                                               ? main_processed_tokens - current_num_processed_tokens
                                                : 0;
             const size_t expected_num_scheduled_tokens = scheduled_delta + request->get_num_tokens_to_validate();
             if (expected_num_scheduled_tokens > 0) {
@@ -483,6 +569,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         //    `main_model` does not insert a new token in the current step.
         // 3. (Eagle3 only) `main_model` has not started processing this request yet
         //    (common with multiple requests); this prevents `draft_model` from running ahead of `main_model`.
+        // 4. Hidden-state-paired drafting is waiting for a deferred main-model request.
         // Start `draft_model` generation after the first `main_model` generation is finished. There are two scenarios:
         // 1. When `main_model` generates a new token, in which case `draft_model` naturally starts its generation.
         // 2. When `main_model` does not generate a new token, which usually happens when processing a portion of prompt (we can
@@ -493,9 +580,9 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
             generated_len -= result.removed_tokens_cnt;
             generated_len += result.inserted_tokens_cnt;
             const bool should_pause_for_main_alignment =
-                eagle_mode_enabled && candidates.begin()->second.num_processed_tokens == 0;
+                eagle_mode_enabled && main_num_processed_tokens.value_or(0) == 0;
             if (generated_len >= max_new_tokens - 1 || (generated_len != 0 && result.inserted_tokens_cnt == 0) ||
-                should_pause_for_main_alignment) {
+                should_pause_for_main_alignment || should_pause_for_missing_main_hidden_state) {
                 pause_gen_status = true;
             }
             request->pause_generation(pause_gen_status);
@@ -542,42 +629,6 @@ bool ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::i
 
 size_t ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_processed_tokens_per_iteration() {
     return m_batch_size;
-}
-
-std::optional<uint64_t> ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::
-reserve_linear_attention_checkpoints_for_next_step(uint64_t request_id, size_t checkpoint_count) {
-    if (!m_scheduler || !m_scheduler->has_linear_attention_cache()) {
-        return std::nullopt;
-    }
-    for (const auto& request : m_requests) {
-        if (request->get_request_id() != request_id) {
-            continue;
-        }
-        const auto running_sequences = request->get_running_sequences();
-        OPENVINO_ASSERT(running_sequences.size() == 1,
-                        "Linear attention checkpointing supports one running sequence per DFlash request.");
-        const uint64_t seq_id = running_sequences.front()->get_id();
-        m_scheduler->reserve_linear_attention_checkpoints_for_next_schedule(seq_id, checkpoint_count);
-        return seq_id;
-    }
-    OPENVINO_ASSERT(false, "Cannot reserve linear attention checkpoints: request ", request_id, " was not found.");
-    return std::nullopt;
-}
-
-void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::
-promote_linear_attention_checkpoint_for_sequence(std::optional<uint64_t> seq_id, size_t checkpoint_slot) {
-    if (!m_scheduler || !seq_id) {
-        return;
-    }
-    m_scheduler->promote_linear_attention_checkpoint(*seq_id, checkpoint_slot);
-}
-
-void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::
-release_linear_attention_checkpoints_for_sequence(std::optional<uint64_t> seq_id) {
-    if (!m_scheduler || !seq_id) {
-        return;
-    }
-    m_scheduler->release_linear_attention_checkpoints(*seq_id);
 }
 
 bool ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::rewind_awaiting_request_prefix(
@@ -642,7 +693,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
             raw_perf_metrics.m_batch_sizes.emplace_back(num_generated_tokens);
         }
 
-        if (eagle_mode_enabled)
+        if (eagle_mode_enabled || mtp_mode_enabled)
             m_model_runner->enable_hidden_state_import(false);
         to_generate = false;
         for (auto& request : m_requests) {
@@ -664,6 +715,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
                 request->pause_generation(true);
             } else if (request->get_num_processed_tokens() == request->get_prompt_len()) {
                 request->pause_generation(true);
+            } else if (mtp_mode_enabled && request->get_num_processed_tokens() < request->get_prompt_len()) {
+                request->pause_generation(true);
             } else if (!sampling_params.is_tree_search() && is_stop_token_id_hit_in_sequence_group(request, sampling_params.stop_token_ids)) {
                 // in branching tree mode, we ignore the stop token, as we may have several candidates at the same tree layer
                 request->pause_generation(true);
@@ -681,7 +734,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
             m_scheduler->clear_expected_num_scheduled_tokens(request->get_request_id());
         }
     }
-    if (eagle_mode_enabled)
+    if (eagle_mode_enabled || mtp_mode_enabled)
         m_model_runner->enable_hidden_state_import(true);
 }
 

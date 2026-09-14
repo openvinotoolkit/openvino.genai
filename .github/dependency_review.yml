@@ -16,12 +16,19 @@ allow-licenses:
   - "LGPL-2.0-or-later"
   - "LicenseRef-scancode-proprietary-license"
   - "LicenseRef-scancode-unicode"
+  # Numpy licenses
+  - "Zlib"
+  - "CC0-1.0"
 fail-on-scopes:
   - "runtime"
   - "development"
   - "unknown"
 license-check: true
 vulnerability-check: true
+allow-ghsas:
+  # Transformers 5.10.0 fixes this issue, but the pinned Optimum Intel revision requires transformers<5.6.
+  # The existing transformers 5.0.0 baseline is also affected, so this upgrade does not introduce the vulnerability.
+  - "GHSA-xrqw-3rrv-vx5w"
 allow-dependencies-licenses:
   - "pkg:npm/thingies" # Docs site (dependency of dependency)
   - "pkg:npm/flatted" # Docs site (dependency of dependency)

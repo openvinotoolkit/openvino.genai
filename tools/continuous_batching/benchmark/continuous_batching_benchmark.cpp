@@ -157,16 +157,18 @@ class GenerationInfo {
             this->start_time = start_time;
         }
 
-        void update() {
+        void update(size_t num_generated_tokens) {
+            OPENVINO_ASSERT(num_generated_tokens > 0);
             std::chrono::steady_clock::time_point new_read_time = std::chrono::steady_clock::now();
             if (last_read_time.time_since_epoch() == std::chrono::milliseconds::zero()) {
                 ttft = std::chrono::duration_cast<std::chrono::milliseconds>(new_read_time - start_time);
             } else {
                 cumulated_tpot += std::chrono::duration_cast<std::chrono::milliseconds>(new_read_time - last_read_time);
-                mean_tpot = cumulated_tpot / num_output_tokens;
-
             }
-            num_output_tokens++;
+            num_output_tokens += num_generated_tokens;
+            if (num_output_tokens > 1) {
+                mean_tpot = cumulated_tpot / (num_output_tokens - 1);
+            }
             last_read_time = new_read_time;
         }
     };
@@ -175,7 +177,7 @@ class GenerationInfo {
         std::chrono::milliseconds mean_ttft = std::chrono::milliseconds::zero();
         std::chrono::milliseconds mean_tpot = std::chrono::milliseconds::zero();
         size_t num_output_tokens = 0;
-        size_t num_input_tokens;
+        size_t num_input_tokens = 0;
     };
 
     ov::genai::GenerationHandle generation_handle;
@@ -191,15 +193,17 @@ public:
         start_time = std::chrono::steady_clock::now();
     }
 
-    void update_sequence(int64_t sequence_id) {
+    void update_sequence(int64_t sequence_id, size_t num_generated_tokens) {
         if (sequences_info.find(sequence_id) == sequences_info.end())
             sequences_info.emplace(sequence_id, SequenceInfo(start_time));
-        sequences_info.at(sequence_id).update();
+        sequences_info.at(sequence_id).update(num_generated_tokens);
     }
 
     void update(ov::genai::GenerationOutputs& outputs){
         for (auto const& output: outputs) {
-            update_sequence(output.first);
+            if (!output.second.generated_ids.empty()) {
+                update_sequence(output.first, output.second.generated_ids.size());
+            }
         }
     }
 
@@ -251,11 +255,15 @@ public:
         this->start_time = start_time;
     }
 
-    void add_generation(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* dataset, size_t request_id, bool is_speculative_decoding_enabled) {
+    void add_generation(ov::genai::ContinuousBatchingPipeline* pipe,
+                        Dataset* dataset,
+                        size_t request_id,
+                        bool is_speculative_decoding_enabled,
+                        size_t num_assistant_tokens) {
         auto sampling_params = dataset->m_sampling_params[request_id];
         if (is_speculative_decoding_enabled) {
             // to enable static speculative decoding
-            sampling_params.num_assistant_tokens = 5;
+            sampling_params.num_assistant_tokens = num_assistant_tokens;
             // to enable dynamic speculative decoding
             // sampling_params.assistant_confidence_threshold = 0.4f;
         }
@@ -270,12 +278,12 @@ public:
             if (!generation_info.is_active())
                 continue;
             
-            if (generation_info.is_finished()) {
-                num_finished++;
-                generation_info.set_inactive();
-            } else if (generation_info.can_read()) {
+            if (generation_info.can_read()) {
                 auto outputs = generation_info.read();
                 generation_info.update(outputs);
+            } else if (generation_info.is_finished()) {
+                num_finished++;
+                generation_info.set_inactive();
             }
         }
         return num_finished;
@@ -308,7 +316,12 @@ public:
     }
 };
 
-void trafficSimulator(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* dataset, std::string request_rate, GenerationInfoCollector* generation_info_collector, bool is_speculative_decoding_enabled) {
+void trafficSimulator(ov::genai::ContinuousBatchingPipeline* pipe,
+                      Dataset* dataset,
+                      std::string request_rate,
+                      GenerationInfoCollector* generation_info_collector,
+                      bool is_speculative_decoding_enabled,
+                      size_t num_assistant_tokens) {
     double numeric_request_rate;
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -335,7 +348,11 @@ void trafficSimulator(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* data
     generation_info_collector->set_start_time(std::chrono::steady_clock::now());
     for (size_t request_id = 0; request_id < dataset->size(); ++request_id) {
         std::cout << "Traffic thread adding request to the queue..." << std::endl;
-        generation_info_collector->add_generation(pipe, dataset, request_id, is_speculative_decoding_enabled);
+        generation_info_collector->add_generation(pipe,
+                              dataset,
+                              request_id,
+                              is_speculative_decoding_enabled,
+                              num_assistant_tokens);
         if (numeric_request_rate > 0)
             std::this_thread::sleep_for(std::chrono::milliseconds(int(distribution(gen) * 1000)));
     }
@@ -437,6 +454,7 @@ int main(int argc, char* argv[]) try {
     ("dynamic_split_fuse", "Whether to use dynamic split-fuse or vLLM scheduling", cxxopts::value<bool>()->default_value("true"))
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
     ("draft_model", "Path to assistant model directory", cxxopts::value<std::string>()->default_value(""))
+    ("num_assistant_tokens", "Number of speculative tokens generated per iteration", cxxopts::value<size_t>()->default_value("5"))
     ("dataset", "Path to dataset .json file", cxxopts::value<std::string>()->default_value("./ShareGPT_V3_unfiltered_cleaned_split.json"))
     ("max_input_len", "Max input length take from dataset", cxxopts::value<size_t>()->default_value("1024"))
     ("max_output_len", "Max output length", cxxopts::value<size_t>()->default_value("2048"))
@@ -466,6 +484,7 @@ int main(int argc, char* argv[]) try {
     const bool dynamic_split_fuse = result["dynamic_split_fuse"].as<bool>();
     const std::string models_path = result["model"].as<std::string>();
     const std::string draft_model_path = result["draft_model"].as<std::string>();
+    const size_t num_assistant_tokens = result["num_assistant_tokens"].as<size_t>();
     const std::string dataset_path = result["dataset"].as<std::string>();
     const size_t max_input_len = result["max_input_len"].as<size_t>();
     const size_t max_output_len = result["max_output_len"].as<size_t>();
@@ -523,14 +542,26 @@ int main(int argc, char* argv[]) try {
 
     std::atomic<bool> finishGenerationThread{false};
     if (request_rate == "inf") {
-        std::thread trafficSimulatorThread(trafficSimulator, &pipe, &dataset, request_rate, &generation_info_collector, is_speculative_decoding_enabled);
+        std::thread trafficSimulatorThread(trafficSimulator,
+                                           &pipe,
+                                           &dataset,
+                                           request_rate,
+                                           &generation_info_collector,
+                                           is_speculative_decoding_enabled,
+                                           num_assistant_tokens);
         trafficSimulatorThread.join();
     }
     
     std::thread lmmEngineThread(llmEngineLoop, &pipe, &dataset, &finishGenerationThread);
     std::thread statisticsReporterThread(statisticsReporter, &generation_info_collector, num_prompts);
     if (request_rate != "inf") {
-        std::thread trafficSimulatorThread(trafficSimulator, &pipe, &dataset, request_rate, &generation_info_collector, is_speculative_decoding_enabled);
+        std::thread trafficSimulatorThread(trafficSimulator,
+                                           &pipe,
+                                           &dataset,
+                                           request_rate,
+                                           &generation_info_collector,
+                                           is_speculative_decoding_enabled,
+                                           num_assistant_tokens);
         trafficSimulatorThread.join();
     }
     statisticsReporterThread.join();

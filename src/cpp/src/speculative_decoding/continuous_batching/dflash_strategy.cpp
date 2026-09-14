@@ -462,7 +462,6 @@ GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(
     uint64_t request_id,
     const ov::Tensor& input_ids,
     const ov::genai::GenerationConfig& sampling_params,
-    std::optional<ov::Tensor> token_type_ids,
     std::optional<ov::Tensor> prompt_ids,
     std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
@@ -513,7 +512,6 @@ GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(
         return m_main_pipeline->add_request(request_id,
                                             input_ids,
                                             sampling_params_copy,
-                                            token_type_ids,
                                             prompt_ids,
                                             lm_extra_inputs);
     } catch (...) {
@@ -610,36 +608,23 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
         GeneratedSequences candidate_sequences;
         candidate_sequences.emplace(0, GeneratedSequence(candidate_tokens, candidate_log_probs));
         m_main_pipeline->update_request(request_id, candidate_sequences, false);
-        state.target_la_checkpoint_sequence_id =
-            m_main_pipeline->reserve_linear_attention_checkpoints_for_next_step(request_id, candidates.size() + 1);
     }
     const auto draft_end = std::chrono::steady_clock::now();
     m_sd_metrics.draft_duration += PerfMetrics::get_microsec(draft_end - draft_start) / 1e6;
 
     const auto main_start = std::chrono::steady_clock::now();
-    try {
-        // Main VLM validation consumes generated IDs as embeddings, not raw IDs.
-        // Synchronize after candidate insertion and before target validation.
-        m_main_pipeline->sync_generated_embeddings();
-        m_main_pipeline->step();
-    } catch (...) {
-        for (auto& [_, state] : m_request_states) {
-            m_main_pipeline->release_linear_attention_checkpoints_for_sequence(state.target_la_checkpoint_sequence_id);
-            state.target_la_checkpoint_sequence_id.reset();
-        }
-        throw;
-    }
+    // Main VLM validation consumes generated IDs as embeddings, not raw IDs.
+    // Synchronize after candidate insertion and before target validation.
+    m_main_pipeline->sync_generated_embeddings();
+    m_main_pipeline->step();
     const auto main_end = std::chrono::steady_clock::now();
     const auto main_duration = PerfMetrics::get_microsec(main_end - main_start);
     m_sd_metrics.main_duration += main_duration / 1e6;
-    m_pipeline_metrics = m_main_pipeline->get_metrics();
 
     auto main_generated_requests = m_main_pipeline->get_generated_requests();
     update_draft_states_from_main(main_generated_requests);
     for (auto& [request_id, state] : m_request_states) {
         if (main_generated_requests.find(request_id) == main_generated_requests.end()) {
-            m_main_pipeline->release_linear_attention_checkpoints_for_sequence(state.target_la_checkpoint_sequence_id);
-            state.target_la_checkpoint_sequence_id.reset();
             state.finished = true;
         }
     }
@@ -650,31 +635,19 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
             continue;
         }
         auto& state = state_it->second;
-        if (draft_generated == 0 || state.generated_tokens.size() <= state.generated_before_draft) {
-            m_main_pipeline->release_linear_attention_checkpoints_for_sequence(state.target_la_checkpoint_sequence_id);
-            state.target_la_checkpoint_sequence_id.reset();
-            continue;
-        }
         const auto accounting =
             dflash_cb::validation_accounting(draft_generated, state.generated_before_draft, state.generated_tokens.size());
         if (!accounting.target_extended) {
-            m_main_pipeline->release_linear_attention_checkpoints_for_sequence(state.target_la_checkpoint_sequence_id);
-            state.target_la_checkpoint_sequence_id.reset();
             continue;
         }
-        const size_t checkpoint_slot =
-            dflash_cb::linear_attention_checkpoint_slot_for_validation(
-                accounting,
-                /*validation_input_includes_seed_token=*/true);
-        m_main_pipeline->promote_linear_attention_checkpoint_for_sequence(state.target_la_checkpoint_sequence_id,
-                                                                         checkpoint_slot);
-        state.target_la_checkpoint_sequence_id.reset();
         const float acceptance_rate =
             draft_generated > 0 ? static_cast<float>(accounting.accepted) / draft_generated * 100.0f : 0.0f;
         m_sd_metrics.update_draft_generated_len(request_id, draft_generated);
         m_sd_metrics.update_draft_accepted_tokens(request_id, accounting.accepted);
         m_sd_metrics.update_acceptance_rate(request_id, acceptance_rate);
     }
+
+    m_pipeline_metrics = m_main_pipeline->get_metrics();
 
     const auto step_end = std::chrono::steady_clock::now();
     const auto step_microsec_duration = PerfMetrics::get_microsec(step_end - step_start);
@@ -729,12 +702,6 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::update_draft_states_from_ma
 void ContinuousBatchingPipeline::DFlashDecodingImpl::drop_requests() {
     std::lock_guard<std::mutex> lock{m_draft_generations_mutex};
 
-    for (auto& [_, state] : m_request_states) {
-        if (m_main_pipeline) {
-            m_main_pipeline->release_linear_attention_checkpoints_for_sequence(state.target_la_checkpoint_sequence_id);
-            state.target_la_checkpoint_sequence_id.reset();
-        }
-    }
     if (m_main_pipeline) {
         m_main_pipeline->finish_request();
     }
@@ -763,7 +730,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::DFlashDecodingI
     const std::vector<ov::Tensor>& input_ids,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer,
-    const std::optional<std::vector<ov::Tensor>>& token_type_ids,
     const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids,
     const std::optional<std::vector<ov::Tensor>>& prompt_ids,
     const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list) {
@@ -797,14 +763,12 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::DFlashDecodingI
             m_inputs_embedder->set_position_ids(main_position_ids);
             m_inputs_embedder->set_rope_delta(rope_delta.value_or(compute_rope_delta(main_position_ids)));
         }
-        const bool has_valid_token_type_ids = token_type_ids.has_value() && request_id < token_type_ids->size();
         const bool has_valid_prompt_ids = prompt_ids.has_value() && request_id < prompt_ids->size();
         const bool has_valid_lm_extra_inputs = lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
         main_generations.push_back(add_request(
             request_id,
             input_ids[request_id],
             sampling_params[request_id],
-            has_valid_token_type_ids ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt,
             has_valid_prompt_ids ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
             has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt));
     }
@@ -865,6 +829,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::DFlashDecodingI
         m_perf_metrics.raw_metrics.generate_durations.clear();
         m_perf_metrics.raw_metrics.generate_durations.emplace_back(generate_duration_us);
         m_perf_metrics.num_input_tokens = request->get_prompt_len();
+        m_perf_metrics.num_prefix_cache_hit_tokens = request->get_num_prefix_cache_hit_tokens();
         m_perf_metrics.evaluate_statistics(start_time);
 
         result.perf_metrics = m_perf_metrics;
