@@ -576,18 +576,6 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
             }
             m_pred_attn = m_talker_code_predictor.get_tensor("attention_mask");
             m_pred_pos = m_talker_code_predictor.get_tensor("position_ids");
-            m_predictor_has_beam_idx = false;
-            for (const auto& in : m_talker_code_predictor.get_compiled_model().inputs()) {
-                if (in.get_any_name() == "beam_idx") {
-                    m_predictor_has_beam_idx = true;
-                    break;
-                }
-            }
-            if (m_predictor_has_beam_idx) {
-                ov::Tensor beam_idx(ov::element::i32, ov::Shape{1});
-                beam_idx.data<int32_t>()[0] = 0;
-                m_talker_code_predictor.set_tensor("beam_idx", beam_idx);
-            }
 
             std::cout << "Qwen3-TTS: using code predictor converted to stateless+static for NPU: "
                       << predictor_path << std::endl;
@@ -600,6 +588,19 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
 
             m_predictor_static = false;
             std::cout << "Qwen3-TTS: using stateful code predictor: " << predictor_path << std::endl;
+        }
+
+        m_predictor_has_beam_idx = false;
+        for (const auto& in : m_talker_code_predictor.get_compiled_model().inputs()) {
+            if (in.get_any_name() == "beam_idx") {
+                m_predictor_has_beam_idx = true;
+                break;
+            }
+        }
+        if (m_predictor_has_beam_idx) {
+            ov::Tensor beam_idx(ov::element::i32, ov::Shape{1});
+            beam_idx.data<int32_t>()[0] = 0;
+            m_talker_code_predictor.set_tensor("beam_idx", beam_idx);
         }
     }
     m_talker_code_predictor_embedding = compile_for(models_path / CODE_PREDICTOR_EMBEDDINGS_NAME,
