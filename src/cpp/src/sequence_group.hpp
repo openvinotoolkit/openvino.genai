@@ -72,6 +72,8 @@ class Sequence {
     GenerationFinishReason m_finish_reason = GenerationFinishReason::NONE;
     float m_cumulative_log_prob = 0.0f;
     std::unordered_map<size_t, std::vector<int64_t>> m_prefix_hashes;
+    size_t m_prefix_publication_limit = std::numeric_limits<size_t>::max();
+    std::function<size_t(size_t, size_t)> m_prefix_hash_provider;
     SequenceGroup* m_sequence_group = nullptr;
     static std::mutex m_counter_mutex;
     std::vector<std::vector<float>> m_generated_ids_embeds;
@@ -103,6 +105,8 @@ class Sequence {
         m_status(seq.m_status),
         m_cumulative_log_prob(seq.m_cumulative_log_prob),
         m_prefix_hashes(seq.m_prefix_hashes),
+        m_prefix_publication_limit(seq.m_prefix_publication_limit),
+        m_prefix_hash_provider(seq.m_prefix_hash_provider),
         m_sequence_group(seq.m_sequence_group),
         m_generated_ids_embeds(seq.m_generated_ids_embeds),
         m_type(seq.m_type),
@@ -374,6 +378,17 @@ public:
     // hash(prefix tokens + block tokens) <--> KV Block
     size_t get_hash(size_t content_length, size_t block_size);
     size_t get_hash(size_t block_size);
+
+    void set_prefix_cache_policy(size_t publication_limit,
+                                 std::function<size_t(size_t, size_t)> hash_provider = {}) {
+        OPENVINO_ASSERT(m_prefix_hashes.empty(), "Prefix cache policy must be set before hashing");
+        m_prefix_publication_limit = publication_limit;
+        m_prefix_hash_provider = std::move(hash_provider);
+    }
+
+    size_t get_prefix_publication_limit() const {
+        return m_prefix_publication_limit;
+    }
 
     static std::pair<ov::Coordinate, ov::Coordinate> get_position_ids_elem_coordinates(const ov::Shape& position_ids_elem_shape, size_t idx, bool need_batch_dimention) {
 

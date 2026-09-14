@@ -1631,6 +1631,14 @@ public:
         return get_total_block_count() - num_free_blocks();
     }
 
+    size_t get_num_linear_attention_headroom_blocks() const {
+        size_t num_blocks = 0;
+        for (const auto& [seq_id, headroom] : m_linear_attention_headroom) {
+            num_blocks += headroom.size();
+        }
+        return num_blocks;
+    }
+
     /// @return Number of sequences currently holding temporary blocks.
     size_t get_num_sequences_with_temporary_blocks() {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
@@ -2497,6 +2505,10 @@ public:
     void publish_completed_blocks(const Sequence::Ptr& sequence, size_t processed_before, size_t processed_after) {
         OPENVINO_ASSERT(processed_after >= processed_before,
                         "Cache block publication cannot precede the scheduled forward pass");
+        processed_after = std::min(processed_after, sequence->get_prefix_publication_limit());
+        if (processed_after <= processed_before) {
+            return;
+        }
         if (!m_enable_prefix_caching || processed_before / m_block_size == processed_after / m_block_size) {
             return;
         }
@@ -3168,7 +3180,8 @@ private:
         size_t allocated_blocks = block_table.size();
         size_t num_hashed_tokens = (logical_start + allocated_blocks) * m_block_size;
 
-        if (m_enable_prefix_caching && private_new_blocks) {
+        if (m_enable_prefix_caching && (private_new_blocks ||
+            sequence->get_prefix_publication_limit() != std::numeric_limits<size_t>::max())) {
             for (auto& table : m_block_table.at(sequence_id)) {
                 table.reserve(table.size() + num_blocks);
             }
@@ -3178,6 +3191,14 @@ private:
                 for (size_t layer = 0; layer < m_num_layers; ++layer) {
                     m_block_table.at(sequence_id)[layer].push_back(allocation.blocks[layer]);
                 }
+            }
+            if (m_restore_latest_prefix_block_only && m_linear_attention_live_states.count(sequence_id) == 0) {
+                BlocksPerLayer live_rows;
+                live_rows.reserve(m_num_layers);
+                for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+                    live_rows.push_back(m_block_table[sequence_id][layer_idx].front());
+                }
+                set_empty_linear_attention_live_state(sequence_id, live_rows);
             }
         } else if (!m_enable_prefix_caching) {
             for (size_t layer_idx = 0; layer_idx < m_block_table[sequence_id].size(); layer_idx++) {

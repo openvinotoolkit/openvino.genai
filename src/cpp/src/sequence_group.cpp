@@ -48,6 +48,12 @@ size_t Sequence::_make_hash(size_t content_length, size_t block_size) {
         // get inputs embeddings
         if (block_start_idx < input_embeds.size()) {
             for (size_t idx = block_start_idx; idx < std::min(input_embeds.size(), content_length); idx++) {
+                if (m_prefix_publication_limit != std::numeric_limits<size_t>::max()) {
+                    const auto& prompt_ids = sequence_group->get_prompt_ids();
+                    OPENVINO_ASSERT(prompt_ids.size() == input_embeds.size(),
+                                    "Prompt-only embedding prefix caching requires one token ID per embedding");
+                    content.push_back(prompt_ids[idx]);
+                }
                 auto embed = _reduce_embedding(input_embeds[idx]);
                 content.insert(content.end(), embed.begin(), embed.end());
             }
@@ -98,6 +104,11 @@ void Sequence::truncate_prefix_hashes() {
 // hash(prefix tokens + block tokens) <--> KV Block
 size_t Sequence::get_hash(size_t content_length, size_t block_size) {
 
+    if (m_prefix_hash_provider) {
+        OPENVINO_ASSERT(content_length > 0 && block_size > 0 && content_length <= m_prefix_publication_limit,
+                        "Prefix identity is outside the configured publication range");
+        return m_prefix_hash_provider(content_length, block_size);
+    }
     auto sequence_group = get_sequence_group_ptr();
     OPENVINO_ASSERT(sequence_group, "Hash computation requires setting of sequence_group ptr.");
     OPENVINO_ASSERT(content_length > 0, "Hash computation requires positive content length");

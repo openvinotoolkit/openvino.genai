@@ -2,6 +2,44 @@
 
 ## Current Handoff (2026-09-14)
 
+LFM is committed as `43b1c3df1`. The subsequent Qwen3.5 work is uncommitted.
+VLM prompt lookup and the actual Qwen3.5 MTP submodel now pass local prefix-on/off
+greedy parity checks with built-in text, images, video and video metadata.
+
+The MTP adapter restores both children to local processed length `D`: main state
+covers original `[0,D)`, while draft state covers shifted embeddings `[1,D+1)`.
+The main replays from `D` to regenerate the hidden-state suffix before draft work.
+Negotiation moves to earlier checkpoints until both processed lengths match;
+no paired hit restarts both at zero. This is predecessor replay, not endpoint-logit
+or endpoint-hidden-state caching. Draft identity uses the main prefix hash at
+`D+1`. Main identity includes complete aligned prompt IDs and the existing bounded
+embedding samples. Both roles publish completed prompt rows only; generated rows
+remain private. Admission rollback removes the failed pair's awaiting requests.
+Scheduling and admission share the strategy mutex; per-child hybrid restore remains
+prepared and atomic, but there is no cross-child prepared-apply transaction.
+
+Validation using the rebuilt native library:
+
+- 755 selected native tests passed; CSV-backed model/cache-routing suites excluded.
+- All 30 isolated cache tests passed after the complete-ID identity change.
+- All 32 local Qwen VLM cases passed; all 16 MTP cases passed again after complete
+  prompt-ID hashing and admission validation. Warm prefix-on calls require observed
+  hybrid and paired MTP restores, not merely output parity.
+- Four-candidate prefix-on MTP cases also cover 80-token decoding, cancellation,
+  reuse, prompt extension and changed-media parity for all four media modes.
+- Tiny Qwen3.5 prompt lookup and all 17 LFM regressions passed with Transformers
+  5.2.0 and Optimum Intel `2.3.0.dev0+fdad637`.
+- Tiny Qwen2-VL passed with `uv run --active --no-project --with
+  transformers==4.57.6 python -m pytest`, leaving the main venv unchanged.
+
+Remaining acceptance limits: no latency/TTFT comparison against main-only restore,
+no cross-child admission allocation-failure sweep, and no dedicated negative test
+for arbitrary caller-supplied position IDs. The aligned-ID admission guard is not
+proof that inputs came from the built-in embedder. LA-bearing drafts are rejected
+when prefix caching is enabled. Generated-state publication stays out of scope.
+
+### Previous LFM Handoff
+
 The scoped LFM common-foundation milestone is implemented and verified locally,
 uncommitted on top of `3b52846fa`. This enables prefix verification for greedy
 token-input requests with one sequence and a static candidate window. Both prompt
