@@ -575,7 +575,7 @@ def load_visual_text_model(
                 model_cls = AutoModelForImageTextToText
                 if model_kwargs["torch_dtype"] not in (None, torch.float32):
                     logger.warning(
-                        "DeepSeek-OCR2 requires torch.float32 in WWB; ignoring requested torch dtype %s.",
+                        "DeepSeek-OCR2 uses float32 to avoid dtype mismatch. Ignoring %s arg.",
                         model_kwargs["torch_dtype"],
                     )
                 model_kwargs.update({"torch_dtype": torch.float32})
