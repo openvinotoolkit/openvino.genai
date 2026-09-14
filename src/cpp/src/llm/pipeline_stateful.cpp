@@ -559,20 +559,9 @@ void StatefulLLMPipeline::start_chat(const std::string& system_message) {
 }
 
 void StatefulLLMPipeline::init_npu_continuous_prefill(const ov::CompiledModel& compiled_model) {
-    // The capability must come from the read-only property. It must not be probed by
-    // looking for npuw_stored_tokens_state in query_state(), because every existing
-    // plugin build publishes that state and would give a false positive. The property
-    // is computed on demand and is not listed in supported_properties either, so
-    // asking for it is the only way to probe it. A plugin that predates the feature
-    // answers with an ov::Exception for an unsupported configuration key, which keeps
-    // the existing full-history behaviour automatically and is the only failure
-    // expected here; anything else propagates.
-    bool supported = false;
-    try {
-        supported = compiled_model.get_property("NPUW_LLM_CONTINUOUS_PREFILL_SUPPORTED").as<bool>();
-    } catch (const ov::Exception&) {
-        supported = false;
-    }
+    // Read the capability directly: the stored-tokens state exists regardless of
+    // support, and this property is not listed in supported_properties.
+    const bool supported = compiled_model.get_property("NPUW_LLM_CONTINUOUS_PREFILL_SUPPORTED").as<bool>();
     m_npu_continuous_prefill = supported;
     m_use_full_chat_history = !supported;
     if (supported) {
