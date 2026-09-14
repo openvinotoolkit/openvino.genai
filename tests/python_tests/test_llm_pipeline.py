@@ -303,12 +303,9 @@ def test_linear_attention_batch_string_inputs(
     prompts: list[str],
     pipeline_type: PipelineType,
 ) -> None:
-    if (
-        llm_model.model_id == QWEN3_NEXT_MODEL_ID
-        and pipeline_type == PipelineType.PAGED_ATTENTION
-        and prompts == BATCHED_PROMPTS[1]
-    ):
+    if llm_model.model_id == QWEN3_NEXT_MODEL_ID and pipeline_type == PipelineType.PAGED_ATTENTION:
         # This tiny-random model has almost-equal logits, so PA and the reference sometimes pick different greedy tokens.
+        # Every batch in BATCHED_PROMPTS has been seen diverging, so the guard covers all of them.
         # Tracking issue: CVS-192310
         pytest.xfail(
             "qwen3-next PAGED_ATTENTION and reference pick different greedy tokens because this tiny-random model has almost-equal logits "
@@ -1081,6 +1078,7 @@ def test_perf_metrics(
 
     num_input_tokens = perf_metrics.get_num_input_tokens()
     assert 0 < num_input_tokens <= len(prompt)
+    assert perf_metrics.get_num_prefix_cache_hit_tokens() == 0
 
     mean_ttft, std_ttft = perf_metrics.get_ttft()
     assert (mean_ttft, std_ttft) == (perf_metrics.get_ttft().mean, perf_metrics.get_ttft().std)

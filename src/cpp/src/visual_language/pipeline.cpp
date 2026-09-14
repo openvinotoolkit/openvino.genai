@@ -7,7 +7,6 @@
 #include <random>
 
 #include "lm_encoding.hpp"
-#include "logger.hpp"
 #include "lora/helper.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "openvino/genai/tokenizer.hpp"
@@ -28,12 +27,6 @@
 using namespace ov::genai;
 
 namespace {
-void log_paged_attention_fallback(const ov::Exception& exception) {
-    GENAI_WARN("Paged Attention backend initialization failed. Falling back to SDPA backend. "
-                "Set ATTENTION_BACKEND=\"SDPA\" to skip Paged Attention initialization.");
-    GENAI_DEBUG("Paged Attention backend initialization error: %s", exception.what());
-}
-
 void update_npu_properties(const std::filesystem::path& models_dir, ov::AnyMap& properties) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
     switch (vlm_config.model_type) {
@@ -825,33 +818,18 @@ private:
         const std::chrono::steady_clock::time_point& embeddings_start_time
     ) {
         ov::Tensor inputs_embeds;
-        std::optional<ov::Tensor> token_type_ids;
         bool recalculate_merged_embeddings = encoded_images.size() > 0 || encoded_videos.size() > 0;
 
-        if (m_inputs_embedder->has_token_type_ids()) {
-            std::tie(inputs_embeds, token_type_ids) =
-                m_inputs_embedder->get_inputs_embeds_with_token_type_ids(
-                    unified_prompt,
-                    encoded_images,
-                    encoded_videos,
-                    perf_metrics,
-                    recalculate_merged_embeddings,
-                    image_sequence,
-                    video_sequence,
-                    history_vision_count
-                );
-        } else {
-            inputs_embeds = m_inputs_embedder->get_inputs_embeds(
-                unified_prompt,
-                encoded_images,
-                encoded_videos,
-                perf_metrics,
-                recalculate_merged_embeddings,
-                image_sequence,
-                video_sequence,
-                history_vision_count
-            );
-        }
+        inputs_embeds = m_inputs_embedder->get_inputs_embeds(
+            unified_prompt,
+            encoded_images,
+            encoded_videos,
+            perf_metrics,
+            recalculate_merged_embeddings,
+            image_sequence,
+            video_sequence,
+            history_vision_count
+        );
         PerfMetrics::emplace_duration(perf_metrics.vlm_raw_metrics.prepare_embeddings_durations, embeddings_start_time);
 
         if (m_is_npu) {
@@ -925,21 +903,22 @@ private:
         if (m_is_npu) {
             max_kv_cache_size = ov::genai::utils::get_npu_kv_cache_capacity(m_language.get_compiled_model());
         }
-        return ov::genai::get_lm_encoded_results(m_language,
-                                                 inputs_embeds,
-                                                 new_atten_mask,
-                                                 streamer_ptr,
-                                                 m_sampler,
-                                                 std::move(requests),
-                                                 position_ids,
-                                                 token_type_ids,
-                                                 cache_state,
-                                                 m_embedding,
-                                                 rope_delta,
-                                                 max_kv_cache_size,
-                                                 use_intermediate_remote_tensor,
-                                                 lm_extra_inputs,
-                                                 std::move(per_layer_callback));
+        return ov::genai::get_lm_encoded_results(
+            m_language,
+            inputs_embeds,
+            new_atten_mask,
+            streamer_ptr,
+            m_sampler,
+            std::move(requests),
+            position_ids,
+            cache_state,
+            m_embedding,
+            rope_delta,
+            max_kv_cache_size,
+            use_intermediate_remote_tensor,
+            lm_extra_inputs,
+            std::move(per_layer_callback)
+        );
     }
 };
 
@@ -984,7 +963,7 @@ VLMPipeline::VLMPipeline(
                 m_pimpl = std::make_shared<VLMContinuousBatchingAdapter>(language_model, models_dir, scheduler_config, device, plugin_properties);
 #endif
             } catch (const ov::Exception& exception) {
-                log_paged_attention_fallback(exception);
+                utils::log_paged_attention_fallback(exception);
                 language_model = utils::singleton_core().read_model(language_model_path, {}, properties);
             }
         }
@@ -994,6 +973,7 @@ VLMPipeline::VLMPipeline(
         }
     }
 
+    utils::log_attention_backend(m_pimpl->get_attention_backend());
     auto stop_time = std::chrono::steady_clock::now();
     m_pimpl->set_load_time(std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count());
 }
@@ -1034,7 +1014,7 @@ VLMPipeline::VLMPipeline(
                 m_pimpl = std::make_shared<VLMContinuousBatchingAdapter>(language_model, models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
     #endif
             } catch (const ov::Exception& exception) {
-                log_paged_attention_fallback(exception);
+                utils::log_paged_attention_fallback(exception);
                 language_model = utils::singleton_core().read_model(model_str, weights);
             }
         }
@@ -1045,6 +1025,7 @@ VLMPipeline::VLMPipeline(
 
     }
 
+    utils::log_attention_backend(m_pimpl->get_attention_backend());
     auto stop_time = std::chrono::steady_clock::now();
     m_pimpl->set_load_time(std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count());
 }

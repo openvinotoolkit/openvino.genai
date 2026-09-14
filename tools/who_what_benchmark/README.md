@@ -207,6 +207,32 @@ wwb --target-model ltx-video-model --gt-data ltx_lora_test/gt.csv --model-type t
 wwb --target-model ltx-video-model --gt-data ltx_lora_test/gt.csv --model-type text-to-video --adapters path/to/lora.safetensors --alphas 0.9 --genai --empty_adapters
 ```
 
+### Compare Image-to-video models
+
+Every sample is conditioned on an input image in addition to the prompt. By default the conditioning images come from the [paint-by-inpaint/PIPE](https://huggingface.co/datasets/paint-by-inpaint/PIPE) dataset, so no extra setup is needed.
+
+```sh
+# Export model to OpenVINO, you can specify weight format with --weight-format option, for example --weight-format fp32/fp16/int8
+optimum-cli export openvino -m Lightricks/LTX-Video --weight-format fp32 ltx-video-model
+# Collect the references and save the mapping in the .csv file.
+# Reference videos will be stored in the "reference" subfolder under the same path with .csv.
+wwb --base-model Lightricks/LTX-Video --gt-data i2v_test/gt.csv --model-type image-to-video --hf
+# Compute the metric
+# Target video will be stored in the "target" subfolder under the same path with .csv.
+# compute metrics with optimum-intel
+wwb --target-model ltx-video-model --gt-data i2v_test/gt.csv --model-type image-to-video --output ltx_i2v_optimum
+# compute metrics with GenAI
+wwb --target-model ltx-video-model --gt-data i2v_test/gt.csv --model-type image-to-video --genai --output ltx_i2v_genai
+```
+
+To condition on your own images, point `--image-dir` at the directory holding them. Relative filenames in the test data's `images`/`image` column are resolved against it; if the column is missing, the images are looked up as `0.png`, `1.png`, ... matching the prompt order.
+
+```sh
+wwb --base-model Lightricks/LTX-Video --gt-data i2v_test/gt.csv --model-type image-to-video --image-dir path/to/images --hf
+```
+
+LoRA adapters work the same way as for text-to-video, via `--adapters`/`--alphas` (and `--empty_adapters` to compare against a plain baseline).
+
 ### Compare Speech-generation models
 
 #### SpeechT5
