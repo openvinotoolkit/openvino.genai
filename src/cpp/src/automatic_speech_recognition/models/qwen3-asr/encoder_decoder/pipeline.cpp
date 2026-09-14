@@ -6,8 +6,8 @@
 #include <algorithm>
 #include <chrono>
 
-#include "audio_chunk.hpp"
-#include "streamer.hpp"
+#include "automatic_speech_recognition/models/qwen3-asr/audio_chunk.hpp"
+#include "automatic_speech_recognition/models/qwen3-asr/streamer.hpp"
 #include "utils.hpp"
 
 namespace {
@@ -23,7 +23,7 @@ int64_t get_required_token_id(const ov::genai::Tokenizer& tokenizer, const std::
 
 namespace ov::genai {
 
-Qwen3ASR::Qwen3ASR(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties)
+Qwen3EncoderDecoderASR::Qwen3EncoderDecoderASR(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties)
     : ASRPipelineImplBase(models_path),
       m_feature_extractor{models_path / "preprocessor_config.json"},
       m_asr_text_token_id{get_required_token_id(m_tokenizer, "<asr_text>")} {
@@ -39,7 +39,7 @@ Qwen3ASR::Qwen3ASR(const std::filesystem::path& models_path, const std::string& 
     m_decoder->set_seed(m_generation_config.rng_seed);
 }
 
-ASRDecodedResults Qwen3ASR::generate(const AudioInputs& audio_inputs,
+ASRDecodedResults Qwen3EncoderDecoderASR::generate(const AudioInputs& audio_inputs,
                                      const std::optional<ASRGenerationConfig>& generation_config,
                                      const std::shared_ptr<StreamerBase> streamer) {
     auto start_time = std::chrono::steady_clock::now();
@@ -81,7 +81,7 @@ ASRDecodedResults Qwen3ASR::generate(const AudioInputs& audio_inputs,
     return results;
 }
 
-std::vector<std::string> Qwen3ASR::build_text_prompt(size_t batch_size, const ASRGenerationConfig& config) {
+std::vector<std::string> Qwen3EncoderDecoderASR::build_text_prompt(size_t batch_size, const ASRGenerationConfig& config) {
     std::string context;
     if (config.context.has_value()) {
         context = config.context.value();
@@ -100,7 +100,7 @@ std::vector<std::string> Qwen3ASR::build_text_prompt(size_t batch_size, const AS
     return std::vector<std::string>(batch_size, prompt);
 }
 
-std::pair<std::string, std::string> Qwen3ASR::parse_asr_output(const std::string& raw,
+std::pair<std::string, std::string> Qwen3EncoderDecoderASR::parse_asr_output(const std::string& raw,
                                                                const std::optional<std::string>& forced_language) {
     static const std::string asr_text_tag = "<asr_text>";
     static const std::string lang_prefix = "language ";
@@ -132,7 +132,7 @@ std::pair<std::string, std::string> Qwen3ASR::parse_asr_output(const std::string
     return {language, text_part};
 }
 
-std::pair<std::vector<std::string>, std::vector<std::string>> Qwen3ASR::merge_chunk_results(
+std::pair<std::vector<std::string>, std::vector<std::string>> Qwen3EncoderDecoderASR::merge_chunk_results(
     const std::vector<AudioChunk>& chunks,
     const std::vector<std::string>& infer_results,
     const ASRGenerationConfig& config) {
@@ -156,7 +156,7 @@ std::pair<std::vector<std::string>, std::vector<std::string>> Qwen3ASR::merge_ch
     return {std::move(merged_texts), std::move(merged_languages)};
 }
 
-std::vector<std::string> Qwen3ASR::extend_audio_tokens(const std::vector<std::string>& prompts,
+std::vector<std::string> Qwen3EncoderDecoderASR::extend_audio_tokens(const std::vector<std::string>& prompts,
                                                        const std::vector<size_t>& audio_lengths) {
     OPENVINO_ASSERT(prompts.size() == audio_lengths.size(),
                     "extend_audio_tokens: prompts and audio_lengths must have the same size");
@@ -181,7 +181,7 @@ std::vector<std::string> Qwen3ASR::extend_audio_tokens(const std::vector<std::st
     return results;
 }
 
-std::vector<std::string> Qwen3ASR::infer(std::vector<AudioChunk> chunks,
+std::vector<std::string> Qwen3EncoderDecoderASR::infer(std::vector<AudioChunk> chunks,
                                          const ASRGenerationConfig& config,
                                          ASRPerfMetrics& perf_metrics,
                                          const std::shared_ptr<StreamerBase>& streamer_ptr) {
@@ -247,7 +247,7 @@ std::vector<std::string> Qwen3ASR::infer(std::vector<AudioChunk> chunks,
     return results;
 }
 
-ASRGenerationConfig Qwen3ASR::resolve_generation_config(const std::optional<ASRGenerationConfig>& generation_config) const {
+ASRGenerationConfig Qwen3EncoderDecoderASR::resolve_generation_config(const std::optional<ASRGenerationConfig>& generation_config) const {
     ASRGenerationConfig config = generation_config.value_or(m_generation_config);
     if (config.stop_token_ids.empty()) {
         config.stop_token_ids = m_generation_config.stop_token_ids;
@@ -261,7 +261,7 @@ ASRGenerationConfig Qwen3ASR::resolve_generation_config(const std::optional<ASRG
     return config;
 }
 
-void Qwen3ASR::validate_generation_config(const ASRGenerationConfig& config) const {
+void Qwen3EncoderDecoderASR::validate_generation_config(const ASRGenerationConfig& config) const {
     config.validate();
 
     OPENVINO_ASSERT(!config.is_beam_search(), "Qwen3-ASR does not support beam search decoding");
