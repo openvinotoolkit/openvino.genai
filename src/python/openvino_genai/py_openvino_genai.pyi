@@ -6002,14 +6002,24 @@ class VLMPipelineBase:
     def __init__(self) -> None:
         ...
     @typing.overload
-    def generate(self, prompt: str | openvino_genai.py_openvino_genai.ChatHistory, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], audios: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], generation_config: GenerationConfig = ..., streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> VLMDecodedResults:
+    def generate(self, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], audios: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], generation_config: GenerationConfig = ..., streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> VLMDecodedResults:
         """
-        Generate a VLM response. prompt may be a str or a ChatHistory. Override in a subclass.
+        Generate a VLM response from a prompt. Override in a subclass.
         """
     @typing.overload
-    def generate(self, prompt: str | openvino_genai.py_openvino_genai.ChatHistory, **kwargs) -> VLMDecodedResults:
+    def generate(self, history: openvino_genai.py_openvino_genai.ChatHistory, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], audios: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], generation_config: GenerationConfig = ..., streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> VLMDecodedResults:
         """
-        Generate a VLM response from a property bag: images, videos, audios, videos_metadata, generation_config, streamer, or any GenerationConfig field as a keyword argument. Reduces to the typed generate() the subclass overrides.
+        Generate a VLM response from a chat history. Override in a subclass.
+        """
+    @typing.overload
+    def generate(self, prompt: str, **kwargs) -> VLMDecodedResults:
+        """
+        Generate a VLM response from a prompt plus a property bag: images, videos, audios, videos_metadata, generation_config, streamer, or any GenerationConfig field as a keyword argument. Reduces to the typed generate() the subclass overrides.
+        """
+    @typing.overload
+    def generate(self, history: openvino_genai.py_openvino_genai.ChatHistory, **kwargs) -> VLMDecodedResults:
+        """
+        Generate a VLM response from a chat history plus a property bag: images, videos, audios, videos_metadata, generation_config, streamer, or any GenerationConfig field as a keyword argument. Reduces to the typed generate() the subclass overrides.
         """
     def get_generation_config(self) -> GenerationConfig:
         ...
