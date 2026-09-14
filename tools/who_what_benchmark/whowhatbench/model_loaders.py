@@ -11,6 +11,7 @@ from packaging.version import Version
 from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
+    AutoModelForSeq2SeqLM,
     AutoModel,
     AutoTokenizer,
     __version__,
@@ -288,6 +289,14 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
             trust_remote_code = True
 
+    # Encoder-decoder (seq2seq / text2text-generation) models such as T5/FLAN-T5,
+    # BART, mBART, etc. are not supported by AutoModelForCausalLM. Select the
+    # appropriate AutoModel class based on the model configuration instead of
+    # special-casing individual model ids.
+    auto_model_cls = AutoModelForCausalLM
+    if config is not None and getattr(config, "is_encoder_decoder", False):
+        auto_model_cls = AutoModelForSeq2SeqLM
+
     if not torch.cuda.is_available() or device.lower() == "cpu":
         is_gptq = False
         is_awq = False
@@ -295,16 +304,16 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
             is_gptq = config.quantization_config["quant_method"] == "gptq"
             is_awq = config.quantization_config["quant_method"] == "awq"
         with mock_AwqQuantizer_validate_environment(is_awq), mock_torch_cuda_is_available(is_gptq or is_awq):
-            model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map="cpu", **model_kwargs)
+            model = auto_model_cls.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map="cpu", **model_kwargs)
         if is_awq:
             model.is_awq = is_awq
     else:
         try:
-            model = AutoModelForCausalLM.from_pretrained(
+            model = auto_model_cls.from_pretrained(
                 model_id, trust_remote_code=False, device_map=device.lower(), **model_kwargs
             )
         except Exception:
-            model = AutoModelForCausalLM.from_pretrained(
+            model = auto_model_cls.from_pretrained(
                 model_id, trust_remote_code=True, device_map=device.lower(), **model_kwargs
             )
 
@@ -328,17 +337,35 @@ def load_text_model(
         model = load_text_llamacpp_pipeline(model_id, **kwargs)
     else:
         logger.info("Using Optimum API")
-        from optimum.intel.openvino import OVModelForCausalLM
+        from optimum.intel.openvino import OVModelForCausalLM, OVModelForSeq2SeqLM
+
+        # Encoder-decoder (seq2seq / text2text-generation) models such as
+        # T5/FLAN-T5, BART, mBART, etc. are exported by optimum as separate
+        # encoder/decoder OpenVINO models and are not loadable through
+        # OVModelForCausalLM (which expects a single openvino_model.xml).
+        # Select the appropriate OV model class based on the model
+        # configuration instead of special-casing individual model ids,
+        # mirroring load_text_hf_pipeline above.
+        ov_model_cls = OVModelForCausalLM
+        try:
+            probe_config = AutoConfig.from_pretrained(model_id)
+        except Exception:
+            try:
+                probe_config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+            except Exception:
+                probe_config = None
+        if probe_config is not None and getattr(probe_config, "is_encoder_decoder", False):
+            ov_model_cls = OVModelForSeq2SeqLM
 
         try:
-            model = OVModelForCausalLM.from_pretrained(
+            model = ov_model_cls.from_pretrained(
                 model_id, device=device, ov_config=ov_config, **kwargs
             )
         except Exception:
             try:
                 config = AutoConfig.from_pretrained(
                     model_id, trust_remote_code=True)
-                model = OVModelForCausalLM.from_pretrained(
+                model = ov_model_cls.from_pretrained(
                     model_id,
                     config=config,
                     trust_remote_code=True,
@@ -349,7 +376,7 @@ def load_text_model(
                 )
             except Exception:
                 config = AutoConfig.from_pretrained(model_id)
-                model = OVModelForCausalLM.from_pretrained(
+                model = ov_model_cls.from_pretrained(
                     model_id,
                     config=config,
                     use_cache=True,
