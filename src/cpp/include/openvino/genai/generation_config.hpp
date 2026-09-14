@@ -5,6 +5,7 @@
 
 #include <filesystem>
 #include <limits>
+#include <optional>
 #include <variant>
 #include <string>
 #include <sstream>
@@ -157,17 +158,21 @@ public:
      */
     struct JSONSchema {
         std::string value;
+        std::optional<int> max_whitespace_cnt;
 
         JSONSchema() = default;
-        JSONSchema(const std::string& schema) : value(schema) {}
+        JSONSchema(const std::string& schema, std::optional<int> whitespace_bound = std::nullopt)
+            : value(schema), max_whitespace_cnt(whitespace_bound) {}
         std::string to_string() const {
-            return "JSONSchema(\"" + value + "\")";
+            return "JSONSchema(\"" + value + "\"" +
+                (max_whitespace_cnt ? ", max_whitespace_cnt=" + std::to_string(*max_whitespace_cnt) : "") + ")";
         }
         std::string to_json() const {
-            return std::string("{\"type\": \"json_schema\", \"json_schema\": ") + value + "}";
+            return std::string("{\"type\": \"json_schema\", \"json_schema\": ") + value +
+                (max_whitespace_cnt ? ", \"max_whitespace_cnt\": " + std::to_string(*max_whitespace_cnt) : "") + "}";
         }
         bool operator==(const JSONSchema& other) const {
-            return value == other.value;
+            return value == other.value && max_whitespace_cnt == other.max_whitespace_cnt;
         }
     };
 
