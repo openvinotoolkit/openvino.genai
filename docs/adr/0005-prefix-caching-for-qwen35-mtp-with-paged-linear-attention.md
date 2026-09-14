@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-08-29
-**Last updated:** 2026-09-11
+**Last updated:** 2026-09-14
 **Target:** Continuous Batching speculative decoding, Paged Attention backend,
 Qwen3.5 MTP with hybrid KV and linear-attention state
 
@@ -17,6 +17,7 @@ observe real restores before selecting coherent-pair, main-only, or no MTP enabl
 
 | Phase | Step | Status | Result |
 |---|---|---|---|
+| P4-P5 | Scoped LFM prefix-verification foundation | Verified locally, uncommitted, 2026-09-14 | Prepared coherent predecessor restore, private verifier KV rows, prefix LA promotion, protected next-window headroom and independent-draft restore/recompute are integrated. Static greedy single-sequence token-input prompt lookup and independent drafting pass with observed restores, both split modes, cancellation/reuse and a hard LA ceiling. 755 selected C++ tests, 18 isolated cache tests and 17 LFM Python cases passed. Exact-live-boundary optional checkpoint sets remain private when publication would consume reusable headroom. Earlier guarded-phase entries below are historical. MTP policy, adapter and Qwen3.5 VLM/media acceptance remain pending. |
 | P0 | Base step failure boundary and output visibility | Accepted | Worker joining precedes cleanup; active and awaiting handles receive the original failure and the pipeline rejects reuse. Owned accepted-output snapshots are delivered after coherent base-step updates, excluding prompt-lookup candidates. Newly terminal sequences participate in LA promotion before free. See the [P0 verification report](../p0-failure-visibility-report.md) for test evidence and scope limits. |
 | P1-P3 | Live handle, scratch lease and coordinated accepted-state commit | Exit gates passed locally, 2026-09-11 | Prepared KV releases and LA promotions precede counter mutation for the selected static greedy path; sampler deferral is opt-in. 749 existing C++ tests, six isolated host-allocation-failure tests and five local LFM hybrid Python cases pass. The failure sweeps cover heap-owned scratch leases, two-sequence KV/LA preparation and actual pipeline commit; prepared apply and cleanup allocate nothing. Prefix verification remains guarded. No MTP adapter or Qwen3.5 VLM/media acceptance is claimed. |
 | M0 | Restore-policy feasibility and draft-state probe | Accepted | Output parity passed, but no restore executed. Generated draft state was path-dependent, so policy selection and generated-state publication remain deferred. |

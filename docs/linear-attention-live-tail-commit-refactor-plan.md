@@ -1,6 +1,6 @@
 # Incremental Linear-Attention Live-Tail and Commit Refactor Plan
 
-**Status:** P0 accepted; P1-P3 committed; P4 capacity and scratch eviction committed; batch publication verified; remaining P4 and P5-P8 pending
+**Status:** P0 accepted; P1-P3 committed; scoped LFM P4-P5 foundation verified locally, uncommitted; Qwen3.5 MTP and VLM/media gates pending
 **Date:** 2026-09-07
 **Last updated:** 2026-09-14
 **Decision record:** [ADR-0005](adr/0005-prefix-caching-for-qwen35-mtp-with-paged-linear-attention.md)
@@ -37,6 +37,28 @@ continuation or cached-logit sampling.
 ## Goal and Boundary
 
 ### Current P4 Progress (2026-09-14)
+
+The scoped LFM P4-P5 milestone now passes: ordered prepared hybrid restore,
+predecessor full hits, private verifier KV rows, prefix-aware LA promotion and
+protected next-window headroom are integrated. Greedy single-sequence token-input
+verification is enabled for static windows. Draft alignment metadata uses ordinary
+paging, and actual independent-draft rejection restores/recomputes recurrent state.
+Explicit prefix-LA ceilings also survive `cache_size` normalization.
+
+Optional exact-live-boundary checkpoint sets stay unpublished when retained
+headroom needs a reusable private live row. This preserves continuation under
+competition rather than maximizing newly published checkpoints. It does not add
+endpoint-logits caching or remove MTP/embedding-input guards.
+
+Final local gates: 755 selected C++ tests, 18 isolated cache tests and 17 LFM Python
+cases passed. Real-model tests cover both split modes, candidate counts 1/4, actual
+restores, nonzero independent-draft acceptance, extensions and cancellation/reuse
+under a 12-row LA ceiling. CSV-backed suites were excluded. See the
+[current handoff](exact-endpoint-continuation-progress.md) for scope and evidence.
+LFM tests are not MTP tests. The Qwen3.5 adapter/policy experiment and VLM/media
+acceptance remain the next milestones; no new commit has been made.
+
+### Previous Publication Slice
 
 Prepared scratch eviction is committed as `74c622c38`. The subsequent uncommitted
 slice prepares all represented crossed-boundary publication metadata before setting

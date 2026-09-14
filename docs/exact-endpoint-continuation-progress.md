@@ -2,6 +2,53 @@
 
 ## Current Handoff (2026-09-14)
 
+The scoped LFM common-foundation milestone is implemented and verified locally,
+uncommitted on top of `3b52846fa`. This enables prefix verification for greedy
+token-input requests with one sequence and a static candidate window. Both prompt
+lookup and ordinary independent-draft decoding are covered. LFM has no MTP submodel;
+none of these results establish Qwen3.5 MTP, VLM, or media support.
+
+Implemented behavior:
+
+- Hybrid restore prepares KV and LA under ordered locks before applying either.
+  Both select the same endpoint; full-prompt hits use a real predecessor, not a
+  counter rewind into state that already includes the last prompt token.
+- Verification uses private, hash-invisible KV allocations and token-precise LA
+  scratch. Accepted promotion preserves published bases and retains physical
+  next-window headroom, which competing requests cannot allocate.
+- Optional crossed LA checkpoints are retained only when headroom permits. At an
+  exact live boundary with retained headroom, the optional publication set stays
+  private so the next window can reuse that live row. Earlier checkpoints remain
+  usable; this deliberately trades cache coverage for guaranteed continuation.
+- Draft alignment metadata no longer selects verifier paging: scheduler routing
+  uses the pipeline's sampler validation mode. A rejected independent hybrid draft
+  restores a prompt predecessor (or starts at zero without prefix caching) and
+  recomputes accepted suffix tokens instead of relabeling recurrent state.
+- Explicit LA limits survive byte-budget normalization; prefix pools can be
+  pre-sized, and admission includes the extra published-base continuation row.
+- Dynamic candidate counts, parallel returns, non-greedy prefix verification and
+  embedding-input prefix verification retain their guards. MTP stays separate.
+
+Validation on the rebuilt native library:
+
+- 755 selected C++ tests passed; CSV-backed model/cache-routing suites excluded.
+- 18 isolated cache tests passed, including host-allocation failure sweeps,
+  no-allocation promotion, stale/abandoned preparation and forced draft rewind.
+- 17 local LFM2.5 Python cases passed. The 16-case verifier matrix covers prefix
+  on/off, both split modes, candidate counts 1/4, a hard 12-row LA ceiling, repeated
+  and extended prompts, cancellation and reuse. Prefix-enabled warm/extended calls
+  require observed hybrid restore events; independent drafts require nonzero
+  drafted and accepted tokens. All outputs match a prefix-off greedy reference.
+- The tight six-row C++ case covers acceptance depths 1/2/3/4, exact-boundary
+  publication and next-window admission while a competitor owns the last free row.
+- C++ diagnostics are clean. Python diagnostics outside the changed test remain.
+
+Next milestone: Qwen3.5 text MTP adapter and observed-restore policy experiment,
+then mandatory Qwen3.5 VLM/image/video acceptance. Endpoint-logits caching is not
+part of this work. No commit, push, or branch change was performed.
+
+### Previous Publication Handoff
+
 User direction: finish LFM common-foundation support first, then validate Qwen3.5
 through the VLM pipeline with media. Existing LFM smoke/parity cases do not establish
 full prefix-verification support. Prefix+VERIFY guards remain until P4/P5 gates pass.

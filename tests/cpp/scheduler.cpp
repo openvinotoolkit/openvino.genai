@@ -1034,51 +1034,71 @@ TEST(TestScheduler, linear_attention_paging_mode_represents_history_and_step_ind
     }
 }
 
-TEST(TestScheduler, hybrid_prefix_linear_attention_verify_retains_actionable_scratch_lease_guard) {
-    constexpr size_t num_tokens_to_validate = 2;
-    SchedulerConfig scheduler_config;
-    scheduler_config.max_num_batched_tokens = 32;
-    scheduler_config.num_kv_blocks = 32;
-    scheduler_config.num_linear_attention_blocks = 16;
-    scheduler_config.cache_interval_multiplier = 1;
-    scheduler_config.enable_prefix_caching = true;
-    scheduler_config.dynamic_split_fuse = false;
-    scheduler_config.max_num_seqs = 4;
+TEST(TestScheduler, hybrid_prefix_linear_attention_verify_retains_next_window_headroom) {
+    for (const size_t accepted_depth : {1u, 2u, 3u, 4u}) {
+        SCOPED_TRACE(accepted_depth);
+        constexpr size_t num_tokens_to_validate = 3;
+        SchedulerConfig scheduler_config;
+        scheduler_config.max_num_batched_tokens = 32;
+        scheduler_config.num_kv_blocks = 32;
+        scheduler_config.num_linear_attention_blocks = 6;
+        scheduler_config.cache_interval_multiplier = 1;
+        scheduler_config.enable_prefix_caching = true;
+        scheduler_config.dynamic_split_fuse = false;
+        scheduler_config.max_num_seqs = 4;
 
-    std::vector<uint64_t> tokens = {0, 1, 2, 3};
-    SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(
-        0,
-        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-        utils::get_greedy_config());
-    const uint64_t seq_id = sequence_group->get_running_sequences()[0]->get_id();
-    std::vector<SequenceGroup::Ptr> requests = {sequence_group};
+        std::vector<uint64_t> tokens = {0, 1, 2, 3};
+        SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(
+            0,
+            ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+            utils::get_greedy_config());
+        const uint64_t seq_id = sequence_group->get_running_sequences()[0]->get_id();
+        std::vector<SequenceGroup::Ptr> requests = {sequence_group};
 
-    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler(orchestrator, scheduler_config);
-    std::ignore = scheduler.schedule(requests);
-    sequence_group->finish_iteration();
-    sequence_group->get_running_sequences()[0]->append_token(42, 0.9f);
-    sequence_group->update_processed_tokens_num(tokens.size());
-    sequence_group->set_num_validated_tokens(num_tokens_to_validate);
-    auto& la_block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
-    const size_t block_table_size_before = orchestrator->get_linear_attention_block_table(seq_id).size();
-    const size_t free_rows_before = la_block_manager.num_free_blocks();
-
-    try {
+        auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
+        Scheduler scheduler(orchestrator, scheduler_config);
         std::ignore = scheduler.schedule(requests);
-        FAIL() << "Expected PREFIX_CHECKPOINTS + VERIFY to remain guarded";
-    } catch (const ov::Exception& exception) {
-        EXPECT_NE(std::string(exception.what()).find("disable prefix caching for speculative validation"),
-                  std::string::npos)
-            << exception.what();
+        sequence_group->finish_iteration();
+        scheduler.publish_completed_blocks(sequence_group->get_running_sequences()[0], 0, tokens.size());
+        sequence_group->get_running_sequences()[0]->append_token(42, 0.9f);
+        sequence_group->update_processed_tokens_num(tokens.size());
+        sequence_group->set_num_validated_tokens(num_tokens_to_validate);
+        auto& la_block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+        const size_t block_table_size_before = orchestrator->get_linear_attention_block_table(seq_id).size();
+        auto output = scheduler.schedule(requests);
+        ASSERT_EQ(output.m_total_num_scheduled_tokens, 4u);
+        const auto& paging = output.get_linear_attention_paging_data(seq_id);
+        ASSERT_TRUE(paging.is_speculative);
+        ASSERT_EQ(paging.block_indices.size(), 5u);
+        EXPECT_EQ(orchestrator->get_linear_attention_block_table(seq_id).size(), block_table_size_before);
+        auto& kv_manager = orchestrator->get_block_manager(CacheType::KV_CACHE);
+        EXPECT_FALSE(kv_manager.get_block_tables(seq_id).front().back()->has_published_hash());
+        auto& lease = output.m_linear_attention_scratch_leases.at(seq_id);
+        const size_t accepted_row = lease->commit(accepted_depth);
+        EXPECT_EQ(accepted_row, static_cast<size_t>(paging.block_indices[accepted_depth]));
+        output.m_linear_attention_scratch_leases.clear();
+        sequence_group->update_processed_tokens_num(4 + accepted_depth);
+        sequence_group->clear_scheduled_tokens();
+        for (size_t token = 1; token < accepted_depth; ++token) {
+            sequence_group->get_sequences().front()->append_token(42, 0.9f);
+        }
+        scheduler.publish_completed_blocks(sequence_group->get_sequences().front(), 4, 4 + accepted_depth);
+        EXPECT_FALSE(la_block_manager.has_temporary_blocks(seq_id));
+        EXPECT_EQ(la_block_manager.get_num_sequences_with_temporary_blocks(), 0u);
+        EXPECT_EQ(la_block_manager.num_free_blocks(), 1u);
+        auto competitor = std::make_shared<SequenceGroup>(
+            1, std::vector<int64_t>{7, 8, 9, 10}, utils::get_greedy_config());
+        competitor->schedule_tokens(4);
+        la_block_manager.append_slots(competitor);
+        EXPECT_EQ(la_block_manager.num_free_blocks(), 0u);
+        ASSERT_TRUE(orchestrator->can_reserve_linear_attention_temporary_blocks(seq_id, 4));
+        auto next = orchestrator->prepare_linear_attention_scratch(seq_id, 4);
+        EXPECT_EQ(next.block_indices().size(), 4u);
+        next.abort();
+        la_block_manager.free_sequence(competitor->get_sequences().front()->get_id());
+        scheduler.free_sequence(seq_id);
+        EXPECT_EQ(la_block_manager.num_free_blocks(), 6u);
     }
-    EXPECT_EQ(sequence_group->get_num_scheduled_tokens(), 0u);
-    EXPECT_EQ(orchestrator->get_linear_attention_block_table(seq_id).size(), block_table_size_before);
-    EXPECT_FALSE(la_block_manager.has_temporary_blocks(seq_id));
-    EXPECT_EQ(la_block_manager.get_num_sequences_with_temporary_blocks(), 0u);
-    EXPECT_EQ(la_block_manager.num_free_blocks(), free_rows_before);
-
-    scheduler.free_sequence(seq_id);
 }
 
 TEST(TestScheduler, hybrid_non_prefix_linear_attention_returns_aliased_read_write_blocks) {
