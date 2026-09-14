@@ -164,6 +164,16 @@ public:
 
     virtual void generate_candidates_for_prompt_lookup();
 
+    virtual bool supports_embedding_prefix_verification() const {
+        return false;
+    }
+
+    virtual void initialize_prefix_cache(const SequenceGroup::Ptr& group) {
+        if (m_scheduler->get_config().enable_prefix_caching) {
+            m_scheduler->restore_cached_blocks(group);
+        }
+    }
+
     virtual bool sync_embeddings_after_candidates() const {
         return !m_is_validation_mode_enabled;
     }

@@ -8,7 +8,12 @@ Qwen3.5 MTP with hybrid KV and linear-attention state
 
 **Implementation plan:** [Incremental Linear-Attention Live-Tail and Commit Refactor](../linear-attention-live-tail-commit-refactor-plan.md)
 
-**M0 decision:** Defer restore-policy selection until the common foundation provides
+**Current implementation:** Uncommitted prompt-only paired predecessor replay passes
+local Qwen3.5 VLM/media parity with observed restores. See the amendment below and
+the [verification handoff](../exact-endpoint-continuation-progress.md). A measured
+main-only versus paired-restore comparison remains open.
+
+**Historical M0 decision:** Defer restore-policy selection until the common foundation provides
 real prepared per-sequence restores and the minimum endpoint sidecar. The accepted M0
 run observed zero restores and found generated draft state path-dependent; M0b must
 observe real restores before selecting coherent-pair, main-only, or no MTP enablement.
@@ -41,6 +46,34 @@ capacity, and the MTP adapter remain unimplemented or guarded. Alternative-owner
 discovery scans active tables under the cache mutex; performance is unmeasured.
 
 ## Decision Summary
+
+### Local Paired-Replay Implementation (2026-09-14)
+
+The implemented adapter negotiates a common local processed length `D`, bounded
+below the end of both prompts. Main state covers original `[0,D)` and draft state
+covers shifted `[1,D+1)`. Main replay from `D` exports the hidden suffix needed by
+the next draft input at original `D+1`. Neither child samples directly from a cache
+hit; no endpoint sidecar is implemented. This differs from the exact semantic
+pair `P`/`P-1` proposal below and uses the permitted predecessor-replay alternative.
+
+Draft identity at `D` delegates to the parent prefix identity at `D+1`, including
+the first original token. Main identity combines complete aligned prompt IDs with
+the existing bounded embedding samples. Allocation is private; completed prompt
+boundaries alone become hash-visible in both roles. Generated-state publication
+remains disabled. Both child configurations must agree on prefix caching.
+
+Admission and scheduling use the same strategy mutex. Restored references remain
+owned by each child during negotiation. Failed admission removes that request from
+both awaiting queues and frees its active cache rows; other request IDs remain.
+This is rollback-based paired admission, not cross-child prepared atomic apply.
+
+All 16 local MTP VLM cases pass with actual draft execution and observed warm paired
+restores, including built-in images, video and video metadata. Four-candidate warm
+cases cover 80-token decoding, cancellation/reuse and prompt extension. Prompt
+lookup's 16-case media matrix passes separately. No speedup or optimal-policy claim
+is made. Arbitrary caller-supplied position-ID rejection and a complete paired
+admission allocation-failure sweep remain verification/design gaps; the current
+aligned-token-ID guard alone does not establish built-in-input provenance.
 
 ### Milestone Boundary Update (2026-09-11)
 

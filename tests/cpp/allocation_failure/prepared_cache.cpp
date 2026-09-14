@@ -8,6 +8,7 @@
 #include "continuous_batching/cache/block_manager.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
 #include "speculative_decoding/continuous_batching/pipeline_impl.hpp"
+#include "prompt_lookup/continuous_batching_for_prompt_lookup.hpp"
 
 namespace {
 
@@ -107,6 +108,15 @@ protected:
         }
     };
 
+    class MtpPipeline : public ContinuousBatchingForMtpDecodingImpl {
+    public:
+        MtpPipeline(const std::shared_ptr<ov::genai::Scheduler>& scheduler,
+                    const std::vector<SequenceGroup::Ptr>& groups) {
+            m_scheduler = scheduler;
+            m_awaiting_requests = groups;
+        }
+    };
+
     std::shared_ptr<CacheOrchestrator> make_orchestrator() {
         auto orchestrator = std::make_shared<CacheOrchestrator>();
         for (const CacheType type : {CacheType::KV_CACHE, CacheType::LINEAR_ATTENTION_CACHE}) {
@@ -135,6 +145,133 @@ protected:
         manager.set_linear_attention_live_state(sequence->get_id(), 4, rows);
     }
 };
+
+TEST_P(PreparedCacheAllocationFailure, EmbeddingPrefixVerificationRequiresStrategySupport) {
+    std::unique_ptr<ContinuousBatchingImpl> lookup = std::make_unique<ContinuousBatchingForPromptLookupImpl>();
+    EXPECT_TRUE(lookup->supports_embedding_prefix_verification());
+    ContinuousBatchingForMtpDecodingImpl mtp;
+    EXPECT_TRUE(mtp.supports_embedding_prefix_verification());
+    ContinuousBatchingForSpeculativeDecodingImpl independent_draft;
+    EXPECT_FALSE(independent_draft.supports_embedding_prefix_verification());
+}
+
+TEST_P(PreparedCacheAllocationFailure, MtpAdmissionRollbackReleasesOnlyFailedRequest) {
+    auto orchestrator = make_orchestrator();
+    auto scheduler = std::make_shared<ov::genai::Scheduler>(orchestrator, ov::genai::SchedulerConfig{});
+    auto failed = make_group(0);
+    auto neighbor = make_group(1);
+    for (const CacheType type : {CacheType::KV_CACHE, CacheType::LINEAR_ATTENTION_CACHE}) {
+        auto& manager = orchestrator->get_block_manager(type);
+        allocate_live(manager, failed);
+        allocate_live(manager, neighbor);
+    }
+    MtpPipeline pipeline(scheduler, {failed, neighbor});
+    pipeline.discard_awaiting_request(0);
+    EXPECT_EQ(pipeline.get_awaiting_requests(), std::vector<SequenceGroup::Ptr>{neighbor});
+    for (const CacheType type : {CacheType::KV_CACHE, CacheType::LINEAR_ATTENTION_CACHE}) {
+        auto& manager = orchestrator->get_block_manager(type);
+        EXPECT_EQ(manager.num_free_blocks(), 23u);
+    }
+    pipeline.discard_awaiting_request(0);
+    pipeline.discard_awaiting_request(1);
+    EXPECT_TRUE(pipeline.get_awaiting_requests().empty());
+    for (const CacheType type : {CacheType::KV_CACHE, CacheType::LINEAR_ATTENTION_CACHE}) {
+        EXPECT_EQ(orchestrator->get_block_manager(type).num_free_blocks(), 24u);
+    }
+}
+
+TEST_P(PreparedCacheAllocationFailure, PromptOnlyPolicyPublishesCompletedPromptAndKeepsGeneratedRowsPrivate) {
+    BlockManager manager(12, true, 4, GetParam());
+    auto group = make_group(0);
+    auto sequence = group->get_sequences().front();
+    sequence->set_prefix_cache_policy(group->get_prompt_len());
+    group->schedule_tokens(4);
+    manager.append_slots(group);
+    EXPECT_FALSE(manager.get_block_tables(sequence->get_id()).front().front()->has_published_hash());
+    group->finish_iteration();
+    manager.publish_completed_blocks(sequence, 0, 4);
+    EXPECT_TRUE(manager.get_block_tables(sequence->get_id()).front().front()->has_published_hash());
+    for (size_t token = 0; token < 4; ++token) {
+        sequence->append_token(9, 0.1f);
+    }
+    group->schedule_tokens(4);
+    manager.append_slots(group);
+    group->finish_iteration();
+    manager.publish_completed_blocks(sequence, 4, 8);
+    EXPECT_FALSE(manager.get_block_tables(sequence->get_id()).front().back()->has_published_hash());
+    manager.free_sequence(sequence->get_id());
+    auto consumer = std::make_shared<SequenceGroup>(
+        1, std::vector<int64_t>{1, 2, 3, 4, 9, 9, 9, 9, 5}, ov::genai::GenerationConfig{});
+    const auto plan = manager.get_prefix_restore_plan(consumer);
+    EXPECT_EQ(plan.cache_token_position, 4u);
+    EXPECT_EQ(manager.num_free_blocks(), 12u);
+}
+
+TEST_P(PreparedCacheAllocationFailure, ShiftedDraftIdentityIncludesParentFirstToken) {
+    auto first_parent = std::make_shared<SequenceGroup>(
+        0, std::vector<int64_t>{1, 2, 3, 4, 5}, ov::genai::GenerationConfig{});
+    auto second_parent = std::make_shared<SequenceGroup>(
+        1, std::vector<int64_t>{8, 2, 3, 4, 5}, ov::genai::GenerationConfig{});
+    auto first_draft = std::make_shared<SequenceGroup>(
+        2, std::vector<int64_t>{2, 3, 4, 5}, ov::genai::GenerationConfig{});
+    auto second_draft = std::make_shared<SequenceGroup>(
+        3, std::vector<int64_t>{2, 3, 4, 5}, ov::genai::GenerationConfig{});
+    const auto first_sequence = first_draft->get_sequences().front();
+    const auto second_sequence = second_draft->get_sequences().front();
+    first_sequence->set_prefix_cache_policy(4, [first_parent](size_t length, size_t block_size) {
+        return first_parent->get_sequences().front()->get_hash(length + 1, block_size);
+    });
+    second_sequence->set_prefix_cache_policy(4, [second_parent](size_t length, size_t block_size) {
+        return second_parent->get_sequences().front()->get_hash(length + 1, block_size);
+    });
+    EXPECT_EQ(first_sequence->get_hash(4, 4), first_parent->get_sequences().front()->get_hash(5, 4));
+    EXPECT_NE(first_sequence->get_hash(4, 4), second_sequence->get_hash(4, 4));
+    EXPECT_THROW(first_sequence->get_hash(5, 4), ov::Exception);
+}
+
+TEST_P(PreparedCacheAllocationFailure, PromptOnlyEmbeddingIdentityIncludesCompleteTokenIds) {
+    ov::Tensor embeddings(ov::element::f32, {1, 4, 8});
+    std::fill_n(embeddings.data<float>(), embeddings.get_size(), 1.f);
+    ov::Tensor first_ids(ov::element::i64, {1, 4});
+    ov::Tensor second_ids(ov::element::i64, {1, 4});
+    std::fill_n(first_ids.data<int64_t>(), 4, 1);
+    std::fill_n(second_ids.data<int64_t>(), 4, 1);
+    second_ids.data<int64_t>()[0] = 2;
+    auto first = std::make_shared<SequenceGroup>(0, embeddings, ov::genai::GenerationConfig{},
+        std::nullopt, std::nullopt, std::nullopt, std::nullopt, first_ids);
+    auto second = std::make_shared<SequenceGroup>(1, embeddings, ov::genai::GenerationConfig{},
+        std::nullopt, std::nullopt, std::nullopt, std::nullopt, second_ids);
+    first->get_sequences().front()->set_prefix_cache_policy(4);
+    second->get_sequences().front()->set_prefix_cache_policy(4);
+    EXPECT_NE(first->get_sequences().front()->get_hash(4, 4), second->get_sequences().front()->get_hash(4, 4));
+}
+
+TEST_P(PreparedCacheAllocationFailure, PrefixPoolGrowthAccountsForOccupiedPromptCheckpoints) {
+    auto orchestrator = std::make_shared<CacheOrchestrator>();
+    auto manager = std::make_unique<BlockManager>(8, true, 4, GetParam(), 0, true);
+    auto group = std::make_shared<SequenceGroup>(
+        0, std::vector<int64_t>(32, 1), ov::genai::GenerationConfig{});
+    group->schedule_tokens(32);
+    manager->append_slots(group);
+    group->finish_iteration();
+    const uint64_t seq_id = group->get_sequences().front()->get_id();
+    manager->advance_linear_attention_live_state(seq_id, 32);
+    orchestrator->register_cache_type(CacheType::LINEAR_ATTENTION_CACHE,
+        std::make_unique<testing::NiceMock<RowOnlyCacheManager>>(), std::move(manager), GetParam() > 1);
+    EXPECT_TRUE(orchestrator->ensure_linear_attention_pool_blocks(7));
+    EXPECT_FALSE(orchestrator->ensure_linear_attention_pool_blocks(7));
+    auto& blocks = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+    EXPECT_TRUE(blocks.can_prepare_temporary_blocks(seq_id, 5));
+    const auto live = blocks.get_linear_attention_live_state(seq_id);
+    const auto scratch = blocks.prepare_temporary_blocks(seq_id, 5);
+    EXPECT_EQ(scratch.block_indices.size(), 5u);
+    auto promotion = blocks.prepare_temporary_promotions({{seq_id, 1, 32, live.generation}});
+    EXPECT_EQ(promotion.apply().size(), 1u);
+    EXPECT_GT(blocks.get_num_linear_attention_headroom_blocks(), 0u);
+    EXPECT_FALSE(orchestrator->ensure_linear_attention_pool_blocks(7));
+    EXPECT_TRUE(blocks.can_prepare_temporary_blocks(seq_id, 5));
+    orchestrator->free_sequence(seq_id);
+}
 
 TEST_P(PreparedCacheAllocationFailure, PrefixPromotionPreservesPublishedBaseAndAppliesWithoutAllocation) {
     BlockManager manager(12, true, 4, GetParam(), 0, true, 12);

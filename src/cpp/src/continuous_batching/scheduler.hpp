@@ -481,8 +481,9 @@ public:
         m_cache_orchestrator->fork_sequence(parent_id, child_id);
     }
 
-    void restore_cached_blocks(const SequenceGroup::Ptr& sequence_group) {
-        m_cache_orchestrator->restore_cached_blocks(sequence_group);
+    void restore_cached_blocks(const SequenceGroup::Ptr& sequence_group,
+                               size_t max_processed_tokens = std::numeric_limits<size_t>::max()) {
+        m_cache_orchestrator->restore_cached_blocks(sequence_group, max_processed_tokens);
     }
 
     const SchedulerConfig& get_config() const {
