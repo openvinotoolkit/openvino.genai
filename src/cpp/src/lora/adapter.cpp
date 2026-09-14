@@ -732,14 +732,15 @@ NodePtr decompression_convert (NodePtr node) {
 }
 
 
-// Cache of infer request for on-demand build and compiled helper models for weight modification.
-// It maps a model signature which is an arbitrary string to OpenVINO infer request.
-// Defines `evaluate` method that compute a model by a given signature and input tensors.
+// Cache of compiled helper models for on-demand weight modification, keyed by an arbitrary
+// model signature string. Infer requests are created lazily and may be reused within a caller's
+// scoped preparation operation; releasing them drops external tensor bindings without recompiling.
 class InferRequestSignatureCache {
 
     // Infer request with additional input-output pairs that are bypassed from input to output to eliminate Parameter -> Result pairs from the OV model
     struct RequestWithBypass {
-        ov::InferRequest request;
+        ov::CompiledModel compiled_model;
+        std::optional<ov::InferRequest> request;
         std::vector<std::pair<size_t, size_t>> bypass; // a set of index pairs [j, k], where j is an index of input tensor to be forwarded to k-th output tensor
         std::vector<size_t> inputs; // inputs[i] gives an index in the original input tensor vector to be set to i-th input of the request
         std::vector<size_t> outputs;  // outputs[i] gives an index in the original output tensor vector to be set as an i-th output of the request
@@ -748,7 +749,36 @@ class InferRequestSignatureCache {
 public:
     using Signature = std::string;
 
+    // Keeps infer requests reusable within one tensor-preparation operation and releases them
+    // on every exit path so they cannot retain caller-owned output tensors afterwards.
+    class ScopedRequestLifetime {
+    public:
+        explicit ScopedRequestLifetime(InferRequestSignatureCache& owner) : m_owner(&owner) {}
+
+        ~ScopedRequestLifetime() {
+            if (m_owner) {
+                m_owner->release_infer_requests();
+            }
+        }
+
+        ScopedRequestLifetime(const ScopedRequestLifetime&) = delete;
+        ScopedRequestLifetime& operator=(const ScopedRequestLifetime&) = delete;
+
+        ScopedRequestLifetime(ScopedRequestLifetime&& other) noexcept : m_owner(other.m_owner) {
+            other.m_owner = nullptr;
+        }
+
+        ScopedRequestLifetime& operator=(ScopedRequestLifetime&&) = delete;
+
+    private:
+        InferRequestSignatureCache* m_owner;
+    };
+
     InferRequestSignatureCache(const std::string& device) : device(device) {}
+
+    ScopedRequestLifetime scoped_request_lifetime() {
+        return ScopedRequestLifetime(*this);
+    }
 
     bool exist (const Signature& signature) {
         return requests.count(signature);
@@ -799,14 +829,16 @@ public:
         auto model = std::make_shared<ov::Model>(request_results, request_parameters);
         auto compiled_model = core.compile_model(model, device);
         ov::genai::utils::print_compiled_model_properties(compiled_model, "Infer Request Signature Cache");
-        rwb.request = compiled_model.create_infer_request();
-        requests.emplace(signature, rwb);
+        rwb.compiled_model = std::move(compiled_model);
+        requests.emplace(signature, std::move(rwb));
     }
 
     void evaluate(const Signature& signature, const ov::TensorVector& inputs, ov::TensorVector& outputs) {
         auto& rwb = at(signature);
-        auto request = rwb.request;
-        auto compiled_model = request.get_compiled_model();
+        if (!rwb.request) {
+            rwb.request.emplace(rwb.compiled_model.create_infer_request());
+        }
+        auto& request = *rwb.request;
         for(size_t i = 0; i < rwb.inputs.size(); ++i) {
             request.set_input_tensor(i, inputs[rwb.inputs[i]]);
         }
@@ -827,6 +859,12 @@ public:
     }
 
 private:
+
+    void release_infer_requests() noexcept {
+        for (auto& entry : requests) {
+            entry.second.request.reset();
+        }
+    }
 
     RequestWithBypass& at(const Signature& signature) {
         return requests.at(signature);
@@ -1288,9 +1326,9 @@ bool operator== (const Adapter& a, const Adapter& b) {
 
 // Holds prepared LoRA concat evaluator outputs so that switching back to a config already
 // seen does not have to evaluate them again. Preparing the tensors is the caller's job; this
-// class only stores them and drops the least recently used entries when a limit is reached.
-// A single config larger than max_bytes is never cached (see insert()), so max_bytes is an
-// actual bound on the cache's resident size, not just a target.
+// class only retains tensor handles and drops the least recently used entries when a limit is
+// reached. A single config larger than max_bytes is returned to the caller without being
+// retained (see insert()), so max_bytes bounds the prepared tensors kept by this cache.
 class PreparedTensorCache {
 public:
     using Tensors = std::vector<LoRAParts<ov::Tensor>>;
@@ -1320,17 +1358,14 @@ public:
         m_entries.front().config = config;
     }
 
-    Tensors& insert(const AdapterConfig& config, Tensors tensors) {
+    // Returns tensor handles by value. ov::Tensor copies share the underlying buffer, so a
+    // cache hit does not copy the tensor payload and an uncached oversized result remains alive
+    // only for the caller's current apply operation.
+    Tensors insert(const AdapterConfig& config, Tensors tensors) {
         const size_t byte_size = total_byte_size(tensors);
 
         if (byte_size > max_bytes) {
-            // A config this large can't be cached without exceeding max_bytes on its own, and
-            // would be evicted by the very next insert() anyway, so it gains little from being
-            // cached. Return the prepared tensors without adding them to m_entries/m_byte_size;
-            // the reference is valid until the next insert() call, and the same config is
-            // recomputed (cache miss) if requested again.
-            m_scratch = std::make_unique<Entry>(Entry{config, std::move(tensors), byte_size});
-            return m_scratch->tensors;
+            return tensors;
         }
 
         // Evict least-recently-used entries until both limits are satisfied.
@@ -1347,7 +1382,6 @@ public:
     void clear() {
         m_entries.clear();
         m_byte_size = 0;
-        m_scratch.reset();
     }
 
     // Checks whether two configs would produce the same prepared A/B tensors, making one reusable for
@@ -1394,9 +1428,6 @@ private:
 
     std::list<Entry> m_entries;
     size_t m_byte_size = 0;
-    // Holds the most recent oversized entry returned by insert() without being cached; see
-    // insert(). Only needed to keep that entry's tensors alive for the caller's reference.
-    std::unique_ptr<Entry> m_scratch;
 };
 
 
@@ -1740,6 +1771,7 @@ struct AdapterControllerImpl {
         const AdapterConfig& config,
         const std::vector<LoRAWeightGetter>& weight_getters,
         bool alpha_only = false) {
+        auto request_lifetime = lora_state_evaluators.scoped_request_lifetime();
         std::vector<LoRAParts<ov::Tensor>> prepared_tensors;
         prepared_tensors.reserve(variable_ids.size());
         for (const auto& lora_var_ids : variable_ids) {
@@ -1776,7 +1808,7 @@ struct AdapterControllerImpl {
     }
 
     // Returns cached prepared tensors for a config if present, otherwise prepares and caches them.
-    const std::vector<LoRAParts<ov::Tensor>>& get_or_prepare_config_tensors(
+    std::vector<LoRAParts<ov::Tensor>> get_or_prepare_config_tensors(
         const AdapterConfig& config,
         const std::vector<LoRAWeightGetter>& weight_getters) {
         if (auto* cached = prepared_tensor_cache.find(config)) {
@@ -1869,15 +1901,9 @@ struct AdapterControllerImpl {
         // An alpha-only update needs neither the cached A/B nor a new cache entry, so evaluate
         // just the alpha tensors directly. The full path goes through the cache, which refreshes
         // stale alpha tensors on a hit (see get_or_prepare_config_tensors).
-        std::vector<LoRAParts<ov::Tensor>> alpha_only_tensors;
-        const std::vector<LoRAParts<ov::Tensor>>* prepared_tensors_ptr;
-        if (alpha_only) {
-            alpha_only_tensors = prepare_config_tensors(current_config, weight_getters, /*alpha_only=*/true);
-            prepared_tensors_ptr = &alpha_only_tensors;
-        } else {
-            prepared_tensors_ptr = &get_or_prepare_config_tensors(current_config, weight_getters);
-        }
-        const auto& prepared_tensors = *prepared_tensors_ptr;
+        auto prepared_tensors = alpha_only
+                                    ? prepare_config_tensors(current_config, weight_getters, /*alpha_only=*/true)
+                                    : get_or_prepare_config_tensors(current_config, weight_getters);
 
         auto prepared_tensor_it = prepared_tensors.begin();
         for(const auto& lora_var_ids : variable_ids) {
