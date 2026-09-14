@@ -1289,6 +1289,8 @@ bool operator== (const Adapter& a, const Adapter& b) {
 // Holds prepared LoRA concat evaluator outputs so that switching back to a config already
 // seen does not have to evaluate them again. Preparing the tensors is the caller's job; this
 // class only stores them and drops the least recently used entries when a limit is reached.
+// A single config larger than max_bytes is never cached (see insert()), so max_bytes is an
+// actual bound on the cache's resident size, not just a target.
 class PreparedTensorCache {
 public:
     using Tensors = std::vector<LoRAParts<ov::Tensor>>;
@@ -1321,12 +1323,19 @@ public:
     Tensors& insert(const AdapterConfig& config, Tensors tensors) {
         const size_t byte_size = total_byte_size(tensors);
 
-        // Retain a single oversized entry so a valid config still benefits from caching.
-        // Otherwise evict least-recently-used entries until both limits are satisfied.
+        if (byte_size > max_bytes) {
+            // A config this large can't be cached without exceeding max_bytes on its own, and
+            // would be evicted by the very next insert() anyway, so it gains little from being
+            // cached. Return the prepared tensors without adding them to m_entries/m_byte_size;
+            // the reference is valid until the next insert() call, and the same config is
+            // recomputed (cache miss) if requested again.
+            m_scratch = std::make_unique<Entry>(Entry{config, std::move(tensors), byte_size});
+            return m_scratch->tensors;
+        }
+
+        // Evict least-recently-used entries until both limits are satisfied.
         while (!m_entries.empty() &&
-               (m_entries.size() >= capacity ||
-                byte_size > max_bytes ||
-                m_byte_size > max_bytes - byte_size)) {
+               (m_entries.size() >= capacity || m_byte_size > max_bytes - byte_size)) {
             m_byte_size -= m_entries.back().byte_size;
             m_entries.pop_back();
         }
@@ -1338,6 +1347,7 @@ public:
     void clear() {
         m_entries.clear();
         m_byte_size = 0;
+        m_scratch.reset();
     }
 
     // Checks whether two configs would produce the same prepared A/B tensors, making one reusable for
@@ -1384,6 +1394,9 @@ private:
 
     std::list<Entry> m_entries;
     size_t m_byte_size = 0;
+    // Holds the most recent oversized entry returned by insert() without being cached; see
+    // insert(). Only needed to keep that entry's tensors alive for the caller's reference.
+    std::unique_ptr<Entry> m_scratch;
 };
 
 
