@@ -90,6 +90,7 @@ private:
     const float m_cache_growth_num_tokens = 256; // Number of tokens by which KV-cache is increased
 
     size_t m_snapkv_window_size = 1;
+    bool m_is_validation_mode_enabled = true;
     std::map<uint64_t, size_t> m_expected_num_scheduled_tokens;
 
     class LinearAttentionReservationTransaction {
@@ -320,12 +321,13 @@ public:
         }
     };
 
-    Scheduler(std::shared_ptr<CacheOrchestrator> cache_orchestrator, const SchedulerConfig & config = {}, bool can_use_partial_preemption = true, size_t snapkv_window_size = 1) :
+    Scheduler(std::shared_ptr<CacheOrchestrator> cache_orchestrator, const SchedulerConfig & config = {}, bool can_use_partial_preemption = true, size_t snapkv_window_size = 1, bool is_validation_mode_enabled = true) :
         m_can_use_partial_preemption(can_use_partial_preemption),
         m_config(config),
         m_kv_paged_attention_global_data(std::make_shared<const KVPagedAttentionGlobalData>(config)),
         m_cache_orchestrator(std::move(cache_orchestrator)),
-        m_snapkv_window_size(snapkv_window_size) {
+        m_snapkv_window_size(snapkv_window_size),
+        m_is_validation_mode_enabled(is_validation_mode_enabled) {
     }
 
     void release() {
@@ -443,11 +445,13 @@ public:
         if (ceiling_rows == 0) {
             return;
         }
-        const size_t required_rows = num_live_sequences + window_rows;
+        const size_t prefix_headroom_rows = m_config.enable_prefix_caching ? 1 : 0;
+        const size_t required_rows = num_live_sequences + window_rows + prefix_headroom_rows;
         OPENVINO_ASSERT(ceiling_rows >= required_rows,
                         "The borrowed speculative linear-attention window needs ", num_live_sequences,
                         " committed recurrent-state rows (one per concurrently live sequence) plus ", window_rows,
-                        " borrowed scratch rows (1 + num_assistant_tokens) coexisting in the shared pool, i.e. ",
+                        " borrowed scratch rows (1 + num_assistant_tokens) plus ", prefix_headroom_rows,
+                        " prefix continuation headroom rows coexisting in the shared pool, i.e. ",
                         required_rows, " rows, but num_linear_attention_blocks caps the whole pool at ",
                         ceiling_rows, " rows, so admission alone would fill it and every verification window "
                         "would be deferred forever and its request dropped out of memory; raise "
@@ -1132,12 +1136,13 @@ private:
                                           ? detail::LinearAttentionPagingStep::DECODE
                                           : detail::LinearAttentionPagingStep::PREFILL;
             const auto mode = _classify_linear_attention_paging(sequence_group, current_step);
-            OPENVINO_ASSERT(
-                !(mode.history() == detail::LinearAttentionPagingHistory::PREFIX_CHECKPOINTS &&
-                  mode.step() == detail::LinearAttentionPagingStep::VERIFY),
-                "Linear-attention PREFIX_CHECKPOINTS + VERIFY is represented but not executable for sequence group ",
-                sequence_group->get_request_id(),
-                ": disable prefix caching for speculative validation or implement transactional scratch leases first");
+            if (mode.history() == detail::LinearAttentionPagingHistory::PREFIX_CHECKPOINTS &&
+                mode.step() == detail::LinearAttentionPagingStep::VERIFY) {
+                const auto& params = sequence_group->get_sampling_parameters();
+                OPENVINO_ASSERT(params.is_greedy_decoding() && params.num_return_sequences == 1 &&
+                                    params.assistant_confidence_threshold == 0.f,
+                                "Prefix linear-attention verification requires one greedy sequence and a static window");
+            }
         }
     }
 
@@ -1148,7 +1153,8 @@ private:
         const auto history = m_config.enable_prefix_caching
                                  ? detail::LinearAttentionPagingHistory::PREFIX_CHECKPOINTS
                                  : detail::LinearAttentionPagingHistory::LIVE_ONLY;
-        const auto step = num_tokens_to_validate > 0
+        const auto step = m_is_validation_mode_enabled &&
+                      current_step != detail::LinearAttentionPagingStep::PREFILL && num_tokens_to_validate > 0
                               ? detail::LinearAttentionPagingStep::VERIFY
                               : current_step;
         return {history, step};
@@ -1202,7 +1208,8 @@ private:
                                                                      linear_attention_reservations) {
         const size_t num_processed_tokens = sequence_group->get_num_processed_tokens();
         const size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
-        if (mode.history() == detail::LinearAttentionPagingHistory::PREFIX_CHECKPOINTS) {
+        if (mode.history() == detail::LinearAttentionPagingHistory::PREFIX_CHECKPOINTS &&
+            mode.step() != detail::LinearAttentionPagingStep::VERIFY) {
             OPENVINO_ASSERT(num_scheduled_tokens > 0,
                             "Linear attention paging requires scheduled tokens for sequence ", seq_id);
             const size_t cache_interval =
