@@ -3274,6 +3274,7 @@ def test_cdpruner_continuous_batching_chat_history(
     )
 
 
+<<<<<<< HEAD
 @pytest.fixture(scope="module")
 def qwen35_mtp_model_path() -> Path:
     model_path = Path(_get_ov_model(MODEL_QWEN35_MTP))
@@ -3383,14 +3384,25 @@ def test_qwen35_mtp_image_add_request(qwen35_mtp_model_path, monkeypatch, capfd)
             assert "MTP paired prefix replay:" in captured.out + captured.err
 
 
+=======
+>>>>>>> acf15c665 (Enable prompt-only paired prefix replay for Qwen3.5 MTP)
 @pytest.mark.parametrize("media", ["text", "image", "video", "video_metadata"])
 @pytest.mark.parametrize("enable_prefix_caching", [False, True])
 @pytest.mark.parametrize("num_assistant_tokens", [1, 4])
 @pytest.mark.parametrize("strategy", ["prompt_lookup", "mtp"])
+<<<<<<< HEAD
 def test_qwen35_vlm_verifier_cache_contract(
     qwen35_mtp_model_path, media, enable_prefix_caching, num_assistant_tokens, strategy, monkeypatch, capfd
 ):
     model_path = qwen35_mtp_model_path
+=======
+def test_local_qwen35_vlm_verifier_cache_contract(
+    media, enable_prefix_caching, num_assistant_tokens, strategy, monkeypatch, capfd
+):
+    model_path = os.environ.get("OV_GENAI_QWEN35_MODEL")
+    if not model_path:
+        pytest.skip("OV_GENAI_QWEN35_MODEL must name a local Qwen3.5 VLM IR")
+>>>>>>> acf15c665 (Enable prompt-only paired prefix replay for Qwen3.5 MTP)
     monkeypatch.setenv("OPENVINO_LOG_LEVEL", "5")
     scheduler = SchedulerConfig()
     scheduler.enable_prefix_caching = False
@@ -3478,6 +3490,7 @@ def test_qwen35_vlm_verifier_cache_contract(
         extended_actual = lookup.generate(extended_prompt, generation_config=config, **media_inputs)
         assert extended_actual.texts == extended_reference.texts
 
+<<<<<<< HEAD
         config.max_new_tokens = 24
         reference_history = ChatHistory()
         reference_history.append({"role": "user", "content": prompt})
@@ -3510,6 +3523,8 @@ def test_qwen35_vlm_verifier_cache_contract(
         next_actual = lookup.generate(history, generation_config=config)
         assert next_actual.texts == next_reference.texts
 
+=======
+>>>>>>> acf15c665 (Enable prompt-only paired prefix replay for Qwen3.5 MTP)
 
 @pytest.mark.parametrize(
     "model_id",

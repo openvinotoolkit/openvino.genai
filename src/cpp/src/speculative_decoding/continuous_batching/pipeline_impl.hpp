@@ -330,7 +330,13 @@ public:
                                                        plugin_config,
                                                        is_validation_mode_enabled) {
         mtp_mode_enabled = true;
+<<<<<<< HEAD
         validate_prefix_cache_support(scheduler_config, is_validation_mode_enabled);
+=======
+        OPENVINO_ASSERT(!scheduler_config.enable_prefix_caching || is_validation_mode_enabled ||
+                    !m_scheduler->has_linear_attention_cache(),
+                "Prefix-enabled MTP draft pipelines with linear-attention state are not supported");
+>>>>>>> acf15c665 (Enable prompt-only paired prefix replay for Qwen3.5 MTP)
         m_inputs_embedder = inputs_embedder;
         m_model_runner->set_inputs_embedder(inputs_embedder);
         m_model_input_type = ModelInputType::EMBEDDINGS;

@@ -2599,6 +2599,10 @@ public:
     void publish_completed_blocks(const Sequence::Ptr& sequence, size_t processed_before, size_t processed_after) {
         OPENVINO_ASSERT(processed_after >= processed_before,
                         "Cache block publication cannot precede the scheduled forward pass");
+        processed_after = std::min(processed_after, sequence->get_prefix_publication_limit());
+        if (processed_after <= processed_before) {
+            return;
+        }
         if (!m_enable_prefix_caching || processed_before / m_block_size == processed_after / m_block_size) {
             return;
         }
