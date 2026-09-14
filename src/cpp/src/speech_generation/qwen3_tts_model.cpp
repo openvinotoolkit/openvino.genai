@@ -958,7 +958,15 @@ ov::Tensor Qwen3TTSImpl::infer_embedding_seq(ov::InferRequest& request, const st
     ov::Tensor ids(ov::element::i64, ov::Shape{1, token_ids.size()});
     std::copy(token_ids.begin(), token_ids.end(), ids.data<int64_t>());
     request.set_input_tensor(ids);
-    request.infer();
+
+    const char* perf_stage = "talker_embedding_unknown";
+    if (&request == &m_talker_embedding) {
+        perf_stage = "talker_embedding";
+    } else if (&request == &m_talker_text_embedding) {
+        perf_stage = "talker_text_embedding";
+    }
+    run_and_time([&] { request.infer(); }, perf_stage, m_perf_ms, m_perf_calls);
+
     auto out = clone_tensor(request.get_output_tensor(0));
     return out;
 }
@@ -1433,10 +1441,6 @@ std::vector<int64_t> Qwen3TTSImpl::generate_codec_groups(const ov::Tensor& past_
                                                          int64_t first_codec_token,
                                                          const SpeechGenerationConfig& generation_config,
                                                          std::mt19937& rng) {
-    // Measure wall-clock time and inference time separately to compute overhead per-call.
-    auto wall_start = std::chrono::high_resolution_clock::now();
-    auto code_predictor_ms_before = m_perf_ms["code_predictor"];
-
     SpeechGenerationConfig predictor_config = generation_config;
     predictor_config.do_sample = generation_config.subtalker_dosample;
     predictor_config.top_k = generation_config.subtalker_top_k;
@@ -1460,12 +1464,7 @@ std::vector<int64_t> Qwen3TTSImpl::generate_codec_groups(const ov::Tensor& past_
         generated.reserve(m_ids.num_code_groups - 1);
         std::vector<bool> predictor_suppressed(2048, false);
 
-        ov::Tensor first_id_hidden;
-        run_and_time(
-            [&]() { first_id_hidden = infer_embedding(m_talker_embedding, first_codec_token); },
-            "codec_groups_first_embedding",
-            m_perf_ms,
-            m_perf_calls);
+        ov::Tensor first_id_hidden = infer_embedding(m_talker_embedding, first_codec_token);
 
         const ov::Shape ph_shape = past_hidden.get_shape();
         const ov::Shape hid_shape = first_id_hidden.get_shape();
@@ -1497,17 +1496,6 @@ std::vector<int64_t> Qwen3TTSImpl::generate_codec_groups(const ov::Tensor& past_
             groups.push_back(m_ids.codec_pad_id);
         }
 
-        auto wall_end = std::chrono::high_resolution_clock::now();
-        double wall_ms = std::chrono::duration<double, std::milli>(wall_end - wall_start).count();
-        double code_predictor_ms_after = m_perf_ms["code_predictor"];
-        double inference_ms = code_predictor_ms_after - code_predictor_ms_before;
-        double overhead_ms = wall_ms - inference_ms;
-
-        m_perf_ms["generate_codec_groups"] += wall_ms;
-        m_perf_calls["generate_codec_groups"]++;
-        m_perf_ms["codec_groups_overhead"] += overhead_ms;
-        m_perf_calls["codec_groups_overhead"]++;
-
         return groups;
     }
 
@@ -1521,12 +1509,7 @@ std::vector<int64_t> Qwen3TTSImpl::generate_codec_groups(const ov::Tensor& past_
     // token (g-1)'s embedding.
 
     // === First embedding lookup ===
-    ov::Tensor first_id_hidden;
-    run_and_time(
-        [&]() { first_id_hidden = infer_embedding(m_talker_embedding, first_codec_token); },
-        "codec_groups_first_embedding",
-        m_perf_ms,
-        m_perf_calls);
+    ov::Tensor first_id_hidden = infer_embedding(m_talker_embedding, first_codec_token);
 
     ov::Shape ph_shape = past_hidden.get_shape();
     ov::Shape hid_shape = first_id_hidden.get_shape();
@@ -1549,18 +1532,12 @@ std::vector<int64_t> Qwen3TTSImpl::generate_codec_groups(const ov::Tensor& past_
     const float* ph_ptr = past_hidden.data<const float>();
     const float* hid_ptr = first_id_hidden.data<const float>();
     ov::Tensor logits;
-    run_and_time(
-        [&]() {
-            for (size_t t = 0; t < prefill_tokens; ++t) {
-                const bool is_last_ctx = (t + 1 == ph_shape[1]);  // last talker-context token
-                const float* src = (t < ph_shape[1]) ? (ph_ptr + t * hidden) : hid_ptr;
-                logits = feed_token(src, /*reset=*/t == 0);
-                (void)is_last_ctx;
-            }
-        },
-        "codec_groups_prefill_loop",
-        m_perf_ms,
-        m_perf_calls);
+    for (size_t t = 0; t < prefill_tokens; ++t) {
+        const bool is_last_ctx = (t + 1 == ph_shape[1]);  // last talker-context token
+        const float* src = (t < ph_shape[1]) ? (ph_ptr + t * hidden) : hid_ptr;
+        logits = feed_token(src, /*reset=*/t == 0);
+        (void)is_last_ctx;
+    }
 
     std::vector<int64_t> generated;
     generated.reserve(m_ids.num_code_groups - 1);
@@ -1568,50 +1545,24 @@ std::vector<int64_t> Qwen3TTSImpl::generate_codec_groups(const ov::Tensor& past_
     std::vector<bool> predictor_suppressed(2048, false);
 
     // === Prefill sampling ===
-    int64_t next;
-    run_and_time(
-        [&]() {
-            next = sample_token_from_logits(logits, predictor_config, generated, predictor_suppressed, rng);
-        },
-        "codec_groups_prefill_sampling",
-        m_perf_ms,
-        m_perf_calls);
+    int64_t next = sample_token_from_logits(logits, predictor_config, generated, predictor_suppressed, rng);
     generated.push_back(next);
 
-    // === Residual loops: embedding + head selection + sampling per group ===
-    run_and_time(
-        [&]() {
-            for (size_t g = 1; g < m_ids.num_code_groups - 1; ++g) {
-                // Embed the previous residual token, advance one position, predict group g+1
-                // from head index g.
-                auto emb = infer_predictor_embedding(next, static_cast<int64_t>(g - 1));
-                OPENVINO_ASSERT(emb.get_shape().size() == 3 && emb.get_shape()[1] == 1,
-                                "Code predictor residual embedding must be a single token");
-                auto lg = infer_predictor(emb, /*reset=*/false, /*step=*/static_cast<int64_t>(g));
-                next = sample_token_from_logits(lg, predictor_config, generated, predictor_suppressed, rng);
-                generated.push_back(next);
-            }
-        },
-        "codec_groups_residual_loop",
-        m_perf_ms,
-        m_perf_calls);
+    for (size_t g = 1; g < m_ids.num_code_groups - 1; ++g) {
+        // Embed the previous residual token, advance one position, predict group g+1
+        // from head index g.
+        auto emb = infer_predictor_embedding(next, static_cast<int64_t>(g - 1));
+        OPENVINO_ASSERT(emb.get_shape().size() == 3 && emb.get_shape()[1] == 1,
+                        "Code predictor residual embedding must be a single token");
+        auto lg = infer_predictor(emb, /*reset=*/false, /*step=*/static_cast<int64_t>(g));
+        next = sample_token_from_logits(lg, predictor_config, generated, predictor_suppressed, rng);
+        generated.push_back(next);
+    }
 
     groups.insert(groups.end(), generated.begin(), generated.end());
     while (groups.size() < m_ids.num_code_groups) {
         groups.push_back(m_ids.codec_pad_id);
     }
-
-    // Record timing: total wall-clock time and nested inference time separately.
-    auto wall_end = std::chrono::high_resolution_clock::now();
-    double wall_ms = std::chrono::duration<double, std::milli>(wall_end - wall_start).count();
-    double code_predictor_ms_after = m_perf_ms["code_predictor"];
-    double inference_ms = code_predictor_ms_after - code_predictor_ms_before;
-    double overhead_ms = wall_ms - inference_ms;
-
-    m_perf_ms["generate_codec_groups"] += wall_ms;
-    m_perf_calls["generate_codec_groups"]++;
-    m_perf_ms["codec_groups_overhead"] += overhead_ms;
-    m_perf_calls["codec_groups_overhead"]++;
 
     return groups;
 }
@@ -2421,6 +2372,10 @@ void Qwen3TTSImpl::perf_print_and_reset() const {
     std::vector<std::pair<std::string, double>> entries(m_perf_ms.begin(), m_perf_ms.end());
     std::sort(entries.begin(), entries.end(),
               [](const auto& a, const auto& b) { return a.second > b.second; });
+    double total_accumulated_ms = 0.0;
+    for (const auto& [_, total_ms] : entries) {
+        total_accumulated_ms += total_ms;
+    }
     std::cout << "[QWEN_PERF] Component inference timing (ms):" << std::endl;
     for (const auto& [name, total_ms] : entries) {
         const int64_t count = m_perf_calls.count(name) ? m_perf_calls.at(name) : 1;
@@ -2437,6 +2392,8 @@ void Qwen3TTSImpl::perf_print_and_reset() const {
                   << ", avg " << std::setw(7) << avg_ms << " ms"
                   << extra << ")" << std::endl;
     }
+    std::cout << "[QWEN_PERF] Total accumulated component time : "
+              << std::fixed << std::setprecision(1) << total_accumulated_ms << " ms" << std::endl;
     m_perf_ms.clear();
     m_perf_calls.clear();
     m_talker_prefill_tokens = 0;
