@@ -1,9 +1,17 @@
 # Incremental Linear-Attention Live-Tail and Commit Refactor Plan
 
-**Status:** P0 accepted; P1-P3 committed; scoped LFM P4-P5 foundation verified locally, uncommitted; Qwen3.5 MTP and VLM/media gates pending
+**Status:** LFM foundation committed as `43b1c3df1`; Qwen3.5 prompt-only paired replay and VLM/media parity verified locally, uncommitted; final policy/negative-input gates remain open
 **Date:** 2026-09-07
 **Last updated:** 2026-09-14
 **Decision record:** [ADR-0005](adr/0005-prefix-caching-for-qwen35-mtp-with-paged-linear-attention.md)
+
+The current Qwen implementation and verification results are recorded in the
+[current handoff](exact-endpoint-continuation-progress.md). All 32 local VLM
+prompt-lookup/MTP media cases pass, with observed paired restores on warm MTP calls.
+The 16 MTP cases also pass after complete prompt-ID identity and admission checks.
+This validates predecessor replay for prompt-only reuse, not the historical
+endpoint-sidecar design or a measured policy comparison. Earlier phase descriptions
+below retain their original acceptance boundaries.
 
 P1-P3 currently includes explicit greedy acceptance, move-only LA scratch leases,
 prepared LA promotion, prepared non-prefix KV tail release, deferred notification, and

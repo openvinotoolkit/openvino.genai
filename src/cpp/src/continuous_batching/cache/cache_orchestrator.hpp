@@ -398,7 +398,8 @@ public:
         }
     }
 
-    void restore_cached_blocks(const SequenceGroup::Ptr& sequence_group) {
+    void restore_cached_blocks(const SequenceGroup::Ptr& sequence_group,
+                               size_t max_processed_tokens = std::numeric_limits<size_t>::max()) {
         if (m_block_managers.empty()) {
             return;
         }
@@ -409,14 +410,13 @@ public:
             auto& kv_block_mgr = *kv_it->second;
             auto& la_block_mgr = *la_it->second;
 
-            auto kv_plan = kv_block_mgr.get_prefix_restore_plan(sequence_group);
+            auto kv_plan = kv_block_mgr.get_prefix_restore_plan(sequence_group, max_processed_tokens);
             if (kv_plan.empty()) {
                 return;
             }
 
-            const size_t restore_ceiling = sequence_group->get_prompt_len() > 0
-                                               ? sequence_group->get_prompt_len() - 1
-                                               : 0;
+            const size_t restore_ceiling = std::min(max_processed_tokens,
+                sequence_group->get_prompt_len() > 0 ? sequence_group->get_prompt_len() - 1 : 0);
             auto la_plan = la_block_mgr.get_prefix_restore_plan(
                 sequence_group, std::min(kv_plan.cache_token_position, restore_ceiling));
             if (la_plan.empty()) {
@@ -449,12 +449,14 @@ public:
         }
 
         if (m_block_managers.size() == 1) {
-            m_block_managers.begin()->second->restore_cached_blocks(sequence_group);
+            auto& manager = *m_block_managers.begin()->second;
+            const auto plan = manager.get_prefix_restore_plan(sequence_group, max_processed_tokens);
+            manager.restore_cached_blocks(sequence_group, plan);
             return;
         }
 
         std::map<CacheType, BlockManager::PrefixRestorePlan> restore_plans;
-        size_t common_cache_token_position = sequence_group->get_prompt_len();
+        size_t common_cache_token_position = std::min(sequence_group->get_prompt_len(), max_processed_tokens);
         while (common_cache_token_position > 0) {
             restore_plans.clear();
             size_t next_common_cache_token_position = std::numeric_limits<size_t>::max();
@@ -755,6 +757,10 @@ public:
         const auto it = m_block_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
         if (it == m_block_managers.end()) {
             return false;
+        }
+        if (it->second->is_prefix_caching_enabled()) {
+            num_blocks += it->second->get_num_blocks_in_use() -
+                          it->second->get_num_linear_attention_headroom_blocks();
         }
         return it->second->increase_block_count_up_to(num_blocks);
     }

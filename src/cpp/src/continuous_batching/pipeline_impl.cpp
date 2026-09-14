@@ -352,9 +352,7 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     {
         std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
         _throw_if_failed();
-        if (m_scheduler->get_config().enable_prefix_caching) {
-            m_scheduler->restore_cached_blocks(sequence_group);
-        }
+        initialize_prefix_cache(sequence_group);
         m_awaiting_requests.push_back(sequence_group);
     }
 
@@ -404,8 +402,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_validate_linear_verifi
 
         const auto& sampling_params = sequence_group->get_sampling_parameters();
         OPENVINO_ASSERT(!m_scheduler->get_config().enable_prefix_caching ||
-                            (m_model_input_type == ModelInputType::TOKENS && sampling_params.is_greedy_decoding()),
-                        "Prefix linear-attention verification supports greedy token-input pipelines only");
+                            ((m_model_input_type == ModelInputType::TOKENS || supports_embedding_prefix_verification()) &&
+                             sampling_params.is_greedy_decoding()),
+                        "Prefix linear-attention verification requires greedy decoding and a supported strategy for embedding input");
         OPENVINO_ASSERT(sampling_params.assistant_confidence_threshold == 0.f,
                         "Linear-attention verifier speculative decoding supports a static candidate count only; assistant_confidence_threshold>0 (dynamic candidate count) is not yet supported.");
         OPENVINO_ASSERT(sampling_params.num_return_sequences == 1,

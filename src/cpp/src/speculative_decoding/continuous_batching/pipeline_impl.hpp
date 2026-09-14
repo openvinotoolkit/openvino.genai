@@ -206,6 +206,56 @@ class ContinuousBatchingPipeline::ContinuousBatchingForMtpDecodingImpl
 public:
     ContinuousBatchingForMtpDecodingImpl() = default;
 
+    bool is_prefix_caching_enabled() const {
+        return m_scheduler->get_config().enable_prefix_caching;
+    }
+
+    void discard_awaiting_request(uint64_t request_id) {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        for (auto request = m_awaiting_requests.begin(); request != m_awaiting_requests.end(); ++request) {
+            if ((*request)->get_request_id() != request_id) {
+                continue;
+            }
+            for (const auto& sequence : (*request)->get_sequences()) {
+                m_scheduler->free_sequence(sequence->get_id());
+            }
+            m_awaiting_requests.erase(request);
+            return;
+        }
+    }
+
+    size_t restore_awaiting_prefix(uint64_t request_id, size_t ceiling) {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        for (const auto& group : m_awaiting_requests) {
+            if (group->get_request_id() != request_id) {
+                continue;
+            }
+            for (const auto& sequence : group->get_sequences()) {
+                m_scheduler->free_sequence(sequence->get_id());
+            }
+            group->update_processed_tokens_num(0);
+            if (m_scheduler->get_config().enable_prefix_caching) {
+                m_scheduler->restore_cached_blocks(group, ceiling);
+            }
+            return group->get_num_processed_tokens();
+        }
+        OPENVINO_THROW("MTP prefix restore requires an awaiting request: ", request_id);
+    }
+
+    bool supports_embedding_prefix_verification() const override {
+        return true;
+    }
+
+    void initialize_prefix_cache(const SequenceGroup::Ptr& group) override {
+        for (const auto& sequence : group->get_sequences()) {
+            sequence->set_prefix_cache_policy(group->get_prompt_len());
+        }
+    }
+
+    bool _can_publish_kv_only_completed_blocks() const override {
+        return true;
+    }
+
     ContinuousBatchingForMtpDecodingImpl(const std::shared_ptr<ov::Model>& model,
                                          const std::shared_ptr<InputsEmbedder>& inputs_embedder,
                                          const Tokenizer& tokenizer,
@@ -222,6 +272,9 @@ public:
                                                        plugin_config,
                                                        is_validation_mode_enabled) {
         mtp_mode_enabled = true;
+        OPENVINO_ASSERT(!scheduler_config.enable_prefix_caching || is_validation_mode_enabled ||
+                    !m_scheduler->has_linear_attention_cache(),
+                "Prefix-enabled MTP draft pipelines with linear-attention state are not supported");
         m_inputs_embedder = inputs_embedder;
         m_model_runner->set_inputs_embedder(inputs_embedder);
         m_model_input_type = ModelInputType::EMBEDDINGS;
