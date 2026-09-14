@@ -1,8 +1,8 @@
 # Incremental Linear-Attention Live-Tail and Commit Refactor Plan
 
-**Status:** P0 accepted; P1-P3 committed; P4 capacity committed and scratch admission verified; remaining P4 and P5-P8 pending
+**Status:** P0 accepted; P1-P3 committed; P4 capacity and scratch eviction committed; batch publication verified; remaining P4 and P5-P8 pending
 **Date:** 2026-09-07
-**Last updated:** 2026-09-11
+**Last updated:** 2026-09-14
 **Decision record:** [ADR-0005](adr/0005-prefix-caching-for-qwen35-mtp-with-paged-linear-attention.md)
 
 P1-P3 currently includes explicit greedy acceptance, move-only LA scratch leases,
@@ -26,6 +26,9 @@ disabled. This closes the remaining P1-P3 host-allocation gate for the selected 
 it does not claim device-allocation or general process-OOM recovery coverage.
 
 Qwen3.5 MTP acceptance must use the VLM pipeline and include built-in media support.
+Execution order confirmed September 14: finish LFM common-foundation support first,
+including observed prefix restores and strategy-specific guard gates, then check
+Qwen3.5 VLM/media. Do not treat existing LFM smoke/parity cases as full enablement.
 The five LFM cases are common-foundation tests, not Qwen3.5 VLM/media tests. The user
 permits predecessor-checkpoint behavior for the three-row pressure test; that case
 now verifies safe capacity deferral and unchanged published ownership, not exact-P
@@ -33,7 +36,23 @@ continuation or cached-logit sampling.
 
 ## Goal and Boundary
 
-### Current P4 Progress (2026-09-11)
+### Current P4 Progress (2026-09-14)
+
+Prepared scratch eviction is committed as `74c622c38`. The subsequent uncommitted
+slice prepares all represented crossed-boundary publication metadata before setting
+any row's published flag. Both production publication loops use the batch API.
+Allocation failure preserves the whole new set; canonical duplicates remain private.
+This is per-cache metadata atomicity, not cross-cache publication or the optional
+physical-row retention policy. Legacy allocation still registers fresh rows early.
+
+Validation: 755 selected C++ tests, ten allocation-failure tests, and five LFM Python
+regressions passed using the rebuilt native library. The new tests cover deterministic
+multi-candidate LRU and failure at each allocation while publishing two boundaries.
+One independent review completed; scoped diagnostics and whitespace checks passed.
+CSV-backed model suites remained excluded. Retained next-window headroom, optional
+no-gap retention, pinned atomic KV+LA restore/rewind and P5 guard decisions remain.
+
+### Earlier Capacity and Eviction Slices
 
 P1-P3 was committed as `0ce159919`. The first subsequent P4 slice preserves the
 explicit `num_linear_attention_blocks` ceiling in production prefix-LA registration.

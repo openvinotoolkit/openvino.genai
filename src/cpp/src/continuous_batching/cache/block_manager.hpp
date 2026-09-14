@@ -1792,7 +1792,6 @@ public:
         OPENVINO_ASSERT(existing_temporary_it == m_temporary_block_table.end() ||
                             existing_temporary_it->second.empty(),
                         "Temporary cache blocks are already reserved for sequence ", seq_id);
-<<<<<<< HEAD
         const auto headroom_it = m_linear_attention_headroom.find(seq_id);
         const size_t retained = headroom_it == m_linear_attention_headroom.end() ? 0 : headroom_it->second.size();
         const bool reusable_live = m_restore_latest_prefix_block_only &&
@@ -1805,14 +1804,10 @@ public:
             ? num_blocks + optional_rows - (reusable_live ? 1 : 0) : num_blocks;
         const size_t capacity = retained + m_allocator.num_free_blocks(0);
         OPENVINO_ASSERT(capacity >= minimum_rows,
-=======
-        OPENVINO_ASSERT(m_allocator.can_allocate_blocks(num_blocks),
->>>>>>> b216665d4 (Prepare atomic checkpoint eviction for scratch reservations)
                         "Not enough cache blocks to reserve ", num_blocks,
                         " temporary checkpoints for sequence ", seq_id);
 
         std::vector<int> block_indices;
-<<<<<<< HEAD
         block_indices.reserve(num_blocks);
         const size_t total_rows = capacity >= desired_rows ? std::max(desired_rows, retained) : std::max(minimum_rows, retained);
         TemporaryBlockTable allocations;
@@ -1837,12 +1832,6 @@ public:
             }
             temporary_it->second = std::move(allocations);
             m_temporary_window_sizes.merge(window_node);
-=======
-        const auto [temporary_it, inserted] = m_temporary_block_table.try_emplace(seq_id);
-        try {
-            temporary_it->second =
-                acquire_temporary_blocks(num_blocks, block_indices);
->>>>>>> b216665d4 (Prepare atomic checkpoint eviction for scratch reservations)
         } catch (...) {
             if (inserted) {
                 m_temporary_block_table.erase(temporary_it);
@@ -2601,6 +2590,15 @@ public:
         if (processed_after <= processed_before) {
             return;
         }
+        if (!m_enable_prefix_caching || processed_before / m_block_size == processed_after / m_block_size) {
+            return;
+        }
+        publish_completed_blocks(sequence, content_length - m_block_size, content_length);
+    }
+
+    void publish_completed_blocks(const Sequence::Ptr& sequence, size_t processed_before, size_t processed_after) {
+        OPENVINO_ASSERT(processed_after >= processed_before,
+                        "Cache block publication cannot precede the scheduled forward pass");
         if (!m_enable_prefix_caching || processed_before / m_block_size == processed_after / m_block_size) {
             return;
         }
