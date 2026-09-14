@@ -2207,6 +2207,15 @@ public:
         if (!m_enable_prefix_caching || content_length == 0 || content_length % m_block_size != 0) {
             return;
         }
+        publish_completed_blocks(sequence, content_length - m_block_size, content_length);
+    }
+
+    void publish_completed_blocks(const Sequence::Ptr& sequence, size_t processed_before, size_t processed_after) {
+        OPENVINO_ASSERT(processed_after >= processed_before,
+                        "Cache block publication cannot precede the scheduled forward pass");
+        if (!m_enable_prefix_caching || processed_before / m_block_size == processed_after / m_block_size) {
+            return;
+        }
 
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         const uint64_t seq_id = sequence->get_id();
@@ -2215,46 +2224,69 @@ public:
             return;
         }
 
-        const size_t logical_block_idx = content_length / m_block_size - 1;
         const size_t logical_start = get_block_table_logical_start_unlocked(seq_id);
-        if (logical_block_idx < logical_start) {
-            return;
-        }
-        const size_t physical_block_idx = logical_block_idx - logical_start;
-        if (physical_block_idx >= block_table_it->second[0].size()) {
-            return;
-        }
-
-        BlocksPerLayer completed_blocks;
-        completed_blocks.reserve(m_num_layers);
-        for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
-            CacheBlock::Ptr block = block_table_it->second[layer_idx][physical_block_idx];
-            OPENVINO_ASSERT(block->has_published_hash() ==
-                                block_table_it->second[0][physical_block_idx]->has_published_hash(),
-                            "Cache blocks across layers must share publication state");
-            completed_blocks.push_back(std::move(block));
-        }
-        if (completed_blocks[0]->has_published_hash()) {
-            return;
-        }
-
-        const uint64_t hash = sequence->get_hash(content_length, m_block_size);
-        const auto cached_blocks_it = m_prefix_hash_to_cached_blocks.find(hash);
-        if (cached_blocks_it != m_prefix_hash_to_cached_blocks.end()) {
-            OPENVINO_ASSERT(cached_blocks_it->second.size() == m_num_layers,
-                            "Cached prefix identity must contain one block per layer");
-            for (const CacheBlock::Ptr& cached_block : cached_blocks_it->second) {
-                OPENVINO_ASSERT(cached_block->has_published_hash() && cached_block->get_hash() == hash,
-                                "Cached prefix identity must refer to verified published blocks");
+        std::map<uint64_t, BlocksPerLayer> prepared_blocks;
+        std::map<uint64_t, size_t> prepared_hash_lengths;
+        std::map<size_t, size_t> prepared_length_counts;
+        for (size_t logical_block_idx = processed_before / m_block_size;
+             logical_block_idx < processed_after / m_block_size; ++logical_block_idx) {
+            if (logical_block_idx < logical_start) {
+                continue;
             }
-            return;
+            const size_t physical_block_idx = logical_block_idx - logical_start;
+            if (physical_block_idx >= block_table_it->second[0].size()) {
+                break;
+            }
+            BlocksPerLayer completed_blocks;
+            completed_blocks.reserve(m_num_layers);
+            for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+                CacheBlock::Ptr block = block_table_it->second[layer_idx][physical_block_idx];
+                OPENVINO_ASSERT(block->has_published_hash() ==
+                                    block_table_it->second[0][physical_block_idx]->has_published_hash(),
+                                "Cache blocks across layers must share publication state");
+                completed_blocks.push_back(std::move(block));
+            }
+            if (completed_blocks[0]->has_published_hash()) {
+                continue;
+            }
+            const size_t content_length = (logical_block_idx + 1) * m_block_size;
+            const uint64_t hash = sequence->get_hash(content_length, m_block_size);
+            const auto content_length_it = m_cached_hash_to_content_length.find(hash);
+            OPENVINO_ASSERT(content_length_it == m_cached_hash_to_content_length.end() ||
+                                content_length_it->second == content_length,
+                            "Cached prefix identity has a different content length");
+            const auto cached_blocks_it = m_prefix_hash_to_cached_blocks.find(hash);
+            if (cached_blocks_it != m_prefix_hash_to_cached_blocks.end()) {
+                OPENVINO_ASSERT(cached_blocks_it->second.size() == m_num_layers,
+                                "Cached prefix identity must contain one block per layer");
+                for (const CacheBlock::Ptr& cached_block : cached_blocks_it->second) {
+                    OPENVINO_ASSERT(cached_block->has_published_hash() && cached_block->get_hash() == hash,
+                                    "Cached prefix identity must refer to verified published blocks");
+                }
+                continue;
+            }
+            const auto [prepared_it, inserted] = prepared_blocks.emplace(hash, std::move(completed_blocks));
+            OPENVINO_ASSERT(inserted, "Crossed cache boundaries must have distinct prefix identities");
+            if (content_length_it == m_cached_hash_to_content_length.end()) {
+                prepared_hash_lengths.emplace(prepared_it->first, content_length);
+                ++prepared_length_counts[content_length];
+            }
         }
 
-        for (CacheBlock::Ptr& block : completed_blocks) {
-            block->set_hash(hash);
+        for (const auto& [hash, blocks] : prepared_blocks) {
+            for (const CacheBlock::Ptr& block : blocks) {
+                block->set_hash(hash);
+            }
         }
-        m_prefix_hash_to_cached_blocks.emplace(hash, completed_blocks);
-        register_cached_content_length(hash, content_length);
+        m_prefix_hash_to_cached_blocks.merge(prepared_blocks);
+        for (const auto& [content_length, count] : prepared_length_counts) {
+            const auto existing = m_cached_content_length_ref_counts.find(content_length);
+            if (existing != m_cached_content_length_ref_counts.end()) {
+                existing->second += count;
+            }
+        }
+        m_cached_content_length_ref_counts.merge(prepared_length_counts);
+        m_cached_hash_to_content_length.merge(prepared_hash_lengths);
     }
 
     bool restore_cached_blocks(SequenceGroup::Ptr group) {
