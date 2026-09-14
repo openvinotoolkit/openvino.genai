@@ -5,20 +5,37 @@
 The first P4 capacity slice is now committed as `f06a67b11`:
 `Bound prefix linear-attention capacity and defer blocked admission`.
 
-The following reservation-admission slice is implemented and uncommitted. Scratch
-admission, legacy reservation and prepared lease acquisition now use the same raw
-writable-row capacity check. Evictable prefix checkpoints still count toward ordinary
-cache capacity, but not toward a scratch allocation that cannot evict them. Zero-row
-reservations are rejected. A capped one/two-layer regression verifies an oversized
-reservation fails before mutation, a fitting reservation preserves cached lookup,
-competing restored continuation cannot consume reserved rows, and release restores
-continuation capacity without modifying the checkpoint hash.
+The conservative raw-only reservation-admission correction is committed as
+`119c6a40c`: `Align scratch reservation admission with writable row capacity`.
+Its validation passed 753 selected C++ tests, six allocation-failure tests and five
+LFM Python regressions.
 
-Validation after this slice: 753 selected C++ tests, six allocation-failure tests and
-five LFM Python regressions passed against the rebuilt native library. CSV-backed
-model suites were excluded. Prepared checkpoint eviction and retained next-window
-headroom are not implemented by this correction; publication and atomic restore also
-remain P4 gates. Prefix verification is still guarded.
+The next slice, prepared checkpoint eviction for scratch, is implemented and
+uncommitted. Admission and both acquisition paths now count reclaimable unowned
+checkpoints because the batch allocator can acquire them. Fresh rows are preferred;
+any remaining need selects unowned checkpoints by LRU. All allocation and row
+validation precedes mutation. Eviction removes owned hash registrations and their
+content-length metadata. Referenced rows remain protected. Zero-row and oversized
+reservations are rejected.
+
+One/two-layer regressions cover fresh-only preservation, competing continuation,
+reclaim under a hard ceiling, and no stale restore after release. An allocation-failure
+sweep checks that every failed preparation preserves capacity, references and cached
+lookup; allocation-disabled release succeeds after eviction. This is per-reservation
+preparation atomicity, not rollback of successful evictions when a later group
+reservation fails. Released scratch stays unpublished rather than resurrecting an
+evicted checkpoint.
+
+Validation: 754 selected C++ tests, eight allocation-failure tests and five LFM Python
+regressions passed against the rebuilt native library. CSV-backed model suites were
+excluded. Scoped editor diagnostics were clean. One independent review was completed;
+its alleged apply allocations were ruled out by reserved vectors, nonallocating
+same-allocator list splices and integer-only reference increments. Multi-candidate
+LRU and duplicate-owner eviction remain dedicated coverage gaps.
+
+Retained next-window headroom, optional publication/canonicalization, pinned atomic
+restore and rewind remain P4 gates. Prefix verification is still guarded. Final
+Qwen3.5 MTP acceptance still requires VLM/media; the local LFM tests do not cover it.
 
 ### Previous Capacity Handoff
 

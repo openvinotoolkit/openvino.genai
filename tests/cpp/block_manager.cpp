@@ -369,7 +369,7 @@ TEST(TestBlockManager, TemporaryBlocksPromoteSelectedCheckpoint) {
     EXPECT_EQ(bm.num_free_blocks(), 4);
 }
 
-TEST(TestBlockManager, TemporaryReservationExcludesEvictableCheckpointsFromWritableCapacity) {
+TEST(TestBlockManager, TemporaryReservationPreservesCheckpointsWhenFreshRowsSuffice) {
     for (const size_t num_layers : {1u, 2u}) {
         SCOPED_TRACE(num_layers);
         ov::genai::BlockManager manager(4, true, 4, num_layers, 0, true, 4);
@@ -391,8 +391,8 @@ TEST(TestBlockManager, TemporaryReservationExcludesEvictableCheckpointsFromWrita
         ASSERT_EQ(manager.num_free_blocks(), 3u);
 
         EXPECT_FALSE(manager.can_reserve_temporary_blocks(active_id, 0));
-        EXPECT_FALSE(manager.can_reserve_temporary_blocks(active_id, 3));
-        EXPECT_THROW(std::ignore = manager.reserve_temporary_blocks(active_id, 3), ov::Exception);
+        EXPECT_FALSE(manager.can_reserve_temporary_blocks(active_id, 4));
+        EXPECT_THROW(std::ignore = manager.reserve_temporary_blocks(active_id, 4), ov::Exception);
         EXPECT_FALSE(manager.has_temporary_blocks(active_id));
         EXPECT_EQ(manager.num_free_blocks(), 3u);
         EXPECT_EQ(published->get_hash(), published_hash);
@@ -424,6 +424,49 @@ TEST(TestBlockManager, TemporaryReservationExcludesEvictableCheckpointsFromWrita
         EXPECT_EQ(manager.get_total_block_count(), 4u);
         EXPECT_EQ(published->get_hash(), published_hash);
         manager.free_sequence(consumer_id);
+        manager.free_sequence(active_id);
+        EXPECT_EQ(manager.num_free_blocks(), 4u);
+    }
+}
+
+TEST(TestBlockManager, TemporaryReservationReclaimsOnlyUnownedCheckpointRows) {
+    for (const size_t num_layers : {1u, 2u}) {
+        SCOPED_TRACE(num_layers);
+        ov::genai::BlockManager manager(4, true, 4, num_layers, 0, true, 4);
+        auto producer = create_sequence_group({1, 2, 3, 4}, 0);
+        auto active = create_sequence_group({5, 6, 7, 8}, 1);
+        const uint64_t producer_id = producer->get_sequences().front()->get_id();
+        const uint64_t active_id = active->get_sequences().front()->get_id();
+        producer->schedule_tokens(4);
+        manager.append_slots(producer);
+        producer->finish_iteration();
+        const auto cached_rows = manager.get_block_tables(producer_id);
+        manager.free_sequence(producer_id);
+        active->schedule_tokens(4);
+        manager.append_slots(active);
+        active->finish_iteration();
+        const auto active_rows = manager.get_block_tables(active_id);
+        const auto active_hash = active_rows.front().front()->get_hash();
+        ASSERT_TRUE(manager.can_reserve_temporary_blocks(active_id, 3));
+        const auto scratch = manager.reserve_temporary_blocks(active_id, 3);
+        ASSERT_EQ(scratch.size(), 3u);
+        EXPECT_EQ(scratch.back(), cached_rows.front().front()->get_index());
+        EXPECT_EQ(manager.num_free_blocks(), 0u);
+        EXPECT_EQ(manager.get_total_block_count(), 4u);
+        for (size_t layer = 0; layer < num_layers; ++layer) {
+            EXPECT_FALSE(cached_rows[layer].front()->has_published_hash());
+            EXPECT_EQ(cached_rows[layer].front()->get_references_count(), 1u);
+            EXPECT_EQ(active_rows[layer].front()->get_hash(), active_hash);
+            EXPECT_EQ(manager.get_block_table(active_id, layer), active_rows[layer]);
+        }
+        auto consumer = create_sequence_group({1, 2, 3, 4, 9}, 2);
+        manager.restore_cached_blocks(consumer);
+        EXPECT_EQ(consumer->get_num_processed_tokens(), 0u);
+        manager.release_temporary_blocks(active_id);
+        EXPECT_EQ(manager.num_free_blocks(), 3u);
+        manager.restore_cached_blocks(consumer);
+        EXPECT_EQ(consumer->get_num_processed_tokens(), 0u);
+        EXPECT_FALSE(manager.has_block_table(consumer->get_sequences().front()->get_id()));
         manager.free_sequence(active_id);
         EXPECT_EQ(manager.num_free_blocks(), 4u);
     }
