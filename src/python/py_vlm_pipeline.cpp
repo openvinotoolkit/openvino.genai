@@ -11,6 +11,7 @@
 #include <pybind11/functional.h>
 
 #include "openvino/core/except.hpp"
+#include "openvino/genai/omni/pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "openvino/genai/visual_language/video_metadata.hpp"
@@ -158,11 +159,16 @@ public:
 
 private:
     static ov::genai::MultimodalInputs unpack_config_map(const ov::AnyMap& config_map) {
-        OPENVINO_ASSERT(config_map.find(ov::genai::utils::AUDIO_STREAMER_ARG_NAME) == config_map.end(),
-                        "VLMPipelineBase: '",
-                        ov::genai::utils::AUDIO_STREAMER_ARG_NAME,
-                        "' is only consumed by the built-in Qwen3-Omni speech path and cannot be forwarded to a "
-                        "Python-defined subclass.");
+        // kwargs_to_any_map() accepts both names and extract_multimodal_inputs() consumes neither,
+        // so letting either through would drop the caller's streamer without a word.
+        for (const std::string& key :
+             {ov::genai::utils::AUDIO_STREAMER_ARG_NAME, std::string{ov::genai::speech_streamer.name()}}) {
+            OPENVINO_ASSERT(config_map.find(key) == config_map.end(),
+                            "VLMPipelineBase: '",
+                            key,
+                            "' is only consumed by the built-in Qwen3-Omni speech path and cannot be forwarded to a "
+                            "Python-defined subclass.");
+        }
         return ov::genai::extract_multimodal_inputs(config_map);
     }
 

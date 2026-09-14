@@ -48,7 +48,7 @@ import openvino_tokenizers
 import pytest
 import transformers
 from huggingface_hub import snapshot_download
-from optimum.intel import OVModelForVisualCausalLM
+from optimum.intel.openvino import OVModelForVisualCausalLM
 from optimum.utils.import_utils import is_transformers_version
 
 import openvino_genai as ov_genai
@@ -383,11 +383,26 @@ class TestCustomTalkerSubclass:
         assert talker.generate_calls == 1, "a speech_streamer kwarg must not block the property-bag overload"
         assert talker.last_speech_streamer is not None, "the streamer must survive the AnyMap round-trip"
 
+    def test_property_bag_generate_accepts_whole_speech_config(self) -> None:
+        """A full OmniTalkerSpeechConfig passed as a kwarg reaches the typed override.
+
+        generate() documents talker_speech_config as a keyword and resolve_talker_properties()
+        reads it back as OmniTalkerSpeechConfig, so py_object_to_any() has to convert the type.
+        """
+        talker = RecordingTalker()
+        config = ov_genai.OmniTalkerSpeechConfig()
+        config.return_audio = False
+
+        ov_genai.TalkerBase.generate(talker, ov_genai.VLMDecodedResults(), talker_speech_config=config)
+
+        assert talker.generate_calls == 1, "a talker_speech_config kwarg must reach the backend"
+        assert talker.last_return_audio is False, "the passed config must win over the stored one"
+
     def test_property_bag_generate_rejects_unknown_keys(self) -> None:
         """A typo in a kwarg must raise rather than being silently dropped."""
         talker = RecordingTalker()
 
-        with pytest.raises(RuntimeError, match="is_omni_talker_speech_config_key"):
+        with pytest.raises(RuntimeError, match="unrecognized property"):
             ov_genai.TalkerBase.generate(talker, ov_genai.VLMDecodedResults(), bogus_key=1)
 
         assert talker.generate_calls == 0, "an invalid property bag must not reach the backend"
