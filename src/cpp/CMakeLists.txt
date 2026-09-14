@@ -152,7 +152,7 @@ if(ANDROID)
 endif()
 
 if(ENABLE_XGRAMMAR)
-    set(XGRAMMAR_VERSION v0.1.31)
+    set(XGRAMMAR_VERSION 9aa840b6d16abf094f3e8e2ac9c10465b77656c9)
     set(XGRAMMAR_DIR ${CMAKE_BINARY_DIR}/xgrammar)
 
     FetchContent_Declare(
