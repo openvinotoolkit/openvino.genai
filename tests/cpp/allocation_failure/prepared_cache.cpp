@@ -125,6 +125,64 @@ protected:
     }
 };
 
+TEST_P(PreparedCacheAllocationFailure, PublicationPreparationPreservesWholeSetOnEveryAllocationFailure) {
+    BlockManager manager(8, true, 4, GetParam());
+    auto source = std::make_shared<SequenceGroup>(
+        0, std::vector<int64_t>{1, 2, 3, 4, 5, 6}, ov::genai::GenerationConfig{});
+    source->schedule_tokens(6);
+    manager.append_slots(source);
+    source->finish_iteration();
+    auto consumer = std::make_shared<SequenceGroup>(
+        1, std::vector<int64_t>{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}, ov::genai::GenerationConfig{});
+    ASSERT_TRUE(manager.restore_cached_blocks(consumer));
+    consumer->schedule_tokens(2);
+    manager.append_slots(consumer);
+    consumer->finish_iteration();
+    consumer->schedule_tokens(4);
+    manager.append_slots(consumer);
+    consumer->finish_iteration();
+    consumer->update_processed_tokens_num(11);
+    manager.free_empty_physical_blocks(consumer);
+    consumer->schedule_tokens(1);
+    manager.append_slots(consumer);
+    consumer->finish_iteration();
+    auto sequence = consumer->get_sequences().front();
+    const auto rows = manager.get_block_tables(sequence->get_id());
+    for (const auto& layer : rows) {
+        ASSERT_EQ(layer.size(), 3u);
+        ASSERT_FALSE(layer[1]->has_published_hash());
+        ASSERT_FALSE(layer.back()->has_published_hash());
+    }
+    bool completed = false;
+    size_t failures = 0;
+    for (size_t allocation_index = 0; allocation_index < 256; ++allocation_index) {
+        SCOPED_TRACE(allocation_index);
+        try {
+            FailAllocation failure(allocation_index);
+            manager.publish_completed_blocks(sequence, 6, 12);
+            completed = true;
+        } catch (const std::bad_alloc&) {
+            ++failures;
+        }
+        for (const auto& layer : rows) {
+            EXPECT_EQ(layer[1]->has_published_hash(), completed);
+            EXPECT_EQ(layer.back()->has_published_hash(), completed);
+        }
+        auto restored = std::make_shared<SequenceGroup>(
+            2, consumer->get_prompt_ids(), ov::genai::GenerationConfig{});
+        ASSERT_TRUE(manager.restore_cached_blocks(restored));
+        EXPECT_EQ(restored->get_num_processed_tokens(), completed ? 12u : 6u);
+        manager.free_sequence(restored->get_sequences().front()->get_id());
+        if (completed) {
+            break;
+        }
+    }
+    EXPECT_TRUE(completed);
+    EXPECT_GT(failures, 0u);
+    manager.free_sequence(source->get_sequences().front()->get_id());
+    manager.free_sequence(sequence->get_id());
+}
+
 TEST_P(PreparedCacheAllocationFailure, ScratchReservationRollsBackEveryAllocationFailure) {
     auto orchestrator = make_orchestrator();
     auto& manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);

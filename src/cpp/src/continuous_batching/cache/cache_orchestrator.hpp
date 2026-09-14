@@ -866,12 +866,7 @@ public:
             if (!block_manager->is_prefix_caching_enabled()) {
                 continue;
             }
-            const size_t block_size = block_manager->get_block_size();
-            size_t completed_boundary = (processed_before / block_size + 1) * block_size;
-            while (completed_boundary <= processed_after) {
-                block_manager->publish_completed_block(sequence, completed_boundary);
-                completed_boundary += block_size;
-            }
+            block_manager->publish_completed_blocks(sequence, processed_before, processed_after);
         }
         if (has_linear_attention_cache()) {
             m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)
