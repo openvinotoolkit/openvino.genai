@@ -6169,7 +6169,7 @@ class VLMPipelineBase:
         Generate a VLM response from a prompt. Override in a subclass.
         """
     @typing.overload
-    def generate(self, history: openvino_genai.py_openvino_genai.ChatHistory, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], audios: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], generation_config: GenerationConfig = ..., streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> VLMDecodedResults:
+    def generate(self, history: ChatHistory, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], audios: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], generation_config: GenerationConfig = ..., streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> VLMDecodedResults:
         """
         Generate a VLM response from a chat history. Override in a subclass.
         """
@@ -6179,7 +6179,7 @@ class VLMPipelineBase:
         Generate a VLM response from a prompt plus a property bag: images, videos, audios, videos_metadata, generation_config, streamer, or any GenerationConfig field as a keyword argument. Reduces to the typed generate() the subclass overrides.
         """
     @typing.overload
-    def generate(self, history: openvino_genai.py_openvino_genai.ChatHistory, **kwargs) -> VLMDecodedResults:
+    def generate(self, history: ChatHistory, **kwargs) -> VLMDecodedResults:
         """
         Generate a VLM response from a chat history plus a property bag: images, videos, audios, videos_metadata, generation_config, streamer, or any GenerationConfig field as a keyword argument. Reduces to the typed generate() the subclass overrides.
         """

@@ -38,6 +38,7 @@
 
 - name: Omni (API)
   cmd: |-
+    python -m pip install transformers==5.1.0
     python -m pytest -v ./tests/python_tests/test_omni_pipeline.py
   timeout: 40
   components:
