@@ -664,6 +664,47 @@ TEST(TestBlockManager, SequenceHashEmbeddingRollbackMatchesFreshSequence) {
     EXPECT_EQ(sequence->get_hash(12, 4), fresh_sequence->get_hash(12, 4));
 }
 
+TEST(TestBlockManager, TemporaryReservationReclaimsOldestCheckpointFirst) {
+    for (size_t num_layers : {1u, 2u}) {
+        ov::genai::BlockManager manager(4, true, 4, num_layers, 0, true, 4);
+        auto oldest = create_sequence_group({1, 2, 3, 4}, 60);
+        auto newest = create_sequence_group({5, 6, 7, 8}, 61);
+        auto active = create_sequence_group({9, 10, 11, 12}, 62);
+        for (const auto& group : {oldest, newest, active}) {
+            group->schedule_tokens(4);
+            manager.append_slots(group);
+            group->finish_iteration();
+        }
+        const uint64_t oldest_id = oldest->get_running_sequences().front()->get_id();
+        const uint64_t newest_id = newest->get_running_sequences().front()->get_id();
+        const uint64_t active_id = active->get_running_sequences().front()->get_id();
+        const auto oldest_rows = manager.get_block_tables(oldest_id);
+        const auto newest_rows = manager.get_block_tables(newest_id);
+        manager.free_sequence(oldest_id);
+        manager.free_sequence(newest_id);
+        const auto timestamp = std::chrono::steady_clock::now();
+        for (size_t layer = 0; layer < num_layers; ++layer) {
+            oldest_rows[layer].front()->set_timestamp(timestamp - std::chrono::seconds(1));
+            newest_rows[layer].front()->set_timestamp(timestamp);
+        }
+
+        const auto reserved = manager.reserve_temporary_blocks(active_id, 2);
+        ASSERT_EQ(reserved.size(), 2u);
+        EXPECT_EQ(reserved.back(), oldest_rows.front().front()->get_index());
+        auto old_consumer = create_sequence_group({1, 2, 3, 4, 13}, 63);
+        auto new_consumer = create_sequence_group({5, 6, 7, 8, 13}, 64);
+        EXPECT_FALSE(manager.restore_cached_blocks(old_consumer));
+        ASSERT_TRUE(manager.restore_cached_blocks(new_consumer));
+        const uint64_t consumer_id = new_consumer->get_running_sequences().front()->get_id();
+        EXPECT_EQ(new_consumer->get_num_processed_tokens(), 4u);
+        EXPECT_EQ(manager.get_block_tables(consumer_id), newest_rows);
+        manager.release_temporary_blocks(active_id);
+        manager.free_sequence(consumer_id);
+        manager.free_sequence(active_id);
+        EXPECT_EQ(manager.num_free_blocks(), 4u);
+    }
+}
+
 TEST(TestBlockManager, PrefixCachingRollbackUnregistersInvalidatedBoundaryBeforeDivergentRewrite) {
     constexpr size_t block_size = 4;
     ov::genai::BlockManager block_manager(8, true, block_size);

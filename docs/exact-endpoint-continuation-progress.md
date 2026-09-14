@@ -1,6 +1,41 @@
 # Exact-Endpoint Continuation Progress
 
-## Current Handoff (2026-09-11)
+## Current Handoff (2026-09-14)
+
+User direction: finish LFM common-foundation support first, then validate Qwen3.5
+through the VLM pipeline with media. Existing LFM smoke/parity cases do not establish
+full prefix-verification support. Prefix+VERIFY guards remain until P4/P5 gates pass.
+
+Prepared scratch eviction is committed as `74c622c38`:
+`Prepare atomic checkpoint eviction for scratch reservations`. Hooks passed; unrelated
+worktree changes were preserved.
+
+The next uncommitted slice makes completed-boundary publication allocation-safe as
+one represented set per cache manager. Registry entries and content-length counts
+are staged in local map nodes before any row becomes published. Node transfer and
+row flags are applied only after preparation succeeds. A failure leaves the entire
+new set unpublished; an existing canonical owner is retained. Scheduler and common
+orchestrator publication use the batch API rather than publishing boundaries one by
+one. This is not cross-cache atomic publication, optional physical-row retention,
+or a change to legacy early registration of freshly allocated rows.
+
+A one/two-layer allocation sweep covers two unpublished boundaries at 8 and 12:
+every failed preparation keeps both unpublished and restore at 6, while success
+restores at 12. A deterministic multi-candidate LRU regression also confirms that
+scratch takes the oldest unowned checkpoint and leaves the newer checkpoint restorable.
+
+Validation on September 14: 755 selected C++ tests, ten allocation-failure tests and
+five LFM Python regressions passed using the rebuilt native library. CSV-backed model
+suites were excluded. Scoped diagnostics and whitespace checks passed. One independent
+review found no actionable defect in publication preparation. Whole-set failure
+coverage was added after the review's test-gap check.
+
+Next: retained next-window headroom and optional no-gap checkpoint retention, followed
+by pinned atomic KV+LA restore/rewind and observed-restore LFM strategy tests before
+guard removal. Duplicate-owner eviction still needs dedicated coverage. No Qwen3.5
+VLM/media validation was attempted in this slice.
+
+### Previous Eviction Handoff (2026-09-11)
 
 The first P4 capacity slice is now committed as `f06a67b11`:
 `Bound prefix linear-attention capacity and defer blocked admission`.
