@@ -334,6 +334,68 @@ TEST_P(PreparedCacheAllocationFailure, PipelinePreparationPreservesBothCountersA
     EXPECT_EQ(la_manager.num_free_blocks(), la_manager.get_total_block_count());
 }
 
+TEST_P(PreparedCacheAllocationFailure, ScratchEvictionPreparationPreservesRegistryOnEveryAllocationFailure) {
+    BlockManager manager(5, true, 4, GetParam(), 0, true, 5);
+    auto producer = make_group(0);
+    const uint64_t producer_id = producer->get_sequences().front()->get_id();
+    producer->schedule_tokens(4);
+    manager.append_slots(producer);
+    producer->finish_iteration();
+    const auto cached = manager.get_block_tables(producer_id);
+    const auto hash = cached.front().front()->get_hash();
+    manager.free_sequence(producer_id);
+    auto active = std::make_shared<SequenceGroup>(
+        1, std::vector<int64_t>{5, 6, 7, 8}, ov::genai::GenerationConfig{});
+    const uint64_t active_id = active->get_sequences().front()->get_id();
+    active->schedule_tokens(4);
+    manager.append_slots(active);
+    active->finish_iteration();
+    const auto active_rows = manager.get_block_tables(active_id);
+    bool completed = false;
+    size_t failures = 0;
+    for (size_t allocation_index = 0; allocation_index < 256; ++allocation_index) {
+        SCOPED_TRACE(allocation_index);
+        try {
+            FailAllocation failure(allocation_index);
+            std::ignore = manager.reserve_temporary_blocks(active_id, 4);
+            completed = true;
+        } catch (const std::bad_alloc&) {
+            ++failures;
+        }
+        EXPECT_EQ(manager.get_block_tables(active_id), active_rows);
+        EXPECT_EQ(manager.get_total_block_count(), 5u);
+        EXPECT_EQ(manager.num_free_blocks(), completed ? 0u : 4u);
+        EXPECT_EQ(manager.has_temporary_blocks(active_id), completed);
+        for (size_t layer = 0; layer < GetParam(); ++layer) {
+            EXPECT_EQ(cached[layer].front()->has_published_hash(), !completed);
+            EXPECT_EQ(cached[layer].front()->get_references_count(), completed ? 1u : 0u);
+            if (!completed) {
+                EXPECT_EQ(cached[layer].front()->get_hash(), hash);
+            }
+        }
+        auto consumer = std::make_shared<SequenceGroup>(
+            2, std::vector<int64_t>{1, 2, 3, 4, 9}, ov::genai::GenerationConfig{});
+        const uint64_t consumer_id = consumer->get_sequences().front()->get_id();
+        manager.restore_cached_blocks(consumer);
+        EXPECT_EQ(consumer->get_num_processed_tokens(), completed ? 0u : 4u);
+        if (!completed) {
+            EXPECT_EQ(manager.get_block_tables(consumer_id), cached);
+            manager.free_sequence(consumer_id);
+        } else {
+            EXPECT_FALSE(manager.has_block_table(consumer_id));
+        }
+        if (completed) {
+            FailAllocation failure(0);
+            manager.release_temporary_blocks(active_id);
+            break;
+        }
+    }
+    EXPECT_TRUE(completed);
+    EXPECT_GT(failures, 0u);
+    manager.free_sequence(active_id);
+    EXPECT_EQ(manager.num_free_blocks(), manager.get_total_block_count());
+}
+
 INSTANTIATE_TEST_SUITE_P(Layers, PreparedCacheAllocationFailure, testing::Values(1u, 2u));
 
 }  // namespace

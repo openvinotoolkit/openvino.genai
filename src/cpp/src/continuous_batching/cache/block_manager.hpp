@@ -113,6 +113,7 @@ using BlocksPerLayer = std::vector<CacheBlock::Ptr>;
  */
 class OverwritableBlocksHashStore {
     std::map<size_t, BlocksPerLayer> m_blocks;
+    friend class BlockAllocator;
     size_t m_num_layers;
     public:
     /**
@@ -390,12 +391,6 @@ public:
         return can_allocate_blocks(num_blocks);
     }
 
-    bool can_allocate_temporary_blocks(size_t num_blocks) const {
-        return num_blocks > 0 &&
-               std::all_of(m_free_blocks_num.begin(), m_free_blocks_num.end(),
-                           [num_blocks](size_t free_blocks) { return free_blocks >= num_blocks; });
-    }
-
     /**
      * Frees a given block for a given layer. If no sequence is associated with the block after freeing, the block
      * is returned to the "free" pool.
@@ -412,29 +407,72 @@ public:
         }
     }
 
-    /**
-     * Allocates one block per layer without registering the block in prefix-cache
-     * hash bookkeeping. Intended for transient state checkpoints that are
-     * overwritten before they become visible as sequence cache.
-     */
-    UncachedBlockAllocation allocate_uncached_block() {
-        if (!can_allocate_temporary_blocks(1)) {
-            return {};
+    std::vector<UncachedBlockAllocation> allocate_temporary_blocks(
+        size_t num_blocks,
+        std::map<uint64_t, BlocksPerLayer>& cached_blocks,
+        std::vector<int>& block_indices,
+        std::vector<uint64_t>& erased_hashes) {
+        OPENVINO_ASSERT(num_blocks > 0 && can_allocate_blocks(num_blocks),
+                        "Not enough cache capacity for temporary reservation");
+        const size_t fresh_count = std::min(num_blocks, m_free_blocks_num.front());
+        const size_t eviction_count = num_blocks - fresh_count;
+        using StoreIterator = decltype(m_overwriteable_blocks.m_blocks)::iterator;
+        std::vector<StoreIterator> candidates;
+        if (eviction_count > 0) {
+            candidates.reserve(m_overwriteable_blocks.m_blocks.size());
+            for (auto iterator = m_overwriteable_blocks.m_blocks.begin();
+                 iterator != m_overwriteable_blocks.m_blocks.end(); ++iterator) {
+                candidates.push_back(iterator);
+            }
+            std::partial_sort(candidates.begin(), candidates.begin() + eviction_count, candidates.end(),
+                              [](const StoreIterator& left, const StoreIterator& right) {
+                                  return left->second.front()->get_timestamp() < right->second.front()->get_timestamp();
+                              });
         }
-        UncachedBlockAllocation allocation;
-        allocation.blocks.reserve(m_num_layers);
-        allocation.free_nodes.resize(m_num_layers);
-        for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
-            CacheBlock::Ptr allocated_block = m_free_blocks[layer_idx].front();
-            allocated_block->increment();
-            allocated_block->clear_published_hash();
-            allocation.blocks.push_back(allocated_block);
-            allocation.free_nodes[layer_idx].splice(allocation.free_nodes[layer_idx].end(),
-                                                     m_free_blocks[layer_idx],
-                                                     m_free_blocks[layer_idx].begin());
-            --m_free_blocks_num[layer_idx];
+        std::vector<UncachedBlockAllocation> allocations(num_blocks);
+        block_indices.reserve(num_blocks);
+        erased_hashes.reserve(eviction_count);
+        for (auto& allocation : allocations) {
+            allocation.blocks.resize(m_num_layers);
+            allocation.free_nodes.resize(m_num_layers);
         }
-        return allocation;
+        for (size_t layer = 0; layer < m_num_layers; ++layer) {
+            auto fresh = m_free_blocks[layer].begin();
+            for (size_t row = 0; row < num_blocks; ++row) {
+                auto& allocation = allocations[row];
+                if (row < fresh_count) {
+                    allocation.blocks[layer] = *fresh++;
+                } else {
+                    allocation.blocks[layer] = candidates[row - fresh_count]->second[layer];
+                    allocation.free_nodes[layer].emplace_back();
+                }
+                OPENVINO_ASSERT(allocation.blocks[layer]->is_free(),
+                                "Temporary reservation cannot evict a referenced cache row");
+            }
+        }
+        for (const auto& allocation : allocations) {
+            block_indices.push_back(allocation.blocks.front()->get_index());
+        }
+        for (size_t row = 0; row < num_blocks; ++row) {
+            auto& allocation = allocations[row];
+            if (row >= fresh_count) {
+                const auto candidate = candidates[row - fresh_count];
+                if (erase_registration_if_owned(candidate->first, allocation.blocks, cached_blocks)) {
+                    erased_hashes.push_back(candidate->first);
+                }
+                m_overwriteable_blocks.m_blocks.erase(candidate);
+            }
+            for (size_t layer = 0; layer < m_num_layers; ++layer) {
+                if (row < fresh_count) {
+                    allocation.free_nodes[layer].splice(allocation.free_nodes[layer].end(),
+                                                         m_free_blocks[layer], m_free_blocks[layer].begin());
+                    --m_free_blocks_num[layer];
+                }
+                allocation.blocks[layer]->increment();
+                allocation.blocks[layer]->clear_published_hash();
+            }
+        }
+        return allocations;
     }
 
     void free_uncached(UncachedBlockAllocation& allocation) noexcept {
@@ -1423,7 +1461,7 @@ public:
         if (temporary_it != m_temporary_block_table.end() && !temporary_it->second.empty()) {
             return false;
         }
-        return m_allocator.can_allocate_temporary_blocks(num_blocks);
+        return num_blocks > 0 && m_allocator.can_allocate_blocks(num_blocks);
     }
 
     std::vector<int> reserve_temporary_blocks(uint64_t seq_id, size_t num_blocks) {
@@ -1434,30 +1472,18 @@ public:
         OPENVINO_ASSERT(existing_temporary_it == m_temporary_block_table.end() ||
                             existing_temporary_it->second.empty(),
                         "Temporary cache blocks are already reserved for sequence ", seq_id);
-        OPENVINO_ASSERT(m_allocator.can_allocate_temporary_blocks(num_blocks),
-                "Not enough writable cache blocks to reserve ", num_blocks,
+        OPENVINO_ASSERT(num_blocks > 0 && m_allocator.can_allocate_blocks(num_blocks),
+                        "Not enough cache blocks to reserve ", num_blocks,
                         " temporary checkpoints for sequence ", seq_id);
 
-        TemporaryBlockTable temporary_blocks;
-        temporary_blocks.reserve(num_blocks);
         std::vector<int> block_indices;
-        block_indices.reserve(num_blocks);
+        const auto [temporary_it, inserted] = m_temporary_block_table.try_emplace(seq_id);
         try {
-            for (size_t idx = 0; idx < num_blocks; ++idx) {
-                auto allocation = m_allocator.allocate_uncached_block();
-                OPENVINO_ASSERT(!allocation.blocks.empty(), "Temporary cache block allocation returned no blocks");
-                const int block_index = allocation.blocks.front()->get_index();
-                temporary_blocks.push_back(std::move(allocation));
-                block_indices.push_back(block_index);
-            }
-            if (existing_temporary_it == m_temporary_block_table.end()) {
-                m_temporary_block_table.emplace(seq_id, std::move(temporary_blocks));
-            } else {
-                existing_temporary_it->second = std::move(temporary_blocks);
-            }
+            temporary_it->second =
+                acquire_temporary_blocks(num_blocks, block_indices);
         } catch (...) {
-            for (auto& allocation : temporary_blocks) {
-                m_allocator.free_uncached(allocation);
+            if (inserted) {
+                m_temporary_block_table.erase(temporary_it);
             }
             throw;
         }
@@ -1493,32 +1519,18 @@ public:
         OPENVINO_ASSERT(existing_temporary_it == m_temporary_block_table.end() ||
                             existing_temporary_it->second.empty(),
                         "Temporary cache blocks are already reserved for sequence ", seq_id);
-        OPENVINO_ASSERT(m_allocator.can_allocate_temporary_blocks(num_blocks),
-                "Not enough writable cache blocks to reserve ", num_blocks,
+        OPENVINO_ASSERT(m_allocator.can_allocate_blocks(num_blocks),
+                        "Not enough cache blocks to reserve ", num_blocks,
                         " temporary checkpoints for sequence ", seq_id);
 
-        TemporaryBlockTable temporary_blocks;
-        temporary_blocks.reserve(num_blocks);
         std::vector<int> block_indices;
-        block_indices.reserve(num_blocks);
+        const auto [temporary_it, inserted] = m_temporary_block_table.try_emplace(seq_id);
         try {
-            for (size_t idx = 0; idx < num_blocks; ++idx) {
-                auto allocation = m_allocator.allocate_uncached_block();
-                OPENVINO_ASSERT(allocation.blocks.size() == m_num_layers,
-                                "Temporary cache row count changed for sequence ", seq_id);
-                OPENVINO_ASSERT(allocation.free_nodes.size() == m_num_layers,
-                                "Temporary cache release metadata changed for sequence ", seq_id);
-                const int block_index = allocation.blocks.front()->get_index();
-                OPENVINO_ASSERT(block_index >= 0,
-                                "Temporary cache block for sequence ", seq_id,
-                                " has a negative physical index: ", block_index);
-                temporary_blocks.push_back(std::move(allocation));
-                block_indices.push_back(block_index);
-            }
-            m_temporary_block_table.emplace(seq_id, std::move(temporary_blocks));
+            temporary_it->second =
+                acquire_temporary_blocks(num_blocks, block_indices);
         } catch (...) {
-            for (auto& allocation : temporary_blocks) {
-                m_allocator.free_uncached(allocation);
+            if (inserted) {
+                m_temporary_block_table.erase(temporary_it);
             }
             throw;
         }
@@ -2643,6 +2655,18 @@ private:
         BlockAllocator::CacheBlockAllocationResult allocation;
         std::optional<size_t> erased_content_length;
     };
+
+    std::vector<BlockAllocator::UncachedBlockAllocation> acquire_temporary_blocks(
+        size_t num_blocks,
+        std::vector<int>& block_indices) {
+        std::vector<uint64_t> erased_hashes;
+        auto allocations = m_allocator.allocate_temporary_blocks(
+            num_blocks, m_prefix_hash_to_cached_blocks, block_indices, erased_hashes);
+        for (uint64_t hash : erased_hashes) {
+            unregister_cached_hash(hash);
+        }
+        return allocations;
+    }
 
     BlockAllocator::CacheBlockAllocationResult acquire_unpublished_block(
         std::optional<size_t>& erased_content_length) {
