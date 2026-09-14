@@ -490,7 +490,7 @@ An input image without explicit slicing metadata counts as one slice.)")
         .def(py::init<>())
         .def("generate",
              [](ov::genai::VLMPipelineBase& self,
-                const std::variant<std::string, ov::genai::ChatHistory>& prompt,
+                const std::string& prompt,
                 const std::vector<ov::Tensor>& images,
                 const std::vector<ov::Tensor>& videos,
                 const std::vector<ov::Tensor>& audios,
@@ -501,44 +501,77 @@ An input image without explicit slicing metadata counts as one slice.)")
                  ov::genai::VLMDecodedResults res;
                  {
                      py::gil_scoped_release rel;
-                     if (const auto* prompt_str = std::get_if<std::string>(&prompt)) {
-                         res = self.generate(*prompt_str, images, videos, audios, videos_metadata,
-                                             generation_config, native_streamer);
-                     } else {
-                         res = self.generate(std::get<ov::genai::ChatHistory>(prompt), images, videos, audios,
-                                             videos_metadata, generation_config, native_streamer);
-                     }
+                     res = self.generate(prompt, images, videos, audios, videos_metadata,
+                                         generation_config, native_streamer);
                  }
                  return res;
              },
-             py::arg("prompt"),
+             py::arg("prompt"), "Input prompt",
              py::arg("images") = std::vector<ov::Tensor>{},
              py::arg("videos") = std::vector<ov::Tensor>{},
              py::arg("audios") = std::vector<ov::Tensor>{},
              py::arg("videos_metadata") = std::vector<ov::genai::VideoMetadata>{},
              py::arg("generation_config") = ov::genai::GenerationConfig{},
              py::arg("streamer") = std::monostate{},
-             "Generate a VLM response. prompt may be a str or a ChatHistory. Override in a subclass.")
+             "Generate a VLM response from a prompt. Override in a subclass.")
         .def("generate",
              [](ov::genai::VLMPipelineBase& self,
-                const std::variant<std::string, ov::genai::ChatHistory>& prompt,
+                const ov::genai::ChatHistory& history,
+                const std::vector<ov::Tensor>& images,
+                const std::vector<ov::Tensor>& videos,
+                const std::vector<ov::Tensor>& audios,
+                const std::vector<ov::genai::VideoMetadata>& videos_metadata,
+                const ov::genai::GenerationConfig& generation_config,
+                const pyutils::PyBindStreamerVariant& streamer) -> ov::genai::VLMDecodedResults {
+                 auto native_streamer = pyutils::pystreamer_to_streamer(streamer);
+                 ov::genai::VLMDecodedResults res;
+                 {
+                     py::gil_scoped_release rel;
+                     res = self.generate(history, images, videos, audios, videos_metadata,
+                                         generation_config, native_streamer);
+                 }
+                 return res;
+             },
+             py::arg("history"), "Chat history",
+             py::arg("images") = std::vector<ov::Tensor>{},
+             py::arg("videos") = std::vector<ov::Tensor>{},
+             py::arg("audios") = std::vector<ov::Tensor>{},
+             py::arg("videos_metadata") = std::vector<ov::genai::VideoMetadata>{},
+             py::arg("generation_config") = ov::genai::GenerationConfig{},
+             py::arg("streamer") = std::monostate{},
+             "Generate a VLM response from a chat history. Override in a subclass.")
+        .def("generate",
+             [](ov::genai::VLMPipelineBase& self,
+                const std::string& prompt,
                 const py::kwargs& kwargs) -> ov::genai::VLMDecodedResults {
                  const ov::AnyMap config_map = pyutils::kwargs_to_any_map(kwargs);
                  ov::genai::VLMDecodedResults res;
                  {
                      py::gil_scoped_release rel;
-                     if (const auto* prompt_str = std::get_if<std::string>(&prompt)) {
-                         res = self.generate(*prompt_str, config_map);
-                     } else {
-                         res = self.generate(std::get<ov::genai::ChatHistory>(prompt), config_map);
-                     }
+                     res = self.generate(prompt, config_map);
                  }
                  return res;
              },
-             py::arg("prompt"),
-             "Generate a VLM response from a property bag: images, videos, audios, videos_metadata, "
-             "generation_config, streamer, or any GenerationConfig field as a keyword argument. "
-             "Reduces to the typed generate() the subclass overrides.")
+             py::arg("prompt"), "Input prompt",
+             "Generate a VLM response from a prompt plus a property bag: images, videos, audios, "
+             "videos_metadata, generation_config, streamer, or any GenerationConfig field as a keyword "
+             "argument. Reduces to the typed generate() the subclass overrides.")
+        .def("generate",
+             [](ov::genai::VLMPipelineBase& self,
+                const ov::genai::ChatHistory& history,
+                const py::kwargs& kwargs) -> ov::genai::VLMDecodedResults {
+                 const ov::AnyMap config_map = pyutils::kwargs_to_any_map(kwargs);
+                 ov::genai::VLMDecodedResults res;
+                 {
+                     py::gil_scoped_release rel;
+                     res = self.generate(history, config_map);
+                 }
+                 return res;
+             },
+             py::arg("history"), "Chat history",
+             "Generate a VLM response from a chat history plus a property bag: images, videos, audios, "
+             "videos_metadata, generation_config, streamer, or any GenerationConfig field as a keyword "
+             "argument. Reduces to the typed generate() the subclass overrides.")
         .def("get_tokenizer", &ov::genai::VLMPipelineBase::get_tokenizer)
         .def("set_chat_template", &ov::genai::VLMPipelineBase::set_chat_template, py::arg("chat_template"))
         .def("get_generation_config", &ov::genai::VLMPipelineBase::get_generation_config)

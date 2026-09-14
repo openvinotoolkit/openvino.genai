@@ -38,7 +38,7 @@
 
 - name: Omni (API)
   cmd: |-
-    python -m pytest -v ./tests/python_tests/test_omni_pipeline.py -k "not TestOmniPipelineRealModel"
+    python -m pytest -v ./tests/python_tests/test_omni_pipeline.py
   timeout: 40
   components:
     - visual_language

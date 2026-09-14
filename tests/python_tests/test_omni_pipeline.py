@@ -14,7 +14,7 @@ The pybind variant alias OmniSpeechStreamerVariant is intentionally not in
 the smoke import — variant aliases are not re-exported in __init__.py per the
 existing AudioStreamerVariant convention.
 
-Three tiers, following the other pipeline suites:
+Two tiers, following the other pipeline suites:
 
 1. Model-free tests — imports, config defaults, field round-trips, and dependency
    injection of user-defined VLMPipelineBase / TalkerBase children. The DI tests
@@ -27,23 +27,17 @@ Three tiers, following the other pipeline suites:
    ChatHistory overload, generation-config sensitivity, ModelsMap/path equivalence,
    multimodal inputs, and the speaker APIs.
 
-3. Full-model tests marked `real_models`, pointed at a complete Qwen3-Omni export by
-   OMNI_REAL_MODEL_PATH. The tiny checkpoint cannot synthesize speech at all, so the
-   tests that need a real waveform live here and are deselected by default.
-
 The tiny-checkpoint tier needs a newer transformers than tests/python_tests/requirements.txt
 pins, so the CI matrix entries install one per job: transformers 5.0.0 reads an unset
 `use_sliding_window` in `Qwen3OmniMoeTalkerCodePredictorConfig.__init__` and the export dies
 with an `AttributeError`, fixed in 5.1.0. The pinned optimum-intel already carries the
-talker/code2wav export from huggingface/optimum-intel#1700. `omni_model_path` still detects
-both gaps and skips with the reason, so running the suite against the repo-wide pins degrades
-to the model-free tier instead of failing.
+talker/code2wav export from huggingface/optimum-intel#1700. `omni_model_path` skips on that
+transformers gap with the reason, so running the suite against the repo-wide pins degrades to
+the model-free tier instead of failing.
 """
 
 from __future__ import annotations
 
-import logging
-import os
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -62,35 +56,16 @@ from utils.atomic_download import AtomicDownloadManager
 from utils.constants import get_ov_cache_converted_models_dir
 from utils.network import retry_request
 
-logger = logging.getLogger(__name__)
-
 pytestmark = pytest.mark.omni
 
 OMNI_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
 
-# Points at a full Qwen3-Omni OpenVINO export for the speech tests the tiny checkpoint cannot host.
-OMNI_REAL_MODEL_ENV = "OMNI_REAL_MODEL_PATH"
-
-# Written by the Talker export; without them OmniPipeline's path ctor cannot build the speech stage.
-TALKER_ARTIFACTS = (
-    "openvino_talker_model.xml",
-    "openvino_code_predictor_model.xml",
-    "openvino_code2wav_model.xml",
-)
-
-MEDIA_EDGE = 64
+FRAME_RESOLUTION = 64
 VIDEO_FRAMES = 4
 AUDIO_SAMPLE_RATE = 16000
 AUDIO_SAMPLES = AUDIO_SAMPLE_RATE
 
-SPEECH_PROMPT = "Say hello."
-
-TALKER_RNG_SEED = 1234
-TALKER_MAX_NEW_TOKENS = 8
-
 OPTIMUM_COMPARE_TOKENS = 6
-
-SPEAKER_EMBEDDING_SCALE = -8.0
 
 NO_WAVEFORM_XFAIL_REASON = (
     "tiny-random-qwen3-omni's talker role token ids are outside its tokenizer's range (im_start 151644, "
@@ -587,19 +562,16 @@ class TestOmniPipelineDependencyInjection:
 
 def _export_tiny_omni_model(target_dir: Path) -> None:
     """Export the tiny Qwen3-Omni checkpoint to OpenVINO IR under ``target_dir``."""
-    model_cached = snapshot_download(OMNI_MODEL_ID)  # required to avoid HF rate limits
+    # Only the download needs retrying; both from_pretrained() calls below read the local path it returns.
+    model_cached = retry_request(lambda: snapshot_download(OMNI_MODEL_ID))
     align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
-    processor = retry_request(
-        lambda: transformers.AutoProcessor.from_pretrained(
-            model_cached,
-            trust_remote_code=True,
-            **align_with_optimum_cli,
-        )
+    processor = transformers.AutoProcessor.from_pretrained(
+        model_cached,
+        trust_remote_code=True,
+        **align_with_optimum_cli,
     )
-    model = retry_request(
-        lambda: OVModelForVisualCausalLM.from_pretrained(
-            model_cached, compile=False, device="CPU", export=True, load_in_8bit=False
-        )
+    model = OVModelForVisualCausalLM.from_pretrained(
+        model_cached, compile=False, device="CPU", export=True, load_in_8bit=False
     )
 
     tokenizer = processor.tokenizer
@@ -616,10 +588,8 @@ def _export_tiny_omni_model(target_dir: Path) -> None:
 def omni_model_path() -> Path:
     """Path to an exported tiny Qwen3-Omni model, or skip when the pinned deps cannot produce one.
 
-    Two distinct gaps are reported separately so a future failure points at the right dependency: the
-    export itself raising, and the export succeeding without any talker submodels. Only the known
-    transformers 5.0.x config bug is turned into a skip — any other export failure propagates so a
-    real regression cannot hide behind a skipped test.
+    Only the known transformers 5.0.x config bug is turned into a skip — any other export failure
+    propagates so a real regression cannot hide behind a skipped test.
     """
     model_dir = get_ov_cache_converted_models_dir() / OMNI_MODEL_ID.replace("/", "_")
     manager = AtomicDownloadManager(model_dir)
@@ -637,16 +607,10 @@ def omni_model_path() -> Path:
                 and "use_sliding_window" in message
             ):
                 raise
-            logger.info("Tiny Qwen3-Omni export hit the known transformers 5.0.x config bug: %s", message)
-            pytest.skip(f"Cannot export {OMNI_MODEL_ID} with the pinned dependencies: AttributeError: {message}")
-
-    missing = [name for name in TALKER_ARTIFACTS if not (model_dir / name).exists()]
-    if missing:
-        pytest.skip(
-            f"{OMNI_MODEL_ID} exported without the talker stage (missing {', '.join(missing)}); "
-            "the installed optimum-intel exported no talker stage; huggingface/optimum-intel#1700 is what "
-            "added it, so a revision predating that one cannot produce these files."
-        )
+            pytest.skip(
+                f"Cannot export {OMNI_MODEL_ID}: hit the known transformers 5.0.x config bug, "
+                f"fixed in 5.1.0. AttributeError: {message}"
+            )
 
     return model_dir
 
@@ -670,14 +634,11 @@ def _text_config(max_new_tokens: int = 10) -> ov_genai.GenerationConfig:
 
 
 def _sampling_text_config(rng_seed: int, max_new_tokens: int = 20) -> ov_genai.GenerationConfig:
-    """Multinomial counterpart of _text_config, seeded so one run reproduces itself.
-
-    The high temperature and ignore_eos come from test_llm_pipeline.py's rng_seed pair: they keep
-    different seeds apart instead of collapsing them onto the same near-greedy sequence.
-    """
     config = ov_genai.GenerationConfig()
     config.max_new_tokens = max_new_tokens
     config.do_sample = True
+    # Copied from test_llm_pipeline.py: a high temperature and ignore_eos keep different seeds on
+    # different sequences instead of collapsing them onto the same near-greedy one.
     config.temperature = 1.3
     config.ignore_eos = True
     config.rng_seed = rng_seed
@@ -687,8 +648,8 @@ def _sampling_text_config(rng_seed: int, max_new_tokens: int = 20) -> ov_genai.G
 @pytest.fixture(scope="module")
 def omni_image() -> ov.Tensor:
     """Deterministic RGB image as [H, W, 3] uint8 — the layout the image preprocessor expects."""
-    ramp = np.linspace(0, 255, MEDIA_EDGE, dtype=np.uint8)
-    frame = np.empty((MEDIA_EDGE, MEDIA_EDGE, 3), dtype=np.uint8)
+    ramp = np.linspace(0, 255, FRAME_RESOLUTION, dtype=np.uint8)
+    frame = np.empty((FRAME_RESOLUTION, FRAME_RESOLUTION, 3), dtype=np.uint8)
     frame[..., 0] = ramp[None, :]
     frame[..., 1] = ramp[::-1][:, None]
     frame[..., 2] = 128
@@ -698,7 +659,7 @@ def omni_image() -> ov.Tensor:
 @pytest.fixture(scope="module")
 def omni_video() -> ov.Tensor:
     """Deterministic video as [N, H, W, 3] uint8, one horizontal shift per frame so frames differ."""
-    base = np.tile(np.linspace(0, 255, MEDIA_EDGE, dtype=np.uint8), (MEDIA_EDGE, 1))
+    base = np.tile(np.linspace(0, 255, FRAME_RESOLUTION, dtype=np.uint8), (FRAME_RESOLUTION, 1))
     frames = [np.repeat(np.roll(base, 8 * index, axis=1)[..., None], 3, axis=2) for index in range(VIDEO_FRAMES)]
     return ov.Tensor(np.stack(frames))
 
@@ -710,7 +671,7 @@ def omni_audio() -> ov.Tensor:
     return ov.Tensor(np.sin(2.0 * np.pi * 440.0 * seconds).astype(np.float32))
 
 
-def _single_waveform(result: ov_genai.OmniDecodedResults) -> np.ndarray:
+def _extract_assert_single_waveform(result: ov_genai.OmniDecodedResults) -> np.ndarray:
     """Flatten the one waveform a speech-enabled result must carry, rejecting empty/non-finite audio."""
     waveforms = result.speech_result.waveforms
     assert len(waveforms) == 1, f"return_audio=True must produce exactly one waveform, got {len(waveforms)}"
@@ -720,52 +681,12 @@ def _single_waveform(result: ov_genai.OmniDecodedResults) -> np.ndarray:
     return waveform
 
 
-def _waveforms_differ(left: np.ndarray, right: np.ndarray) -> bool:
-    """Whether two waveforms are different audio, by length or by samples."""
-    return left.shape != right.shape or not np.allclose(left, right)
-
-
-def _generate_speech(pipe: ov_genai.OmniPipeline, speaker: str | ov.Tensor) -> np.ndarray:
-    """Generate speech for the fixed prompt/seed/token budget and return the waveform."""
-    result = pipe.generate(
-        SPEECH_PROMPT,
-        text_config=_text_config(),
-        talker_speech_config=_talker_speech_config(
-            return_audio=True,
-            speaker=speaker,
-            rng_seed=TALKER_RNG_SEED,
-            max_new_tokens=TALKER_MAX_NEW_TOKENS,
-        ),
-    )
-    return _single_waveform(result)
-
-
-@pytest.fixture(scope="module")
-def real_omni_pipe() -> ov_genai.OmniPipeline:
-    """Pipeline over a full Qwen3-Omni export, for tests the tiny checkpoint cannot host.
-
-    Pointed at by OMNI_REAL_MODEL_PATH rather than a models/ list file: those hold HF ids consumed by
-    the LLM suites' indirect fixture, which cannot express a pre-exported VLM+talker directory. Tests
-    using this are also marked real_models, so pytest.ini's default addopts deselect them; the skip
-    below only matters when somebody opts in without setting the variable.
-    """
-    raw_path = os.environ.get(OMNI_REAL_MODEL_ENV)
-    if not raw_path:
-        pytest.skip(f"set {OMNI_REAL_MODEL_ENV} to a full Qwen3-Omni OpenVINO export to run this")
-
-    model_dir = Path(raw_path)
-    if not (model_dir / "openvino_talker_model.xml").exists():
-        pytest.skip(f"{OMNI_REAL_MODEL_ENV}={model_dir} has no talker export")
-
-    return ov_genai.OmniPipeline(model_dir, "CPU")
-
-
 class _CapturingStreamer(ov_genai.StreamerBase):
     """Records the raw token ids GenAI generates.
 
-    Decoded text is useless as a comparison target on this checkpoint: its tokenizer covers ids
-    0-769 while the model head emits the full Qwen vocab, so every generated id falls outside the
-    tokenizer and renders as ''. Ids sidestep the broken tokenizer entirely.
+    Decoded text is useless as a comparison target on tiny-random-qwen3-omni: its tokenizer covers
+    ids 0-769 while the model head emits the full Qwen vocab, so every generated id falls outside
+    the tokenizer and renders as ''. Ids sidestep the broken tokenizer entirely.
     """
 
     def __init__(self) -> None:
@@ -926,9 +847,8 @@ class TestOmniPipelineRealModel:
 
         The talker samples with top-k, but it re-seeds its RNG from talker_speech_config.rng_seed on
         every call (default 0 on both sides here), so identical thinker hidden states yield an
-        identical codec token stream and therefore an identical sample count. The samples themselves
-        are compared with a tolerance rather than bit-exactly: the two stacks are independently
-        compiled copies of the same IRs, so only the last float bits may drift.
+        identical codec token stream. Both stacks run the same IRs on the same device, so the
+        waveforms must match sample for sample, not just closely.
         """
         text_config = _text_config()
         speech_on = _talker_speech_config(return_audio=True)
@@ -940,16 +860,16 @@ class TestOmniPipelineRealModel:
 
         assert from_map.texts == from_path.texts, "the thinker stages must agree before waveforms can be compared"
 
-        path_waveform = _single_waveform(from_path)
-        map_waveform = _single_waveform(from_map)
+        path_waveform = _extract_assert_single_waveform(from_path)
+        map_waveform = _extract_assert_single_waveform(from_map)
 
         assert map_waveform.shape == path_waveform.shape, (
             f"waveform lengths diverged ({map_waveform.size} vs {path_waveform.size} samples), so the two talkers "
             "sampled different codec tokens"
         )
-        assert np.allclose(map_waveform, path_waveform, rtol=0.0, atol=1e-4), (
-            f"waveforms differ by up to {np.abs(map_waveform - path_waveform).max():.3g}, which is beyond "
-            "independent-compilation float noise"
+        assert np.array_equal(map_waveform, path_waveform), (
+            f"waveforms differ by up to {np.abs(map_waveform - path_waveform).max():.3g}; the ModelsMap and "
+            "path talkers run the same IRs from the same seed, so they must agree sample for sample"
         )
 
     def test_generate_text_only(self, omni_pipe: ov_genai.OmniPipeline) -> None:
@@ -965,11 +885,10 @@ class TestOmniPipelineRealModel:
         assert result.speech_result.waveforms == [], "return_audio=False must not produce waveforms"
 
     def test_max_new_tokens_changes_generated_length(self, omni_pipe: ov_genai.OmniPipeline) -> None:
-        """Raising max_new_tokens makes the thinker emit strictly more tokens.
+        """max_new_tokens sets the generated length exactly.
 
-        ignore_eos is belt-and-braces: this checkpoint never emits EOS within 24 tokens, so the
-        counts are the same without it, but a checkpoint that did would make both caps stop early
-        at the same length and the comparison would say nothing.
+        ignore_eos is what makes the count exact rather than an upper bound: without it a checkpoint
+        that emitted EOS early would stop short of the cap.
         """
         short_config = _text_config(max_new_tokens=4)
         short_config.ignore_eos = True
@@ -983,11 +902,8 @@ class TestOmniPipelineRealModel:
         short_tokens = short_result.perf_metrics.get_num_generated_tokens()
         long_tokens = long_result.perf_metrics.get_num_generated_tokens()
 
-        assert 0 < short_tokens <= 4, f"max_new_tokens=4 must cap the decode, got {short_tokens} tokens"
-        assert 0 < long_tokens <= 24, f"max_new_tokens=24 must cap the decode, got {long_tokens} tokens"
-        assert short_tokens < long_tokens, (
-            f"raising max_new_tokens from 4 to 24 must lengthen the decode, got {short_tokens} then {long_tokens}"
-        )
+        assert short_tokens == 4, f"max_new_tokens=4 with ignore_eos must generate 4 tokens, got {short_tokens}"
+        assert long_tokens == 24, f"max_new_tokens=24 with ignore_eos must generate 24 tokens, got {long_tokens}"
 
     def test_rng_seed_steers_sampling(self, omni_pipe: ov_genai.OmniPipeline) -> None:
         """One rng_seed reproduces its own result, and the seeds do not all produce the same one.
@@ -1032,7 +948,7 @@ class TestOmniPipelineRealModel:
             talker_speech_config=_talker_speech_config(return_audio=True),
         )
 
-        _single_waveform(result)
+        _extract_assert_single_waveform(result)
 
     def test_matches_optimum_text(self, omni_pipe: ov_genai.OmniPipeline, optimum_reference: OptimumReference) -> None:
         """Greedy decode must produce the same token ids as optimum-intel for a text-only prompt.
@@ -1170,57 +1086,3 @@ class TestOmniPipelineRealModel:
         assert speakers, "the checkpoint declares speakers, so list_speakers() must not be empty"
         embedding = omni_pipe.get_talker().get_speaker_embedding(speakers[0])
         assert embedding.get_size() > 0, f"speaker {speakers[0]!r} must resolve to a non-empty embedding"
-
-    @pytest.mark.real_models
-    def test_altering_speaker_embedding_changes_speech(self, real_omni_pipe: ov_genai.OmniPipeline) -> None:
-        """A modified speaker embedding yields different speech; an unmodified one reproduces it exactly.
-
-        OmniTalkerSpeechConfig.speaker is a variant of name-or-tensor, and the tensor branch bypasses
-        the name lookup and feeds the embedding straight into the talker prefix. The talker has no
-        greedy path, so all three runs pin the same rng_seed. The control run proves the pipeline is
-        reproducible under that seed, which is what lets the third run attribute its difference to the
-        embedding rather than to sampling noise.
-
-        Needs a full checkpoint: the tiny one cannot synthesize at all, so there is no waveform to
-        compare. See NO_WAVEFORM_XFAIL_REASON.
-        """
-        omni_pipe = real_omni_pipe
-        talker = omni_pipe.get_talker()
-        speakers = talker.list_speakers()
-        assert speakers, "the checkpoint declares speakers, so list_speakers() must not be empty"
-
-        embedding = talker.get_speaker_embedding(speakers[0])
-        altered_data = (np.array(embedding.data, dtype=np.float32) * SPEAKER_EMBEDDING_SCALE).astype(np.float32)
-        altered = ov.Tensor(altered_data)
-
-        baseline = _generate_speech(omni_pipe, speaker=embedding)
-        control = _generate_speech(omni_pipe, speaker=embedding)
-        perturbed = _generate_speech(omni_pipe, speaker=altered)
-
-        assert np.array_equal(baseline, control), (
-            "the same speaker embedding and rng_seed must reproduce the waveform sample for sample; "
-            "without that the comparison below cannot attribute a difference to the embedding"
-        )
-        assert _waveforms_differ(perturbed, baseline), (
-            f"scaling the speaker embedding by {SPEAKER_EMBEDDING_SCALE} left the waveform unchanged "
-            f"({perturbed.size} samples), so the embedding is not reaching the talker"
-        )
-
-    @pytest.mark.real_models
-    def test_distinct_speakers_produce_distinct_speech(self, real_omni_pipe: ov_genai.OmniPipeline) -> None:
-        """Two different named speakers must not render the same audio for the same text and seed.
-
-        Needs a full checkpoint, for the same reason as the embedding test above.
-        """
-        omni_pipe = real_omni_pipe
-        speakers = omni_pipe.get_talker().list_speakers()
-        if len(speakers) < 2:
-            pytest.skip(f"the checkpoint declares a single speaker ({speakers}); nothing to compare")
-
-        first = _generate_speech(omni_pipe, speaker=speakers[0])
-        second = _generate_speech(omni_pipe, speaker=speakers[1])
-
-        assert _waveforms_differ(first, second), (
-            f"speakers {speakers[0]!r} and {speakers[1]!r} rendered identical audio ({first.size} samples); "
-            "the speaker selection is not reaching the talker"
-        )
