@@ -223,7 +223,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     const size_t kv_block_size = cache_orchestrator->get_block_size(CacheType::KV_CACHE);
     if (is_use_cache_eviction) {
         const auto& eviction_config = scheduler_config.cache_eviction_config;
-        m_scheduler = std::make_shared<Scheduler>(cache_orchestrator, normalized_config, can_use_partial_preemption, eviction_config.snapkv_window_size);
+        m_scheduler = std::make_shared<Scheduler>(cache_orchestrator, normalized_config, can_use_partial_preemption, eviction_config.snapkv_window_size, m_is_validation_mode_enabled);
 
         bool is_apply_rotation = eviction_config.apply_rotation;
         bool is_use_adaptive_rkv = (eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV);
@@ -241,7 +241,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
             _prepare_rotation_data_storage(normalized_config, kv_mgr.get_v_head_size(0));
         }
     } else {
-        m_scheduler = std::make_shared<Scheduler>(cache_orchestrator, normalized_config, can_use_partial_preemption);
+        m_scheduler = std::make_shared<Scheduler>(cache_orchestrator, normalized_config, can_use_partial_preemption, 1, m_is_validation_mode_enabled);
         m_model_runner =
             std::make_shared<ModelRunner>(infer_request, kv_block_size, m_num_decoder_layers,
                                                        /* collect_attention_scores = */ false,
@@ -402,10 +402,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_validate_linear_verifi
             continue;
         }
 
-        OPENVINO_ASSERT(!m_scheduler->get_config().enable_prefix_caching,
-                        "Linear-attention verifier speculative decoding requires enable_prefix_caching=false (not yet supported).");
-
         const auto& sampling_params = sequence_group->get_sampling_parameters();
+        OPENVINO_ASSERT(!m_scheduler->get_config().enable_prefix_caching ||
+                            (m_model_input_type == ModelInputType::TOKENS && sampling_params.is_greedy_decoding()),
+                        "Prefix linear-attention verification supports greedy token-input pipelines only");
         OPENVINO_ASSERT(sampling_params.assistant_confidence_threshold == 0.f,
                         "Linear-attention verifier speculative decoding supports a static candidate count only; assistant_confidence_threshold>0 (dynamic candidate count) is not yet supported.");
         OPENVINO_ASSERT(sampling_params.num_return_sequences == 1,
@@ -437,7 +437,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_reserve_linear_attenti
     // Pre-size for committed rows plus every verifier's full scratch window.
     const size_t window_blocks = 1 + max_num_assistant_tokens;
     m_scheduler->check_linear_attention_borrow_pool_floor(num_live_sequences, window_blocks);
-    const size_t required_pool_blocks = num_live_sequences + num_verifying_sequences * window_blocks;
+    const size_t prefix_headroom_rows = m_scheduler->get_config().enable_prefix_caching ? 1 : 0;
+    const size_t required_pool_blocks = num_live_sequences + num_verifying_sequences * (window_blocks + prefix_headroom_rows);
     m_scheduler->ensure_linear_attention_pool_blocks(required_pool_blocks);
 }
 
@@ -581,6 +582,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_linear_attentio
     for (const PendingPromotion& promotion : pending_promotions) {
         promotion.lease->mark_committed();
         scheduler_output.m_linear_attention_scratch_leases.erase(promotion.seq_id);
+        if (m_scheduler->get_config().enable_prefix_caching) {
+            m_scheduler->publish_completed_blocks(
+                promotion.sequence_group->get_sequences().front(),
+                scheduler_output.get_linear_attention_paging_data(promotion.seq_id).num_processed_tokens_before,
+                promotion.processed_tokens_after);
+        }
     }
 }
 

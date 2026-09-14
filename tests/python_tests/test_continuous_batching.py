@@ -23,6 +23,7 @@ from openvino_genai import (
     draft_model,
     GenerationFinishReason,
     GenerationStatus,
+    StreamingStatus,
     ChatHistory,
 )
 
@@ -643,28 +644,35 @@ def test_preemption_with_multinomial_n_seq(model_facebook_opt_125m: OVConvertedM
 
 @pytest.mark.parametrize("num_assistant_tokens", [1, 4])
 @pytest.mark.parametrize("enable_prefix_caching", [False, True])
-def test_local_hybrid_prompt_lookup_cache_contract(num_assistant_tokens, enable_prefix_caching):
+@pytest.mark.parametrize("pipeline_type", [PipelineType.PROMPT_LOOKUP_DECODING, PipelineType.SPECULATIVE_DECODING])
+@pytest.mark.parametrize("dynamic_split_fuse", [False, True])
+def test_local_hybrid_verifier_cache_contract(
+    num_assistant_tokens, enable_prefix_caching, pipeline_type, dynamic_split_fuse, monkeypatch, capfd
+):
     model_path = os.environ.get("OV_GENAI_HYBRID_MODEL")
     if not model_path:
         pytest.skip("OV_GENAI_HYBRID_MODEL must name a local hybrid OpenVINO IR")
     assert Path(model_path).is_dir()
+    monkeypatch.setenv("OPENVINO_LOG_LEVEL", "5")
     scheduler_config = dict_to_scheduler_config(
         {
             "enable_prefix_caching": enable_prefix_caching,
-            "dynamic_split_fuse": False,
+            "dynamic_split_fuse": dynamic_split_fuse,
             "max_num_batched_tokens": 256,
+            "cache_interval_multiplier": 1,
             "cache_size": 1,
+            "num_linear_attention_blocks": 12,
         }
     )
     lookup_pipe = create_ov_pipeline(
         Path(model_path),
-        pipeline_type=PipelineType.PROMPT_LOOKUP_DECODING,
+        pipeline_type=pipeline_type,
         scheduler_config=scheduler_config,
     )
     input_ids = (
         lookup_pipe.get_tokenizer()
         .encode(
-            "Repeat this sequence: one two three four. one two three four. one two three four.",
+            "Repeat this sequence: " + "one two three four. " * 32,
             add_special_tokens=True,
         )
         .input_ids
@@ -675,12 +683,9 @@ def test_local_hybrid_prompt_lookup_cache_contract(num_assistant_tokens, enable_
         ignore_eos=True,
         apply_chat_template=False,
         num_assistant_tokens=num_assistant_tokens,
-        max_ngram_size=3,
+        max_ngram_size=3 if pipeline_type == PipelineType.PROMPT_LOOKUP_DECODING else 0,
     )
-    if enable_prefix_caching:
-        with pytest.raises(RuntimeError, match="requires enable_prefix_caching=false"):
-            lookup_pipe.generate(input_ids, lookup_config)
-        return
+    scheduler_config.enable_prefix_caching = False
     reference_pipe = create_ov_pipeline(
         Path(model_path),
         pipeline_type=PipelineType.PAGED_ATTENTION,
@@ -693,10 +698,44 @@ def test_local_hybrid_prompt_lookup_cache_contract(num_assistant_tokens, enable_
         apply_chat_template=False,
     )
     reference = reference_pipe.generate(input_ids, reference_config)
-    for _ in range(2):
+    for iteration in range(2):
+        capfd.readouterr()
         result = lookup_pipe.generate(input_ids, lookup_config)
+        captured = capfd.readouterr()
+        if enable_prefix_caching and iteration == 1:
+            assert "Hybrid prefix restore:" in captured.out + captured.err
         assert result.tokens == reference.tokens
         assert len(result.tokens[0]) == 16
+        if pipeline_type == PipelineType.SPECULATIVE_DECODING:
+            assert result.extended_perf_metrics.get_num_draft_tokens() > 0
+            assert result.extended_perf_metrics.get_num_accepted_tokens() > 0
+
+    extended_ids = (
+        lookup_pipe.get_tokenizer()
+        .encode(
+            "Repeat this sequence: " + "one two three four. " * 32 + "Now continue with five six seven.",
+            add_special_tokens=True,
+        )
+        .input_ids
+    )
+    extended_reference = reference_pipe.generate(extended_ids, reference_config)
+    capfd.readouterr()
+    extended_result = lookup_pipe.generate(extended_ids, lookup_config)
+    captured = capfd.readouterr()
+    if enable_prefix_caching:
+        assert "Hybrid prefix restore:" in captured.out + captured.err
+    assert extended_result.tokens == extended_reference.tokens
+
+    streamed_chunks = []
+
+    def cancel_generation(chunk):
+        streamed_chunks.append(chunk)
+        return StreamingStatus.CANCEL
+
+    lookup_pipe.generate(input_ids, lookup_config, streamer=cancel_generation)
+    assert streamed_chunks
+    result_after_cancel = lookup_pipe.generate(input_ids, lookup_config)
+    assert result_after_cancel.tokens == reference.tokens
 
 
 def test_local_hybrid_cached_prefix_with_new_input():

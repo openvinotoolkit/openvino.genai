@@ -307,8 +307,13 @@ public:
 
     std::map<CacheType, std::map<size_t, std::list<size_t>>> append_slots(SequenceGroup::Ptr seq_group) {
         std::map<CacheType, std::map<size_t, std::list<size_t>>> per_type;
+        const bool reserved_verification = has_reserved_linear_attention_scratch(seq_group);
         for (auto& [type, block_mgr] : m_block_managers) {
-            auto copy_map = block_mgr->append_slots(seq_group);
+            if (type == CacheType::LINEAR_ATTENTION_CACHE && reserved_verification) {
+                continue;
+            }
+            auto copy_map = block_mgr->append_slots(seq_group,
+                type == CacheType::KV_CACHE && reserved_verification);
             queue_linear_attention_initial_state_zero(type, *block_mgr, seq_group);
             if (!copy_map.empty()) {
                 per_type[type] = std::move(copy_map);
@@ -318,8 +323,22 @@ public:
     }
 
     bool can_append_slots(SequenceGroup::CPtr seq_group) const {
+        const bool reserved_verification = has_reserved_linear_attention_scratch(seq_group);
         return std::all_of(m_block_managers.begin(), m_block_managers.end(),
-            [&seq_group](const auto& pair) { return pair.second->can_append_slots(seq_group); });
+            [&seq_group, reserved_verification](const auto& pair) {
+                return (pair.first == CacheType::LINEAR_ATTENTION_CACHE && reserved_verification) ||
+                       pair.second->can_append_slots(seq_group);
+            });
+    }
+
+    bool has_reserved_linear_attention_scratch(SequenceGroup::CPtr seq_group) const {
+        const auto manager = m_block_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
+        if (manager == m_block_managers.end()) {
+            return false;
+        }
+        const auto sequences = seq_group->get_running_sequences();
+        return !sequences.empty() && std::all_of(sequences.begin(), sequences.end(),
+            [&manager](const auto& sequence) { return manager->second->has_temporary_blocks(sequence->get_id()); });
     }
 
     /**
@@ -395,29 +414,37 @@ public:
                 return;
             }
 
-            auto la_plan = la_block_mgr.get_prefix_restore_plan(sequence_group, kv_plan.cache_token_position);
+            const size_t restore_ceiling = sequence_group->get_prompt_len() > 0
+                                               ? sequence_group->get_prompt_len() - 1
+                                               : 0;
+            auto la_plan = la_block_mgr.get_prefix_restore_plan(
+                sequence_group, std::min(kv_plan.cache_token_position, restore_ceiling));
             if (la_plan.empty()) {
                 return;
             }
 
-            kv_plan = kv_block_mgr.get_prefix_restore_plan(sequence_group, la_plan.cache_token_position);
-            if (kv_plan.empty()) {
-                return;
+            while (kv_plan.cache_token_position != la_plan.cache_token_position) {
+                const size_t ceiling = std::min(kv_plan.cache_token_position, la_plan.cache_token_position);
+                kv_plan = kv_block_mgr.get_prefix_restore_plan(sequence_group, ceiling);
+                la_plan = la_block_mgr.get_prefix_restore_plan(sequence_group, ceiling);
+                if (kv_plan.empty() || la_plan.empty()) {
+                    return;
+                }
             }
 
-            const size_t common_cache_token_position = std::min(kv_plan.cache_token_position,
-                                                               la_plan.cache_token_position);
-            kv_plan = kv_block_mgr.get_prefix_restore_plan(sequence_group, common_cache_token_position);
-            la_plan = la_block_mgr.get_prefix_restore_plan(sequence_group, common_cache_token_position);
-            if (kv_plan.empty() || la_plan.empty()) {
+            auto prepared_kv = kv_block_mgr.prepare_prefix_restore(sequence_group, kv_plan);
+            if (!prepared_kv) {
                 return;
             }
-
-            if (!kv_block_mgr.restore_cached_blocks(sequence_group, kv_plan) ||
-                !la_block_mgr.restore_cached_blocks(sequence_group, la_plan)) {
+            auto prepared_la = la_block_mgr.prepare_prefix_restore(sequence_group, la_plan);
+            if (!prepared_la) {
                 return;
             }
+            prepared_kv->apply();
+            prepared_la->apply();
             sequence_group->update_processed_tokens_num(std::min(kv_plan.processed_tokens, la_plan.processed_tokens));
+            GENAI_DEBUG("Hybrid prefix restore: request=%llu endpoint=%zu",
+                        static_cast<unsigned long long>(sequence_group->get_request_id()), la_plan.cache_token_position);
             return;
         }
 
@@ -722,11 +749,11 @@ public:
         }
     }
 
-    /// @brief Grows the shared non-prefix LA pool, clamped to its configured ceiling.
+    /// @brief Grows the shared LA pool, clamped to its configured ceiling.
     /// @return Whether the pool was grown.
     bool ensure_linear_attention_pool_blocks(size_t num_blocks) {
         const auto it = m_block_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
-        if (it == m_block_managers.end() || !it->second->is_fixed_size_per_sequence()) {
+        if (it == m_block_managers.end()) {
             return false;
         }
         return it->second->increase_block_count_up_to(num_blocks);
@@ -824,7 +851,7 @@ public:
         if (!has_linear_attention_cache() || num_blocks == 0) {
             return false;
         }
-        return m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->can_reserve_temporary_blocks(seq_id, num_blocks);
+        return m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->can_prepare_temporary_blocks(seq_id, num_blocks);
     }
 
     std::vector<int> reserve_linear_attention_temporary_blocks(uint64_t seq_id, size_t num_blocks) {
@@ -1068,7 +1095,7 @@ private:
             OPENVINO_ASSERT(budget_in_bytes <= total_available_memory,
                             "Requested cache size is larger than available memory size on the system.");
 
-            if (la_manager && !config.enable_prefix_caching) {
+            if (la_manager && (!config.enable_prefix_caching || config.num_linear_attention_blocks > 0)) {
                 const size_t reserved_la_bytes = normalized_num_la_blocks * la_block_size_in_bytes;
                 OPENVINO_ASSERT(reserved_la_bytes <= budget_in_bytes,
                                 "Requested linear attention cache allocation exceeds the configured cache size.");
