@@ -1452,17 +1452,29 @@ std::vector<int64_t> Qwen3TTSImpl::generate_codec_groups(const ov::Tensor& past_
     groups.reserve(m_ids.num_code_groups);
     groups.push_back(first_codec_token);
 
-    if (!m_predictor_static) {
-        SpeechGenerationConfig predictor_config = generation_config;
-        predictor_config.do_sample = generation_config.subtalker_dosample;
-        predictor_config.top_k = generation_config.subtalker_top_k;
-        predictor_config.top_p = generation_config.subtalker_top_p;
-        predictor_config.temperature = generation_config.subtalker_temperature;
-        predictor_config.repetition_penalty = 1.0f;
+    auto sample_remaining_groups = [&](int64_t next,
+                                       std::vector<int64_t>& generated,
+                                       const std::vector<bool>& predictor_suppressed) {
+        for (size_t g = 1; g < m_ids.num_code_groups - 1; ++g) {
+            auto emb = infer_predictor_embedding(next, static_cast<int64_t>(g - 1));
+            OPENVINO_ASSERT(emb.get_shape().size() == 3 && emb.get_shape()[1] == 1,
+                            "Code predictor residual embedding must be a single token");
+            auto lg = infer_predictor(emb, /*reset_state=*/false, /*step=*/static_cast<int64_t>(g));
+            next = sample_token_from_logits(lg, predictor_config, generated, predictor_suppressed, rng);
+            generated.push_back(next);
+        }
+    };
 
+    auto append_and_pad_groups = [&](const std::vector<int64_t>& generated) {
+        groups.insert(groups.end(), generated.begin(), generated.end());
+        while (groups.size() < m_ids.num_code_groups) {
+            groups.push_back(m_ids.codec_pad_id);
+        }
+    };
+
+    if (!m_predictor_static) {
         std::vector<int64_t> generated;
         generated.reserve(m_ids.num_code_groups - 1);
-        std::vector<bool> predictor_suppressed(2048, false);
 
         ov::Tensor first_id_hidden = infer_embedding(m_talker_embedding, first_codec_token);
 
@@ -1481,20 +1493,16 @@ std::vector<int64_t> Qwen3TTSImpl::generate_codec_groups(const ov::Tensor& past_
         std::copy_n(first_id_hidden.data<const float>(), ph_shape[2], prefill_ptr + ph_shape[1] * ph_shape[2]);
 
         auto logits = infer_predictor(prefill, /*reset_state=*/true, /*step=*/0);  // [1, T, V]
+        const auto logits_shape = logits.get_shape();
+        OPENVINO_ASSERT(logits_shape.size() == 3,
+                "Expected code predictor logits shape [B, T, V], got rank ",
+                logits_shape.size());
+        std::vector<bool> predictor_suppressed(logits_shape[2], false);
         int64_t next = sample_token_from_logits(logits, predictor_config, generated, predictor_suppressed, rng);
         generated.push_back(next);
 
-        for (size_t g = 1; g < m_ids.num_code_groups - 1; ++g) {
-            auto emb = infer_predictor_embedding(next, static_cast<int64_t>(g - 1));
-            auto lg = infer_predictor(emb, /*reset_state=*/false, /*step=*/static_cast<int64_t>(g));
-            next = sample_token_from_logits(lg, predictor_config, generated, predictor_suppressed, rng);
-            generated.push_back(next);
-        }
-
-        groups.insert(groups.end(), generated.begin(), generated.end());
-        while (groups.size() < m_ids.num_code_groups) {
-            groups.push_back(m_ids.codec_pad_id);
-        }
+        sample_remaining_groups(next, generated, predictor_suppressed);
+        append_and_pad_groups(generated);
 
         return groups;
     }
@@ -1542,27 +1550,17 @@ std::vector<int64_t> Qwen3TTSImpl::generate_codec_groups(const ov::Tensor& past_
     std::vector<int64_t> generated;
     generated.reserve(m_ids.num_code_groups - 1);
 
-    std::vector<bool> predictor_suppressed(2048, false);
-
     // === Prefill sampling ===
+    const auto logits_shape = logits.get_shape();
+    OPENVINO_ASSERT(logits_shape.size() == 3,
+                    "Expected code predictor logits shape [B, T, V], got rank ",
+                    logits_shape.size());
+    std::vector<bool> predictor_suppressed(logits_shape[2], false);
     int64_t next = sample_token_from_logits(logits, predictor_config, generated, predictor_suppressed, rng);
     generated.push_back(next);
 
-    for (size_t g = 1; g < m_ids.num_code_groups - 1; ++g) {
-        // Embed the previous residual token, advance one position, predict group g+1
-        // from head index g.
-        auto emb = infer_predictor_embedding(next, static_cast<int64_t>(g - 1));
-        OPENVINO_ASSERT(emb.get_shape().size() == 3 && emb.get_shape()[1] == 1,
-                        "Code predictor residual embedding must be a single token");
-        auto lg = infer_predictor(emb, /*reset=*/false, /*step=*/static_cast<int64_t>(g));
-        next = sample_token_from_logits(lg, predictor_config, generated, predictor_suppressed, rng);
-        generated.push_back(next);
-    }
-
-    groups.insert(groups.end(), generated.begin(), generated.end());
-    while (groups.size() < m_ids.num_code_groups) {
-        groups.push_back(m_ids.codec_pad_id);
-    }
+    sample_remaining_groups(next, generated, predictor_suppressed);
+    append_and_pad_groups(generated);
 
     return groups;
 }
