@@ -57,6 +57,11 @@ public:
     /// transcribe it twice (CVS-193623). Public so tests can check the split.
     static std::vector<size_t> plan_chunk_frame_lens(size_t n_frames, size_t n_window);
 
+    /// @brief Preprocess audio: mel spectrogram -> chunk into windows -> pad.
+    /// @return Tuple of (padded_feature, padded_mask_after_cnn, aftercnn_lens, cu_seqlens).
+    /// Needs no compiled model, so tests can check the produced shapes directly.
+    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> preprocess_audio(const ov::Tensor& audio_raw);
+
     /// @brief Compute CNN output length after 8x total downsampling (three stride-2 Conv2d stages).
     /// Applied per chunk; summing over the chunks of an utterance must equal
     /// `_get_feat_extract_output_lengths(n_frames)` in transformers.
@@ -73,10 +78,6 @@ private:
     VLMConfig m_config;
     WhisperFeatureExtractor m_feature_extractor;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue;
-
-    /// @brief Preprocess audio: mel spectrogram -> chunk into windows -> pad.
-    /// @return Tuple of (padded_feature, padded_mask_after_cnn, aftercnn_lens, cu_seqlens).
-    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> preprocess_audio(const ov::Tensor& audio_raw);
 };
 
 }  // namespace ov::genai

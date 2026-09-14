@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <numeric>
 #include <vector>
 
@@ -85,10 +86,14 @@ void AudioEncoderQwen3Omni::validate_audio_input(const ov::Tensor& audio_raw) {
 
 std::vector<size_t> AudioEncoderQwen3Omni::plan_chunk_frame_lens(size_t n_frames, size_t n_window) {
     OPENVINO_ASSERT(n_window > 0, "audio_config.n_window must be > 0");
+    OPENVINO_ASSERT(n_window <= std::numeric_limits<size_t>::max() / 2,
+                    "audio_config.n_window is too large to double: ",
+                    n_window);
     OPENVINO_ASSERT(n_frames > 0, "Cannot chunk an empty mel spectrogram");
 
     const size_t chunk_size = n_window * 2;
-    const size_t num_chunks = (n_frames + chunk_size - 1) / chunk_size;
+    // Subtraction-based ceiling: n_frames + chunk_size - 1 could wrap, this cannot.
+    const size_t num_chunks = 1 + (n_frames - 1) / chunk_size;
 
     std::vector<size_t> chunk_frame_lens(num_chunks);
     for (size_t c = 0; c < num_chunks; c++) {
@@ -120,16 +125,23 @@ std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> AudioEncoderQwen3Omni
     const std::vector<size_t> chunk_frame_lens = plan_chunk_frame_lens(n_frames, n_window);
     const size_t num_chunks = chunk_frame_lens.size();
 
-    ov::Tensor padded_feature(ov::element::f32, {num_chunks, num_mel_bins, chunk_size});
+    // pad_sequence() upstream pads to the longest actual chunk, not to a full one. Audio
+    // shorter than one chunk must stay narrow: a full-width feature makes the CNN emit more
+    // positions than padded_mask_after_cnn holds, and the encoder multiplies the two.
+    const size_t padded_frames = *std::max_element(chunk_frame_lens.begin(), chunk_frame_lens.end());
+
+    ov::Tensor padded_feature(ov::element::f32, {num_chunks, num_mel_bins, padded_frames});
     auto* pf_data = padded_feature.data<float>();
     std::fill(pf_data, pf_data + padded_feature.get_size(), 0.0f);
 
     for (size_t c = 0; c < num_chunks; c++) {
+        // Source stride is the logical chunk width; destination stride is the padded width.
         const size_t start = c * chunk_size;
         // Copy mel data for this chunk: mel_data is [num_mel_bins, n_frames] row-major
         for (size_t mel = 0; mel < num_mel_bins; mel++) {
             for (size_t f = 0; f < chunk_frame_lens[c]; f++) {
-                pf_data[c * num_mel_bins * chunk_size + mel * chunk_size + f] = mel_data[mel * n_frames + start + f];
+                pf_data[c * num_mel_bins * padded_frames + mel * padded_frames + f] =
+                    mel_data[mel * n_frames + start + f];
             }
         }
     }
@@ -138,8 +150,7 @@ std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> AudioEncoderQwen3Omni
     for (size_t c = 0; c < num_chunks; c++) {
         chunk_aftercnn_lens[c] = get_feat_extract_output_length(chunk_frame_lens[c]);
     }
-    // Matches pad_sequence() upstream: pad to the longest chunk, not to a full one,
-    // so short audio keeps a narrow mask and a smaller window_aftercnn.
+    // Same pad_sequence() rule as padded_frames above, so the two stay in step.
     const size_t max_aftercnn_len = *std::max_element(chunk_aftercnn_lens.begin(), chunk_aftercnn_lens.end());
 
     ov::Tensor padded_mask_after_cnn(ov::element::boolean, {num_chunks, max_aftercnn_len});

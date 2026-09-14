@@ -11,7 +11,9 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <limits>
 #include <numeric>
 #include <vector>
@@ -193,4 +195,70 @@ TEST(AudioEncoderChunking, TokenCountForKnownDurations) {
 TEST(AudioEncoderChunking, RejectsDegenerateInput) {
     EXPECT_THROW({ Encoder::plan_chunk_frame_lens(0, kNWindow); }, ov::Exception);
     EXPECT_THROW({ Encoder::plan_chunk_frame_lens(100, 0); }, ov::Exception);
+    // n_window * 2 would wrap to 0 and the chunk count would divide by it.
+    constexpr size_t overflowing_window = std::numeric_limits<size_t>::max() / 2 + 1;
+    EXPECT_THROW({ Encoder::plan_chunk_frame_lens(100, overflowing_window); }, ov::Exception);
+}
+
+// ---- preprocess_audio() tensor shapes ----
+
+namespace {
+
+// The encoder model is optional: when the .xml is absent the constructor returns early but
+// still initialises the config and the mel extractor, so preprocess_audio() runs without a
+// compiled model. Point it at a directory that holds no audio encoder.
+Encoder make_encoder_without_model() {
+    return Encoder(std::filesystem::temp_directory_path(), ov::genai::VLMConfig{}, "CPU", {});
+}
+
+ov::Tensor make_pcm(size_t n_samples) {
+    ov::Tensor pcm(ov::element::f32, {n_samples});
+    auto* data = pcm.data<float>();
+    // A plain tone: preprocess_audio() only reshapes, so the content is irrelevant.
+    for (size_t i = 0; i < n_samples; i++) {
+        data[i] = 0.1f * std::sin(0.05f * static_cast<float>(i));
+    }
+    return pcm;
+}
+
+}  // namespace
+
+TEST(AudioEncoderPreprocess, FeatureWidthAndMaskWidthAgree) {
+    // The encoder multiplies its CNN output by padded_mask_after_cnn, so the post-CNN width
+    // implied by padded_feature must equal the mask width. Padding the feature to a full
+    // chunk while sizing the mask from the real tail throws inside the model (CVS-193623).
+    auto encoder = make_encoder_without_model();
+
+    // 0.25 s and 0.5 s sit below one chunk (100 frames); 1 s and 3 s span whole chunks.
+    for (size_t n_samples : {4000u, 8000u, 16000u, 48000u}) {
+        auto [feature, mask, aftercnn_lens, cu_seqlens] = encoder.preprocess_audio(make_pcm(n_samples));
+
+        const auto feature_shape = feature.get_shape();
+        const auto mask_shape = mask.get_shape();
+        ASSERT_EQ(feature_shape.size(), 3u);
+        ASSERT_EQ(mask_shape.size(), 2u);
+
+        EXPECT_EQ(feature_shape[0], mask_shape[0]) << "n_samples=" << n_samples;
+        EXPECT_EQ(Encoder::get_feat_extract_output_length(feature_shape[2]), mask_shape[1])
+            << "n_samples=" << n_samples;
+    }
+}
+
+TEST(AudioEncoderPreprocess, ShortAudioKeepsOneNarrowChunk) {
+    // 0.5 s is the case the old code got wrong: one chunk, padded out to a full 100 frames.
+    auto encoder = make_encoder_without_model();
+    auto [feature, mask, aftercnn_lens, cu_seqlens] = encoder.preprocess_audio(make_pcm(8000));
+
+    EXPECT_EQ(feature.get_shape()[0], 1u);
+    EXPECT_LT(feature.get_shape()[2], kNWindow * 2) << "sub-chunk audio must not be padded to a full chunk";
+
+    // One value for the whole utterance, and it must equal the emitted token count.
+    ASSERT_EQ(aftercnn_lens.get_shape(), ov::Shape{1});
+    const auto total_tokens = static_cast<size_t>(aftercnn_lens.data<const int64_t>()[0]);
+    EXPECT_EQ(total_tokens, mask.get_shape()[1]);
+
+    // cu_seqlens is a cumulative sum starting at 0 and ending at the token count.
+    const auto* cu = cu_seqlens.data<const int32_t>();
+    EXPECT_EQ(cu[0], 0);
+    EXPECT_EQ(static_cast<size_t>(cu[cu_seqlens.get_size() - 1]), total_tokens);
 }
