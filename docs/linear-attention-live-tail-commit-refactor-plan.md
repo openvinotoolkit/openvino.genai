@@ -50,14 +50,28 @@ native library. CSV-backed model suites were excluded. Reservation accounting, c
 prepared pinned restore and rewind remain unimplemented P4 gates. No prefix-verifier
 guard was removed; Qwen3.5 VLM/media remains mandatory for later MTP acceptance.
 
-The next, uncommitted scratch-admission correction distinguishes raw writable capacity
+The scratch-admission correction committed as `119c6a40c` distinguishes raw writable capacity
 from free-but-cached checkpoint capacity. Admission and both scratch acquisition paths
 now agree before any row is taken. The regression covers capped one/two-layer pools,
 rejection without mutation, cached restore while scratch is reserved, blocked competing
 continuation and successful continuation after release. Validation passed 753 selected
-C++ tests, six allocation-failure tests and five real-hybrid Python cases. This does not
-implement prepared eviction or retained next-window headroom; those remain required
-before optional publication can safely consume spare capacity.
+C++ tests, six allocation-failure tests and five real-hybrid Python cases.
+
+The next uncommitted slice adds prepared batch eviction for scratch reservations.
+Both acquisition paths prefer fresh rows, then reclaim only unowned LRU checkpoints.
+Allocations and row validation complete before any ownership or registry mutation;
+eviction also removes content-length metadata for erased canonical registrations.
+Admission can now include evictable capacity. Failed preparation preserves cached
+lookup and references, while release after successful eviction returns unpublished
+rows without resurrecting stale hashes. This guarantee is per reservation, not a
+rollback of successful eviction if a later group reservation fails.
+
+Validation passed 754 selected C++ tests, eight allocation-failure tests and five
+real-hybrid Python cases with the rebuilt native library. CSV-backed suites were
+excluded. One independent review was completed. Multi-candidate LRU and duplicate-owner
+eviction need dedicated coverage. Retained next-window headroom, optional no-gap
+publication/canonicalization, pinned atomic restore and rewind remain P4 work;
+prefix-verifier guards stay in place.
 
 Refactor internal linear-attention (LA) state coordination incrementally so prefix
 checkpoints, a sequence's current recurrent state, and speculative state have separate
