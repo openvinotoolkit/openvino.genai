@@ -99,12 +99,9 @@ public:
             }
             m_status = status;
             m_closed = status != GenerationStatus::RUNNING;
-<<<<<<< HEAD
             if (status == GenerationStatus::STOP || status == GenerationStatus::CANCEL) {
                 m_output_queue = {};
             }
-=======
->>>>>>> e54962f60 (Harden sampler worker lifetime and generation stream failures)
         }
         m_cv.notify_all();
     }
