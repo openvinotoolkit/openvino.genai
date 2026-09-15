@@ -61,6 +61,7 @@ ContinuousBatchingPipeline::MtpDecodingImpl::MtpDecodingImpl(const ov::genai::Mo
     m_tokenizer = main_model_tokenizer;
     m_inputs_embedder = inputs_embedder;
     m_model_input_type = ModelInputType::EMBEDDINGS;
+    m_vision_registry = std::make_shared<VisionRegistry>();
 
     // PA conversion must precede the MTP lm_head graft.
     bool allow_score_aggregation = true;

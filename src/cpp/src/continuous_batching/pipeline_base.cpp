@@ -653,7 +653,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     // not force ChatHistory through the string path (which would misplace multimodal tokens).
     const bool capture_prompt_ids = std::any_of(sampling_params.begin(), sampling_params.end(),
                                                  [](const GenerationConfig& params) {
-                                                     return params.return_omni_outputs;
+                                                     return params.return_omni_outputs || params.is_assisting_generation();
                                                  });
 
     std::vector<VLMChatContext> chat_contexts;

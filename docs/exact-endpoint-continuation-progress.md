@@ -1,8 +1,24 @@
 # Exact-Endpoint Continuation Progress
 
-## Current Handoff (2026-09-14)
+## Current Handoff (2026-09-15)
 
-LFM is committed as `43b1c3df1`. The subsequent Qwen3.5 work is uncommitted.
+LFM is committed as `43b1c3df1`; Qwen3.5 paired prefix replay is committed as
+`80c5236b1`. The explicit `ChatHistory` follow-up is implemented and uncommitted:
+
+- Assisted history requests now forward the aligned prompt IDs without requiring
+  Omni outputs, and MTP initializes its strategy-level vision registry.
+- Qwen's single-media merger copies the stored encoded tensor before adding
+  positional embeddings in place. Previously, repeated history calls mutated the
+  registry-owned tensor, changed prefix identity, and lost warm cache reuse.
+- Four real-model MTP cases passed with text, image, video and video metadata.
+  Each checks explicit-history parity, observed warm hybrid/paired restores, and
+  a follow-up turn using retained media. Existing string-input long-generation,
+  cancellation/reuse and changed-media checks also run in these cases.
+- The native library builds and scoped C++ diagnostics are clean. The broader
+  native and model-suite counts below describe the preceding committed milestone.
+
+### Paired-Replay Milestone (2026-09-14)
+
 VLM prompt lookup and the actual Qwen3.5 MTP submodel now pass local prefix-on/off
 greedy parity checks with built-in text, images, video and video metadata.
 
