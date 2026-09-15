@@ -807,58 +807,17 @@ ov::Tensor Qwen3TTSImpl::extract_qwen3_ref_code_from_audio(const ov::Tensor& ref
      run_and_time([&]{ req.infer(); }, roles::SPEECH_TOKENIZER_ENCODER, m_perf_ms, m_perf_calls);
 
     const ov::Tensor out = req.get_output_tensor(0);
-    OPENVINO_ASSERT(out.get_element_type() == ov::element::i64 || out.get_element_type() == ov::element::i32,
-                    "Speech tokenizer encoder output must be i64 or i32");
+    OPENVINO_ASSERT(out.get_element_type() == ov::element::i64,
+                    "Speech tokenizer encoder output must be i64");
 
     const ov::Shape shape = out.get_shape();
-    OPENVINO_ASSERT(shape.size() == 2 || shape.size() == 3,
-                    "Unexpected ref_code output rank. Expected 2 or 3, got ",
-                    shape.size());
-
-    auto out_i64 = [&](size_t idx) -> int64_t {
-        if (out.get_element_type() == ov::element::i64) {
-            return out.data<const int64_t>()[idx];
-        }
-        return static_cast<int64_t>(out.data<const int32_t>()[idx]);
-    };
-
-    if (shape.size() == 2) {
-        const size_t d0 = shape[0];
-        const size_t d1 = shape[1];
-        if (d1 == m_ids.num_code_groups) {
-            ov::Tensor ref_code(ov::element::i64, ov::Shape{d0, d1});
-            for (size_t i = 0; i < out.get_size(); ++i) {
-                ref_code.data<int64_t>()[i] = out_i64(i);
-            }
-            return ref_code;
-        }
-        OPENVINO_ASSERT(d0 == m_ids.num_code_groups,
-                        "Unexpected ref_code 2D shape ",
-                        shape_to_string(shape),
-                        ", expected [T,G] or [G,T] with G=",
-                        m_ids.num_code_groups);
-        ov::Tensor ref_code(ov::element::i64, ov::Shape{d1, d0});
-        for (size_t t = 0; t < d1; ++t) {
-            for (size_t g = 0; g < d0; ++g) {
-                ref_code.data<int64_t>()[t * d0 + g] = out_i64(g * d1 + t);
-            }
-        }
-        return ref_code;
-    }
+    OPENVINO_ASSERT(shape.size() == 3, "Unexpected ref_code output rank. Expected 3, got ", shape.size());
+    const int64_t* out_i64 = out.data<const int64_t>();
 
     const size_t b = shape[0];
     const size_t d1 = shape[1];
     const size_t d2 = shape[2];
     OPENVINO_ASSERT(b == 1, "Unexpected ref_code batch dimension. Expected 1, got ", b);
-
-    if (d2 == m_ids.num_code_groups) {
-        ov::Tensor ref_code(ov::element::i64, ov::Shape{1, d1, d2});
-        for (size_t i = 0; i < out.get_size(); ++i) {
-            ref_code.data<int64_t>()[i] = out_i64(i);
-        }
-        return ref_code;
-    }
-
     OPENVINO_ASSERT(d1 == m_ids.num_code_groups,
                     "Unexpected ref_code 3D shape ",
                     shape_to_string(shape),
@@ -868,7 +827,7 @@ ov::Tensor Qwen3TTSImpl::extract_qwen3_ref_code_from_audio(const ov::Tensor& ref
     ov::Tensor ref_code(ov::element::i64, ov::Shape{1, d2, d1});
     for (size_t t = 0; t < d2; ++t) {
         for (size_t g = 0; g < d1; ++g) {
-            ref_code.data<int64_t>()[t * d1 + g] = out_i64(g * d2 + t);
+            ref_code.data<int64_t>()[t * d1 + g] = out_i64[g * d2 + t];
         }
     }
     return ref_code;
