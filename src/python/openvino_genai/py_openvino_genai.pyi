@@ -1259,6 +1259,14 @@ class EmbedResult:
     embeddings: openvino._pyopenvino.Tensor
     def __init__(self, embeddings: openvino._pyopenvino.Tensor) -> None:
         ...
+    @property
+    def token_scores(self) -> dict[str, openvino._pyopenvino.Tensor]:
+        """
+        Per token scores of every model output, by name. Filled instead of `embeddings` by models replacing the single embedding with several classification heads, e.g. Qwen3Guard.
+        """
+    @token_scores.setter
+    def token_scores(self, arg0: collections.abc.Mapping[str, openvino._pyopenvino.Tensor]) -> None:
+        ...
 class EmbeddingPipeline:
     """
     
@@ -1282,6 +1290,10 @@ class EmbeddingPipeline:
     def embed(self, **kwargs) -> EmbedResult:
         """
         Computes embedding vectors using properties (text=..., images=..., videos=..., videos_metadata=..., embedding_prompt=...).
+        """
+    def reset_state(self) -> None:
+        """
+        Starts a new sequence, dropping the KV cache built by the previous embed() calls. A no-op for models without a cache.
         """
 class EncodedGenerationResult:
     """
@@ -5165,6 +5177,38 @@ class TextEmbeddingPipeline:
     def embed_query(self, text: str) -> list[float] | list[int] | list[int]:
         """
         Computes embeddings for a query
+        """
+    def is_stateful(self) -> bool:
+        """
+        True when the model carries its own KV cache, i.e. score_next() is usable.
+        """
+    def reset_state(self) -> None:
+        """
+        Drops the cached sequence, so the next score_next() starts a new one.
+        """
+    @typing.overload
+    def score(self, texts: collections.abc.Sequence[str]) -> dict[str, openvino._pyopenvino.Tensor]:
+        """
+        Scores a batch of texts, returning every model output by name.
+        """
+    @typing.overload
+    def score(self, input_ids: openvino._pyopenvino.Tensor, attention_mask: openvino._pyopenvino.Tensor | None = None) -> dict[str, openvino._pyopenvino.Tensor]:
+        """
+        Scores an already tokenized batch, returning every model output by name.
+        """
+    @typing.overload
+    def score_next(self, token_ids: collections.abc.Sequence[typing.SupportsInt]) -> dict[str, openvino._pyopenvino.Tensor]:
+        """
+        Appends tokens to the running sequence and scores them against the cache built by the previous calls.
+        """
+    @typing.overload
+    def score_next(self, input_ids: openvino._pyopenvino.Tensor) -> dict[str, openvino._pyopenvino.Tensor]:
+        """
+        Appends tokens to the running sequence and scores them against the cache built by the previous calls.
+        """
+    def scores_tokens(self) -> bool:
+        """
+        True when the model scores every token through several outputs instead of pooling them into a single embedding, i.e. score() has to be used instead of the embed* family.
         """
     def start_embed_documents_async(self, texts: collections.abc.Sequence[str]) -> None:
         """

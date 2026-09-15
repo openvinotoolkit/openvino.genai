@@ -45,6 +45,10 @@ TextEmbeddingPipelineImpl::TextEmbeddingPipelineImpl(const std::filesystem::path
           utils::remove_config_properties(properties))) {}
 
 EmbedResult TextEmbeddingPipelineImpl::embed(const StringInputs& text, const ov::AnyMap& properties) {
+    if (m_text_embedding_pipeline->scores_tokens()) {
+        return EmbedResult{ov::Tensor(ov::element::f32, {0, 0}), score(text, properties)};
+    }
+
     std::optional<std::string> prompt;
     utils::read_anymap_param(properties, embedding_prompt.name(), prompt);
     const std::vector<std::string> texts = std::holds_alternative<std::string>(text)
@@ -55,6 +59,31 @@ EmbedResult TextEmbeddingPipelineImpl::embed(const StringInputs& text, const ov:
         return EmbedResult{embedding_results_to_tensor(m_text_embedding_pipeline->embed(texts, *prompt))};
     }
     return EmbedResult{embedding_results_to_tensor(m_text_embedding_pipeline->embed_documents(texts))};
+}
+
+void TextEmbeddingPipelineImpl::reset_state() {
+    m_text_embedding_pipeline->reset_state();
+}
+
+std::map<std::string, ov::Tensor> TextEmbeddingPipelineImpl::score(const StringInputs& text,
+                                                                   const ov::AnyMap& properties) {
+    ov::Tensor ids;
+    ov::Tensor mask;
+    utils::read_anymap_param(properties, input_ids.name(), ids);
+    utils::read_anymap_param(properties, attention_mask.name(), mask);
+
+    if (!ids) {
+        const std::vector<std::string> texts = std::holds_alternative<std::string>(text)
+            ? std::vector<std::string>{std::get<std::string>(text)}
+            : std::get<std::vector<std::string>>(text);
+        return m_text_embedding_pipeline->score(texts);
+    }
+
+    if (m_text_embedding_pipeline->is_stateful()) {
+        OPENVINO_ASSERT(!mask, "attention_mask is derived from the cached sequence and cannot be set");
+        return m_text_embedding_pipeline->score_next(ids);
+    }
+    return m_text_embedding_pipeline->score(ids, mask);
 }
 
 EmbedResult TextEmbeddingPipelineImpl::embed(const StringInputs& text,

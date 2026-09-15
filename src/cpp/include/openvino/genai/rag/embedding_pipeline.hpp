@@ -4,7 +4,9 @@
 #pragma once
 
 #include <filesystem>
+#include <map>
 #include <memory>
+#include <string>
 #include <variant>
 #include <vector>
 
@@ -25,7 +27,18 @@ class EmbeddingPipelineImpl;
  * @brief Result of an embedding computation.
  */
 struct OPENVINO_GENAI_EXPORTS EmbedResult {
+    /**
+     * @brief Pooled embedding vectors, [batch, hidden_size]. Empty for models that score every
+     * token through several outputs instead of pooling them into one vector, see `token_scores`.
+     */
     ov::Tensor embeddings;
+
+    /**
+     * @brief Per token scores of every model output, by name, each shaped [batch, seq_len,
+     * num_classes]. Filled instead of `embeddings` by models that replace the single embedding
+     * with several classification heads, e.g. Qwen3Guard.
+     */
+    std::map<std::string, ov::Tensor> token_scores;
 };
 
 /**
@@ -86,6 +99,12 @@ public:
         return embed(ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
+    /**
+    * @brief Starts a new sequence, dropping the KV cache built by the previous embed() calls.
+    * A no-op for models without a cache.
+    */
+    void reset_state();
+
     ~EmbeddingPipeline();
 
 private:
@@ -96,6 +115,18 @@ private:
  * @brief Text or batch of texts to embed via EmbeddingPipeline::embed(AnyMap).
  */
 static constexpr ov::Property<std::variant<std::string, std::vector<std::string>>> text{"text"};
+
+/**
+ * @brief Already tokenized input, i64 [batch, seq_len], an alternative to `text` for models
+ * scoring individual tokens. Lets a caller reuse ids it already has, e.g. the ones an LLMPipeline
+ * just generated.
+ */
+static constexpr ov::Property<ov::Tensor> input_ids{"input_ids"};
+
+/**
+ * @brief Mask matching `input_ids`, all ones when omitted.
+ */
+static constexpr ov::Property<ov::Tensor> attention_mask{"attention_mask"};
 
 /**
  * @brief Instruction for encoding a document or query.
