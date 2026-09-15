@@ -131,11 +131,6 @@ class LTX2Pipeline : public VideoPipeline {
         video_generation_utils::check_video_size(generation_config.height,
                                                  generation_config.width,
                                                  m_vae->get_config().spatial_compression_ratio);
-        const auto temporal_ratio = m_vae->get_config().temporal_compression_ratio;
-        OPENVINO_ASSERT(generation_config.num_frames > 0 &&
-                            (generation_config.num_frames - 1) % temporal_ratio == 0,
-                        "Number of frames have to be divisible by ", temporal_ratio,
-                        " plus 1 (e.g. 9, 17, 25) but got ", generation_config.num_frames);
         OPENVINO_ASSERT(generation_config.max_sequence_length <= 1024,
                         "Gemma3's 'max_sequence_length' must be less or equal to 1024");
         OPENVINO_ASSERT(!generation_config.taylorseer_config,
@@ -149,7 +144,10 @@ class LTX2Pipeline : public VideoPipeline {
         const double audio_latents_per_second = static_cast<double>(m_audio_vae->get_config().sample_rate) /
                                                 m_audio_vae->get_config().mel_hop_length /
                                                 m_audio_vae->get_config().temporal_compression_ratio;
-        const double duration_s = static_cast<double>(generation_config.num_frames) / frame_rate;
+        // Match the frame count the video VAE actually produces so audio and video stay in sync
+        const auto temporal_ratio = m_vae->get_config().temporal_compression_ratio;
+        const int64_t num_frames = (generation_config.num_frames - 1) / temporal_ratio * temporal_ratio + 1;
+        const double duration_s = static_cast<double>(num_frames) / frame_rate;
         return static_cast<size_t>(std::lround(duration_s * audio_latents_per_second));
     }
 

@@ -748,10 +748,13 @@ class TestLTX2PipelineGenerate:
         assert result.video.shape == [2, 9, 32, 32, 3]
         assert list(result.audio.shape)[0] == 2
 
-    def test_invalid_num_frames_rejected(self, video_generation_model):
+    def test_num_frames_floored_with_matching_audio(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
-        with pytest.raises(RuntimeError, match="Number of frames"):
-            pipe.generate("test prompt", guidance_scale=1.0, height=32, width=32, num_frames=10, num_inference_steps=2)
+        kwargs = dict(LTX2_GEN_KWARGS, num_frames=10)
+        result = pipe.generate("test prompt", guidance_scale=1.0, **kwargs)
+        reference = pipe.generate("test prompt", guidance_scale=1.0, **LTX2_GEN_KWARGS)
+        assert result.video.shape == [1, 9, 32, 32, 3]
+        assert result.audio.shape == reference.audio.shape
 
     def test_taylorseer_rejected(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
