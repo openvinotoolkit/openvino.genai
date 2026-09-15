@@ -177,6 +177,29 @@ ov::Tensor clone_tensor(const ov::Tensor& src) {
     return dst;
 }
 
+// Concatenate tensors of shape [1, T_i, H] along the sequence dimension.
+ov::Tensor concat_embed(const std::vector<ov::Tensor>& tensors) {
+    OPENVINO_ASSERT(!tensors.empty(), "concat_embed requires at least one tensor");
+    OPENVINO_ASSERT(tensors.front().get_shape().size() == 3,
+                    "concat_embed expects tensors of shape [1, T, H], got ", tensors.front().get_shape());
+    const size_t h = tensors.front().get_shape()[2];
+    size_t total_len = 0;
+    for (const auto& t : tensors) {
+        OPENVINO_ASSERT(t.get_shape().size() == 3 && t.get_shape()[0] == 1 && t.get_shape()[2] == h,
+                        "concat_embed expects tensors of shape [1, T, ", h, "], got ", t.get_shape());
+        total_len += t.get_shape()[1];
+    }
+    ov::Tensor out(ov::element::f32, ov::Shape{1, total_len, h});
+    float* out_ptr = out.data<float>();
+    size_t cursor = 0;
+    for (const auto& t : tensors) {
+        const size_t sz = t.get_size();
+        std::copy_n(t.data<const float>(), sz, out_ptr + cursor);
+        cursor += sz;
+    }
+    return out;
+}
+
 // Gate for per-component inference timing. Enable with OV_GENAI_QWEN_TTS_PERF=1.
 bool qwen_perf_enabled() {
     static const bool enabled = []() {
@@ -1631,14 +1654,7 @@ std::vector<float> Qwen3TTSImpl::decode_speech_tokenizer(const std::vector<int64
     return chunks_audio;
 }
 
-Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>& texts,
-                                                  const ov::Tensor& speaker_embedding,
-                                                  const SpeechGenerationConfig& generation_config) {
-    Text2SpeechDecodedResults result;
-    result.output_sample_rate = m_output_sample_rate;
-
-    auto generation_start = std::chrono::steady_clock::now();
-
+std::vector<bool> Qwen3TTSImpl::compute_suppress_tokens() const {
     std::vector<bool> suppress_tokens(m_ids.talker_vocab_size, false);
     const size_t suppress_begin = m_ids.talker_vocab_size > 1024 ? (m_ids.talker_vocab_size - 1024) : 0;
     for (size_t i = suppress_begin; i < m_ids.talker_vocab_size; ++i) {
@@ -1646,6 +1662,70 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
             suppress_tokens[i] = true;
         }
     }
+    return suppress_tokens;
+}
+
+std::vector<int64_t> Qwen3TTSImpl::make_speaker_and_codec_prefill_ids(const std::string& language,
+                                                                      const std::string& speaker) const {
+    int64_t language_id = -1;
+    auto lang_it = m_ids.codec_language_id.find(language);
+    if (language != "auto" && lang_it != m_ids.codec_language_id.end()) {
+        language_id = lang_it->second;
+    }
+
+    if (language_id == -1 && !speaker.empty()) {
+        auto spk_dialect = m_ids.spk_is_dialect.find(speaker);
+        if (spk_dialect != m_ids.spk_is_dialect.end()) {
+            auto dialect_it = m_ids.codec_language_id.find(spk_dialect->second);
+            if (dialect_it != m_ids.codec_language_id.end()) {
+                language_id = dialect_it->second;
+            }
+        }
+    }
+
+    if (language_id == -1) {
+        return {m_ids.codec_nothink_id, m_ids.codec_think_bos_id, m_ids.codec_think_eos_id};
+    }
+    return {m_ids.codec_think_id, m_ids.codec_think_bos_id, language_id, m_ids.codec_think_eos_id};
+}
+
+Qwen3TTSImpl::SpecialEmbeds Qwen3TTSImpl::infer_special_embeds() {
+    auto special_projected = infer_embedding_seq(m_talker_text_embedding,
+                                                {m_ids.tts_bos_token_id, m_ids.tts_eos_token_id, m_ids.tts_pad_token_id});
+
+    SpecialEmbeds embeds;
+    embeds.hidden = special_projected.get_shape()[2];
+    embeds.bos = ov::Tensor(ov::element::f32, ov::Shape{1, 1, embeds.hidden});
+    embeds.eos = ov::Tensor(ov::element::f32, ov::Shape{1, 1, embeds.hidden});
+    embeds.pad = ov::Tensor(ov::element::f32, ov::Shape{1, 1, embeds.hidden});
+    const float* sp = special_projected.data<const float>();
+    std::copy_n(sp + 0 * embeds.hidden, embeds.hidden, embeds.bos.data<float>());
+    std::copy_n(sp + 1 * embeds.hidden, embeds.hidden, embeds.eos.data<float>());
+    std::copy_n(sp + 2 * embeds.hidden, embeds.hidden, embeds.pad.data<float>());
+    return embeds;
+}
+
+ov::Tensor Qwen3TTSImpl::prepend_instruct_embed(ov::Tensor talker_prefill, const std::string& instruct) {
+    if (instruct.empty()) {
+        return talker_prefill;
+    }
+    const std::string instruct_text = "<|im_start|>user\n" + instruct + "<|im_end|>\n";
+    auto instruct_ids = m_tokenizer.encode(instruct_text).input_ids;
+    const int64_t* instr = instruct_ids.data<const int64_t>();
+    const size_t instr_len = instruct_ids.get_shape()[1];
+    auto instruct_embed = infer_embedding_seq(m_talker_text_embedding, std::vector<int64_t>(instr, instr + instr_len));
+    return concat_embed({instruct_embed, talker_prefill});
+}
+
+Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>& texts,
+                                                 const ov::Tensor& speaker_embedding,
+                                                 const SpeechGenerationConfig& generation_config) {
+    Text2SpeechDecodedResults result;
+    result.output_sample_rate = m_output_sample_rate;
+
+    auto generation_start = std::chrono::steady_clock::now();
+
+    std::vector<bool> suppress_tokens = compute_suppress_tokens();
 
     const std::string language = normalize_text_language(generation_config.language);
     const std::string speaker = normalize_speaker(generation_config.speaker);
@@ -1754,28 +1834,7 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
         const size_t input_len = input_shape[1];
         const int64_t* input_ids = input_ids_tensor.data<const int64_t>();
 
-        std::vector<int64_t> speaker_and_codec_prefill;
-        int64_t language_id = -1;
-        auto lang_it = m_ids.codec_language_id.find(language);
-        if (language != "auto" && lang_it != m_ids.codec_language_id.end()) {
-            language_id = lang_it->second;
-        }
-
-        if (language_id == -1 && !speaker.empty()) {
-            auto spk_dialect = m_ids.spk_is_dialect.find(speaker);
-            if (spk_dialect != m_ids.spk_is_dialect.end()) {
-                auto dialect_it = m_ids.codec_language_id.find(spk_dialect->second);
-                if (dialect_it != m_ids.codec_language_id.end()) {
-                    language_id = dialect_it->second;
-                }
-            }
-        }
-
-        if (language_id == -1) {
-            speaker_and_codec_prefill = {m_ids.codec_nothink_id, m_ids.codec_think_bos_id, m_ids.codec_think_eos_id};
-        } else {
-            speaker_and_codec_prefill = {m_ids.codec_think_id, m_ids.codec_think_bos_id, language_id, m_ids.codec_think_eos_id};
-        }
+        auto speaker_and_codec_prefill = make_speaker_and_codec_prefill_ids(language, speaker);
         auto codec_prefill_embed0 = infer_embedding_seq(m_talker_embedding, speaker_and_codec_prefill);
         auto codec_prefill_embed1 = infer_embedding_seq(m_talker_embedding, {m_ids.codec_pad_id, m_ids.codec_bos_id});
 
@@ -1803,34 +1862,11 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
             has_speaker_embed = true;
         }
 
-        auto special_projected = infer_embedding_seq(m_talker_text_embedding,
-                                                    {m_ids.tts_bos_token_id, m_ids.tts_eos_token_id, m_ids.tts_pad_token_id});
-
-        const size_t hidden = special_projected.get_shape()[2];
-        ov::Tensor tts_bos(ov::element::f32, ov::Shape{1, 1, hidden});
-        ov::Tensor tts_eos(ov::element::f32, ov::Shape{1, 1, hidden});
-        ov::Tensor tts_pad(ov::element::f32, ov::Shape{1, 1, hidden});
-        const float* sp = special_projected.data<const float>();
-        std::copy_n(sp + 0 * hidden, hidden, tts_bos.data<float>());
-        std::copy_n(sp + 1 * hidden, hidden, tts_eos.data<float>());
-        std::copy_n(sp + 2 * hidden, hidden, tts_pad.data<float>());
-
-        auto concat_embed = [&](const std::vector<ov::Tensor>& tensors) {
-            size_t total_len = 0;
-            size_t h = tensors.front().get_shape()[2];
-            for (const auto& t : tensors) {
-                total_len += t.get_shape()[1];
-            }
-            ov::Tensor out(ov::element::f32, ov::Shape{1, total_len, h});
-            float* out_ptr = out.data<float>();
-            size_t cursor = 0;
-            for (const auto& t : tensors) {
-                const size_t sz = t.get_size();
-                std::copy_n(t.data<const float>(), sz, out_ptr + cursor);
-                cursor += sz;
-            }
-            return out;
-        };
+        auto special_embeds = infer_special_embeds();
+        const size_t hidden = special_embeds.hidden;
+        const ov::Tensor& tts_bos = special_embeds.bos;
+        const ov::Tensor& tts_eos = special_embeds.eos;
+        const ov::Tensor& tts_pad = special_embeds.pad;
 
         ov::Tensor codec_input_embedding;
         if (has_speaker_embed) {
@@ -1925,14 +1961,7 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
             trailing_text_hidden = concat_embed({trailing_text_without_eos, tts_eos});
         }
 
-        if (!generation_config.instruct.empty()) {
-            const std::string instruct_text = "<|im_start|>user\n" + generation_config.instruct + "<|im_end|>\n";
-            auto instruct_ids = m_tokenizer.encode(instruct_text).input_ids;
-            const int64_t* instr = instruct_ids.data<const int64_t>();
-            const size_t instr_len = instruct_ids.get_shape()[1];
-            auto instruct_embed = infer_embedding_seq(m_talker_text_embedding, std::vector<int64_t>(instr, instr + instr_len));
-            talker_prefill = concat_embed({instruct_embed, talker_prefill});
-        }
+        talker_prefill = prepend_instruct_embed(talker_prefill, generation_config.instruct);
 
         auto decoded = decode_from_prefill(talker_prefill, tts_pad, trailing_text_hidden, generation_config, suppress_tokens);
         result.speeches.insert(result.speeches.end(), decoded.speeches.begin(), decoded.speeches.end());
@@ -1962,13 +1991,7 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate_voice_clone(const std::string& 
     const std::string language = normalize_text_language(generation_config.language);
     const std::string speaker = normalize_speaker(generation_config.speaker);
 
-    std::vector<bool> suppress_tokens(m_ids.talker_vocab_size, false);
-    const size_t suppress_begin = m_ids.talker_vocab_size > 1024 ? (m_ids.talker_vocab_size - 1024) : 0;
-    for (size_t i = suppress_begin; i < m_ids.talker_vocab_size; ++i) {
-        if (static_cast<int64_t>(i) != m_ids.codec_eos_token_id) {
-            suppress_tokens[i] = true;
-        }
-    }
+    std::vector<bool> suppress_tokens = compute_suppress_tokens();
 
     auto result = Text2SpeechDecodedResults{};
     result.output_sample_rate = m_output_sample_rate;
@@ -2007,59 +2030,16 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate_voice_clone(const std::string& 
     icl_content_ids.insert(icl_content_ids.end(), ref_ids + 3, ref_ids + (ref_ids_len - 2));
     icl_content_ids.insert(icl_content_ids.end(), target_ids + 3, target_ids + (target_ids_len - 5));
 
-    int64_t language_id = -1;
-    auto lang_it = m_ids.codec_language_id.find(language);
-    if (language != "auto" && lang_it != m_ids.codec_language_id.end()) {
-        language_id = lang_it->second;
-    }
-    if (language_id == -1 && !speaker.empty()) {
-        auto spk_dialect = m_ids.spk_is_dialect.find(speaker);
-        if (spk_dialect != m_ids.spk_is_dialect.end()) {
-            auto dialect_it = m_ids.codec_language_id.find(spk_dialect->second);
-            if (dialect_it != m_ids.codec_language_id.end()) {
-                language_id = dialect_it->second;
-            }
-        }
-    }
-
-    std::vector<int64_t> speaker_and_codec_prefill;
-    if (language_id == -1) {
-        speaker_and_codec_prefill = {m_ids.codec_nothink_id, m_ids.codec_think_bos_id, m_ids.codec_think_eos_id};
-    } else {
-        speaker_and_codec_prefill = {m_ids.codec_think_id, m_ids.codec_think_bos_id, language_id, m_ids.codec_think_eos_id};
-    }
-
+    auto speaker_and_codec_prefill = make_speaker_and_codec_prefill_ids(language, speaker);
     auto codec_prefill_embed0 = infer_embedding_seq(m_talker_embedding, speaker_and_codec_prefill);
     // Split codec_pad and codec_bos: they occupy different structural roles in the prefill.
     auto codec_pad_embed1 = infer_embedding_seq(m_talker_embedding, {m_ids.codec_pad_id});
     auto codec_bos_embed = infer_embedding_seq(m_talker_embedding, {m_ids.codec_bos_id});
-    auto special_projected = infer_embedding_seq(m_talker_text_embedding,
-                                                {m_ids.tts_bos_token_id, m_ids.tts_eos_token_id, m_ids.tts_pad_token_id});
-
-    const size_t hidden = special_projected.get_shape()[2];
-    ov::Tensor tts_bos(ov::element::f32, ov::Shape{1, 1, hidden});
-    ov::Tensor tts_eos(ov::element::f32, ov::Shape{1, 1, hidden});
-    ov::Tensor tts_pad(ov::element::f32, ov::Shape{1, 1, hidden});
-    const float* sp = special_projected.data<const float>();
-    std::copy_n(sp + 0 * hidden, hidden, tts_bos.data<float>());
-    std::copy_n(sp + 1 * hidden, hidden, tts_eos.data<float>());
-    std::copy_n(sp + 2 * hidden, hidden, tts_pad.data<float>());
-
-    auto concat_embed = [&](const std::vector<ov::Tensor>& tensors) {
-        size_t total_len = 0;
-        size_t h = tensors.front().get_shape()[2];
-        for (const auto& t : tensors) {
-            total_len += t.get_shape()[1];
-        }
-        ov::Tensor out(ov::element::f32, ov::Shape{1, total_len, h});
-        float* out_ptr = out.data<float>();
-        size_t cursor = 0;
-        for (const auto& t : tensors) {
-            std::copy_n(t.data<const float>(), t.get_size(), out_ptr + cursor);
-            cursor += t.get_size();
-        }
-        return out;
-    };
+    auto special_embeds = infer_special_embeds();
+    const size_t hidden = special_embeds.hidden;
+    const ov::Tensor& tts_bos = special_embeds.bos;
+    const ov::Tensor& tts_eos = special_embeds.eos;
+    const ov::Tensor& tts_pad = special_embeds.pad;
 
     ov::Tensor speaker_embed = normalize_external_speaker_embedding(prompt.ref_spk_embedding, codec_prefill_embed0.get_shape()[2]);
     // codec_input_no_bos = [codec_prefill0, speaker, codec_pad] — codec_bos is placed separately at start of codec_side
@@ -2187,14 +2167,7 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate_voice_clone(const std::string& 
     // Full prefill: role | codec_input_part | icl_input_embed
     ov::Tensor talker_prefill = concat_embed({role_embed, codec_input_part, icl_input_embed});
 
-    if (!generation_config.instruct.empty()) {
-        const std::string instruct_text = "<|im_start|>user\n" + generation_config.instruct + "<|im_end|>\n";
-        auto instruct_ids = m_tokenizer.encode(instruct_text).input_ids;
-        const int64_t* instr = instruct_ids.data<const int64_t>();
-        const size_t instr_len = instruct_ids.get_shape()[1];
-        auto instruct_embed = infer_embedding_seq(m_talker_text_embedding, std::vector<int64_t>(instr, instr + instr_len));
-        talker_prefill = concat_embed({instruct_embed, talker_prefill});
-    }
+    talker_prefill = prepend_instruct_embed(talker_prefill, generation_config.instruct);
 
     return decode_from_prefill(talker_prefill,
                                tts_pad,

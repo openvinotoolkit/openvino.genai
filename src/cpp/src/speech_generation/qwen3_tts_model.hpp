@@ -123,6 +123,20 @@ private:
     ov::Tensor extract_qwen3_speaker_embedding_from_audio(const ov::Tensor& ref_audio) const;
     ov::Tensor extract_qwen3_ref_code_from_audio(const ov::Tensor& ref_audio) const;
 
+    std::vector<bool> compute_suppress_tokens() const;
+    std::vector<int64_t> make_speaker_and_codec_prefill_ids(const std::string& language,
+                                                            const std::string& speaker) const;
+
+    // Result of projecting tts_bos/tts_eos/tts_pad through the text embedding model.
+    struct SpecialEmbeds {
+        ov::Tensor bos;
+        ov::Tensor eos;
+        ov::Tensor pad;
+        size_t hidden = 0;
+    };
+    SpecialEmbeds infer_special_embeds();
+    ov::Tensor prepend_instruct_embed(ov::Tensor talker_prefill, const std::string& instruct);
+
 private:
     std::filesystem::path m_models_path;
     std::string m_device;
