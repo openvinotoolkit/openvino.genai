@@ -5,7 +5,9 @@
 import pytest
 import torch
 import gc
+import os
 import struct
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 from dataclasses import dataclass
@@ -80,7 +82,7 @@ def model_gguf(request: pytest.FixtureRequest) -> ModelInfo:
     )
 
 
-@pytest.mark.parametrize("pipeline_type", GGUF_PIPELINE_TYPES)
+@pytest.mark.parametrize("pipeline_type", (*GGUF_PIPELINE_TYPES, PipelineType.AUTO))
 @pytest.mark.parametrize("gguf_reader", GGUF_READERS)
 @pytest.mark.parametrize("model_gguf", GGUF_MODEL_LIST, indirect=True)
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
@@ -136,7 +138,7 @@ def test_pipelines_with_gguf_generate(
     assert res_string_input_1 == res_string_input_2
 
 
-@pytest.mark.parametrize("pipeline_type", GGUF_PIPELINE_TYPES)
+@pytest.mark.parametrize("pipeline_type", (*GGUF_PIPELINE_TYPES, PipelineType.AUTO))
 @pytest.mark.parametrize(
     "gguf_reader",
     [
@@ -220,12 +222,9 @@ def test_full_gguf_pipeline(
 
     if enable_save_ov_model:
         gguf_full_path = Path(gguf_full_path)
-        # The frontend currently forces SDPA for .gguf inputs. Reload with the same backend:
-        # a plain IR does not retain that override, and PA has different numerical behavior.
-        saved_pipeline_type = PipelineType.STATEFUL if gguf_reader == "FRONTEND" else pipeline_type
         ov_pipe_native = create_ov_pipeline(
             gguf_full_path.parent,
-            pipeline_type=saved_pipeline_type,
+            pipeline_type=pipeline_type,
             dynamic_quantization_group_size=dynamic_quantization_group_size,
         )
         assert ov_pipe_native.get_tokenizer().encode(prompt).input_ids.data.tolist() == input_ids.tolist()
@@ -236,7 +235,7 @@ def test_full_gguf_pipeline(
 
     assert res_string_input_1 == res_string_input_2
 
-@pytest.mark.parametrize("pipeline_type", GGUF_PIPELINE_TYPES)
+@pytest.mark.parametrize("pipeline_type", (*GGUF_PIPELINE_TYPES, PipelineType.AUTO))
 @pytest.mark.parametrize("gguf_reader", GGUF_READERS)
 @pytest.mark.parametrize(
     "model_ids",
@@ -273,6 +272,47 @@ def test_full_gguf_qwen3_pipeline(pipeline_type, gguf_reader, model_ids):
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
 
     assert res_string_input_1 == res_string_input_2
+
+
+@pytest.mark.skipif(sys.platform == "darwin", reason="CVS-168882: sporadic segmentation fault")
+@pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
+@pytest.mark.parametrize("backend", ["default", "PA", "SDPA", "scheduler"])
+@pytest.mark.parametrize("with_tokenizer", [False, True])
+def test_gguf_frontend_attention_backend(backend, with_tokenizer):
+    model_path = download_gguf_model("prithivMLmods/SmolLM2-135M-GGUF", "SmolLM2-135M.F16.gguf")
+    # The logger reads its environment once, so use a fresh process for backend assertions.
+    script = """
+import sys
+import openvino_genai as genai
+
+model_path, backend, with_tokenizer = sys.argv[1:]
+properties = {"GGUF_READER": "FRONTEND", "INFERENCE_PRECISION_HINT": "f32"}
+if backend == "scheduler":
+    properties["scheduler_config"] = genai.SchedulerConfig()
+elif backend != "default":
+    properties["ATTENTION_BACKEND"] = backend
+
+if with_tokenizer == "True":
+    tokenizer = genai.Tokenizer(model_path, GGUF_READER="FRONTEND")
+    pipeline = genai.LLMPipeline(model_path, tokenizer, "CPU", **properties)
+else:
+    pipeline = genai.LLMPipeline(model_path, "CPU", **properties)
+
+result = pipeline.generate("Why is the Sun yellow?", max_new_tokens=4, apply_chat_template=False)
+assert result
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script, str(model_path), backend, str(with_tokenizer)],
+        env={**os.environ, "OPENVINO_LOG_LEVEL": "3"},
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    output = completed.stdout + completed.stderr
+    assert completed.returncode == 0, output
+    expected_backend = "SDPA" if backend == "SDPA" else "PA"
+    assert f"[INFO] {expected_backend} backend is enabled." in output, output
+    assert "Falling back to SDPA" not in output, output
 
 
 # GGUF tensor type ids (see gguflib.h enum gguf_tensor_type).

@@ -115,23 +115,19 @@ def create_ov_pipeline(
     if scheduler_config is None:
         scheduler_config = SchedulerConfig()
 
+    if pipeline_type in (PipelineType.AUTO, PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION):
+        if enable_save_ov_model is not None: 
+            ov_config["enable_save_ov_model"] = enable_save_ov_model
+        if dynamic_quantization_group_size is not None: 
+            ov_config["DYNAMIC_QUANTIZATION_GROUP_SIZE"] = dynamic_quantization_group_size
+        if gguf_reader is not None:
+            ov_config["GGUF_READER"] = gguf_reader
+
     if pipeline_type == PipelineType.AUTO:
         return LLMPipeline(models_path, device, ov_config)
     elif pipeline_type == PipelineType.STATEFUL:
-        if enable_save_ov_model is not None: 
-            ov_config["enable_save_ov_model"] = enable_save_ov_model
-        if dynamic_quantization_group_size is not None: 
-            ov_config["DYNAMIC_QUANTIZATION_GROUP_SIZE"] = dynamic_quantization_group_size
-        if gguf_reader is not None:
-            ov_config["GGUF_READER"] = gguf_reader
         return LLMPipeline(models_path, device, ov_config, ATTENTION_BACKEND="SDPA")
     elif pipeline_type == PipelineType.PAGED_ATTENTION:
-        if enable_save_ov_model is not None: 
-            ov_config["enable_save_ov_model"] = enable_save_ov_model
-        if dynamic_quantization_group_size is not None: 
-            ov_config["DYNAMIC_QUANTIZATION_GROUP_SIZE"] = dynamic_quantization_group_size
-        if gguf_reader is not None:
-            ov_config["GGUF_READER"] = gguf_reader
         return LLMPipeline(models_path, device, ov_config, scheduler_config=scheduler_config, ATTENTION_BACKEND="PA")
     elif pipeline_type == PipelineType.CONTINUOUS_BATCHING:
         return ContinuousBatchingPipeline(models_path, scheduler_config, device, ov_config)
