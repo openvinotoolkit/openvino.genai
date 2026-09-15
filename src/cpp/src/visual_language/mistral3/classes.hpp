@@ -56,6 +56,8 @@ private:
     int64_t m_image_token_id = -1;
     std::once_flag m_image_token_id_once_flag;
 
+    ov::Tensor apply_chat_template_tokenize(const std::string& prompt, VLMPerfMetrics& metrics) override;
+
     /// @brief Encode the native image tag with the tokenizer to obtain its token id.
     void encode_image_token_id();
 };

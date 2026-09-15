@@ -190,6 +190,7 @@ USE_CASES = {
                 "qwen3-5",
                 "videochat-flash-qwen",
                 "gemma4",
+                "mistral3",
             ]
         ),
         UseCaseVLM(["qwen3-omni"], ov_cls=OVModelForMultimodalLM),

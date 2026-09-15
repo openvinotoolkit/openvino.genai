@@ -3,6 +3,7 @@
 
 #include "visual_language/mistral3/classes.hpp"
 #include "visual_language/clip.hpp"
+#include "continuous_batching/timer.hpp"
 #include "utils.hpp"
 
 #include <algorithm>
@@ -293,6 +294,21 @@ NormalizedPrompt InputsEmbedderMistral3::normalize_prompt(
     }
 
     return {std::move(unified_prompt), std::move(images_sequence), {}};
+}
+
+ov::Tensor InputsEmbedderMistral3::apply_chat_template_tokenize(const std::string& prompt, VLMPerfMetrics& metrics) {
+    const std::string bos_token = m_tokenizer.get_bos_token();
+    // The chat template already emits the BOS token. Ticket to address globally: 192386
+    if (!m_is_chat_conversation && !m_apply_chat_template && !bos_token.empty() &&
+        prompt.compare(0, bos_token.size(), bos_token) == 0) {
+        ManualTimer encode_timer("Encode");
+        encode_timer.start();
+        ov::Tensor input_ids = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false)).input_ids;
+        encode_timer.end();
+        metrics.raw_metrics.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());
+        return input_ids;
+    }
+    return IInputsEmbedder::apply_chat_template_tokenize(prompt, metrics);
 }
 
 void InputsEmbedderMistral3::encode_image_token_id() {
