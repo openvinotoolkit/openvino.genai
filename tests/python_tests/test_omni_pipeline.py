@@ -565,13 +565,13 @@ class TestOmniPipelineDependencyInjection:
     def test_rejects_model_without_audio_output(self) -> None:
         """The constructor must reject a VLM whose is_audio_output_enabled() reports False."""
         vlm = RecordingVLM(audio_output=False)
-        with pytest.raises(RuntimeError, match="is_audio_output_enabled"):
+        with pytest.raises(RuntimeError, match="requires a Qwen3-Omni model with audio output enabled"):
             ov_genai.OmniPipeline(vlm, RecordingTalker())
 
     def test_rejects_backend_without_hidden_states(self) -> None:
         """The constructor must reject a VLM that cannot collect hidden states the talker needs."""
         vlm = RecordingVLM(hidden_states=False)
-        with pytest.raises(RuntimeError, match="supports_hidden_states_collection"):
+        with pytest.raises(RuntimeError, match="speech output requires the continuous-batching backend"):
             ov_genai.OmniPipeline(vlm, RecordingTalker())
 
 
