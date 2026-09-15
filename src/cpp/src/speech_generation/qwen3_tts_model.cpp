@@ -715,21 +715,7 @@ ov::Tensor Qwen3TTSImpl::normalize_external_speaker_embedding(const ov::Tensor& 
         return out;
     }
 
-    if (speaker_embedding.get_element_type() == ov::element::f16) {
-        const ov::float16* src = speaker_embedding.data<const ov::float16>();
-        const size_t src_size = speaker_embedding.get_size();
-        OPENVINO_ASSERT(src_size == hidden_size,
-                        "Qwen3 Base speaker_embedding size mismatch. Expected ",
-                        hidden_size,
-                        " values, got ",
-                        src_size);
-        for (size_t i = 0; i < hidden_size; ++i) {
-            out_ptr[i] = static_cast<float>(src[i]);
-        }
-        return out;
-    }
-
-    OPENVINO_THROW("Qwen3 Base speaker_embedding must be f32 or f16");
+    OPENVINO_THROW("Qwen3 Base speaker_embedding must be f32");
 }
 
 std::vector<float> Qwen3TTSImpl::normalize_ref_audio_waveform(const ov::Tensor& ref_audio) const {
