@@ -61,6 +61,11 @@ void end_speech_streamer(const ov::genai::OmniSpeechStreamerVariant& streamer) {
 }
 
 bool is_speech_streamer_active(const ov::genai::OmniSpeechStreamerVariant& streamer) {
+    // A C++ caller can hold the shared_ptr alternative with a null pointer, which write() and
+    // end() would dereference. Python cannot reach this: an explicit None lands in monostate.
+    if (const auto* holder = std::get_if<std::shared_ptr<ov::genai::OmniSpeechStreamerBase>>(&streamer)) {
+        return *holder != nullptr;
+    }
     return !std::holds_alternative<std::monostate>(streamer);
 }
 
@@ -833,10 +838,12 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
     const float cp_temp = talker_speech_config.cp_temperature.value_or(m_config.cp_temperature);
     const size_t cp_top_k_resolved = talker_speech_config.cp_top_k.value_or(m_config.cp_top_k);
 
-    const size_t chunk_frames = talker_speech_config.audio_chunk_frames;
-    OPENVINO_ASSERT(chunk_frames >= 1, "audio_chunk_frames must be >= 1 (got ", chunk_frames, ")");
+    // Construct the guard before any validation below, so a rejected config still closes the stream.
     bool streaming = is_speech_streamer_active(audio_streamer);
     SpeechStreamerGuard streamer_guard(audio_streamer, streaming);
+
+    const size_t chunk_frames = talker_speech_config.audio_chunk_frames;
+    OPENVINO_ASSERT(chunk_frames >= 1, "audio_chunk_frames must be >= 1 (got ", chunk_frames, ")");
 
     if (!m_talker_available) {
         GENAI_WARN("Speech: talker not available");
