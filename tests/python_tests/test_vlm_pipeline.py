@@ -3100,6 +3100,38 @@ def test_local_qwen35_vlm_verifier_cache_contract(
         extended_actual = lookup.generate(extended_prompt, generation_config=config, **media_inputs)
         assert extended_actual.texts == extended_reference.texts
 
+        config.max_new_tokens = 24
+        reference_history = ChatHistory()
+        reference_history.append({"role": "user", "content": prompt})
+        config.num_assistant_tokens = 0
+        history_reference = reference.generate(reference_history, generation_config=config, **media_inputs)
+        history = ChatHistory()
+        history.append({"role": "user", "content": prompt})
+        config.num_assistant_tokens = num_assistant_tokens
+        assert not config.return_omni_outputs
+        history_logs = []
+        for iteration in range(2):
+            capfd.readouterr()
+            history_actual = lookup.generate(
+                history, generation_config=config, **(media_inputs if iteration == 0 else {})
+            )
+            captured = capfd.readouterr()
+            history_logs.append(captured.out + captured.err)
+            assert history_actual.texts == history_reference.texts
+            assert history_actual.extended_perf_metrics.get_num_draft_tokens() > 0
+            if iteration == 1:
+                assert "Hybrid prefix restore:" in captured.out + captured.err, "\n".join(history_logs)
+                assert "MTP paired prefix replay:" in captured.out + captured.err
+
+        for chat in (reference_history, history):
+            chat.append({"role": "assistant", "content": history_reference.texts[0]})
+            chat.append({"role": "user", "content": "Continue with five six seven eight."})
+        config.num_assistant_tokens = 0
+        next_reference = reference.generate(reference_history, generation_config=config)
+        config.num_assistant_tokens = num_assistant_tokens
+        next_actual = lookup.generate(history, generation_config=config)
+        assert next_actual.texts == next_reference.texts
+
 
 @pytest.mark.parametrize(
     "model_id",
