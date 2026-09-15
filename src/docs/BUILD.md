@@ -252,7 +252,7 @@ After setting up your environment, use the following commands to configure addit
     ```sh
     cmake -DENABLE_GIL_PYTHON_API=OFF -S ./ -B ./build/
     ```
-    This disables the Global Interpreter Lock (GIL) in the Python API, enabling free threading. Note that this feature is experimental and may not be fully supported in all environments.
+    This disables the Global Interpreter Lock (GIL) in the Python API, enabling free threading. It requires a free threaded interpreter (Python 3.13t or 3.14t). Note that this feature is experimental and may not be fully supported in all environments.
 
 ### Install OpenVINO GenAI From Source
 
