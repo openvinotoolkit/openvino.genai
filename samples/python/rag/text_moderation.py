@@ -33,7 +33,7 @@ def main():
     parser.add_argument("response", nargs="?", default=None)
     args = parser.parse_args()
 
-    device = "CPU"  # GPU and NPU can be used as well
+    device = "CPU"
 
     label_maps = json.loads((Path(args.model_dir) / "config.json").read_text())
     pipeline = openvino_genai.TextEmbeddingPipeline(args.model_dir, device)
@@ -46,8 +46,6 @@ def main():
         return
 
     if pipeline.is_stateful():
-        # the model keeps the KV cache of everything scored so far, so the response can be moderated
-        # token by token as it is generated, e.g. from an LLMPipeline streamer
         pipeline.reset_state()
         pipeline.score_next(tokenizer.encode(prompt).input_ids)
         for token in tokenizer.encode(args.response, add_special_tokens=False).input_ids.data[0]:

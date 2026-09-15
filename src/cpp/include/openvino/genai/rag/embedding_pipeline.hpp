@@ -27,10 +27,6 @@ class EmbeddingPipelineImpl;
  * @brief Result of an embedding computation.
  */
 struct OPENVINO_GENAI_EXPORTS EmbedResult {
-    /**
-     * @brief Pooled embedding vectors, [batch, hidden_size]. Empty for models that score every
-     * token through several outputs instead of pooling them into one vector, see `token_scores`.
-     */
     ov::Tensor embeddings;
 
     /**
@@ -99,10 +95,6 @@ public:
         return embed(ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
-    /**
-    * @brief Starts a new sequence, dropping the KV cache built by the previous embed() calls.
-    * A no-op for models without a cache.
-    */
     void reset_state();
 
     ~EmbeddingPipeline();
@@ -117,7 +109,7 @@ private:
 static constexpr ov::Property<std::variant<std::string, std::vector<std::string>>> text{"text"};
 
 /**
- * @brief Already tokenized input, i64 [batch, seq_len], an alternative to `text` for models
+ * @brief Already tokenized input as an alternative to `text` for models
  * scoring individual tokens. Lets a caller reuse ids it already has, e.g. the ones an LLMPipeline
  * just generated.
  */

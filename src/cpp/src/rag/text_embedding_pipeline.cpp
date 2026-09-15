@@ -117,8 +117,6 @@ public:
 
         auto model = core.read_model(models_path / "openvino_model.xml", {}, std::as_const(properties));
 
-        // Models replacing the embedding by classification heads (e.g. Qwen3Guard) have no
-        // `last_hidden_state`, so there is nothing to pool and every output is returned as is.
         m_scores_tokens = !has_port(model->outputs(), "last_hidden_state");
         m_has_position_ids = has_port(model->inputs(), "position_ids");
         m_stateful = has_port(model->inputs(), "beam_idx");
@@ -145,7 +143,6 @@ public:
         if (m_config.padding_side) {
             m_tokenization_params.insert({padding_side.name(), *m_config.padding_side});
         } else if (m_scores_tokens) {
-            // these models are causal, so padding has to go after the scored token, never before it
             m_tokenization_params.insert({padding_side.name(), "right"});
         }
 
@@ -233,7 +230,6 @@ public:
         const ov::Tensor mask = attention_mask ? attention_mask : ones_mask(shape[0], shape[1]);
         OPENVINO_ASSERT(mask.get_shape() == shape, "attention_mask must have the same shape as input_ids");
 
-        // a fresh score of a whole prompt must not see the sequence cached before it
         reset_state();
         set_score_inputs(input_ids, mask);
         return run_scoring();
@@ -275,10 +271,6 @@ private:
     std::vector<std::string> m_output_names;
 
     ov::Shape validate_scoring_input(const ov::Tensor& input_ids) const {
-        OPENVINO_ASSERT(m_scores_tokens,
-                        "This model pools its output into a single embedding, use the embed* family instead. "
-                        "Per token scores are only produced by models replacing the embedding with "
-                        "classification heads, e.g. Qwen3Guard.");
         const ov::Shape shape = input_ids.get_shape();
         OPENVINO_ASSERT(shape.size() == 2, "input_ids must be shaped [batch, seq_len], got ", shape);
         OPENVINO_ASSERT(input_ids.get_element_type() == ov::element::i64,
@@ -296,7 +288,6 @@ private:
         }
 
         if (m_stateful) {
-            // scoring never branches, so every sequence keeps its own cache slot
             ov::Tensor beam_idx(ov::element::i32, Shape{input_ids.get_shape()[0]});
             std::fill_n(beam_idx.data<int32_t>(), beam_idx.get_size(), 0);
             m_request.set_tensor("beam_idx", beam_idx);
