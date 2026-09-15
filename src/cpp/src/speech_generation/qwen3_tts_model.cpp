@@ -565,9 +565,6 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
             }
             m_pred_attn = m_talker_code_predictor.get_tensor("attention_mask");
             m_pred_pos = m_talker_code_predictor.get_tensor("position_ids");
-
-            std::cout << "Qwen3-TTS: using code predictor converted to stateless+static for NPU: "
-                      << predictor_path << std::endl;
         } else {
             m_talker_code_predictor = compile_request(predictor_model,
                                                       "qwen3_tts code predictor (stateful)",
@@ -576,7 +573,6 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
             m_perf_device["code_predictor"] = device_of(m_talker_code_predictor, predictor_device);
 
             m_predictor_static = false;
-            std::cout << "Qwen3-TTS: using stateful code predictor: " << predictor_path << std::endl;
         }
 
         m_predictor_has_beam_idx = false;
@@ -623,7 +619,7 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
             const ov::PartialShape static_codes{1,
                                                 static_cast<int64_t>(m_decoder_num_quantizers),
                                                 static_cast<int64_t>(DECODER_TRACE_LEN)};
-            std::cout << "Reshaping speech-tokenizer decoder to static shape " << static_codes << std::endl;
+
             decoder_model->reshape({{"audio_codes", static_codes}});
             m_speech_tokenizer_decoder = compile_request(decoder_model,
                                                          "qwen3_tts speech tokenizer decoder",
