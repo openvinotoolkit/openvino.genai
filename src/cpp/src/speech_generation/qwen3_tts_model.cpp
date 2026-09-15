@@ -866,13 +866,9 @@ ov::Tensor Qwen3TTSImpl::infer_talker(const ov::Tensor& inputs_embeds,
     m_talker.set_tensor("attention_mask", attention_mask);
     m_talker.set_tensor("position_ids", position_ids);
 
-    if (m_talker.get_compiled_model().inputs().size() > 3) {
-        ov::Tensor beam_idx(ov::element::i32, ov::Shape{1});
-        beam_idx.data<int32_t>()[0] = 0;
-        if (m_talker.get_compiled_model().input(3).get_any_name().find("beam") != std::string::npos) {
-            m_talker.set_input_tensor(3, beam_idx);
-        }
-    }
+    ov::Tensor beam_idx(ov::element::i32, ov::Shape{1});
+    beam_idx.data<int32_t>()[0] = 0;
+    m_talker.set_tensor("beam_idx", beam_idx);
 
     if (reset_state) {
         const auto shape = inputs_embeds.get_shape();
