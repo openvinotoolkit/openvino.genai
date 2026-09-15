@@ -129,50 +129,9 @@ ov::InferRequest compile_request(const std::shared_ptr<ov::Model>& model,
     return compiled_model.create_infer_request();
 }
 
-void convert_stateful_to_stateless_with_beam_idx(const std::shared_ptr<ov::Model>& model) {
-    OPENVINO_ASSERT(model != nullptr, "Model is null");
-
-    if (!ov::genai::utils::has_input(model, "beam_idx")) {
-        ov::Output<ov::Node> main_input;
-        if (ov::genai::utils::has_input(model, "inputs_embeds")) {
-            main_input = model->input("inputs_embeds");
-        } else {
-            OPENVINO_ASSERT(!model->inputs().empty(), "Model has no inputs");
-            main_input = model->input(0);
-        }
-
-        ov::Dimension batch_dim = ov::Dimension::dynamic();
-        const auto& pshape = main_input.get_partial_shape();
-        if (pshape.rank().is_static() && pshape.rank().get_length() >= 1) {
-            batch_dim = pshape[0];
-        }
-
-        auto beam_idx = std::make_shared<ov::opset15::Parameter>(ov::element::i32, ov::PartialShape{batch_dim});
-        beam_idx->set_friendly_name("beam_idx");
-        beam_idx->output(0).get_tensor().set_names({"beam_idx"});
-        model->add_parameters({beam_idx});
-
-        auto axis0 = ov::opset15::Constant::create(ov::element::i64, ov::Shape{}, {0});
-        for (const auto& op : model->get_ops()) {
-            auto read_value = std::dynamic_pointer_cast<ov::op::v6::ReadValue>(op);
-            if (!read_value) {
-                continue;
-            }
-
-            auto rv_out = read_value->output(0);
-            auto consumers = rv_out.get_target_inputs();
-            auto gathered = std::make_shared<ov::opset15::Gather>(rv_out, beam_idx, axis0);
-            for (auto& consumer : consumers) {
-                consumer.replace_source_output(gathered->output(0));
-            }
-        }
-        model->validate_nodes_and_infer_types();
-    }
-
-    ov::pass::StatefulToStateless().run_on_model(model);
-    model->validate_nodes_and_infer_types();
-}
-
+// The code predictor exposes 'step' parameter as scalar (shape of []).
+// Currently, this is problematic for NPU. This function converts this
+// scalar input to a vector of shape [1].
 void expose_scalar_input_as_vector1(const std::shared_ptr<ov::Model>& model,
                                     const std::string& input_name) {
     OPENVINO_ASSERT(model != nullptr, "Model is null");
@@ -546,7 +505,8 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
             // NPU path for code predictor: expose step as [1], convert to stateless,
             // then freeze to static so explicit KV tensors can be host-managed.
             expose_scalar_input_as_vector1(predictor_model, "step");
-            convert_stateful_to_stateless_with_beam_idx(predictor_model);
+            ov::pass::StatefulToStateless().run_on_model(predictor_model);
+            predictor_model->validate_nodes_and_infer_types();
             reshape_predictor_to_static(predictor_model);
             m_predictor_static = true;
             init_static_predictor_meta(predictor_model);
