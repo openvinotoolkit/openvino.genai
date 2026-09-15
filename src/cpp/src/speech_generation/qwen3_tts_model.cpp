@@ -55,7 +55,6 @@ namespace roles {
 constexpr const char* TALKER = "talker";
 constexpr const char* TALKER_EMBEDDING = "talker_embedding";
 constexpr const char* TALKER_TEXT_EMBEDDING = "talker_text_embedding";
-constexpr const char* TALKER_TEXT_PROJECTION = "talker_text_projection";
 constexpr const char* CODE_PREDICTOR = "code_predictor";
 constexpr const char* CODE_PREDICTOR_EMBEDDING = "code_predictor_embedding";
 constexpr const char* SPEECH_TOKENIZER_DECODER = "speech_tokenizer_decoder";
