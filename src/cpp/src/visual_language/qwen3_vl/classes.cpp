@@ -588,6 +588,12 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen3VL::run_video_image_embeddi
     ov::Tensor concatenated_embeds =
         qwen2_vl_utils::concatenate_video_image_embeds(reordered_video_embeds, reordered_image_embeds);
 
+    if (reordered_video_embeds.size() + reordered_image_embeds.size() == 1) {
+        ov::Tensor owned_embeds(concatenated_embeds.get_element_type(), concatenated_embeds.get_shape());
+        concatenated_embeds.copy_to(owned_embeds);
+        concatenated_embeds = std::move(owned_embeds);
+    }
+
     // Combined grid for position computation
     std::vector<std::array<size_t, 3>> combined_grid_thw;
     combined_grid_thw.insert(combined_grid_thw.end(),
