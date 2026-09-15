@@ -28,11 +28,19 @@ std::vector<std::string> collect_hidden_state_names(const std::vector<ov::Output
             }
         }
     }
-    OPENVINO_ASSERT(!indexed.empty(), "Text encoder model must expose 'hidden_states.N' outputs");
+    OPENVINO_ASSERT(!indexed.empty(),
+                    "Text encoder model must expose either a 'prompt_embeds' or 'hidden_states.N' outputs");
     std::vector<std::string> names;
     for (const auto& [idx, name] : indexed)
         names.push_back(name);
     return names;
+}
+
+// Newer exports stack and flatten the hidden states in-graph into a single 'prompt_embeds' output
+bool has_packed_prompt_embeds(const std::vector<ov::Output<const ov::Node>>& outputs) {
+    return std::any_of(outputs.begin(), outputs.end(), [](const ov::Output<const ov::Node>& output) {
+        return output.get_names().count("prompt_embeds") > 0;
+    });
 }
 
 }  // namespace
@@ -87,7 +95,9 @@ Gemma3TextEncoder& Gemma3TextEncoder::compile(const std::string& device, const o
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Gemma3 text encoder model");
     m_request = compiled_model.create_infer_request();
-    m_hidden_state_names = collect_hidden_state_names(compiled_model.outputs());
+    if (!has_packed_prompt_embeds(compiled_model.outputs())) {
+        m_hidden_state_names = collect_hidden_state_names(compiled_model.outputs());
+    }
     // release the original model
     m_model.reset();
 
@@ -143,23 +153,28 @@ ov::Tensor Gemma3TextEncoder::infer(const std::string& pos_prompt,
     m_request.set_tensor("attention_mask", attention_mask);
     m_request.infer();
 
-    // torch.stack(hidden_states, dim=-1).flatten(2, 3): layer index varies fastest in the packed dim
-    const size_t num_layers = m_hidden_state_names.size();
-    const size_t hidden_size = m_request.get_tensor(m_hidden_state_names.front()).get_shape()[2];
-    const size_t packed_dim = hidden_size * num_layers;
+    ov::Tensor prompt_embeds;
+    if (m_hidden_state_names.empty()) {
+        prompt_embeds = m_request.get_tensor("prompt_embeds");
+    } else {
+        // torch.stack(hidden_states, dim=-1).flatten(2, 3): layer index varies fastest in the packed dim
+        const size_t num_layers = m_hidden_state_names.size();
+        const size_t hidden_size = m_request.get_tensor(m_hidden_state_names.front()).get_shape()[2];
+        const size_t packed_dim = hidden_size * num_layers;
 
-    ov::Tensor prompt_embeds(ov::element::f32, {batch_size, seq_len, packed_dim});
-    float* embeds_data = prompt_embeds.data<float>();
+        prompt_embeds = ov::Tensor(ov::element::f32, {batch_size, seq_len, packed_dim});
+        float* embeds_data = prompt_embeds.data<float>();
 
-    for (size_t layer_idx = 0; layer_idx < num_layers; ++layer_idx) {
-        const ov::Tensor hidden_state = m_request.get_tensor(m_hidden_state_names[layer_idx]);
-        const float* hs_data = hidden_state.data<const float>();
-        for (size_t b = 0; b < batch_size; ++b) {
-            for (size_t s = 0; s < seq_len; ++s) {
-                const float* src = hs_data + (b * seq_len + s) * hidden_size;
-                float* dst = embeds_data + (b * seq_len + s) * packed_dim + layer_idx;
-                for (size_t h = 0; h < hidden_size; ++h) {
-                    dst[h * num_layers] = src[h];
+        for (size_t layer_idx = 0; layer_idx < num_layers; ++layer_idx) {
+            const ov::Tensor hidden_state = m_request.get_tensor(m_hidden_state_names[layer_idx]);
+            const float* hs_data = hidden_state.data<const float>();
+            for (size_t b = 0; b < batch_size; ++b) {
+                for (size_t s = 0; s < seq_len; ++s) {
+                    const float* src = hs_data + (b * seq_len + s) * hidden_size;
+                    float* dst = embeds_data + (b * seq_len + s) * packed_dim + layer_idx;
+                    for (size_t h = 0; h < hidden_size; ++h) {
+                        dst[h * num_layers] = src[h];
+                    }
                 }
             }
         }
