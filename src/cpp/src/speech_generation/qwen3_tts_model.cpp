@@ -898,24 +898,6 @@ ov::Tensor Qwen3TTSImpl::infer_talker_hidden(const ov::Tensor& inputs_embeds,
 // allocate the host-side KV cache buffers. Called once after read_model when the
 // static variant is detected.
 //
-// Static contract (see Notebooks/export_code_predictor_optionA.py --all-heads and
-// Notebooks/validate_optionA_full.py):
-//   inputs : inputs_embeds [1,1,H], attention_mask [1,kv_len], position_ids [1,1],
-//            past_key_values.{i}.{key,value} [1,n_kv,past_len,head_dim]  (i in 0..L-1)
-//   outputs: logits [num_heads,1,1,V] (all code-group heads stacked),
-//            present.{i}.{key,value}   [1,n_kv,kv_len,head_dim] (or [1,n_kv,1,head_dim]
-//                                       when the exporter slices to just the new token)
-// where kv_len = past_len + 1. The graph hard-wires cache_position = [past_len],
-// so the freshly produced token always lands at the last present slot.
-
-// Newer exporters emit the all-heads code predictor with fully dynamic shapes
-// (e.g. inputs_embeds [?,?,?], past_key_values [?,n_kv,?,head_dim], logits
-// [num_heads,?,?,V]). The runtime host-KV logic (init_static_predictor_meta /
-// infer_predictor) requires a single fixed shape, so specialize the IR here. The
-// export still pins the structurally-fixed dims (n_kv, head_dim on the KV inputs;
-// num_heads, V on logits); the KV window is derived as past_len = num_heads and
-// kv_len = past_len + 1, matching the static export contract above. No-op when the
-// IR is already static.
 void Qwen3TTSImpl::reshape_predictor_to_static(const std::shared_ptr<ov::Model>& model) {
     bool is_dynamic = false;
     for (const auto& in : model->inputs()) {
@@ -924,18 +906,17 @@ void Qwen3TTSImpl::reshape_predictor_to_static(const std::shared_ptr<ov::Model>&
             break;
         }
     }
-    if (!is_dynamic) {
-        return;  // already static (reshaped at export time)
-    }
+    OPENVINO_ASSERT(is_dynamic, "Code predictor model is expected to be dynamic");
 
     // Fixed dims the dynamic export still pins.
     size_t n_kv = 0, head_dim = 0, num_heads = 0, past_len_hint = 0;
-    bool attention_mask_4d = false;
     for (const auto& in : model->inputs()) {
         const auto name = in.get_any_name();
         if (name == "attention_mask") {
             const auto& ps = in.get_partial_shape();
-            attention_mask_4d = ps.rank().is_static() && ps.size() == 4;
+            OPENVINO_ASSERT(ps.rank().is_static() && ps.size() == 4,
+                            "Code predictor attention_mask must be rank-4, got ",
+                            ps);
         }
         if (name.rfind("past_key_values.", 0) == 0 && name.find(".key") != std::string::npos) {
             const auto& ps = in.get_partial_shape();  // [?, n_kv, ?, head_dim]
@@ -976,11 +957,7 @@ void Qwen3TTSImpl::reshape_predictor_to_static(const std::shared_ptr<ov::Model>&
         if (name == "inputs_embeds") {
             shapes[name] = ov::PartialShape{1, 1, hidden};
         } else if (name == "attention_mask") {
-            // Legacy static predictor uses [B,kv_len], converted stateful->stateless
-            // variant uses additive mask [B,1,Q,K].
-            shapes[name] = attention_mask_4d
-                ? ov::PartialShape{1, 1, 1, kv_len}
-                : ov::PartialShape{1, kv_len};
+            shapes[name] = ov::PartialShape{1, 1, 1, kv_len};
         } else if (name == "position_ids") {
             shapes[name] = ov::PartialShape{1, 1};
         } else if (name == "step") {
@@ -1005,7 +982,7 @@ void Qwen3TTSImpl::init_static_predictor_meta(const std::shared_ptr<ov::Model>& 
         const auto name = in.get_any_name();
         if (name == "attention_mask") {
             const auto& s = in.get_shape();
-            OPENVINO_ASSERT(s.size() == 2 || s.size() == 4,
+            OPENVINO_ASSERT(s.size() == 4,
                             "Unexpected static code predictor attention_mask rank: ", s.size());
             m_pred_kv_len = static_cast<size_t>(s[s.size() - 1]);
         } else if (name.rfind("past_key_values.", 0) == 0 && name.find(".key") != std::string::npos) {
@@ -1101,24 +1078,18 @@ ov::Tensor Qwen3TTSImpl::infer_predictor(const ov::Tensor& inputs_embeds, bool r
     // Valid kv slots are the p real past tokens (slots 0..p-1) plus the current
     // token, which the graph appends at slot index past_len.
     const auto& attn_shape = m_pred_attn.get_shape();
-    if (attn_shape.size() == 2) {
-        int64_t* attn_ptr = m_pred_attn.data<int64_t>();
-        std::fill_n(attn_ptr, m_pred_kv_len, static_cast<int64_t>(0));
-        for (size_t j = 0; j < p; ++j) {
-            attn_ptr[j] = 1;
-        }
-        attn_ptr[m_pred_past_len] = 1;  // current token slot (= kv_len - 1)
-    } else if (attn_shape.size() == 4) {
-        float* attn_ptr = m_pred_attn.data<float>();
-        const float neg_inf = -std::numeric_limits<float>::infinity();
-        std::fill_n(attn_ptr, m_pred_kv_len, neg_inf);
-        for (size_t j = 0; j < p; ++j) {
-            attn_ptr[j] = 0.0f;
-        }
-        attn_ptr[m_pred_past_len] = 0.0f;  // current token slot (= kv_len - 1)
-    } else {
-        OPENVINO_THROW("Unsupported static code predictor attention_mask rank: ", attn_shape.size());
+    OPENVINO_ASSERT(attn_shape.size() == 4,
+                    "Unsupported static code predictor attention_mask rank: ",
+                    attn_shape.size());
+    OPENVINO_ASSERT(m_pred_attn.get_element_type() == ov::element::f32,
+                    "Static code predictor attention_mask must be f32");
+    float* attn_ptr = m_pred_attn.data<float>();
+    const float neg_inf = -std::numeric_limits<float>::infinity();
+    std::fill_n(attn_ptr, m_pred_kv_len, neg_inf);
+    for (size_t j = 0; j < p; ++j) {
+        attn_ptr[j] = 0.0f;
     }
+    attn_ptr[m_pred_past_len] = 0.0f;  // current token slot (= kv_len - 1)
 
     // Update position_ids data in-place (tensor already set on infer request).
     m_pred_pos.data<int64_t>()[0] = static_cast<int64_t>(p);
