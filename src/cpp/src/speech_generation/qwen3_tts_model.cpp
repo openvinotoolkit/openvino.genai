@@ -70,22 +70,22 @@ constexpr const char* TALKER_GENERATE_PERF_NAME = "talker_model(generate)";
 
 // Default device policy for a component. The Qwen3-TTS pipeline can place each submodel on a different device,
 // and so here we define the default device for each role.
-std::string default_device_for_role(const std::string& base_device, bool is_npu, const std::string& role) {
+std::string default_device_for_role(const std::string& base_device, const std::string& role) {
     // Keep predictor embedding on CPU (short, data-dependent lookup path).
     if (role == roles::CODE_PREDICTOR_EMBEDDING) {
         return "CPU";
     }
 
-    if (!is_npu) {
-        return base_device;
+    if (base_device.find("NPU") != std::string::npos) {
+        // NPU can run talker, code predictor, and speech-tokenizer decoder.
+        if( role == roles::TALKER || role == roles::CODE_PREDICTOR || role == roles::SPEECH_TOKENIZER_DECODER) {
+            return base_device;
+        }
+
+        return "CPU";
     }
 
-    // NPU can run talker, code predictor, and speech-tokenizer decoder.
-    if( role == roles::TALKER || role == roles::CODE_PREDICTOR || role == roles::SPEECH_TOKENIZER_DECODER) {
-        return base_device;
-    }
-
-    return "CPU";
+    return base_device;
 }
 
 // Resolve the (device, properties) pair for a component following the VLM
@@ -94,11 +94,10 @@ std::string default_device_for_role(const std::string& base_device, bool is_npu,
 // lands on; otherwise the same top-level properties are reused for every
 // component.
 std::pair<std::string, ov::AnyMap> resolve_component_target(const std::string& base_device,
-                                                            bool is_npu,
                                                             const ov::AnyMap& device_properties,
                                                             const ov::AnyMap& base_properties,
                                                             const std::string& role) {
-    const std::string device = default_device_for_role(base_device, is_npu, role);
+    const std::string device = default_device_for_role(base_device, role);
     if (device_properties.empty()) {
         return {device, base_properties};
     }
@@ -423,8 +422,6 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
       m_tokenizer(tokenizer) {
     init_config(models_path);
 
-    m_is_npu = ov::genai::utils::is_npu_requested(device, properties);
-
     // Split off the optional per-device property map (VLM `ov::device::properties`
     // convention). The remaining top-level properties act as the default for
     // every component when no per-device map is supplied.
@@ -434,7 +431,7 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
 
     auto compile_for = [&](const auto& model_source, const std::string& role) {
         auto [target_device, target_properties] =
-            resolve_component_target(device, m_is_npu, device_properties, base_properties, role);
+            resolve_component_target(device, device_properties, base_properties, role);
         m_perf_device[role] = target_device;
         return compile_request(model_source, role, target_device, target_properties);
     };
@@ -455,8 +452,8 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
     // keeps the generic path.
     {
         auto [talker_device, talker_properties] =
-            resolve_component_target(device, m_is_npu, device_properties, base_properties, roles::TALKER);
-        if (m_is_npu) {
+            resolve_component_target(device, device_properties, base_properties, roles::TALKER);
+        if (talker_device.find("NPU") != std::string::npos) {
             // Apply TTS-specific static-shape sizing unless the caller already set it.
             constexpr int64_t DEFAULT_MAX_PROMPT_LEN = 1024;
             constexpr int64_t DEFAULT_MIN_RESPONSE_LEN = 128;
@@ -486,7 +483,7 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
     m_talker_text_embedding = compile_for(models_path / TEXT_EMBEDDINGS_NAME, roles::TALKER_TEXT_EMBEDDING);
     {
         auto [predictor_device, predictor_properties] =
-            resolve_component_target(device, m_is_npu, device_properties, base_properties, roles::CODE_PREDICTOR);
+            resolve_component_target(device, device_properties, base_properties, roles::CODE_PREDICTOR);
 
         // The code predictor is additionally pinned to f32 arithmetic on GPU. It runs `num_code_groups - 1`
         // steps inside every talker frame off a cache that is reset each frame, and in f16 - the GPU
@@ -566,7 +563,7 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
         // shapes (e.g. NPU) we reshape it before compiling. CPU/GPU keep the model
         // as exported.
         auto [decoder_device, decoder_properties] =
-            resolve_component_target(device, m_is_npu, device_properties, base_properties, roles::SPEECH_TOKENIZER_DECODER);
+            resolve_component_target(device, device_properties, base_properties, roles::SPEECH_TOKENIZER_DECODER);
         const auto decoder_path = models_path / CODEC_DECODER_NAME;
         if (decoder_device.find("NPU") != std::string::npos) {
             auto decoder_model = ov::genai::utils::singleton_core().read_model(decoder_path);
