@@ -873,6 +873,9 @@ ov::Tensor Qwen3TTSImpl::infer_embedding_seq(ov::InferRequest& request, const st
     }
     run_and_time([&] { request.infer(); }, perf_stage, m_perf_ms, m_perf_calls);
 
+    // Cloned because callers routinely hold the result across several further
+    // infers of this same request (e.g. building a multi-part prefill from several
+    // embedding lookups before concatenating them).
     auto out = clone_tensor(request.get_output_tensor(0));
     return out;
 }
