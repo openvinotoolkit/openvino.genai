@@ -32,7 +32,9 @@ GGUF_MODEL_LIST = (
     {
         "gguf_model_id": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
         "gguf_filename": "qwen2.5-0.5b-instruct-q4_0.gguf",
-        # Compare with HF's floating-point activations, independently of the CPU's VNNI support.
+        # Disable CPU dynamic activation quantization for exact-token comparison with HF.
+        # Leaving this unset uses the plugin default, which can change Qwen's greedy tokens.
+        # This is a reference-test setting for both readers, not a change to runtime defaults.
         "dynamic_quantization_group_size": "0",
     },
     pytest.param(

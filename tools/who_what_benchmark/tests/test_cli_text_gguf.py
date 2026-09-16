@@ -32,10 +32,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-# Minimum WWB text similarity (cosine over sentence embeddings) between the llama.cpp reference
-# and the GenAI-frontend target. Similarity falls with generated length even for a correct
-# conversion (measured for qwen3-0.6B: ~0.89 @ 16 tokens, ~0.85 @ 32, ~0.74 @ 100), so the
-# threshold is set to clear a correct conversion comfortably while failing hard on a broken one.
+# Minimum WWB text similarity (cosine over sentence embeddings) between llama.cpp and GenAI.
+# Cases without reference_precision retain the CPU plugin's dynamic-quantization default;
+# FP32 inference alone does not disable activation quantization. This can contribute to token
+# drift, but disabling it does not eliminate differences in weight decoding, KV-cache precision
+# or floating-point arithmetic. Autoregressive decoding can amplify those differences.
+# This threshold is an end-to-end regression check, not proof of conversion correctness.
 SIMILARITY_THRESHOLD = 0.8
 
 # Bound generated length so late-token greedy drift between the two runtimes doesn't dominate
