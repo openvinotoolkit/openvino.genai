@@ -11,7 +11,7 @@
 #include "json_utils.hpp"
 #include "kokoro_tts_model.hpp"
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
-#include "qwen3_tts_model.hpp"
+#include "speech_generation/qwen3_tts/qwen3_tts_model.hpp"
 #include "speecht5_tts_model.hpp"
 #include "utils.hpp"
 

@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "qwen3_tts_model.hpp"
+#include "speech_generation/qwen3_tts/qwen3_tts_model.hpp"
 
 #include <algorithm>
 #include <chrono>

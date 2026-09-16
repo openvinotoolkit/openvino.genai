@@ -10,7 +10,7 @@
 
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
-#include "text2speech_pipeline_impl.hpp"
+#include "speech_generation/text2speech_pipeline_impl.hpp"
 
 namespace ov {
 namespace genai {
