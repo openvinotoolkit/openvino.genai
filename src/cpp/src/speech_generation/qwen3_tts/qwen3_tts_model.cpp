@@ -42,10 +42,12 @@ constexpr const char* TALKER_NAME = "openvino_talker_model.xml";  // 4D float at
 constexpr const char* CODE_PREDICTOR_NAME = "openvino_code_predictor_model.xml";
 constexpr const char* CODEC_ENCODER_NAME = "openvino_codec_encoder.xml";
 
-constexpr int64_t DECODER_TRACE_LEN = 256;
-constexpr int64_t DECODER_CHUNK_SIZE = 231;
-constexpr int64_t DECODER_LEFT_CONTEXT = 25;
-constexpr int64_t DECODER_OFFSET = 555;
+// NPU-only decoder chunking, ported from the OpenVINO notebook's OVQwen3TTSSpeechTokenizer
+// (qwen_3_tts_helper.py); CPU/GPU bypass this entirely (see m_decoder_static).
+constexpr int64_t DECODER_CHUNK_SIZE = 231;      // effective (non-overlapping) codes fed per chunk
+constexpr int64_t DECODER_LEFT_CONTEXT = 25;     // prior-chunk codes prepended for continuity
+constexpr int64_t DECODER_TRACE_LEN = DECODER_CHUNK_SIZE + DECODER_LEFT_CONTEXT;  // static decoder window
+constexpr int64_t DECODER_OFFSET = 555;  // tail samples trimmed per chunk to hide a decoder edge artifact
 
 // Component roles used for per-component device routing. Each Qwen3-TTS
 // submodel is a separate IR, so (mirroring the VLM pipeline) the pipeline can
