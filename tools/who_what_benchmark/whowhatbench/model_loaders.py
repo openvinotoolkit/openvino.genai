@@ -706,9 +706,9 @@ def load_imagetext2image_model(
 
         logger.info("Using HF Transformers API")
         config = AutoPipelineForImage2Image.load_config(model_id)
-        pipeline_cls = (
-            DiffusionPipeline if config.get("_class_name") == "QwenImage21Pipeline" else AutoPipelineForImage2Image
-        )
+        pipeline_cls = AutoPipelineForImage2Image
+        if config.get("_class_name") == "QwenImage21Pipeline":
+            pipeline_cls = DiffusionPipeline
         model = pipeline_cls.from_pretrained(
             model_id,
             trust_remote_code=True,
