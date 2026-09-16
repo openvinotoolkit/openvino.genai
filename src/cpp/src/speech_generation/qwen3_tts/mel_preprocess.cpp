@@ -159,7 +159,7 @@ std::shared_ptr<ov::Model> build_qwen3_mel_preprocess_model(size_t mel_dim) {
                                                       ov::Shape{},
                                                       std::vector<int32_t>{static_cast<int32_t>(hop_size)});
 
-    auto stft = std::make_shared<ov::opset15::STFT>(squeezed, window, frame_size_c, frame_step_c, false);
+    auto stft = std::make_shared<ov::opset15::STFT>(squeezed, window, frame_size_c, frame_step_c, false);  // [B, Frames, F, 2]
 
     auto power_2 = ov::opset15::Constant::create(ov::element::f32,
                                                  ov::Shape{1, 1, 1, 1},
@@ -169,7 +169,9 @@ std::shared_ptr<ov::Model> build_qwen3_mel_preprocess_model(size_t mel_dim) {
                                                    ov::Shape{},
                                                    std::vector<int64_t>{-1});
     auto power_sum = std::make_shared<ov::opset15::ReduceSum>(squared, imag_axis, false);
-    auto magnitude = std::make_shared<ov::opset15::Sqrt>(power_sum);  // [B, F, Frames]
+    auto power_sum_eps = ov::opset15::Constant::create(ov::element::f32, ov::Shape{1, 1, 1}, std::vector<float>{1e-9f});
+    auto power_sum_stable = std::make_shared<ov::opset15::Add>(power_sum, power_sum_eps);
+    auto magnitude = std::make_shared<ov::opset15::Sqrt>(power_sum_stable);  // [B, Frames, F]
 
     const auto mel_filter_2d = mel_filter_bank(1 + n_fft / 2,
                                                static_cast<int64_t>(mel_dim),
