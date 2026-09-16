@@ -301,7 +301,9 @@ class EmbeddingsEvaluator(BaseEvaluator):
             with torch.no_grad():
                 outputs = model(**inputs)
 
-            if kwargs.get("pooling_type") == "last_token" and "attention_mask" in inputs:
+            if is_guard_model_output(outputs):
+                embeddings = guard_logits_pool(outputs, inputs["attention_mask"])
+            elif kwargs.get("pooling_type") == "last_token" and "attention_mask" in inputs:
                 embeddings = last_token_pool(outputs.last_hidden_state, inputs["attention_mask"])
             elif kwargs.get("pooling_type") == "mean" and "attention_mask" in inputs:
                 embeddings = mean_pooling(outputs.last_hidden_state, inputs["attention_mask"])
