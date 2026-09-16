@@ -137,6 +137,16 @@ public:
         return finalize_decoded_results(decoded_results, start_time, stop_time);
     }
 
+    VLMDecodedResults generate(const ProcessedInputs& inputs,
+                               const GenerationConfig& generation_config,
+                               const StreamerVariant& streamer) override {
+        auto start_time = std::chrono::steady_clock::now();
+        std::vector<ov::genai::GenerationConfig> generation_configs = {generation_config};
+        const auto decoded_results = m_impl.generate({inputs}, generation_configs, streamer)[0];
+        auto stop_time = std::chrono::steady_clock::now();
+        return finalize_decoded_results(decoded_results, start_time, stop_time);
+    }
+
     void start_chat(const std::string& system_message) override {
         m_impl.start_chat(system_message);
     }
