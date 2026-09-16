@@ -1556,6 +1556,9 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
         OPENVINO_ASSERT( !speaker_embedding,
             "Qwen3 CustomVoice does not accept external speaker_embedding. Use 'speaker' property instead.");
         OPENVINO_ASSERT(!speaker.empty(), "Qwen3 CustomVoice requires a non-empty 'speaker' property.");
+    } else if (base_model) {
+        OPENVINO_ASSERT(speaker_embedding || generation_config.ref_audio,
+                        "Qwen3 Base requires a voice source: provide either 'speaker_embedding' or 'ref_audio'.");
     }
 
     if (!base_model &&
