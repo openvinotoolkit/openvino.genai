@@ -690,6 +690,13 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     );
 }
 
+std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
+    const std::vector<ProcessedInputs>& inputs,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer) {
+    return m_impl->generate(inputs, sampling_params, streamer);
+}
+
 void ContinuousBatchingPipeline::start_chat(const std::string& system_message) {
     m_impl->finish_chat();
     m_impl->start_chat(system_message);

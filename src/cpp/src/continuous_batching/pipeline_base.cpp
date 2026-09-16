@@ -759,6 +759,61 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     return results;
 }
 
+std::vector<VLMDecodedResults>
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+    const std::vector<ProcessedInputs>& inputs,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer
+) {
+    OPENVINO_ASSERT(inputs.size() == sampling_params.size(),
+        "Number of ProcessedInputs (", inputs.size(), ") must match sampling_params (", sampling_params.size(), ")");
+    auto generate_start_time = std::chrono::steady_clock::now();
+
+    std::vector<ov::Tensor> input_embeds_list;
+    std::vector<std::pair<ov::Tensor, std::optional<int64_t>>> position_ids_list;
+    std::vector<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs_list;
+    input_embeds_list.reserve(inputs.size());
+    position_ids_list.reserve(inputs.size());
+    lm_extra_inputs_list.reserve(inputs.size());
+    for (const auto& in : inputs) {
+        input_embeds_list.push_back(in.inputs_embeds);
+        position_ids_list.emplace_back(in.position_ids, in.rope_delta);
+        lm_extra_inputs_list.push_back(in.lm_extra_inputs);
+    }
+
+    // FIXME Replace nullopt with populated prompt_ids with audios input/omni pipeline support
+    std::vector<EncodedGenerationResult> encoded_results = generate(
+        input_embeds_list, sampling_params, streamer, position_ids_list, std::nullopt, lm_extra_inputs_list);
+
+    std::vector<VLMDecodedResults> results;
+    results.reserve(encoded_results.size());
+    for (size_t i = 0; i < encoded_results.size(); ++i) {
+        utils::assert_request_was_scheduled(encoded_results[i].m_status, encoded_results[i].m_request_id);
+        auto& result = encoded_results[i];
+        VLMDecodedResults gen_result;
+        gen_result.perf_metrics = VLMPerfMetrics(result.perf_metrics);
+        gen_result.extended_perf_metrics = result.extended_perf_metrics;
+        gen_result.perf_metrics.vlm_raw_metrics = inputs[i].raw_perf_metrics;
+
+        auto decode_start_time = std::chrono::steady_clock::now();
+        for (size_t idx = 0; idx < result.m_generation_ids.size(); ++idx) {
+            gen_result.texts.push_back(m_tokenizer.decode(result.m_generation_ids.at(idx)));
+            gen_result.scores.push_back(result.m_scores.at(idx));
+        }
+        gen_result.finish_reasons = result.m_finish_reasons;
+        PerfMetrics::emplace_duration(gen_result.perf_metrics.raw_metrics.detokenization_durations, decode_start_time);
+        gen_result.perf_metrics.m_evaluated = false;
+        gen_result.perf_metrics.evaluate_statistics(generate_start_time);
+
+        if (sampling_params[i].return_omni_outputs) {
+            gen_result.intermediate_hidden_states = std::move(result.m_intermediate_hidden_states);
+            gen_result.full_token_ids = std::move(result.m_full_token_ids);
+        }
+        results.emplace_back(std::move(gen_result));
+    }
+    return results;
+}
+
 GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
     uint64_t request_id,
     const std::string& prompt,

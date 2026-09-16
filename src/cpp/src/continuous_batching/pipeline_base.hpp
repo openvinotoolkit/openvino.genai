@@ -252,6 +252,15 @@ public:
     );
 
     /**
+     * Performs monolitic generation based on pre-processed VLMProcessor inputs
+     */
+    std::vector<VLMDecodedResults> generate(
+        const std::vector<ProcessedInputs>& inputs,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer
+    );
+
+    /**
      * Starts chat with a given system prompt
      * 
      * In chat scenario prompts passed to `generate` method are accumulated inside the pipeline until `finish_chat` is called

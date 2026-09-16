@@ -361,6 +361,11 @@ public:
         return generate(histories, AnyMap{std::forward<Properties>(properties)...});
     }
 
+    std::vector<VLMDecodedResults> generate(
+        const std::vector<ProcessedInputs>& inputs,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer=std::monostate{});
+
     /**
     * @brief start chat with keeping history in kv cache.
     * @param system_message optional system message.
