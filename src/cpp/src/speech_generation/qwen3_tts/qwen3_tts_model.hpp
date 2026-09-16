@@ -174,6 +174,7 @@ private:
     ov::Tensor m_pred_emb_ids;  // token ids input, reused across calls
     ov::Tensor m_pred_emb_step;  // generation_steps input, reused across calls
     ov::InferRequest m_speech_tokenizer_decoder;
+    bool m_decoder_static = false;  // true when reshaped to a fixed DECODER_TRACE_LEN window (NPU)
     ov::InferRequest m_qwen3_mel_preprocess;
     ov::InferRequest m_speaker_encoder;
     ov::InferRequest m_speech_tokenizer_encoder;

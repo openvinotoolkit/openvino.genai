@@ -390,11 +390,11 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
     m_talker_code_predictor_embedding.set_tensor("input_ids", m_pred_emb_ids);
     m_talker_code_predictor_embedding.set_tensor("step", m_pred_emb_step);
     {
-        // The speech-tokenizer decoder is always fed fixed-size [1, DECODER_TRACE_LEN,
-        // num_quantizers] code chunks (decode_speech_tokenizer zero-pads shorter
-        // chunks up to DECODER_TRACE_LEN), so on accelerators that require static
-        // shapes (e.g. NPU) we reshape it before compiling. CPU/GPU keep the model
-        // as exported.
+        // On accelerators that require static shapes (e.g. NPU) the decoder is reshaped
+        // to a fixed [1, num_quantizers, DECODER_TRACE_LEN] window and decode_speech_tokenizer
+        // drives it through overlapping padded chunks. CPU/GPU keep the model dynamic and
+        // decode_speech_tokenizer feeds it the whole code sequence in a single call, exactly
+        // like optimum-intel/native HF.
         auto [decoder_device, decoder_properties] =
             resolve_component_target(device, device_properties, base_properties, roles::SPEECH_TOKENIZER_DECODER);
         const auto decoder_path = models_path / CODEC_DECODER_NAME;
@@ -409,6 +409,7 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
                                                          roles::SPEECH_TOKENIZER_DECODER,
                                                          decoder_device,
                                                          decoder_properties);
+            m_decoder_static = true;
         } else {
             m_speech_tokenizer_decoder = compile_request(decoder_path,
                                                          roles::SPEECH_TOKENIZER_DECODER,
@@ -1266,6 +1267,14 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
     if (max_steps == SIZE_MAX) {
         max_steps = 2048;
     }
+    // Reference HF generate() computes a token's residual codes on the NEXT forward call (fed
+    // that token as input), and its loop stops as soon as max_new_tokens is reached -- before
+    // that extra call happens -- so the last sampled token's codes are silently dropped whenever
+    // generation is capped by length rather than natural EOS. Mirror that here so max_new_tokens
+    // yields the same number of audio-code frames as optimum-intel / native HF.
+    if (max_steps > 0) {
+        --max_steps;
+    }
     generated_main.reserve(std::min(max_steps, size_t(8192)));
     all_codes.reserve(std::min(max_steps, size_t(8192)) * m_ids.num_code_groups);
 
@@ -1418,6 +1427,29 @@ std::vector<float> Qwen3TTSImpl::decode_speech_tokenizer(const std::vector<int64
                     "Qwen codec tensor is malformed: expected [T, num_quantizers] flattening");
 
     const size_t num_frames = codes.size() / m_decoder_num_quantizers;
+
+    if (!m_decoder_static) {
+        // Dynamic model: feed the whole [1, num_quantizers, num_frames] sequence in one shot
+        // and take the whole output, exactly like optimum-intel/native HF. The chunked,
+        // padded-window, offset-trimmed path below exists only for the NPU static decoder.
+        ov::Tensor audio_codes(ov::element::i64, ov::Shape{1, m_decoder_num_quantizers, num_frames});
+        int64_t* dst = audio_codes.data<int64_t>();
+        for (size_t t = 0; t < num_frames; ++t) {
+            for (size_t q = 0; q < m_decoder_num_quantizers; ++q) {
+                dst[q * num_frames + t] = codes[t * m_decoder_num_quantizers + q];
+            }
+        }
+
+        m_speech_tokenizer_decoder.set_tensor("audio_codes", audio_codes);
+        run_and_time([&]{ m_speech_tokenizer_decoder.infer(); }, roles::SPEECH_TOKENIZER_DECODER, m_perf_ms, m_perf_calls);
+
+        const auto out = m_speech_tokenizer_decoder.get_tensor("waveform");
+        OPENVINO_ASSERT(out.get_element_type() == ov::element::f32,
+                        "Speech tokenizer decoder output is expected to be f32");
+        const float* out_ptr = out.data<const float>();
+        return std::vector<float>(out_ptr, out_ptr + out.get_size());
+    }
+
     std::vector<float> chunks_audio;
     chunks_audio.reserve(num_frames * m_decoder_upsample);
 
