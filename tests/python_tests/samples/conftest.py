@@ -144,6 +144,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "Qwen/Qwen3-Embedding-0.6B",
         "convert_args": ["--trust-remote-code", "--task", "feature-extraction"],
     },
+    "Qwen3Guard-Stream-0.6B": {
+        "name": "Qwen/Qwen3Guard-Stream-0.6B",
+        "convert_args": ["--trust-remote-code", "--task", "feature-extraction"],
+    },
     "Qwen3-Reranker-0.6B": {
         "name": "Qwen/Qwen3-Reranker-0.6B",
         "convert_args": ["--trust-remote-code"]
