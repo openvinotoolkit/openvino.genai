@@ -69,6 +69,12 @@ public:
     size_t temporal_patch_size = 2;
     size_t merge_size = 2;
 
+    // DeepSeek-OCR-2 specific params (also used as DeepseekOcr2ImageProcessor fields)
+    size_t tile_size = 768;
+    size_t min_patches = 2;
+    size_t max_patches = 6;
+    std::array<uint8_t, 3> background_color{127, 127, 127};
+
     /// @brief Default constructor
     ProcessorConfig() = default;
 

@@ -64,7 +64,6 @@ public:
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer,
-             const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt,
              const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt,
              const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
              const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) override;
@@ -74,7 +73,6 @@ public:
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
                                  const ov::genai::GenerationConfig& sampling_params,
-                                 std::optional<ov::Tensor> token_type_ids = std::nullopt,
                                  std::optional<ov::Tensor> prompt_ids = std::nullopt,
                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs = std::nullopt) override;
 
@@ -98,7 +96,6 @@ protected:
     std::map<uint64_t, size_t> m_main_generated_lengths_before_validation;
     std::map<uint64_t, size_t> m_validation_candidate_counts;
     ov::Tensor create_draft_input_embeddings(const ov::Tensor& original_input_embeddings);
-    static int64_t compute_rope_delta(const ov::Tensor& position_ids);
     static ov::Tensor trim_first_token_sequence_tensor(const ov::Tensor& tensor, const char* tensor_name);
 };
 }

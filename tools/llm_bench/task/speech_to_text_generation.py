@@ -14,7 +14,7 @@ import llm_bench_utils.gen_output_data as gen_output_data
 import llm_bench_utils.parse_json_data as parse_json_data
 from llm_bench_utils.hook_forward_whisper import ASRHook
 
-FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
+FW_UTILS = {"pt": llm_bench_utils.pt_utils, "ov": llm_bench_utils.ov_utils}
 asr_hook = ASRHook()
 
 DEFAULT_OUTPUT_TOKEN_SIZE = 1000
@@ -32,7 +32,7 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     use_genai = input_param["use_genai"]
     use_case = args["use_case"]
 
-    default_language = "English" if use_case.model_type in ["qwen3-asr"] else "<|en|>"
+    default_language = "English" if use_case.model_type in ["qwen3-asr", "fun-asr"] else "<|en|>"
     speech_language = input_param["speech_param"].get("language", default_language)
     ret_timestamps = input_param["speech_param"].get("timestamp", True)
     max_gen_tokens = args["infer_count"]

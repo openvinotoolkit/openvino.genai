@@ -392,6 +392,12 @@ void extract_extensions_to_core(ov::AnyMap& properties);
 
 void clear_false_prompt_lookup_from_config(ov::AnyMap& properties);
 
+void log_attention_backend(const std::string& attention_backend);
+
+// Print an INFO message about the Paged Attention initialization failure and the SDPA fallback,
+// followed by a DEBUG message with the original exception details.
+void log_paged_attention_fallback(const ov::Exception& exception);
+
 void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16);
 
 ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov::Tensor& text_embeds, const std::vector<ov::Tensor>& image_embeds, int64_t image_token_id);
@@ -449,6 +455,13 @@ ov::Tensor make_tensor_slice(const ov::Tensor& tensor, size_t dim, size_t start_
 ov::genai::GenerationConfig get_beam_search_config();
 ov::genai::GenerationConfig get_greedy_config();
 ov::genai::GenerationConfig get_multinomial_config();
+
+/**
+ * @brief Patches the chat template in the provided Tokenizer and
+ * removes any implicit concatenation of adjacent multiline string literals.
+ */
+void patch_chat_template_multiline_strings(Tokenizer& tokenizer);
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

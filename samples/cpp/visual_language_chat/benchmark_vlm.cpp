@@ -117,7 +117,7 @@ int main(int argc, char* argv[]) try {
     if (device == "NPU")
         pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device);
     else {
-        // Setting of Scheduler config will trigger usage of ContinuousBatching pipeline, which is not default for Qwen2VL, Qwen2.5VL, Gemma3 due to accuracy issues.
+        // Setting SchedulerConfig triggers ContinuousBatching pipeline usage.
         ov::genai::SchedulerConfig scheduler_config;
         scheduler_config.enable_prefix_caching = false;
         scheduler_config.max_num_batched_tokens = std::numeric_limits<std::size_t>::max();
@@ -158,6 +158,8 @@ int main(int argc, char* argv[]) try {
     std::cout << "Tokenization time: " << metrics.get_tokenization_duration().mean << " ± " << metrics.get_tokenization_duration().std << " ms" << std::endl;
     std::cout << "Detokenization time: " << metrics.get_detokenization_duration().mean << " ± " << metrics.get_detokenization_duration().std << " ms" << std::endl;
     std::cout << "Embeddings preparation time: " << metrics.get_prepare_embeddings_duration().mean << " ± " << metrics.get_prepare_embeddings_duration().std << " ms" << std::endl;
+    std::cout << "  Vision encoding time: " << metrics.get_vision_encoding_duration().mean << " ± " << metrics.get_vision_encoding_duration().std << " ms" << std::endl;
+    std::cout << "  Text embedding time: " << metrics.get_text_embedding_duration().mean << " ± " << metrics.get_text_embedding_duration().std << " ms" << std::endl;
     std::cout << "TTFT: " << metrics.get_ttft().mean  << " ± " << metrics.get_ttft().std << " ms" << std::endl;
     std::cout << "TPOT: " << metrics.get_tpot().mean  << " ± " << metrics.get_tpot().std << " ms/token " << std::endl;
     std::cout << "Throughput: " << metrics.get_throughput().mean  << " ± " << metrics.get_throughput().std << " tokens/s" << std::endl;

@@ -27,12 +27,24 @@ def parse_text_json_data(json_data_list):
 def parse_vlm_json_data(json_data_list, optional_prompt=False):
     text_param_list = []
     for json_data in json_data_list:
-        prompt_data = create_base_prompt(json_data, optional=optional_prompt)
-        for param in ["media", "video"]:
-            if param in json_data:
-                prompt_data[param] = json_data[param]
+        data_list = json_data
+        chat_mode = isinstance(json_data, list)
+        if not chat_mode:
+            data_list = [json_data]
 
-        text_param_list.append(prompt_data)
+        new_data = []
+        for data in data_list:
+            prompt_data = create_base_prompt(data, optional=optional_prompt)
+            for param in ["media", "video", "audio"]:
+                if param in data:
+                    prompt_data[param] = data[param]
+            new_data.append(prompt_data)
+
+        if chat_mode:
+            text_param_list.append(new_data)
+        else:
+            text_param_list.extend(new_data)
+
     return text_param_list
 
 

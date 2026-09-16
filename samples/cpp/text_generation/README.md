@@ -138,6 +138,8 @@ Recommended models: meta-llama/Llama-2-13b-hf as main model and TinyLlama/TinyLl
   | `branching_factor` | `1` | ContinuousBatching (EAGLE only) | Number of candidate tokens to consider at each tree level when running tree-based speculative decoding. |
   | `tree_depth` | `0` | ContinuousBatching (EAGLE only) | Depth of the candidate token tree. Tree drafting requires `num_assistant_tokens >= tree_depth`. |
 
+  The sample prints accepted, rejected, and total draft candidate tokens. Draft generated tokens count tokens sampled by the draft pipeline. Draft candidate tokens count the subset offered to the main model for validation and are used as the denominator for acceptance rate.
+
   Example:
   ```cpp
   ov::genai::GenerationConfig config;

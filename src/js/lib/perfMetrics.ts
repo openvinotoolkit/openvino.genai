@@ -41,6 +41,14 @@ export type RawMetrics = {
 export type VLMRawMetrics = {
   /** Durations for embedding preparation in milliseconds. */
   prepareEmbeddingsDurations: number[];
+  /** Durations for vision encoding in milliseconds. */
+  visionEncodingDurations: number[];
+  /** Durations for audio encoding in milliseconds. */
+  audioEncodingDurations: number[];
+  /** Durations for text embedding in milliseconds. */
+  textEmbeddingDurations: number[];
+  /** Number of image slices produced for each input image */
+  perImageSliceCounts: number[];
 };
 
 /** Structure with raw performance metrics for Whisper generation. */
@@ -128,6 +136,19 @@ export interface PerfMetrics {
 export interface VLMPerfMetrics extends PerfMetrics {
   /** Returns the mean and standard deviation of embeddings preparation duration in milliseconds. */
   getPrepareEmbeddingsDuration(): MeanStdPair;
+
+  /** Returns the mean and standard deviation of vision encoding duration in milliseconds. */
+  getVisionEncodingDuration(): MeanStdPair;
+
+  /** Returns the mean and standard deviation of audio encoding duration in milliseconds. */
+  getAudioEncodingDuration(): MeanStdPair;
+
+  /** Returns the mean and standard deviation of text embedding duration in milliseconds. */
+  getTextEmbeddingDuration(): MeanStdPair;
+
+  /** Returns the total number of image slices produced for the request. */
+  getTotalImageSliceCount(): number;
+
   /** VLM specific raw metrics */
   vlmRawMetrics: VLMRawMetrics;
 

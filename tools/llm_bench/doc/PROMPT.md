@@ -47,6 +47,12 @@ Supported parameters that can be set are:
 * `media` - image file path or url
 * `video` - video file path
 * `prompt` - input text prompt
+* `audio` - input audio prompt
+Prompt file example:
+{"prompt": "Describe this image in detail", "media": "./image_file.jpg"}
+Prompt file example for chat mode:
+[{"prompt": "What animal is this?", "media": ["./image_file1.jpg"]}, {"prompt": "What do the images have in common?", "media": ["./image_file2.jpg"]}]
+[{"prompt": "Describe these image in detail", "media": ["./image_file3.jpg", "./image_file4.jpg"]}]
 
 ## 6. Image to Image Generation
 Supported parameters that can be set are:

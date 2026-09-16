@@ -1150,7 +1150,7 @@ ov::Tensor InputsEmbedderVideoChatFlashQwen::get_inputs_embeds(const std::string
     ov::Tensor inputs_embeds = vlm_utils::build_inputs_embeds_from_text_and_visual_chunks(
         tokens,
         [&](const ov::Tensor& text_chunk) {
-            return m_embedding->infer(req, text_chunk);
+            return get_text_embedding(req, text_chunk, metrics);
         },
         images_features_proj,
         base_id,

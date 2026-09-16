@@ -383,7 +383,7 @@ StatefulSpeculativeLLMPipeline::StatefulSpeculativeLLMPipeline(const ov::genai::
 
     // Specifying number candidates to generate
     ensure_num_assistant_tokens_is_set(m_generation_config);
-    m_candidates_num = m_generation_config.num_assistant_tokens;
+    m_candidates_num = m_generation_config.num_assistant_tokens.value();
     // We set the upper limit for candidates number as two times the number requested
     // by user.
     m_max_candidates_num = m_candidates_num * 2;
@@ -403,7 +403,7 @@ GenerationConfig StatefulSpeculativeLLMPipeline::resolve_generation_config(Optio
 
     // Apply Fast Draft specific validations
     ensure_num_assistant_tokens_is_set(config);
-    m_candidates_num = config.num_assistant_tokens;
+    m_candidates_num = config.num_assistant_tokens.value();
     // We set the upper limit for candidates number as two times the number
     // requested by user.
     m_max_candidates_num = m_candidates_num * 2;
@@ -455,6 +455,8 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
     std::shared_ptr<StreamerBase> streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
     ov::genai::EncodedResults results;
     auto& raw_perf_counters = m_sd_perf_metrics.raw_metrics;
+    m_sd_perf_metrics.num_accepted_tokens = 0;
+    m_sd_perf_metrics.num_draft_tokens = 0;
     // NB: Only batch=1 is supported now.
     // NB: In the case of greedy decoding scores are filled with zeros.
     results.scores.resize(1u);
@@ -637,6 +639,8 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
 
         auto& main_perf_generated_tokens = m_main_request->raw_perf_metrics.m_batch_sizes.back();
         main_perf_generated_tokens -= mismatched_candidates;
+        m_sd_perf_metrics.num_draft_tokens += candidates_to_generate;
+        m_sd_perf_metrics.num_accepted_tokens += accepted_tokens_number;
         m_sd_metrics.update_draft_generated_len(0 /* request_id */, candidates_to_generate);
         m_sd_metrics.update_acceptance_rate(0 /* request_id */, (accepted_tokens_number * 100.f) / candidates_to_generate);
         m_sd_metrics.update_draft_accepted_tokens(0 /* request_id */, accepted_tokens_number);
@@ -674,7 +678,7 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
 
     // If not chat conversation, then reset all states.
     if (!m_is_chat_active) {
-        m_candidates_num = config.num_assistant_tokens;
+        m_candidates_num = config.num_assistant_tokens.value();
         m_draft_request->reset_state();
         m_main_request->reset_state();
     }
