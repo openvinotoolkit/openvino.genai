@@ -174,6 +174,23 @@ def mean_pooling(last_hidden_states: Tensor, attention_mask: Tensor) -> Tensor:
     return sum_embeddings / sum_mask
 
 
+GUARD_LOGITS_FIELDS = (
+    "risk_level_logits",
+    "category_logits",
+    "query_risk_level_logits",
+    "query_category_logits",
+)
+
+
+def is_guard_model_output(outputs) -> bool:
+    return not hasattr(outputs, "last_hidden_state") and hasattr(outputs, GUARD_LOGITS_FIELDS[0])
+
+
+def guard_logits_pool(outputs, attention_mask: Tensor) -> Tensor:
+    per_head_logits = [last_token_pool(getattr(outputs, name), attention_mask) for name in GUARD_LOGITS_FIELDS]
+    return torch.cat(per_head_logits, dim=-1)
+
+
 @register_evaluator("text-embedding", "image-embedding", "video-embedding")
 class EmbeddingsEvaluator(BaseEvaluator):
     def __init__(
