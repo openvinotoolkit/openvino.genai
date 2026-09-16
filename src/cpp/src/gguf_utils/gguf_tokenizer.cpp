@@ -479,6 +479,7 @@ static std::vector<uint8_t> build_spm_model_proto(const std::vector<std::string>
                                                    const std::vector<float>& scores,
                                                    const std::vector<int32_t>& token_types,
                                                    bool add_dummy_prefix,
+                                                   bool remove_extra_whitespaces,
                                                    int32_t unk_id = -1,
                                                    int32_t bos_id = -1,
                                                    int32_t eos_id = -1,
@@ -569,6 +570,8 @@ static std::vector<uint8_t> build_spm_model_proto(const std::vector<std::string>
         // field 3: add_dummy_prefix
         pb_append_varint(ns, (3ULL << 3) | 0);
         ns.push_back(add_dummy_prefix ? 1 : 0);
+        pb_append_varint(ns, (4ULL << 3) | 0);
+        ns.push_back(remove_extra_whitespaces ? 1 : 0);
         pb_append_tag_len(proto, 3, ns);
     }
 
@@ -704,7 +707,7 @@ static ov::OutputVector parse_spm_config(const std::map<std::string, GGUFMetaDat
 
     // Build the serialized ModelProto and wrap as a u8 Constant (first input to SentencepieceTokenizer)
     auto proto_bytes =
-        build_spm_model_proto(vocab, scores, token_types, add_space_prefix, unk_id, bos_id, eos_id, pad_id);
+        build_spm_model_proto(vocab, scores, token_types, add_space_prefix, true, unk_id, bos_id, eos_id, pad_id);
     auto sp_model_const = std::make_shared<v0::Constant>(element::u8, Shape{proto_bytes.size()}, proto_bytes.data());
 
     // inputs = SpecialTokensSplit outputs: [ragged_begins(0), ragged_ends(1), begins(2), ends(3), chars(4), ...]
@@ -968,7 +971,8 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
             if (t.get_size() > 0)
                 detok_add_space_prefix = t.data<bool>()[0];
         }
-        auto proto_bytes = build_spm_model_proto(tokens, spm_scores, spm_types, detok_add_space_prefix);
+        // SentencePiece otherwise strips leading whitespace even when add_dummy_prefix is false.
+        auto proto_bytes = build_spm_model_proto(tokens, spm_scores, spm_types, detok_add_space_prefix, false);
         auto sp_model_const =
             std::make_shared<v0::Constant>(element::u8, Shape{proto_bytes.size()}, proto_bytes.data());
         auto ids_i32 = std::make_shared<v0::Convert>(detokenizer_input, element::i32)->output(0);

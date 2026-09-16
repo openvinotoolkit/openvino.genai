@@ -50,8 +50,8 @@ NUM_SAMPLES = 4
 
 # (architecture, Hub repository, filename, reference_precision).
 # Catalog: openvinotoolkit/openvino at 38286c35d9, src/frontends/gguf/docs/supported_models.md.
-# The `gguf_small` mark selects downloads under ~1 GB for the existing CI job.
-# Larger checkpoints remain local/opt-in tests.
+# The `gguf_small` mark selects downloads under ~1 GB for an opt-in subset run.
+# Precommit uses tests/python_tests/test_gguf_frontend.py with tiny models instead.
 GGUF_MODELS = [
     pytest.param(
         "llama",

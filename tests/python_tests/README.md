@@ -41,6 +41,35 @@ python -m pytest tests/python_tests/ -k "test_multibatch" --model_ids "TinyLlama
 
 List of currently supported models can be found in tests/python_tests/data/models.py:get_models_list
 
+## GGUF Frontend Tests
+
+The Linux precommit GGUF jobs include a tiny-model suite comparing the frontend with
+the regular Optimum export path:
+
+```sh
+python -m pip install transformers==5.0.0
+python -m pytest tests/python_tests/test_gguf_frontend.py -v
+```
+
+It downloads pinned Llama, Qwen3, Phi-3 and Gemma-3 GGUFs (about 79 MB total), plus
+their source tokenizer/configuration files, into the Hugging Face cache. The reference
+is exported through Optimum from the same GGUF weights. No model binaries are stored
+in this repository; reference IRs and serialization outputs use pytest temporary directories.
+Tests cover PA, SDPA and automatic backend selection, exact generation comparisons,
+batched prompts, beam search, encoded inputs, tokenizer whitespace, streaming and saved-IR reloads. Batch and beam tests
+use PA/default; native SDPA attention masks currently support batch one. The Optimum
+Gemma-3 reference requires Transformers 5.0, matching the regular LLM job. The existing reader
+suite separately retains its model/quantization and native-tokenizer coverage.
+
+Real-model comparisons with llama.cpp remain opt-in and require the WWB GGUF dependencies:
+
+```sh
+WWB_GGUF_TESTS=1 python -m pytest tools/who_what_benchmark/tests/test_cli_text_gguf.py -m gguf_small -v
+```
+
+Omit `-m gguf_small` to include the larger checkpoints. Tiny-model coverage is not a
+claim that all frontend architectures or production quantization formats are tested.
+
 ## Test Samples
 To test samples, set the `SAMPLES_PY_DIR` and `SAMPLES_CPP_DIR` environment variables to the directories containing your Python samples and built C++ samples respectively. The `SAMPLES_CPP_DIR` should point to the folder with built C++ samples, which can be installed using `cmake --component samples_bin`. For example:
 ```sh

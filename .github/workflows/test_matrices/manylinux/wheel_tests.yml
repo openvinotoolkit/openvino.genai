@@ -125,6 +125,16 @@
     - GGUF
     - LLM
 
+- name: GGUF Frontend tiny models
+  cmd: |-
+    # Match the regular LLM job: Optimum's Gemma-3 exporter requires Transformers <=5.0.
+    python -m pip install transformers==5.0.0
+    python -m pytest -v ./tests/python_tests/test_gguf_frontend.py
+  timeout: 30
+  components:
+    - GGUF
+    - LLM
+
 - name: Tokenizer tests
   cmd: |-
     python -m pytest -v ./tests/python_tests/test_tokenizer.py
