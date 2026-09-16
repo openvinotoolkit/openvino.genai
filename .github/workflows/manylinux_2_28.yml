@@ -318,6 +318,8 @@ jobs:
       WHEELS_DIR: ${{ github.workspace }}/install/wheels
       SRC_DIR: ${{ github.workspace }}/src
       OpenVINODeveloperPackage_DIR: ${{ github.workspace }}/ov/developer_package/cmake
+      # Per-Python-version cache prefix so each matrix leg keeps its own sccache entries.
+      SCCACHE_AZURE_KEY_PREFIX: genai/manylinux_2_28/py${{ matrix.python-version }}
 
     steps:
       - name: Clone openvino.genai
@@ -343,13 +345,27 @@ jobs:
           build_type: Release
           save_to: ${{ github.workspace }}
 
+      - name: Clean sccache stats
+        run: ${SCCACHE_PATH} --zero-stats
+
       - name: Build GenAI Wheel
         run: |
           python_exec_path=$(python${{ matrix.python-version }} -c "import sys; print(sys.executable)")
-          $python_exec_path -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+          # Put the interpreter's console-scripts dir on PATH so CMake's find_program locates pybind11-stubgen with --no-build-isolation.
+          export PATH="$(dirname "$python_exec_path"):$PATH"
+
+          # Install build requirements read from pyproject so the list isn't duplicated here; --no-build-isolation skips pip's auto build-deps and a stable OpenVINO path keeps sccache warm.
+          mapfile -t build_reqs < <(python3.11 -c "import sys, tomllib; print('\n'.join(tomllib.load(open(sys.argv[1], 'rb'))['build-system']['requires']))" "${{ env.SRC_DIR }}/pyproject.toml")
+          $python_exec_path -m pip install "${build_reqs[@]}" ${{ needs.openvino_download.outputs.ov_wheel_source }}
+
+          $python_exec_path -m pip wheel -v --no-deps --no-build-isolation --wheel-dir ${{ env.WHEELS_DIR }} \
+              --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_C_COMPILER_LAUNCHER=sccache" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}
         working-directory: ${{ env.OV_INSTALL_DIR }}
+
+      - name: Show sccache stats
+        run: ${SCCACHE_PATH} --show-stats
 
       - name: Upload GenAI Wheel
         if: ${{ always() }}
