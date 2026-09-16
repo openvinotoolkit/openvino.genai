@@ -653,8 +653,15 @@ void Qwen3TTSImpl::init_config(const std::filesystem::path& models_path) {
 
     if (config.contains("speaker_encoder_config") && config["speaker_encoder_config"].is_object()) {
         m_speaker_embedding_dim = config["speaker_encoder_config"].value("enc_dim", static_cast<size_t>(talker.value("hidden_size", 1024)));
-        m_speaker_encoder_sample_rate =
+        const uint32_t speaker_encoder_sample_rate =
             config["speaker_encoder_config"].value("sample_rate", static_cast<uint32_t>(24000));
+        // The internal mel-preprocessing pipeline (build_qwen3_mel_preprocess_model) hardcodes a
+        // 24000 Hz mel filterbank rather than reading this value, so a model declaring a different
+        // rate would silently get mismatched mel features.
+        OPENVINO_ASSERT(speaker_encoder_sample_rate == 24000,
+                        "Unsupported speaker_encoder_config.sample_rate: ",
+                        speaker_encoder_sample_rate,
+                        ". OV GenAI's internal Qwen3 mel-preprocessing pipeline only supports 24000 Hz.");
         m_speaker_encoder_mel_dim =
             config["speaker_encoder_config"].value("mel_dim", static_cast<uint32_t>(128));
     } else {
@@ -688,7 +695,13 @@ void Qwen3TTSImpl::init_config(const std::filesystem::path& models_path) {
             nlohmann::json speech_cfg = nlohmann::json::parse(speech_cfg_stream);
             m_output_sample_rate = speech_cfg.value("output_sample_rate", static_cast<uint32_t>(24000));
             m_decoder_upsample = speech_cfg.value("decode_upsample_rate", static_cast<uint32_t>(1920));
-            m_speech_tokenizer_input_sample_rate = speech_cfg.value("input_sample_rate", static_cast<uint32_t>(24000));
+            const uint32_t speech_tokenizer_input_sample_rate =
+                speech_cfg.value("input_sample_rate", static_cast<uint32_t>(24000));
+            // extract_qwen3_ref_code_from_audio feeds the encoder waveform directly, with no resampling.
+            OPENVINO_ASSERT(speech_tokenizer_input_sample_rate == 24000,
+                            "Unsupported speech_tokenizer input_sample_rate: ",
+                            speech_tokenizer_input_sample_rate,
+                            ". OV GenAI's internal Qwen3 ref-audio encoding only supports 24000 Hz.");
             if (speech_cfg.contains("decoder_config") && speech_cfg["decoder_config"].is_object()) {
                 m_decoder_num_quantizers = speech_cfg["decoder_config"].value("num_quantizers", static_cast<uint32_t>(16));
             }
@@ -776,8 +789,6 @@ ov::Tensor Qwen3TTSImpl::extract_qwen3_speaker_embedding_from_audio(const ov::Te
                     "ref_audio requires 'openvino_speaker_encoder.xml' in the model directory");
     OPENVINO_ASSERT(m_has_qwen3_mel_preprocess,
                     "ref_audio requires internal mel preprocessing model initialization");
-    OPENVINO_ASSERT(m_speaker_encoder_sample_rate == 24000,
-                    "Qwen3 internal ref-audio extraction assumes 24000 Hz speaker encoder sample rate");
 
     const std::vector<float> waveform = normalize_ref_audio_waveform(ref_audio);
 
@@ -817,8 +828,6 @@ ov::Tensor Qwen3TTSImpl::extract_qwen3_speaker_embedding_from_audio(const ov::Te
 ov::Tensor Qwen3TTSImpl::extract_qwen3_ref_code_from_audio(const ov::Tensor& ref_audio) const {
     OPENVINO_ASSERT(m_has_speech_tokenizer_encoder,
                     "ref_audio ICL mode requires 'openvino_codec_encoder.xml'");
-    OPENVINO_ASSERT(m_speech_tokenizer_input_sample_rate == 24000,
-                    "Qwen3 internal ref-audio extraction assumes 24000 Hz speech tokenizer input sample rate");
 
     const std::vector<float> waveform = normalize_ref_audio_waveform(ref_audio);
 
@@ -1022,15 +1031,10 @@ void Qwen3TTSImpl::init_static_predictor_meta(const std::shared_ptr<ov::Model>& 
     for (const auto& out : model->outputs()) {
         if (out.get_any_name() == "logits") {
             const auto& s = out.get_shape();
-            OPENVINO_ASSERT(s.size() == 3 || s.size() == 4,
+            OPENVINO_ASSERT(s.size() == 3,
                             "Unexpected static code predictor logits rank: ", s.size());
-            if (s.size() == 4) {
-                m_pred_num_heads = static_cast<size_t>(s[0]);  // [num_heads,1,1,V]
-                m_pred_vocab = static_cast<size_t>(s[3]);
-            } else {
-                m_pred_num_heads = 1;  // [1,1,V]
-                m_pred_vocab = static_cast<size_t>(s[2]);
-            }
+            m_pred_num_heads = 1;  // [1,1,V]
+            m_pred_vocab = static_cast<size_t>(s[2]);
         }
     }
     OPENVINO_ASSERT(m_pred_num_layers > 0 && m_pred_kv_len == m_pred_past_len + 1,
@@ -1737,9 +1741,11 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
                         "Qwen3 VoiceDesign does not support 'speaker'. Remove speaker and use 'instruct'.");
         OPENVINO_ASSERT(!speaker_embedding,
                         "Qwen3 VoiceDesign does not accept external speaker_embedding. Use language/instruct only.");
+        OPENVINO_ASSERT(!generation_config.instruct.empty(), "Qwen3 VoiceDesign requires a non-empty 'instruct' property.");
     } else if (m_tts_model_type == "custom_voice") {
         OPENVINO_ASSERT( !speaker_embedding,
             "Qwen3 CustomVoice does not accept external speaker_embedding. Use 'speaker' property instead.");
+        OPENVINO_ASSERT(!speaker.empty(), "Qwen3 CustomVoice requires a non-empty 'speaker' property.");
     }
 
     if (!base_model &&
@@ -1757,8 +1763,6 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
 
     ov::Tensor effective_speaker_embedding = speaker_embedding;
     if (base_model && x_vector_only_mode && !effective_speaker_embedding && generation_config.ref_audio) {
-        OPENVINO_ASSERT(m_speaker_encoder_sample_rate == 24000,
-                        "ref_audio assumes 24000 Hz waveform input. OV GenAI does not resample");
         effective_speaker_embedding = extract_qwen3_speaker_embedding_from_audio(generation_config.ref_audio);
         // Falls through to the normal synthesis loop with effective_speaker_embedding.
     }
@@ -1779,8 +1783,6 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
     if (has_qwen_voice_clone_props) {
         ov::Tensor resolved_speaker_embedding = effective_speaker_embedding;
         if (!resolved_speaker_embedding && generation_config.ref_audio) {
-            OPENVINO_ASSERT(m_speaker_encoder_sample_rate == 24000,
-                            "ref_audio assumes 24000 Hz waveform input. OV GenAI does not resample");
             resolved_speaker_embedding = extract_qwen3_speaker_embedding_from_audio(generation_config.ref_audio);
         }
 
@@ -1789,8 +1791,6 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
 
         ov::Tensor resolved_ref_code = generation_config.ref_codec_ids;
         if (!resolved_ref_code && generation_config.ref_audio) {
-            OPENVINO_ASSERT(m_speech_tokenizer_input_sample_rate == 24000,
-                            "ref_audio assumes 24000 Hz waveform input. OV GenAI does not resample");
             resolved_ref_code = extract_qwen3_ref_code_from_audio(generation_config.ref_audio);
         }
 

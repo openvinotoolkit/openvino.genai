@@ -77,8 +77,8 @@ private:
     // Read static-predictor dims from the IR and (re)allocate host KV buffers.
     void init_static_predictor_meta(const std::shared_ptr<ov::Model>& model);
     // Reshape a dynamically-exported code predictor IR to the required static
-    // shapes (no-op if the IR is already static). Derives the KV window from the
-    // stacked-heads `logits` output and the fixed n_kv/head_dim of past_key_values.
+    // shapes. Derives the KV window from the stacked-heads `logits` output and
+    // the fixed n_kv/head_dim of past_key_values.
     void reshape_predictor_to_static(const std::shared_ptr<ov::Model>& model);
     // Zero host KV buffers and reset the running absolute-position counter.
     void reset_predictor_state();
@@ -188,9 +188,7 @@ private:
 
     uint32_t m_decoder_num_quantizers = 16;
     uint32_t m_decoder_upsample = 1920;
-    uint32_t m_speaker_encoder_sample_rate = 24000;
     uint32_t m_speaker_encoder_mel_dim = 128;
-    uint32_t m_speech_tokenizer_input_sample_rate = 24000;
 
     bool m_has_speaker_encoder = false;
     bool m_has_speech_tokenizer_encoder = false;
