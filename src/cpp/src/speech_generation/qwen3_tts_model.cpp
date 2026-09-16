@@ -173,7 +173,7 @@ void expose_scalar_input_as_vector1(const std::shared_ptr<ov::Model>& model,
 
 ov::Tensor clone_tensor(const ov::Tensor& src) {
     ov::Tensor dst(src.get_element_type(), src.get_shape());
-    std::memcpy(dst.data(), src.data(), src.get_byte_size());
+    src.copy_to(dst);
     return dst;
 }
 
