@@ -61,6 +61,56 @@ use PA/default; native SDPA attention masks currently support batch one. The Opt
 Gemma-3 reference requires Transformers 5.0, matching the regular LLM job. The existing reader
 suite separately retains its model/quantization and native-tokenizer coverage.
 
+The same precommit jobs also run generated-model architecture tests:
+
+```sh
+python -m pip install cmake==3.26.4
+python -m pytest tests/python_tests/test_gguf_generated.py -v
+```
+
+These tests fetch a SHA-256-verified source archive of llama.cpp at
+`03fa73cb27f5c251b9528489b18d303b1366aca4` and build only its CPU generator and a
+reference runner (CMake >=3.24 and a C++17 compiler are required). Both use the same
+revision. `generate.cpp` reuses the upstream `test-llama-archs` factory for architecture
+metadata, tensor shapes and seeded random weights. It removes unrelated metadata and
+optional bias/RoPE/quantization-scale tensors, retains required biases, and centers
+normalization weights around one (Gemma applies its own offset). MoE fixtures select
+two of four experts. The runner reloads the finalized GGUFs and independently produces
+greedy token IDs and log probabilities using llama.cpp CPU, with OpenVINO disabled in
+that build. Both sides use F32 inference/KV caches and no dynamic quantization.
+GenAI checks prefill/decode with SDPA, PA and automatic selection, plus concurrent
+PA requests with chunked prefill. Inputs include a sliding-window-boundary case.
+The fixtures have no text vocabulary, so an auxiliary tokenizer only satisfies the
+pipeline constructor; comparisons use token IDs. The Optimum suite above separately
+checks real tokenizer behavior.
+
+Build outputs, GGUFs and references are generated in pytest temporary directories,
+not committed or downloaded as model binaries. For repeated local runs,
+`GGUF_LLAMA_BUILD_DIR=/absolute/path` reuses the reference build, rebuilding as needed.
+A local run took 87 seconds including the clean four-job CPU build (about 79 seconds),
+and about 10 seconds with that build cached. The combined Optimum/generated suite took
+117 seconds with build/download caches warm; CI timings depend on the runner.
+The 21 model variants cover 18 architecture IDs: BailingMoE2, ERNIE4.5-MoE, EXAONE4,
+Gemma, Gemma2, GPT-OSS, Hunyuan-Dense, Llama, Maincoder, MiniCPM, Mistral3, OLMoE,
+Phi3, Qwen2, Qwen3, Qwen3.5, Qwen3MoE and SmolLM3. Llama, MiniCPM and Mistral3 have
+separate dense and MoE cases. Each two-layer F32 model is about 4-12 MiB.
+The architecture list is explicit: missing exports fail setup rather than silently
+skipping coverage. The pinned factory/saver cannot export Gemma3, Gemma4,
+DeepSeek2-OCR, Mellum or Muse-Glimmer; Gemma3 remains covered by the Optimum suite.
+
+Known limitations are isolated from the passing cases:
+
+| Cases | Status |
+| --- | --- |
+| Qwen3.5 PA/default/continuous batching | Skipped: recurrent state needs SDPA |
+| Gemma2 explicit PA/continuous batching | Strict xfail: soft-capped attention has no SDPA node for PA conversion; automatic fallback passes |
+| MoE PA/default/continuous batching | Strict xfail: token-axis shape errors or incorrect prefill output after PA conversion |
+| GPT-OSS SDPA | Strict xfail: first-token mismatch against llama.cpp CPU |
+
+Expected failures still execute and become failures on unexpected passes, so fixes
+require removing the corresponding markers. Generator/build/reference failures are
+never xfailed. Run with `--runxfail` to reproduce the underlying failures.
+
 Real-model comparisons with llama.cpp remain opt-in and require the WWB GGUF dependencies:
 
 ```sh
