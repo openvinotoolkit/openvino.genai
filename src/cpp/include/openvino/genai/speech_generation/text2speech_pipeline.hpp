@@ -25,7 +25,7 @@ struct Text2SpeechDecodedResults {
     // When a Qwen3 Base voice clone is performed from reference audio, the pipeline extracts these
     // artifacts internally. They are surfaced here so an application can persist them once and reuse
     // them across subsequent generations (via the `speaker_embedding` argument and the
-    // `voice_clone_ref_codec_ids` property) to skip the reference-audio encoding step.
+    // `ref_codec_ids` property) to skip the reference-audio encoding step.
     //
     // Both tensors are empty for non-Qwen3 backends and for Qwen3 CustomVoice / VoiceDesign.
 
@@ -34,7 +34,7 @@ struct Text2SpeechDecodedResults {
 
     // Reference codec ids used for the Qwen3 Base ICL clone. Shape: [T, G].
     // Empty in x-vector-only mode (no ICL prompt).
-    ov::Tensor voice_clone_ref_codec_ids;
+    ov::Tensor ref_codec_ids;
 };
 
 /**

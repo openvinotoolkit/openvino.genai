@@ -742,28 +742,28 @@ ov::Tensor Qwen3TTSImpl::normalize_external_speaker_embedding(const ov::Tensor& 
 }
 
 std::vector<float> Qwen3TTSImpl::normalize_ref_audio_waveform(const ov::Tensor& ref_audio) const {
-    OPENVINO_ASSERT(ref_audio, "voice_clone_ref_audio must be a non-empty tensor");
+    OPENVINO_ASSERT(ref_audio, "ref_audio must be a non-empty tensor");
     OPENVINO_ASSERT(ref_audio.get_element_type() == ov::element::f32,
-                    "voice_clone_ref_audio must be float32 tensor with shape [T], [1, T], or [1, 1, T]");
+                    "ref_audio must be float32 tensor with shape [T], [1, T], or [1, 1, T]");
 
     const auto shape = ref_audio.get_shape();
-    OPENVINO_ASSERT(!shape.empty(), "voice_clone_ref_audio tensor rank must be 1, 2, or 3");
+    OPENVINO_ASSERT(!shape.empty(), "ref_audio tensor rank must be 1, 2, or 3");
 
     size_t num_samples = 0;
     if (shape.size() == 1) {
         num_samples = shape[0];
     } else if (shape.size() == 2) {
-        OPENVINO_ASSERT(shape[0] == 1, "voice_clone_ref_audio rank-2 tensor must have shape [1, T]");
+        OPENVINO_ASSERT(shape[0] == 1, "ref_audio rank-2 tensor must have shape [1, T]");
         num_samples = shape[1];
     } else if (shape.size() == 3) {
         OPENVINO_ASSERT(shape[0] == 1 && shape[1] == 1,
-                        "voice_clone_ref_audio rank-3 tensor must have shape [1, 1, T]");
+                        "ref_audio rank-3 tensor must have shape [1, 1, T]");
         num_samples = shape[2];
     } else {
-        OPENVINO_THROW("voice_clone_ref_audio tensor rank must be 1, 2, or 3");
+        OPENVINO_THROW("ref_audio tensor rank must be 1, 2, or 3");
     }
 
-    OPENVINO_ASSERT(num_samples > 0, "voice_clone_ref_audio must contain at least one sample");
+    OPENVINO_ASSERT(num_samples > 0, "ref_audio must contain at least one sample");
 
     const float* src = ref_audio.data<const float>();
     std::vector<float> waveform(num_samples, 0.0f);
@@ -773,9 +773,9 @@ std::vector<float> Qwen3TTSImpl::normalize_ref_audio_waveform(const ov::Tensor& 
 
 ov::Tensor Qwen3TTSImpl::extract_qwen3_speaker_embedding_from_audio(const ov::Tensor& ref_audio) const {
     OPENVINO_ASSERT(m_has_speaker_encoder,
-                    "voice_clone_ref_audio requires 'openvino_speaker_encoder.xml' in the model directory");
+                    "ref_audio requires 'openvino_speaker_encoder.xml' in the model directory");
     OPENVINO_ASSERT(m_has_qwen3_mel_preprocess,
-                    "voice_clone_ref_audio requires internal mel preprocessing model initialization");
+                    "ref_audio requires internal mel preprocessing model initialization");
     OPENVINO_ASSERT(m_speaker_encoder_sample_rate == 24000,
                     "Qwen3 internal ref-audio extraction assumes 24000 Hz speaker encoder sample rate");
 
@@ -816,7 +816,7 @@ ov::Tensor Qwen3TTSImpl::extract_qwen3_speaker_embedding_from_audio(const ov::Te
 
 ov::Tensor Qwen3TTSImpl::extract_qwen3_ref_code_from_audio(const ov::Tensor& ref_audio) const {
     OPENVINO_ASSERT(m_has_speech_tokenizer_encoder,
-                    "voice_clone_ref_audio ICL mode requires 'openvino_codec_encoder.xml'");
+                    "ref_audio ICL mode requires 'openvino_codec_encoder.xml'");
     OPENVINO_ASSERT(m_speech_tokenizer_input_sample_rate == 24000,
                     "Qwen3 internal ref-audio extraction assumes 24000 Hz speech tokenizer input sample rate");
 
@@ -1743,23 +1743,23 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
     }
 
     if (!base_model &&
-        (!generation_config.voice_clone_ref_text.empty() || static_cast<bool>(generation_config.voice_clone_ref_audio) ||
-         static_cast<bool>(generation_config.voice_clone_ref_codec_ids))) {
-        OPENVINO_THROW("voice_clone_ref_text/voice_clone_ref_audio/voice_clone_ref_codec_ids are supported only for Qwen3 Base models");
+        (!generation_config.ref_text.empty() || static_cast<bool>(generation_config.ref_audio) ||
+         static_cast<bool>(generation_config.ref_codec_ids))) {
+        OPENVINO_THROW("ref_text/ref_audio/ref_codec_ids are supported only for Qwen3 Base models");
     }
 
     // Derive x-vector-only vs ICL mode from the inputs provided.
     // ICL mode requires ref_text (transcript) or pre-computed ref_codec_ids.
     // ref_audio alone implies x-vector-only mode (embedding extraction only, no ICL prompt).
     const bool x_vector_only_mode = base_model &&
-        generation_config.voice_clone_ref_text.empty() &&
-        !static_cast<bool>(generation_config.voice_clone_ref_codec_ids);
+        generation_config.ref_text.empty() &&
+        !static_cast<bool>(generation_config.ref_codec_ids);
 
     ov::Tensor effective_speaker_embedding = speaker_embedding;
-    if (base_model && x_vector_only_mode && !effective_speaker_embedding && generation_config.voice_clone_ref_audio) {
+    if (base_model && x_vector_only_mode && !effective_speaker_embedding && generation_config.ref_audio) {
         OPENVINO_ASSERT(m_speaker_encoder_sample_rate == 24000,
-                        "voice_clone_ref_audio assumes 24000 Hz waveform input. OV GenAI does not resample");
-        effective_speaker_embedding = extract_qwen3_speaker_embedding_from_audio(generation_config.voice_clone_ref_audio);
+                        "ref_audio assumes 24000 Hz waveform input. OV GenAI does not resample");
+        effective_speaker_embedding = extract_qwen3_speaker_embedding_from_audio(generation_config.ref_audio);
         // Falls through to the normal synthesis loop with effective_speaker_embedding.
     }
 
@@ -1772,36 +1772,36 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
     const bool has_qwen_voice_clone_props =
         base_model &&
         !x_vector_only_mode &&
-        (!generation_config.voice_clone_ref_text.empty() ||
-         static_cast<bool>(generation_config.voice_clone_ref_audio) ||
-         static_cast<bool>(generation_config.voice_clone_ref_codec_ids));
+        (!generation_config.ref_text.empty() ||
+         static_cast<bool>(generation_config.ref_audio) ||
+         static_cast<bool>(generation_config.ref_codec_ids));
 
     if (has_qwen_voice_clone_props) {
         ov::Tensor resolved_speaker_embedding = effective_speaker_embedding;
-        if (!resolved_speaker_embedding && generation_config.voice_clone_ref_audio) {
+        if (!resolved_speaker_embedding && generation_config.ref_audio) {
             OPENVINO_ASSERT(m_speaker_encoder_sample_rate == 24000,
-                            "voice_clone_ref_audio assumes 24000 Hz waveform input. OV GenAI does not resample");
-            resolved_speaker_embedding = extract_qwen3_speaker_embedding_from_audio(generation_config.voice_clone_ref_audio);
+                            "ref_audio assumes 24000 Hz waveform input. OV GenAI does not resample");
+            resolved_speaker_embedding = extract_qwen3_speaker_embedding_from_audio(generation_config.ref_audio);
         }
 
         OPENVINO_ASSERT(resolved_speaker_embedding,
-                        "Qwen3 Base voice cloning via generate(...) requires either speaker_embedding or voice_clone_ref_audio");
+                        "Qwen3 Base voice cloning via generate(...) requires either speaker_embedding or ref_audio");
 
-        ov::Tensor resolved_ref_code = generation_config.voice_clone_ref_codec_ids;
-        if (!resolved_ref_code && generation_config.voice_clone_ref_audio) {
+        ov::Tensor resolved_ref_code = generation_config.ref_codec_ids;
+        if (!resolved_ref_code && generation_config.ref_audio) {
             OPENVINO_ASSERT(m_speech_tokenizer_input_sample_rate == 24000,
-                            "voice_clone_ref_audio assumes 24000 Hz waveform input. OV GenAI does not resample");
-            resolved_ref_code = extract_qwen3_ref_code_from_audio(generation_config.voice_clone_ref_audio);
+                            "ref_audio assumes 24000 Hz waveform input. OV GenAI does not resample");
+            resolved_ref_code = extract_qwen3_ref_code_from_audio(generation_config.ref_audio);
         }
 
         Qwen3VoiceClonePrompt prompt;
         prompt.ref_spk_embedding = resolved_speaker_embedding;
-        prompt.ref_text = generation_config.voice_clone_ref_text;
+        prompt.ref_text = generation_config.ref_text;
         prompt.ref_code = resolved_ref_code;
 
         // Surface the resolved clone artifacts so callers can persist and reuse them (ICL mode).
         result.speaker_embedding = resolved_speaker_embedding;
-        result.voice_clone_ref_codec_ids = resolved_ref_code;
+        result.ref_codec_ids = resolved_ref_code;
 
         for (const auto& text : texts) {
             auto decoded = generate_voice_clone(text, prompt, generation_config);

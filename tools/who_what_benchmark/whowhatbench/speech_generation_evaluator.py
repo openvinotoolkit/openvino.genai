@@ -812,7 +812,7 @@ class Qwen3BaseWrapper:
         if selected_instruct:
             generation_properties["instruct"] = selected_instruct
         if selected_ref_text:
-            generation_properties["voice_clone_ref_text"] = selected_ref_text
+            generation_properties["ref_text"] = selected_ref_text
 
         audio_data, _sr = sf.read(selected_ref_audio, dtype="float32", always_2d=False)
         if _sr != 24000:
@@ -825,7 +825,7 @@ class Qwen3BaseWrapper:
             audio_array = np.mean(audio_array, axis=-1, dtype=np.float32)
         import openvino as ov
 
-        generation_properties["voice_clone_ref_audio"] = ov.Tensor(audio_array.reshape(-1))
+        generation_properties["ref_audio"] = ov.Tensor(audio_array.reshape(-1))
 
         generation_properties.update(kwargs)
 

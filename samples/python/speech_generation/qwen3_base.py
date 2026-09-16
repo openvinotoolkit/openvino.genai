@@ -20,7 +20,7 @@
 # Extracting the speaker embedding and reference codes from audio is the
 # expensive part of cloning. To avoid recomputing them for every generation,
 # clone once from reference audio and save the artifacts returned on the result
-# (speaker_embedding and voice_clone_ref_codec_ids) with
+# (speaker_embedding and ref_codec_ids) with
 # --save_speaker_embedding_file_path / --save_ref_codec_ids_file_path. Later runs
 # can pass them back via --speaker_embedding_file_path and
 # --ref_codec_ids_file_path to skip the reference-audio encoder entirely.
@@ -116,14 +116,14 @@ def main():
     # Reference audio: the pipeline internally derives the speaker embedding and,
     # in ICL mode, the reference codes from this waveform.
     if args.ref_audio_wav_path:
-        generation_properties["voice_clone_ref_audio"] = _load_ref_audio(args.ref_audio_wav_path)
+        generation_properties["ref_audio"] = _load_ref_audio(args.ref_audio_wav_path)
 
     # ICL mode is enabled by providing the reference transcript. Reference codes are
     # either supplied directly (reuse) or extracted from the reference audio.
     if args.ref_text.strip():
-        generation_properties["voice_clone_ref_text"] = args.ref_text
+        generation_properties["ref_text"] = args.ref_text
     if args.ref_codec_ids_file_path:
-        generation_properties["voice_clone_ref_codec_ids"] = _load_reference_codes(args.ref_codec_ids_file_path)
+        generation_properties["ref_codec_ids"] = _load_reference_codes(args.ref_codec_ids_file_path)
 
     icl_mode = bool(args.ref_text.strip())
     print(f"[Info] Qwen3-TTS Base voice clone ({'ICL' if icl_mode else 'x-vector'} mode).")
@@ -153,11 +153,11 @@ def main():
         _save_speaker_embedding(args.save_speaker_embedding_file_path, result.speaker_embedding)
         print(f'[Info] Saved speaker embedding to "{args.save_speaker_embedding_file_path}".')
     if args.save_ref_codec_ids_file_path:
-        if not result.voice_clone_ref_codec_ids:
+        if not result.ref_codec_ids:
             raise RuntimeError(
                 "No reference codes were produced to save. ICL mode (--ref_text) with --ref_audio_wav_path is required."
             )
-        _save_reference_codes(args.save_ref_codec_ids_file_path, result.voice_clone_ref_codec_ids)
+        _save_reference_codes(args.save_ref_codec_ids_file_path, result.ref_codec_ids)
         print(f'[Info] Saved reference codes to "{args.save_ref_codec_ids_file_path}".')
 
     perf_metrics = result.perf_metrics

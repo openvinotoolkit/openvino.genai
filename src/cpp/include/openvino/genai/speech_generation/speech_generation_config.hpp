@@ -84,18 +84,18 @@ public:
     float subtalker_temperature = 0.9f;
 
     // Qwen3 Base voice-clone reference transcript for ICL mode.
-    std::string voice_clone_ref_text;
+    std::string ref_text;
 
     // Qwen3 Base voice-clone reference audio waveform for internal prompt extraction.
     // Expected tensor shape: [T], [1, T], or [1, 1, T].
     // Expected element type: f32.
     // Expected sample rate: 24000 Hz.
     // OV GenAI does not resample or decode files for this property.
-    ov::Tensor voice_clone_ref_audio;
+    ov::Tensor ref_audio;
 
     // Qwen3 Base voice-clone reference codec ids for ICL mode.
     // Expected shape: [T, G] or [1, T, G].
-    ov::Tensor voice_clone_ref_codec_ids;
+    ov::Tensor ref_codec_ids;
 
     void update_generation_config(const ov::AnyMap& config_map = {}) override;
 
@@ -127,9 +127,9 @@ static constexpr ov::Property<uint32_t> subtalker_top_k{"subtalker_top_k"};
 static constexpr ov::Property<float> subtalker_top_p{"subtalker_top_p"};
 static constexpr ov::Property<float> subtalker_temperature{"subtalker_temperature"};
 
-static constexpr ov::Property<std::string> voice_clone_ref_text{"voice_clone_ref_text"};
-static constexpr ov::Property<ov::Tensor> voice_clone_ref_audio{"voice_clone_ref_audio"};
-static constexpr ov::Property<ov::Tensor> voice_clone_ref_codec_ids{"voice_clone_ref_codec_ids"};
+static constexpr ov::Property<std::string> ref_text{"ref_text"};
+static constexpr ov::Property<ov::Tensor> ref_audio{"ref_audio"};
+static constexpr ov::Property<ov::Tensor> ref_codec_ids{"ref_codec_ids"};
 
 }  // namespace genai
 }  // namespace ov

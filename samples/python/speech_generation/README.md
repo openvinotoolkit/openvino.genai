@@ -231,7 +231,7 @@ python qwen3_base.py qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_
 
 Extracting the speaker embedding and reference codes from audio is the expensive part of cloning. To avoid
 recomputing them on every run, clone once from reference audio and save the artifacts that `generate(...)`
-returns on the result (`speaker_embedding` and `voice_clone_ref_codec_ids`):
+returns on the result (`speaker_embedding` and `ref_codec_ids`):
 
 Save from a first x-vector run:
 ```

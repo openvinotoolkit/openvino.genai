@@ -4043,28 +4043,28 @@ class SpeechGenerationConfig(GenerationConfig):
         :type subtalker_temperature: float
     
         Qwen3 Base voice-clone over ``generate``:
-        :param voice_clone_ref_text: reference transcript for ICL mode.
-        :type voice_clone_ref_text: str
+        :param ref_text: reference transcript for ICL mode.
+        :type ref_text: str
     
-        :param voice_clone_ref_audio: reference audio waveform tensor used to internally derive Qwen3 Base clone artifacts.
+        :param ref_audio: reference audio waveform tensor used to internally derive Qwen3 Base clone artifacts.
                                Expected shape: [T], [1, T], or [1, 1, T].
                                Expected dtype: float32.
                                Expected sample rate: 24000 Hz.
                                OV GenAI does not decode audio files or resample this tensor.
-        :type voice_clone_ref_audio: openvino.Tensor
+        :type ref_audio: openvino.Tensor
     
-        :param voice_clone_ref_codec_ids: reference codec ids tensor for ICL mode, shape [T, G] or [1, T, G].
-        :type voice_clone_ref_codec_ids: openvino.Tensor
+        :param ref_codec_ids: reference codec ids tensor for ICL mode, shape [T, G] or [1, T, G].
+        :type ref_codec_ids: openvino.Tensor
     
     """
     instruct: str
     language: str
     non_streaming_mode: bool
+    ref_audio: openvino._pyopenvino.Tensor
+    ref_codec_ids: openvino._pyopenvino.Tensor
+    ref_text: str
     speaker: str
     subtalker_dosample: bool
-    voice_clone_ref_audio: openvino._pyopenvino.Tensor
-    voice_clone_ref_codec_ids: openvino._pyopenvino.Tensor
-    voice_clone_ref_text: str
     @typing.overload
     def __init__(self, json_path: os.PathLike | str | bytes) -> None:
         """
@@ -4957,10 +4957,10 @@ class Text2SpeechDecodedResults:
                                   cloned voice without re-encoding reference audio. Empty for other backends.
         :type speaker_embedding: openvino.Tensor
     
-        :param voice_clone_ref_codec_ids: Qwen3-TTS Base reference codec ids used for ICL-mode cloning.
-                                          Persist and pass it back via the ``voice_clone_ref_codec_ids``
+        :param ref_codec_ids: Qwen3-TTS Base reference codec ids used for ICL-mode cloning.
+                                          Persist and pass it back via the ``ref_codec_ids``
                                           property to reuse the reference prompt. Empty otherwise.
-        :type voice_clone_ref_codec_ids: openvino.Tensor
+        :type ref_codec_ids: openvino.Tensor
     """
     def __init__(self) -> None:
         ...
@@ -4971,13 +4971,13 @@ class Text2SpeechDecodedResults:
     def perf_metrics(self) -> SpeechGenerationPerfMetrics:
         ...
     @property
+    def ref_codec_ids(self) -> openvino._pyopenvino.Tensor:
+        ...
+    @property
     def speaker_embedding(self) -> openvino._pyopenvino.Tensor:
         ...
     @property
     def speeches(self) -> list[openvino._pyopenvino.Tensor]:
-        ...
-    @property
-    def voice_clone_ref_codec_ids(self) -> openvino._pyopenvino.Tensor:
         ...
 class Text2SpeechPipeline:
     """
@@ -5002,7 +5002,7 @@ class Text2SpeechPipeline:
                                         - SpeechT5: optional. If omitted, a default x-vector is used.
                                         - Kokoro: required.
                                         - Qwen3-TTS Base: optional. Can be provided directly, or derived internally
-                                            from ``voice_clone_ref_audio`` passed via properties.
+                                            from ``ref_audio`` passed via properties.
                                         - Qwen3-TTS CustomVoice: ignored and should not be provided.
                                         - Qwen3-TTS VoiceDesign: ignored and should not be provided.
             :type speaker_embedding: openvino.Tensor or None
@@ -5073,18 +5073,18 @@ class Text2SpeechPipeline:
             :type subtalker_temperature: float
         
             Qwen3 Base voice-clone over ``generate``:
-            :param voice_clone_ref_text: reference transcript for ICL mode.
-            :type voice_clone_ref_text: str
+            :param ref_text: reference transcript for ICL mode.
+            :type ref_text: str
         
-            :param voice_clone_ref_audio: reference audio waveform tensor used to internally derive Qwen3 Base clone artifacts.
+            :param ref_audio: reference audio waveform tensor used to internally derive Qwen3 Base clone artifacts.
                                    Expected shape: [T], [1, T], or [1, 1, T].
                                    Expected dtype: float32.
                                    Expected sample rate: 24000 Hz.
                                    OV GenAI does not decode audio files or resample this tensor.
-            :type voice_clone_ref_audio: openvino.Tensor
+            :type ref_audio: openvino.Tensor
         
-            :param voice_clone_ref_codec_ids: reference codec ids tensor for ICL mode, shape [T, G] or [1, T, G].
-            :type voice_clone_ref_codec_ids: openvino.Tensor
+            :param ref_codec_ids: reference codec ids tensor for ICL mode, shape [T, G] or [1, T, G].
+            :type ref_codec_ids: openvino.Tensor
         """
     @typing.overload
     def generate(self, texts: collections.abc.Sequence[str], speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
@@ -5099,7 +5099,7 @@ class Text2SpeechPipeline:
                                         - SpeechT5: optional. If omitted, a default x-vector is used.
                                         - Kokoro: required.
                                         - Qwen3-TTS Base: optional. Can be provided directly, or derived internally
-                                            from ``voice_clone_ref_audio`` passed via properties.
+                                            from ``ref_audio`` passed via properties.
                                         - Qwen3-TTS CustomVoice: ignored and should not be provided.
                                         - Qwen3-TTS VoiceDesign: ignored and should not be provided.
             :type speaker_embedding: openvino.Tensor or None
@@ -5170,18 +5170,18 @@ class Text2SpeechPipeline:
             :type subtalker_temperature: float
         
             Qwen3 Base voice-clone over ``generate``:
-            :param voice_clone_ref_text: reference transcript for ICL mode.
-            :type voice_clone_ref_text: str
+            :param ref_text: reference transcript for ICL mode.
+            :type ref_text: str
         
-            :param voice_clone_ref_audio: reference audio waveform tensor used to internally derive Qwen3 Base clone artifacts.
+            :param ref_audio: reference audio waveform tensor used to internally derive Qwen3 Base clone artifacts.
                                    Expected shape: [T], [1, T], or [1, 1, T].
                                    Expected dtype: float32.
                                    Expected sample rate: 24000 Hz.
                                    OV GenAI does not decode audio files or resample this tensor.
-            :type voice_clone_ref_audio: openvino.Tensor
+            :type ref_audio: openvino.Tensor
         
-            :param voice_clone_ref_codec_ids: reference codec ids tensor for ICL mode, shape [T, G] or [1, T, G].
-            :type voice_clone_ref_codec_ids: openvino.Tensor
+            :param ref_codec_ids: reference codec ids tensor for ICL mode, shape [T, G] or [1, T, G].
+            :type ref_codec_ids: openvino.Tensor
         """
     def get_generation_config(self) -> SpeechGenerationConfig:
         ...

@@ -20,7 +20,7 @@
 // Extracting the speaker embedding and reference codes from audio is the
 // expensive part of cloning. To avoid recomputing them for every generation,
 // clone once from reference audio and save the artifacts returned on the result
-// (`speaker_embedding` and `voice_clone_ref_codec_ids`) with
+// (`speaker_embedding` and `ref_codec_ids`) with
 // `--save_speaker_embedding_file_path` / `--save_ref_codec_ids_file_path`. Later
 // runs can pass them back via `--speaker_embedding_file_path` and
 // `--ref_codec_ids_file_path` to skip the reference-audio encoder entirely.
@@ -186,16 +186,16 @@ int main(int argc, char* argv[]) try {
     // Reference audio: the pipeline internally derives the speaker embedding and,
     // in ICL mode, the reference codes from this waveform.
     if (ref_audio_wav_path.has_value()) {
-        properties["voice_clone_ref_audio"] = utils::audio::read_wav_mono_f32(*ref_audio_wav_path, 24000);
+        properties["ref_audio"] = utils::audio::read_wav_mono_f32(*ref_audio_wav_path, 24000);
     }
 
     // ICL mode is enabled by providing the reference transcript. Reference codes
     // are either supplied directly (reuse) or extracted from the reference audio.
     if (!ref_text.empty()) {
-        properties["voice_clone_ref_text"] = ref_text;
+        properties["ref_text"] = ref_text;
     }
     if (ref_codec_ids_path.has_value()) {
-        properties["voice_clone_ref_codec_ids"] = read_reference_codes(*ref_codec_ids_path);
+        properties["ref_codec_ids"] = read_reference_codes(*ref_codec_ids_path);
     }
 
     const bool icl_mode = !ref_text.empty();
@@ -235,10 +235,10 @@ int main(int argc, char* argv[]) try {
         std::cout << "[Info] Saved speaker embedding to \"" << *save_speaker_embedding_path << "\"." << std::endl;
     }
     if (save_ref_codec_ids_path.has_value()) {
-        OPENVINO_ASSERT(static_cast<bool>(gen_speech.voice_clone_ref_codec_ids),
+        OPENVINO_ASSERT(static_cast<bool>(gen_speech.ref_codec_ids),
                         "No reference codes were produced to save. ICL mode (--ref_text) with "
                         "--ref_audio_wav_path is required.");
-        write_reference_codes(*save_ref_codec_ids_path, gen_speech.voice_clone_ref_codec_ids);
+        write_reference_codes(*save_ref_codec_ids_path, gen_speech.ref_codec_ids);
         std::cout << "[Info] Saved reference codes to \"" << *save_ref_codec_ids_path << "\"." << std::endl;
     }
 
