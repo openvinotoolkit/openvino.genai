@@ -823,6 +823,18 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
     const std::vector<VideoMetadata>& videos_metadata,
     GenerationConfig sampling_params
 ) {
+    return add_request(request_id, prompt, images, videos, videos_metadata, {}, sampling_params);
+}
+
+GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
+    uint64_t request_id,
+    const std::string& prompt,
+    const std::vector<ov::Tensor>& images,
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<VideoMetadata>& videos_metadata,
+    const std::vector<ov::Tensor>& audios,
+    GenerationConfig sampling_params
+) {
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
     ov::genai::VLMPerfMetrics metrics;
     ov::Tensor inputs;
@@ -841,18 +853,27 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
 
         vlm_utils::update_image_slice_counts(metrics, encoded_images);
 
-        // The 5-arg overload never fills audio; named to show the binding is deliberately unused.
-        const auto [unified_prompt, image_sequence, video_sequence, unused_audio_sequence] =
-            m_inputs_embedder->normalize_prompt(prompt, 0, 0, encoded_images, encoded_videos);
+        const auto audio_encoding_start = std::chrono::steady_clock::now();
+        const auto encoded_audios = m_inputs_embedder->encode_audios(audios);
+        if (!audios.empty()) {
+            PerfMetrics::emplace_duration(metrics.vlm_raw_metrics.audio_encoding_durations, audio_encoding_start);
+        }
+
+        const auto [unified_prompt, image_sequence, video_sequence, audio_sequence] =
+            m_inputs_embedder->normalize_prompt(prompt, 0, 0, 0, encoded_images, encoded_videos, encoded_audios);
 
         inputs = m_inputs_embedder->get_inputs_embeds(
             unified_prompt,
             encoded_images,
             encoded_videos,
+            encoded_audios,
             metrics,
             true,
             image_sequence,
-            video_sequence
+            video_sequence,
+            audio_sequence,
+            0,
+            {}
         );
 
         PerfMetrics::emplace_duration(metrics.vlm_raw_metrics.prepare_embeddings_durations, start_get_inputs_embeds);

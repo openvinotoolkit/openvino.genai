@@ -327,6 +327,11 @@ private:
     protected:
         IInputsEmbedder(
             const VLMConfig& vlm_config,
+            const Tokenizer& tokenizer,
+            EmbeddingsModel::Ptr embedding);
+
+        IInputsEmbedder(
+            const VLMConfig& vlm_config,
             const std::filesystem::path& model_dir,
             const Tokenizer& tokenizer,
             const std::string& device,
@@ -427,6 +432,7 @@ private:
     friend class InputsEmbedderQwen3VL;
     friend class InputsEmbedderQwen3_5;
     friend class InputsEmbedderQwen3Omni;
+    friend class InputsEmbedderQwen3ASR;
     friend class InputsEmbedderGemma3;
     friend class InputsEmbedderGemma3n;
     friend class InputsEmbedderGemma4;
