@@ -360,7 +360,7 @@ def test_visual_embeddings(model_id, model_type, tmp_path):
 def test_embeddings_guard_model(model_id, model_type, tmp_path):
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = convert_model(model_id)
-    SIMILARITY_THRESHOLD = 0.9
+    SIMILARITY_THRESHOLD = 0.99
 
     run_wwb(
         [
