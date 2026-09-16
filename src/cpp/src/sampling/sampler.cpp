@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <future>
+ #include <future>
 
 #include "sampling/sampler.hpp"
 #include "tokenizer/tokenizer_impl.hpp"
@@ -1359,10 +1359,111 @@ size_t Sampler::verify_draft_tree(Sequence::Ptr& sequence,
     return accepted_steps;
 }
 
+// Probability the target model assigns to `token_id` under the same (post-processing)
+// distribution _multinomial_sample draws from:
+//   - fast path: TemperatureLogitTransform normalised m_data in place, so m_data[i] == p_i.
+//   - vector path (top_k / top_p / logprobs > 0): m_vector holds the surviving candidates
+//     (normalised probabilities, or scaled logits when m_defer_expf is set). A token that
+//     top_k/top_p filtered out carries zero target mass, so the candidate must be rejected.
+// Returns 0 when the token is outside the candidate set.
+static float get_target_token_probability(const Logits& target_logits, int64_t token_id) {
+    if (target_logits.is_vector_initialized()) {
+        float total = 0.0f, token_weight = 0.0f;
+        bool found = false;
+        for (size_t i = 0; i < target_logits.m_size; ++i) {
+            const float w = target_logits.m_defer_expf ? std::exp(target_logits.m_vector[i].m_log_prob)
+                                                        : target_logits.m_vector[i].m_log_prob;
+            total += w;
+            if (target_logits.m_vector[i].m_index == token_id) {
+                token_weight = w;
+                found = true;
+            }
+        }
+        return (found && total > 0.0f) ? token_weight / total : 0.0f;
+    }
+    if (token_id < 0 || static_cast<size_t>(token_id) >= target_logits.m_size)
+        return 0.0f;
+    return target_logits.m_data[token_id];
+}
+
+// Materialise the full-vocabulary probability distribution the sampler drew from, so it can
+// be stored (draft side) or differenced (main side). Fast path: TemperatureLogitTransform
+// normalised m_data in place, so m_data[i] == p_i over the whole vocabulary. Vector path
+// (top_k / top_p / logprobs > 0): only the surviving candidates carry mass and every
+// filtered-out token is zero; weights are exp'd when m_defer_expf is set. The result is
+// L1-normalised over the surviving mass so max(0, p - q) is a valid sub-distribution.
+static std::vector<float> materialize_distribution(const Logits& logits, size_t vocab_size) {
+    std::vector<float> distribution(vocab_size, 0.0f);
+    if (logits.is_vector_initialized()) {
+        float total = 0.0f;
+        for (size_t i = 0; i < logits.m_size; ++i) {
+            const int64_t idx = logits.m_vector[i].m_index;
+            if (idx < 0 || static_cast<size_t>(idx) >= vocab_size)
+                continue;
+            const float w = logits.m_defer_expf ? std::exp(logits.m_vector[i].m_log_prob)
+                                                : logits.m_vector[i].m_log_prob;
+            distribution[idx] = w;
+            total += w;
+        }
+        if (total > 0.0f)
+            for (float& v : distribution)
+                v /= total;
+    } else {
+        const size_t n = std::min(vocab_size, logits.m_size);
+        for (size_t i = 0; i < n; ++i)
+            distribution[i] = logits.m_data[i];
+    }
+    return distribution;
+}
+
+// Exact residual resampling for a rejected draft token (Leviathan et al. 2023,
+// Chen et al. 2023; identical to HuggingFace transformers `_speculative_sampling` and
+// vLLM's rejection sampler): draw the replacement from the normalised residual
+// max(0, p(x) - q(x)), where p is the target and q the draft distribution for the same
+// position. This keeps the accepted stream exactly target-distributed, unlike drawing
+// from p alone. Falls back to p when the residual is degenerate (p fully covered by q).
+static Token residual_sample(const std::vector<float>& target_distribution,
+                             const std::vector<float>& draft_distribution,
+                             std::mt19937& rng_engine) {
+    const size_t vocab_size = target_distribution.size();
+    std::vector<float> residual(vocab_size);
+    float total = 0.0f;
+    for (size_t i = 0; i < vocab_size; ++i) {
+        const float q = i < draft_distribution.size() ? draft_distribution[i] : 0.0f;
+        residual[i] = std::max(0.0f, target_distribution[i] - q);
+        total += residual[i];
+    }
+    if (!(total > 0.0f)) {
+        residual = target_distribution;
+        total = 0.0f;
+        for (float v : residual)
+            total += v;
+        if (!(total > 0.0f))
+            return Token(std::log(1.0f / static_cast<float>(vocab_size)), 0);
+    }
+    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+    const float r = total * dist(rng_engine);
+    float running = 0.0f;
+    size_t sampled_idx = vocab_size - 1;
+    for (size_t i = 0; i < vocab_size; ++i) {
+        running += residual[i];
+        if (running > r) {
+            sampled_idx = i;
+            break;
+        }
+    }
+    // Report the token's log-probability under the target distribution, consistent with the
+    // acceptance step which compares against the target probability of the draft token.
+    const float p = target_distribution[sampled_idx];
+    return Token(p > 0.0f ? std::log(p) : -std::numeric_limits<float>::infinity(),
+                 static_cast<int64_t>(sampled_idx));
+}
+
 bool Sampler::validate_candidate(
     Sequence::Ptr running_sequence,
     size_t& token_idx,
     Token& sampled_token,
+    const Logits& target_logits,
     bool& is_extend_sequence,
     size_t& max_removed_tokens,
     bool do_sample,
@@ -1381,14 +1482,22 @@ bool Sampler::validate_candidate(
         auto it_log_prob = generated_log_probs.rbegin();
         std::advance(it_log_prob, token_idx - 1);
 
-        float p_i = std::exp(*it_log_prob),
-                q_i = std::exp(sampled_token.m_log_prob),
-                probability_ratio = p_i / q_i;
-        
-        auto dist = std::uniform_int_distribution<>(0, 100); // equivalent to multinomial with number of trials == 1
-        float r_i = dist(rng_engine);
-        r_i /= 100;
-        is_candidate_accepted = r_i <= probability_ratio;
+        // Speculative sampling acceptance (Leviathan et al. 2023, Chen et al. 2023):
+        // accept the draft token t with probability min(1, p(t) / q(t)), where
+        //   q(t) = draft-model probability of t (stored when t was drafted), and
+        //   p(t) = target-model probability of the SAME token t.
+        // Both terms must reference the draft token *it_token_id; comparing against the
+        // target's own freshly sampled token would break the guarantee that the accepted
+        // stream matches the target distribution.
+        const float q_t = std::exp(*it_log_prob);
+        const float p_t = get_target_token_probability(target_logits, *it_token_id);
+        const float probability_ratio = q_t > 0.f ? p_t / q_t : 0.f;
+
+        // Draw r ~ U[0, 1) and accept when r < min(1, p/q). A continuous distribution
+        // matches _multinomial_sample and avoids the bias of a coarse 0..100 integer draw.
+        std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+        const float r_i = dist(rng_engine);
+        is_candidate_accepted = r_i < probability_ratio;
     } else {
         is_candidate_accepted = *it_token_id == sampled_token.m_index;
     }
@@ -1479,6 +1588,9 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
         for (size_t running_sequence_id = 0; running_sequence_id < num_running_sequences; ++running_sequence_id) {
             auto& running_sequence = running_sequences[running_sequence_id];
             bool is_validation_passed = true;
+            // Target distribution p(.) at the rejected position, captured while its logit is still
+            // addressable so the residual resamples from the correct context (see reject branch below).
+            std::vector<float> rejected_target_distribution;
             // make `num_tokens_to_process` iteration to validate a candidate generated by `draft_model` + 1 iteration to generate one more token by `main_model`
             for (size_t i = 0; i <= num_tokens_to_process; ++i) {
                 if (running_sequence->has_finished())
@@ -1524,15 +1636,39 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                         sg_sampling_info.sampler_output.m_forked_sequences.insert({running_sequences[0]->get_id(), forked_seq_ids});
                     }
                     sampled_token = sampled_token_ids.front();
+                    // Draft side: stash the full distribution q(.) this token was drawn from so the
+                    // main sampler can build the exact residual on rejection. Skipped when the draft
+                    // remaps into target vocab (EAGLE d2t), where q and p live in different spaces.
+                    if (!is_validation_mode_enabled && !sampling_params.is_prompt_lookup() && !m_d2t_mapping) {
+                        append_draft_distribution(sequence_group->get_request_id(), running_sequence->get_grouped_id(),
+                                                  materialize_distribution(logit_vector, sequence_group_logits.get_shape().back()));
+                    }
                     // make `_speculative_sampling` in case of previous token was not accepted in speculative decoding
                     if (!is_validation_passed) {
-                        float p_prime = get_p_prime(running_sequence, sampled_token, generated_seq_token_offset + 1);
-                        assisting_pipeline_info.max_removed_tokens_per_request = std::max(assisting_pipeline_info.max_removed_tokens_per_request, generated_seq_token_offset);
-                        // update prob only in case candidate prob > sampled token prob
-                        if (p_prime > 0.f) {
-                            auto prob = std::exp(sampled_token.m_log_prob);
-                            prob /= p_prime;
-                            sampled_token.m_log_prob = std::log(prob);
+                        // Prefer exact residual resampling: draw from max(0, p - q) using the draft
+                        // distribution q(.) captured for this position; fall back to the historic
+                        // sample-from-target reweighting when q(.) is unavailable.
+                        const std::vector<float> draft_distribution =
+                            get_candidate_distribution(sequence_group->get_request_id(), running_sequence->get_grouped_id(),
+                                                       generated_seq_token_offset + 1);
+                        if (!draft_distribution.empty()) {
+                            // Resample the rejected position from the exact residual max(0, p - q).
+                            // p is the target distribution captured at the reject site (conditioned on
+                            // the accepted prefix); q is the draft distribution for the same position.
+                            sampled_token = residual_sample(rejected_target_distribution, draft_distribution, rng_engine);
+                            // The rejected token plus any speculative tokens after it are dropped, so the
+                            // resampled token is re-processed into the KV cache on the next iteration.
+                            assisting_pipeline_info.max_removed_tokens_per_request = std::max(assisting_pipeline_info.max_removed_tokens_per_request, generated_seq_token_offset + 1);
+                            running_sequence->remove_last_tokens(generated_seq_token_offset + 1);
+                        } else {
+                            float p_prime = get_p_prime(running_sequence, sampled_token, generated_seq_token_offset + 1);
+                            assisting_pipeline_info.max_removed_tokens_per_request = std::max(assisting_pipeline_info.max_removed_tokens_per_request, generated_seq_token_offset);
+                            // update prob only in case candidate prob > sampled token prob
+                            if (p_prime > 0.f) {
+                                auto prob = std::exp(sampled_token.m_log_prob);
+                                prob /= p_prime;
+                                sampled_token.m_log_prob = std::log(prob);
+                            }
                         }
                     }
                 }
@@ -1545,11 +1681,16 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                 bool is_extend_sequence = logit_token_offset == 0 || is_generate_n_tokens || !is_validation_passed;
                 if (is_validation_mode_enabled && !is_extend_sequence) {
                     is_validation_passed = validate_candidate(running_sequences[running_sequence_id], generated_seq_token_offset,
-                                                              sampled_token, is_extend_sequence, assisting_pipeline_info.max_removed_tokens_per_request,
+                                                              sampled_token, logit_vector, is_extend_sequence, assisting_pipeline_info.max_removed_tokens_per_request,
                                                               sampling_params.do_sample, !sampling_params.is_prompt_lookup(), rng_engine);
 
                     // doing resample in case of non accepted tokens in speculative sampling
                     if (!is_validation_passed && sampling_params.do_sample && !sampling_params.is_prompt_lookup()) {
+                        // Capture p(.) for the rejected position now: logit_vector here is the target
+                        // distribution that validated this token (conditioned on the accepted prefix).
+                        // The next iteration advances one position, so its logit would resample the
+                        // reject from the wrong context.
+                        rejected_target_distribution = materialize_distribution(logit_vector, sequence_group_logits.get_shape().back());
                         continue;
                     }
                     // update log prob just while validation process
@@ -1809,7 +1950,53 @@ void Sampler::clear_request_info(uint64_t request_id) {
         m_beam_search_info.erase(request_id);
         m_tree_search_info.erase(request_id);
     }
+    {
+        std::lock_guard<std::mutex> lock(m_draft_distributions_mutex);
+        m_draft_distributions.erase(request_id);
+    }
     m_request_contexts.erase(request_id);
+}
+
+void Sampler::append_draft_distribution(uint64_t request_id, uint64_t grouped_id, std::vector<float> distribution) {
+    std::lock_guard<std::mutex> lock(m_draft_distributions_mutex);
+    m_draft_distributions[request_id][grouped_id].push_back(std::move(distribution));
+}
+
+std::vector<std::vector<float>> Sampler::extract_draft_distributions(uint64_t request_id, uint64_t grouped_id) {
+    std::lock_guard<std::mutex> lock(m_draft_distributions_mutex);
+    auto request_it = m_draft_distributions.find(request_id);
+    if (request_it == m_draft_distributions.end())
+        return {};
+    auto sequence_it = request_it->second.find(grouped_id);
+    if (sequence_it == request_it->second.end())
+        return {};
+    std::vector<std::vector<float>> result = std::move(sequence_it->second);
+    request_it->second.erase(sequence_it);
+    if (request_it->second.empty())
+        m_draft_distributions.erase(request_it);
+    return result;
+}
+
+void Sampler::set_candidate_distributions(uint64_t request_id, uint64_t grouped_id, std::vector<std::vector<float>> distributions) {
+    std::lock_guard<std::mutex> lock(m_draft_distributions_mutex);
+    if (distributions.empty())
+        m_draft_distributions[request_id].erase(grouped_id);
+    else
+        m_draft_distributions[request_id][grouped_id] = std::move(distributions);
+}
+
+std::vector<float> Sampler::get_candidate_distribution(uint64_t request_id, uint64_t grouped_id, size_t token_offset_from_end) {
+    std::lock_guard<std::mutex> lock(m_draft_distributions_mutex);
+    auto request_it = m_draft_distributions.find(request_id);
+    if (request_it == m_draft_distributions.end())
+        return {};
+    auto sequence_it = request_it->second.find(grouped_id);
+    if (sequence_it == request_it->second.end())
+        return {};
+    const auto& window = sequence_it->second;
+    if (token_offset_from_end == 0 || token_offset_from_end > window.size())
+        return {};
+    return window[window.size() - token_offset_from_end];
 }
 
 int64_t Sampler::GroupBeamSearcher::Group::finish(Beam beam, const ov::genai::GenerationConfig& sampling_params) {

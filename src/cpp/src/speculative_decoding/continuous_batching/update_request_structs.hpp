@@ -24,16 +24,24 @@ struct GeneratedSequence {
     // If not using eagle speculative decoding, this field may remain empty.
     ov::Tensor hidden_states;
     std::shared_ptr<const TreeMetaData> tree_metadata;
+    // Full draft-model probability distributions q(.) for the speculated tokens of the
+    // current round, in generation order (one full-vocab vector per proposed token).
+    // Consumed by the main sampler to draw the exact residual max(0, p - q) when a draft
+    // token is rejected under multinomial speculative decoding. Empty for greedy decoding
+    // or when the draft did not expose per-token distributions.
+    std::vector<std::vector<float>> draft_distributions;
     GeneratedSequence(const std::vector<int64_t>& generated_token_ids,
                       const std::vector<float>& generated_log_probs,
                       size_t num_processed_tokens = 0,
                       const ov::Tensor& generated_hidden_states = {},
-                      std::shared_ptr<const TreeMetaData> metadata = nullptr)
+                      std::shared_ptr<const TreeMetaData> metadata = nullptr,
+                      std::vector<std::vector<float>> draft_distributions = {})
         : token_ids(generated_token_ids),
           log_probs(generated_log_probs),
           num_processed_tokens(num_processed_tokens),
           hidden_states(generated_hidden_states),
-          tree_metadata(std::move(metadata)) {};
+          tree_metadata(std::move(metadata)),
+          draft_distributions(std::move(draft_distributions)) {};
 };
 
 struct UpdateRequestResult {
