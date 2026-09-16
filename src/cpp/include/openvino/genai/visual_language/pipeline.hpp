@@ -12,6 +12,7 @@
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "openvino/genai/visual_language/video_metadata.hpp"
+#include "openvino/genai/visual_language/processor.hpp"
 
 namespace ov::genai {
 
@@ -290,6 +291,38 @@ public:
         Properties&&... properties)
         : VLMPipeline(models_map, tokenizer, config_dir_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
+    /// @brief Construct a pipeline from a model path and VLMProcessor.
+    /// Loads only the language model from the specified models_path.
+    /// VLMProcessor's sub-models are already loaded and shared.
+    /// @param models_path A folder containing the language model IR and generation_config.json.
+    /// @param processor A VLMProcessor whose engine is reused.
+    /// @param device Inference device for the language model.
+    /// @param properties A config to pass to ov::Core::compile_model().
+    VLMPipeline(
+        const std::filesystem::path& models_path,
+        const VLMProcessor& processor,
+        const std::string& device,
+        const ov::AnyMap& properties = {}
+    );
+
+    /// @brief Construct a pipeline from a map of pre-loaded models with weights and VLMProcessor.
+    /// Loads only the language model from models_map.
+    /// VLMProcessor's sub-models are already loaded and shared.
+    /// @param models_map A map with at least the "language" model IR and weights.
+    /// @param processor A VLMProcessor whose engine is reused.
+    /// @param config_dir_path A path to directory containing config.json.
+    /// @param device Inference device for the language model.
+    /// @param properties A config to pass to ov::Core::compile_model().
+    /// @param generation_config Optional generation configuration for the pipeline.
+    VLMPipeline(
+        const ModelsMap& models_map,
+        const VLMProcessor& processor,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap& properties = {},
+        const ov::genai::GenerationConfig& generation_config = {}
+    );
+
     /// @brief Default destructor.
     ~VLMPipeline();
 
@@ -485,6 +518,17 @@ public:
             history, AnyMap{std::forward<Properties>(properties)...}
         );
     }
+
+    /// @brief Generate a response given pre-processed inputs from VLMProcessor.
+    /// @param inputs Processed inputs produced by VLMProcessor (merged embeddings and auxiliaries).
+    /// @param generation_config A config to follow for text generation.
+    /// @param streamer A streamer to acquire intermediate result.
+    /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
+    VLMDecodedResults generate(
+        const ProcessedInputs& inputs,
+        const GenerationConfig& generation_config,
+        const StreamerVariant& streamer = std::monostate{}
+    );
 
     /// @brief Activate chat mode. Chat preserves previous history.
     /// Calling start_chat() again or finish_chat() drops the memorized history.

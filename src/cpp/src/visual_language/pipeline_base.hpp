@@ -49,6 +49,12 @@ public:
     VLMDecodedResults generate(const std::string& prompt, const ov::AnyMap& config_map) override;
     VLMDecodedResults generate(const ChatHistory& history, const ov::AnyMap& config_map) override;
 
+    virtual VLMDecodedResults generate(
+        const ProcessedInputs& inputs,
+        const GenerationConfig& generation_config,
+        const StreamerVariant& streamer
+    ) = 0;
+
     /// @brief Activate chat mode (legacy stateful path; deprecated on `VLMPipeline` itself
     /// but kept on the internal base because OmniPipeline / pipeline_base.cpp still calls
     /// these to thread through impls).
