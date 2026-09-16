@@ -38,3 +38,14 @@ install(TARGETS automatic_speech_recognition
     RUNTIME DESTINATION samples_bin/
     COMPONENT samples_bin
     EXCLUDE_FROM_ALL)
+
+add_executable(automatic_speech_recognition_cb automatic_speech_recognition_cb.cpp audio_utils.cpp)
+target_link_libraries(automatic_speech_recognition_cb PRIVATE openvino::genai)
+target_include_directories(automatic_speech_recognition_cb PRIVATE "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
+target_compile_features(automatic_speech_recognition_cb PRIVATE cxx_std_17)
+set_target_properties(automatic_speech_recognition_cb PROPERTIES INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS automatic_speech_recognition_cb
+    RUNTIME DESTINATION samples_bin/
+    COMPONENT samples_bin
+    EXCLUDE_FROM_ALL)
