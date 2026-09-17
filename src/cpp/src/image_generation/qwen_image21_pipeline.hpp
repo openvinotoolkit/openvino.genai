@@ -6,6 +6,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <numeric>
 #include <utility>
@@ -23,10 +24,11 @@
 namespace {
 
 // Qwen-Image 2.1 consumes latents unpatched, so packing is a plain spatial flatten:
-// (B, C, H, W) -> (B, H * W, C).
+// (B, C, ...spatial) -> (B, spatial, C).
 inline ov::Tensor qwen_image21_pack_latents(const ov::Tensor latents) {
     const ov::Shape& shape = latents.get_shape();
-    const size_t batch_size = shape[0], channels = shape[1], spatial = shape[2] * shape[3];
+    const size_t batch_size = shape[0], channels = shape[1];
+    const size_t spatial = std::accumulate(shape.begin() + 2, shape.end(), size_t{1}, std::multiplies<size_t>());
 
     ov::Tensor packed(latents.get_element_type(), {batch_size, spatial, channels});
     const float* src_data = latents.data<const float>();
@@ -92,6 +94,28 @@ inline void qwen_image21_denormalize_latents(ov::Tensor& latents,
     }
 }
 
+// Inverse of qwen_image21_denormalize_latents, applied to freshly encoded condition latents.
+inline void qwen_image21_normalize_latents(ov::Tensor& latents,
+                                           const std::vector<float>& latents_mean,
+                                           const std::vector<float>& latents_std) {
+    const ov::Shape& shape = latents.get_shape();
+    const size_t batch_size = shape[0], channels = shape[1], spatial = shape[2] * shape[3] * shape[4];
+
+    OPENVINO_ASSERT(channels <= latents_mean.size() && channels <= latents_std.size(),
+                    "Latent channels (", channels, ") exceed latents_mean/latents_std size");
+
+    float* data = latents.data<float>();
+    for (size_t b = 0; b < batch_size; ++b) {
+        for (size_t c = 0; c < channels; ++c) {
+            const float mean = latents_mean[c], std_inverse = 1.0f / latents_std[c];
+            float* channel_data = data + (b * channels + c) * spatial;
+            for (size_t i = 0; i < spatial; ++i) {
+                channel_data[i] = (channel_data[i] - mean) * std_inverse;
+            }
+        }
+    }
+}
+
 }  // anonymous namespace
 
 namespace ov {
@@ -106,9 +130,19 @@ public:
 
         set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
-        m_text_encoder = std::make_shared<Qwen3VLForConditionalGeneration>(root_dir / text_encoder_subfolder(data));
-        m_vae = std::make_shared<AutoencoderKLQwenImage>(root_dir / vae_subfolder(data));
         m_transformer = std::make_shared<QwenImage21Transformer2DModel>(root_dir / transformer_subfolder(data));
+
+        const std::filesystem::path text_encoder_dir = root_dir / text_encoder_subfolder(data);
+        const std::filesystem::path vae_decoder_dir = root_dir / vae_subfolder(data);
+        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+            m_text_encoder = std::make_shared<Qwen3VLForConditionalGeneration>(text_encoder_dir,
+                                                                              root_dir / VISION_ENCODER_SUBFOLDER,
+                                                                              root_dir / TEXT_ENCODER_I2I_SUBFOLDER);
+            m_vae = std::make_shared<AutoencoderKLQwenImage>(root_dir / VAE_ENCODER_SUBFOLDER, vae_decoder_dir);
+        } else {
+            m_text_encoder = std::make_shared<Qwen3VLForConditionalGeneration>(text_encoder_dir);
+            m_vae = std::make_shared<AutoencoderKLQwenImage>(vae_decoder_dir);
+        }
 
         initialize_generation_config("QwenImage21Pipeline");
     }
@@ -125,11 +159,22 @@ public:
 
         auto updated_properties = update_adapters_in_properties(properties, &QwenImage21Pipeline::derived_adapters);
 
-        m_text_encoder = std::make_shared<Qwen3VLForConditionalGeneration>(root_dir / text_encoder_subfolder(data),
-                                                                          device, *updated_properties);
-        m_vae = std::make_shared<AutoencoderKLQwenImage>(root_dir / vae_subfolder(data), device, *updated_properties);
         m_transformer = std::make_shared<QwenImage21Transformer2DModel>(root_dir / transformer_subfolder(data),
                                                                        device, *updated_properties);
+
+        const std::filesystem::path text_encoder_dir = root_dir / text_encoder_subfolder(data);
+        const std::filesystem::path vae_decoder_dir = root_dir / vae_subfolder(data);
+        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+            m_text_encoder = std::make_shared<Qwen3VLForConditionalGeneration>(text_encoder_dir,
+                                                                              root_dir / VISION_ENCODER_SUBFOLDER,
+                                                                              root_dir / TEXT_ENCODER_I2I_SUBFOLDER);
+            m_vae = std::make_shared<AutoencoderKLQwenImage>(root_dir / VAE_ENCODER_SUBFOLDER, vae_decoder_dir,
+                                                            device, *updated_properties);
+        } else {
+            m_text_encoder = std::make_shared<Qwen3VLForConditionalGeneration>(text_encoder_dir);
+            m_vae = std::make_shared<AutoencoderKLQwenImage>(vae_decoder_dir, device, *updated_properties);
+        }
+        m_text_encoder->compile(device, *updated_properties);
 
         initialize_generation_config("QwenImage21Pipeline");
         update_adapters_from_properties(properties, m_generation_config.adapters);
@@ -186,14 +231,21 @@ public:
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
         const auto infer_start = std::chrono::steady_clock::now();
 
-        m_positive_prompt_embeds = numpy_utils::repeat(
-            m_text_encoder->infer(positive_prompt, generation_config.max_sequence_length),
-            generation_config.num_images_per_prompt);
+        // The condition image is preprocessed by generate() before this call because the base interface passes
+        // the prompt only.
+        const auto encode = [&](const std::string& prompt) {
+            return numpy_utils::repeat(m_condition_image
+                                           ? m_text_encoder->infer(prompt, m_condition_image, generation_config.max_sequence_length)
+                                           : m_text_encoder->infer(prompt, generation_config.max_sequence_length),
+                                       generation_config.num_images_per_prompt);
+        };
+
+        m_positive_prompt_embeds = encode(positive_prompt);
+        m_positive_image_pad_mask = m_text_encoder->get_image_pad_mask();
 
         if (do_true_cfg(generation_config)) {
-            m_negative_prompt_embeds = numpy_utils::repeat(
-                m_text_encoder->infer(*generation_config.negative_prompt, generation_config.max_sequence_length),
-                generation_config.num_images_per_prompt);
+            m_negative_prompt_embeds = encode(*generation_config.negative_prompt);
+            m_negative_image_pad_mask = m_text_encoder->get_image_pad_mask();
         }
 
         m_perf_metrics.encoder_inference_duration["text_encoder"] =
@@ -208,7 +260,21 @@ public:
                                      generation_config.width / vae_scale_factor};
 
         const ov::Tensor noise = generation_config.generator->randn_tensor(latent_shape);
-        return std::make_tuple(qwen_image21_pack_latents(noise), ov::Tensor(), ov::Tensor(), noise);
+
+        ov::Tensor condition_latents;
+        if (m_condition_image) {
+            const auto encode_start = std::chrono::steady_clock::now();
+            condition_latents = m_vae->encode(to_vae_input(m_condition_image));
+            m_perf_metrics.vae_encoder_inference_duration =
+                std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - encode_start).count();
+
+            const auto& vae_config = m_vae->get_config();
+            qwen_image21_normalize_latents(condition_latents, vae_config.latents_mean, vae_config.latents_std);
+            condition_latents = numpy_utils::repeat(qwen_image21_pack_latents(condition_latents),
+                                                    generation_config.num_images_per_prompt);
+        }
+
+        return std::make_tuple(qwen_image21_pack_latents(noise), ov::Tensor(), condition_latents, noise);
     }
 
     void set_lora_adapters(std::optional<AdapterConfig> adapters) override {
@@ -228,6 +294,31 @@ public:
         m_perf_metrics.clean_up();
         m_custom_generation_config = m_generation_config;
         m_custom_generation_config.update_generation_config(properties);
+
+        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
+        m_condition_image = ov::Tensor();
+
+        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+            OPENVINO_ASSERT(initial_image, "'initial_image' must not be empty for Image 2 image pipeline");
+            const ov::Shape& image_shape = initial_image.get_shape();
+            const Qwen3VLForConditionalGeneration::ImageSize condition_size =
+                Qwen3VLForConditionalGeneration::calculate_dimensions(
+                    DEFAULT_OUTPUT_RESOLUTION * DEFAULT_OUTPUT_RESOLUTION,
+                    static_cast<double>(image_shape[2]) / static_cast<double>(image_shape[1]));
+
+            // Without an explicit resolution the target follows the condition image's aspect ratio.
+            if (m_custom_generation_config.height < 0) {
+                m_custom_generation_config.height = static_cast<int64_t>(condition_size.height);
+            }
+            if (m_custom_generation_config.width < 0) {
+                m_custom_generation_config.width = static_cast<int64_t>(condition_size.width);
+            }
+
+            // One resize feeds both the vision tower and the VAE.
+            m_condition_image = m_image_processor->execute(
+                m_image_resizer->execute(initial_image, condition_size.height, condition_size.width));
+            m_condition_block = {condition_size.height / vae_scale_factor, condition_size.width / vae_scale_factor};
+        }
 
         if (m_custom_generation_config.height < 0) {
             m_custom_generation_config.height = DEFAULT_OUTPUT_RESOLUTION;
@@ -250,23 +341,30 @@ public:
 
         compute_hidden_states(positive_prompt, m_custom_generation_config);
 
-        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const size_t latent_height = m_custom_generation_config.height / vae_scale_factor;
         const size_t latent_width = m_custom_generation_config.width / vae_scale_factor;
         const size_t image_seq_len = latent_height * latent_width;
 
         m_scheduler->set_timesteps_with_mu(m_scheduler->calculate_shift(image_seq_len),
                                            m_custom_generation_config.num_inference_steps,
-                                           m_custom_generation_config.strength);
+                                           1.0f);
         const std::vector<float> timesteps = m_scheduler->get_float_timesteps();
 
-        ov::Tensor latents;
-        std::tie(latents, std::ignore, std::ignore, std::ignore) = prepare_latents(initial_image, m_custom_generation_config);
+        ov::Tensor latents, condition_latents;
+        std::tie(latents, std::ignore, condition_latents, std::ignore) = prepare_latents(initial_image, m_custom_generation_config);
 
-        const JointSequenceInputs positive_inputs = build_joint_sequence_inputs(m_positive_prompt_embeds, latent_height, latent_width);
+        std::vector<LatentBlock> blocks;
+        if (condition_latents) {
+            blocks.push_back(m_condition_block);
+        }
+        blocks.push_back({latent_height, latent_width});
+
+        const JointSequenceInputs positive_inputs =
+            build_joint_sequence_inputs(m_positive_prompt_embeds, m_positive_image_pad_mask, blocks);
         const bool true_cfg = do_true_cfg(m_custom_generation_config);
         const JointSequenceInputs negative_inputs =
-            true_cfg ? build_joint_sequence_inputs(m_negative_prompt_embeds, latent_height, latent_width) : JointSequenceInputs();
+            true_cfg ? build_joint_sequence_inputs(m_negative_prompt_embeds, m_negative_image_pad_mask, blocks)
+                     : JointSequenceInputs();
 
         ov::Tensor timestep_tensor(ov::element::f32, {m_custom_generation_config.num_images_per_prompt});
 
@@ -275,12 +373,16 @@ public:
 
             std::fill_n(timestep_tensor.data<float>(), timestep_tensor.get_size(), timesteps[inference_step] / 1000.0f);
 
+            // Condition latents are static context tokens prepended to the denoised ones.
+            const ov::Tensor model_input =
+                condition_latents ? numpy_utils::concat(condition_latents, latents, 1) : latents;
+
             set_transformer_inputs(m_positive_prompt_embeds, positive_inputs);
-            ov::Tensor noise_pred = infer_transformer(latents, timestep_tensor, image_seq_len);
+            ov::Tensor noise_pred = infer_transformer(model_input, timestep_tensor, image_seq_len);
 
             if (true_cfg) {
                 set_transformer_inputs(m_negative_prompt_embeds, negative_inputs);
-                const ov::Tensor negative_noise_pred = infer_transformer(latents, timestep_tensor, image_seq_len);
+                const ov::Tensor negative_noise_pred = infer_transformer(model_input, timestep_tensor, image_seq_len);
 
                 const float true_cfg_scale = m_custom_generation_config.guidance_scale;
                 float* positive_data = noise_pred.data<float>();
@@ -339,8 +441,8 @@ public:
 
 protected:
     explicit QwenImage21Pipeline(PipelineType pipeline_type) : DiffusionPipeline(pipeline_type) {
-        OPENVINO_ASSERT(pipeline_type == PipelineType::TEXT_2_IMAGE,
-                        "QwenImage21Pipeline supports text to image generation only");
+        OPENVINO_ASSERT(pipeline_type != PipelineType::INPAINTING,
+                        "QwenImage21Pipeline does not support inpainting");
     }
 
     void initialize_generation_config(const std::string& class_name) override {
@@ -370,9 +472,19 @@ protected:
         OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used by QwenImage21Pipeline");
         OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by QwenImage21Pipeline");
 
-        OPENVINO_ASSERT(generation_config.strength == 1.0f,
-                        "'strength' generation parameter must be 1.0f for Text 2 image pipeline");
-        OPENVINO_ASSERT(!initial_image, "'initial_image' must be empty for Text 2 image pipeline");
+        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+            OPENVINO_ASSERT(initial_image, "'initial_image' must not be empty for Image 2 image pipeline");
+            OPENVINO_ASSERT(m_text_encoder->has_vision_tower(),
+                            "Image 2 image generation requires the '", VISION_ENCODER_SUBFOLDER, "' and '",
+                            TEXT_ENCODER_I2I_SUBFOLDER, "' submodels");
+            // Qwen-Image 2.1 does not support variable strength: the condition image enters the joint sequence as
+            // its own token block instead of being blended with noise, so partial denoising is not applicable.
+            // Aligned with diffusers QwenImage21Pipeline which does not accept 'strength'.
+        } else {
+            OPENVINO_ASSERT(generation_config.strength == 1.0f,
+                            "'strength' generation parameter must be 1.0f for Text 2 image pipeline");
+            OPENVINO_ASSERT(!initial_image, "'initial_image' must be empty for Text 2 image pipeline");
+        }
     }
 
     size_t get_config_in_channels() const override {
@@ -398,8 +510,25 @@ private:
         ov::Tensor cos, sin, gather_idx, attn_mask, modulation_mask;
     };
 
+    // Latent extent of one image block of the joint sequence.
+    struct LatentBlock {
+        size_t height = 0;
+        size_t width = 0;
+
+        size_t area() const {
+            return height * width;
+        }
+    };
+
     static constexpr int64_t DEFAULT_OUTPUT_RESOLUTION = 1024;
     static constexpr double ROPE_THETA = 10000.0;
+    // The transformer expands one joint-sequence image slot into a 2x2 group of latent tokens.
+    static constexpr size_t LATENTS_PER_IMAGE_SLOT = 4;
+    static constexpr const char* VISION_ENCODER_SUBFOLDER = "vision_encoder";
+    static constexpr const char* TEXT_ENCODER_I2I_SUBFOLDER = "text_encoder_i2i";
+    static constexpr const char* VAE_ENCODER_SUBFOLDER = "vae_encoder";
+    // Qwen-Image 2.1 encodes and decodes RGBA; a fully opaque alpha channel normalizes to 1.0.
+    static constexpr size_t VAE_IMAGE_CHANNELS = 4;
 
     static nlohmann::json read_model_index(const std::filesystem::path& root_dir) {
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
@@ -432,76 +561,152 @@ private:
         return generation_config.guidance_scale > 1.0f && generation_config.negative_prompt.has_value();
     }
 
+    // (1, 3, H, W) normalized RGB -> (1, 4, 1, H, W) RGBA with the temporal axis the 3D VAE expects.
+    static ov::Tensor to_vae_input(const ov::Tensor normalized_image) {
+        const ov::Shape& shape = normalized_image.get_shape();
+        const size_t batch_size = shape[0], channels = shape[1], spatial = shape[2] * shape[3];
+        OPENVINO_ASSERT(channels < VAE_IMAGE_CHANNELS,
+                        "Condition image must have fewer than ", VAE_IMAGE_CHANNELS, " channels, got ", channels);
+
+        ov::Tensor vae_input(ov::element::f32, {batch_size, VAE_IMAGE_CHANNELS, 1, shape[2], shape[3]});
+        const float* src_data = normalized_image.data<const float>();
+        float* dst_data = vae_input.data<float>();
+
+        for (size_t b = 0; b < batch_size; ++b) {
+            float* image_data = dst_data + b * VAE_IMAGE_CHANNELS * spatial;
+            std::copy_n(src_data + b * channels * spatial, channels * spatial, image_data);
+            std::fill_n(image_data + channels * spatial, (VAE_IMAGE_CHANNELS - channels) * spatial, 1.0f);
+        }
+
+        return vae_input;
+    }
+
     // Builds the rotary table, the joint-sequence gather index, the dense block-causal attention mask and the
-    // modulation mask for the text-to-image layout: `text_length` text tokens followed by a single image block
-    // of `latent_height` x `latent_width` tokens. In that layout the joint sequence already equals
-    // cat([text, image]), so the gather index is the identity.
+    // modulation mask. The prompt reserves one slot per contiguous run of vision placeholders, and the target
+    // image appends its own run; every slot expands into the latent tokens of the matching image block.
     JointSequenceInputs build_joint_sequence_inputs(const ov::Tensor prompt_embeds,
-                                                    const size_t latent_height,
-                                                    const size_t latent_width) const {
+                                                    const ov::Tensor prompt_image_pad_mask,
+                                                    const std::vector<LatentBlock>& blocks) const {
+        OPENVINO_ASSERT(!blocks.empty(), "Joint sequence must contain at least the target image block");
         const size_t batch_size = prompt_embeds.get_shape()[0];
         const size_t text_length = prompt_embeds.get_shape()[1];
-        const size_t image_length = latent_height * latent_width;
-        const size_t seq_len = text_length + image_length;
 
+        std::vector<char> slots(text_length + blocks.back().area() / LATENTS_PER_IMAGE_SLOT, 1);
+        std::copy_n(prompt_image_pad_mask.data<const bool>(), text_length, slots.begin());
+
+        std::vector<size_t> repeats(slots.size(), 1);
+        std::vector<int32_t> slot_block(slots.size(), -1);
+        size_t block_index = 0;
+        for (size_t slot = 0; slot < slots.size();) {
+            if (slots[slot] == 0) {
+                ++slot;
+                continue;
+            }
+            const size_t run_start = slot;
+            while (slot < slots.size() && slots[slot] != 0) {
+                ++slot;
+            }
+            OPENVINO_ASSERT(block_index < blocks.size(),
+                            "Prompt reserves more image slots than there are image blocks");
+            const size_t run_length = slot - run_start;
+            const size_t block_area = blocks[block_index].area();
+            OPENVINO_ASSERT(block_area % run_length == 0,
+                            "Image block of ", block_area, " latent tokens does not fit ", run_length, " prompt slots");
+            std::fill(repeats.begin() + run_start, repeats.begin() + slot, block_area / run_length);
+            std::fill(slot_block.begin() + run_start, slot_block.begin() + slot, static_cast<int32_t>(block_index));
+            ++block_index;
+        }
+        OPENVINO_ASSERT(block_index == blocks.size(),
+                        "Prompt reserves fewer image slots than there are image blocks");
+
+        // Each joint position reads either a text token or an image token of cat([text, image_blocks]).
+        const size_t seq_len = std::accumulate(repeats.begin(), repeats.end(), size_t{0});
+        std::vector<int32_t> token_block;
+        token_block.reserve(seq_len);
         JointSequenceInputs inputs;
-        std::tie(inputs.cos, inputs.sin) = build_rotary_embeddings(text_length, latent_height, latent_width);
-
         inputs.gather_idx = ov::Tensor(ov::element::i64, {seq_len});
         int64_t* gather_data = inputs.gather_idx.data<int64_t>();
-        std::iota(gather_data, gather_data + seq_len, int64_t{0});
 
-        // Attention follows '(q_idx >= kv_idx) or same_image_block': text rows stay causal and cannot attend to
-        // the image block, while every image row attends to the whole sequence.
+        size_t image_token_count = 0;
+        for (size_t slot = 0; slot < slots.size(); ++slot) {
+            for (size_t repeat = 0; repeat < repeats[slot]; ++repeat) {
+                *gather_data++ = slots[slot] != 0 ? static_cast<int64_t>(text_length + image_token_count++)
+                                                  : static_cast<int64_t>(slot);
+                token_block.push_back(slot_block[slot]);
+            }
+        }
+
+        std::tie(inputs.cos, inputs.sin) = build_rotary_embeddings(token_block, blocks);
+
+        // Attention follows '(q_idx >= kv_idx) or same_image_block': text rows stay causal, while an image row
+        // additionally attends to the rest of its own block.
+        std::vector<size_t> block_start(blocks.size(), 0);
+        for (size_t token = seq_len; token-- > 0;) {
+            if (token_block[token] >= 0) {
+                block_start[token_block[token]] = token;
+            }
+        }
+
         inputs.attn_mask = ov::Tensor(ov::element::f32, {batch_size, 1, seq_len, seq_len});
         float* attn_data = inputs.attn_mask.data<float>();
-        std::fill_n(attn_data, inputs.attn_mask.get_size(), 0.0f);
-        for (size_t row = 0; row < text_length; ++row) {
-            std::fill_n(attn_data + row * seq_len + row + 1, seq_len - row - 1,
-                        -std::numeric_limits<float>::infinity());
+        for (size_t row = 0; row < seq_len; ++row) {
+            float* row_data = attn_data + row * seq_len;
+            std::fill_n(row_data, row + 1, 0.0f);
+            std::fill_n(row_data + row + 1, seq_len - row - 1, -std::numeric_limits<float>::infinity());
+            if (token_block[row] >= 0) {
+                std::fill_n(row_data + block_start[token_block[row]], blocks[token_block[row]].area(), 0.0f);
+            }
         }
-        for (size_t b = 1; b < batch_size; ++b) {
-            std::copy_n(attn_data, seq_len * seq_len, attn_data + b * seq_len * seq_len);
+        for (size_t batch = 1; batch < batch_size; ++batch) {
+            std::copy_n(attn_data, seq_len * seq_len, attn_data + batch * seq_len * seq_len);
         }
 
         inputs.modulation_mask = ov::Tensor(ov::element::boolean, {seq_len});
         bool* modulation_data = inputs.modulation_mask.data<bool>();
-        std::fill_n(modulation_data, text_length, false);
-        std::fill_n(modulation_data + text_length, image_length, true);
+        const int32_t target_block = static_cast<int32_t>(blocks.size() - 1);
+        for (size_t token = 0; token < seq_len; ++token) {
+            modulation_data[token] = token_block[token] == target_block;
+        }
 
         return inputs;
     }
 
     // 3-axis (frame, height, width) rotary embedding. Text tokens advance a shared position on all three axes;
-    // the image block freezes the frame axis at the position reached by the text and lays its tokens out on a
-    // height/width grid centred on zero. The half-width table is duplicated onto both halves.
-    std::pair<ov::Tensor, ov::Tensor> build_rotary_embeddings(const size_t text_length,
-                                                              const size_t latent_height,
-                                                              const size_t latent_width) const {
+    // every image block freezes the frame axis at the position reached by the preceding text and lays its tokens
+    // out on a height/width grid centred on zero. The half-width table is duplicated onto both halves.
+    std::pair<ov::Tensor, ov::Tensor> build_rotary_embeddings(const std::vector<int32_t>& token_block,
+                                                              const std::vector<LatentBlock>& blocks) const {
         const std::vector<size_t>& axes_dims_rope = m_transformer->get_config().axes_dims_rope;
         const size_t half_dim = std::accumulate(axes_dims_rope.begin(), axes_dims_rope.end(), size_t{0}) / 2;
         const size_t head_dim = half_dim * 2;
-        const size_t seq_len = text_length + latent_height * latent_width;
+        const size_t seq_len = token_block.size();
+
+        std::vector<std::array<int64_t, 3>> positions(seq_len);
+        int64_t position = 0;
+        for (size_t token = 0; token < seq_len;) {
+            if (token_block[token] < 0) {
+                positions[token] = {position, position, position};
+                ++position;
+                ++token;
+                continue;
+            }
+            const LatentBlock& block = blocks[token_block[token]];
+            const int64_t height_origin = -static_cast<int64_t>(block.height - block.height / 2);
+            const int64_t width_origin = -static_cast<int64_t>(block.width - block.width / 2);
+            for (size_t index = 0; index < block.area(); ++index, ++token) {
+                positions[token] = {position,
+                                    height_origin + static_cast<int64_t>(index / block.width),
+                                    width_origin + static_cast<int64_t>(index % block.width)};
+            }
+            position += static_cast<int64_t>(std::max(block.height, block.width));
+        }
 
         ov::Tensor cos(ov::element::f32, {1, seq_len, 1, head_dim});
         ov::Tensor sin(ov::element::f32, {1, seq_len, 1, head_dim});
         float* cos_data = cos.data<float>();
         float* sin_data = sin.data<float>();
 
-        const int64_t height_origin = -static_cast<int64_t>(latent_height - latent_height / 2);
-        const int64_t width_origin = -static_cast<int64_t>(latent_width - latent_width / 2);
-
         for (size_t token = 0; token < seq_len; ++token) {
-            std::array<int64_t, 3> positions;
-            if (token < text_length) {
-                positions = {static_cast<int64_t>(token), static_cast<int64_t>(token), static_cast<int64_t>(token)};
-            } else {
-                const size_t image_token = token - text_length;
-                positions = {static_cast<int64_t>(text_length),
-                             height_origin + static_cast<int64_t>(image_token / latent_width),
-                             width_origin + static_cast<int64_t>(image_token % latent_width)};
-            }
-
             float* token_cos = cos_data + token * head_dim;
             float* token_sin = sin_data + token * head_dim;
             size_t offset = 0;
@@ -510,7 +715,7 @@ private:
                 for (size_t i = 0; i < axis_half; ++i) {
                     const double inv_freq =
                         1.0 / std::pow(ROPE_THETA, 2.0 * static_cast<double>(i) / static_cast<double>(axes_dims_rope[axis]));
-                    const double angle = static_cast<double>(positions[axis]) * inv_freq;
+                    const double angle = static_cast<double>(positions[token][axis]) * inv_freq;
                     token_cos[offset + i] = token_cos[half_dim + offset + i] = static_cast<float>(std::cos(angle));
                     token_sin[offset + i] = token_sin[half_dim + offset + i] = static_cast<float>(std::sin(angle));
                 }
@@ -531,7 +736,7 @@ private:
     }
 
     // The transformer returns the whole joint sequence; only the trailing image tokens are the noise prediction.
-    ov::Tensor infer_transformer(const ov::Tensor latents, const ov::Tensor timestep, const size_t image_seq_len) {
+    ov::Tensor infer_transformer(const ov::Tensor& latents, const ov::Tensor& timestep, const size_t image_seq_len) {
         const auto infer_start = std::chrono::steady_clock::now();
         const ov::Tensor joint_output = m_transformer->infer(latents, timestep);
         m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(
@@ -549,8 +754,11 @@ private:
     std::shared_ptr<AutoencoderKLQwenImage> m_vae;
     std::shared_ptr<QwenImage21Transformer2DModel> m_transformer;
 
-    ov::Tensor m_positive_prompt_embeds;
-    ov::Tensor m_negative_prompt_embeds;
+    ov::Tensor m_positive_prompt_embeds, m_positive_image_pad_mask;
+    ov::Tensor m_negative_prompt_embeds, m_negative_image_pad_mask;
+
+    ov::Tensor m_condition_image;
+    LatentBlock m_condition_block;
 
     ImageGenerationConfig m_custom_generation_config;
     ImageGenerationPerfMetrics m_perf_metrics;
