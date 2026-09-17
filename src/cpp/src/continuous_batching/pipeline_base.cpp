@@ -322,6 +322,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
              const std::vector<std::vector<ov::Tensor>>& images_vector,
              const std::vector<std::vector<ov::Tensor>>& videos_vector,
              const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
+             const std::vector<std::vector<ov::Tensor>>& audios_vector,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) {
     auto generate_start_time = std::chrono::steady_clock::now();
@@ -333,6 +334,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         "Number of prompts should be equal to the number of images and videos vectors.");
     OPENVINO_ASSERT(prompts.size() == videos_metadata_vector.size(),
         "Number of prompts should be equal to the number of videos metadata vector.");
+    OPENVINO_ASSERT(prompts.size() == audios_vector.size(),
+        "Number of prompts should be equal to the number of audios vector.");
 
     std::vector<ov::Tensor> input_embeds_list;
     std::vector<std::pair<ov::Tensor, std::optional<int64_t>>> position_ids_list;
@@ -391,10 +394,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         // Encode this prompt's audios under m_embeddings_mutex right before tokenization.
         // encoded_audios is a local, so an empty batch yields an empty list rather than leaving a
         // previous turn's audio live — that aliasing was the stale-audio bug.
-        if (!m_pending_audios_batches.empty() && !m_pending_audios_batches[0].empty()) {
+        if (!audios_vector[0].empty()) {
             std::lock_guard<std::mutex> lock(m_embeddings_mutex);
             const auto audio_encoding_start = std::chrono::steady_clock::now();
-            encoded_audios = m_inputs_embedder->encode_audios(m_pending_audios_batches[0]);
+            encoded_audios = m_inputs_embedder->encode_audios(audios_vector[0]);
             PerfMetrics::emplace_duration(vlm_perf_metrics[0].vlm_raw_metrics.audio_encoding_durations, audio_encoding_start);
         }
 
@@ -459,10 +462,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             // Per-prompt local: each prompt in the batch gets its own encodings, so one prompt's
             // audio cannot leak into the next.
             std::vector<ov::genai::EncodedAudio> encoded_audios;
-            if (i < m_pending_audios_batches.size() && !m_pending_audios_batches[i].empty()) {
+            if (!audios_vector[i].empty()) {
                 std::lock_guard<std::mutex> lock(m_embeddings_mutex);
                 const auto audio_encoding_start = std::chrono::steady_clock::now();
-                encoded_audios = m_inputs_embedder->encode_audios(m_pending_audios_batches[i]);
+                encoded_audios = m_inputs_embedder->encode_audios(audios_vector[i]);
                 PerfMetrics::emplace_duration(vlm_perf_metrics[i].vlm_raw_metrics.audio_encoding_durations, audio_encoding_start);
             }
 
@@ -591,20 +594,36 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<std::vector<ov::Tensor>>& images_vector,
     const std::vector<std::vector<ov::Tensor>>& videos_vector,
     const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
-    const std::vector<std::vector<ov::Tensor>>& audios_vector,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer
 ) {
-    // Stash audios per-request and clear on scope exit so the inner per-prompt loop can
-    // encode the i-th batch immediately before tokenizing prompts[i]. Pre-encoding all
-    // batches up front would overwrite the embedder's audio cache and leave every prompt
-    // seeing the last batch's embeddings.
-    struct PendingAudiosGuard {
-        std::vector<std::vector<ov::Tensor>>& slot;
-        ~PendingAudiosGuard() { slot.clear(); }
-    } guard{m_pending_audios_batches};
-    m_pending_audios_batches = audios_vector;
-    return generate(prompts, images_vector, videos_vector, videos_metadata_vector, sampling_params, streamer);
+    const std::vector<std::vector<ov::Tensor>> no_audios(prompts.size());
+    return generate(prompts,
+                    images_vector,
+                    videos_vector,
+                    videos_metadata_vector,
+                    no_audios,
+                    sampling_params,
+                    streamer);
+}
+
+std::vector<VLMDecodedResults>
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+    const std::vector<ChatHistory>& histories,
+    const std::vector<std::vector<ov::Tensor>>& images_vector,
+    const std::vector<std::vector<ov::Tensor>>& videos_vector,
+    const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer
+) {
+    const std::vector<std::vector<ov::Tensor>> no_audios(histories.size());
+    return generate(histories,
+                    images_vector,
+                    videos_vector,
+                    videos_metadata_vector,
+                    no_audios,
+                    sampling_params,
+                    streamer);
 }
 
 std::vector<VLMDecodedResults>
@@ -614,24 +633,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<std::vector<ov::Tensor>>& videos_vector,
     const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
     const std::vector<std::vector<ov::Tensor>>& audios_vector,
-    const std::vector<GenerationConfig>& sampling_params,
-    const StreamerVariant& streamer
-) {
-    // Same per-prompt deferral as the prompts overload — see comment there.
-    struct PendingAudiosGuard {
-        std::vector<std::vector<ov::Tensor>>& slot;
-        ~PendingAudiosGuard() { slot.clear(); }
-    } guard{m_pending_audios_batches};
-    m_pending_audios_batches = audios_vector;
-    return generate(histories, images_vector, videos_vector, videos_metadata_vector, sampling_params, streamer);
-}
-
-std::vector<VLMDecodedResults>
-ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
-    const std::vector<ChatHistory>& histories,
-    const std::vector<std::vector<ov::Tensor>>& images_vector,
-    const std::vector<std::vector<ov::Tensor>>& videos_vector,
-    const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer
 ) {
@@ -645,6 +646,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     );
     OPENVINO_ASSERT(histories.size() == videos_metadata_vector.size(),
         "Number of chat histories should be equal to the number of videos metadata vector.");
+    OPENVINO_ASSERT(histories.size() == audios_vector.size(),
+        "Number of chat histories should be equal to the number of audios vector.");
 
     std::vector<ov::Tensor> input_embeds_list;
     std::vector<std::pair<ov::Tensor, std::optional<int64_t>>> position_ids_list;
@@ -681,12 +684,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         // Audio goes through the chat context so it is registered, content-hashed and reused
         // across turns exactly like images and video, rather than re-encoded every turn.
-        const auto& audios_for_history =
-            i < m_pending_audios_batches.size() ? m_pending_audios_batches[i] : std::vector<ov::Tensor>{};
         auto processed_chat_data = chat_contexts[i].process(images_vector[i],
                                                            videos_vector[i],
                                                            videos_metadata_vector[i],
-                                                           audios_for_history);
+                                                           audios_vector[i]);
 
         vlm_perf_metrics[i].vlm_raw_metrics.vision_encoding_durations.emplace_back(
             processed_chat_data.vision_encoding_duration
