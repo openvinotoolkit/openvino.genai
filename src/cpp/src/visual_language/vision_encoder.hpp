@@ -3,14 +3,15 @@
 
 #pragma once
 #include <memory>
-
-#include "circular_buffer_queue.hpp"
-#include "openvino/genai/common_types.hpp"
-#include "openvino/genai/visual_language/video_metadata.hpp"
 #include "openvino/runtime/infer_request.hpp"
+
+#include "openvino/genai/common_types.hpp"
+#include "visual_language/vlm_config.hpp"
 #include "visual_language/processor_config.hpp"
 #include "visual_language/video_processor_config.hpp"
-#include "visual_language/vlm_config.hpp"
+#include "circular_buffer_queue.hpp"
+#include "openvino/genai/visual_language/video_metadata.hpp"
+
 
 namespace ov::genai {
 
@@ -70,8 +71,7 @@ struct EncodedImage {
 
 /// @brief Embeddings of a given video. 
 struct EncodedVideo {
-    /// @brief Embeddings of a given video obtained by applying preprocessing to frames and feature extracting models
-    /// (resampler, mm_projector, etc.)
+    /// @brief Embeddings of a given video obtained by applying preprocessing to frames and feature extracting models (resampler, mm_projector, etc.)
     ov::Tensor video_features;
 
     /// @brief Number of video tokens required to append to a normalized prompt
@@ -164,12 +164,10 @@ protected:
     VisionEncoder(const ModelsMap& models_map, const std::filesystem::path& config_dir, ConfigOnlyTag);
 
 public:
-    VisionEncoder(const std::shared_ptr<ov::Model>& model,
-                  const ProcessorConfig& processor,
-                  const std::string& device,
-                  const ov::AnyMap& properties);
-
-    VisionEncoder(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties);
+    VisionEncoder(
+        const std::filesystem::path& model_dir,
+        const std::string& device,
+        const ov::AnyMap properties);
 
     VisionEncoder(
         const ModelsMap& models_map,

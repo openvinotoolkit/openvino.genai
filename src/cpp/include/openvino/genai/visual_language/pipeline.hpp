@@ -3,9 +3,9 @@
 
 #pragma once
 
-#include <filesystem>
 #include <string>
 #include <vector>
+#include <filesystem>
 
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/streamer_base.hpp"
@@ -14,10 +14,6 @@
 #include "openvino/genai/visual_language/video_metadata.hpp"
 
 namespace ov::genai {
-
-/// Matching multimodal encoder/projector GGUF for a language GGUF passed to VLMPipeline.
-/// This loading route uses the OpenVINO GGUF frontend.
-static constexpr ov::Property<std::string> mmproj_path{"mmproj_path"};
 
 class OPENVINO_GENAI_EXPORTS VLMDecodedResults : public DecodedResults{
 public:
@@ -61,8 +57,7 @@ public:
     /// @param streamer A streamer to acquire intermediate result.
     /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
     /// chat_template will be applied to the prompt, run pipe.set_chat_template(custom_chat_template) to update it.
-    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set
-    /// generation_config.apply_chat_template to false.
+    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set generation_config.apply_chat_template to false.
     virtual VLMDecodedResults generate(const std::string& prompt,
                                        const std::vector<ov::Tensor>& images,
                                        const GenerationConfig& generation_config,
@@ -78,8 +73,7 @@ public:
     /// @param streamer A streamer to acquire intermediate result.
     /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
     /// chat_template will be applied to the prompt, run pipe.set_chat_template(custom_chat_template) to update it.
-    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set
-    /// generation_config.apply_chat_template to false.
+    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set generation_config.apply_chat_template to false.
     virtual VLMDecodedResults generate(const std::string& prompt,
                                        const std::vector<ov::Tensor>& images,
                                        const std::vector<ov::Tensor>& videos,
@@ -110,8 +104,7 @@ public:
     /// images/videos, and audios.
     /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
     /// chat_template will be applied to the prompt, run pipe.set_chat_template(custom_chat_template) to update it.
-    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set
-    /// generation_config.apply_chat_template to false.
+    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set generation_config.apply_chat_template to false.
     virtual VLMDecodedResults generate(const std::string& prompt, const ov::AnyMap& config_map) = 0;
 
     /// @brief Generate a response given a chat history and any number of
@@ -250,8 +243,8 @@ public:
     );
 
     /// @brief Construct a pipeline from a map of models and their weights.
-    /// @param models_map A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language",
-    /// "resampler") and value is a pair of model IR as string and weights as tensor.
+    /// @param models_map A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
+    /// and value is a pair of model IR as string and weights as tensor.
     /// @param tokenizer A tokenizer.
     /// @param config_dir_path A path to directory containing config.json.
     /// @param device Inference device. A tokenizer is always compiled
@@ -281,8 +274,8 @@ public:
         : VLMPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     /// @brief Construct a pipeline from a map of models and their weights.
-    /// @param models_map A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language",
-    /// "resampler") and value is a pair of model IR as string and weights as tensor.
+    /// @param models_map A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
+    /// and value is a pair of model IR as string and weights as tensor.
     /// @param tokenizer A tokenizer.
     /// @param config_dir_path A path to directory containing config.json.
     /// @param device Inference device. A tokenizer is always compiled
@@ -310,8 +303,7 @@ public:
     /// @param streamer A streamer to acquire intermediate result.
     /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
     /// chat_template will be applied to the prompt, run pipe.set_chat_template(custom_chat_template) to update it.
-    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set
-    /// generation_config.apply_chat_template to false.
+    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set generation_config.apply_chat_template to false.
     VLMDecodedResults generate(
         const std::string& prompt,
         const std::vector<ov::Tensor>& images,
@@ -329,8 +321,7 @@ public:
     /// @param streamer A streamer to acquire intermediate result.
     /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
     /// chat_template will be applied to the prompt, run pipe.set_chat_template(custom_chat_template) to update it.
-    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set
-    /// generation_config.apply_chat_template to false.
+    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set generation_config.apply_chat_template to false.
     VLMDecodedResults generate(
         const std::string& prompt,
         const std::vector<ov::Tensor>& images,
@@ -363,8 +354,7 @@ public:
     /// images/videos, and audios.
     /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
     /// chat_template will be applied to the prompt, run pipe.set_chat_template(custom_chat_template) to update it.
-    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set
-    /// generation_config.apply_chat_template to false.
+    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set generation_config.apply_chat_template to false.
     VLMDecodedResults generate(
         const std::string& prompt,
         const ov::AnyMap& config_map
@@ -381,8 +371,7 @@ public:
     /// ov::AnyMap.
     /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
     /// chat_template will be applied to the prompt, run pipe.set_chat_template(custom_chat_template) to update it.
-    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set
-    /// generation_config.apply_chat_template to false.
+    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set generation_config.apply_chat_template to false.
     template <typename... Properties>
     util::EnableIfAllStringAny<VLMDecodedResults, Properties...> generate(
         const std::string& prompt,
@@ -560,4 +549,4 @@ static constexpr ov::Property<std::vector<ov::Tensor>> images{"images"};
 static constexpr ov::Property<std::vector<ov::Tensor>> videos{"videos"};
 static constexpr ov::Property<std::vector<VideoMetadata>> videos_metadata{"videos_metadata"};
 static constexpr ov::Property<std::vector<ov::Tensor>> audios{"audios"};
-}  // namespace ov::genai
+}

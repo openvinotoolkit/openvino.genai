@@ -4,19 +4,21 @@
 #pragma once
 
 #include <filesystem>
-#include <memory>
-#include <openvino/openvino.hpp>
-#include <string>
 #include <vector>
+#include <string>
+#include <memory>
 
-#include "circular_buffer_queue.hpp"
 #include "openvino/core/any.hpp"
 #include "openvino/runtime/core.hpp"
+#include "openvino/runtime/tensor.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/properties.hpp"
-#include "openvino/runtime/tensor.hpp"
-#include "visual_language/processor_config.hpp"
+
 #include "visual_language/vlm_config.hpp"
+
+#include <openvino/openvino.hpp>
+#include "visual_language/processor_config.hpp"
+#include "circular_buffer_queue.hpp"
 
 namespace ov {
 namespace genai {
@@ -43,7 +45,6 @@ public:
                     const ov::AnyMap& properties);
 
     EmbeddingsModel() = default;
-    EmbeddingsModel(const std::shared_ptr<ov::Model>& model, const std::string& device, const ov::AnyMap& properties);
 
     static Ptr create(const std::filesystem::path& model_dir,
                       const float scale_emb,

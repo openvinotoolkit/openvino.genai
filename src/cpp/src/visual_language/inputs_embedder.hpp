@@ -3,22 +3,22 @@
 
 #pragma once
 
-#include <filesystem>
-#include <functional>
-#include <regex>
 #include <string>
 #include <vector>
+#include <filesystem>
+#include <regex>
+#include <functional>
 
+#include "utils.hpp"
 #include "lm_encoding.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
-#include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/tensor.hpp"
-#include "utils.hpp"
+#include "openvino/runtime/infer_request.hpp"
+#include "visual_language/vlm_config.hpp"
 #include "visual_language/embedding_model.hpp"
 #include "visual_language/vision_encoder.hpp"
 #include "visual_language/vision_token_pruning_processor.hpp"
-#include "visual_language/vlm_config.hpp"
 
 namespace ov::genai {
 struct VLMPerfMetrics;
@@ -34,11 +34,6 @@ struct NormalizedPrompt {
 
 class InputsEmbedder {
 public:
-    InputsEmbedder(const VLMConfig& config,
-                   const Tokenizer& tokenizer,
-                   const VisionEncoder::Ptr& vision,
-                   const EmbeddingsModel::Ptr& embeddings,
-                   const std::string& device);
     InputsEmbedder(const std::filesystem::path& model_dir,
                    const Tokenizer& tokenizer,
                    const std::string& device,
@@ -274,13 +269,8 @@ private:
             const std::vector<EncodedVideo>& videos) const;
 
     protected:
-        IInputsEmbedder(const VLMConfig& config,
-                        const Tokenizer& tokenizer,
-                        const VisionEncoder::Ptr& vision,
-                        const EmbeddingsModel::Ptr& embeddings,
-                        const std::string& device);
-
-        IInputsEmbedder(const VLMConfig& vlm_config,
+        IInputsEmbedder(
+            const VLMConfig& vlm_config,
             const std::filesystem::path& model_dir,
             const Tokenizer& tokenizer,
             const std::string& device,
@@ -328,8 +318,7 @@ private:
         /**
         * @brief Converts a vector of batched images ([NHWC]) into a vector of individual image tensors ([1HWC]).
         *
-         * @param images A vector of tensors representing the images. Each tensor can have a shape of either [NHWC] or
-         * [HWC].
+        * @param images A vector of tensors representing the images. Each tensor can have a shape of either [NHWC] or [HWC].
         * @return A vector of tensors where each tensor represents a single image with a shape of [1, H, W, C].
         */
         std::vector<ov::Tensor> to_single_image_tensors(const std::vector<ov::Tensor>& images);
