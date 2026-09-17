@@ -313,8 +313,9 @@ class TextAgentEvaluator(BaseEvaluator):
                     trust_remote_code=True,
                 )
             custom_template = self._get_tokenizer_chat_template(custom_tokenizer)
-            if custom_template is not None:
-                return custom_template
+            if custom_template is None:
+                raise ValueError("Custom chat template is loaded wrong, custom template is empty.")
+            return custom_template
 
         if tokenizer is not None:
             try:
@@ -382,14 +383,7 @@ class TextAgentEvaluator(BaseEvaluator):
 
     def _build_templated_prompt(self, tokenizer, messages, tools, chat_template, backend_name: str) -> str:
         if chat_template is not None:
-            try:
-                return self._render_messages_to_prompt(messages, tools, chat_template)
-            except Exception as render_exc:
-                logger.warning(
-                    "Template rendering failed for current record in %s path; falling back to tokenizer.apply_chat_template. Error: %s",
-                    backend_name,
-                    render_exc,
-                )
+            return self._render_messages_to_prompt(messages, tools, chat_template)
 
         return self._apply_tokenizer_chat_template_to_prompt(tokenizer, messages, tools)
 
@@ -402,17 +396,7 @@ class TextAgentEvaluator(BaseEvaluator):
         return self._build_templated_prompt(tokenizer, messages, None, chat_template, backend_name)
 
     def _build_prompt_text(self, tokenizer, messages, tools, chat_template, backend_name: str) -> str:
-        try:
-            return self._build_templated_prompt(tokenizer, messages, tools, chat_template, backend_name)
-        except Exception as template_exc:
-            if tools is None:
-                raise
-            logger.warning(
-                "tokenizer.apply_chat_template failed with tools in %s path; retrying without tools. Error: %s",
-                backend_name,
-                template_exc,
-            )
-            return self._build_prompt_text_without_tools(tokenizer, messages, chat_template, backend_name)
+        return self._build_templated_prompt(tokenizer, messages, tools, chat_template, backend_name)
 
     def _generate_non_genai(self, model, tokenizer, record: Dict[str, Any], chat_template: Optional[str]) -> str:
         messages = record["messages"]
@@ -497,7 +481,7 @@ class TextAgentEvaluator(BaseEvaluator):
 
         model_chat_template = getattr(genai_tokenizer, "chat_template", None) if genai_tokenizer is not None else None
 
-        if chat_template:
+        if chat_template and self.chat_template_source:
             if genai_tokenizer is not None and hasattr(genai_tokenizer, "set_chat_template"):
                 try:
                     genai_tokenizer.set_chat_template(chat_template)
@@ -526,16 +510,6 @@ class TextAgentEvaluator(BaseEvaluator):
                     logger.warning(
                         "ChatHistory.set_extra_context is not available in current OpenVINO GenAI package; template extra context was not applied"
                     )
-
-        # Keep legacy prompt-path behavior when template is not explicitly overridden.
-        # This preserves HF/GenAI output alignment in text-agent E2E tests.
-        if not self.chat_template_source:
-            prompt = self._build_prompt_text(_tokenizer, messages, tools, chat_template, backend_name="GenAI")
-            kwargs["apply_chat_template"] = False
-            res = model.generate(prompt, **kwargs)
-            if hasattr(res, "texts") and len(res.texts) > 0:
-                return res.texts[0]
-            return str(res)
 
         if tools is not None:
             if hasattr(history, "set_tools"):
