@@ -273,9 +273,7 @@ public:
                                                        plugin_config,
                                                        is_validation_mode_enabled) {
         mtp_mode_enabled = true;
-        OPENVINO_ASSERT(!scheduler_config.enable_prefix_caching || is_validation_mode_enabled ||
-                    !m_scheduler->has_linear_attention_cache(),
-                "Prefix-enabled MTP draft pipelines with linear-attention state are not supported");
+        validate_prefix_cache_support(scheduler_config, is_validation_mode_enabled);
         m_inputs_embedder = inputs_embedder;
         m_model_runner->set_inputs_embedder(inputs_embedder);
         m_model_input_type = ModelInputType::EMBEDDINGS;
@@ -285,6 +283,14 @@ public:
         if (m_model_runner) {
             m_model_runner->enable_mtp_draft_positions(is_needed);
         }
+    }
+
+protected:
+    void validate_prefix_cache_support(const SchedulerConfig& scheduler_config,
+                                       bool is_validation_mode_enabled) const {
+        OPENVINO_ASSERT(!scheduler_config.enable_prefix_caching || is_validation_mode_enabled ||
+                    !m_scheduler->has_linear_attention_cache(),
+                "Prefix-enabled MTP draft pipelines with linear-attention state are not supported");
     }
 };
 }

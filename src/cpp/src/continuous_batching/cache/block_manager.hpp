@@ -874,6 +874,8 @@ public:
 
 private:
     using TemporaryBlockTable = std::vector<BlockAllocator::UncachedBlockAllocation>;
+    using PrefixRestoreReleases = std::vector<BlockAllocator::PreparedBlockRelease>;
+    std::map<uint64_t, PrefixRestoreReleases> m_prefix_restore_releases;
 
     void replace_linear_attention_live_rows(LinearAttentionLiveState& live_state,
                                             const BlocksPerLayer& rows) noexcept {
@@ -953,6 +955,7 @@ public:
             m_owner.m_block_table.merge(m_tables);
             m_owner.m_block_table_logical_start.merge(m_logical_starts);
             m_owner.m_linear_attention_live_states.merge(m_live_states);
+            m_owner.m_prefix_restore_releases.merge(m_releases);
             m_applied = true;
         }
 
@@ -967,6 +970,7 @@ public:
         std::map<uint64_t, std::vector<BlocksPerLayer>> m_tables;
         std::map<uint64_t, size_t> m_logical_starts;
         std::map<uint64_t, LinearAttentionLiveState> m_live_states;
+        std::map<uint64_t, PrefixRestoreReleases> m_releases;
         bool m_applied = false;
     };
 
@@ -991,6 +995,8 @@ public:
         }
         PreparedPrefixRestore prepared(*this, std::move(lock));
         auto& tables = prepared.m_tables.try_emplace(seq_id, m_num_layers).first->second;
+        auto& releases = prepared.m_releases[seq_id];
+        releases.reserve(plan.block_content_lengths.size());
         prepared.m_blocks.reserve(plan.block_content_lengths.size());
         for (auto& table : tables) {
             table.reserve(plan.block_content_lengths.size());
@@ -1006,6 +1012,7 @@ public:
                                 "Restored prefix row identity is inconsistent");
                 tables[layer].push_back(rows[layer]);
             }
+            releases.push_back(m_allocator.prepare_block_release(rows, m_prefix_hash_to_cached_blocks));
             prepared.m_blocks.emplace_back(hash, std::move(rows));
         }
         if (m_restore_latest_prefix_block_only) {
@@ -1055,6 +1062,7 @@ public:
                     layer_table.resize(layer_table.size() - release.blocks.size());
                 }
                 if (release.table_it->second.front().empty()) {
+                    m_owner->m_prefix_restore_releases.erase(release.seq_id);
                     m_owner->m_block_table_logical_start.erase(release.seq_id);
                     m_owner->m_block_table.erase(release.table_it);
                 }
@@ -1456,6 +1464,7 @@ public:
         }
 
         if (block_table[0].size() == 0) {
+            m_prefix_restore_releases.erase(seq_id);
             m_block_table_logical_start.erase(seq_id);
             OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
          }
@@ -2122,6 +2131,35 @@ public:
         auto& block_table = m_block_table[seq_id];
         size_t effective_num_layers = block_table.size();
         size_t num_allocated_blocks = block_table[0].size();
+        const auto restored = m_prefix_restore_releases.find(seq_id);
+        if (restored != m_prefix_restore_releases.end()) {
+            bool unchanged = restored->second.size() == num_allocated_blocks;
+            for (size_t position = 0; unchanged && position < num_allocated_blocks; ++position) {
+                const auto& rows = restored->second[position].allocation.blocks;
+                for (size_t layer = 0; layer < effective_num_layers; ++layer) {
+                    unchanged = unchanged && block_table[layer][position] == rows[layer];
+                }
+                if (!unchanged || !rows.front()->has_published_hash()) {
+                    unchanged = false;
+                    break;
+                }
+                const auto registered = m_prefix_hash_to_cached_blocks.find(rows.front()->get_hash());
+                unchanged = unchanged && registered != m_prefix_hash_to_cached_blocks.end() &&
+                            registered->second == rows &&
+                            !restored->second[position].cached_node.empty() &&
+                            restored->second[position].cached_node.begin()->first == registered->first;
+            }
+            if (unchanged) {
+                for (auto& release : restored->second) {
+                    m_allocator.release_prepared_block(release);
+                }
+                m_prefix_restore_releases.erase(restored);
+                m_block_table.erase(seq_id);
+                m_block_table_logical_start.erase(seq_id);
+                return;
+            }
+            m_prefix_restore_releases.erase(restored);
+        }
         for (size_t i = 0; i < num_allocated_blocks; i++) {
             BlocksPerLayer blocks_to_free;
             blocks_to_free.reserve(effective_num_layers);
@@ -2172,6 +2210,7 @@ public:
             // The invariant must hold at BlockManager level that all per-layer block tables
             // must have the same size
             OPENVINO_ASSERT(all_freed_completely, "block tables across layers should only be empty all at once");
+            m_prefix_restore_releases.erase(seq_id);
             OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
             m_block_table_logical_start.erase(seq_id);
         }
@@ -2343,6 +2382,7 @@ public:
             auto it = m_block_table.find(seq_id);
             if (it == m_block_table.end() || it->second.empty() || it->second[0].empty()) {
                 if (num_logical_blocks == 0 && it != m_block_table.end()) {
+                    m_prefix_restore_releases.erase(seq_id);
                     m_block_table_logical_start.erase(seq_id);
                     OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
                 }

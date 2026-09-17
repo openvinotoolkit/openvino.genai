@@ -452,7 +452,11 @@ public:
         if (m_block_managers.size() == 1) {
             auto& manager = *m_block_managers.begin()->second;
             const auto plan = manager.get_prefix_restore_plan(sequence_group, max_processed_tokens);
-            manager.restore_cached_blocks(sequence_group, plan);
+            auto prepared = manager.prepare_prefix_restore(sequence_group, plan);
+            if (prepared) {
+                prepared->apply();
+                sequence_group->update_processed_tokens_num(plan.processed_tokens);
+            }
             return;
         }
 
