@@ -20,6 +20,7 @@
 #include "speculative_decoding/stateful/gemma4_mtp_strategy.hpp"
 #include "utils.hpp"
 #include "gguf_utils/gguf_modeling.hpp"
+#include "gguf_utils/gguf_tokenizer.hpp"
 #include "model_desc.hpp"
 
 namespace {
@@ -302,7 +303,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
 
     // The reader choice determines whether tokenizer metadata is available on the model.
-    const bool use_legacy_reader = utils::extract_gguf_properties(properties).use_legacy_reader();
+    const auto gguf_properties = utils::extract_gguf_properties(properties);
 
     // Read model and create tokenizer once to avoid double I/O during pipeline construction.
     std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
@@ -310,12 +311,13 @@ ov::genai::LLMPipeline::LLMPipeline(
     // tokenizer from what was already read instead of re-opening the .gguf. Exceptions: the
     // legacy reader's model has no such rt_info, and enable_save_ov_model needs the source
     // directory to write the tokenizer/detokenizer IRs to, which the metadata alone can't give.
-    const bool needs_tokenizer_from_file =
-        utils::extract_gguf_properties(properties).enable_save_ov_model || use_legacy_reader;
+    const bool tokenizer_from_model = is_gguf_model(models_path) && !gguf_properties.enable_save_ov_model &&
+                                      !gguf_properties.use_legacy_reader();
     const Tokenizer tokenizer =
-        (models_path.extension() == ".gguf" && !needs_tokenizer_from_file)
-            ? Tokenizer(GGUFTokenizerParameters::from_model(model), properties)
-            : Tokenizer(models_path, properties);
+        tokenizer_from_model ? Tokenizer(GGUFTokenizerParameters(take_gguf_tokenizer_metadata(model)), properties)
+                             : Tokenizer(models_path, properties);
+    // On the from-file path the frontend's metadata is still on the model and no longer read.
+    erase_gguf_tokenizer_metadata(model);
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
     if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {

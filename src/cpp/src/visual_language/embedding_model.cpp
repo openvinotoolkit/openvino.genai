@@ -1,17 +1,16 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include "embedding_model.hpp"
+
 #include <fstream>
 #include <memory>
 
-#include "openvino/runtime/core.hpp"
 #include "openvino/core/preprocess/pre_post_process.hpp"
-#include "openvino/op/multiply.hpp"
 #include "openvino/op/constant.hpp"
-
+#include "openvino/op/multiply.hpp"
+#include "openvino/runtime/core.hpp"
 #include "utils.hpp"
-
-#include "embedding_model.hpp"
 
 namespace {
 
@@ -39,6 +38,16 @@ std::unique_ptr<ov::genai::CircularBufferQueue<ov::genai::EmbeddingsRequest>> in
 
 namespace ov {
 namespace genai {
+
+EmbeddingsModel::EmbeddingsModel(const std::shared_ptr<ov::Model>& model,
+                                 const std::string& device,
+                                 const ov::AnyMap& properties) {
+    auto compiled =
+        utils::singleton_core().compile_model(model,
+                                              device,
+                                              utils::get_model_properties(properties, "text_embeddings", device));
+    m_embeddings_requests_queue = init(compiled);
+}
 
 EmbeddingsModel::EmbeddingsModel(const std::filesystem::path& model_dir,
                                  const float scale_emb,

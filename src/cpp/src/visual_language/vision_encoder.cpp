@@ -1,34 +1,49 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <fstream>
-
 #include "vision_encoder.hpp"
 
-#include "utils.hpp"
-#include "logger.hpp"
+#include <fstream>
 
-#include "visual_language/qwen2vl/classes.hpp"
-#include "visual_language/qwen2_5_vl/classes.hpp"
-#include "visual_language/qwen3_vl/classes.hpp"
-#include "visual_language/qwen3_5/classes.hpp"
-#include "visual_language/qwen3_omni/classes.hpp"
-#include "visual_language/phi3_vision/classes.hpp"
-#include "visual_language/phi4mm/classes.hpp"
-#include "visual_language/minicpm/classes.hpp"
-#include "visual_language/nanollava/classes.hpp"
-#include "visual_language/llava/classes.hpp"
-#include "visual_language/llava_next/classes.hpp"
-#include "visual_language/llava_next_video/classes.hpp"
-#include "visual_language/internvl_chat/classes.hpp"
+#include "logger.hpp"
+#include "utils.hpp"
+#include "visual_language/deepseek_ocr2/classes.hpp"
 #include "visual_language/gemma3/classes.hpp"
 #include "visual_language/gemma3n/classes.hpp"
 #include "visual_language/gemma4/classes.hpp"
-#include "visual_language/deepseek_ocr2/classes.hpp"
-#include "visual_language/videochat_flash/classes.hpp"
+#include "visual_language/internvl_chat/classes.hpp"
+#include "visual_language/llava/classes.hpp"
+#include "visual_language/llava_next/classes.hpp"
+#include "visual_language/llava_next_video/classes.hpp"
+#include "visual_language/minicpm/classes.hpp"
 #include "visual_language/muse_glimmer/classes.hpp"
+#include "visual_language/nanollava/classes.hpp"
+#include "visual_language/phi3_vision/classes.hpp"
+#include "visual_language/phi4mm/classes.hpp"
+#include "visual_language/qwen2_5_vl/classes.hpp"
+#include "visual_language/qwen2vl/classes.hpp"
+#include "visual_language/qwen3_5/classes.hpp"
+#include "visual_language/qwen3_omni/classes.hpp"
+#include "visual_language/qwen3_vl/classes.hpp"
+#include "visual_language/videochat_flash/classes.hpp"
 
 namespace ov::genai {
+
+VisionEncoder::VisionEncoder(const std::shared_ptr<ov::Model>& model,
+                             const ProcessorConfig& processor,
+                             const std::string& device,
+                             const ov::AnyMap& properties)
+    : m_processor_config(processor) {
+    auto compiled =
+        utils::singleton_core().compile_model(model,
+                                              device,
+                                              utils::get_model_properties(properties, "vision_embeddings", device));
+    m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled] {
+            return compiled.create_infer_request();
+        });
+}
 
 VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties) {
     auto compiled_model = utils::singleton_core().compile_model(

@@ -66,7 +66,7 @@ public:
                                  const std::shared_ptr<ov::Model>& ov_detokenizer,
                                  const std::map<std::string, GGUFMetaData>& tokenizer_config,
                                  const ov::AnyMap& filtered_properties,
-                                 bool enable_save_ov_model,
+                                 // Empty means "do not serialize the tokenizer/detokenizer IRs".
                                  const std::filesystem::path& save_dir);
 
     void read_config(const std::filesystem::path& tokenizer_path);

@@ -1,13 +1,13 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include "gguf_tokenizer.hpp"
+
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <limits>
 #include <set>
-
-#include "gguf_tokenizer.hpp"
 
 #include "openvino/frontend/gguf/tokenizer_metadata.hpp"
 #include "openvino/op/add.hpp"
@@ -185,6 +185,19 @@ std::vector<std::string> get_split_regex(const std::string& pre) {
     };
 
     return default_regex_exprs;
+}
+
+// Keyed by the same tokenizer.ggml.pre value as get_split_regex(): pre-types whose llama.cpp
+// vocab defaults to add_bos_token=true.
+static bool pre_tokenizer_adds_bos(const std::string& pre) {
+    static const std::set<std::string> pre_add_bos = {
+        // LLAMA_VOCAB_PRE_TYPE_LLAMA3 group
+        "llama3", "llama-v3", "llama-bpe", "falcon3", "falcon-h1", "pixtral", "midm-2.0",
+        "lfm2", "jina-v5-nano",
+        // standalone
+        "tekken", "chameleon",
+    };
+    return pre_add_bos.count(pre) > 0;
 }
 
 ov::OutputVector create_string_constant(const std::vector<std::string>& input_strings) {
@@ -585,35 +598,34 @@ static std::vector<uint8_t> build_spm_model_proto(const std::vector<std::string>
 static ov::OutputVector sparse_to_ragged(const ov::Output<ov::Node>& sparse_indices,
                                           const ov::Output<ov::Node>& sparse_values,
                                           const ov::Output<ov::Node>& dense_shape) {
-    auto ax0_1d = std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{0});
-    auto ax1_1d = std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{1});
+    // 1-D i64 0 and 1, used both as axes and as slice bounds
+    auto k0_1d = std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{0});
+    auto k1_1d = std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{1});
     auto ax0_0d = std::make_shared<v0::Constant>(element::i64, Shape{}, std::vector<int64_t>{0});
     auto one_i64 = std::make_shared<v0::Constant>(element::i64, Shape{}, std::vector<int64_t>{1});
     auto zero_i64 = std::make_shared<v0::Constant>(element::i64, Shape{}, std::vector<int64_t>{0});
 
     // batch_indices = sparse_indices[:, 0]
-    auto batch_indices = std::make_shared<v8::Gather>(sparse_indices, ax0_0d, ax1_1d);
+    auto batch_indices = std::make_shared<v8::Gather>(sparse_indices, ax0_0d, k1_1d);
     // B = dense_shape[0] (batch size)
     auto B = std::make_shared<v8::Gather>(dense_shape, ax0_0d, ax0_0d);
     auto B_plus_1 = std::make_shared<v1::Add>(B, one_i64);
     // range [0, B+1) as row boundaries
     auto range = std::make_shared<v4::Range>(zero_i64, B_plus_1, one_i64, element::i64);
     // mask[n, i] = batch_indices[n] < range[i]  → row_splits[i] = sum of mask[:, i]
-    auto bi_unsq = std::make_shared<v0::Unsqueeze>(batch_indices, ax1_1d);
-    auto range_unsq = std::make_shared<v0::Unsqueeze>(range, ax0_1d);
+    auto bi_unsq = std::make_shared<v0::Unsqueeze>(batch_indices, k1_1d);
+    auto range_unsq = std::make_shared<v0::Unsqueeze>(range, k0_1d);
     auto mask = std::make_shared<v1::Less>(bi_unsq, range_unsq);
     auto mask_i32 = std::make_shared<v0::Convert>(mask, element::i32);
-    auto row_splits = std::make_shared<v1::ReduceSum>(mask_i32, ax0_1d, false)->output(0);
+    auto row_splits = std::make_shared<v1::ReduceSum>(mask_i32, k0_1d, false)->output(0);
 
     // begins = row_splits[0:B], ends = row_splits[1:B+1]
-    auto one_i64_1d = std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{1});
-    auto zero_i64_1d = std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{0});
     auto int64_max = std::make_shared<v0::Constant>(element::i64, Shape{1},
                                                      std::vector<int64_t>{std::numeric_limits<int64_t>::max()});
     // B as a 1D i64 tensor (v8::Slice stop must be 1D)
-    auto B_i64_1d = std::make_shared<v0::Unsqueeze>(B, ax0_1d);
-    auto begins = std::make_shared<v8::Slice>(row_splits, zero_i64_1d, B_i64_1d, one_i64_1d, ax0_1d)->output(0);
-    auto ends_node = std::make_shared<v8::Slice>(row_splits, one_i64_1d, int64_max, one_i64_1d, ax0_1d)->output(0);
+    auto B_i64_1d = std::make_shared<v0::Unsqueeze>(B, k0_1d);
+    auto begins = std::make_shared<v8::Slice>(row_splits, k0_1d, B_i64_1d, k1_1d, k0_1d)->output(0);
+    auto ends_node = std::make_shared<v8::Slice>(row_splits, k1_1d, int64_max, k1_1d, k0_1d)->output(0);
 
     auto values_i32 = std::make_shared<v0::Convert>(sparse_values, element::i32)->output(0);
     return {begins, ends_node, values_i32};
@@ -649,16 +661,32 @@ static int32_t read_tokenizer_id(const std::map<std::string, GGUFMetaData>& toke
     return -1;
 }
 
+// SentencePiece requires exactly one UNKNOWN token (type=2). Some models (gemma2, gemma3) have
+// no type-2 token in their GGUF vocab but do supply unknown_token_id. Promote it.
+static void promote_unknown_token_type(std::vector<int32_t>& token_types,
+                                       const std::map<std::string, GGUFMetaData>& tokenizer_config) {
+    if (std::any_of(token_types.begin(), token_types.end(), [](int32_t t) { return t == 2; }))
+        return;
+    const int32_t unk_id = read_tokenizer_id(tokenizer_config, "unknown_token_id");
+    if (unk_id >= 0 && static_cast<size_t>(unk_id) < token_types.size())
+        token_types[unk_id] = 2;
+}
+
+// A u8 Constant holding the bytes of @p str, as expected by the string ops.
+static ov::Output<ov::Node> u8_string_constant(const std::string& str) {
+    ov::Tensor tensor(ov::element::u8, {str.size()});
+    std::memcpy(tensor.data<uint8_t>(), str.data(), str.size());
+    return std::make_shared<v0::Constant>(tensor)->output(0);
+}
+
 // Build SentencePiece (model="llama") tokenizer outputs from a serialized ModelProto via the
 // SentencepieceTokenizer op.
 static ov::OutputVector parse_spm_config(const std::map<std::string, GGUFMetaData>& tokenizer_config,
                                           ov::OutputVector inputs,
                                           const FactoryCreateType& create_func) {
-    std::vector<std::string> vocab;
+    // tokenizer_config outlives this call, so read the vocabulary in place instead of copying it.
+    const auto* vocab_ptr = std::get_if<std::vector<std::string>>(&tokenizer_config.at("tokens"));
     ov::Tensor token_types_tensor;
-
-    if (auto val = std::get_if<std::vector<std::string>>(&tokenizer_config.at("tokens")))
-        vocab = *val;
     if (auto val = std::get_if<ov::Tensor>(&tokenizer_config.at("token_type")))
         token_types_tensor = *val;
 
@@ -666,7 +694,9 @@ static ov::OutputVector parse_spm_config(const std::map<std::string, GGUFMetaDat
     if (auto val = std::get_if<ov::Tensor>(&tokenizer_config.at("scores")))
         scores_tensor = *val;
 
-    OPENVINO_ASSERT(!vocab.empty(), "[gguf tokenizer] SentencePiece: 'tokens' array is missing or empty");
+    OPENVINO_ASSERT(vocab_ptr && !vocab_ptr->empty(),
+                    "[gguf tokenizer] SentencePiece: 'tokens' array is missing or empty");
+    const auto& vocab = *vocab_ptr;
     OPENVINO_ASSERT(scores_tensor.get_size() == vocab.size(),
                     "[gguf tokenizer] SentencePiece: 'scores' tensor size (", scores_tensor.get_size(),
                     ") != vocab size (", vocab.size(), ")");
@@ -678,26 +708,10 @@ static ov::OutputVector parse_spm_config(const std::map<std::string, GGUFMetaDat
     std::vector<int32_t> token_types(token_types_tensor.data<int32_t>(),
                                      token_types_tensor.data<int32_t>() + token_types_tensor.get_size());
 
-    // SentencePiece requires exactly one UNKNOWN token (type=2). Some models (gemma2, gemma3)
-    // have no type-2 token in their GGUF vocab but do supply unknown_token_id. Promote it.
-    if (std::none_of(token_types.begin(), token_types.end(), [](int32_t t) { return t == 2; })) {
-        if (auto it = tokenizer_config.find("unknown_token_id"); it != tokenizer_config.end()) {
-            if (auto t = std::get_if<ov::Tensor>(&it->second)) {
-                const uint32_t unk_id = t->data<uint32_t>()[0];
-                if (unk_id < token_types.size())
-                    token_types[unk_id] = 2;
-            }
-        }
-    }
+    promote_unknown_token_type(token_types, tokenizer_config);
 
-    // add_space_prefix (GGUF bool, default true): leading metaspace prefix; gemma3 sets it false.
-    bool add_space_prefix = true;
-    if (auto it = tokenizer_config.find("add_space_prefix");
-        it != tokenizer_config.end() && std::holds_alternative<ov::Tensor>(it->second)) {
-        const auto& t = std::get<ov::Tensor>(it->second);
-        if (t.get_size() > 0)
-            add_space_prefix = t.data<bool>()[0];
-    }
+    // Leading metaspace prefix; gemma3 sets it false.
+    const bool add_space_prefix = read_tokenizer_flag(tokenizer_config, "add_space_prefix", true);
 
     // Special-token ids from the GGUF, baked into the SP proto's trainer_spec.
     const int32_t unk_id = read_tokenizer_id(tokenizer_config, "unknown_token_id");
@@ -714,6 +728,22 @@ static ov::OutputVector parse_spm_config(const std::map<std::string, GGUFMetaDat
     // SentencepieceTokenizer with 4 inputs: (sp_model, begins, ends, chars) — the inner flat ragged string.
     OPENVINO_ASSERT(inputs.size() >= 5, "[gguf tokenizer] SentencePiece: expected >=5 outputs from SpecialTokensSplit");
     ov::OutputVector sp_inputs = {sp_model_const->output(0), inputs[2], inputs[3], inputs[4]};
+    // SentencePiece deliberately does not encode CONTROL pieces from their spelling.
+    // Chat delimiters and media markers must use their GGUF IDs even when automatic
+    // BOS/EOS insertion is disabled. Use the tokenizer op's explicit special-token map.
+    std::vector<std::vector<uint8_t>> special_pieces;
+    std::vector<int32_t> special_ids;
+    for (size_t i = 0; i < vocab.size(); ++i) {
+        if (is_special_token(token_types[i])) {
+            special_pieces.emplace_back(vocab[i].begin(), vocab[i].end());
+            special_ids.push_back(static_cast<int32_t>(i));
+        }
+    }
+    if (!special_ids.empty()) {
+        auto pieces = create_string_constant(special_pieces);
+        sp_inputs.insert(sp_inputs.end(), pieces.begin(), pieces.end());
+        sp_inputs.push_back(v0::Constant::create(element::i32, Shape{special_ids.size()}, special_ids));
+    }
     // BOS/EOS are not baked into SentencepieceTokenizer: its add_bos/add_eos are compile-time
     // attributes that add_special_tokens=false can't switch off. Emit them as a CombineSegments
     // segment instead, like the BPE paths (see the CombineSegments block below).
@@ -746,6 +776,11 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
     if (auto val = std::get_if<std::string>(&tokenizer_config.at("model"))) {
         model = *val;
     }
+    // plamo2 uses the same SentencePiece BPE format as llama
+    const std::string effective_model = (model == "plamo2") ? "llama" : model;
+    OPENVINO_ASSERT(effective_model == "gpt2" || effective_model == "llama" || effective_model == "gemma4",
+                    "[gguf tokenizer] Unsupported tokenizer model '", model,
+                    "'. Supported: 'gpt2' (BPE), 'llama'/'plamo2' (SentencePiece BPE), 'gemma4' (SPM-style BPE).");
 
     OutputVector outputs = create_func("StringTensorUnpack", {tokenizer_input}, {});
 
@@ -753,16 +788,11 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
     // string (indices 0,1,2 = begins/ends/chars) before the ragged dimension is added. It does
     // NOT prepend a leading metaspace (llama.cpp gemma4: add_space_prefix=false), so only the
     // space->metaspace replacement is applied.
-    if (model == "gemma4") {
+    if (effective_model == "gemma4") {
         const std::string metaspace = "\xe2\x96\x81";  // U+2581 ▁
-        auto make_str_scalar = [](const std::string& s) {
-            ov::Tensor t(ov::element::u8, {s.size()});
-            std::memcpy(t.data<uint8_t>(), s.data(), s.size());
-            return std::make_shared<v0::Constant>(t)->output(0);
-        };
         ov::OutputVector in(outputs.begin(), outputs.begin() + 3);
-        in.push_back(make_str_scalar(" "));
-        in.push_back(make_str_scalar(metaspace));
+        in.push_back(u8_string_constant(" "));
+        in.push_back(u8_string_constant(metaspace));
         auto normed = create_func("RegexNormalization", in, {{"global_replace", true}});
         for (size_t i = 0; i < normed.size() && i < outputs.size(); ++i) {
             outputs[i] = normed[i];
@@ -799,13 +829,6 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
     inputs_to_split.push_back(const_special_tokens->output(0));
     outputs = create_func("SpecialTokensSplit", inputs_to_split, {});
 
-    // plamo2 uses the same SentencePiece BPE format as llama
-    const std::string effective_model = (model == "plamo2") ? "llama" : model;
-
-    OPENVINO_ASSERT(effective_model == "gpt2" || effective_model == "llama" || effective_model == "gemma4",
-                    "[gguf tokenizer] Unsupported tokenizer model '", model,
-                    "'. Supported: 'gpt2' (BPE), 'llama'/'plamo2' (SentencePiece BPE), 'gemma4' (SPM-style BPE).");
-
     if (effective_model == "llama") {
         // SentencePiece: SP handles word splitting internally; skip BPE-style RegexSplit.
         // outputs[0..2] = ragged string (begins, ends, chars) from SpecialTokensSplit.
@@ -814,7 +837,7 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
     } else {
         // BPE: gpt2 is byte-level BPE with regex pre-tokenization; gemma4 is SPM-style BPE over
         // the raw-UTF8 vocab, split only on newlines (mirrors llama.cpp's GEMMA4 pre-type).
-        if (model == "gemma4") {
+        if (effective_model == "gemma4") {
             const std::string newline_split = "[^\\n]+|[\\n]+";
             ov::Tensor ov_split_re(ov::element::u8, {newline_split.size()});
             std::memcpy(ov_split_re.data<uint8_t>(), newline_split.data(), newline_split.size());
@@ -860,21 +883,14 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
         // Defaults follow llama.cpp (llama-vocab.cpp): SPM defaults add_bos true; for BPE the base
         // default is false, but a few pre-tokenizer families flip it to true and gemma4 is forced
         // true. An explicit tokenizer.ggml.add_bos_token in the GGUF always wins over the default.
-        static const std::set<std::string> bpe_pre_add_bos = {
-            // LLAMA_VOCAB_PRE_TYPE_LLAMA3 group
-            "llama3", "llama-v3", "llama-bpe", "falcon3", "falcon-h1", "pixtral", "midm-2.0",
-            "lfm2", "jina-v5-nano",
-            // standalone
-            "tekken", "chameleon",
-        };
         std::string pre{};
         if (auto it = tokenizer_config.find("pre"); it != tokenizer_config.end()) {
             if (auto val = std::get_if<std::string>(&it->second)) {
                 pre = *val;
             }
         }
-        const bool default_add_bos = (effective_model == "llama") || (model == "gemma4") ||
-                                     bpe_pre_add_bos.count(pre) > 0;
+        const bool default_add_bos =
+            (effective_model == "llama") || (effective_model == "gemma4") || pre_tokenizer_adds_bos(pre);
 
         const bool add_bos = read_tokenizer_flag(tokenizer_config, "add_bos_token", default_add_bos);
         const bool add_eos = read_tokenizer_flag(tokenizer_config, "add_eos_token", false);
@@ -947,31 +963,16 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
         // SentencepieceDetokenizer: takes (sp_model_u8, token_ids_i32) → ragged string
         std::vector<int32_t> spm_types(token_types.data<int32_t>(),
                                        token_types.data<int32_t>() + token_types.get_size());
-        // Same unk-promotion as the tokenizer: ensure exactly one type-2 entry.
-        if (std::none_of(spm_types.begin(), spm_types.end(), [](int32_t t) { return t == 2; })) {
-            if (auto it = tokenizer_config.find("unknown_token_id"); it != tokenizer_config.end()) {
-                if (auto t = std::get_if<ov::Tensor>(&it->second)) {
-                    const uint32_t unk_id = t->data<uint32_t>()[0];
-                    if (unk_id < spm_types.size())
-                        spm_types[unk_id] = 2;
-                }
-            }
-        }
+        promote_unknown_token_type(spm_types, tokenizer_config);
         std::vector<float> spm_scores;
         if (auto val = std::get_if<ov::Tensor>(&tokenizer_config.at("scores"))) {
             const ov::Tensor& st = *val;
             spm_scores.assign(st.data<float>(), st.data<float>() + st.get_size());
         }
         // Mirror the tokenizer's add_space_prefix so detokenization strips the leading
-        // metaspace symmetrically (gemma3: false).
-        bool detok_add_space_prefix = true;
-        if (auto it = tokenizer_config.find("add_space_prefix");
-            it != tokenizer_config.end() && std::holds_alternative<ov::Tensor>(it->second)) {
-            const auto& t = std::get<ov::Tensor>(it->second);
-            if (t.get_size() > 0)
-                detok_add_space_prefix = t.data<bool>()[0];
-        }
-        // SentencePiece otherwise strips leading whitespace even when add_dummy_prefix is false.
+        // metaspace symmetrically; SentencePiece otherwise strips leading whitespace even
+        // when add_dummy_prefix is false.
+        const bool detok_add_space_prefix = read_tokenizer_flag(tokenizer_config, "add_space_prefix", true);
         auto proto_bytes = build_spm_model_proto(tokens, spm_scores, spm_types, detok_add_space_prefix, false);
         auto sp_model_const =
             std::make_shared<v0::Constant>(element::u8, Shape{proto_bytes.size()}, proto_bytes.data());
@@ -987,7 +988,7 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
         // BPE detokenizer: VocabDecoder + FuzeRagged + UTF8Validate. gpt2 uses GPT-2 byte
         // decoding of the vocab; gemma4 uses the raw-UTF8 vocab (and undoes the metaspace
         // afterwards, below).
-        const bool byte_encode = (model != "gemma4");
+        const bool byte_encode = (effective_model != "gemma4");
         auto vocab = parse_bbpe_vocab(tokens, byte_encode);
         ov::OutputVector const_vocab = create_string_constant(vocab);
         OutputVector detokenizer_outputs = {detokenizer_input};
@@ -1016,18 +1017,13 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
         ov::OutputVector inputs_for_utf8_validate(outputs_fused_ragged.begin(), outputs_fused_ragged.end());
         auto outputs_utf8_validate =
             create_func("UTF8Validate", inputs_for_utf8_validate, {{"replace_mode", true}});
-        if (model == "gemma4") {
+        if (effective_model == "gemma4") {
             // Undo the metaspace: U+2581 -> space, on the decoded ragged string.
             const std::string metaspace = "\xe2\x96\x81";
-            auto make_str_scalar = [](const std::string& s) {
-                ov::Tensor t(ov::element::u8, {s.size()});
-                std::memcpy(t.data<uint8_t>(), s.data(), s.size());
-                return std::make_shared<v0::Constant>(t)->output(0);
-            };
             ov::OutputVector norm_inputs(outputs_utf8_validate.begin(),
                                          outputs_utf8_validate.begin() + 3);
-            norm_inputs.push_back(make_str_scalar(metaspace));
-            norm_inputs.push_back(make_str_scalar(" "));
+            norm_inputs.push_back(u8_string_constant(metaspace));
+            norm_inputs.push_back(u8_string_constant(" "));
             outputs_utf8_validate = create_func("RegexNormalization", norm_inputs, {{"global_replace", true}});
         }
         auto packed_output = create_func("StringTensorPack", outputs_utf8_validate, {});
@@ -1075,7 +1071,9 @@ create_tokenizer_from_parameters(const std::shared_ptr<void>& shared_object_ov_t
     return build_tokenizer_models(shared_object_ov_tokenizers, std::move(tokenizer_config));
 }
 
-ov::AnyMap gguf_tokenizer_metadata_from_model(const std::shared_ptr<ov::Model>& model) {
+namespace {
+std::shared_ptr<ov::frontend::gguf::GGUFTokenizerMetadata> find_tokenizer_metadata(
+    const std::shared_ptr<ov::Model>& model) {
     OPENVINO_ASSERT(model, "[gguf tokenizer] null model: cannot read GGUF tokenizer metadata from it.");
     const auto& rt = model->get_rt_info();
     auto it = rt.find(ov::frontend::gguf::gguf_tokenizer_metadata_key());
@@ -1088,7 +1086,25 @@ ov::AnyMap gguf_tokenizer_metadata_from_model(const std::shared_ptr<ov::Model>& 
                     "instead.");
     auto attr = it->second.as<std::shared_ptr<ov::frontend::gguf::GGUFTokenizerMetadata>>();
     OPENVINO_ASSERT(attr, "[gguf tokenizer] unexpected type for the GGUF tokenizer metadata runtime info.");
-    return attr->config;
+    return attr;
+}
+}  // namespace
+
+const ov::AnyMap& gguf_tokenizer_metadata_from_model(const std::shared_ptr<ov::Model>& model) {
+    return find_tokenizer_metadata(model)->config;
+}
+
+ov::AnyMap take_gguf_tokenizer_metadata(const std::shared_ptr<ov::Model>& model) {
+    auto attr = find_tokenizer_metadata(model);
+    ov::AnyMap config = std::move(attr->config);
+    erase_gguf_tokenizer_metadata(model);
+    return config;
+}
+
+void erase_gguf_tokenizer_metadata(const std::shared_ptr<ov::Model>& model) {
+    if (model) {
+        model->get_rt_info().erase(ov::frontend::gguf::gguf_tokenizer_metadata_key());
+    }
 }
 
 std::string patch_gguf_chat_template(const std::string& chat_template) {

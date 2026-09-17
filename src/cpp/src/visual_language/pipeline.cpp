@@ -6,6 +6,7 @@
 #include <optional>
 #include <random>
 
+#include "gguf_utils/gguf_tokenizer.hpp"
 #include "lm_encoding.hpp"
 #include "lora/helper.hpp"
 #include "openvino/genai/text_streamer.hpp"
@@ -23,6 +24,10 @@
 #include "visual_language/vlm_chat_context.hpp"
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/vlm_utils.hpp"
+#ifdef ENABLE_GGUF
+#    include "gguf_utils/gguf_multimodal.hpp"
+#    include "visual_language/gemma3/classes.hpp"
+#endif
 
 using namespace ov::genai;
 
@@ -46,7 +51,7 @@ void npu_auto_default_properties(ov::AnyMap& device_properties) {
     device_properties["AUTO"] = auto_properties;
 }
 
-}
+}  // namespace
 
 class VLMPipeline::VLMPipelineImpl : public VLMBackend{
     // A config to follow for text generation.
@@ -230,6 +235,61 @@ private:
         finalize_initialization(language_model, kv_pos);
     }
 public:
+#ifdef ENABLE_GGUF
+    VLMPipelineImpl(GGUFMultimodalModels models, const std::string& device, const ov::AnyMap& properties)
+        : m_vlm_config(models.config) {
+        auto vision = std::make_shared<VisionEncoderGemma3>(models.vision, models.processor, device, properties);
+        auto embeddings = std::make_shared<EmbeddingsModel>(models.text_embeddings, device, properties);
+        m_inputs_embedder =
+            std::make_shared<InputsEmbedder>(models.config, models.tokenizer, vision, embeddings, device);
+        const auto kv_pos = utils::get_kv_axes_pos(models.language);
+        // Slice-before-matmul rewrites LM logits to be produced only for the last token,
+        // as on every other non-NPU path.
+        utils::apply_slice_before_matmul_transformation(models.language);
+        auto compiled_language_model =
+            utils::singleton_core().compile_model(models.language,
+                                                  device,
+                                                  utils::get_model_properties(properties, "language_model", device));
+        utils::print_compiled_model_properties(compiled_language_model, "VLM language model");
+        m_language = compiled_language_model.create_infer_request();
+        m_language.get_tensor("attention_mask").set_shape({1, 0});
+        finalize_initialization(models.language, kv_pos);
+        // GGUF supplies tokenizer metadata but no generation_config.json. Gemma's
+        // end-of-turn marker terminates a response independently of its EOS token.
+        const auto end_of_turn = models.tokenizer.encode("<end_of_turn>", add_special_tokens(false));
+        OPENVINO_ASSERT(end_of_turn.input_ids.get_size() == 1, "GGUF Gemma3 requires a single end-of-turn token");
+        m_generation_config.stop_token_ids.insert(end_of_turn.input_ids.data<const int64_t>()[0]);
+    }
+
+    // Convert a language .gguf plus its mmproj into an impl. Kept out of VLMPipeline's
+    // constructor so the shared path there has a single entry.
+    static std::shared_ptr<VLMPipelineImpl> create_gguf(const std::filesystem::path& models_dir,
+                                                        const std::string& device,
+                                                        ov::AnyMap properties,
+                                                        bool requires_paged_attention) {
+        OPENVINO_ASSERT(device == "CPU", "GGUF multimodal generation is currently qualified on CPU only");
+        OPENVINO_ASSERT(!requires_paged_attention, "GGUF multimodal generation requires the SDPA attention backend");
+        const auto it = properties.find(mmproj_path.name());
+        OPENVINO_ASSERT(it != properties.end(), "A language GGUF requires mmproj_path for VLMPipeline");
+        const auto projector = it->second.as<std::string>();
+        properties.erase(it);
+        auto gguf_properties = utils::extract_gguf_properties(properties);
+        OPENVINO_ASSERT(!gguf_properties.legacy_reader.value_or(false),
+                        "GGUF multimodal generation requires gguf_reader=FRONTEND");
+        properties = std::move(gguf_properties.rest);
+        utils::clear_false_prompt_lookup_from_config(properties);
+        utils::validate_vlm_model_properties(properties);
+        utils::extract_extensions_to_core(properties);
+        auto models = read_gguf_multimodal(models_dir, projector, properties);
+        if (gguf_properties.enable_save_ov_model) {
+            utils::save_openvino_model(models.language, models_dir.string() + ".vlm.xml", false);
+            utils::save_openvino_model(models.text_embeddings, models_dir.string() + ".embeddings.xml", false);
+            utils::save_openvino_model(models.vision, projector + ".vision.xml", false);
+        }
+        return std::make_shared<VLMPipelineImpl>(std::move(models), device, properties);
+    }
+#endif
+
     VLMPipelineImpl(
         const std::filesystem::path& models_dir,
         const std::string& device,
@@ -735,7 +795,9 @@ public:
     }
 
     void set_chat_template(const std::string& new_template) override {
-        OPENVINO_ASSERT(!m_is_chat_conversation, "Chat template cannot be changed once start_chat() is called. Please, finish current chat via finish_chat()");
+        OPENVINO_ASSERT(!m_is_chat_conversation,
+                        "Chat template cannot be changed once start_chat() is called. Please, finish current chat via "
+                        "finish_chat()");
         m_tokenizer.set_chat_template(new_template);
     }
 
@@ -937,6 +999,20 @@ VLMPipeline::VLMPipeline(
     auto start_time = std::chrono::steady_clock::now();
 
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
+    if (is_gguf_model(models_dir)) {
+#ifdef ENABLE_GGUF
+        m_pimpl = VLMPipelineImpl::create_gguf(models_dir,
+                                               device,
+                                               std::move(properties),
+                                               utils::explicitly_requires_paged_attention(user_properties));
+        m_pimpl->set_load_time(
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time)
+                .count());
+        return;
+#else
+        OPENVINO_THROW("GGUF support is disabled; rebuild GenAI with ENABLE_GGUF=ON");
+#endif
+    }
     utils::clear_false_prompt_lookup_from_config(properties);
     utils::validate_vlm_model_properties(properties);
     if (device == "NPU") {

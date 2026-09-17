@@ -1,35 +1,33 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "visual_language/inputs_embedder.hpp"
 
+#include "continuous_batching/timer.hpp"
+#include "openvino/genai/visual_language/perf_metrics.hpp"
+#include "utils.hpp"
 #include "visual_language/clip.hpp"
-#include "visual_language/vision_encoder.hpp"
+#include "visual_language/deepseek_ocr2/classes.hpp"
 #include "visual_language/embedding_model.hpp"
-
-#include "visual_language/qwen2vl/classes.hpp"
-#include "visual_language/qwen2_5_vl/classes.hpp"
-#include "visual_language/qwen3_vl/classes.hpp"
-#include "visual_language/qwen3_5/classes.hpp"
-#include "visual_language/qwen3_omni/classes.hpp"
-#include "visual_language/phi3_vision/classes.hpp"
-#include "visual_language/phi4mm/classes.hpp"
-#include "visual_language/minicpm/classes.hpp"
-#include "visual_language/llava/classes.hpp"
-#include "visual_language/nanollava/classes.hpp"
-#include "visual_language/llava_next/classes.hpp"
-#include "visual_language/llava_next_video/classes.hpp"
-#include "visual_language/internvl_chat/classes.hpp"
 #include "visual_language/gemma3/classes.hpp"
 #include "visual_language/gemma3n/classes.hpp"
 #include "visual_language/gemma4/classes.hpp"
-#include "visual_language/deepseek_ocr2/classes.hpp"
-#include "visual_language/videochat_flash/classes.hpp"
+#include "visual_language/internvl_chat/classes.hpp"
+#include "visual_language/llava/classes.hpp"
+#include "visual_language/llava_next/classes.hpp"
+#include "visual_language/llava_next_video/classes.hpp"
+#include "visual_language/minicpm/classes.hpp"
 #include "visual_language/muse_glimmer/classes.hpp"
-
-#include "continuous_batching/timer.hpp"
-#include "utils.hpp"
+#include "visual_language/nanollava/classes.hpp"
+#include "visual_language/phi3_vision/classes.hpp"
+#include "visual_language/phi4mm/classes.hpp"
+#include "visual_language/qwen2_5_vl/classes.hpp"
+#include "visual_language/qwen2vl/classes.hpp"
+#include "visual_language/qwen3_5/classes.hpp"
+#include "visual_language/qwen3_omni/classes.hpp"
+#include "visual_language/qwen3_vl/classes.hpp"
+#include "visual_language/videochat_flash/classes.hpp"
+#include "visual_language/vision_encoder.hpp"
 
 namespace {
 template <typename VideoType>
@@ -83,6 +81,27 @@ void InputsEmbedder::IInputsEmbedder::update_chat_history(const std::string& dec
 void InputsEmbedder::IInputsEmbedder::finish_chat() {
     m_is_chat_conversation = false;
     m_cache_state.reset_state();
+}
+
+InputsEmbedder::IInputsEmbedder::IInputsEmbedder(const VLMConfig& config,
+                                                 const Tokenizer& tokenizer,
+                                                 const VisionEncoder::Ptr& vision,
+                                                 const EmbeddingsModel::Ptr& embeddings,
+                                                 const std::string& device)
+    : m_vlm_config(config),
+      m_vision_encoder(vision),
+      m_embedding(embeddings),
+      m_tokenizer(tokenizer),
+      m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) {}
+
+InputsEmbedder::InputsEmbedder(const VLMConfig& config,
+                               const Tokenizer& tokenizer,
+                               const VisionEncoder::Ptr& vision,
+                               const EmbeddingsModel::Ptr& embeddings,
+                               const std::string& device) {
+    OPENVINO_ASSERT(config.model_type == VLMModelType::GEMMA3,
+                    "GGUF multimodal pipeline adapter is not implemented for this model family");
+    m_impl = std::make_shared<InputsEmbedderGemma3>(config, tokenizer, vision, embeddings, device);
 }
 
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(

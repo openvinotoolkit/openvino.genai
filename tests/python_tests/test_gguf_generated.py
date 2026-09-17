@@ -17,9 +17,8 @@ from transformers import PreTrainedTokenizerFast
 
 import openvino as ov
 import openvino_genai as genai
-from openvino_tokenizers import convert_tokenizer
-
 from utils.constants import get_default_llm_properties
+from utils.hugging_face import convert_and_save_tokenizer
 
 
 pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="CPU reference build is validated on Linux")
@@ -96,10 +95,8 @@ def numeric_tokenizer(tmp_path_factory):
     # constructor; all model inputs and comparisons use token IDs, never decoded text.
     backend = HFTokenizer(WordLevel({f"t{i}": i for i in range(128)}, unk_token="t0"))
     hf_tokenizer = PreTrainedTokenizerFast(tokenizer_object=backend, unk_token="t0", pad_token="t0", eos_token="t127")
-    tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True)
     directory = tmp_path_factory.mktemp("numeric_tokenizer")
-    ov.save_model(tokenizer, directory / "openvino_tokenizer.xml")
-    ov.save_model(detokenizer, directory / "openvino_detokenizer.xml")
+    convert_and_save_tokenizer(hf_tokenizer, directory)
     hf_tokenizer.save_pretrained(directory)
     return genai.Tokenizer(directory)
 
@@ -138,45 +135,42 @@ def generation_config():
     return genai.GenerationConfig(max_new_tokens=NEW_TOKENS, ignore_eos=True, apply_chat_template=False)
 
 
+# (predicate, raises, reason) applied in order; the first match marks the test xfail.
+BACKEND_LIMITATIONS = [
+    (
+        lambda arch, variant, backend: arch == "gemma2" and backend == "PA",
+        RuntimeError,
+        "Soft-capped Gemma2 attention has no SDPA node for explicit PA conversion",
+    ),
+    (
+        lambda arch, variant, backend: variant == "moe"
+        and backend != "SDPA"
+        and arch in {"bailingmoe2", "ernie4_5-moe"},
+        AssertionError,
+        "GGUF hybrid MoE PA prefill disagrees with llama.cpp CPU; SDPA passes",
+    ),
+    (
+        lambda arch, variant, backend: variant == "moe"
+        and backend != "SDPA"
+        and arch in {"llama", "minicpm", "mistral3", "olmoe", "qwen3moe", "gpt-oss"},
+        RuntimeError,
+        "GGUF MoE PA prefill has token-axis shape errors in PagedAttention/Reshape",
+    ),
+    (
+        lambda arch, variant, backend: arch == "gpt-oss",
+        AssertionError,
+        "Generated GPT-OSS F32 logits diverge from llama.cpp CPU before decoding",
+    ),
+]
+
+
 def mark_backend_limitation(request, arch, variant, backend):
     if arch == "qwen35" and backend != "SDPA":
         pytest.skip("Qwen3.5 recurrent state currently supports SDPA only")
-    if arch == "gemma2" and backend == "PA":
-        request.node.add_marker(
-            pytest.mark.xfail(
-                strict=True,
-                raises=RuntimeError,
-                reason="Soft-capped Gemma2 attention has no SDPA node for explicit PA conversion",
-            )
-        )
-    elif variant == "moe" and backend != "SDPA" and arch in {"bailingmoe2", "ernie4_5-moe"}:
-        request.node.add_marker(
-            pytest.mark.xfail(
-                strict=True,
-                raises=AssertionError,
-                reason="GGUF hybrid MoE PA prefill disagrees with llama.cpp CPU; SDPA passes",
-            )
-        )
-    elif (
-        variant == "moe"
-        and backend != "SDPA"
-        and arch in {"llama", "minicpm", "mistral3", "olmoe", "qwen3moe", "gpt-oss"}
-    ):
-        request.node.add_marker(
-            pytest.mark.xfail(
-                strict=True,
-                raises=RuntimeError,
-                reason="GGUF MoE PA prefill has token-axis shape errors in PagedAttention/Reshape",
-            )
-        )
-    elif arch == "gpt-oss":
-        request.node.add_marker(
-            pytest.mark.xfail(
-                strict=True,
-                raises=AssertionError,
-                reason="Generated GPT-OSS F32 logits diverge from llama.cpp CPU before decoding",
-            )
-        )
+    for matches, raises, reason in BACKEND_LIMITATIONS:
+        if matches(arch, variant, backend):
+            request.node.add_marker(pytest.mark.xfail(strict=True, raises=raises, reason=reason))
+            return
 
 
 @pytest.mark.parametrize("backend", ["SDPA", "PA", "AUTO"])

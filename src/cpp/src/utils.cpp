@@ -21,6 +21,7 @@
 #include "openvino/op/transpose.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "gguf_utils/gguf_modeling.hpp"
+#include "gguf_utils/gguf_tokenizer.hpp"
 
 
 #include "sampling/sampler.hpp"
@@ -404,13 +405,6 @@ ov::Core& singleton_core() {
 }
 
 
-namespace {
-bool is_gguf_model(const std::filesystem::path& file_path) {
-    return file_path.extension() == ".gguf";
-}
-
-} // namespace
-
 const std::string PER_MODEL_PROPERTIES = "MODEL_PROPERTIES";
 
 ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device) {
@@ -472,15 +466,16 @@ GGUFProperties extract_gguf_properties(const ov::AnyMap& external_properties) {
 
     auto reader_it = result.rest.find(ov::genai::gguf_reader.name());
     if (reader_it != result.rest.end()) {
-        result.reader = reader_it->second.as<std::string>();
-        OPENVINO_ASSERT(result.reader == FRONTEND_GGUF_READER || result.reader == LEGACY_GGUF_READER,
+        const auto reader = reader_it->second.as<std::string>();
+        OPENVINO_ASSERT(reader == FRONTEND_GGUF_READER || reader == LEGACY_GGUF_READER,
                         "GGUF reader must be either '",
                         FRONTEND_GGUF_READER,
                         "' or '",
                         LEGACY_GGUF_READER,
                         "', got '",
-                        result.reader,
+                        reader,
                         "'");
+        result.legacy_reader = reader == LEGACY_GGUF_READER;
         result.rest.erase(reader_it);
     }
 

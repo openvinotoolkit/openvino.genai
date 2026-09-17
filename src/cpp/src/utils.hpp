@@ -150,11 +150,13 @@ struct GGUFProperties {
     ov::AnyMap rest;
     /// ov::genai::enable_save_ov_model: serialize the converted model next to the .gguf.
     bool enable_save_ov_model = false;
-    /// ov::genai::gguf_reader: FRONTEND_GGUF_READER or LEGACY_GGUF_READER (default, for now).
-    std::string reader = LEGACY_GGUF_READER;
+    /// ov::genai::gguf_reader, when the user set it: true for LEGACY_GGUF_READER,
+    /// false for FRONTEND_GGUF_READER. Empty when the property was absent.
+    std::optional<bool> legacy_reader;
 
+    /// The legacy reader is still the default when the user expressed no preference.
     bool use_legacy_reader() const {
-        return reader == LEGACY_GGUF_READER;
+        return legacy_reader.value_or(true);
     }
 };
 

@@ -143,11 +143,19 @@ std::shared_ptr<ov::Model> create_language_model(
 
 } // namespace
 
+std::shared_ptr<ov::Model> convert_gguf_with_frontend(const std::string& model_path) {
+    ov::frontend::gguf::FrontEnd frontend;
+    frontend.add_extension(std::make_shared<ov::frontend::DecoderTransformationExtension>(
+        ov::frontend::gguf::pass::GGUFMakeStateful()));
+    return frontend.convert(frontend.load(model_path));
+}
+
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
                                             bool enable_save_ov_model,
                                             bool use_legacy_reader) {
     auto start_time = std::chrono::high_resolution_clock::now();
     std::stringstream ss;
+    std::shared_ptr<ov::Model> model;
 
     // Escape hatch while the legacy reader is still around: gguf_reader("LEGACY") uses the old
     // hand-written builder instead of the GGUF frontend. Supports only llama/qwen2/qwen3 and
@@ -165,50 +173,29 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
                         "'. Set the ov::genai::gguf_reader property to '",
                         ov::genai::FRONTEND_GGUF_READER,
                         "' to use the GGUF frontend.");
-        auto legacy_model = create_language_model(config, consts, qtypes);
-        if (enable_save_ov_model) {
-            std::filesystem::path gguf_model_path(model_path);
-            std::filesystem::path save_path = gguf_model_path.parent_path() / "openvino_model.xml";
-            ov::genai::utils::save_openvino_model(legacy_model, save_path.string(), true);
-        }
-        ss.str("");
-        ss << "Legacy GGUF conversion done. Time: "
-           << std::chrono::duration_cast<std::chrono::milliseconds>(
-                  std::chrono::high_resolution_clock::now() - start_time)
-                  .count()
-           << "ms";
+        model = create_language_model(config, consts, qtypes);
+    } else {
+        ss << "Loading and converting GGUF model via the OpenVINO GGUF frontend: " << model_path;
         ov::genai::utils::print_gguf_debug_info(ss.str());
-        return legacy_model;
+
+        model = convert_gguf_with_frontend(model_path);
+
+        // AdaptToGenAI rewires IO to what StatefulLLMPipeline expects
+        // (input_ids / attention_mask / position_ids / beam_idx -> logits).
+        ov::pass::Manager manager;
+        manager.register_pass<ov::frontend::gguf::pass::AdaptToGenAI>();
+        manager.run_passes(model);
     }
 
-    ss << "Loading and converting GGUF model via the OpenVINO GGUF frontend: " << model_path;
-    ov::genai::utils::print_gguf_debug_info(ss.str());
-
-    // The GGUF frontend always converts to a stateless graph (explicit KV-cache input/output
-    // pairs, like optimum-intel before its own make-stateful pass). Register GGUFMakeStateful as
-    // a transformation extension so the frontend turns each cache into a ReadValue/Concat/Assign
-    // state during conversion; scoped to this call rather than global via ov::Core::add_extension.
-    // AdaptToGenAI then rewires IO to what StatefulLLMPipeline expects (input_ids /
-    // attention_mask / position_ids / beam_idx -> logits).
-    ov::frontend::gguf::FrontEnd frontend;
-    frontend.add_extension(std::make_shared<ov::frontend::DecoderTransformationExtension>(
-        ov::frontend::gguf::pass::GGUFMakeStateful()));
-    auto model = frontend.convert(frontend.load(model_path));
-
-    ov::pass::Manager manager;
-    manager.register_pass<ov::frontend::gguf::pass::AdaptToGenAI>();
-    manager.run_passes(model);
-
     if (enable_save_ov_model) {
-        std::filesystem::path gguf_model_path(model_path);
-        std::filesystem::path save_path = gguf_model_path.parent_path() / "openvino_model.xml";
+        std::filesystem::path save_path = std::filesystem::path(model_path).parent_path() / "openvino_model.xml";
         ov::genai::utils::save_openvino_model(model, save_path.string(), true);
     }
 
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::high_resolution_clock::now() - start_time).count();
     ss.str("");
-    ss << "GGUF model conversion done. Time: " << duration << "ms";
+    ss << (use_legacy_reader ? "Legacy GGUF" : "GGUF model") << " conversion done. Time: " << duration << "ms";
     ov::genai::utils::print_gguf_debug_info(ss.str());
 
     return model;
