@@ -122,8 +122,7 @@ def tiny_qwen3_tts_base_ov_path() -> Path:
         pytest.skip("optimum-cli is not available in PATH")
     except subprocess.CalledProcessError as error:
         pytest.skip(
-            f"Failed to export {QWEN3_TTS_BASE_TINY_MODEL_ID}: "
-            f"returncode={error.returncode}, stderr={error.stderr}"
+            f"Failed to export {QWEN3_TTS_BASE_TINY_MODEL_ID}: returncode={error.returncode}, stderr={error.stderr}"
         )
 
     return model_dir
@@ -230,8 +229,7 @@ class TestQwen3TTSPipelineBase:
         )
 
         assert result.output_sample_rate == optimum_sr, (
-            f"Output sample rate mismatch for mode={mode}: "
-            f"optimum={optimum_sr}, genai={result.output_sample_rate}"
+            f"Output sample rate mismatch for mode={mode}: optimum={optimum_sr}, genai={result.output_sample_rate}"
         )
 
         _assert_waveform_equal(optimum_speech, genai_speech, f"mode={mode}")
