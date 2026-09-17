@@ -891,6 +891,24 @@ private:
         std::optional<int64_t> rope_delta;
         std::tie(position_ids, rope_delta) = m_inputs_embedder->get_position_ids(inputs_embeds_size, history_size);
 
+        // Some stateful decoders (e.g. LFM2 hybrid conv/attention) manage positions
+        // internally and expose no "position_ids" input. Only forward the tensor when
+        // the compiled language model actually accepts it.
+        std::optional<ov::Tensor> position_ids_opt = position_ids;
+        {
+            bool lm_has_position_ids = false;
+            for (const auto& port : m_language.get_compiled_model().inputs()) {
+                const auto& names = port.get_names();
+                if (names.find("position_ids") != names.end()) {
+                    lm_has_position_ids = true;
+                    break;
+                }
+            }
+            if (!lm_has_position_ids) {
+                position_ids_opt = std::nullopt;
+            }
+        }
+
         const auto& lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
 
         auto per_layer_callback = m_inputs_embedder->get_per_layer_embeddings_callback();
@@ -910,7 +928,7 @@ private:
             streamer_ptr,
             m_sampler,
             std::move(requests),
-            position_ids,
+            position_ids_opt,
             cache_state,
             m_embedding,
             rope_delta,
@@ -923,10 +941,13 @@ private:
 };
 
 bool requires_sdpa(const std::filesystem::path& models_dir) {
-    // Force models to use SDPA backend by default until PA is supported. Example:
-    // auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    // vlm_config.model_type == VLMModelType::GEMMA3;
-    return false;
+    // Force models to use SDPA backend by default until PA is supported.
+    // LFM2-VL wraps the hybrid LFM2 language model (short-convolution + GQA
+    // attention layers). The PagedAttention backend does not reproduce that
+    // hybrid cache correctly, so greedy decoding diverges from the SDPA/optimum
+    // reference. Pin LFM2-VL to SDPA to keep parity until PA supports it.
+    auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
+    return vlm_config.model_type == VLMModelType::LFM2_VL;
 }
 
 VLMPipeline::VLMPipeline(
