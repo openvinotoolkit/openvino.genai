@@ -8,6 +8,7 @@
 #include "continuous_batching/cache/block_manager.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
 #include "speculative_decoding/continuous_batching/pipeline_impl.hpp"
+#include "speculative_decoding/continuous_batching/mtp_strategy.hpp"
 #include "prompt_lookup/continuous_batching_for_prompt_lookup.hpp"
 
 namespace {
@@ -110,11 +111,85 @@ protected:
 
     class MtpPipeline : public ContinuousBatchingForMtpDecodingImpl {
     public:
+        using ContinuousBatchingForMtpDecodingImpl::validate_prefix_cache_support;
+
         MtpPipeline(const std::shared_ptr<ov::genai::Scheduler>& scheduler,
                     const std::vector<SequenceGroup::Ptr>& groups) {
             m_scheduler = scheduler;
             m_awaiting_requests = groups;
         }
+    };
+
+    class MtpAdmissionChild : public MtpPipeline {
+    public:
+        explicit MtpAdmissionChild(const std::shared_ptr<ov::genai::Scheduler>& scheduler)
+            : MtpPipeline(scheduler, {}) {}
+
+        ov::genai::GenerationHandle add_request(
+            uint64_t request_id,
+            const ov::Tensor& embeddings,
+            const ov::genai::GenerationConfig& config,
+            std::optional<ov::Tensor> token_type_ids = std::nullopt,
+            std::optional<ov::Tensor> prompt_ids = std::nullopt,
+            std::optional<std::unordered_map<std::string, ov::Tensor>> extra_inputs = std::nullopt) override {
+            ov::Tensor tokens(ov::element::i64, {1, embeddings.get_shape()[1]});
+            const size_t hidden_size = embeddings.get_shape()[2];
+            for (size_t token = 0; token < tokens.get_size(); ++token) {
+                tokens.data<int64_t>()[token] = static_cast<int64_t>(embeddings.data<const float>()[token * hidden_size]);
+            }
+            return ContinuousBatchingImpl::add_request(request_id, tokens, config);
+        }
+
+        size_t awaiting_count() const {
+            return m_awaiting_requests.size();
+        }
+
+        size_t processed(uint64_t request_id) const {
+            for (const auto& group : m_awaiting_requests) {
+                if (group->get_request_id() == request_id) {
+                    return group->get_num_processed_tokens();
+                }
+            }
+            return 0;
+        }
+    };
+
+    class MtpAdmissionStrategy : public MtpDecodingImpl {
+    public:
+        MtpAdmissionStrategy(const std::shared_ptr<MtpAdmissionChild>& main,
+                             const std::shared_ptr<MtpAdmissionChild>& draft)
+            : main_child(main), draft_child(draft) {
+            m_main_pipeline = main;
+            m_draft_pipeline = draft;
+        }
+
+        size_t draft_handle_count() const {
+            return m_draft_generations.size();
+        }
+
+        void discard(uint64_t request_id) {
+            main_child->discard_awaiting_request(request_id);
+            draft_child->discard_awaiting_request(request_id);
+            m_draft_generations.erase(request_id);
+        }
+
+        bool failed_after_main_restore = false;
+        bool failed_with_both_queued = false;
+
+    protected:
+        void align_request_pair_processed_prefix(uint64_t request_id) override {
+            try {
+                MtpDecodingImpl::align_request_pair_processed_prefix(request_id);
+            } catch (...) {
+                failed_after_main_restore |= main_child->processed(request_id) > 0;
+                failed_with_both_queued |= main_child->awaiting_count() == 2 && draft_child->awaiting_count() == 2;
+                throw;
+            }
+        }
+
+    private:
+        std::shared_ptr<MtpAdmissionChild> main_child;
+        std::shared_ptr<MtpAdmissionChild> draft_child;
     };
 
     std::shared_ptr<CacheOrchestrator> make_orchestrator() {
@@ -177,6 +252,204 @@ TEST_P(PreparedCacheAllocationFailure, MtpAdmissionRollbackReleasesOnlyFailedReq
     EXPECT_TRUE(pipeline.get_awaiting_requests().empty());
     for (const CacheType type : {CacheType::KV_CACHE, CacheType::LINEAR_ATTENTION_CACHE}) {
         EXPECT_EQ(orchestrator->get_block_manager(type).num_free_blocks(), 24u);
+    }
+}
+
+TEST_P(PreparedCacheAllocationFailure, MtpPrefixGuardRejectsOnlyLinearAttentionDraft) {
+    for (const bool has_linear_attention : {false, true}) {
+        auto cache = std::make_shared<CacheOrchestrator>();
+        cache->register_cache_type(CacheType::KV_CACHE,
+            std::make_unique<testing::NiceMock<RowOnlyCacheManager>>(),
+            std::make_unique<BlockManager>(24, true, 4, GetParam()), GetParam() > 1);
+        if (has_linear_attention) {
+            cache->register_cache_type(CacheType::LINEAR_ATTENTION_CACHE,
+                std::make_unique<testing::NiceMock<RowOnlyCacheManager>>(),
+                std::make_unique<BlockManager>(24, true, 4, GetParam(), 0, true), GetParam() > 1);
+        }
+        for (const bool prefix_enabled : {false, true}) {
+            ov::genai::SchedulerConfig config;
+            config.enable_prefix_caching = prefix_enabled;
+            auto scheduler = std::make_shared<ov::genai::Scheduler>(cache, config);
+            MtpPipeline pipeline(scheduler, {});
+            EXPECT_NO_THROW(pipeline.validate_prefix_cache_support(config, true));
+            if (has_linear_attention && prefix_enabled) {
+                try {
+                    pipeline.validate_prefix_cache_support(config, false);
+                    FAIL() << "Expected prefix-enabled linear-attention MTP draft rejection";
+                } catch (const ov::Exception& error) {
+                    EXPECT_NE(std::string(error.what()).find(
+                        "Prefix-enabled MTP draft pipelines with linear-attention state are not supported"),
+                        std::string::npos);
+                }
+            } else {
+                EXPECT_NO_THROW(pipeline.validate_prefix_cache_support(config, false));
+            }
+        }
+    }
+}
+
+TEST_P(PreparedCacheAllocationFailure, MtpPairedAdmissionRollsBackEveryAllocationFailure) {
+    ov::genai::GenerationConfig config;
+    config.max_new_tokens = 8;
+    config.num_assistant_tokens = 4;
+    config.ignore_eos = true;
+    config.set_eos_token_id(0);
+    ov::Tensor embeddings(ov::element::f32, {1, 13, 1});
+    ov::Tensor prompt_ids(ov::element::i64, {1, 13});
+    for (size_t token = 0; token < 13; ++token) {
+        embeddings.data<float>()[token] = static_cast<float>(token + 1);
+        prompt_ids.data<int64_t>()[token] = static_cast<int64_t>(token + 1);
+    }
+
+    for (const size_t draft_endpoint : {4u, 8u}) {
+        SCOPED_TRACE(draft_endpoint);
+        auto main_cache = std::make_shared<CacheOrchestrator>();
+        auto draft_cache = std::make_shared<CacheOrchestrator>();
+        auto parent = std::make_shared<SequenceGroup>(
+            10, std::vector<int64_t>{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}, config);
+        auto shifted = std::make_shared<SequenceGroup>(
+            10, std::vector<int64_t>{2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}, config);
+        parent->get_sequences().front()->set_prefix_cache_policy(13);
+        shifted->get_sequences().front()->set_prefix_cache_policy(12, [parent](size_t length, size_t block_size) {
+            return parent->get_sequences().front()->get_hash(length + 1, block_size);
+        });
+        parent->schedule_tokens(8);
+        shifted->schedule_tokens(draft_endpoint);
+        std::vector<BlockManager*> managers;
+        for (const CacheType type : {CacheType::KV_CACHE, CacheType::LINEAR_ATTENTION_CACHE}) {
+            auto manager = std::make_unique<BlockManager>(24, true, 4, GetParam(), 0,
+                                                         type == CacheType::LINEAR_ATTENTION_CACHE, 24);
+            manager->append_slots(parent);
+            manager->publish_completed_blocks(parent->get_sequences().front(), 0, 8);
+            manager->free_sequence(parent->get_sequences().front()->get_id());
+            managers.push_back(manager.get());
+            main_cache->register_cache_type(type, std::make_unique<testing::NiceMock<RowOnlyCacheManager>>(),
+                                           std::move(manager), GetParam() > 1);
+        }
+        auto draft_manager = std::make_unique<BlockManager>(24, true, 4, GetParam());
+        draft_manager->append_slots(shifted);
+        draft_manager->publish_completed_blocks(shifted->get_sequences().front(), 0, draft_endpoint);
+        draft_manager->free_sequence(shifted->get_sequences().front()->get_id());
+        managers.push_back(draft_manager.get());
+        draft_cache->register_cache_type(CacheType::KV_CACHE,
+            std::make_unique<testing::NiceMock<RowOnlyCacheManager>>(), std::move(draft_manager), GetParam() > 1);
+
+        ov::genai::SchedulerConfig scheduler_config;
+        scheduler_config.enable_prefix_caching = true;
+        auto main_child = std::make_shared<MtpAdmissionChild>(
+            std::make_shared<ov::genai::Scheduler>(main_cache, scheduler_config));
+        auto draft_child = std::make_shared<MtpAdmissionChild>(
+            std::make_shared<ov::genai::Scheduler>(draft_cache, scheduler_config));
+        MtpAdmissionStrategy strategy(main_child, draft_child);
+        const auto neighbor_handle = strategy.add_request(99, embeddings, config, std::nullopt, prompt_ids);
+        const auto main_neighbor = main_child->get_awaiting_requests().front();
+        const auto draft_neighbor = draft_child->get_awaiting_requests().front();
+        ASSERT_EQ(main_neighbor->get_num_processed_tokens(), draft_endpoint);
+        ASSERT_EQ(draft_neighbor->get_num_processed_tokens(), draft_endpoint);
+        const uint64_t main_neighbor_id = main_neighbor->get_sequences().front()->get_id();
+        const uint64_t draft_neighbor_id = draft_neighbor->get_sequences().front()->get_id();
+        const auto neighbor_live = managers[1]->get_linear_attention_live_state(main_neighbor_id);
+        std::vector<size_t> free_before;
+        std::vector<std::pair<ov::genai::CacheBlock::Ptr, size_t>> references_before;
+        for (size_t manager_index = 0; manager_index < managers.size(); ++manager_index) {
+            auto& manager = *managers[manager_index];
+            free_before.push_back(manager.num_free_blocks());
+            const auto& tables = manager.get_block_tables(manager_index == 2 ? draft_neighbor_id : main_neighbor_id);
+            for (const auto& layer : tables) {
+                for (const auto& row : layer) {
+                    references_before.emplace_back(row, row->get_references_count());
+                }
+            }
+        }
+
+        bool completed = false;
+        size_t failures = 0;
+        for (size_t allocation_index = 0; allocation_index < 2048; ++allocation_index) {
+            SCOPED_TRACE(allocation_index);
+            ov::genai::GenerationHandle handle;
+            try {
+                FailAllocation failure(allocation_index);
+                handle = strategy.add_request(0, embeddings, config, std::nullopt, prompt_ids);
+                completed = true;
+            } catch (const std::bad_alloc&) {
+                ++failures;
+            }
+            if (completed) {
+                EXPECT_EQ(main_child->processed(0), draft_endpoint);
+                EXPECT_EQ(draft_child->processed(0), draft_endpoint);
+                EXPECT_EQ(strategy.draft_handle_count(), 2u);
+                strategy.discard(0);
+            }
+            EXPECT_EQ(main_child->get_awaiting_requests(), std::vector<SequenceGroup::Ptr>{main_neighbor});
+            EXPECT_EQ(draft_child->get_awaiting_requests(), std::vector<SequenceGroup::Ptr>{draft_neighbor});
+            EXPECT_EQ(strategy.draft_handle_count(), 1u);
+            EXPECT_FALSE(main_neighbor->handle_stopped());
+            EXPECT_FALSE(draft_neighbor->handle_stopped());
+            EXPECT_EQ(main_neighbor->get_num_processed_tokens(), draft_endpoint);
+            EXPECT_EQ(draft_neighbor->get_num_processed_tokens(), draft_endpoint);
+            const auto live = managers[1]->get_linear_attention_live_state(main_neighbor_id);
+            EXPECT_EQ(live.rows, neighbor_live.rows);
+            EXPECT_EQ(live.endpoint, neighbor_live.endpoint);
+            EXPECT_EQ(live.generation, neighbor_live.generation);
+            for (size_t manager_index = 0; manager_index < managers.size(); ++manager_index) {
+                EXPECT_EQ(managers[manager_index]->num_free_blocks(), free_before[manager_index]);
+                EXPECT_EQ(managers[manager_index]->get_num_sequences_with_temporary_blocks(), 0u);
+                EXPECT_EQ(managers[manager_index]->get_num_linear_attention_headroom_blocks(), 0u);
+            }
+            for (const auto& [row, references] : references_before) {
+                EXPECT_EQ(row->get_references_count(), references);
+                EXPECT_TRUE(row->has_published_hash());
+            }
+            if (completed) {
+                break;
+            }
+        }
+        ASSERT_TRUE(completed);
+        EXPECT_GT(failures, 0u);
+        EXPECT_TRUE(strategy.failed_with_both_queued);
+        EXPECT_TRUE(strategy.failed_after_main_restore);
+        RecordProperty("shared_endpoint_" + std::to_string(draft_endpoint) + "_failures", failures);
+        strategy.discard(99);
+        for (const auto* manager : managers) {
+            EXPECT_EQ(manager->num_free_blocks(), 24u);
+        }
+
+        completed = false;
+        failures = 0;
+        for (size_t allocation_index = 0; allocation_index < 2048; ++allocation_index) {
+            SCOPED_TRACE(allocation_index);
+            ov::genai::GenerationHandle handle;
+            try {
+                FailAllocation failure(allocation_index);
+                handle = strategy.add_request(0, embeddings, config, std::nullopt, prompt_ids);
+                completed = true;
+            } catch (const std::bad_alloc&) {
+                ++failures;
+            }
+            if (completed) {
+                EXPECT_EQ(main_child->processed(0), draft_endpoint);
+                EXPECT_EQ(draft_child->processed(0), draft_endpoint);
+                strategy.discard(0);
+            }
+            ASSERT_EQ(main_child->awaiting_count(), 0u);
+            ASSERT_EQ(draft_child->awaiting_count(), 0u);
+            EXPECT_EQ(strategy.draft_handle_count(), 0u);
+            for (auto* manager : managers) {
+                EXPECT_EQ(manager->num_free_blocks(), 24u);
+                EXPECT_EQ(manager->get_num_sequences_with_temporary_blocks(), 0u);
+                EXPECT_EQ(manager->get_num_linear_attention_headroom_blocks(), 0u);
+            }
+            for (const auto& [row, references] : references_before) {
+                EXPECT_EQ(row->get_references_count(), 0u);
+                EXPECT_TRUE(row->has_published_hash());
+            }
+            if (completed) {
+                break;
+            }
+        }
+        ASSERT_TRUE(completed);
+        EXPECT_GT(failures, 0u);
+        RecordProperty("unshared_endpoint_" + std::to_string(draft_endpoint) + "_failures", failures);
     }
 }
 

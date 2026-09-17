@@ -3000,6 +3000,68 @@ def test_cdpruner_continuous_batching_chat_history(
     )
 
 
+@pytest.mark.parametrize("main_prefix", [False, True])
+def test_local_qwen35_mtp_rejects_prefix_mismatch(main_prefix):
+    model_path = os.environ.get("OV_GENAI_QWEN35_MODEL")
+    if not model_path:
+        pytest.skip("OV_GENAI_QWEN35_MODEL must name a local Qwen3.5 VLM IR")
+    scheduler = SchedulerConfig()
+    scheduler.cache_size = 1
+    scheduler.enable_prefix_caching = main_prefix
+    draft_scheduler = SchedulerConfig()
+    draft_scheduler.num_kv_blocks = 128
+    draft_scheduler.enable_prefix_caching = not main_prefix
+    with pytest.raises(RuntimeError, match="MTP main and draft pipelines must use the same enable_prefix_caching"):
+        ContinuousBatchingPipeline(
+            model_path,
+            scheduler,
+            "CPU",
+            {"draft_model": draft_model(model_path, "CPU", scheduler_config=draft_scheduler)},
+        )
+
+
+def test_local_qwen35_mtp_text_add_request(monkeypatch, capfd):
+    model_path = os.environ.get("OV_GENAI_QWEN35_MODEL")
+    if not model_path:
+        pytest.skip("OV_GENAI_QWEN35_MODEL must name a local Qwen3.5 VLM IR")
+    monkeypatch.setenv("OPENVINO_LOG_LEVEL", "5")
+    scheduler = SchedulerConfig()
+    scheduler.cache_size = 1
+    scheduler.cache_interval_multiplier = 1
+    scheduler.max_num_seqs = 1
+    scheduler.num_linear_attention_blocks = 32
+    scheduler.enable_prefix_caching = False
+    reference = ContinuousBatchingPipeline(model_path, scheduler, "CPU")
+    scheduler.enable_prefix_caching = True
+    draft_scheduler = SchedulerConfig()
+    draft_scheduler.enable_prefix_caching = True
+    draft_scheduler.num_kv_blocks = 128
+    pipeline = ContinuousBatchingPipeline(
+        model_path,
+        scheduler,
+        "CPU",
+        {"draft_model": draft_model(model_path, "CPU", scheduler_config=draft_scheduler)},
+    )
+    config = GenerationConfig(max_new_tokens=24, do_sample=False, ignore_eos=True)
+    prompt = "Repeat the following sequence exactly: " + "one two three four. " * 32
+    reference_handle = reference.add_request(0, prompt, config)
+    while reference.has_non_finished_requests():
+        reference.step()
+    expected = reference_handle.read_all()[0].generated_ids
+    config.num_assistant_tokens = 4
+    for iteration in range(2):
+        capfd.readouterr()
+        handle = pipeline.add_request(0, prompt, config)
+        while pipeline.has_non_finished_requests():
+            pipeline.step()
+        assert handle.get_status() == GenerationStatus.FINISHED
+        assert handle.read_all()[0].generated_ids == expected
+        captured = capfd.readouterr()
+        if iteration == 1:
+            assert "Hybrid prefix restore:" in captured.out + captured.err
+            assert "MTP paired prefix replay:" in captured.out + captured.err
+
+
 @pytest.mark.parametrize("media", ["text", "image", "video", "video_metadata"])
 @pytest.mark.parametrize("enable_prefix_caching", [False, True])
 @pytest.mark.parametrize("num_assistant_tokens", [1, 4])
