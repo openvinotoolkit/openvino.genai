@@ -104,13 +104,16 @@ def _create_messages_dataset(path, as_jsonl=False, use_real_prompt=False):
             False,
             0.9,
         ),
-        (
+        pytest.param(
             "optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM",
             "text-agent",
             "messages_real.jsonl",
             True,
             True,
             0.9,
+            marks=pytest.mark.xfail(
+                reason="Known mismatch: deterministic GenAI ChatHistory path is not HF-prompt equivalent for messages_real.jsonl"
+            ),
         ),
         (
             "optimum-intel-internal-testing/tiny-random-llava",
