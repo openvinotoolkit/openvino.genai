@@ -656,9 +656,9 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     OPENVINO_ASSERT(properties.generation_config_batches.has_value(),
         "\"generation_config_batches\" property is required in generate with properties map");
 
-    OPENVINO_ASSERT(properties.has_media_properties(),
-                    "Media properties are required for VLM generate with properties map. "
-                    "Use the text-only generate overload for LLM requests.");
+    OPENVINO_ASSERT(properties.has_multimodal_properties(),
+        "Multimodal properties are required for generate with properties map. "
+        "Use the text-only generate overload for LLM requests.");
 
     return m_impl->generate(
         prompts,
@@ -700,9 +700,9 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     OPENVINO_ASSERT(properties.generation_config_batches.has_value(),
         "\"generation_config_batches\" property is required in generate with properties map");
 
-    OPENVINO_ASSERT(properties.has_media_properties(),
-                    "Media properties are required for VLM generate with properties map. "
-                    "Use the text-only generate overload for LLM requests.");
+    OPENVINO_ASSERT(properties.has_multimodal_properties(),
+        "Multimodal properties are required for generate with properties map. "
+        "Use the text-only generate overload for LLM requests.");
 
     return m_impl->generate(
         histories,

@@ -36,8 +36,9 @@ Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai
 # ASR pipeline usage
 ## Qwen3-ASR continuous batching
 
-`automatic_speech_recognition_cb` uses `ContinuousBatchingPipeline::add_request()`
-and `step()` to process multiple WAV files. Use a Qwen3-ASR split export containing
+`automatic_speech_recognition_cb` uses both `ContinuousBatchingPipeline::add_request()`
+with `step()` and the batched `generate()` API to process multiple WAV files. Use a
+Qwen3-ASR split export containing
 `openvino_audio_encoder_model.xml`, `openvino_text_embeddings_model.xml`,
 `openvino_language_model.xml`, their weights, and the tokenizer/configuration files.
 The legacy encoder/decoder export is not supported by this sample.
@@ -56,10 +57,11 @@ automatic_speech_recognition_cb Qwen3-ASR-0.6B-split CPU first.wav second.wav
 ```
 
 Each WAV file must have a 16 kHz sample rate and fit within one audio chunk
-(at most 1200 seconds). The sample submits all files before stepping the decoder,
-limits each output to 256 generated tokens, and prints raw model output including
-language metadata. Audio encoding happens during submission; decoder inference is
-continuously batched. No ASRPipeline chunk merging or timestamp prediction is performed.
+(at most 1200 seconds). The sample first submits all files before stepping the decoder,
+then processes the same files with one batched `generate()` call. It limits each output
+to 256 generated tokens and prints raw model output including language metadata. Audio
+encoding happens during submission; decoder inference is continuously batched. No
+ASRPipeline chunk merging or timestamp prediction is performed.
 
 ### Input prompt examples
 

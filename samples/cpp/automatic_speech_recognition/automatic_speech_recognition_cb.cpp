@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -25,12 +26,15 @@ int main(int argc, char* argv[]) try {
                                "<|im_start|>assistant\n";
 
     std::vector<ov::genai::GenerationHandle> handles;
+    std::vector<std::vector<ov::Tensor>> audio_batches;
     for (int argument_index = 3; argument_index < argc; ++argument_index) {
-        auto waveform = utils::audio::read_wav(argv[argument_index]);
-        const ov::Tensor audio(ov::element::f32, {waveform.size()}, waveform.data());
+        const auto waveform = utils::audio::read_wav(argv[argument_index]);
+        ov::Tensor audio(ov::element::f32, {waveform.size()});
+        std::copy(waveform.begin(), waveform.end(), audio.data<float>());
+        audio_batches.push_back({audio});
         handles.push_back(pipeline.add_request(handles.size(),
                                                prompt,
-                                               ov::genai::audios(std::vector<ov::Tensor>{audio}),
+                                               ov::genai::audios(audio_batches.back()),
                                                ov::genai::generation_config(generation_config)));
     }
 
@@ -40,10 +44,24 @@ int main(int argc, char* argv[]) try {
 
     for (size_t request_id = 0; request_id < handles.size(); ++request_id) {
         OPENVINO_ASSERT(handles[request_id]->get_status() == ov::genai::GenerationStatus::FINISHED,
-                        "Audio request ", request_id, " did not finish successfully");
+                        "Audio request ",
+                        request_id,
+                        " did not finish successfully");
         const auto outputs = handles[request_id]->read_all();
         OPENVINO_ASSERT(outputs.size() == 1, "Expected one transcription for audio request ", request_id);
         std::cout << "Request " << request_id << ": " << tokenizer.decode(outputs.front().generated_ids) << '\n';
+    }
+
+    const std::vector<std::string> prompts(audio_batches.size(), prompt);
+    const std::vector<ov::genai::GenerationConfig> generation_configs(audio_batches.size(), generation_config);
+    const auto results = pipeline.generate(prompts,
+                                           ov::genai::audios_batches(audio_batches),
+                                           ov::genai::generation_config_batches(generation_configs));
+    for (size_t request_id = 0; request_id < results.size(); ++request_id) {
+        OPENVINO_ASSERT(results[request_id].texts.size() == 1,
+                        "Expected one generated transcription for audio request ",
+                        request_id);
+        std::cout << "Generated request " << request_id << ": " << results[request_id].texts.front() << '\n';
     }
     return EXIT_SUCCESS;
 } catch (const std::exception& error) {
@@ -54,4 +72,14 @@ int main(int argc, char* argv[]) try {
 // results
 // Request 0: language Chinese<asr_text>审核制。
 // Request 1: language English<asr_text>How are you doing today?
-// Request 2: language English<asr_text>You know if you watch the show, you're aware that I spend most of my time right over there, wandering the news forest for you, felling all the biggestand hardiest white story oaks, cutting and shaping them into the newsiest most topical cleats, clamps and planks, keeping them in a constant angle, gradually creating a shell-shaped shallow ball hole using the fire bending technique instead of steam bending, obviously. Then I lay out all the keel blocks to carefully set up the stem stern and garboard, attach the bill phurocks to the timber, and lovingly craft a flat transom stern out of naturally curved quarter circles. Then secure all the planks with trunnels handmade from the finest locust wood and finally adorn it with a proud bow, sprit forepeak and custom gilded fingerhead to present to you the Dutch Golden Age Spiegel yacht that is my monologue. But sometimes, sometimes folks, gotta hydrate after that. Spiegel yacht. But sometimes I awaken from a meat sweat induced fever strapped to a basket on the wonder wheel at Coney Island, stumble across the garbage flecked beach to the sound of a terrifying ragged bellow I realize is coming from my own lungs,
+// Request 2: language English<asr_text>You know if you watch the show, you're aware that I spend most of my time right
+// over there, wandering the news forest for you, felling all the biggestand hardiest white story oaks, cutting and
+// shaping them into the newsiest most topical cleats, clamps and planks, keeping them in a constant angle, gradually
+// creating a shell-shaped shallow ball hole using the fire bending technique instead of steam bending, obviously. Then
+// I lay out all the keel blocks to carefully set up the stem stern and garboard, attach the bill phurocks to the
+// timber, and lovingly craft a flat transom stern out of naturally curved quarter circles. Then secure all the planks
+// with trunnels handmade from the finest locust wood and finally adorn it with a proud bow, sprit forepeak and custom
+// gilded fingerhead to present to you the Dutch Golden Age Spiegel yacht that is my monologue. But sometimes, sometimes
+// folks, gotta hydrate after that. Spiegel yacht. But sometimes I awaken from a meat sweat induced fever strapped to a
+// basket on the wonder wheel at Coney Island, stumble across the garbage flecked beach to the sound of a terrifying
+// ragged bellow I realize is coming from my own lungs,
