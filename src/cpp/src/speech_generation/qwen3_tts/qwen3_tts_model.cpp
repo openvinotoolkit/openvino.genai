@@ -42,12 +42,13 @@ constexpr const char* TALKER_NAME = "openvino_talker_model.xml";  // 4D float at
 constexpr const char* CODE_PREDICTOR_NAME = "openvino_code_predictor_model.xml";
 constexpr const char* CODEC_ENCODER_NAME = "openvino_codec_encoder.xml";
 
-// NPU-only decoder chunking, ported from the OpenVINO notebook's OVQwen3TTSSpeechTokenizer
-// (qwen_3_tts_helper.py); CPU/GPU bypass this entirely (see m_decoder_static).
+// Constants used for NPU-only decoder chunking.
 constexpr int64_t DECODER_CHUNK_SIZE = 231;      // effective (non-overlapping) codes fed per chunk
 constexpr int64_t DECODER_LEFT_CONTEXT = 25;     // prior-chunk codes prepended for continuity
-constexpr int64_t DECODER_TRACE_LEN = DECODER_CHUNK_SIZE + DECODER_LEFT_CONTEXT;  // static decoder window
-constexpr int64_t DECODER_OFFSET = 555;  // tail samples trimmed per chunk to hide a decoder edge artifact
+constexpr int64_t DECODER_WINDOW_LEN = DECODER_CHUNK_SIZE + DECODER_LEFT_CONTEXT;  // static decoder window
+constexpr int64_t DECODER_BLEND_FRAMES = 13;      // middle region of DECODER_LEFT_CONTEXT that is cross-faded.
+static_assert(DECODER_LEFT_CONTEXT >= DECODER_BLEND_FRAMES,
+              "DECODER_LEFT_CONTEXT must be >= DECODER_BLEND_FRAMES");
 
 // Component roles used for per-component device routing. Each Qwen3-TTS
 // submodel is a separate IR, so (mirroring the VLM pipeline) the pipeline can
@@ -393,7 +394,7 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
     m_talker_code_predictor_embedding.set_tensor("step", m_pred_emb_step);
     {
         // On accelerators that require static shapes (e.g. NPU) the decoder is reshaped
-        // to a fixed [1, num_quantizers, DECODER_TRACE_LEN] window and decode_speech_tokenizer
+        // to a fixed [1, num_quantizers, DECODER_WINDOW_LEN] window and decode_speech_tokenizer
         // drives it through overlapping padded chunks. CPU/GPU keep the model dynamic and
         // decode_speech_tokenizer feeds it the whole code sequence in a single call, exactly
         // like optimum-intel/native HF.
@@ -404,7 +405,7 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
             auto decoder_model = ov::genai::utils::singleton_core().read_model(decoder_path);
             const ov::PartialShape static_codes{1,
                                                 static_cast<int64_t>(m_decoder_num_quantizers),
-                                                static_cast<int64_t>(DECODER_TRACE_LEN)};
+                                                static_cast<int64_t>(DECODER_WINDOW_LEN)};
 
             decoder_model->reshape({{"audio_codes", static_codes}});
             m_speech_tokenizer_decoder = compile_request(decoder_model,
@@ -1463,7 +1464,7 @@ std::vector<float> Qwen3TTSImpl::decode_speech_tokenizer(const std::vector<int64
         const size_t chunk_len = end - chunk_start;
 
         const size_t src_offset = chunk_start * m_decoder_num_quantizers;
-        const size_t padded_len = static_cast<size_t>(DECODER_TRACE_LEN);
+        const size_t padded_len = static_cast<size_t>(DECODER_WINDOW_LEN);
         OPENVINO_ASSERT(chunk_len <= padded_len, "Speech tokenizer decoder chunk length exceeds the padded trace length");
         ov::Tensor audio_codes;
 
@@ -1478,24 +1479,64 @@ std::vector<float> Qwen3TTSImpl::decode_speech_tokenizer(const std::vector<int64
             }
         }
 
+        // Fill the rest of the window with real look-ahead codes (if available) instead of
+        // zeros: a real-vs-zero-padded-code boundary confuses the decoder near that edge, so
+        // only the true tail of the whole sequence (no more codes left at all) is ever padded.
+        const size_t lookahead_len = std::min(padded_len - chunk_len, num_frames - end);
+        if (lookahead_len > 0) {
+            const int64_t* lookahead_src = codes.data() + end * m_decoder_num_quantizers;
+            for (size_t t = 0; t < lookahead_len; ++t) {
+                for (size_t q = 0; q < m_decoder_num_quantizers; ++q) {
+                    dst[q * padded_len + (chunk_len + t)] = lookahead_src[t * m_decoder_num_quantizers + q];
+                }
+            }
+        }
+
         m_speech_tokenizer_decoder.set_tensor("audio_codes", audio_codes);
         run_and_time([&]{ m_speech_tokenizer_decoder.infer(); }, roles::SPEECH_TOKENIZER_DECODER, m_perf_ms, m_perf_calls);
-
         const auto out = m_speech_tokenizer_decoder.get_tensor("waveform");
         OPENVINO_ASSERT(out.get_element_type() == ov::element::f32,
                         "Speech tokenizer decoder output is expected to be f32");
 
         const float* out_ptr = out.data<const float>();
         const size_t out_size = out.get_size();
-
-        const size_t total_valid = chunk_len * m_decoder_upsample > static_cast<size_t>(DECODER_OFFSET)
-                                       ? chunk_len * m_decoder_upsample - static_cast<size_t>(DECODER_OFFSET)
-                                       : 0;
+        const size_t valid_samples = chunk_len * m_decoder_upsample;
+        OPENVINO_ASSERT(valid_samples <= out_size,
+                        "Speech tokenizer decoder produced fewer samples than the chunk's real code length");
         const size_t context_samples = ctx * m_decoder_upsample;
 
-        if (total_valid > context_samples && total_valid <= out_size) {
-            chunks_audio.insert(chunks_audio.end(), out_ptr + static_cast<std::ptrdiff_t>(context_samples), out_ptr + static_cast<std::ptrdiff_t>(total_valid));
+        // Split the ctx-frame overlap into three zones so each chunk gets a region where it is
+        // fully trusted, mirrored around a middle blend zone: the first (oldest) left_drop frames
+        // keep the previous chunk's decode untouched (this chunk's decode of them has too little
+        // left-side context), the last (nearest the boundary) right_drop frames take this chunk's
+        // decode outright (the previous chunk's decode of them had no right-side context), and
+        // blend_frames in between are linearly crossfaded.
+        const size_t blend_frames = std::min<size_t>(static_cast<size_t>(DECODER_BLEND_FRAMES), ctx);
+        const size_t leftover_frames = ctx - blend_frames;
+        const size_t left_drop_frames = (leftover_frames + 1) / 2;
+        const size_t right_drop_frames = leftover_frames - left_drop_frames;
+        const size_t blend_samples = blend_frames * m_decoder_upsample;
+        const size_t right_drop_samples = right_drop_frames * m_decoder_upsample;
+
+        if (blend_samples > 0 && chunks_audio.size() >= blend_samples + right_drop_samples) {
+            const size_t blend_start_local = context_samples - blend_samples - right_drop_samples;
+            float* blend_tail = chunks_audio.data() + (chunks_audio.size() - blend_samples - right_drop_samples);
+            for (size_t i = 0; i < blend_samples; ++i) {
+                // Closed-interval ramp: the last blended sample is fully this chunk's own
+                // regeneration, the first is fully the previous chunk's already-appended output.
+                const float w = (blend_samples > 1) ? static_cast<float>(i) / static_cast<float>(blend_samples - 1)
+                                                     : 1.0f;
+                blend_tail[i] = blend_tail[i] * (1.0f - w) + out_ptr[blend_start_local + i] * w;
+            }
         }
+        if (right_drop_samples > 0 && chunks_audio.size() >= right_drop_samples) {
+            float* new_tail = chunks_audio.data() + (chunks_audio.size() - right_drop_samples);
+            std::copy_n(out_ptr + (context_samples - right_drop_samples), right_drop_samples, new_tail);
+        }
+
+        chunks_audio.insert(chunks_audio.end(),
+                            out_ptr + static_cast<std::ptrdiff_t>(context_samples),
+                            out_ptr + static_cast<std::ptrdiff_t>(valid_samples));
 
         start = end;
     }
