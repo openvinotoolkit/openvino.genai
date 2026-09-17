@@ -3,7 +3,7 @@
 ## Current Handoff (2026-09-15)
 
 LFM is committed as `43b1c3df1`; Qwen3.5 paired prefix replay is committed as
-`80c5236b1`. The explicit `ChatHistory` follow-up is implemented and uncommitted:
+`80c5236b1`. The explicit `ChatHistory` follow-up is committed as `751f910ea`:
 
 - Assisted history requests now forward the aligned prompt IDs without requiring
   Omni outputs, and MTP initializes its strategy-level vision registry.
@@ -16,6 +16,187 @@ LFM is committed as `43b1c3df1`; Qwen3.5 paired prefix replay is committed as
   cancellation/reuse and changed-media checks also run in these cases.
 - The native library builds and scoped C++ diagnostics are clean. The broader
   native and model-suite counts below describe the preceding committed milestone.
+
+### Interval-4 Benchmark Rerun (2026-09-17)
+
+The benchmark was rerun successfully in the explicitly activated environment.
+`venv/bin/activate` intentionally sources `setupvars.sh`; its
+`PYTHONPATH=/home/apaniuko/openvino/python` and
+`LD_LIBRARY_PATH=/home/apaniuko/openvino/runtime/...` were preserved. In that
+shell, `openvino` imported from `/home/apaniuko/openvino/python/openvino/__init__.py`
+and `ov.get_version()` returned `2026.5.0-22974-1af7b61853c`. Installed GenAI
+imported from
+`venv/lib/python3.10/site-packages/openvino_genai/__init__.py`; its metadata is
+`2026.5.0.0`. The pip `openvino` metadata is `2026.3.1`, but it is not the
+runtime selected by the activated `PYTHONPATH` and was not used as a blocker.
+The obsolete `build/vscode-__unspec__/openvino_genai/libopenvino_genai.so`
+Debug `LD_PRELOAD` was removed when present. `LD_PRELOAD` was empty during the
+run, and `OPENVINO_LOG_LEVEL` and `OV_GENAI_MTP_TIMING_JSONL` were unset.
+
+The available CMake provenance reports `CMAKE_BUILD_TYPE=Release` and
+`ENABLE_LTO=OFF` for `build/` and `build-review/`; the installed wheel's full
+build flags were not independently exposed. This is a provenance limitation,
+not a timing blocker. No environment packages were changed.
+
+Conditions match the prior interval-4 experiment: local Qwen3.5-2B INT4
+actual-MTP model, CPU with 18 inference threads and one stream, text-only
+`VLMPipeline` with PA, greedy generation with `ignore_eos=True`, 64 output
+tokens and four assistant candidates. Main cache uses 1 GiB, 32 linear-
+attention rows, interval multiplier 4, batch-token limit 256 and one sequence;
+the draft uses 256 KV blocks. Three repetitions rotate mode order. Each length
+has a distinct-prefix untimed warmup, followed by measured first and exact
+repeat submissions. Interval 1 remains excluded because its long prompt
+exceeded capacity. Model loading is excluded from timings.
+
+| Input tokens | Mode | TTFT median (min-max) ms | Wall median (min-max) ms |
+| ---: | --- | ---: | ---: |
+| 187 | Main-only, prefix off | 659.9 (640.7-678.0) | 2622.8 (2600.3-2636.6) |
+| 187 | MTP, prefix off | 649.4 (642.1-653.5) | 2810.4 (2797.1-2868.3) |
+| 187 | MTP, prefix on cold | 676.2 (648.3-676.8) | 2842.8 (2800.2-2854.6) |
+| 187 | MTP, prefix on warm | 229.5 (226.6-239.7) | 2392.5 (2386.2-2406.1) |
+| 668 | Main-only, prefix off | 2280.7 (2191.7-2350.9) | 4244.8 (4155.5-4319.4) |
+| 668 | MTP, prefix off | 2237.0 (2208.5-2267.3) | 4433.4 (4374.4-4459.0) |
+| 668 | MTP, prefix on cold | 2244.3 (2230.7-2370.9) | 4400.5 (4393.3-4568.1) |
+| 668 | MTP, prefix on warm | 136.7 (135.2-141.6) | 2305.4 (2302.1-2334.0) |
+| 2588 | Main-only, prefix off | 8734.4 (8496.9-8899.3) | 10720.3 (10509.9-10879.0) |
+| 2588 | MTP, prefix off | 8538.3 (8499.8-8625.7) | 10794.2 (10754.0-10941.4) |
+| 2588 | MTP, prefix on cold | 8737.2 (8599.9-9117.4) | 11003.1 (10852.5-11414.9) |
+| 2588 | MTP, prefix on warm | 174.2 (173.4-184.3) | 2461.2 (2438.1-2466.2) |
+
+Warm MTP-prefix versus MTP-off TTFT speedups are **2.83x/16.36x/49.02x**;
+wall-time speedups are **1.17x/1.92x/4.39x**. Compared with main-only,
+warm MTP TTFT speedups are **2.88x/16.68x/50.15x** and wall-time speedups are
+**1.10x/1.84x/4.36x** for 187/668/2588 tokens. MTP acceptance was 37.5% in
+every MTP cell. All 54 measured outputs generated exactly 64 tokens and matched
+by SHA-256 within each scale; each of the 18 cells has three samples.
+
+These results measure a synthetic repetitive-text workload only. They do not
+measure media latency, model loading, main-only prefix-on reuse, or general MTP
+speedups. "Cold" means the first measured prompt after the distinct-prefix
+warmup, not cold startup.
+
+Exact reproduction, with each fresh shell explicitly activated:
+
+```bash
+source /home/apaniuko/cpp/openvino.genai/venv/bin/activate
+unset LD_PRELOAD OPENVINO_LOG_LEVEL OV_GENAI_MTP_TIMING_JSONL
+python /home/apaniuko/cpp/openvino.genai/temp/qwen35_mtp/prefix_replay_bench.py \
+  --model /home/apaniuko/cpp/openvino.genai/temp/qwen35_mtp/Qwen3.5-2B-int4 \
+  --repetitions 3 --scales 32 128 512 --tokens 64 \
+  --output /home/apaniuko/cpp/openvino.genai/temp/qwen35_mtp/prefix-replay-benchmark-interval4-20260917.json
+```
+
+Raw ignored artifacts are
+`temp/qwen35_mtp/prefix-replay-benchmark-interval4-20260917.json` and
+`temp/qwen35_mtp/prefix-replay-benchmark-interval4-20260917.log`. The prior
+2026-09-15 measurements below remain historical baselines and were not
+overwritten.
+
+### API Tests and Diagnostic Performance (2026-09-15)
+
+Added local-model Python tests for direct string `add_request` (token parity,
+request-ID reuse, observed warm hybrid/paired restore) and both directions of
+explicit MTP prefix-setting mismatch. All three cases passed. The MTP-only
+linear-attention draft guard was extracted unchanged into a protected method;
+one/two-layer native cases exercise KV-only versus hybrid state, prefix on/off,
+and main versus draft roles. All 34 isolated tests passed. Eight existing LFM
+independent-draft cases also passed across prefix settings, split modes and
+candidate counts, confirming that independent hybrid drafting remains allowed.
+The LA guard matrix tests the production predicate with synthetic schedulers,
+not construction of an unsupported real LA-bearing MTP export.
+
+Diagnostic benchmark: local Qwen3.5-2B INT4, actual MTP submodel, CPU
+Intel Core i9-10980XE, 18 inference threads, one stream, text-only `VLMPipeline`
+with PA. Each request generates 64 tokens, greedy, ignoring EOS, with four MTP
+candidates. Main-only has prefix caching disabled. Main cache budget is 1 GiB,
+32 LA rows, checkpoint interval multiplier 4, batch-token limit 256; draft uses
+256 KV blocks. Three repetitions rotate the mode order, each using a newly
+constructed pipeline and untimed per-length warmup with a different prefix.
+The measured prompt is then submitted twice. "Cold" means first prompt use,
+not cold model loading; "warm" means the immediate exact repeat. Prompts repeat
+"one two three four." at three lengths. All 54 measured outputs matched by text
+SHA-256 and had exactly 64 generated tokens. Draft acceptance was 37.5% throughout.
+
+Median timings, three samples per cell. Off/main rows use repeat submissions
+to match the warm run; cold prefix rows use first submissions. Times are ms.
+
+| Input tokens | Mode | TTFT | Total request | Total min-max |
+| ---: | --- | ---: | ---: | ---: |
+| 187 | Main-only, prefix off | 712.3 | 3038.8 | 2994.3-3039.6 |
+| 187 | MTP, prefix off | 691.9 | 4021.6 | 3976.2-4118.7 |
+| 187 | MTP, prefix on cold | 682.3 | 3973.6 | 3942.8-4106.5 |
+| 187 | MTP, prefix on warm | 251.5 | 3595.9 | 3531.6-3716.0 |
+| 668 | Main-only, prefix off | 2249.4 | 4560.0 | 4539.6-4687.4 |
+| 668 | MTP, prefix off | 2311.2 | 5766.2 | 5522.9-5893.9 |
+| 668 | MTP, prefix on cold | 2321.0 | 5714.7 | 5626.3-5825.7 |
+| 668 | MTP, prefix on warm | 182.7 | 3627.1 | 3469.5-3637.9 |
+| 2588 | Main-only, prefix off | 8516.8 | 10864.3 | 10847.3-11266.7 |
+| 2588 | MTP, prefix off | 8920.7 | 12511.6 | 12132.4-12555.9 |
+| 2588 | MTP, prefix on cold | 8830.7 | 12288.8 | 12275.8-12466.9 |
+| 2588 | MTP, prefix on warm | 275.3 | 3833.2 | 3783.4-3885.0 |
+
+Warm versus MTP-off TTFT speedups are 2.75x/12.65x/32.41x; total-time speedups
+are 1.12x/1.59x/3.26x. Compared with main-only, warm MTP is slower at 187 tokens
+and 1.26x/2.83x faster at 668/2588. Cold MTP does not beat main-only on this
+workload. These results isolate a repeated-prefix benefit, not a general MTP
+speedup, and do not measure image/video latency or main-only prefix-on reuse.
+
+Historical setup limits: the 2026-09-15 run used a preloaded GenAI Debug
+library, while its provenance check recorded pip OpenVINO metadata 2026.3.1
+and the activated native runtime 2026.5.0-22974-1af7b61853c. The benchmark
+completed through `openvino_genai`; metadata recorded GenAI 2026.5.0.0 and
+Transformers 5.5.0. The 2026-09-17 run above intentionally used the activated
+nightly paths without that obsolete preload. An initial interval-1 attempt
+exhausted the LA budget on the long prompt; those partial results are excluded.
+
+Local reproduction and raw data (ignored, not intended for commit):
+`temp/qwen35_mtp/prefix_replay_bench.py` and
+`temp/qwen35_mtp/prefix-replay-benchmark-interval4-20260915.json`.
+Run with `venv/bin/python`, `LD_PRELOAD` pointing to
+`build/vscode-__unspec__/openvino_genai/libopenvino_genai.so`, logging/timing
+instrumentation disabled, and `--output` naming a new JSON file. The harness
+defaults reproduce the table's three lengths and three repetitions.
+
+### Paired-Admission Failure Testing (2026-09-15)
+
+Implemented and uncommitted on top of `751f910ea`. The allocation sweep found and
+fixed two production defects:
+
+- Cleanup of restored rows allocated temporary vectors and cache-store nodes.
+  Under sustained allocation failure, rollback threw and left the failed pair
+  queued. Prefix preparation now reserves release records before acquiring rows;
+  freeing an unchanged restored table uses allocation-free prepared release.
+  Records are removed with their table and validated against current row identity
+  and the saved hash before reuse.
+- The KV-only draft used incremental restore, which could leave a partially
+  initialized table and crash cleanup. Single-cache orchestrator restore now uses
+  the same prepared restore primitive as the hybrid main.
+
+The production MTP admission/negotiation path is exercised through synthetic
+token-backed child ingress. One/two-layer cases cover matching checkpoints at 8
+and negotiation back to a draft checkpoint at 4, both with a pinned neighboring
+pair and with no neighbor. The allocator keeps failing during production cleanup.
+Checks cover both awaiting queues, draft handles, neighbor state, row references,
+published hashes, capacity, temporary/headroom ownership, and successful reuse of
+the failed request ID. Failures after both children are queued and after main
+restore are explicitly observed.
+
+Validation:
+
+- Eight sweeps exercised 1,662 failed admissions and eight successful retries.
+  One-layer counts: 228/176 failures for endpoints 4/8, for each ownership case;
+  two-layer counts: 242/185 respectively.
+- All 32 isolated allocation-failure tests and 755 selected native tests passed.
+  CSV-backed model/cache-routing suites remain excluded.
+- Four real Qwen3.5 MTP prefix-enabled, four-candidate text/image/video/video-metadata
+  cases passed against the rebuilt library, including explicit history, retained
+  media, warm restore, long generation, cancellation/reuse and prompt extension.
+- Scoped C++ diagnostics and changed-file whitespace checks are clean.
+
+Limits: injection covers host `new` allocations on the admission thread, not
+device OOM, concurrent scheduling, or real embedding/position construction. The
+real-model checks validate generation separately, without allocation injection.
+No cross-child prepared-apply transaction or performance baseline was added.
 
 ### Paired-Replay Milestone (2026-09-14)
 
@@ -48,8 +229,8 @@ Validation using the rebuilt native library:
 - Tiny Qwen2-VL passed with `uv run --active --no-project --with
   transformers==4.57.6 python -m pytest`, leaving the main venv unchanged.
 
-Remaining acceptance limits: no latency/TTFT comparison against main-only restore,
-no cross-child admission allocation-failure sweep, and no dedicated negative test
+Acceptance limits at that milestone: no latency/TTFT comparison against main-only
+restore, no cross-child admission allocation-failure sweep (now covered above), and no dedicated negative test
 for arbitrary caller-supplied position IDs. The aligned-ID admission guard is not
 proof that inputs came from the built-in embedder. LA-bearing drafts are rejected
 when prefix caching is enabled. Generated-state publication stays out of scope.
