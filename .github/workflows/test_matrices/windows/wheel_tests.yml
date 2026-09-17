@@ -112,6 +112,16 @@
   components:
     - speech_generation
 
+- name: Qwen3 TTS
+  cmd: |-
+    python -m pip install transformers==4.57.3
+    python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@c46fb912366bc9d25b8395621d885a457369228d#egg=optimum-intel"
+    python -m pip install qwen-tts
+    python -m pytest -s -v tests/python_tests/test_qwen3_tts_pipeline.py --override-ini cache_dir=/mount/caches/pytest/
+  timeout: 90
+  components:
+    - speech_generation
+
 - name: GGUF Reader tests
   cmd: |-
     python -m pytest -s -v tests/python_tests/test_gguf_reader.py
