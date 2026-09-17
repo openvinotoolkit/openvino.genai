@@ -13,9 +13,9 @@ public:
     explicit ASRGenerationConfig(const std::filesystem::path& json_path);
 
     /**
-     * @brief Language token to use for generation
-     * In the form of <|en|> for Whisper models. Can be set for multilingual models only.
-     * In the form of English for Qwen3-ASR models.
+     * @brief Language to use for generation
+     * In the form of `en`, `<|en|>` for Whisper models. Can be set for multilingual models only.
+     * In the form of English for Qwen3-ASR and Fun-ASR models.
      */
     std::optional<std::string> language = std::nullopt;
 

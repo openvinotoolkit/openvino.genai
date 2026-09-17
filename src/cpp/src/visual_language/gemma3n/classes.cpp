@@ -49,9 +49,10 @@ EncodedImage VisionEncoderGemma3n::encode(const ov::Tensor& image, const ov::Any
 
 InputsEmbedderGemma3n::InputsEmbedderGemma3n(const VLMConfig& vlm_config,
                                              const std::filesystem::path& model_dir,
+                                             const Tokenizer& tokenizer,
                                              const std::string& device,
                                              const ov::AnyMap device_config)
-    : IInputsEmbedder(vlm_config, model_dir, device, device_config) {
+    : IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {
     auto per_layer_model_path = model_dir / "openvino_text_embeddings_per_layer_model.xml";
     auto core = utils::singleton_core();
     auto model = core.read_model(per_layer_model_path);
@@ -149,7 +150,7 @@ ov::Tensor InputsEmbedderGemma3n::get_inputs_embeds(const std::string& prompt,
 
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
-    ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
+    ov::Tensor text_embeds = get_text_embedding(req, input_ids, metrics);
 
     if (images.empty()) {
         ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());

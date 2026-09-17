@@ -11,13 +11,14 @@ import traceback
 import llm_bench_utils.output_csv
 import llm_bench_utils.output_json
 import task.visual_language_generation as bench_vlm
+import task.visual_language_generation_chat as bench_vlm_chat
 import task.text_generation as bench_text
 import task.text_generation_chat as bench_text_chat
 import task.image_generation as bench_image
 import task.video_generation as bench_video
 import task.super_resolution_generation as bench_ldm_sr
 import task.speech_to_text_generation as bench_speech
-import task.text_embeddings as bench_text_embed
+import task.embedding as bench_text_embed
 import task.text_to_speech_generation as bench_text_to_speech
 import task.text_reranker as bench_text_rerank
 from llm_bench_utils.model_utils import analyze_args, get_ir_conversion_frontend, get_model_precision
@@ -175,6 +176,31 @@ def get_argparser():
         type=str,
         help="Path to store memory consumption logs and chart.",
     )
+    parser.add_argument(
+        "--memory_sampler",
+        default="base",
+        choices=["base", "win-gpu", "full"],
+        type=str.lower,  # normalise e.g. 'WIN-GPU'/'Full' -> 'win-gpu'/'full' before choices validation
+        required=False,
+        help="Memory sampler implementation to use when process-based monitoring is active\n"
+        "(--memory_consumption 3 or 4).\n"
+        "Possible values:\n"
+        "  base (default) — MemorySamplerBase: cross-platform sampler built on\n"
+        "                   psutil.memory_info(). Collects RSS, VMS, Private and\n"
+        "                   system-wide RAM. Works on Linux, macOS and Windows.\n"
+        "  win-gpu        — MemorySamplerWinGPU: same RAM metrics as base plus, when\n"
+        "                   the optional *wmi* package is installed (pip install wmi),\n"
+        "                   two per-GPU-adapter metrics: gpu_<index>_ded (dedicated\n"
+        "                   VRAM) and gpu_<index>_shr (shared system RAM). Sourced\n"
+        "                   from GPUAdapterMemory perf counters (Windows 10 1709+),\n"
+        "                   so integrated GPUs report real usage via the shared pool\n"
+        "                   instead of a constant 0. Windows only; falls back to\n"
+        "                   MemorySamplerBase on other platforms.\n"
+        "  full           — MemorySamplerFull: same RAM metrics as base plus uss, pss\n"
+        "                   and swap from psutil.memory_full_info() (reads /proc smaps).\n"
+        "                   More accurate 'real' footprint but slower. Linux only;\n"
+        "                   falls back to MemorySamplerBase on other platforms.",
+    )
     parser.add_argument("-bs", "--batch_size", type=int, default=1, required=False, help="Batch size value")
     parser.add_argument(
         "--num_beams",
@@ -329,16 +355,21 @@ def get_argparser():
     parser.add_argument(
         "--streaming", action="store_true", help="Set whether to use streaming mode, only applicable to LLM."
     )
-    parser.add_argument("--num_steps", type=int, required=False, help="Number of inference steps for image generation")
+    parser.add_argument(
+        "--num_steps",
+        type=greater_than_zero,
+        required=False,
+        help="Number of inference steps for Image and Video Generation.",
+    )
     parser.add_argument(
         "--height",
-        type=int,
+        type=greater_than_zero,
         required=False,
         help="Generated image height. Applicable only for Image and Video Generation.",
     )
     parser.add_argument(
         "--width",
-        type=int,
+        type=greater_than_zero,
         required=False,
         help="Generated image width. Applicable only for Image and Video Generation.",
     )
@@ -355,7 +386,7 @@ def get_argparser():
     )
     parser.add_argument(
         "--num_frames",
-        type=int,
+        type=greater_than_zero,
         required=False,
         help="Number of frames in generated video. Applicable only for Video Generation.",
     )
@@ -375,16 +406,19 @@ def get_argparser():
             "text_gen_chat",
             "image_gen",
             "visual_text_gen",
+            "visual_text_gen_chat",
             "speech_to_text",
             "image_cls",
             "code_gen",
             "ldm_super_resolution",
+            "embed",
             "text_embed",
             "text_rerank",
             "text_to_speech",
             "text-to-image",
             "image-to-image",
             "text-to-video",
+            "image-to-video",
             "inpainting",
         ],
         help="The task to setup the pipeline type",
@@ -426,6 +460,14 @@ def get_argparser():
         choices=["left", "right"],
         default=None,
         help="Side to use for padding 'left' or 'right'. Applicable only for text embeddings",
+    )
+    parser.add_argument(
+        "--embedding_prompt",
+        type=str,
+        default=None,
+        help="Instruction/system prompt used to guide embedding generation for Qwen3-VL-Embedding "
+        "(distinct from -p/--prompt, which is the content being embedded). Ignored by non-Qwen3-VL "
+        'embedding models. Defaults to "Represent the user\'s input."',
     )
     parser.add_argument(
         "--reranking_max_length",
@@ -472,7 +514,9 @@ def get_argparser():
         "--speech_voice",
         type=str,
         default="",
-        help="Speech voice for text-to-speech models. For Kokoro defaults to af_heart",
+        help=(
+            "Speech voice for text-to-speech models. For Kokoro defaults to af_heart. For Qwen3-Omni defaults to Ethan."
+        ),
     )
     parser.add_argument(
         "-vf",
@@ -495,6 +539,16 @@ def get_argparser():
         help="Use with --task text_gen_chat and optimum-intel/PyTorch backends. "
         "Benchmark will send the full chat history as input for generation on each turn. By default, only the new prompt is used.",
     )
+    parser.add_argument(
+        "-np",
+        "--num_prefill_tokens",
+        type=greater_than_zero,
+        default=None,
+        help="Use with --task text_gen/visual_text_gen. "
+        "Specifies the number of prefill tokens to use for generation. \n"
+        "If this number is not specified or is greater than the tokens in the prompt, the entire prompt is used for generation.\n"
+        "If this number is less than the tokens in the prompt, llm_bench trims prompt and takes only the first prefill tokens.\n",
+    )
 
     return parser.parse_args()
 
@@ -508,6 +562,7 @@ CASE_TO_BENCH = {
     "ldm_super_resolution": bench_ldm_sr.run_ldm_super_resolution_benchmark,
     "speech_to_text": bench_speech.run_speech_2_txt_benchmark,
     "visual_text_gen": bench_vlm.run_visual_language_generation_benchmark,
+    "visual_text_gen_chat": bench_vlm_chat.run_visual_language_generation_benchmark,
     "text_embed": bench_text_embed.run_text_embddings_benchmark,
     "text_to_speech": bench_text_to_speech.run_text_2_speech_benchmark,
     "text_rerank": bench_text_rerank.run_text_reranker_benchmark,

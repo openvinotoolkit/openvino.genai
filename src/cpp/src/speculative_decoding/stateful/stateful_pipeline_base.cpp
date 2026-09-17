@@ -28,7 +28,7 @@ void StatefulSpeculativePipelineBase::ensure_num_assistant_tokens_is_set(Generat
         "Stateful (non-Continuous Batching) Speculative Decoding pipeline only supports num_assistant_tokens, "
         "not assistant_confidence_threshold. Set assistant_confidence_threshold to 0.f or remove its specification.");
 
-    if (config.num_assistant_tokens == 0) {
+    if (!config.num_assistant_tokens.has_value() || config.num_assistant_tokens.value() == 0) {
         config.num_assistant_tokens = DEFAULT_NUM_ASSISTANT_TOKENS;
     }
 }

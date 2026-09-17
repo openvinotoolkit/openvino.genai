@@ -1,0 +1,49 @@
+name: Test Matrices Scripts
+
+on:
+  pull_request:
+    paths:
+      - '.github/scripts/build_test_matrices.py'
+      - '.github/scripts/tests/**'
+      - '.github/workflows/test_matrices/**'
+      - '.github/workflows/test_matrices_scripts.yml'
+  push:
+    branches:
+      - master
+      - 'releases/**'
+    paths:
+      - '.github/scripts/build_test_matrices.py'
+      - '.github/scripts/tests/**'
+      - '.github/workflows/test_matrices/**'
+      - '.github/workflows/test_matrices_scripts.yml'
+
+permissions: read-all
+
+concurrency:
+  group: ${{ github.event_name == 'push' && github.run_id || github.ref }}-test-matrices-scripts
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  test_matrices_scripts:
+    name: Test build_test_matrices.py
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 15
+        with:
+          sparse-checkout: .github
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: python -m pip install PyYAML==6.0.3 pytest==9.1.1
+
+      - name: Run tests
+        run: python -m pytest -v .github/scripts/tests

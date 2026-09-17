@@ -4,13 +4,15 @@
 import os
 
 import pandas as pd
+import yaml
 
 from tqdm import tqdm
 from itertools import zip_longest
 from typing import Literal, Any, Union
+from importlib.resources import files
 
 from .registry import register_evaluator
-from .text_evaluator import TextEvaluator
+from .text_evaluator import TextEvaluator, PROMPTS_FILE, LONG_PROMPTS_FILE
 from .utils import (
     OMNI_MODEL_TYPES,
     get_ignore_parameters_flag,
@@ -21,15 +23,17 @@ from .utils import (
 from .inputs_preprocessors import MODEL_TYPE_TO_CLS_MAPPING
 
 DEF_VIDEO_FRAMES_AMOUNT = 10
+DEF_VIDEO_FRAMES_AMOUNT_GEMMA4 = 32
 
 
-@register_evaluator("visual-text", "visual-video-text")
+@register_evaluator("visual-text", "visual-video-text", "visual-text-only")
 class VisualTextEvaluator(TextEvaluator):
     def __init__(
         self,
         base_model: Any = None,
         tokenizer: Any = None,
         processor: Any = None,
+        config: Any = None,
         gt_data: str = None,
         test_data: Union[str, list] = None,
         similarity_model_id: str = "sentence-transformers/all-mpnet-base-v2",
@@ -41,14 +45,19 @@ class VisualTextEvaluator(TextEvaluator):
         seqs_per_request=None,
         pruning_ratio=None,
         relevance_weight=None,
-        task_type: Literal['visual-text', 'visual-video-text'] = "visual-text",
+        task_type: Literal["visual-text", "visual-video-text", "visual-text-only"] = "visual-text",
         frames_num: int | None = None,
+        generation_config_extra=None,
+        language="en",
+        long_prompt=True,
     ) -> None:
         self.processor = processor
-        self.is_image_input = (task_type == "visual-text")
-        self.frames_num = frames_num or DEF_VIDEO_FRAMES_AMOUNT
+        self.is_image_input = task_type == "visual-text"
+        self.is_text_only = task_type == "visual-text-only"
+        self.frames_num = self._resolve_frames_num(frames_num, config)
         self.pruning_ratio = pruning_ratio
         self.relevance_weight = relevance_weight
+        self.generation_config_extra = generation_config_extra or {}
         super().__init__(
             base_model=base_model,
             tokenizer=tokenizer,
@@ -62,6 +71,9 @@ class VisualTextEvaluator(TextEvaluator):
             gen_answer_fn=gen_answer_fn,
             generation_config=generation_config,
             seqs_per_request=seqs_per_request,
+            generation_config_extra=self.generation_config_extra,
+            language=language,
+            long_prompt=long_prompt,
         )
 
     def score(self, model_or_data, gen_answer_fn=None, **kwargs):
@@ -124,11 +136,14 @@ class VisualTextEvaluator(TextEvaluator):
             crop_question,
             pruning_ratio,
             relevance_weight,
+            generation_config_extra=None,
         ):
             # Optimum exports OpenVINO models (OVModelFor*). Everything else reaching
             # this path is a native torch/HF model, possibly wrapped (e.g. by peft.PeftModel).
             is_optimum_ov = "openvino" in str(type(model)).lower()
-            if model.config.model_type in MODEL_TYPE_TO_CLS_MAPPING and not is_optimum_ov:
+            if model.config.model_type in MODEL_TYPE_TO_CLS_MAPPING and (
+                not is_optimum_ov or model.config.model_type == "muse_glimmer"
+            ):
                 inputs_processor = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type]()
                 preprocess_inputs = inputs_processor.preprocess_inputs
             else:
@@ -185,7 +200,22 @@ class VisualTextEvaluator(TextEvaluator):
                     data = dict(self.test_data)
                 data = pd.DataFrame.from_dict(data)
         else:
-            input_data = prepare_default_data_image(self.num_samples) if self.is_image_input else prepare_default_data_video(self.num_samples, self.frames_num)
+            if self.is_text_only:
+                prompts_file_path = LONG_PROMPTS_FILE if self.long_prompt else PROMPTS_FILE
+                data_path = files("whowhatbench.prompts").joinpath(prompts_file_path)
+                lang_prompt_data = yaml.safe_load(data_path.read_text(encoding="utf-8"))
+                prompts_list = list(lang_prompt_data[self.language]["prompts"])
+                if self.num_samples is not None:
+                    prompts_list = prompts_list[: self.num_samples]
+                input_data = {
+                    "prompts": prompts_list,
+                    "images": [None] * len(prompts_list),
+                    "videos": [None] * len(prompts_list),
+                }
+            elif self.is_image_input:
+                input_data = prepare_default_data_image(self.num_samples)
+            else:
+                input_data = prepare_default_data_video(self.num_samples, self.frames_num)
             data = pd.DataFrame.from_dict(input_data)
 
         # Skip prompts that cause issues for specific models
@@ -199,6 +229,8 @@ class VisualTextEvaluator(TextEvaluator):
         prompts = prompt_data.values
         images = image_data.values
         videos = videos_data.values
+
+        extra_kwargs = {"generation_config_extra": self.generation_config_extra} if self.generation_config_extra else {}
 
         for p, i, v in tqdm(
             zip_longest(prompts, images, videos),
@@ -217,6 +249,7 @@ class VisualTextEvaluator(TextEvaluator):
                     self._crop_question,
                     self.pruning_ratio,
                     self.relevance_weight,
+                    **extra_kwargs,
                 )
             )
 
@@ -235,3 +268,15 @@ class VisualTextEvaluator(TextEvaluator):
             # likely due to image complexity and small model size.
             prompt_to_skip = 'Extract the letters in the words "Bus Stop" that fall between the wheels of the bus logo drawn above it.'
             data.drop(data[data["prompts"] == prompt_to_skip].index, inplace=True)
+
+    def _resolve_frames_num(self, frames_num: int | None, config: Any | None) -> int:
+        """
+        Resolve the number of frames to use for video input based on the model config.
+        """
+        if frames_num is not None:
+            return frames_num
+
+        if getattr(config, "model_type", None) in ("gemma4", "gemma4_unified"):
+            return DEF_VIDEO_FRAMES_AMOUNT_GEMMA4
+
+        return DEF_VIDEO_FRAMES_AMOUNT

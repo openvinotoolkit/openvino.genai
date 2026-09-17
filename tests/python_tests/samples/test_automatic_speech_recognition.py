@@ -47,7 +47,7 @@ class TestAutomaticSpeechRecognition:
         c_result = run_sample(c_command)
 
         # Run JS sample
-        js_sample = SAMPLES_JS_DIR / "whisper_speech_recognition/whisper_speech_recognition.js"
+        js_sample = SAMPLES_JS_DIR / "automatic_speech_recognition/automatic_speech_recognition.js"
         js_command = ["node", js_sample, convert_model, download_test_content]
         js_result = run_sample(js_command)
 

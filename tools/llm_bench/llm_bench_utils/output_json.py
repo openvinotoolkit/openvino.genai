@@ -32,6 +32,9 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         # optional metrics
         tokenization_time = iter_data.get("tokenization_time")
         detokenization_time = iter_data.get("detokenization_time")
+        tts_output_duration = iter_data.get("tts_output_duration_s")
+        tts_sample_rate = iter_data.get("tts_sample_rate")
+        tts_rtf = iter_data.get("tts_rtf")
         max_rss_mem = iter_data.get("max_rss_mem_consumption")
         max_sys_mem = iter_data.get("max_sys_mem_consumption")
         rss_mem_increase = iter_data.get("max_rss_mem_increase")
@@ -40,10 +43,13 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         sys_mem_share = iter_data.get("max_sys_mem_share")
 
         result_md5 = []
-        for idx_md5 in range(len(iter_data['result_md5'])):
-            result_md5.append(iter_data['result_md5'][idx_md5])
+        for idx_md5 in range(len(iter_data["result_md5"])):
+            result_md5.append(iter_data["result_md5"][idx_md5])
 
-        input_idx = iter_data["chat_idx"] if iter_data["chat_idx"] != "" else iter_data["prompt_idx"]
+        prompt_idx = iter_data.get("prompt_idx", "")
+        chat_idx = iter_data.get("chat_idx", "")
+
+        input_idx = chat_idx if chat_idx != "" else prompt_idx
         timestamp_start, timestamp_end = get_timestamp(iter_data["iteration"], input_idx, iter_timestamp)
 
         if first_token_infer_latency:
@@ -56,7 +62,6 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             detokenization_time = round(detokenization_time, 5)
         if generation_time:
             generation_time = round(generation_time, 5)
-
         res_data = {
             "iteration": iter_data["iteration"],
             "input_size": iter_data["input_size"],
@@ -70,12 +75,19 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             "second_infer_avg_latency": other_token_infer_latency,
             "tokenization_time": tokenization_time,
             "detokenization_time": detokenization_time,
-            "prompt_idx": iter_data["prompt_idx"],
-            "chat_idx": iter_data["chat_idx"],
+            "prompt_idx": prompt_idx,
+            "chat_idx": chat_idx,
             "result_md5": result_md5,
             "start": timestamp_start,
             "end": timestamp_end,
         }
+
+        if tts_output_duration is not None and tts_output_duration != "":
+            res_data["tts_output_duration"] = round(tts_output_duration, 5)
+        if tts_sample_rate is not None and tts_sample_rate != "":
+            res_data["tts_sample_rate"] = int(tts_sample_rate)
+        if tts_rtf is not None and tts_rtf != "":
+            res_data["tts_rtf"] = round(tts_rtf, 5)
 
         if max_rss_mem:
             res_data["max_rss_mem"] = round(max_rss_mem, 5)
@@ -96,18 +108,24 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         result.append(res_data)
 
     keys_to_average = [
-        'generation_time',
-        'latency',
-        'first_latency',
-        'second_avg_latency',
-        'first_infer_latency',
-        'second_infer_avg_latency',
-        'tokenization_time',
-        'detokenization_time'
+        "generation_time",
+        "latency",
+        "first_latency",
+        "second_avg_latency",
+        "first_infer_latency",
+        "second_infer_avg_latency",
+        "tokenization_time",
+        "detokenization_time",
+        "tts_output_duration",
+        "tts_rtf",
     ]
     results_averaged = {}
     for key in keys_to_average:
-        values = [x[key] for x in result[1:] if x[key] != '']
+        values = []
+        for entry in result[1:]:
+            value = entry.get(key, "")
+            if value != "" and value is not None:
+                values.append(value)
         if len(values) > 0:
             results_averaged[key] = round(sum(values) / len(values), 5)
 

@@ -30,6 +30,12 @@ enum class SequenceGroupType {
     EMBEDDINGS
 };
 
+// Representation of the values stored in the logits tensor passed to the sampler.
+enum class LogitsType {
+    RAW,
+    LOG_PROBS
+};
+
 using TokenIds = std::vector<int64_t>;
 using LogProbs = std::vector<float>;
 
@@ -426,6 +432,7 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     size_t m_num_validation_tokens = 0;
     // flag to enable/disable token generation, e.g. in speculative decoding scenario
     bool m_is_gen_paused = false;
+    LogitsType m_logits_type = LogitsType::RAW;
     // output seq len at current iteration
     size_t m_output_seq_len = 0;
 
@@ -454,13 +461,12 @@ public:
 
     // const_cast is safe as ov::Tensor only views the data and doesn't modify it.
     SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const ov::genai::GenerationConfig& sampling_params)
-        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, const_cast<int64_t*>(input_ids.data())), sampling_params, std::nullopt, std::nullopt) {
+        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, const_cast<int64_t*>(input_ids.data())), sampling_params, std::nullopt) {
     }
 
     SequenceGroup(uint64_t request_id,
                   const ov::Tensor& input_ids,
                   const ov::genai::GenerationConfig& sampling_params,
-                  const std::optional<ov::Tensor>& token_type_ids = std::nullopt,
                   const std::optional<std::unordered_map<std::string, ov::Tensor>>& lm_extra_inputs = std::nullopt,
                   const std::optional<ov::Tensor>& position_ids = std::nullopt,
                   const std::optional<int64_t>& rope_delta = std::nullopt,
@@ -486,11 +492,6 @@ public:
                 m_input_embeds[i].resize(hidden_size);
                 std::copy_n(input_ids.data<const float>() + i * hidden_size, hidden_size, m_input_embeds[i].begin());
             }
-            if (token_type_ids.has_value()) {
-                const ov::Tensor& tokens = token_type_ids.value();
-                m_token_type_ids = std::vector<int64_t>(tokens.get_size());
-                std::copy_n(tokens.data<const int64_t>(), tokens.get_size(), m_token_type_ids->begin());
-            }
             if (prompt_ids.has_value()) {
                 const ov::Tensor& tokens = prompt_ids.value();
                 OPENVINO_ASSERT(tokens.get_element_type() == ov::element::i64);
@@ -512,6 +513,11 @@ public:
                             "per_layer_inputs must have shape [1, tokens, num_hidden_layers, hidden_size]");
                         m_per_layer_inputs = ov::Tensor(tensor.get_element_type(), shape);
                         tensor.copy_to(m_per_layer_inputs);
+                    } else if (input_name == "token_type_ids") {
+                        m_token_type_ids = std::vector<int64_t>(
+                            tensor.data<const int64_t>(),
+                            tensor.data<const int64_t>() + tensor.get_size()
+                        );
                     } else {
                         OPENVINO_THROW("Unsupported extra input for LLM: " + input_name);
                     }
@@ -863,6 +869,14 @@ public:
         return m_sampling_params;
     }
 
+    LogitsType get_logits_type() const {
+        return m_logits_type;
+    }
+
+    void set_logits_type(LogitsType logits_type) {
+        m_logits_type = logits_type;
+    }
+
     void set_out_of_memory() {
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
             if (m_sequences[seq_id]->is_running()) {
@@ -894,6 +908,14 @@ public:
 
     void set_generation_status(GenerationStatus status) {
         m_generation_stream->set_generation_status(status);
+    }
+
+    void set_num_prefix_cache_hit_tokens(size_t num_prefix_cache_hit_tokens) {
+        m_perf_metrics.num_prefix_cache_hit_tokens = num_prefix_cache_hit_tokens;
+    }
+
+    size_t get_num_prefix_cache_hit_tokens() const {
+        return m_perf_metrics.num_prefix_cache_hit_tokens;
     }
 
     void update_perf_metrics(MicroSeconds inference_duration,

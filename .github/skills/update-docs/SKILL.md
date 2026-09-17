@@ -40,6 +40,7 @@ Decide which site sections need updating based on what changed:
 | New model type supported        | `site/docs/supported-models/_components/`  |
 | New public API or config option | Relevant guide in `site/docs/guides/`      |
 | New concept or algorithm        | `site/docs/concepts/`                      |
+| New or changed VLM prompt tag   | Visual processing usage options            |
 
 **Rules:**
 
@@ -48,6 +49,9 @@ Decide which site sections need updating based on what changed:
 - Code snippets must have JavaScript tab if NodeJS API changed.
 - Do not invent model names, benchmark numbers, or unverified capabilities.
 - Cross-link to related pages using relative links (e.g., `[Supported Models](/docs/supported-models/)`).
+- For VLM prompt tags, update the native image and video tag lists in
+  `site/docs/use-cases/visual-processing/_sections/_usage_options/index.mdx`, verify each tag against the model's
+  prompt normalization implementation or tokenizer configuration.
 
 **Rules for `models.ts` entries:**
 

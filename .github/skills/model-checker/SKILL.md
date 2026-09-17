@@ -51,10 +51,14 @@ Run the checker script from the repository root:
 python3 .github/skills/model-checker/scripts/check_model.py \
     --model-id <model_id_or_path> \
     --task <export_task> \
-    --work-dir .model_enabler/model_checker
+    --work-dir .model_enabler/<model_type>/model_checker
 ```
 
-When `--model-id` is a path to an existing directory, the script treats it as a pre-converted OpenVINO IR model and automatically skips the export step.
+Determine `<model_type>` from the model's `config.json`. When `--model-id` is a
+path to an existing directory, the script treats it as a pre-converted OpenVINO
+IR model and automatically skips the export step. Keep each model type in its
+own work directory so parallel or resumed enablement runs do not overwrite one
+another's artifacts.
 
 Run `python3 .github/skills/model-checker/scripts/check_model.py --help` for the full argument reference including defaults. The `--work-dir` is where all intermediate files, logs, and outputs will be stored. Do not pipe with any additional logging or redirection — the script handles its own logging.
 

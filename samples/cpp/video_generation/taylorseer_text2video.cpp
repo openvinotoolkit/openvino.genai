@@ -3,6 +3,7 @@
 
 #include <chrono>
 #include <iostream>
+#include <string>
 
 #include "progress_bar.hpp"
 #include "imwrite_video.hpp"
@@ -11,10 +12,11 @@
 #include <openvino/genai/taylorseer_config.hpp>
 
 int main(int argc, char* argv[]) try {
-    OPENVINO_ASSERT(argc == 3, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>'");
+    OPENVINO_ASSERT(argc == 3 || argc == 4, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' [NUM_FRAMES]");
 
     const std::string models_path = argv[1];
     const std::string prompt = argv[2];
+    const int64_t num_frames = (argc == 4) ? std::stoll(argv[3]) : 161;
     const std::string device = "CPU";  // GPU can be used as well
     const std::string negative_prompt = "worst quality, inconsistent motion, blurry, jittery, distorted";
     const size_t num_inference_steps = 25;
@@ -31,6 +33,7 @@ int main(int argc, char* argv[]) try {
     auto baseline_output = pipe.generate(
         prompt,
         ov::genai::negative_prompt(negative_prompt),
+        ov::genai::num_frames(num_frames),
         ov::genai::num_inference_steps(num_inference_steps),
         ov::genai::callback(progress_bar)
     );
@@ -59,6 +62,7 @@ int main(int argc, char* argv[]) try {
     auto output = pipe.generate(
         prompt,
         ov::genai::negative_prompt(negative_prompt),
+        ov::genai::num_frames(num_frames),
         ov::genai::num_inference_steps(num_inference_steps),
         ov::genai::callback(progress_bar)
     );

@@ -23,10 +23,11 @@ def main():
     parser.add_argument("prompt", help="Text prompt for video generation")
     args, adapters = parser.parse_known_args()
 
-    if len(adapters) % 2 != 0:
-        parser.error(
-            "Each LoRA adapter path must be followed by a numeric alpha value (got an odd number of extra arguments)."
-        )
+    # <LORA_SAFETENSORS> <ALPHA> go in pairs, so an odd number of the remaining arguments means the first one is NUM_FRAMES
+    num_frames = 161
+    if len(adapters) % 2 == 1:
+        num_frames = int(adapters[0])
+        adapters = adapters[1:]
 
     # Multiple LoRA adapters applied simultaneously are supported, parse them all and corresponding alphas from cmd parameters:
     adapter_config = openvino_genai.AdapterConfig()
@@ -50,6 +51,7 @@ def main():
     generate_args = dict(
         negative_prompt="worst quality, inconsistent motion, blurry, jittery, distorted",
         height=480,
+        num_frames=num_frames,
         num_inference_steps=25,
         callback=callback,
         guidance_scale=3,

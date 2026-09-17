@@ -34,6 +34,8 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"videochat_flash_qwen", VLMModelType::VIDEOCHAT_FLASH_QWEN},
         {"qwen3_omni", VLMModelType::QWEN3_OMNI},
         {"qwen3_omni_moe", VLMModelType::QWEN3_OMNI},
+        {"deepseek_ocr2", VLMModelType::DEEPSEEK_OCR2},
+        {"muse_glimmer", VLMModelType::MUSE_GLIMMER},
     };
 
     auto it = model_types_map.find(value);
@@ -90,6 +92,10 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
         parsed.at("text_config").at("use_bidirectional_attention").is_string()) {
         read_json_param(parsed, "text_config.use_bidirectional_attention", use_bidirectional_attention);
     }
+
+    // DeepSeek-OCR-2
+    read_json_param(parsed, "view_separator", view_separator);
+    read_json_param(parsed, "image_token_id", image_token_id);
 
     // Qwen3-Omni: vision/audio configs are nested under thinker_config
     if (model_type == VLMModelType::QWEN3_OMNI) {

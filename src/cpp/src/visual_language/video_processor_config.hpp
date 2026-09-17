@@ -19,9 +19,13 @@ public:
     size_t max_frames = 0;
     size_t min_frames = 0;
     size_t num_frames = 0;
-    // Target sampling rate in frames per second if do_sample_frames is true. Mutually exclusive with num_frames.
-    // Used to compute the number of frames to extract from the original video.
+    // Target sampling rate in frames per second if do_sample_frames is true.
+    // Generic video processors treat fps and the exact num_frames as mutually exclusive;
+    // Model-specific maximum frame counts are stored in max_frames.
     float fps = 0.0f;
+
+    // Muse Glimmer-specific config params.
+    size_t max_video_frame_tokens = 144;
 
     VideoProcessorConfig() = default;
 
@@ -34,6 +38,7 @@ public:
         read_json_param(parsed_json, "min_frames", min_frames);
         read_json_param(parsed_json, "num_frames", num_frames);
         read_json_param(parsed_json, "fps", fps);
+        read_json_param(parsed_json, "max_video_frame_tokens", max_video_frame_tokens);
     }
 
     explicit VideoProcessorConfig(const std::filesystem::path& json_path)

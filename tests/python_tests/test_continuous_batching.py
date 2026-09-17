@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import gc
 import pytest
 import math
 import sys
@@ -12,6 +13,7 @@ from shutil import rmtree
 from optimum.intel.utils.import_utils import is_transformers_version
 
 import openvino as ov
+import openvino.properties.hint as hints
 from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig, draft_model, GenerationFinishReason, ChatHistory
 
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
@@ -19,7 +21,15 @@ from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_tex
 from utils.generation_config import get_greedy, get_beam_search, \
     get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
-from utils.hugging_face import OVConvertedModelSchema, download_and_convert_model, run_hugging_face
+from utils.atomic_download import AtomicDownloadManager
+from utils.constants import get_default_llm_properties, get_ov_cache_converted_models_dir
+from utils.hugging_face import (
+    OVConvertedModelSchema,
+    download_and_convert_model,
+    export_with_optimum_cli,
+    run_hugging_face,
+    sanitize_model_id,
+)
 from utils.ov_genai_pipelines import (
     create_ov_pipeline,
     create_ov_cb_pipeline,
@@ -75,6 +85,26 @@ def llm_model(request: pytest.FixtureRequest) -> OVConvertedModelSchema:
 def model_facebook_opt_125m() -> OVConvertedModelSchema:
     model_id : str = "facebook/opt-125m"
     return download_and_convert_model(model_id)
+
+
+@pytest.fixture(scope="module")
+def model_tinyllama_1_1b_chat() -> OVConvertedModelSchema:
+    model_id: str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    return download_and_convert_model(model_id)
+
+
+@pytest.fixture(scope="module")
+def tinyllama_lora_adapter(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    from huggingface_hub import hf_hub_download
+
+    adapter_dir = tmp_path_factory.mktemp("tinyllama_lora")
+    return Path(
+        hf_hub_download(
+            repo_id="smangrul/tinyllama_lora_sql",
+            filename="adapter_model.safetensors",
+            local_dir=adapter_dir,
+        )
+    )
 
 
 @pytest.mark.transformers_dependent(
@@ -591,6 +621,25 @@ speculative_cases = [
     eagle_models_and_input[0],
 ]
 
+# u8 stores the KV cache quantized, which selects different attention kernels than f16.
+# None leaves the hint unset so the plugin resolves the cache type for the main and KV-update models.
+kv_cache_precisions = [ov.Type.f16, ov.Type.u8, None]
+
+
+def kv_cache_precision_id(kv_cache_precision: ov.Type | None) -> str:
+    if kv_cache_precision is None:
+        return "kv_cache_precision=unset"
+    return f"kv_cache_precision={kv_cache_precision.get_type_name()}"
+
+
+def get_llm_properties_for_kv_cache_precision(kv_cache_precision: ov.Type | None) -> dict:
+    properties = get_default_llm_properties()
+    if kv_cache_precision is None:
+        properties.pop(hints.kv_cache_precision, None)
+        return properties
+    return properties | {hints.kv_cache_precision: kv_cache_precision}
+
+
 @pytest.mark.parametrize(
     "pipeline_type", 
     [
@@ -599,7 +648,10 @@ speculative_cases = [
     ]
 )
 @pytest.mark.parametrize("main_model_id,draft_model_id, prompt", speculative_cases)
-def test_speculative_decoding_extended_perf_metrics(pipeline_type: PipelineType, main_model_id, draft_model_id, prompt):
+@pytest.mark.parametrize("kv_cache_precision", kv_cache_precisions, ids=kv_cache_precision_id)
+def test_speculative_decoding_extended_perf_metrics(
+    pipeline_type: PipelineType, main_model_id, draft_model_id, prompt, kv_cache_precision
+):
     def run_extended_perf_metrics_collection(
         model_id: str,
         generation_config: GenerationConfig,
@@ -611,7 +663,12 @@ def test_speculative_decoding_extended_perf_metrics(pipeline_type: PipelineType,
         draft_model_path = None
         if draft_model_id is not None:
             draft_model_path = download_and_convert_model(draft_model_id).models_path
-        ov_pipe = create_ov_pipeline(model_path, pipeline_type=pipeline_type, draft_model_path=draft_model_path)
+        ov_pipe = create_ov_pipeline(
+            model_path,
+            pipeline_type=pipeline_type,
+            draft_model_path=draft_model_path,
+            ov_config=get_llm_properties_for_kv_cache_precision(kv_cache_precision),
+        )
         return ov_pipe.generate([prompt], generation_config).extended_perf_metrics
 
     import time
@@ -645,6 +702,25 @@ def test_speculative_decoding_extended_perf_metrics(pipeline_type: PipelineType,
         assert not extended_perf_metrics.draft_model_metrics is None
 
         assert extended_perf_metrics.get_num_accepted_tokens() > 0
+        num_draft_tokens = extended_perf_metrics.get_num_draft_tokens()
+        assert num_draft_tokens > 0
+        assert extended_perf_metrics.get_num_accepted_tokens() <= num_draft_tokens
+        assert (
+            extended_perf_metrics.get_num_rejected_tokens()
+            == num_draft_tokens - extended_perf_metrics.get_num_accepted_tokens()
+        )
+        assert 0 <= extended_perf_metrics.get_draft_acceptance_rate() <= 1
+
+        num_draft_processed_tokens = extended_perf_metrics.get_num_draft_processed_tokens()
+        assert num_draft_processed_tokens == extended_perf_metrics.draft_model_metrics.get_num_generated_tokens()
+        assert num_draft_processed_tokens > 0
+        assert math.isclose(
+            extended_perf_metrics.get_draft_processed_to_candidate_ratio(),
+            num_draft_processed_tokens / num_draft_tokens,
+            rel_tol=1e-6,
+        )
+        duration_ratio = extended_perf_metrics.get_draft_to_main_inference_duration_ratio()
+        assert math.isfinite(duration_ratio) and duration_ratio >= 0
 
         num_generated_tokens_main = extended_perf_metrics.main_model_metrics.get_num_generated_tokens()
         assert num_generated_tokens_main > 0 and num_generated_tokens_main <= generation_config.max_new_tokens
@@ -686,7 +762,8 @@ devices = [("CPU", "CPU")]
 
 @pytest.mark.parametrize("main_model,draft_model,prompt", eagle_models_and_input)
 @pytest.mark.parametrize("main_device,draft_device", devices)
-def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_device, prompt):
+@pytest.mark.parametrize("kv_cache_precision", kv_cache_precisions, ids=kv_cache_precision_id)
+def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_device, prompt, kv_cache_precision):
     # Download and convert model:
     main_model_schema = download_and_convert_model(main_model)
     main_opt_model = main_model_schema.opt_model
@@ -698,7 +775,10 @@ def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_dev
     # Create OpenVINO GenAI pipeline:
 
     ov_pipe = create_ov_pipeline(
-        main_model_path, pipeline_type=PipelineType.SPECULATIVE_DECODING, draft_model_path=draft_model_path
+        main_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        draft_model_path=draft_model_path,
+        ov_config=get_llm_properties_for_kv_cache_precision(kv_cache_precision),
     )
 
     # Run reference HF model:
@@ -759,6 +839,75 @@ dynamic_split_fuse_prompt_cases = [
 ]
 
 
+@pytest.fixture(scope="module")
+def qwen35_mtp_model_path() -> Path:
+    model_id = "Qwen/Qwen3.5-0.8B"
+    model_path = get_ov_cache_converted_models_dir() / f"{sanitize_model_id(model_id)}_image-text-to-text"
+    manager = AtomicDownloadManager(model_path)
+    manager.execute(
+        lambda temp_path: export_with_optimum_cli(
+            model_id,
+            "image-text-to-text",
+            temp_path,
+            trust_remote_code=False,
+        )
+    )
+    return model_path
+
+
+def test_qwen35_mtp_matches_main_only(qwen35_mtp_model_path: Path):
+    main_only_pipe = create_ov_cb_pipeline(
+        qwen35_mtp_model_path,
+        pipeline_type=PipelineType.CONTINUOUS_BATCHING,
+    )
+    generation_config = GenerationConfig(do_sample=False, max_new_tokens=20, num_assistant_tokens=3)
+    prompt = "OpenVINO is"
+
+    main_only_result = main_only_pipe.generate([prompt], [generation_config])
+    main_only_texts = main_only_result[0].m_generation_ids
+    del main_only_result
+    del main_only_pipe
+    gc.collect()
+
+    mtp_pipe = create_ov_cb_pipeline(
+        qwen35_mtp_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+    )
+    mtp_result = mtp_pipe.generate([prompt], [generation_config])
+
+    assert mtp_result[0].m_generation_ids == main_only_texts
+
+
+def test_qwen35_mtp_extended_perf_metrics(qwen35_mtp_model_path: Path):
+    mtp_pipe = create_ov_cb_pipeline(
+        qwen35_mtp_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+    )
+    generation_config = GenerationConfig(
+        do_sample=False,
+        max_new_tokens=20,
+        ignore_eos=True,
+        num_assistant_tokens=3,
+    )
+
+    def generate_and_collect_metrics():
+        result = mtp_pipe.generate(["OpenVINO is"], [generation_config])[0]
+        metrics = result.extended_perf_metrics
+
+        assert metrics is not None
+        assert metrics.draft_model_metrics is not None
+        num_draft_generated = metrics.draft_model_metrics.get_num_generated_tokens()
+        num_draft_tokens = metrics.get_num_draft_tokens()
+        num_accepted = metrics.get_num_accepted_tokens()
+        assert num_draft_generated > 0
+        assert num_draft_generated <= generation_config.max_new_tokens * generation_config.num_assistant_tokens
+        assert num_draft_tokens > 0
+        assert 0 < num_accepted <= num_draft_tokens
+
+    generate_and_collect_metrics()
+    generate_and_collect_metrics()
+
+
 @pytest.mark.parametrize(
     "prompts,max_num_batched_tokens",
     dynamic_split_fuse_prompt_cases,
@@ -803,6 +952,114 @@ def eagle3_model_paths() -> tuple[Path, Path]:
     main_model_path = download_and_convert_model("Qwen/Qwen3-1.7B").models_path
     draft_model_path = download_and_convert_model("AngelSlim/Qwen3-1.7B_eagle3").models_path
     return main_model_path, draft_model_path
+
+
+def test_eagle3_cb_generate_zero_assistant_tokens_matches_main_only(eagle3_model_paths: tuple[Path, Path]):
+    main_model_path, draft_model_path = eagle3_model_paths
+
+    scheduler_config = dict_to_scheduler_config({"dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize})
+    sd_cb_pipe = create_ov_cb_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        draft_model_path=draft_model_path,
+        scheduler_config=scheduler_config,
+    )
+    main_only_cb_pipe = create_ov_cb_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.CONTINUOUS_BATCHING,
+        scheduler_config=scheduler_config,
+    )
+
+    prompt = "Explain why sunsets often appear orange."
+    sd_config = GenerationConfig(do_sample=False, max_new_tokens=20, num_assistant_tokens=0)
+    main_only_config = GenerationConfig(do_sample=False, max_new_tokens=20)
+
+    sd_result = sd_cb_pipe.generate([prompt], [sd_config])
+    main_only_result = main_only_cb_pipe.generate([prompt], [main_only_config])
+
+    assert len(sd_result) == 1
+    assert len(main_only_result) == 1
+    assert len(sd_result[0].m_generation_ids) == 1
+    assert len(main_only_result[0].m_generation_ids) == 1
+    assert len(sd_result[0].m_generation_ids[0]) > 0
+    assert sd_result[0].m_generation_ids[0] == main_only_result[0].m_generation_ids[0]
+
+
+def test_eagle3_llm_generate_zero_assistant_tokens_matches_main_only(eagle3_model_paths: tuple[Path, Path]):
+    main_model_path, draft_model_path = eagle3_model_paths
+
+    scheduler_config = dict_to_scheduler_config({"dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize})
+    sd_pipe = create_ov_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        device="CPU",
+        draft_model_path=draft_model_path,
+        scheduler_config=scheduler_config,
+    )
+    main_only_pipe = create_ov_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.PAGED_ATTENTION,
+        device="CPU",
+        scheduler_config=scheduler_config,
+    )
+
+    prompt = "Explain why sunsets often appear orange."
+    sd_config = GenerationConfig(do_sample=False, max_new_tokens=20, num_assistant_tokens=0)
+    main_only_config = GenerationConfig(do_sample=False, max_new_tokens=20)
+
+    sd_result = sd_pipe.generate([prompt], sd_config)
+    main_only_result = main_only_pipe.generate([prompt], main_only_config)
+
+    assert len(sd_result.texts) == 1
+    assert len(main_only_result.texts) == 1
+    assert len(sd_result.texts[0]) > 0
+    assert sd_result.texts[0] == main_only_result.texts[0]
+
+
+def test_eagle3_cb_add_request_mixed_batch_zero_assistant_tokens_matches_main_only(
+    eagle3_model_paths: tuple[Path, Path],
+):
+    main_model_path, draft_model_path = eagle3_model_paths
+
+    scheduler_config = dict_to_scheduler_config({"dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize})
+    sd_cb_pipe = create_ov_cb_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        draft_model_path=draft_model_path,
+        scheduler_config=scheduler_config,
+    )
+    main_only_cb_pipe = create_ov_cb_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.CONTINUOUS_BATCHING,
+        scheduler_config=scheduler_config,
+    )
+
+    main_only_prompt = "Write one sentence about OpenVINO."
+    speculative_prompt = "Write one sentence about the Moon."
+    zero_assistant_config = GenerationConfig(do_sample=False, max_new_tokens=20, num_assistant_tokens=0)
+    speculative_config = GenerationConfig(do_sample=False, max_new_tokens=20, num_assistant_tokens=4)
+
+    handle_main_only = sd_cb_pipe.add_request(0, main_only_prompt, generation_config=zero_assistant_config)
+    handle_speculative = sd_cb_pipe.add_request(1, speculative_prompt, generation_config=speculative_config)
+    while sd_cb_pipe.has_non_finished_requests():
+        sd_cb_pipe.step()
+
+    sd_main_only_outputs = handle_main_only.read_all()
+    sd_speculative_outputs = handle_speculative.read_all()
+
+    baseline_handle = main_only_cb_pipe.add_request(
+        2, main_only_prompt, generation_config=GenerationConfig(do_sample=False, max_new_tokens=20)
+    )
+    while main_only_cb_pipe.has_non_finished_requests():
+        main_only_cb_pipe.step()
+    baseline_outputs = baseline_handle.read_all()
+
+    assert len(sd_main_only_outputs) == 1
+    assert len(sd_speculative_outputs) == 1
+    assert len(baseline_outputs) == 1
+    assert len(sd_main_only_outputs[0].generated_ids) > 0
+    assert len(sd_speculative_outputs[0].generated_ids) > 0
+    assert sd_main_only_outputs[0].generated_ids == baseline_outputs[0].generated_ids
 
 
 def _build_input_ids_with_exact_token_count(ov_tokenizer, target_tokens: int) -> ov.Tensor:
@@ -895,7 +1152,10 @@ def test_eagle3_prefix_caching_add_request_no_crash(target_prompt_tokens: int, e
 @pytest.mark.parametrize("main_model,draft_model,prompt", eagle_models_and_input)
 @pytest.mark.parametrize("main_device,draft_device", devices)
 @pytest.mark.parametrize("branching_factor,tree_depth", [(4, 2), (8, 4), (6, 3), (1, 0), (1, 4)])
-def test_eagle3_tree_decode(main_model, main_device, draft_model, draft_device, prompt, branching_factor, tree_depth):
+@pytest.mark.parametrize("kv_cache_precision", kv_cache_precisions, ids=kv_cache_precision_id)
+def test_eagle3_tree_decode(
+    main_model, main_device, draft_model, draft_device, prompt, branching_factor, tree_depth, kv_cache_precision
+):
     """Test EAGLE3 with tree-based speculative decoding using different tree configurations."""
     # Download and convert model
     main_model_schema = download_and_convert_model(main_model)
@@ -906,7 +1166,10 @@ def test_eagle3_tree_decode(main_model, main_device, draft_model, draft_device, 
 
     # Create pipeline
     ov_pipe = create_ov_pipeline(
-        main_model_path, pipeline_type=PipelineType.SPECULATIVE_DECODING, draft_model_path=draft_model_path
+        main_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        draft_model_path=draft_model_path,
+        ov_config=get_llm_properties_for_kv_cache_precision(kv_cache_precision),
     )
 
     # Test with tree-based configuration
@@ -1059,3 +1322,101 @@ def test_cb_different_seed_produces_different_output(model_facebook_opt_125m: OV
         f"Requests with different rng_seeds {rng_seeds} must produce at least one distinct output, "
         f"but all produced identical token sequences: {token_seqs[0]}"
     )
+
+
+def test_cb_add_request_accepts_empty_lora_config(model_facebook_opt_125m: OVConvertedModelSchema):
+    """add_request() must allow an explicit empty LoRA config."""
+    import openvino_genai as ov_genai
+
+    pipe = ContinuousBatchingPipeline(model_facebook_opt_125m.models_path, SchedulerConfig(), "CPU")
+
+    modes = [
+        ov_genai.AdapterConfig.Mode.MODE_AUTO,
+        ov_genai.AdapterConfig.Mode.MODE_DYNAMIC,
+        ov_genai.AdapterConfig.Mode.MODE_STATIC_RANK,
+    ]
+    for request_id, mode in enumerate(modes):
+        config = GenerationConfig()
+        config.max_new_tokens = 10
+        config.adapters = ov_genai.AdapterConfig(mode=mode)
+
+        pipe.add_request(request_id, "test prompt", generation_config=config)
+
+
+@pytest.mark.parametrize("mode_name", ["MODE_AUTO", "MODE_DYNAMIC", "MODE_STATIC_RANK"])
+def test_cb_add_request_rejects_non_empty_unsupported_lora_mode(
+    model_tinyllama_1_1b_chat: OVConvertedModelSchema, tinyllama_lora_adapter: Path, mode_name: str
+):
+    """add_request() must reject unsupported modes when LoRA adapters are present."""
+    import openvino_genai as ov_genai
+
+    pipe = ContinuousBatchingPipeline(model_tinyllama_1_1b_chat.models_path, SchedulerConfig(), "CPU")
+
+    config = GenerationConfig()
+    config.max_new_tokens = 10
+    config.adapters = ov_genai.AdapterConfig(
+        ov_genai.Adapter(tinyllama_lora_adapter), mode=getattr(ov_genai.AdapterConfig.Mode, mode_name)
+    )
+
+    with pytest.raises(
+        RuntimeError, match="MODE_DYNAMIC, MODE_AUTO, and MODE_STATIC_RANK LoRA adapters are not supported"
+    ):
+        pipe.add_request(0, "test prompt", generation_config=config)
+
+
+@pytest.mark.parametrize("mode_name", ["MODE_AUTO", "MODE_DYNAMIC", "MODE_STATIC_RANK"])
+def test_cb_add_request_rejects_non_empty_unsupported_pipeline_lora_mode(
+    model_tinyllama_1_1b_chat: OVConvertedModelSchema, tinyllama_lora_adapter: Path, mode_name: str
+):
+    """add_request() must reject unsupported pipeline modes when LoRA adapters are present."""
+    import openvino_genai as ov_genai
+
+    adapter_config = ov_genai.AdapterConfig(
+        ov_genai.Adapter(tinyllama_lora_adapter), mode=getattr(ov_genai.AdapterConfig.Mode, mode_name)
+    )
+    pipe = ContinuousBatchingPipeline(
+        model_tinyllama_1_1b_chat.models_path,
+        SchedulerConfig(),
+        "CPU",
+        properties={"adapters": adapter_config},
+    )
+
+    config = GenerationConfig()
+    config.max_new_tokens = 10
+
+    with pytest.raises(
+        RuntimeError, match="MODE_DYNAMIC, MODE_AUTO, and MODE_STATIC_RANK LoRA adapters are not supported"
+    ):
+        pipe.add_request(0, "test prompt", generation_config=config)
+
+
+@pytest.mark.parametrize("mode_name", ["MODE_AUTO", "MODE_DYNAMIC", "MODE_STATIC_RANK"])
+@pytest.mark.parametrize("backend", ["continuous_batching", "prompt_lookup", "speculative_decoding"])
+def test_cb_generate_allows_unsupported_add_request_lora_mode(
+    model_tinyllama_1_1b_chat: OVConvertedModelSchema, tinyllama_lora_adapter: Path, mode_name: str, backend: str
+):
+    """generate() applies the adapters itself, so the add_request() mode restriction must not affect any backend."""
+    import openvino_genai as ov_genai
+
+    adapter_config = ov_genai.AdapterConfig(
+        ov_genai.Adapter(tinyllama_lora_adapter), mode=getattr(ov_genai.AdapterConfig.Mode, mode_name)
+    )
+
+    properties = {"adapters": adapter_config}
+    config = GenerationConfig()
+    config.max_new_tokens = 5
+    if backend == "prompt_lookup":
+        properties["prompt_lookup"] = True
+        config.max_ngram_size = 3
+        config.num_assistant_tokens = 3
+    elif backend == "speculative_decoding":
+        properties["draft_model"] = draft_model(model_tinyllama_1_1b_chat.models_path)
+        config.num_assistant_tokens = 3
+
+    pipe = ContinuousBatchingPipeline(
+        model_tinyllama_1_1b_chat.models_path, SchedulerConfig(), "CPU", properties=properties
+    )
+
+    results = pipe.generate(["test prompt"], [config])
+
+    assert len(results[0].m_generation_ids[0]) > 0

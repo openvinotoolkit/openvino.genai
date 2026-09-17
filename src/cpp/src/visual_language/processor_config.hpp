@@ -6,7 +6,6 @@
 #include <array>
 #include <filesystem>
 #include <nlohmann/json_fwd.hpp>
-
 #include <openvino/core/any.hpp>
 #include <openvino/runtime/properties.hpp>
 
@@ -54,6 +53,8 @@ public:
     size_t size_height = 896;
     size_t size_width = 896;
 
+    size_t max_image_tokens = 4096;
+
     // gemma4 specific config params
     size_t pooling_kernel_size = 3;
     size_t max_soft_tokens = 280;
@@ -68,6 +69,12 @@ public:
     size_t temporal_patch_size = 2;
     size_t merge_size = 2;
 
+    // DeepSeek-OCR-2 specific params (also used as DeepseekOcr2ImageProcessor fields)
+    size_t tile_size = 768;
+    size_t min_patches = 2;
+    size_t max_patches = 6;
+    std::array<uint8_t, 3> background_color{127, 127, 127};
+
     /// @brief Default constructor
     ProcessorConfig() = default;
 
@@ -78,9 +85,6 @@ public:
     /// @param json_path A path to a file to extract the values from.
     explicit ProcessorConfig(const std::filesystem::path& json_path);
 
-    static ProcessorConfig from_any_map(
-        const ov::AnyMap& config_map,
-        const ProcessorConfig& initial
-    );
+    static ProcessorConfig from_any_map(const ov::AnyMap& config_map, const ProcessorConfig& initial);
 };
 }  // namespace ov::genai

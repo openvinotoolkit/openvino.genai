@@ -340,9 +340,10 @@ EncodedVideo VisionEncoderQwen3VL::encode_frames(const std::vector<ov::Tensor>& 
 InputsEmbedderQwen3VL::InputsEmbedderQwen3VL(
     const VLMConfig& vlm_config,
     const std::filesystem::path& model_dir,
+    const Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap device_config
-) : InputsEmbedderQwen2VL(vlm_config, model_dir, device, device_config),
+) : InputsEmbedderQwen2VL(vlm_config, model_dir, tokenizer, device, device_config),
     m_use_patched_pos_model(!is_cpp_pos_embeds_fallback_requested()) {
     auto pos_model = utils::singleton_core().read_model(
         model_dir / "openvino_vision_embeddings_pos_model.xml");
@@ -714,7 +715,7 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
     m_last_input_ids = input_ids;
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
-    ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
+    ov::Tensor text_embeds = get_text_embedding(req, input_ids, metrics);
 
     int64_t vision_start_token_id = m_vision_token_ids.at("vision_start");
     int64_t vision_end_token_id = m_vision_token_ids.at("vision_end");

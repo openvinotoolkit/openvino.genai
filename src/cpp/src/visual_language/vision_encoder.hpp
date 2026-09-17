@@ -75,14 +75,14 @@ struct EncodedVideo {
     ov::Tensor video_features;
 
     /// @brief Number of video tokens required to append to a normalized prompt
-    size_t num_video_tokens;
+    size_t num_video_tokens = 0;
 
     /// @brief A size of an image used to compute embeddings for
     /// divided by ProcessorConfig's patch_size.
     ImageSize resized_source_size;
 
     /// @brief A number of encoded frames.
-    size_t frame_num;
+    size_t frame_num = 0;
 
     /// @brief Video metadata, used for video input processing and prompt normalization.
     VideoMetadata metadata;
@@ -158,8 +158,7 @@ protected:
     void resolve_processor_configs(const std::filesystem::path& config_dir_path);
     
     VisionEncoder() = default;
-    // Config-only constructor tag for subclasses where vision encoder is merged
-    // into a single model (loads only config files, skips model compilation)
+    // Loads processor configuration while deferring model compilation to derived encoders.
     struct ConfigOnlyTag {};
     VisionEncoder(const std::filesystem::path& config_dir, ConfigOnlyTag);
     VisionEncoder(const ModelsMap& models_map, const std::filesystem::path& config_dir, ConfigOnlyTag);

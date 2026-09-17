@@ -4,10 +4,47 @@
 from pathlib import Path
 from zipfile import ZipFile
 import tempfile
+import time
 
 import requests
 from github.WorkflowRun import WorkflowRun
 from workflow_rerun.constants import GITHUB_TOKEN, LOGGER
+
+LOG_DOWNLOAD_MAX_ATTEMPTS = 3
+LOG_DOWNLOAD_RETRY_BACKOFF_SECONDS = 5
+LOG_DOWNLOAD_TIMEOUT_SECONDS = 60
+LOG_DOWNLOAD_CHUNK_SIZE_BYTES = 1024 * 1024
+
+
+def _download_logs_archive(run: WorkflowRun, log_archive_path: Path, session: requests.Session) -> None:
+    """
+    Downloads the logs archive for a run, retrying on transient request failures
+    (e.g. connection resets while the response body is being read)
+    """
+    for attempt in range(1, LOG_DOWNLOAD_MAX_ATTEMPTS + 1):
+        try:
+            # PyGitHub does not expose the "/repos/{owner}/{repo}/actions/runs/{run_id}/logs" endpoint so we have to use requests
+            LOGGER.info(f"DOWNLOADING LOGS FOR RUN ID {run.id} (ATTEMPT {attempt}/{LOG_DOWNLOAD_MAX_ATTEMPTS})")
+            LOGGER.debug(f"Downloading logs from {run.logs_url}")
+            with session.get(
+                url=run.logs_url,
+                headers={"Authorization": f"Bearer {GITHUB_TOKEN}"},
+                stream=True,
+                timeout=LOG_DOWNLOAD_TIMEOUT_SECONDS,
+            ) as response:
+                response.raise_for_status()
+                with open(file=log_archive_path, mode="wb") as log_archive:
+                    for chunk in response.iter_content(chunk_size=LOG_DOWNLOAD_CHUNK_SIZE_BYTES):
+                        if chunk:
+                            log_archive.write(chunk)
+            return
+        except requests.exceptions.RequestException as error:
+            LOGGER.warning(
+                f"FAILED TO DOWNLOAD LOGS FOR RUN ID {run.id} ON ATTEMPT {attempt}/{LOG_DOWNLOAD_MAX_ATTEMPTS}: {error}"
+            )
+            if attempt == LOG_DOWNLOAD_MAX_ATTEMPTS:
+                raise
+            time.sleep(LOG_DOWNLOAD_RETRY_BACKOFF_SECONDS)
 
 
 def collect_logs_for_run(run: WorkflowRun, logs_dir: Path, session: requests.Session) -> Path:
@@ -66,14 +103,7 @@ def collect_logs_for_run(run: WorkflowRun, logs_dir: Path, session: requests.Ses
     with tempfile.NamedTemporaryFile(suffix=".zip") as temp_file:
         log_archive_path = Path(temp_file.name)
 
-        # Download logs archive
-        with open(file=log_archive_path, mode="wb") as log_archive:
-            LOGGER.info(f"DOWNLOADING LOGS FOR RUN ID {run.id}")
-            # PyGitHub does not expose the "/repos/{owner}/{repo}/actions/runs/{run_id}/logs" endpoint so we have to use requests
-            LOGGER.debug(f"Downloading logs from {run.logs_url}")
-            response = session.get(url=run.logs_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
-            response.raise_for_status()
-            log_archive.write(response.content)
+        _download_logs_archive(run=run, log_archive_path=log_archive_path, session=session)
 
         # Unpack it
         with tempfile.TemporaryDirectory() as temp_dir:
