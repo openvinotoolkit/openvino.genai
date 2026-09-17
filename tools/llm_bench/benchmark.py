@@ -494,7 +494,7 @@ def get_argparser():
     parser.add_argument(
         "--apply_chat_template",
         action="store_true",
-        help="Apply chat template for LLM. By default chat template is not applied. It's better to use with --disable_prompt_permutation,"
+        help="Apply chat template for LLM. Harmony templates are applied automatically. It's better to use with --disable_prompt_permutation,"
         " otherwise the prompt will be modified after applying the chat template, so the structure of chat template will not be kept.",
     )
     parser.add_argument(
