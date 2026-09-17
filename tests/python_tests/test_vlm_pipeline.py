@@ -168,6 +168,7 @@ else:
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
+MODEL_QWEN35_MTP = "optimum-intel-internal-testing/tiny-random-qwen3.5-mtp"
 MODEL_DEEPSEEK_OCR2 = "optimum-intel-internal-testing/tiny-random-deepseek-ocr-2"
 
 MODEL_IDS: list[str] = []
@@ -326,7 +327,10 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of Qwen3-Omni. Minimum required is 4.57.0."
         )
-    if "optimum-intel-internal-testing/tiny-random-qwen3.5" == model_id and is_transformers_version("<", "5.2.0"):
+    if model_id in {
+        "optimum-intel-internal-testing/tiny-random-qwen3.5",
+        MODEL_QWEN35_MTP,
+    } and is_transformers_version("<", "5.2.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.2.0."
         )
@@ -3000,11 +3004,16 @@ def test_cdpruner_continuous_batching_chat_history(
     )
 
 
+@pytest.fixture(scope="module")
+def qwen35_mtp_model_path() -> Path:
+    model_path = Path(_get_ov_model(MODEL_QWEN35_MTP))
+    assert (model_path / "openvino_mtp_model.xml").is_file(), "Qwen3.5 export must include the MTP draft model"
+    return model_path
+
+
 @pytest.mark.parametrize("main_prefix", [False, True])
-def test_local_qwen35_mtp_rejects_prefix_mismatch(main_prefix):
-    model_path = os.environ.get("OV_GENAI_QWEN35_MODEL")
-    if not model_path:
-        pytest.skip("OV_GENAI_QWEN35_MODEL must name a local Qwen3.5 VLM IR")
+def test_qwen35_mtp_rejects_prefix_mismatch(qwen35_mtp_model_path, main_prefix):
+    model_path = qwen35_mtp_model_path
     scheduler = SchedulerConfig()
     scheduler.cache_size = 1
     scheduler.enable_prefix_caching = main_prefix
@@ -3020,10 +3029,8 @@ def test_local_qwen35_mtp_rejects_prefix_mismatch(main_prefix):
         )
 
 
-def test_local_qwen35_mtp_text_add_request(monkeypatch, capfd):
-    model_path = os.environ.get("OV_GENAI_QWEN35_MODEL")
-    if not model_path:
-        pytest.skip("OV_GENAI_QWEN35_MODEL must name a local Qwen3.5 VLM IR")
+def test_qwen35_mtp_text_add_request(qwen35_mtp_model_path, monkeypatch, capfd):
+    model_path = qwen35_mtp_model_path
     monkeypatch.setenv("OPENVINO_LOG_LEVEL", "5")
     scheduler = SchedulerConfig()
     scheduler.cache_size = 1
@@ -3066,12 +3073,10 @@ def test_local_qwen35_mtp_text_add_request(monkeypatch, capfd):
 @pytest.mark.parametrize("enable_prefix_caching", [False, True])
 @pytest.mark.parametrize("num_assistant_tokens", [1, 4])
 @pytest.mark.parametrize("strategy", ["prompt_lookup", "mtp"])
-def test_local_qwen35_vlm_verifier_cache_contract(
-    media, enable_prefix_caching, num_assistant_tokens, strategy, monkeypatch, capfd
+def test_qwen35_vlm_verifier_cache_contract(
+    qwen35_mtp_model_path, media, enable_prefix_caching, num_assistant_tokens, strategy, monkeypatch, capfd
 ):
-    model_path = os.environ.get("OV_GENAI_QWEN35_MODEL")
-    if not model_path:
-        pytest.skip("OV_GENAI_QWEN35_MODEL must name a local Qwen3.5 VLM IR")
+    model_path = qwen35_mtp_model_path
     monkeypatch.setenv("OPENVINO_LOG_LEVEL", "5")
     scheduler = SchedulerConfig()
     scheduler.enable_prefix_caching = False

@@ -17,6 +17,48 @@ LFM is committed as `43b1c3df1`; Qwen3.5 paired prefix replay is committed as
 - The native library builds and scoped C++ diagnostics are clean. The broader
   native and model-suite counts below describe the preceding committed milestone.
 
+### Converted Tiny Qwen3.5-MTP Tests (2026-09-17)
+
+The rollback fixes and real-model validation below are committed as `98e678c92`.
+The subsequent test-portability change replaces `OV_GENAI_QWEN35_MODEL` in the
+three Qwen test functions with a module-scoped fixture using `_get_ov_model` and
+`optimum-intel-internal-testing/tiny-random-qwen3.5-mtp`. The fixture requires
+`openvino_mtp_model.xml`; the existing Qwen3.5 Transformers minimum-version gate
+also applies to this model.
+
+All 35 migrated cases passed in 116.96 seconds, including conversion. The existing
+parity, warm hybrid/paired replay, draft activity, changed media, cancellation,
+prompt extension, retained chat media, direct admission, and prefix-mismatch
+assertions are unchanged. The local-model environment variable was unset.
+
+The installed exporter's `Qwen3_5DynamicCache` import fails with the active
+Transformers package. Validation used the approved Transformers 5.2.0 overlay
+without modifying the venv or overriding its activated OpenVINO runtime:
+
+```bash
+source venv/bin/activate
+env -u LD_PRELOAD -u OV_GENAI_QWEN35_MODEL OV_CACHE="$PWD/ov_cache0" \
+  uv run --active --no-project --with transformers==5.2.0 python -m pytest \
+  tests/python_tests/test_vlm_pipeline.py \
+  -k 'test_qwen35_mtp_text_add_request or test_qwen35_mtp_rejects_prefix_mismatch or test_qwen35_vlm_verifier_cache_contract' \
+  -x -q --tb=short --show-capture=no --disable-warnings
+```
+
+### Converted Tiny Hybrid CB Tests (2026-09-17)
+
+Both CB tests previously gated by `OV_GENAI_HYBRID_MODEL` now use the existing
+`llm_model` conversion fixture, parameterized by `LINEAR_ATTENTION_MODELS_LIST`
+(`optimum-intel-internal-testing/tiny-random-lfm2`). This preserves independent
+speculative decoding rather than substituting MTP. All existing assertions remain
+unchanged, including draft acceptance, warm hybrid restore, cancellation/reuse,
+and cached-prefix continuation with new input.
+
+All 17 cases passed in 33.90 seconds with `OV_GENAI_HYBRID_MODEL` unset, using
+the activated runtime and the Transformers 5.2.0 overlay above. The installed
+exporter rejects LFM2 export with Transformers 5.5.0 (maximum supported: 5.4.0).
+The pytest selection was
+`tests/python_tests/test_continuous_batching.py -k 'test_hybrid_cached_prefix_with_new_input or test_hybrid_verifier_cache_contract'`.
+
 ### Interval-4 Benchmark Rerun (2026-09-17)
 
 The benchmark was rerun successfully in the explicitly activated environment.
