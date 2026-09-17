@@ -1248,7 +1248,8 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
                                                             const ov::Tensor& tts_pad,
                                                             const ov::Tensor& trailing_text_hidden,
                                                             const SpeechGenerationConfig& generation_config,
-                                                            const std::vector<bool>& suppress_tokens) {
+                                                            const std::vector<bool>& suppress_tokens,
+                                                            const ov::Tensor& ref_codec_ids) {
     Text2SpeechDecodedResults result;
     result.output_sample_rate = m_output_sample_rate;
 
@@ -1344,7 +1345,52 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
         ++absolute_pos;
     }
 
-    auto waveform = decode_speech_tokenizer(all_codes);
+    std::vector<int64_t> codes_for_decode;
+    size_t ref_frames = 0;
+    if (ref_codec_ids) {
+        const ov::Shape ref_shape = ref_codec_ids.get_shape();
+        OPENVINO_ASSERT(ref_codec_ids.get_element_type() == ov::element::i64,
+                        "Qwen3 Base ref_codec_ids tensor must have element type i64");
+        OPENVINO_ASSERT(ref_shape.size() == 2 || ref_shape.size() == 3,
+                        "Qwen3 Base ref_codec_ids tensor is expected to have shape [T, G] or [1, T, G]");
+        const bool rank3 = ref_shape.size() == 3;
+        OPENVINO_ASSERT(!rank3 || ref_shape[0] == 1,
+                        "Qwen3 Base ref_codec_ids rank-3 tensor must have batch dimension 1");
+
+        ref_frames = rank3 ? ref_shape[1] : ref_shape[0];
+        const size_t ref_groups = rank3 ? ref_shape[2] : ref_shape[1];
+        OPENVINO_ASSERT(ref_groups == m_decoder_num_quantizers,
+                        "Qwen3 Base ref_codec_ids group count mismatch. Expected ",
+                        m_decoder_num_quantizers,
+                        ", got ",
+                        ref_groups);
+
+        const int64_t* ref_ptr = ref_codec_ids.data<const int64_t>();
+        codes_for_decode.reserve(ref_frames * ref_groups + all_codes.size());
+        for (size_t t = 0; t < ref_frames; ++t) {
+            for (size_t g = 0; g < ref_groups; ++g) {
+                codes_for_decode.push_back(ref_ptr[t * ref_groups + g]);
+            }
+        }
+        codes_for_decode.insert(codes_for_decode.end(), all_codes.begin(), all_codes.end());
+    } else {
+        codes_for_decode = all_codes;
+    }
+
+    auto waveform = decode_speech_tokenizer(codes_for_decode);
+    if (ref_frames > 0) {
+        const size_t generated_frames = all_codes.size() / m_decoder_num_quantizers;
+        const size_t total_frames = ref_frames + generated_frames;
+        const size_t cut_samples = static_cast<size_t>(
+            (static_cast<double>(ref_frames) / static_cast<double>(std::max<size_t>(total_frames, 1))) *
+            static_cast<double>(waveform.size()));
+        if (cut_samples >= waveform.size()) {
+            waveform.clear();
+        } else {
+            waveform.erase(waveform.begin(), waveform.begin() + static_cast<std::ptrdiff_t>(cut_samples));
+        }
+    }
+
     ov::Tensor wav_tensor(ov::element::f32, ov::Shape{waveform.size()});
     if (!waveform.empty()) {
         std::copy(waveform.begin(), waveform.end(), wav_tensor.data<float>());
@@ -2069,7 +2115,8 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate_voice_clone(const std::string& 
                                tts_pad,
                                trailing_text_hidden,
                                generation_config,
-                               suppress_tokens);
+                               suppress_tokens,
+                               prompt.ref_code);
 }
 
 void Qwen3TTSImpl::perf_print_and_reset() const {

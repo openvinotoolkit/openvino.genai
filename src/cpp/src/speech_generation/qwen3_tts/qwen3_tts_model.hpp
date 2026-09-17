@@ -103,7 +103,8 @@ private:
                                                   const ov::Tensor& tts_pad,
                                                   const ov::Tensor& trailing_text_hidden,
                                                   const SpeechGenerationConfig& generation_config,
-                                                  const std::vector<bool>& suppress_tokens);
+                                                  const std::vector<bool>& suppress_tokens,
+                                                  const ov::Tensor& ref_codec_ids = ov::Tensor{});
 
     ov::Tensor make_attention_mask(size_t length);
     ov::Tensor make_causal_attention_mask_4d(size_t length);
@@ -174,7 +175,7 @@ private:
     ov::Tensor m_pred_emb_ids;  // token ids input, reused across calls
     ov::Tensor m_pred_emb_step;  // generation_steps input, reused across calls
     ov::InferRequest m_speech_tokenizer_decoder;
-    bool m_decoder_static = false;  // true when reshaped to a fixed DECODER_TRACE_LEN window (NPU)
+    bool m_decoder_static = false;  // true when reshaped to a fixed DECODER_WINDOW_LEN window (NPU)
     ov::InferRequest m_qwen3_mel_preprocess;
     ov::InferRequest m_speaker_encoder;
     ov::InferRequest m_speech_tokenizer_encoder;
