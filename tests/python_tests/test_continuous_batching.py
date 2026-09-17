@@ -52,7 +52,7 @@ from utils.ov_genai_pipelines import (
     GenerationChatInputsType,
 )
 from utils.comparation import compare_generation_results
-from data.models import CHAT_MODELS_LIST
+from data.models import CHAT_MODELS_LIST, LINEAR_ATTENTION_MODELS_LIST
 from data.test_dataset import get_test_dataset
 from utils.custom_op import assert_ir_contains_op_type, get_extension_model, get_extension_lib_path, CustomAdd
 
@@ -646,13 +646,11 @@ def test_preemption_with_multinomial_n_seq(model_facebook_opt_125m: OVConvertedM
 @pytest.mark.parametrize("enable_prefix_caching", [False, True])
 @pytest.mark.parametrize("pipeline_type", [PipelineType.PROMPT_LOOKUP_DECODING, PipelineType.SPECULATIVE_DECODING])
 @pytest.mark.parametrize("dynamic_split_fuse", [False, True])
-def test_local_hybrid_verifier_cache_contract(
-    num_assistant_tokens, enable_prefix_caching, pipeline_type, dynamic_split_fuse, monkeypatch, capfd
+@pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
+def test_hybrid_verifier_cache_contract(
+    llm_model, num_assistant_tokens, enable_prefix_caching, pipeline_type, dynamic_split_fuse, monkeypatch, capfd
 ):
-    model_path = os.environ.get("OV_GENAI_HYBRID_MODEL")
-    if not model_path:
-        pytest.skip("OV_GENAI_HYBRID_MODEL must name a local hybrid OpenVINO IR")
-    assert Path(model_path).is_dir()
+    model_path = llm_model.models_path
     monkeypatch.setenv("OPENVINO_LOG_LEVEL", "5")
     scheduler_config = dict_to_scheduler_config(
         {
@@ -738,11 +736,9 @@ def test_local_hybrid_verifier_cache_contract(
     assert result_after_cancel.tokens == reference.tokens
 
 
-def test_local_hybrid_cached_prefix_with_new_input():
-    model_path = os.environ.get("OV_GENAI_HYBRID_MODEL")
-    if not model_path:
-        pytest.skip("OV_GENAI_HYBRID_MODEL must name a local hybrid OpenVINO IR")
-    assert Path(model_path).is_dir()
+@pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
+def test_hybrid_cached_prefix_with_new_input(llm_model: OVConvertedModelSchema):
+    model_path = llm_model.models_path
     scheduler_config = dict_to_scheduler_config(
         {
             "enable_prefix_caching": True,
