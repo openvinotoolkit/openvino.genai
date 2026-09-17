@@ -31,6 +31,9 @@ public:
 
     explicit AutoencoderKLLTX2Video(const std::filesystem::path& vae_decoder_path);
 
+    AutoencoderKLLTX2Video(const std::filesystem::path& vae_encoder_path,
+                           const std::filesystem::path& vae_decoder_path);
+
     AutoencoderKLLTX2Video(const std::filesystem::path& vae_decoder_path,
                            const std::string& device,
                            const ov::AnyMap& properties = {});
@@ -41,6 +44,11 @@ public:
                            const std::string& device,
                            Properties&&... properties)
         : AutoencoderKLLTX2Video(vae_decoder_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
+
+    AutoencoderKLLTX2Video(const std::filesystem::path& vae_encoder_path,
+                           const std::filesystem::path& vae_decoder_path,
+                           const std::string& device,
+                           const ov::AnyMap& properties = {});
 
     AutoencoderKLLTX2Video(const AutoencoderKLLTX2Video&);
 
@@ -58,14 +66,17 @@ public:
 
     AutoencoderKLLTX2Video& reshape(int64_t batch_size, int64_t num_frames, int64_t height, int64_t width);
 
+    /// Encodes a [B, 3, F, H, W] video into the latent distribution mean [B, C, F', H', W'] (not normalized)
+    ov::Tensor encode(const ov::Tensor& video);
+
     ov::Tensor decode(const ov::Tensor& latent);
 
 private:
     void merge_vae_video_post_processing() const;
 
     Config m_config;
-    ov::InferRequest m_decoder_request;
-    std::shared_ptr<ov::Model> m_decoder_model;
+    ov::InferRequest m_encoder_request, m_decoder_request;
+    std::shared_ptr<ov::Model> m_encoder_model, m_decoder_model;
 };
 
 }  // namespace ov::genai
