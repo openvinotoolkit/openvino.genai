@@ -84,7 +84,7 @@
 
 ### Requirements
 
-- Node.js v21+
+- Node.js v22+
 
 ### Build Bindings
 

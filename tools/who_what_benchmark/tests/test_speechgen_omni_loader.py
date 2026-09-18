@@ -48,7 +48,7 @@ def test_load_omni_hf_pipeline_uses_requested_device_and_native_dtype(monkeypatc
     model_loaders.load_omni_hf_pipeline("dummy-omni", device, _OmniConfig())
 
     assert load_kwargs["device_map"] == expected_device_map
-    assert load_kwargs["dtype"] == "auto"
+    assert load_kwargs["torch_dtype"] == "auto"
 
 
 @pytest.mark.parametrize("use_hf", [True, False], ids=["hf", "optimum"])
