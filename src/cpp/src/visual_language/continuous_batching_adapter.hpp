@@ -34,6 +34,18 @@ public:
         load_vlm_config(models_dir);
     }
 
+    VLMContinuousBatchingAdapter(const std::shared_ptr<ov::Model>& language_model,
+                                 const std::shared_ptr<InputsEmbedder>& inputs_embedder,
+                                 const SchedulerConfig& scheduler_config,
+                                 const std::filesystem::path& config_dir_path,
+                                 const std::string& device,
+                                 const ov::AnyMap& properties,
+                                 const ov::genai::GenerationConfig& generation_config)
+        : m_impl{language_model, inputs_embedder, scheduler_config, device, config_dir_path, properties, generation_config} {
+        set_attention_backend(PA_BACKEND);
+        load_vlm_config(config_dir_path);
+    }
+
     VLMContinuousBatchingAdapter(const ModelsMap& models_map,
                                  const Tokenizer& tokenizer,
                                  const std::filesystem::path& config_dir_path,

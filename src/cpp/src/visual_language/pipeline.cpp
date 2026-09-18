@@ -1233,7 +1233,7 @@ VLMPipeline::VLMPipeline(
     utils::clear_false_prompt_lookup_from_config(properties);
     utils::validate_vlm_model_properties(properties);
 
-    // TODO Check if NPU should be enabled for VLMProcessor
+    // TODO Support NPU with VLMProcessor
     OPENVINO_ASSERT(device != "NPU",
         "VLMPipeline construction from a VLMProcessor isn't supported for NPU device");
 
@@ -1242,8 +1242,29 @@ VLMPipeline::VLMPipeline(
     auto language_model = utils::singleton_core().read_model(
         language_model_path, {}, utils::get_model_properties(properties, "language_model"));
 
-    m_pimpl = std::make_shared<VLMPipelineImpl>(
-        language_model, models_dir, get_shared_inputs_embedder(processor), device, properties);
+    auto shared_embedder = get_shared_inputs_embedder(processor);
+
+    if (utils::explicitly_requires_paged_attention(user_properties)) {
+        auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+        auto generation_config = utils::from_config_json_if_exists<GenerationConfig>(models_dir, "generation_config.json");
+        m_pimpl = std::make_shared<VLMContinuousBatchingAdapter>(language_model, shared_embedder, scheduler_config, models_dir, device, plugin_properties, generation_config);
+    } else if (attention_backend == PA_BACKEND && !requires_sdpa(models_dir)) {
+        try {
+            auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+            auto generation_config = utils::from_config_json_if_exists<GenerationConfig>(models_dir, "generation_config.json");
+#if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
+            m_pimpl = std::make_shared<VLMContinuousBatchingAdapter>(language_model, shared_embedder, scheduler_config, models_dir, device, plugin_properties, generation_config);
+#endif
+        } catch (const ov::Exception& exception) {
+            log_paged_attention_fallback(exception);
+            language_model = utils::singleton_core().read_model(language_model_path, {}, properties);
+        }
+    }
+
+    if (m_pimpl == nullptr) {
+        m_pimpl = std::make_shared<VLMPipelineImpl>(
+            language_model, models_dir, shared_embedder, device, properties);
+    }
 
     auto stop_time = std::chrono::steady_clock::now();
     m_pimpl->set_load_time(std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count());
@@ -1263,7 +1284,7 @@ VLMPipeline::VLMPipeline(
     utils::clear_false_prompt_lookup_from_config(properties);
     utils::validate_vlm_model_properties(properties);
 
-    // TODO Check if NPU should be enabled for VLMProcessor
+    // TODO Support NPU with VLMProcessor
     OPENVINO_ASSERT(device != "NPU",
         "VLMPipeline construction from a VLMProcessor isn't supported for NPU device");
 
@@ -1271,8 +1292,27 @@ VLMPipeline::VLMPipeline(
     const auto& [model_str, weights] = utils::get_model_weights_pair(models_map, "language");
     auto language_model = utils::singleton_core().read_model(model_str, weights);
 
-    m_pimpl = std::make_shared<VLMPipelineImpl>(
-        language_model, config_dir_path, get_shared_inputs_embedder(processor), device, properties, generation_config);
+    auto shared_embedder = get_shared_inputs_embedder(processor);
+
+    if (utils::explicitly_requires_paged_attention(user_properties)) {
+        auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+        m_pimpl = std::make_shared<VLMContinuousBatchingAdapter>(language_model, shared_embedder, scheduler_config, config_dir_path, device, plugin_properties, generation_config);
+    } else if (attention_backend == PA_BACKEND && !requires_sdpa(config_dir_path)) {
+        try {
+            auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+#if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
+            m_pimpl = std::make_shared<VLMContinuousBatchingAdapter>(language_model, shared_embedder, scheduler_config, config_dir_path, device, plugin_properties, generation_config);
+#endif
+        } catch (const ov::Exception& exception) {
+            log_paged_attention_fallback(exception);
+            language_model = utils::singleton_core().read_model(model_str, weights);
+        }
+    }
+
+    if (m_pimpl == nullptr) {
+        m_pimpl = std::make_shared<VLMPipelineImpl>(
+            language_model, config_dir_path, shared_embedder, device, properties, generation_config);
+    }
 
     auto stop_time = std::chrono::steady_clock::now();
     m_pimpl->set_load_time(std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count());
