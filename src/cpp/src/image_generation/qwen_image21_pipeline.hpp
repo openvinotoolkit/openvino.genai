@@ -198,7 +198,16 @@ public:
                  const int width,
                  const float guidance_scale) override {
         check_image_size(height, width);
-        m_vae->reshape(num_images_per_prompt, height, width);
+        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+            // The condition image is encoded once, at the resolution derived from the requested aspect ratio rather
+            // than from the requested output size.
+            const Qwen3VLForConditionalGeneration::ImageSize condition_size =
+                Qwen3VLForConditionalGeneration::calculate_dimensions(
+                    DEFAULT_OUTPUT_RESOLUTION * DEFAULT_OUTPUT_RESOLUTION,
+                    static_cast<double>(width) / static_cast<double>(height));
+            m_vae->reshape_encoder(1, static_cast<int>(condition_size.height), static_cast<int>(condition_size.width));
+        }
+        m_vae->reshape_decoder(num_images_per_prompt, height, width);
     }
 
     void compile(const std::string& text_encode_device,
