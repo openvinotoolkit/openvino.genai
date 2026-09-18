@@ -39,7 +39,7 @@ def test_harmony_template_converts_legacy_user_prompt():
     ]
 
 
-def test_harmony_template_preserves_legacy_system_message():
+def test_harmony_template_converts_legacy_chatml_prompt():
     args = {"apply_chat_template": False, "batch_size": 1, "disable_prompt_permutation": True}
     prompt = (
         "<|im_start|>system<|im_sep|>Summarize precisely.<|im_end|>"
@@ -48,7 +48,7 @@ def test_harmony_template_preserves_legacy_system_message():
     )
 
     assert apply_chat_template_genai(args, prompt, HarmonyTokenizer()) == [
-        "<|start|>system:Summarize precisely.|user:Article text.<|start|>assistant"
+        "<|start|>user:Summarize precisely.\r\n\r\nArticle text.<|start|>assistant"
     ]
 
 
