@@ -725,7 +725,6 @@ def load_imagetext2image_model(
         if kwargs.get('from_onnx'):
             model_kwargs['from_onnx'] = kwargs['from_onnx']
         config = OVPipelineForImage2Image.load_config(model_id)
-        config = config[0] if isinstance(config, tuple) else config
         pipeline_cls = OVPipelineForImage2Image
         if config.get("_class_name") == "QwenImage21Pipeline":
             from optimum.intel.openvino import OVQwenImage21Pipeline

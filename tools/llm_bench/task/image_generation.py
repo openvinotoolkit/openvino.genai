@@ -91,12 +91,11 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
     result_md5_list = []
     mem_consumption.start(num)
     input_text_list = [input_text] * args['batch_size']
+    tokenizer = pipe.tokenizer
     if type(pipe).__name__ in ("QwenImage21Pipeline", "OVQwenImage21Pipeline"):
         tokenizer = pipe.processor.tokenizer
         if input_args.pop("strength", None) is not None:
             log.warning("Qwen-Image-2.1 does not support strength; ignoring it.")
-    else:
-        tokenizer = pipe.tokenizer
     input_data = tokenizer(input_text, return_tensors="pt")
     input_data.pop("token_type_ids", None)
     # Remove `token_type_ids` from inputs
