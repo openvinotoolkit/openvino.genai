@@ -11,7 +11,6 @@ import pytest
 
 import openvino as ov
 import openvino_genai as ov_genai
-from huggingface_hub import snapshot_download
 from optimum.intel import OVModelForTextToSpeechSeq2Seq
 
 from utils.atomic_download import AtomicDownloadManager
@@ -21,20 +20,29 @@ from utils.network import retry_request
 logger = logging.getLogger(__name__)
 
 QWEN3_TTS_BASE_TINY_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-tts"
+QWEN3_TTS_CUSTOMVOICE_TINY_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-tts-customvoice"
+QWEN3_TTS_VOICEDESIGN_TINY_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-tts-voicedesign"
+
 SAMPLE_RATE = 24000
 LANGUAGES = ["English", "Chinese", "Russian"]
 LANGUAGE_TEST_TEXTS = {
     "English": {
         "prompt": "Okay, let's run some tests! Is everything okay?",
         "reference_text": "This is a dummy-generated waveform for parity testing",
+        "instruct": "Speak with a calm, friendly, and reassuring tone.",
+        "customvoice_speaker": "serena",
     },
     "Chinese": {
         "prompt": "好了，我们来做些测试吧！一切都正常吗？",
         "reference_text": "这是一个用于奇偶校验测试的模拟生成波形。",
+        "instruct": "请用平静、亲切且令人安心的语气说话。",
+        "customvoice_speaker": "uncle_fu",
     },
     "Russian": {
         "prompt": "Хорошо, давайте проведем несколько тестов! Всё в порядке?",
         "reference_text": "Это сгенерированный тестовый сигнал для проверки четности.",
+        "instruct": "Говорите спокойным, дружелюбным и обнадеживающим тоном.",
+        "customvoice_speaker": "vivian",
     },
 }
 GENERATION_KWARGS = {
@@ -46,6 +54,50 @@ GENERATION_KWARGS = {
 
 def _generation_kwargs(non_streaming_mode: bool) -> dict:
     return {**GENERATION_KWARGS, "non_streaming_mode": non_streaming_mode}
+
+
+def _prepare_qwen3_tts_ov_model(
+    model_id: str,
+    cache_name: str,
+) -> Path:
+    models_dir = get_ov_cache_converted_models_dir()
+    model_dir = models_dir / cache_name
+    manager = AtomicDownloadManager(model_dir)
+
+    if manager.is_complete() or (model_dir / "openvino_talker_model.xml").exists():
+        return model_dir
+
+    def convert_to_temp(temp_dir: Path) -> None:
+        command = [
+            "optimum-cli",
+            "export",
+            "openvino",
+            "--model",
+            model_id,
+            "--trust-remote-code",
+            str(temp_dir),
+        ]
+        logger.info("Qwen3 TTS export command: %s", " ".join(command))
+        retry_request(
+            lambda: subprocess.run(
+                command,
+                check=True,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+        )
+
+    try:
+        manager.execute(convert_to_temp)
+    except FileNotFoundError:
+        pytest.skip("optimum-cli is not available in PATH")
+    except subprocess.CalledProcessError as error:
+        pytest.skip(
+            f"Failed to export {model_id}: returncode={error.returncode}, stderr={error.stderr}"
+        )
+
+    return model_dir
 
 
 def _make_ref_audio() -> np.ndarray:
@@ -87,45 +139,26 @@ def _assert_waveform_equal(expected: np.ndarray, actual: np.ndarray, context: st
 
 @pytest.fixture(scope="module")
 def tiny_qwen3_tts_base_ov_path() -> Path:
-    models_dir = get_ov_cache_converted_models_dir()
-    model_dir = models_dir / QWEN3_TTS_BASE_TINY_MODEL_ID.replace("/", "_")
-    manager = AtomicDownloadManager(model_dir)
+    return _prepare_qwen3_tts_ov_model(
+        QWEN3_TTS_BASE_TINY_MODEL_ID,
+        QWEN3_TTS_BASE_TINY_MODEL_ID.replace("/", "_"),
+    )
 
-    if manager.is_complete() or (model_dir / "openvino_talker_model.xml").exists():
-        return model_dir
 
-    def convert_to_temp(temp_dir: Path) -> None:
-        model_cached = snapshot_download(QWEN3_TTS_BASE_TINY_MODEL_ID)
-        command = [
-            "optimum-cli",
-            "export",
-            "openvino",
-            "--model",
-            model_cached,
-            "--trust-remote-code",
-            str(temp_dir),
-        ]
-        logger.info("Qwen3 TTS export command: %s", " ".join(command))
-        retry_request(
-            lambda: subprocess.run(
-                command,
-                check=True,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-            )
-        )
+@pytest.fixture(scope="module")
+def tiny_qwen3_tts_customvoice_ov_path() -> Path:
+    return _prepare_qwen3_tts_ov_model(
+        QWEN3_TTS_CUSTOMVOICE_TINY_MODEL_ID,
+        "optimum-intel-internal-testing_tiny-random-qwen3-tts-customvoice",
+    )
 
-    try:
-        manager.execute(convert_to_temp)
-    except FileNotFoundError:
-        pytest.skip("optimum-cli is not available in PATH")
-    except subprocess.CalledProcessError as error:
-        pytest.skip(
-            f"Failed to export {QWEN3_TTS_BASE_TINY_MODEL_ID}: returncode={error.returncode}, stderr={error.stderr}"
-        )
 
-    return model_dir
+@pytest.fixture(scope="module")
+def tiny_qwen3_tts_voicedesign_ov_path() -> Path:
+    return _prepare_qwen3_tts_ov_model(
+        QWEN3_TTS_VOICEDESIGN_TINY_MODEL_ID,
+        "optimum-intel-internal-testing_tiny-random-qwen3-tts-voicedesign",
+    )
 
 
 @pytest.fixture(scope="module")
@@ -147,6 +180,48 @@ def optimum_qwen3_tts_base_model(tiny_qwen3_tts_base_ov_path: Path):
 @pytest.fixture
 def genai_qwen3_tts_base_pipe(tiny_qwen3_tts_base_ov_path: Path):
     return ov_genai.Text2SpeechPipeline(str(tiny_qwen3_tts_base_ov_path), "CPU")
+
+
+@pytest.fixture(scope="module")
+def optimum_qwen3_tts_customvoice_model(tiny_qwen3_tts_customvoice_ov_path: Path):
+    try:
+        return retry_request(
+            lambda: OVModelForTextToSpeechSeq2Seq.from_pretrained(
+                str(tiny_qwen3_tts_customvoice_ov_path),
+                trust_remote_code=True,
+                local_files_only=True,
+                compile=False,
+                device="CPU",
+            )
+        )
+    except Exception as error:
+        pytest.skip(f"Failed to load optimum Qwen3-TTS CustomVoice model: {error}")
+
+
+@pytest.fixture
+def genai_qwen3_tts_customvoice_pipe(tiny_qwen3_tts_customvoice_ov_path: Path):
+    return ov_genai.Text2SpeechPipeline(str(tiny_qwen3_tts_customvoice_ov_path), "CPU")
+
+
+@pytest.fixture(scope="module")
+def optimum_qwen3_tts_voicedesign_model(tiny_qwen3_tts_voicedesign_ov_path: Path):
+    try:
+        return retry_request(
+            lambda: OVModelForTextToSpeechSeq2Seq.from_pretrained(
+                str(tiny_qwen3_tts_voicedesign_ov_path),
+                trust_remote_code=True,
+                local_files_only=True,
+                compile=False,
+                device="CPU",
+            )
+        )
+    except Exception as error:
+        pytest.skip(f"Failed to load optimum Qwen3-TTS VoiceDesign model: {error}")
+
+
+@pytest.fixture
+def genai_qwen3_tts_voicedesign_pipe(tiny_qwen3_tts_voicedesign_ov_path: Path):
+    return ov_genai.Text2SpeechPipeline(str(tiny_qwen3_tts_voicedesign_ov_path), "CPU")
 
 
 def _run_optimum_base_generate(
@@ -313,3 +388,112 @@ class TestQwen3TTSPipelineBase:
 
         assert first.output_sample_rate == second.output_sample_rate
         _assert_waveform_equal(first_speech, second_speech, "x-vector artifact reuse")
+
+
+@pytest.mark.speech_generation
+@pytest.mark.parametrize(
+    "non_streaming_mode",
+    [True, False],
+    ids=["non-streaming", "streaming"],
+)
+@pytest.mark.parametrize("language", LANGUAGES)
+class TestQwen3TTSPipelineCustomVoice:
+    @pytest.mark.parametrize("use_instruct", [True, False], ids=["with-instruct", "without-instruct"])
+    def test_qwen3_tts_customvoice_optimum_vs_genai(
+        self,
+        optimum_qwen3_tts_customvoice_model,
+        genai_qwen3_tts_customvoice_pipe,
+        language: str,
+        non_streaming_mode: bool,
+        use_instruct: bool,
+    ):
+        prompt = LANGUAGE_TEST_TEXTS[language]["prompt"]
+        instruct = LANGUAGE_TEST_TEXTS[language]["instruct"] if use_instruct else None
+        speaker = LANGUAGE_TEST_TEXTS[language]["customvoice_speaker"]
+
+        preprocess_kwargs = dict(
+            text=prompt,
+            language=language,
+            speaker=speaker,
+        )
+        if instruct is not None:
+            preprocess_kwargs["instruct"] = instruct
+
+        inputs = optimum_qwen3_tts_customvoice_model.preprocess_input(**preprocess_kwargs)
+        optimum_output = optimum_qwen3_tts_customvoice_model.generate(
+            **inputs,
+            **_generation_kwargs(non_streaming_mode),
+        )
+        optimum_speech = _to_waveform_array(optimum_output)
+        optimum_sr = int(getattr(optimum_qwen3_tts_customvoice_model, "sampling_rate", SAMPLE_RATE))
+
+        generation_kwargs = {
+            "text": prompt,
+            "language": language,
+            "speaker": speaker,
+            **_generation_kwargs(non_streaming_mode),
+        }
+        if instruct is not None:
+            generation_kwargs["instruct"] = instruct
+
+        result = genai_qwen3_tts_customvoice_pipe.generate(**generation_kwargs)
+        genai_speech = np.array(result.speeches[0].data, dtype=np.float32).reshape(-1)
+
+        assert result.output_sample_rate == SAMPLE_RATE, (
+            f"GenAI CustomVoice sample rate mismatch for language={language}: "
+            f"expected={SAMPLE_RATE}, actual={result.output_sample_rate}"
+        )
+        assert result.output_sample_rate == optimum_sr, (
+            f"CustomVoice sample rate mismatch for language={language}: "
+            f"optimum={optimum_sr}, genai={result.output_sample_rate}"
+        )
+        _assert_waveform_equal(optimum_speech, genai_speech, "customvoice parity")
+
+
+@pytest.mark.speech_generation
+@pytest.mark.parametrize(
+    "non_streaming_mode",
+    [True, False],
+    ids=["non-streaming", "streaming"],
+)
+@pytest.mark.parametrize("language", LANGUAGES)
+class TestQwen3TTSPipelineVoiceDesign:
+    def test_qwen3_tts_voicedesign_optimum_vs_genai(
+        self,
+        optimum_qwen3_tts_voicedesign_model,
+        genai_qwen3_tts_voicedesign_pipe,
+        language: str,
+        non_streaming_mode: bool,
+    ):
+        prompt = LANGUAGE_TEST_TEXTS[language]["prompt"]
+        instruct = LANGUAGE_TEST_TEXTS[language]["instruct"]
+
+        inputs = optimum_qwen3_tts_voicedesign_model.preprocess_input(
+            text=prompt,
+            language=language,
+            instruct=instruct,
+        )
+        optimum_output = optimum_qwen3_tts_voicedesign_model.generate(
+            **inputs,
+            **_generation_kwargs(non_streaming_mode),
+        )
+        optimum_speech = _to_waveform_array(optimum_output)
+        optimum_sr = int(getattr(optimum_qwen3_tts_voicedesign_model, "sampling_rate", SAMPLE_RATE))
+
+        result = genai_qwen3_tts_voicedesign_pipe.generate(
+            prompt,
+            language=language,
+            instruct=instruct,
+            **_generation_kwargs(non_streaming_mode),
+        )
+        genai_speech = np.array(result.speeches[0].data, dtype=np.float32).reshape(-1)
+
+        assert result.output_sample_rate == SAMPLE_RATE, (
+            f"GenAI VoiceDesign sample rate mismatch for language={language}: "
+            f"expected={SAMPLE_RATE}, actual={result.output_sample_rate}"
+        )
+        assert result.output_sample_rate == optimum_sr, (
+            f"VoiceDesign sample rate mismatch for language={language}: "
+            f"optimum={optimum_sr}, genai={result.output_sample_rate}"
+        )
+        _assert_waveform_equal(optimum_speech, genai_speech, "voicedesign parity")
