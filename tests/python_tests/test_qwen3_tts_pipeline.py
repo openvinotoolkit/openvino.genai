@@ -247,6 +247,64 @@ def _run_optimum_base_generate(
 
 
 @pytest.mark.speech_generation
+def test_qwen3_tts_base_icl_model_properties_change_genai_output(
+    tiny_qwen3_tts_base_ov_path: Path,
+):
+    stack_ov_config = {"KV_CACHE_PRECISION": "f32"}
+    component_properties = {
+        "MODEL_PROPERTIES": {
+            "talker_model": stack_ov_config,
+            "code_predictor_model": {**stack_ov_config, "INFERENCE_PRECISION_HINT": "f32"},
+        }
+    }
+
+    genai_pipe_with_props = ov_genai.Text2SpeechPipeline(
+        str(tiny_qwen3_tts_base_ov_path),
+        "CPU",
+        **component_properties,
+    )
+    genai_pipe_default = ov_genai.Text2SpeechPipeline(str(tiny_qwen3_tts_base_ov_path), "CPU")
+
+    language = "English"
+    prompt = LANGUAGE_TEST_TEXTS[language]["prompt"]
+    ref_text = LANGUAGE_TEST_TEXTS[language]["reference_text"]
+    ref_audio = _make_ref_audio()
+
+    with_props_result = genai_pipe_with_props.generate(
+        prompt,
+        language=language,
+        ref_audio=ov.Tensor(ref_audio),
+        ref_text=ref_text,
+        **_generation_kwargs(non_streaming_mode=True),
+    )
+    with_props_speech = np.array(with_props_result.speeches[0].data, dtype=np.float32).reshape(-1)
+
+    default_result = genai_pipe_default.generate(
+        prompt,
+        language=language,
+        ref_audio=ov.Tensor(ref_audio),
+        ref_text=ref_text,
+        **_generation_kwargs(non_streaming_mode=True),
+    )
+    default_speech = np.array(default_result.speeches[0].data, dtype=np.float32).reshape(-1)
+
+    assert with_props_result.output_sample_rate == SAMPLE_RATE, (
+        f"GenAI output sample rate mismatch for MODEL_PROPERTIES test (with props): "
+        f"expected={SAMPLE_RATE}, actual={with_props_result.output_sample_rate}"
+    )
+    assert default_result.output_sample_rate == SAMPLE_RATE, (
+        f"GenAI output sample rate mismatch for MODEL_PROPERTIES test (default): "
+        f"expected={SAMPLE_RATE}, actual={default_result.output_sample_rate}"
+    )
+
+    if np.array_equal(with_props_speech, default_speech):
+        pytest.fail(
+            "MODEL_PROPERTIES sanity check failed: waveform with component properties "
+            "matches waveform from default pipeline for the same English ICL input."
+        )
+
+
+@pytest.mark.speech_generation
 @pytest.mark.parametrize(
     "non_streaming_mode",
     [True, False],

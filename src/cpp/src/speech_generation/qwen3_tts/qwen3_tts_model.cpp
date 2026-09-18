@@ -97,16 +97,10 @@ std::string default_device_for_role(const std::string& base_device, const std::s
 // lands on; otherwise the same top-level properties are reused for every
 // component.
 std::pair<std::string, ov::AnyMap> resolve_component_target(const std::string& base_device,
-                                                            const ov::AnyMap& device_properties,
                                                             const ov::AnyMap& base_properties,
                                                             const std::string& role) {
     const std::string device = default_device_for_role(base_device, role);
-    if (device_properties.empty()) {
-        return {device, base_properties};
-    }
-    auto it = device_properties.find(device);
-    ov::AnyMap properties = (it != device_properties.end()) ? it->second.as<ov::AnyMap>() : ov::AnyMap{};
-    return {device, properties};
+    return {device, ov::genai::utils::get_model_properties(base_properties, role, device)};
 }
 
 std::string to_lower(std::string value) {
@@ -258,16 +252,13 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
       m_tokenizer(tokenizer) {
     init_config(models_path);
 
-    // Split off the optional per-device property map (VLM `ov::device::properties`
-    // convention). The remaining top-level properties act as the default for
-    // every component when no per-device map is supplied.
+    // Resolve all component properties through the established layered mechanism:
+    // globals + DEVICE_PROPERTIES[device] + MODEL_PROPERTIES[role].
     ov::AnyMap base_properties = properties;
-    ov::AnyMap device_properties =
-        ov::genai::utils::pop_or_default<ov::AnyMap>(base_properties, ov::device::properties.name(), ov::AnyMap{});
 
     auto compile_for = [&](const auto& model_source, const std::string& role) {
         auto [target_device, target_properties] =
-            resolve_component_target(device, device_properties, base_properties, role);
+            resolve_component_target(device, base_properties, role);
         m_perf_device[role] = target_device;
         return compile_request(model_source, role, target_device, target_properties);
     };
@@ -288,7 +279,7 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
     // keeps the generic path.
     {
         auto [talker_device, talker_properties] =
-            resolve_component_target(device, device_properties, base_properties, roles::TALKER);
+            resolve_component_target(device, base_properties, roles::TALKER);
         if (talker_device.find("NPU") != std::string::npos) {
             // Apply TTS-specific static-shape sizing unless the caller already set it.
             constexpr int64_t DEFAULT_MAX_PROMPT_LEN = 1024;
@@ -319,7 +310,7 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
     m_talker_text_embedding = compile_for(models_path / TEXT_EMBEDDINGS_NAME, roles::TALKER_TEXT_EMBEDDING);
     {
         auto [predictor_device, predictor_properties] =
-            resolve_component_target(device, device_properties, base_properties, roles::CODE_PREDICTOR);
+            resolve_component_target(device, base_properties, roles::CODE_PREDICTOR);
 
         // The code predictor is additionally pinned to f32 arithmetic on GPU. It runs `num_code_groups - 1`
         // steps inside every talker frame off a cache that is reset each frame, and in f16 - the GPU
@@ -399,7 +390,7 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
         // decode_speech_tokenizer feeds it the whole code sequence in a single call, exactly
         // like optimum-intel/native HF.
         auto [decoder_device, decoder_properties] =
-            resolve_component_target(device, device_properties, base_properties, roles::SPEECH_TOKENIZER_DECODER);
+            resolve_component_target(device, base_properties, roles::SPEECH_TOKENIZER_DECODER);
         const auto decoder_path = models_path / CODEC_DECODER_NAME;
         if (decoder_device.find("NPU") != std::string::npos) {
             auto decoder_model = ov::genai::utils::singleton_core().read_model(decoder_path);
