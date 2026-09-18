@@ -368,23 +368,42 @@ public:
 
         ov::Tensor timestep_tensor(ov::element::f32, {m_custom_generation_config.num_images_per_prompt});
 
+        // Condition latents are static context tokens prepended to the denoised ones, so the joint input buffer is
+        // built once and every step refreshes only its trailing target region.
+        ov::Tensor joint_input;
+        size_t joint_row = 0, target_row = 0;
+        if (condition_latents) {
+            joint_input = numpy_utils::concat(condition_latents, latents, 1);
+            target_row = latents.get_shape()[1] * latents.get_shape()[2];
+            joint_row = joint_input.get_shape()[1] * joint_input.get_shape()[2];
+        }
+
+        // The joint-sequence inputs do not depend on the timestep, so they are bound once. Only CFG has to swap
+        // them between the two passes of a step.
+        set_transformer_inputs(m_positive_prompt_embeds, positive_inputs);
+        const float true_cfg_scale = m_custom_generation_config.guidance_scale;
+
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
             const auto step_start = std::chrono::steady_clock::now();
 
             std::fill_n(timestep_tensor.data<float>(), timestep_tensor.get_size(), timesteps[inference_step] / 1000.0f);
 
-            // Condition latents are static context tokens prepended to the denoised ones.
-            const ov::Tensor model_input =
-                condition_latents ? numpy_utils::concat(condition_latents, latents, 1) : latents;
+            if (joint_input) {
+                float* target_data = joint_input.data<float>() + joint_row - target_row;
+                const float* latent_data = latents.data<const float>();
+                for (size_t batch = 0; batch < m_custom_generation_config.num_images_per_prompt; ++batch) {
+                    std::copy_n(latent_data + batch * target_row, target_row, target_data + batch * joint_row);
+                }
+            }
+            const ov::Tensor model_input = joint_input ? joint_input : latents;
 
-            set_transformer_inputs(m_positive_prompt_embeds, positive_inputs);
             ov::Tensor noise_pred = infer_transformer(model_input, timestep_tensor, image_seq_len);
 
             if (true_cfg) {
                 set_transformer_inputs(m_negative_prompt_embeds, negative_inputs);
                 const ov::Tensor negative_noise_pred = infer_transformer(model_input, timestep_tensor, image_seq_len);
+                set_transformer_inputs(m_positive_prompt_embeds, positive_inputs);
 
-                const float true_cfg_scale = m_custom_generation_config.guidance_scale;
                 float* positive_data = noise_pred.data<float>();
                 const float* negative_data = negative_noise_pred.data<const float>();
                 for (size_t i = 0; i < noise_pred.get_size(); ++i) {
