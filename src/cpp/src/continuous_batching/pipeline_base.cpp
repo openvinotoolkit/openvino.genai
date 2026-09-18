@@ -886,6 +886,40 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
     return handle;
 }
 
+GenerationHandle
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
+    uint64_t request_id,
+    const ProcessedInputs& inputs,
+    const GenerationConfig& sampling_params
+) {
+    OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
+    ov::genai::VLMPerfMetrics metrics;
+    metrics.vlm_raw_metrics = inputs.raw_perf_metrics;
+    // FIXME prompt_ids is not populated for VLM prompt lookup with add_request API
+    std::optional<ov::Tensor> prompt_ids;
+    GenerationHandle handle;
+    {
+        std::lock_guard<std::mutex> lock(m_embeddings_mutex);
+
+        // position ids / rope delta are computed by the processor (as in prefill).
+        // Pass them through embedder to reads them back later in model runner.
+        m_inputs_embedder->set_position_ids(inputs.position_ids);
+        if (inputs.rope_delta.has_value()) {
+            m_inputs_embedder->set_rope_delta(*inputs.rope_delta);
+        }
+
+        handle = add_request(
+            request_id,
+            inputs.inputs_embeds,
+            sampling_params,
+            prompt_ids,
+            inputs.lm_extra_inputs
+        );
+        handle->m_generation_stream->set_vlm_perf_metrics(std::move(metrics));
+    }
+    return handle;
+}
+
 void ContinuousBatchingPipeline::IContinuousBatchingPipeline::stream_tokens(
     const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr,
     const GenerationHandle& handle) {

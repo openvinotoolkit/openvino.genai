@@ -144,6 +144,14 @@ public:
                                  GenerationConfig sampling_params);
 
     /**
+     * Adds a request to the running queue using processed inputs from VLMProcessor.
+     * No vision encoding or tokenization is performed.
+     */
+    GenerationHandle add_request(uint64_t request_id,
+                                 const ProcessedInputs& inputs,
+                                 const GenerationConfig& sampling_params);
+
+    /**
      * Checks whether server (pipeline) has non-finished requests and step() should be called within a loop
      */
     virtual bool has_non_finished_requests() = 0;
