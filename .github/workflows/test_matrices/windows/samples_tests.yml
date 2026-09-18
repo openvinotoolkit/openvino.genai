@@ -45,7 +45,18 @@
     - RAG_samples
 
 - name: Speech generation
-  marker: speech_generation
+  marker: speech_generation and not qwen3_tts
+  cmd: tests/python_tests/samples
+  runner: aks-win-4-cores-8gb-test
+  components:
+    - Speech_generation_samples
+
+- name: Speech generation (Qwen3 TTS)
+  extra_cmd: |
+    python -m pip install transformers==4.57.3
+    python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@c46fb912366bc9d25b8395621d885a457369228d#egg=optimum-intel"
+    python -m pip install qwen-tts
+  marker: speech_generation and qwen3_tts
   cmd: tests/python_tests/samples
   runner: aks-win-4-cores-8gb-test
   components:

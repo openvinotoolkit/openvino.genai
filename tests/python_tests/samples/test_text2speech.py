@@ -237,6 +237,7 @@ class TestTextToSpeechSample:
         )
 
     @pytest.mark.speech_generation
+    @pytest.mark.qwen3_tts
     @pytest.mark.samples
     @pytest.mark.parametrize(
         "convert_model",
@@ -463,6 +464,7 @@ class TestTextToSpeechSample:
             assert os.path.exists(wav_path), f"Generated WAV output should exist: {wav_path}"
 
     @pytest.mark.speech_generation
+    @pytest.mark.qwen3_tts
     @pytest.mark.samples
     @pytest.mark.parametrize(
         "convert_model",
@@ -512,6 +514,7 @@ class TestTextToSpeechSample:
         assert "Text successfully converted to audio file" in py_result.stdout
 
     @pytest.mark.speech_generation
+    @pytest.mark.qwen3_tts
     @pytest.mark.samples
     @pytest.mark.parametrize(
         "convert_model",
