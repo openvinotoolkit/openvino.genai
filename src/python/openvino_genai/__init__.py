@@ -88,6 +88,7 @@ from .py_openvino_genai import TokenizedInputs, Tokenizer
 from .py_openvino_genai import (
     ASRDecodedResultChunk,
     ASRDecodedResults,
+    ASRForcedAligner,
     ASRGenerationConfig,
     ASRPerfMetrics,
     ASRPipeline,
