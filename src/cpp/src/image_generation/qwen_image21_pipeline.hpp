@@ -314,7 +314,8 @@ public:
                 m_custom_generation_config.width = static_cast<int64_t>(condition_size.width);
             }
 
-            // One resize feeds both the vision tower and the VAE.
+            // One resize and normalization feed both the vision tower and the VAE: Qwen3-VL's processor uses
+            // image_mean = image_std = 0.5, which reduces to the (pixel / 127.5) - 1 the VAE expects.
             m_condition_image = m_image_processor->execute(
                 m_image_resizer->execute(initial_image, condition_size.height, condition_size.width));
             m_condition_block = {condition_size.height / vae_scale_factor, condition_size.width / vae_scale_factor};
@@ -468,9 +469,9 @@ protected:
         OPENVINO_ASSERT(class_name == "QwenImage21Pipeline",
                         "Unsupported class_name '", class_name, "'. Please, contact OpenVINO GenAI developers");
 
+        // Height and width stay unset so that generate() can derive them: from the condition image's aspect
+        // ratio for image-to-image, and from DEFAULT_OUTPUT_RESOLUTION otherwise.
         m_generation_config = ImageGenerationConfig();
-        m_generation_config.height = DEFAULT_OUTPUT_RESOLUTION;
-        m_generation_config.width = DEFAULT_OUTPUT_RESOLUTION;
         m_generation_config.guidance_scale = 4.0f;
         m_generation_config.num_inference_steps = 50;
         m_generation_config.max_sequence_length = 8192;

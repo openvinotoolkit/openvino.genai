@@ -520,10 +520,14 @@ ov::Tensor Qwen3VLForConditionalGeneration::infer(const std::string& prompt,
     const size_t template_length = template_ids.get_shape()[1];
     const int64_t* template_data = template_ids.data<const int64_t>();
 
+    const std::ptrdiff_t template_image_tokens =
+        std::count(template_data, template_data + template_length, m_config.image_token_id);
+    OPENVINO_ASSERT(template_image_tokens == 1,
+                    "Image conditioned prompt must contain exactly one '<|image_pad|>' token, got ",
+                    template_image_tokens, ". Remove '<|image_pad|>' from the prompt");
+
     const int64_t* image_token_position =
         std::find(template_data, template_data + template_length, m_config.image_token_id);
-    OPENVINO_ASSERT(image_token_position != template_data + template_length,
-                    "Image conditioned prompt template must contain the '<|image_pad|>' token");
     const size_t prefix_length = static_cast<size_t>(image_token_position - template_data);
     const size_t token_count = template_length - 1 + num_image_tokens;
 
