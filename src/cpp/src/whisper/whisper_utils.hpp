@@ -45,6 +45,9 @@ int64_t get_or_throw_token_id_by_language(const std::map<std::string, int64_t>& 
 // "<|en|>" -> "en"
 std::string to_unescaped_language(const std::string& language);
 
+// Accepts CPU/GPU device strings, including indexed forms such as GPU.0; rejects meta-devices.
+bool is_whisper_batching_supported_device(const std::string& device);
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

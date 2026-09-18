@@ -76,6 +76,7 @@ public:
                                 const std::string& device,
                                 const ov::AnyMap& properties)
         : WhisperPipelineImplBase{models_path},
+          m_device(device),
           m_sampler(m_tokenizer) {
         ov::AnyMap properties_copy = properties;
         m_generation_config.update_generation_config(properties_copy);
@@ -129,16 +130,18 @@ public:
 
         auto [context_tokens, tokenization_duration_microseconds] = prepare_context_tokens(config, m_tokenizer);
 
-        auto generate_result = ov::genai::whisper_generate(config,
-                                                           m_model_config,
-                                                           context_tokens,
-                                                           raw_speech_input,
-                                                           m_encoder,
-                                                           m_decoder,
-                                                           m_feature_extractor,
-                                                           streamer,
-                                                           m_sampler,
-                                                           m_tokenizer);
+        auto generate_results = ov::genai::whisper_generate(config,
+                                                            m_model_config,
+                                                            context_tokens,
+                                                            &raw_speech_input,
+                                                            1,
+                                                            m_encoder,
+                                                            m_decoder,
+                                                            m_feature_extractor,
+                                                            streamer,
+                                                            m_sampler,
+                                                            m_tokenizer);
+        auto& generate_result = generate_results.front();
         auto decode_start_time = std::chrono::steady_clock::now();
         WhisperDecodedResults result{std::vector{m_tokenizer.decode(generate_result.output_tokens)}, std::vector{1.f}};
         generate_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(
@@ -175,7 +178,105 @@ public:
         return result;
     }
 
+    std::vector<WhisperDecodedResults> generate(const std::vector<RawSpeechInput>& raw_speech_inputs,
+                                                OptionalWhisperGenerationConfig generation_config,
+                                                const std::shared_ptr<StreamerBase> streamer) override {
+        OPENVINO_ASSERT(!raw_speech_inputs.empty(),
+                        "Whisper pipeline expects at least one audio input, got an empty batch.");
+
+        auto start_time = std::chrono::steady_clock::now();
+        WhisperGenerationConfig config = utils::prepare_per_generate_config(m_generation_config, generation_config);
+
+        if (raw_speech_inputs.size() > 1) {
+            OPENVINO_ASSERT(utils::is_whisper_batching_supported_device(m_device),
+                            "Batched Whisper generation is supported on CPU and GPU only. Got device '",
+                            m_device,
+                            "' for ",
+                            raw_speech_inputs.size(),
+                            " audio inputs.");
+            OPENVINO_ASSERT(!streamer,
+                            "Streaming is only supported with a single audio input. Got ",
+                            raw_speech_inputs.size(),
+                            " audio inputs.");
+            OPENVINO_ASSERT(!config.word_timestamps,
+                            "'word_timestamps' is not supported for batched generation yet. Got ",
+                            raw_speech_inputs.size(),
+                            " audio inputs.");
+            OPENVINO_ASSERT(config.num_beams == 1,
+                            "Batched Whisper generation currently supports greedy decoding only. Got num_beams = ",
+                            config.num_beams,
+                            ".");
+            OPENVINO_ASSERT(!config.do_sample,
+                            "Batched Whisper generation currently supports greedy decoding only. Multinomial sampling "
+                            "('do_sample') is not supported for batch size > 1. Got ",
+                            raw_speech_inputs.size(),
+                            " audio inputs.");
+        }
+
+        auto [context_tokens, tokenization_duration_microseconds] = prepare_context_tokens(config, m_tokenizer);
+
+        auto generate_results = ov::genai::whisper_generate(config,
+                                                            m_model_config,
+                                                            context_tokens,
+                                                            raw_speech_inputs.data(),
+                                                            raw_speech_inputs.size(),
+                                                            m_encoder,
+                                                            m_decoder,
+                                                            m_feature_extractor,
+                                                            streamer,
+                                                            m_sampler,
+                                                            m_tokenizer);
+
+        // Aggregate metrics for the entire batch; copied to every decoded result below.
+        WhisperPerfMetrics metrics = generate_results.front().perf_metrics;
+
+        std::vector<WhisperDecodedResults> results;
+        results.reserve(generate_results.size());
+
+        for (auto& generate_result : generate_results) {
+            auto decode_start_time = std::chrono::steady_clock::now();
+            WhisperDecodedResults result{std::vector{m_tokenizer.decode(generate_result.output_tokens)},
+                                         std::vector{1.f}};
+            metrics.raw_metrics.detokenization_durations.emplace_back(
+                PerfMetrics::get_microsec(std::chrono::steady_clock::now() - decode_start_time));
+
+            result.language = generate_result.language;
+            result.words = generate_result.words;
+
+            // Convert this input's internal segments to public timestamp chunks.
+            const auto& segments = generate_result.segments;
+            if (segments.has_value()) {
+                std::vector<WhisperDecodedResultChunk> chunks;
+                chunks.reserve((*segments).size());
+                for (const auto& segment : *segments) {
+                    decode_start_time = std::chrono::steady_clock::now();
+                    chunks.push_back(WhisperDecodedResultChunk{segment.m_start,
+                                                               segment.m_end,
+                                                               m_tokenizer.decode(segment.m_tokens)});
+                    metrics.raw_metrics.detokenization_durations.emplace_back(
+                        PerfMetrics::get_microsec(std::chrono::steady_clock::now() - decode_start_time));
+                }
+                result.chunks = std::move(chunks);
+            }
+
+            results.push_back(std::move(result));
+        }
+
+        metrics.load_time = this->m_load_time_ms;
+        metrics.raw_metrics.tokenization_durations.emplace_back(tokenization_duration_microseconds);
+        auto stop_time = std::chrono::steady_clock::now();
+        metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
+        metrics.evaluate_statistics(start_time);
+
+        for (auto& result : results) {
+            result.perf_metrics = metrics;
+        }
+
+        return results;
+    }
+
 private:
+    std::string m_device;
     ov::InferRequest m_encoder;
     std::shared_ptr<ov::genai::WhisperDecoder> m_decoder;
     Sampler m_sampler;
@@ -224,6 +325,27 @@ ov::genai::WhisperDecodedResults ov::genai::WhisperPipeline::generate(const RawS
     const std::shared_ptr<StreamerBase> base_streamer = utils::create_streamer(streamer_variant, m_impl->m_tokenizer);
 
     return m_impl->generate(raw_speech_input, config, base_streamer);
+}
+
+std::vector<ov::genai::WhisperDecodedResults> ov::genai::WhisperPipeline::generate(
+    const std::vector<RawSpeechInput>& raw_speech_inputs,
+    OptionalWhisperGenerationConfig generation_config,
+    StreamerVariant streamer) {
+    auto base_streamer = utils::create_streamer(streamer, m_impl->m_tokenizer);
+
+    return m_impl->generate(raw_speech_inputs, generation_config, base_streamer);
+}
+
+std::vector<ov::genai::WhisperDecodedResults> ov::genai::WhisperPipeline::generate(
+    const std::vector<RawSpeechInput>& raw_speech_inputs,
+    const ov::AnyMap& config_map) {
+    auto config_arg = get_config_from_map(config_map);
+    WhisperGenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
+    config.update_generation_config(config_map);
+    StreamerVariant streamer_variant = utils::get_streamer_from_map(config_map);
+    const std::shared_ptr<StreamerBase> base_streamer = utils::create_streamer(streamer_variant, m_impl->m_tokenizer);
+
+    return m_impl->generate(raw_speech_inputs, config, base_streamer);
 }
 
 ov::genai::WhisperGenerationConfig ov::genai::WhisperPipeline::get_generation_config() const {
