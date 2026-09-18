@@ -93,7 +93,7 @@ def _prepare_qwen3_tts_ov_model(
     except FileNotFoundError:
         pytest.skip("optimum-cli is not available in PATH")
     except subprocess.CalledProcessError as error:
-        pytest.skip(f"Failed to export {model_id}: returncode={error.returncode}, stderr={error.stderr}")
+        pytest.fail(f"Failed to export {model_id}: returncode={error.returncode}, stderr={error.stderr}")
 
     return model_dir
 
