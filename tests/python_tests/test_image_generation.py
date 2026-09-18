@@ -452,7 +452,9 @@ class TestImageGenerationWithBlobTensorModels:
 
 
 class TestImageGeneration:
-    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID, QWEN_IMAGE_MODEL_ID, QWEN_IMAGE_21_MODEL_ID], indirect=True)
+    @pytest.mark.parametrize(
+        "image_generation_model", [FLUX2_KLEIN_MODEL_ID, QWEN_IMAGE_MODEL_ID, QWEN_IMAGE_21_MODEL_ID], indirect=True
+    )
     def test_text2image(self, image_generation_model):
         pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
 
@@ -465,7 +467,9 @@ class TestImageGeneration:
 
         assert image is not None
 
-    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID, QWEN_IMAGE_MODEL_ID, QWEN_IMAGE_21_MODEL_ID], indirect=True)
+    @pytest.mark.parametrize(
+        "image_generation_model", [FLUX2_KLEIN_MODEL_ID, QWEN_IMAGE_MODEL_ID, QWEN_IMAGE_21_MODEL_ID], indirect=True
+    )
     def test_text2image_with_callback(self, image_generation_model):
         pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
 
@@ -501,7 +505,9 @@ class TestImageGeneration:
 
         assert image is not None
 
-    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID, QWEN_IMAGE_MODEL_ID, QWEN_IMAGE_21_MODEL_ID], indirect=True)
+    @pytest.mark.parametrize(
+        "image_generation_model", [FLUX2_KLEIN_MODEL_ID, QWEN_IMAGE_MODEL_ID, QWEN_IMAGE_21_MODEL_ID], indirect=True
+    )
     def test_text2image_reshape_and_generate(self, image_generation_model):
         pipe = ov_genai.Text2ImagePipeline(image_generation_model)
         pipe.reshape(1, 128, 128, 3.5)
@@ -514,7 +520,9 @@ class TestImageGeneration:
 
         assert image is not None
 
-    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID, QWEN_IMAGE_MODEL_ID, QWEN_IMAGE_21_MODEL_ID], indirect=True)
+    @pytest.mark.parametrize(
+        "image_generation_model", [FLUX2_KLEIN_MODEL_ID, QWEN_IMAGE_MODEL_ID, QWEN_IMAGE_21_MODEL_ID], indirect=True
+    )
     def test_image2image(self, image_generation_model):
         pipe = ov_genai.Image2ImagePipeline(image_generation_model, "CPU")
 
@@ -531,7 +539,9 @@ class TestImageGeneration:
 
         assert image is not None
 
-    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID, QWEN_IMAGE_MODEL_ID, QWEN_IMAGE_21_MODEL_ID], indirect=True)
+    @pytest.mark.parametrize(
+        "image_generation_model", [FLUX2_KLEIN_MODEL_ID, QWEN_IMAGE_MODEL_ID, QWEN_IMAGE_21_MODEL_ID], indirect=True
+    )
     def test_image2image_with_callback(self, image_generation_model):
         pipe = ov_genai.Image2ImagePipeline(image_generation_model, "CPU")
 
