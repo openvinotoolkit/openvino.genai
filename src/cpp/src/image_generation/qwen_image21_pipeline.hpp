@@ -301,6 +301,10 @@ public:
         if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
             OPENVINO_ASSERT(initial_image, "'initial_image' must not be empty for Image 2 image pipeline");
             const ov::Shape& image_shape = initial_image.get_shape();
+            OPENVINO_ASSERT(image_shape.size() == 4 && image_shape[0] == 1 && image_shape[1] > 0 &&
+                                image_shape[2] > 0 && image_shape[3] == 3,
+                            "'initial_image' must have [1, height, width, 3] shape with non-zero spatial dimensions, got ",
+                            image_shape);
             const Qwen3VLForConditionalGeneration::ImageSize condition_size =
                 Qwen3VLForConditionalGeneration::calculate_dimensions(
                     DEFAULT_OUTPUT_RESOLUTION * DEFAULT_OUTPUT_RESOLUTION,

@@ -1344,6 +1344,17 @@ void init_qwen3_vl(py::module_& m) {
         py::arg("root_dir"), "Model root directory")
         .def(py::init([](
             const std::filesystem::path& root_dir,
+            const std::filesystem::path& vision_encoder_path,
+            const std::filesystem::path& text_encoder_i2i_path
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::Qwen3VLForConditionalGeneration>(root_dir, vision_encoder_path, text_encoder_i2i_path);
+        }),
+        py::arg("root_dir"), "Model root directory",
+        py::arg("vision_encoder_path"), "Vision encoder directory",
+        py::arg("text_encoder_i2i_path"), "Image conditioned language model directory")
+        .def(py::init([](
+            const std::filesystem::path& root_dir,
             const std::string& device,
             const py::kwargs& kwargs
         ) {
@@ -1357,7 +1368,21 @@ void init_qwen3_vl(py::module_& m) {
         .def(py::init([](const std::filesystem::path& config_path) {
             return std::make_unique<ov::genai::Qwen3VLForConditionalGeneration::Config>(config_path);
         }), py::arg("config_path"))
-        .def_readwrite("hidden_size", &ov::genai::Qwen3VLForConditionalGeneration::Config::hidden_size);
+        .def_readwrite("hidden_size", &ov::genai::Qwen3VLForConditionalGeneration::Config::hidden_size)
+        .def_readwrite("image_token_id", &ov::genai::Qwen3VLForConditionalGeneration::Config::image_token_id);
+
+    py::class_<ov::genai::Qwen3VLForConditionalGeneration::VisionConfig>(cls, "VisionConfig")
+        .def(py::init([](const std::filesystem::path& config_path) {
+            return std::make_unique<ov::genai::Qwen3VLForConditionalGeneration::VisionConfig>(config_path);
+        }), py::arg("config_path"))
+        .def_readwrite("hidden_size", &ov::genai::Qwen3VLForConditionalGeneration::VisionConfig::hidden_size)
+        .def_readwrite("num_heads", &ov::genai::Qwen3VLForConditionalGeneration::VisionConfig::num_heads)
+        .def_readwrite("in_channels", &ov::genai::Qwen3VLForConditionalGeneration::VisionConfig::in_channels)
+        .def_readwrite("patch_size", &ov::genai::Qwen3VLForConditionalGeneration::VisionConfig::patch_size)
+        .def_readwrite("temporal_patch_size", &ov::genai::Qwen3VLForConditionalGeneration::VisionConfig::temporal_patch_size)
+        .def_readwrite("spatial_merge_size", &ov::genai::Qwen3VLForConditionalGeneration::VisionConfig::spatial_merge_size)
+        .def_readwrite("num_position_embeddings", &ov::genai::Qwen3VLForConditionalGeneration::VisionConfig::num_position_embeddings)
+        .def_readwrite("num_deepstack_layers", &ov::genai::Qwen3VLForConditionalGeneration::VisionConfig::num_deepstack_layers);
 
     cls.def("infer",
             [](ov::genai::Qwen3VLForConditionalGeneration& self, const std::string& prompt, int max_sequence_length) {
@@ -1365,7 +1390,16 @@ void init_qwen3_vl(py::module_& m) {
                 return self.infer(prompt, max_sequence_length);
             },
             py::arg("prompt"), py::arg("max_sequence_length"))
+        .def("infer",
+            [](ov::genai::Qwen3VLForConditionalGeneration& self, const std::string& prompt, const ov::Tensor& condition_image, int max_sequence_length) {
+                py::gil_scoped_release rel;
+                return self.infer(prompt, condition_image, max_sequence_length);
+            },
+            py::arg("prompt"), py::arg("condition_image"), py::arg("max_sequence_length"))
+        .def("has_vision_tower", &ov::genai::Qwen3VLForConditionalGeneration::has_vision_tower)
+        .def("get_image_pad_mask", &ov::genai::Qwen3VLForConditionalGeneration::get_image_pad_mask)
         .def("get_config", &ov::genai::Qwen3VLForConditionalGeneration::get_config)
+        .def("get_vision_config", &ov::genai::Qwen3VLForConditionalGeneration::get_vision_config)
         .def("compile",
             [](ov::genai::Qwen3VLForConditionalGeneration& self, const std::string& device, const py::kwargs& kwargs) {
                 auto map = pyutils::kwargs_to_any_map(kwargs);

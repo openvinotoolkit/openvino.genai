@@ -3397,10 +3397,72 @@ class Qwen3VLForConditionalGeneration:
         @hidden_size.setter
         def hidden_size(self, arg0: typing.SupportsInt) -> None:
             ...
+        @property
+        def image_token_id(self) -> int:
+            ...
+        @image_token_id.setter
+        def image_token_id(self, arg0: typing.SupportsInt) -> None:
+            ...
+    class VisionConfig:
+        def __init__(self, config_path: os.PathLike | str | bytes) -> None:
+            ...
+        @property
+        def hidden_size(self) -> int:
+            ...
+        @hidden_size.setter
+        def hidden_size(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def in_channels(self) -> int:
+            ...
+        @in_channels.setter
+        def in_channels(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def num_deepstack_layers(self) -> int:
+            ...
+        @num_deepstack_layers.setter
+        def num_deepstack_layers(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def num_heads(self) -> int:
+            ...
+        @num_heads.setter
+        def num_heads(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def num_position_embeddings(self) -> int:
+            ...
+        @num_position_embeddings.setter
+        def num_position_embeddings(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def patch_size(self) -> int:
+            ...
+        @patch_size.setter
+        def patch_size(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def spatial_merge_size(self) -> int:
+            ...
+        @spatial_merge_size.setter
+        def spatial_merge_size(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def temporal_patch_size(self) -> int:
+            ...
+        @temporal_patch_size.setter
+        def temporal_patch_size(self, arg0: typing.SupportsInt) -> None:
+            ...
     @typing.overload
     def __init__(self, root_dir: os.PathLike | str | bytes) -> None:
         """
         Model root directory
+        """
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike | str | bytes, vision_encoder_path: os.PathLike | str | bytes, text_encoder_i2i_path: os.PathLike | str | bytes) -> None:
+        """
+        Image conditioned language model directory
         """
     @typing.overload
     def __init__(self, root_dir: os.PathLike | str | bytes, device: str, **kwargs) -> None:
@@ -3411,7 +3473,17 @@ class Qwen3VLForConditionalGeneration:
         ...
     def get_config(self) -> Qwen3VLForConditionalGeneration.Config:
         ...
+    def get_image_pad_mask(self) -> openvino._pyopenvino.Tensor:
+        ...
+    def get_vision_config(self) -> Qwen3VLForConditionalGeneration.VisionConfig:
+        ...
+    def has_vision_tower(self) -> bool:
+        ...
+    @typing.overload
     def infer(self, prompt: str, max_sequence_length: typing.SupportsInt) -> openvino._pyopenvino.Tensor:
+        ...
+    @typing.overload
+    def infer(self, prompt: str, condition_image: openvino._pyopenvino.Tensor, max_sequence_length: typing.SupportsInt) -> openvino._pyopenvino.Tensor:
         ...
 class QwenImage21Transformer2DModel:
     """
