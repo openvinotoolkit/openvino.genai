@@ -26,17 +26,13 @@ endif()
 add_executable(text2speech text2speech.cpp audio_utils.cpp)
 add_executable(kokoro_phonemize_fallback kokoro_phonemize_fallback.cpp audio_utils.cpp)
 
-# Qwen3-TTS samples (one per model variant)
-add_executable(qwen3_customvoice qwen3_customvoice.cpp audio_utils.cpp)
-add_executable(qwen3_voice_design qwen3_voice_design.cpp audio_utils.cpp)
-add_executable(qwen3_base qwen3_base.cpp audio_utils.cpp)
+# Unified Qwen3-TTS sample (all model variants via subcommands)
+add_executable(qwen3_tts qwen3_tts.cpp audio_utils.cpp)
 
 set(speech_generation_samples
     text2speech
     kokoro_phonemize_fallback
-    qwen3_customvoice
-    qwen3_voice_design
-    qwen3_base)
+    qwen3_tts)
 
 foreach(sample_target IN LISTS speech_generation_samples)
     target_include_directories(${sample_target} PRIVATE "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")

@@ -20,10 +20,10 @@ This folder contains C++ examples for `ov::genai::Text2SpeechPipeline`.
 		- `pt-br` (Portuguese, Brazil)
 	- Not yet supported for end-to-end text generation in this flow: `ja` (Japanese), `zh` (Chinese/Mandarin).
 - **Qwen3-TTS**
-	- Three model variants, each with its own dedicated sample:
-		- `qwen3_customvoice`: speak with one of the model's built-in speaker identities, with an optional style `instruct`.
-		- `qwen3_voice_design`: create a brand-new voice from a natural-language `instruct` description.
-		- `qwen3_base`: clone a voice from a short reference recording (x-vector and ICL modes).
+	- Three model variants are covered by one sample with subcommands:
+		- `qwen3_tts customvoice`: built-in speaker identities, with optional style `instruct`.
+		- `qwen3_tts voice-design`: create a brand-new voice from a natural-language `instruct` description.
+		- `qwen3_tts base`: clone a voice from a short reference recording (x-vector and ICL modes).
 	- See the [Qwen3-TTS samples](#qwen3-tts-samples) section below for setup and run commands.
 
 ## SpeechT5 setup
@@ -90,8 +90,8 @@ Text2speech with speed control:
 text2speech ov_Kokoro-82M "Hello from OpenVINO GenAI with a faster speaking rate." ov_Kokoro-82M/voices/af_heart.bin --language en-us --speed 1.15
 ```
 
-> **Note:** `text2speech` targets SpeechT5 and Kokoro. Qwen3-TTS is covered by its own dedicated
-> samples — see the [Qwen3-TTS samples](#qwen3-tts-samples) section.
+> **Note:** `text2speech` targets SpeechT5 and Kokoro. Qwen3-TTS is covered by
+> `qwen3_tts` — see the [Qwen3-TTS samples](#qwen3-tts-samples) section.
 
 ### 2) `kokoro_phonemize_fallback` (Kokoro only)
 
@@ -135,13 +135,13 @@ OpenVINO fallback models above are an English-only feature (`en-us` / `en-gb`). 
 
 ## Qwen3-TTS samples
 
-Qwen3-TTS ships as three model variants, and this folder provides one focused sample for each:
+Qwen3-TTS ships as three model variants, and this folder provides one unified sample:
 
-| Sample | Model variant | What it showcases |
-| --- | --- | --- |
-| `qwen3_customvoice` | CustomVoice | Built-in speaker identities, optional style `instruct` |
-| `qwen3_voice_design` | VoiceDesign | A new voice created from a natural-language `instruct` description |
-| `qwen3_base` | Base | Voice cloning from reference audio (x-vector and ICL modes) |
+| Sample | Subcommand | Model variant | What it showcases |
+| --- | --- | --- | --- |
+| `qwen3_tts` | `customvoice` | CustomVoice | Built-in speaker identities, optional style `instruct` |
+| `qwen3_tts` | `voice-design` | VoiceDesign | A new voice created from a natural-language `instruct` description |
+| `qwen3_tts` | `base` | Base | Voice cloning from reference audio (x-vector and ICL modes) |
 
 ### Qwen3-TTS setup
 
@@ -157,17 +157,19 @@ optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-0.6B-Base --trust-remote
 `--language` accepts the model's language names (for example `english`, `chinese`). Pass `auto` (or omit) to
 let the model adapt automatically.
 
-### 3) `qwen3_customvoice`
+### 3) `qwen3_tts customvoice`
 
-Speak with one of the model's built-in speakers. `--instruct` is optional and steers tone/emotion/pace.
+Speak with one of the model's built-in speakers.
 
 ```
-qwen3_customvoice qwen3_tts_customvoice_ov "Hello from Qwen3 CustomVoice." --speaker ryan --language english
+qwen3_tts customvoice qwen3_tts_customvoice_ov "Hello from Qwen3 CustomVoice." --speaker ryan --language english
 ```
 
-With a style instruction:
+`--instruct` is optional and steers tone/emotion/pace.
+Note: Only supported in 1.7B variant of CustomVoice -- `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`
+
 ```
-qwen3_customvoice qwen3_tts_customvoice_ov "Hello from Qwen3 CustomVoice." --speaker ryan --language english --instruct "Speak in a calm, professional tone."
+qwen3_tts customvoice qwen3_tts_customvoice_ov "Hello from Qwen3 CustomVoice." --speaker ryan --language english --instruct "Speak in a calm, professional tone."
 ```
 
 For `Qwen3-TTS-12Hz-1.7B/0.6B-CustomVoice` models, the supported speaker list and speaker descriptions are provided below. We recommend using each speaker's native language for the best quality. Of course, each speaker can speak any language supported by the model.
@@ -184,15 +186,15 @@ For `Qwen3-TTS-12Hz-1.7B/0.6B-CustomVoice` models, the supported speaker list an
 | Ono_Anna | Playful Japanese female voice with a light, nimble timbre. | Japanese |
 | Sohee | Warm Korean female voice with rich emotion. | Korean |
 
-### 4) `qwen3_voice_design`
+### 4) `qwen3_tts voice-design`
 
 Design a new voice purely from a natural-language description. There is no speaker list; `--instruct` is required.
 
 ```
-qwen3_voice_design qwen3_tts_voicedesign_ov "Hello from Qwen3 VoiceDesign." --language english --instruct "A male voice with a thick French accent."
+qwen3_tts voice-design qwen3_tts_voicedesign_ov "H-hey! You dropped your... uh... calculus notebook? I mean, I think it's yours? Maybe?" --language english --instruct "Male, 17 years old, tenor range, gaining confidence - deeper breath support now, though vowels still tighten when nervous"
 ```
 
-### 5) `qwen3_base`
+### 5) `qwen3_tts base`
 
 Clone a voice from a short reference recording. Two modes are selected automatically from the inputs:
 
@@ -201,12 +203,12 @@ Clone a voice from a short reference recording. Two modes are selected automatic
 
 Clone directly from reference audio (x-vector mode):
 ```
-qwen3_base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path reference_24k.wav --language english
+qwen3_tts base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path reference_24k.wav --language english
 ```
 
 Clone from reference audio + transcript (ICL mode):
 ```
-qwen3_base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path reference_24k.wav --ref_text "This is the reference transcript." --language english
+qwen3_tts base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path reference_24k.wav --ref_text "This is the reference transcript." --language english
 ```
 
 > **Note:** reference audio must already be mono/stereo at 24000 Hz. OV GenAI does not resample reference audio.
@@ -219,22 +221,22 @@ returns on the result (`speaker_embedding` and `ref_codec_ids`):
 
 Save from a first x-vector run:
 ```
-qwen3_base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path reference_24k.wav --language english --save_speaker_embedding_file_path qwen_speaker_embedding.bin
+qwen3_tts base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path reference_24k.wav --language english --save_speaker_embedding_file_path qwen_speaker_embedding.bin
 ```
 
 Save from a first ICL run (also emits reference codes):
 ```
-qwen3_base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path reference_24k.wav --ref_text "This is the reference transcript." --language english --save_speaker_embedding_file_path qwen_speaker_embedding.bin --save_ref_codec_ids_file_path qwen_ref_code.bin
+qwen3_tts base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path reference_24k.wav --ref_text "This is the reference transcript." --language english --save_speaker_embedding_file_path qwen_speaker_embedding.bin --save_ref_codec_ids_file_path qwen_ref_code.bin
 ```
 
 Reuse the saved speaker embedding (x-vector mode, no encoder pass):
 ```
-qwen3_base qwen3_tts_base_ov "Hello again." --speaker_embedding_file_path qwen_speaker_embedding.bin --language english
+qwen3_tts base qwen3_tts_base_ov "Hello again." --speaker_embedding_file_path qwen_speaker_embedding.bin --language english
 ```
 
 Reuse saved embedding + reference codes (ICL mode, no encoder pass):
 ```
-qwen3_base qwen3_tts_base_ov "Hello again." --speaker_embedding_file_path qwen_speaker_embedding.bin --ref_text "This is the reference transcript." --ref_codec_ids_file_path qwen_ref_code.bin --language english
+qwen3_tts base qwen3_tts_base_ov "Hello again." --speaker_embedding_file_path qwen_speaker_embedding.bin --ref_text "This is the reference transcript." --ref_codec_ids_file_path qwen_ref_code.bin --language english
 ```
 
 The saved files use simple flat-binary layouts owned by this sample (the speaker embedding is raw
