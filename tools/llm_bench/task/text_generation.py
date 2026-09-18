@@ -469,7 +469,7 @@ def genai_generation_config_setup(model: object, max_gen_tokens: int, args: dict
     # This is too small because test prompt may contain 4096 tokens which leaves no space for new tokens.
     # Override it to preserve max_new_tokens.
     gen_config.max_length = 2**64 - 1
-    gen_config.ignore_eos = True
+    gen_config.ignore_eos = not args["end_token_stopping"]
     gen_config.rng_seed = args["seed"]
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False

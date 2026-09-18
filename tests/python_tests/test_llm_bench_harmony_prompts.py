@@ -4,11 +4,12 @@
 import sys
 from pathlib import Path
 
+from openvino_genai import GenerationConfig
 
 LLM_BENCH_DIR = Path(__file__).parents[2] / "tools" / "llm_bench"
 sys.path.insert(0, str(LLM_BENCH_DIR))
 
-from task.text_generation import _should_apply_chat_template, apply_chat_template_genai
+from task.text_generation import _should_apply_chat_template, apply_chat_template_genai, genai_generation_config_setup
 
 
 class HarmonyTokenizer:
@@ -27,6 +28,22 @@ class PlainTokenizer:
     def apply_chat_template(self, history, add_generation_prompt):
         messages = "|".join(f"{message['role']}:{message['content']}" for message in history)
         return f"<|start|>{messages}<|start|>assistant"
+
+
+class GenerationConfigModel:
+    def get_generation_config(self):
+        return GenerationConfig()
+
+
+def get_generation_args(end_token_stopping):
+    return {
+        "end_token_stopping": end_token_stopping,
+        "seed": 42,
+        "num_beams": 1,
+        "draft_model": "",
+        "max_ngram_size": None,
+        "num_assistant_tokens": None,
+    }
 
 
 def test_harmony_template_converts_legacy_user_prompt():
@@ -72,3 +89,15 @@ def test_plain_template_preserves_legacy_prompt_with_explicit_flag():
     assert apply_chat_template_genai(args, prompt, PlainTokenizer()) == [
         "<|start|>user:<|user|>Article text.<|end|><|assistant|><|start|>assistant"
     ]
+
+
+def test_genai_honors_end_token_stopping():
+    generation_config = genai_generation_config_setup(GenerationConfigModel(), 128, get_generation_args(True))
+
+    assert not generation_config.ignore_eos
+
+
+def test_genai_keeps_fixed_token_benchmark_default():
+    generation_config = genai_generation_config_setup(GenerationConfigModel(), 128, get_generation_args(False))
+
+    assert generation_config.ignore_eos
