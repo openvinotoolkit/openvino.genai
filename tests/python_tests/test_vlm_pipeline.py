@@ -169,6 +169,7 @@ MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
 MODEL_DEEPSEEK_OCR2 = "optimum-intel-internal-testing/tiny-random-deepseek-ocr-2"
+MODEL_LFM2_VL = "optimum-intel-internal-testing/tiny-random-lfm2-vl"
 
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
@@ -191,6 +192,7 @@ else:
         "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
         "qnguyen3/nanoLLaVA",
         MODEL_DEEPSEEK_OCR2,
+        MODEL_LFM2_VL,
         *VIDEO_MODEL_IDS,
     ]
 
@@ -222,6 +224,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-muse-glimmer": lambda idx: "<|image|>",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
+    MODEL_LFM2_VL: lambda idx: "<image>",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
 }
 
@@ -244,6 +247,7 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
 RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-gemma3": 32,
     "qnguyen3/nanoLLaVA": 384,
+    MODEL_LFM2_VL: 64,
     "optimum-intel-internal-testing/tiny-random-llava-next-video": 336,
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": 448,
     "optimum-intel-internal-testing/tiny-random-qwen2vl": 336,
@@ -288,6 +292,7 @@ NPU_UNSUPPORTED_MODELS = {
     "optimum-intel-internal-testing/tiny-random-gemma4-unified-it",
     "optimum-intel-internal-testing/tiny-random-gemma4-31B",
     MODEL_DEEPSEEK_OCR2,
+    MODEL_LFM2_VL,
 }
 
 MODELS_WITHOUT_CHAT_TEMPLATE = {
@@ -532,6 +537,12 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
 
     if "qwen3-vl" in ov_model and ov_backend == "SDPA":
         pytest.xfail(QWEN3_VL_SDPA_XFAIL_REASON)
+
+    if ov_model == MODEL_LFM2_VL and ov_backend == "PA":
+        pytest.skip(
+            "LFM2-VL uses a hybrid short-convolution language model that is only supported by the "
+            "stateful SDPA backend; the PagedAttention/continuous-batching path is not applicable."
+        )
 
     models_path = _get_ov_model(ov_model)
 
@@ -2381,6 +2392,14 @@ OPTIMUM_VS_GENAI_PER_MODEL_IMAGE_RESOLUTIONS = {
     # (999, 666) resolution fails, result is reasonable and close to optimum-intel output.
     # There is a known image resize incompatibility, so different image sizes are used to test the Gemma 4 model.
     "optimum-intel-internal-testing/tiny-random-gemma4": [(100, 77), (1000, 666), (997, 666), (999, 665), (1920, 1080)],
+    # LFM2-VL (Lfm2VlImageProcessor) splits large images into 512x512 tiles plus an
+    # antialiased-downsampled thumbnail (torchvision bicubic with antialias=True). GenAI's
+    # C++ preprocessing uses a non-antialiased bicubic resize, so multi-tile resolutions
+    # (e.g. 999x666, 1920x1080) diverge slightly from optimum-intel - the same known image
+    # resize incompatibility documented for Gemma 4. The single-tile resolutions below keep
+    # GenAI byte-for-byte aligned with optimum-intel while still covering small, square and
+    # non-square image inputs.
+    MODEL_LFM2_VL: [(100, 77), (512, 512), (768, 512)],
 }
 
 OPTIMUM_VS_GENAI_PER_MODEL_VIDEO_RESOLUTIONS = {
