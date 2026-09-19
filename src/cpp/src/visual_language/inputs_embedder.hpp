@@ -377,6 +377,7 @@ private:
     friend class InputsEmbedderDeepseekOCR2;
     friend class InputsEmbedderVideoChatFlashQwen;
     friend class InputsEmbedderMuseGlimmer;
+    friend class InputsEmbedderLFM2VL;
 };
 
 template <typename Func>
