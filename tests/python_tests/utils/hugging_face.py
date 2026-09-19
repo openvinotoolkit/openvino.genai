@@ -341,7 +341,11 @@ def sanitize_model_id(model_id: str) -> str:
     return model_id.replace("/", "_")
 
 
-TRUST_REMOTE_CODE_MODELS = ("AngelSlim/Qwen3-1.7B_eagle3", "optimum-intel-internal-testing/tiny-random-qwen3-vl-eagle3")
+TRUST_REMOTE_CODE_MODELS = (
+    "AngelSlim/Qwen3-1.7B_eagle3",
+    "optimum-intel-internal-testing/tiny-random-qwen3-vl-eagle3",
+    "Qwen/Qwen3Guard-Stream-0.6B",
+)
 
 # Some models require optimum-cli export instead of the Python API path.
 # This maps model_id to the --task value used during export - CVS-183496
@@ -349,6 +353,7 @@ FORCE_OPTIMUM_CLI_EXPORT_MODELS = {
     "optimum-intel-internal-testing/tiny-random-flux": "text-to-image",
     "optimum-intel-internal-testing/tiny-random-lfm2": "text-generation-with-past",
     "optimum-intel-internal-testing/tiny-random-qwen3-next": "text-generation-with-past",
+    "Qwen/Qwen3Guard-Stream-0.6B": "feature-extraction",
 }
 
 

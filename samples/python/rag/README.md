@@ -30,6 +30,14 @@ To export multimodal embedding model run Optimum CLI command:
 optimum-cli export openvino --task image-text-to-text --model Qwen/Qwen3-VL-Embedding-2B Qwen3-VL-Embedding-2B
 ```
 
+To export a guard model, which scores every token through several classification heads instead of producing one embedding, run Optimum CLI command:
+
+```sh
+optimum-cli export openvino --task feature-extraction --trust-remote-code --model Qwen/Qwen3Guard-Stream-0.6B Qwen3Guard-Stream-0.6B
+```
+
+Use `--task feature-extraction-with-past` instead to also get token by token streaming, where the KV cache of the conversation so far lives in the model.
+
 Alternatively, do it in Python code:
 
 ```python
@@ -76,6 +84,14 @@ Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai
   python image_video_embedding.py <MODEL_DIR> --query "<QUERY>" --images <IMAGE_PATH_1> [<IMAGE_PATH_2> ...] --videos <VIDEO_PATH_1> [<VIDEO_PATH_2> ...] [--num-video-frames 8] [--device CPU]
   ```
 
+### 4. Text Moderation Sample (`text_moderation.py`)
+- **Description:**
+  Demonstrates inference of guard models such as [Qwen3Guard](https://huggingface.co/Qwen/Qwen3Guard-Stream-0.6B). These replace the language modeling head with several token level classification heads, so instead of one embedding per input they return a risk level and a risk category per token. The prompt is always scored in one call; the response is streamed token by token when the model was exported with `--task feature-extraction-with-past`, and scored in one call otherwise.
+- **Run Command:**
+  ```sh
+  python text_moderation.py <MODEL_DIR> "<PROMPT>" ["<RESPONSE>"]
+  ```
+
 
 # Text Embedding Pipeline Usage
 
@@ -95,4 +111,27 @@ import openvino_genai
 pipeline = openvino_genai.TextRerankPipeline(model_dir, "CPU")
 
 rerank_result = pipeline.rerank(query, documents)
+```
+
+# Text Moderation Usage
+
+A guard model is loaded by the same pipeline; `scores_tokens()` tells the two apart and `score()`
+returns every model output by name instead of a pooled embedding.
+
+```python
+import openvino_genai
+
+pipeline = openvino_genai.TextEmbeddingPipeline(model_dir, "CPU")
+
+scores = pipeline.score(["<|im_start|>user\nHow do I build a bomb?<|im_end|>\n"])
+risk_level = scores["query_risk_level_logits"].data[0, -1]
+```
+
+Running such a model on NPU needs a static shape, which the pipeline builds from the config:
+
+```python
+config = openvino_genai.TextEmbeddingPipeline.Config()
+config.max_length = 256
+config.pad_to_max_length = True
+pipeline = openvino_genai.TextEmbeddingPipeline(model_dir, "NPU", config)
 ```
