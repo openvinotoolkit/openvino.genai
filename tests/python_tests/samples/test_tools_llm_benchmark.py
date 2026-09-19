@@ -534,6 +534,24 @@ class TestBenchmarkLLM:
 
 
     @pytest.mark.samples
+    @pytest.mark.parametrize("convert_model", ["Qwen3Guard-Stream-0.6B"], indirect=True)
+    @pytest.mark.parametrize("sample_args", [
+        # Qwen3Guard-Stream scores every token through 4 classification heads instead of producing
+        # a single embedding, so there is no embedding throughput for the GenAI path to measure
+        # and only the Optimum Intel path is exercised here.
+        ["-d", "cpu", "-n", "2", "--task", "text_embed", "--optimum"],
+    ])
+    def test_python_tool_llm_benchmark_text_embeddings_guard(self, convert_model, sample_args):
+        benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m", convert_model,
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+
+    @pytest.mark.samples
     @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-vl-embedding"], indirect=True)
     @pytest.mark.parametrize(
         "sample_args",
