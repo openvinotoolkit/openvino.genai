@@ -13,6 +13,7 @@
 #include "image_generation/flux_pipeline.hpp"
 #include "image_generation/flux2_klein_pipeline.hpp"
 #include "image_generation/qwen_image_pipeline.hpp"
+#include "image_generation/qwen_image21_pipeline.hpp"
 #include "image_generation/zimage_pipeline.hpp"
 
 #include "utils.hpp"
@@ -36,6 +37,8 @@ Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir) 
         m_impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
     } else if (class_name == "QwenImagePipeline") {
         m_impl = std::make_shared<QwenImagePipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
+    } else if (class_name == "QwenImage21Pipeline") {
+        m_impl = std::make_shared<QwenImage21Pipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
     } else if (class_name == "ZImagePipeline") {
         m_impl = std::make_shared<ZImagePipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
     } else {
@@ -60,6 +63,8 @@ Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir, 
         m_impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
     } else if (class_name == "QwenImagePipeline") {
         m_impl = std::make_shared<QwenImagePipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
+    } else if (class_name == "QwenImage21Pipeline") {
+        m_impl = std::make_shared<QwenImage21Pipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
     } else if (class_name == "ZImagePipeline") {
         m_impl = std::make_shared<ZImagePipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
     } else {
