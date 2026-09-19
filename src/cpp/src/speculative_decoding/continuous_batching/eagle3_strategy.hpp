@@ -29,7 +29,10 @@ public:
                             for (size_t i = 0; i < value_caches.size(); ++i) {
                                 m_request.set_tensor("value_cache." + std::to_string(i), value_caches[i]);
                             }
-                            // infer and get output tensors
+                            for (size_t i = 0; i < key_caches.size(); ++i) {
+                                m_request.set_output_tensor(2 * i, key_caches[i]);
+                                m_request.set_output_tensor(2 * i + 1, value_caches[i]);
+                            }
                             m_request.infer();
                         }
 
