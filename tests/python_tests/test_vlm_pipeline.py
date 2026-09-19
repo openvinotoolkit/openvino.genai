@@ -3168,9 +3168,12 @@ def test_vlm_eagle3_chat_with_videos(
         "What did you see across both inputs?",
     ]
 
-    def run_two_round_chat(pipe: VLMPipeline, generation_config: GenerationConfig) -> list[str]:
+    def run_two_round_chat(
+        pipe: VLMPipeline, generation_config: GenerationConfig
+    ) -> tuple[list[str], list[object | None]]:
         history = ChatHistory()
         results = []
+        extended_perf_metrics = []
 
         for round_idx, prompt in enumerate(prompts):
             history.append({"role": "user", "content": prompt})
@@ -3184,13 +3187,14 @@ def test_vlm_eagle3_chat_with_videos(
                 **generate_kwargs,
             )
             results.append(result.texts[0].strip())
+            extended_perf_metrics.append(result.extended_perf_metrics)
             history.append({"role": "assistant", "content": result.texts[0]})
 
-        return results
+        return results, extended_perf_metrics
 
     ov_pipe = VLMPipeline(model_path, "CPU")
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
-    results_without_draft = run_two_round_chat(ov_pipe, generation_config)
+    results_without_draft, _ = run_two_round_chat(ov_pipe, generation_config)
 
     ov_draft = draft_model(draft_model_path, "CPU")
     ov_pipe_with_draft = VLMPipeline(
@@ -3202,8 +3206,16 @@ def test_vlm_eagle3_chat_with_videos(
     generation_config_with_draft_tree = _setup_generation_config(
         ov_pipe_with_draft, max_new_tokens=20, tree_search=True, do_sample=False
     )
-    results_with_draft = run_two_round_chat(ov_pipe_with_draft, generation_config_with_draft)
-    results_with_draft_tree = run_two_round_chat(ov_pipe_with_draft, generation_config_with_draft_tree)
+    results_with_draft, metrics_with_draft = run_two_round_chat(ov_pipe_with_draft, generation_config_with_draft)
+    results_with_draft_tree, metrics_with_draft_tree = run_two_round_chat(
+        ov_pipe_with_draft, generation_config_with_draft_tree
+    )
+
+    for metrics_list in (metrics_with_draft, metrics_with_draft_tree):
+        for metrics in metrics_list:
+            assert metrics is not None
+            assert metrics.draft_model_metrics is not None
+            assert metrics.draft_model_metrics.get_num_generated_tokens() > 0
 
     assert results_without_draft[0] == results_with_draft[0], (
         "First mixed-modality chat turn should be the same when Eagle3 draft model is enabled and disabled."
