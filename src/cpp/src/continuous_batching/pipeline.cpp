@@ -580,6 +580,7 @@ GenerationHandle ContinuousBatchingPipeline::add_request(
         multimodal_inputs.images.value_or(std::vector<ov::Tensor>{}),
         multimodal_inputs.videos.value_or(std::vector<ov::Tensor>{}),
         multimodal_inputs.videos_metadata.value_or(std::vector<VideoMetadata>{}),
+        multimodal_inputs.audios.value_or(std::vector<ov::Tensor>{}),
         generation_config.value()
     );
 }
