@@ -182,7 +182,7 @@ def get_argparser():
         choices=["base", "win-gpu", "full"],
         type=str.lower,  # normalise e.g. 'WIN-GPU'/'Full' -> 'win-gpu'/'full' before choices validation
         required=False,
-        help="Memory sampler implementation to use when process-based monitoring is active\n"
+        help="Memory sampler implementation to use when process-based monitoring is active.\n"
         "(--memory_consumption 3 or 4).\n"
         "Possible values:\n"
         "  base (default) — MemorySamplerBase: cross-platform sampler built on\n"
