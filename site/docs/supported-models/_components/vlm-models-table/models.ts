@@ -289,4 +289,17 @@ export const VLM_MODELS: VLMModelType[] = [
       },
     ],
   },
+  {
+    architecture: 'Lfm2VlForConditionalGeneration',
+    models: [
+      {
+        name: 'LFM2-VL',
+        links: [
+          'https://huggingface.co/LiquidAI/LFM2-VL-450M',
+          'https://huggingface.co/LiquidAI/LFM2-VL-1.6B',
+          'https://huggingface.co/LiquidAI/LFM2.5-VL-3B',
+        ],
+      },
+    ],
+  },
 ];

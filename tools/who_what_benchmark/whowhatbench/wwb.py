@@ -6,6 +6,7 @@ import difflib
 import numpy as np
 import logging
 import os
+import sys
 from pathlib import Path
 from itertools import zip_longest
 
@@ -547,9 +548,78 @@ def check_args(args):
         args.dataset_field = "text"
 
 
+def _load_local_visual_text_csv(args):
+    """Load a local CSV dataset for visual-text style tasks.
+
+    The CSV must contain a ``prompts`` column and may contain ``images`` and
+    ``videos`` columns holding paths (absolute, or relative to the CSV location).
+    Image paths are resolved deterministically and opened as RGB ``PIL.Image``
+    objects so the evaluator can feed them to the processor directly; empty cells
+    become ``None``. The behavior is generic and not tied to any specific model.
+    """
+    csv_path = Path(args.dataset)
+    base_dir = csv_path.parent
+    df = pd.read_csv(csv_path)
+
+    prompt_field = "prompts" if "prompts" in df.columns else args.dataset_field
+    if prompt_field not in df.columns:
+        raise ValueError(
+            f"Local dataset '{csv_path}' must contain a '{prompt_field}' column. "
+            f"Found columns: {list(df.columns)}"
+        )
+
+    def _resolve_path(value):
+        if value is None:
+            return None
+        if isinstance(value, float) and np.isnan(value):
+            return None
+        value = str(value).strip()
+        if value == "" or value.lower() == "nan":
+            return None
+        p = Path(value)
+        if not p.is_absolute():
+            p = base_dir / p
+        return p
+
+    def _load_image(value):
+        p = _resolve_path(value)
+        if p is None:
+            return None
+        return Image.open(p).convert("RGB")
+
+    n = len(df)
+    res = {"prompts": list(df[prompt_field])}
+
+    if "images" in df.columns:
+        res["images"] = [_load_image(v) for v in df["images"]]
+    else:
+        res["images"] = [None] * n
+
+    if "videos" in df.columns:
+        # Video frame extraction is model/task specific; pass resolved paths through
+        # unchanged so downstream video handling can consume them.
+        res["videos"] = [
+            (str(_resolve_path(v)) if _resolve_path(v) is not None else None)
+            for v in df["videos"]
+        ]
+    else:
+        res["videos"] = [None] * n
+
+    if args.num_samples is not None:
+        for key in res:
+            res[key] = res[key][: args.num_samples]
+
+    return res
+
+
 def load_prompts(args):
     if args.dataset is None:
         return None
+    # Support a local CSV dataset (prompts/images/videos columns) without going
+    # through the remote datasets hub. This keeps visual-text validation robust
+    # when the default remote dataset is unavailable or too slow.
+    if "," not in args.dataset and os.path.isfile(args.dataset) and args.dataset.lower().endswith(".csv"):
+        return _load_local_visual_text_csv(args)
     split = "validation"
     if args.split is not None:
         split = args.split
@@ -1457,6 +1527,21 @@ def print_speech_results(evaluator):
         logger.info("## Target audio path:\n%s\n", e["optimized_model"])
 
 
+def _flush_and_exit(code=0):
+    """Flush standard streams and terminate the process immediately.
+
+    Used at the end of a successful CLI run to avoid a rare
+    ``PyGILState_Release`` fatal error during interpreter finalization that can
+    be triggered by lingering background threads spawned by streaming
+    HuggingFace datasets. Output files are written before this is called.
+    """
+    try:
+        sys.stdout.flush()
+        sys.stderr.flush()
+    finally:
+        os._exit(code)
+
+
 def main():
     args = parse_args()
     check_args(args)
@@ -1683,6 +1768,17 @@ def main():
             print_embeds_results(evaluator)
         elif args.model_type in ['text-reranking']:
             print_rag_results(evaluator)
+
+    # Ensure a prompt, clean process termination. Streaming HuggingFace
+    # datasets (e.g. VQAv2 used for the visual-text default data) can leave
+    # background download/HTTP worker threads alive after evaluation finishes.
+    # On rare timing these native threads race with CPython interpreter
+    # finalization and abort the process with
+    # "Fatal Python error: PyGILState_Release: thread state ... must be current
+    # when releasing" (observed intermittently as exit code 134). All results
+    # are already persisted to disk at this point, so flush the standard
+    # streams and exit immediately, bypassing the racy finalization.
+    _flush_and_exit(0)
 
 
 if __name__ == "__main__":
