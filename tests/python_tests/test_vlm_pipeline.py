@@ -32,7 +32,7 @@ import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
 patch_pyav_for_servercore.install_av_stub_module_for_windows()
 
 import inspect
-from enum import Enum
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Generator, cast
@@ -59,6 +59,7 @@ from openvino_genai import (
     GenerationFinishReason,
     ChatHistory,
     VideoMetadata,
+    VLMDecodedResults,
     draft_model,
 )
 
@@ -70,17 +71,13 @@ from utils.generation_config import (
 )
 from utils.constants import get_ov_cache_converted_models_dir
 from utils.atomic_download import AtomicDownloadManager
+from utils.media_tags import ModalityType, get_media_inputs_kwargs, get_universal_tag
 from utils.custom_op import assert_ir_contains_op_type, get_extension_model, get_extension_lib_path, CustomAdd
 from utils.hugging_face import download_and_convert_model
 from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 import logging
 logger = logging.getLogger(__name__)
-
-
-class VisionType(Enum):
-    IMAGE = "IMAGE"
-    VIDEO = "VIDEO"
 
 
 @dataclass(frozen=True)
@@ -93,8 +90,12 @@ class VlmModelInfo:
     pipeline: VLMPipeline
     prompt_lookup: bool
 
-    def get_vision_tag(self, vision_type: VisionType) -> Callable[[int], str]:
-        return self.image_tag if vision_type == VisionType.IMAGE else self.video_tag
+    def get_media_tag(self, modality_type: ModalityType) -> Callable[[int], str]:
+        # AUDIO is unreachable here: parametrize_model_with_modality never yields it, and the
+        # audio suites use their own fixture.
+        if modality_type == ModalityType.AUDIO:
+            raise ValueError("VlmModelInfo carries no audio tag; audio suites do not use ov_pipe_model")
+        return self.image_tag if modality_type == ModalityType.IMAGE else self.video_tag
 
 
 def _is_videochat_flash_qwen_model(model_id: str) -> bool:
@@ -793,6 +794,16 @@ def car_tensor(pytestconfig: pytest.Config) -> openvino.Tensor:
 @pytest.fixture(scope="module")
 def synthetic_video_32x32_tensor(synthetic_video_32x32):
     return openvino.Tensor(synthetic_video_32x32)
+
+
+@pytest.fixture(scope="module")
+def inverted_video_32x32_tensor(synthetic_video_32x32):
+    """A video that differs from `synthetic_video_32x32_tensor` in every pixel of every frame.
+
+    Ordering tests need two media items whose embeddings cannot coincide; inverting is independent
+    of however a model samples frames, unlike reordering the same frames.
+    """
+    return openvino.Tensor(255 - np.asarray(synthetic_video_32x32))
 
 
 @pytest.fixture(scope="module")
@@ -1841,14 +1852,16 @@ def retry(func, exception_type=AssertionError):
 
 
 def generate(
-    vlm: VLMPipeline, requests: list[tuple[str, list[openvino.Tensor]]], vision_type: VisionType = VisionType.IMAGE
+    vlm: VLMPipeline,
+    requests: list[tuple[str, list[openvino.Tensor]]],
+    modality_type: ModalityType = ModalityType.IMAGE,
 ):
     generation_config = _setup_generation_config(vlm, set_eos_token=False)
     vlm.set_generation_config(generation_config)
     vlm.start_chat()
     answers = [
-        vlm.generate(prompt, **get_vision_inputs_kwargs(visions, vision_type), do_sample=False)
-        for (prompt, visions) in requests
+        vlm.generate(prompt, **get_media_inputs_kwargs(media, modality_type), do_sample=False)
+        for (prompt, media) in requests
     ]
     vlm.finish_chat()
     return answers
@@ -1917,49 +1930,35 @@ else:
     ]
 
 
-def get_vision_inputs_kwargs(visions: list[openvino.Tensor], vision_type: VisionType) -> dict:
-    if vision_type == VisionType.IMAGE:
-        return {"images": visions}
-    else:
-        return {"videos": visions}
-
-
-def get_universal_tag(vision_type: VisionType, index: int) -> str:
-    if vision_type == VisionType.IMAGE:
-        return f"<ov_genai_image_{index}>"
-    else:
-        return f"<ov_genai_video_{index}>"
-
-
-def parametrize_model_with_vision_type(
+def parametrize_model_with_modality(
     items: list[tuple[str, str]] | None = None,
-    xfail: dict[tuple[str, str, VisionType], str] | None = None,  # (model, attn_backend, VisionType) -> reason,
+    xfail: dict[tuple[str, str, ModalityType], str] | None = None,  # (model, attn_backend, ModalityType) -> reason,
 ) -> Callable[[Callable], Generator]:
     if items is None:
         items = MODELS_TO_TAG
 
     xfail = xfail or {}
 
-    # params: items (model and backend) + vision_type
-    params: list[tuple[tuple[str, str], VisionType]] = []
+    # params: items (model and backend) + modality_type
+    params: list[tuple[tuple[str, str], ModalityType]] = []
     ids = []
     for item in items:
 
-        def append_param(item, vision_type):
+        def append_param(item, modality_type):
             model_id, attn_backend = item[0], item[1]
-            ids.append(f"{model_id}/{attn_backend}/{vision_type.value}")
-            reason = xfail.get((model_id, attn_backend, vision_type))
+            ids.append(f"{model_id}/{attn_backend}/{modality_type.value}")
+            reason = xfail.get((model_id, attn_backend, modality_type))
             if reason:
-                params.append(pytest.param(item, vision_type, marks=pytest.mark.xfail(reason=reason)))
+                params.append(pytest.param(item, modality_type, marks=pytest.mark.xfail(reason=reason)))
             else:
-                params.append((item, vision_type))
+                params.append((item, modality_type))
 
-        append_param(item, VisionType.IMAGE)
+        append_param(item, ModalityType.IMAGE)
         if item[0] in VIDEO_MODEL_IDS:
-            append_param(item, VisionType.VIDEO)
+            append_param(item, ModalityType.VIDEO)
 
     return pytest.mark.parametrize(
-        "ov_pipe_model,vision_type",
+        "ov_pipe_model,modality_type",
         params,
         indirect=["ov_pipe_model"],
         ids=ids,
@@ -1967,13 +1966,13 @@ def parametrize_model_with_vision_type(
 
 
 @pytest.mark.transformers_dependent(reason="CSV-186059")
-@parametrize_model_with_vision_type(
+@parametrize_model_with_modality(
     TAG_INSERTED_BY_TEMPLATE,
-    xfail={("optimum-intel-internal-testing/tiny-random-llava", "PA", VisionType.IMAGE): "CVS-179090"},
+    xfail={("optimum-intel-internal-testing/tiny-random-llava", "PA", ModalityType.IMAGE): "CVS-179090"},
 )
 def test_model_tags_representation(
     ov_pipe_model: VlmModelInfo,
-    vision_type: VisionType,
+    modality_type: ModalityType,
     request: pytest.FixtureRequest,
 ):
     ov_pipe = ov_pipe_model.pipeline
@@ -1987,7 +1986,7 @@ def test_model_tags_representation(
     model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
     if model_id == "qnguyen3/nanoLLaVA":
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
-        messages = [{"role": "user", "content": f"{ov_pipe_model.get_vision_tag(vision_type)(0)}{prompt}"}]
+        messages = [{"role": "user", "content": f"{ov_pipe_model.get_media_tag(modality_type)(0)}{prompt}"}]
         templated_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     else:
         processor = retry_request(
@@ -2001,7 +2000,7 @@ def test_model_tags_representation(
             {
                 "role": "user",
                 "content": [
-                    {"type": "image" if vision_type == VisionType.IMAGE else "video"},
+                    {"type": "image" if modality_type == ModalityType.IMAGE else "video"},
                     {"type": "text", "text": prompt},
                 ],
             }
@@ -2009,15 +2008,15 @@ def test_model_tags_representation(
         templated_prompt = processor.apply_chat_template(messages, add_generation_prompt=True)
 
     input_tensor: openvino.Tensor = request.getfixturevalue(
-        "cat_tensor" if vision_type == VisionType.IMAGE else "synthetic_video_32x32_tensor"
+        "cat_tensor" if modality_type == ModalityType.IMAGE else "synthetic_video_32x32_tensor"
     )
-    vision_inputs_kwargs = get_vision_inputs_kwargs([input_tensor], vision_type)
+    media_inputs_kwargs = get_media_inputs_kwargs([input_tensor], modality_type)
 
     def workaround_inconsistent_inference():
         __tracebackhide__ = True
-        automatic_tags = ov_pipe.generate(prompt, **vision_inputs_kwargs, do_sample=False)
+        automatic_tags = ov_pipe.generate(prompt, **media_inputs_kwargs, do_sample=False)
         reference_tags = ov_pipe.generate(
-            templated_prompt, **vision_inputs_kwargs, apply_chat_template=False, do_sample=False
+            templated_prompt, **media_inputs_kwargs, apply_chat_template=False, do_sample=False
         )
         assert automatic_tags.texts == reference_tags.texts
         assert automatic_tags.scores == reference_tags.scores
@@ -2028,34 +2027,34 @@ def test_model_tags_representation(
 @pytest.mark.transformers_dependent(
     "minicpmv, internvl_chat is not supported by transformers>=v5; gemma3, llava-next, llava - CVS-186059"
 )
-@parametrize_model_with_vision_type()
+@parametrize_model_with_modality()
 def test_model_tags_prepend_native(
     ov_pipe_model: VlmModelInfo,
-    vision_type: VisionType,
+    modality_type: ModalityType,
     request: pytest.FixtureRequest,
 ):
     ov_pipe = ov_pipe_model.pipeline
-    vision_tag = ov_pipe_model.get_vision_tag(vision_type)
+    media_tag = ov_pipe_model.get_media_tag(modality_type)
 
     conversation_requests = request.getfixturevalue(
-        "conversation_requests" if vision_type == VisionType.IMAGE else "conversation_video_requests"
+        "conversation_requests" if modality_type == ModalityType.IMAGE else "conversation_video_requests"
     )
 
     def workaround_inconsistent_inference():
         __tracebackhide__ = True
-        answers = generate(ov_pipe, conversation_requests, vision_type)
+        answers = generate(ov_pipe, conversation_requests, modality_type)
 
         ov_pipe.start_chat()
         native_tag0 = ov_pipe.generate(
-            vision_tag(0) + conversation_requests[0][0],
-            **get_vision_inputs_kwargs(conversation_requests[0][1], vision_type),
+            media_tag(0) + conversation_requests[0][0],
+            **get_media_inputs_kwargs(conversation_requests[0][1], modality_type),
             do_sample=False,
         )
         assert native_tag0.texts == answers[0].texts
         assert native_tag0.scores == answers[0].scores
         native_tags1 = ov_pipe.generate(
-            vision_tag(1) + vision_tag(2) + conversation_requests[1][0],
-            **get_vision_inputs_kwargs(conversation_requests[1][1], vision_type),
+            media_tag(1) + media_tag(2) + conversation_requests[1][0],
+            **get_media_inputs_kwargs(conversation_requests[1][1], modality_type),
             do_sample=False,
         )
         assert native_tags1.texts == answers[1].texts
@@ -2068,33 +2067,33 @@ def test_model_tags_prepend_native(
 @pytest.mark.transformers_dependent(
     "minicpmv, internvl_chat is not supported by transformers>=v5; gemma3, llava-next, llava - CVS-186059"
 )
-@parametrize_model_with_vision_type()
+@parametrize_model_with_modality()
 def test_model_tags_prepend_universal(
     ov_pipe_model: VlmModelInfo,
-    vision_type: VisionType,
+    modality_type: ModalityType,
     request: pytest.FixtureRequest,
 ):
     ov_pipe = ov_pipe_model.pipeline
 
     conversation_requests = request.getfixturevalue(
-        "conversation_requests" if vision_type == VisionType.IMAGE else "conversation_video_requests"
+        "conversation_requests" if modality_type == ModalityType.IMAGE else "conversation_video_requests"
     )
 
     def workaround_inconsistent_inference():
         __tracebackhide__ = True
-        answers = generate(ov_pipe, conversation_requests, vision_type)
+        answers = generate(ov_pipe, conversation_requests, modality_type)
 
         ov_pipe.start_chat()
         universal_tag0 = ov_pipe.generate(
-            get_universal_tag(vision_type, 0) + conversation_requests[0][0],
-            **get_vision_inputs_kwargs(conversation_requests[0][1], vision_type),
+            get_universal_tag(modality_type, 0) + conversation_requests[0][0],
+            **get_media_inputs_kwargs(conversation_requests[0][1], modality_type),
             do_sample=False,
         )
         assert universal_tag0.texts == answers[0].texts
         assert universal_tag0.scores == answers[0].scores
         universal_tags1 = ov_pipe.generate(
-            get_universal_tag(vision_type, 1) + get_universal_tag(vision_type, 2) + conversation_requests[1][0],
-            **get_vision_inputs_kwargs(conversation_requests[1][1], vision_type),
+            get_universal_tag(modality_type, 1) + get_universal_tag(modality_type, 2) + conversation_requests[1][0],
+            **get_media_inputs_kwargs(conversation_requests[1][1], modality_type),
             do_sample=False
         )
         assert universal_tags1.texts == answers[1].texts
@@ -2107,17 +2106,17 @@ def test_model_tags_prepend_universal(
 @pytest.mark.transformers_dependent(
     "minicpmv, internvl_chat is not supported by transformers>=v5; gemma3, llava-next, llava - CVS-186059"
 )
-@parametrize_model_with_vision_type()
+@parametrize_model_with_modality()
 def test_model_tags_append(
     ov_pipe_model: VlmModelInfo,
-    vision_type: VisionType,
+    modality_type: ModalityType,
     request: pytest.FixtureRequest,
 ):
     ov_pipe = ov_pipe_model.pipeline
-    vision_tag = ov_pipe_model.get_vision_tag(vision_type)
+    media_tag = ov_pipe_model.get_media_tag(modality_type)
 
     conversation_requests = request.getfixturevalue(
-        "conversation_requests" if vision_type == VisionType.IMAGE else "conversation_video_requests"
+        "conversation_requests" if modality_type == ModalityType.IMAGE else "conversation_video_requests"
     )
 
     generation_config = _setup_generation_config(ov_pipe, set_eos_token=False)
@@ -2127,28 +2126,28 @@ def test_model_tags_append(
         __tracebackhide__ = True
         ov_pipe.start_chat()
         native_tag0 = ov_pipe.generate(
-            conversation_requests[0][0] + vision_tag(0),
-            **get_vision_inputs_kwargs(conversation_requests[0][1], vision_type),
+            conversation_requests[0][0] + media_tag(0),
+            **get_media_inputs_kwargs(conversation_requests[0][1], modality_type),
             do_sample=False,
         )
         native_tags1 = ov_pipe.generate(
-            conversation_requests[1][0] + vision_tag(1) + vision_tag(2),
-            **get_vision_inputs_kwargs(conversation_requests[1][1], vision_type),
+            conversation_requests[1][0] + media_tag(1) + media_tag(2),
+            **get_media_inputs_kwargs(conversation_requests[1][1], modality_type),
             do_sample=False,
         )
         ov_pipe.finish_chat()
 
         ov_pipe.start_chat()
         universal_tag0 = ov_pipe.generate(
-            conversation_requests[0][0] + get_universal_tag(vision_type, 0),
-            **get_vision_inputs_kwargs(conversation_requests[0][1], vision_type),
+            conversation_requests[0][0] + get_universal_tag(modality_type, 0),
+            **get_media_inputs_kwargs(conversation_requests[0][1], modality_type),
             do_sample=False,
         )
         assert universal_tag0.texts == native_tag0.texts
         assert universal_tag0.scores == native_tag0.scores
         universal_tags1 = ov_pipe.generate(
-            conversation_requests[1][0] + get_universal_tag(vision_type, 1) + get_universal_tag(vision_type, 2),
-            **get_vision_inputs_kwargs(conversation_requests[1][1], vision_type),
+            conversation_requests[1][0] + get_universal_tag(modality_type, 1) + get_universal_tag(modality_type, 2),
+            **get_media_inputs_kwargs(conversation_requests[1][1], modality_type),
             do_sample=False
         )
         assert universal_tags1.texts == native_tags1.texts
@@ -2161,10 +2160,10 @@ def test_model_tags_append(
 @pytest.mark.transformers_dependent(
     "minicpmv, internvl_chat is not supported by transformers>=v5; gemma3, llava-next, llava, qwen3_vl - CVS-186059"
 )
-@parametrize_model_with_vision_type(IMAGE_ID_IGNORANT_MODELS_TO_TAG)
+@parametrize_model_with_modality(IMAGE_ID_IGNORANT_MODELS_TO_TAG)
 def test_model_tags_same_reference(
     ov_pipe_model: VlmModelInfo,
-    vision_type: VisionType,
+    modality_type: ModalityType,
     request: pytest.FixtureRequest,
 ):
     ov_pipe = ov_pipe_model.pipeline
@@ -2173,19 +2172,19 @@ def test_model_tags_same_reference(
     ov_pipe.set_generation_config(generation_config)
 
     input_tensor: openvino.Tensor = request.getfixturevalue(
-        "cat_tensor" if vision_type == VisionType.IMAGE else "synthetic_video_32x32_tensor"
+        "cat_tensor" if modality_type == ModalityType.IMAGE else "synthetic_video_32x32_tensor"
     )
 
     def workaround_inconsistent_inference():
         __tracebackhide__ = True
         one_input = ov_pipe.generate(
-            get_universal_tag(vision_type, 0) * 2,
-            **get_vision_inputs_kwargs([input_tensor], vision_type),
+            get_universal_tag(modality_type, 0) * 2,
+            **get_media_inputs_kwargs([input_tensor], modality_type),
             do_sample=False,
         )
         two_inputs = ov_pipe.generate(
-            get_universal_tag(vision_type, 0) + get_universal_tag(vision_type, 1),
-            **get_vision_inputs_kwargs([input_tensor] * 2, vision_type),
+            get_universal_tag(modality_type, 0) + get_universal_tag(modality_type, 1),
+            **get_media_inputs_kwargs([input_tensor] * 2, modality_type),
             do_sample=False,
         )
         assert one_input.texts == two_inputs.texts
@@ -2197,48 +2196,202 @@ def test_model_tags_same_reference(
 @pytest.mark.transformers_dependent(
     "minicpmv, internvl_chat is not supported by transformers>=v5; gemma3, llava-next, llava, qwen3_vl - CVS-186059"
 )
-@parametrize_model_with_vision_type()
+@parametrize_model_with_modality()
 def test_model_tags_older(
     ov_pipe_model: VlmModelInfo,
-    vision_type: VisionType,
+    modality_type: ModalityType,
     request: pytest.FixtureRequest,
 ):
     ov_pipe = ov_pipe_model.pipeline
 
     input_tensor: openvino.Tensor = request.getfixturevalue(
-        "car_tensor" if vision_type == VisionType.IMAGE else "synthetic_video_32x32_tensor"
+        "car_tensor" if modality_type == ModalityType.IMAGE else "synthetic_video_32x32_tensor"
     )
 
     generation_config = _setup_generation_config(ov_pipe, set_eos_token=False)
     ov_pipe.set_generation_config(generation_config)
     ov_pipe.start_chat()
-    ov_pipe.generate("", **get_vision_inputs_kwargs([input_tensor], vision_type))
+    ov_pipe.generate("", **get_media_inputs_kwargs([input_tensor], modality_type))
     with pytest.raises(RuntimeError):
-        ov_pipe.generate(get_universal_tag(vision_type, 0), **get_vision_inputs_kwargs([input_tensor], vision_type))
+        ov_pipe.generate(get_universal_tag(modality_type, 0), **get_media_inputs_kwargs([input_tensor], modality_type))
     ov_pipe.finish_chat()
 
 
 @pytest.mark.transformers_dependent(
     "minicpmv, internvl_chat is not supported by transformers>=v5; gemma3, llava-next, llava, qwen3_vl - CVS-186059"
 )
-@parametrize_model_with_vision_type()
-def test_model_tags_missing_universal(ov_pipe_model: VlmModelInfo, vision_type: VisionType):
+@parametrize_model_with_modality()
+def test_model_tags_missing_universal(ov_pipe_model: VlmModelInfo, modality_type: ModalityType):
     ov_pipe = ov_pipe_model.pipeline
 
     with pytest.raises(RuntimeError):
-        ov_pipe.generate(get_universal_tag(vision_type, 0))
+        ov_pipe.generate(get_universal_tag(modality_type, 0))
 
 
 @pytest.mark.transformers_dependent(
     "minicpmv, internvl_chat is not supported by transformers>=v5; gemma3, llava-next, llava, qwen3_vl - CVS-186059"
 )
-@parametrize_model_with_vision_type()
-def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo, vision_type: VisionType):
+@parametrize_model_with_modality()
+def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo, modality_type: ModalityType):
     ov_pipe = ov_pipe_model.pipeline
-    vision_tag = ov_pipe_model.get_vision_tag(vision_type)
+    media_tag = ov_pipe_model.get_media_tag(modality_type)
 
     with pytest.raises(RuntimeError):
-        ov_pipe.generate(vision_tag(0))
+        ov_pipe.generate(media_tag(0))
+
+
+# A tag with text on both sides is where per-model expansion-offset bugs surface: LLaVA keeps a
+# running position, Qwen2-VL restarts `find` from zero (qwen2vl/classes.cpp:1092).
+INTERLEAVED_MAX_NEW_TOKENS = 20
+
+
+def _interleaved_media_pair(modality_type: ModalityType, request: pytest.FixtureRequest) -> list[openvino.Tensor]:
+    """Two media items of `modality_type` that are guaranteed to differ from each other."""
+    if modality_type == ModalityType.IMAGE:
+        names = ("cat_tensor", "car_tensor")
+    else:
+        names = ("synthetic_video_32x32_tensor", "inverted_video_32x32_tensor")
+    return [request.getfixturevalue(name) for name in names]
+
+
+def _setup_interleaved_config(ov_pipe: VLMPipeline) -> None:
+    generation_config = _setup_generation_config(
+        ov_pipe,
+        max_new_tokens=INTERLEAVED_MAX_NEW_TOKENS,
+        ignore_eos=True,
+        set_eos_token=False,
+        do_sample=False,
+    )
+    ov_pipe.set_generation_config(generation_config)
+
+
+@pytest.mark.transformers_dependent(
+    "minicpmv, internvl_chat is not supported by transformers>=v5; gemma3, llava-next, llava, qwen3_vl - CVS-186059"
+)
+@parametrize_model_with_modality()
+def test_tags_interleaved_universal(
+    ov_pipe_model: VlmModelInfo,
+    modality_type: ModalityType,
+    request: pytest.FixtureRequest,
+):
+    """A universal tag between two text segments must resolve exactly like the native tag there."""
+    ov_pipe = ov_pipe_model.pipeline
+    media_tag = ov_pipe_model.get_media_tag(modality_type)
+    _setup_interleaved_config(ov_pipe)
+
+    input_tensor = _interleaved_media_pair(modality_type, request)[0]
+    media_kwargs = get_media_inputs_kwargs([input_tensor], modality_type)
+
+    def workaround_inconsistent_inference():
+        __tracebackhide__ = True
+        universal = ov_pipe.generate(
+            "Look at this " + get_universal_tag(modality_type, 0) + " and describe it",
+            **media_kwargs,
+            do_sample=False,
+        )
+        native = ov_pipe.generate(
+            "Look at this " + media_tag(0) + " and describe it",
+            **media_kwargs,
+            do_sample=False,
+        )
+        assert universal.texts[0] == native.texts[0]
+
+    retry(workaround_inconsistent_inference)
+
+
+@pytest.mark.transformers_dependent(
+    "minicpmv, internvl_chat is not supported by transformers>=v5; gemma3, llava-next, llava, qwen3_vl - CVS-186059"
+)
+@parametrize_model_with_modality()
+def test_tags_interleaved_two_universal(
+    ov_pipe_model: VlmModelInfo,
+    modality_type: ModalityType,
+    request: pytest.FixtureRequest,
+):
+    """Two universal tags, each surrounded by text, must resolve exactly like the native tags."""
+    ov_pipe = ov_pipe_model.pipeline
+    media_tag = ov_pipe_model.get_media_tag(modality_type)
+    _setup_interleaved_config(ov_pipe)
+
+    media_kwargs = get_media_inputs_kwargs(_interleaved_media_pair(modality_type, request), modality_type)
+
+    def workaround_inconsistent_inference():
+        __tracebackhide__ = True
+        universal = ov_pipe.generate(
+            "First " + get_universal_tag(modality_type, 0) + " then " + get_universal_tag(modality_type, 1) + " done",
+            **media_kwargs,
+            do_sample=False,
+        )
+        native = ov_pipe.generate(
+            "First " + media_tag(0) + " then " + media_tag(1) + " done",
+            **media_kwargs,
+            do_sample=False,
+        )
+        assert universal.texts[0] == native.texts[0]
+
+    retry(workaround_inconsistent_inference)
+
+
+@pytest.mark.transformers_dependent(
+    "minicpmv, internvl_chat is not supported by transformers>=v5; gemma3, llava-next, llava, qwen3_vl - CVS-186059"
+)
+@parametrize_model_with_modality()
+def test_tags_interleaved_reversed_order(
+    ov_pipe_model: VlmModelInfo,
+    modality_type: ModalityType,
+    request: pytest.FixtureRequest,
+):
+    """Swapping the two universal indices must swap where the media land, not be normalized away.
+
+    Reversing the tag indices over media [first, second] has to mean the same thing as keeping the
+    tags in order and reversing the media list. A pipeline that binds by tag position instead of by
+    tag index leaves the media where they were, so only the second form swaps them and the two
+    outputs diverge.
+    """
+    ov_pipe = ov_pipe_model.pipeline
+    _setup_interleaved_config(ov_pipe)
+
+    first, second = _interleaved_media_pair(modality_type, request)
+
+    def workaround_inconsistent_inference():
+        __tracebackhide__ = True
+        reversed_tags = ov_pipe.generate(
+            "First " + get_universal_tag(modality_type, 1) + " then " + get_universal_tag(modality_type, 0) + " done",
+            **get_media_inputs_kwargs([first, second], modality_type),
+            do_sample=False,
+        )
+        reversed_media = ov_pipe.generate(
+            "First " + get_universal_tag(modality_type, 0) + " then " + get_universal_tag(modality_type, 1) + " done",
+            **get_media_inputs_kwargs([second, first], modality_type),
+            do_sample=False,
+        )
+        assert reversed_tags.texts == reversed_media.texts
+        assert reversed_tags.scores == reversed_media.scores
+
+    retry(workaround_inconsistent_inference)
+
+
+@pytest.mark.real_models
+@pytest.mark.vlm
+def test_audio_rejected_by_non_audio_model():
+    """A VLM without an audio tower must say so instead of failing deep in the encoder.
+
+    Audio placement itself lives in test_omni_pipeline.py; this stays here because it is about a
+    conventional VLM rejecting an input it cannot serve.
+    """
+    # This export is not covered by _maybe_skip_unsupported_model_export, so a version mismatch
+    # arrives as a ValueError. An unavailable control model says nothing about the guard.
+    try:
+        models_path = _get_ov_model("optimum-intel-internal-testing/tiny-random-qwen3-vl")
+    except ValueError as export_error:
+        pytest.skip(f"tiny-random-qwen3-vl cannot be exported here: {export_error}")
+    pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND="PA")
+
+    samples = np.arange(16000)
+    audio = openvino.Tensor(np.sin(2 * np.pi * 440 * samples / 16000).astype(np.float32))
+
+    with pytest.raises(RuntimeError, match="Audio input isn't supported by this model"):
+        pipe.generate("Describe", audios=[audio], generation_config=GenerationConfig(max_new_tokens=20))
 
 
 def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
