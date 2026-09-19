@@ -18,7 +18,7 @@ class TestLora:
     @pytest.mark.parametrize("convert_model", ["TinyStories-1M"], indirect=True)
     @pytest.mark.parametrize("sample_args", ["How to create a table with two columns, one of them has type float, another one has type int?"])
     @pytest.mark.parametrize("download_test_content", ["adapter_model.safetensors"], indirect=True)
-    def test_python_sample_lora(self, convert_model, download_test_content, sample_args):      
+    def test_python_sample_lora(self, convert_model, download_test_content, sample_args):
         py_script = SAMPLES_PY_DIR / "text_generation/lora_greedy_causal_lm.py"
         py_command = [sys.executable, py_script, convert_model, download_test_content, sample_args]
         run_sample(py_command)
@@ -189,3 +189,60 @@ class TestLora:
             adapters=ov_genai.AdapterConfig(),
         )
         assert len(result_without_lora.texts[0]) > 0, "Generation without LoRA should produce output"
+
+    @pytest.mark.vlm
+    @pytest.mark.parametrize(
+        "convert_model, download_test_content, prompt",
+        [
+            pytest.param(
+                "Qwen2-VL-2B-Instruct",
+                ("qwen2b_lora_100_adapter_model.safetensors", "monalisa.jpg"),
+                "Who drew this painting?",
+            ),
+        ],
+        indirect=["convert_model", "download_test_content"],
+    )
+    def test_visual_language_lora_switch_prepared_tensor_cache(self, convert_model, download_test_content, prompt):
+        # Checks the prepared tensor cache in AdapterControllerImpl: switching to another config
+        # must refresh the cached tensors, and switching back must give the first result again.
+        adapter_path, image_path = download_test_content
+        assert os.path.exists(image_path), f"Missing test image: {image_path}"
+
+        image = Image.open(image_path).convert("RGB")
+        image_tensor = ov.Tensor(np.array(image))
+
+        adapter = ov_genai.Adapter(adapter_path)
+        config_a = ov_genai.AdapterConfig()
+        config_a.add(adapter, 2.0)
+        # A and B use the same adapter and differ only by alpha.
+        config_b = ov_genai.AdapterConfig()
+        config_b.add(adapter, 0.0)
+
+        pipe = ov_genai.VLMPipeline(convert_model, "CPU", ATTENTION_BACKEND="PA", adapters=config_a)
+
+        generation_config = ov_genai.GenerationConfig()
+        generation_config.max_new_tokens = 100
+
+        result_a_first = pipe.generate(prompt, images=[image_tensor], generation_config=generation_config)
+        assert len(result_a_first.texts[0]) > 0, "Generation with config A should produce output"
+
+        result_b = pipe.generate(prompt, images=[image_tensor], generation_config=generation_config, adapters=config_b)
+        assert len(result_b.texts[0]) > 0, "Generation with config B should produce output"
+
+        # The cache key does not include alpha, so a stale entry would make B reuse A's scaling.
+        # Alpha 0.0 turns the adapter off, so B must match a run with no adapter at all.
+        result_no_adapter = pipe.generate(
+            prompt, images=[image_tensor], generation_config=generation_config, adapters=ov_genai.AdapterConfig()
+        )
+        assert result_b.texts[0] == result_no_adapter.texts[0], (
+            "Config B (alpha=0.0) should exactly match a no-adapter baseline"
+        )
+
+        result_a_second = pipe.generate(
+            prompt, images=[image_tensor], generation_config=generation_config, adapters=config_a
+        )
+        assert len(result_a_second.texts[0]) > 0, "Generation after switching back to config A should produce output"
+
+        assert result_a_second.texts[0] == result_a_first.texts[0], (
+            "Switching A -> B -> A should reproduce the original config A output"
+        )
