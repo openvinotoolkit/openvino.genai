@@ -97,7 +97,7 @@ public:
     /// @brief Embeds a prompt together with a condition image.
     /// @param condition_image Normalized image of shape (1, 3, height, width) resized to get_vision_image_size().
     /// @param run_vision_tower Set to false only after infer() has encoded the same condition image.
-    ov::Tensor infer(const std::string& prompt, const ov::Tensor condition_image, int max_sequence_length,
+    ov::Tensor infer(const std::string& prompt, const ov::Tensor& condition_image, int max_sequence_length,
                      bool run_vision_tower = true);
 
     /// @brief Marks the prompt positions the vision tower reserved for the condition image.
@@ -117,7 +117,7 @@ private:
 
     ov::Tensor infer_vision_tower(const ov::Tensor condition_image);
 
-    ov::Tensor drop_system_prefix(const ov::Tensor hidden_states, size_t prompt_length) const;
+    ov::Tensor drop_system_prefix(const ov::Tensor& hidden_states, size_t prompt_length) const;
 
     Config m_config;
     VisionConfig m_vision_config;
