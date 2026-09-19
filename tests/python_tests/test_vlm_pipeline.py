@@ -169,6 +169,7 @@ MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
 MODEL_DEEPSEEK_OCR2 = "optimum-intel-internal-testing/tiny-random-deepseek-ocr-2"
+MODEL_LFM2_VL = "optimum-intel-internal-testing/tiny-random-lfm2-vl"
 
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
@@ -191,6 +192,7 @@ else:
         "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
         "qnguyen3/nanoLLaVA",
         MODEL_DEEPSEEK_OCR2,
+        MODEL_LFM2_VL,
         *VIDEO_MODEL_IDS,
     ]
 
@@ -212,6 +214,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     MODEL_GEMMA3N: lambda idx: "<image_soft_token>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     MODEL_DEEPSEEK_OCR2: lambda idx: "<image>",
+    MODEL_LFM2_VL: lambda idx: "<image>",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
@@ -288,6 +291,7 @@ NPU_UNSUPPORTED_MODELS = {
     "optimum-intel-internal-testing/tiny-random-gemma4-unified-it",
     "optimum-intel-internal-testing/tiny-random-gemma4-31B",
     MODEL_DEEPSEEK_OCR2,
+    MODEL_LFM2_VL,
 }
 
 MODELS_WITHOUT_CHAT_TEMPLATE = {
@@ -356,6 +360,11 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
     if model_id == MODEL_DEEPSEEK_OCR2 and is_transformers_version("<", "5.11.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of DeepSeek-OCR-2. Minimum required is 5.11.0."
+        )
+    if model_id == MODEL_LFM2_VL:
+        pytest.skip(
+            "The tiny-random-lfm2-vl checkpoint hasn't been uploaded to the HF Hub yet "
+            "(huggingface/optimum-intel#1979). Unskip once it's available."
         )
     if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
         pytest.skip("ValueError: The current version of optimum-intel does not support videochat_flash_qwen")
