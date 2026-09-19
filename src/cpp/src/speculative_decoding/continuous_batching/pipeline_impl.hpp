@@ -64,6 +64,12 @@ public:
     // physical block tables with the updated logical context.
     bool rewind_awaiting_request_prefix(uint64_t request_id, size_t processed_tokens);
 
+    // Reserves linear-attention checkpoints for the next Eagle3 validation step.
+    std::optional<uint64_t> reserve_linear_attention_checkpoints_for_next_step(uint64_t request_id,
+                                                                                size_t num_checkpoints);
+    void promote_linear_attention_checkpoint_for_sequence(uint64_t sequence_id, size_t checkpoint_slot);
+    void release_linear_attention_checkpoints_for_sequence(uint64_t sequence_id);
+
     UpdateRequestResult init_request_by_candidate(uint64_t request_id, const GeneratedSequences& candidates);
 
     RawPerfMetrics raw_perf_metrics;
@@ -188,6 +194,9 @@ public:
     void collect_block_update_info(const GeneratedRequests& main_generated_requests,
                                    std::vector<int32_t>& block_update_indices,
                                    std::vector<int32_t>& block_update_begins) const;
+
+protected:
+    void _commit_linear_attention_checkpoint_transactions(const Scheduler::Output& scheduler_output) override;
 
     ov::Tensor get_tensor_by_name(const std::string& name) {
         if (m_model_runner) {
