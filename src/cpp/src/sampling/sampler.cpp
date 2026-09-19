@@ -1436,31 +1436,6 @@ bool Sampler::validate_candidate(
     return true;
 }
 
-float get_p_prime(Sequence::Ptr& running_sequence,
-                  const Token& sampled_token,
-                  size_t token_offset) {
-    auto generated_log_probs = running_sequence->get_generated_log_probs();
-    auto it_log_prob = generated_log_probs.rbegin();
-    std::advance(it_log_prob, token_offset - 1);
-
-    running_sequence->remove_last_tokens(token_offset);
-
-    float cumulative_prob = 0;
-    for (auto& log_prob : running_sequence->get_generated_log_probs()) {
-        cumulative_prob += std::exp(log_prob);
-    }
-
-    if (cumulative_prob == 0.f) {
-        return 1.f;
-    }
-    
-    float p_n = std::exp(sampled_token.m_log_prob),
-          q_n = std::exp(*it_log_prob),
-          p_prime = std::max(0.f, (p_n - q_n)) / std::log(cumulative_prob);
-
-    return p_prime;
-}
-
 std::pair<size_t, std::set<std::string>>
 process_stop_strings(const std::set<std::string>& stop_strings, Tokenizer& tokenizer) {
     std::pair<size_t, std::set<std::string>> result;
@@ -1550,17 +1525,6 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                         sg_sampling_info.sampler_output.m_forked_sequences.insert({running_sequences[0]->get_id(), forked_seq_ids});
                     }
                     sampled_token = sampled_token_ids.front();
-                    // make `_speculative_sampling` in case of previous token was not accepted in speculative decoding
-                    if (!is_validation_passed) {
-                        float p_prime = get_p_prime(running_sequence, sampled_token, generated_seq_token_offset + 1);
-                        assisting_pipeline_info.max_removed_tokens_per_request = std::max(assisting_pipeline_info.max_removed_tokens_per_request, generated_seq_token_offset);
-                        // update prob only in case candidate prob > sampled token prob
-                        if (p_prime > 0.f) {
-                            auto prob = std::exp(sampled_token.m_log_prob);
-                            prob /= p_prime;
-                            sampled_token.m_log_prob = std::log(prob);
-                        }
-                    }
                 }
                 if (!is_validation_mode_enabled && m_d2t_mapping) { // compute token offset for draft model in speculative sampling
                     ov::Tensor d2t_tensor = m_d2t_mapping->get_tensor_view();
@@ -1574,9 +1538,12 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                                                               sampled_token, is_extend_sequence, assisting_pipeline_info.max_removed_tokens_per_request,
                                                               sampling_params.do_sample, !sampling_params.is_prompt_lookup(), rng_engine);
 
-                    // doing resample in case of non accepted tokens in speculative sampling
                     if (!is_validation_passed && sampling_params.do_sample && !sampling_params.is_prompt_lookup()) {
-                        continue;
+                        running_sequence->remove_last_tokens(generated_seq_token_offset);
+                        assisting_pipeline_info.max_removed_tokens_per_request =
+                            std::max(assisting_pipeline_info.max_removed_tokens_per_request,
+                                     generated_seq_token_offset);
+                        is_extend_sequence = true;
                     }
                     // update log prob just while validation process
                     if (!is_extend_sequence) {
