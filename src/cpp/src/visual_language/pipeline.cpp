@@ -864,7 +864,6 @@ private:
             image_sequence,
             video_sequence,
             audio_sequence,
-            0,
             history_vision_count
         );
         PerfMetrics::emplace_duration(perf_metrics.vlm_raw_metrics.prepare_embeddings_durations, embeddings_start_time);

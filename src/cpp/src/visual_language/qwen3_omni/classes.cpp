@@ -606,7 +606,6 @@ ov::Tensor InputsEmbedderQwen3Omni::get_inputs_embeds(
     const std::vector<size_t>& image_sequence,
     const std::vector<size_t>& videos_sequence,
     const std::vector<size_t>& audios_sequence,
-    size_t base_audio_id,
     const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
     auto input_embeds = get_inputs_embeds(prompt,
                                           images,
@@ -625,7 +624,7 @@ ov::Tensor InputsEmbedderQwen3Omni::get_inputs_embeds(
     std::vector<int64_t> input_ids_vec(m_last_input_ids.data<int64_t>(),
                                        m_last_input_ids.data<int64_t>() + m_last_input_ids.get_size());
 
-    merge_audio_embeddings(input_embeds, input_ids_vec, audios, audios_sequence, base_audio_id);
+    merge_audio_embeddings(input_embeds, input_ids_vec, audios, audios_sequence);
 
     return input_embeds;
 }
@@ -675,10 +674,20 @@ void InputsEmbedderQwen3Omni::expand_audio_tags_in_prompt(std::string& prompt,
 void InputsEmbedderQwen3Omni::merge_audio_embeddings(ov::Tensor& input_embeds,
                                                      const std::vector<int64_t>& input_ids,
                                                      const std::vector<ov::genai::EncodedAudio>& audios,
-                                                     const std::vector<size_t>& audios_sequence,
-                                                     size_t base_audio_id) const {
+                                                     const std::vector<size_t>& audios_sequence) const {
     if (audios_sequence.empty() || m_audio_token_id < 0) {
         return;
+    }
+
+    // Checked up front because the zero-token skip loops below index audios before the
+    // per-run checks would catch a bad index.
+    for (size_t audio_id : audios_sequence) {
+        OPENVINO_ASSERT(audio_id < audios.size(),
+                        "Audio index ",
+                        audio_id,
+                        " is out of range for ",
+                        audios.size(),
+                        " provided audios. The sequence must be rebased to this turn's audios.");
     }
 
     const auto& shape = input_embeds.get_shape();
@@ -710,8 +719,7 @@ void InputsEmbedderQwen3Omni::merge_audio_embeddings(ov::Tensor& input_embeds,
 
         // A zero-token audio expands to start+end with no pads, so it contributes no run. Skip
         // over those entries or run k stops lining up with audios_sequence[k].
-        while (run_index < audios_sequence.size() &&
-               audios[audios_sequence[run_index] - base_audio_id].num_audio_tokens == 0) {
+        while (run_index < audios_sequence.size() && audios[audios_sequence[run_index]].num_audio_tokens == 0) {
             run_index++;
         }
 
@@ -720,14 +728,7 @@ void InputsEmbedderQwen3Omni::merge_audio_embeddings(ov::Tensor& input_embeds,
                         audios_sequence.size(),
                         "). A literal audio marker in user text would do this.");
 
-        const size_t relative_id = audios_sequence[run_index] - base_audio_id;
-        OPENVINO_ASSERT(relative_id < audios.size(),
-                        "Audio index ",
-                        audios_sequence[run_index],
-                        " is out of range for ",
-                        audios.size(),
-                        " provided audios.");
-        const auto& audio = audios[relative_id];
+        const auto& audio = audios[audios_sequence[run_index]];
 
         OPENVINO_ASSERT(run_length == audio.num_audio_tokens,
                         "Audio placeholder run ",
@@ -759,8 +760,7 @@ void InputsEmbedderQwen3Omni::merge_audio_embeddings(ov::Tensor& input_embeds,
     }
 
     // Trailing zero-token audios also have no run, so consume them before the final check.
-    while (run_index < audios_sequence.size() &&
-           audios[audios_sequence[run_index] - base_audio_id].num_audio_tokens == 0) {
+    while (run_index < audios_sequence.size() && audios[audios_sequence[run_index]].num_audio_tokens == 0) {
         run_index++;
     }
 

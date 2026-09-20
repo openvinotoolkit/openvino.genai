@@ -143,7 +143,8 @@ public:
         const std::vector<EncodedVideo>& videos,
         const std::vector<EncodedAudio>& audios) const;
 
-    /// @brief Audio-aware embeds. audios_sequence holds absolute indices in prompt order.
+    /// @brief Audio-aware embeds. audios_sequence indexes audios directly, like the vision
+    /// sequences: callers rebase it with vlm_utils::rebase_media_sequence() first.
     ov::Tensor get_inputs_embeds(const std::string& prompt,
                                  const std::vector<ov::genai::EncodedImage>& images,
                                  const std::vector<ov::genai::EncodedVideo>& videos,
@@ -153,7 +154,6 @@ public:
                                  const std::vector<size_t>& image_sequence,
                                  const std::vector<size_t>& videos_sequence,
                                  const std::vector<size_t>& audios_sequence,
-                                 size_t base_audio_id,
                                  const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count);
 
 private:
@@ -235,8 +235,8 @@ private:
             const std::vector<EncodedVideo>& videos,
             const std::vector<ov::genai::EncodedAudio>& audios) const;
 
-        /// @brief get_inputs_embeds() for audio-capable models. audios_sequence holds absolute
-        /// indices in placeholder order, which is what allows audio anywhere in the prompt.
+        /// @brief get_inputs_embeds() for audio-capable models. audios_sequence lists indices
+        /// into audios in placeholder order, which is what allows audio anywhere in the prompt.
         virtual ov::Tensor get_inputs_embeds(
             const std::string& prompt,
             const std::vector<ov::genai::EncodedImage>& images,
@@ -247,7 +247,6 @@ private:
             const std::vector<size_t>& image_sequence,
             const std::vector<size_t>& videos_sequence,
             const std::vector<size_t>& audios_sequence,
-            size_t base_audio_id,
             const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count);
 
         virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
