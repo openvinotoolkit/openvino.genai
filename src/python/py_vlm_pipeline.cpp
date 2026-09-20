@@ -169,6 +169,15 @@ auto video_metadata_docstring = R"(
     :type frames_indices: list[int]
 )";
 
+auto processed_inputs_docstring = R"(
+    Structure representing the processed inputs produced by VLMProcessor and consumed by generate().
+)";
+
+auto vlm_processor_docstring = R"(
+    Processor for VLMs that tokenizes text, encodes images/videos, merges embeddings and
+    returns as structured ProcessedInputs.
+)";
+
 py::object call_vlm_generate(
     ov::genai::VLMPipeline& pipe,
     const std::string& prompt,
@@ -324,6 +333,92 @@ An input image without explicit slicing metadata counts as one slice.)")
             return res;
         });
 
+    py::class_<ov::genai::ProcessedInputs>(m, "ProcessedInputs", processed_inputs_docstring)
+        .def(py::init<>())
+        .def_readwrite("inputs_embeds", &ov::genai::ProcessedInputs::inputs_embeds)
+        .def_readwrite("attention_mask", &ov::genai::ProcessedInputs::attention_mask)
+        .def_readwrite("position_ids", &ov::genai::ProcessedInputs::position_ids)
+        .def_readwrite("lm_extra_inputs", &ov::genai::ProcessedInputs::lm_extra_inputs)
+        .def_readwrite("rope_delta", &ov::genai::ProcessedInputs::rope_delta)
+        .def_readonly("raw_perf_metrics", &ov::genai::ProcessedInputs::raw_perf_metrics);
+
+    py::class_<ov::genai::VLMProcessor>(m, "VLMProcessor", vlm_processor_docstring)
+        .def(py::init([](
+            const std::filesystem::path& models_path,
+            const ov::genai::Tokenizer& tokenizer,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+            py::gil_scoped_release rel;
+            return std::make_unique<ov::genai::VLMProcessor>(models_path, tokenizer, device, properties);
+        }),
+        py::arg("models_path"), "folder with exported model files",
+        py::arg("tokenizer"), "genai Tokenizer",
+        py::arg("device"), "device on which inference will be done",
+            R"(VLMProcessor constructor with an externally provided tokenizer.)")
+        .def(py::init([](
+            const std::filesystem::path& models_path,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+            py::gil_scoped_release rel;
+            return std::make_unique<ov::genai::VLMProcessor>(models_path, device, properties);
+        }),
+        py::arg("models_path"), "folder with exported model files",
+        py::arg("device"), "device on which inference will be done",
+            R"(VLMProcessor constructor.)")
+        .def(py::init([](
+            const ov::genai::ModelsMap& models,
+            const ov::genai::Tokenizer& tokenizer,
+            const std::filesystem::path& config_dir_path,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+            py::gil_scoped_release rel;
+            return std::make_unique<ov::genai::VLMProcessor>(models, tokenizer, config_dir_path, device, properties);
+        }),
+        py::arg("models"), "map with decrypted models",
+        py::arg("tokenizer"), "genai Tokenizer",
+        py::arg("config_dir_path"), "Path to folder with model configs",
+        py::arg("device"), "device on which inference will be done",
+            R"(VLMProcessor constructor from in-memory models map and tokenizer.)")
+        .def("process",
+            [](ov::genai::VLMProcessor& processor,
+               const std::string& prompt,
+               const std::vector<ov::Tensor>& images,
+               const std::vector<ov::Tensor>& videos,
+               const std::vector<ov::genai::VideoMetadata>& videos_metadata
+            ) {
+                py::gil_scoped_release rel;
+                return processor.process(prompt, images, videos, videos_metadata);
+            },
+            py::arg("prompt"), "Input prompt",
+            py::arg("images") = std::vector<ov::Tensor>{}, "Input images",
+            py::arg("videos") = std::vector<ov::Tensor>{}, "Input videos",
+            py::arg("videos_metadata") = std::vector<ov::genai::VideoMetadata>{}, "Per-video metadata",
+                R"(Process string prompt and optional images/videos into ProcessedInputs.)")
+        .def("process",
+            [](ov::genai::VLMProcessor& processor,
+               const ov::genai::ChatHistory& history,
+               const std::vector<ov::Tensor>& images,
+               const std::vector<ov::Tensor>& videos,
+               const std::vector<ov::genai::VideoMetadata>& videos_metadata
+            ) {
+                py::gil_scoped_release rel;
+                return processor.process(history, images, videos, videos_metadata);
+            },
+            py::arg("history"), "Chat history",
+            py::arg("images") = std::vector<ov::Tensor>{}, "Input images",
+            py::arg("videos") = std::vector<ov::Tensor>{}, "Input videos",
+            py::arg("videos_metadata") = std::vector<ov::genai::VideoMetadata>{}, "Per-video metadata",
+                R"(Process chat history and optional images/videos into ProcessedInputs.)")
+        .def("get_tokenizer", &ov::genai::VLMProcessor::get_tokenizer);
+
     // Abstract public base. Registered (without a constructor) so that a VLMPipeline can be
     // passed to OmniPipeline's DI constructor as a shared_ptr<VLMPipelineBase>.
     py::class_<ov::genai::VLMPipelineBase, std::shared_ptr<ov::genai::VLMPipelineBase>>(
@@ -375,6 +470,56 @@ An input image without explicit slicing metadata counts as one slice.)")
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
             generation_config (GenerationConfig | None): Device properties.
             kwargs: Device properties
+        )")
+
+        .def(py::init([](
+            const std::filesystem::path& models_path,
+            const ov::genai::VLMProcessor& processor,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+            py::gil_scoped_release rel;
+            return std::make_unique<ov::genai::VLMPipeline>(models_path, processor, device, properties);
+        }),
+        py::arg("models_path"), "folder with exported language model files",
+        py::arg("processor"), "VLMProcessor instance",
+        py::arg("device"), "device on which inference will be done",
+        R"(
+            VLMPipeline constructor from models path and VLMProcessor.
+            models_path (os.PathLike): Path to folder with exported language model files.
+            processor (VLMProcessor): VLMProcessor instance.
+            device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            kwargs: Device properties.
+        )")
+
+        .def(py::init([](
+            const ov::genai::ModelsMap& models,
+            const ov::genai::VLMProcessor& processor,
+            const std::filesystem::path& config_dir_path,
+            const std::string& device,
+            const ov::genai::OptionalGenerationConfig& generation_config,
+            const py::kwargs& kwargs
+        ) {
+            ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+            ov::genai::GenerationConfig config = generation_config.value_or(ov::genai::GenerationConfig());
+            py::gil_scoped_release rel;
+            return std::make_unique<ov::genai::VLMPipeline>(models, processor, config_dir_path, device, properties, config);
+        }),
+        py::arg("models"), "map with in-memory models",
+        py::arg("processor"), "VLMProcessor instance",
+        py::arg("config_dir_path"), "Path to folder with model configs",
+        py::arg("device"), "device on which inference will be done",
+        py::arg("generation_config") = std::nullopt, "generation config",
+        R"(
+            VLMPipeline constructor from in-memory models map and VLMProcessor.
+            models (ov::genai::ModelsMap): Map with in-memory models.
+            processor (VLMProcessor): VLMProcessor instance.
+            config_dir_path (os.PathLike): Path to folder with model configs.
+            device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            generation_config (Optional[GenerationConfig]): Generation configuration.
+            kwargs: Device properties.
         )")
 
         .def("start_chat", [](ov::genai::VLMPipeline& pipe, const std::string& system_message) {
@@ -551,5 +696,25 @@ An input image without explicit slicing metadata counts as one slice.)")
             },
             py::arg("history"), "Chat history",
             (vlm_generate_history_kwargs_docstring + std::string(" \n ")).c_str()
+        )
+        .def(
+            "generate",
+            [](ov::genai::VLMPipeline& pipe,
+               const ov::genai::ProcessedInputs& inputs,
+               const ov::genai::GenerationConfig& generation_config,
+               const pyutils::PyBindStreamerVariant& py_streamer
+            ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
+                ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
+                ov::genai::VLMDecodedResults res;
+                {
+                    py::gil_scoped_release rel;
+                    res = pipe.generate(inputs, generation_config, streamer);
+                }
+                return py::cast(res);
+            },
+            py::arg("inputs"), "Processed inputs from VLMProcessor",
+            py::arg("generation_config"), "generation_config",
+            py::arg("streamer") = std::monostate(), "streamer",
+            "Generate from ProcessedInputs produced by VLMProcessor."
         );
 }
