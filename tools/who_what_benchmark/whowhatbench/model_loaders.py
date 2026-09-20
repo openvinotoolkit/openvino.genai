@@ -703,10 +703,14 @@ def load_imagetext2image_model(
     model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs
 ):
     if use_hf:
-        from diffusers import AutoPipelineForImage2Image
+        from diffusers import AutoPipelineForImage2Image, DiffusionPipeline
 
         logger.info("Using HF Transformers API")
-        model = AutoPipelineForImage2Image.from_pretrained(
+        config = AutoPipelineForImage2Image.load_config(model_id)
+        pipeline_cls = AutoPipelineForImage2Image
+        if config.get("_class_name") == "QwenImage21Pipeline":
+            pipeline_cls = DiffusionPipeline
+        model = pipeline_cls.from_pretrained(
             model_id,
             trust_remote_code=True,
             torch_dtype=_resolve_torch_dtype(kwargs.get("torch_dtype")) or torch.float32,
@@ -721,10 +725,16 @@ def load_imagetext2image_model(
         model_kwargs = {"ov_config": ov_config, "safety_checker": None}
         if kwargs.get('from_onnx'):
             model_kwargs['from_onnx'] = kwargs['from_onnx']
+        config = OVPipelineForImage2Image.load_config(model_id)
+        pipeline_cls = OVPipelineForImage2Image
+        if config.get("_class_name") == "QwenImage21Pipeline":
+            from optimum.intel.openvino import OVQwenImage21Pipeline
+
+            pipeline_cls = OVQwenImage21Pipeline
         try:
-            model = OVPipelineForImage2Image.from_pretrained(model_id, device=device, **model_kwargs)
+            model = pipeline_cls.from_pretrained(model_id, device=device, **model_kwargs)
         except ValueError:
-            model = OVPipelineForImage2Image.from_pretrained(
+            model = pipeline_cls.from_pretrained(
                 model_id,
                 trust_remote_code=True,
                 use_cache=True,
