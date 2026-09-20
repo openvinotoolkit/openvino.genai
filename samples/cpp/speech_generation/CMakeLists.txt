@@ -43,6 +43,10 @@ foreach(sample_target IN LISTS speech_generation_samples)
     target_compile_features(${sample_target} PRIVATE cxx_std_17)
 endforeach()
 
+if(WIN32)
+    target_link_libraries(qwen3_tts PRIVATE shell32)
+endif()
+
 install(TARGETS ${speech_generation_samples}
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin

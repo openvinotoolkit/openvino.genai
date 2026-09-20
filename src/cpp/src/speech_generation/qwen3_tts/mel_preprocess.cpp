@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 #include <openvino/opsets/opset15.hpp>
 

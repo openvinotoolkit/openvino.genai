@@ -3,6 +3,7 @@
 
 #include "audio_utils.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <vector>

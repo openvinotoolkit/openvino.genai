@@ -334,6 +334,10 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
             for (size_t i = 0; i < m_pred_num_layers; ++i) {
                 m_pred_past_k.emplace_back(m_talker_code_predictor.get_tensor("past_key_values." + std::to_string(i) + ".key"));
                 m_pred_past_v.emplace_back(m_talker_code_predictor.get_tensor("past_key_values." + std::to_string(i) + ".value"));
+                OPENVINO_ASSERT(m_pred_past_k.back().get_element_type() == ov::element::f32,
+                                "Static code predictor past_key_values.", i, ".key must be f32");
+                OPENVINO_ASSERT(m_pred_past_v.back().get_element_type() == ov::element::f32,
+                                "Static code predictor past_key_values.", i, ".value must be f32");
             }
             m_pred_attn = m_talker_code_predictor.get_tensor("attention_mask");
             m_pred_pos = m_talker_code_predictor.get_tensor("position_ids");
@@ -944,7 +948,17 @@ ov::Tensor Qwen3TTSImpl::infer_predictor(const ov::Tensor& inputs_embeds, bool r
         for (size_t i = 0; i < m_pred_num_layers; ++i) {
             const auto& pk = m_talker_code_predictor.get_tensor("present." + std::to_string(i) + ".key");
             const auto& pv = m_talker_code_predictor.get_tensor("present." + std::to_string(i) + ".value");
+            OPENVINO_ASSERT(pk.get_element_type() == ov::element::f32,
+                            "Static code predictor present.", i, ".key must be f32");
+            OPENVINO_ASSERT(pv.get_element_type() == ov::element::f32,
+                            "Static code predictor present.", i, ".value must be f32");
+            OPENVINO_ASSERT(pk.get_element_type() == m_pred_past_k[i].get_element_type(),
+                            "Element type mismatch between present.", i, ".key and past_key_values.", i, ".key");
+            OPENVINO_ASSERT(pv.get_element_type() == m_pred_past_v[i].get_element_type(),
+                            "Element type mismatch between present.", i, ".value and past_key_values.", i, ".value");
             const size_t present_slots = pk.get_shape()[2];          // kv_len (full) or 1 (sliced)
+            OPENVINO_ASSERT(present_slots > 0,
+                            "Static code predictor present.", i, " must contain at least one KV slot");
             const size_t present_slot_stride = present_slots * row;
             const size_t src_slot = present_slots - 1;               // new token = last slot
             const float* pk_ptr = pk.data<const float>();
