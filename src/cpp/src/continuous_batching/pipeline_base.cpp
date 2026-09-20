@@ -431,7 +431,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             m_history_image_ids,
             m_history_video_ids,
             m_history_audio_ids,
-            0,
             m_history_vision_count
         ));
 
@@ -472,6 +471,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             auto [unified_prompt, image_sequence, video_sequence, audio_sequence] =
                 m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, m_audio_id, encoded_images, encoded_videos, encoded_audios);
 
+            // normalize_prompt numbers media across the whole conversation, but encoded_audios
+            // holds only this turn's. Same rebase VLMPipeline does for all three modalities.
+            vlm_utils::rebase_media_sequence(audio_sequence, m_audio_id);
+
             m_inputs_embedder->set_apply_chat_template_status(sampling_params[i].apply_chat_template);
 
             size_t cache_size_before = prepare_prompt_ids(prompt, sampling_params[i]);
@@ -486,7 +489,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                 image_sequence,
                 video_sequence,
                 audio_sequence,
-                m_audio_id,
                 {}
             ));
 
@@ -721,7 +723,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             processed_chat_data.image_sequence,
             processed_chat_data.video_sequence,
             processed_chat_data.audio_sequence,
-            0,
             processed_chat_data.vision_counts
         ));
 

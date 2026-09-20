@@ -488,7 +488,6 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(
     const std::vector<size_t>& image_sequence,
     const std::vector<size_t>& videos_sequence,
     const std::vector<size_t>& audios_sequence,
-    size_t base_audio_id,
     const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
 ) {
     OPENVINO_ASSERT(audios.empty(), "Audio input isn't supported by this model.");
@@ -609,7 +608,6 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt,
                                              const std::vector<size_t>& image_sequence,
                                              const std::vector<size_t>& videos_sequence,
                                              const std::vector<size_t>& audios_sequence,
-                                             size_t base_audio_id,
                                              const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
     return m_impl->get_inputs_embeds(prompt,
                                      images,
@@ -620,7 +618,6 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt,
                                      image_sequence,
                                      videos_sequence,
                                      audios_sequence,
-                                     base_audio_id,
                                      history_vision_count);
 }
 
