@@ -135,10 +135,11 @@ int64_t floor_div(int64_t a, int64_t b) {
     return (a % b != 0 && ((a < 0) != (b < 0))) ? q - 1 : q;
 }
 
-// Port of _get_feat_extract_output_lengths() from
-// transformers/models/qwen3_omni_moe/modeling_qwen3_omni_moe.py, so the test
-// checks against upstream instead of restating our own code. The 100 and 13 are
-// upstream literals and assume n_window == 50.
+// Port of _get_feat_extract_output_lengths() from transformers, so the test checks against
+// upstream instead of restating our own code. The 100 and 13 are upstream literals and assume
+// n_window == 50. Kept expression-for-expression identical to the source, including the
+// redundant `+ 1 - 1`, so the two can be compared by eye.
+// https://github.com/huggingface/transformers/blob/b856a67bea4fdbb5368de1c8a9f183df048dafbe/src/transformers/models/qwen3_omni_moe/modeling_qwen3_omni_moe.py#L152-L159
 int64_t upstream_output_length(int64_t n_frames) {
     const int64_t leave = n_frames % 100;
     const int64_t feat = floor_div(leave - 1, 2) + 1;
@@ -225,8 +226,7 @@ ov::Tensor make_pcm(size_t n_samples) {
 
 TEST(AudioEncoderPreprocess, FeatureWidthAndMaskWidthAgree) {
     // The encoder multiplies its CNN output by padded_mask_after_cnn, so the post-CNN width
-    // implied by padded_feature must equal the mask width. Padding the feature to a full
-    // chunk while sizing the mask from the real tail throws inside the model (CVS-193623).
+    // implied by padded_feature must equal the mask width.
     auto encoder = make_encoder_without_model();
 
     // 0.25 s and 0.5 s sit below one chunk (100 frames); 1 s and 3 s span whole chunks.
@@ -245,7 +245,7 @@ TEST(AudioEncoderPreprocess, FeatureWidthAndMaskWidthAgree) {
 }
 
 TEST(AudioEncoderPreprocess, ShortAudioKeepsOneNarrowChunk) {
-    // 0.5 s is the case the old code got wrong: one chunk, padded out to a full 100 frames.
+    // 0.5 s is the case the old code got wrong: one chunk was padded out to a full 100 frames.
     auto encoder = make_encoder_without_model();
     auto [feature, mask, aftercnn_lens, cu_seqlens] = encoder.preprocess_audio(make_pcm(8000));
 

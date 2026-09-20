@@ -117,17 +117,20 @@ std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> AudioEncoderQwen3Omni
     OPENVINO_ASSERT(n_frames > 0, "Audio input too short to produce mel spectrogram frames");
 
     const auto num_mel_bins = m_config.audio_config_num_mel_bins;
+    // Sizes the encoder's attention window (window_aftercnn) further below. The chunk split
+    // uses n_window instead.
     const auto n_window_infer = m_config.audio_config_n_window_infer;
     const auto n_window = m_config.audio_config_n_window;
 
-    // n_window_infer sizes the encoder's attention window below, not the split.
     const size_t chunk_size = n_window * 2;
     const std::vector<size_t> chunk_frame_lens = plan_chunk_frame_lens(n_frames, n_window);
     const size_t num_chunks = chunk_frame_lens.size();
 
-    // pad_sequence() upstream pads to the longest actual chunk, not to a full one. Audio
-    // shorter than one chunk must stay narrow: a full-width feature makes the CNN emit more
-    // positions than padded_mask_after_cnn holds, and the encoder multiplies the two.
+    // torch.nn.utils.rnn.pad_sequence() in the transformers Qwen3-Omni audio encoder pads to
+    // the longest actual chunk, not to a full one. Audio shorter than one chunk must stay
+    // narrow: a full-width feature makes the CNN emit more positions than
+    // padded_mask_after_cnn holds, and the encoder multiplies positions and
+    // padded_mask_after_cnn.
     const size_t padded_frames = *std::max_element(chunk_frame_lens.begin(), chunk_frame_lens.end());
 
     ov::Tensor padded_feature(ov::element::f32, {num_chunks, num_mel_bins, padded_frames});
