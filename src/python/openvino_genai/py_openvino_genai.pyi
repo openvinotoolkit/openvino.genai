@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
+__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'ProcessedInputs', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMProcessor', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
 class ASRDecodedResultChunk:
     """
     
@@ -1147,6 +1147,9 @@ class ContinuousBatchingPipeline:
     def __init__(self, models_path: os.PathLike | str | bytes, tokenizer: Tokenizer, scheduler_config: SchedulerConfig, device: str, **kwargs) -> None:
         ...
     @typing.overload
+    def __init__(self, models_path: os.PathLike | str | bytes, scheduler_config: SchedulerConfig, processor: VLMProcessor, device: str, **kwargs) -> None:
+        ...
+    @typing.overload
     def add_request(self, request_id: typing.SupportsInt, input_ids: openvino._pyopenvino.Tensor, generation_config: GenerationConfig) -> GenerationHandle:
         ...
     @typing.overload
@@ -1157,6 +1160,9 @@ class ContinuousBatchingPipeline:
         ...
     @typing.overload
     def add_request(self, request_id: typing.SupportsInt, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig) -> GenerationHandle:
+        ...
+    @typing.overload
+    def add_request(self, request_id: typing.SupportsInt, inputs: ProcessedInputs, generation_config: GenerationConfig) -> GenerationHandle:
         ...
     def finish_chat(self) -> None:
         ...
@@ -1189,6 +1195,9 @@ class ContinuousBatchingPipeline:
         ...
     @typing.overload
     def generate(self, histories: list, videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> list[VLMDecodedResults]:
+        ...
+    @typing.overload
+    def generate(self, inputs: collections.abc.Sequence[ProcessedInputs], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[VLMDecodedResults]:
         ...
     def get_config(self) -> GenerationConfig:
         ...
@@ -3289,6 +3298,31 @@ class PipelineMetrics:
         ...
     @property
     def scheduled_requests(self) -> int:
+        ...
+class ProcessedInputs:
+    """
+    
+        Structure representing the processed inputs produced by VLMProcessor and consumed by generate().
+    """
+    attention_mask: openvino._pyopenvino.Tensor
+    inputs_embeds: openvino._pyopenvino.Tensor
+    position_ids: openvino._pyopenvino.Tensor
+    def __init__(self) -> None:
+        ...
+    @property
+    def lm_extra_inputs(self) -> dict[str, openvino._pyopenvino.Tensor]:
+        ...
+    @lm_extra_inputs.setter
+    def lm_extra_inputs(self, arg0: collections.abc.Mapping[str, openvino._pyopenvino.Tensor]) -> None:
+        ...
+    @property
+    def raw_perf_metrics(self) -> VLMRawPerfMetrics:
+        ...
+    @property
+    def rope_delta(self) -> int | None:
+        ...
+    @rope_delta.setter
+    def rope_delta(self, arg0: typing.SupportsInt | None) -> None:
         ...
 class Qwen2_5_VLForConditionalGeneration:
     """
@@ -5626,6 +5660,26 @@ class VLMPipeline(VLMPipelineBase):
                     generation_config (GenerationConfig | None): Device properties.
                     kwargs: Device properties
         """
+    @typing.overload
+    def __init__(self, models_path: os.PathLike | str | bytes, processor: VLMProcessor, device: str, **kwargs) -> None:
+        """
+                    VLMPipeline constructor from models path and VLMProcessor.
+                    models_path (os.PathLike): Path to folder with exported language model files.
+                    processor (VLMProcessor): VLMProcessor instance.
+                    device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+                    kwargs: Device properties.
+        """
+    @typing.overload
+    def __init__(self, models: collections.abc.Mapping[str, tuple[str, openvino._pyopenvino.Tensor]], processor: VLMProcessor, config_dir_path: os.PathLike | str | bytes, device: str, generation_config: openvino_genai.py_openvino_genai.GenerationConfig | None = None, **kwargs) -> None:
+        """
+                    VLMPipeline constructor from in-memory models map and VLMProcessor.
+                    models (ov::genai::ModelsMap): Map with in-memory models.
+                    processor (VLMProcessor): VLMProcessor instance.
+                    config_dir_path (os.PathLike): Path to folder with model configs.
+                    device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+                    generation_config (Optional[GenerationConfig]): Generation configuration.
+                    kwargs: Device properties.
+        """
     def finish_chat(self) -> None:
         ...
     @typing.overload
@@ -5960,6 +6014,11 @@ class VLMPipeline(VLMPipelineBase):
             :return: return results in decoded form
             :rtype: VLMDecodedResults
         """
+    @typing.overload
+    def generate(self, inputs: ProcessedInputs, generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> VLMDecodedResults:
+        """
+        Generate from ProcessedInputs produced by VLMProcessor.
+        """
     def get_generation_config(self) -> GenerationConfig:
         ...
     def get_tokenizer(self) -> Tokenizer:
@@ -5974,6 +6033,39 @@ class VLMPipelineBase:
     """
     Abstract base of VLM-style pipelines.
     """
+class VLMProcessor:
+    """
+    
+        Processor for VLMs that tokenizes text, encodes images/videos, merges embeddings and
+        returns as structured ProcessedInputs.
+    """
+    @typing.overload
+    def __init__(self, models_path: os.PathLike | str | bytes, tokenizer: Tokenizer, device: str, **kwargs) -> None:
+        """
+        VLMProcessor constructor with an externally provided tokenizer.
+        """
+    @typing.overload
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+        """
+        VLMProcessor constructor.
+        """
+    @typing.overload
+    def __init__(self, models: collections.abc.Mapping[str, tuple[str, openvino._pyopenvino.Tensor]], tokenizer: Tokenizer, config_dir_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+        """
+        VLMProcessor constructor from in-memory models map and tokenizer.
+        """
+    def get_tokenizer(self) -> Tokenizer:
+        ...
+    @typing.overload
+    def process(self, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = []) -> ProcessedInputs:
+        """
+        Process string prompt and optional images/videos into ProcessedInputs.
+        """
+    @typing.overload
+    def process(self, history: ChatHistory, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = []) -> ProcessedInputs:
+        """
+        Process chat history and optional images/videos into ProcessedInputs.
+        """
 class VLMRawPerfMetrics:
     """
     
