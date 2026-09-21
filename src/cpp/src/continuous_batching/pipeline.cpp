@@ -47,6 +47,22 @@ float get_load_time(std::chrono::steady_clock::time_point start_time) {
     return std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }
 
+void assert_supported_add_request_lora_mode(const std::optional<AdapterConfig>& adapters) {
+    if (adapters && static_cast<bool>(*adapters)) {
+        const auto mode = adapters->get_mode();
+        OPENVINO_ASSERT(mode != AdapterConfig::MODE_DYNAMIC && mode != AdapterConfig::MODE_AUTO && mode != AdapterConfig::MODE_STATIC_RANK,
+            "MODE_DYNAMIC, MODE_AUTO, and MODE_STATIC_RANK LoRA adapters are not supported in the add_request() + step() flow. "
+            "Use MODE_STATIC or MODE_FUSE instead.");
+    }
+}
+
+// The restriction applies to the public add_request() + step() flow only; generate() applies the adapters itself.
+void assert_supported_add_request_lora_modes(const std::optional<AdapterConfig>& pipeline_adapters,
+                                             const GenerationConfig& sampling_params) {
+    assert_supported_add_request_lora_mode(pipeline_adapters);
+    assert_supported_add_request_lora_mode(sampling_params.adapters);
+}
+
 } // namespace
 
 ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::path& models_path,
@@ -522,18 +538,22 @@ PipelineMetrics ContinuousBatchingPipeline::get_metrics() const{
 }
 
 GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const std::string& prompt, const ov::genai::GenerationConfig& sampling_params) {
+    assert_supported_add_request_lora_modes(m_impl->get_pipeline_adapters(), sampling_params);
     return m_impl->add_request(request_id, prompt, sampling_params);
 }
 
 GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const ov::Tensor& input_ids, const ov::genai::GenerationConfig& sampling_params) {
+    assert_supported_add_request_lora_modes(m_impl->get_pipeline_adapters(), sampling_params);
     return m_impl->add_request(request_id, input_ids, sampling_params);
 }
 
 GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const std::string& prompt, const std::vector<ov::Tensor>& images, const ov::genai::GenerationConfig& sampling_params) {
+    assert_supported_add_request_lora_modes(m_impl->get_pipeline_adapters(), sampling_params);
     return m_impl->add_request(request_id, prompt, images, sampling_params);
 }
 
 GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const std::string& prompt, const std::vector<ov::Tensor>& images, const std::vector<ov::Tensor>& videos, const ov::genai::GenerationConfig& sampling_params) {
+    assert_supported_add_request_lora_modes(m_impl->get_pipeline_adapters(), sampling_params);
     return m_impl->add_request(request_id, prompt, images, videos, sampling_params);
 }
 
@@ -545,6 +565,8 @@ GenerationHandle ContinuousBatchingPipeline::add_request(
     ov::genai::OptionalGenerationConfig generation_config = utils::get_config_from_map(properties_map);
     OPENVINO_ASSERT(generation_config.has_value(),
         "\"generation_config\" property is required in add_request with properties map");
+
+    assert_supported_add_request_lora_modes(m_impl->get_pipeline_adapters(), generation_config.value());
 
     const auto multimodal_inputs = extract_multimodal_inputs(properties_map);
 

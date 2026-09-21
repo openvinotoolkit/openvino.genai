@@ -58,6 +58,40 @@ void dedicated_models_export_import(const std::filesystem::path& root_dir) {
         ov::genai::AutoencoderKL(root_dir / "vae_decoder", device, ov::genai::blob_path(blob_path)));
 };
 
+void tensor_models_export_import(const std::filesystem::path& root_dir) {
+    const auto blob_path = root_dir / "exported_tensors";
+    const auto device = "CPU";
+
+    ov::genai::Text2ImagePipeline pipe(root_dir, device);
+    pipe.export_model(blob_path);
+
+    auto text_encoder =
+        ov::genai::CLIPTextModel(ov::read_tensor_data(blob_path / "text_encoder" / "openvino_model.blob"),
+                                 ov::genai::CLIPTextModel::Config(root_dir / "text_encoder" / "config.json"),
+                                 ov::genai::Tokenizer(root_dir / "tokenizer"),
+                                 device);
+    auto text_encoder_2 = ov::genai::CLIPTextModelWithProjection(
+        ov::read_tensor_data(blob_path / "text_encoder_2" / "openvino_model.blob"),
+        ov::genai::CLIPTextModelWithProjection::Config(root_dir / "text_encoder_2" / "config.json"),
+        ov::genai::Tokenizer(root_dir / "tokenizer_2"),
+        device);
+    auto vae = ov::genai::AutoencoderKL(ov::read_tensor_data(blob_path / "vae_decoder" / "openvino_model.blob"),
+                                        ov::genai::AutoencoderKL::Config(root_dir / "vae_decoder" / "config.json"),
+                                        device);
+    auto unet =
+        ov::genai::UNet2DConditionModel(ov::read_tensor_data(blob_path / "unet" / "openvino_model.blob"),
+                                        ov::genai::UNet2DConditionModel::Config(root_dir / "unet" / "config.json"),
+                                        vae.get_vae_scale_factor(),
+                                        device);
+
+    auto imported_pipe = ov::genai::Text2ImagePipeline::stable_diffusion_xl(
+        ov::genai::Scheduler::from_config(root_dir / "scheduler" / "scheduler_config.json"),
+        text_encoder,
+        text_encoder_2,
+        unet,
+        vae);
+}
+
 void export_import_with_reshape(const std::filesystem::path& root_dir, const std::string& prompt) {
     const auto device = "CPU";
 
@@ -101,6 +135,7 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     pipeline_export_import(root_dir);
     dedicated_models_export_import(root_dir);
+    tensor_models_export_import(root_dir);
     export_import_with_reshape(root_dir, prompt);
 
     return EXIT_SUCCESS;

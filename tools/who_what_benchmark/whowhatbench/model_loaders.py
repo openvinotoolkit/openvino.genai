@@ -44,6 +44,26 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+# HF INT8/INT4 loading requires quantization configuration or a quantized checkpoint, not torch_dtype.
+TORCH_DTYPES = {
+    "float32": torch.float32,
+    "float16": torch.float16,
+    "bfloat16": torch.bfloat16,
+    "fp32": torch.float32,
+    "fp16": torch.float16,
+    "bf16": torch.bfloat16,
+}
+
+
+def _resolve_torch_dtype(dtype):
+    if dtype is None or dtype == "auto" or isinstance(dtype, torch.dtype):
+        return dtype
+    try:
+        return TORCH_DTYPES[dtype]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported PyTorch dtype '{dtype}'. Supported values: {', '.join(TORCH_DTYPES)}.") from exc
+
+
 def _sanitize_load_kwargs(model_type, use_hf, use_genai, use_llamacpp, kwargs):
     sanitized_kwargs = dict(kwargs)
     n_ctx = sanitized_kwargs.get("llamacpp_n_ctx")
@@ -271,7 +291,7 @@ def load_omni_hf_pipeline(model_id, device, config, trust_remote_code=False, **k
         model_id,
         trust_remote_code=trust_remote_code,
         device_map=device.lower(),
-        dtype="auto",
+        torch_dtype=_resolve_torch_dtype(kwargs.get("torch_dtype", "auto")),
     )
 
     if kwargs.get("adapters") is not None:
@@ -282,7 +302,7 @@ def load_omni_hf_pipeline(model_id, device, config, trust_remote_code=False, **k
 
 
 def load_text_hf_pipeline(model_id, device, **kwargs):
-    model_kwargs = {}
+    model_kwargs = {"torch_dtype": _resolve_torch_dtype(kwargs.get("torch_dtype"))}
     trust_remote_code = False
     config = None
     if kwargs.get('gguf_file'):
@@ -429,10 +449,11 @@ def load_text2image_model(
         from diffusers import DiffusionPipeline
 
         logger.info("Using HF Transformers API")
+        torch_dtype = _resolve_torch_dtype(kwargs.get("torch_dtype")) or torch.float32
         try:
-            model = DiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float32)
+            model = DiffusionPipeline.from_pretrained(model_id, torch_dtype=torch_dtype)
         except Exception:
-            model = DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch.float32)
+            model = DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch_dtype)
         if kwargs.get("adapters") is not None:
             adapters = kwargs["adapters"]
             alphas = kwargs.get("alphas", None)
@@ -535,7 +556,10 @@ def load_visual_text_model(
         if getattr(config, "model_type", None) in OMNI_MODEL_TYPES:
             return load_omni_hf_pipeline(model_id, device, config, trust_remote_code, **kwargs)
 
-        model_kwargs = {"trust_remote_code": trust_remote_code}
+        model_kwargs = {
+            "trust_remote_code": trust_remote_code,
+            "torch_dtype": _resolve_torch_dtype(kwargs.get("torch_dtype")),
+        }
         try:
             model_cls = None
 
@@ -550,6 +574,16 @@ def load_visual_text_model(
                 model_cls = AutoModelForMultimodalLM
             elif config.model_type == "gemma3n":
                 model_cls = AutoModelForCausalLM
+                model_kwargs["torch_dtype"] = model_kwargs["torch_dtype"] or torch.float32
+            elif config.model_type == "deepseek_ocr2":
+                from transformers import AutoModelForImageTextToText
+
+                model_cls = AutoModelForImageTextToText
+                if model_kwargs["torch_dtype"] not in (None, torch.float32):
+                    logger.warning(
+                        "DeepSeek-OCR2 uses float32 to avoid dtype mismatch. Ignoring %s arg.",
+                        model_kwargs["torch_dtype"],
+                    )
                 model_kwargs.update({"torch_dtype": torch.float32})
             elif transformers_version < Version("5.0.0"):
                 from transformers import AutoModelForVision2Seq
@@ -674,10 +708,18 @@ def load_imagetext2image_model(
     model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs
 ):
     if use_hf:
-        from diffusers import AutoPipelineForImage2Image
+        from diffusers import AutoPipelineForImage2Image, DiffusionPipeline
 
         logger.info("Using HF Transformers API")
-        model = AutoPipelineForImage2Image.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch.float32)
+        config = AutoPipelineForImage2Image.load_config(model_id)
+        pipeline_cls = AutoPipelineForImage2Image
+        if config.get("_class_name") == "QwenImage21Pipeline":
+            pipeline_cls = DiffusionPipeline
+        model = pipeline_cls.from_pretrained(
+            model_id,
+            trust_remote_code=True,
+            torch_dtype=_resolve_torch_dtype(kwargs.get("torch_dtype")) or torch.float32,
+        )
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
         model = load_image2image_genai_pipeline(model_id, device, ov_config)
@@ -688,10 +730,16 @@ def load_imagetext2image_model(
         model_kwargs = {"ov_config": ov_config, "safety_checker": None}
         if kwargs.get('from_onnx'):
             model_kwargs['from_onnx'] = kwargs['from_onnx']
+        config = OVPipelineForImage2Image.load_config(model_id)
+        pipeline_cls = OVPipelineForImage2Image
+        if config.get("_class_name") == "QwenImage21Pipeline":
+            from optimum.intel.openvino import OVQwenImage21Pipeline
+
+            pipeline_cls = OVQwenImage21Pipeline
         try:
-            model = OVPipelineForImage2Image.from_pretrained(model_id, device=device, **model_kwargs)
+            model = pipeline_cls.from_pretrained(model_id, device=device, **model_kwargs)
         except ValueError:
-            model = OVPipelineForImage2Image.from_pretrained(
+            model = pipeline_cls.from_pretrained(
                 model_id,
                 trust_remote_code=True,
                 use_cache=True,
@@ -724,7 +772,11 @@ def load_inpainting_model(
         from diffusers import AutoPipelineForInpainting
 
         logger.info("Using HF Transformers API")
-        model = AutoPipelineForInpainting.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch.float32)
+        model = AutoPipelineForInpainting.from_pretrained(
+            model_id,
+            trust_remote_code=True,
+            torch_dtype=_resolve_torch_dtype(kwargs.get("torch_dtype")) or torch.float32,
+        )
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
         model = load_inpainting_genai_pipeline(model_id, device, ov_config)
@@ -781,7 +833,7 @@ def load_embedding_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwa
     config.pad_to_max_length = True
     config.batch_size = kwargs.get("embeds_batch_size", config.batch_size)
 
-    logger.info("Using OpenVINO GenAI TextEmbeddingPipeline API")
+    logger.info("Using OpenVINO GenAI EmbeddingPipeline API")
     if hasattr(openvino_genai, "EmbeddingPipeline"):
         pipeline = openvino_genai.EmbeddingPipeline(
             model_dir, device.upper(), text_embedding_config=config, **ov_config
@@ -797,7 +849,9 @@ def load_embedding_model(model_id, device="CPU", ov_config=None, use_hf=False, u
         from transformers import AutoModel
 
         logger.info("Using HF Transformers API")
-        model = AutoModel.from_pretrained(model_id, trust_remote_code=True)
+        model = AutoModel.from_pretrained(
+            model_id, trust_remote_code=True, torch_dtype=_resolve_torch_dtype(kwargs.get("torch_dtype"))
+        )
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
         model = load_embedding_genai_pipeline(model_id, device, ov_config, **kwargs)
@@ -843,7 +897,7 @@ def load_reranking_genai_pipeline(model_dir, device="CPU", ov_config=None, is_qw
     )
 
 
-def load_reranking_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False):
+def load_reranking_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
     try:
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
     except Exception:
@@ -854,11 +908,15 @@ def load_reranking_model(model_id, device="CPU", ov_config=None, use_hf=False, u
         if is_qwen3_causallm(config):
             from transformers import AutoModelForCausalLM
 
-            model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True)
+            model = AutoModelForCausalLM.from_pretrained(
+                model_id, trust_remote_code=True, torch_dtype=_resolve_torch_dtype(kwargs.get("torch_dtype"))
+            )
         else:
             from transformers import AutoModelForSequenceClassification
 
-            model = AutoModelForSequenceClassification.from_pretrained(model_id, trust_remote_code=True)
+            model = AutoModelForSequenceClassification.from_pretrained(
+                model_id, trust_remote_code=True, torch_dtype=_resolve_torch_dtype(kwargs.get("torch_dtype"))
+            )
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
         is_qwen3_model = is_qwen3(config)
@@ -912,10 +970,11 @@ def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, 
         from diffusers import LTXPipeline
 
         logger.info("Using HF Transformers API")
+        torch_dtype = _resolve_torch_dtype(kwargs.get("torch_dtype")) or torch.float32
         try:
-            model = LTXPipeline.from_pretrained(model_id, torch_dtype=torch.float32)
+            model = LTXPipeline.from_pretrained(model_id, torch_dtype=torch_dtype)
         except ValueError:
-            model = LTXPipeline.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch.float32)
+            model = LTXPipeline.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch_dtype)
         if kwargs.get("adapters") is not None:
             adapters = kwargs["adapters"]
             alphas = kwargs.get("alphas", None)
@@ -967,10 +1026,11 @@ def load_image2video_model(model_id, device="CPU", ov_config=None, use_hf=False,
         from diffusers import LTXImageToVideoPipeline
 
         logger.info("Using HF Transformers API")
+        torch_dtype = _resolve_torch_dtype(kwargs.get("torch_dtype")) or torch.float32
         try:
-            model = LTXImageToVideoPipeline.from_pretrained(model_id, torch_dtype=torch.float32)
+            model = LTXImageToVideoPipeline.from_pretrained(model_id, torch_dtype=torch_dtype)
         except ValueError:
-            model = LTXImageToVideoPipeline.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch.float32)
+            model = LTXImageToVideoPipeline.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch_dtype)
         if kwargs.get("adapters") is not None:
             adapters = kwargs["adapters"]
             alphas = kwargs.get("alphas", None)
@@ -1080,7 +1140,10 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
     if use_hf:
         if _is_kokoro_model_id(model_id):
             logger.info("Using Kokoro HF API")
-            return KokoroModelWrapper(model_id)
+            return KokoroModelWrapper(
+                model_id,
+                torch_dtype=_resolve_torch_dtype(kwargs.get("torch_dtype")),
+            )
 
         remote_code, model_config = _resolve_remote_code_and_config(model_id)
         logger.info("Using HF Transformers API")
@@ -1090,12 +1153,15 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
 
         from transformers import SpeechT5ForTextToSpeech
 
-        model = SpeechT5ForTextToSpeech.from_pretrained(model_id, trust_remote_code=remote_code)
+        model = SpeechT5ForTextToSpeech.from_pretrained(
+            model_id,
+            trust_remote_code=remote_code,
+            torch_dtype=_resolve_torch_dtype(kwargs.get("torch_dtype")),
+        )
         processor = _load_speecht5_processor(model_id, remote_code)
 
-        # for HF, we need to explicitly load the vocoder.
-        # Assume it's microsoft/speecht5_hifigan for now.
         vocoder = _load_speecht5_hifigan_vocoder(vocoder_path)
+        vocoder.to(device=model.device, dtype=model.dtype)
         return SpeechT5Wrapper(model, processor, vocoder)
 
     if use_genai:
@@ -1157,6 +1223,7 @@ def load_speech_recognition_model(model_id, device="CPU", ov_config=None, use_hf
     from .speech_recognition_evaluator import ASRGenAITranscriber, ASRHFTranscriber, ASROptimumTranscriber
 
     if use_hf:
+        kwargs["torch_dtype"] = _resolve_torch_dtype(kwargs.get("torch_dtype"))
         return ASRHFTranscriber.create(model_id, device, ov_config, language, **kwargs)
     if use_genai:
         return ASRGenAITranscriber.create(model_id, device, ov_config, language, **kwargs)
@@ -1191,7 +1258,7 @@ def load_model(
     elif model_type in ("text-embedding", "image-embedding", "video-embedding"):
         return load_embedding_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "text-reranking":
-        return load_reranking_model(model_id, device, ov_options, use_hf, use_genai)
+        return load_reranking_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "text-to-video":
         return load_text2video_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "image-to-video":

@@ -131,6 +131,16 @@ export const IMAGE_GENERATION_MODELS: ImageGenerationModelType[] = [
     ],
   },
   {
+    architecture: 'Qwen-Image-2.1',
+    textToImage: true,
+    imageToImage: true,
+    inpainting: false,
+    loraSupport: false,
+    links: [
+      'https://huggingface.co/Qwen/Qwen-Image-2.1',
+    ],
+  },
+  {
     architecture: 'Z-Image',
     textToImage: true,
     imageToImage: true,
