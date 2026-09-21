@@ -61,7 +61,8 @@ class RerankingEvaluator(BaseEvaluator):
         gt_data: str = None,
         test_data: Union[str, list] = None,
         num_samples=None,
-        gen_rerank_fn=None
+        gen_rerank_fn=None,
+        batch_size=None,
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -71,6 +72,7 @@ class RerankingEvaluator(BaseEvaluator):
         self.tokenizer = tokenizer
         self.num_samples = num_samples
         self.generation_fn = gen_rerank_fn
+        self.batch_size = batch_size
         self.gt_dir = os.path.dirname(gt_data)
 
         if base_model:
@@ -185,7 +187,30 @@ class RerankingEvaluator(BaseEvaluator):
             documents = data[1]
             if is_qwen3(model.config):
                 query, documents = self._apply_qwen3_template(data[0], data[1])
-            result = gen_answer_fn(model, self.tokenizer, query, documents)
+
+            if self.batch_size is not None and self.batch_size <= 0:
+                raise ValueError("embeds_batch_size must be greater than zero")
+
+            if self.batch_size is not None:
+                # Process documents in batches and restore local batch indices.
+                batch_size = self.batch_size
+                results = []
+                for document_index in range(0, len(documents), batch_size):
+                    document_result = np.asarray(
+                        gen_answer_fn(
+                            model,
+                            self.tokenizer,
+                            query,
+                            documents[document_index : document_index + batch_size],
+                        )
+                    )
+                    if document_result.size:
+                        document_result = document_result.reshape(-1, 2).copy()
+                        document_result[:, 0] += document_index
+                        results.append(document_result)
+                result = np.concatenate(results) if results else np.empty((0, 2))
+            else:
+                result = gen_answer_fn(model, self.tokenizer, query, documents)
 
             queries.append(data[0])
             passages.append(data[1])
