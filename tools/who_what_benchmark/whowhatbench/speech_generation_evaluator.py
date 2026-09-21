@@ -558,13 +558,6 @@ class Qwen3CustomVoiceWrapper:
     def get_speaker_embedding_shape(self):
         return None
 
-    @staticmethod
-    def _preview_ids(values, max_items=80):
-        seq = list(values)
-        head = seq[:max_items]
-        suffix = ",..." if len(seq) > max_items else ""
-        return f"len={len(seq)} [{','.join(str(int(x)) for x in head)}{suffix}]"
-
     def generate(self, prompt, speaker_embedding=None, language="", voice="", instruct="", **kwargs):
         if speaker_embedding is not None:
             LOGGER.debug("Ignoring speaker_embedding for Qwen3 CustomVoice.")
@@ -581,33 +574,6 @@ class Qwen3CustomVoiceWrapper:
         kwargs.setdefault("subtalker_dosample", False)
         kwargs.setdefault("non_streaming_mode", True)
         kwargs.setdefault("repetition_penalty", 1.2)
-
-        if os.getenv("WWB_QWEN3_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}:
-            LOGGER.info(
-                "[WWB_QWEN3_DEBUG] speaker='%s' language='%s' instruct_len=%d do_sample=%s subtalker_dosample=%s",
-                selected_speaker,
-                selected_language,
-                len(selected_instruct),
-                kwargs.get("do_sample"),
-                kwargs.get("subtalker_dosample"),
-            )
-
-            if hasattr(self.model, "processor"):
-                try:
-                    assistant_text = f"<|im_start|>assistant\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
-                    assistant_tok = self.model.processor(text=assistant_text, return_tensors="pt", padding=True)
-                    assistant_ids = assistant_tok["input_ids"].detach().cpu().reshape(-1).tolist()
-                    LOGGER.info("[WWB_QWEN3_DEBUG] assistant_text=%r", assistant_text)
-                    LOGGER.info("[WWB_QWEN3_DEBUG] assistant_input_ids %s", self._preview_ids(assistant_ids))
-
-                    if selected_instruct:
-                        instruct_text = f"<|im_start|>user\n{selected_instruct}<|im_end|>\n"
-                        instruct_tok = self.model.processor(text=instruct_text, return_tensors="pt", padding=True)
-                        instruct_ids = instruct_tok["input_ids"].detach().cpu().reshape(-1).tolist()
-                        LOGGER.info("[WWB_QWEN3_DEBUG] instruct_text=%r", instruct_text)
-                        LOGGER.info("[WWB_QWEN3_DEBUG] instruct_ids %s", self._preview_ids(instruct_ids))
-                except Exception as exc:
-                    LOGGER.warning("[WWB_QWEN3_DEBUG] failed to tokenize debug prompt: %s", exc)
 
         if hasattr(self.model, "generate_custom_voice"):
             wavs, sample_rate = self.model.generate_custom_voice(
@@ -681,15 +647,6 @@ class Qwen3VoiceDesignWrapper:
         kwargs.setdefault("non_streaming_mode", True)
         kwargs.setdefault("repetition_penalty", 1.2)
 
-        if os.getenv("WWB_QWEN3_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}:
-            LOGGER.info(
-                "[WWB_QWEN3_DEBUG] language='%s' instruct_len=%d do_sample=%s subtalker_dosample=%s",
-                selected_language,
-                len(selected_instruct),
-                kwargs.get("do_sample"),
-                kwargs.get("subtalker_dosample"),
-            )
-
         if hasattr(self.model, "generate_voice_design"):
             wavs, sample_rate = self.model.generate_voice_design(
                 text=prompt,
@@ -742,13 +699,6 @@ class Qwen3BaseWrapper:
 
     def get_speaker_embedding_shape(self):
         return None
-
-    @staticmethod
-    def _preview_ids(values, max_items=80):
-        seq = list(values)
-        head = seq[:max_items]
-        suffix = ",..." if len(seq) > max_items else ""
-        return f"len={len(seq)} [{','.join(str(int(x)) for x in head)}{suffix}]"
 
     def generate(
         self,
