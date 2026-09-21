@@ -2535,13 +2535,6 @@ public:
         return copy_blocks_map;
     }
 
-    void publish_completed_block(const Sequence::Ptr& sequence, size_t content_length) {
-        if (!m_enable_prefix_caching || content_length == 0 || content_length % m_block_size != 0) {
-            return;
-        }
-        publish_completed_blocks(sequence, content_length - m_block_size, content_length);
-    }
-
     void publish_completed_blocks(const Sequence::Ptr& sequence, size_t processed_before, size_t processed_after) {
         OPENVINO_ASSERT(processed_after >= processed_before,
                         "Cache block publication cannot precede the scheduled forward pass");

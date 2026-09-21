@@ -888,13 +888,6 @@ public:
         return promoted_index;
     }
 
-    void publish_completed_linear_attention_block(const Sequence::Ptr& sequence, size_t content_length) {
-        if (!has_linear_attention_cache()) {
-            return;
-        }
-        m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->publish_completed_block(sequence, content_length);
-    }
-
     void publish_completed_blocks(const Sequence::Ptr& sequence,
                                   size_t processed_before,
                                   size_t processed_after) {
