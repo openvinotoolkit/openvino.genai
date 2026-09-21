@@ -1447,7 +1447,8 @@ def test_cb_perf_metrics_available_after_concurrent_read(model_facebook_opt_125m
         t.start()
         while cb_pipe.has_non_finished_requests():
             cb_pipe.step()
-        t.join()
+        t.join(timeout=10)
+        assert not t.is_alive(), f"Iteration {i}: reader thread did not finish within timeout"
         assert not errors, f"Iteration {i}: get_perf_metrics() raised: {errors[0]}"
 
 

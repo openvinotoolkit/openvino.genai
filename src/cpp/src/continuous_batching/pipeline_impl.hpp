@@ -78,6 +78,12 @@ protected:
     void _notify_handles(const Scheduler::Output& scheduler_output);
 
     /**
+     * Sets load_time and commits perf metrics onto the request's GenerationStream.
+     * Must run before any terminal/echo notification so readers never observe stale metrics.
+     */
+    void _commit_perf_metrics(const SequenceGroup::Ptr& request);
+
+    /**
      * Handles 'echo' generation parameter
      */
     void _fill_prompt_log_probs(std::vector<SequenceGroup::Ptr>& sequence_groups, ov::Tensor& logits);

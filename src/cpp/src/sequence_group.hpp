@@ -1084,7 +1084,7 @@ public:
         m_terminal_notification_sent = true;
         stream_output();
         set_generation_status(GenerationStatus::IGNORED);
-        push_empty_outputs();  // unblock any reader blocked in read() before the status change
+        push_empty_outputs();  // wake any reader already blocked in read()
     }
 
     // Push the final output for a finished group; must be called after set_perf_metrics() to close the metrics race.

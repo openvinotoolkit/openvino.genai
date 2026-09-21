@@ -513,9 +513,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         for (size_t i = 0; i < m_requests.size(); ++i) {
             SequenceGroup::Ptr sequence_group = m_requests[i];
             if (!sequence_group->is_waiting()) {
-                auto perf_metrics = sequence_group->get_perf_metrics();
-                perf_metrics.load_time = m_load_time_ms;
-                sequence_group->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
+                _commit_perf_metrics(sequence_group);
                 sequence_group->set_out_of_memory();
                 sequence_group->notify_handle_oom();
             }
@@ -874,9 +872,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_reque
 
         if (is_finished || is_stopped || is_cancelled) {
             if (!request->notified_terminal()) {
-                auto perf_metrics = request->get_perf_metrics();
-                perf_metrics.load_time = m_load_time_ms;
-                request->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
+                _commit_perf_metrics(request);
                 if (is_finished) {
                     request->notify_handle_final();
                 } else {
@@ -897,6 +893,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_reque
     }
 }
 
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_perf_metrics(const SequenceGroup::Ptr& request) {
+    auto perf_metrics = request->get_perf_metrics();
+    perf_metrics.load_time = m_load_time_ms;
+    request->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
+}
+
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_notify_handles(const Scheduler::Output& scheduler_output) {
     for (const auto request_index : scheduler_output.m_scheduled_sequence_groups_ids) {
         const auto& request = m_requests.at(request_index);
@@ -904,14 +906,14 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_notify_handles(const S
                                   request->get_sampling_parameters().echo &&
                                   request->get_max_new_tokens() == 0;
         if (is_echo_only) {
-            auto perf_metrics = request->get_perf_metrics();
-            perf_metrics.load_time = m_load_time_ms;
-            request->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
+            // Commit metrics only once the whole prompt has been echoed back, otherwise
+            // get_perf_metrics()'s one-shot generate_durations capture would freeze early.
+            if (request->get_context_len() == request->get_prompt_len()) {
+                _commit_perf_metrics(request);
+            }
             request->notify_handle_echo_only();
         } else if (request->has_finished()) {
-            auto perf_metrics = request->get_perf_metrics();
-            perf_metrics.load_time = m_load_time_ms;
-            request->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
+            _commit_perf_metrics(request);
             request->notify_handle_final();
         } else {
             request->notify_handle();
@@ -924,9 +926,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_notify_handles(const S
         const bool is_cancelled = request->handle_cancelled();
 
         if (!is_finished && (is_stopped || is_cancelled) && !request->notified_terminal()) {
-            auto perf_metrics = request->get_perf_metrics();
-            perf_metrics.load_time = m_load_time_ms;
-            request->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
+            _commit_perf_metrics(request);
             request->notify_handle_stopped_or_cancelled();
         }
     }
