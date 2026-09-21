@@ -781,7 +781,7 @@ public:
                  int64_t height,
                  int64_t width,
                  float guidance_scale) override {
-        check_video_size(height, width);
+        video_generation_utils::check_video_size(height, width, 32);
 
         VideoGenerationConfig reshaped_config = m_generation_config;
         reshaped_config.num_videos_per_prompt = num_videos_per_prompt;
@@ -844,21 +844,6 @@ protected:
             config.frame_rate = LTX_VIDEO_DEFAULT_CONFIG.frame_rate;
         }
     }
-
-private:
-    void check_video_size(const int height, const int width) const {
-        OPENVINO_ASSERT(m_transformer != nullptr);
-        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
-        OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) && (width % vae_scale_factor == 0 || width < 0),
-                        "Both 'width' and 'height' must be divisible by ",
-                        vae_scale_factor);
-
-        OPENVINO_ASSERT(height > 0, "Height must be positive");
-        OPENVINO_ASSERT(height % 32 == 0, "Height have to be divisible by 32 but got ", height);
-        OPENVINO_ASSERT(width > 0, "Width must be positive");
-        OPENVINO_ASSERT(width % 32 == 0, "Width have to be divisible by 32 but got ", width);
-    }
-
 };
 
 }  // namespace ov::genai
