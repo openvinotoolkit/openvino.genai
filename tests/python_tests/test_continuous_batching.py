@@ -1421,6 +1421,8 @@ def test_cb_generate_allows_unsupported_add_request_lora_mode(
     results = pipe.generate(["test prompt"], [config])
 
     assert len(results[0].m_generation_ids[0]) > 0
+
+
 def test_cb_perf_metrics_available_after_concurrent_read(model_facebook_opt_125m: OVConvertedModelSchema):
     """Metrics must be committed before the final token push so the reader never hits the assertion."""
     models_path = model_facebook_opt_125m.models_path
