@@ -13,24 +13,10 @@
 #include <fstream>
 #include <iostream>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <vector>
 
 namespace {
-
-std::string shape_to_string(const ov::Shape& shape) {
-    std::ostringstream os;
-    os << "{";
-    for (size_t i = 0; i < shape.size(); ++i) {
-        if (i > 0) {
-            os << ", ";
-        }
-        os << shape[i];
-    }
-    os << "}";
-    return os.str();
-}
 
 std::string to_upper(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
