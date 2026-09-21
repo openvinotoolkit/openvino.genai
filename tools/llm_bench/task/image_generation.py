@@ -7,7 +7,7 @@ import datetime
 from PIL import Image
 import hashlib
 import logging as log
-from transformers import set_seed
+from transformers import AutoProcessor, set_seed
 from llm_bench_utils.hook_forward import StableDiffusionHook
 import llm_bench_utils
 import llm_bench_utils.model_utils as model_utils
@@ -91,7 +91,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
     result_md5_list = []
     mem_consumption.start(num)
     input_text_list = [input_text] * args['batch_size']
-    if type(pipe).__name__ in ("QwenImage21Pipeline", "OVQwenImage21Pipeline"):
+    if args["use_case"].tokenizer_cls is AutoProcessor:
         tokenizer = pipe.processor.tokenizer
         if input_args.pop("strength", None) is not None:
             log.warning("Qwen-Image-2.1 does not support strength; ignoring it.")

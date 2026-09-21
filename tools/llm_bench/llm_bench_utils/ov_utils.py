@@ -382,14 +382,11 @@ def create_image_gen_model(model_path, device, memory_data_collector, **kwargs):
     elif is_image_to_image_model(kwargs, image_gen_use_case):
         model_class = image_gen_use_case.TASK["img2img"]["ov_cls"]
 
-    if model_index_data.get("_class_name") == "QwenImage21Pipeline" and not kwargs.get("genai", True):
-        try:
-            from optimum.intel.openvino import OVQwenImage21Pipeline
-        except ImportError as exc:
-            raise RuntimeError(
-                "Qwen-Image-2.1 requires an Optimum Intel version that provides OVQwenImage21Pipeline."
-            ) from exc
-        model_class = OVQwenImage21Pipeline
+    # Qwen-Image-2.1 uses OVQwenImage21Pipeline instead of generic one (eg. OVPipelineForImage2Image).
+    if image_gen_use_case.ov_cls != image_gen_use_case.TASK["text2img"]["ov_cls"]:
+        model_class = image_gen_use_case.ov_cls
+    if model_class is None and not kwargs.get("genai", True):
+        raise RuntimeError("Qwen-Image-2.1 requires an Optimum Intel version that provides OVQwenImage21Pipeline.")
 
     model_path = Path(model_path)
     ov_config = kwargs['config']
@@ -527,13 +524,10 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
     if adapter_config:
         ov_config['adapters'] = adapter_config
 
-    model_class_name = model_index_data.get("_class_name", "")
     main_model_name = "unet" if "unet" in model_index_data else "transformer"
     callback = PerfCollector(main_model_name)
 
-    tokenizer_subfolder = "tokenizer"
-    if model_class_name == "QwenImage21Pipeline":
-        tokenizer_subfolder = "processor"
+    tokenizer_subfolder = "processor" if image_gen_use_case.tokenizer_cls is AutoProcessor else "tokenizer"
     orig_tokenizer = AutoTokenizer.from_pretrained(model_path, subfolder=tokenizer_subfolder)
     callback.orig_tokenizer = orig_tokenizer
 
