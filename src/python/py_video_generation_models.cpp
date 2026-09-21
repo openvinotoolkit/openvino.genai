@@ -305,6 +305,7 @@ void init_ltx2_video_transformer_3d_model(py::module_& m) {
         .def_readonly("patch_size_t", &ov::genai::LTX2VideoTransformer3DModel::Config::patch_size_t)
         .def_readonly("vae_scale_factors", &ov::genai::LTX2VideoTransformer3DModel::Config::vae_scale_factors)
         .def_readonly("audio_scale_factor", &ov::genai::LTX2VideoTransformer3DModel::Config::audio_scale_factor)
+        .def_readonly("causal_offset", &ov::genai::LTX2VideoTransformer3DModel::Config::causal_offset)
         .def_readonly("audio_sampling_rate", &ov::genai::LTX2VideoTransformer3DModel::Config::audio_sampling_rate)
         .def_readonly("audio_hop_length", &ov::genai::LTX2VideoTransformer3DModel::Config::audio_hop_length);
 

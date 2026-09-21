@@ -2964,6 +2964,9 @@ class LTX2VideoTransformer3DModel:
         def audio_scale_factor(self) -> int:
             ...
         @property
+        def causal_offset(self) -> int:
+            ...
+        @property
         def in_channels(self) -> int:
             ...
         @property
