@@ -354,10 +354,8 @@ def parse_args():
         default=None,
         help="Side to use for padding 'left' or 'right'. Applicable only for text embeddings")
     parser.add_argument(
-        "--embeds_batch_size",
-        type=int,
-        default=None,
-        help="Batch size value. Applicable only for text embeddings")
+        "--embeds_batch_size", type=int, default=None, help="Batch size value for text embeddings and reranking"
+    )
     parser.add_argument(
         "--rag-config",
         type=str,
@@ -1247,7 +1245,8 @@ def create_evaluator(base_model, args):
                 gt_data=args.gt_data,
                 test_data=prompts,
                 num_samples=args.num_samples,
-                gen_rerank_fn=genai_gen_reranking if args.genai else None
+                gen_rerank_fn=genai_gen_reranking if args.genai else None,
+                batch_size=args.embeds_batch_size,
             )
         elif task == "text-chat":
             tokenizer = load_tokenizer(args)
