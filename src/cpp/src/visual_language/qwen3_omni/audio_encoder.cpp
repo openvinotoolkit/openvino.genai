@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
+#include <numeric>
 #include <vector>
 
 #include "openvino/openvino.hpp"
@@ -82,6 +84,24 @@ void AudioEncoderQwen3Omni::validate_audio_input(const ov::Tensor& audio_raw) {
     validate_audio_shape(audio_raw.get_shape(), audio_raw.get_element_type());
 }
 
+std::vector<size_t> AudioEncoderQwen3Omni::plan_chunk_frame_lens(size_t n_frames, size_t n_window) {
+    OPENVINO_ASSERT(n_window > 0, "audio_config.n_window must be > 0");
+    OPENVINO_ASSERT(n_window <= std::numeric_limits<size_t>::max() / 2,
+                    "audio_config.n_window is too large to double: ",
+                    n_window);
+    OPENVINO_ASSERT(n_frames > 0, "Cannot chunk an empty mel spectrogram");
+
+    const size_t chunk_size = n_window * 2;
+    // Subtraction-based ceiling: n_frames + chunk_size - 1 could wrap, this cannot.
+    const size_t num_chunks = 1 + (n_frames - 1) / chunk_size;
+
+    std::vector<size_t> chunk_frame_lens(num_chunks);
+    for (size_t c = 0; c < num_chunks; c++) {
+        chunk_frame_lens[c] = std::min(chunk_size, n_frames - c * chunk_size);
+    }
+    return chunk_frame_lens;
+}
+
 std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> AudioEncoderQwen3Omni::preprocess_audio(
     const ov::Tensor& audio_raw) {
     // Reject malformed or oversized audio before any allocation.
@@ -97,64 +117,72 @@ std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> AudioEncoderQwen3Omni
     OPENVINO_ASSERT(n_frames > 0, "Audio input too short to produce mel spectrogram frames");
 
     const auto num_mel_bins = m_config.audio_config_num_mel_bins;
+    // Sizes the encoder's attention window (window_aftercnn) further below. The chunk split
+    // uses n_window instead.
     const auto n_window_infer = m_config.audio_config_n_window_infer;
     const auto n_window = m_config.audio_config_n_window;
 
-    // Chunk the mel spectrogram into windows of (n_window_infer * 2) frames
-    // Each window overlaps: window i covers frames [i * n_window_infer, i * n_window_infer + 2 * n_window_infer)
-    const size_t chunk_size = n_window_infer * 2;
-    const size_t num_chunks = (n_frames + n_window_infer - 1) / n_window_infer;
+    const size_t chunk_size = n_window * 2;
+    const std::vector<size_t> chunk_frame_lens = plan_chunk_frame_lens(n_frames, n_window);
+    const size_t num_chunks = chunk_frame_lens.size();
 
-    ov::Tensor padded_feature(ov::element::f32, {num_chunks, num_mel_bins, chunk_size});
+    // torch.nn.utils.rnn.pad_sequence() in the transformers Qwen3-Omni audio encoder pads to
+    // the longest actual chunk, not to a full one. Audio shorter than one chunk must stay
+    // narrow: a full-width feature makes the CNN emit more positions than
+    // padded_mask_after_cnn holds, and the encoder multiplies positions and
+    // padded_mask_after_cnn.
+    const size_t padded_frames = *std::max_element(chunk_frame_lens.begin(), chunk_frame_lens.end());
+
+    ov::Tensor padded_feature(ov::element::f32, {num_chunks, num_mel_bins, padded_frames});
     auto* pf_data = padded_feature.data<float>();
     std::fill(pf_data, pf_data + padded_feature.get_size(), 0.0f);
 
-    std::vector<size_t> chunk_frame_lens(num_chunks);
     for (size_t c = 0; c < num_chunks; c++) {
-        const size_t start = c * n_window_infer;
-        const size_t end = std::min(start + chunk_size, n_frames);
-        chunk_frame_lens[c] = end - start;
-
+        // Source stride is the logical chunk width; destination stride is the padded width.
+        const size_t start = c * chunk_size;
         // Copy mel data for this chunk: mel_data is [num_mel_bins, n_frames] row-major
         for (size_t mel = 0; mel < num_mel_bins; mel++) {
             for (size_t f = 0; f < chunk_frame_lens[c]; f++) {
-                pf_data[c * num_mel_bins * chunk_size + mel * chunk_size + f] = mel_data[mel * n_frames + start + f];
+                pf_data[c * num_mel_bins * padded_frames + mel * padded_frames + f] =
+                    mel_data[mel * n_frames + start + f];
             }
         }
     }
 
-    const auto max_aftercnn_len = get_feat_extract_output_length(chunk_size);
-    ov::Tensor aftercnn_lens(ov::element::i64, {num_chunks});
-    auto* acl_data = aftercnn_lens.data<int64_t>();
+    std::vector<size_t> chunk_aftercnn_lens(num_chunks);
+    for (size_t c = 0; c < num_chunks; c++) {
+        chunk_aftercnn_lens[c] = get_feat_extract_output_length(chunk_frame_lens[c]);
+    }
+    // Same pad_sequence() rule as padded_frames above, so the two stay in step.
+    const size_t max_aftercnn_len = *std::max_element(chunk_aftercnn_lens.begin(), chunk_aftercnn_lens.end());
 
     ov::Tensor padded_mask_after_cnn(ov::element::boolean, {num_chunks, max_aftercnn_len});
     auto* mask_data = padded_mask_after_cnn.data<bool>();
     std::fill(mask_data, mask_data + padded_mask_after_cnn.get_size(), false);
 
     for (size_t c = 0; c < num_chunks; c++) {
-        const auto cnn_len = get_feat_extract_output_length(chunk_frame_lens[c]);
-        acl_data[c] = static_cast<int64_t>(cnn_len);
-        for (size_t i = 0; i < cnn_len; i++) {
+        for (size_t i = 0; i < chunk_aftercnn_lens[c]; i++) {
             mask_data[c * max_aftercnn_len + i] = true;
         }
     }
 
+    // aftercnn_lens is the post-CNN length of the whole utterance, not of one chunk.
+    const size_t total_aftercnn = std::accumulate(chunk_aftercnn_lens.begin(), chunk_aftercnn_lens.end(), size_t{0});
+    ov::Tensor aftercnn_lens(ov::element::i64, {1});
+    aftercnn_lens.data<int64_t>()[0] = static_cast<int64_t>(total_aftercnn);
+
     // Compute cu_seqlens for chunked attention (must be done outside the model
     // because it uses data-dependent loops that can't be traced)
     const size_t window_aftercnn = max_aftercnn_len * (n_window_infer / (n_window * 2));
-    std::vector<int32_t> cu_chunk_lens = {0};
     OPENVINO_ASSERT(window_aftercnn > 0,
                     "Audio encoder: window_aftercnn is zero — check config values n_window_infer and n_window");
-    for (size_t c = 0; c < num_chunks; c++) {
-        const auto cnn_len = static_cast<size_t>(acl_data[c]);
-        const size_t full_windows = cnn_len / window_aftercnn;
-        for (size_t w = 0; w < full_windows; w++) {
-            cu_chunk_lens.push_back(static_cast<int32_t>(window_aftercnn));
-        }
-        const size_t remainder = cnn_len % window_aftercnn;
-        if (remainder != 0) {
-            cu_chunk_lens.push_back(static_cast<int32_t>(remainder));
-        }
+    std::vector<int32_t> cu_chunk_lens = {0};
+    for (size_t w = 0; w < total_aftercnn / window_aftercnn; w++) {
+        cu_chunk_lens.push_back(static_cast<int32_t>(window_aftercnn));
+    }
+    const size_t remainder = total_aftercnn % window_aftercnn;
+    if (remainder != 0) {
+        cu_chunk_lens.push_back(static_cast<int32_t>(remainder));
     }
 
     ov::Tensor cu_seqlens(ov::element::i32, {cu_chunk_lens.size()});
