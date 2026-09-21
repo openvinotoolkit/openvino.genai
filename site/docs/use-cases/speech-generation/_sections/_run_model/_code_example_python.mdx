@@ -10,6 +10,6 @@ pipeline = openvino_genai.Text2SpeechPipeline(model_path, "${props.device || 'CP
 result = pipeline.generate("Hello OpenVINO GenAI")
 # speech tensor contains the waveform of the spoken phrase
 speech = result.speeches[0]
-sf.write("output_audio.wav", speech.data[0], samplerate=16000)
+sf.write("output_audio.wav", speech.data[0], samplerate=result.output_sample_rate)
 `}
 </CodeBlock>
