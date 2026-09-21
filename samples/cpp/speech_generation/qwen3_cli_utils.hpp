@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <utility>
 
 #include "openvino/core/except.hpp"
 
