@@ -831,6 +831,9 @@ def test_chat_scenario_callback_cancel(
     llm_model: OVConvertedModelSchema,
     ov_pipe: ov_genai.LLMPipeline,
 ) -> None:
+    if llm_model.model_id == QWEN3_NEXT_MODEL_ID:
+        pytest.xfail("qwen3-next model output doesn't match for GenAI vs transformers. CVS-195218")
+
     generation_config_kwargs = {"max_new_tokens": 20}
 
     chat_history_hf = []
