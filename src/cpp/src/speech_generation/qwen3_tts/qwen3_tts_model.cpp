@@ -743,7 +743,7 @@ void Qwen3TTSImpl::reshape_predictor_to_static(const std::shared_ptr<ov::Model>&
     OPENVINO_ASSERT(is_dynamic, "Code predictor model is expected to be dynamic");
 
     // Fixed dims the dynamic export still pins.
-    size_t n_kv = 0, head_dim = 0, num_heads = 0, past_len_hint = 0;
+    size_t n_kv = 0, head_dim = 0, past_len_hint = 0;
     for (const auto& in : model->inputs()) {
         const auto name = in.get_any_name();
         if (name == "attention_mask") {
@@ -767,15 +767,15 @@ void Qwen3TTSImpl::reshape_predictor_to_static(const std::shared_ptr<ov::Model>&
     for (const auto& out : model->outputs()) {
         if (out.get_any_name() == "logits") {
             const auto& ps = out.get_partial_shape();
-            if (ps.rank().is_static() && ps.size() == 4 && ps[0].is_static()) {
-                // Legacy static all-heads layout: [num_heads, ?, ?, vocab].
-                num_heads = static_cast<size_t>(ps[0].get_length());
+            if (ps.rank().is_static()) {
+                OPENVINO_ASSERT(ps.size() != 4,
+                                "Unsupported static code predictor logits layout [num_heads, ..., vocab] on NPU path. "
+                                "Export logits as rank-3 [B, T, V] to use static predictor mode");
             }
             break;
         }
     }
-    const size_t past_len_slots = (num_heads > 0) ? num_heads
-                                : (past_len_hint > 0) ? past_len_hint
+    const size_t past_len_slots = (past_len_hint > 0) ? past_len_hint
                                                       : m_ids.num_code_groups;
     OPENVINO_ASSERT(n_kv > 0 && head_dim > 0 && past_len_slots > 0,
                     "Could not derive static code predictor dims (n_kv=",
@@ -831,7 +831,8 @@ void Qwen3TTSImpl::init_static_predictor_meta(const std::shared_ptr<ov::Model>& 
         if (out.get_any_name() == "logits") {
             const auto& s = out.get_shape();
             OPENVINO_ASSERT(s.size() == 3,
-                            "Unexpected static code predictor logits rank: ", s.size());
+                            "Unexpected static code predictor logits rank: ", s.size(),
+                            ". Expected rank-3 [B, T, V]");
             m_pred_num_heads = 1;  // [1,1,V]
             m_pred_vocab = static_cast<size_t>(s[2]);
         }
@@ -1019,6 +1020,7 @@ int64_t Qwen3TTSImpl::sample_token_from_logits(const ov::Tensor& logits,
                                              std::mt19937& rng) const {
     const auto shape = logits.get_shape();
     OPENVINO_ASSERT(shape.size() == 3, "Expected logits shape [B, T, V]");
+    OPENVINO_ASSERT(logits.get_element_type() == ov::element::f32, "Qwen3 logits must be f32 for sampling");
     const size_t vocab = shape[2];
     const float* ptr = logits.data<const float>();
     const size_t offset = (shape[1] - 1) * vocab;
