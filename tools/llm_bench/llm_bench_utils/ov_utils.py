@@ -381,8 +381,6 @@ def create_image_gen_model(model_path, device, memory_data_collector, **kwargs):
         model_class = image_gen_use_case.TASK["inpainting"]["ov_cls"]
     elif is_image_to_image_model(kwargs, image_gen_use_case):
         model_class = image_gen_use_case.TASK["img2img"]["ov_cls"]
-    if model_class is None and not kwargs.get("genai", True):
-        raise RuntimeError("Qwen-Image-2.1 requires an Optimum Intel version that provides OVQwenImage21Pipeline.")
 
     model_path = Path(model_path)
     ov_config = kwargs['config']

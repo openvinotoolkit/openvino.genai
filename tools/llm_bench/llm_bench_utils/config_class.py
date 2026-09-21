@@ -38,10 +38,6 @@ try:
 except ImportError:
     OVLTXImageToVideoPipeline = None
 
-try:
-    from optimum.intel.openvino import OVQwenImage21Pipeline
-except ImportError:
-    OVQwenImage21Pipeline = None
 from llm_bench_utils.ov_model_classes import OVMPTModel, OVLDMSuperResolutionPipeline, OVChatGLMModel
 from dataclasses import dataclass, field
 
@@ -188,7 +184,7 @@ USE_CASES = {
         UseCaseImageGen(
             ["stable-diffusion-", "ssd-", "tiny-sd", "small-sd", "lcm-", "sdxl", "dreamlike", "flux", "z-image"]
         ),
-        UseCaseImageGen(["qwenimage21"], ov_cls=OVQwenImage21Pipeline, tokenizer_cls=AutoProcessor),
+        UseCaseImageGen(["qwenimage21"], tokenizer_cls=AutoProcessor),
     ],
     "video_gen": [UseCaseVideoGen(["ltx"])],
     "visual_text_gen": [
