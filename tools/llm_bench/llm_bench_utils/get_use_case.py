@@ -155,7 +155,7 @@ def get_use_case(model_path: Path, task: Optional[str] = None):
         if (pipe_type := diffusers_config.get("_class_name")) in DIFFUSERS_PIPELINE_TYPES:
             model_type = pipe_type.replace("Pipeline", "")
             use_case, _ = get_use_case_by_model_id(model_type, "image_gen")
-            return log_and_return(use_case or USE_CASES["image_gen"][0], model_type, cur_model_name)
+            return log_and_return(use_case, model_type, cur_model_name)
         if (pipe_type := diffusers_config.get("_class_name")) in ["LTXPipeline"]:
             model_type = pipe_type.replace("Pipeline", "")
             return log_and_return(USE_CASES["video_gen"][0], model_type, cur_model_name)

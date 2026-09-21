@@ -37,7 +37,6 @@ try:
     from optimum.intel.openvino import OVLTXImageToVideoPipeline
 except ImportError:
     OVLTXImageToVideoPipeline = None
-
 from llm_bench_utils.ov_model_classes import OVMPTModel, OVLDMSuperResolutionPipeline, OVChatGLMModel
 from dataclasses import dataclass, field
 

@@ -162,6 +162,13 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
             llm_bench_utils.output_file.output_image_input_text(in_text, args, image_id, bs_idx, proc_id)
     callback.reset()
 
+    if args["use_case"].tokenizer_cls is AutoProcessor:
+        if input_args.pop("strength", None) is not None:
+            log.warning("Qwen-Image-2.1 does not support strength; ignoring it.")
+        guidance_scale = input_args.get("guidance_scale", pipe.get_generation_config().guidance_scale)
+        if guidance_scale > 1:
+            input_args["negative_prompt"] = ""
+
     if (args['empty_lora'] and (pipe.get_generation_config().adapters is not None)):
         import openvino_genai
         input_args['adapters'] = openvino_genai.AdapterConfig()
