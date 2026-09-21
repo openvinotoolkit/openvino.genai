@@ -652,7 +652,7 @@ ov::Tensor Qwen3TTSImpl::extract_qwen3_ref_code_from_audio(const ov::Tensor& ref
     OPENVINO_ASSERT(d1 == m_ids.num_code_groups,
                     "Unexpected ref_code 3D shape ",
                     shape_to_string(shape),
-                    ", expected [1,T,G] or [1,G,T] with G=",
+                    ", expected [1,G,T] with G=",
                     m_ids.num_code_groups);
 
     ov::Tensor ref_code(ov::element::i64, ov::Shape{1, d2, d1});
