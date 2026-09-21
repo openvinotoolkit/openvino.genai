@@ -177,16 +177,24 @@ jobs:
                 -S ${{ env.SRC_DIR }} \
                 -B ${{ env.BUILD_DIR }}
           /usr/bin/cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
-          for py_version in "3.10" "3.11" "3.12" "3.13"
+          for py_version in "3.10" "3.11" "3.12" "3.13" "3.14" "3.14t"
           do
             rm -rf ${{ env.BUILD_DIR }}/CMakeCache.txt
 
-            python_exec_path=$(python$py_version -c "import sys; print(sys.executable)")
+            # Free threaded interpreters are not exposed as python3.Xt in the manylinux image
+            gil_option=""
+            if [[ $py_version == "3.14t" ]]; then
+              python_exec_path=/opt/python/cp314-cp314t/bin/python3
+              gil_option="-DENABLE_GIL_PYTHON_API=OFF"
+            else
+              python_exec_path=$(python$py_version -c "import sys; print(sys.executable)")
+            fi
 
             echo "Configuring cmake for python$py_version"
             /usr/bin/cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
                   -DENABLE_PYTHON=ON \
                   -DPython3_EXECUTABLE=${python_exec_path} \
+                  $gil_option \
                   -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
                   -S ${{ env.SRC_DIR }} \
                   -B ${{ env.BUILD_DIR }}
@@ -300,7 +308,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10', '3.11', '3.12', '3.13']
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14', '3.14t']
     defaults:
       run:
         shell: bash
@@ -350,7 +358,12 @@ jobs:
 
       - name: Build GenAI Wheel
         run: |
-          python_exec_path=$(python${{ matrix.python-version }} -c "import sys; print(sys.executable)")
+          # Free threaded interpreters are not exposed as python3.Xt in the manylinux image
+          if [[ "${{ matrix.python-version }}" == "3.14t" ]]; then
+            python_exec_path=/opt/python/cp314-cp314t/bin/python3
+          else
+            python_exec_path=$(python${{ matrix.python-version }} -c "import sys; print(sys.executable)")
+          fi
           # Put the interpreter's console-scripts dir on PATH so CMake's find_program locates pybind11-stubgen with --no-build-isolation.
           export PATH="$(dirname "$python_exec_path"):$PATH"
 
@@ -358,8 +371,14 @@ jobs:
           mapfile -t build_reqs < <(python3.11 -c "import sys, tomllib; print('\n'.join(tomllib.load(open(sys.argv[1], 'rb'))['build-system']['requires']))" "${{ env.SRC_DIR }}/pyproject.toml")
           $python_exec_path -m pip install "${build_reqs[@]}" ${{ needs.openvino_download.outputs.ov_wheel_source }}
 
+          cmake_args="-DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_C_COMPILER_LAUNCHER=sccache"
+          # Free threaded interpreters ship without the GIL, so the bindings must be built accordingly
+          if [[ "${{ matrix.python-version }}" == *t ]]; then
+            cmake_args="$cmake_args -DENABLE_GIL_PYTHON_API=OFF"
+          fi
+
           $python_exec_path -m pip wheel -v --no-deps --no-build-isolation --wheel-dir ${{ env.WHEELS_DIR }} \
-              --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_C_COMPILER_LAUNCHER=sccache" \
+              --config-settings=cmake.args="$cmake_args" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}
         working-directory: ${{ env.OV_INSTALL_DIR }}

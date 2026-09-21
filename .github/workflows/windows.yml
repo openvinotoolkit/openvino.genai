@@ -147,6 +147,18 @@ jobs:
         with:
           python-version: '3.13'
 
+      - name: Setup Python 3.14
+        if: ${{ matrix.build-type != 'Debug' }}
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+
+      - name: Setup Python 3.14t
+        if: ${{ matrix.build-type != 'Debug' }}
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14t'
+
       - name: Download OpenVINO package
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -204,7 +216,7 @@ jobs:
         run: |
           ${{ env.OV_INSTALL_DIR }}/setupvars.ps1
           if ( "${{ matrix.build-type }}" -ne "Debug" ) {
-            $pyVersions = '3.10', '3.11', '3.12', '3.13'
+            $pyVersions = '3.10', '3.11', '3.12', '3.13', '3.14', '3.14t'
           } else {
             $pyVersions = '3.11'
           }
@@ -214,7 +226,10 @@ jobs:
             $pythonCommand = "py -$pyVersion -c `"import sys; print(f'{sys.executable}')`""
             $pythonExecutablePath = & cmd /c $pythonCommand
 
-            cmake -DPython3_EXECUTABLE="$pythonExecutablePath" -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }} &&
+            # Free threaded interpreters ship without the GIL, so the bindings must be built accordingly
+            $gilOption = if ($pyVersion.EndsWith('t')) { 'OFF' } else { 'ON' }
+
+            cmake -DPython3_EXECUTABLE="$pythonExecutablePath" -DENABLE_GIL_PYTHON_API=$gilOption -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }} &&
             cmake --build ${{ env.BUILD_DIR }} --parallel $ENV:NUMBER_OF_PROCESSORS --config ${{ matrix.build-type }} --verbose &&
             cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build-type }} --prefix=${{ env.GENAI_INSTALL_DIR }}
             if ($LASTEXITCODE -ne 0) {
@@ -390,7 +405,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10', '3.11', '3.12', '3.13']
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14', '3.14t']
     defaults:
       run:
         shell: pwsh
@@ -480,9 +495,13 @@ jobs:
           $buildReqs = @(& $pythonExecutablePath -c "import sys, tomli; print('\n'.join(tomli.load(open(sys.argv[1], 'rb'))['build-system']['requires']))" "${{ env.SRC_DIR }}/pyproject.toml")
           & $pythonExecutablePath -m pip install @buildReqs ${{ needs.openvino_download.outputs.ov_wheel_source }}
 
+          # Free threaded interpreters ship without the GIL, so the bindings must be built accordingly
+          $cmakeArgs = if ('${{ matrix.python-version }}'.EndsWith('t')) { '-DENABLE_GIL_PYTHON_API=OFF' } else { '-DENABLE_GIL_PYTHON_API=ON' }
+
           & $pythonExecutablePath -m pip wheel -v --no-deps --no-build-isolation --wheel-dir ${{ env.WHEELS_DIR }} `
             --config-settings=override=cmake.generator='Ninja' `
             --config-settings=override=cmake.build_path='${{ env.BUILD_DIR }}/genai' `
+            --config-settings=cmake.args="$cmakeArgs" `
             --config-settings='override=wheel.build_tag="${{ github.run_number }}"' `
             ${{ needs.openvino_download.outputs.ov_wheel_source }} `
             ${{ env.SRC_DIR }}

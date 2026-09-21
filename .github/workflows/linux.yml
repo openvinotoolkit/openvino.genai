@@ -187,7 +187,7 @@ jobs:
           # Need to remove the default Python 3.11 in /venv from the Path so that CMake uses the correct one from newly created venv$py_version
           export PATH=${PATH/:\/venv\/bin/}
 
-          for py_version in "3.10" "3.11" "3.12" "3.13"
+          for py_version in "3.10" "3.11" "3.12" "3.13" "3.14" "3.14t"
           do
             rm -rf ${{ env.BUILD_DIR }}/CMakeCache.txt
 
@@ -196,9 +196,16 @@ jobs:
             source venv$py_version/bin/activate
             echo "PATH: $PATH"
 
+            # Free threaded interpreters ship without the GIL, so the bindings must be built accordingly.
+            gil_option=""
+            if [[ $py_version == *t ]]; then
+              gil_option="-DENABLE_GIL_PYTHON_API=OFF"
+            fi
+
             echo "Configuring cmake for python$py_version"
             cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
                   -DENABLE_PYTHON=ON \
+                  $gil_option \
                   -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
                   -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
                   -DCMAKE_C_COMPILER_LAUNCHER=sccache \
@@ -314,7 +321,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10', '3.11', '3.12', '3.13']
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14', '3.14t']
     defaults:
       run:
         shell: bash
@@ -369,9 +376,15 @@ jobs:
           mapfile -t build_reqs < <(python3.11 -c "import sys, tomllib; print('\n'.join(tomllib.load(open(sys.argv[1], 'rb'))['build-system']['requires']))" "${{ env.SRC_DIR }}/pyproject.toml")
           $python_exec_path -m pip install "${build_reqs[@]}" ${{ needs.openvino_download.outputs.ov_wheel_source }}
 
+          cmake_args="-DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_C_COMPILER_LAUNCHER=sccache"
+          # Free threaded interpreters ship without the GIL, so the bindings must be built accordingly
+          if [[ "${{ matrix.python-version }}" == *t ]]; then
+            cmake_args="$cmake_args -DENABLE_GIL_PYTHON_API=OFF"
+          fi
+
           $python_exec_path -m pip wheel -v --no-deps --no-build-isolation --wheel-dir ${{ env.WHEELS_DIR }} \
               --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
-              --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_C_COMPILER_LAUNCHER=sccache" \
+              --config-settings=cmake.args="$cmake_args" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}
         working-directory: ${{ env.OV_INSTALL_DIR }}
