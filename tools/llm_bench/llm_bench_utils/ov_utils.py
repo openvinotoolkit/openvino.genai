@@ -376,15 +376,11 @@ def create_image_gen_model(model_path, device, memory_data_collector, **kwargs):
         model_index_data = json.load(f)
 
     image_gen_use_case = kwargs['use_case']
-    model_class = image_gen_use_case.TASK["text2img"]["ov_cls"]
+    model_class = image_gen_use_case.ov_cls
     if is_inpainting_model(kwargs, image_gen_use_case, model_index_data):
         model_class = image_gen_use_case.TASK["inpainting"]["ov_cls"]
     elif is_image_to_image_model(kwargs, image_gen_use_case):
         model_class = image_gen_use_case.TASK["img2img"]["ov_cls"]
-
-    # Qwen-Image-2.1 uses OVQwenImage21Pipeline instead of generic one (eg. OVPipelineForImage2Image).
-    if image_gen_use_case.ov_cls != image_gen_use_case.TASK["text2img"]["ov_cls"]:
-        model_class = image_gen_use_case.ov_cls
     if model_class is None and not kwargs.get("genai", True):
         raise RuntimeError("Qwen-Image-2.1 requires an Optimum Intel version that provides OVQwenImage21Pipeline.")
 
