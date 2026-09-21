@@ -306,4 +306,3 @@ TEST(GatherBeforeMatmul, InferenceGatheredTokensMatchOriginal) {
         }
     }
 }
-
