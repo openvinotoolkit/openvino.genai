@@ -4714,7 +4714,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrowed_steady_state_ret
 
         const size_t advance = advances[step];
         const int32_t chosen = pd.block_indices[advance];
-        scheduler.promote_linear_attention_checkpoint(seq_id, advance);
+        orchestrator->promote_linear_attention_temporary_block(seq_id, advance);
 
         EXPECT_EQ(la_block_manager.get_num_blocks_in_use(), committed_only_in_use)
             << "borrowed rows leaked at step " << step;
