@@ -1835,9 +1835,11 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
             m_talker_text_embedding,
             std::vector<int64_t>(input_ids + std::min<size_t>(3, input_len), input_ids + input_len));
 
-        // Remove trailing control tokens in the same spirit as helper slicing [:, 3:-5].
+        // Match upstream qwen_tts/core/models/modeling_qwen3_tts.py, which uses
+        // text span slicing input_id[:, 3:-5] for this target turn. For short prompts,
+        // that slice is empty, so keep trimmed_len at zero instead of preserving control tokens.
         size_t text_tokens_len = text_embed_full.get_shape()[1];
-        size_t trimmed_len = text_tokens_len > 5 ? text_tokens_len - 5 : text_tokens_len;
+        size_t trimmed_len = text_tokens_len > 5 ? text_tokens_len - 5 : 0;
         ov::Tensor text_embed_trimmed = (trimmed_len > 0)
             ? ov::Tensor(text_embed_full, ov::Coordinate{0, 0, 0}, ov::Coordinate{1, trimmed_len, hidden})
             : ov::Tensor(ov::element::f32, ov::Shape{1, 0, hidden});
