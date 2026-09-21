@@ -97,7 +97,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
             log.warning("Qwen-Image-2.1 does not support strength; ignoring it.")
         if "guidance_scale" in input_args:
             input_args["true_cfg_scale"] = input_args.pop("guidance_scale")
-            input_args["negative_prompt"] = ""
+            input_args["negative_prompt"] = [""] * args["batch_size"]
     else:
         tokenizer = pipe.tokenizer
     input_data = tokenizer(input_text, return_tensors="pt")
