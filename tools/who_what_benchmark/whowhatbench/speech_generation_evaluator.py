@@ -772,6 +772,17 @@ class Qwen3BaseWrapper:
         if not selected_ref_audio:
             raise ValueError("Qwen3 Base requires --speech-ref-audio (or speech_ref_audio column in prompt data).")
 
+        audio_data, sample_rate = sf.read(selected_ref_audio, dtype="float32", always_2d=False)
+        if sample_rate != 24000:
+            raise ValueError(
+                f"Qwen3 Base strict check failed: reference audio sample rate must be 24000 Hz, got {sample_rate} Hz "
+                f"for '{selected_ref_audio}'."
+            )
+        ref_audio_waveform = np.asarray(audio_data, dtype=np.float32)
+        if ref_audio_waveform.ndim > 1:
+            ref_audio_waveform = np.mean(ref_audio_waveform, axis=-1, dtype=np.float32)
+        ref_audio_tuple = (ref_audio_waveform.reshape(-1), int(sample_rate))
+
         # Keep WWB speech comparisons deterministic for Qwen3 unless explicitly overridden.
         kwargs.setdefault("do_sample", False)
         kwargs.setdefault("subtalker_dosample", False)
@@ -790,7 +801,7 @@ class Qwen3BaseWrapper:
                 text=prompt,
                 language=selected_language or "Auto",
                 instruct=selected_instruct,
-                ref_audio=selected_ref_audio,
+                ref_audio=ref_audio_tuple,
                 ref_text=selected_ref_text if selected_ref_text else None,
                 **kwargs,
             )
@@ -800,7 +811,7 @@ class Qwen3BaseWrapper:
             preprocess_kwargs = {
                 "text": [prompt],
                 "language": [selected_language or "English"],
-                "ref_audio": selected_ref_audio,
+                "ref_audio": ref_audio_tuple,
             }
             if selected_ref_text:
                 preprocess_kwargs["ref_text"] = selected_ref_text
@@ -829,18 +840,9 @@ class Qwen3BaseWrapper:
         if selected_ref_text:
             generation_properties["ref_text"] = selected_ref_text
 
-        audio_data, _sr = sf.read(selected_ref_audio, dtype="float32", always_2d=False)
-        if _sr != 24000:
-            raise ValueError(
-                f"Qwen3 Base strict check failed: reference audio sample rate must be 24000 Hz, got {_sr} Hz "
-                f"for '{selected_ref_audio}'."
-            )
-        audio_array = np.asarray(audio_data, dtype=np.float32)
-        if audio_array.ndim > 1:
-            audio_array = np.mean(audio_array, axis=-1, dtype=np.float32)
         import openvino as ov
 
-        generation_properties["ref_audio"] = ov.Tensor(audio_array.reshape(-1))
+        generation_properties["ref_audio"] = ov.Tensor(ref_audio_waveform.reshape(-1))
 
         generation_properties.update(kwargs)
 
