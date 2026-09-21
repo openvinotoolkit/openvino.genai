@@ -91,7 +91,7 @@ def _prepare_qwen3_tts_ov_model(
     try:
         manager.execute(convert_to_temp)
     except FileNotFoundError:
-        pytest.skip("optimum-cli is not available in PATH")
+        pytest.fail("optimum-cli is not available in PATH")
     except subprocess.CalledProcessError as error:
         pytest.fail(f"Failed to export {model_id}: returncode={error.returncode}, stderr={error.stderr}")
 
@@ -172,7 +172,7 @@ def optimum_qwen3_tts_base_model(tiny_qwen3_tts_base_ov_path: Path):
             )
         )
     except Exception as error:
-        pytest.skip(f"Failed to load optimum Qwen3-TTS model: {error}")
+        pytest.fail(f"Failed to load optimum Qwen3-TTS model: {error}")
 
 
 @pytest.fixture
@@ -193,7 +193,7 @@ def optimum_qwen3_tts_customvoice_model(tiny_qwen3_tts_customvoice_ov_path: Path
             )
         )
     except Exception as error:
-        pytest.skip(f"Failed to load optimum Qwen3-TTS CustomVoice model: {error}")
+        pytest.fail(f"Failed to load optimum Qwen3-TTS CustomVoice model: {error}")
 
 
 @pytest.fixture
@@ -214,7 +214,7 @@ def optimum_qwen3_tts_voicedesign_model(tiny_qwen3_tts_voicedesign_ov_path: Path
             )
         )
     except Exception as error:
-        pytest.skip(f"Failed to load optimum Qwen3-TTS VoiceDesign model: {error}")
+        pytest.fail(f"Failed to load optimum Qwen3-TTS VoiceDesign model: {error}")
 
 
 @pytest.fixture
