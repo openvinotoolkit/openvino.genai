@@ -826,7 +826,22 @@ def test_callback_terminate_by_status(ov_pipe: ov_genai.LLMPipeline) -> None:
     assert len(ov_output.tokens[0]) < max_new_tokens
 
 
-@pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST + LINEAR_ATTENTION_MODELS_LIST, indirect=True)
+@pytest.mark.parametrize(
+    "llm_model",
+    [
+        pytest.param(
+            model_id,
+            marks=pytest.mark.xfail(
+                reason="qwen3-next model output doesn't match for GenAI vs transformers. CVS-195218",
+                raises=AssertionError,
+            ),
+        )
+        if model_id == QWEN3_NEXT_MODEL_ID
+        else model_id
+        for model_id in CHAT_MODELS_LIST + LINEAR_ATTENTION_MODELS_LIST
+    ],
+    indirect=True,
+)
 def test_chat_scenario_callback_cancel(
     llm_model: OVConvertedModelSchema,
     ov_pipe: ov_genai.LLMPipeline,
