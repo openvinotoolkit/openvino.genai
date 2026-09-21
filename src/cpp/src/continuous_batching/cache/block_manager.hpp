@@ -2593,19 +2593,6 @@ public:
         if (!m_enable_prefix_caching || processed_before / m_block_size == processed_after / m_block_size) {
             return;
         }
-        publish_completed_blocks(sequence, content_length - m_block_size, content_length);
-    }
-
-    void publish_completed_blocks(const Sequence::Ptr& sequence, size_t processed_before, size_t processed_after) {
-        OPENVINO_ASSERT(processed_after >= processed_before,
-                        "Cache block publication cannot precede the scheduled forward pass");
-        processed_after = std::min(processed_after, sequence->get_prefix_publication_limit());
-        if (processed_after <= processed_before) {
-            return;
-        }
-        if (!m_enable_prefix_caching || processed_before / m_block_size == processed_after / m_block_size) {
-            return;
-        }
 
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         const uint64_t seq_id = sequence->get_id();
