@@ -106,7 +106,6 @@ private:
                                                   const std::vector<bool>& suppress_tokens,
                                                   const ov::Tensor& ref_codec_ids = ov::Tensor{});
 
-    ov::Tensor make_attention_mask(size_t length);
     ov::Tensor make_causal_attention_mask_4d(size_t length);
     ov::Tensor make_decode_attention_mask_4d(size_t kv_len);
     ov::Tensor make_position_ids_prefill(size_t length);

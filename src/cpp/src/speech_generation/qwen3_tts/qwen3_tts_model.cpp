@@ -1400,12 +1400,6 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
     return result;
 }
 
-ov::Tensor Qwen3TTSImpl::make_attention_mask(size_t length) {
-    ov::Tensor mask(ov::element::i64, ov::Shape{1, length});
-    std::fill_n(mask.data<int64_t>(), length, static_cast<int64_t>(1));
-    return mask;
-}
-
 ov::Tensor Qwen3TTSImpl::make_causal_attention_mask_4d(size_t length) {
     ov::Tensor mask(ov::element::f32, ov::Shape{1, 1, length, length});
     float* data = mask.data<float>();
