@@ -550,6 +550,11 @@ def check_args(args):
 def load_prompts(args):
     if args.dataset is None:
         return None
+    # Support a local CSV dataset (e.g. for visual-text with local images).
+    # The CSV may contain "prompts", "images" and "videos" columns. Image/video
+    # paths are resolved deterministically relative to the CSV location.
+    if isinstance(args.dataset, str) and os.path.isfile(args.dataset) and args.dataset.lower().endswith(".csv"):
+        return load_prompts_from_csv(args)
     split = "validation"
     if args.split is not None:
         split = args.split
@@ -565,6 +570,52 @@ def load_prompts(args):
     res = data[args.dataset_field]
     res = {"prompts": list(res)}
     return res
+
+
+def load_prompts_from_csv(args):
+    df = pd.read_csv(args.dataset, keep_default_na=False)
+    base_dir = os.path.dirname(os.path.abspath(args.dataset))
+
+    if "prompts" in df.columns:
+        prompts = list(df["prompts"])
+    elif args.dataset_field in df.columns:
+        prompts = list(df[args.dataset_field])
+    else:
+        raise ValueError(
+            f"CSV dataset '{args.dataset}' must contain a 'prompts' column "
+            f"(or a '{args.dataset_field}' column)."
+        )
+
+    result = {"prompts": prompts}
+
+    def _is_empty(value):
+        if value is None:
+            return True
+        value = str(value).strip()
+        return value == "" or value.lower() == "none"
+
+    def _resolve_path(value):
+        value = str(value).strip()
+        return value if os.path.isabs(value) else os.path.join(base_dir, value)
+
+    if "images" in df.columns:
+        images = []
+        for value in df["images"]:
+            if _is_empty(value):
+                images.append(None)
+            else:
+                images.append(Image.open(_resolve_path(value)).convert("RGB"))
+        result["images"] = images
+    else:
+        result["images"] = [None] * len(prompts)
+
+    if "videos" in df.columns:
+        # Keep resolved video paths; downstream loaders handle frame extraction.
+        result["videos"] = [None if _is_empty(v) else _resolve_path(v) for v in df["videos"]]
+    else:
+        result["videos"] = [None] * len(prompts)
+
+    return result
 
 
 def load_tokenizer(args):
