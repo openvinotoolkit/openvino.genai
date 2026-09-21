@@ -490,26 +490,6 @@ public:
         return m_config;
     }
 
-    void promote_linear_attention_checkpoint(uint64_t seq_id, size_t checkpoint_slot) {
-        if (!m_cache_orchestrator->has_linear_attention_cache()) {
-            return;
-        }
-        m_cache_orchestrator->promote_linear_attention_temporary_block(seq_id, checkpoint_slot);
-    }
-
-    void publish_completed_linear_attention_block(const Sequence::Ptr& sequence, size_t content_length) {
-        m_cache_orchestrator->publish_completed_linear_attention_block(sequence, content_length);
-    }
-
-    void publish_completed_linear_attention_blocks(const Sequence::Ptr& sequence,
-                                                    size_t processed_before,
-                                                    size_t processed_after) {
-        OPENVINO_ASSERT(processed_after >= processed_before,
-                        "Linear-attention block publication cannot precede the scheduled forward pass");
-        m_cache_orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE)
-            .publish_completed_blocks(sequence, processed_before, processed_after);
-    }
-
     void publish_completed_blocks(const Sequence::Ptr& sequence,
                                   size_t processed_before,
                                   size_t processed_after) {

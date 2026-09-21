@@ -1857,14 +1857,14 @@ TEST(TestScheduler, hybrid_prefix_caching_republishes_cow_only_after_accepted_bo
     const CacheBlock::Ptr cow_row =
         orchestrator->get_linear_attention_block_table(consumer_seq_id).back();
     ASSERT_FALSE(cow_row->has_published_hash());
-    scheduler.publish_completed_linear_attention_block(consumer_sequence,
-                                                        consumer_group->get_num_processed_tokens());
+    orchestrator->publish_completed_linear_attention_block(consumer_sequence,
+                                                            consumer_group->get_num_processed_tokens());
     EXPECT_FALSE(cow_row->has_published_hash());
 
     consumer_group->finish_iteration();
     ASSERT_EQ(consumer_group->get_num_processed_tokens(), completed_tokens.size());
-    scheduler.publish_completed_linear_attention_block(consumer_sequence,
-                                                        consumer_group->get_num_processed_tokens());
+    orchestrator->publish_completed_linear_attention_block(consumer_sequence,
+                                                            consumer_group->get_num_processed_tokens());
     EXPECT_TRUE(cow_row->has_published_hash());
 
     scheduler.free_sequence(producer_seq_id);
@@ -4653,7 +4653,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrowed_steady_state_ret
 
         const size_t advance = advances[step];
         const int32_t chosen = pd.block_indices[advance];
-        scheduler.promote_linear_attention_checkpoint(seq_id, advance);
+        orchestrator->promote_linear_attention_temporary_block(seq_id, advance);
 
         EXPECT_EQ(la_block_manager.get_num_blocks_in_use(), committed_only_in_use)
             << "borrowed rows leaked at step " << step;
