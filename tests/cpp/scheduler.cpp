@@ -1857,14 +1857,16 @@ TEST(TestScheduler, hybrid_prefix_caching_republishes_cow_only_after_accepted_bo
     const CacheBlock::Ptr cow_row =
         orchestrator->get_linear_attention_block_table(consumer_seq_id).back();
     ASSERT_FALSE(cow_row->has_published_hash());
-    orchestrator->publish_completed_linear_attention_block(consumer_sequence,
-                                                            consumer_group->get_num_processed_tokens());
+    orchestrator->publish_completed_blocks(consumer_sequence,
+                                           paging_data.num_processed_tokens_before,
+                                           consumer_group->get_num_processed_tokens());
     EXPECT_FALSE(cow_row->has_published_hash());
 
     consumer_group->finish_iteration();
     ASSERT_EQ(consumer_group->get_num_processed_tokens(), completed_tokens.size());
-    orchestrator->publish_completed_linear_attention_block(consumer_sequence,
-                                                            consumer_group->get_num_processed_tokens());
+    orchestrator->publish_completed_blocks(consumer_sequence,
+                                           paging_data.num_processed_tokens_before,
+                                           consumer_group->get_num_processed_tokens());
     EXPECT_TRUE(cow_row->has_published_hash());
 
     scheduler.free_sequence(producer_seq_id);

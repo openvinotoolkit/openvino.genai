@@ -744,7 +744,7 @@ TEST(TestBlockManager, PrefixCachingRollbackUnregistersInvalidatedBoundaryBefore
               1);
     block_manager.free_sequence(unpublished_restore_group->get_running_sequences().front()->get_id());
 
-    block_manager.publish_completed_block(sequence, 8);
+    block_manager.publish_completed_blocks(sequence, 7, 8);
     auto divergent_restore_group = create_sequence_group(std::vector<int64_t>{0, 1, 2, 3, 4, 5, 6, 40}, 53);
     ASSERT_TRUE(block_manager.restore_cached_blocks(divergent_restore_group));
     EXPECT_EQ(block_manager.get_block_table(divergent_restore_group->get_running_sequences().front()->get_id(), 0)
@@ -793,7 +793,7 @@ TEST(TestBlockManager, PrefixCachingRollbackPreservesIdentityBackedBySharedOwner
     ASSERT_EQ(copy_map.count(static_cast<size_t>(original_index)), 1);
     EXPECT_FALSE(block_manager.get_block_table(producer->get_id(), 0).back()->has_published_hash());
     producer_group->finish_iteration();
-    block_manager.publish_completed_block(producer, 8);
+    block_manager.publish_completed_blocks(producer, 7, 8);
 
     auto divergent_restore_group = create_sequence_group(std::vector<int64_t>{0, 1, 2, 3, 4, 5, 6, 40}, 57);
     ASSERT_TRUE(block_manager.restore_cached_blocks(divergent_restore_group));
@@ -1455,7 +1455,9 @@ TEST(TestBlockManager, PrefixCachingCompletedCopyOnWriteRowIsPublishedOnlyAtAcce
     ASSERT_NE(cow_index, shared_incomplete_index);
     EXPECT_FALSE(block_manager.get_block_table(first_id, 0).back()->has_published_hash());
     first_group->finish_iteration();
-    block_manager.publish_completed_block(first_sequence, first_group->get_num_processed_tokens());
+    block_manager.publish_completed_blocks(first_sequence,
+                                           source_tokens.size(),
+                                           first_group->get_num_processed_tokens());
     EXPECT_FALSE(block_manager.get_block_table(first_id, 0).back()->has_published_hash());
 
     auto partial_restore_group = create_sequence_group(completed_tokens, 43);
@@ -1467,7 +1469,9 @@ TEST(TestBlockManager, PrefixCachingCompletedCopyOnWriteRowIsPublishedOnlyAtAcce
     block_manager.append_slots(first_group);
     EXPECT_FALSE(block_manager.get_block_table(first_id, 0).back()->has_published_hash());
     first_group->finish_iteration();
-    block_manager.publish_completed_block(first_sequence, first_group->get_num_processed_tokens());
+    block_manager.publish_completed_blocks(first_sequence,
+                                           completed_tokens.size() - 1,
+                                           first_group->get_num_processed_tokens());
     EXPECT_TRUE(block_manager.get_block_table(first_id, 0).back()->has_published_hash());
 
     block_manager.free_sequence(first_id);
@@ -1550,7 +1554,9 @@ TEST(TestBlockManager, PrefixCachingCompletedCopyOnWriteKeepsExistingVerifiedIde
     first_group->finish_iteration();
     const int duplicate_index = block_manager.get_block_table(first_id, 0).back()->get_index();
     ASSERT_NE(duplicate_index, verified_index);
-    block_manager.publish_completed_block(first_sequence, first_group->get_num_processed_tokens());
+    block_manager.publish_completed_blocks(first_sequence,
+                                           source_tokens.size(),
+                                           first_group->get_num_processed_tokens());
     for (size_t layer_idx = 0; layer_idx < 2; ++layer_idx) {
         EXPECT_FALSE(block_manager.get_block_table(first_id, layer_idx).back()->has_published_hash());
     }
