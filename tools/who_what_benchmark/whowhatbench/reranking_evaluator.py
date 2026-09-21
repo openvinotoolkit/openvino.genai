@@ -188,9 +188,6 @@ class RerankingEvaluator(BaseEvaluator):
             if is_qwen3(model.config):
                 query, documents = self._apply_qwen3_template(data[0], data[1])
 
-            if self.batch_size is not None and self.batch_size <= 0:
-                raise ValueError("embeds_batch_size must be greater than zero")
-
             if self.batch_size is not None:
                 # Process documents in batches and restore local batch indices.
                 batch_size = self.batch_size

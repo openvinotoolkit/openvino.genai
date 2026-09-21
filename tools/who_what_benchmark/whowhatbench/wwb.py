@@ -354,7 +354,10 @@ def parse_args():
         default=None,
         help="Side to use for padding 'left' or 'right'. Applicable only for text embeddings")
     parser.add_argument(
-        "--embeds_batch_size", type=int, default=None, help="Batch size value for text embeddings and reranking"
+        "--embeds_batch_size",
+        type=positive_integer,
+        default=None,
+        help="Batch size value for text embeddings and reranking",
     )
     parser.add_argument(
         "--rag-config",
