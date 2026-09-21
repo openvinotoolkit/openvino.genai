@@ -524,6 +524,7 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
     if adapter_config:
         ov_config['adapters'] = adapter_config
 
+    model_class_name = model_index_data.get("_class_name", "")
     main_model_name = "unet" if "unet" in model_index_data else "transformer"
     callback = PerfCollector(main_model_name)
 
