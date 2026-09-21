@@ -1115,18 +1115,6 @@ def _get_qwen3_tts_model_type(model_id):
     return str(config.get("tts_model_type", "")).strip().lower() or None
 
 
-def _is_qwen3_custom_voice_model(model_id):
-    return _get_qwen3_tts_model_type(model_id) == "custom_voice"
-
-
-def _is_qwen3_voice_design_model(model_id):
-    return _get_qwen3_tts_model_type(model_id) == "voice_design"
-
-
-def _is_qwen3_base_model(model_id):
-    return _get_qwen3_tts_model_type(model_id) == "base"
-
-
 def _map_qwen3_device(device: str) -> str:
     normalized_device = (device or "CPU").strip().lower()
     if normalized_device == "gpu":
