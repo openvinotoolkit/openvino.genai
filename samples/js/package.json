@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
-    "node": ">=21.0.0"
+    "node": ">=22.0.0"
   },
   "scripts": {
     "test": "node tests/usage.test.js"

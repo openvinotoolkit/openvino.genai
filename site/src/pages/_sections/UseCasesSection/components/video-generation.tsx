@@ -14,7 +14,7 @@ export const VideoGeneration = () => (
       to produce high-quality clips for creative storytelling, marketing content, product demos, and rapid visual prototyping.
     </UseCaseCard.Description>
     <UseCaseCard.Features>
-      <li>Support for text-to-video pipeline</li>
+      <li>Support for text-to-video and image-to-video pipelines</li>
       <li>Control video generation by adjusting parameters (dimensions, iterations, etc.)</li>
       <li>Generate multiple videos per one request</li>
     </UseCaseCard.Features>

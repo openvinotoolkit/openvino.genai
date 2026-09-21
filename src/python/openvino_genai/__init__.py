@@ -108,7 +108,9 @@ from .py_openvino_genai import (
     CLIPTextModelWithProjection,
     Qwen3TextEncoder,
     Qwen2_5_VLForConditionalGeneration,
+    Qwen3VLForConditionalGeneration,
     QwenImageTransformer2DModel,
+    QwenImage21Transformer2DModel,
     T5EncoderModel,
     UNet2DConditionModel,
     Flux2Transformer2DModel,
@@ -133,6 +135,7 @@ from .py_openvino_genai import (
 from .py_openvino_genai import (
     LTXVideoTransformer3DModel,
     AutoencoderKLLTXVideo,
+    Image2VideoPipeline,
     Text2VideoPipeline,
     VideoGenerationConfig,
     VideoGenerationResult,

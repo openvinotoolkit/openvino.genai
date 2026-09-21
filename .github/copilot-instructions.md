@@ -50,6 +50,7 @@ Follow these rules when writing, modifying, or reviewing code in this repository
 22. Don't introduce try/catch blocks just to be safe. Only catch if an exception is expected.
 23. Avoid reporting the same algorithmic branch choice multiple times.
 24. Avoid ambiguous words like "some" or "capable".
+25. It's fine to call `tensor.data<T>()` without preceding assertion on `tensor.get_element_type()` because `data<>()` performs the necessary type check internally.
 
 ## Code Review Instructions for PRs
 
@@ -66,3 +67,4 @@ When performing a code review on a Pull Request, additionally follow this protoc
 9. Helper scripts shouldn't be committed.
 10. ABI stability isn't required.
 11. If a PR aims to improve accuracy or performance, the PR description must include corresponding metrics. Performance-oriented PRs require both accuracy and performance metrics.
+12. GitHub Actions CI validates only CPU and NPUW with CPU fallback. Reject new tests that require actual GPU hardware (or other non-CPU devices) because they would be dead code.

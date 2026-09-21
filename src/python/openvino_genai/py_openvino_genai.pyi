@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRGenerationConfig', 'ASRPartialResult', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'ASRStreamingConfig', 'ASRStreamingSession', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
+__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'Qwen3VLForConditionalGeneration', 'QwenImage21Transformer2DModel', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
 class ASRDecodedResultChunk:
     """
     
@@ -244,25 +244,6 @@ class ASRGenerationConfig(GenerationConfig):
     @translate_token_id.setter
     def translate_token_id(self, arg0: typing.SupportsInt) -> None:
         ...
-class ASRPartialResult:
-    """
-    
-        Partial transcription result emitted after each streaming decode pass.
-    
-        :param language: Detected language for the current stream.
-        :type language: str
-    
-        :param text: Current partial transcript.
-        :type text: str
-    """
-    committed_text: str
-    language: str
-    new_committed_text: str
-    partial_text: str
-    def __init__(self) -> None:
-        ...
-    def __repr__(self) -> str:
-        ...
 class ASRPerfMetrics(PerfMetrics):
     """
     
@@ -305,10 +286,6 @@ class ASRPipeline:
                     ASRPipeline class constructor.
                     models_path (os.PathLike): Path to the model file.
                     device (str): Device to run the model on (e.g., CPU, GPU).
-        """
-    def create_streaming_session(self, streaming_config: openvino_genai.py_openvino_genai.ASRStreamingConfig | None = None, generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None) -> ASRStreamingSession:
-        """
-        Create a streaming ASR session for incremental transcription.
         """
     def generate(self, audio_inputs: collections.abc.Sequence[typing.SupportsFloat], generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> ASRDecodedResults:
         """
@@ -460,84 +437,6 @@ class ASRRawPerfMetrics:
     @property
     def word_level_timestamps_processing_durations(self) -> list[float]:
         ...
-class ASRStreamingConfig:
-    """
-    
-        ASRStreamingConfig
-    
-        Streaming configuration used by ASRPipeline.create_streaming_session().
-    
-        :param chunk_size_sec: Audio duration to accumulate before triggering a decode pass.
-        :type chunk_size_sec: float
-    
-        :param warmup_chunks: Number of initial decode passes run without a prefix.
-        :type warmup_chunks: int
-    
-        :param context_rollback_tokens: Number of trailing tokens to rewind from the accumulated text when
-                                        reusing it as a prefix for the next decode pass.
-        :type context_rollback_tokens: int
-    
-        :param window_chunk_num: Maximum chunks of audio retained in the sliding window before older,
-                                 already-decoded audio is dropped from the front of the accumulated
-                                 buffer. 0 = unbounded (re-encode the entire session every pass).
-        :type window_chunk_num: int
-    
-        :param window_rollback_chunk_num: Chunks of already-decoded audio treated as still "unfixed"
-                                          (not yet safe to drop) once the sliding window is active.
-                                          Must be less than window_chunk_num. Ignored when
-                                          window_chunk_num == 0.
-        :type window_rollback_chunk_num: int
-    
-        :param unbounded_prefix: Experimental. When true, disables eviction of the
-                                 text-history prefix tied to the audio sliding window, so the decoder
-                                 prefix grows unbounded for the life of the session even though the
-                                 audio window itself still stays bounded. Ignored when window_chunk_num == 0.
-        :type unbounded_prefix: bool
-    """
-    unbounded_prefix: bool
-    def __init__(self) -> None:
-        ...
-    @property
-    def chunk_size_sec(self) -> float:
-        ...
-    @chunk_size_sec.setter
-    def chunk_size_sec(self, arg0: typing.SupportsFloat) -> None:
-        ...
-    @property
-    def context_rollback_tokens(self) -> int:
-        ...
-    @context_rollback_tokens.setter
-    def context_rollback_tokens(self, arg0: typing.SupportsInt) -> None:
-        ...
-    @property
-    def warmup_chunks(self) -> int:
-        ...
-    @warmup_chunks.setter
-    def warmup_chunks(self, arg0: typing.SupportsInt) -> None:
-        ...
-    @property
-    def window_chunk_num(self) -> int:
-        ...
-    @window_chunk_num.setter
-    def window_chunk_num(self, arg0: typing.SupportsInt) -> None:
-        ...
-    @property
-    def window_rollback_chunk_num(self) -> int:
-        ...
-    @window_rollback_chunk_num.setter
-    def window_rollback_chunk_num(self, arg0: typing.SupportsInt) -> None:
-        ...
-class ASRStreamingSession:
-    def __repr__(self) -> str:
-        ...
-    def finish(self) -> ASRPartialResult:
-        """
-        Flush the remaining buffered audio and return the final partial result. partial_text is always empty on the returned result.
-        """
-    def push_chunk(self, pcm16k: collections.abc.Sequence[typing.SupportsFloat]) -> openvino_genai.py_openvino_genai.ASRPartialResult | None:
-        """
-        Append audio samples to the streaming buffer. Returns a partial result if a decode pass was triggered, None otherwise.
-        """
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -943,6 +842,15 @@ class AutoencoderKLLTXVideo:
                         Decodes latent video to pixel space.
                         latent (ov.Tensor): Latent video tensor.
                         Returns: Decoded video tensor.
+        """
+    def encode(self, video: openvino._pyopenvino.Tensor, generator: Generator = None) -> openvino._pyopenvino.Tensor:
+        """
+                        Encodes a video tensor to latent space.
+                        video (ov.Tensor): Input video tensor [B, C, F, H, W].
+                        generator (Generator, optional): Random generator for sampling from the latent
+                            distribution. Required only when the encoder outputs latent parameters
+                            (mean + logvar); unused when it outputs a latent sample directly.
+                        Returns: Normalized latent tensor.
         """
     def get_config(self) -> AutoencoderKLLTXVideo.Config:
         ...
@@ -1472,6 +1380,7 @@ class ExtendedPerfMetrics:
         - Load time, ms
         - Number of generated tokens
         - Number of tokens in the input prompt
+        - Number of input tokens reused from the prefix cache
         - Time to initialize grammar compiler for each backend, ms
         - Time to compile grammar, ms
     
@@ -1486,6 +1395,9 @@ class ExtendedPerfMetrics:
     
         :param get_num_input_tokens: Returns the number of tokens in the input prompt.
         :type get_num_input_tokens: int
+    
+        :param get_num_prefix_cache_hit_tokens: Returns the number of input tokens reused from the prefix cache.
+        :type get_num_prefix_cache_hit_tokens: int
     
         :param get_ttft: Returns the mean and standard deviation of TTFT in milliseconds.
         :type get_ttft: MeanStdPair
@@ -1547,6 +1459,8 @@ class ExtendedPerfMetrics:
     def get_num_generated_tokens(self) -> int:
         ...
     def get_num_input_tokens(self) -> int:
+        ...
+    def get_num_prefix_cache_hit_tokens(self) -> int:
         ...
     def get_sampling_duration(self) -> MeanStdPair:
         ...
@@ -2263,6 +2177,31 @@ class Image2ImagePipeline:
     def set_generation_config(self, config: ImageGenerationConfig) -> None:
         ...
     def set_scheduler(self, scheduler: Scheduler) -> None:
+        ...
+class Image2VideoPipeline:
+    @typing.overload
+    def __init__(self, models_path: os.PathLike | str | bytes) -> None:
+        ...
+    @typing.overload
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+        ...
+    @typing.overload
+    def compile(self, device: str, **kwargs) -> None:
+        ...
+    @typing.overload
+    def compile(self, text_encode_device: str, denoise_device: str, vae_device: str, **kwargs) -> None:
+        ...
+    def decode(self, latent: openvino._pyopenvino.Tensor) -> VideoGenerationResult:
+        ...
+    def generate(self, image: openvino._pyopenvino.Tensor, prompt: str, **kwargs) -> VideoGenerationResult:
+        ...
+    def get_generation_config(self) -> VideoGenerationConfig:
+        ...
+    def get_performance_metrics(self) -> VideoGenerationPerfMetrics:
+        ...
+    def reshape(self, num_videos_per_prompt: typing.SupportsInt, num_frames: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, guidance_scale: typing.SupportsFloat) -> None:
+        ...
+    def set_generation_config(self, config: VideoGenerationConfig) -> None:
         ...
 class ImageGenerationConfig:
     """
@@ -3194,6 +3133,7 @@ class PerfMetrics:
         - Load time, ms
         - Number of generated tokens
         - Number of tokens in the input prompt
+        - Number of input tokens reused from the prefix cache
         - Time to initialize grammar compiler for each backend, ms
         - Time to compile grammar, ms
     
@@ -3208,6 +3148,9 @@ class PerfMetrics:
     
         :param get_num_input_tokens: Returns the number of tokens in the input prompt.
         :type get_num_input_tokens: int
+    
+        :param get_num_prefix_cache_hit_tokens: Returns the number of input tokens reused from the prefix cache.
+        :type get_num_prefix_cache_hit_tokens: int
     
         :param get_ttft: Returns the mean and standard deviation of TTFT in milliseconds.
         :type get_ttft: MeanStdPair
@@ -3273,6 +3216,8 @@ class PerfMetrics:
     def get_num_generated_tokens(self) -> int:
         ...
     def get_num_input_tokens(self) -> int:
+        ...
+    def get_num_prefix_cache_hit_tokens(self) -> int:
         ...
     def get_sampling_duration(self) -> MeanStdPair:
         ...
@@ -3438,6 +3383,168 @@ class Qwen3TextEncoder:
     def infer(self, pos_prompt: str, neg_prompt: str, do_classifier_free_guidance: bool, max_sequence_length: typing.SupportsInt) -> openvino._pyopenvino.Tensor:
         ...
     def reshape(self, batch_size: typing.SupportsInt, max_sequence_length: typing.SupportsInt) -> Qwen3TextEncoder:
+        ...
+class Qwen3VLForConditionalGeneration:
+    """
+    Qwen3VLForConditionalGeneration class.
+    """
+    class Config:
+        def __init__(self, config_path: os.PathLike | str | bytes) -> None:
+            ...
+        @property
+        def hidden_size(self) -> int:
+            ...
+        @hidden_size.setter
+        def hidden_size(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def image_token_id(self) -> int:
+            ...
+        @image_token_id.setter
+        def image_token_id(self, arg0: typing.SupportsInt) -> None:
+            ...
+    class VisionConfig:
+        def __init__(self, config_path: os.PathLike | str | bytes) -> None:
+            ...
+        @property
+        def hidden_size(self) -> int:
+            ...
+        @hidden_size.setter
+        def hidden_size(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def in_channels(self) -> int:
+            ...
+        @in_channels.setter
+        def in_channels(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def num_deepstack_layers(self) -> int:
+            ...
+        @num_deepstack_layers.setter
+        def num_deepstack_layers(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def num_heads(self) -> int:
+            ...
+        @num_heads.setter
+        def num_heads(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def num_position_embeddings(self) -> int:
+            ...
+        @num_position_embeddings.setter
+        def num_position_embeddings(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def patch_size(self) -> int:
+            ...
+        @patch_size.setter
+        def patch_size(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def spatial_merge_size(self) -> int:
+            ...
+        @spatial_merge_size.setter
+        def spatial_merge_size(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def temporal_patch_size(self) -> int:
+            ...
+        @temporal_patch_size.setter
+        def temporal_patch_size(self, arg0: typing.SupportsInt) -> None:
+            ...
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike | str | bytes) -> None:
+        """
+        Model root directory
+        """
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike | str | bytes, vision_encoder_path: os.PathLike | str | bytes, text_encoder_i2i_path: os.PathLike | str | bytes) -> None:
+        """
+        Image conditioned language model directory
+        """
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+        """
+        Device on which inference will be done
+        """
+    def compile(self, device: str, **kwargs) -> None:
+        ...
+    def get_config(self) -> Qwen3VLForConditionalGeneration.Config:
+        ...
+    def get_image_pad_mask(self) -> openvino._pyopenvino.Tensor:
+        ...
+    def get_vision_config(self) -> Qwen3VLForConditionalGeneration.VisionConfig:
+        ...
+    def has_vision_tower(self) -> bool:
+        ...
+    @typing.overload
+    def infer(self, prompt: str, max_sequence_length: typing.SupportsInt) -> openvino._pyopenvino.Tensor:
+        ...
+    @typing.overload
+    def infer(self, prompt: str, condition_image: openvino._pyopenvino.Tensor, max_sequence_length: typing.SupportsInt) -> openvino._pyopenvino.Tensor:
+        ...
+class QwenImage21Transformer2DModel:
+    """
+    QwenImage21Transformer2DModel class.
+    """
+    class Config:
+        def __init__(self, config_path: os.PathLike | str | bytes) -> None:
+            ...
+        @property
+        def attention_head_dim(self) -> int:
+            ...
+        @attention_head_dim.setter
+        def attention_head_dim(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def axes_dims_rope(self) -> list[int]:
+            ...
+        @axes_dims_rope.setter
+        def axes_dims_rope(self, arg0: collections.abc.Sequence[typing.SupportsInt]) -> None:
+            ...
+        @property
+        def context_in_dim(self) -> int:
+            ...
+        @context_in_dim.setter
+        def context_in_dim(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def in_channels(self) -> int:
+            ...
+        @in_channels.setter
+        def in_channels(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def num_layers(self) -> int:
+            ...
+        @num_layers.setter
+        def num_layers(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def out_channels(self) -> int:
+            ...
+        @out_channels.setter
+        def out_channels(self, arg0: typing.SupportsInt) -> None:
+            ...
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike | str | bytes) -> None:
+        """
+        Model root directory
+        """
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+        """
+        Device on which inference will be done
+        """
+    def compile(self, device: str, **kwargs) -> None:
+        ...
+    def get_config(self) -> QwenImage21Transformer2DModel.Config:
+        ...
+    def infer(self, latent: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+        ...
+    def set_hidden_states(self, tensor_name: str, tensor: openvino._pyopenvino.Tensor) -> None:
         ...
 class QwenImageTransformer2DModel:
     """

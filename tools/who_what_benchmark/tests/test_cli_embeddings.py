@@ -24,7 +24,6 @@ def remove_artifacts(artifacts_path: Path):
         ("Qwen/Qwen3-Embedding-0.6B", "text-embedding"),
     ],
 )
-@pytest.mark.xfail(sys.platform == "win32", reason="Ticket 178790", run=False)
 def test_embeddings_basic(model_id, model_type, tmp_path):
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = convert_model(model_id)
@@ -133,7 +132,6 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
         ("Qwen/Qwen3-Embedding-0.6B", "text-embedding", 12),
     ],
 )
-@pytest.mark.xfail(sys.platform == "win32", reason="Ticket 178790", run=False)
 def test_embeddings_with_batch(model_id, model_type, batch_size, tmp_path):
     GT_FILE = tmp_path / f"gt_batch_{batch_size}.csv"
     MODEL_PATH = convert_model(model_id)
@@ -249,7 +247,6 @@ def test_embeddings_with_batch(model_id, model_type, batch_size, tmp_path):
         ("optimum-intel-internal-testing/tiny-random-qwen3-vl-embedding", "video-embedding"),
     ],
 )
-@pytest.mark.xfail(sys.platform == "win32", reason="Ticket 178790", run=False)
 def test_visual_embeddings(model_id, model_type, tmp_path):
     GT_FILE = tmp_path / f"gt_batch_{model_type}.csv"
     MODEL_PATH = convert_model(model_id)

@@ -346,9 +346,14 @@ std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared
         if (auto add = ov::as_type_ptr<ov::op::v1::Add>(last_node)) {
             matmul = ov::as_type_ptr<ov::op::v0::MatMul>(add->input_value(0).get_node_shared_ptr());
         } else if (auto transpose = ov::as_type_ptr<ov::op::v1::Transpose>(last_node)) {
+            auto order = ov::as_type_ptr<ov::op::v0::Constant>(transpose->input_value(1).get_node_shared_ptr());
+            OPENVINO_ASSERT(order, "Transpose after the LLM head must have a constant order.");
+            const auto order_values = order->get_axis_vector_val();
+            OPENVINO_ASSERT(static_cast<size_t>(slice_gather_dim) < order_values.size(),
+                            "Transpose after the LLM head permutes ", order_values.size(),
+                            " axes, which does not cover axis ", slice_gather_dim, ".");
             matmul = ov::as_type_ptr<ov::op::v0::MatMul>(transpose->input_value(0).get_node_shared_ptr());
-            auto order = ov::as_type_ptr<ov::op::v0::Constant>(transpose->input_value(1).get_node_shared_ptr())->get_axis_vector_val();
-            slice_gather_dim = order[slice_gather_dim];
+            slice_gather_dim = order_values[slice_gather_dim];
         } else if (auto multiply = ov::as_type_ptr<ov::op::v1::Multiply>(last_node)) {
             if (auto tanh = ov::as_type_ptr<ov::op::v0::Tanh>(multiply->input_value(0).get_node_shared_ptr())) {
                 if (auto divide = ov::as_type_ptr<ov::op::v1::Divide>(tanh->input_value(0).get_node_shared_ptr())) {
@@ -1024,6 +1029,16 @@ void extract_extensions_to_core(ov::AnyMap& properties) {
             singleton_core().add_extension(std::get<std::shared_ptr<ov::Extension>>(extension));
         }
     }
+}
+
+void log_attention_backend(const std::string& attention_backend) {
+    GENAI_INFO("%s backend is enabled.", attention_backend.c_str());
+}
+
+void log_paged_attention_fallback(const ov::Exception& exception) {
+    GENAI_INFO("Paged Attention backend initialization failed. Falling back to SDPA backend. "
+                "Set ATTENTION_BACKEND=\"SDPA\" to skip Paged Attention initialization.");
+    GENAI_DEBUG("Paged Attention backend initialization error: %s", exception.what());
 }
 
 void release_core_plugin(const std::string& device) {
