@@ -7,11 +7,26 @@
 
 #include "openvino/op/softmax.hpp"
 #include "openvino/pass/manager.hpp"
+#include "openvino/runtime/intel_gpu/properties.hpp"
 #include "utils.hpp"
 #include "whisper/alignment_heads.hpp"
 #include "whisper/word_level_timestamps.hpp"
 
 namespace {
+// Work around CVS-195124 by disabling optimized GPU SDPA until batch broadcasting is fixed.
+ov::AnyMap disable_gpu_sdpa_optimization(ov::AnyMap properties) {
+    auto& device_properties = properties[ov::device::properties.name()];
+    auto per_device = device_properties.empty() ? ov::AnyMap{} : device_properties.as<ov::AnyMap>();
+
+    auto& gpu_any = per_device["GPU"];
+    auto gpu_properties = gpu_any.empty() ? ov::AnyMap{} : gpu_any.as<ov::AnyMap>();
+    gpu_properties[ov::intel_gpu::hint::enable_sdpa_optimization.name()] = false;
+
+    gpu_any = gpu_properties;
+    device_properties = per_device;
+    return properties;
+}
+
 void reshape_hidden_states_to_static(std::shared_ptr<ov::Model> model, const ov::PartialShape& lhstates_shape) {
     ov::PartialShape new_shape = model->input("encoder_hidden_states").get_partial_shape();
     OPENVINO_ASSERT(new_shape.size() > 1 && lhstates_shape.size() > 1);
@@ -50,7 +65,7 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
 
         utils::apply_slice_before_matmul_transformation(model);
 
-        compiled_model = core.compile_model(model, device, properties);
+        compiled_model = core.compile_model(model, device, disable_gpu_sdpa_optimization(properties));
     }
 
     utils::print_compiled_model_properties(compiled_model, "whisper decoder model");
