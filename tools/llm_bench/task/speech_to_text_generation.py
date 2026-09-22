@@ -205,18 +205,11 @@ def run_omni_speech_2_txt_benchmark(model_path, framework, device, args, num_ite
 
 
 def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
-    # Build the prompt schedule via BenchPrompter, which:
-    #   - reads and parses the speech prompt file (JSON or plain path), falling
-    #     back to prompts/speech_to_text_default.jsonl when none was given
-    #   - resolves media paths relative to the prompt file and stores them
-    #     under the 'audio' key
-    #   - honours args['prompt_index'] for selective benchmarking
-    #   - handles both subsequent=False (iter-major) and subsequent=True
-    #     (prompt-major) scheduling in a single unified iter_schedule() loop
-    # NOTE: the raw waveform is loaded lazily inside the loop (not at
-    #       prompt-construction time) because decoding depends on the model's
-    #       feature-extractor sampling rate, which is only known after the
-    #       model has been loaded.
+    # Falls back to prompts/speech_to_text_default.jsonl when no prompt was
+    # given, and stores the resolved audio path under the 'audio' key.
+    # The raw waveform is loaded lazily inside the loop rather than here:
+    # decoding needs the model's feature-extractor sampling rate, which is
+    # only known once the model has been created.
     prompter = BenchPrompter(args)
 
     if args.get("is_omni_model", False):

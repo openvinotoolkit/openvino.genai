@@ -499,12 +499,9 @@ def run_visual_language_generation_benchmark(model_path, framework, device, args
     mem_consumption.activate_cooldown("after model compilation")
     model, processor_config, pretrain_time, bench_hook, use_genai = outs
     model_precision = model_utils.get_model_precision(model_path.parts)
-    # Build the chat schedule via BenchPrompter, which reads and parses the
-    # prompt file, resolves media paths, expands each entry into its turns
-    # (honouring --chat_iter), honours --prompt_index, and drives both
-    # subsequent=False (iter-major) and subsequent=True (chat-major) scheduling
-    # from one iter_schedule() loop. require_active() keeps this pipeline's
-    # historical error when --prompt_index selects nothing.
+    # Each entry is expanded into its turns, honouring --chat_iter.
+    # require_active() makes an empty --prompt_index selection an error, which
+    # only this pipeline does.
     prompter = BenchPrompter(args).require_active()
     input_idx_list = prompter.active_indices
     chat_list = prompter.active_items
