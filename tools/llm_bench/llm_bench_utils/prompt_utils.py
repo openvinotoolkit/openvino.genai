@@ -113,6 +113,29 @@ def _normalize_to_list(value):
     return [value]
 
 
+def _expand_media_entries(value):
+    """Expand a media key's value into the flat list of files it refers to.
+
+    A media key may hold a single path, a list of paths, or a directory (see
+    :func:`extract_prompt_data`, which loads directories entry by entry).
+    Mirrors that expansion so ``BenchPrompt.probe()`` describes exactly the
+    files the pipeline will consume.  HTTP(S) URLs are passed through
+    untouched — ``Path.is_dir()`` is False for them.
+    """
+    entries = []
+    for item in _normalize_to_list(value):
+        try:
+            path = Path(item)
+            is_dir = path.is_dir()
+        except (TypeError, ValueError, OSError):
+            is_dir = False
+        if is_dir:
+            entries.extend(sorted(path.iterdir()))
+        else:
+            entries.append(item)
+    return entries
+
+
 def extract_prompt_data(inputs, required_frames, genai_flag):
     """
     Unpack a list of prompt dicts into separate
@@ -152,24 +175,20 @@ def extract_prompt_data(inputs, required_frames, genai_flag):
                 video_tensor = make_video_tensor(entry, required_frames, genai_flag)
                 videos.append(video_tensor)
 
-        for media_item in _normalize_to_list(input_data.get("media")):
-            entry = Path(media_item)
-            if entry.is_dir():
-                for file in sorted(entry.iterdir()):
-                    pil_img = load_image(str(file))
-                    images.append(ov.Tensor(np.array(pil_img)[None]) if genai_flag else pil_img)
-            else:
-                # Always load as PIL first so we can update the BenchPrompt repr
-                # metadata with the actual image dimensions after the real media
-                # file has been fetched (handles HTTP(S) URLs and local paths
-                # uniformly).  The _image_size cached by probe() (which runs
-                # before inference in introduce_in_stdout) is overwritten here
-                # with the value from the truly loaded image, so the final
-                # prompt_repr in the report is always accurate.
-                pil_img = load_image(str(media_item))
-                if isinstance(input_data, BenchPrompt):
-                    input_data._image_size = pil_img.size
-                images.append(ov.Tensor(np.array(pil_img)[None]) if genai_flag else pil_img)
+        # Always load as PIL first so we can update the BenchPrompt repr
+        # metadata with the actual image dimensions after the real media files
+        # have been fetched (handles HTTP(S) URLs, directories and local paths
+        # uniformly).  The sizes cached by probe() (which runs before inference
+        # in introduce_in_stdout) are overwritten here with the values from the
+        # truly loaded images, so the final prompt_repr in the report is always
+        # accurate.
+        loaded_sizes = []
+        for media_item in _expand_media_entries(input_data.get("media")):
+            pil_img = load_image(str(media_item))
+            loaded_sizes.append(pil_img.size)
+            images.append(ov.Tensor(np.array(pil_img)[None]) if genai_flag else pil_img)
+        if loaded_sizes and isinstance(input_data, BenchPrompt):
+            input_data._image_sizes = loaded_sizes
 
         func_load_audio = load_audio_genai if genai_flag else load_audio_optimum
         for audio_item in _normalize_to_list(input_data.get("audio")):
@@ -224,10 +243,12 @@ class BenchPrompt(dict):
     def __init__(self, data, args=None):
         dict.__init__(self)
         self._args = args or {}
-        # Lazily filled by probe()
-        self._image_size = None  # (width, height) | None
-        self._video_shape = None  # (frames, height, width) | None
-        self._audio_info = None  # (duration_sec, sample_rate) | None
+        # Lazily filled by probe().  A media key may name several files (a
+        # list of paths, or a directory), so each holds one entry per file;
+        # an entry is None when that file could not be probed.
+        self._image_sizes = []  # list[(width, height) | None]
+        self._video_shapes = []  # list[(frames, height, width) | None]
+        self._audio_infos = []  # list[(duration_sec, sample_rate) | None]
         self._mask_fraction = None  # float | None  cached mask coverage %
         self._probed = False
         self._load(data)
@@ -276,15 +297,15 @@ class BenchPrompt(dict):
         # its low-res input image there. A VLM prompt may legitimately carry an
         # image AND audio at once (doc/PROMPT.md section 5 lists them as
         # independent keys), so the two are probed independently.
-        if self.get("media"):
-            self._image_size = self._get_image_size(self["media"])
+        # Every media key accepts a single path, a list of paths or a directory
+        # (see doc/PROMPT.md section 5 and extract_prompt_data), so each is
+        # expanded and probed file by file.
+        self._image_sizes = [self._get_image_size(path) for path in _expand_media_entries(self.get("media"))]
 
-        if self.get("video"):
-            decim = self._args.get("video_frames")
-            self._video_shape = self._get_video_shape(self["video"], decim)
+        decim = self._args.get("video_frames")
+        self._video_shapes = [self._get_video_shape(path, decim) for path in _expand_media_entries(self.get("video"))]
 
-        if self.get("audio"):
-            self._audio_info = self._get_audio_info(self["audio"])
+        self._audio_infos = [self._get_audio_info(path) for path in _expand_media_entries(self.get("audio"))]
 
         # Cache mask-coverage fraction so _get_mask_fraction is never called
         # more than once per BenchPrompt instance (extra feedback fix).
@@ -353,16 +374,41 @@ class BenchPrompt(dict):
 
     @staticmethod
     def _get_mask_fraction(mask_path):
-        """Return the percentage of non-zero pixels in *mask_path* or ``None``."""
+        """Return the percentage of non-zero pixels in *mask_path* or ``None``.
+
+        Uses :func:`~transformers.image_utils.load_image` for the same reason
+        :meth:`_get_image_size` does: ``Image.open()`` cannot resolve HTTP(S)
+        URLs, and the shipped inpainting prompt file
+        (``prompts/stable-diffusion-inpainting.jsonl``) points its mask at one,
+        so the mask-coverage suffix never appeared for it.
+        """
         try:
-            arr = np.array(Image.open(mask_path).convert("L"))
+            arr = np.array(load_image(str(mask_path)).convert("L"))
             return 100.0 * float(np.count_nonzero(arr)) / arr.size
-        except Exception:
+        except Exception as exc:
+            log.warning(f"BenchPrompt: cannot probe mask image '{mask_path}': {exc}")
             return None
 
     # ------------------------------------------------------------------ #
     # Representation                                                       #
     # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _join_media(kind, dims):
+        """Render one modality's per-file dimension strings as a single token.
+
+        A media key may name several files, so *dims* holds one string per
+        file. They are collapsed to ``kind:<dims> x<N>`` when every file has
+        the same dimensions, and joined with ``|`` when they differ — never
+        with ``,``, which would need quoting in the CSV report.
+        """
+        if not dims:
+            return None
+        if len(dims) == 1:
+            return f"{kind}:{dims[0]}"
+        if len(set(dims)) == 1:
+            return f"{kind}:{dims[0]} x{len(dims)}"
+        return f"{kind}:" + "|".join(dims)
 
     def __repr__(self):
         """
@@ -377,6 +423,10 @@ class BenchPrompt(dict):
             text:7w + image:512x512/35.2%
             text:7w + image:1024x768 + video:640x480@16f
             audio:30.0s@44100Hz      <- no text prompt
+
+        A media key naming several files (a list of paths, or a directory) is
+        rendered as one token covering all of them — ``image:512x512 x3`` when
+        they share dimensions, ``image:512x512|640x480`` when they differ.
 
         This is a pre-tokenization *size* summary: the text is shown as a
         whitespace word count (``w`` suffix), images/videos as pixel
@@ -395,35 +445,27 @@ class BenchPrompt(dict):
         # ---- image (optionally decorated with mask coverage fraction) ----
         # Mirrors probe(): 'media' is always an image, and is rendered
         # independently of any audio the prompt also carries.
-        if self.get("media"):
-            if self._image_size:
-                w, h = self._image_size
-                if self.get("mask_image"):
-                    frac = self._mask_fraction  # pre-computed in probe()
-                    if frac is not None:
-                        parts.append(f"image:{w}x{h}/{frac:.1f}%")
-                    else:
-                        parts.append(f"image:{w}x{h}")
-                else:
-                    parts.append(f"image:{w}x{h}")
-            else:
-                parts.append("image:?x?")
+        image_dims = [f"{size[0]}x{size[1]}" if size else "?x?" for size in self._image_sizes]
+        image_part = self._join_media("image", image_dims)
+        if image_part is not None:
+            # The mask covers the whole 'media' key, so its fraction is
+            # appended once to the joined token rather than per file.
+            frac = self._mask_fraction  # pre-computed in probe()
+            if self.get("mask_image") and frac is not None:
+                image_part += f"/{frac:.1f}%"
+            parts.append(image_part)
 
         # ---- video ----
-        if self.get("video"):
-            if self._video_shape:
-                frames, h, w = self._video_shape
-                parts.append(f"video:{w}x{h}@{frames}f")
-            else:
-                parts.append("video:?x?@?f")
+        video_dims = [f"{s[2]}x{s[1]}@{s[0]}f" if s else "?x?@?f" for s in self._video_shapes]
+        video_part = self._join_media("video", video_dims)
+        if video_part is not None:
+            parts.append(video_part)
 
         # ---- audio ----
-        if self.get("audio"):
-            if self._audio_info:
-                dur, sr = self._audio_info
-                parts.append(f"audio:{dur:.1f}s@{sr}Hz")
-            else:
-                parts.append("audio:?s@?Hz")
+        audio_dims = [f"{info[0]:.1f}s@{info[1]}Hz" if info else "?s@?Hz" for info in self._audio_infos]
+        audio_part = self._join_media("audio", audio_dims)
+        if audio_part is not None:
+            parts.append(audio_part)
 
         return " + ".join(parts) if parts else "<empty prompt>"
 
