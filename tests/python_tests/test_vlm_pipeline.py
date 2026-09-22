@@ -3069,6 +3069,50 @@ def test_qwen35_mtp_text_add_request(qwen35_mtp_model_path, monkeypatch, capfd):
             assert "MTP paired prefix replay:" in captured.out + captured.err
 
 
+def test_qwen35_mtp_image_add_request(qwen35_mtp_model_path, monkeypatch, capfd):
+    model_path = qwen35_mtp_model_path
+    monkeypatch.setenv("OPENVINO_LOG_LEVEL", "5")
+    scheduler = SchedulerConfig()
+    scheduler.cache_size = 1
+    scheduler.cache_interval_multiplier = 1
+    scheduler.max_num_seqs = 1
+    scheduler.num_linear_attention_blocks = 32
+    scheduler.enable_prefix_caching = False
+    reference = ContinuousBatchingPipeline(model_path, scheduler, "CPU")
+    scheduler.enable_prefix_caching = True
+    draft_scheduler = SchedulerConfig()
+    draft_scheduler.enable_prefix_caching = True
+    draft_scheduler.num_kv_blocks = 128
+    pipeline = ContinuousBatchingPipeline(
+        model_path,
+        scheduler,
+        "CPU",
+        {"draft_model": draft_model(model_path, "CPU", scheduler_config=draft_scheduler)},
+    )
+    pixels = np.zeros((224, 224, 3), dtype=np.uint8)
+    pixels[:, :112, 0] = 255
+    pixels[:, 112:, 1] = 255
+    image = openvino.Tensor(pixels[np.newaxis])
+    prompt = "Repeat the following sequence exactly: " + "one two three four. " * 32
+    config = GenerationConfig(max_new_tokens=24, do_sample=False, ignore_eos=True)
+    reference_handle = reference.add_request(0, prompt, images=[image], generation_config=config)
+    while reference.has_non_finished_requests():
+        reference.step()
+    expected = reference_handle.read_all()[0].generated_ids
+    config.num_assistant_tokens = 4
+    for iteration in range(2):
+        capfd.readouterr()
+        handle = pipeline.add_request(0, prompt, images=[image], generation_config=config)
+        while pipeline.has_non_finished_requests():
+            pipeline.step()
+        assert handle.get_status() == GenerationStatus.FINISHED
+        assert handle.read_all()[0].generated_ids == expected
+        captured = capfd.readouterr()
+        if iteration == 1:
+            assert "Hybrid prefix restore:" in captured.out + captured.err
+            assert "MTP paired prefix replay:" in captured.out + captured.err
+
+
 @pytest.mark.parametrize("media", ["text", "image", "video", "video_metadata"])
 @pytest.mark.parametrize("enable_prefix_caching", [False, True])
 @pytest.mark.parametrize("num_assistant_tokens", [1, 4])

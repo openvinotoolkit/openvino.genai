@@ -794,7 +794,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
     ov::genai::VLMPerfMetrics metrics;
     ov::Tensor inputs;
-    // FIXME prompt_ids is not populated for VLM prompt lookup with add_request API
     std::optional<ov::Tensor> prompt_ids;
     GenerationHandle handle;
     {
@@ -811,6 +810,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
 
         const auto [unified_prompt, image_sequence, video_sequence] =
             m_inputs_embedder->normalize_prompt(prompt, 0, 0, encoded_images, encoded_videos);
+        const bool capture_prompt_ids = sampling_params.is_prompt_lookup() || sampling_params.is_assisting_generation();
+        const size_t cache_size_before =
+            capture_prompt_ids ? m_inputs_embedder->get_cache_state().get_state().size() : 0;
 
         inputs = m_inputs_embedder->get_inputs_embeds(
             unified_prompt,
@@ -822,6 +824,16 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
             video_sequence
         );
 
+        if (capture_prompt_ids) {
+            const auto& cache_ids = m_inputs_embedder->get_cache_state().get_state();
+            OPENVINO_ASSERT(cache_ids.size() >= cache_size_before,
+                            "VLM prompt preparation cannot shrink token history");
+            const size_t prompt_length = cache_ids.size() - cache_size_before;
+            OPENVINO_ASSERT(prompt_length == inputs.get_shape()[1],
+                            "VLM prompt preparation requires one token ID per embedding");
+            prompt_ids.emplace(ov::element::i64, ov::Shape{1, prompt_length});
+            std::copy(cache_ids.begin() + cache_size_before, cache_ids.end(), prompt_ids->data<int64_t>());
+        }
         PerfMetrics::emplace_duration(metrics.vlm_raw_metrics.prepare_embeddings_durations, start_get_inputs_embeds);
         handle = add_request(
             request_id,
