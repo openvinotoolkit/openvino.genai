@@ -250,8 +250,10 @@ def get_argparser():
     parser.add_argument(
         "--subsequent",
         action="store_true",
-        help="if the value is True, input prompts are processed in subsequent manner"
-        "if the value is False (default), input prompts are processed in interleave manner",
+        help="Run all iterations of one prompt before moving to the next (prompt-major).\n"
+        "When absent (default), every prompt is run once per iteration (interleaved).\n"
+        "Applies to all tasks; see 'Iteration order' in README.md — video generation\n"
+        "and super-resolution did not follow this before and their ordering changed.",
     )
     parser.add_argument("-od", "--output_dir", help="Save the input text and generated text, images to files")
     parser.add_argument(
