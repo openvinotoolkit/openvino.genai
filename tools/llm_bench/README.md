@@ -132,6 +132,24 @@ Input/output descriptors — `input_size` and `output_size` are the **raw** nume
 
 > **Note (text-to-speech):** TTS has no discrete output "tokens" — `output_size` reports the number of generated **audio samples**, and `output_repr` shows `audio:<samples>sa@<rate>Hz`. Divide samples by the sample rate for the duration in seconds.
 
+**Iteration order:**
+
+`--subsequent` selects how iterations and prompts are nested. With `-n 2` over prompts `P0`, `P1` (iteration `0` is the warm-up):
+
+| Mode | Order | Run sequence |
+| --- | --- | --- |
+| `--subsequent` **absent** (default) | interleaved — all prompts within each iteration | `(0,P0) (0,P1) (1,P0) (1,P1) (2,P0) (2,P1)` |
+| `--subsequent` **present** | subsequent — all iterations of one prompt before the next | `(0,P0) (1,P0) (2,P0) (0,P1) (1,P1) (2,P1)` |
+
+This applies uniformly to every task. The order affects report row order, and — because it changes what sits in the KV/model cache between runs, and how long the device has been under load — it can move the measured latencies too. Keep it fixed when comparing runs.
+
+> ⚠️ **Changed behaviour:** two tasks did not previously follow the table above.
+>
+> - **Video generation** interpreted the flag **inverted**: without `--subsequent` it ran prompt-major, and with it, iteration-major. It now matches every other task, so a `video_gen` command line that omits the flag runs in the opposite order to before. Add `--subsequent` to reproduce the old default ordering.
+> - **Super-resolution** ignored `--subsequent` entirely and always ran iteration-major. It now honours the flag; omitting it preserves the old ordering.
+>
+> Per-iteration results are computed the same way in both cases — only the order changes — but benchmark numbers from before and after this change are not directly comparable for these two tasks.
+
 #### Benchmarking the Original PyTorch Model:
 To benchmark the original PyTorch model, first download the model locally and then run benchmark by specifying PyTorch as the framework with parameter `-f pt`
 
