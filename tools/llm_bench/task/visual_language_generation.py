@@ -294,11 +294,9 @@ def run_visual_language_generation_benchmark(
     model_precision = model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
     md5_list = {num : {} for num in range(num_iters + 1)}
-    # Build the prompt schedule via BenchPrompter, which handles both
-    # subsequent=False (iter-major) and subsequent=True (prompt-major) modes
-    # in a single unified iter_schedule() loop.  `input_list` lets callers that
-    # synthesise their own entries (e.g. the Qwen3-Omni speech path) reuse this
-    # benchmark instead of loading prompts from args.
+    # `input_list` lets callers that synthesise their own entries (e.g. the
+    # Qwen3-Omni speech path) reuse this benchmark instead of loading prompts
+    # from args.
     prompter = BenchPrompter(args, prompts=input_list)
     prompt_idx_list = prompter.active_indices
     image_text_list = prompter.active_items

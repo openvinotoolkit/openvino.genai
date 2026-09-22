@@ -753,9 +753,6 @@ def run_text_generation_benchmark(
     iter_data_list = []
     md5_list = {num: {} for num in range(num_iters + 1)}
 
-    # Build the prompt schedule via BenchPrompter, which handles both
-    # subsequent=False (iter-major) and subsequent=True (prompt-major) modes
-    # in a single unified iter_schedule() loop.
     prompter = BenchPrompter(args)
     prompt_idx_list = prompter.active_indices
     text_list = [p["prompt"] for p in prompter.active_items]

@@ -205,9 +205,6 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
 
 
 def run_image_generation_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
-    # Build the prompt schedule via BenchPrompter, which handles both
-    # subsequent=False (iter-major) and subsequent=True (prompt-major) modes
-    # in a single unified iter_schedule() loop.
     prompter = BenchPrompter(args)
     prompt_idx_list = prompter.active_indices
     image_list = prompter.active_items
