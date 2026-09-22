@@ -582,10 +582,7 @@ def run_text_generation_benchmark(
     model_precision = model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
     md5_list = {num: {} for num in range(num_iters + 1)}
-    # Build the chat schedule via BenchPrompter, which reads and parses the
-    # prompt file, expands each entry into its turns (honouring --chat_iter),
-    # honours --prompt_index, and drives both subsequent=False (iter-major) and
-    # subsequent=True (chat-major) scheduling from one iter_schedule() loop.
+    # Each entry is expanded into its turns, honouring --chat_iter.
     prompter = BenchPrompter(args)
     inputs_idx_list = prompter.active_indices
     text_list = prompter.active_items

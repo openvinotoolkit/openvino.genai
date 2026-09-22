@@ -175,13 +175,9 @@ def extract_prompt_data(inputs, required_frames, genai_flag):
                 video_tensor = make_video_tensor(entry, required_frames, genai_flag)
                 videos.append(video_tensor)
 
-        # Always load as PIL first so we can update the BenchPrompt repr
-        # metadata with the actual image dimensions after the real media files
-        # have been fetched (handles HTTP(S) URLs, directories and local paths
-        # uniformly).  The sizes cached by probe() (which runs before inference
-        # in introduce_in_stdout) are overwritten here with the values from the
-        # truly loaded images, so the final prompt_repr in the report is always
-        # accurate.
+        # Load as PIL first so the BenchPrompt repr metadata can be refreshed
+        # with the dimensions of the images that were really fetched, which
+        # supersede the ones probe() guessed before inference.
         loaded_sizes = []
         for media_item in _expand_media_entries(input_data.get("media")):
             pil_img = load_image(str(media_item))
@@ -283,23 +279,25 @@ class BenchPrompt(dict):
         """
         Probe all media files to fill size / shape metadata.
 
-        Called automatically by ``__repr__``. Safe to call multiple times
-        (runs only once). Validates correctness of input data and applies
-        decimation to video via ``make_video_tensor``.
+        Called automatically by ``__repr__``. Safe to call multiple times: it
+        runs once and caches, so a repeated ``repr()`` costs nothing and the
+        mask fraction is computed at most once per instance.
+
+        ``'media'`` always holds an image. ``speech_to_text`` routes its audio
+        path to the ``'audio'`` key on both the JSONL and CLI branches (see
+        ``rename`` / ``nonjson_wrap`` in ``_PROMPT_SPECS``), and
+        ``ldm_super_resolution`` puts its low-res input image there. A VLM
+        prompt may carry an image and audio at once — doc/PROMPT.md section 5
+        lists the media keys as independent — so each is probed separately.
+
+        Every media key accepts a single path, a list of paths or a directory,
+        so each is expanded (see :func:`_expand_media_entries`) and probed file
+        by file.
         """
         if self._probed:
             return
         self._probed = True
 
-        # 'media' always holds an image: speech_to_text routes its audio path to
-        # the 'audio' key on both the JSONL and CLI branches (see the rename /
-        # nonjson_wrap in _PROMPT_SPECS), and ldm_super_resolution's rename puts
-        # its low-res input image there. A VLM prompt may legitimately carry an
-        # image AND audio at once (doc/PROMPT.md section 5 lists them as
-        # independent keys), so the two are probed independently.
-        # Every media key accepts a single path, a list of paths or a directory
-        # (see doc/PROMPT.md section 5 and extract_prompt_data), so each is
-        # expanded and probed file by file.
         self._image_sizes = [self._get_image_size(path) for path in _expand_media_entries(self.get("media"))]
 
         decim = self._args.get("video_frames")
@@ -307,8 +305,6 @@ class BenchPrompt(dict):
 
         self._audio_infos = [self._get_audio_info(path) for path in _expand_media_entries(self.get("audio"))]
 
-        # Cache mask-coverage fraction so _get_mask_fraction is never called
-        # more than once per BenchPrompt instance (extra feedback fix).
         if self.get("mask_image"):
             self._mask_fraction = self._get_mask_fraction(self["mask_image"])
 
@@ -320,11 +316,9 @@ class BenchPrompt(dict):
     def _get_image_size(path):
         """Return ``(width, height)`` or ``None`` on failure.
 
-        Uses :func:`~transformers.image_utils.load_image` which handles both
-        local filesystem paths and HTTP(S) URLs.  The previous
-        ``Image.open()`` call could not resolve HTTP URLs and emitted a
-        misleading ``[Errno 2] No such file or directory`` warning for
-        web-hosted prompt images (e.g. GitHub asset URLs in VLM benchmarks).
+        Uses :func:`~transformers.image_utils.load_image`, which resolves both
+        local filesystem paths and HTTP(S) URLs. Prompt files may point at
+        either, so ``Image.open()`` is not sufficient here.
         """
         try:
             return load_image(str(path)).size
@@ -336,15 +330,13 @@ class BenchPrompt(dict):
     def _get_video_shape(path, decim_frames=None):
         """Return ``(frames, height, width)`` or ``None`` on failure.
 
-        Uses cv2 container metadata for near-instant probing instead of
-        decoding all frames via ``make_video_tensor``.  This eliminates the
-        significant I/O + CPU overhead that previously occurred on the very
-        first ``repr()`` / ``introduce_in_stdout()`` call before the
-        benchmark loop (REDUCE-4 / CHANGE-3 from analysis).
+        Reads cv2 container metadata rather than decoding every frame via
+        ``make_video_tensor``: this runs before the benchmark loop, so it must
+        not cost real I/O and CPU.
 
-        Note: the frame count reflects the raw container value and does NOT
-        account for the decimation applied during the actual run.  It is used
-        for informational / display purposes only.
+        The frame count is therefore the raw container value and does NOT
+        account for the decimation applied during the run. It is displayed for
+        information only.
         """
         try:
             cap = cv2.VideoCapture(str(path))
@@ -376,11 +368,9 @@ class BenchPrompt(dict):
     def _get_mask_fraction(mask_path):
         """Return the percentage of non-zero pixels in *mask_path* or ``None``.
 
-        Uses :func:`~transformers.image_utils.load_image` for the same reason
-        :meth:`_get_image_size` does: ``Image.open()`` cannot resolve HTTP(S)
-        URLs, and the shipped inpainting prompt file
-        (``prompts/stable-diffusion-inpainting.jsonl``) points its mask at one,
-        so the mask-coverage suffix never appeared for it.
+        Loaded with :func:`~transformers.image_utils.load_image` for the same
+        reason :meth:`_get_image_size` is: a mask may be given as an HTTP(S)
+        URL, which ``Image.open()`` cannot resolve.
         """
         try:
             arr = np.array(load_image(str(mask_path)).convert("L"))
@@ -492,9 +482,9 @@ class BenchPrompt(dict):
           tagged, so a previous iteration's record is never mislabelled;
         * multiple records appended (e.g. per-batch) -> all of them are tagged.
 
-        This replaces the fragile ``iter_data_list[-1]["prompt_repr"] = ...``
-        positional assignment, which silently mis-attributed the value whenever
-        a call appended a number of records other than exactly one.
+        Slicing rather than indexing ``iter_data_list[-1]`` is what makes both
+        of those cases correct: a positional assignment mis-attributes the
+        value whenever a call appends other than exactly one record.
         """
         self._stamp_records(iter_data_list[start_index:])
 
@@ -536,8 +526,7 @@ class BenchChatPrompt(list):
         for turn in turns:
             self.append(BenchPrompt(turn, args))
         if not self:
-            # A chat with no turns cannot be benchmarked. This is where the
-            # pipelines' inline `any(len(chat_turns) == 0 for ...)` check moved.
+            # A chat with no turns cannot be benchmarked.
             raise RuntimeError("==Failure prompts is empty ==")
 
     def append(self, turn):
@@ -812,10 +801,10 @@ class BenchPrompter(list):
     def require_active(self):
         """Raise when ``args['prompt_index']`` selected no prompt at all.
 
-        Returns ``self`` so it can be chained onto the constructor. Only the VLM
-        chat pipeline historically validated the *filtered* list; the others run
-        zero iterations instead. That difference is preserved here rather than
-        harmonised, which would be a behaviour change beyond this refactor.
+        Returns ``self`` so it can be chained onto the constructor. Opt-in on
+        purpose: only the VLM chat pipeline treats an empty selection as an
+        error, while the other tasks run zero iterations instead. Calling this
+        from more pipelines would change their behaviour.
         """
         if not self.active_pairs:
             raise RuntimeError("==Failure prompts is empty ==")
@@ -865,10 +854,9 @@ class BenchPrompter(list):
             raw_list = spec.parse(output_data_list)
             # Path resolution needs the prompt file to resolve relative paths,
             # so it is applied only when one is present.  Key renames (e.g.
-            # speech_to_text 'media' -> 'audio') must happen unconditionally so
-            # downstream consumers always find the expected key — decoupling the
-            # rename from prompt_file avoids a latent KeyError on the (currently
-            # unreachable) JSON-without-prompt_file path.
+            # speech_to_text 'media' -> 'audio') run unconditionally instead, so
+            # that downstream consumers always find the expected key even on a
+            # JSON-without-prompt_file input.
             prompt_file = args.get("prompt_file")
             base = prompt_file[0] if prompt_file else None
             for entry in raw_list:
