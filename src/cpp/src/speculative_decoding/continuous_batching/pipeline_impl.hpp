@@ -51,10 +51,16 @@ public:
 
     void multistep();
 
+    void fail_pipeline(std::exception_ptr error) noexcept {
+        _fail_pipeline(std::move(error));
+    }
+
     void finish_request(int64_t request_id = -1);
     void pull_awaiting_requests(bool is_pause_request = false);
     GeneratedRequests get_generated_requests();
-    UpdateRequestResult update_request(uint64_t request_id, const GeneratedSequences& candidates, bool is_update_logit_processor);
+    UpdateRequestResult update_request(uint64_t request_id,
+                                       const GeneratedSequences& candidates,
+                                       bool is_update_logit_processor);
     void sync_generated_embeddings();
     bool is_requests_empty();
 

@@ -101,11 +101,26 @@ protected:
 
     class DraftPipeline : public ContinuousBatchingForSpeculativeDecodingImpl {
     public:
-        DraftPipeline(const std::shared_ptr<ov::genai::Scheduler>& scheduler,
-                      const SequenceGroup::Ptr& group) {
+        DraftPipeline(const std::shared_ptr<ov::genai::Scheduler>& scheduler, const SequenceGroup::Ptr& group) {
             m_scheduler = scheduler;
             m_requests = {group};
             m_sampler = std::make_shared<ov::genai::Sampler>();
+        }
+    };
+
+    class FailurePropagationStrategy : public SpeculativeDecodingImpl {
+    public:
+        FailurePropagationStrategy(const std::shared_ptr<DraftPipeline>& main,
+                                   const std::shared_ptr<DraftPipeline>& draft,
+                                   uint64_t request_id,
+                                   const ov::genai::GenerationHandle& draft_handle) {
+            m_main_pipeline = main;
+            m_draft_pipeline = draft;
+            m_draft_generations.emplace(request_id, draft_handle);
+        }
+
+        size_t draft_handle_count() const {
+            return m_draft_generations.size();
         }
     };
 
@@ -135,7 +150,8 @@ protected:
             ov::Tensor tokens(ov::element::i64, {1, embeddings.get_shape()[1]});
             const size_t hidden_size = embeddings.get_shape()[2];
             for (size_t token = 0; token < tokens.get_size(); ++token) {
-                tokens.data<int64_t>()[token] = static_cast<int64_t>(embeddings.data<const float>()[token * hidden_size]);
+                tokens.data<int64_t>()[token] =
+                    static_cast<int64_t>(embeddings.data<const float>()[token * hidden_size]);
             }
             return ContinuousBatchingImpl::add_request(request_id, tokens, config);
         }
@@ -158,7 +174,8 @@ protected:
     public:
         MtpAdmissionStrategy(const std::shared_ptr<MtpAdmissionChild>& main,
                              const std::shared_ptr<MtpAdmissionChild>& draft)
-            : main_child(main), draft_child(draft) {
+            : main_child(main),
+              draft_child(draft) {
             m_main_pipeline = main;
             m_draft_pipeline = draft;
         }
@@ -198,7 +215,10 @@ protected:
             orchestrator->register_cache_type(
                 type,
                 std::make_unique<testing::NiceMock<RowOnlyCacheManager>>(),
-                std::make_unique<BlockManager>(24, false, 4, GetParam(),
+                std::make_unique<BlockManager>(24,
+                                               false,
+                                               4,
+                                               GetParam(),
                                                type == CacheType::LINEAR_ATTENTION_CACHE ? 1 : 0),
                 GetParam() > 1);
         }
@@ -206,8 +226,9 @@ protected:
     }
 
     SequenceGroup::Ptr make_group(uint64_t request_id) {
-        return std::make_shared<SequenceGroup>(
-            request_id, std::vector<int64_t>{1, 2, 3, 4}, ov::genai::GenerationConfig{});
+        return std::make_shared<SequenceGroup>(request_id,
+                                               std::vector<int64_t>{1, 2, 3, 4},
+                                               ov::genai::GenerationConfig{});
     }
 
     void allocate_live(BlockManager& manager, const SequenceGroup::Ptr& group) {
@@ -228,6 +249,44 @@ TEST_P(PreparedCacheAllocationFailure, EmbeddingPrefixVerificationRequiresStrate
     EXPECT_TRUE(mtp.supports_embedding_prefix_verification());
     ContinuousBatchingForSpeculativeDecodingImpl independent_draft;
     EXPECT_FALSE(independent_draft.supports_embedding_prefix_verification());
+}
+
+TEST_P(PreparedCacheAllocationFailure, DraftFailurePropagatesToMainPipeline) {
+    auto main_scheduler = std::make_shared<ov::genai::Scheduler>(make_orchestrator(), ov::genai::SchedulerConfig{});
+    auto draft_scheduler = std::make_shared<ov::genai::Scheduler>(make_orchestrator(), ov::genai::SchedulerConfig{});
+    auto main_group = make_group(0);
+    auto draft_group = make_group(0);
+    auto main_pipeline = std::make_shared<DraftPipeline>(main_scheduler, main_group);
+    auto draft_pipeline = std::make_shared<DraftPipeline>(draft_scheduler, draft_group);
+    auto main_handle = std::make_shared<ov::genai::GenerationHandleImpl>(main_group->get_generation_stream(),
+                                                                         main_group->get_sampling_parameters());
+    auto draft_handle = std::make_shared<ov::genai::GenerationHandleImpl>(draft_group->get_generation_stream(),
+                                                                          draft_group->get_sampling_parameters());
+    FailurePropagationStrategy strategy(main_pipeline, draft_pipeline, 0, draft_handle);
+
+    draft_pipeline->fail_pipeline(std::make_exception_ptr(std::logic_error("draft failure")));
+
+    for (size_t attempt = 0; attempt < 2; ++attempt) {
+        EXPECT_THROW(
+            try { strategy.step(); } catch (const std::logic_error& error) {
+                EXPECT_STREQ(error.what(), "draft failure");
+                throw;
+            },
+            std::logic_error);
+    }
+    EXPECT_EQ(main_handle->get_status(), ov::genai::GenerationStatus::FAILED);
+    EXPECT_TRUE(main_handle->can_read());
+    for (size_t attempt = 0; attempt < 2; ++attempt) {
+        EXPECT_THROW(
+            try { main_handle->read(); } catch (const std::logic_error& error) {
+                EXPECT_STREQ(error.what(), "draft failure");
+                throw;
+            },
+            std::logic_error);
+    }
+    EXPECT_EQ(strategy.draft_handle_count(), 0u);
+    EXPECT_TRUE(main_pipeline->is_requests_empty());
+    EXPECT_TRUE(draft_pipeline->is_requests_empty());
 }
 
 TEST_P(PreparedCacheAllocationFailure, MtpAdmissionRollbackReleasesOnlyFailedRequest) {
