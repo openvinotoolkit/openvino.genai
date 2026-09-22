@@ -38,9 +38,8 @@ def stamp_low_res_size(img):
     resized dimensions are what pairs with the upscaled ``output_repr``, and
     are what the README documents for this task.
 
-    ``probe()`` is forced first: it is lazy, so leaving it unrun would let the
-    next ``repr()`` overwrite the value we set here with the on-disk size —
-    which is how the log line and the report column came to disagree.
+    ``probe()`` must be forced first: it is lazy, so leaving it unrun would
+    let the next ``repr()`` overwrite this value with the on-disk size.
     """
     img.probe()
     img._image_sizes = [resolve_low_res_size(img)]
@@ -101,13 +100,9 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
     iter_data_list = []
     tm_list = []
 
-    # Build the prompt schedule via BenchPrompter, which:
-    #   - reads and parses the image prompt file (JSON or plain path)
-    #   - resolves image paths relative to the prompt file
-    #   - honours args['prompt_index'] for selective benchmarking
-    #   - handles both subsequent=False (iter-major) and subsequent=True
-    #     (prompt-major) scheduling in a single unified iter_schedule() loop,
-    #     eliminating the previous duplicated if/else filter blocks.
+    # The spec renames the entry's 'prompt' key to 'media', so the low-res
+    # input image is resolved relative to the prompt file and reported as an
+    # image rather than as a text word count.
     prompter = BenchPrompter(args)
     prompt_idx_list = prompter.active_indices
     image_list = prompter.active_items

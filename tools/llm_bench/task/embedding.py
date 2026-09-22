@@ -238,9 +238,6 @@ def run_text_embeddings_genai(
 
 
 def run_text_embddings_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
-    # Build the prompt schedule via BenchPrompter, which handles both
-    # subsequent=False (iter-major) and subsequent=True (prompt-major) modes
-    # in a single unified iter_schedule() loop.
     prompter = BenchPrompter(args)
     prompt_idx_list = prompter.active_indices
     entries_list = prompter.active_items

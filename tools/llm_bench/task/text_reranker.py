@@ -402,9 +402,6 @@ def run_text_reranker_benchmark(
     model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_reranker_model(model_path, device, mem_consumption, **args)
     iter_data_list = []
 
-    # Build the prompt schedule via BenchPrompter, which handles both
-    # subsequent=False (iter-major) and subsequent=True (prompt-major) modes
-    # in a single unified iter_schedule() loop.
     prompter = BenchPrompter(args)
     prompt_idx_list = prompter.active_indices
     text_list = [p["prompt"] for p in prompter.active_items]
