@@ -1111,8 +1111,10 @@ public:
     void notify_handle_echo_only() {
         if (m_terminal_notification_sent)
             return;
-        size_t first_token_position = m_num_streamed_tokens;
-        size_t last_token_position = m_num_processed_tokens;
+         const size_t last_token_position = m_num_processed_tokens;
+         if (last_token_position <= m_num_streamed_tokens)
+             return;
+         const size_t first_token_position = m_num_streamed_tokens;
 
         GenerationOutput output;
         output.generated_ids = std::vector<int64_t>(m_prompt_ids.begin() + first_token_position, m_prompt_ids.begin() + last_token_position);
