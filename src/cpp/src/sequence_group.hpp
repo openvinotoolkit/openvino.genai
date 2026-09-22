@@ -1111,11 +1111,8 @@ public:
     void notify_handle_echo_only() {
         if (m_terminal_notification_sent)
             return;
-        // Called after metrics are updated; m_num_processed_tokens does not yet include
-        // recently forwarded tokens, so it is our starting position.
-        // we return m_num_scheduled_tokens tokens as they were forwarded in the current step, meaning context length is our last position.
-        size_t first_token_position = m_num_processed_tokens;
-        size_t last_token_position = get_context_len();
+        size_t first_token_position = m_num_streamed_tokens;
+        size_t last_token_position = m_num_processed_tokens;
 
         GenerationOutput output;
         output.generated_ids = std::vector<int64_t>(m_prompt_ids.begin() + first_token_position, m_prompt_ids.begin() + last_token_position);
@@ -1130,6 +1127,7 @@ public:
         GenerationOutputs outputs;
         outputs.emplace(0, output);
         m_generation_stream->push(std::move(outputs));
+        m_num_streamed_tokens = last_token_position;
         if (last_token_position == get_prompt_len()) {
             m_terminal_notification_sent = true;
             set_generation_status(GenerationStatus::FINISHED);

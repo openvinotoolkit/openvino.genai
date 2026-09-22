@@ -1435,9 +1435,9 @@ def test_cb_perf_metrics_available_after_concurrent_read(model_facebook_opt_125m
 
         def make_reader(h, errs):
             def reader():
-                h.read_all()
-                # no sleep: immediate call is the exact race window the fix closes
                 try:
+                    h.read_all()
+                    # no sleep: immediate call is the exact race window the fix closes
                     metrics = h.get_perf_metrics()
                     assert metrics.get_num_generated_tokens() > 0
                 except Exception as e:
@@ -1488,6 +1488,10 @@ def test_cb_perf_metrics_available_for_echo_only(model_facebook_opt_125m: OVConv
     handle = cb_pipe.add_request(0, "What is OpenVINO?", generation_config=config)
     while cb_pipe.has_non_finished_requests():
         cb_pipe.step()
-    handle.read_all()
+    outputs = handle.read_all()
     metrics = handle.get_perf_metrics()
     assert metrics.get_num_input_tokens() > 0
+    assert len(outputs) > 0
+    assert len(outputs[0].generated_ids) == metrics.get_num_input_tokens(), (
+        "Echo-only output must contain the whole prompt; got an empty/partial range instead"
+    )
