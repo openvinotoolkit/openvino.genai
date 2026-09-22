@@ -9,7 +9,7 @@
 #include <unordered_map>
 
 #include "automatic_speech_recognition/models/fun-asr/pipeline.hpp"
-#include "automatic_speech_recognition/models/qwen3-asr/pipeline.hpp"
+#include "automatic_speech_recognition/models/qwen3-asr/encoder_decoder/pipeline.hpp"
 #include "automatic_speech_recognition/models/whisper/pipeline.hpp"
 #include "automatic_speech_recognition/pipeline_base.hpp"
 #include "utils.hpp"
@@ -61,7 +61,7 @@ ASRPipeline::ASRPipeline(const std::filesystem::path& models_path,
         break;
     }
     case ASRModelType::qwen3_asr: {
-        m_impl = std::make_unique<Qwen3ASR>(models_path, device, properties);
+        m_impl = std::make_unique<Qwen3EncoderDecoderASR>(models_path, device, properties);
         break;
     }
     case ASRModelType::fun_asr: {

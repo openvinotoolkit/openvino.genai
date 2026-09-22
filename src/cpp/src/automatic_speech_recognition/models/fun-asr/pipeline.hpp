@@ -6,7 +6,7 @@
 #include <string>
 #include <utility>
 
-#include "automatic_speech_recognition/models/qwen3-asr/decoder.hpp"
+#include "automatic_speech_recognition/models/qwen3-asr/encoder_decoder/decoder.hpp"
 #include "automatic_speech_recognition/pipeline_base.hpp"
 #include "encoder.hpp"
 #include "feature_extractor.hpp"
