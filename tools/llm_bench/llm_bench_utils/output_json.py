@@ -68,7 +68,8 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             "infer_count": iter_data["infer_count"],
             "output_size": iter_data["output_size"],
             # output_repr: compact output summary, symmetric with prompt_repr
-            # ("<N>t" for text outputs, media dimensions for image/video/audio).
+            # ("text:<N>w" for text outputs, media dimensions for
+            # image/video/audio).
             "output_repr": iter_data.get("output_repr", ""),
             "generation_time": generation_time,
             "latency": round(latency, 5) if latency != "" else latency,

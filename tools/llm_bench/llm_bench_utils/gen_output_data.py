@@ -11,10 +11,12 @@ def text_output_repr(text):
     text as a whitespace word count (``w`` suffix), media as dimensions (the
     media-generating tasks pass their own ``output_repr`` such as
     ``"image:512x512"``). Returns ``""`` for empty output.
+
+    Callers pass the single generated string they also report elsewhere (the
+    first batch element), matching ``prompt_repr``, which likewise describes
+    one item rather than the whole batch.
     """
-    if isinstance(text, (list, tuple)):
-        text = " ".join(str(t) for t in text)
-    n = len(str(text).split()) if text else 0
+    n = len(text.split()) if text else 0
     return f"text:{n}w" if n else ""
 
 
