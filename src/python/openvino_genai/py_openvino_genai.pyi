@@ -644,6 +644,9 @@ class AutoencoderKL:
         @property
         def scaling_factor(self) -> float:
             ...
+        @property
+        def timestep_conditioning(self) -> bool:
+            ...
         @scaling_factor.setter
         def scaling_factor(self, arg0: typing.SupportsFloat) -> None:
             ...
@@ -837,10 +840,19 @@ class AutoencoderKLLTXVideo:
                         device (str): Device to run the model on (e.g., CPU, GPU).
                         kwargs: Device properties.
         """
+    @typing.overload
     def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         """
                         Decodes latent video to pixel space.
                         latent (ov.Tensor): Latent video tensor.
+                        Returns: Decoded video tensor.
+        """
+    @typing.overload
+    def decode(self, latent: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+        """
+                        Decodes latent video with timestep conditioning to pixel space.
+                        latent (ov.Tensor): Latent video tensor.
+                        timestep (ov.Tensor): Float32 timestep tensor shaped [B].
                         Returns: Decoded video tensor.
         """
     def encode(self, video: openvino._pyopenvino.Tensor, generator: Generator = None) -> openvino._pyopenvino.Tensor:
@@ -5202,6 +5214,8 @@ class Text2VideoPipeline:
     @typing.overload
     def compile(self, text_encode_device: str, denoise_device: str, vae_device: str, **kwargs) -> None:
         ...
+    def decode(self, latent: openvino._pyopenvino.Tensor) -> VideoGenerationResult:
+        ...
     def generate(self, prompt: str, **kwargs) -> VideoGenerationResult:
         ...
     def get_generation_config(self) -> VideoGenerationConfig:
@@ -6179,6 +6193,18 @@ class VideoGenerationConfig:
     negative_prompt: str | None
     taylorseer_config: openvino_genai.py_openvino_genai.TaylorSeerCacheConfig | None
     def __init__(self) -> None:
+        ...
+    @property
+    def decode_noise_scale(self) -> float | None:
+        ...
+    @decode_noise_scale.setter
+    def decode_noise_scale(self, arg0: typing.SupportsFloat | None) -> None:
+        ...
+    @property
+    def decode_timestep(self) -> float:
+        ...
+    @decode_timestep.setter
+    def decode_timestep(self, arg0: typing.SupportsFloat) -> None:
         ...
     @property
     def frame_rate(self) -> float | None:

@@ -66,6 +66,29 @@ You can adjust several parameters to control the video generation process, inclu
     </TabItemCpp>
 </LanguageTabs>
 
+For an LTX model with a timestep-conditioned VAE decoder, configure decode-time conditioning as follows:
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        video = pipe.generate(
+            prompt,
+            decode_timestep=0.05,
+            decode_noise_scale=0.025,
+        ).video
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        ov::Tensor video = pipe.generate(
+            prompt,
+            ov::genai::decode_timestep(0.05f),
+            ov::genai::decode_noise_scale(0.025f)
+        ).video;
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
 ### Working with LoRA Adapters
 
 For video generation models like LTX-Video, LoRA adapters can modify the generation process to produce videos with specific artistic styles, content types, or quality enhancements.
@@ -83,6 +106,8 @@ Refer to the [LoRA Adapters](/docs/guides/lora-adapters) for more details on wor
 - `guidance_scale`: Balances prompt adherence vs. creativity. Higher values follow prompt more strictly, lower values allow more creative freedom.
 - `generator`: Controls randomness for reproducible results. Same generator seed produces identical videos across runs.
 - `frame_rate`: Target video FPS used by the pipeline.
+- `decode_timestep`: Timestep conditioning value passed to a timestep-conditioned LTX VAE decoder. The default is `0.0`.
+- `decode_noise_scale`: Interpolation factor between denoised latents and random noise before VAE decoding. When omitted, `decode_timestep` is used. This parameter requires a timestep-conditioned LTX VAE decoder.
 
 For the full list of generation parameters, refer to the [Video Generation Config API](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.VideoGenerationConfig.html).
 
