@@ -453,27 +453,32 @@ class LTXPipeline {
 
         const float decode_noise_scale =
             generation_config.decode_noise_scale.value_or(generation_config.decode_timestep);
-        std::optional<ov::Tensor> timestep;
         if (!m_vae->get_config().timestep_conditioning) {
             OPENVINO_ASSERT(generation_config.decode_timestep == 0.0f && decode_noise_scale == 0.0f,
                             "decode_timestep and decode_noise_scale require a timestep-conditioned VAE decoder");
-        } else {
-            OPENVINO_ASSERT(generation_config.generator,
-                            "A generator is required for a timestep-conditioned VAE decoder");
-            OPENVINO_ASSERT(unpacked.get_element_type() == ov::element::f32,
-                            "Decode-time noise interpolation requires f32 latents, got ",
-                            unpacked.get_element_type());
-            const ov::Tensor noise = generation_config.generator->randn_tensor(unpacked.get_shape());
-            float* unpacked_data = unpacked.data<float>();
-            const float* noise_data = noise.data<const float>();
-            for (size_t i = 0; i < unpacked.get_size(); ++i) {
-                unpacked_data[i] =
-                    (1.0f - decode_noise_scale) * unpacked_data[i] + decode_noise_scale * noise_data[i];
-            }
-
-            timestep.emplace(ov::element::f32, ov::Shape{unpacked.get_shape()[0]});
-            std::fill_n(timestep->data<float>(), timestep->get_size(), generation_config.decode_timestep);
+            ov::Tensor denormalized = denormalize_latents(
+                unpacked,
+                tensor_from_vector(m_vae->get_config().latents_mean_data),
+                tensor_from_vector(m_vae->get_config().latents_std_data),
+                m_vae->get_config().scaling_factor);
+            return {std::move(denormalized), std::nullopt};
         }
+
+        OPENVINO_ASSERT(generation_config.generator,
+                        "A generator is required for a timestep-conditioned VAE decoder");
+        OPENVINO_ASSERT(unpacked.get_element_type() == ov::element::f32,
+                        "Decode-time noise interpolation requires f32 latents, got ",
+                        unpacked.get_element_type());
+        const ov::Tensor noise = generation_config.generator->randn_tensor(unpacked.get_shape());
+        float* unpacked_data = unpacked.data<float>();
+        const float* noise_data = noise.data<const float>();
+        for (size_t i = 0; i < unpacked.get_size(); ++i) {
+            unpacked_data[i] =
+                (1.0f - decode_noise_scale) * unpacked_data[i] + decode_noise_scale * noise_data[i];
+        }
+
+        ov::Tensor timestep(ov::element::f32, {unpacked.get_shape()[0]});
+        std::fill_n(timestep.data<float>(), timestep.get_size(), generation_config.decode_timestep);
 
         ov::Tensor denormalized = denormalize_latents(
             unpacked,
