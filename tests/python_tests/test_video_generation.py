@@ -327,6 +327,23 @@ class TestAutoEncoderKLLTXVideoTimestepConditioning:
         )
         return decoder_path
 
+    def test_compression_ratios_prefer_explicit_values_and_fall_back(self, conditioned_vae_path):
+        config_path = conditioned_vae_path / "config.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config.update({"spatial_compression_ratio": 32, "temporal_compression_ratio": 8})
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+
+        explicit_config = ov_genai.AutoencoderKLLTXVideo(str(conditioned_vae_path)).get_config()
+        assert explicit_config.spatial_compression_ratio == 32
+        assert explicit_config.temporal_compression_ratio == 8
+
+        config.update({"spatial_compression_ratio": None, "temporal_compression_ratio": None})
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+
+        fallback_config = ov_genai.AutoencoderKLLTXVideo(str(conditioned_vae_path)).get_config()
+        assert fallback_config.spatial_compression_ratio == 1
+        assert fallback_config.temporal_compression_ratio == 1
+
     def test_decode_accepts_fp32_timestep(self, conditioned_vae_path):
         vae = ov_genai.AutoencoderKLLTXVideo(str(conditioned_vae_path))
         vae.compile("CPU")

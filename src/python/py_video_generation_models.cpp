@@ -193,6 +193,8 @@ void init_autoencoder_kl_ltx_video(py::module_& m) {
         .def_readonly("block_out_channels", &ov::genai::AutoencoderKLLTXVideo::Config::block_out_channels)
         .def_readonly("patch_size", &ov::genai::AutoencoderKLLTXVideo::Config::patch_size)
         .def_readonly("patch_size_t", &ov::genai::AutoencoderKLLTXVideo::Config::patch_size_t)
+        .def_readonly("spatial_compression_ratio", &ov::genai::AutoencoderKLLTXVideo::Config::spatial_compression_ratio)
+        .def_readonly("temporal_compression_ratio", &ov::genai::AutoencoderKLLTXVideo::Config::temporal_compression_ratio)
         .def_readonly("timestep_conditioning", &ov::genai::AutoencoderKLLTXVideo::Config::timestep_conditioning);
 
     vae.def("get_config", &ov::genai::AutoencoderKLLTXVideo::get_config)

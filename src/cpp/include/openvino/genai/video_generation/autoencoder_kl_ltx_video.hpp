@@ -28,6 +28,8 @@ public:
         size_t patch_size = 4;
         std::vector<bool> spatio_temporal_scaling{true, true, true, false};
         size_t patch_size_t = 1;
+        size_t spatial_compression_ratio = 0;
+        size_t temporal_compression_ratio = 0;
         std::vector<float> latents_mean_data, latents_std_data;
         bool timestep_conditioning = false;
 
