@@ -87,7 +87,8 @@ def read_video(path: str, num_frames: int = 8) -> tuple[Tensor, openvino_genai.V
         ret, frame = cap.read()
         if not ret:
             break
-        frames.append(np.array(frame))
+        # OpenCV decodes to BGR; GenAI video inputs are RGB.
+        frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
     cap.release()
 
     if len(frames) != total_num_frames:
@@ -162,13 +163,13 @@ def main() -> None:
 
         turn += 1
         history.append({"role": "user", "content": prompt})
-        # New images and videos can be passed at each turn; here we rely on the info from turn 1.
+        # New images, videos and audio can be passed at each turn; here we rely on the info from turn 1.
         decoded_results = pipe.generate(
             history,
             images=[],
             videos=[],
             videos_metadata=[],
-            audios=audios,
+            audios=[],
             text_config=text_config,
             talker_speech_config=talker_speech_config,
             streamer=streamer,
