@@ -7,7 +7,7 @@ import datetime
 from PIL import Image
 import hashlib
 import logging as log
-from transformers import AutoProcessor, set_seed
+from transformers import set_seed
 from llm_bench_utils.hook_forward import StableDiffusionHook
 import llm_bench_utils
 import llm_bench_utils.model_utils as model_utils
@@ -91,7 +91,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
     result_md5_list = []
     mem_consumption.start(num)
     input_text_list = [input_text] * args['batch_size']
-    if args["use_case"].tokenizer_cls is AutoProcessor:
+    if args.get("model_type") == "QwenImage21":
         tokenizer = pipe.processor.tokenizer
         if input_args.pop("strength", None) is not None:
             log.warning("Qwen-Image-2.1 does not support strength; ignoring it.")
@@ -162,9 +162,9 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
             llm_bench_utils.output_file.output_image_input_text(in_text, args, image_id, bs_idx, proc_id)
     callback.reset()
 
-    if args["use_case"].tokenizer_cls is AutoProcessor:
+    if args.get("model_type") == "QwenImage21":
         if input_args.pop("strength", None) is not None:
-            log.warning("model does not support strength; ignoring it.")
+            log.warning("The model does not support strength; ignoring it.")
         guidance_scale = input_args.get("guidance_scale", pipe.get_generation_config().guidance_scale)
         if guidance_scale > 1:
             input_args["negative_prompt"] = ""
