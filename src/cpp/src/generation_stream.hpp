@@ -93,6 +93,9 @@ public:
             }
             m_status = status;
             m_closed = status != GenerationStatus::RUNNING;
+            if (status == GenerationStatus::STOP || status == GenerationStatus::CANCEL) {
+                m_output_queue = {};
+            }
         }
         m_cv.notify_all();
     }
@@ -152,6 +155,7 @@ public:
             m_status = GenerationStatus::STOP;
             m_finish_reason = finish_reason;
             m_closed = true;
+            m_output_queue = {};
         }
         m_cv.notify_all();
     }
@@ -164,6 +168,7 @@ public:
             }
             m_status = GenerationStatus::CANCEL;
             m_closed = true;
+            m_output_queue = {};
         }
         m_cv.notify_all();
     }

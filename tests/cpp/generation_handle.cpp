@@ -182,11 +182,21 @@ TEST(GenerationStreamContractTest, BlockedReadWakesEmptyOnStopAndCancel) {
     }
 }
 
-TEST(GenerationStreamContractTest, CancelledStreamDoesNotReturnQueuedOutput) {
-    const auto stream = ov::genai::GenerationStream::create();
-    stream->push(make_outputs(41));
-    stream->cancel();
+TEST(GenerationStreamContractTest, StopAndCancelDiscardQueuedOutput) {
+    for (const bool cancel : {false, true}) {
+        const auto stream = ov::genai::GenerationStream::create();
+        stream->push(make_outputs(41));
+        cancel ? stream->cancel() : stream->stop();
 
+        EXPECT_FALSE(stream->can_read());
+        EXPECT_TRUE(stream->read().empty());
+    }
+
+    const auto stream = ov::genai::GenerationStream::create();
+    stream->push(make_outputs(43));
+    stream->set_generation_status(ov::genai::GenerationStatus::STOP);
+
+    EXPECT_FALSE(stream->can_read());
     EXPECT_TRUE(stream->read().empty());
 }
 
