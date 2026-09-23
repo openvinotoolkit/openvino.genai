@@ -38,6 +38,8 @@ the model-free tier instead of failing.
 
 from __future__ import annotations
 
+import platform
+import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,8 +58,6 @@ from utils.atomic_download import AtomicDownloadManager
 from utils.constants import get_ov_cache_converted_models_dir
 from utils.network import retry_request
 
-pytestmark = pytest.mark.omni
-
 OMNI_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
 
 FRAME_RESOLUTION = 64
@@ -68,37 +68,38 @@ AUDIO_SAMPLES = AUDIO_SAMPLE_RATE
 OPTIMUM_COMPARE_TOKENS = 6
 
 NO_WAVEFORM_XFAIL_REASON = (
-    "tiny-random-qwen3-omni's talker role token ids are outside its tokenizer's range (im_start 151644, "
-    "user 872, assistant 77091, against a max id of 769), so build_talker_input finds no segments and "
-    "speech generation raises before reaching code2wav — see "
+    "CVS-194799: tiny-random-qwen3-omni's talker role token ids are outside its tokenizer's range "
+    "(im_start 151644, user 872, assistant 77091, against a max id of 769), so build_talker_input finds "
+    "no segments and speech generation raises before reaching code2wav — see "
     "test_speech_generation_rejects_unmatched_role_tokens, which locks that error in. Same checkpoint "
-    "limitation test_tools_llm_benchmark.py xfails its omni text_to_speech cases on, for both "
+    "limitation that test_python_tool_llm_benchmark_qwen3_omni_text_to_speech xfails on, for both "
     "--optimum and --genai."
 )
 
 VIDEO_INPUT_XFAIL_REASON = (
-    "tiny-random-qwen3-omni's processor_config.json declares video_processor.patch_size=14 (a stale "
-    "Qwen2VL default) while image_processor and thinker_config.vision_config both say 16, so the video "
-    "patch dim is 2*3*14*14=1176 against an encoder built for 1536 and the infer request fails "
-    "shape.compatible(). Setting that one value to 16 makes video work on this checkpoint, and real "
-    "Qwen3-Omni models already ship 16 — the encoder and the video path itself are fine."
+    "CVS-194799: tiny-random-qwen3-omni's processor_config.json declares video_processor.patch_size=14 "
+    "(a stale Qwen2VL default) while image_processor and thinker_config.vision_config both say 16, so "
+    "the video patch dim is 2*3*14*14=1176 against an encoder built for 1536 and the infer request "
+    "fails shape.compatible(). Setting that one value to 16 makes video work on this checkpoint, and "
+    "real Qwen3-Omni models already ship 16 — the encoder and the video path itself are fine."
 )
 
 OPTIMUM_IMAGE_XFAIL_REASON = (
-    "GenAI and optimum agree exactly on generated token ids for a text-only prompt but diverge once an "
-    "image is attached, while still agreeing on the 57-token input length — so they build the same "
-    "sequence and merge different image embeddings into it. Undetermined whether that is a real "
-    "preprocessing difference or this checkpoint's random weights making the greedy argmax flip on "
-    "numerical noise: it cannot be arbitrated locally, because optimum only recognizes model_type "
-    "qwen3_omni_moe and every full Qwen3-Omni export at hand is dense qwen3_omni."
+    "CVS-194800: GenAI and optimum agree exactly on generated token ids for a text-only prompt but "
+    "diverge once an image is attached, while still agreeing on the 57-token input length — so they "
+    "build the same sequence and merge different image embeddings into it. Undetermined whether that "
+    "is a real preprocessing difference or this checkpoint's random weights making the greedy argmax "
+    "flip on numerical noise: it cannot be arbitrated locally, because optimum only recognizes "
+    "model_type qwen3_omni_moe and every full Qwen3-Omni export at hand is dense qwen3_omni."
 )
 
 AUDIO_INPUT_XFAIL_REASON = (
-    "tiny-random-qwen3-omni is internally inconsistent for audio: thinker_config.audio_token_id is 9, "
-    "while its tokenizer maps <|AUDIO|> to 267 and has no <|audio_pad|> token at all. GenAI injects "
-    "<|audio_start|><|audio_pad|>...<|audio_end|> and merges audio features at audio_token_id positions, "
-    "so nothing matches and merge_audio_embeddings() throws 'Audio token count mismatch: placed 0 "
-    "embeddings'. Same root cause as the omni speech_to_text xfail in test_tools_llm_benchmark.py."
+    "CVS-194799: tiny-random-qwen3-omni is internally inconsistent for audio: "
+    "thinker_config.audio_token_id is 9, while its tokenizer maps <|AUDIO|> to 267 and has no "
+    "<|audio_pad|> token at all. GenAI injects <|audio_start|><|audio_pad|>...<|audio_end|> and merges "
+    "audio features at audio_token_id positions, so nothing matches and merge_audio_embeddings() "
+    "throws 'Audio token count mismatch: placed 0 embeddings'. Same root cause as the --genai xfail "
+    "on test_python_tool_llm_benchmark_qwen3_omni_speech_to_text."
 )
 
 
@@ -383,6 +384,31 @@ class TestCustomTalkerSubclass:
         assert talker.generate_calls == 1, "a speech_streamer kwarg must not block the property-bag overload"
         assert talker.last_speech_streamer is not None, "the streamer must survive the AnyMap round-trip"
 
+    def test_property_bag_generate_accepts_speech_streamer_object(self) -> None:
+        """An OmniSpeechStreamerBase subclass reaches the typed override, not just a callable.
+
+        The callable and the shared_ptr are separate alternatives of OmniSpeechStreamerVariant and
+        take different branches of the AnyMap reader, so a callable-only test leaves half of it
+        unexercised.
+        """
+
+        class Collector(ov_genai.OmniSpeechStreamerBase):
+            def write(self, chunk: ov.Tensor) -> ov_genai.StreamingStatus:
+                return ov_genai.StreamingStatus.RUNNING
+
+            def end(self) -> None:
+                pass
+
+        talker = RecordingTalker()
+        collector = Collector()
+
+        ov_genai.TalkerBase.generate(
+            talker, ov_genai.VLMDecodedResults(), return_audio=False, speech_streamer=collector
+        )
+
+        assert talker.generate_calls == 1, "a streamer object must not block the property-bag overload"
+        assert talker.last_speech_streamer is collector, "the streamer object must survive the AnyMap round-trip"
+
     def test_property_bag_generate_accepts_whole_speech_config(self) -> None:
         """A full OmniTalkerSpeechConfig passed as a kwarg reaches the typed override.
 
@@ -455,16 +481,17 @@ class TestCustomVLMSubclass:
         assert len(vlm.last_videos) == 1, "videos must survive the AnyMap round-trip"
         assert vlm.last_max_new_tokens == 3, "the ChatHistory AnyMap overload must fold in config fields"
 
-    def test_property_bag_generate_rejects_audio_streamer(self) -> None:
-        """audio_streamer has no typed generate() parameter to land in, so it must be rejected loudly.
+    def test_property_bag_generate_rejects_speech_streamer(self) -> None:
+        """speech_streamer has no typed generate() parameter to land in, so it must be rejected loudly.
 
         It is plumbing for the built-in Qwen3-Omni speech path; forwarding it to a Python subclass
-        would silently drop the caller's streamer.
+        would silently drop the caller's streamer. kwargs_to_any_map() accepts the key, so the
+        rejection has to come from unpack_config_map() rather than from the conversion failing.
         """
         vlm = RecordingVLM()
 
-        with pytest.raises(RuntimeError, match="audio_streamer"):
-            ov_genai.VLMPipelineBase.generate(vlm, "describe", audio_streamer=lambda chunk: None)
+        with pytest.raises(RuntimeError, match="speech_streamer"):
+            ov_genai.VLMPipelineBase.generate(vlm, "describe", speech_streamer=lambda chunk: None)
 
         assert vlm.generate_calls == 0, "an unforwardable property must not reach the backend"
 
@@ -634,9 +661,8 @@ def omni_model_path() -> Path:
 def omni_pipe(omni_model_path: Path) -> ov_genai.OmniPipeline:
     """Pipeline built once per module — loading the model per test dominates the suite runtime.
 
-    Reused across the real-model tests the way test_vlm_pipeline.py reuses ov_pipe_model. Safe to
-    share: none of these tests enters chat mode or mutates the stored configs, so no state carries
-    between them.
+    Safe to share: none of these tests enters chat mode or mutates the stored configs, so no state
+    carries between them.
     """
     return ov_genai.OmniPipeline(omni_model_path, "CPU")
 
@@ -652,8 +678,8 @@ def _sampling_text_config(rng_seed: int, max_new_tokens: int = 20) -> ov_genai.G
     config = ov_genai.GenerationConfig()
     config.max_new_tokens = max_new_tokens
     config.do_sample = True
-    # Copied from test_llm_pipeline.py: a high temperature and ignore_eos keep different seeds on
-    # different sequences instead of collapsing them onto the same near-greedy one.
+    # A high temperature and ignore_eos keep different seeds on different sequences instead of
+    # collapsing them onto the same near-greedy one.
     config.temperature = 1.3
     config.ignore_eos = True
     config.rng_seed = rng_seed
@@ -809,6 +835,11 @@ def omni_pipe_from_models_map(omni_model_path: Path) -> ov_genai.OmniPipeline:
     return ov_genai.OmniPipeline(vlm, talker)
 
 
+@pytest.mark.skipif(
+    sys.platform == "darwin" and platform.machine() == "arm64",
+    reason="CVS-194249: OmniPipeline requires the continuous-batching backend, and PagedAttention is "
+    "unavailable on macOS arm64.",
+)
 class TestOmniPipelineRealModel:
     """OmniPipeline driven by an exported tiny Qwen3-Omni checkpoint.
 
@@ -928,7 +959,7 @@ class TestOmniPipelineRealModel:
         the test that rng_seed actually reaches the sampler.
 
         The divergence check spans four seeds and only requires that they are not all identical,
-        mirroring test_llm_pipeline.py's rng_seed pair — any single pair of seeds can collide.
+        because any single pair of seeds can collide.
         """
         text_only = _talker_speech_config(return_audio=False)
         seeded = _sampling_text_config(rng_seed=42)
