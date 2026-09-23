@@ -142,7 +142,7 @@ public:
                                  GenerationConfig sampling_params);
 
     /**
-     * Overload accepting audios. Audios are encoded under m_embeddings_mutex before text tokenization so
+     * Overload accepting audios. Audios are encoded before text tokenization so
      * <|AUDIO|> placeholders resolve to fresh embeddings (Qwen3-Omni).
      */
     GenerationHandle add_request(uint64_t request_id,
