@@ -443,7 +443,16 @@ void Qwen3TTSImpl::init_config(const std::filesystem::path& models_path) {
 
     nlohmann::json config = nlohmann::json::parse(config_stream);
 
-    m_tts_model_type = to_lower(config.value("tts_model_type", std::string("custom_voice")));
+    OPENVINO_ASSERT(config.contains("tts_model_type") && config.at("tts_model_type").is_string(),
+                    "Qwen3-TTS config must contain string field 'tts_model_type'");
+    const std::string tts_model_type = to_lower(config.at("tts_model_type").get<std::string>());
+    OPENVINO_ASSERT(tts_model_type == "base" ||
+                        tts_model_type == "custom_voice" ||
+                        tts_model_type == "voice_design",
+                    "Unsupported tts_model_type: '",
+                    tts_model_type,
+                    "'. Supported values are: 'base', 'custom_voice', 'voice_design'.");
+    m_tts_model_type = tts_model_type;
 
     m_ids.tts_bos_token_id = config.value("tts_bos_token_id", -1);
     m_ids.tts_eos_token_id = config.value("tts_eos_token_id", -1);
