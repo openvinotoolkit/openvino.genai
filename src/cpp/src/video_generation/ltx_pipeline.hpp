@@ -68,6 +68,11 @@ void check_inputs(const VideoGenerationConfig& generation_config, size_t vae_sca
 namespace ov::genai {
 
 class LTXPipeline : public VideoPipeline {
+    struct VAEDecodeInputs {
+        ov::Tensor latent;
+        std::optional<ov::Tensor> timestep;
+    };
+
     std::shared_ptr<IScheduler> m_scheduler;
     std::shared_ptr<T5EncoderModel> m_t5_text_encoder;
     std::shared_ptr<LTXVideoTransformer3DModel> m_transformer;
@@ -177,7 +182,8 @@ class LTXPipeline : public VideoPipeline {
         return packed;
     }
 
-    ov::Tensor postprocess_latents(const ov::Tensor& latent) {
+    VAEDecodeInputs prepare_vae_decode_inputs(const ov::Tensor& latent,
+                                              const VideoGenerationConfig& generation_config) {
         OPENVINO_ASSERT(m_latent_num_frames > 0 && m_latent_height > 0 && m_latent_width > 0,
                         "Latent sizes must be > 0 (got num_frames=",
                         m_latent_num_frames,
@@ -187,20 +193,43 @@ class LTXPipeline : public VideoPipeline {
                         m_latent_width,
                         ").");
 
-        ov::Tensor decoded = video_generation_utils::unpack_latents(latent,
-                                                                    m_latent_num_frames,
-                                                                    m_latent_height,
-                                                                    m_latent_width,
-                                                                    m_transformer->get_config().patch_size,
-                                                                    m_transformer->get_config().patch_size_t);
+    ov::Tensor unpacked = video_generation_utils::unpack_latents(latent,
+                                     m_latent_num_frames,
+                                     m_latent_height,
+                                     m_latent_width,
+                                     m_transformer->get_config().patch_size,
+                                     m_transformer->get_config().patch_size_t);
 
-        decoded = video_generation_utils::denormalize_latents(
-            decoded,
+        const float decode_noise_scale =
+            generation_config.decode_noise_scale.value_or(generation_config.decode_timestep);
+        std::optional<ov::Tensor> timestep;
+        if (!m_vae->get_config().timestep_conditioning) {
+            OPENVINO_ASSERT(generation_config.decode_timestep == 0.0f && decode_noise_scale == 0.0f,
+                            "decode_timestep and decode_noise_scale require a timestep-conditioned VAE decoder");
+        } else {
+            OPENVINO_ASSERT(generation_config.generator,
+                            "A generator is required for a timestep-conditioned VAE decoder");
+            OPENVINO_ASSERT(unpacked.get_element_type() == ov::element::f32,
+                            "Decode-time noise interpolation requires f32 latents, got ",
+                            unpacked.get_element_type());
+            const ov::Tensor noise = generation_config.generator->randn_tensor(unpacked.get_shape());
+            float* unpacked_data = unpacked.data<float>();
+            const float* noise_data = noise.data<const float>();
+            for (size_t i = 0; i < unpacked.get_size(); ++i) {
+                unpacked_data[i] =
+                    (1.0f - decode_noise_scale) * unpacked_data[i] + decode_noise_scale * noise_data[i];
+            }
+
+            timestep.emplace(ov::element::f32, ov::Shape{unpacked.get_shape()[0]});
+            std::fill_n(timestep->data<float>(), timestep->get_size(), generation_config.decode_timestep);
+        }
+
+        ov::Tensor denormalized = video_generation_utils::denormalize_latents(
+            unpacked,
             video_generation_utils::tensor_from_vector(m_vae->get_config().latents_mean_data),
             video_generation_utils::tensor_from_vector(m_vae->get_config().latents_std_data),
             m_vae->get_config().scaling_factor);
-
-        return decoded;
+        return {std::move(denormalized), std::move(timestep)};
     }
 
     void compute_hidden_states(const std::string& positive_prompt,
@@ -351,39 +380,6 @@ public:
 
     size_t get_transformer_expected_batch_size() const override {
         return m_transformer->get_expected_batch_size();
-    }
-
-    ov::Tensor decode_latents(ov::Tensor&& latent, const VideoGenerationConfig& generation_config) {
-        const float decode_noise_scale =
-            generation_config.decode_noise_scale.value_or(generation_config.decode_timestep);
-
-        if (!m_vae->get_config().timestep_conditioning) {
-            OPENVINO_ASSERT(generation_config.decode_timestep == 0.0f && decode_noise_scale == 0.0f,
-                            "decode_timestep and decode_noise_scale require a timestep-conditioned VAE decoder");
-            return m_vae->decode(latent);
-        }
-
-        const ov::Shape latent_shape = latent.get_shape();
-        OPENVINO_ASSERT(latent.get_element_type() == ov::element::f32,
-                        "Decode-time noise interpolation requires f32 latents, got ",
-                        latent.get_element_type());
-        OPENVINO_ASSERT(latent_shape.size() == 5,
-                        "Decode-time noise interpolation requires rank 5 latents [B, C, F, H, W]");
-
-        if (decode_noise_scale != 0.0f) {
-            OPENVINO_ASSERT(generation_config.generator,
-                            "A generator is required when decode_noise_scale is non-zero");
-            const ov::Tensor noise = generation_config.generator->randn_tensor(latent_shape);
-            float* latent_data = latent.data<float>();
-            const float* noise_data = noise.data<const float>();
-            for (size_t i = 0; i < latent.get_size(); ++i) {
-                latent_data[i] = (1.0f - decode_noise_scale) * latent_data[i] + decode_noise_scale * noise_data[i];
-            }
-        }
-
-        ov::Tensor timestep(ov::element::f32, {latent_shape[0]});
-        std::fill_n(timestep.data<float>(), timestep.get_size(), generation_config.decode_timestep);
-        return m_vae->decode(latent, timestep);
     }
 
     void rebuild_models() {
@@ -599,10 +595,12 @@ public:
             callback_ptr->end();
         }
 
-        latent = postprocess_latents(latent);
+        VAEDecodeInputs decode_inputs = prepare_vae_decode_inputs(latent, merged_generation_config);
 
         const auto decode_start = std::chrono::steady_clock::now();
-        ov::Tensor video = decode_latents(std::move(latent), merged_generation_config);
+        ov::Tensor video = decode_inputs.timestep.has_value()
+                       ? m_vae->decode(decode_inputs.latent, *decode_inputs.timestep)
+                       : m_vae->decode(decode_inputs.latent);
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
@@ -774,10 +772,12 @@ public:
             callback_ptr->end();
         }
 
-        latent = postprocess_latents(latent);
+        VAEDecodeInputs decode_inputs = prepare_vae_decode_inputs(latent, merged_generation_config);
 
         const auto decode_start = std::chrono::steady_clock::now();
-        ov::Tensor video = decode_latents(std::move(latent), merged_generation_config);
+        ov::Tensor video = decode_inputs.timestep.has_value()
+                       ? m_vae->decode(decode_inputs.latent, *decode_inputs.timestep)
+                       : m_vae->decode(decode_inputs.latent);
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
@@ -789,12 +789,14 @@ public:
     }
 
     VideoGenerationResult decode(const ov::Tensor& latent) override {
-        ov::Tensor postprocessed = postprocess_latents(latent);
         VideoGenerationConfig generation_config = m_generation_config;
         utils::update_generation_config(generation_config, {});
+        VAEDecodeInputs decode_inputs = prepare_vae_decode_inputs(latent, generation_config);
 
         const auto decode_start = std::chrono::steady_clock::now();
-        ov::Tensor video = decode_latents(std::move(postprocessed), generation_config);
+        ov::Tensor video = decode_inputs.timestep.has_value()
+                       ? m_vae->decode(decode_inputs.latent, *decode_inputs.timestep)
+                       : m_vae->decode(decode_inputs.latent);
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
