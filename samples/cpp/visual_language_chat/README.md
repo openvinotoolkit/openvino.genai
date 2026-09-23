@@ -73,7 +73,7 @@ A model that supports video input is required to run this sample, for example `l
 
 `video_to_text_chat ./LLaVA-NeXT-Video-7B-hf/ sample_demo_1.mp4`
 
-Supported models with video input are listed in [this section](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt).
+Supported models with video input are listed in [this section](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-media-tags-in-prompt).
 
 ## Run benchmark:
 
