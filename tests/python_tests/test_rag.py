@@ -463,6 +463,28 @@ def test_embedding_pipeline_matches_text_embedding_pipeline(emb_model):
     )
 
 
+@pytest.mark.parametrize("emb_model", [EMBEDDINGS_TEST_MODELS[0]], indirect=True)
+def test_embedding_pipeline_honors_wrapped_text_embedding_config(emb_model):
+    text = "What is OpenVINO?"
+    config = TextEmbeddingPipeline.Config(pooling_type=TextEmbeddingPipeline.PoolingType.MEAN)
+    wrapped_config_pipeline = EmbeddingPipeline(emb_model.models_path, "CPU", text_embedding_config=config)
+    direct_config_pipeline = EmbeddingPipeline(
+        emb_model.models_path,
+        "CPU",
+        pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
+    )
+
+    wrapped_config_result = wrapped_config_pipeline.embed(text)
+    direct_config_result = direct_config_pipeline.embed(text)
+
+    np.testing.assert_allclose(
+        wrapped_config_result.embeddings.data,
+        direct_config_result.embeddings.data,
+        atol=MAX_EMBEDDING_ERROR,
+        rtol=0,
+    )
+
+
 @pytest.mark.parametrize("emb_model", ["BAAI/bge-small-en-v1.5"], indirect=True)
 def test_embedding_pipeline_prompt_matches_embed_instruction(emb_model):
     text = "What is OpenVINO?"

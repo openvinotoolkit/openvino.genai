@@ -366,6 +366,10 @@ def is_text_to_image_model(model_args, use_case):
     return model_args.get("task", "") == use_case.TASK["text2img"]["name"] or not model_args.get("task")
 
 
+def is_image_to_video_model(model_args, use_case):
+    return model_args.get("task", "") == use_case.TASK["image2video"]["name"]
+
+
 def create_image_gen_model(model_path, device, memory_data_collector, **kwargs):
     model_index_data = {}
     with open(str(model_path / "model_index.json"), 'r') as f:
@@ -377,6 +381,15 @@ def create_image_gen_model(model_path, device, memory_data_collector, **kwargs):
         model_class = image_gen_use_case.TASK["inpainting"]["ov_cls"]
     elif is_image_to_image_model(kwargs, image_gen_use_case):
         model_class = image_gen_use_case.TASK["img2img"]["ov_cls"]
+
+    if model_index_data.get("_class_name") == "QwenImage21Pipeline" and not kwargs.get("genai", True):
+        try:
+            from optimum.intel.openvino import OVQwenImage21Pipeline
+        except ImportError as exc:
+            raise RuntimeError(
+                "Qwen-Image-2.1 requires an Optimum Intel version that provides OVQwenImage21Pipeline."
+            ) from exc
+        model_class = OVQwenImage21Pipeline
 
     model_path = Path(model_path)
     ov_config = kwargs['config']
@@ -518,7 +531,10 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
     main_model_name = "unet" if "unet" in model_index_data else "transformer"
     callback = PerfCollector(main_model_name)
 
-    orig_tokenizer = AutoTokenizer.from_pretrained(model_path, subfolder="tokenizer")
+    tokenizer_subfolder = "tokenizer"
+    if model_class_name == "QwenImage21Pipeline":
+        tokenizer_subfolder = "processor"
+    orig_tokenizer = AutoTokenizer.from_pretrained(model_path, subfolder=tokenizer_subfolder)
     callback.orig_tokenizer = orig_tokenizer
 
     if kwargs.get("mem_consumption"):
@@ -603,7 +619,7 @@ def create_ldm_super_resolution_model(model_path, device, memory_data_collector,
 def create_genai_speech_2_txt_model(model_path, device, memory_data_collector, processor, **kwargs):
     import openvino_genai as ov_genai
 
-    ov_config = kwargs['config']
+    ov_config = kwargs["config"]
     pipeline_class = ov_genai.ASRPipeline if hasattr(ov_genai, "ASRPipeline") else ov_genai.WhisperPipeline
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()
@@ -1493,12 +1509,17 @@ def create_genai_video_gen_model(model_path, device, ov_config, memory_data_coll
 
     orig_tokenizer = AutoTokenizer.from_pretrained(model_path, subfolder="tokenizer")
 
+    pipeline_cls = openvino_genai.Text2VideoPipeline
+    if is_image_to_video_model(kwargs, kwargs["use_case"]):
+        log.info("Selected Image to Video generation pipeline")
+        pipeline_cls = openvino_genai.Image2VideoPipeline
+
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()
     start = time.perf_counter()
 
     if kwargs.get("static_reshape", False):
-        video_gen_pipe = openvino_genai.Text2VideoPipeline(model_path)
+        video_gen_pipe = pipeline_cls(model_path)
         height = kwargs.get("height", 512)
         width = kwargs.get("width", 512)
         num_frames = kwargs.get("num_frames", 25)
@@ -1507,7 +1528,7 @@ def create_genai_video_gen_model(model_path, device, ov_config, memory_data_coll
         video_gen_pipe.reshape(1, num_frames, height, width, guidance_scale)
         video_gen_pipe.compile(device.upper(), **ov_config)
     else:
-        video_gen_pipe = openvino_genai.Text2VideoPipeline(model_path, device.upper(), **ov_config)
+        video_gen_pipe = pipeline_cls(model_path, device.upper(), **ov_config)
 
     end = time.perf_counter()
     if kwargs.get("mem_consumption"):
@@ -1521,7 +1542,10 @@ def create_genai_video_gen_model(model_path, device, ov_config, memory_data_coll
 
 
 def create_video_gen_model(model_path, device, memory_data_collector, **kwargs):
-    model_class = kwargs["use_case"].ov_cls
+    use_case = kwargs["use_case"]
+    model_class = use_case.TASK["text2video"]["ov_cls"]
+    if is_image_to_video_model(kwargs, use_case):
+        model_class = use_case.TASK["image2video"]["ov_cls"]
 
     model_path = Path(model_path)
     ov_config = kwargs["config"]
