@@ -813,7 +813,7 @@ ov::Tensor Qwen3OmniSpeechPipeline::codes_to_wav(const ov::Tensor& codes) {
 
 TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& full_token_ids,
                                                        const std::vector<ov::Tensor>& all_intermediate_hidden_states,
-                                                       const OmniSpeechStreamerVariant& audio_streamer,
+                                                       const OmniSpeechStreamerVariant& speech_streamer,
                                                        const OmniTalkerSpeechConfig& talker_speech_config) {
     // Stamp start_time for the speech-side perf record.
     const auto speech_start_time = std::chrono::steady_clock::now();
@@ -839,8 +839,8 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
     const size_t cp_top_k_resolved = talker_speech_config.cp_top_k.value_or(m_config.cp_top_k);
 
     // Construct the guard before any validation below, so a rejected config still closes the stream.
-    bool streaming = is_speech_streamer_active(audio_streamer);
-    SpeechStreamerGuard streamer_guard(audio_streamer, streaming);
+    bool streaming = is_speech_streamer_active(speech_streamer);
+    SpeechStreamerGuard streamer_guard(speech_streamer, streaming);
 
     const size_t chunk_frames = talker_speech_config.audio_chunk_frames;
     OPENVINO_ASSERT(chunk_frames >= 1, "audio_chunk_frames must be >= 1 (got ", chunk_frames, ")");
@@ -1033,7 +1033,7 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
             chunk_cursor = all_codes.size();
             streamed_chunks.push_back(chunk_wav);
 
-            auto status = invoke_speech_streamer(audio_streamer, chunk_wav);
+            auto status = invoke_speech_streamer(speech_streamer, chunk_wav);
             if (status == StreamingStatus::STOP || status == StreamingStatus::CANCEL) {
                 GENAI_INFO("Speech: streaming %s at step %zu",
                            status == StreamingStatus::STOP ? "stopped" : "cancelled",
@@ -1080,7 +1080,7 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
         auto chunk_tensor = stack_codes_range(chunk_cursor, all_codes.size());
         auto chunk_wav = codes_to_wav(chunk_tensor);
         streamed_chunks.push_back(chunk_wav);
-        invoke_speech_streamer(audio_streamer, chunk_wav);
+        invoke_speech_streamer(speech_streamer, chunk_wav);
     }
 
     // Close the stream here rather than at scope exit: the consumer should not wait
