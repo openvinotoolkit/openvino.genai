@@ -3,6 +3,8 @@
 
 #include "visual_language/vision_registry.hpp"
 
+#include <cstring>
+
 namespace ov::genai {
 
 VisionRegistry::VisionEntry::VisionEntry(ModalityType t, ov::Tensor tensor)
@@ -50,6 +52,18 @@ size_t calculate_hash_stride(size_t byte_size) {
     return std::max(HASH_CHUNK_SIZE, stride);
 }
 
+// memcpy instead of a uint64_t* cast: user and ROI tensors are not guaranteed to be 8-byte aligned.
+uint64_t load_u64(const uint8_t* ptr) {
+    uint64_t value;
+    std::memcpy(&value, ptr, sizeof(value));
+    return value;
+}
+
+bool same_content(const ov::Tensor& lhs, const ov::Tensor& rhs) {
+    return lhs.get_element_type() == rhs.get_element_type() && lhs.get_shape() == rhs.get_shape() &&
+           (lhs.get_byte_size() == 0 || std::memcmp(lhs.data(), rhs.data(), lhs.get_byte_size()) == 0);
+}
+
 } // namespace
 
 // Hash tensor using FNV-1a algorithm.
@@ -77,8 +91,7 @@ VisionID VisionRegistry::compute_hash(const ov::Tensor& tensor) {
     // in the hash, so raw bytes stay unambiguous.
     const auto* data = static_cast<const uint8_t*>(tensor.data());
     const size_t byte_size = tensor.get_byte_size();
-    const uint64_t* data64 = reinterpret_cast<const uint64_t*>(data);
-    
+
     const size_t num_frames = shape.size() == 4 ? shape[0] : 1;
     const size_t frame_size_bytes = byte_size / num_frames;
     const size_t frame_chunks = frame_size_bytes / HASH_CHUNK_SIZE;
@@ -86,16 +99,16 @@ VisionID VisionRegistry::compute_hash(const ov::Tensor& tensor) {
     const size_t frame_stride = calculate_hash_stride(frame_size_bytes);
     
     for (size_t frame_idx = 0; frame_idx < num_frames; ++frame_idx) {
-        const uint64_t* frame_data = data64 + (frame_idx * frame_chunks);
-        
+        const auto* frame_data = data + frame_idx * frame_size_bytes;
+
         for (size_t i = 0; i < frame_chunks; i += frame_stride) {
-            hash ^= frame_data[i];
+            hash ^= load_u64(frame_data + i * HASH_CHUNK_SIZE);
             hash *= FNV_PRIME;
         }
         
         // Hash last chunk if strided loop didn't process it
         if (frame_stride > 1 && frame_chunks > 0 && (frame_chunks - 1) % frame_stride != 0) {
-            hash ^= frame_data[frame_chunks - 1];
+            hash ^= load_u64(frame_data + (frame_chunks - 1) * HASH_CHUNK_SIZE);
             hash *= FNV_PRIME;
         }
         
@@ -113,16 +126,19 @@ VisionID VisionRegistry::compute_hash(const ov::Tensor& tensor) {
 }
 
 VisionID VisionRegistry::register_vision(const ov::Tensor& tensor, ModalityType type) {
-    VisionID id = compute_hash(tensor);
-    
+    auto id = compute_hash(tensor);
+
     std::lock_guard<std::mutex> lock(m_mutex);
-    auto it = m_entries.find(id);
-    if (it == m_entries.end()) {
-        ov::Tensor owned_tensor(tensor.get_element_type(), tensor.get_shape());
-        tensor.copy_to(owned_tensor);
-        m_entries.emplace(id, VisionEntry(type, std::move(owned_tensor)));
+    // The hash samples large tensors, so a hit is only a candidate. Probe past entries with other content.
+    for (auto it = m_entries.find(id); it != m_entries.end(); it = m_entries.find(++id)) {
+        if (it->second.type == type && same_content(it->second.original, tensor)) {
+            it->second.ref_count++;
+            return id;
+        }
     }
-    m_entries.at(id).ref_count++;
+    ov::Tensor owned_tensor(tensor.get_element_type(), tensor.get_shape());
+    tensor.copy_to(owned_tensor);
+    m_entries.emplace(id, VisionEntry(type, std::move(owned_tensor))).first->second.ref_count++;
     return id;
 }
 
