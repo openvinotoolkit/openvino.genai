@@ -74,12 +74,6 @@ def _pipeline_kwargs_for_device(device):
     if "NPU" in device_upper or "GPU" in device_upper:
         kwargs["CACHE_DIR"] = "qwen3_tts_cache_dir"
 
-    # Keep code predictor in f32 on GPU to avoid accuracy issues.
-    if "GPU" in device_upper:
-        kwargs["MODEL_PROPERTIES"] = {
-            "code_predictor_model": {"INFERENCE_PRECISION_HINT": "f32"},
-        }
-
     return kwargs
 
 

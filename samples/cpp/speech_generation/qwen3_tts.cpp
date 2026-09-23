@@ -33,12 +33,6 @@ ov::AnyMap get_pipeline_config_for_device(const std::string& device) {
         config["CACHE_DIR"] = std::string("qwen3_tts_cache_dir");
     }
 
-    if (upper_device.find("GPU") != std::string::npos) {
-        config["MODEL_PROPERTIES"] = ov::AnyMap{
-            {"code_predictor_model", ov::AnyMap{{"INFERENCE_PRECISION_HINT", std::string("f32")}}},
-        };
-    }
-
     return config;
 }
 
