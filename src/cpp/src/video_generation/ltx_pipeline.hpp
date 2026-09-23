@@ -10,6 +10,7 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <numeric>
+#include <utility>
 
 #include "image_generation/image_processor.hpp"
 #include "image_generation/numpy_utils.hpp"
@@ -41,7 +42,11 @@ const VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
     0.0f,                    // guidance_rescale
     161,                     // num_frames
     25.0f,                   // frame_rate
-    std::nullopt             // taylorseer_config
+    std::nullopt,            // taylorseer_config
+    std::nullopt,            // adapters
+    std::nullopt,            // audio_guidance_scale
+    0.0f,                    // decode_timestep
+    std::nullopt             // decode_noise_scale
 };
 
 void check_inputs(const VideoGenerationConfig& generation_config, size_t vae_scale_factor) {
@@ -348,6 +353,48 @@ public:
         return m_transformer->get_expected_batch_size();
     }
 
+    ov::Tensor decode_latents(ov::Tensor&& latent, const VideoGenerationConfig& generation_config) {
+        const float decode_noise_scale =
+            generation_config.decode_noise_scale.value_or(generation_config.decode_timestep);
+
+        if (!m_vae->get_config().timestep_conditioning) {
+            OPENVINO_ASSERT(generation_config.decode_timestep == 0.0f && decode_noise_scale == 0.0f,
+                            "decode_timestep and decode_noise_scale require a timestep-conditioned VAE decoder");
+            return m_vae->decode(latent);
+        }
+
+        const ov::Shape latent_shape = latent.get_shape();
+        OPENVINO_ASSERT(latent.get_element_type() == ov::element::f32,
+                        "Decode-time noise interpolation requires f32 latents, got ",
+                        latent.get_element_type());
+        OPENVINO_ASSERT(latent_shape.size() == 5,
+                        "Decode-time noise interpolation requires rank 5 latents [B, C, F, H, W]");
+
+        if (decode_noise_scale != 0.0f) {
+            OPENVINO_ASSERT(generation_config.generator,
+                            "A generator is required when decode_noise_scale is non-zero");
+            const ov::Tensor noise = generation_config.generator->randn_tensor(latent_shape);
+            float* latent_data = latent.data<float>();
+            const float* noise_data = noise.data<const float>();
+            for (size_t i = 0; i < latent.get_size(); ++i) {
+                latent_data[i] = (1.0f - decode_noise_scale) * latent_data[i] + decode_noise_scale * noise_data[i];
+            }
+        }
+
+        ov::Tensor timestep(ov::element::f32, {latent_shape[0]});
+        std::fill_n(timestep.data<float>(), timestep.get_size(), generation_config.decode_timestep);
+        return m_vae->decode(latent, timestep);
+    }
+
+    void rebuild_models() {
+        m_t5_text_encoder = std::make_shared<T5EncoderModel>(m_models_dir / "text_encoder");
+        m_transformer = std::make_shared<LTXVideoTransformer3DModel>(m_models_dir / "transformer");
+        if (m_pipeline_type == VideoPipelineType::IMAGE_2_VIDEO)
+            m_vae = std::make_shared<AutoencoderKLLTXVideo>(m_models_dir / "vae_encoder", m_models_dir / "vae_decoder");
+        else
+            m_vae = std::make_shared<AutoencoderKLLTXVideo>(m_models_dir / "vae_decoder");
+    }
+
     void reshape_models(const VideoGenerationConfig& generation_config, size_t batch_size_multiplier) override {
         m_reshape_batch_size_multiplier = batch_size_multiplier;
         m_t5_text_encoder->reshape(batch_size_multiplier, generation_config.max_sequence_length);
@@ -562,11 +609,8 @@ public:
 
         latent = postprocess_latents(latent);
 
-        OPENVINO_ASSERT(!m_vae->get_config().timestep_conditioning,
-                            "Parameter 'timestep_conditioning' is not currently supported by AutoencoderKLLTX. Please, contact OpenVINO GenAI developers.");
-
         const auto decode_start = std::chrono::steady_clock::now();
-        ov::Tensor video = m_vae->decode(latent);
+        ov::Tensor video = decode_latents(std::move(latent), merged_generation_config);
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
@@ -748,12 +792,8 @@ public:
 
         latent = postprocess_latents(latent);
 
-        // TODO: support timestep_conditioning for AutoencoderKLLTX
-        OPENVINO_ASSERT(!m_vae->get_config().timestep_conditioning,
-                            "Parameter 'timestep_conditioning' is not currently supported by AutoencoderKLLTX. Please, contact OpenVINO GenAI developers.");
-
         const auto decode_start = std::chrono::steady_clock::now();
-        ov::Tensor video = m_vae->decode(latent);
+        ov::Tensor video = decode_latents(std::move(latent), merged_generation_config);
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
@@ -766,9 +806,11 @@ public:
 
     VideoGenerationResult decode(const ov::Tensor& latent) override {
         ov::Tensor postprocessed = postprocess_latents(latent);
+        VideoGenerationConfig generation_config = m_generation_config;
+        utils::update_generation_config(generation_config, {});
 
         const auto decode_start = std::chrono::steady_clock::now();
-        ov::Tensor video = m_vae->decode(postprocessed);
+        ov::Tensor video = decode_latents(std::move(postprocessed), generation_config);
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
