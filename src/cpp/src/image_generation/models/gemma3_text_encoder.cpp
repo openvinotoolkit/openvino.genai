@@ -112,6 +112,10 @@ ov::Tensor Gemma3TextEncoder::infer(const std::string& pos_prompt,
 
     const size_t batch_size = do_classifier_free_guidance ? 2 : 1;
     const size_t seq_len = static_cast<size_t>(max_sequence_length);
+    const ov::PartialShape input_ids_shape = m_request.get_compiled_model().input("input_ids").get_partial_shape();
+    OPENVINO_ASSERT(input_ids_shape[1].is_dynamic() || input_ids_shape[1].get_length() == max_sequence_length,
+                    "In case of Gemma3TextEncoder was reshaped before, reshape's max_sequence_length ",
+                    input_ids_shape[1], " must be equal to infer's max_sequence_length ", max_sequence_length);
 
     const ov::element::Type input_type = m_request.get_compiled_model().input("input_ids").get_element_type();
     OPENVINO_ASSERT(input_type == ov::element::i64, "'input_ids' input must be i64");
