@@ -40,22 +40,29 @@ VLMChatContext::ProcessedChatData VLMChatContext::process(
         m_initial_base_video_index = m_history_state->get_base_video_index();
         m_initial_base_audio_index = m_history_state->get_base_audio_index();
     }
-    
-    std::vector<size_t> new_image_indices = m_history_state->register_images(new_images);
-    std::vector<size_t> new_video_indices = m_history_state->register_videos(new_videos);
-    std::vector<size_t> new_audio_indices = m_history_state->register_audios(new_audios);
-    
-    ManualTimer vision_encoding_timer("Vision Encoding");
-    vision_encoding_timer.start();
-    encode_visions_if_needed(new_image_indices, new_video_indices, new_videos_metadata);
-    vision_encoding_timer.end();
 
-    // Timed separately: folding audio into vision_encoding_duration would both mis-attribute it
-    // and count it twice, since encode_audios_if_needed() already reports its own durations.
-    result.audio_encoding_durations = encode_audios_if_needed(new_audio_indices);
-    
-    fill_messages_metadata(matching_history_length, new_image_indices, new_video_indices, new_audio_indices);
-    
+    ManualTimer vision_encoding_timer("Vision Encoding");
+    // Registration mutates the caller's ChatHistory state. If encoding or normalization throws,
+    // undo it, or a retry with the same history starts from shifted media indices.
+    try {
+        const auto new_image_indices = m_history_state->register_images(new_images);
+        const auto new_video_indices = m_history_state->register_videos(new_videos);
+        const auto new_audio_indices = m_history_state->register_audios(new_audios);
+
+        vision_encoding_timer.start();
+        encode_visions_if_needed(new_image_indices, new_video_indices, new_videos_metadata);
+        vision_encoding_timer.end();
+
+        // Timed separately: folding audio into vision_encoding_duration would both mis-attribute it
+        // and count it twice, since encode_audios_if_needed() already reports its own durations.
+        result.audio_encoding_durations = encode_audios_if_needed(new_audio_indices);
+
+        fill_messages_metadata(matching_history_length, new_image_indices, new_video_indices, new_audio_indices);
+    } catch (...) {
+        m_history_state->truncate_to(matching_history_length);
+        throw;
+    }
+
     result.normalized_history = m_history_state->build_normalized_history(m_history);
     
     auto resolved_visions = m_history_state->resolve_visions_with_sequence();

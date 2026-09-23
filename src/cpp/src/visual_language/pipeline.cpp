@@ -88,6 +88,8 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
     std::vector<ov::genai::EncodedImage> m_encoded_images;
     std::vector<ov::genai::EncodedVideo> m_encoded_videos;
     std::vector<ov::genai::EncodedAudio> m_encoded_audios;
+    // Prompt-order audio ids across turns. Unlike 0..N, keeps reversed and repeated tags.
+    std::vector<size_t> m_history_audio_sequence;
     std::vector<std::pair<std::size_t, std::size_t>> m_history_vision_count;  // pair<video count, image count>
 
     std::string m_system_message;
@@ -378,6 +380,7 @@ public:
 
         auto [unified_prompt, image_sequence, video_sequence, audio_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, m_audio_id, encoded_images, encoded_videos, encoded_audios);
 
+        const auto history_audio_sequence_before = m_history_audio_sequence.size();
         if (m_is_chat_conversation) {
             m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
 
@@ -402,8 +405,11 @@ public:
 
                 m_encoded_audios.reserve(m_encoded_audios.size() + encoded_audios.size());
                 m_encoded_audios.insert(m_encoded_audios.end(), encoded_audios.begin(), encoded_audios.end());
-                audio_sequence.resize(m_encoded_audios.size());
-                std::iota(audio_sequence.begin(), audio_sequence.end(), 0);
+                // Ids are absolute, so they index m_encoded_audios directly.
+                m_history_audio_sequence.insert(m_history_audio_sequence.end(),
+                                                audio_sequence.begin(),
+                                                audio_sequence.end());
+                audio_sequence = m_history_audio_sequence;
                 encoded_audios = m_encoded_audios;
 
                 m_inputs_embedder->start_chat(m_system_message);
@@ -479,6 +485,7 @@ public:
 
                     OPENVINO_ASSERT(audios.size() <= m_encoded_audios.size(), "Number of audios to remove is more than stored audios!");
                     m_encoded_audios.resize(m_encoded_audios.size() - audios.size());
+                    m_history_audio_sequence.resize(history_audio_sequence_before);
 
                     m_history_vision_count.pop_back();
                 }
@@ -492,6 +499,7 @@ public:
             m_encoded_images.clear();
             m_encoded_videos.clear();
             m_encoded_audios.clear();
+            m_history_audio_sequence.clear();
             m_history_vision_count.clear();
         }
 
@@ -759,6 +767,7 @@ public:
         m_encoded_images.clear();
         m_encoded_videos.clear();
         m_encoded_audios.clear();
+        m_history_audio_sequence.clear();
         m_history_vision_count.clear();
     }
 
