@@ -69,8 +69,6 @@ void SpeechGenerationConfig::update_generation_config(const ov::AnyMap& config_m
 }
 
 void SpeechGenerationConfig::validate() const {
-    GenerationConfig::validate();
-
     OPENVINO_ASSERT(speed > 0.0f, "speed must be positive");
     OPENVINO_ASSERT(minlenratio >= 0.0f, "minlenratio must be non-negative");
     OPENVINO_ASSERT(maxlenratio > minlenratio, "maxlenratio must be greater than minlenratio");
@@ -83,6 +81,18 @@ void SpeechGenerationConfig::validate() const {
         OPENVINO_ASSERT(0.0f <= subtalker_top_p && subtalker_top_p <= 1.0f,
                         "subtalker_top_p must be in the range [0; 1]");
         OPENVINO_ASSERT(subtalker_temperature > 0.0f, "subtalker_temperature must be positive");
+    }
+
+    if (is_multinomial()) {
+        OPENVINO_ASSERT(top_p > 0 && top_p <= 1.0f,
+                        "When 'do_sample' is true, top_p must be a positive float > 0.0 and <= 1.0, but got ",
+                        top_p);
+        OPENVINO_ASSERT(temperature > 0,
+                        "When 'do_sample' is true, temperature must be a strictly positive float, but got ",
+                        temperature);
+        OPENVINO_ASSERT(min_p >= 0.0f && min_p < 1.0f,
+                        "When 'do_sample' is true, min_p must be in [0.0, 1.0), but got ",
+                        min_p);
     }
 }
 
