@@ -43,10 +43,15 @@
 - 'src/cpp/src/lm_encoding.cpp'
 - 'src/python/py_vlm_pipeline.cpp'
 - 'tests/python_tests/test_vlm_pipeline.py'
+
+'category: omni':
 - 'src/cpp/include/openvino/genai/omni/**/*'
 - 'src/cpp/src/omni/**/*'
+- 'src/cpp/src/visual_language/qwen3_omni/**/*'
 - 'src/python/py_omni_pipeline.cpp'
 - 'tests/python_tests/test_omni_pipeline.py'
+- 'samples/cpp/omni/**/*'
+- 'samples/python/omni/**/*'
 
 'category: RAG':
 - 'src/cpp/include/openvino/genai/rag/**/*'
