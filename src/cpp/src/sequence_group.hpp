@@ -6,6 +6,8 @@
 #include <vector>
 #include <cassert>
 #include <chrono>
+#include <functional>
+#include <limits>
 #include <set>
 #include <cstdlib>
 #include <string_view>

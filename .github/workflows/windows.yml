@@ -937,6 +937,7 @@ jobs:
           & "${{ env.INSTALL_DIR }}/tests/tests_continuous_batching.exe" --gtest_filter="-AddSecondInputTest.*"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & "${{ env.INSTALL_DIR }}/tests/tests_cache_allocation_failure.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         env:
           TEST_MODELS_BASE_DIR: "${{ env.HF_HOME }}/ov_test_models"
           CACHE_TYPES_CSV: "${{ env.INSTALL_DIR }}/tests/data/cache_types_models.csv"
