@@ -624,15 +624,17 @@ ov::Tensor InputsEmbedderQwen3Omni::get_inputs_embeds(
     std::vector<int64_t> input_ids_vec(m_last_input_ids.data<int64_t>(),
                                        m_last_input_ids.data<int64_t>() + m_last_input_ids.get_size());
 
-    merge_audio_embeddings(input_embeds, input_ids_vec, audios, audios_sequence);
+    qwen3_omni::merge_audio_embeddings(input_embeds, input_ids_vec, audios, audios_sequence, m_audio_token_id);
 
     return input_embeds;
 }
 
-void InputsEmbedderQwen3Omni::expand_audio_tags_in_prompt(std::string& prompt,
-                                                          const std::vector<ov::genai::EncodedAudio>& audios,
-                                                          const std::vector<size_t>& audios_sequence,
-                                                          size_t base_audio_id) const {
+namespace qwen3_omni {
+
+void expand_audio_tags(std::string& prompt,
+                       const std::vector<EncodedAudio>& audios,
+                       const std::vector<size_t>& audios_sequence,
+                       size_t base_audio_id) {
     const std::string native_tag = std::string(qwen3_omni::AUDIO_START_TAG) +
                                    std::string(qwen3_omni::AUDIO_PAD_TAG) + std::string(qwen3_omni::AUDIO_END_TAG);
 
@@ -671,13 +673,17 @@ void InputsEmbedderQwen3Omni::expand_audio_tags_in_prompt(std::string& prompt,
     }
 }
 
-void InputsEmbedderQwen3Omni::merge_audio_embeddings(ov::Tensor& input_embeds,
-                                                     const std::vector<int64_t>& input_ids,
-                                                     const std::vector<ov::genai::EncodedAudio>& audios,
-                                                     const std::vector<size_t>& audios_sequence) const {
-    if (audios_sequence.empty() || m_audio_token_id < 0) {
+void merge_audio_embeddings(ov::Tensor& input_embeds,
+                            const std::vector<int64_t>& input_ids,
+                            const std::vector<EncodedAudio>& audios,
+                            const std::vector<size_t>& audios_sequence,
+                            int64_t audio_token_id) {
+    if (audios_sequence.empty()) {
         return;
     }
+    OPENVINO_ASSERT(audio_token_id >= 0,
+                    "Audio was provided but thinker_config.audio_token_id is missing from config.json, so the "
+                    "audio placeholders cannot be located. Re-export the model.");
 
     // Checked up front because the zero-token skip loops below index audios before the
     // per-run checks would catch a bad index.
@@ -706,13 +712,13 @@ void InputsEmbedderQwen3Omni::merge_audio_embeddings(ov::Tensor& input_embeds,
 
     size_t run_index = 0;
     for (size_t i = 0; i < seq_len;) {
-        if (input_ids[i] != m_audio_token_id) {
+        if (input_ids[i] != audio_token_id) {
             i++;
             continue;
         }
 
         size_t run_end = i;
-        while (run_end < seq_len && input_ids[run_end] == m_audio_token_id) {
+        while (run_end < seq_len && input_ids[run_end] == audio_token_id) {
             run_end++;
         }
         const size_t run_length = run_end - i;
@@ -773,6 +779,8 @@ void InputsEmbedderQwen3Omni::merge_audio_embeddings(ov::Tensor& input_embeds,
                     "internal inconsistency, please report it with the prompt that triggered it.");
 }
 
+}  // namespace qwen3_omni
+
 NormalizedPrompt InputsEmbedderQwen3Omni::normalize_prompt(const std::string& prompt,
                                                            size_t base_id,
                                                            const std::vector<EncodedImage>& images) const {
@@ -814,7 +822,7 @@ NormalizedPrompt InputsEmbedderQwen3Omni::normalize_prompt(const std::string& pr
                                                                 ModalityType::AUDIO);
     result.unified_prompt = std::move(audio_prompt);
     result.audios_sequence = std::move(audios_sequence);
-    expand_audio_tags_in_prompt(result.unified_prompt, audios, result.audios_sequence, audio_base_id);
+    qwen3_omni::expand_audio_tags(result.unified_prompt, audios, result.audios_sequence, audio_base_id);
     return result;
 }
 
