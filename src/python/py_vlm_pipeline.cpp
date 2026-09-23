@@ -159,16 +159,13 @@ public:
 
 private:
     static ov::genai::MultimodalInputs unpack_config_map(const ov::AnyMap& config_map) {
-        // kwargs_to_any_map() accepts both names and extract_multimodal_inputs() consumes neither,
-        // so letting either through would drop the caller's streamer without a word.
-        for (const std::string& key :
-             {ov::genai::utils::AUDIO_STREAMER_ARG_NAME, std::string{ov::genai::speech_streamer.name()}}) {
-            OPENVINO_ASSERT(config_map.find(key) == config_map.end(),
-                            "VLMPipelineBase: '",
-                            key,
-                            "' is only consumed by the built-in Qwen3-Omni speech path and cannot be forwarded to a "
-                            "Python-defined subclass.");
-        }
+        // kwargs_to_any_map() accepts the key and extract_multimodal_inputs() does not consume it,
+        // so letting it through would drop the caller's streamer without a word.
+        OPENVINO_ASSERT(config_map.find(ov::genai::utils::SPEECH_STREAMER_ARG_NAME) == config_map.end(),
+                        "VLMPipelineBase: '",
+                        ov::genai::utils::SPEECH_STREAMER_ARG_NAME,
+                        "' is only consumed by the built-in Qwen3-Omni speech path and cannot be forwarded to a "
+                        "Python-defined subclass.");
         return ov::genai::extract_multimodal_inputs(config_map);
     }
 
@@ -216,13 +213,13 @@ auto vlm_generate_common_params = R"(
     :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
     :type streamer: Callable[[str], bool], ov.genai.StreamerBase
 
-    :param audio_streamer: callback or OmniSpeechStreamerBase to receive audio chunks during speech generation.
+    :param speech_streamer: callback or OmniSpeechStreamerBase to receive audio chunks during speech generation.
         Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
-    :type audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
+    :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
 
     :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
         Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
-        Ignored when audio_streamer is not provided.
+        Ignored when speech_streamer is not provided.
     :type audio_chunk_frames: int
 
     :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
@@ -243,8 +240,8 @@ auto vlm_generate_kwargs_param = R"(
     videos_metadata: list[VideoMetadata] - metadata for each video,
     generation_config: GenerationConfig,
     streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped,
-    audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None] or OmniSpeechStreamerBase - callback to receive audio chunks during speech generation,
-    audio_chunk_frames: int - number of codec frames per streaming chunk (default 4, must be >= 1). Ignored when audio_streamer is not provided.
+    speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None] or OmniSpeechStreamerBase - callback to receive audio chunks during speech generation,
+    audio_chunk_frames: int - number of codec frames per streaming chunk (default 4, must be >= 1). Ignored when speech_streamer is not provided.
 
     :return: return results in decoded form
     :rtype: VLMDecodedResults
@@ -341,7 +338,7 @@ py::object call_vlm_generate(
 ) {
     // Route through AnyMap overload when audio kwargs are present, since only the AnyMap path
     // extracts the audio tensors and sets up the speech streamer for the underlying pipeline.
-    if (kwargs.contains("audios") || kwargs.contains("audio_streamer")) {
+    if (kwargs.contains("audios") || kwargs.contains("speech_streamer")) {
         auto map = pyutils::kwargs_to_any_map(kwargs);
         if (!images.empty()) {
             map[ov::genai::images.name()] = images;
@@ -390,7 +387,7 @@ py::object call_vlm_generate_with_chat_history(
     const pyutils::PyBindStreamerVariant& py_streamer,
     const py::kwargs& kwargs
 ) {
-    if (kwargs.contains("audios") || kwargs.contains("audio_streamer")) {
+    if (kwargs.contains("audios") || kwargs.contains("speech_streamer")) {
         auto map = pyutils::kwargs_to_any_map(kwargs);
         if (!images.empty()) {
             map[ov::genai::images.name()] = images;

@@ -145,7 +145,7 @@ void validate_omni_talker_speech_config(const OmniTalkerSpeechConfig& config) {
 namespace {
 
 std::string join_recognized_keys() {
-    std::string joined = "speech_streamer, talker_speech_config";
+    std::string joined = utils::SPEECH_STREAMER_ARG_NAME + ", " + std::string{ov::genai::talker_speech_config.name()};
     for (const auto& key : omni_talker_speech_config_keys()) {
         joined += ", ";
         joined += key;
@@ -156,19 +156,15 @@ std::string join_recognized_keys() {
 }  // namespace
 
 ResolvedTalkerProperties resolve_talker_properties(const OmniTalkerSpeechConfig& base, const ov::AnyMap& properties) {
-    ResolvedTalkerProperties out{base, std::monostate{}};
+    // speech_streamer is stored as the concrete variant alternative, so the shared reader
+    // type-tests it the same way the text streamer is read.
+    ResolvedTalkerProperties out{base, utils::get_speech_streamer_from_map(properties)};
     ov::AnyMap leftover;
     for (const auto& [key, value] : properties) {
-        if (key == ov::genai::speech_streamer.name()) {
-            // Python kwargs arrive already unwrapped to a concrete alternative, C++ callers pass the variant.
-            if (value.is<std::shared_ptr<OmniSpeechStreamerBase>>()) {
-                out.speech_streamer = value.as<std::shared_ptr<OmniSpeechStreamerBase>>();
-            } else if (value.is<std::function<StreamingStatus(const ov::Tensor&)>>()) {
-                out.speech_streamer = value.as<std::function<StreamingStatus(const ov::Tensor&)>>();
-            } else {
-                out.speech_streamer = value.as<OmniSpeechStreamerVariant>();
-            }
-        } else if (key == ov::genai::talker_speech_config.name()) {
+        if (key == utils::SPEECH_STREAMER_ARG_NAME) {
+            continue;
+        }
+        if (key == ov::genai::talker_speech_config.name()) {
             out.config = value.as<OmniTalkerSpeechConfig>();
         } else {
             OPENVINO_ASSERT(is_omni_talker_speech_config_key(key),
