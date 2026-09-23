@@ -48,6 +48,8 @@ std::vector<ov::genai::VideoMetadata> get_videos_metadata_from_kwargs(const py::
 
 std::vector<std::vector<ov::genai::VideoMetadata>> get_videos_metadata_batches_from_kwargs(const py::kwargs& kwargs);
 
+std::vector<std::vector<ov::Tensor>> get_audios_batches_from_kwargs(const py::kwargs& kwargs);
+
 ov::genai::GenerationConfig update_config_from_kwargs(ov::genai::GenerationConfig config, const py::kwargs& kwargs);
 
 ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& py_streamer);
