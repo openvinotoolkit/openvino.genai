@@ -69,6 +69,8 @@ void SpeechGenerationConfig::update_generation_config(const ov::AnyMap& config_m
 }
 
 void SpeechGenerationConfig::validate() const {
+    GenerationConfig::validate();
+
     OPENVINO_ASSERT(speed > 0.0f, "speed must be positive");
     OPENVINO_ASSERT(minlenratio >= 0.0f, "minlenratio must be non-negative");
     OPENVINO_ASSERT(maxlenratio > minlenratio, "maxlenratio must be greater than minlenratio");
