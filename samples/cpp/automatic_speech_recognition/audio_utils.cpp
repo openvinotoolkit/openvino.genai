@@ -41,7 +41,7 @@ namespace audio {
 
 ov::genai::RawSpeechInput read_wav(const std::string& filename) {
     drwav wav;
-    std::vector<uint8_t> wav_data;  // used for pipe input from stdin or ffmpeg decoding output
+    std::vector<uint8_t> wav_data;  // used for pipe input from stdin
 
     if (filename == "-") {
         {
@@ -67,14 +67,7 @@ ov::genai::RawSpeechInput read_wav(const std::string& filename) {
         OPENVINO_ASSERT(drwav_init_memory(&wav, filename.c_str(), filename.size(), nullptr),
                         "Failed to open WAV file from fname buffer");
     } else if (!drwav_init_file(&wav, filename.c_str(), nullptr)) {
-#if defined(WHISPER_FFMPEG)
-        OPENVINO_ASSERT(ffmpeg_decode_audio(fname, wav_data) == 0, "Failed to ffmpeg decode")
-
-        OPENVINO_ASSERT(drwav_init_memory(&wav, wav_data.data(), wav_data.size(), nullptr),
-                        "Failed to read wav data as wav")
-#else
         throw std::runtime_error("failed to open as WAV file");
-#endif
     }
 
     if (wav.channels != 1 && wav.channels != 2) {
