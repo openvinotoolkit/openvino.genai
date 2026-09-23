@@ -1081,39 +1081,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_perf_metrics(co
     request->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
 }
 
-void ContinuousBatchingPipeline::ContinuousBatchingImpl::_notify_handles(const Scheduler::Output& scheduler_output) {
-    for (const auto request_index : scheduler_output.m_scheduled_sequence_groups_ids) {
-        const auto& request = m_requests.at(request_index);
-        const bool is_echo_only = request->get_context_len() <= request->get_prompt_len() &&
-                                  request->get_sampling_parameters().echo &&
-                                  request->get_max_new_tokens() == 0;
-        if (is_echo_only) {
-            // Commit metrics only once the whole prompt has been echoed back, otherwise
-            // get_perf_metrics()'s one-shot generate_durations capture would freeze early.
-            if (request->get_context_len() == request->get_prompt_len()) {
-                _commit_perf_metrics(request);
-            }
-            request->notify_handle_echo_only();
-        } else if (request->has_finished()) {
-            _commit_perf_metrics(request);
-            request->notify_handle_final();
-        } else {
-            request->notify_handle();
-        }
-    }
-    // stopped/cancelled requests may not be among the scheduled ones
-    for (auto& request : m_requests) {
-        const bool is_finished = request->has_finished();
-        const bool is_stopped = request->handle_stopped();
-        const bool is_cancelled = request->handle_cancelled();
-
-        if (!is_finished && (is_stopped || is_cancelled) && !request->notified_terminal()) {
-            _commit_perf_metrics(request);
-            request->notify_handle_stopped_or_cancelled();
-        }
-    }
-}
-
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_register_step_cache_usage(float step_cache_usage) {
     if (m_previous_step_cache_usages.size() >= AVG_CACHE_USAGE_WINDOW_SIZE_IN_STEPS) {
         m_previous_step_cache_usages.pop_front();

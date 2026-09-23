@@ -76,7 +76,6 @@ protected:
      * Releases non-running (finished, dropped or OOM) requests from running queue
      */
     void _free_non_running_requests();
-    void _notify_handles(const Scheduler::Output& scheduler_output);
 
     /**
      * Sets load_time and commits perf metrics onto the request's GenerationStream.
