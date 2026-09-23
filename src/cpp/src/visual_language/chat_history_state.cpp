@@ -275,9 +275,9 @@ const size_t ChatHistoryInternalState::find_matching_history_length(const ChatHi
 }
 
 void ChatHistoryInternalState::truncate_to(size_t size) {
-    if (size >= m_messages_metadata.size()) {
-        return;
-    }
+    // No early return: media registered by a turn that failed before its metadata was added is
+    // owned by no message, and must be released too.
+    size = std::min(size, m_messages_metadata.size());
 
     size_t new_image_base_index = 0;
     size_t new_video_base_index = 0;
@@ -359,9 +359,8 @@ void ChatHistoryInternalState::detect_chat_history_format(const ChatHistory& his
             const auto& item = last_user_message["content"][i];
             if (item.is_object() && item.contains("type")) {
                 std::string type = item["type"].get_string();
-                if ((type == "text" && item.contains("text") && item["text"].is_string()) ||
-                     type == "image" || type == "video"
-                ) {
+                if ((type == "text" && item.contains("text") && item["text"].is_string()) || type == "image" ||
+                    type == "video" || type == "audio") {
                     detected_format = ChatHistoryFormat::MULTIPART_CONTENT;
                     break;
                 }
@@ -370,9 +369,9 @@ void ChatHistoryInternalState::detect_chat_history_format(const ChatHistory& his
     }
 
     OPENVINO_ASSERT(detected_format != ChatHistoryFormat::UNKNOWN,
-        "Unknown chat history format. Supported formats schemas are "
-        "`{role: user, content: string}` and "
-        "`{role: user, content: [{type: text/image/video, ...}, ...]}`.");
+                    "Unknown chat history format. Supported formats schemas are "
+                    "`{role: user, content: string}` and "
+                    "`{role: user, content: [{type: text/image/video/audio, ...}, ...]}`.");
 
     OPENVINO_ASSERT(m_chat_history_format == ChatHistoryFormat::UNKNOWN ||
                     m_chat_history_format == detected_format,
