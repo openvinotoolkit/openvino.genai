@@ -28,6 +28,21 @@ namespace qwen3_omni {
 inline constexpr std::string_view AUDIO_START_TAG = "<|audio_start|>";
 inline constexpr std::string_view AUDIO_PAD_TAG = "<|audio_pad|>";
 inline constexpr std::string_view AUDIO_END_TAG = "<|audio_end|>";
+
+/// @brief Grow each single-pad audio tag to its real pad count, using a running offset. A
+/// one-pad expansion is byte-identical to the tag, so find()-from-zero would rewrite slot 0.
+void expand_audio_tags(std::string& prompt,
+                       const std::vector<EncodedAudio>& audios,
+                       const std::vector<size_t>& audios_sequence,
+                       size_t base_audio_id);
+
+/// @brief Copy each audio's features into its own placeholder run. Binds run k to
+/// audios[audios_sequence[k]], so out-of-order tags still place the right audio.
+void merge_audio_embeddings(ov::Tensor& input_embeds,
+                            const std::vector<int64_t>& input_ids,
+                            const std::vector<EncodedAudio>& audios,
+                            const std::vector<size_t>& audios_sequence,
+                            int64_t audio_token_id);
 }  // namespace qwen3_omni
 
 /// @brief Vision encoder for Qwen3-Omni.
@@ -190,20 +205,6 @@ private:
     // True when the GPU SDPAToVLSDPA pass fired and the vision model now expects a packed
     // "cu_seq_lens" input instead of the dense "attention_mask".
     bool m_with_cu_seqlens_input = false;
-
-    /// @brief Grow each single-pad audio tag to its real pad count, using a running offset. A
-    /// one-pad expansion is byte-identical to the tag, so find()-from-zero would rewrite slot 0.
-    void expand_audio_tags_in_prompt(std::string& prompt,
-                                     const std::vector<ov::genai::EncodedAudio>& audios,
-                                     const std::vector<size_t>& audios_sequence,
-                                     size_t base_audio_id) const;
-
-    /// @brief Copy each audio's features into its own placeholder run. Binds run k to
-    /// audios[audios_sequence[k]], so out-of-order tags still place the right audio.
-    void merge_audio_embeddings(ov::Tensor& input_embeds,
-                                const std::vector<int64_t>& input_ids,
-                                const std::vector<ov::genai::EncodedAudio>& audios,
-                                const std::vector<size_t>& audios_sequence) const;
 };
 
 }  // namespace ov::genai
