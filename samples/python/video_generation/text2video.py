@@ -14,7 +14,7 @@ def main():
     parser.add_argument("num_frames", type=int, nargs="?", default=161, help="Number of frames to generate")
     args = parser.parse_args()
 
-    pipe = openvino_genai.Text2VideoPipeline(args.model_dir, "CPU")  # GPU can be used as well
+    pipe = openvino_genai.Text2VideoPipeline(args.model_dir, "GPU")
 
     frame_rate = 25
 

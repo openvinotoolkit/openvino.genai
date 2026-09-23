@@ -145,6 +145,8 @@ AutoencoderKLLTXVideo::Config::Config(const std::filesystem::path& config_path) 
     read_json_param(data, "patch_size", patch_size);
     read_json_param(data, "patch_size_t", patch_size_t);
     read_json_param(data, "spatio_temporal_scaling", spatio_temporal_scaling);
+    read_json_param(data, "spatial_compression_ratio", spatial_compression_ratio);
+    read_json_param(data, "temporal_compression_ratio", temporal_compression_ratio);
     read_json_param(data, "latents_mean_data", latents_mean_data);
     read_json_param(data, "latents_std_data", latents_std_data);
     read_json_param(data, "timestep_conditioning", timestep_conditioning);
@@ -154,6 +156,15 @@ AutoencoderKLLTXVideo::Config::Config(const std::filesystem::path& config_path) 
     }
     if (latents_std_data.empty()) {
         latents_std_data.assign(latent_channels, 1.0f);
+    }
+
+    const size_t compression_factor =
+        std::pow(2, std::accumulate(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), 0));
+    if (spatial_compression_ratio == 0) {
+        spatial_compression_ratio = patch_size * compression_factor;
+    }
+    if (temporal_compression_ratio == 0) {
+        temporal_compression_ratio = patch_size_t * compression_factor;
     }
 }
 
@@ -253,20 +264,12 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
         m_encoder_model->reshape(idx_to_shape);
     }
 
-    int64_t spatial_compression_ratio =
-        get_config().patch_size *
-        std::pow(
-            2,
-            std::accumulate(get_config().spatio_temporal_scaling.begin(), get_config().spatio_temporal_scaling.end(), 0));
-    int64_t temporal_compression_ratio =
-        get_config().patch_size_t *
-        std::pow(
-            2,
-            std::accumulate(get_config().spatio_temporal_scaling.begin(), get_config().spatio_temporal_scaling.end(), 0));
-
-    int64_t latent_num_frames = ((num_frames - 1) / temporal_compression_ratio + 1) / m_transformer_patch_size_t;
-    int64_t latent_height = height / (spatial_compression_ratio * m_transformer_patch_size);
-    int64_t latent_width  = width  / (spatial_compression_ratio * m_transformer_patch_size);
+    const int64_t latent_num_frames =
+        ((num_frames - 1) / get_config().temporal_compression_ratio + 1) / m_transformer_patch_size_t;
+    const int64_t latent_height =
+        height / (get_config().spatial_compression_ratio * m_transformer_patch_size);
+    const int64_t latent_width =
+        width / (get_config().spatial_compression_ratio * m_transformer_patch_size);
 
     const ov::PartialShape input_shape = m_decoder_model->input("latent_sample").get_partial_shape();
     std::map<std::string, ov::PartialShape> inputs_to_shapes{
