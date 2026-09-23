@@ -1524,6 +1524,11 @@ def create_genai_video_gen_model(model_path, device, ov_config, memory_data_coll
         width = kwargs.get("width", 512)
         num_frames = kwargs.get("num_frames", 25)
         guidance_scale = kwargs.get("guidance_scale", 3.0)
+        if kwargs.get("max_sequence_length") is not None:
+            # the text encoder is reshaped to the config value, which must match the generate() argument
+            config = video_gen_pipe.get_generation_config()
+            config.max_sequence_length = kwargs["max_sequence_length"]
+            video_gen_pipe.set_generation_config(config)
         log.info(f"Video Pipeline reshape(height={height}, width={width}, num_frames={num_frames})")
         video_gen_pipe.reshape(1, num_frames, height, width, guidance_scale)
         video_gen_pipe.compile(device.upper(), **ov_config)
@@ -1546,6 +1551,10 @@ def create_video_gen_model(model_path, device, memory_data_collector, **kwargs):
     model_class = use_case.TASK["text2video"]["ov_cls"]
     if is_image_to_video_model(kwargs, use_case):
         model_class = use_case.TASK["image2video"]["ov_cls"]
+    if model_class is None and not kwargs.get("genai", True):
+        raise RuntimeError(
+            "Image-to-video generation requires an Optimum Intel version that provides OVPipelineForImage2Video."
+        )
 
     model_path = Path(model_path)
     ov_config = kwargs["config"]
