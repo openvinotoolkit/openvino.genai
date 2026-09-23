@@ -28,15 +28,15 @@ auto vlm_generate_description = R"(
 auto vlm_generate_prompt_param = R"(
     :param prompt: Input prompt
     :type prompt: str
-    For using image and video tags in prompt, see:
-    https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
+    For using media tags in prompt, see:
+    https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-media-tags-in-prompt
 )";
 
 auto vlm_generate_history_param = R"(
     :param history: Chat history
     :type history: ChatHistory
-    For using image and video tags in prompt, see:
-    https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
+    For using media tags in prompt, see:
+    https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-media-tags-in-prompt
 )";
 
 auto vlm_generate_common_params = R"(
@@ -46,8 +46,7 @@ auto vlm_generate_common_params = R"(
     :param videos: list of frames
     :type videos: list[ov.Tensor]
 
-    :param audios: audio tensors, for multimodal models supporting audio input. Place with
-        `<ov_genai_audio_N>` anywhere in the prompt; untagged audio is prepended
+    :param audios: audio tensors, for models supporting audio input
     :type audios: list[ov.Tensor]
 
     :param generation_config: generation_config
@@ -79,7 +78,7 @@ auto vlm_generate_kwargs_param = R"(
     image: ov.Tensor - input image,
     images: list[ov.Tensor] - input images,
     videos: list[ov.Tensor] - input videos,
-    audios: list[ov.Tensor] - audio tensors, placed with `<ov_genai_audio_N>` or prepended if untagged,
+    audios: list[ov.Tensor] - audio tensors, for models supporting audio input,
     videos_metadata: list[VideoMetadata] - metadata for each video,
     generation_config: GenerationConfig,
     streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped,
