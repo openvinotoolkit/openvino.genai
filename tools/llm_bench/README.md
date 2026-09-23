@@ -182,6 +182,8 @@ python benchmark.py -m ./models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --t
 **Some additional parameters:**
 - `--cb_config`: Path to file with Continuous Batching Scheduler settings or dict".
 - `--disable_prompt_permutation`: "Disable modification prompt from run to run for avoid prefix caching"
+- `--do_sample`: enable multinomial sampling. When neither `--do_sample` nor `--greedy` is specified, use the model generation configuration.
+- `--greedy`: disable sampling and use greedy decoding.
 - `--apply_chat_template`: "Apply chat template for LLM. By default chat template is not applied"
 - `--from_onnx`: "Load the model from an ONNX file instead of a pre-converted OpenVINO IR."
 
