@@ -55,6 +55,11 @@ size_t PerfMetrics::get_num_input_tokens() {
     return num_input_tokens;
 }
 
+size_t PerfMetrics::get_num_prefix_cache_hit_tokens() {
+    evaluate_statistics();
+    return num_prefix_cache_hit_tokens;
+}
+
 MeanStdPair PerfMetrics::get_ttft() {
     evaluate_statistics();
     return ttft;
@@ -117,6 +122,14 @@ SummaryStats PerfMetrics::get_grammar_compile_time() {
 
 float PerfMetrics::get_microsec(std::chrono::steady_clock::duration duration) {
     return std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
+}
+
+void PerfMetrics::emplace_duration(
+    std::vector<MicroSeconds>& target_durations,
+    const TimePoint& start_time,
+    const TimePoint& end_time
+) {
+    target_durations.emplace_back(get_microsec(end_time - start_time));
 }
 
 void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
@@ -236,6 +249,7 @@ PerfMetrics PerfMetrics::operator+(const PerfMetrics& right) const {
 
     res.num_generated_tokens += right.num_generated_tokens;
     res.num_input_tokens += right.num_input_tokens;
+    res.num_prefix_cache_hit_tokens += right.num_prefix_cache_hit_tokens;
     res.m_evaluated = false;
     return res;
 }

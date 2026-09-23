@@ -35,6 +35,8 @@ public:
 
     LTXVideoTransformer3DModel(const LTXVideoTransformer3DModel&);
 
+    LTXVideoTransformer3DModel clone();
+
     const Config& get_config() const;
 
     LTXVideoTransformer3DModel& compile(const std::string& device, const ov::AnyMap& properties = {});
@@ -51,10 +53,18 @@ public:
 
     ov::Tensor infer(const ov::Tensor& latent, const ov::Tensor& timestep);
 
+    /// @brief Builds the 'timestep' input matching the compiled model and runs inference.
+    /// Legacy exports take a rank-1 [B] timestep, current ones a rank-2 [B, S] per-token timestep.
+    ov::Tensor infer(const ov::Tensor& latent, float timestep);
+
     LTXVideoTransformer3DModel& reshape(int64_t batch_size, int64_t num_frames, int64_t height, int64_t width, int64_t tokenizer_model_max_length);
 
     size_t get_expected_batch_size() const;
     size_t get_request_input_batch();
+
+    /// @brief Rank of the compiled model's 'timestep' input: 1 for legacy [B] exports,
+    /// 2 for [B, S] per-token conditioning.
+    size_t get_timestep_rank();
 
 private:
     class Inference;

@@ -49,7 +49,7 @@ def run_text_embeddings_optimum(
 
     tok_encode_start = time.perf_counter()
     if is_multimodal:
-        prompts, images, videos = extract_prompt_data([entry], args.get("video_frames"), False)
+        prompts, images, videos, _ = extract_prompt_data([entry], args.get("video_frames"), False)
         prompt_text = prompts[0] if prompts else ""
         content = [{"type": "text", "text": prompt_text}] if prompt_text else []
         for image in images:
@@ -160,7 +160,7 @@ def run_text_embeddings_genai(
     embedding_prompt = _resolve_embedding_prompt(args, is_multimodal)
     batch_size = args["batch_size"]
 
-    prompts, images, videos = extract_prompt_data([entry], args.get("video_frames"), True)
+    prompts, images, videos, _ = extract_prompt_data([entry], args.get("video_frames"), True)
     prompts = prompts * batch_size
 
     if is_multimodal:

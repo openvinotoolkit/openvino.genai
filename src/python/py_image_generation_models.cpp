@@ -10,6 +10,7 @@
 #include <pybind11/functional.h>
 
 #include "openvino/genai/image_generation/autoencoder_kl.hpp"
+#include "openvino/genai/image_generation/autoencoder_kl_qwen_image.hpp"
 #include "openvino/genai/image_generation/clip_text_model.hpp"
 #include "openvino/genai/image_generation/clip_text_model_with_projection.hpp"
 #include "openvino/genai/image_generation/t5_encoder_model.hpp"
@@ -18,6 +19,11 @@
 #include "openvino/genai/image_generation/flux_transformer_2d_model.hpp"
 #include "openvino/genai/image_generation/flux2_transformer_2d_model.hpp"
 #include "openvino/genai/image_generation/qwen3_text_encoder.hpp"
+#include "openvino/genai/image_generation/qwen3_vl_for_conditional_generation.hpp"
+#include "openvino/genai/image_generation/qwen2_5_vl_for_conditional_generation.hpp"
+#include "openvino/genai/image_generation/qwen_image_transformer_2d_model.hpp"
+#include "openvino/genai/image_generation/qwen_image21_transformer_2d_model.hpp"
+#include "openvino/genai/image_generation/zimage_transformer_2d_model.hpp"
 
 #include "tokenizer/tokenizers_path.hpp"
 #include "py_utils.hpp"
@@ -884,6 +890,53 @@ void init_flux2_transformer_2d_model(py::module_& m) {
             )");
 }
 
+void init_zimage_transformer_2d_model(py::module_& m) {
+    auto cls = py::class_<ov::genai::ZImageTransformer2DModel>(m, "ZImageTransformer2DModel", "ZImageTransformer2DModel class.")
+        .def(py::init<const std::filesystem::path&>(), py::arg("root_dir"), "Model root directory")
+        .def(py::init([](const std::filesystem::path& root_dir,
+                         const std::string& device,
+                         const py::kwargs& kwargs) {
+            return std::make_unique<ov::genai::ZImageTransformer2DModel>(root_dir, device, pyutils::kwargs_to_any_map(kwargs));
+        }), py::arg("root_dir"), py::arg("device"), "Device on which inference will be done")
+        .def(py::init<const ov::genai::ZImageTransformer2DModel&>(), py::arg("model"));
+
+    py::class_<ov::genai::ZImageTransformer2DModel::Config>(cls, "Config")
+        .def(py::init<const std::filesystem::path&>(), py::arg("config_path"))
+        .def_readwrite("in_channels", &ov::genai::ZImageTransformer2DModel::Config::in_channels)
+        .def_readwrite("out_channels", &ov::genai::ZImageTransformer2DModel::Config::out_channels)
+        .def_readwrite("sample_size", &ov::genai::ZImageTransformer2DModel::Config::sample_size);
+
+    cls.def(py::init<const std::string&,
+                     const ov::Tensor&,
+                     const ov::genai::ZImageTransformer2DModel::Config&,
+                     size_t>(),
+            py::arg("model"), py::arg("weights"), py::arg("config"), py::arg("vae_scale_factor"))
+        .def(py::init([](const std::string& model,
+                         const ov::Tensor& weights,
+                         const ov::genai::ZImageTransformer2DModel::Config& config,
+                         size_t vae_scale_factor,
+                         const std::string& device,
+                         const py::kwargs& kwargs) {
+            return std::make_unique<ov::genai::ZImageTransformer2DModel>(
+                model, weights, config, vae_scale_factor, device, pyutils::kwargs_to_any_map(kwargs));
+        }), py::arg("model"), py::arg("weights"), py::arg("config"), py::arg("vae_scale_factor"), py::arg("device"))
+        .def("get_config", &ov::genai::ZImageTransformer2DModel::get_config)
+        .def("reshape", &ov::genai::ZImageTransformer2DModel::reshape,
+             py::arg("batch_size"), py::arg("height"), py::arg("width"), py::arg("tokenizer_model_max_length"))
+        .def("step", &ov::genai::ZImageTransformer2DModel::step,
+             py::call_guard<py::gil_scoped_release>(),
+             py::arg("sample"), py::arg("timestep"), py::arg("encoder_hidden_states"))
+        .def("set_hidden_states", &ov::genai::ZImageTransformer2DModel::set_hidden_states,
+             py::arg("tensor_name"), py::arg("encoder_hidden_states"))
+        .def("compile", [](ov::genai::ZImageTransformer2DModel& self,
+                            const std::string& device,
+                            const py::kwargs& kwargs) {
+            const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+            py::gil_scoped_release release;
+            self.compile(device, properties);
+        }, py::arg("device"));
+}
+
 void init_qwen3_text_encoder(py::module_& m) {
     auto qwen3_text_encoder = py::class_<ov::genai::Qwen3TextEncoder>(m, "Qwen3TextEncoder", "Qwen3TextEncoder class.")
         .def(py::init([](const std::filesystem::path& root_dir) {
@@ -1201,4 +1254,196 @@ void init_autoencoder_kl(py::module_& m) {
                 Use `blob_path` property to load previously exported models.
             )"
         );
+}
+
+void init_qwen2_5_vl(py::module_& m) {
+    auto cls = py::class_<ov::genai::Qwen2_5_VLForConditionalGeneration>(m, "Qwen2_5_VLForConditionalGeneration", "Qwen2_5_VLForConditionalGeneration class.")
+        .def(py::init([](const std::filesystem::path& root_dir) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::Qwen2_5_VLForConditionalGeneration>(root_dir);
+        }),
+        py::arg("root_dir"), "Model root directory")
+        .def(py::init([](
+            const std::filesystem::path& root_dir,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::Qwen2_5_VLForConditionalGeneration>(root_dir, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("root_dir"), "Model root directory",
+        py::arg("device"), "Device on which inference will be done");
+
+    py::class_<ov::genai::Qwen2_5_VLForConditionalGeneration::Config>(cls, "Config")
+        .def(py::init([](const std::filesystem::path& config_path) {
+            return std::make_unique<ov::genai::Qwen2_5_VLForConditionalGeneration::Config>(config_path);
+        }), py::arg("config_path"))
+        .def_readwrite("hidden_size", &ov::genai::Qwen2_5_VLForConditionalGeneration::Config::hidden_size);
+
+    cls.def("reshape", &ov::genai::Qwen2_5_VLForConditionalGeneration::reshape, py::arg("batch_size"), py::arg("max_sequence_length"))
+        .def("infer",
+            [](ov::genai::Qwen2_5_VLForConditionalGeneration& self, const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance, int max_sequence_length) {
+                py::gil_scoped_release rel;
+                return self.infer(pos_prompt, neg_prompt, do_classifier_free_guidance, max_sequence_length);
+            },
+            py::arg("pos_prompt"), py::arg("neg_prompt"), py::arg("do_classifier_free_guidance"), py::arg("max_sequence_length"))
+        .def("get_encoder_attention_mask", &ov::genai::Qwen2_5_VLForConditionalGeneration::get_encoder_attention_mask)
+        .def("get_config", &ov::genai::Qwen2_5_VLForConditionalGeneration::get_config)
+        .def("compile",
+            [](ov::genai::Qwen2_5_VLForConditionalGeneration& self, const std::string& device, const py::kwargs& kwargs) {
+                auto map = pyutils::kwargs_to_any_map(kwargs);
+                py::gil_scoped_release rel;
+                self.compile(device, map);
+            },
+            py::arg("device"));
+}
+
+void init_qwen_image_transformer_2d_model(py::module_& m) {
+    auto cls = py::class_<ov::genai::QwenImageTransformer2DModel>(m, "QwenImageTransformer2DModel", "QwenImageTransformer2DModel class.")
+        .def(py::init([](const std::filesystem::path& root_dir) {
+            return std::make_unique<ov::genai::QwenImageTransformer2DModel>(root_dir);
+        }),
+        py::arg("root_dir"), "Model root directory")
+        .def(py::init([](
+            const std::filesystem::path& root_dir,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            return std::make_unique<ov::genai::QwenImageTransformer2DModel>(root_dir, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("root_dir"), "Model root directory",
+        py::arg("device"), "Device on which inference will be done");
+
+    py::class_<ov::genai::QwenImageTransformer2DModel::Config>(cls, "Config")
+        .def(py::init([](const std::filesystem::path& config_path) {
+            return std::make_unique<ov::genai::QwenImageTransformer2DModel::Config>(config_path);
+        }), py::arg("config_path"))
+        .def_readwrite("in_channels", &ov::genai::QwenImageTransformer2DModel::Config::in_channels)
+        .def_readwrite("guidance_embeds", &ov::genai::QwenImageTransformer2DModel::Config::guidance_embeds)
+        .def_readwrite("default_sample_size", &ov::genai::QwenImageTransformer2DModel::Config::default_sample_size);
+
+    cls.def("get_config", &ov::genai::QwenImageTransformer2DModel::get_config)
+        .def("reshape", &ov::genai::QwenImageTransformer2DModel::reshape, py::arg("batch_size"), py::arg("height"), py::arg("width"), py::arg("tokenizer_model_max_length"))
+        .def("infer", &ov::genai::QwenImageTransformer2DModel::infer, py::call_guard<py::gil_scoped_release>(), py::arg("latent"), py::arg("timestep"))
+        .def("set_hidden_states", &ov::genai::QwenImageTransformer2DModel::set_hidden_states, py::arg("tensor_name"), py::arg("tensor"))
+        .def("compile",
+            [](ov::genai::QwenImageTransformer2DModel& self, const std::string& device, const py::kwargs& kwargs) {
+                auto map = pyutils::kwargs_to_any_map(kwargs);
+                py::gil_scoped_release rel;
+                self.compile(device, map);
+            },
+            py::arg("device"));
+}
+
+void init_qwen3_vl(py::module_& m) {
+    auto cls = py::class_<ov::genai::Qwen3VLForConditionalGeneration>(m, "Qwen3VLForConditionalGeneration", "Qwen3VLForConditionalGeneration class.")
+        .def(py::init([](const std::filesystem::path& root_dir) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::Qwen3VLForConditionalGeneration>(root_dir);
+        }),
+        py::arg("root_dir"), "Model root directory")
+        .def(py::init([](
+            const std::filesystem::path& root_dir,
+            const std::filesystem::path& vision_encoder_path,
+            const std::filesystem::path& text_encoder_i2i_path
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::Qwen3VLForConditionalGeneration>(root_dir, vision_encoder_path, text_encoder_i2i_path);
+        }),
+        py::arg("root_dir"), "Model root directory",
+        py::arg("vision_encoder_path"), "Vision encoder directory",
+        py::arg("text_encoder_i2i_path"), "Image conditioned language model directory")
+        .def(py::init([](
+            const std::filesystem::path& root_dir,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::Qwen3VLForConditionalGeneration>(root_dir, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("root_dir"), "Model root directory",
+        py::arg("device"), "Device on which inference will be done");
+
+    py::class_<ov::genai::Qwen3VLForConditionalGeneration::Config>(cls, "Config")
+        .def(py::init([](const std::filesystem::path& config_path) {
+            return std::make_unique<ov::genai::Qwen3VLForConditionalGeneration::Config>(config_path);
+        }), py::arg("config_path"))
+        .def_readwrite("hidden_size", &ov::genai::Qwen3VLForConditionalGeneration::Config::hidden_size)
+        .def_readwrite("image_token_id", &ov::genai::Qwen3VLForConditionalGeneration::Config::image_token_id);
+
+    py::class_<ov::genai::Qwen3VLForConditionalGeneration::VisionConfig>(cls, "VisionConfig")
+        .def(py::init([](const std::filesystem::path& config_path) {
+            return std::make_unique<ov::genai::Qwen3VLForConditionalGeneration::VisionConfig>(config_path);
+        }), py::arg("config_path"))
+        .def_readwrite("hidden_size", &ov::genai::Qwen3VLForConditionalGeneration::VisionConfig::hidden_size)
+        .def_readwrite("num_heads", &ov::genai::Qwen3VLForConditionalGeneration::VisionConfig::num_heads)
+        .def_readwrite("in_channels", &ov::genai::Qwen3VLForConditionalGeneration::VisionConfig::in_channels)
+        .def_readwrite("patch_size", &ov::genai::Qwen3VLForConditionalGeneration::VisionConfig::patch_size)
+        .def_readwrite("temporal_patch_size", &ov::genai::Qwen3VLForConditionalGeneration::VisionConfig::temporal_patch_size)
+        .def_readwrite("spatial_merge_size", &ov::genai::Qwen3VLForConditionalGeneration::VisionConfig::spatial_merge_size)
+        .def_readwrite("num_position_embeddings", &ov::genai::Qwen3VLForConditionalGeneration::VisionConfig::num_position_embeddings)
+        .def_readwrite("num_deepstack_layers", &ov::genai::Qwen3VLForConditionalGeneration::VisionConfig::num_deepstack_layers);
+
+    cls.def("infer",
+            [](ov::genai::Qwen3VLForConditionalGeneration& self, const std::string& prompt, int max_sequence_length) {
+                py::gil_scoped_release rel;
+                return self.infer(prompt, max_sequence_length);
+            },
+            py::arg("prompt"), py::arg("max_sequence_length"))
+        .def("infer",
+            [](ov::genai::Qwen3VLForConditionalGeneration& self, const std::string& prompt, const ov::Tensor& condition_image, int max_sequence_length) {
+                py::gil_scoped_release rel;
+                return self.infer(prompt, condition_image, max_sequence_length);
+            },
+            py::arg("prompt"), py::arg("condition_image"), py::arg("max_sequence_length"))
+        .def("has_vision_tower", &ov::genai::Qwen3VLForConditionalGeneration::has_vision_tower)
+        .def("get_image_pad_mask", &ov::genai::Qwen3VLForConditionalGeneration::get_image_pad_mask)
+        .def("get_config", &ov::genai::Qwen3VLForConditionalGeneration::get_config)
+        .def("get_vision_config", &ov::genai::Qwen3VLForConditionalGeneration::get_vision_config)
+        .def("compile",
+            [](ov::genai::Qwen3VLForConditionalGeneration& self, const std::string& device, const py::kwargs& kwargs) {
+                auto map = pyutils::kwargs_to_any_map(kwargs);
+                py::gil_scoped_release rel;
+                self.compile(device, map);
+            },
+            py::arg("device"));
+}
+
+void init_qwen_image21_transformer_2d_model(py::module_& m) {
+    auto cls = py::class_<ov::genai::QwenImage21Transformer2DModel>(m, "QwenImage21Transformer2DModel", "QwenImage21Transformer2DModel class.")
+        .def(py::init([](const std::filesystem::path& root_dir) {
+            return std::make_unique<ov::genai::QwenImage21Transformer2DModel>(root_dir);
+        }),
+        py::arg("root_dir"), "Model root directory")
+        .def(py::init([](
+            const std::filesystem::path& root_dir,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            return std::make_unique<ov::genai::QwenImage21Transformer2DModel>(root_dir, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("root_dir"), "Model root directory",
+        py::arg("device"), "Device on which inference will be done");
+
+    py::class_<ov::genai::QwenImage21Transformer2DModel::Config>(cls, "Config")
+        .def(py::init([](const std::filesystem::path& config_path) {
+            return std::make_unique<ov::genai::QwenImage21Transformer2DModel::Config>(config_path);
+        }), py::arg("config_path"))
+        .def_readwrite("in_channels", &ov::genai::QwenImage21Transformer2DModel::Config::in_channels)
+        .def_readwrite("out_channels", &ov::genai::QwenImage21Transformer2DModel::Config::out_channels)
+        .def_readwrite("context_in_dim", &ov::genai::QwenImage21Transformer2DModel::Config::context_in_dim)
+        .def_readwrite("attention_head_dim", &ov::genai::QwenImage21Transformer2DModel::Config::attention_head_dim)
+        .def_readwrite("num_layers", &ov::genai::QwenImage21Transformer2DModel::Config::num_layers)
+        .def_readwrite("axes_dims_rope", &ov::genai::QwenImage21Transformer2DModel::Config::axes_dims_rope);
+
+    cls.def("get_config", &ov::genai::QwenImage21Transformer2DModel::get_config)
+        .def("infer", &ov::genai::QwenImage21Transformer2DModel::infer, py::call_guard<py::gil_scoped_release>(), py::arg("latent"), py::arg("timestep"))
+        .def("set_hidden_states", &ov::genai::QwenImage21Transformer2DModel::set_hidden_states, py::arg("tensor_name"), py::arg("tensor"))
+        .def("compile",
+            [](ov::genai::QwenImage21Transformer2DModel& self, const std::string& device, const py::kwargs& kwargs) {
+                auto map = pyutils::kwargs_to_any_map(kwargs);
+                py::gil_scoped_release rel;
+                self.compile(device, map);
+            },
+            py::arg("device"));
 }

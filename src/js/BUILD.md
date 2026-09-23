@@ -84,7 +84,7 @@
 
 ### Requirements
 
-- Node.js v21+
+- Node.js v22+
 
 ### Build Bindings
 
@@ -127,7 +127,7 @@ node -e "const { LLMPipeline } = require('openvino-genai-node'); console.log(LLM
 
 ### Set Up the Python Environment
 
-To run the JavaScript tests, you need Python 3.10+ and the following Python packages:
+To run the JavaScript tests, you need Python 3.11+ and the following Python packages:
 
 - `openvino-genai`
 - `optimum-intel` — for model conversion

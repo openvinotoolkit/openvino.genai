@@ -293,7 +293,6 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     uint64_t request_id,
     const ov::Tensor& input_ids,
     const ov::genai::GenerationConfig& sampling_params,
-    std::optional<ov::Tensor> token_type_ids,
     std::optional<ov::Tensor> prompt_ids,
     std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     auto sampling_params_copy = sampling_params;
@@ -319,7 +318,6 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
         sequence_group = std::make_shared<SequenceGroup>(request_id,
                                                          input_ids,
                                                          sampling_params_copy,
-                                                         token_type_ids,
                                                          lm_extra_inputs,
                                                          position_ids,
                                                          rope_delta,
@@ -328,8 +326,7 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     else {
         sequence_group = std::make_shared<SequenceGroup>(request_id,
                                                          input_ids,
-                                                         sampling_params_copy,
-                                                         token_type_ids);
+                                                         sampling_params_copy);
     }
 
     // Enable hidden state accumulation for speech output (Qwen3-Omni).
@@ -340,6 +337,7 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
 
     if (m_scheduler->get_config().enable_prefix_caching) {
         m_scheduler->restore_cached_blocks(sequence_group);
+        sequence_group->set_num_prefix_cache_hit_tokens(sequence_group->get_num_processed_tokens());
     }
 
     {
@@ -375,11 +373,113 @@ bool ContinuousBatchingPipeline::ContinuousBatchingImpl::has_non_finished_reques
     return !m_awaiting_requests.empty() || !m_requests.empty();
 }
 
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_validate_linear_verifier_constraints() const {
+    if (!m_scheduler->has_linear_attention_cache()) {
+        return;
+    }
+
+    for (const auto& sequence_group : m_requests) {
+        if (sequence_group->get_num_tokens_to_validate() == 0) {
+            continue;
+        }
+
+        OPENVINO_ASSERT(!m_scheduler->get_config().enable_prefix_caching,
+                        "Linear-attention verifier speculative decoding requires enable_prefix_caching=false (not yet supported).");
+
+        const auto& sampling_params = sequence_group->get_sampling_parameters();
+        OPENVINO_ASSERT(sampling_params.assistant_confidence_threshold == 0.f,
+                        "Linear-attention verifier speculative decoding supports a static candidate count only; assistant_confidence_threshold>0 (dynamic candidate count) is not yet supported.");
+        OPENVINO_ASSERT(sampling_params.num_return_sequences == 1,
+                        "Linear-attention verifier speculative decoding requires num_return_sequences=1; parallel sampling / fork is not yet supported.");
+    }
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_reserve_linear_attention_scratch() {
+    if (!m_scheduler->has_linear_attention_cache()) {
+        return;
+    }
+
+    size_t max_num_assistant_tokens = 0;
+    size_t num_verifying_sequences = 0;
+    // Non-verifying sequences also hold one committed row.
+    size_t num_live_sequences = 0;
+    for (const auto& sequence_group : m_requests) {
+        const auto& params = sequence_group->get_sampling_parameters();
+        num_live_sequences += sequence_group->num_running_seqs();
+        if (params.is_prompt_lookup() || params.is_assisting_generation()) {
+            max_num_assistant_tokens = std::max(max_num_assistant_tokens, params.num_assistant_tokens.value_or(0));
+            num_verifying_sequences += sequence_group->num_running_seqs();
+        }
+    }
+    if (max_num_assistant_tokens == 0) {
+        return;
+    }
+
+    // Pre-size for committed rows plus every verifier's full scratch window.
+    const size_t window_blocks = 1 + max_num_assistant_tokens;
+    m_scheduler->check_linear_attention_borrow_pool_floor(num_live_sequences, window_blocks);
+    const size_t required_pool_blocks = num_live_sequences + num_verifying_sequences * window_blocks;
+    m_scheduler->ensure_linear_attention_pool_blocks(required_pool_blocks);
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_publish_linear_attention_pool_metric() {
+    m_pipeline_metrics.la_peak_pool_blocks = m_scheduler->get_linear_attention_pool_blocks_high_water();
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_release_linear_attention_borrowed_rows(
+    const Scheduler::Output& scheduler_output) {
+    if (!m_scheduler->has_linear_attention_cache()) {
+        return;
+    }
+
+    // Sampling may finish a sequence before throwing. Release from the immutable
+    // schedule instead of consulting mutable post-sampling sequence status.
+    for (const auto& [seq_id, paging_data] : scheduler_output.m_linear_attention_paging_data) {
+        if (paging_data.is_speculative) {
+            m_scheduler->release_linear_attention_checkpoints(seq_id);
+        }
+    }
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_linear_attention_checkpoint_transactions(
+    const Scheduler::Output& scheduler_output) {
+    if (!m_scheduler->has_linear_attention_cache()) {
+        return;
+    }
+
+    for (size_t seq_group_id : scheduler_output.m_scheduled_sequence_groups_ids) {
+        const SequenceGroup::Ptr& sequence_group = m_requests[seq_group_id];
+        const size_t processed_after = sequence_group->get_num_processed_tokens();
+
+        for (const auto& sequence : sequence_group->get_running_sequences()) {
+            const uint64_t seq_id = sequence->get_id();
+            if (!scheduler_output.has_linear_attention_paging_data(seq_id)) {
+                continue;
+            }
+            const auto& paging_data = scheduler_output.get_linear_attention_paging_data(seq_id);
+            if (!paging_data.is_speculative) {
+                continue;
+            }
+
+            OPENVINO_ASSERT(processed_after >= paging_data.num_processed_tokens_before,
+                            "Linear-attention checkpoint commit: processed tokens cannot decrease below the pre-forward count (processed_after=",
+                            processed_after, ", processed_before=", paging_data.num_processed_tokens_before, ").");
+            const size_t checkpoint_slot = processed_after - paging_data.num_processed_tokens_before;
+            OPENVINO_ASSERT(checkpoint_slot > 0,
+                            "Linear-attention speculative verification must advance through at least the seed token "
+                            "for sequence ", seq_id);
+            m_scheduler->promote_linear_attention_checkpoint(seq_id, checkpoint_slot);
+        }
+    }
+}
+
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     static ManualTimer step_timer("step()");
     step_timer.start();
 
     _pull_awaiting_requests();
+    _validate_linear_verifier_constraints();
+    _reserve_linear_attention_scratch();
 
     Scheduler::Output scheduler_output;
 
@@ -396,6 +496,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
             std::max(m_pipeline_metrics.max_cache_usage, scheduler_output.m_cache_usage);
         _register_step_cache_usage(scheduler_output.m_cache_usage);
         m_pipeline_metrics.avg_cache_usage = _get_current_running_average_cache_usage();
+        _publish_linear_attention_pool_metric();
 
         const auto& sched_config = m_scheduler->get_config();
         if (sched_config.use_cache_eviction) {
@@ -412,13 +513,31 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         for (size_t i = 0; i < m_requests.size(); ++i) {
             SequenceGroup::Ptr sequence_group = m_requests[i];
             if (!sequence_group->is_waiting()) {
+                _commit_perf_metrics(sequence_group);
                 sequence_group->set_out_of_memory();
-                sequence_group->notify_handle();
+                sequence_group->notify_handle_oom();
             }
         }
         _free_non_running_requests();
         return;
     }
+
+    // Return borrowed rows if forward or sampling fails before commit.
+    struct BorrowedLinearAttentionRowsGuard {
+        ContinuousBatchingImpl& m_impl;
+        const Scheduler::Output& m_scheduler_output;
+        bool m_armed = true;
+
+        ~BorrowedLinearAttentionRowsGuard() {
+            if (m_armed) {
+                m_impl._release_linear_attention_borrowed_rows(m_scheduler_output);
+            }
+        }
+        BorrowedLinearAttentionRowsGuard(const BorrowedLinearAttentionRowsGuard&) = delete;
+        BorrowedLinearAttentionRowsGuard& operator=(const BorrowedLinearAttentionRowsGuard&) = delete;
+    };
+    BorrowedLinearAttentionRowsGuard borrowed_rows_guard{*this, scheduler_output};
+
     ov::Tensor logits;
 
     {
@@ -463,6 +582,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         timer.end();
     }
 
+    // Promote the committed linear-attention state to the correct physical row for any
+    // Commit after sampling rewinds the accepted prefix and before fork/free can release LA rows.
+    _commit_linear_attention_checkpoint_transactions(scheduler_output);
+    borrowed_rows_guard.m_armed = false;
+
     // process sampler_output (e.g. fork or drop sequences from BlockScheduler)
     {
         static ManualTimer free_fork_timer("fork / free sequence");
@@ -481,30 +605,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         free_fork_timer.end();
     }
 
-    {
-        static ManualTimer candidates_timer("generate_candidates_for_prompt_lookup()");
-        candidates_timer.start();
-        generate_candidates_for_prompt_lookup();
-        candidates_timer.end();
-    }
-
-    // Append embeddings for tokens produced in this step.
-    // Validation mode usually skips this because speculative validation reuses/rewinds
-    // candidate tokens instead of committing them here. prompt_lookup is the exception:
-    // it appends validation candidates after sampling and must keep embeddings in sync
-    // before the next scheduling/hash step.
-    if (m_model_input_type == ModelInputType::EMBEDDINGS && sync_embeddings_after_candidates()) {
-        m_model_runner->append_embeddings(m_requests, scheduler_output);
-    }
-
-    // notify requests dropped by handle
-    {
-        static ManualTimer report_tokens_timer("notify requests dropped by handle");
-        report_tokens_timer.start();
-        _notify_requests_dropped_by_handle();
-        report_tokens_timer.end();
-    }
-
     const auto step_end_time = std::chrono::steady_clock::now();
     for (const auto request_index : scheduler_output.m_scheduled_sequence_groups_ids) {
         const auto& request = m_requests.at(request_index);
@@ -520,7 +620,24 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
                                      step_end_time);
     }
 
-    // free non running requests for current step
+    // notify handles before appending candidates: generated_ids must not include unvalidated draft tokens
+    _notify_handles(scheduler_output);
+
+    {
+        static ManualTimer candidates_timer("generate_candidates_for_prompt_lookup()");
+        candidates_timer.start();
+        generate_candidates_for_prompt_lookup();
+        candidates_timer.end();
+    }
+
+    // Append embeddings for tokens produced in this step.
+    // Validation mode usually skips this because speculative validation reuses/rewinds
+    // candidate tokens instead of committing them here. prompt_lookup is the exception:
+    // it appends validation candidates after sampling and must keep embeddings in sync
+    // before the next scheduling/hash step.
+    if (m_model_input_type == ModelInputType::EMBEDDINGS && sync_embeddings_after_candidates()) {
+        m_model_runner->append_embeddings(m_requests, scheduler_output);
+    }
 
     {
         static ManualTimer clean_up_requests_timer("free non running requests");
@@ -542,7 +659,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
     const std::vector<ov::Tensor>& input_ids,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer,
-    const std::optional<std::vector<ov::Tensor>>& token_type_ids,
     const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list,
     const std::optional<std::vector<ov::Tensor>>& prompt_ids,
     const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list) {
@@ -618,7 +734,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
                 m_inputs_embedder->set_rope_delta(*rope_delta);
             }
         }
-        const bool has_valid_token_type_ids = token_type_ids.has_value() && request_id < token_type_ids->size();
+
         const bool has_valid_prompt_ids = prompt_ids.has_value() && request_id < prompt_ids->size();
         const bool has_valid_lm_extra_inputs =
             lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
@@ -627,7 +743,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
             request_id,
             input_ids[request_id],
             sampling_params[request_id],
-            has_valid_token_type_ids ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt,
             has_valid_prompt_ids ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
             has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt));
     }
@@ -728,6 +843,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
         perf_metrics.raw_metrics.generate_durations.emplace_back(
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
         perf_metrics.num_input_tokens = request->get_prompt_len();
+        perf_metrics.num_prefix_cache_hit_tokens = request->get_num_prefix_cache_hit_tokens();
         perf_metrics.evaluate_statistics(start_time);
 
         result.perf_metrics = perf_metrics;
@@ -750,10 +866,20 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_reque
     std::vector<SequenceGroup::Ptr>::iterator requests_iterator = m_requests.begin();
     while (requests_iterator != m_requests.end()) {
         const auto& request = *requests_iterator;
-        if (request->has_finished() || request->handle_stopped() || request->handle_cancelled()) {
-            auto perf_metrics = request->get_perf_metrics();
-            perf_metrics.load_time = m_load_time_ms;
-            request->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
+        const bool is_finished = request->has_finished();
+        const bool is_stopped = request->handle_stopped();
+        const bool is_cancelled = request->handle_cancelled();
+
+        if (is_finished || is_stopped || is_cancelled) {
+            if (!request->notified_terminal()) {
+                _commit_perf_metrics(request);
+                if (is_finished) {
+                    request->notify_handle_final();
+                } else {
+                    request->notify_handle_stopped_or_cancelled();
+                }
+            }
+
             for (const auto& sequence : request->get_sequences()) {
                 if (m_scheduler->has_block_table(sequence->get_id())) {
                     m_scheduler->free_sequence(sequence->get_id());
@@ -767,12 +893,42 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_reque
     }
 }
 
-void ContinuousBatchingPipeline::ContinuousBatchingImpl::_notify_requests_dropped_by_handle() {
-    // Notify the last time by pushing empty output
-    // This causes read() to unblock by adding anything to the queue
-    for (SequenceGroup::Ptr& request : m_requests) {
-        if (request->handle_stopped() || request->handle_cancelled())
-            request->push_empty_outputs();
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_perf_metrics(const SequenceGroup::Ptr& request) {
+    auto perf_metrics = request->get_perf_metrics();
+    perf_metrics.load_time = m_load_time_ms;
+    request->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_notify_handles(const Scheduler::Output& scheduler_output) {
+    for (const auto request_index : scheduler_output.m_scheduled_sequence_groups_ids) {
+        const auto& request = m_requests.at(request_index);
+        const bool is_echo_only = request->get_context_len() <= request->get_prompt_len() &&
+                                  request->get_sampling_parameters().echo &&
+                                  request->get_max_new_tokens() == 0;
+        if (is_echo_only) {
+            // Commit metrics only once the whole prompt has been echoed back, otherwise
+            // get_perf_metrics()'s one-shot generate_durations capture would freeze early.
+            if (request->get_context_len() == request->get_prompt_len()) {
+                _commit_perf_metrics(request);
+            }
+            request->notify_handle_echo_only();
+        } else if (request->has_finished()) {
+            _commit_perf_metrics(request);
+            request->notify_handle_final();
+        } else {
+            request->notify_handle();
+        }
+    }
+    // stopped/cancelled requests may not be among the scheduled ones
+    for (auto& request : m_requests) {
+        const bool is_finished = request->has_finished();
+        const bool is_stopped = request->handle_stopped();
+        const bool is_cancelled = request->handle_cancelled();
+
+        if (!is_finished && (is_stopped || is_cancelled) && !request->notified_terminal()) {
+            _commit_perf_metrics(request);
+            request->notify_handle_stopped_or_cancelled();
+        }
     }
 }
 
@@ -1026,10 +1182,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
             sequence_group->append_prompt_log_prob(token_logit - max_value - log_sum);
         }
         currently_processed_tokens += output_seq_len * num_running_sequences;
-        // For max_new_tokens == 0, we don't reach sampling so need to notify handle separately
-        if (sequence_group->get_max_new_tokens() == 0) {
-            sequence_group->notify_handle_echo_only();
-        }
     }
 }
 

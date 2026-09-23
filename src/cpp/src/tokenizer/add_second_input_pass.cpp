@@ -205,10 +205,31 @@ void AddSecondInputPass::insert_splits() {
     // Adjust truncation values
     auto& trunc_values = this->m_trunc_values;
     if (!trunc_values.empty()) {
-        auto trunc_const_max_len = std::dynamic_pointer_cast<Constant>(trunc_values[0].get_node_shared_ptr());
+        auto trunc_max_len_node = trunc_values[0].get_node_shared_ptr();
+        auto trunc_const_max_len = ov::as_type_ptr<Constant>(trunc_max_len_node);
+        auto trunc_max_len_select = ov::as_type_ptr<Select>(trunc_max_len_node);
+
+        // Stateful tokenizers select the configured max length only when truncation is enabled:
+        // Select(ReadValue("truncation"), max_length, disabled_truncation_limit).
+        // Preserve the state and the disabled-truncation branch, and adjust only max_length.
+        if (trunc_max_len_select) {
+            trunc_const_max_len = ov::as_type_ptr<Constant>(trunc_max_len_select->get_input_node_shared_ptr(1));
+        }
+
         if (trunc_const_max_len) {
             int trunc_adj = trunc_const_max_len->get_vector<int>()[0] - (static_cast<int>(signature_to_extend.size()) - 1);
-            trunc_values[0] = std::make_shared<Constant>(element::i32, Shape{}, std::vector<int32_t>{trunc_adj});
+            auto adjusted_max_len = std::make_shared<Constant>(
+                trunc_const_max_len->get_element_type(),
+                trunc_const_max_len->get_shape(),
+                std::vector<int32_t>{trunc_adj});
+            if (trunc_max_len_select) {
+                trunc_values[0] = std::make_shared<Select>(
+                    trunc_max_len_select->input_value(0),
+                    adjusted_max_len,
+                    trunc_max_len_select->input_value(2));
+            } else {
+                trunc_values[0] = adjusted_max_len;
+            }
         }
     }
 

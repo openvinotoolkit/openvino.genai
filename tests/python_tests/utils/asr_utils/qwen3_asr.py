@@ -1,4 +1,5 @@
 import re
+from typing import ClassVar
 
 import pytest
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
@@ -25,7 +26,7 @@ def skip_if_qwen3_asr_package_is_unavailable():
 
 class Qwen3ASROptimumPipeline:
     SAMPLE_RATE = 16000
-    EOS_TOKEN_IDS = [151643, 151645]
+    EOS_TOKEN_IDS: ClassVar[tuple[int]] = (151643, 151645)
 
     def __init__(self, model: OVModelForSpeechSeq2Seq, processor: AutoProcessor):
         self.model = model

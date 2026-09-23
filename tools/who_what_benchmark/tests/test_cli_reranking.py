@@ -27,7 +27,6 @@ def remove_artifacts(artifacts_path: Path):
     ],
 )
 @pytest.mark.xfail(sys.platform == "darwin", reason="Hangs. Ticket 175534", run=False)
-@pytest.mark.xfail(sys.platform == "win32", reason="Ticket 178790", run=False)
 def test_reranking_optimum(model_id, threshold, tmp_path):
     GT_FILE = Path(tmp_path) / "gt.csv"
     MODEL_PATH = convert_model(model_id)

@@ -310,9 +310,7 @@ def test_embedding_pipeline_prompt_api_reaches_cpp(emb_model):
     assert batch_result.embeddings.shape[0] == 2
     assert batch_result.embeddings.shape[1] == result.embeddings.shape[1]
 
-    with pytest.raises(
-        RuntimeError, match="TextEmbeddingPipeline fallback is active and does not support image/video input"
-    ):
+    with pytest.raises(RuntimeError, match="This model does not support image/video input"):
         pipeline.embed("What is OpenVINO?", images=[ov.Tensor(np.zeros((1, 1, 1, 1), dtype=np.float32))])
 
 
@@ -460,6 +458,28 @@ def test_embedding_pipeline_matches_text_embedding_pipeline(emb_model):
     np.testing.assert_allclose(
         embedding_result.embeddings.data,
         np.asarray(text_embedding_result, dtype=np.float32),
+        atol=MAX_EMBEDDING_ERROR,
+        rtol=0,
+    )
+
+
+@pytest.mark.parametrize("emb_model", [EMBEDDINGS_TEST_MODELS[0]], indirect=True)
+def test_embedding_pipeline_honors_wrapped_text_embedding_config(emb_model):
+    text = "What is OpenVINO?"
+    config = TextEmbeddingPipeline.Config(pooling_type=TextEmbeddingPipeline.PoolingType.MEAN)
+    wrapped_config_pipeline = EmbeddingPipeline(emb_model.models_path, "CPU", text_embedding_config=config)
+    direct_config_pipeline = EmbeddingPipeline(
+        emb_model.models_path,
+        "CPU",
+        pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
+    )
+
+    wrapped_config_result = wrapped_config_pipeline.embed(text)
+    direct_config_result = direct_config_pipeline.embed(text)
+
+    np.testing.assert_allclose(
+        wrapped_config_result.embeddings.data,
+        direct_config_result.embeddings.data,
         atol=MAX_EMBEDDING_ERROR,
         rtol=0,
     )

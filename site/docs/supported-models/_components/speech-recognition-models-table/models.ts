@@ -8,6 +8,15 @@ type SpeechRecognitionModelType = {
 
 export const SPEECH_RECOGNITION_MODELS: SpeechRecognitionModelType[] = [
   {
+    architecture: 'FunASRNano',
+    models: [
+      {
+        name: 'Fun-ASR-Nano',
+        links: ['https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512'],
+      },
+    ],
+  },
+  {
     architecture: 'Qwen3ASRForConditionalGeneration',
     models: [
       {

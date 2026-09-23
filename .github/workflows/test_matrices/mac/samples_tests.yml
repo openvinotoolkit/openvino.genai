@@ -1,0 +1,39 @@
+# Test matrix for the macOS genai_samples_tests job.
+# Each entry runs when any of its `components` is affected (has `.test`).
+- name: LLM
+  marker: llm and not transformers_lower_v5
+  cmd: tests/python_tests/samples
+  components:
+    - LLM_samples
+
+- name: LLM with transformers under 5.0
+  extra_cmd: python -m pip install transformers==4.57.6
+  marker: llm and (transformers_dependent or transformers_lower_v5)
+  cmd: tests/python_tests/samples
+  components:
+    - LLM_samples
+
+- name: Automatic Speech Recognition
+  marker: automatic_speech_recognition
+  cmd: tests/python_tests/samples
+  components:
+    - automatic_speech_recognition_samples
+
+- name: Rag
+  marker: rag
+  cmd: tests/python_tests/samples
+  components:
+    - RAG_samples
+
+- name: Speech generation
+  marker: speech_generation
+  cmd: tests/python_tests/samples
+  components:
+    - Speech_generation_samples
+
+# Disabled on macOS: UnigramTokenizer reads vocab log-probs as f32, but arm64 CPU defaults to f16 inference precision. Ticket: CVS-191863
+# - name: Video generation
+#   marker: video_generation
+#   cmd: tests/python_tests/samples
+#   components:
+#     - Video_generation_samples

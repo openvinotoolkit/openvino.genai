@@ -103,17 +103,13 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const ChatHistory& h
                     ") must match videos size (", videos.size(), ") or be empty");
 
     if (talker_speech_config.return_audio) {
-        // Speech output requires the prompts overload's per-prompt loop, which captures the
-        // prompt-id slice into VLMDecodedResults::prompt_ids. The histories overload doesn't
-        // yet wire that capture (CB pipeline_base.cpp leaves original_prompt_ids_list empty
-        // for the ChatHistory path — see the FIXME there). Apply the chat template here and
-        // route through the prompts path so speech generation has its prompt_ids.
-        const std::string templated_prompt = m_vlm->get_tokenizer().apply_chat_template(history, true);
         GenerationConfig text_cfg = text_config;
-        text_cfg.apply_chat_template = false;
         text_cfg.return_omni_outputs = true;
+        // Keep multimodal normalization inside the ChatHistory path. Applying the chat template
+        // first and routing the resulting string through the prompt overload would place image
+        // and audio tags outside the user message and change the Thinker output.
         VLMDecodedResults vlm_result =
-            m_vlm->generate(templated_prompt, images, videos, audios, videos_metadata, text_cfg, streamer);
+            m_vlm->generate(history, images, videos, audios, videos_metadata, text_cfg, streamer);
         TalkerResults talker_result = m_talker->generate(vlm_result, talker_speech_config, speech_streamer);
         OmniDecodedResults omni_result;
         static_cast<VLMDecodedResults&>(omni_result) = std::move(vlm_result);

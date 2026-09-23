@@ -11,7 +11,9 @@ from transformers import set_seed
 import torch
 import openvino_genai
 
+from .utils import parquet_generate_tables
 from .registry import register_evaluator
+from .inpaint_evaluator import patched_parquet
 from .text2image_evaluator import Text2ImageEvaluator
 
 from .whowhat_metrics import ImageSimilarity
@@ -87,6 +89,9 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
                 "strength": 0.8,
                 "generator": generator,
             }
+            if model.__class__.__name__ in ("QwenImage21Pipeline", "OVQwenImage21Pipeline"):
+                # Qwen Image 2.1 conditions on image tokens and does not support the img2img strength argument.
+                kwargs.pop("strength")
             with torch.no_grad():
                 output = model(**kwargs)
             return output.images[0]
@@ -103,7 +108,8 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
                     data = dict(self.test_data)
                 data = pd.DataFrame.from_dict(data)
         else:
-            data = pd.DataFrame.from_dict(prepare_default_data(self.num_samples))
+            with patched_parquet(parquet_generate_tables):
+                data = pd.DataFrame.from_dict(prepare_default_data(self.num_samples))
 
         prompts = data["prompts"]
         images = data["images"]

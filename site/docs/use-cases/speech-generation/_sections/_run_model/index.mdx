@@ -124,3 +124,13 @@ python create_speaker_embedding.py
         ```
     </TabItemJS>
 </LanguageTabs>
+
+### Performance Metrics
+
+`Text2SpeechPipeline` returns `Text2SpeechDecodedResults` with a `perf_metrics` field of type `SpeechGenerationPerfMetrics`, which extends [`PerfMetrics`](/docs/guides/performance-metrics).
+
+In addition to common metrics, `SpeechGenerationPerfMetrics` provides:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `num_generated_samples` | integer | Number of audio samples generated |

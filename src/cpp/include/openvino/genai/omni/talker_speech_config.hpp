@@ -55,8 +55,19 @@ struct OPENVINO_GENAI_EXPORTS OmniTalkerSpeechConfig {
     std::variant<std::string, ov::Tensor> speaker;
 
     /// @brief Number of codec frames accumulated before streaming each audio chunk.
-    /// Must be >= 1. Each frame is 80ms of audio at 24 kHz (1920 samples).
-    std::size_t audio_chunk_frames = 1;
+    /// Must be >= 1. At steady state each frame decodes to 1920 samples (80ms at 24 kHz),
+    /// but the code2wav vocoder trims its convolutional warmup from the first frame of every
+    /// decode call, so a chunk of N frames yields 1920*N - 555 samples, not 1920*N. This is a
+    /// property of the vocoder graph, not a miscount. Larger chunks amortize the fixed warmup
+    /// cost; very small chunks (e.g. 1) also risk audible seams between independently decoded
+    /// chunks in streaming mode.
+    ///
+    /// Default is 4: the per-frame talker+code_predictor decode cost is fixed (~77ms on GPU),
+    /// so a chunk must yield at least that much audio to keep up in real time. A single frame
+    /// yields only ~57ms of audio (warmup trim dominates), so `audio_chunk_frames = 1` runs at
+    /// ~1.36x real time (falls behind); 4 frames yield ~74ms/frame and reach ~1.04x (keeps up).
+    /// Smaller values lower time-to-first-audio at the cost of falling behind real time.
+    std::size_t audio_chunk_frames = 4;
 
     /// @brief Cap on talker AR steps. Independent of `text_config.max_new_tokens`
     /// (which caps the thinker text decode).
@@ -90,10 +101,6 @@ struct OPENVINO_GENAI_EXPORTS OmniTalkerSpeechConfig {
     /// @brief CodePredictor top-k override (must be >= 1 when set).
     /// Checkpoint default from `generation_config.json -> cp_top_k` if present.
     std::optional<std::size_t> cp_top_k;
-
-    /// @brief CodePredictor repetition penalty override (must be > 0 when set; 1.0 = no penalty).
-    /// Checkpoint default from `generation_config.json -> cp_repetition_penalty` if present.
-    std::optional<float> cp_repetition_penalty;
 };
 
 }  // namespace genai
