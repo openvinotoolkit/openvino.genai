@@ -19,23 +19,15 @@ Usage:
 import argparse
 
 import librosa
-import numpy as np
 import openvino_genai
-import soundfile as sf
 from openvino import Tensor
 
 
 def load_audio(audio_path: str, target_sr: int = 16000) -> Tensor:
     """Load a WAV file as a mono float32 tensor at target_sr, the layout Qwen3-Omni expects."""
-    audio_data, sample_rate = sf.read(audio_path, dtype="float32")
-
-    if audio_data.ndim > 1:
-        audio_data = audio_data.mean(axis=1)
-
-    if sample_rate != target_sr:
-        audio_data = librosa.resample(audio_data, orig_sr=sample_rate, target_sr=target_sr)
-
-    return Tensor(audio_data.astype(np.float32))
+    # librosa.load downmixes to mono, resamples, and returns float32 in one call.
+    audio_data, _ = librosa.load(audio_path, sr=target_sr, mono=True)
+    return Tensor(audio_data)
 
 
 def run(pipe: openvino_genai.OmniPipeline, label: str, prompt: str, audios: list[Tensor]) -> None:
