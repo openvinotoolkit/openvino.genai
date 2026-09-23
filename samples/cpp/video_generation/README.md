@@ -66,6 +66,11 @@ GPUs usually provide better performance compared to CPUs. Modify the source code
 
 - **Main Feature:** Generate videos from text descriptions with customizable parameters.
 
+- **Output:** `genai_video.avi`; models that generate audio (LTX-2) also write `genai_audio.wav`. To combine both into one file:
+  ```bash
+  ffmpeg -i genai_video.avi -i genai_audio.wav genai_video.mp4
+  ```
+
 - **Run Command:**
   ```bash
   ./text2video model_dir prompt

@@ -19,11 +19,12 @@ void save_to_wav(const float* waveform_ptr,
                  size_t waveform_size,
                  const std::filesystem::path& file_path,
                  uint32_t bits_per_sample,
-                 uint32_t sample_rate) {
+                 uint32_t sample_rate,
+                 uint32_t channels) {
     drwav_data_format format;
     format.container = drwav_container_riff;
     format.format = DR_WAVE_FORMAT_IEEE_FLOAT;
-    format.channels = 1;
+    format.channels = channels;
     format.sampleRate = sample_rate;
     format.bitsPerSample = bits_per_sample;
 
@@ -31,10 +32,8 @@ void save_to_wav(const float* waveform_ptr,
     OPENVINO_ASSERT(drwav_init_file_write(&wav, file_path.string().c_str(), &format, nullptr),
                     "Failed to initialize WAV writer");
 
-    size_t total_samples = waveform_size * format.channels;
-
-    drwav_uint64 frames_written = drwav_write_pcm_frames(&wav, total_samples, waveform_ptr);
-    OPENVINO_ASSERT(frames_written == total_samples, "Failed to write not all frames");
+    drwav_uint64 frames_written = drwav_write_pcm_frames(&wav, waveform_size, waveform_ptr);
+    OPENVINO_ASSERT(frames_written == waveform_size, "Failed to write not all frames");
 
     drwav_uninit(&wav);
 }

@@ -4,7 +4,7 @@
 
 import argparse
 import openvino_genai
-from video_utils import save_video
+from video_utils import save_audio, save_video
 
 
 def main():
@@ -36,6 +36,10 @@ def main():
     )
 
     save_video("genai_video.avi", output.video, frame_rate)
+    # Models that generate audio (LTX-2) return it as a separate track. To combine both into one file:
+    #   ffmpeg -i genai_video.avi -i genai_audio.wav genai_video.mp4
+    if output.audio_sample_rate:
+        save_audio("genai_audio.wav", output.audio, output.audio_sample_rate)
 
     print(f"\nPerformance metrics:")
     print(f"  Load time: {output.perf_metrics.get_load_time():.2f} ms")
