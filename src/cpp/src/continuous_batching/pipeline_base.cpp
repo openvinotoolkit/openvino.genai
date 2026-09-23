@@ -391,11 +391,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         vlm_utils::update_image_slice_counts(vlm_perf_metrics[0], encoded_images);
 
-        // Encode this prompt's audios under m_embeddings_mutex right before tokenization.
         // encoded_audios is a local, so an empty batch yields an empty list rather than leaving a
         // previous turn's audio live — that aliasing was the stale-audio bug.
         if (!audios_vector[0].empty()) {
-            std::lock_guard<std::mutex> lock(m_embeddings_mutex);
             const auto audio_encoding_start = std::chrono::steady_clock::now();
             encoded_audios = m_inputs_embedder->encode_audios(audios_vector[0]);
             PerfMetrics::emplace_duration(vlm_perf_metrics[0].vlm_raw_metrics.audio_encoding_durations, audio_encoding_start);
@@ -457,12 +455,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
             vlm_utils::update_image_slice_counts(vlm_perf_metrics[i], encoded_images);
 
-            // Encode this prompt's audios under m_embeddings_mutex right before tokenization.
             // Per-prompt local: each prompt in the batch gets its own encodings, so one prompt's
             // audio cannot leak into the next.
             std::vector<ov::genai::EncodedAudio> encoded_audios;
             if (!audios_vector[i].empty()) {
-                std::lock_guard<std::mutex> lock(m_embeddings_mutex);
                 const auto audio_encoding_start = std::chrono::steady_clock::now();
                 encoded_audios = m_inputs_embedder->encode_audios(audios_vector[i]);
                 PerfMetrics::emplace_duration(vlm_perf_metrics[i].vlm_raw_metrics.audio_encoding_durations, audio_encoding_start);
