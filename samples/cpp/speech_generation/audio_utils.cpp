@@ -3,6 +3,7 @@
 
 #include "audio_utils.hpp"
 
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -19,14 +20,16 @@
 #endif
 
 namespace {
-bool is_wav_buffer(const std::string buf) {
+bool is_wav_buffer(const std::string& buf) {
     // RIFF ref: https://en.wikipedia.org/wiki/Resource_Interchange_File_Format
     // WAV ref: https://www.mmsp.ece.mcgill.ca/Documents/AudioFormats/WAVE/WAVE.html
     if (buf.size() < 12 || buf.substr(0, 4) != "RIFF" || buf.substr(8, 4) != "WAVE") {
         return false;
     }
 
-    uint32_t chunk_size = *reinterpret_cast<const uint32_t*>(buf.data() + 4);
+    // memcpy, not a uint32_t* cast: offset 4 of a string buffer is not guaranteed to be aligned.
+    uint32_t chunk_size;
+    std::memcpy(&chunk_size, buf.data() + 4, sizeof(chunk_size));
     if (chunk_size + 8 != buf.size()) {
         return false;
     }
@@ -62,8 +65,6 @@ ov::genai::RawSpeechInput read_wav(const std::string& filename) {
 
         OPENVINO_ASSERT(drwav_init_memory(&wav, wav_data.data(), wav_data.size(), nullptr),
                         "Failed to open WAV file from stdin");
-
-        fprintf(stderr, "%s: read %zu bytes from stdin\n", __func__, wav_data.size());
     } else if (is_wav_buffer(filename)) {
         OPENVINO_ASSERT(drwav_init_memory(&wav, filename.c_str(), filename.size(), nullptr),
                         "Failed to open WAV file from fname buffer");
@@ -81,20 +82,12 @@ ov::genai::RawSpeechInput read_wav(const std::string& filename) {
         throw std::runtime_error("WAV file must be " + std::to_string(COMMON_SAMPLE_RATE / 1000) + " kHz");
     }
 
-    const uint64_t n =
-        wav_data.empty()
-        ? wav.totalPCMFrameCount
-        : (
-            wav_data.size() /
-            (static_cast<uint64_t>(wav.channels) * static_cast<uint64_t>(wav.bitsPerSample) / 8ul)
-        );
-
     // drwav_uninit invalidates the struct, so keep what we still need for the conversion below.
     const auto channels = wav.channels;
 
-    std::vector<int16_t> pcm16;
-    pcm16.resize(n * channels);
-    drwav_read_pcm_frames_s16(&wav, n, pcm16.data());
+    // The header's frame count, not the buffer size: an in-memory buffer also holds the header.
+    std::vector<int16_t> pcm16(wav.totalPCMFrameCount * channels);
+    const uint64_t n = drwav_read_pcm_frames_s16(&wav, wav.totalPCMFrameCount, pcm16.data());
     drwav_uninit(&wav);
 
     // convert to mono, float
