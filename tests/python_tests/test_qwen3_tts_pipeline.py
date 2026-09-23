@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
+import re
 import subprocess  # nosec B404
 from pathlib import Path
 from typing import Optional
@@ -246,6 +247,23 @@ def _run_optimum_base_generate(
     return _to_waveform_array(output), sample_rate
 
 
+def _run_genai_base_generate(
+    pipe: ov_genai.Text2SpeechPipeline,
+    prompt: str,
+    language: str,
+    ref_audio: np.ndarray,
+    **generation_kwargs,
+) -> tuple[np.ndarray, int]:
+    result = pipe.generate(
+        prompt,
+        language=language,
+        ref_audio=ov.Tensor(ref_audio),
+        **generation_kwargs,
+    )
+    speech = np.array(result.speeches[0].data, dtype=np.float32).reshape(-1)
+    return speech, int(result.output_sample_rate)
+
+
 @pytest.mark.speech_generation
 def test_qwen3_tts_base_icl_model_properties_change_genai_output(
     tiny_qwen3_tts_base_ov_path: Path,
@@ -301,6 +319,200 @@ def test_qwen3_tts_base_icl_model_properties_change_genai_output(
         pytest.fail(
             "MODEL_PROPERTIES sanity check failed: waveform with component properties "
             "matches waveform from default pipeline for the same English ICL input."
+        )
+
+
+@pytest.mark.speech_generation
+def test_qwen3_tts_base_sampling_default_seeded_is_deterministic(
+    genai_qwen3_tts_base_pipe,
+):
+    language = "English"
+    prompt = LANGUAGE_TEST_TEXTS[language]["prompt"]
+    ref_audio = _make_ref_audio()
+
+    cases = [
+        ("do_sample=false", {"max_new_tokens": 128, "rng_seed": 2025}),
+        ("do_sample=true", {"max_new_tokens": 128, "rng_seed": 2026, "do_sample": True}),
+    ]
+
+    for case_name, generation_kwargs in cases:
+        first_speech, first_sr = _run_genai_base_generate(
+            genai_qwen3_tts_base_pipe,
+            prompt,
+            language,
+            ref_audio,
+            **generation_kwargs,
+        )
+        second_speech, second_sr = _run_genai_base_generate(
+            genai_qwen3_tts_base_pipe,
+            prompt,
+            language,
+            ref_audio,
+            **generation_kwargs,
+        )
+
+        assert first_sr == SAMPLE_RATE, f"Expected sample rate {SAMPLE_RATE}, got {first_sr}"
+        assert second_sr == SAMPLE_RATE, f"Expected sample rate {SAMPLE_RATE}, got {second_sr}"
+        _assert_waveform_equal(first_speech, second_speech, f"seeded reproducibility ({case_name})")
+
+
+@pytest.mark.speech_generation
+def test_qwen3_tts_base_sampling_subtalker_knobs_change_output(
+    genai_qwen3_tts_base_pipe,
+):
+    language = "English"
+    prompt = LANGUAGE_TEST_TEXTS[language]["prompt"]
+    ref_audio = _make_ref_audio()
+
+    baseline_kwargs = {
+        "max_new_tokens": 128,
+        "rng_seed": 2027,
+    }
+    baseline_speech, baseline_sr = _run_genai_base_generate(
+        genai_qwen3_tts_base_pipe,
+        prompt,
+        language,
+        ref_audio,
+        **baseline_kwargs,
+    )
+    assert baseline_sr == SAMPLE_RATE, f"Expected sample rate {SAMPLE_RATE}, got {baseline_sr}"
+
+    variants = [
+        {"subtalker_top_k": 1},
+        {"subtalker_top_p": 0.2},
+        {"subtalker_temperature": 0.2},
+    ]
+
+    differs = False
+    for variant in variants:
+        variant_speech, variant_sr = _run_genai_base_generate(
+            genai_qwen3_tts_base_pipe,
+            prompt,
+            language,
+            ref_audio,
+            **baseline_kwargs,
+            **variant,
+        )
+        assert variant_sr == SAMPLE_RATE, f"Expected sample rate {SAMPLE_RATE}, got {variant_sr}"
+        if not np.array_equal(baseline_speech, variant_speech):
+            differs = True
+            break
+
+    assert differs, (
+        "Expected at least one subtalker sampling knob variant (top_k/top_p/temperature) "
+        "to produce a different waveform from seeded baseline."
+    )
+
+
+@pytest.mark.speech_generation
+def test_qwen3_tts_base_sampling_talker_knobs_change_output(
+    genai_qwen3_tts_base_pipe,
+):
+    language = "English"
+    prompt = LANGUAGE_TEST_TEXTS[language]["prompt"]
+    ref_audio = _make_ref_audio()
+
+    baseline_kwargs = {
+        "max_new_tokens": 128,
+        "rng_seed": 2029,
+        "do_sample": True,
+        "subtalker_dosample": False,
+    }
+    baseline_speech, baseline_sr = _run_genai_base_generate(
+        genai_qwen3_tts_base_pipe,
+        prompt,
+        language,
+        ref_audio,
+        **baseline_kwargs,
+    )
+    assert baseline_sr == SAMPLE_RATE, f"Expected sample rate {SAMPLE_RATE}, got {baseline_sr}"
+
+    variants = [
+        {"top_k": 1},
+        {"top_p": 0.2},
+        {"temperature": 0.2},
+    ]
+
+    differs = False
+    for variant in variants:
+        variant_speech, variant_sr = _run_genai_base_generate(
+            genai_qwen3_tts_base_pipe,
+            prompt,
+            language,
+            ref_audio,
+            **baseline_kwargs,
+            **variant,
+        )
+        assert variant_sr == SAMPLE_RATE, f"Expected sample rate {SAMPLE_RATE}, got {variant_sr}"
+        if not np.array_equal(baseline_speech, variant_speech):
+            differs = True
+            break
+
+    assert differs, (
+        "Expected at least one talker sampling knob variant (top_k/top_p/temperature) "
+        "to produce a different waveform from seeded baseline."
+    )
+
+
+@pytest.mark.speech_generation
+@pytest.mark.parametrize(
+    "invalid_kwargs,expected_message",
+    [
+        ({"subtalker_top_k": 0}, "subtalker_top_k must be positive"),
+        ({"subtalker_top_p": -0.1}, "subtalker_top_p must be in the range [0; 1]"),
+        ({"subtalker_top_p": 1.1}, "subtalker_top_p must be in the range [0; 1]"),
+        ({"subtalker_temperature": 0.0}, "subtalker_temperature must be positive"),
+    ],
+)
+def test_qwen3_tts_base_sampling_invalid_subtalker_settings_raises(
+    genai_qwen3_tts_base_pipe,
+    invalid_kwargs,
+    expected_message,
+):
+    language = "English"
+    prompt = LANGUAGE_TEST_TEXTS[language]["prompt"]
+    ref_audio = _make_ref_audio()
+
+    with pytest.raises(RuntimeError, match=re.escape(expected_message)):
+        genai_qwen3_tts_base_pipe.generate(
+            prompt,
+            language=language,
+            ref_audio=ov.Tensor(ref_audio),
+            max_new_tokens=128,
+            rng_seed=2028,
+            subtalker_dosample=True,
+            **invalid_kwargs,
+        )
+
+
+@pytest.mark.speech_generation
+@pytest.mark.parametrize(
+    "invalid_kwargs,expected_message",
+    [
+        ({"top_p": 0.0}, "When 'do_sample' is true, top_p must be a positive float > 0.0 and <= 1.0"),
+        ({"top_p": 1.1}, "When 'do_sample' is true, top_p must be a positive float > 0.0 and <= 1.0"),
+        ({"temperature": 0.0}, "When 'do_sample' is true, temperature must be a strictly positive float"),
+    ],
+)
+def test_qwen3_tts_base_sampling_invalid_talker_settings_raises(
+    genai_qwen3_tts_base_pipe,
+    invalid_kwargs,
+    expected_message,
+):
+    language = "English"
+    prompt = LANGUAGE_TEST_TEXTS[language]["prompt"]
+    ref_audio = _make_ref_audio()
+
+    with pytest.raises(RuntimeError, match=re.escape(expected_message)):
+        genai_qwen3_tts_base_pipe.generate(
+            prompt,
+            language=language,
+            ref_audio=ov.Tensor(ref_audio),
+            max_new_tokens=128,
+            rng_seed=2030,
+            do_sample=True,
+            subtalker_dosample=False,
+            **invalid_kwargs,
         )
 
 
