@@ -32,7 +32,15 @@ import openvino
 import pytest
 
 import openvino_genai as ov_genai
-from openvino_genai import ChatHistory, GenerationConfig, VLMDecodedResults, VLMPipeline, VideoMetadata
+from openvino_genai import (
+    ChatHistory,
+    ContinuousBatchingPipeline,
+    GenerationConfig,
+    SchedulerConfig,
+    VLMDecodedResults,
+    VLMPipeline,
+    VideoMetadata,
+)
 from utils.media_tags import ModalityType, get_universal_tag
 
 
@@ -326,17 +334,32 @@ def qwen3_omni_pipe_pa(qwen3_omni_ov_model: str) -> VLMPipeline:
     return VLMPipeline(qwen3_omni_ov_model, "CPU", ATTENTION_BACKEND="PA")
 
 
-# Qwen3-Omni derives its embedder from Qwen3VL and inherits the qwen3-vl SDPA embedding-count
-# defect: SDPA fails on a text-only prompt with no audio involved. The qwen3-vl gate above does
-# not string-match qwen3-omni. Non-strict so a real audio regression cannot hide behind the xfail.
-#
-# Measured, not assumed: the SDPA prompt path fails, but its ChatHistory path works for video
-# (see the ungated video-only control). An XPASS here means the audio drop was the real cause.
-QWEN3_OMNI_SDPA_XFAIL_REASON = (
-    "qwen3-omni inherits the qwen3-vl SDPA embedding-count defect; the SDPA prompt path fails on "
-    "unmodified master with no audio involved. Flips to XPASS if audio wiring was the real cause"
-)
-qwen3_omni_sdpa_xfail = pytest.mark.xfail(reason=QWEN3_OMNI_SDPA_XFAIL_REASON, strict=False)
+# Qwen3-Omni inherits the qwen3-vl SDPA defect: a text-only request fails with a [cpu]reshape
+# error, no audio involved. The SDPA audio tests xfail only while that exact failure reproduces;
+# any other error in them is a real failure.
+QWEN3_OMNI_SDPA_DEFECT = "conflicts with the reshape pattern"
+
+
+@pytest.fixture(scope="session")
+def qwen3_omni_sdpa_text_only_error(qwen3_omni_ov_model: str) -> str | None:
+    """The known SDPA error on a text-only request, or None once the defect is fixed."""
+    # Own pipeline: a failed generate leaves the embedder state dirty for the next call on that pipe.
+    pipe = VLMPipeline(qwen3_omni_ov_model, "CPU", ATTENTION_BACKEND="SDPA")
+    history = ChatHistory()
+    history.append({"role": "user", "content": "Describe"})
+    try:
+        pipe.generate(history, generation_config=GenerationConfig(max_new_tokens=1))
+    except RuntimeError as error:
+        if QWEN3_OMNI_SDPA_DEFECT not in str(error):
+            raise
+        return str(error).strip().splitlines()[-1]
+    return None
+
+
+@pytest.fixture
+def qwen3_omni_sdpa_known_defect(qwen3_omni_sdpa_text_only_error: str | None) -> None:
+    if qwen3_omni_sdpa_text_only_error is not None:
+        pytest.xfail(f"qwen3-omni inherits the qwen3-vl SDPA defect: {qwen3_omni_sdpa_text_only_error}")
 
 
 @pytest.fixture(scope="session")
@@ -581,7 +604,7 @@ def test_audio_one_pad_audio_still_expands(
     A one-pad expansion leaves the native tag byte-identical to its unexpanded form, so an
     expansion loop that restarts its search from position zero writes the second audio's pads into
     the first tag's slot. O2 only sees that the second audio expanded at all; which span it landed
-    in is pinned by the C++ `ExpandAudioTags` cases.
+    in is pinned by `Qwen3OmniAudioExpansion.OnePadAudioDoesNotSwallowNextTag`.
     """
     assert pads(ONE_PAD_AUDIO_SECONDS, qwen3_omni_n_window) == 1, (
         "the one-pad control no longer yields a single pad on this model"
@@ -795,6 +818,19 @@ def test_audio_multipart_audio_first(qwen3_omni_pipe_pa: VLMPipeline, audio_1s_t
 
 @pytest.mark.real_models
 @pytest.mark.vlm
+def test_audio_multipart_audio_only(qwen3_omni_pipe_pa: VLMPipeline, audio_1s_tensor: openvino.Tensor):
+    """A message with only an audio part used to fail format detection as an unknown schema."""
+    multipart = audio_history_run(
+        qwen3_omni_pipe_pa, [{"role": "user", "content": [{"type": "audio"}]}], [audio_1s_tensor]
+    )
+    string_form = audio_history_run(qwen3_omni_pipe_pa, [{"role": "user", "content": audio_tag(0)}], [audio_1s_tensor])
+
+    assert multipart.texts == string_form.texts
+    assert num_input_tokens(multipart) == num_input_tokens(string_form)
+
+
+@pytest.mark.real_models
+@pytest.mark.vlm
 def test_audio_multipart_unsupported_type_still_throws(
     qwen3_omni_pipe_pa: VLMPipeline, audio_1s_tensor: openvino.Tensor
 ):
@@ -900,6 +936,87 @@ def test_audio_older_turn_reference_rejected(qwen3_omni_pipe_pa: VLMPipeline, au
         )
 
 
+@pytest.mark.real_models
+@pytest.mark.vlm
+def test_audio_failed_turn_is_rolled_back(qwen3_omni_pipe_pa: VLMPipeline, audio_1s_tensor: openvino.Tensor):
+    """A turn that throws after registering its audio must not shift the next turn's indices."""
+    history = ChatHistory()
+    history.append({"role": "user", "content": "Describe " + audio_tag(1)})
+    with pytest.raises(RuntimeError):
+        qwen3_omni_pipe_pa.generate(history, audios=[audio_1s_tensor], generation_config=audio_generation_config())
+
+    history.pop()
+    history.append({"role": "user", "content": "Describe " + audio_tag(0)})
+    retried = qwen3_omni_pipe_pa.generate(
+        history, audios=[audio_1s_tensor], generation_config=audio_generation_config()
+    )
+    fresh = audio_history_run(
+        qwen3_omni_pipe_pa, [{"role": "user", "content": "Describe " + audio_tag(0)}], [audio_1s_tensor]
+    )
+
+    assert retried.texts == fresh.texts
+    assert num_input_tokens(retried) == num_input_tokens(fresh)
+
+
+# ----------------------------------------------------------------------------------------------
+# ContinuousBatchingPipeline with a batch of two, each item with its own audio. Batch size 1 is
+# already covered: VLMPipeline with PA goes through the same code via the CB adapter.
+
+
+@pytest.fixture(scope="session")
+def qwen3_omni_cb(qwen3_omni_ov_model: str) -> ContinuousBatchingPipeline:
+    return ContinuousBatchingPipeline(qwen3_omni_ov_model, SchedulerConfig(), "CPU")
+
+
+def cb_audio_run(
+    pipe: ContinuousBatchingPipeline, inputs: list[str] | list[ChatHistory], audios: list[openvino.Tensor]
+) -> list[VLMDecodedResults]:
+    """One audio per batch item."""
+    return pipe.generate(
+        inputs,
+        images=[[] for _ in inputs],
+        videos=[[] for _ in inputs],
+        audios_batches=[[audio] for audio in audios],
+        generation_config=[audio_generation_config() for _ in inputs],
+    )
+
+
+def assert_batch_matches_single_runs(batch: list[VLMDecodedResults], singles: list[VLMDecodedResults]) -> None:
+    __tracebackhide__ = True
+    for item, single in zip(batch, singles, strict=True):
+        assert item.texts == single.texts
+        assert num_input_tokens(item) == num_input_tokens(single)
+    assert num_input_tokens(batch[0]) != num_input_tokens(batch[1]), "the two audios must differ in length"
+
+
+@pytest.mark.real_models
+@pytest.mark.vlm
+def test_audio_cb_prompt_batch_keeps_audio_per_prompt(
+    qwen3_omni_cb: ContinuousBatchingPipeline,
+    audio_1s_tensor: openvino.Tensor,
+    audio_8s_tensor: openvino.Tensor,
+):
+    prompt = "Describe " + audio_tag(0)
+    audios = [audio_1s_tensor, audio_8s_tensor]
+    batch = cb_audio_run(qwen3_omni_cb, [prompt, prompt], audios)
+    singles = [cb_audio_run(qwen3_omni_cb, [prompt], [audio])[0] for audio in audios]
+    assert_batch_matches_single_runs(batch, singles)
+
+
+@pytest.mark.real_models
+@pytest.mark.vlm
+def test_audio_cb_chat_history_batch_keeps_audio_per_history(
+    qwen3_omni_cb: ContinuousBatchingPipeline,
+    audio_1s_tensor: openvino.Tensor,
+    audio_8s_tensor: openvino.Tensor,
+):
+    messages = [{"role": "user", "content": "Describe " + audio_tag(0)}]
+    audios = [audio_1s_tensor, audio_8s_tensor]
+    batch = cb_audio_run(qwen3_omni_cb, [ChatHistory(messages), ChatHistory(messages)], audios)
+    singles = [cb_audio_run(qwen3_omni_cb, [ChatHistory(messages)], [audio])[0] for audio in audios]
+    assert_batch_matches_single_runs(batch, singles)
+
+
 # ----------------------------------------------------------------------------------------------
 # T-E: the SDPA `VLMPipeline` ChatHistory path. Its overload puts `audios` before
 # `videos_metadata`, the opposite of `OmniPipeline`; both are vectors, so a swap compiles silently.
@@ -925,7 +1042,7 @@ def audio_sdpa_history_run(
 
 @pytest.mark.real_models
 @pytest.mark.vlm
-@qwen3_omni_sdpa_xfail
+@pytest.mark.usefixtures("qwen3_omni_sdpa_known_defect")
 def test_vlm_chat_history_audio_is_encoded_sdpa(
     qwen3_omni_pipe_sdpa: VLMPipeline,
     qwen3_omni_n_window: int,
@@ -949,7 +1066,7 @@ def test_vlm_chat_history_audio_is_encoded_sdpa(
 
 @pytest.mark.real_models
 @pytest.mark.vlm
-@qwen3_omni_sdpa_xfail
+@pytest.mark.usefixtures("qwen3_omni_sdpa_known_defect")
 def test_vlm_chat_history_audio_matches_pa_backend(
     qwen3_omni_pipe_sdpa: VLMPipeline,
     qwen3_omni_pipe_pa: VLMPipeline,
@@ -966,7 +1083,7 @@ def test_vlm_chat_history_audio_matches_pa_backend(
 
 @pytest.mark.real_models
 @pytest.mark.vlm
-@qwen3_omni_sdpa_xfail
+@pytest.mark.usefixtures("qwen3_omni_sdpa_known_defect")
 def test_vlm_chat_history_audio_only_no_video(
     qwen3_omni_pipe_sdpa: VLMPipeline,
     qwen3_omni_n_window: int,
@@ -1021,7 +1138,7 @@ def test_vlm_chat_history_video_only_no_audio(
 
 @pytest.mark.real_models
 @pytest.mark.vlm
-@qwen3_omni_sdpa_xfail
+@pytest.mark.usefixtures("qwen3_omni_sdpa_known_defect")
 def test_vlm_chat_history_audio_and_video_together(
     qwen3_omni_pipe_sdpa: VLMPipeline,
     qwen3_omni_n_window: int,
@@ -1052,7 +1169,7 @@ def test_vlm_chat_history_audio_and_video_together(
 
 @pytest.mark.real_models
 @pytest.mark.vlm
-@qwen3_omni_sdpa_xfail
+@pytest.mark.usefixtures("qwen3_omni_sdpa_known_defect")
 def test_vlm_prompt_path_audio_unchanged_sdpa(
     qwen3_omni_pipe_sdpa: VLMPipeline,
     qwen3_omni_pipe_pa: VLMPipeline,
