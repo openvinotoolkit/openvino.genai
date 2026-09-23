@@ -78,6 +78,8 @@ public:
     /// @param videos Video tensors. Place them with `<ov_genai_video_N>`; prepended if untagged.
     /// @param audios Audio tensors. Place them with `<ov_genai_audio_N>`; prepended if untagged,
     ///        which is the recommended form since the model is trained with media before text.
+    ///        In a chat, N is conversation-absolute: a second turn that adds one audio uses
+    ///        `<ov_genai_audio_1>`, not `<ov_genai_audio_0>`.
     /// @param text_generation_config Thinker text-decode config.
     /// @param talker_speech_config Talker + speech-output config.
     /// @param streamer Optional streamer for text tokens.

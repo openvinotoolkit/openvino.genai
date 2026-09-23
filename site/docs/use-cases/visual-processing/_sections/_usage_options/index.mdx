@@ -11,16 +11,27 @@ Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master
 
 ### Use Media Tags in Prompt
 
-The prompt can contain `<ov_genai_image_i>`, `<ov_genai_video_i>` or `<ov_genai_audio_i>`, with `i` replaced with an actual zero based index, to refer to an image, a video or an audio. Reference to media used in previous prompts isn't implemented. A model's native tag can be used instead of the universal one; the native tags are listed per modality below.
+The prompt can contain `<ov_genai_image_i>`, `<ov_genai_video_i>` or `<ov_genai_audio_i>`, with `i` replaced with an actual zero based index, to refer to an image, a video or an audio. Outside a chat, `i` indexes the list passed to the call. In a chat, indices are conversation-absolute: each modality counts on from the media of earlier turns. If turn 1 passed one audio, a new audio on turn 2 is `<ov_genai_audio_1>`, not `<ov_genai_audio_0>`. Reference to media used in previous prompts isn't implemented, so an index from an earlier turn is rejected. A model's native tag can be used instead of the universal one; the native tags are listed per modality below.
 
 If the prompt doesn't contain image, video or audio tags, but images, videos or audios are provided, the tags are prepended to the prompt.
 
 Tags let you place media anywhere, including between spans of text:
 
-```python
-# Audio between two pieces of text, and two audios referenced by index.
-pipe.generate("Compare <ov_genai_audio_0> against <ov_genai_audio_1> and explain", audios=[first, second])
-```
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        # Audio between two pieces of text, and two audios referenced by index.
+        pipe.generate("Compare <ov_genai_audio_0> against <ov_genai_audio_1> and explain", audios=[first, second])
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        // Audio between two pieces of text, and two audios referenced by index.
+        pipe.generate("Compare <ov_genai_audio_0> against <ov_genai_audio_1> and explain",
+                      ov::genai::audios(std::vector<ov::Tensor>{first, second}));
+        ```
+    </TabItemCpp>
+</LanguageTabs>
 
 #### Image Tags
 

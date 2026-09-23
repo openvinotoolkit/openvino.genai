@@ -46,7 +46,9 @@ auto vlm_generate_common_params = R"(
     :param videos: list of frames
     :type videos: list[ov.Tensor]
 
-    :param audios: audio tensors, for models supporting audio input
+    :param audios: audio tensors, for models supporting audio input. Place with `<ov_genai_audio_N>`;
+        prepended if untagged. In a chat, N is conversation-absolute: a second turn that adds one
+        audio uses `<ov_genai_audio_1>`, not `<ov_genai_audio_0>`
     :type audios: list[ov.Tensor]
 
     :param generation_config: generation_config
@@ -78,7 +80,7 @@ auto vlm_generate_kwargs_param = R"(
     image: ov.Tensor - input image,
     images: list[ov.Tensor] - input images,
     videos: list[ov.Tensor] - input videos,
-    audios: list[ov.Tensor] - audio tensors, for models supporting audio input,
+    audios: list[ov.Tensor] - audio tensors, for models supporting audio input. In a chat, `<ov_genai_audio_N>` indices are conversation-absolute,
     videos_metadata: list[VideoMetadata] - metadata for each video,
     generation_config: GenerationConfig,
     streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped,
