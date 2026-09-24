@@ -517,6 +517,199 @@ def test_qwen3_tts_base_sampling_invalid_talker_settings_raises(
 
 
 @pytest.mark.speech_generation
+def test_qwen3_tts_base_optimum_vs_genai_without_language(
+    optimum_qwen3_tts_base_model,
+    genai_qwen3_tts_base_pipe,
+):
+    prompt = LANGUAGE_TEST_TEXTS["English"]["prompt"]
+    ref_audio = _make_ref_audio()
+
+    inputs = optimum_qwen3_tts_base_model.preprocess_input(
+        text=prompt,
+        ref_audio=(ref_audio, SAMPLE_RATE),
+        x_vector_only_mode=True,
+    )
+    optimum_output = optimum_qwen3_tts_base_model.generate(
+        **inputs,
+        **_generation_kwargs(non_streaming_mode=True),
+    )
+    optimum_speech = _to_waveform_array(optimum_output)
+    optimum_sr = int(getattr(optimum_qwen3_tts_base_model, "sampling_rate", SAMPLE_RATE))
+
+    result = genai_qwen3_tts_base_pipe.generate(
+        prompt,
+        ref_audio=ov.Tensor(ref_audio),
+        **_generation_kwargs(non_streaming_mode=True),
+    )
+    genai_speech = np.array(result.speeches[0].data, dtype=np.float32).reshape(-1)
+
+    assert result.output_sample_rate == SAMPLE_RATE, (
+        f"GenAI Base sample rate mismatch without language: "
+        f"expected={SAMPLE_RATE}, actual={result.output_sample_rate}"
+    )
+    assert result.output_sample_rate == optimum_sr, (
+        f"Base sample rate mismatch without language: "
+        f"optimum={optimum_sr}, genai={result.output_sample_rate}"
+    )
+    _assert_waveform_equal(optimum_speech, genai_speech, "base parity without language")
+
+
+@pytest.mark.speech_generation
+def test_qwen3_tts_customvoice_optimum_vs_genai_without_language(
+    optimum_qwen3_tts_customvoice_model,
+    genai_qwen3_tts_customvoice_pipe,
+):
+    prompt = LANGUAGE_TEST_TEXTS["English"]["prompt"]
+    instruct = LANGUAGE_TEST_TEXTS["English"]["instruct"]
+    speaker = LANGUAGE_TEST_TEXTS["English"]["customvoice_speaker"]
+
+    inputs = optimum_qwen3_tts_customvoice_model.preprocess_input(
+        text=prompt,
+        speaker=speaker,
+        instruct=instruct,
+    )
+    optimum_output = optimum_qwen3_tts_customvoice_model.generate(
+        **inputs,
+        **_generation_kwargs(non_streaming_mode=True),
+    )
+    optimum_speech = _to_waveform_array(optimum_output)
+    optimum_sr = int(getattr(optimum_qwen3_tts_customvoice_model, "sampling_rate", SAMPLE_RATE))
+
+    result = genai_qwen3_tts_customvoice_pipe.generate(
+        prompt,
+        speaker=speaker,
+        instruct=instruct,
+        **_generation_kwargs(non_streaming_mode=True),
+    )
+    genai_speech = np.array(result.speeches[0].data, dtype=np.float32).reshape(-1)
+
+    assert result.output_sample_rate == SAMPLE_RATE, (
+        f"GenAI CustomVoice sample rate mismatch without language: "
+        f"expected={SAMPLE_RATE}, actual={result.output_sample_rate}"
+    )
+    assert result.output_sample_rate == optimum_sr, (
+        f"CustomVoice sample rate mismatch without language: "
+        f"optimum={optimum_sr}, genai={result.output_sample_rate}"
+    )
+    _assert_waveform_equal(optimum_speech, genai_speech, "customvoice parity without language")
+
+
+@pytest.mark.speech_generation
+def test_qwen3_tts_customvoice_invalid_language_hides_dialects_in_supported_list(
+    genai_qwen3_tts_customvoice_pipe,
+):
+    prompt = LANGUAGE_TEST_TEXTS["English"]["prompt"]
+    instruct = LANGUAGE_TEST_TEXTS["English"]["instruct"]
+    speaker = LANGUAGE_TEST_TEXTS["English"]["customvoice_speaker"]
+
+    with pytest.raises(RuntimeError) as error:
+        genai_qwen3_tts_customvoice_pipe.generate(
+            prompt,
+            language="SomeInvalidLanguage",
+            speaker=speaker,
+            instruct=instruct,
+            **_generation_kwargs(non_streaming_mode=True),
+        )
+
+    message = str(error.value)
+    assert "'beijing_dialect'" not in message
+    assert "'sichuan_dialect'" not in message
+    assert "'auto'" in message
+    assert "'chinese'" in message
+
+
+@pytest.mark.speech_generation
+@pytest.mark.parametrize(
+    "language",
+    ["Chinese", "Auto"],
+    ids=["chinese", "auto"],
+)
+def test_qwen3_tts_customvoice_dialect_speaker_language_parity_optimum_vs_genai(
+    optimum_qwen3_tts_customvoice_model,
+    genai_qwen3_tts_customvoice_pipe,
+    language: str,
+):
+    dialect_speaker = "eric"
+    get_supported_speakers = getattr(optimum_qwen3_tts_customvoice_model, "get_supported_speakers", None)
+    if callable(get_supported_speakers):
+        supported_speakers = {str(s).lower() for s in get_supported_speakers()}
+        if dialect_speaker not in supported_speakers:
+            pytest.fail(f"Speaker '{dialect_speaker}' is not available in this model fixture")
+
+    prompt = LANGUAGE_TEST_TEXTS["Chinese"]["prompt"]
+    instruct = LANGUAGE_TEST_TEXTS["Chinese"]["instruct"]
+
+    inputs = optimum_qwen3_tts_customvoice_model.preprocess_input(
+        text=prompt,
+        language=language,
+        speaker=dialect_speaker,
+        instruct=instruct,
+    )
+    optimum_output = optimum_qwen3_tts_customvoice_model.generate(
+        **inputs,
+        **_generation_kwargs(non_streaming_mode=True),
+    )
+    optimum_speech = _to_waveform_array(optimum_output)
+    optimum_sr = int(getattr(optimum_qwen3_tts_customvoice_model, "sampling_rate", SAMPLE_RATE))
+
+    result = genai_qwen3_tts_customvoice_pipe.generate(
+        prompt,
+        language=language,
+        speaker=dialect_speaker,
+        instruct=instruct,
+        **_generation_kwargs(non_streaming_mode=True),
+    )
+    genai_speech = np.array(result.speeches[0].data, dtype=np.float32).reshape(-1)
+
+    assert result.output_sample_rate == SAMPLE_RATE, (
+        f"GenAI CustomVoice sample rate mismatch for language={language}+dialect speaker parity: "
+        f"expected={SAMPLE_RATE}, actual={result.output_sample_rate}"
+    )
+    assert result.output_sample_rate == optimum_sr, (
+        f"CustomVoice sample rate mismatch for language={language}+dialect speaker parity: "
+        f"optimum={optimum_sr}, genai={result.output_sample_rate}"
+    )
+    _assert_waveform_equal(optimum_speech, genai_speech, f"customvoice {language}+dialect parity")
+
+
+@pytest.mark.speech_generation
+def test_qwen3_tts_voicedesign_optimum_vs_genai_without_language(
+    optimum_qwen3_tts_voicedesign_model,
+    genai_qwen3_tts_voicedesign_pipe,
+):
+    prompt = LANGUAGE_TEST_TEXTS["English"]["prompt"]
+    instruct = LANGUAGE_TEST_TEXTS["English"]["instruct"]
+
+    inputs = optimum_qwen3_tts_voicedesign_model.preprocess_input(
+        text=prompt,
+        instruct=instruct,
+    )
+    optimum_output = optimum_qwen3_tts_voicedesign_model.generate(
+        **inputs,
+        **_generation_kwargs(non_streaming_mode=True),
+    )
+    optimum_speech = _to_waveform_array(optimum_output)
+    optimum_sr = int(getattr(optimum_qwen3_tts_voicedesign_model, "sampling_rate", SAMPLE_RATE))
+
+    result = genai_qwen3_tts_voicedesign_pipe.generate(
+        prompt,
+        instruct=instruct,
+        **_generation_kwargs(non_streaming_mode=True),
+    )
+    genai_speech = np.array(result.speeches[0].data, dtype=np.float32).reshape(-1)
+
+    assert result.output_sample_rate == SAMPLE_RATE, (
+        f"GenAI VoiceDesign sample rate mismatch without language: "
+        f"expected={SAMPLE_RATE}, actual={result.output_sample_rate}"
+    )
+    assert result.output_sample_rate == optimum_sr, (
+        f"VoiceDesign sample rate mismatch without language: "
+        f"optimum={optimum_sr}, genai={result.output_sample_rate}"
+    )
+    _assert_waveform_equal(optimum_speech, genai_speech, "voicedesign parity without language")
+
+
+@pytest.mark.speech_generation
 @pytest.mark.parametrize(
     "non_streaming_mode",
     [True, False],
