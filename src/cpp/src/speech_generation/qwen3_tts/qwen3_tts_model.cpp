@@ -110,6 +110,33 @@ std::string to_lower(std::string value) {
     return value;
 }
 
+bool is_dialect_language(const std::string& language) {
+    return language.find("dialect") != std::string::npos;
+}
+
+std::string format_supported_languages(const std::unordered_map<std::string, int64_t>& codec_language_id) {
+    std::vector<std::string> supported_languages;
+    supported_languages.reserve(codec_language_id.size() + 1);
+    supported_languages.emplace_back("auto");
+    for (const auto& [language, _] : codec_language_id) {
+        if (is_dialect_language(language)) {
+            continue;
+        }
+        supported_languages.emplace_back(language);
+    }
+    std::sort(supported_languages.begin(), supported_languages.end());
+    supported_languages.erase(std::unique(supported_languages.begin(), supported_languages.end()), supported_languages.end());
+
+    std::ostringstream stream;
+    for (size_t index = 0; index < supported_languages.size(); ++index) {
+        if (index > 0) {
+            stream << ", ";
+        }
+        stream << "'" << supported_languages[index] << "'";
+    }
+    return stream.str();
+}
+
 ov::InferRequest compile_request(const std::filesystem::path& model_path,
                                  const std::string& model_name,
                                  const std::string& device,
@@ -1471,7 +1498,22 @@ std::string Qwen3TTSImpl::normalize_text_language(const std::string& language) c
     if (language.empty()) {
         return "auto";
     }
-    return to_lower(language);
+
+    const std::string normalized_language = to_lower(language);
+    if (normalized_language == "auto") {
+        return normalized_language;
+    }
+
+    if (is_dialect_language(normalized_language) ||
+        m_ids.codec_language_id.find(normalized_language) == m_ids.codec_language_id.end()) {
+        OPENVINO_THROW("Unsupported language: ['",
+                       language,
+                       "']. Supported: [",
+                       format_supported_languages(m_ids.codec_language_id),
+                       "]");
+    }
+
+    return normalized_language;
 }
 
 std::string Qwen3TTSImpl::normalize_speaker(const std::string& speaker) const {
@@ -1620,7 +1662,7 @@ std::vector<int64_t> Qwen3TTSImpl::make_speaker_and_codec_prefill_ids(const std:
         language_id = lang_it->second;
     }
 
-    if (language_id == -1 && !speaker.empty()) {
+    if ((language == "auto" || language == "chinese") && !speaker.empty()) {
         auto spk_dialect = m_ids.spk_is_dialect.find(speaker);
         if (spk_dialect != m_ids.spk_is_dialect.end()) {
             auto dialect_it = m_ids.codec_language_id.find(spk_dialect->second);
@@ -1675,6 +1717,7 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
     std::vector<bool> suppress_tokens = compute_suppress_tokens();
 
     const std::string language = normalize_text_language(generation_config.language);
+    std::cout << "Qwen3TTSImpl::generate: language = " << language << std::endl;
     const std::string speaker = normalize_speaker(generation_config.speaker);
     const bool base_model = is_base_model();
 
