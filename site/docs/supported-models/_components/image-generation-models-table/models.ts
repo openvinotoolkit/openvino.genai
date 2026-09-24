@@ -130,4 +130,25 @@ export const IMAGE_GENERATION_MODELS: ImageGenerationModelType[] = [
       'https://huggingface.co/Qwen/Qwen-Image',
     ],
   },
+  {
+    architecture: 'Qwen-Image-2.1',
+    textToImage: true,
+    imageToImage: true,
+    inpainting: false,
+    loraSupport: false,
+    links: [
+      'https://huggingface.co/Qwen/Qwen-Image-2.1',
+    ],
+  },
+  {
+    architecture: 'Z-Image',
+    textToImage: true,
+    imageToImage: true,
+    inpainting: false,
+    loraSupport: true,
+    links: [
+      'https://huggingface.co/Tongyi-MAI/Z-Image',
+      'https://huggingface.co/Tongyi-MAI/Z-Image-Turbo',
+    ],
+  },
 ];

@@ -65,6 +65,12 @@ public:
 
     AutoencoderKLQwenImage& reshape(int batch_size, int height, int width);
 
+    /// @brief Reshapes the encoder alone. Needed by pipelines whose condition image does not share the batch or the
+    /// resolution of the generated image.
+    AutoencoderKLQwenImage& reshape_encoder(int batch_size, int height, int width);
+
+    AutoencoderKLQwenImage& reshape_decoder(int batch_size, int height, int width);
+
     AutoencoderKLQwenImage& compile(const std::string& device, const ov::AnyMap& properties = {});
 
     template <typename... Properties>
@@ -88,6 +94,7 @@ public:
 
 private:
     void merge_vae_image_post_processing() const;
+    void check_reshape_dimensions(int height, int width) const;
 
     Config m_config;
     ov::InferRequest m_encoder_request, m_decoder_request;

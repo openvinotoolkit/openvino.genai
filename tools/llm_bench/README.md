@@ -217,6 +217,14 @@ optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code mo
 python benchmark.py -m models/MiniCPM-V-2_6/ -p "What is openvino?" -n 2 --task visual_text_gen -i ./image.png
 ```
 
+```sh
+# convert model to OpenVINO IR format
+optimum-cli export openvino -m google/gemma-3n-E2B-it gemma-3n-E2B-it --task=image-text-to-text
+# chat iteration
+python benchmark.py -m ./models/gemma-3n-E2B-it/ -n 2 --task visual_text_gen_chat --chat_iter 3
+python benchmark.py -m ./models/gemma-3n-E2B-it/ -n 2 --task visual_text_gen_chat -pf ./prompts/vlm_chat.jsonl
+```
+
 > **Supported VLM model types:** llava, llava-next, qwen2-vl, llava-qwen2, internvl-chat, minicpmv, phi3-v, minicpm-v, minicpmo, maira2, qwen2-5-vl
 
 ### Image Generation Models
@@ -294,9 +302,13 @@ python benchmark.py -m models/whisper-base/ --media ./how_are_you_doing_today.wa
 
 # Qwen3-Omni speech recognition
 python benchmark.py -m models/qwen3-omni/ --media ./how_are_you_doing_today.wav -p "Transcribe this audio." -n 2 --task speech_to_text
+
+# FunASR speech recognition
+optimum-cli export openvino --model FunAudioLLM/Fun-ASR-Nano-2512 models/fun-asr
+python benchmark.py -m models/fun-asr/ --media ./how_are_you_doing_today.wav -n 2
 ```
 
-> **Supported Speech to Text model types:** whisper, qwen3-asr, qwen3-omni
+> **Supported Speech to Text model types:** whisper, qwen3-asr, fun-asr, qwen3-omni
 
 
 ### Text Rerank models
@@ -369,6 +381,11 @@ python benchmark.py -m models/codegen-350M-multi -p "def hello_world():" -n 2 --
 ### Video Generation Models
 ```sh
 python benchmark.py -m models/LTX-Video/FP16 -p "A cat plays with ball on the christmas tree." --negative_prompt "worst quality, inconsistent motion, blurry, jittery, distorted" --num_frames 5 -n 2 --num_steps 25 --task text-to-video
+```
+
+Image-to-video requires an input image (`-i`/`--media`) and a model directory containing a `vae_encoder`. The prompt should describe how the input image animates:
+```sh
+python benchmark.py -m models/LTX-Video/FP16 -i input.png -p "The camera slowly pushes in as the scene comes to life with gentle, natural motion." --num_frames 5 -n 2 --num_steps 25 --task image-to-video
 ```
 
 **Some additional parameters:**
