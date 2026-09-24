@@ -131,7 +131,7 @@ def tinyllama_lora_adapter(tmp_path_factory: pytest.TempPathFactory) -> Path:
     "read_method, expected_output",
     [("read", {}), ("read_all", [])],
 )
-def test_generation_handle_blocked_read_releases_gil_and_stop_unblocks(
+def test_generation_handle_concurrent_stop_and_read_smoke(
     model_facebook_opt_125m: OVConvertedModelSchema,
     read_method: str,
     expected_output,
@@ -141,12 +141,12 @@ def test_generation_handle_blocked_read_releases_gil_and_stop_unblocks(
         pipeline_type=PipelineType.CONTINUOUS_BATCHING,
     )
     handle = cb_pipe.add_request(0, "The Sun is", generation_config=GenerationConfig(max_new_tokens=1))
-    reader_started = threading.Event()
+    reader_thread_started = threading.Event()
     reader_output = []
     reader_error = []
 
     def read_output():
-        reader_started.set()
+        reader_thread_started.set()
         try:
             reader_output.append(getattr(handle, read_method)())
         except RuntimeError as error:
@@ -154,7 +154,7 @@ def test_generation_handle_blocked_read_releases_gil_and_stop_unblocks(
 
     reader = threading.Thread(target=read_output)
     reader.start()
-    assert reader_started.wait(timeout=5)
+    assert reader_thread_started.wait(timeout=5)
     time.sleep(0.05)
 
     handle.stop()

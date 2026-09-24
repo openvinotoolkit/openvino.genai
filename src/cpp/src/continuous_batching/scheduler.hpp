@@ -587,10 +587,11 @@ private:
         return m_cache_orchestrator->num_free_blocks() > prev_blocks_count;
     }
 
-    size_t _get_low_priority_sequence_group_id(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
-        for (size_t seq_group_id = 0, num_groups = sequence_groups.size(); seq_group_id < num_groups; ++seq_group_id) {
-            size_t group_idx = num_groups - seq_group_id - 1;
-            SequenceGroup::Ptr sequence_group = sequence_groups[group_idx];
+    std::optional<size_t> _get_low_priority_sequence_group_id(
+        const std::vector<SequenceGroup::Ptr>& sequence_groups, size_t sequence_group_id) {
+        for (size_t group_idx = sequence_groups.size(); group_idx > sequence_group_id + 1;) {
+            --group_idx;
+            const SequenceGroup::Ptr& sequence_group = sequence_groups[group_idx];
             if (sequence_group->get_num_processed_tokens() > 0 &&
                 !m_cache_orchestrator->has_active_scratch_leases(sequence_group)) {
                 // we are here, because current sequence group has some reserved KV blocks in block manager
@@ -599,7 +600,7 @@ private:
             }
         }
 
-        return std::numeric_limits<size_t>::max();
+        return std::nullopt;
     }
 
     void _apply_preemption(size_t sequence_group_id, const std::vector<SequenceGroup::Ptr>& sequence_groups) {
@@ -608,13 +609,12 @@ private:
         // check whether current sequence requires a new slot / block
         while (!m_cache_orchestrator->can_append_slots(sequence_group)) {
             // let's run a sequence for eviction
-            size_t evicted_sequence_group_id = _get_low_priority_sequence_group_id(sequence_groups);
+            const auto evicted_sequence_group_id = _get_low_priority_sequence_group_id(sequence_groups, sequence_group_id);
 
-            if (evicted_sequence_group_id <= sequence_group_id) {
-                // we have a cycle when current group need to evict itself to be in a running state
+            if (!evicted_sequence_group_id) {
                 break;
             }
-            if (!_preempt_by_recompute(sequence_groups[evicted_sequence_group_id], sequence_group)){
+            if (!_preempt_by_recompute(sequence_groups[*evicted_sequence_group_id], sequence_group)){
                 break;
             }
         }

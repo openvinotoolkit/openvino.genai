@@ -24,6 +24,12 @@ class GenerationStream {
     std::optional<PerfMetrics> m_perf_metrics;
     std::optional<VLMPerfMetrics> m_vlm_perf_metrics;
 
+    void clear_output_queue() noexcept {
+        while (!m_output_queue.empty()) {
+            m_output_queue.pop();
+        }
+    }
+
 public:
     using Ptr = std::shared_ptr<GenerationStream>;
 
@@ -155,7 +161,7 @@ public:
             m_status = GenerationStatus::STOP;
             m_finish_reason = finish_reason;
             m_closed = true;
-            m_output_queue = {};
+            clear_output_queue();
         }
         m_cv.notify_all();
     }
@@ -168,7 +174,7 @@ public:
             }
             m_status = GenerationStatus::CANCEL;
             m_closed = true;
-            m_output_queue = {};
+            clear_output_queue();
         }
         m_cv.notify_all();
     }

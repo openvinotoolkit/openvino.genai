@@ -4080,7 +4080,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_plain_step_rejects_outsta
     const auto seq_id = seq_group->get_running_sequences()[0]->get_id();
     ASSERT_EQ(seq_group->get_num_tokens_to_validate(), 0u);
 
-    const auto borrowed = orchestrator->reserve_linear_attention_temporary_blocks(seq_id, 2);
+    const auto borrowed = la_block_manager.reserve_temporary_blocks(seq_id, 2);
     ASSERT_EQ(borrowed.size(), 2u);
     ASSERT_TRUE(la_block_manager.has_temporary_blocks(seq_id));
 
@@ -4655,7 +4655,8 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrowed_steady_state_ret
 
         const size_t advance = advances[step];
         const int32_t chosen = pd.block_indices[advance];
-        orchestrator->promote_linear_attention_temporary_block(seq_id, advance);
+        const auto& live_state = la_block_manager.get_linear_attention_live_state(seq_id);
+        la_block_manager.promote_temporary_block(seq_id, advance, live_state.endpoint, live_state.generation);
 
         EXPECT_EQ(la_block_manager.get_num_blocks_in_use(), committed_only_in_use)
             << "borrowed rows leaked at step " << step;
@@ -4696,7 +4697,7 @@ TEST(TestScheduler, linear_attention_borrowed_release_keeps_latest_row) {
     const uint64_t seq_id = seq->get_id();
     const size_t latest_row = orchestrator->get_linear_attention_latest_row(seq_id);
 
-    const auto borrowed = orchestrator->reserve_linear_attention_temporary_blocks(seq_id, 4);
+    const auto borrowed = la_block_manager.reserve_temporary_blocks(seq_id, 4);
     ASSERT_EQ(borrowed.size(), 4u);
     EXPECT_TRUE(la_block_manager.has_temporary_blocks(seq_id));
 
@@ -4704,7 +4705,9 @@ TEST(TestScheduler, linear_attention_borrowed_release_keeps_latest_row) {
     EXPECT_FALSE(la_block_manager.has_temporary_blocks(seq_id));
     EXPECT_EQ(orchestrator->get_linear_attention_latest_row(seq_id), latest_row);
     EXPECT_EQ(la_block_manager.get_num_blocks_in_use(), 1u);
-    EXPECT_THROW(orchestrator->promote_linear_attention_temporary_block(seq_id, 0), ov::Exception);
+    const auto& live_state = la_block_manager.get_linear_attention_live_state(seq_id);
+    EXPECT_THROW(la_block_manager.promote_temporary_block(seq_id, 0, live_state.endpoint, live_state.generation),
+                 ov::Exception);
 
     orchestrator->free_sequence(seq_id);
 }
@@ -4737,6 +4740,32 @@ std::vector<SequenceGroup::Ptr> make_prompt_processed_sequence_groups(Scheduler&
     return groups;
 }
 }  // namespace
+
+TEST(TestScheduler, hybrid_linear_attention_defers_when_kv_is_full_and_no_victim_is_available) {
+    SchedulerConfig scheduler_config = make_speculative_linear_attention_scheduler_config();
+    scheduler_config.num_kv_blocks = 1;
+    scheduler_config.num_linear_attention_blocks = 4;
+
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
+    auto& la_block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+    Scheduler scheduler(orchestrator, scheduler_config);
+    std::vector<SequenceGroup::Ptr> requests;
+    auto groups = make_prompt_processed_sequence_groups(scheduler, requests, 1, {0, 1, 2, 3});
+    const auto& group = groups.front();
+    const uint64_t seq_id = group->get_running_sequences().front()->get_id();
+    group->set_num_validated_tokens(2);
+
+    ASSERT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).num_free_blocks(), 0u);
+    ASSERT_TRUE(orchestrator->can_reserve_linear_attention_temporary_blocks(seq_id, 3));
+    Scheduler::Output output;
+    ASSERT_NO_THROW(output = scheduler.schedule(requests));
+    EXPECT_TRUE(output.m_scheduled_sequence_groups_ids.empty());
+    EXPECT_EQ(group->get_num_scheduled_tokens(), 0u);
+    EXPECT_FALSE(la_block_manager.has_temporary_blocks(seq_id));
+    EXPECT_EQ(la_block_manager.num_free_blocks(), 3u);
+
+    scheduler.free_sequence(seq_id);
+}
 
 // With room for one speculative window, the second sequence defers until those rows are released.
 TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrowed_speculative_window_deferred_when_pool_is_short) {
@@ -4898,7 +4927,7 @@ TEST(TestScheduler, linear_attention_can_reserve_temporary_blocks_agrees_with_re
     EXPECT_FALSE(la_block_manager.can_reserve_temporary_blocks(seq_id, free_rows + 1));
     EXPECT_FALSE(scheduler.can_reserve_linear_attention_checkpoints(seq_id, free_rows + 1));
     EXPECT_FALSE(orchestrator->can_reserve_linear_attention_temporary_blocks(seq_id, 0));
-    EXPECT_THROW(std::ignore = orchestrator->reserve_linear_attention_temporary_blocks(seq_id, 0), ov::Exception);
+    EXPECT_THROW(std::ignore = la_block_manager.reserve_temporary_blocks(seq_id, 0), ov::Exception);
 
     std::vector<int> borrowed;
     ASSERT_NO_THROW(borrowed = la_block_manager.reserve_temporary_blocks(seq_id, free_rows));

@@ -208,6 +208,7 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     ov::genai::VLMPerfMetrics metrics;
     ov::Tensor inputs_embeds;
     ov::Tensor prompt_ids;
+    std::unordered_map<std::string, ov::Tensor> lm_extra_inputs;
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
@@ -225,9 +226,9 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
         if (rope_delta.has_value()) {
             m_inputs_embedder->set_rope_delta(*rope_delta);
         }
+        lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
     }
-    return add_request(request_id, inputs_embeds, sampling_params, prompt_ids,
-                       m_inputs_embedder->get_lm_extra_inputs());
+    return add_request(request_id, inputs_embeds, sampling_params, prompt_ids, std::move(lm_extra_inputs));
 }
 
 std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::MtpDecodingImpl::generate(
