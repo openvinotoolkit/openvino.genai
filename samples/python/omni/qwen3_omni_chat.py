@@ -89,10 +89,13 @@ def read_video(path: str, num_frames: int = 8) -> tuple[Tensor, openvino_genai.V
             break
         # OpenCV decodes to BGR; GenAI video inputs are RGB.
         frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    has_extra_frame = cap.read()[0]
     cap.release()
 
     if len(frames) != total_num_frames:
         raise RuntimeError(f"Frame count mismatch: expected {total_num_frames}, got {len(frames)}")
+    if has_extra_frame:
+        raise RuntimeError(f"Video has more frames than its container reports ({total_num_frames}): {path}")
 
     return Tensor(np.array(frames)), video_metadata
 
