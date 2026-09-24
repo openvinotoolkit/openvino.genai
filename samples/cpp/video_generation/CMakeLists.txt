@@ -33,14 +33,10 @@ if(NOT TARGET dr_libs)
     FetchContent_MakeAvailable(dr_libs)
 endif()
 
-# audio_utils.cpp provides the WAV writer used for models that generate audio
-set(VIDEO_IO_SOURCES imwrite_video.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../speech_generation/audio_utils.cpp)
-set(VIDEO_IO_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/../speech_generation/" "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
-
 # create main sample executable
-add_executable(text2video text2video.cpp ${VIDEO_IO_SOURCES})
+add_executable(text2video text2video.cpp imwrite_video.cpp save_audio.cpp)
 
-target_include_directories(text2video PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/" "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/cpp/src/" ${VIDEO_IO_INCLUDES})
+target_include_directories(text2video PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/" "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/cpp/src/" "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
 ov_genai_link_opencv(text2video core imgproc videoio imgcodecs)
 target_link_libraries(text2video PRIVATE openvino::genai indicators::indicators)
 
@@ -64,9 +60,9 @@ install(TARGETS text2video
         EXCLUDE_FROM_ALL)
 
 # create taylorseer text2video sample executable
-add_executable(taylorseer_text2video taylorseer_text2video.cpp ${VIDEO_IO_SOURCES})
+add_executable(taylorseer_text2video taylorseer_text2video.cpp imwrite_video.cpp)
 
-target_include_directories(taylorseer_text2video PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/" "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/cpp/src/" ${VIDEO_IO_INCLUDES})
+target_include_directories(taylorseer_text2video PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/" "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/cpp/src/")
 ov_genai_link_opencv(taylorseer_text2video core imgproc videoio imgcodecs)
 target_link_libraries(taylorseer_text2video PRIVATE openvino::genai indicators::indicators)
 
@@ -90,9 +86,9 @@ install(TARGETS taylorseer_text2video
         EXCLUDE_FROM_ALL)
 
 # create image to video sample executable
-add_executable(image2video image2video.cpp ${VIDEO_IO_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/load_image.cpp)
+add_executable(image2video image2video.cpp imwrite_video.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/load_image.cpp)
 
-target_include_directories(image2video PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/" "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/cpp/src/" ${VIDEO_IO_INCLUDES})
+target_include_directories(image2video PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/" "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/cpp/src/")
 ov_genai_link_opencv(image2video core imgproc videoio imgcodecs)
 target_link_libraries(image2video PRIVATE openvino::genai indicators::indicators)
 
@@ -115,9 +111,9 @@ install(TARGETS image2video
         EXCLUDE_FROM_ALL)
 
 # create LoRA sample executable
-add_executable(lora_text2video lora_text2video.cpp ${VIDEO_IO_SOURCES})
+add_executable(lora_text2video lora_text2video.cpp imwrite_video.cpp)
 
-target_include_directories(lora_text2video PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/" "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/cpp/src/" ${VIDEO_IO_INCLUDES})
+target_include_directories(lora_text2video PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/" "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/cpp/src/")
 ov_genai_link_opencv(lora_text2video core imgproc videoio imgcodecs)
 target_link_libraries(lora_text2video PRIVATE openvino::genai indicators::indicators)
 

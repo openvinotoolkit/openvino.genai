@@ -9,6 +9,7 @@
 
 #include "progress_bar.hpp"
 #include "imwrite_video.hpp"
+#include "save_audio.hpp"
 
 #include <openvino/genai/video_generation/text2video_pipeline.hpp>
 

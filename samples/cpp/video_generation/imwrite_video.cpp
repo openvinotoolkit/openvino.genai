@@ -10,7 +10,6 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/videoio.hpp>
 
-#include "audio_utils.hpp"
 #include "imwrite_video.hpp"
 
 void save_video(const std::string& filename,
@@ -51,33 +50,5 @@ void save_video(const std::string& filename,
 
             writer.write(bgr);
         }
-    }
-}
-
-void save_audio(const std::string& filename, const ov::Tensor& audio_tensor, uint32_t sample_rate) {
-    const ov::Shape shape = audio_tensor.get_shape();  // [B, C, S]
-    if (shape.size() != 3) {
-        throw std::runtime_error("save_audio(): expected audio tensor of shape [B, C, S]");
-    }
-    const size_t B = shape[0], C = shape[1], S = shape[2];
-    const float* data = audio_tensor.data<const float>();
-
-    for (size_t b = 0; b < B; ++b) {
-        std::string out = filename;
-        if (B > 1) {
-            std::filesystem::path p(filename);
-            const std::string ext = p.has_extension() ? p.extension().string() : ".wav";
-            out = (p.parent_path() / (p.stem().string() + "_b" + std::to_string(b) + ext)).string();
-        }
-
-        // [C, S] -> interleaved [S, C]
-        std::vector<float> interleaved(C * S);
-        for (size_t c = 0; c < C; ++c) {
-            for (size_t i = 0; i < S; ++i) {
-                interleaved[i * C + c] = data[(b * C + c) * S + i];
-            }
-        }
-        utils::audio::save_to_wav(interleaved.data(), S, out, 32, sample_rate, static_cast<uint32_t>(C));
-        std::cout << "Wrote " << out << " (" << S << " samples, " << C << " channels @ " << sample_rate << " Hz)\n";
     }
 }
