@@ -165,8 +165,7 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
     if args.get("model_type") == "QwenImage21":
         if input_args.pop("strength", None) is not None:
             log.warning("The model does not support strength; ignoring it.")
-        guidance_scale = input_args.get("guidance_scale", pipe.get_generation_config().guidance_scale)
-        if guidance_scale > 1:
+        if input_args.get("guidance_scale", 1.0) > 1:
             input_args["negative_prompt"] = ""
 
     if (args['empty_lora'] and (pipe.get_generation_config().adapters is not None)):
