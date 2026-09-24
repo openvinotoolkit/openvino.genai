@@ -567,6 +567,7 @@ class Qwen3CustomVoiceWrapper:
             raise ValueError("Qwen3 CustomVoice requires --speech-voice to select a speaker.")
 
         selected_language = language.strip() if isinstance(language, str) else ""
+        resolved_language = selected_language or "Auto"
         selected_instruct = instruct.strip() if isinstance(instruct, str) else ""
 
         # Keep WWB speech comparisons deterministic for Qwen3 unless explicitly overridden.
@@ -579,7 +580,7 @@ class Qwen3CustomVoiceWrapper:
             wavs, sample_rate = self.model.generate_custom_voice(
                 text=prompt,
                 speaker=selected_speaker,
-                language=selected_language or "Auto",
+                language=resolved_language,
                 instruct=selected_instruct,
                 **kwargs,
             )
@@ -588,7 +589,7 @@ class Qwen3CustomVoiceWrapper:
         if hasattr(self.model, "preprocess_input"):
             preprocess_kwargs = {
                 "text": [prompt],
-                "language": [selected_language or "English"],
+                "language": [resolved_language],
                 "speaker": selected_speaker,
             }
             if selected_instruct:
@@ -605,8 +606,7 @@ class Qwen3CustomVoiceWrapper:
             return _SpeechResult(np.asarray(waveform, dtype=np.float32).reshape(-1), int(self.model.sampling_rate))
 
         generation_properties = {"speaker": selected_speaker}
-        if selected_language:
-            generation_properties["language"] = selected_language
+        generation_properties["language"] = resolved_language
         if selected_instruct:
             generation_properties["instruct"] = selected_instruct
 
@@ -635,6 +635,7 @@ class Qwen3VoiceDesignWrapper:
             LOGGER.debug("Ignoring speaker_embedding for Qwen3 VoiceDesign.")
 
         selected_language = language.strip() if isinstance(language, str) else ""
+        resolved_language = selected_language or "Auto"
         selected_instruct = instruct.strip() if isinstance(instruct, str) else ""
         selected_voice = voice.strip() if isinstance(voice, str) else ""
 
@@ -650,7 +651,7 @@ class Qwen3VoiceDesignWrapper:
         if hasattr(self.model, "generate_voice_design"):
             wavs, sample_rate = self.model.generate_voice_design(
                 text=prompt,
-                language=selected_language or "Auto",
+                language=resolved_language,
                 instruct=selected_instruct,
                 **kwargs,
             )
@@ -659,7 +660,7 @@ class Qwen3VoiceDesignWrapper:
         if hasattr(self.model, "preprocess_input"):
             preprocess_kwargs = {
                 "text": [prompt],
-                "language": [selected_language or "English"],
+                "language": [resolved_language],
             }
             if selected_instruct:
                 preprocess_kwargs["instruct"] = selected_instruct
@@ -675,8 +676,7 @@ class Qwen3VoiceDesignWrapper:
             return _SpeechResult(np.asarray(waveform, dtype=np.float32).reshape(-1), int(self.model.sampling_rate))
 
         generation_properties = {}
-        if selected_language:
-            generation_properties["language"] = selected_language
+        generation_properties["language"] = resolved_language
         if selected_instruct:
             generation_properties["instruct"] = selected_instruct
 
@@ -715,6 +715,7 @@ class Qwen3BaseWrapper:
             LOGGER.debug("Ignoring speaker_embedding for Qwen3 Base.")
 
         selected_language = language.strip() if isinstance(language, str) else ""
+        resolved_language = selected_language or "Auto"
         selected_instruct = instruct.strip() if isinstance(instruct, str) else ""
         selected_ref_text = ref_text.strip() if isinstance(ref_text, str) else ""
         selected_ref_audio = ref_audio.strip() if isinstance(ref_audio, str) else ""
@@ -749,7 +750,7 @@ class Qwen3BaseWrapper:
 
             wavs, sample_rate = self.model.generate_voice_clone(
                 text=prompt,
-                language=selected_language or "Auto",
+                language=resolved_language,
                 instruct=selected_instruct,
                 ref_audio=ref_audio_tuple,
                 ref_text=selected_ref_text if selected_ref_text else None,
@@ -760,7 +761,7 @@ class Qwen3BaseWrapper:
         if hasattr(self.model, "preprocess_input"):
             preprocess_kwargs = {
                 "text": [prompt],
-                "language": [selected_language or "English"],
+                "language": [resolved_language],
                 "ref_audio": ref_audio_tuple,
             }
             if selected_ref_text:
@@ -783,8 +784,7 @@ class Qwen3BaseWrapper:
             return _SpeechResult(np.asarray(waveform, dtype=np.float32).reshape(-1), int(self.model.sampling_rate))
 
         generation_properties = {}
-        if selected_language:
-            generation_properties["language"] = selected_language
+        generation_properties["language"] = resolved_language
         if selected_instruct:
             generation_properties["instruct"] = selected_instruct
         if selected_ref_text:
