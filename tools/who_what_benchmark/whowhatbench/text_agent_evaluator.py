@@ -487,13 +487,15 @@ class TextAgentEvaluator(BaseEvaluator):
                     genai_tokenizer.set_chat_template(chat_template)
                     model_chat_template = chat_template
                 except Exception as exc:
-                    logger.warning(
-                        "Failed to set custom chat template on GenAI tokenizer; tokenizer default template will be used. Error: %s",
-                        exc,
-                    )
+                    raise ValueError(
+                        "Failed to apply --chat-template-source to GenAI tokenizer; aborting evaluation to avoid "
+                        "running with an unexpected default template. "
+                        f"Original error: {exc}"
+                    ) from exc
             else:
-                logger.warning(
-                    "Custom chat template was provided but GenAI tokenizer does not support set_chat_template; tokenizer default template will be used"
+                raise ValueError(
+                    "--chat-template-source was provided, but GenAI tokenizer does not support set_chat_template; "
+                    "aborting evaluation to avoid using an unexpected default template"
                 )
 
         if model_chat_template:
