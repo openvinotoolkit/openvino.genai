@@ -39,12 +39,16 @@ auto speech_generation_config_docstring = R"(
     :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
     :type threshold: float
 
+    Shared parameters:
+    :param language: language selector used by speech backends.
+                     Empty string delegates to backend default handling:
+                     - Kokoro uses "en-us".
+                     - Qwen3-TTS resolves to "auto".
+    :type language: str
+
     Kokoro-specific parameters:
     :param speed: speech speed multiplier.
     :type speed: float
-
-    :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
-    :type language: str
 
     :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
     :type max_phoneme_length: int

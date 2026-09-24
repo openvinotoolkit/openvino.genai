@@ -352,6 +352,10 @@ std::string normalize_language_variant(const std::string& language) {
         return static_cast<char>(std::tolower(c));
     });
 
+    if (normalized.empty()) {
+        return "en-us";
+    }
+
     if (normalized == "a" || normalized == "en" || normalized == "en-us") {
         return "en-us";
     }

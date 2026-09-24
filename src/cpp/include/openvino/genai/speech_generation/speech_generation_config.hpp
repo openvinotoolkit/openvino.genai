@@ -37,14 +37,21 @@ public:
     float threshold = 0.5;
 
     // ---------------------------------------------------------------------
+    // Shared parameters
+    // ---------------------------------------------------------------------
+
+    // Language selector for speech backends that support language-aware generation.
+    // Empty value delegates language handling to backend-specific defaults:
+    // - Kokoro resolves empty to "en-us".
+    // - Qwen3-TTS resolves empty to "auto".
+    std::string language;
+
+    // ---------------------------------------------------------------------
     // Kokoro-specific parameters
     // ---------------------------------------------------------------------
 
     // Speech speed multiplier.
     float speed = 1.0f;
-
-    // Language code used by Kokoro G2P (for example: en-us, en-gb).
-    std::string language = "en-us";
 
     // Maximum phoneme sequence length per Kokoro preprocessing chunk.
     uint32_t max_phoneme_length = 510;
