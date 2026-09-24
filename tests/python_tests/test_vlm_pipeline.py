@@ -1550,7 +1550,6 @@ def test_perf_metrics(
     metrics_and_raw_pairs = [
         (perf_metrics.get_prepare_embeddings_duration(), vlm_raw_metrics.prepare_embeddings_durations),
         (perf_metrics.get_vision_encoding_duration(), vlm_raw_metrics.vision_encoding_durations),
-        (perf_metrics.get_audio_encoding_duration(), vlm_raw_metrics.audio_encoding_durations),
         (perf_metrics.get_text_embedding_duration(), vlm_raw_metrics.text_embedding_durations),
     ]
 
@@ -1558,6 +1557,13 @@ def test_perf_metrics(
         raw_durations = np.array(raw_metrics) / 1000.0
         assert np.allclose(mean_duration, np.mean(raw_durations))
         assert np.allclose(std_duration, np.std(raw_durations))
+
+    # No audio in this request: nothing is recorded and the metric reports the empty-series value.
+    assert len(vlm_raw_metrics.audio_encoding_durations) == 0
+    assert (perf_metrics.get_audio_encoding_duration().mean, perf_metrics.get_audio_encoding_duration().std) == (
+        -1.0,
+        -1.0,
+    )
 
     # Test per-image and request-level image slice metrics.
     assert perf_metrics.get_total_image_slice_count() > 0
