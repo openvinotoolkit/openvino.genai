@@ -407,6 +407,9 @@ public:
 
         const auto kv_it = m_block_managers.find(CacheType::KV_CACHE);
         const auto la_it = m_block_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
+        OPENVINO_ASSERT(m_block_managers.size() == (kv_it != m_block_managers.end()) +
+                              (la_it != m_block_managers.end()),
+                "Prefix restore supports only KV and linear-attention caches");
         if (kv_it != m_block_managers.end() && la_it != m_block_managers.end()) {
             auto& kv_block_mgr = *kv_it->second;
             auto& la_block_mgr = *la_it->second;
@@ -458,37 +461,6 @@ public:
                 sequence_group->update_processed_tokens_num(plan.processed_tokens);
             }
             return;
-        }
-
-        std::map<CacheType, BlockManager::PrefixRestorePlan> restore_plans;
-        size_t common_cache_token_position = std::min(sequence_group->get_prompt_len(), max_processed_tokens);
-        while (common_cache_token_position > 0) {
-            restore_plans.clear();
-            size_t next_common_cache_token_position = std::numeric_limits<size_t>::max();
-            for (auto& [type, block_mgr] : m_block_managers) {
-                auto plan = block_mgr->get_prefix_restore_plan(sequence_group, common_cache_token_position);
-                if (plan.empty()) {
-                    return;
-                }
-                next_common_cache_token_position = std::min(next_common_cache_token_position, plan.cache_token_position);
-                restore_plans[type] = std::move(plan);
-            }
-
-            if (next_common_cache_token_position == common_cache_token_position) {
-                break;
-            }
-            common_cache_token_position = next_common_cache_token_position;
-        }
-
-        size_t common_processed_tokens = std::numeric_limits<size_t>::max();
-        for (auto& [type, plan] : restore_plans) {
-            if (!m_block_managers.at(type)->restore_cached_blocks(sequence_group, plan)) {
-                return;
-            }
-            common_processed_tokens = std::min(common_processed_tokens, plan.processed_tokens);
-        }
-        if (common_processed_tokens != std::numeric_limits<size_t>::max()) {
-            sequence_group->update_processed_tokens_num(common_processed_tokens);
         }
     }
 
