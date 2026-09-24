@@ -407,7 +407,9 @@ GenerationConfig ContinuousBatchingPipeline::DFlashDecodingImpl::make_draft_gene
         draft_config.structured_output_config.reset();
         draft_config.parsers.clear();
     }
-    draft_config.max_new_tokens = config.max_new_tokens + config.num_assistant_tokens.value();
+    if (config.max_new_tokens != SIZE_MAX) {
+        draft_config.max_new_tokens = config.max_new_tokens + config.num_assistant_tokens.value();
+    }
     draft_config.num_assistant_tokens = 0;
     return draft_config;
 }
