@@ -445,7 +445,7 @@ def run_visual_language_generation_chat_common(
             in_text_tokens=gen_output_data.count_text_tokens(pipeline.tokenizer, prompts[0]),
             infer_count=chat_iteration_result.infer_count,
             out_size=chat_iteration_result.output_size,
-            output_repr=gen_output_data.text_output_repr(chat_iteration_result.answer_text),
+            output_repr=gen_output_data.text_output_repr(chat_iteration_result.answer_text, pipeline.tokenizer),
             gen_time=chat_iteration_result.generation_time,
             latency=per_token_time,
             res_md5=result_md5_list,
