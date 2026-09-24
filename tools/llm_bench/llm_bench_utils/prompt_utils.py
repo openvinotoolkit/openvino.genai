@@ -10,6 +10,7 @@ import logging as log
 import librosa
 from transformers.image_utils import load_image
 from .model_utils import get_param_from_file, resolve_media_file_path
+from .gen_output_data import count_words
 from .parse_json_data import (
     parse_text_json_data,
     parse_vlm_json_data,
@@ -401,12 +402,16 @@ class BenchPrompt(dict):
         return f"{kind}:" + "|".join(dims)
 
     def __repr__(self):
+        return self._repr()
+
+    def _repr(self, text_tokens=None):
         """
         Human-readable description of the prompt and its input **sizes**.
 
         Format (``+`` separates modalities):
 
             text:7w
+            text:7w/9t               <- with the text's token count
             text:7w + image:512x512
             text:7w + video:640x480@30f
             text:7w + audio:30.0s@44100Hz
@@ -418,19 +423,25 @@ class BenchPrompt(dict):
         rendered as one token covering all of them — ``image:512x512 x3`` when
         they share dimensions, ``image:512x512|640x480`` when they differ.
 
-        This is a pre-tokenization *size* summary: the text is shown as a
-        whitespace word count (``w`` suffix), images/videos as pixel
-        dimensions, audio as duration. The tokenized length is reported
-        separately by the pipelines as ``input_size``.
+        This is a *size* summary: the text is shown as a word count (``w``
+        suffix, see :func:`~llm_bench_utils.gen_output_data.count_words`),
+        images/videos as pixel dimensions, audio as duration.
+
+        *text_tokens* is the token count of the prompt text alone, appended as
+        ``/<M>t``. It is known only once a pipeline has run, so ``repr()``
+        omits it and :meth:`_stamp_records` passes it from each record. The
+        model's full tokenized input (chat template, media tokens) is reported
+        separately as ``input_size``.
         """
         self.probe()
         parts = []
 
         # ---- text (optional) ----
-        # prompt_repr describes input *sizes*; the text size is its word count.
         if self.get("prompt"):
-            word_count = len(self["prompt"].split())
-            parts.append(f"text:{word_count}w")
+            text_part = f"text:{count_words(self['prompt'])}w"
+            if text_tokens not in (None, ""):
+                text_part += f"/{text_tokens}t"
+            parts.append(text_part)
 
         # ---- image (optionally decorated with mask coverage fraction) ----
         # Mirrors probe(): 'media' is always an image, and is rendered
@@ -492,11 +503,11 @@ class BenchPrompt(dict):
         """Write ``prompt_repr`` onto an explicit record list.
 
         Split out of :meth:`stamp_repr` so :class:`BenchChatPrompt` can stamp a
-        single turn's record without re-slicing ``iter_data_list``.
+        single turn's record without re-slicing ``iter_data_list``. Each
+        record's own ``input_text_tokens`` goes into its repr.
         """
-        prompt_repr = repr(self)
         for record in records:
-            record["prompt_repr"] = prompt_repr
+            record["prompt_repr"] = self._repr(record.get("input_text_tokens"))
 
 
 class BenchChatPrompt(list):
