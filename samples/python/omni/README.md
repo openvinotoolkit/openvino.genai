@@ -6,7 +6,6 @@ This example demonstrates interactive multimodal chat with Qwen3-Omni models: te
 
 The following are sample files:
  - [`qwen3_omni_chat.py`](./qwen3_omni_chat.py) demonstrates multimodal chat with optional speech synthesis.
- - [`audio_placement.py`](./audio_placement.py) shows where an audio lands in the prompt, using `<ov_genai_audio_N>` tags.
 
 ## Download and convert the model and tokenizers
 
@@ -41,12 +40,10 @@ python qwen3_omni_chat.py ./qwen3-omni-ov ./coco.jpg --audio ./audio.wav
 
 ## Audio placement
 
-Every audio you pass gets an index, starting at zero. Write `<ov_genai_audio_N>` in the prompt to
-put audio N at that exact position:
-
-```sh
-python audio_placement.py ./qwen3-omni-ov ./first.wav ./second.wav
-```
+Every audio you pass gets an index, starting at zero. Write `<ov_genai_audio_N>` in a question to
+put audio N at that exact position, for example `Compare <ov_genai_audio_0> with <ov_genai_audio_1>`
+with two `--audio` files. The full tag rules are in
+[Use Media Tags in Prompt](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-media-tags-in-prompt).
 
 Omit the tags and the audio is prepended to your text instead. That default is also the layout
 Qwen3-Omni was trained on, so prefer it unless you specifically need the audio elsewhere. Placing

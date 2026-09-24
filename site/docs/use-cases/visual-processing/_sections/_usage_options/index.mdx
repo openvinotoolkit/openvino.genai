@@ -15,6 +15,8 @@ The prompt can contain `<ov_genai_image_i>`, `<ov_genai_video_i>` or `<ov_genai_
 
 If the prompt doesn't contain image, video or audio tags, but images, videos or audios are provided, the tags are prepended to the prompt.
 
+A tag expands to as many placeholder tokens as its media requires, so you do not write the placeholder count yourself.
+
 Tags let you place media anywhere, including between spans of text:
 
 <LanguageTabs>
@@ -67,9 +69,6 @@ Tags let you place media anywhere, including between spans of text:
 #### Audio Tags
 
 1. Qwen3-Omni: `<|audio_start|><|audio_pad|><|audio_end|>`
-
-An audio expands to as many placeholder tokens as its duration requires, so you do not write the pad
-count yourself.
 
 #### Qwen3-Omni Notes
 
