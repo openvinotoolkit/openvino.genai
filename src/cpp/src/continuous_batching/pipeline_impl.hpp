@@ -75,11 +75,13 @@ protected:
      * Releases non-running (finished, dropped or OOM) requests from running queue
      */
     void _free_non_running_requests();
+    void _notify_handles(const Scheduler::Output& scheduler_output);
 
     /**
-     * Notify dropped requests by pushing empty output
+     * Sets load_time and commits perf metrics onto the request's GenerationStream.
+     * Must run before any terminal/echo notification so readers never observe stale metrics.
      */
-    void _notify_requests_dropped_by_handle();
+    void _commit_perf_metrics(const SequenceGroup::Ptr& request);
 
     /**
      * Handles 'echo' generation parameter
