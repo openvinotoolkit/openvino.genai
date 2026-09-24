@@ -1717,7 +1717,6 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
     std::vector<bool> suppress_tokens = compute_suppress_tokens();
 
     const std::string language = normalize_text_language(generation_config.language);
-    std::cout << "Qwen3TTSImpl::generate: language = " << language << std::endl;
     const std::string speaker = normalize_speaker(generation_config.speaker);
     const bool base_model = is_base_model();
 
