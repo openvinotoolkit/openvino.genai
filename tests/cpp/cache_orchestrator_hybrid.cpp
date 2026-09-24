@@ -614,10 +614,10 @@ TEST(TestCacheOrchestratorHybrid, LinearAttentionLatestRowTracksPromotionForkAnd
     const uint64_t parent_id = parent->get_id();
     orchestrator->allocate_tokens(parent, seq_group, 1, seq_group->get_prompt_len());
 
-    const auto temporary_blocks = orchestrator->reserve_linear_attention_temporary_blocks(parent_id, 1);
-    ASSERT_EQ(temporary_blocks.size(), 1u);
-    const size_t promoted = orchestrator->promote_linear_attention_temporary_block(parent_id, 1);
-    ASSERT_EQ(promoted, static_cast<size_t>(temporary_blocks.front()));
+    auto lease = orchestrator->prepare_linear_attention_scratch(parent_id, 1);
+    ASSERT_EQ(lease.block_indices().size(), 1u);
+    const size_t promoted = lease.commit(1);
+    ASSERT_EQ(promoted, static_cast<size_t>(lease.block_indices().front()));
     ASSERT_EQ(orchestrator->get_linear_attention_block_table(parent_id).front()->get_index(), promoted);
     EXPECT_EQ(orchestrator->get_linear_attention_latest_row(parent_id), promoted);
     EXPECT_FALSE(orchestrator->is_linear_attention_latest_row_shared(parent_id));

@@ -13,6 +13,7 @@
 
 namespace {
 
+// The failure sweep intercepts ordinary global new/new[]; aligned allocations are not injected.
 thread_local size_t allocations_remaining = std::numeric_limits<size_t>::max();
 
 class FailAllocation {
@@ -144,7 +145,6 @@ protected:
             uint64_t request_id,
             const ov::Tensor& embeddings,
             const ov::genai::GenerationConfig& config,
-            std::optional<ov::Tensor> token_type_ids = std::nullopt,
             std::optional<ov::Tensor> prompt_ids = std::nullopt,
             std::optional<std::unordered_map<std::string, ov::Tensor>> extra_inputs = std::nullopt) override {
             ov::Tensor tokens(ov::element::i64, {1, embeddings.get_shape()[1]});
@@ -347,7 +347,7 @@ TEST_P(PreparedCacheAllocationFailure, MtpPrefixGuardRejectsOnlyLinearAttentionD
     }
 }
 
-TEST_P(PreparedCacheAllocationFailure, MtpPairedAdmissionRollsBackEveryAllocationFailure) {
+TEST_P(PreparedCacheAllocationFailure, MtpPairedAdmissionRollsBackAcrossInjectedAllocationFailures) {
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 8;
     config.num_assistant_tokens = 4;
@@ -400,7 +400,7 @@ TEST_P(PreparedCacheAllocationFailure, MtpPairedAdmissionRollsBackEveryAllocatio
         auto draft_child = std::make_shared<MtpAdmissionChild>(
             std::make_shared<ov::genai::Scheduler>(draft_cache, scheduler_config));
         MtpAdmissionStrategy strategy(main_child, draft_child);
-        const auto neighbor_handle = strategy.add_request(99, embeddings, config, std::nullopt, prompt_ids);
+        const auto neighbor_handle = strategy.add_request(99, embeddings, config, prompt_ids);
         const auto main_neighbor = main_child->get_awaiting_requests().front();
         const auto draft_neighbor = draft_child->get_awaiting_requests().front();
         ASSERT_EQ(main_neighbor->get_num_processed_tokens(), draft_endpoint);
@@ -428,7 +428,7 @@ TEST_P(PreparedCacheAllocationFailure, MtpPairedAdmissionRollsBackEveryAllocatio
             ov::genai::GenerationHandle handle;
             try {
                 FailAllocation failure(allocation_index);
-                handle = strategy.add_request(0, embeddings, config, std::nullopt, prompt_ids);
+                handle = strategy.add_request(0, embeddings, config, prompt_ids);
                 completed = true;
             } catch (const std::bad_alloc&) {
                 ++failures;
@@ -480,7 +480,7 @@ TEST_P(PreparedCacheAllocationFailure, MtpPairedAdmissionRollsBackEveryAllocatio
             ov::genai::GenerationHandle handle;
             try {
                 FailAllocation failure(allocation_index);
-                handle = strategy.add_request(0, embeddings, config, std::nullopt, prompt_ids);
+                handle = strategy.add_request(0, embeddings, config, prompt_ids);
                 completed = true;
             } catch (const std::bad_alloc&) {
                 ++failures;
@@ -570,9 +570,9 @@ TEST_P(PreparedCacheAllocationFailure, PromptOnlyEmbeddingIdentityIncludesComple
     std::fill_n(second_ids.data<int64_t>(), 4, 1);
     second_ids.data<int64_t>()[0] = 2;
     auto first = std::make_shared<SequenceGroup>(0, embeddings, ov::genai::GenerationConfig{},
-        std::nullopt, std::nullopt, std::nullopt, std::nullopt, first_ids);
+        std::nullopt, std::nullopt, std::nullopt, first_ids);
     auto second = std::make_shared<SequenceGroup>(1, embeddings, ov::genai::GenerationConfig{},
-        std::nullopt, std::nullopt, std::nullopt, std::nullopt, second_ids);
+        std::nullopt, std::nullopt, std::nullopt, second_ids);
     first->get_sequences().front()->set_prefix_cache_policy(4);
     second->get_sequences().front()->set_prefix_cache_policy(4);
     EXPECT_NE(first->get_sequences().front()->get_hash(4, 4), second->get_sequences().front()->get_hash(4, 4));
@@ -776,7 +776,7 @@ TEST_P(PreparedCacheAllocationFailure, HybridRestorePreparationIsAtomic) {
     orchestrator->free_sequence(seq_id);
 }
 
-TEST_P(PreparedCacheAllocationFailure, PublicationPreparationPreservesWholeSetOnEveryAllocationFailure) {
+TEST_P(PreparedCacheAllocationFailure, PublicationPreparationPreservesWholeSetAcrossInjectedAllocationFailures) {
     BlockManager manager(8, true, 4, GetParam());
     auto source = std::make_shared<SequenceGroup>(
         0, std::vector<int64_t>{1, 2, 3, 4, 5, 6}, ov::genai::GenerationConfig{});
@@ -834,7 +834,7 @@ TEST_P(PreparedCacheAllocationFailure, PublicationPreparationPreservesWholeSetOn
     manager.free_sequence(sequence->get_id());
 }
 
-TEST_P(PreparedCacheAllocationFailure, ScratchReservationRollsBackEveryAllocationFailure) {
+TEST_P(PreparedCacheAllocationFailure, ScratchReservationRollsBackAcrossInjectedAllocationFailures) {
     auto orchestrator = make_orchestrator();
     auto& manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
     auto group = make_group(0);
@@ -956,7 +956,7 @@ TEST_P(PreparedCacheAllocationFailure, CombinedPreparationIsAtomicAndApplyDoesNo
     }
 }
 
-TEST_P(PreparedCacheAllocationFailure, PipelinePreparationPreservesBothCountersAtEveryAllocationFailure) {
+TEST_P(PreparedCacheAllocationFailure, PipelinePreparationPreservesBothCountersAcrossInjectedAllocationFailures) {
     auto orchestrator = make_orchestrator();
     auto& kv_manager = orchestrator->get_block_manager(CacheType::KV_CACHE);
     auto& la_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
@@ -1043,7 +1043,7 @@ TEST_P(PreparedCacheAllocationFailure, PipelinePreparationPreservesBothCountersA
     EXPECT_EQ(la_manager.num_free_blocks(), la_manager.get_total_block_count());
 }
 
-TEST_P(PreparedCacheAllocationFailure, ScratchEvictionPreparationPreservesRegistryOnEveryAllocationFailure) {
+TEST_P(PreparedCacheAllocationFailure, ScratchEvictionPreparationPreservesRegistryAcrossInjectedAllocationFailures) {
     BlockManager manager(5, true, 4, GetParam(), 0, true, 5);
     auto producer = make_group(0);
     const uint64_t producer_id = producer->get_sequences().front()->get_id();

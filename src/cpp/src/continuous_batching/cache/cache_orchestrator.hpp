@@ -837,27 +837,11 @@ public:
         return m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->can_prepare_temporary_blocks(seq_id, num_blocks);
     }
 
-    std::vector<int> reserve_linear_attention_temporary_blocks(uint64_t seq_id, size_t num_blocks) {
-        OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
-        OPENVINO_ASSERT(num_blocks > 0, "Cannot reserve zero linear attention checkpoint blocks");
-        return m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->reserve_temporary_blocks(seq_id, num_blocks);
-    }
-
     LinearAttentionScratchLease prepare_linear_attention_scratch(uint64_t seq_id, size_t num_blocks) {
         auto& block_manager = get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
         auto prepared = block_manager.prepare_temporary_blocks(seq_id, num_blocks);
         return LinearAttentionScratchLease{
             *this, seq_id, prepared.endpoint, prepared.generation, std::move(prepared.block_indices)};
-    }
-
-    /// @return Physical block index that became the sequence's committed linear-attention row.
-    size_t promote_linear_attention_temporary_block(uint64_t seq_id, size_t checkpoint_slot) {
-        OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
-        auto& block_manager = *m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE);
-        const auto& live_state = block_manager.get_linear_attention_live_state(seq_id);
-        const size_t promoted_index = block_manager.promote_temporary_block(
-            seq_id, checkpoint_slot, live_state.endpoint, live_state.generation);
-        return promoted_index;
     }
 
     void publish_completed_blocks(const Sequence::Ptr& sequence,
