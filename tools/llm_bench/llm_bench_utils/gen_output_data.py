@@ -44,21 +44,29 @@ def count_text_tokens(tokenizer, text):
     return ids.shape[-1] if hasattr(ids, "shape") else len(ids)
 
 
-def text_output_repr(text):
-    """Word-count summary of a generated *text* output, e.g. ``"text:42w"``.
+def text_output_repr(text, tokenizer=None):
+    """Size summary of a generated *text* output, e.g. ``"text:42w/57t"``.
 
-    Mirrors the input-side text repr produced by ``BenchPrompt.__repr__``
+    Mirrors the input-side text repr produced by ``BenchPrompt._repr``
     (``prompt_repr``) so ``output_repr`` and ``prompt_repr`` read the same way:
-    text as a word count (``w`` suffix, see :func:`count_words`), media as
-    dimensions (the media-generating tasks pass their own ``output_repr`` such
-    as ``"image:512x512"``). Returns ``""`` for empty output.
+    text as a word count (``w`` suffix, see :func:`count_words`) plus, when a
+    *tokenizer* is given, its token count (``/<M>t`` suffix, see
+    :func:`count_text_tokens`); media as dimensions (the media-generating tasks
+    pass their own ``output_repr`` such as ``"image:512x512"``). The token
+    count is dropped if it cannot be determined. Returns ``""`` for empty
+    output.
 
     Callers pass the single generated string they also report elsewhere (the
     first batch element), matching ``prompt_repr``, which likewise describes
-    one item rather than the whole batch.
+    one item rather than the whole batch — so the token count is not
+    comparable with ``output_size``, which is batch-total. Call it outside the
+    timed region, as tokenizing the output takes time.
     """
     n = count_words(text)
-    return f"text:{n}w" if n else ""
+    if not n:
+        return ""
+    text_tokens = count_text_tokens(tokenizer, text)
+    return f"text:{n}w/{text_tokens}t" if text_tokens is not None else f"text:{n}w"
 
 
 def gen_iterate_data(
@@ -92,7 +100,7 @@ def gen_iterate_data(
     iter_data["infer_count"] = infer_count
     iter_data["output_size"] = out_size
     # output_repr: compact summary of the generated output, symmetric with
-    # prompt_repr. Text tasks pass an explicit "text:<N>w" word count (via
+    # prompt_repr. Text tasks pass "text:<N>w/<M>t" words and tokens (via
     # text_output_repr); media tasks pass their own dimensions string
     # (e.g. "image:512x512"). Empty when neither applies.
     iter_data["output_repr"] = output_repr or ""
