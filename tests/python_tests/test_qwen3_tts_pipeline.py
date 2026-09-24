@@ -544,12 +544,10 @@ def test_qwen3_tts_base_optimum_vs_genai_without_language(
     genai_speech = np.array(result.speeches[0].data, dtype=np.float32).reshape(-1)
 
     assert result.output_sample_rate == SAMPLE_RATE, (
-        f"GenAI Base sample rate mismatch without language: "
-        f"expected={SAMPLE_RATE}, actual={result.output_sample_rate}"
+        f"GenAI Base sample rate mismatch without language: expected={SAMPLE_RATE}, actual={result.output_sample_rate}"
     )
     assert result.output_sample_rate == optimum_sr, (
-        f"Base sample rate mismatch without language: "
-        f"optimum={optimum_sr}, genai={result.output_sample_rate}"
+        f"Base sample rate mismatch without language: optimum={optimum_sr}, genai={result.output_sample_rate}"
     )
     _assert_waveform_equal(optimum_speech, genai_speech, "base parity without language")
 
@@ -588,8 +586,7 @@ def test_qwen3_tts_customvoice_optimum_vs_genai_without_language(
         f"expected={SAMPLE_RATE}, actual={result.output_sample_rate}"
     )
     assert result.output_sample_rate == optimum_sr, (
-        f"CustomVoice sample rate mismatch without language: "
-        f"optimum={optimum_sr}, genai={result.output_sample_rate}"
+        f"CustomVoice sample rate mismatch without language: optimum={optimum_sr}, genai={result.output_sample_rate}"
     )
     _assert_waveform_equal(optimum_speech, genai_speech, "customvoice parity without language")
 
@@ -703,8 +700,7 @@ def test_qwen3_tts_voicedesign_optimum_vs_genai_without_language(
         f"expected={SAMPLE_RATE}, actual={result.output_sample_rate}"
     )
     assert result.output_sample_rate == optimum_sr, (
-        f"VoiceDesign sample rate mismatch without language: "
-        f"optimum={optimum_sr}, genai={result.output_sample_rate}"
+        f"VoiceDesign sample rate mismatch without language: optimum={optimum_sr}, genai={result.output_sample_rate}"
     )
     _assert_waveform_equal(optimum_speech, genai_speech, "voicedesign parity without language")
 
