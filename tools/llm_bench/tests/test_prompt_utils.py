@@ -251,6 +251,31 @@ def test_chat_stamp_repr_matches_records_to_turns_by_prompt_idx():
     assert records[1]["prompt_repr"] == "text:3w"
 
 
+def test_repr_word_count_ignores_punctuation():
+    assert repr(BenchPrompt("Hello , world .")) == "text:2w"
+
+
+def test_stamp_repr_appends_each_records_text_tokens(tmp_path):
+    media = make_image(tmp_path / "a.png", (64, 64))
+    prompt = BenchPrompt({"prompt": "one two", "media": media})
+    records = [{"input_text_tokens": 5}, {"input_text_tokens": ""}, {}]
+    prompt.stamp_repr(records, 0)
+    assert [r["prompt_repr"] for r in records] == [
+        "text:2w/5t + image:64x64",
+        "text:2w + image:64x64",
+        "text:2w + image:64x64",
+    ]
+    # The log-time repr has no token count yet.
+    assert repr(prompt) == "text:2w + image:64x64"
+
+
+def test_chat_stamp_repr_uses_each_turns_own_text_tokens():
+    chat = BenchChatPrompt(["first turn here", "second"])
+    records = [{"prompt_idx": 0, "input_text_tokens": 4}, {"prompt_idx": 1, "input_text_tokens": 1}]
+    chat.stamp_repr(records, 0)
+    assert [r["prompt_repr"] for r in records] == ["text:3w/4t", "text:1w/1t"]
+
+
 def test_chat_stamp_repr_skips_records_with_an_unknown_turn_index():
     chat = BenchChatPrompt(["only turn"])
     records = [{"prompt_idx": 7}]

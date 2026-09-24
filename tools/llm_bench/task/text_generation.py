@@ -317,6 +317,7 @@ def run_text_generation(
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
         in_size=input_token_size * args["batch_size"],
+        in_text_tokens=gen_output_data.count_text_tokens(tokenizer, input_text),
         infer_count=len(tm_infer_list),
         out_size=num_tokens,
         output_repr=gen_output_data.text_output_repr(generated_text[0]),
@@ -587,6 +588,7 @@ def run_text_generation_genai(
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
         in_size=num_input_tokens * args["batch_size"],
+        in_text_tokens=gen_output_data.count_text_tokens(tokenizer, input_text),
         infer_count=len(tm_list),
         out_size=num_tokens,
         output_repr=gen_output_data.text_output_repr(generated_text[0]),
@@ -715,6 +717,7 @@ def run_text_generation_genai_with_stream(
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
         in_size=input_token_size * args["batch_size"],
+        in_text_tokens=gen_output_data.count_text_tokens(pipe_tokenizer, input_text),
         infer_count=len(tm_list),
         out_size=num_tokens,
         output_repr=gen_output_data.text_output_repr(generated_text[0]),
