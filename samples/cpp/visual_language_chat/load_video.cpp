@@ -74,6 +74,11 @@ std::pair<ov::Tensor, ov::genai::VideoMetadata> utils::load_video(const fs::path
                     total_frames,
                     ", got ",
                     decoded_frames);
+    OPENVINO_ASSERT(!capture.read(frame),
+                    "Video has more frames than its container reports (",
+                    total_frames,
+                    "): ",
+                    video_path.string());
     return {video, metadata};
 }
 
