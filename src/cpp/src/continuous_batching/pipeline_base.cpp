@@ -346,10 +346,40 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     std::vector<EncodedImage> encoded_images = {};
     std::vector<EncodedVideo> encoded_videos = {};
     std::vector<EncodedAudio> encoded_audios = {};
-    // Sizes before this turn appended to the audio history, so a cancelled turn can be rolled back
-    // exactly. The id count can differ from the media count when a prompt duplicates or omits tags.
-    size_t history_audios_before = 0;
-    size_t history_audio_ids_before = 0;
+    // Restores the chat history on CANCEL or on any exception thrown during this turn.
+    struct ChatTurnRollback {
+        IContinuousBatchingPipeline& pipe;
+        const size_t history = pipe.m_history.size();
+        const size_t images = pipe.m_history_images.size();
+        const size_t image_ids = pipe.m_history_image_ids.size();
+        const size_t videos = pipe.m_history_videos.size();
+        const size_t video_ids = pipe.m_history_video_ids.size();
+        const size_t audios = pipe.m_history_audios.size();
+        const size_t audio_ids = pipe.m_history_audio_ids.size();
+        const size_t vision_count = pipe.m_history_vision_count.size();
+        bool active = true;
+
+        explicit ChatTurnRollback(IContinuousBatchingPipeline& pipe) : pipe(pipe) {}
+        ~ChatTurnRollback() {
+            if (active) {
+                restore();
+            }
+        }
+
+        void restore() {
+            while (pipe.m_history.size() > history) {
+                pipe.m_history.pop_back();
+            }
+            pipe.m_history_images.resize(images);
+            pipe.m_history_image_ids.resize(image_ids);
+            pipe.m_history_videos.resize(videos);
+            pipe.m_history_video_ids.resize(video_ids);
+            pipe.m_history_audios.resize(audios);
+            pipe.m_history_audio_ids.resize(audio_ids);
+            pipe.m_history_vision_count.resize(vision_count);
+            active = false;
+        }
+    } chat_turn_rollback{*this};
     bool recalculate_merged_embeddings = images_vector.size() > 0 || videos_vector.size() > 0;
 
     const auto& generation_config = sampling_params[0];
@@ -405,8 +435,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
         m_history_image_ids.insert(m_history_image_ids.end(), image_sequence.begin(), image_sequence.end());
         m_history_video_ids.insert(m_history_video_ids.end(), video_sequence.begin(), video_sequence.end());
-        history_audios_before = m_history_audios.size();
-        history_audio_ids_before = m_history_audio_ids.size();
         m_history_audios.insert(m_history_audios.end(), encoded_audios.begin(), encoded_audios.end());
         m_history_audio_ids.insert(m_history_audio_ids.end(), audio_sequence.begin(), audio_sequence.end());
         m_history_vision_count.emplace_back(std::make_pair(video_sequence.size(), image_sequence.size()));
@@ -546,20 +574,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             m_audio_id += encoded_audios.size();
             m_history.push_back({{"role", "assistant"}, {"content", results[0].texts[0]}});
         } else {
-            m_history.pop_back();
-            for (size_t idx = 0; idx < encoded_images.size(); idx++) {
-                m_history_image_ids.pop_back();
-                m_history_images.pop_back();
-            }
-            for (size_t idx = 0; idx < encoded_videos.size(); idx++) {
-                m_history_video_ids.pop_back();
-                m_history_videos.pop_back();
-            }
-            m_history_audios.resize(history_audios_before);
-            m_history_audio_ids.resize(history_audio_ids_before);
-            m_history_vision_count.pop_back();
+            chat_turn_rollback.restore();
         }
     }
+    chat_turn_rollback.active = false;
     return results;
 }
 

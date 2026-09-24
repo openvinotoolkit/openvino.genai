@@ -380,7 +380,37 @@ public:
 
         auto [unified_prompt, image_sequence, video_sequence, audio_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, m_audio_id, encoded_images, encoded_videos, encoded_audios);
 
-        const auto history_audio_sequence_before = m_history_audio_sequence.size();
+        // Restores the chat history on CANCEL or on any exception thrown during this turn.
+        struct ChatTurnRollback {
+            VLMPipelineImpl& pipe;
+            const size_t history = pipe.m_history.size();
+            const size_t images = pipe.m_encoded_images.size();
+            const size_t videos = pipe.m_encoded_videos.size();
+            const size_t audios = pipe.m_encoded_audios.size();
+            const size_t audio_sequence = pipe.m_history_audio_sequence.size();
+            const size_t vision_count = pipe.m_history_vision_count.size();
+            bool active = true;
+
+            explicit ChatTurnRollback(VLMPipelineImpl& pipe) : pipe(pipe) {}
+            ~ChatTurnRollback() {
+                if (active) {
+                    restore();
+                }
+            }
+
+            void restore() {
+                while (pipe.m_history.size() > history) {
+                    pipe.m_history.pop_back();
+                }
+                pipe.m_encoded_images.resize(images);
+                pipe.m_encoded_videos.resize(videos);
+                pipe.m_encoded_audios.resize(audios);
+                pipe.m_history_audio_sequence.resize(audio_sequence);
+                pipe.m_history_vision_count.resize(vision_count);
+                active = false;
+            }
+        } chat_turn_rollback{*this};
+
         if (m_is_chat_conversation) {
             m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
 
@@ -475,25 +505,13 @@ public:
                 // Find the tail to concatenate it with the next input prompt.
                 m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
             } else {
-                m_history.pop_back();
-                if (m_use_full_chat_history) {
-                    OPENVINO_ASSERT(images.size() <= m_encoded_images.size(), "Number of images to remove is more than stored images!");
-                    m_encoded_images.resize(m_encoded_images.size() - images.size());
-
-                    OPENVINO_ASSERT(videos.size() <= m_encoded_videos.size(), "Number of videos to remove is more than stored videos!");
-                    m_encoded_videos.resize(m_encoded_videos.size() - videos.size());
-
-                    OPENVINO_ASSERT(audios.size() <= m_encoded_audios.size(), "Number of audios to remove is more than stored audios!");
-                    m_encoded_audios.resize(m_encoded_audios.size() - audios.size());
-                    m_history_audio_sequence.resize(history_audio_sequence_before);
-
-                    m_history_vision_count.pop_back();
-                }
+                chat_turn_rollback.restore();
             }
         } else {
             utils::CacheState& cache_state = m_inputs_embedder->get_cache_state();
             cache_state.reset_state();
         }
+        chat_turn_rollback.active = false;
 
         if (!(m_is_chat_conversation && m_use_full_chat_history)) {
             m_encoded_images.clear();
