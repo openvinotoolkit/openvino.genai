@@ -521,6 +521,7 @@ def run_text_generation_chat_common(
         iter_data = gen_output_data.gen_iterate_data(
             iter_idx=iter_num,
             in_size=chat_iteration_result.input_size,
+            in_text_tokens=gen_output_data.count_text_tokens(pipeline.tokenizer, turn["prompt"]),
             infer_count=chat_iteration_result.infer_count,
             out_size=chat_iteration_result.output_size,
             output_repr=gen_output_data.text_output_repr(chat_iteration_result.answer_text),
