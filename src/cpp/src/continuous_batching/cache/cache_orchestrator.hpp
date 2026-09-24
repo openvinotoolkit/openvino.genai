@@ -861,23 +861,6 @@ public:
         }
     }
 
-    void publish_completed_blocks(const Sequence::Ptr& sequence,
-                                  size_t processed_before,
-                                  size_t processed_after) {
-        OPENVINO_ASSERT(processed_after >= processed_before,
-                        "Cache block publication cannot precede the scheduled forward pass");
-        for (const auto& [cache_type, block_manager] : m_block_managers) {
-            if (!block_manager->is_prefix_caching_enabled()) {
-                continue;
-            }
-            block_manager->publish_completed_blocks(sequence, processed_before, processed_after);
-        }
-        if (has_linear_attention_cache()) {
-            m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)
-                ->advance_linear_attention_live_state(sequence->get_id(), processed_after);
-        }
-    }
-
     void release_linear_attention_temporary_blocks(uint64_t seq_id) noexcept {
         if (!has_linear_attention_cache()) {
             return;
