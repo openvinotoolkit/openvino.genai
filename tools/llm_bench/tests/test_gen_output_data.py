@@ -104,3 +104,18 @@ def test_gen_iterate_data_stores_text_tokens():
     assert gen_iterate_data(in_text_tokens=7)["input_text_tokens"] == 7
     assert gen_iterate_data(in_text_tokens=None)["input_text_tokens"] == ""
     assert gen_iterate_data()["input_text_tokens"] == ""
+
+
+def test_text_output_repr_appends_token_count():
+    assert text_output_repr("Hello , world .", FakeHFTokenizer()) == "text:2w/4t"
+    assert text_output_repr("Hello world", FakeGenAITokenizer()) == "text:2w/8t"
+    assert text_output_repr("...", FakeHFTokenizer()) == ""
+
+
+def test_text_output_repr_drops_unknown_token_count():
+    class Broken:
+        def encode(self, text, **kwargs):
+            raise RuntimeError("no encode for you")
+
+    assert text_output_repr("Hello world", Broken()) == "text:2w"
+    assert text_output_repr("Hello world", None) == "text:2w"
