@@ -174,7 +174,8 @@ def get_argparser():
         default=None,
         required=False,
         type=str,
-        help="Path to store memory consumption logs and chart.",
+        help="Path to store memory consumption logs and chart. "
+        "Defaults to ./memory_consumption for process-based monitoring (--memory_consumption 3 or 4).",
     )
     parser.add_argument(
         "--memory_sampler",
