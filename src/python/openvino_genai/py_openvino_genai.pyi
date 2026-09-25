@@ -2037,14 +2037,14 @@ class GenerationResult:
         ...
 class GenerationStatus:
     """
-
+    
             Generation request state.
-
+    
             FAILED preserves the original exception for read() and read_all(). Output queued before
             failure is read first. Failure overrides a pending STOP or CANCEL, while FINISHED and
             IGNORED are final and cannot be replaced by a later failure.
-
-
+        
+    
     Members:
     
       RUNNING
@@ -2056,7 +2056,7 @@ class GenerationStatus:
       CANCEL
     
       STOP
-
+    
       FAILED
     """
     CANCEL: typing.ClassVar[GenerationStatus]  # value = <GenerationStatus.CANCEL: 3>
