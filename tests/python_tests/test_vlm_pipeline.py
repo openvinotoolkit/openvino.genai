@@ -177,6 +177,7 @@ if is_transformers_version("<", "5.0"):
     # MiniCPM-o-2_6 maximum supported version of transformers is 4.51.3
     MODEL_IDS = [
         "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
+        "optimum-intel-internal-testing/tiny-random-minicpm-v-4",
         "optimum-intel-internal-testing/tiny-random-internvl2",
         "optimum-intel-internal-testing/tiny-random-llava",
         "optimum-intel-internal-testing/tiny-random-llava-next",
@@ -213,6 +214,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     MODEL_DEEPSEEK_OCR2: lambda idx: "<image>",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
+    "optimum-intel-internal-testing/tiny-random-minicpm-v-4": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<image>\n",
@@ -246,6 +248,7 @@ RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "qnguyen3/nanoLLaVA": 384,
     "optimum-intel-internal-testing/tiny-random-llava-next-video": 336,
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": 448,
+    "optimum-intel-internal-testing/tiny-random-minicpm-v-4": 448,
     "optimum-intel-internal-testing/tiny-random-qwen2vl": 336,
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": 336,
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": 256,
@@ -317,6 +320,12 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
     ):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Maximum supported version is 4.51.3"
+        )
+    if "optimum-intel-internal-testing/tiny-random-minicpm-v-4" == model_id and is_transformers_version(
+        "<", "4.56.0"
+    ):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of MiniCPM-V-4. Minimum required is 4.56.0."
         )
     if "qwen3-vl" in model_id and is_transformers_version("<", "4.57.0"):
         pytest.skip(
@@ -447,6 +456,7 @@ def _get_ov_model(model_id: str) -> str:
                 load_in_8bit=False,
                 trust_remote_code=model_id in {
                     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
+                    "optimum-intel-internal-testing/tiny-random-minicpm-v-4",
                     "optimum-intel-internal-testing/tiny-random-internvl2",
                     "optimum-intel-internal-testing/tiny-random-phi3-vision",
                     "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
@@ -2436,6 +2446,13 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     "*tiny-random-MiniCPM-o-2_6/*/text-only": "CVS-180070",
     # minicpmv-2_6 cases with images
     "*tiny-random-minicpmv-2_6/*/image*": "CVS-180070",
+    # minicpm-v-4 tiny-random greedy optimum-vs-genai mismatch (near-uniform random
+    # logits make argmax unstable across the optimum/GenAI f32 code paths; the real
+    # openbmb/MiniCPM-V-4 model generates coherent, matching output). Same class as
+    # the sibling MiniCPM tiny-random cases above.
+    "*tiny-random-minicpm-v-4/*/text-only": "CVS-180070",
+    "*tiny-random-minicpm-v-4/*/image*": "CVS-180070",
+    "*tiny-random-minicpm-v-4/*/preresized-image*": "CVS-180070",
     # videochat_flash_qwen text-only cases
     "*tiny-videochat-flash-qwen/PA/CPP/text-only": "CVS-183813",
     # deepseek-ocr-2 text-only cases
