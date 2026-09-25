@@ -19,6 +19,9 @@ allow-licenses:
   # Numpy licenses
   - "Zlib"
   - "CC0-1.0"
+  # Torch licenses
+  - "Apache-2.0 WITH LLVM-exception"
+  - "BSL-1.0"
 fail-on-scopes:
   - "runtime"
   - "development"
