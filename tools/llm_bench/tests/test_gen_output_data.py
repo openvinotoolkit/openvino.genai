@@ -12,6 +12,7 @@ import pytest
 from llm_bench_utils.gen_output_data import (
     count_text_tokens,
     count_words,
+    embed_iterate_data,
     gen_iterate_data,
     text_output_repr,
 )
@@ -119,3 +120,8 @@ def test_text_output_repr_drops_unknown_token_count():
 
     assert text_output_repr("Hello world", Broken()) == "text:2w"
     assert text_output_repr("Hello world", None) == "text:2w"
+
+
+def test_embed_iterate_data_output_repr():
+    assert embed_iterate_data()["output_repr"] == ""  # embeddings
+    assert embed_iterate_data(output_repr="docs:2")["output_repr"] == "docs:2"  # rerankers
