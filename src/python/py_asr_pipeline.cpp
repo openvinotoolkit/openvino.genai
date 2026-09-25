@@ -18,9 +18,12 @@ namespace py = pybind11;
 using ov::genai::ASRDecodedResultChunk;
 using ov::genai::ASRDecodedResults;
 using ov::genai::ASRGenerationConfig;
+using ov::genai::ASRPartialResult;
 using ov::genai::ASRPerfMetrics;
 using ov::genai::ASRPipeline;
 using ov::genai::ASRRawPerfMetrics;
+using ov::genai::ASRStreamingConfig;
+using ov::genai::ASRStreamingSession;
 using ov::genai::AudioInputs;
 using ov::genai::GenerationConfig;
 using ov::genai::PerfMetrics;
@@ -74,6 +77,49 @@ auto asr_decoded_result_chunk_docstring = R"(
     :param end_ts   chunk end time in seconds
     :param text     chunk text
     :param token_ids token ids corresponding to the chunk text
+)";
+
+auto asr_streaming_config_docstring = R"(
+    ASRStreamingConfig
+
+    Streaming configuration used by ASRPipeline.create_streaming_session().
+
+    :param chunk_size_sec: Audio duration to accumulate before triggering a decode pass.
+    :type chunk_size_sec: float
+
+    :param warmup_chunks: Number of initial decode passes run without a prefix.
+    :type warmup_chunks: int
+
+    :param context_rollback_tokens: Number of trailing tokens to rewind from the accumulated text when
+                                    reusing it as a prefix for the next decode pass.
+    :type context_rollback_tokens: int
+
+    :param window_chunk_num: Maximum chunks of audio retained in the sliding window before older,
+                             already-decoded audio is dropped from the front of the accumulated
+                             buffer. 0 = unbounded (re-encode the entire session every pass).
+    :type window_chunk_num: int
+
+    :param window_rollback_chunk_num: Chunks of already-decoded audio treated as still "unfixed"
+                                      (not yet safe to drop) once the sliding window is active.
+                                      Must be less than window_chunk_num. Ignored when
+                                      window_chunk_num == 0.
+    :type window_rollback_chunk_num: int
+
+    :param unbounded_prefix: Experimental. When true, disables eviction of the
+                             text-history prefix tied to the audio sliding window, so the decoder
+                             prefix grows unbounded for the life of the session even though the
+                             audio window itself still stays bounded. Ignored when window_chunk_num == 0.
+    :type unbounded_prefix: bool
+)";
+
+auto asr_partial_result_docstring = R"(
+    Partial transcription result emitted after each streaming decode pass.
+
+    :param language: Detected language for the current stream.
+    :type language: str
+
+    :param text: Current partial transcript.
+    :type text: str
 )";
 
 auto asr_generation_config_docstring = R"(
@@ -335,6 +381,46 @@ void init_asr_pipeline(py::module_& m) {
             return res;
         });
 
+    py::class_<ASRStreamingConfig>(m, "ASRStreamingConfig", asr_streaming_config_docstring)
+        .def(py::init<>())
+        .def_readwrite("chunk_size_sec", &ASRStreamingConfig::chunk_size_sec)
+        .def_readwrite("warmup_chunks", &ASRStreamingConfig::warmup_chunks)
+        .def_readwrite("context_rollback_tokens", &ASRStreamingConfig::context_rollback_tokens)
+        .def_readwrite("window_chunk_num", &ASRStreamingConfig::window_chunk_num)
+        .def_readwrite("window_rollback_chunk_num", &ASRStreamingConfig::window_rollback_chunk_num)
+        .def_readwrite("unbounded_prefix", &ASRStreamingConfig::unbounded_prefix);
+
+    py::class_<ASRPartialResult>(m, "ASRPartialResult", asr_partial_result_docstring)
+        .def(py::init<>())
+        .def_readwrite("language", &ASRPartialResult::language)
+        .def_readwrite("committed_text", &ASRPartialResult::committed_text)
+        .def_readwrite("new_committed_text", &ASRPartialResult::new_committed_text)
+        .def_readwrite("partial_text", &ASRPartialResult::partial_text)
+        .def("__repr__", [](const ASRPartialResult& result) {
+            return py::str("ASRPartialResult(language='" + result.language +
+                           "', committed_text='" + result.committed_text +
+                           "', new_committed_text='" + result.new_committed_text +
+                           "', partial_text='" + result.partial_text + "')");
+        });
+
+    py::class_<ASRStreamingSession>(m, "ASRStreamingSession")
+        .def("push_chunk",
+             [](ASRStreamingSession& session, const std::vector<float>& pcm16k) -> std::optional<ASRPartialResult> {
+                 py::gil_scoped_release release;
+                 return session.push_chunk(pcm16k);
+             },
+             py::arg("pcm16k"),
+             "Append audio samples to the streaming buffer. Returns a partial result if a decode pass was triggered, None otherwise.")
+        .def("finish",
+             [](ASRStreamingSession& session) {
+                 py::gil_scoped_release release;
+                 return session.finish();
+             },
+             "Flush the remaining buffered audio and return the final partial result. partial_text is always empty on the returned result.")
+        .def("__repr__", [](const ASRStreamingSession&) {
+            return py::str("ASRStreamingSession()");
+        });
+
     py::class_<ASRPipeline>(m, "ASRPipeline", "Automatic speech recognition pipeline")
         .def(
             py::init([](const std::filesystem::path& models_path, const std::string& device, const py::kwargs& kwargs) {
@@ -368,7 +454,16 @@ void init_asr_pipeline(py::module_& m) {
             py::arg("streamer") = std::monostate(),
             "streamer",
             (asr_generate_docstring + std::string(" \n ") + asr_generation_config_docstring).c_str())
-
+        .def("create_streaming_session",
+             [](ASRPipeline& pipe,
+                const std::optional<ASRStreamingConfig>& streaming_config,
+                const std::optional<ASRGenerationConfig>& generation_config) {
+                 py::gil_scoped_release release;
+                 return ASRStreamingSession(pipe, streaming_config.value_or(ASRStreamingConfig{}), generation_config);
+             },
+             py::arg("streaming_config") = py::none(),
+             py::arg("generation_config") = py::none(),
+             "Create a streaming ASR session for incremental transcription.")
         .def("get_tokenizer", &ASRPipeline::get_tokenizer)
         .def("get_generation_config", &ASRPipeline::get_generation_config, py::return_value_policy::copy)
         .def("set_generation_config", &ASRPipeline::set_generation_config, py::arg("config"));

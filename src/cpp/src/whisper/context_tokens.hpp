@@ -12,6 +12,7 @@ namespace genai {
 struct WhisperContextTokens {
     std::vector<int64_t> initial_prompt;
     std::vector<int64_t> hotwords;
+    std::vector<int64_t> prefix;  // forced output tokens appended after SOT header
 };
 
 std::pair<WhisperContextTokens, float> prepare_context_tokens(const WhisperGenerationConfig& config,
