@@ -115,6 +115,72 @@ Similar to [text generation](/docs/use-cases/text-generation/#use-different-gene
   </LanguageTabs>
 </BasicGenerationConfiguration>
 
+### Continuous Batching, PagedAttention, and Prefix Caching
+
+Pass a `SchedulerConfig` to `VLMPipeline` to explicitly select the continuous batching (CB) backend, which uses PagedAttention (PA). Set `enable_prefix_caching` explicitly to keep completed KV-cache blocks available for later requests to the same pipeline. Requests whose resulting input-embedding prefix is identical can then reuse those blocks, which may reduce prefill work and time to first token (TTFT) after the first request. For multimodal requests, both the text and the corresponding visual inputs must match; matching tokenized text alone is not sufficient.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        import openvino_genai as ov_genai
+
+        model_path = "path/to/exported_vlm"
+        scheduler_config = ov_genai.SchedulerConfig()
+        scheduler_config.enable_prefix_caching = True
+        scheduler_config.cache_size = 2  # GB
+
+        pipe = ov_genai.VLMPipeline(
+            model_path,
+            "GPU",
+            scheduler_config=scheduler_config,
+        )
+
+        generation_config = ov_genai.GenerationConfig()
+        generation_config.max_new_tokens = 40
+
+        shared_prefix = "You are a helpful assistant. " * 100
+        for question in ("Summarize the instructions.", "List the key points."):
+            result = pipe.generate(
+                shared_prefix + question,
+                generation_config=generation_config,
+            )
+            print(result.texts[0])
+            print(f"TTFT: {result.perf_metrics.get_ttft().mean:.2f} ms")
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        const std::string model_path = "path/to/exported_vlm";
+        ov::genai::SchedulerConfig scheduler_config;
+        scheduler_config.enable_prefix_caching = true;
+        scheduler_config.cache_size = 2;  // GB
+
+        ov::genai::VLMPipeline pipe(
+            model_path,
+            "GPU",
+            ov::genai::scheduler_config(scheduler_config));
+
+        ov::genai::GenerationConfig generation_config;
+        generation_config.max_new_tokens = 40;
+
+        std::string shared_prefix;
+        for (std::size_t i = 0; i < 100; ++i)
+            shared_prefix += "You are a helpful assistant. ";
+        for (const auto& question : {"Summarize the instructions.", "List the key points."}) {
+            auto result = pipe.generate(
+                shared_prefix + question,
+                ov::genai::generation_config(generation_config));
+            std::cout << result.texts[0] << std::endl;
+            std::cout << "TTFT: " << result.perf_metrics.get_ttft().mean << " ms" << std::endl;
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+`cache_size` is the maximum cache allocation in GB and must fit in available device memory. If `num_kv_blocks` and `cache_size` are both set, `num_kv_blocks` takes precedence; leaving both at zero enables dynamic cache allocation. Cached blocks are scoped to the pipeline instance and can be overwritten under cache pressure.
+
+On supported platforms, `VLMPipeline` may select PagedAttention automatically and currently uses a latency-oriented scheduler configuration with prefix caching enabled. Supplying `scheduler_config` replaces those scheduler defaults; because a new `SchedulerConfig` has prefix caching disabled, set `enable_prefix_caching = True` as shown above. Explicit selection requires PagedAttention support (available on x86-64 and ARM64) and is not available for `VLMPipeline` on NPU. Initialization also depends on whether the model graph and target device support the PagedAttention path; prefix reuse and its performance benefit therefore vary by model, device, prefix length, and cache pressure.
+
 ### Video Metadata and Sampling
 
 When a video is provided as an input, video metadata can be passed along with the video to control the sampling of video frames.
