@@ -120,6 +120,15 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'PaddleOCRVLForConditionalGeneration',
+    models: [
+      {
+        name: 'PaddleOCR-VL',
+        links: ['https://huggingface.co/PaddlePaddle/PaddleOCR-VL-1.5'],
+      },
+    ],
+  },
+  {
     architecture: 'Phi3VForCausalLM',
     models: [
       {

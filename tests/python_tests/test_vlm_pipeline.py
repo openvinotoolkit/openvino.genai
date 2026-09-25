@@ -169,6 +169,7 @@ MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
 MODEL_DEEPSEEK_OCR2 = "optimum-intel-internal-testing/tiny-random-deepseek-ocr-2"
+MODEL_PADDLEOCR_VL = "optimum-intel-internal-testing/tiny-random-paddleocr-vl"
 
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
@@ -191,6 +192,7 @@ else:
         "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
         "qnguyen3/nanoLLaVA",
         MODEL_DEEPSEEK_OCR2,
+        MODEL_PADDLEOCR_VL,
         *VIDEO_MODEL_IDS,
     ]
 
@@ -212,6 +214,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     MODEL_GEMMA3N: lambda idx: "<image_soft_token>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     MODEL_DEEPSEEK_OCR2: lambda idx: "<image>",
+    MODEL_PADDLEOCR_VL: lambda idx: "<|IMAGE_START|><|IMAGE_PLACEHOLDER|><|IMAGE_END|>",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
@@ -333,6 +336,10 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
     if model_id == "optimum-intel-internal-testing/tiny-random-muse-glimmer" and is_transformers_version("<", "5.15.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of Muse Glimmer. Minimum required is 5.15.0."
+        )
+    if model_id == MODEL_PADDLEOCR_VL and is_transformers_version("<", "5.10.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of PaddleOCR-VL. Minimum required is 5.10.0."
         )
     if model_id in [
         "optimum-intel-internal-testing/tiny-random-gemma4",
@@ -811,6 +818,7 @@ def test_images(request: pytest.FixtureRequest):
 
 SINGLE_IMAGE_ONLY_MODELS = {
     MODEL_DEEPSEEK_OCR2,
+    MODEL_PADDLEOCR_VL,
 }
 
 
