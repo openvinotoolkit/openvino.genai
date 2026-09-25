@@ -61,6 +61,7 @@ ContinuousBatchingPipeline::MtpDecodingImpl::MtpDecodingImpl(const ov::genai::Mo
     m_tokenizer = main_model_tokenizer;
     m_inputs_embedder = inputs_embedder;
     m_model_input_type = ModelInputType::EMBEDDINGS;
+    m_vision_registry = std::make_shared<VisionRegistry>();
 
     // PA conversion must precede the MTP lm_head graft.
     bool allow_score_aggregation = true;
@@ -81,6 +82,7 @@ ContinuousBatchingPipeline::MtpDecodingImpl::MtpDecodingImpl(const ov::genai::Mo
     auto main_scheduler_config = main_model_desc.scheduler_config;
     auto draft_scheduler_config = main_scheduler_config;
     if (draft_model_desc.scheduler_config == SchedulerConfig()) {
+        draft_scheduler_config.num_linear_attention_blocks = 0;
         constexpr size_t MTP_DRAFT_CACHE_SIZE_GB = 1;
         if (main_scheduler_config.cache_size > MTP_DRAFT_CACHE_SIZE_GB) {
             draft_scheduler_config.cache_size = MTP_DRAFT_CACHE_SIZE_GB;
@@ -91,6 +93,8 @@ ContinuousBatchingPipeline::MtpDecodingImpl::MtpDecodingImpl(const ov::genai::Mo
         draft_scheduler_config.dynamic_split_fuse = main_scheduler_config.dynamic_split_fuse;
         draft_scheduler_config.max_num_batched_tokens = main_scheduler_config.max_num_batched_tokens;
     }
+    OPENVINO_ASSERT(main_scheduler_config.enable_prefix_caching == draft_scheduler_config.enable_prefix_caching,
+                    "MTP main and draft pipelines must use the same enable_prefix_caching setting");
 
     m_main_pipeline = std::make_shared<ContinuousBatchingForMtpDecodingImpl>(main_model,
                                                                             inputs_embedder,
@@ -142,11 +146,56 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     draft_sampling_params.stop_strings = {};
     // Draft gets shifted embeds only; VLM extras belong to the main model.
     ov::Tensor draft_input_embeds = create_draft_input_embeds(input_ids);
+    OPENVINO_ASSERT(!std::static_pointer_cast<ContinuousBatchingForMtpDecodingImpl>(m_main_pipeline)->is_prefix_caching_enabled() ||
+                        (prompt_ids.has_value() && prompt_ids->get_element_type() == ov::element::i64 &&
+                         prompt_ids->get_size() == input_ids.get_shape()[1]),
+                    "MTP prefix caching requires built-in prompt preparation with one token ID per embedding");
     // Use insert_or_assign, not insert: a finished prior request may leave a stale (stopped) handle
     // under the same request_id. insert() would be a no-op there, dropping the new handle as a
     // temporary whose destructor stops the freshly added draft request before it can draft.
-    m_draft_generations.insert_or_assign(request_id, m_draft_pipeline->add_request(request_id, draft_input_embeds, draft_sampling_params));
-    return m_main_pipeline->add_request(request_id, input_ids, sampling_params, prompt_ids, lm_extra_inputs);
+    try {
+        m_draft_generations.insert_or_assign(request_id, m_draft_pipeline->add_request(request_id, draft_input_embeds, draft_sampling_params));
+        auto main_handle = m_main_pipeline->add_request(request_id, input_ids, sampling_params, prompt_ids, lm_extra_inputs);
+        align_request_pair_processed_prefix(request_id);
+        return main_handle;
+    } catch (...) {
+        std::static_pointer_cast<ContinuousBatchingForMtpDecodingImpl>(m_main_pipeline)->discard_awaiting_request(request_id);
+        std::static_pointer_cast<ContinuousBatchingForMtpDecodingImpl>(m_draft_pipeline)->discard_awaiting_request(request_id);
+        m_draft_generations.erase(request_id);
+        throw;
+    }
+}
+
+void ContinuousBatchingPipeline::MtpDecodingImpl::align_request_pair_processed_prefix(uint64_t request_id) {
+    auto find_request = [request_id](const std::vector<SequenceGroup::Ptr>& requests) {
+        const auto found = std::find_if(requests.begin(), requests.end(), [request_id](const auto& group) {
+            return group->get_request_id() == request_id;
+        });
+        OPENVINO_ASSERT(found != requests.end(), "MTP alignment requires both awaiting requests: ", request_id);
+        return *found;
+    };
+    const auto main_group = find_request(m_main_pipeline->get_awaiting_requests());
+    const auto draft_group = find_request(m_draft_pipeline->get_awaiting_requests());
+    draft_group->get_sequences().front()->set_prefix_cache_policy(draft_group->get_prompt_len(),
+        [main_group](size_t length, size_t block_size) {
+            return main_group->get_sequences().front()->get_hash(length + 1, block_size);
+        });
+    auto main_pipeline = std::static_pointer_cast<ContinuousBatchingForMtpDecodingImpl>(m_main_pipeline);
+    auto draft_pipeline = std::static_pointer_cast<ContinuousBatchingForMtpDecodingImpl>(m_draft_pipeline);
+    size_t ceiling = draft_group->get_prompt_len() - 1;
+    while (true) {
+        const size_t main_processed = main_pipeline->restore_awaiting_prefix(request_id, ceiling);
+        const size_t draft_processed = draft_pipeline->restore_awaiting_prefix(request_id, main_processed);
+        if (main_processed == draft_processed) {
+            if (main_processed > 0) {
+                GENAI_DEBUG("MTP paired prefix replay: request=%llu main=%zu draft=%zu",
+                            static_cast<unsigned long long>(request_id), main_processed, draft_processed);
+            }
+            return;
+        }
+        OPENVINO_ASSERT(draft_processed < ceiling, "MTP prefix alignment must select an earlier checkpoint");
+        ceiling = draft_processed;
+    }
 }
 
 GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
@@ -158,21 +207,28 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     // Text-only serving path.
     ov::genai::VLMPerfMetrics metrics;
     ov::Tensor inputs_embeds;
+    ov::Tensor prompt_ids;
+    std::unordered_map<std::string, ov::Tensor> lm_extra_inputs;
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
+        const size_t previous_tokens = m_inputs_embedder->get_cache_state().get_state().size();
         const std::vector<ov::genai::EncodedImage> no_images;
         const auto [unified_prompt, image_sequence, video_sequence] =
             m_inputs_embedder->normalize_prompt(prompt, 0, no_images);
         inputs_embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, no_images, metrics, true, image_sequence);
+        const auto& cached_ids = m_inputs_embedder->get_cache_state().get_state();
+        OPENVINO_ASSERT(cached_ids.size() >= previous_tokens, "MTP prompt preparation cannot shrink token history");
+        prompt_ids = ov::Tensor(ov::element::i64, {1, cached_ids.size() - previous_tokens});
+        std::copy(cached_ids.begin() + previous_tokens, cached_ids.end(), prompt_ids.data<int64_t>());
         const auto [position_ids, rope_delta] = m_inputs_embedder->get_position_ids(inputs_embeds.get_shape()[1], 0);
         m_inputs_embedder->set_position_ids(position_ids);
         if (rope_delta.has_value()) {
             m_inputs_embedder->set_rope_delta(*rope_delta);
         }
+        lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
     }
-    return add_request(request_id, inputs_embeds, sampling_params, std::nullopt,
-                       m_inputs_embedder->get_lm_extra_inputs());
+    return add_request(request_id, inputs_embeds, sampling_params, prompt_ids, std::move(lm_extra_inputs));
 }
 
 std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::MtpDecodingImpl::generate(

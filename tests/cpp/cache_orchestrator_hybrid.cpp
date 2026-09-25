@@ -600,8 +600,8 @@ TEST(TestCacheOrchestratorHybrid, LinearAttentionWorkspace_ReservesOnePlusN) {
     }
 }
 
-/// The committed row is block_table[0] across promotion, fork, and copy-on-write.
-TEST(TestCacheOrchestratorHybrid, LinearAttentionCommittedBlockTracksPromotedRowAcrossForkCopyOnWrite) {
+/// The latest row is block_table[0] across promotion, fork, and copy-on-write.
+TEST(TestCacheOrchestratorHybrid, LinearAttentionLatestRowTracksPromotionForkAndCopyOnWrite) {
     auto orchestrator = create_hybrid_orchestrator(
         /*num_kv_blocks=*/16,
         /*num_la_blocks=*/4,
@@ -614,21 +614,24 @@ TEST(TestCacheOrchestratorHybrid, LinearAttentionCommittedBlockTracksPromotedRow
     const uint64_t parent_id = parent->get_id();
     orchestrator->allocate_tokens(parent, seq_group, 1, seq_group->get_prompt_len());
 
-    const auto temporary_blocks = orchestrator->reserve_linear_attention_temporary_blocks(parent_id, 1);
-    ASSERT_EQ(temporary_blocks.size(), 1u);
-    const size_t promoted = orchestrator->promote_linear_attention_temporary_block(parent_id, 1);
-    ASSERT_EQ(promoted, static_cast<size_t>(temporary_blocks.front()));
+    auto lease = orchestrator->prepare_linear_attention_scratch(parent_id, 1);
+    ASSERT_EQ(lease.block_indices().size(), 1u);
+    const size_t promoted = lease.commit(1);
+    ASSERT_EQ(promoted, static_cast<size_t>(lease.block_indices().front()));
     ASSERT_EQ(orchestrator->get_linear_attention_block_table(parent_id).front()->get_index(), promoted);
-    EXPECT_EQ(orchestrator->get_linear_attention_live_block(parent_id), promoted);
+    EXPECT_EQ(orchestrator->get_linear_attention_latest_row(parent_id), promoted);
+    EXPECT_FALSE(orchestrator->is_linear_attention_latest_row_shared(parent_id));
 
     auto child = seq_group->fork_sequence(parent);
     const uint64_t child_id = child->get_id();
     ASSERT_NO_THROW(orchestrator->fork_sequence(parent_id, child_id));
     ASSERT_EQ(orchestrator->get_linear_attention_block_table(child_id).front()->get_index(), promoted);
-    EXPECT_EQ(orchestrator->get_linear_attention_live_block(child_id), promoted);
+    EXPECT_EQ(orchestrator->get_linear_attention_latest_row(child_id), promoted);
+    EXPECT_TRUE(orchestrator->is_linear_attention_latest_row_shared(parent_id));
+    EXPECT_TRUE(orchestrator->is_linear_attention_latest_row_shared(child_id));
 
     seq_group->schedule_tokens(1);
-    orchestrator->append_slots(seq_group);
+    const auto copy_maps = orchestrator->append_slots(seq_group);
 
     const auto& parent_owned = orchestrator->get_linear_attention_block_table(parent_id);
     const auto& child_owned = orchestrator->get_linear_attention_block_table(child_id);
@@ -636,11 +639,153 @@ TEST(TestCacheOrchestratorHybrid, LinearAttentionCommittedBlockTracksPromotedRow
     ASSERT_EQ(child_owned.size(), 1u);
     EXPECT_NE(parent_owned.front()->get_index(), promoted);
     EXPECT_EQ(child_owned.front()->get_index(), promoted);
-    EXPECT_EQ(orchestrator->get_linear_attention_live_block(parent_id), parent_owned.front()->get_index());
-    EXPECT_EQ(orchestrator->get_linear_attention_live_block(child_id), child_owned.front()->get_index());
+    const auto& linear_attention_copy_map = copy_maps.at(CacheType::LINEAR_ATTENTION_CACHE);
+    ASSERT_EQ(linear_attention_copy_map.size(), 1u);
+    ASSERT_EQ(linear_attention_copy_map.at(promoted).size(), 1u);
+    EXPECT_EQ(linear_attention_copy_map.at(promoted).front(), parent_owned.front()->get_index());
+    EXPECT_EQ(orchestrator->get_linear_attention_latest_row(parent_id), parent_owned.front()->get_index());
+    EXPECT_EQ(orchestrator->get_linear_attention_latest_row(child_id), child_owned.front()->get_index());
+    EXPECT_FALSE(orchestrator->is_linear_attention_latest_row_shared(parent_id));
+    EXPECT_FALSE(orchestrator->is_linear_attention_latest_row_shared(child_id));
 
     orchestrator->free_sequence(child_id);
     orchestrator->free_sequence(parent_id);
+}
+
+TEST(TestCacheOrchestratorHybrid, LinearAttentionScratchLeaseMovesAbortsAndRejectsStaleBase) {
+    auto orchestrator = create_hybrid_orchestrator(
+        /*num_kv_blocks=*/16,
+        /*num_la_blocks=*/4,
+        TEST_BLOCK_SIZE,
+        /*num_layers=*/1,
+        /*la_fixed_blocks_per_seq=*/1);
+    const uint64_t seq_id = provision_single_sequence(orchestrator, 421);
+    auto& block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+    const size_t free_before = block_manager.num_free_blocks();
+    auto& kv_block_manager = orchestrator->get_block_manager(CacheType::KV_CACHE);
+    const size_t kv_free_before = kv_block_manager.num_free_blocks();
+    const size_t base_row = orchestrator->get_linear_attention_latest_row(seq_id);
+    const size_t base_endpoint = block_manager.get_linear_attention_live_state(seq_id).endpoint;
+    const auto* const kv_row = kv_block_manager.get_block_tables(seq_id).front().front().get();
+    const int kv_refs_before = kv_row->get_references_count();
+    const auto* const la_row = block_manager.get_block_tables(seq_id).front().front().get();
+    const int la_refs_before = la_row->get_references_count();
+
+    {
+        auto lease = orchestrator->prepare_linear_attention_scratch(seq_id, 2);
+        EXPECT_EQ(lease.state(), CacheOrchestrator::LinearAttentionScratchLease::State::ACTIVE);
+        ASSERT_EQ(lease.block_indices().size(), 2u);
+        auto moved_lease = std::move(lease);
+        EXPECT_EQ(lease.state(), CacheOrchestrator::LinearAttentionScratchLease::State::ABORTED);
+        EXPECT_EQ(moved_lease.state(), CacheOrchestrator::LinearAttentionScratchLease::State::ACTIVE);
+        EXPECT_THROW(orchestrator->fork_sequence(seq_id, 422), ov::Exception);
+        EXPECT_THROW(orchestrator->free_sequence(seq_id), ov::Exception);
+        EXPECT_TRUE(kv_block_manager.has_block_table(seq_id));
+        EXPECT_TRUE(block_manager.has_block_table(seq_id));
+        EXPECT_EQ(kv_block_manager.num_free_blocks(), kv_free_before);
+        EXPECT_EQ(block_manager.num_free_blocks(), free_before - 2);
+        EXPECT_EQ(kv_row->get_references_count(), kv_refs_before);
+        EXPECT_EQ(la_row->get_references_count(), la_refs_before);
+    }
+    EXPECT_EQ(block_manager.num_free_blocks(), free_before);
+    EXPECT_FALSE(block_manager.has_temporary_blocks(seq_id));
+    EXPECT_EQ(orchestrator->get_linear_attention_latest_row(seq_id), base_row);
+    EXPECT_EQ(block_manager.get_linear_attention_live_state(seq_id).endpoint, base_endpoint);
+
+    auto committed_lease = orchestrator->prepare_linear_attention_scratch(seq_id, 2);
+    const size_t committed_row = committed_lease.commit(2);
+    EXPECT_EQ(committed_lease.state(), CacheOrchestrator::LinearAttentionScratchLease::State::COMMITTED);
+    EXPECT_NE(committed_row, base_row);
+    EXPECT_EQ(block_manager.num_free_blocks(), free_before);
+    EXPECT_FALSE(block_manager.has_temporary_blocks(seq_id));
+    EXPECT_EQ(block_manager.get_linear_attention_live_state(seq_id).endpoint, base_endpoint + 2);
+
+    auto stale_lease = orchestrator->prepare_linear_attention_scratch(seq_id, 2);
+    const auto current_state = block_manager.get_linear_attention_live_state(seq_id);
+    block_manager.set_linear_attention_live_state(seq_id, current_state.endpoint, current_state.rows);
+    EXPECT_THROW(stale_lease.commit(1), ov::Exception);
+    stale_lease.abort();
+    EXPECT_EQ(block_manager.num_free_blocks(), free_before);
+    EXPECT_FALSE(block_manager.has_temporary_blocks(seq_id));
+
+    auto invalid_lease = orchestrator->prepare_linear_attention_scratch(seq_id, 2);
+    const auto state_before_invalid_commit = block_manager.get_linear_attention_live_state(seq_id);
+    const size_t free_before_invalid_commit = block_manager.num_free_blocks();
+    EXPECT_THROW(invalid_lease.commit(3), ov::Exception);
+    EXPECT_TRUE(block_manager.has_temporary_blocks(seq_id));
+    EXPECT_EQ(block_manager.num_free_blocks(), free_before_invalid_commit);
+    EXPECT_EQ(block_manager.get_linear_attention_live_state(seq_id).endpoint,
+              state_before_invalid_commit.endpoint);
+    EXPECT_EQ(block_manager.get_linear_attention_live_state(seq_id).generation,
+              state_before_invalid_commit.generation);
+    invalid_lease.abort();
+    EXPECT_EQ(block_manager.num_free_blocks(), free_before);
+
+    orchestrator->free_sequence(seq_id);
+}
+
+TEST(TestCacheOrchestratorHybrid, LinearAttentionScratchPrepareRejectsInvalidBaseWithoutMutation) {
+    auto orchestrator = create_hybrid_orchestrator(
+        /*num_kv_blocks=*/16,
+        /*num_la_blocks=*/4,
+        TEST_BLOCK_SIZE,
+        /*num_layers=*/1,
+        /*la_fixed_blocks_per_seq=*/1);
+    const uint64_t seq_id = provision_single_sequence(orchestrator, 425);
+    auto& block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+    const auto state = block_manager.get_linear_attention_live_state(seq_id);
+    const size_t free_before = block_manager.num_free_blocks();
+    const int refs_before = state.rows.front()->get_references_count();
+
+    block_manager.set_linear_attention_live_state(seq_id,
+                                                  std::numeric_limits<size_t>::max(),
+                                                  state.rows);
+    EXPECT_THROW(std::ignore = orchestrator->prepare_linear_attention_scratch(seq_id, 1), ov::Exception);
+    EXPECT_FALSE(block_manager.has_temporary_blocks(seq_id));
+    EXPECT_EQ(block_manager.num_free_blocks(), free_before);
+    EXPECT_EQ(block_manager.get_linear_attention_live_state(seq_id).endpoint,
+              std::numeric_limits<size_t>::max());
+    EXPECT_EQ(state.rows.front()->get_references_count(), refs_before);
+
+    orchestrator->free_sequence(seq_id);
+}
+
+TEST(TestCacheOrchestratorHybrid, PartialPreemptionDefersActiveLinearAttentionLeaseWithoutMutation) {
+    auto orchestrator = create_hybrid_orchestrator(
+        /*num_kv_blocks=*/16,
+        /*num_la_blocks=*/4,
+        TEST_BLOCK_SIZE,
+        /*num_layers=*/1,
+        /*la_fixed_blocks_per_seq=*/1);
+    auto victim = create_sequence_group(423);
+    auto target = create_sequence_group(424);
+    auto victim_sequence = victim->get_running_sequences().front();
+    auto target_sequence = target->get_running_sequences().front();
+    orchestrator->allocate_tokens(victim_sequence, victim, TEST_BLOCK_SIZE * 2 + 1, victim->get_prompt_len());
+    orchestrator->allocate_tokens(target_sequence, target, 1, target->get_prompt_len());
+    target->schedule_tokens(TEST_BLOCK_SIZE + 1);
+
+    auto& kv_block_manager = orchestrator->get_block_manager(CacheType::KV_CACHE);
+    auto& la_block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+    auto lease = orchestrator->prepare_linear_attention_scratch(victim_sequence->get_id(), 2);
+    const size_t kv_free_before = kv_block_manager.num_free_blocks();
+    const size_t la_free_before = la_block_manager.num_free_blocks();
+    const auto kv_table_before = kv_block_manager.get_block_tables(victim_sequence->get_id());
+    const auto la_table_before = la_block_manager.get_block_tables(victim_sequence->get_id());
+    const int kv_refs_before = kv_table_before.front().front()->get_references_count();
+    const int la_refs_before = la_table_before.front().front()->get_references_count();
+
+    EXPECT_THROW(orchestrator->free_group_partially_for_target(victim, target), ov::Exception);
+    EXPECT_EQ(kv_block_manager.get_block_tables(victim_sequence->get_id()), kv_table_before);
+    EXPECT_EQ(la_block_manager.get_block_tables(victim_sequence->get_id()), la_table_before);
+    EXPECT_EQ(kv_block_manager.num_free_blocks(), kv_free_before);
+    EXPECT_EQ(la_block_manager.num_free_blocks(), la_free_before);
+    EXPECT_EQ(kv_table_before.front().front()->get_references_count(), kv_refs_before);
+    EXPECT_EQ(la_table_before.front().front()->get_references_count(), la_refs_before);
+
+    lease.abort();
+    orchestrator->free_sequence(victim_sequence->get_id());
+    orchestrator->free_sequence(target_sequence->get_id());
 }
 
 /// @test PartialPreemptionIsDisallowedWhenFixedSizeTargetNeedsBlocks

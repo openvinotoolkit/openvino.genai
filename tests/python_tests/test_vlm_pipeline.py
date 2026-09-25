@@ -168,6 +168,7 @@ else:
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
+MODEL_QWEN35_MTP = "optimum-intel-internal-testing/tiny-random-qwen3.5-mtp"
 MODEL_DEEPSEEK_OCR2 = "optimum-intel-internal-testing/tiny-random-deepseek-ocr-2"
 
 MODEL_IDS: list[str] = []
@@ -326,7 +327,10 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of Qwen3-Omni. Minimum required is 4.57.0."
         )
-    if "optimum-intel-internal-testing/tiny-random-qwen3.5" == model_id and is_transformers_version("<", "5.2.0"):
+    if model_id in {
+        "optimum-intel-internal-testing/tiny-random-qwen3.5",
+        MODEL_QWEN35_MTP,
+    } and is_transformers_version("<", "5.2.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.2.0."
         )
@@ -3000,16 +3004,261 @@ def test_cdpruner_continuous_batching_chat_history(
     )
 
 
-def test_vlm_prompt_lookup_functionality(cat_tensor):
-    """Test prompt_lookup functionality for Qwen2VL model."""
-    model_id = "optimum-intel-internal-testing/tiny-random-qwen2vl"
+@pytest.fixture(scope="module")
+def qwen35_mtp_model_path() -> Path:
+    model_path = Path(_get_ov_model(MODEL_QWEN35_MTP))
+    assert (model_path / "openvino_mtp_model.xml").is_file(), "Qwen3.5 export must include the MTP draft model"
+    return model_path
+
+
+@pytest.mark.parametrize("main_prefix", [False, True])
+def test_qwen35_mtp_rejects_prefix_mismatch(qwen35_mtp_model_path, main_prefix):
+    model_path = qwen35_mtp_model_path
+    scheduler = SchedulerConfig()
+    scheduler.cache_size = 1
+    scheduler.enable_prefix_caching = main_prefix
+    draft_scheduler = SchedulerConfig()
+    draft_scheduler.num_kv_blocks = 128
+    draft_scheduler.enable_prefix_caching = not main_prefix
+    with pytest.raises(RuntimeError, match="MTP main and draft pipelines must use the same enable_prefix_caching"):
+        ContinuousBatchingPipeline(
+            model_path,
+            scheduler,
+            "CPU",
+            {"draft_model": draft_model(model_path, "CPU", scheduler_config=draft_scheduler)},
+        )
+
+
+def test_qwen35_mtp_text_add_request(qwen35_mtp_model_path, monkeypatch, capfd):
+    model_path = qwen35_mtp_model_path
+    monkeypatch.setenv("OPENVINO_LOG_LEVEL", "5")
+    scheduler = SchedulerConfig()
+    scheduler.cache_size = 1
+    scheduler.cache_interval_multiplier = 1
+    scheduler.max_num_seqs = 1
+    scheduler.num_linear_attention_blocks = 32
+    scheduler.enable_prefix_caching = False
+    reference = ContinuousBatchingPipeline(model_path, scheduler, "CPU")
+    scheduler.enable_prefix_caching = True
+    draft_scheduler = SchedulerConfig()
+    draft_scheduler.enable_prefix_caching = True
+    draft_scheduler.num_kv_blocks = 128
+    pipeline = ContinuousBatchingPipeline(
+        model_path,
+        scheduler,
+        "CPU",
+        {"draft_model": draft_model(model_path, "CPU", scheduler_config=draft_scheduler)},
+    )
+    config = GenerationConfig(max_new_tokens=24, do_sample=False, ignore_eos=True)
+    prompt = "Repeat the following sequence exactly: " + "one two three four. " * 32
+    reference_handle = reference.add_request(0, prompt, config)
+    while reference.has_non_finished_requests():
+        reference.step()
+    expected = reference_handle.read_all()[0].generated_ids
+    config.num_assistant_tokens = 4
+    for iteration in range(2):
+        capfd.readouterr()
+        handle = pipeline.add_request(0, prompt, config)
+        while pipeline.has_non_finished_requests():
+            pipeline.step()
+        assert handle.get_status() == GenerationStatus.FINISHED
+        assert handle.read_all()[0].generated_ids == expected
+        captured = capfd.readouterr()
+        if iteration == 1:
+            assert "Hybrid prefix restore:" in captured.out + captured.err
+            assert "MTP paired prefix replay:" in captured.out + captured.err
+
+
+def test_qwen35_mtp_image_add_request(qwen35_mtp_model_path, monkeypatch, capfd):
+    model_path = qwen35_mtp_model_path
+    monkeypatch.setenv("OPENVINO_LOG_LEVEL", "5")
+    scheduler = SchedulerConfig()
+    scheduler.cache_size = 1
+    scheduler.cache_interval_multiplier = 1
+    scheduler.max_num_seqs = 1
+    scheduler.num_linear_attention_blocks = 32
+    scheduler.enable_prefix_caching = False
+    reference = ContinuousBatchingPipeline(model_path, scheduler, "CPU")
+    scheduler.enable_prefix_caching = True
+    draft_scheduler = SchedulerConfig()
+    draft_scheduler.enable_prefix_caching = True
+    draft_scheduler.num_kv_blocks = 128
+    pipeline = ContinuousBatchingPipeline(
+        model_path,
+        scheduler,
+        "CPU",
+        {"draft_model": draft_model(model_path, "CPU", scheduler_config=draft_scheduler)},
+    )
+    pixels = np.zeros((224, 224, 3), dtype=np.uint8)
+    pixels[:, :112, 0] = 255
+    pixels[:, 112:, 1] = 255
+    image = openvino.Tensor(pixels[np.newaxis])
+    prompt = "Repeat the following sequence exactly: " + "one two three four. " * 32
+    config = GenerationConfig(max_new_tokens=24, do_sample=False, ignore_eos=True)
+    reference_handle = reference.add_request(0, prompt, images=[image], generation_config=config)
+    while reference.has_non_finished_requests():
+        reference.step()
+    expected = reference_handle.read_all()[0].generated_ids
+    config.num_assistant_tokens = 4
+    for iteration in range(2):
+        capfd.readouterr()
+        handle = pipeline.add_request(0, prompt, images=[image], generation_config=config)
+        while pipeline.has_non_finished_requests():
+            pipeline.step()
+        assert handle.get_status() == GenerationStatus.FINISHED
+        assert handle.read_all()[0].generated_ids == expected
+        captured = capfd.readouterr()
+        if iteration == 1:
+            assert "Hybrid prefix restore:" in captured.out + captured.err
+            assert "MTP paired prefix replay:" in captured.out + captured.err
+
+
+@pytest.mark.parametrize("media", ["text", "image", "video", "video_metadata"])
+@pytest.mark.parametrize("enable_prefix_caching", [False, True])
+@pytest.mark.parametrize("num_assistant_tokens", [1, 4])
+@pytest.mark.parametrize("strategy", ["prompt_lookup", "mtp"])
+def test_qwen35_vlm_verifier_cache_contract(
+    qwen35_mtp_model_path, media, enable_prefix_caching, num_assistant_tokens, strategy, monkeypatch, capfd
+):
+    model_path = qwen35_mtp_model_path
+    monkeypatch.setenv("OPENVINO_LOG_LEVEL", "5")
+    scheduler = SchedulerConfig()
+    scheduler.enable_prefix_caching = False
+    scheduler.cache_size = 1
+    scheduler.cache_interval_multiplier = 1
+    scheduler.max_num_seqs = 1
+    scheduler.num_linear_attention_blocks = 32
+    reference = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND="PA", scheduler_config=scheduler)
+    scheduler.enable_prefix_caching = enable_prefix_caching
+    if strategy == "prompt_lookup":
+        strategy_properties = {"prompt_lookup": True}
+    else:
+        draft_scheduler = SchedulerConfig()
+        draft_scheduler.enable_prefix_caching = enable_prefix_caching
+        draft_scheduler.num_kv_blocks = 128
+        strategy_properties = {"draft_model": draft_model(model_path, "CPU", scheduler_config=draft_scheduler)}
+    lookup = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND="PA", scheduler_config=scheduler, **strategy_properties)
+    pixels = np.zeros((224, 224, 3), dtype=np.uint8)
+    pixels[:, :112, 0] = 255
+    pixels[:, 112:, 1] = 255
+    media_inputs = {}
+    if media == "image":
+        media_inputs = {"images": [openvino.Tensor(pixels[np.newaxis])]}
+    elif media == "video":
+        media_inputs = {"videos": [openvino.Tensor(np.stack([pixels, np.flip(pixels, axis=1)] * 2))]}
+    elif media == "video_metadata":
+        metadata = VideoMetadata()
+        metadata.frames_indices = [0, 2, 4, 6]
+        media_inputs = {
+            "videos": [openvino.Tensor(np.stack([pixels, np.flip(pixels, axis=1)] * 4))],
+            "videos_metadata": [metadata],
+        }
+    prompt = "Repeat the following sequence exactly: " + "one two three four. " * 32
+    config = GenerationConfig(max_new_tokens=24, do_sample=False, ignore_eos=True)
+    expected = reference.generate(prompt, generation_config=config, **media_inputs)
+    config.num_assistant_tokens = num_assistant_tokens
+    config.max_ngram_size = 3 if strategy == "prompt_lookup" else 0
+    for iteration in range(2):
+        capfd.readouterr()
+        actual = lookup.generate(prompt, generation_config=config, **media_inputs)
+        captured = capfd.readouterr()
+        assert actual.texts == expected.texts
+        if enable_prefix_caching and iteration == 1:
+            assert "Hybrid prefix restore:" in captured.out + captured.err
+            if strategy == "mtp":
+                assert "MTP paired prefix replay:" in captured.out + captured.err
+        if strategy == "mtp":
+            assert actual.extended_perf_metrics.get_num_draft_tokens() > 0
+
+    if media != "text":
+        changed_media = dict(media_inputs)
+        media_key = "images" if media == "image" else "videos"
+        changed_media[media_key] = [openvino.Tensor(255 - media_inputs[media_key][0].data)]
+        config.num_assistant_tokens = 0
+        config.max_ngram_size = 0
+        changed_reference = reference.generate(prompt, generation_config=config, **changed_media)
+        config.num_assistant_tokens = num_assistant_tokens
+        config.max_ngram_size = 3 if strategy == "prompt_lookup" else 0
+        changed_actual = lookup.generate(prompt, generation_config=config, **changed_media)
+        assert changed_actual.texts == changed_reference.texts
+
+    if strategy == "mtp" and enable_prefix_caching and num_assistant_tokens == 4:
+        config.max_new_tokens = 80
+        config.num_assistant_tokens = 0
+        long_reference = reference.generate(prompt, generation_config=config, **media_inputs)
+        config.num_assistant_tokens = num_assistant_tokens
+        long_actual = lookup.generate(prompt, generation_config=config, **media_inputs)
+        assert long_actual.texts == long_reference.texts
+
+        streamed_chunks = []
+
+        def cancel_streamer(chunk):
+            streamed_chunks.append(chunk)
+            return StreamingStatus.CANCEL
+
+        lookup.generate(prompt, generation_config=config, streamer=cancel_streamer, **media_inputs)
+        assert streamed_chunks
+        after_cancel = lookup.generate(prompt, generation_config=config, **media_inputs)
+        assert after_cancel.texts == long_reference.texts
+
+        extended_prompt = prompt + " Continue with five six seven eight."
+        config.num_assistant_tokens = 0
+        extended_reference = reference.generate(extended_prompt, generation_config=config, **media_inputs)
+        config.num_assistant_tokens = num_assistant_tokens
+        extended_actual = lookup.generate(extended_prompt, generation_config=config, **media_inputs)
+        assert extended_actual.texts == extended_reference.texts
+
+        config.max_new_tokens = 24
+        reference_history = ChatHistory()
+        reference_history.append({"role": "user", "content": prompt})
+        config.num_assistant_tokens = 0
+        history_reference = reference.generate(reference_history, generation_config=config, **media_inputs)
+        history = ChatHistory()
+        history.append({"role": "user", "content": prompt})
+        config.num_assistant_tokens = num_assistant_tokens
+        assert not config.return_omni_outputs
+        history_logs = []
+        for iteration in range(2):
+            capfd.readouterr()
+            history_actual = lookup.generate(
+                history, generation_config=config, **(media_inputs if iteration == 0 else {})
+            )
+            captured = capfd.readouterr()
+            history_logs.append(captured.out + captured.err)
+            assert history_actual.texts == history_reference.texts
+            assert history_actual.extended_perf_metrics.get_num_draft_tokens() > 0
+            if iteration == 1:
+                assert "Hybrid prefix restore:" in captured.out + captured.err, "\n".join(history_logs)
+                assert "MTP paired prefix replay:" in captured.out + captured.err
+
+        for chat in (reference_history, history):
+            chat.append({"role": "assistant", "content": history_reference.texts[0]})
+            chat.append({"role": "user", "content": "Continue with five six seven eight."})
+        config.num_assistant_tokens = 0
+        next_reference = reference.generate(reference_history, generation_config=config)
+        config.num_assistant_tokens = num_assistant_tokens
+        next_actual = lookup.generate(history, generation_config=config)
+        assert next_actual.texts == next_reference.texts
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "optimum-intel-internal-testing/tiny-random-qwen2vl",
+        "optimum-intel-internal-testing/tiny-random-qwen3.5",
+    ],
+)
+def test_vlm_prompt_lookup_functionality(cat_tensor, model_id):
     model_path = _get_ov_model(model_id)
 
     ov_pipe = VLMPipeline(model_path, "CPU")
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
     results = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
 
-    ov_pipe_pld = VLMPipeline(model_path, "CPU", prompt_lookup=True)
+    scheduler = SchedulerConfig()
+    scheduler.enable_prefix_caching = True
+    scheduler.max_num_seqs = 1
+    ov_pipe_pld = VLMPipeline(model_path, "CPU", prompt_lookup=True, scheduler_config=scheduler)
     generation_config_pld = _setup_generation_config(
         ov_pipe_pld, max_new_tokens=20, do_sample=False, prompt_lookup=True
     )
