@@ -4,7 +4,6 @@
 #pragma once
 
 #include <filesystem>
-#include <list>
 #include <map>
 #include <random>
 #include <string>
@@ -129,12 +128,6 @@ private:
     ov::InferRequest m_talker_projections;  // dual-output: text_projection + hidden_projection
     ov::InferRequest m_code_predictor;
     ov::InferRequest m_code2wav;
-
-    // LRU cache for talker token embeddings to avoid redundant inference.
-    // Bounded to kMaxEmbeddingCacheSize entries; evicts least recently used on overflow.
-    static constexpr size_t kMaxEmbeddingCacheSize = 256;
-    std::list<std::pair<int64_t, ov::Tensor>> m_embedding_lru_list;
-    std::unordered_map<int64_t, std::list<std::pair<int64_t, ov::Tensor>>::iterator> m_embedding_lru_map;
 
     // Pre-allocated scratch buffers reused across generate_speech() calls
     std::vector<float> m_talker_buf;
