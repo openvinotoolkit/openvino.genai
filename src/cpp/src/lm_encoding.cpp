@@ -165,7 +165,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         m_llm.set_tensor("input_ids", input_ids);
     }
     m_llm.set_tensor("attention_mask", attention_mask);
-    if (position_ids.has_value())
+    if (position_ids.has_value() && position_ids->get_size() > 0)
         m_llm.set_tensor("position_ids", *position_ids);
 
     ov::Tensor beam_idx = ov::Tensor(ov::element::i32, {batch_size});
@@ -293,7 +293,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 
         update_attention_mask_with_beams(m_llm.get_tensor("attention_mask"), next_beams);
 
-        if (position_ids.has_value()) {
+        if (position_ids.has_value() && position_ids->get_size() > 0) {
             if (position_ids->get_shape().size() == 3 && rope_delta.has_value()) {
                 update_3d_position_ids(m_llm.get_tensor("position_ids"), m_llm.get_tensor("attention_mask"), rope_delta.value());
             } else {

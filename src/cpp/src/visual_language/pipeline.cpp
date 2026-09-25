@@ -923,10 +923,11 @@ private:
 };
 
 bool requires_sdpa(const std::filesystem::path& models_dir) {
-    // Force models to use SDPA backend by default until PA is supported. Example:
-    // auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    // vlm_config.model_type == VLMModelType::GEMMA3;
-    return false;
+    // The LFM2-VL language model is a hybrid short-conv + attention model whose exported
+    // IR has no position_ids input and is designed for the stateful SDPA path. Force SDPA
+    // for it; the PagedAttention path diverges numerically for this architecture.
+    auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
+    return vlm_config.model_type == VLMModelType::LFM2_VL;
 }
 
 VLMPipeline::VLMPipeline(
@@ -949,11 +950,22 @@ VLMPipeline::VLMPipeline(
         auto language_model = utils::singleton_core().read_model(
             language_model_path, {}, utils::get_model_properties(properties, "language_model"));
 
+        const bool sdpa_required = requires_sdpa(models_dir);
+        // Models flagged by requires_sdpa() (e.g. LFM2-VL's hybrid short-convolution language model)
+        // can only run through the stateful SDPA backend. A bare ATTENTION_BACKEND=PA request (the
+        // default used by llm_bench and other callers) is silently downgraded to SDPA below. Only a
+        // genuine continuous-batching feature (scheduler_config / prompt lookup / speculative decoding)
+        // cannot be honored and is reported as a conflicting request. `properties` already has
+        // ATTENTION_BACKEND stripped by extract_attention_backend(), so it reflects only such features.
+        OPENVINO_ASSERT(!(sdpa_required && utils::explicitly_requires_paged_attention(properties)),
+            "LFM2-VL uses a hybrid short-convolution language model that is only supported by the stateful "
+            "SDPA backend. Remove the explicit continuous-batching/prompt-lookup/speculative-decoding request.");
+
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-        if (utils::explicitly_requires_paged_attention(user_properties)) {
+        if (!sdpa_required && utils::explicitly_requires_paged_attention(user_properties)) {
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
             m_pimpl = std::make_shared<VLMContinuousBatchingAdapter>(language_model, models_dir, scheduler_config, device, plugin_properties);
-        } else if (attention_backend == PA_BACKEND && !requires_sdpa(models_dir)) {
+        } else if (attention_backend == PA_BACKEND && !sdpa_required) {
             // try to call CB adapter one more time, but with safe guard to silent exception
             try {
                 auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
@@ -1000,11 +1012,20 @@ VLMPipeline::VLMPipeline(
         const auto& [model_str, weights] = utils::get_model_weights_pair(models_map, "language");
         auto language_model = utils::singleton_core().read_model(model_str, weights);
 
+        const bool sdpa_required = requires_sdpa(config_dir_path);
+        // See the models_dir constructor above: requires_sdpa() models only support the stateful SDPA
+        // backend. A bare ATTENTION_BACKEND=PA request is downgraded to SDPA; only genuine
+        // continuous-batching features are reported as conflicting. `properties` has ATTENTION_BACKEND
+        // already stripped by extract_attention_backend().
+        OPENVINO_ASSERT(!(sdpa_required && utils::explicitly_requires_paged_attention(properties)),
+            "LFM2-VL uses a hybrid short-convolution language model that is only supported by the stateful "
+            "SDPA backend. Remove the explicit continuous-batching/prompt-lookup/speculative-decoding request.");
+
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-        if (utils::explicitly_requires_paged_attention(user_properties)) {
+        if (!sdpa_required && utils::explicitly_requires_paged_attention(user_properties)) {
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
             m_pimpl = std::make_shared<VLMContinuousBatchingAdapter>(language_model, models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
-        } else if (attention_backend == PA_BACKEND && !requires_sdpa(config_dir_path)) {
+        } else if (attention_backend == PA_BACKEND && !sdpa_required) {
             // try to call CB adapter one more time, but with safe guard to silent exception
             try {
                 auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
