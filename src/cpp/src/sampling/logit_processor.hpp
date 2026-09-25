@@ -109,6 +109,28 @@ public:
                 m_assistant_confidence_threshold = sampling_params.assistant_confidence_threshold;
             }
         }
+
+        // Thinking / Reasoning control - inserted last so its -inf mask overrides all prior transforms.
+        // When reasoning_config is set, create the transform if start/end IDs are known.
+        // budget == 0 means disable thinking: force </think> immediately.
+        if (sampling_params.reasoning_config.has_value()) {
+            const auto& rc = *sampling_params.reasoning_config;
+            int64_t start_id = rc.start_token_id;
+            int64_t end_id   = rc.end_token_id;
+            int64_t budget   = rc.budget;
+
+            // Only create the transform when start/end IDs are valid.
+            // Pass input_ids (prompt token sequence) to determine initial state.
+            // Stateful: registered in m_stateful_logit_transformers (like the
+            // structured output transformer) so register_new_generated_token
+            // feeds it accepted tokens through the generic loop.
+            if (start_id >= 0 && end_id >= 0 && budget >= 0) {
+                auto thinking_budget = std::make_shared<LogitTransformers::ThinkingBudgetTransform>(
+                    budget, start_id, end_id, input_ids);
+                m_logit_transformers.push_back(thinking_budget);
+                m_stateful_logit_transformers.emplace_back(thinking_budget);
+            }
+        }
     }
 
     float get_assistant_confidence_threshold() {
