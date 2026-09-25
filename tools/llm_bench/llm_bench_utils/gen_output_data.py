@@ -140,6 +140,7 @@ def embed_iterate_data(
     max_sys_mem_share="",
     prompt_idx="",
     tokenization_time=[],
+    output_repr="",
 ):
     iter_data = {}
     iter_data["iteration"] = iter_idx
@@ -163,5 +164,7 @@ def embed_iterate_data(
     iter_data["detokenization_time"] = ""
     iter_data["result_md5"] = ""
     iter_data["output_size"] = ""
-    iter_data["output_repr"] = ""  # embeddings have no generated output
+    # Empty for embeddings (no generated output); rerankers pass the number of
+    # ranked documents returned, e.g. "docs:2".
+    iter_data["output_repr"] = output_repr or ""
     return iter_data

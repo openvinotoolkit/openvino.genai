@@ -288,6 +288,7 @@ def _record_omni_iter(
         gen_time=generation_time,
         res_md5=result_md5_list,
         prompt_idx=prompt_index,
+        output_repr=f"audio:{out_size}sa@{sample_rate}Hz",
         **tokenization_kwargs,
         **memory_metrics,
     )
