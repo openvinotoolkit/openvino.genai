@@ -543,6 +543,264 @@ class GenAIOmniSpeechWrapper(_Qwen3OmniSpeakerMixin):
         return _SpeechResult(speech, QWEN3_OMNI_SAMPLE_RATE, text=texts[0] if texts else "")
 
 
+class Qwen3CustomVoiceWrapper:
+    """Unified wrapper for Qwen3 CustomVoice models via HF or GenAI backends."""
+
+    def __init__(self, model):
+        self.model = model
+        self.model_type = "speech-generation"
+
+    def __getattr__(self, attr):
+        if attr in self.__dict__:
+            return getattr(self, attr)
+        return getattr(self.model, attr)
+
+    def get_speaker_embedding_shape(self):
+        return None
+
+    def generate(self, prompt, speaker_embedding=None, language="", voice="", instruct="", **kwargs):
+        if speaker_embedding is not None:
+            LOGGER.debug("Ignoring speaker_embedding for Qwen3 CustomVoice.")
+
+        selected_speaker = voice.strip() if isinstance(voice, str) else ""
+        if not selected_speaker:
+            raise ValueError("Qwen3 CustomVoice requires --speech-voice to select a speaker.")
+
+        selected_language = language.strip() if isinstance(language, str) else ""
+        resolved_language = selected_language or "Auto"
+        selected_instruct = instruct.strip() if isinstance(instruct, str) else ""
+
+        # Keep WWB speech comparisons deterministic for Qwen3 unless explicitly overridden.
+        kwargs.setdefault("do_sample", False)
+        kwargs.setdefault("subtalker_dosample", False)
+        kwargs.setdefault("non_streaming_mode", True)
+        kwargs.setdefault("repetition_penalty", 1.2)
+
+        if hasattr(self.model, "generate_custom_voice"):
+            wavs, sample_rate = self.model.generate_custom_voice(
+                text=prompt,
+                speaker=selected_speaker,
+                language=resolved_language,
+                instruct=selected_instruct,
+                **kwargs,
+            )
+            return _SpeechResult(np.array(wavs[0]).reshape(-1), sample_rate)
+
+        if hasattr(self.model, "preprocess_input"):
+            preprocess_kwargs = {
+                "text": [prompt],
+                "language": [resolved_language],
+                "speaker": selected_speaker,
+            }
+            if selected_instruct:
+                preprocess_kwargs["instruct"] = selected_instruct
+            inputs = self.model.preprocess_input(**preprocess_kwargs)
+            speeches = self.model.generate(**inputs, **kwargs)
+
+            if isinstance(speeches, list):
+                speech = speeches[0]
+            else:
+                speech = speeches
+
+            waveform = speech.numpy() if hasattr(speech, "numpy") else np.asarray(speech)
+            return _SpeechResult(np.asarray(waveform, dtype=np.float32).reshape(-1), int(self.model.sampling_rate))
+
+        generation_properties = {"speaker": selected_speaker}
+        generation_properties["language"] = resolved_language
+        if selected_instruct:
+            generation_properties["instruct"] = selected_instruct
+
+        generation_properties.update(kwargs)
+
+        return self.model.generate(prompt, **generation_properties)
+
+
+class Qwen3VoiceDesignWrapper:
+    """Unified wrapper for Qwen3 VoiceDesign models via HF or GenAI backends."""
+
+    def __init__(self, model):
+        self.model = model
+        self.model_type = "speech-generation"
+
+    def __getattr__(self, attr):
+        if attr in self.__dict__:
+            return getattr(self, attr)
+        return getattr(self.model, attr)
+
+    def get_speaker_embedding_shape(self):
+        return None
+
+    def generate(self, prompt, speaker_embedding=None, language="", voice="", instruct="", **kwargs):
+        if speaker_embedding is not None:
+            LOGGER.debug("Ignoring speaker_embedding for Qwen3 VoiceDesign.")
+
+        selected_language = language.strip() if isinstance(language, str) else ""
+        resolved_language = selected_language or "Auto"
+        selected_instruct = instruct.strip() if isinstance(instruct, str) else ""
+        selected_voice = voice.strip() if isinstance(voice, str) else ""
+
+        if selected_voice:
+            LOGGER.warning("Ignoring --speech-voice for Qwen3 VoiceDesign.")
+
+        # Keep WWB speech comparisons deterministic for Qwen3 unless explicitly overridden.
+        kwargs.setdefault("do_sample", False)
+        kwargs.setdefault("subtalker_dosample", False)
+        kwargs.setdefault("non_streaming_mode", True)
+        kwargs.setdefault("repetition_penalty", 1.2)
+
+        if hasattr(self.model, "generate_voice_design"):
+            wavs, sample_rate = self.model.generate_voice_design(
+                text=prompt,
+                language=resolved_language,
+                instruct=selected_instruct,
+                **kwargs,
+            )
+            return _SpeechResult(np.array(wavs[0]).reshape(-1), sample_rate)
+
+        if hasattr(self.model, "preprocess_input"):
+            preprocess_kwargs = {
+                "text": [prompt],
+                "language": [resolved_language],
+            }
+            if selected_instruct:
+                preprocess_kwargs["instruct"] = selected_instruct
+            inputs = self.model.preprocess_input(**preprocess_kwargs)
+            speeches = self.model.generate(**inputs, **kwargs)
+
+            if isinstance(speeches, list):
+                speech = speeches[0]
+            else:
+                speech = speeches
+
+            waveform = speech.numpy() if hasattr(speech, "numpy") else np.asarray(speech)
+            return _SpeechResult(np.asarray(waveform, dtype=np.float32).reshape(-1), int(self.model.sampling_rate))
+
+        generation_properties = {}
+        generation_properties["language"] = resolved_language
+        if selected_instruct:
+            generation_properties["instruct"] = selected_instruct
+
+        generation_properties.update(kwargs)
+
+        return self.model.generate(prompt, **generation_properties)
+
+
+class Qwen3BaseWrapper:
+    """Unified wrapper for Qwen3 Base models via HF or GenAI backends."""
+
+    def __init__(self, model):
+        self.model = model
+        self.model_type = "speech-generation"
+
+    def __getattr__(self, attr):
+        if attr in self.__dict__:
+            return getattr(self, attr)
+        return getattr(self.model, attr)
+
+    def get_speaker_embedding_shape(self):
+        return None
+
+    def generate(
+        self,
+        prompt,
+        speaker_embedding=None,
+        language="",
+        voice="",
+        instruct="",
+        ref_audio="",
+        ref_text="",
+        **kwargs,
+    ):
+        if speaker_embedding is not None:
+            LOGGER.debug("Ignoring speaker_embedding for Qwen3 Base.")
+
+        selected_language = language.strip() if isinstance(language, str) else ""
+        resolved_language = selected_language or "Auto"
+        selected_instruct = instruct.strip() if isinstance(instruct, str) else ""
+        selected_ref_text = ref_text.strip() if isinstance(ref_text, str) else ""
+        selected_ref_audio = ref_audio.strip() if isinstance(ref_audio, str) else ""
+
+        if not selected_ref_audio:
+            raise ValueError("Qwen3 Base requires --speech-ref-audio (or speech_ref_audio column in prompt data).")
+
+        audio_data, sample_rate = sf.read(selected_ref_audio, dtype="float32", always_2d=False)
+        if sample_rate != 24000:
+            raise ValueError(
+                f"Qwen3 Base strict check failed: reference audio sample rate must be 24000 Hz, got {sample_rate} Hz "
+                f"for '{selected_ref_audio}'."
+            )
+        ref_audio_waveform = np.asarray(audio_data, dtype=np.float32)
+        if ref_audio_waveform.ndim > 1:
+            ref_audio_waveform = np.mean(ref_audio_waveform, axis=-1, dtype=np.float32)
+        ref_audio_tuple = (ref_audio_waveform.reshape(-1), int(sample_rate))
+
+        # Keep WWB speech comparisons deterministic for Qwen3 unless explicitly overridden.
+        kwargs.setdefault("do_sample", False)
+        kwargs.setdefault("subtalker_dosample", False)
+        # GenAI currently defaults non_streaming_mode to True, whereas HF seems to default
+        # it to False. So, force them both to True for now...
+        kwargs.setdefault("non_streaming_mode", True)
+        # Qwen3 Base currently behaves better in WWB with a slightly stronger repetition penalty.
+        kwargs.setdefault("repetition_penalty", 1.2)
+
+        if hasattr(self.model, "generate_voice_clone"):
+            if not selected_ref_text:
+                # HF Base requires x_vector_only_mode for ref-audio-only cloning.
+                kwargs.setdefault("x_vector_only_mode", True)
+
+            wavs, sample_rate = self.model.generate_voice_clone(
+                text=prompt,
+                language=resolved_language,
+                instruct=selected_instruct,
+                ref_audio=ref_audio_tuple,
+                ref_text=selected_ref_text if selected_ref_text else None,
+                **kwargs,
+            )
+            return _SpeechResult(np.array(wavs[0]).reshape(-1), sample_rate)
+
+        if hasattr(self.model, "preprocess_input"):
+            preprocess_kwargs = {
+                "text": [prompt],
+                "language": [resolved_language],
+                "ref_audio": ref_audio_tuple,
+            }
+            if selected_ref_text:
+                preprocess_kwargs["ref_text"] = selected_ref_text
+            else:
+                preprocess_kwargs["x_vector_only_mode"] = True
+
+            # x_vector_only_mode is consumed by preprocess_input in Optimum, not generate.
+            kwargs.pop("x_vector_only_mode", None)
+
+            inputs = self.model.preprocess_input(**preprocess_kwargs)
+            speeches = self.model.generate(**inputs, **kwargs)
+
+            if isinstance(speeches, list):
+                speech = speeches[0]
+            else:
+                speech = speeches
+
+            waveform = speech.numpy() if hasattr(speech, "numpy") else np.asarray(speech)
+            return _SpeechResult(np.asarray(waveform, dtype=np.float32).reshape(-1), int(self.model.sampling_rate))
+
+        generation_properties = {}
+        generation_properties["language"] = resolved_language
+        if selected_instruct:
+            generation_properties["instruct"] = selected_instruct
+        if selected_ref_text:
+            generation_properties["ref_text"] = selected_ref_text
+
+        import openvino as ov
+
+        generation_properties["ref_audio"] = ov.Tensor(ref_audio_waveform.reshape(-1))
+
+        generation_properties.update(kwargs)
+
+        result = self.model.generate(prompt, **generation_properties)
+
+        return result
+
+
 def _safe_metric_mean(values):
     arr = np.array([np.nan if value is None else value for value in values], dtype=float)
     if np.isnan(arr).all():
@@ -564,6 +822,10 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         vocoder_path: str = None,
         speech_language: str = "",
         speech_voice: str = "",
+        speech_instruct: str = "",
+        speech_ref_audio: str = "",
+        speech_ref_text: str = "",
+        max_new_tokens: int = None,
     ) -> None:
         if base_model is None and gt_data is None:
             raise ValueError("Speech generation pipeline for evaluation or ground truth data must be defined")
@@ -576,8 +838,15 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         self.last_cmp = None
         self.speaker_embedding_file_path = speaker_embedding_file_path
         self.speaker_embedding = None
-        self.speech_language = speech_language.strip().lower() if isinstance(speech_language, str) else ""
+        self.speech_language = speech_language.strip() if isinstance(speech_language, str) else ""
         self.speech_voice = speech_voice.strip() if isinstance(speech_voice, str) else ""
+        self.speech_instruct = speech_instruct.strip() if isinstance(speech_instruct, str) else ""
+        self.speech_ref_audio = speech_ref_audio.strip() if isinstance(speech_ref_audio, str) else ""
+        self.speech_ref_text = speech_ref_text.strip() if isinstance(speech_ref_text, str) else ""
+        self.max_new_tokens = max_new_tokens
+
+        if self.speech_ref_audio and not os.path.exists(self.speech_ref_audio):
+            raise ValueError(f"Reference audio file does not exist: {self.speech_ref_audio}")
 
         if self.speaker_embedding_file_path is not None and not os.path.exists(self.speaker_embedding_file_path):
             raise ValueError(f"Speaker embedding file does not exist: {self.speaker_embedding_file_path}")
@@ -704,6 +973,17 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         if missing_columns:
             raise ValueError(f"{data_name.capitalize()} is missing required columns: {', '.join(missing_columns)}")
 
+    @staticmethod
+    def _get_expected_speaker_embedding_shape(model):
+        getter = getattr(model, "get_speaker_embedding_shape", None)
+        if not callable(getter):
+            return None
+
+        shape = getter()
+        if shape is None:
+            return None
+        return tuple(int(dim) for dim in shape)
+
     def _load_speaker_embedding(self, speaker_embedding_file_path: str, expected_shape=None):
         if speaker_embedding_file_path is None:
             return None
@@ -741,14 +1021,41 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         if self.speaker_embedding is not None or self.speaker_embedding_file_path is not None:
             return
 
+        expected_shape = self._get_expected_speaker_embedding_shape(model)
+        if expected_shape is None:
+            return
+
         if hasattr(model, "resolve_default_speaker_embedding_file"):
             self.speaker_embedding_file_path = model.resolve_default_speaker_embedding_file()
-            expected_shape = tuple(int(dim) for dim in model.get_speaker_embedding_shape())
             self.speaker_embedding = self._load_speaker_embedding(self.speaker_embedding_file_path, expected_shape)
 
     def _generate_data(self, model, gen_speech_fn=None, audio_dir="reference"):
-        def default_gen_speech_fn(model, prompt, speaker_embedding=None, language="", voice=""):
-            result = model.generate(prompt, speaker_embedding, language=language, voice=voice)
+        def default_gen_speech_fn(
+            model,
+            prompt,
+            speaker_embedding=None,
+            language="",
+            voice="",
+            instruct="",
+            ref_audio="",
+            ref_text="",
+            max_new_tokens=None,
+        ):
+            generation_kwargs = {}
+            effective_max_new_tokens = max_new_tokens if max_new_tokens is not None else self.max_new_tokens
+            if effective_max_new_tokens is not None:
+                generation_kwargs["max_new_tokens"] = effective_max_new_tokens
+
+            result = model.generate(
+                prompt,
+                speaker_embedding,
+                language=language,
+                voice=voice,
+                instruct=instruct,
+                ref_audio=ref_audio,
+                ref_text=ref_text,
+                **generation_kwargs,
+            )
             audio_data = np.array(result.speeches[0].data).reshape(-1)
             try:
                 sr = int(result.output_sample_rate)
@@ -787,7 +1094,7 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         audios = []
         texts = []
         prompt_values = data["prompts"].values
-        expected_shape = tuple(int(dim) for dim in model.get_speaker_embedding_shape())
+        expected_shape = self._get_expected_speaker_embedding_shape(model)
 
         for idx, prompt in tqdm(enumerate(prompt_values), total=len(prompt_values), desc="Evaluate pipeline"):
             speaker_embedding_file_path = self.speaker_embedding_file_path
@@ -796,17 +1103,41 @@ class SpeechGenerationEvaluator(BaseEvaluator):
                 if isinstance(speaker_embedding_file_path, str) and speaker_embedding_file_path.strip() == "":
                     speaker_embedding_file_path = None
 
-            if speaker_embedding_file_path:
+            if expected_shape is not None and speaker_embedding_file_path:
                 speaker_embedding = self._load_speaker_embedding(speaker_embedding_file_path, expected_shape)
             else:
                 speaker_embedding = self.speaker_embedding
+
+            speech_language = self.speech_language
+            if "speech_language" in data.columns and pd.notna(data.iloc[idx]["speech_language"]):
+                speech_language = str(data.iloc[idx]["speech_language"]).strip()
+
+            speech_voice = self.speech_voice
+            if "speech_voice" in data.columns and pd.notna(data.iloc[idx]["speech_voice"]):
+                speech_voice = str(data.iloc[idx]["speech_voice"]).strip()
+
+            speech_instruct = self.speech_instruct
+            if "speech_instruct" in data.columns and pd.notna(data.iloc[idx]["speech_instruct"]):
+                speech_instruct = str(data.iloc[idx]["speech_instruct"]).strip()
+
+            speech_ref_audio = self.speech_ref_audio
+            if "speech_ref_audio" in data.columns and pd.notna(data.iloc[idx]["speech_ref_audio"]):
+                speech_ref_audio = str(data.iloc[idx]["speech_ref_audio"]).strip()
+
+            speech_ref_text = self.speech_ref_text
+            if "speech_ref_text" in data.columns and pd.notna(data.iloc[idx]["speech_ref_text"]):
+                speech_ref_text = str(data.iloc[idx]["speech_ref_text"]).strip()
 
             result = generation_fn(
                 model,
                 prompt,
                 speaker_embedding=speaker_embedding,
-                language=self.speech_language,
-                voice=self.speech_voice,
+                language=speech_language,
+                voice=speech_voice,
+                instruct=speech_instruct,
+                ref_audio=speech_ref_audio,
+                ref_text=speech_ref_text,
+                max_new_tokens=self.max_new_tokens,
             )
             # Custom gen_speech_fn may still return the legacy (audio, sr) tuple; accept both.
             if len(result) == 3:
