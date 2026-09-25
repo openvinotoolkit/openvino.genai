@@ -169,11 +169,16 @@ class TextEvaluator(BaseEvaluator):
             if 'token_type_ids' in inputs and 'token_type_ids' not in list(inspect.signature(model.forward).parameters.keys()):
                 inputs.pop('token_type_ids')
 
+            generate_kwargs = {
+                "max_new_tokens": max_new_tokens,
+                **get_ignore_parameters_flag(),
+                **(generation_config_extra or {}),
+            }
             if is_awq:
                 with patch_awq_for_inference(is_awq):
-                    tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens, **get_ignore_parameters_flag())
+                    tokens = model.generate(**inputs, **generate_kwargs)
             else:
-                tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens, **get_ignore_parameters_flag())
+                tokens = model.generate(**inputs, **generate_kwargs)
             if crop_question:
                 tokens = tokens[:, inputs["input_ids"].shape[-1] :]
             return self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]

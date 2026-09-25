@@ -168,6 +168,7 @@ def analyze_args(args):
     model_args['mem_consumption'] = args.memory_consumption
     model_args['batch_size'] = args.batch_size
     model_args['num_beams'] = args.num_beams
+    model_args['do_sample'] = args.do_sample
     model_args['torch_compile_backend'] = args.torch_compile_backend
     model_args['torch_compile_dynamic'] = args.torch_compile_dynamic
     model_args['torch_compile_options'] = args.torch_compile_options
