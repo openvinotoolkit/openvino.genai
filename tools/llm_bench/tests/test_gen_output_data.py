@@ -50,7 +50,14 @@ def test_count_words(text, expected):
 
 def test_text_output_repr_uses_count_words():
     assert text_output_repr("Hello , world .") == "text:2w"
-    assert text_output_repr("...") == ""
+    assert text_output_repr("...") == "text:0w"
+
+
+def test_text_output_repr_empty_output():
+    assert text_output_repr("") == "empty"
+    assert text_output_repr("  \n\t") == "empty"
+    assert text_output_repr(None) == "empty"
+    assert text_output_repr("", FakeHFTokenizer()) == "empty"
 
 
 # --------------------------------------------------------------------------- #
@@ -110,7 +117,7 @@ def test_gen_iterate_data_stores_text_tokens():
 def test_text_output_repr_appends_token_count():
     assert text_output_repr("Hello , world .", FakeHFTokenizer()) == "text:2w/4t"
     assert text_output_repr("Hello world", FakeGenAITokenizer()) == "text:2w/8t"
-    assert text_output_repr("...", FakeHFTokenizer()) == ""
+    assert text_output_repr("...", FakeHFTokenizer()) == "text:0w/1t"
 
 
 def test_text_output_repr_drops_unknown_token_count():
