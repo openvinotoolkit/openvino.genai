@@ -83,7 +83,7 @@ public:
      * @param schdl A scheduler managing certain sequence groups.
      * @param sequence_groups Sequence groups currently utilizing the cache (managed by the scheduler).
      */
-    void dump_cache_state(const Scheduler &schdl, const std::vector <SequenceGroup::Ptr> &sequence_groups,
+    void dump_cache_state(const ContinuousBatchingScheduler &schdl, const std::vector <SequenceGroup::Ptr> &sequence_groups,
                           size_t dump_count) {
         dump_cache_state(schdl.m_cache_orchestrator->get_block_manager(CacheType::KV_CACHE), sequence_groups, dump_count);
 

@@ -465,7 +465,7 @@ public:
      * @param scheduler_output The scheduler output struct with information on the specifics of the token scheduling during this forward call
      * @return An ov::Tensor with next-token logit scores for each sequence processed during this `forward` call.
      */
-    ov::Tensor forward(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
+    ov::Tensor forward(const std::vector<SequenceGroup::Ptr> & sequence_groups, const ContinuousBatchingScheduler::Output& scheduler_output) {
         m_sequence_hidden_state_mapping.clear();
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
 
@@ -1036,7 +1036,7 @@ public:
     }
 
     bool _has_missing_generated_embeddings(const std::vector<SequenceGroup::Ptr>& sequence_groups,
-                                           const Scheduler::Output& scheduler_output) const {
+                                           const ContinuousBatchingScheduler::Output& scheduler_output) const {
         for (size_t seq_group_id : scheduler_output.m_scheduled_sequence_groups_ids) {
             const SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
             for (const auto& seq : sequence_group->get_running_sequences()) {
@@ -1048,7 +1048,7 @@ public:
         return false;
     }
 
-    void append_embeddings(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
+    void append_embeddings(const std::vector<SequenceGroup::Ptr> & sequence_groups, const ContinuousBatchingScheduler::Output& scheduler_output) {
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
         size_t num_generated_ids_without_embeddings = 0;
         OPENVINO_ASSERT(sequence_groups.size() > 0);
@@ -1138,10 +1138,10 @@ private:
      *   after the prompt has been fully processed.
      *
      * @param sequence_groups Full list of sequence groups; entries are accessed by scheduler IDs.
-     * @param scheduler_output Scheduler result with ordered `m_scheduled_sequence_groups_ids`.
+     * @param scheduler_output Continuous batching scheduler result with ordered `m_scheduled_sequence_groups_ids`.
      */
     void _set_query_to_query_tensors(const std::vector<SequenceGroup::Ptr>& sequence_groups,
-                                     const Scheduler::Output& scheduler_output) {
+                                     const ContinuousBatchingScheduler::Output& scheduler_output) {
         static constexpr const char* k_qq_bias_name = "qq_bias";
         static constexpr const char* k_qq_bias_begins_name = "qq_bias_begins";
 
@@ -1353,7 +1353,7 @@ private:
     void _fill_indices_from_block_tables(
         const std::vector<std::string>& dst_tensor_names,
         const std::vector<SequenceGroup::Ptr>& sequence_groups,
-        const Scheduler::Output& scheduler_output,
+        const ContinuousBatchingScheduler::Output& scheduler_output,
         const std::vector<std::map<size_t, std::vector<size_t>>>& seq_id_to_select_logical_idx_maps) {
         OPENVINO_ASSERT(seq_id_to_select_logical_idx_maps.size() == dst_tensor_names.size() ||
                         (dst_tensor_names.size() == 1 && !m_use_per_layer_kv_block_indices) ||
@@ -1420,7 +1420,7 @@ private:
     // (i.e. ascending for an ordered map)
     void _fill_select_indices_from_block_tables(
         const std::vector<std::string>& dst_tensor_names,
-        const Scheduler::Output& scheduler_output,
+        const ContinuousBatchingScheduler::Output& scheduler_output,
         const std::vector<std::map<size_t, std::vector<size_t>>>& seq_id_to_select_logical_idx_maps) {
         OPENVINO_ASSERT(seq_id_to_select_logical_idx_maps.size() == dst_tensor_names.size() ||
                         (dst_tensor_names.size() == 1 && !m_use_per_layer_kv_block_indices) ||
@@ -1455,7 +1455,7 @@ private:
     }
 
     void _set_block_indices(const std::vector<SequenceGroup::Ptr>& sequence_groups,
-                            const Scheduler::Output& scheduler_output,
+                            const ContinuousBatchingScheduler::Output& scheduler_output,
                             const std::map<size_t, std::set<size_t>>& seq_id_to_skipped_blocks_map) {
         std::vector<std::string> tensor_names = {"block_indices"};
 
@@ -1518,7 +1518,7 @@ private:
     }
 
     void _set_cache_rotation_coefficients(const std::vector<SequenceGroup::Ptr>& sequence_groups,
-                                          const Scheduler::Output& scheduler_output) {
+                                          const ContinuousBatchingScheduler::Output& scheduler_output) {
         std::vector<std::string> rotation_indices_tensor_names(m_num_decoder_layers);
         for (size_t i = 0; i < m_num_decoder_layers; i++) {
             auto tensor_name = std::string("rotated_block_indices.") + std::to_string(i);
@@ -1552,7 +1552,7 @@ private:
         }
     }
 
-    void _collect_attention_scores(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
+    void _collect_attention_scores(const std::vector<SequenceGroup::Ptr> & sequence_groups, const ContinuousBatchingScheduler::Output& scheduler_output) {
         m_last_attention_scores.clear();
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
         using IndexSpan = std::pair<size_t, size_t>;
@@ -1604,7 +1604,7 @@ private:
         }
     }
 
-    void _collect_adaptive_rkv_block_diversities(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
+    void _collect_adaptive_rkv_block_diversities(const std::vector<SequenceGroup::Ptr> & sequence_groups, const ContinuousBatchingScheduler::Output& scheduler_output) {
         m_last_block_diversities.clear();
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
         using IndexSpan = std::pair<size_t, size_t>;
@@ -1658,11 +1658,11 @@ private:
     }
 
     void _set_xattention_tensors(const std::vector<SequenceGroup::Ptr>& sequence_groups,
-                                 const Scheduler::Output& scheduler_output,
+                                 const ContinuousBatchingScheduler::Output& scheduler_output,
                                  size_t batch_size_in_sequences) {
         ov::Tensor xattention_block_size(ov::element::i32, {});
         ov::Tensor xattention_stride(ov::element::i32, {});
-        const Scheduler::KVPagedAttentionGlobalData& kv_global_data = scheduler_output.get_kv_paged_attention_global_data();
+        const ContinuousBatchingScheduler::KVPagedAttentionGlobalData& kv_global_data = scheduler_output.get_kv_paged_attention_global_data();
         xattention_block_size.data<int32_t>()[0] = kv_global_data.xattention_block_size;
         xattention_stride.data<int32_t>()[0] = kv_global_data.xattention_stride;
         m_request.set_tensor("xattention_block_size", xattention_block_size);
@@ -1693,10 +1693,10 @@ private:
     }
 
     void _set_adaptive_rkv_tensors(const std::vector<SequenceGroup::Ptr>& sequence_groups,
-                                   const Scheduler::Output& scheduler_output,
+                                   const ContinuousBatchingScheduler::Output& scheduler_output,
                                    size_t batch_size_in_sequences) {
         ov::Tensor adaptive_rkv_start_size(ov::element::i32, {});
-        const Scheduler::KVPagedAttentionGlobalData& kv_global_data = scheduler_output.get_kv_paged_attention_global_data();
+        const ContinuousBatchingScheduler::KVPagedAttentionGlobalData& kv_global_data = scheduler_output.get_kv_paged_attention_global_data();
         adaptive_rkv_start_size.data<int32_t>()[0] = kv_global_data.adaptive_rkv_start_size;
         m_request.set_tensor("adaptive_rkv_start_size", adaptive_rkv_start_size);
 
@@ -1813,7 +1813,7 @@ private:
      *        paged_conv_past_lens, paged_conv_cache_interval.
      */
     void _set_linear_attention_inputs(const std::vector<SequenceGroup::Ptr>& sequence_groups,
-                                       const Scheduler::Output& scheduler_output,
+                                       const ContinuousBatchingScheduler::Output& scheduler_output,
                                        size_t batch_size_in_sequences) {
         const size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
 
