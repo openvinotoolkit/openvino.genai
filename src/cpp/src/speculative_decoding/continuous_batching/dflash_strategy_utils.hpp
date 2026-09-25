@@ -199,6 +199,40 @@ inline ov::Tensor build_draft_attention_mask(size_t committed_context_length,
     return attention_mask;
 }
 
+// Per-row drafts (exported with a token_type_ids input) take every per-token input over the new rows
+// [context delta ; block]: input_ids is read in the block rows and hidden_states in the context rows.
+inline ov::Tensor build_draft_row_input_ids(int64_t seed_token,
+                                            int64_t mask_token_id,
+                                            size_t hidden_delta_length,
+                                            size_t candidate_count) {
+    auto block_ids = build_draft_input_ids(seed_token, mask_token_id, candidate_count);
+    ov::Tensor input_ids(ov::element::i64, {1, hidden_delta_length + block_ids.get_size()});
+    auto* data = input_ids.data<int64_t>();
+    // context rows read the target hidden states; their embedding is never used
+    std::fill_n(data, hidden_delta_length, mask_token_id);
+    std::copy_n(block_ids.data<const int64_t>(), block_ids.get_size(), data + hidden_delta_length);
+    return input_ids;
+}
+
+inline ov::Tensor build_draft_row_hidden_states(const ov::Tensor& hidden_delta, size_t candidate_count) {
+    const auto shape = hidden_delta.get_shape();
+    OPENVINO_ASSERT(shape.size() == 3, "DFlash hidden delta must have rank 3.");
+    ov::Tensor hidden_states(hidden_delta.get_element_type(), {shape[0] + candidate_count + 1, shape[1], shape[2]});
+    auto* data = static_cast<uint8_t*>(hidden_states.data());
+    std::memcpy(data, hidden_delta.data(), hidden_delta.get_byte_size());
+    // block rows read their own embeddings; their hidden states are never used
+    std::memset(data + hidden_delta.get_byte_size(), 0, hidden_states.get_byte_size() - hidden_delta.get_byte_size());
+    return hidden_states;
+}
+
+inline ov::Tensor build_draft_token_type_ids(size_t hidden_delta_length, size_t candidate_count) {
+    ov::Tensor token_type_ids(ov::element::i64, {1, hidden_delta_length + candidate_count + 1});
+    auto* data = token_type_ids.data<int64_t>();
+    std::fill_n(data, hidden_delta_length, 0);
+    std::fill_n(data + hidden_delta_length, candidate_count + 1, 1);
+    return token_type_ids;
+}
+
 inline size_t draft_candidate_count(size_t num_assistant_tokens, size_t generated_len, size_t max_new_tokens) {
     OPENVINO_ASSERT(num_assistant_tokens > 0, "DFlash num_assistant_tokens must be greater than 0.");
     if (generated_len >= max_new_tokens) {

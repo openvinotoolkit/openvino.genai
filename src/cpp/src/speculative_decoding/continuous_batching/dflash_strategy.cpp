@@ -10,6 +10,7 @@
 
 #include <openvino/pass/sdpa_to_paged_attention.hpp>
 
+#include "continuous_batching/cache/kv_cache_manager.hpp"
 #include "continuous_batching/paged_attention_transformations.hpp"
 #include "sampling/sampler.hpp"
 #include "sequence_group.hpp"
@@ -66,13 +67,19 @@ public:
     DFlashCBDraftRunner(const ov::genai::ModelDesc& model_desc,
                         const Tokenizer& tokenizer,
                         const ov::genai::utils::dflash::DFlashRTInfo& rt_info,
-                        EmbeddingsModel::Ptr embedding_model = nullptr)
+                        EmbeddingsModel::Ptr embedding_model = nullptr,
+                        bool paged_attention = false)
         : m_tokenizer(tokenizer),
           m_embedding_model(std::move(embedding_model)),
-          m_request(create_draft_infer_request(model_desc, static_cast<bool>(m_embedding_model))),
+          m_request(create_draft_infer_request(model_desc, static_cast<bool>(m_embedding_model), paged_attention)),
           m_sampler(tokenizer),
           m_mask_token_id(rt_info.mask_token_id) {
+        m_paged_attention = paged_attention;
         m_has_beam_idx = has_compiled_input(m_request.get_compiled_model(), "beam_idx");
+        m_has_token_type_ids = has_compiled_input(m_request.get_compiled_model(), "token_type_ids");
+        if (m_paged_attention) {
+            m_kv_cache = std::make_unique<KVCacheManager>(m_request);
+        }
         if (m_has_beam_idx) {
             m_beam_idx = ov::Tensor(ov::element::i32, {BATCH_SIZE});
             std::fill_n(m_beam_idx.data<int32_t>(), m_beam_idx.get_size(), 0);
@@ -116,10 +123,20 @@ public:
                         "DFlash draft hidden_states input must have shape [seq_len, 1, hidden].");
         const size_t hidden_delta_length = hidden_delta_shape[0];
 
-        auto input_ids = build_input_ids(seed_token, candidate_count);
+        if (m_paged_attention) {
+            return infer_paged(seed_token, hidden_delta, candidate_count);
+        }
         auto position_ids = build_position_ids(hidden_delta_length, candidate_count);
         auto attention_mask = build_attention_mask(hidden_delta_length, candidate_count);
-        m_request.set_tensor("hidden_states", hidden_delta);
+        ov::Tensor input_ids;
+        if (m_has_token_type_ids) {
+            input_ids = dflash_cb::build_draft_row_input_ids(seed_token, m_mask_token_id, hidden_delta_length, candidate_count);
+            m_request.set_tensor("hidden_states", dflash_cb::build_draft_row_hidden_states(hidden_delta, candidate_count));
+            m_request.set_tensor("token_type_ids", dflash_cb::build_draft_token_type_ids(hidden_delta_length, candidate_count));
+        } else {
+            input_ids = build_input_ids(seed_token, candidate_count);
+            m_request.set_tensor("hidden_states", hidden_delta);
+        }
         m_request.set_tensor("position_ids", position_ids);
         m_request.set_tensor("attention_mask", attention_mask);
         if (m_embedding_model) {
@@ -178,9 +195,76 @@ private:
         m_raw_perf_metrics.m_batch_sizes.clear();
     }
 
+    // Paged draft: the rows [context delta ; block] go along the token axis. The committed context
+    // precedes past_lens, so the block written by the previous step is overwritten, which rolls it back.
+    ov::Tensor infer_paged(int64_t seed_token, const ov::Tensor& hidden_delta, size_t candidate_count) {
+        const size_t hidden_delta_length = hidden_delta.get_shape()[0];
+        const size_t num_rows = hidden_delta_length + candidate_count + 1;
+        const size_t context_length = m_committed_context_length + num_rows;
+        const size_t block_size = m_kv_cache->get_block_size();
+        const size_t num_blocks = (context_length + block_size - 1) / block_size;
+        if (m_kv_cache->get_num_allocated_blocks() < num_blocks) {
+            m_kv_cache->allocate_cache_if_needed(std::max(num_blocks, 2 * m_kv_cache->get_num_allocated_blocks()));
+        }
+
+        auto flatten = [](const ov::Tensor& tensor, ov::Shape shape) {
+            ov::Tensor flat(tensor.get_element_type(), shape);
+            tensor.copy_to(ov::Tensor(flat.get_element_type(), tensor.get_shape(), flat.data()));
+            return flat;
+        };
+        auto input_ids = dflash_cb::build_draft_row_input_ids(seed_token, m_mask_token_id, hidden_delta_length, candidate_count);
+        m_request.set_tensor("hidden_states", dflash_cb::build_draft_row_hidden_states(hidden_delta, candidate_count));
+        m_request.set_tensor("position_ids", flatten(build_position_ids(hidden_delta_length, candidate_count), {num_rows}));
+        m_request.set_tensor("token_type_ids",
+                             flatten(dflash_cb::build_draft_token_type_ids(hidden_delta_length, candidate_count), {num_rows, 1}));
+
+        ov::Tensor past_lens(ov::element::i32, {1});
+        past_lens.data<int32_t>()[0] = static_cast<int32_t>(m_committed_context_length);
+        ov::Tensor subsequence_begins(ov::element::i32, {2});
+        subsequence_begins.data<int32_t>()[0] = 0;
+        subsequence_begins.data<int32_t>()[1] = static_cast<int32_t>(num_rows);
+        ov::Tensor block_indices(ov::element::i32, {num_blocks});
+        std::iota(block_indices.data<int32_t>(), block_indices.data<int32_t>() + num_blocks, 0);
+        ov::Tensor block_indices_begins(ov::element::i32, {2});
+        block_indices_begins.data<int32_t>()[0] = 0;
+        block_indices_begins.data<int32_t>()[1] = static_cast<int32_t>(num_blocks);
+        ov::Tensor max_context_len(ov::element::i32, {});
+        max_context_len.data<int32_t>()[0] = static_cast<int32_t>(context_length);
+        m_request.set_tensor("past_lens", past_lens);
+        m_request.set_tensor("subsequence_begins", subsequence_begins);
+        m_request.set_tensor("block_indices", block_indices);
+        m_request.set_tensor("block_indices_begins", block_indices_begins);
+        m_request.set_tensor("max_context_len", max_context_len);
+
+        if (m_embedding_model) {
+            CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(
+                m_embedding_model->get_request_queue().get());
+            ov::Tensor input_embeds = m_embedding_model->infer(embeddings_request_guard.get(), input_ids);
+            const size_t hidden_size = input_embeds.get_shape().back();
+            m_request.set_tensor("inputs_embeds",
+                                 ov::Tensor(input_embeds.get_element_type(), {num_rows, hidden_size}, input_embeds.data()));
+            update_inference_time(execute_inference());
+        } else {
+            m_request.set_tensor("input_ids", flatten(input_ids, {num_rows}));
+            update_inference_time(execute_inference());
+        }
+        m_committed_context_length += hidden_delta_length;
+        return m_request.get_tensor("logits");
+    }
+
     static ov::InferRequest create_draft_infer_request(const ov::genai::ModelDesc& model_desc,
-                                                        bool use_external_embeddings) {
+                                                        bool use_external_embeddings,
+                                                        bool paged_attention) {
         OPENVINO_ASSERT(model_desc.model, "DFlash draft model cannot be null.");
+        if (paged_attention) {
+            OPENVINO_ASSERT(utils::has_input(model_desc.model, "token_type_ids"),
+                            "DFlash paged draft requires a draft exported with a 'token_type_ids' input.");
+            OPENVINO_ASSERT(model_desc.device != "NPU", "DFlash paged draft is not supported on NPU.");
+            ov::pass::SDPAToPagedAttention().run_on_model(model_desc.model);
+            return utils::singleton_core()
+                .compile_model(model_desc.model, model_desc.device, model_desc.properties)
+                .create_infer_request();
+        }
         OPENVINO_ASSERT(utils::has_input(model_desc.model, "hidden_states"),
                         "DFlash CB/PA draft model must have 'hidden_states' input.");
         if (use_external_embeddings) {
@@ -261,6 +345,10 @@ private:
     Sampler m_sampler;
     ov::genai::RawPerfMetrics m_raw_perf_metrics;
     bool m_has_beam_idx = false;
+    // per-row draft export: every per-token input covers [context delta ; block]
+    bool m_has_token_type_ids = false;
+    bool m_paged_attention = false;
+    std::unique_ptr<KVCacheManager> m_kv_cache;
     ov::Tensor m_beam_idx;
     size_t m_prompt_length = 0;
     size_t m_committed_context_length = 0;
@@ -353,12 +441,23 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     if (draft_model_desc_for_runner.device.empty()) {
         draft_model_desc_for_runner.device = main_model_desc.device;
     }
-    utils::dflash::reshape_draft_hidden_states_input_for_cb(draft_model_desc_for_runner.model);
+    // ATTENTION_BACKEND=PA in the draft properties runs the draft on PagedAttention; stateful SDPA otherwise
+    bool draft_paged_attention = false;
+    auto draft_backend_it = draft_model_desc_for_runner.properties.find("ATTENTION_BACKEND");
+    if (draft_backend_it != draft_model_desc_for_runner.properties.end()) {
+        draft_paged_attention = draft_backend_it->second.as<std::string>() == PA_BACKEND;
+        draft_model_desc_for_runner.properties.erase(draft_backend_it);
+    }
+    if (!draft_paged_attention) {
+        // the paged draft takes the token-major hidden states as they are
+        utils::dflash::reshape_draft_hidden_states_input_for_cb(draft_model_desc_for_runner.model);
+    }
 
     m_draft = std::make_shared<DFlashCBDraftRunner>(draft_model_desc_for_runner,
                                                     m_tokenizer,
                                                     m_rt_info,
-                                                    draft_embedding_model);
+                                                    draft_embedding_model,
+                                                    draft_paged_attention);
 
     if (is_vlm_dflash) {
         m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(

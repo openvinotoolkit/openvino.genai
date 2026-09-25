@@ -383,6 +383,13 @@ def parse_args():
         help="Inference device for Speculative decoding of draft model, e.g. 'CPU', 'GPU'.",
     )
     parser.add_argument(
+        "--draft-ov-config",
+        type=str,
+        default=None,
+        help="Path to the JSON file or a JSON string with OpenVINO GenAI properties of the draft model for "
+        'Speculative decoding. Example: \'{"ATTENTION_BACKEND": "PA"}\' runs a DFlash draft on PagedAttention.',
+    )
+    parser.add_argument(
         "--draft-cb-config",
         type=str,
         default=None,
@@ -1555,6 +1562,11 @@ def main():
             draft_cb_config = get_json_config(args.draft_cb_config)
             logger.info(f"draft_cb_config: {draft_cb_config}")
         kwargs["draft_cb_config"] = draft_cb_config
+        draft_ov_config = None
+        if args.draft_ov_config is not None:
+            draft_ov_config = get_json_config(args.draft_ov_config)
+            logger.info(f"draft_ov_config: {draft_ov_config}")
+        kwargs["draft_ov_config"] = draft_ov_config
 
     # Create TaylorSeerCacheConfig for text-to-image, text-to-video, and image-to-video pipelines
     taylorseer_config = None

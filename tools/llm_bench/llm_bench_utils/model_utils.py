@@ -278,6 +278,7 @@ def analyze_args(args):
     if args.draft_cb_config:
         draft_cb_config = get_config(args.draft_cb_config)
     model_args["draft_cb_config"] = draft_cb_config
+    model_args["draft_load_config"] = get_config(args.draft_load_config) if args.draft_load_config else None
     model_args["num_assistant_tokens"] = args.num_assistant_tokens
     model_args["assistant_confidence_threshold"] = args.assistant_confidence_threshold
     model_args["max_ngram_size"] = args.max_ngram_size
