@@ -127,6 +127,7 @@ class TextRerankerOptimum(CommonPipeline):
         sys_mem_increase: float,
         prompt_index: int,
         tokenization_time: list,
+        output_repr: str = "",
     ):
         return gen_output_data.embed_iterate_data(
             iter_idx=iter_num,
@@ -140,6 +141,7 @@ class TextRerankerOptimum(CommonPipeline):
             max_sys_mem_increase=sys_mem_increase,
             prompt_idx=prompt_index,
             tokenization_time=tokenization_time,
+            output_repr=output_repr,
         )
 
     def postprocess_output_info(
@@ -180,6 +182,7 @@ class TextRerankerOptimum(CommonPipeline):
             sys_mem_increase,
             prompt_index,
             tokenization_time,
+            output_repr=f"docs:{len(generation_result)}",
         )
         metrics_print.print_metrics(
             iter_num,
@@ -296,6 +299,7 @@ class TextRerankerGenAI(CommonPipeline):
         sys_mem_increase: float,
         prompt_index: int,
         tokenization_time: list,
+        output_repr: str = "",
     ):
         return gen_output_data.embed_iterate_data(
             iter_idx=iter_num,
@@ -309,6 +313,7 @@ class TextRerankerGenAI(CommonPipeline):
             max_sys_mem_increase=sys_mem_increase,
             prompt_idx=prompt_index,
             tokenization_time=tokenization_time,
+            output_repr=output_repr,
         )
 
     def postprocess_output_info(
@@ -342,6 +347,7 @@ class TextRerankerGenAI(CommonPipeline):
             sys_mem_increase,
             prompt_index,
             tokenization_time,
+            output_repr=f"docs:{len(generation_result)}",
         )
 
         self.print_generated(iter_num, generation_result, prompt_index)
