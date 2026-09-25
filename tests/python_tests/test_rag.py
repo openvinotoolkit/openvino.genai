@@ -8,7 +8,12 @@ import requests
 import openvino as ov
 import openvino_genai
 from openvino_genai import EmbeddingPipeline, TextEmbeddingPipeline, TextRerankPipeline, VideoMetadata
-from utils.hugging_face import download_and_convert_model, download_and_convert_model_class, OVConvertedModelSchema
+from utils.hugging_face import (
+    download_and_convert_model,
+    download_and_convert_model_class,
+    export_with_optimum_cli,
+    OVConvertedModelSchema,
+)
 from langchain_core.documents.base import Document
 from langchain_community.embeddings import OpenVINOBgeEmbeddings
 from langchain_community.document_compressors.openvino_rerank import OpenVINOReranker
@@ -39,6 +44,16 @@ RERANK_TEST_MODELS = [
     "cross-encoder/ms-marco-TinyBERT-L2-v2",  # sigmoid applied
     # "answerdotai/ModernBERT-base",  # 2 classes output, softmax applied. Skip until langchain OpenVINORerank supports it.
 ]
+
+# Replaces the language modeling head with 4 token level classification heads, so it is a
+# feature-extraction model scoring every token instead of producing one embedding.
+GUARD_TEST_MODEL = "Qwen/Qwen3Guard-Stream-0.6B"
+GUARD_OUTPUT_NAMES = {
+    "risk_level_logits",
+    "category_logits",
+    "query_risk_level_logits",
+    "query_category_logits",
+}
 
 QWEN3_RERANK_SEQ_CLS = "tomaarsen/Qwen3-Reranker-0.6B-seq-cls"
 QWEN3_RERANK = "Qwen/Qwen3-Reranker-0.6B"
@@ -96,6 +111,19 @@ def rerank_model(request) -> OVConvertedModelSchema:
 def emb_model(request) -> OVConvertedModelSchema:
     model_id = request.param
     return download_and_convert_model_class(model_id, OVModelForFeatureExtraction)
+
+
+@pytest.fixture(scope="module")
+def guard_model() -> OVConvertedModelSchema:
+    return download_and_convert_model_class(GUARD_TEST_MODEL, OVModelForFeatureExtraction)
+
+
+@pytest.fixture(scope="module")
+def stateful_guard_model_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """The same checkpoint exported with a KV cache, which is what makes score_next() usable."""
+    models_path = tmp_path_factory.mktemp("qwen3guard_with_past")
+    export_with_optimum_cli(GUARD_TEST_MODEL, "feature-extraction-with-past", models_path, trust_remote_code=True)
+    return models_path
 
 
 @pytest.fixture(scope="module")
@@ -322,6 +350,74 @@ def test_qwen3_vl_embedding_text_and_prompt(multimodal_emb_model):
 
     result = pipeline.embed(text, prompt=prompt)
     assert_embedding_tensor(result, 1)
+
+
+def guard_reference(guard_model: OVConvertedModelSchema, text: str) -> dict[str, np.ndarray]:
+    """Last token logits of every head, straight from the optimum model the IR was exported from."""
+    tokens = guard_model.hf_tokenizer(text, return_tensors="pt")
+    outputs = guard_model.opt_model(**tokens)
+    return {name: outputs[name][0, -1].numpy() for name in GUARD_OUTPUT_NAMES}
+
+
+def assert_matches_guard_reference(scores, reference: dict[str, np.ndarray], atol: float = 1e-3):
+    assert set(scores) == GUARD_OUTPUT_NAMES
+    for name, expected in reference.items():
+        actual = scores[name].data[0, -1]
+        assert np.allclose(actual, expected, atol=atol), f"{name} differs from the reference"
+
+
+def test_guard_model_scores_tokens(guard_model):
+    """A model with classification heads instead of an embedding is read by the same pipeline."""
+    pipeline = TextEmbeddingPipeline(guard_model.models_path, "CPU")
+    assert pipeline.scores_tokens()
+    assert not pipeline.is_stateful()
+
+    text = "This is a sample input"
+    reference = guard_reference(guard_model, text)
+    assert_matches_guard_reference(pipeline.score([text]), reference)
+
+    input_ids = ov.Tensor(guard_model.hf_tokenizer(text, return_tensors="np").input_ids)
+    assert_matches_guard_reference(pipeline.score(input_ids), reference)
+
+    with pytest.raises(RuntimeError, match="use score"):
+        pipeline.embed_documents([text])
+
+
+def test_guard_model_through_embedding_pipeline(guard_model):
+    pipeline = EmbeddingPipeline(guard_model.models_path, "CPU")
+    text = "This is a sample input"
+
+    result = pipeline.embed(text)
+    assert result.embeddings.get_size() == 0
+    assert_matches_guard_reference(result.token_scores, guard_reference(guard_model, text))
+
+    input_ids = ov.Tensor(guard_model.hf_tokenizer(text, return_tensors="np").input_ids)
+    assert_matches_guard_reference(pipeline.embed(input_ids=input_ids).token_scores,
+                                   guard_reference(guard_model, text))
+
+
+def test_guard_model_stateful_streaming(guard_model, stateful_guard_model_path):
+    pipeline = TextEmbeddingPipeline(stateful_guard_model_path, "CPU")
+    assert pipeline.scores_tokens()
+    assert pipeline.is_stateful()
+
+    text = "This is a sample input"
+    token_ids = guard_model.hf_tokenizer(text).input_ids
+    prefix_length = len(token_ids) - 2
+    # the cache is kept in a lower precision than the one shot run, so the verdicts drift slightly
+    atol = 5e-3
+
+    # score the prefix once, then feed the remaining tokens one at a time against the KV cache
+    pipeline.score_next(ov.Tensor(np.array([token_ids[:prefix_length]], dtype=np.int64)))
+    for index in range(prefix_length, len(token_ids)):
+        scores = pipeline.score_next([token_ids[index]])
+        prefix = guard_model.hf_tokenizer.decode(token_ids[: index + 1])
+        assert_matches_guard_reference(scores, guard_reference(guard_model, prefix), atol)
+
+    # a new sequence must not see the cache left behind by the previous one
+    pipeline.reset_state()
+    restarted = pipeline.score_next(ov.Tensor(np.array([token_ids], dtype=np.int64)))
+    assert_matches_guard_reference(restarted, guard_reference(guard_model, text), atol)
 
 
 @pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)

@@ -77,7 +77,11 @@ Computes embedding vector for:
 void init_rag_pipelines(py::module_& m) {
     py::class_<EmbedResult>(m, "EmbedResult")
         .def(py::init([](ov::Tensor embeddings) { return EmbedResult{embeddings}; }), py::arg("embeddings"))
-        .def_readwrite("embeddings", &EmbedResult::embeddings);
+        .def_readwrite("embeddings", &EmbedResult::embeddings)
+        .def_readwrite("token_scores",
+                       &EmbedResult::token_scores,
+                       "Per token scores of every model output, by name. Filled instead of `embeddings` by models "
+                       "replacing the single embedding with several classification heads, e.g. Qwen3Guard.");
 
     py::class_<EmbeddingPipeline>(m, "EmbeddingPipeline", embedding_pipeline_docstring)
         .def(
@@ -121,6 +125,14 @@ void init_rag_pipelines(py::module_& m) {
             },
             "Computes embedding vectors using properties "
             "(text=..., images=..., videos=..., videos_metadata=..., embedding_prompt=...).")
+        .def(
+            "reset_state",
+            [](EmbeddingPipeline& pipe) {
+                py::gil_scoped_release rel;
+                pipe.reset_state();
+            },
+            "Starts a new sequence, dropping the KV cache built by the previous embed() calls. "
+            "A no-op for models without a cache.")
         ;
 
     auto text_embedding_pipeline =
@@ -208,7 +220,56 @@ void init_rag_pipelines(py::module_& m) {
                     }
                     return py::cast(res);
                 },
-                "Waits computed embeddings for a query");
+                "Waits computed embeddings for a query")
+            .def("scores_tokens",
+                 &TextEmbeddingPipeline::scores_tokens,
+                 "True when the model scores every token through several outputs instead of pooling them "
+                 "into a single embedding, i.e. score() has to be used instead of the embed* family.")
+            .def("is_stateful",
+                 &TextEmbeddingPipeline::is_stateful,
+                 "True when the model carries its own KV cache, i.e. score_next() is usable.")
+            .def(
+                "score",
+                [](TextEmbeddingPipeline& pipe, const std::vector<std::string>& texts) {
+                    py::gil_scoped_release rel;
+                    return pipe.score(texts);
+                },
+                py::arg("texts"),
+                "Scores a batch of texts, returning every model output by name.")
+            .def(
+                "score",
+                [](TextEmbeddingPipeline& pipe,
+                   const ov::Tensor& input_ids,
+                   const std::optional<ov::Tensor>& attention_mask) {
+                    py::gil_scoped_release rel;
+                    return pipe.score(input_ids, attention_mask.value_or(ov::Tensor()));
+                },
+                py::arg("input_ids"),
+                py::arg("attention_mask") = std::nullopt,
+                "Scores an already tokenized batch, returning every model output by name.")
+            .def(
+                "score_next",
+                [](TextEmbeddingPipeline& pipe, const std::vector<int64_t>& token_ids) {
+                    ov::Tensor input_ids(ov::element::i64, ov::Shape{1, token_ids.size()});
+                    std::copy(token_ids.begin(), token_ids.end(), input_ids.data<int64_t>());
+                    py::gil_scoped_release rel;
+                    return pipe.score_next(input_ids);
+                },
+                py::arg("token_ids"),
+                "Appends tokens to the running sequence and scores them against the cache built by the "
+                "previous calls.")
+            .def(
+                "score_next",
+                [](TextEmbeddingPipeline& pipe, const ov::Tensor& input_ids) {
+                    py::gil_scoped_release rel;
+                    return pipe.score_next(input_ids);
+                },
+                py::arg("input_ids"),
+                "Appends tokens to the running sequence and scores them against the cache built by the "
+                "previous calls.")
+            .def("reset_state",
+                 &TextEmbeddingPipeline::reset_state,
+                 "Drops the cached sequence, so the next score_next() starts a new one.");
 
     py::enum_<TextEmbeddingPipeline::PoolingType>(text_embedding_pipeline, "PoolingType")
         .value("CLS", TextEmbeddingPipeline::PoolingType::CLS, "First token embeddings")

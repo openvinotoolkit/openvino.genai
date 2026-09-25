@@ -18,6 +18,8 @@ public:
                               const std::vector<ov::Tensor>& videos,
                               const std::vector<VideoMetadata>& videos_metadata,
                               const ov::AnyMap& properties) = 0;
+
+    virtual void reset_state() {}
 };
 
 }  // namespace ov::genai

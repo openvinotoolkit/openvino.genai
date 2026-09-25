@@ -243,6 +243,12 @@ void reshape_model(std::shared_ptr<Model>& model,
         input_name_to_shape["token_type_ids"] = target_shape;
     }
 
+    for (const auto& input : model->inputs()) {
+        if (input.get_any_name() == "position_ids") {
+            input_name_to_shape["position_ids"] = target_shape;
+        }
+    }
+
     model->reshape(input_name_to_shape);
 }
 
