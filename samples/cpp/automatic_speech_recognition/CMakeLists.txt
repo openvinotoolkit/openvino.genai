@@ -38,3 +38,17 @@ install(TARGETS automatic_speech_recognition
     RUNTIME DESTINATION samples_bin/
     COMPONENT samples_bin
     EXCLUDE_FROM_ALL)
+
+add_executable(asr_forced_aligner asr_forced_aligner.cpp audio_utils.cpp)
+target_link_libraries(asr_forced_aligner PRIVATE openvino::genai)
+target_include_directories(asr_forced_aligner PRIVATE "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
+set_target_properties(asr_forced_aligner PROPERTIES
+
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+target_compile_features(asr_forced_aligner PRIVATE cxx_std_17)
+
+install(TARGETS asr_forced_aligner
+    RUNTIME DESTINATION samples_bin/
+    COMPONENT samples_bin
+    EXCLUDE_FROM_ALL)

@@ -357,6 +357,92 @@ Whisper can predict timestamps for each word of speech, which provides more gran
     </TabItemJS>
 </LanguageTabs>
 
+For Qwen3-ASR word timestamps, OpenVINO GenAI uses the companion Qwen3 Forced Aligner model.
+
+OpenVINO GenAI currently supports forced-alignment timestamps for Chinese, Cantonese, English, German, Spanish, French, Italian, Portuguese, and Russian. The Qwen3 Forced Aligner model also supports Japanese and Korean, but Japanese and Korean segmentation are not currently implemented in OpenVINO GenAI.
+
+Qwen3-ASR and its forced aligner are distributed separately and should be exported to separate directories. Install `qwen-asr` before export.
+
+```sh
+pip install qwen-asr
+
+# Required for ASRPipeline transcription with Qwen3-ASR.
+optimum-cli export openvino \
+    --model Qwen/Qwen3-ASR-0.6B \
+    --task automatic-speech-recognition-with-past \
+    --trust-remote-code \
+    qwen3-asr-ov
+
+# Required for forced alignment (standalone or ASRPipeline word timestamps).
+optimum-cli export openvino \
+    --model Qwen/Qwen3-ForcedAligner-0.6B \
+    --task automatic-speech-recognition-with-past \
+    --trust-remote-code \
+    qwen3-forced-aligner-ov
+```
+
+Construct the `ASRForcedAligner` and pass the instance into `ASRPipeline`. The ASR pipeline and forced aligner may use different devices.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        aligner = openvino_genai.ASRForcedAligner(forced_aligner_model_path, "CPU")
+        pipe = openvino_genai.ASRPipeline(asr_model_path, "GPU", forced_aligner=aligner)
+
+        result = pipe.generate(raw_speech, word_timestamps=True, language="English")
+
+        for word in result.words[0]:
+            print(f"[{word.start_ts:.2f}, {word.end_ts:.2f}]: {word.text}")
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        int main() {
+            auto aligner = std::make_shared<ov::genai::ASRForcedAligner>(forced_aligner_model_path, "CPU");
+            ov::genai::ASRPipeline pipe(asr_model_path, "GPU", ov::genai::forced_aligner(aligner));
+
+            auto result = pipe.generate(raw_speech, ov::genai::word_timestamps(true), ov::genai::language("English"));
+
+            std::cout << std::fixed << std::setprecision(2);
+            for (const auto& word : (*result.words)[0]) {
+                std::cout << "[" << word.start_ts << ", " << word.end_ts << "]: " << word.text << "\n";
+            }
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+When word timestamps are enabled for Qwen3-ASR, audio is processed in chunks of approximately 180 seconds. This can change chunk boundaries and therefore the transcription compared with plain transcription.
+
+The forced aligner is also available as a standalone `ASRForcedAligner` class, usable independently of `ASRPipeline`.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        aligner = openvino_genai.ASRForcedAligner(forced_aligner_model_path, "CPU")
+
+        words = aligner.align(raw_speech, transcript, language="english")
+
+        for word in words:
+            print(f"[{word.start_ts:.2f}, {word.end_ts:.2f}]: {word.text}")
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        int main() {
+            ov::genai::ASRForcedAligner aligner(forced_aligner_model_path, "CPU");
+
+            auto words = aligner.align(raw_speech, transcript, ov::genai::language("english"));
+
+            std::cout << std::fixed << std::setprecision(2);
+            for (const auto& word : words) {
+                std::cout << "[" << word.start_ts << ", " << word.end_ts << "]: " << word.text << "\n";
+            }
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
 #### Long-Form Audio Processing
 
 Whisper models are designed for audio segments up to 30 seconds in length.

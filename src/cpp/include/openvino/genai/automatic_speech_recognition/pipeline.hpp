@@ -73,6 +73,7 @@ struct OPENVINO_GENAI_EXPORTS ASRDecodedResults {
 };
 
 class ASRPipelineImplBase;
+class ASRForcedAligner;
 
 class OPENVINO_GENAI_EXPORTS ASRPipeline {
     std::unique_ptr<ASRPipelineImplBase> m_impl;
@@ -103,5 +104,13 @@ public:
     ASRGenerationConfig get_generation_config() const;
     void set_generation_config(const ASRGenerationConfig& config);
 };
+
+/**
+ * @brief Pre-constructed forced aligner used for word-level timestamps.
+ *
+ * Constructor-only property carrying an already-built ASRForcedAligner instance, used when word-level
+ * timestamps are requested. Currently supported only for Qwen3-ASR.
+ */
+static constexpr ov::Property<std::shared_ptr<ASRForcedAligner>> forced_aligner{"forced_aligner"};
 
 }  // namespace ov::genai

@@ -10,13 +10,11 @@ patch_pyav_for_servercore.install_av_stub_module_for_windows()
 import openvino_genai as ov_genai
 import functools
 import pytest
-import openvino_tokenizers
 import openvino
 import datasets
 from transformers import AutoProcessor, AutoTokenizer
 from transformers.pipelines.automatic_speech_recognition import AutomaticSpeechRecognitionPipeline
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
-from huggingface_hub import snapshot_download
 import gc
 import json
 import typing
@@ -32,9 +30,11 @@ from typing import Any, Literal
 from difflib import SequenceMatcher
 
 from utils.dataset_utils import load_dataset_via_snapshot
-from utils.asr_utils.fun_asr import FunASROptimumPipeline, skip_if_fun_asr_package_is_unavailable
+from utils.asr_utils.fun_asr import FUN_ASR_MODEL_ID, FunASROptimumPipeline, skip_if_fun_asr_package_is_unavailable
 from utils.asr_utils.qwen3_asr import (
+    QWEN3_ASR_MODEL_ID,
     Qwen3ASROptimumPipeline,
+    save_model,
     skip_if_qwen3_asr_package_is_unavailable,
 )
 
@@ -91,8 +91,6 @@ def get_whisper_models_list(tiny_only=False):
     return [(model_id, prefix / model_id.split("/")[1]) for model_id in model_ids]
 
 
-QWEN3_ASR_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-asr"
-FUN_ASR_MODEL_ID = "optimum-intel-internal-testing/tiny-random-fun-asr"
 
 
 # used whisper models are relatively small
@@ -171,51 +169,6 @@ def read_asr_model(params, word_timestamps=False, pipeline_type=PipelineType.WHI
         hf_pipe,
         pipeline_cls(path, "CPU", **properties, ENABLE_MMAP=False),
     )
-
-
-def save_model(model_id: str, tmp_path: pathlib.Path):
-    manager = AtomicDownloadManager(tmp_path)
-
-    def save_to_temp(temp_path: pathlib.Path) -> None:
-        model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
-
-        tokenizer_cached = model_cached
-        if model_id == FUN_ASR_MODEL_ID:
-            tokenizer_cached = pathlib.Path(model_cached) / "Qwen3-0.6B"
-        tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(tokenizer_cached, trust_remote_code=True))
-        ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
-            tokenizer,
-            with_detokenizer=True,
-            clean_up_tokenization_spaces=False,
-        )
-
-        openvino.save_model(ov_tokenizer, temp_path / "openvino_tokenizer.xml")
-        openvino.save_model(ov_detokenizer, temp_path / "openvino_detokenizer.xml")
-
-        tokenizer.save_pretrained(temp_path)
-
-        opt_model = retry_request(
-            lambda: OVModelForSpeechSeq2Seq.from_pretrained(
-                model_cached,
-                export=True,
-                trust_remote_code=True,
-                compile=False,
-                device="CPU",
-                load_in_8bit=False,
-            )
-        )
-        opt_model.generation_config.save_pretrained(temp_path)
-        opt_model.config.save_pretrained(temp_path)
-        opt_model.save_pretrained(temp_path)
-
-        processor_cached = model_cached
-        if model_id == FUN_ASR_MODEL_ID:
-            processor_cached = pathlib.Path(model_cached) / "Qwen3-0.6B"
-
-        processor = retry_request(lambda: AutoProcessor.from_pretrained(processor_cached, trust_remote_code=True))
-        processor.save_pretrained(temp_path)
-
-    manager.execute(save_to_temp)
 
 
 def run_huggingface(
