@@ -4,15 +4,46 @@
 import subprocess  # nosec B404
 import sys
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
 from conftest import run_wwb
 from huggingface_hub import hf_hub_download
 from whowhatbench import model_loaders
+from whowhatbench.wwb import llamacpp_gen_text
 
 
 pytestmark = pytest.mark.skipif(sys.platform.startswith("win"), reason="llama.cpp tests run on Linux only")
+
+
+def test_llamacpp_raw_completion_preserves_gguf_prompt_tokens():
+    model = Mock()
+    # Hunyuan has a separator token, but its tokenizer does not add it to raw prompts.
+    prompt_tokens = [18166, 316, 7991, 107918, 30]
+    model.tokenize.return_value = prompt_tokens
+    model.return_value = {"choices": [{"text": "answer"}]}
+
+    assert llamacpp_gen_text(model, None, "Who is Mark Twain?", 32, True) == "answer"
+
+    model.tokenize.assert_called_once_with(b"Who is Mark Twain?", add_bos=True, special=True)
+    model.assert_called_once_with(prompt_tokens, max_tokens=32, echo=False, temperature=0.0)
+    model.create_chat_completion.assert_not_called()
+
+
+def test_llamacpp_chat_completion_uses_chat_template():
+    model = Mock()
+    model.create_chat_completion.return_value = {"choices": [{"message": {"content": "answer"}}]}
+
+    assert llamacpp_gen_text(model, None, "Who is Mark Twain?", 32, True, use_chat_template=True) == "answer"
+
+    model.create_chat_completion.assert_called_once_with(
+        messages=[{"role": "user", "content": "Who is Mark Twain?"}],
+        max_tokens=32,
+        temperature=0.0,
+    )
+    model.tokenize.assert_not_called()
+    model.assert_not_called()
 
 
 def _assert_wwb_cli_error(args: list[str], expected_message: str) -> str:
