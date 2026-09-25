@@ -42,7 +42,7 @@ npm install openvino-genai-node
 
 ## Requirements
 
-Node.js **≥ 21**. Refer to the [supported platforms](#supported-platforms) for more details.
+Node.js **≥ 22**. Refer to the [supported platforms](#supported-platforms) for more details.
 
 ## Supported platforms
 
@@ -102,7 +102,7 @@ Contributions are welcome in the [openvino.genai](https://github.com/openvinotoo
 
 - Read the project [Contributing guide](https://github.com/openvinotoolkit/openvino.genai/blob/master/.github/CONTRIBUTING.md) (PR process, code quality, branching).
 - **Node.js bindings:** build and test locally — [BUILD.md](https://github.com/openvinotoolkit/openvino.genai/blob/master/src/js/BUILD.md) (native addon + TypeScript wrapper in `src/js`).
-- **JavaScript changes:** from `src/js`, run `npm run lint`, `npm run build`, and `npm test` (tests require Python 3.10+ and model setup described in BUILD.md).
+- **JavaScript changes:** from `src/js`, run `npm run lint`, `npm run build`, and `npm test` (tests require Python 3.11+ and model setup described in BUILD.md).
 - **Samples:** extend or fix examples under [samples/js](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/js).
 - Open issues or pull requests on GitHub; use the repository PR template and fork-based workflow described in the contributing guide.
 
