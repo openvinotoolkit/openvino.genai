@@ -36,6 +36,7 @@ def main():
     )
 
     save_video("genai_video.avi", output.video, frame_rate)
+    # TODO: Combine audio and video into one file inside GenAI for LTX-2, so users don't need ffmpeg.
     # Models that generate audio (LTX-2) return it as a separate track. To combine both into one file:
     #   ffmpeg -i genai_video.avi -i genai_audio.wav genai_video.mp4
     if output.audio_sample_rate:
