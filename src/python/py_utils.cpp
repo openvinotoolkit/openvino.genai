@@ -695,6 +695,21 @@ std::vector<std::vector<ov::genai::VideoMetadata>> get_videos_metadata_batches_f
     return videos_metadata_batches;
 }
 
+std::vector<std::vector<ov::Tensor>> get_audios_batches_from_kwargs(const py::kwargs& kwargs) {
+    std::vector<std::vector<ov::Tensor>> audios_batches;
+    if (kwargs.contains(ov::genai::utils::AUDIOS_BATCHES_ARG_NAME)) {
+        const auto py_audios_batches = kwargs[ov::genai::utils::AUDIOS_BATCHES_ARG_NAME.c_str()];
+        OPENVINO_ASSERT(py::isinstance<py::list>(py_audios_batches),
+                        "\"audios_batches\" should be a list of lists of ov.Tensor.");
+        for (const auto& py_audios : py_audios_batches) {
+            OPENVINO_ASSERT(py::isinstance<py::list>(py_audios),
+                            "Each item in \"audios_batches\" should be a list of ov.Tensor.");
+            audios_batches.push_back(py_audios.cast<std::vector<ov::Tensor>>());
+        }
+    }
+    return audios_batches;
+}
+
 ov::genai::GenerationConfig update_config_from_kwargs(ov::genai::GenerationConfig config, const py::kwargs& kwargs) {
     config.update_generation_config(kwargs_to_any_map(kwargs));
     return config;

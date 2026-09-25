@@ -237,18 +237,18 @@ py::object _call_cb_vlm_generate(
 ) {
     ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
     const auto videos_metadata_batches = pyutils::get_videos_metadata_batches_from_kwargs(kwargs);
+    const auto audios_batches = pyutils::get_audios_batches_from_kwargs(kwargs);
 
     std::vector<ov::genai::VLMDecodedResults> generated_results;
     {
         py::gil_scoped_release rel;
-        generated_results = pipe.generate(
-            prompts,
-            ov::genai::images_batches(images_batches),
-            ov::genai::videos_batches(videos_batches),
-            ov::genai::videos_metadata_batches(videos_metadata_batches),
-            ov::genai::generation_config_batches(generation_configs),
-            ov::genai::streamer(streamer)
-        );
+        generated_results = pipe.generate(prompts,
+                                          ov::genai::images_batches(images_batches),
+                                          ov::genai::videos_batches(videos_batches),
+                                          ov::genai::videos_metadata_batches(videos_metadata_batches),
+                                          ov::genai::audios_batches(audios_batches),
+                                          ov::genai::generation_config_batches(generation_configs),
+                                          ov::genai::streamer(streamer));
     }
     return py::cast(generated_results);
 }
@@ -264,18 +264,18 @@ py::object _call_cb_vlm_generate_chat_history(
 ) {
     ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
     const auto videos_metadata_batches = pyutils::get_videos_metadata_batches_from_kwargs(kwargs);
+    const auto audios_batches = pyutils::get_audios_batches_from_kwargs(kwargs);
 
     std::vector<ov::genai::VLMDecodedResults> generated_results;
     {
         py::gil_scoped_release rel;
-        generated_results = pipe.generate(
-            histories,
-            ov::genai::images_batches(images_batches),
-            ov::genai::videos_batches(videos_batches),
-            ov::genai::videos_metadata_batches(videos_metadata_batches),
-            ov::genai::generation_config_batches(generation_configs),
-            ov::genai::streamer(streamer)
-        );
+        generated_results = pipe.generate(histories,
+                                          ov::genai::images_batches(images_batches),
+                                          ov::genai::videos_batches(videos_batches),
+                                          ov::genai::videos_metadata_batches(videos_metadata_batches),
+                                          ov::genai::audios_batches(audios_batches),
+                                          ov::genai::generation_config_batches(generation_configs),
+                                          ov::genai::streamer(streamer));
     }
     return py::cast(generated_results);
 }
