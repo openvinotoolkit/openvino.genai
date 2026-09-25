@@ -1054,7 +1054,7 @@ jobs:
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           python -m pip install transformers==4.57.6 diffusers==0.37.1
           # lfm2 conversion fails in CI: CVS-195736
-          python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_llm_pipeline.py -m "transformers_lower_v5 or transformers_dependent and not lfm2"
+          python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_llm_pipeline.py -m "transformers_lower_v5 or transformers_dependent" -k "not lfm2"
 
   Overall_Status:
     name: ci/gha_overall_status_linux
