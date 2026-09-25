@@ -4,6 +4,7 @@
 import pytest
 import subprocess  # nosec B404
 import logging
+import json
 from pathlib import Path
 
 import numpy as np
@@ -61,6 +62,8 @@ class TestVideoGenerationConfig:
         assert hasattr(config, "frame_rate")
         assert hasattr(config, "num_videos_per_prompt")
         assert hasattr(config, "guidance_rescale")
+        assert config.decode_timestep == pytest.approx(0.0)
+        assert config.decode_noise_scale is None
 
     def test_config_inherited_fields(self):
         config = ov_genai.VideoGenerationConfig()
@@ -75,9 +78,13 @@ class TestVideoGenerationConfig:
         config.num_frames = 17
         config.height = 32
         config.width = 64
+        config.decode_timestep = 0.05
+        config.decode_noise_scale = 0.025
         assert config.num_frames == 17
         assert config.height == 32
         assert config.width == 64
+        assert config.decode_timestep == pytest.approx(0.05)
+        assert config.decode_noise_scale == pytest.approx(0.025)
 
     def test_config_validate_guidance_scale_with_negative_prompt(self, video_generation_model):
         """guidance_scale <= 1 with negative_prompt is accepted (warning only)."""
@@ -96,6 +103,7 @@ class TestText2VideoPipelineConstructor:
     def test_constructor_path_only(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model)
         assert pipe is not None
+        assert hasattr(pipe, "decode")
 
     def test_constructor_with_device(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
@@ -279,6 +287,93 @@ class TestAutoEncoderKLLTXVideo:
             assert config is not None
             assert hasattr(config, "latent_channels")
             assert hasattr(config, "scaling_factor")
+
+
+class TestAutoEncoderKLLTXVideoTimestepConditioning:
+    @pytest.fixture()
+    def conditioned_vae_path(self, tmp_path):
+        decoder_path = tmp_path / "vae_decoder"
+        transformer_path = tmp_path / "transformer"
+        decoder_path.mkdir()
+        transformer_path.mkdir()
+
+        latent = ov.opset13.parameter([-1, 3, -1, -1, -1], np.float32, name="latent_sample")
+        timestep = ov.opset13.parameter([-1], np.float32, name="timestep")
+        timestep_5d = ov.opset13.reshape(
+            timestep,
+            ov.opset13.constant(np.array([-1, 1, 1, 1, 1], dtype=np.int64)),
+            False,
+        )
+        sample = ov.opset13.add(latent, timestep_5d)
+        sample.output(0).tensor.set_names({"sample"})
+        ov.save_model(ov.Model([sample], [latent, timestep]), decoder_path / "openvino_model.xml")
+
+        config = {
+            "in_channels": 3,
+            "latent_channels": 3,
+            "out_channels": 3,
+            "scaling_factor": 1.0,
+            "block_out_channels": [1],
+            "patch_size": 1,
+            "patch_size_t": 1,
+            "spatio_temporal_scaling": [False],
+            "latents_mean_data": [0.0, 0.0, 0.0],
+            "latents_std_data": [1.0, 1.0, 1.0],
+            "timestep_conditioning": True,
+        }
+        (decoder_path / "config.json").write_text(json.dumps(config), encoding="utf-8")
+        (transformer_path / "config.json").write_text(
+            json.dumps({"patch_size": 1, "patch_size_t": 1}), encoding="utf-8"
+        )
+        return decoder_path
+
+    def test_compression_ratios_prefer_explicit_values_and_fall_back(self, conditioned_vae_path):
+        config_path = conditioned_vae_path / "config.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config.update({"spatial_compression_ratio": 32, "temporal_compression_ratio": 8})
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+
+        explicit_config = ov_genai.AutoencoderKLLTXVideo(str(conditioned_vae_path)).get_config()
+        assert explicit_config.spatial_compression_ratio == 32
+        assert explicit_config.temporal_compression_ratio == 8
+
+        config.update({"spatial_compression_ratio": None, "temporal_compression_ratio": None})
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+
+        fallback_config = ov_genai.AutoencoderKLLTXVideo(str(conditioned_vae_path)).get_config()
+        assert fallback_config.spatial_compression_ratio == 1
+        assert fallback_config.temporal_compression_ratio == 1
+
+    def test_decode_accepts_fp32_timestep(self, conditioned_vae_path):
+        vae = ov_genai.AutoencoderKLLTXVideo(str(conditioned_vae_path))
+        vae.compile("CPU")
+        assert vae.get_config().timestep_conditioning is True
+        latent = ov.Tensor(np.zeros([1, 3, 1, 1, 1], dtype=np.float32))
+        timestep = ov.Tensor(np.ones([1], dtype=np.float32))
+
+        default_decoded = np.array(vae.decode(latent).data, copy=True)
+        conditioned_decoded = vae.decode(latent, timestep)
+
+        np.testing.assert_array_equal(default_decoded, np.full([1, 1, 1, 1, 3], 128, dtype=np.uint8))
+        np.testing.assert_array_equal(conditioned_decoded.data, np.full([1, 1, 1, 1, 3], 255, dtype=np.uint8))
+
+    def test_decode_rejects_non_fp32_timestep(self, conditioned_vae_path):
+        vae = ov_genai.AutoencoderKLLTXVideo(str(conditioned_vae_path))
+        vae.compile("CPU")
+        latent = ov.Tensor(np.zeros([1, 3, 1, 1, 1], dtype=np.float32))
+        timestep = ov.Tensor(np.zeros([1], dtype=np.int64))
+
+        with pytest.raises(RuntimeError, match="must have f32 element type"):
+            vae.decode(latent, timestep)
+
+    def test_decode_rejects_mismatched_timestep_batch(self, conditioned_vae_path):
+        vae = ov_genai.AutoencoderKLLTXVideo(str(conditioned_vae_path))
+        vae.compile("CPU")
+        latent = ov.Tensor(np.zeros([2, 3, 1, 1, 1], dtype=np.float32))
+        timestep = ov.Tensor(np.zeros([1], dtype=np.float32))
+
+        with pytest.raises(RuntimeError, match="batch size must match"):
+            vae.decode(latent, timestep)
 
 
 class TestAutoEncoderKLLTXVideoEncoder:

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "generation_config_utils.hpp"
+#include <cmath>
 #include "logger.hpp"
 #include "utils.hpp"
 
@@ -11,6 +12,9 @@ void validate_generation_config(const VideoGenerationConfig& config) {
     if (config.guidance_scale <= 1.0f && config.negative_prompt != std::nullopt) {
         GENAI_WARN("Guidance scale <= 1.0 ignores negative prompt");
     }
+    OPENVINO_ASSERT(std::isfinite(config.decode_timestep), "decode_timestep must be finite");
+    OPENVINO_ASSERT(!config.decode_noise_scale.has_value() || std::isfinite(*config.decode_noise_scale),
+                    "decode_noise_scale must be finite");
 }
 
 void update_generation_config(VideoGenerationConfig& config, const ov::AnyMap& properties) {
@@ -22,6 +26,8 @@ void update_generation_config(VideoGenerationConfig& config, const ov::AnyMap& p
     read_anymap_param(properties, "guidance_rescale", config.guidance_rescale);
     read_anymap_param(properties, "num_frames", config.num_frames);
     read_anymap_param(properties, "frame_rate", config.frame_rate);
+    read_anymap_param(properties, "decode_timestep", config.decode_timestep);
+    read_anymap_param(properties, "decode_noise_scale", config.decode_noise_scale);
     read_anymap_param(properties, "num_videos_per_prompt", config.num_videos_per_prompt);
 
     read_anymap_param(properties, "negative_prompt", config.negative_prompt);

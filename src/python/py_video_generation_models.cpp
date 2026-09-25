@@ -192,7 +192,10 @@ void init_autoencoder_kl_ltx_video(py::module_& m) {
         .def_readonly("scaling_factor", &ov::genai::AutoencoderKLLTXVideo::Config::scaling_factor)
         .def_readonly("block_out_channels", &ov::genai::AutoencoderKLLTXVideo::Config::block_out_channels)
         .def_readonly("patch_size", &ov::genai::AutoencoderKLLTXVideo::Config::patch_size)
-        .def_readonly("patch_size_t", &ov::genai::AutoencoderKLLTXVideo::Config::patch_size_t);
+        .def_readonly("patch_size_t", &ov::genai::AutoencoderKLLTXVideo::Config::patch_size_t)
+        .def_readonly("spatial_compression_ratio", &ov::genai::AutoencoderKLLTXVideo::Config::spatial_compression_ratio)
+        .def_readonly("temporal_compression_ratio", &ov::genai::AutoencoderKLLTXVideo::Config::temporal_compression_ratio)
+        .def_readonly("timestep_conditioning", &ov::genai::AutoencoderKLLTXVideo::Config::timestep_conditioning);
 
     vae.def("get_config", &ov::genai::AutoencoderKLLTXVideo::get_config)
         .def("get_vae_scale_factor", &ov::genai::AutoencoderKLLTXVideo::get_vae_scale_factor)
@@ -239,13 +242,24 @@ void init_autoencoder_kl_ltx_video(py::module_& m) {
                     (mean + logvar); unused when it outputs a latent sample directly.
                 Returns: Normalized latent tensor.
             )")
-        .def("decode",
-             &ov::genai::AutoencoderKLLTXVideo::decode,
+           .def("decode",
+               py::overload_cast<const ov::Tensor&>(&ov::genai::AutoencoderKLLTXVideo::decode),
              py::call_guard<py::gil_scoped_release>(),
              py::arg("latent"),
              R"(
                 Decodes latent video to pixel space.
                 latent (ov.Tensor): Latent video tensor.
+                Returns: Decoded video tensor.
+            )")
+        .def("decode",
+             py::overload_cast<const ov::Tensor&, const ov::Tensor&>(&ov::genai::AutoencoderKLLTXVideo::decode),
+             py::call_guard<py::gil_scoped_release>(),
+             py::arg("latent"),
+             py::arg("timestep"),
+             R"(
+                Decodes latent video with timestep conditioning to pixel space.
+                latent (ov.Tensor): Latent video tensor.
+                timestep (ov.Tensor): Float32 timestep tensor shaped [B].
                 Returns: Decoded video tensor.
             )");
 }

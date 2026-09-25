@@ -11,6 +11,7 @@
 #include <nlohmann/json.hpp>
 #include <numeric>
 #include <type_traits>
+#include <utility>
 
 #include <openvino/op/convert.hpp>
 #include <openvino/op/maximum.hpp>
@@ -56,7 +57,10 @@ const VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
     0.0,                     // guidance_rescale
     161,                     // num_frames
     25.0f,                   // frame_rate
-    std::nullopt             // taylorseer_config
+    std::nullopt,            // taylorseer_config
+    std::nullopt,            // adapters
+    0.0f,                    // decode_timestep
+    std::nullopt             // decode_noise_scale
 };
 
 // Some defaults aren't special values so it's not possible to distinguish
@@ -306,6 +310,11 @@ enum class VideoPipelineType {
 class LTXPipeline {
     using Ms = std::chrono::duration<float, std::ratio<1, 1000>>;
 
+    struct VAEDecodeInputs {
+        ov::Tensor latent;
+        std::optional<ov::Tensor> timestep;
+    };
+
     std::shared_ptr<IScheduler> m_scheduler;
     std::shared_ptr<T5EncoderModel> m_t5_text_encoder;
     std::shared_ptr<LTXVideoTransformer3DModel> m_transformer;
@@ -424,7 +433,8 @@ class LTXPipeline {
         return packed;
     }
 
-    ov::Tensor postprocess_latents(const ov::Tensor& latent) {
+    VAEDecodeInputs prepare_vae_decode_inputs(const ov::Tensor& latent,
+                                              const VideoGenerationConfig& generation_config) {
         OPENVINO_ASSERT(m_latent_num_frames > 0 && m_latent_height > 0 && m_latent_width > 0,
                         "Latent sizes must be > 0 (got num_frames=",
                         m_latent_num_frames,
@@ -434,19 +444,43 @@ class LTXPipeline {
                         m_latent_width,
                         ").");
 
-        ov::Tensor decoded = unpack_latents(latent,
-                                            m_latent_num_frames,
-                                            m_latent_height,
-                                            m_latent_width,
-                                            m_transformer->get_config().patch_size,
-                                            m_transformer->get_config().patch_size_t);
+        ov::Tensor unpacked = unpack_latents(latent,
+                                             m_latent_num_frames,
+                                             m_latent_height,
+                                             m_latent_width,
+                                             m_transformer->get_config().patch_size,
+                                             m_transformer->get_config().patch_size_t);
 
-        decoded = denormalize_latents(decoded,
-                                      tensor_from_vector(m_vae->get_config().latents_mean_data),
-                                      tensor_from_vector(m_vae->get_config().latents_std_data),
-                                      m_vae->get_config().scaling_factor);
+        const float decode_noise_scale =
+            generation_config.decode_noise_scale.value_or(generation_config.decode_timestep);
+        std::optional<ov::Tensor> timestep;
+        if (!m_vae->get_config().timestep_conditioning) {
+            OPENVINO_ASSERT(generation_config.decode_timestep == 0.0f && decode_noise_scale == 0.0f,
+                            "decode_timestep and decode_noise_scale require a timestep-conditioned VAE decoder");
+        } else {
+            OPENVINO_ASSERT(generation_config.generator,
+                            "A generator is required for a timestep-conditioned VAE decoder");
+            OPENVINO_ASSERT(unpacked.get_element_type() == ov::element::f32,
+                            "Decode-time noise interpolation requires f32 latents, got ",
+                            unpacked.get_element_type());
+            const ov::Tensor noise = generation_config.generator->randn_tensor(unpacked.get_shape());
+            float* unpacked_data = unpacked.data<float>();
+            const float* noise_data = noise.data<const float>();
+            for (size_t i = 0; i < unpacked.get_size(); ++i) {
+                unpacked_data[i] =
+                    (1.0f - decode_noise_scale) * unpacked_data[i] + decode_noise_scale * noise_data[i];
+            }
 
-        return decoded;
+            timestep.emplace(ov::element::f32, ov::Shape{unpacked.get_shape()[0]});
+            std::fill_n(timestep->data<float>(), timestep->get_size(), generation_config.decode_timestep);
+        }
+
+        ov::Tensor denormalized = denormalize_latents(
+            unpacked,
+            tensor_from_vector(m_vae->get_config().latents_mean_data),
+            tensor_from_vector(m_vae->get_config().latents_std_data),
+            m_vae->get_config().scaling_factor);
+        return {std::move(denormalized), std::move(timestep)};
     }
 
     void compute_hidden_states(const std::string& positive_prompt,
@@ -698,16 +732,8 @@ public:
         }
 
         const size_t num_channels_latents = transformer_config.in_channels;
-        const size_t spatial_compression_ratio =
-            m_vae->get_config().patch_size * std::pow(2,
-                                                      std::accumulate(m_vae->get_config().spatio_temporal_scaling.begin(),
-                                                                  m_vae->get_config().spatio_temporal_scaling.end(),
-                                                                  0));
-        const size_t temporal_compression_ratio =
-            m_vae->get_config().patch_size_t * std::pow(2,
-                                                        std::accumulate(m_vae->get_config().spatio_temporal_scaling.begin(),
-                                                                    m_vae->get_config().spatio_temporal_scaling.end(),
-                                                                    0));
+        const size_t spatial_compression_ratio = m_vae->get_config().spatial_compression_ratio;
+        const size_t temporal_compression_ratio = m_vae->get_config().temporal_compression_ratio;
         const size_t transformer_spatial_patch_size  = transformer_config.patch_size;
         const size_t transformer_temporal_patch_size = transformer_config.patch_size_t;
 
@@ -870,13 +896,12 @@ public:
             callback_ptr->end();
         }
 
-        latent = postprocess_latents(latent);
-
-        OPENVINO_ASSERT(!m_vae->get_config().timestep_conditioning,
-                            "Parameter 'timestep_conditioning' is not currently supported by AutoencoderKLLTX. Please, contact OpenVINO GenAI developers.");
+        VAEDecodeInputs decode_inputs = prepare_vae_decode_inputs(latent, merged_generation_config);
 
         const auto decode_start = std::chrono::steady_clock::now();
-        ov::Tensor video = m_vae->decode(latent);
+        ov::Tensor video = decode_inputs.timestep.has_value()
+                       ? m_vae->decode(decode_inputs.latent, *decode_inputs.timestep)
+                       : m_vae->decode(decode_inputs.latent);
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
@@ -948,16 +973,8 @@ public:
         }
 
         size_t num_channels_latents = transformer_config.in_channels;
-        size_t spatial_compression_ratio =
-            m_vae->get_config().patch_size * std::pow(2,
-                                                      std::accumulate(m_vae->get_config().spatio_temporal_scaling.begin(),
-                                                                  m_vae->get_config().spatio_temporal_scaling.end(),
-                                                                  0));
-        size_t temporal_compression_ratio =
-            m_vae->get_config().patch_size_t * std::pow(2,
-                                                        std::accumulate(m_vae->get_config().spatio_temporal_scaling.begin(),
-                                                                    m_vae->get_config().spatio_temporal_scaling.end(),
-                                                                    0));
+        const size_t spatial_compression_ratio = m_vae->get_config().spatial_compression_ratio;
+        const size_t temporal_compression_ratio = m_vae->get_config().temporal_compression_ratio;
         size_t transformer_spatial_patch_size = transformer_config.patch_size;
         size_t transformer_temporal_patch_size = transformer_config.patch_size_t;
 
@@ -1093,14 +1110,12 @@ public:
             callback_ptr->end();
         }
 
-        latent = postprocess_latents(latent);
-
-        // TODO: support timestep_conditioning for AutoencoderKLLTX
-        OPENVINO_ASSERT(!m_vae->get_config().timestep_conditioning,
-                            "Parameter 'timestep_conditioning' is not currently supported by AutoencoderKLLTX. Please, contact OpenVINO GenAI developers.");
+        VAEDecodeInputs decode_inputs = prepare_vae_decode_inputs(latent, merged_generation_config);
 
         const auto decode_start = std::chrono::steady_clock::now();
-        ov::Tensor video = m_vae->decode(latent);
+        ov::Tensor video = decode_inputs.timestep.has_value()
+                       ? m_vae->decode(decode_inputs.latent, *decode_inputs.timestep)
+                       : m_vae->decode(decode_inputs.latent);
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
@@ -1112,10 +1127,14 @@ public:
     }
 
     VideoGenerationResult decode(const ov::Tensor& latent) {
-        ov::Tensor postprocessed = postprocess_latents(latent);
+        VideoGenerationConfig generation_config = m_generation_config;
+        utils::update_generation_config(generation_config, {});
+        VAEDecodeInputs decode_inputs = prepare_vae_decode_inputs(latent, generation_config);
 
         const auto decode_start = std::chrono::steady_clock::now();
-        ov::Tensor video = m_vae->decode(postprocessed);
+        ov::Tensor video = decode_inputs.timestep.has_value()
+                       ? m_vae->decode(decode_inputs.latent, *decode_inputs.timestep)
+                       : m_vae->decode(decode_inputs.latent);
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();

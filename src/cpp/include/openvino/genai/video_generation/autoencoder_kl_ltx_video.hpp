@@ -28,6 +28,8 @@ public:
         size_t patch_size = 4;
         std::vector<bool> spatio_temporal_scaling{true, true, true, false};
         size_t patch_size_t = 1;
+        size_t spatial_compression_ratio = 0;
+        size_t temporal_compression_ratio = 0;
         std::vector<float> latents_mean_data, latents_std_data;
         bool timestep_conditioning = false;
 
@@ -54,7 +56,15 @@ public:
 
     ov::Tensor encode(const ov::Tensor& video, std::shared_ptr<Generator> generator = nullptr);
 
+    /**
+     * Decodes latent video using a zero timestep for a timestep-conditioned decoder.
+     */
     ov::Tensor decode(const ov::Tensor& latent);
+
+    /**
+     * Decodes latent video using an f32 timestep tensor shaped [batch_size].
+     */
+    ov::Tensor decode(const ov::Tensor& latent, const ov::Tensor& timestep);
 
     const Config& get_config() const;
 
@@ -63,6 +73,8 @@ public:
     AutoencoderKLLTXVideo& reshape(int64_t batch_size, int64_t num_frames, int64_t height, int64_t width);
 
 private:
+    void validate_decoder_inputs() const;
+
     void merge_vae_video_post_processing() const;
 
     Config m_config;

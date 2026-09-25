@@ -25,6 +25,8 @@ void init_video_generation_pipelines(py::module_& m) {
         .def_readwrite("guidance_rescale", &ov::genai::VideoGenerationConfig::guidance_rescale)
         .def_readwrite("num_frames", &ov::genai::VideoGenerationConfig::num_frames)
         .def_readwrite("frame_rate", &ov::genai::VideoGenerationConfig::frame_rate)
+        .def_readwrite("decode_timestep", &ov::genai::VideoGenerationConfig::decode_timestep)
+        .def_readwrite("decode_noise_scale", &ov::genai::VideoGenerationConfig::decode_noise_scale)
         .def_readwrite("num_videos_per_prompt", &ov::genai::VideoGenerationConfig::num_videos_per_prompt)
         .def_readwrite("negative_prompt", &ov::genai::VideoGenerationConfig::negative_prompt)
         .def_readwrite("generator", &ov::genai::VideoGenerationConfig::generator)
@@ -99,7 +101,13 @@ void init_video_generation_pipelines(py::module_& m) {
                 }
                 return result;
             },
-            py::arg("prompt"));
+            py::arg("prompt"))
+        .def("decode",
+             [](ov::genai::Text2VideoPipeline& pipe, const ov::Tensor& latent) {
+                 py::gil_scoped_release rel;
+                 return pipe.decode(latent);
+             },
+             py::arg("latent"));
 
     py::class_<ov::genai::Image2VideoPipeline>(m, "Image2VideoPipeline")
         .def(py::init([](const std::filesystem::path& models_path) {

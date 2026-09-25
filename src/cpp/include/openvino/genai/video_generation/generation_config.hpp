@@ -66,6 +66,14 @@ struct VideoGenerationConfig {
 
     /// LoRA adapters applied during generation.
     std::optional<AdapterConfig> adapters = std::nullopt;
+
+    /// Timestep conditioning value passed to every video in a timestep-conditioned VAE decoder batch.
+    /// A non-zero value is rejected when the VAE decoder does not support timestep conditioning.
+    float decode_timestep = 0.0f;
+    /// Decode-time interpolation factor between denoised latents and random noise.
+    /// If unset, decode_timestep is used. A non-zero value is rejected when the VAE decoder does not support
+    /// timestep conditioning. Applied to every video in the batch.
+    std::optional<float> decode_noise_scale = std::nullopt;
 };
 
 /**
@@ -91,6 +99,10 @@ static constexpr ov::Property<float> guidance_rescale{"guidance_rescale"};
 static constexpr ov::Property<size_t> num_frames{"num_frames"};
 /// Video frame rate.
 static constexpr ov::Property<float> frame_rate{"frame_rate"};
+/// Timestep conditioning value passed to the VAE decoder.
+static constexpr ov::Property<float> decode_timestep{"decode_timestep"};
+/// Decode-time interpolation factor between denoised latents and random noise.
+static constexpr ov::Property<float> decode_noise_scale{"decode_noise_scale"};
 
 /**
  * Function to pass 'VideoGenerationConfig' as property to 'generate()' call.
