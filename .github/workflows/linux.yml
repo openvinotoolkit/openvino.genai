@@ -1045,6 +1045,7 @@ jobs:
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
           python -m pip install transformers==5.0.0
+          # lfm2 conversion fails in CI: CVS-195736
           python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_llm_pipeline.py -k "not test_perf_metrics_with_structured_output and not lfm2" -m "not transformers_lower_v5"
       - name: Run test_llm_pipeline.py when -DENABLE_XGRAMMAR=OFF and transformers under 5.0
         env:
@@ -1052,6 +1053,7 @@ jobs:
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           python -m pip install transformers==4.57.6 diffusers==0.37.1
+          # lfm2 conversion fails in CI: CVS-195736
           python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_llm_pipeline.py -m "transformers_lower_v5 or transformers_dependent and not lfm2"
 
   Overall_Status:
