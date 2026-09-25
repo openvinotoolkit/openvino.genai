@@ -309,6 +309,13 @@ def get_argparser():
         help="Path to file with Continuous Batching Scheduler settings or dict for Speculative decoding of draft model",
     )
     parser.add_argument(
+        "--draft_load_config",
+        required=False,
+        default=None,
+        help="Path to file or dict with OpenVINO GenAI properties of the draft model for Speculative decoding, "
+        'e.g. {"ATTENTION_BACKEND": "PA"} runs a DFlash draft on PagedAttention',
+    )
+    parser.add_argument(
         "--num_assistant_tokens",
         required=False,
         default=None,

@@ -355,10 +355,19 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
                                const ov::AnyMap device_config) :
     InputsEmbedder(model_dir, Tokenizer(model_dir, device_config), device, device_config) {}
 
+namespace {
+// ContinuousBatchingAdapter adds sampler_num_threads for the CB sampler; plugins reject it on compile_model
+ov::AnyMap without_sampler_properties(ov::AnyMap device_config) {
+    device_config.erase("sampler_num_threads");
+    return device_config;
+}
+}  // namespace
+
 InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
                                const Tokenizer& tokenizer,
                                const std::string& device,
-                               const ov::AnyMap device_config) {
+                               const ov::AnyMap properties) {
+    const ov::AnyMap device_config = without_sampler_properties(properties);
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
@@ -410,7 +419,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
                                const Tokenizer& tokenizer,
                                const std::filesystem::path& config_dir_path,
                                const std::string& device,
-                               const ov::AnyMap device_config) {
+                               const ov::AnyMap properties) {
+    const ov::AnyMap device_config = without_sampler_properties(properties);
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json");
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
