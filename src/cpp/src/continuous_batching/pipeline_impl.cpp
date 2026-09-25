@@ -528,6 +528,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         const Scheduler::Output& m_scheduler_output;
         bool m_armed = true;
 
+        BorrowedLinearAttentionRowsGuard(ContinuousBatchingImpl& impl, const Scheduler::Output& scheduler_output)
+            : m_impl(impl), m_scheduler_output(scheduler_output) {
+        }
+
         ~BorrowedLinearAttentionRowsGuard() {
             if (m_armed) {
                 m_impl._release_linear_attention_borrowed_rows(m_scheduler_output);
