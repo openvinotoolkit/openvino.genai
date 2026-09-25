@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "openvino/core/any.hpp"
@@ -202,6 +203,10 @@ private:
 /// `images`, `videos`, `audios` are reused from `openvino/genai/visual_language/pipeline.hpp`.
 static constexpr ov::Property<GenerationConfig> text_config{"text_config"};
 static constexpr ov::Property<OmniTalkerSpeechConfig> talker_speech_config{"talker_speech_config"};
-static constexpr ov::Property<OmniSpeechStreamerVariant> speech_streamer{"speech_streamer"};
+
+/// @brief `speech_streamer` key for the property bags above. A free function rather than an
+/// ov::Property because, like ov::genai::streamer, it stores the concrete variant alternative
+/// instead of the variant itself — that is what lets readers type-test the ov::Any.
+OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> speech_streamer(OmniSpeechStreamerVariant func);
 
 }  // namespace ov::genai

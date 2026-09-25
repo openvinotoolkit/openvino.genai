@@ -36,6 +36,14 @@
 #   components:
 #     - continuous_batching
 
+- name: Omni (API)
+  cmd: |-
+    python -m pip install transformers==5.1.0
+    python -m pytest -v ./tests/python_tests/test_omni_pipeline.py
+  timeout: 40
+  components:
+    - omni
+
 - name: GGUF Reader tests
   cmd: |-
     python -m pytest -v ./tests/python_tests/test_gguf_reader.py

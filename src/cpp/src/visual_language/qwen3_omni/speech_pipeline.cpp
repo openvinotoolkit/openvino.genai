@@ -61,8 +61,49 @@ void end_speech_streamer(const ov::genai::OmniSpeechStreamerVariant& streamer) {
 }
 
 bool is_speech_streamer_active(const ov::genai::OmniSpeechStreamerVariant& streamer) {
+    // A C++ caller can hold the shared_ptr alternative with a null pointer, which write() and
+    // end() would dereference. Python cannot reach this: an explicit None lands in monostate.
+    if (const auto* holder = std::get_if<std::shared_ptr<ov::genai::OmniSpeechStreamerBase>>(&streamer)) {
+        return *holder != nullptr;
+    }
     return !std::holds_alternative<std::monostate>(streamer);
 }
+
+/// @brief Calls end() on an active speech streamer exactly once, on every exit path.
+/// Speech generation can throw after streaming has started — speaker lookup, talker input,
+/// inference, waveform conversion — and a consumer blocked on the stream must not be left
+/// waiting. Call end() directly to close at a chosen point; the destructor covers the rest.
+class SpeechStreamerGuard {
+public:
+    SpeechStreamerGuard(const ov::genai::OmniSpeechStreamerVariant& streamer, bool active)
+        : m_streamer(streamer),
+          m_active(active) {}
+
+    SpeechStreamerGuard(const SpeechStreamerGuard&) = delete;
+    SpeechStreamerGuard& operator=(const SpeechStreamerGuard&) = delete;
+
+    ~SpeechStreamerGuard() {
+        try {
+            end();
+        } catch (const std::exception& e) {
+            // end() runs during unwinding here, so letting a user streamer throw would terminate.
+            GENAI_WARN("Speech: streamer end() threw during cleanup: %s", e.what());
+        } catch (...) {
+            GENAI_WARN("Speech: streamer end() threw an unknown exception during cleanup");
+        }
+    }
+
+    void end() {
+        if (m_active) {
+            m_active = false;
+            end_speech_streamer(m_streamer);
+        }
+    }
+
+private:
+    const ov::genai::OmniSpeechStreamerVariant& m_streamer;
+    bool m_active;
+};
 
 }  // namespace
 
@@ -772,7 +813,7 @@ ov::Tensor Qwen3OmniSpeechPipeline::codes_to_wav(const ov::Tensor& codes) {
 
 TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& full_token_ids,
                                                        const std::vector<ov::Tensor>& all_intermediate_hidden_states,
-                                                       const OmniSpeechStreamerVariant& audio_streamer,
+                                                       const OmniSpeechStreamerVariant& speech_streamer,
                                                        const OmniTalkerSpeechConfig& talker_speech_config) {
     // Stamp start_time for the speech-side perf record.
     const auto speech_start_time = std::chrono::steady_clock::now();
@@ -797,14 +838,16 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
     const float cp_temp = talker_speech_config.cp_temperature.value_or(m_config.cp_temperature);
     const size_t cp_top_k_resolved = talker_speech_config.cp_top_k.value_or(m_config.cp_top_k);
 
+    // Construct the guard before any validation below, so a rejected config still closes the stream.
+    bool streaming = is_speech_streamer_active(speech_streamer);
+    SpeechStreamerGuard streamer_guard(speech_streamer, streaming);
+
     const size_t chunk_frames = talker_speech_config.audio_chunk_frames;
     OPENVINO_ASSERT(chunk_frames >= 1, "audio_chunk_frames must be >= 1 (got ", chunk_frames, ")");
-    bool streaming = is_speech_streamer_active(audio_streamer);
 
     if (!m_talker_available) {
         GENAI_WARN("Speech: talker not available");
-        if (streaming)
-            end_speech_streamer(audio_streamer);
+        streamer_guard.end();
         return build_result(ov::Tensor{});
     }
 
@@ -839,12 +882,13 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
     auto [talker_input, trailing_text_hidden] =
         build_talker_input(full_token_ids, all_intermediate_hidden_states, speaker_embed_to_use);
 
-    if (talker_input.get_shape()[1] == 0) {
-        GENAI_WARN("Speech: build_talker_input returned empty, cannot generate speech");
-        if (streaming)
-            end_speech_streamer(audio_streamer);
-        return build_result(ov::Tensor{});
-    }
+    OPENVINO_ASSERT(talker_input.get_shape()[1] != 0,
+                    "Speech generation produced no talker input: none of the ",
+                    full_token_ids.size(),
+                    " thinker tokens matched im_start_token_id=",
+                    m_config.im_start_token_id,
+                    ", so the conversation could not be segmented. The role token ids in the model's "
+                    "config.json must be the ids its tokenizer actually emits.");
 
     GENAI_DEBUG("Speech: talker_input=[1, %zu, %zu], trailing=[1, %zu, ...], streaming=%s, chunk_frames=%zu",
                 talker_input.get_shape()[1],
@@ -989,7 +1033,7 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
             chunk_cursor = all_codes.size();
             streamed_chunks.push_back(chunk_wav);
 
-            auto status = invoke_speech_streamer(audio_streamer, chunk_wav);
+            auto status = invoke_speech_streamer(speech_streamer, chunk_wav);
             if (status == StreamingStatus::STOP || status == StreamingStatus::CANCEL) {
                 GENAI_INFO("Speech: streaming %s at step %zu",
                            status == StreamingStatus::STOP ? "stopped" : "cancelled",
@@ -1036,13 +1080,12 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
         auto chunk_tensor = stack_codes_range(chunk_cursor, all_codes.size());
         auto chunk_wav = codes_to_wav(chunk_tensor);
         streamed_chunks.push_back(chunk_wav);
-        invoke_speech_streamer(audio_streamer, chunk_wav);
+        invoke_speech_streamer(speech_streamer, chunk_wav);
     }
 
-    // Always call end() on active streamer
-    if (streaming) {
-        end_speech_streamer(audio_streamer);
-    }
+    // Close the stream here rather than at scope exit: the consumer should not wait
+    // while the full waveform is assembled below.
+    streamer_guard.end();
 
     if (all_codes.size() == talker_max_tokens) {
         GENAI_WARN("Speech: reached max tokens (%zu) without EOS", talker_max_tokens);

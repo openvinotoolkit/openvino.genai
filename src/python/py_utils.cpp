@@ -17,6 +17,8 @@
 #include "openvino/genai/extensions.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/omni/pipeline.hpp"
+#include "openvino/genai/omni/talker_speech_config.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/genai/taylorseer_config.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
@@ -429,6 +431,10 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         return py::cast<ov::genai::SchedulerConfig>(py_obj);
     } else if (py::isinstance<ov::genai::AdapterConfig>(py_obj)) {
         return py::cast<ov::genai::AdapterConfig>(py_obj);
+    } else if (py::isinstance<ov::genai::OmniTalkerSpeechConfig>(py_obj)) {
+        // TalkerBase::generate documents talker_speech_config as a keyword and
+        // resolve_talker_properties() reads it back with as<OmniTalkerSpeechConfig>().
+        return py::cast<ov::genai::OmniTalkerSpeechConfig>(py_obj);
     } else if (py::isinstance<ov::genai::StructuralTagItem>(py_obj)) {
         return py::cast<ov::genai::StructuralTagItem>(py_obj);
     } else if (py::isinstance<ov::genai::StructuralTagsConfig>(py_obj)) {
@@ -499,15 +505,9 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         auto streamer = py::cast<ov::genai::pybind::utils::PyBindStreamerVariant>(py_obj);
         return ov::genai::streamer(pystreamer_to_streamer(streamer)).second;
     } else if ((py::isinstance<py::function>(py_obj) || py::isinstance<ov::genai::OmniSpeechStreamerBase>(py_obj)) &&
-               property_name == "audio_streamer") {
-        auto audio_streamer = py::cast<ov::genai::pybind::utils::PyBindOmniSpeechStreamerVariant>(py_obj);
-        auto converted = py_speech_streamer_to_streamer(audio_streamer);
-        // Store the unwrapped concrete type so get_audio_streamer_from_map can .is<T>() it
-        return std::visit(
-            [](auto&& val) -> ov::Any {
-                return ov::Any(val);
-            },
-            converted);
+               property_name == ov::genai::utils::SPEECH_STREAMER_ARG_NAME) {
+        auto speech_streamer = py::cast<ov::genai::pybind::utils::PyBindOmniSpeechStreamerVariant>(py_obj);
+        return ov::genai::speech_streamer(py_speech_streamer_to_streamer(speech_streamer)).second;
     } else if (py::isinstance(py_obj, py::module_::import("pathlib").attr("Path"))) {
         return py::cast<std::filesystem::path>(py_obj);
     }
