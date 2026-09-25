@@ -14,6 +14,7 @@
 
 #include <iostream>
 #include "openvino/core/extension.hpp"
+#include "openvino/genai/automatic_speech_recognition/forced_aligner.hpp"
 #include "openvino/genai/extensions.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
@@ -477,6 +478,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         std::shared_ptr<ov::genai::Generator> wrapper =
             std::make_shared<GilSafeGeneratorWrapper>(std::move(impl), py::reinterpret_borrow<py::object>(py_obj));
         return wrapper;
+    } else if (py::isinstance<ov::genai::ASRForcedAligner>(py_obj)) {
+        return py::cast<std::shared_ptr<ov::genai::ASRForcedAligner>>(py_obj);
     } else if (py::isinstance<py::function>(py_obj) && property_name == "callback") {
         auto py_callback = py::cast<py::function>(py_obj);
         auto shared_callback = std::shared_ptr<py::function>(new py::function(py_callback), [](py::function* f) {
