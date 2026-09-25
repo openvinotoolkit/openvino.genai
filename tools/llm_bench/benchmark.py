@@ -174,7 +174,8 @@ def get_argparser():
         default=None,
         required=False,
         type=str,
-        help="Path to store memory consumption logs and chart.",
+        help="Path to store memory consumption logs and chart. "
+        "Defaults to ./memory_consumption for process-based monitoring (--memory_consumption 3 or 4).",
     )
     parser.add_argument(
         "--memory_sampler",
@@ -182,7 +183,7 @@ def get_argparser():
         choices=["base", "win-gpu", "full"],
         type=str.lower,  # normalise e.g. 'WIN-GPU'/'Full' -> 'win-gpu'/'full' before choices validation
         required=False,
-        help="Memory sampler implementation to use when process-based monitoring is active\n"
+        help="Memory sampler implementation to use when process-based monitoring is active.\n"
         "(--memory_consumption 3 or 4).\n"
         "Possible values:\n"
         "  base (default) — MemorySamplerBase: cross-platform sampler built on\n"
@@ -250,8 +251,10 @@ def get_argparser():
     parser.add_argument(
         "--subsequent",
         action="store_true",
-        help="if the value is True, input prompts are processed in subsequent manner"
-        "if the value is False (default), input prompts are processed in interleave manner",
+        help="Run all iterations of one prompt before moving to the next (prompt-major).\n"
+        "When absent (default), every prompt is run once per iteration (interleaved).\n"
+        "Applies to all tasks; see 'Iteration order' in README.md — video generation\n"
+        "and super-resolution did not follow this before and their ordering changed.",
     )
     parser.add_argument("-od", "--output_dir", help="Save the input text and generated text, images to files")
     parser.add_argument(

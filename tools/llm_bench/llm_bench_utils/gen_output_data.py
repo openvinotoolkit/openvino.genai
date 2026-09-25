@@ -2,6 +2,74 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import re
+import logging as log
+
+# CJK / kana characters: one word each (these languages don't separate words with spaces).
+_CJK = r"\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff"
+# A word: letters/digits (Unicode-aware, no underscore, no CJK), optionally joined
+# by an apostrophe or hyphen ("don't", "state-of-the-art" -> 1 word).
+_WORD_RE = re.compile(rf"[{_CJK}]|[^\W_{_CJK}]+(?:['’\-][^\W_{_CJK}]+)*")
+
+
+def count_words(text):
+    """Number of words in *text*, as shown by the ``text:<N>w`` reprs.
+
+    Punctuation is not a word, whether attached ("Hello,") or standalone
+    (" - "), and every CJK / kana character counts as one word.
+    """
+    return len(_WORD_RE.findall(text)) if text else 0
+
+
+def count_text_tokens(tokenizer, text):
+    """Number of tokens the raw *text* encodes to, or ``None`` if unknown.
+
+    Counts the text alone: no special tokens, no chat template, no media
+    placeholders — so it is not comparable with ``input_size``, which is what
+    the model actually processed. Accepts a HF tokenizer, a HF processor
+    (unwrapped via its ``.tokenizer``) or an ``openvino_genai.Tokenizer``.
+    Call it outside the timed region; any tokenizer failure yields ``None``
+    so the repr falls back to the word count alone.
+    """
+    if tokenizer is None or not text:
+        return None
+    tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+    try:
+        ids = tokenizer.encode(text, add_special_tokens=False)
+    except Exception as exc:
+        log.debug(f"Cannot count input text tokens: {exc}")
+        return None
+    # openvino_genai returns TokenizedInputs, HF a plain list of ids.
+    ids = getattr(ids, "input_ids", ids)
+    return ids.shape[-1] if hasattr(ids, "shape") else len(ids)
+
+
+def text_output_repr(text, tokenizer=None):
+    """Size summary of a generated *text* output, e.g. ``"text:42w/57t"``.
+
+    Mirrors the input-side text repr produced by ``BenchPrompt._repr``
+    (``prompt_repr``) so ``output_repr`` and ``prompt_repr`` read the same way:
+    text as a word count (``w`` suffix, see :func:`count_words`) plus, when a
+    *tokenizer* is given, its token count (``/<M>t`` suffix, see
+    :func:`count_text_tokens`); media as dimensions (the media-generating tasks
+    pass their own ``output_repr`` such as ``"image:512x512"``). The token
+    count is dropped if it cannot be determined. Returns ``"empty"`` when the
+    output is empty or whitespace only — e.g. a broken model whose generated
+    tokens all decode to nothing — so it is not mistaken for missing data.
+    Text with no words but some characters (``"..."``) is ``"text:0w/<M>t"``.
+
+    Callers pass the single generated string they also report elsewhere (the
+    first batch element), matching ``prompt_repr``, which likewise describes
+    one item rather than the whole batch — so the token count is not
+    comparable with ``output_size``, which is batch-total. Call it outside the
+    timed region, as tokenizing the output takes time.
+    """
+    if not text or not text.strip():
+        return "empty"
+    n = count_words(text)
+    text_tokens = count_text_tokens(tokenizer, text)
+    return f"text:{n}w/{text_tokens}t" if text_tokens is not None else f"text:{n}w"
+
 
 def gen_iterate_data(
     iter_idx="",
@@ -21,12 +89,24 @@ def gen_iterate_data(
     tokenization_time=[],
     mm_embeddings_preparation_time="",
     chat_idx="",
+    output_repr="",
+    in_text_tokens="",
 ):
     iter_data = {}
     iter_data["iteration"] = iter_idx
     iter_data["input_size"] = in_size
+    # input_text_tokens: token count of the raw prompt text alone (see
+    # count_text_tokens). Not a report column: BenchPrompt renders it into
+    # prompt_repr as "text:<N>w/<M>t".
+    iter_data["input_text_tokens"] = in_text_tokens if in_text_tokens is not None else ""
     iter_data["infer_count"] = infer_count
     iter_data["output_size"] = out_size
+    # output_repr: compact summary of the generated output, symmetric with
+    # prompt_repr. Text tasks pass "text:<N>w/<M>t" words and tokens (via
+    # text_output_repr); media tasks pass their own dimensions string
+    # (e.g. "image:512x512"). "empty" for a generated text with nothing in it;
+    # "" when no output applies.
+    iter_data["output_repr"] = output_repr or ""
     iter_data["generation_time"] = gen_time
     iter_data["latency"] = latency
     iter_data["result_md5"] = res_md5
@@ -63,6 +143,7 @@ def embed_iterate_data(
     max_sys_mem_share="",
     prompt_idx="",
     tokenization_time=[],
+    output_repr="",
 ):
     iter_data = {}
     iter_data["iteration"] = iter_idx
@@ -86,4 +167,7 @@ def embed_iterate_data(
     iter_data["detokenization_time"] = ""
     iter_data["result_md5"] = ""
     iter_data["output_size"] = ""
+    # Empty for embeddings (no generated output); rerankers pass the number of
+    # ranked documents returned, e.g. "docs:2".
+    iter_data["output_repr"] = output_repr or ""
     return iter_data
