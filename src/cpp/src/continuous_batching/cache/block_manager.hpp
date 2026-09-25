@@ -1011,9 +1011,13 @@ public:
         OPENVINO_ASSERT(existing_temporary_it == m_temporary_block_table.end() ||
                             existing_temporary_it->second.empty(),
                         "Temporary cache blocks are already reserved for sequence ", seq_id);
-        OPENVINO_ASSERT(can_allocate_blocks(num_blocks),
-                        "Not enough cache blocks to reserve ", num_blocks,
-                        " temporary checkpoints for sequence ", seq_id);
+        const size_t free_blocks = m_allocator.num_free_blocks(0);
+        if (free_blocks < num_blocks) {
+            const size_t missing_blocks = num_blocks - free_blocks;
+            OPENVINO_ASSERT(get_total_block_count() <= std::numeric_limits<size_t>::max() - missing_blocks,
+                            "Temporary cache checkpoint capacity exceeds size_t range");
+            increase_block_count(get_total_block_count() + missing_blocks);
+        }
 
         std::vector<BlocksPerLayer> temporary_blocks;
         temporary_blocks.reserve(num_blocks);

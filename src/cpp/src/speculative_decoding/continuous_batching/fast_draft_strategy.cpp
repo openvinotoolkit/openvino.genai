@@ -213,6 +213,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
 
     // to generate num_matches statistic
     std::map<int64_t, UpdateRequestResult> update_sequence_info;
+    const auto main_generated_requests_before_validation = m_main_pipeline->get_generated_requests();
     // put candidates to model KV cache
     auto draft_generated_requests = m_draft_pipeline->get_generated_requests();
     for (const auto& candidate : m_draft_pipeline->get_generated_requests()) {
@@ -221,19 +222,29 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     }
     m_main_pipeline->sync_generated_embeddings();
 
-    // to ensure extras steps, if any, are finished before main model generation
-    if (m_sync_future.valid()) {
-        m_sync_future.get();
-    }
+    prepare_main_validation(main_generated_requests_before_validation, update_sequence_info);
 
-    const auto main_start = std::chrono::steady_clock::now();
-    m_main_pipeline->step();
-    const auto main_end = std::chrono::steady_clock::now();
+    // to ensure extras steps, if any, are finished before main model generation
+    TimePoint main_start;
+    TimePoint main_end;
+    try {
+        if (m_sync_future.valid()) {
+            m_sync_future.get();
+        }
+
+        main_start = std::chrono::steady_clock::now();
+        m_main_pipeline->step();
+        main_end = std::chrono::steady_clock::now();
+    } catch (...) {
+        abort_main_validation();
+        throw;
+    }
     const auto main_duration = PerfMetrics::get_microsec(main_end - main_start);
     m_sd_metrics.main_duration += main_duration / 1e6;
     m_pipeline_metrics = m_main_pipeline->get_metrics();
 
     auto main_generated_requests = m_main_pipeline->get_generated_requests();
+    finalize_main_validation(main_generated_requests);
     for (const auto& checked_sequence : main_generated_requests) {
         auto update_result = m_draft_pipeline->update_request(checked_sequence.first, checked_sequence.second, true);
         const bool is_tree_validation = std::any_of(checked_sequence.second.begin(),
