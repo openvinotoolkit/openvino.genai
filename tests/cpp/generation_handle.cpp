@@ -167,9 +167,9 @@ TEST(GenerationStreamContractTest, BlockedReadWakesEmptyOnStopAndCancel) {
         const auto handle = make_handle(stream);
         std::promise<void> reader_started_promise;
         std::future<void> reader_started = reader_started_promise.get_future();
-        auto reader = std::async(std::launch::async, [&handle, &reader_started_promise] {
+        auto reader = std::async(std::launch::async, [&stream, &reader_started_promise] {
             reader_started_promise.set_value();
-            return handle->read();
+            return stream->read();
         });
         StreamStopGuard stream_stop_guard(stream);
 
