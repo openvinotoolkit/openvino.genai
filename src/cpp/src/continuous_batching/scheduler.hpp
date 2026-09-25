@@ -24,7 +24,10 @@
 #include "continuous_batching/cache/cache_eviction.hpp"
 
 namespace ov::genai {
-class Scheduler {
+// Keep this internal scheduler distinct from the public image-generation
+// ov::genai::Scheduler.  Defining both classes under the same qualified name
+// violates the one-definition rule when the complete library is linked.
+class ContinuousBatchingScheduler {
 public:
     // Stable data that doesn't change across scheduling calls
     struct KVPagedAttentionGlobalData {
@@ -280,7 +283,7 @@ public:
         }
     };
 
-    Scheduler(std::shared_ptr<CacheOrchestrator> cache_orchestrator, const SchedulerConfig & config = {}, bool can_use_partial_preemption = true, size_t snapkv_window_size = 1) :
+    ContinuousBatchingScheduler(std::shared_ptr<CacheOrchestrator> cache_orchestrator, const SchedulerConfig & config = {}, bool can_use_partial_preemption = true, size_t snapkv_window_size = 1) :
         m_can_use_partial_preemption(can_use_partial_preemption),
         m_config(config),
         m_kv_paged_attention_global_data(std::make_shared<const KVPagedAttentionGlobalData>(config)),

@@ -209,7 +209,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
         can_use_partial_preemption = false;
     }
 
-    // Scheduler and Model Runner instantiation
+    // Continuous batching scheduler and model runner instantiation
     bool is_use_xattention = scheduler_config.use_sparse_attention &&
                              scheduler_config.sparse_attention_config.mode == SparseAttentionMode::XATTENTION;
     bool is_use_cache_eviction = scheduler_config.use_cache_eviction;
@@ -217,7 +217,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     const size_t kv_block_size = cache_orchestrator->get_block_size(CacheType::KV_CACHE);
     if (is_use_cache_eviction) {
         const auto& eviction_config = scheduler_config.cache_eviction_config;
-        m_scheduler = std::make_shared<Scheduler>(cache_orchestrator, normalized_config, can_use_partial_preemption, eviction_config.snapkv_window_size);
+        m_scheduler = std::make_shared<ContinuousBatchingScheduler>(cache_orchestrator, normalized_config, can_use_partial_preemption, eviction_config.snapkv_window_size);
 
         bool is_apply_rotation = eviction_config.apply_rotation;
         bool is_use_adaptive_rkv = (eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV);
@@ -235,7 +235,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
             _prepare_rotation_data_storage(normalized_config, kv_mgr.get_v_head_size(0));
         }
     } else {
-        m_scheduler = std::make_shared<Scheduler>(cache_orchestrator, normalized_config, can_use_partial_preemption);
+        m_scheduler = std::make_shared<ContinuousBatchingScheduler>(cache_orchestrator, normalized_config, can_use_partial_preemption);
         m_model_runner =
             std::make_shared<ModelRunner>(infer_request, kv_block_size, m_num_decoder_layers,
                                                        /* collect_attention_scores = */ false,
@@ -427,7 +427,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_publish_linear_attenti
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_release_linear_attention_borrowed_rows(
-    const Scheduler::Output& scheduler_output) {
+    const ContinuousBatchingScheduler::Output& scheduler_output) {
     if (!m_scheduler->has_linear_attention_cache()) {
         return;
     }
@@ -442,7 +442,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_release_linear_attenti
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_linear_attention_checkpoint_transactions(
-    const Scheduler::Output& scheduler_output) {
+    const ContinuousBatchingScheduler::Output& scheduler_output) {
     if (!m_scheduler->has_linear_attention_cache()) {
         return;
     }
@@ -481,7 +481,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     _validate_linear_verifier_constraints();
     _reserve_linear_attention_scratch();
 
-    Scheduler::Output scheduler_output;
+    ContinuousBatchingScheduler::Output scheduler_output;
 
     {
         static ManualTimer scheduling_timer("scheduling");
@@ -525,7 +525,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     // Return borrowed rows if forward or sampling fails before commit.
     struct BorrowedLinearAttentionRowsGuard {
         ContinuousBatchingImpl& m_impl;
-        const Scheduler::Output& m_scheduler_output;
+        const ContinuousBatchingScheduler::Output& m_scheduler_output;
         bool m_armed = true;
 
         ~BorrowedLinearAttentionRowsGuard() {
@@ -965,7 +965,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests() {
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation_data(
     const std::vector<SequenceGroup::Ptr>& sequence_groups,
-    const Scheduler::Output& scheduler_output) {
+    const ContinuousBatchingScheduler::Output& scheduler_output) {
     size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
     std::map<size_t, size_t> live_seq_ids_to_num_occupied_blocks;
     for (size_t i = 0; i < num_sequence_groups; ++i) {
@@ -1039,7 +1039,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_blocks(
     const SchedulerConfig& sched_config,
-    const Scheduler::Output& scheduler_output) {
+    const ContinuousBatchingScheduler::Output& scheduler_output) {
     std::unordered_map<SequenceGroup::Ptr, size_t> seq_group_to_num_blocks_evicted_map;
     const auto& sequence_attention_scores = m_model_runner->get_last_attention_scores();
 
@@ -1116,7 +1116,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_set_adaptive_rkv_diversity_blocks(
     const SchedulerConfig& sched_config,
-    const Scheduler::Output& scheduler_output) {
+    const ContinuousBatchingScheduler::Output& scheduler_output) {
     // TODO(vshampor): implement
 }
 
