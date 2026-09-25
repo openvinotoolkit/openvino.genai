@@ -1,0 +1,217 @@
+name: Android (ARM64, x64)
+on:
+  workflow_dispatch:
+  pull_request:
+  merge_group:
+  push:
+    branches:
+      - master
+      - 'releases/**'
+
+permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
+
+concurrency:
+  # github.ref is not unique in post-commit
+  group: ${{ github.event_name == 'push' && github.run_id || github.ref }}-android
+  cancel-in-progress: true
+
+env:
+  OV_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
+  CMAKE_CXX_COMPILER_LAUNCHER: sccache
+  CMAKE_C_COMPILER_LAUNCHER: sccache
+  SCCACHE_IGNORE_SERVER_IO_ERROR: 1
+  SCCACHE_SERVER_PORT: 35555
+  SCCACHE_CACHE_SIZE: 30G
+  GENAI_ARCHIVE_NAME: genai.tar.gz
+  # NDK and SDK are preinstalled in the ov_build/ubuntu_22_04_android image.
+  ANDROID_NDK_HOME: '/deps/android_tools/ndk/29.0.14206865'
+  ANDROID_SDK_VERSION: 35
+
+jobs:
+  smart_ci:
+    name: Smart CI
+    runs-on: ubuntu-latest
+    outputs:
+      affected_components: "${{ steps.smart_ci.outputs.affected_components }}"
+      changed_components: "${{ steps.smart_ci.outputs.changed_components }}"
+      skip_workflow: "${{ steps.smart_ci.outputs.skip_workflow }}"
+    steps:
+      - name: checkout action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 15
+        with:
+          sparse-checkout: .github
+
+      - name: Get affected components
+        id: smart_ci
+        uses: openvinotoolkit/openvino/.github/actions/smart-ci@009fce994252679e838bfa14efc0c27f7e66daad
+        with:
+          repository: ${{ github.repository }}
+          pr: ${{ github.event.number }}
+          commit_sha: ${{ github.sha }}
+          ref_name: ${{ github.ref_name }}
+          component_pattern: "category: ((?!Python API|CPP API).*)|Structured Output"
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          skip_when_only_listed_labels_set: 'GH Pages Docs'
+          skip_when_only_listed_files_changed: '*.md,*.rst,*.png,*.jpg,*.svg,*.gif'
+
+      - name: Show affected components
+        run: echo "${{ toJSON(steps.smart_ci.outputs.affected_components) }}"
+        shell: bash
+
+  get_docker_tag:
+    needs: smart_ci
+    if: ${{ github.event_name != 'merge_group' && needs.smart_ci.outputs.skip_workflow != 'True' }}
+    name: Get Docker tag
+    timeout-minutes: 5
+    defaults:
+      run:
+        shell: bash
+    runs-on: ubuntu-latest
+    outputs:
+      docker_tag: ${{ steps.get_docker_tag.outputs.docker_tag }}
+    steps:
+      - name: Clone docker tag from OpenVINO repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: 'openvinotoolkit/openvino'
+          path: 'openvino'
+          ref: ${{ env.OV_BRANCH }}
+          sparse-checkout: |
+            .github/dockerfiles/docker_tag
+
+      - name: Save docker tag to output
+        id: get_docker_tag
+        run: |
+          docker_tag=$(cat openvino/.github/dockerfiles/docker_tag)
+          echo "docker_tag=$docker_tag" >> $GITHUB_OUTPUT
+
+  openvino_download:
+    needs: smart_ci
+    if: ${{ github.event_name != 'merge_group' && needs.smart_ci.outputs.skip_workflow != 'True' }}
+    name: Download OpenVINO - ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+          - arch: x64
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    runs-on: aks-linux-medium
+    container:
+      image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+
+    steps:
+    - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@master
+      with:
+        platform: android
+        arch: ${{ matrix.arch }}
+        ov_artifact_name: genai_ov_package_android_${{ matrix.arch }}
+        commit_packages_to_provide: openvino_package.tar.gz
+        # Consuming Android artifacts from OpenVINO PR https://github.com/openvinotoolkit/openvino/pull/38294.
+        # Revert to `revision: latest_available_commit` (and drop branch_name/event_name) once it is merged.
+        revision: ecd8e6b5eee7247f5d7a9b72bd2e9d9aab7ee037
+        branch_name: master
+        event_name: pull_request
+
+  genai_build_android:
+    name: Build Android - ${{ matrix.arch }}
+    needs: [ smart_ci, get_docker_tag, openvino_download ]
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    runs-on: aks-linux-8-cores-16gb
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            android_abi: arm64-v8a
+          - arch: x64
+            android_abi: x86_64
+    container:
+      image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_android:${{ needs.get_docker_tag.outputs.docker_tag }}
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+      options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING
+    env:
+      CMAKE_GENERATOR: Ninja
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      INSTALL_DIR: ${{ github.workspace }}/install
+      BUILD_DIR: ${{ github.workspace }}/build
+      SRC_DIR: ${{ github.workspace }}/src
+      # Per-arch cache prefix so each matrix leg keeps its own sccache entries.
+      SCCACHE_AZURE_KEY_PREFIX: genai/android/${{ matrix.arch }}
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: ${{ env.SRC_DIR }}
+          submodules: recursive
+
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: genai_ov_package_android_${{ matrix.arch }}
+          path: ${{ env.OV_INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Clean sccache stats
+        run: ${SCCACHE_PATH} --zero-stats
+
+      - name: CMake Build
+        run: |
+          cmake -G '${{ env.CMAKE_GENERATOR }}' \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_TOOLCHAIN_FILE=${{ env.ANDROID_NDK_HOME }}/build/cmake/android.toolchain.cmake \
+                -DANDROID_ABI=${{ matrix.android_abi }} \
+                -DANDROID_PLATFORM=${{ env.ANDROID_SDK_VERSION }} \
+                -DANDROID_STL=c++_shared \
+                -DOpenVINO_DIR=${{ env.OV_INSTALL_DIR }}/runtime/cmake \
+                -DENABLE_PYTHON=OFF \
+                -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+                -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+                -DCMAKE_EXE_LINKER_FLAGS="-Wl,-z,max-page-size=16384" \
+                -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384" \
+                -S ${{ env.SRC_DIR }} \
+                -B ${{ env.BUILD_DIR }}
+          cmake --build ${{ env.BUILD_DIR }} --config Release --parallel $(nproc) --verbose
+          cmake --install ${{ env.BUILD_DIR }} --config Release --prefix ${{ env.INSTALL_DIR }}
+
+      - name: Show sccache stats
+        run: ${SCCACHE_PATH} --show-stats
+
+      - name: Pack Artifacts
+        run: tar -cvf - * | pigz > ${{ env.BUILD_DIR }}/${{ env.GENAI_ARCHIVE_NAME }}
+        working-directory: ${{ env.INSTALL_DIR }}
+
+      - name: Upload Archive Distribution Package
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: genai_archive_android_${{ matrix.arch }}
+          path: ${{ env.BUILD_DIR }}/${{ env.GENAI_ARCHIVE_NAME }}
+          if-no-files-found: 'error'
+
+  Overall_Status:
+    name: ci/gha_overall_status_android
+    needs: [smart_ci, get_docker_tag, openvino_download, genai_build_android]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check status of all jobs
+        if: >-
+          ${{
+            contains(needs.*.result, 'failure') ||
+            contains(needs.*.result, 'cancelled')
+          }}
+        run: exit 1
