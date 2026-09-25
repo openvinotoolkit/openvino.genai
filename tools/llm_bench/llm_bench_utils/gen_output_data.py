@@ -53,8 +53,10 @@ def text_output_repr(text, tokenizer=None):
     *tokenizer* is given, its token count (``/<M>t`` suffix, see
     :func:`count_text_tokens`); media as dimensions (the media-generating tasks
     pass their own ``output_repr`` such as ``"image:512x512"``). The token
-    count is dropped if it cannot be determined. Returns ``""`` for empty
-    output.
+    count is dropped if it cannot be determined. Returns ``"empty"`` when the
+    output is empty or whitespace only — e.g. a broken model whose generated
+    tokens all decode to nothing — so it is not mistaken for missing data.
+    Text with no words but some characters (``"..."``) is ``"text:0w/<M>t"``.
 
     Callers pass the single generated string they also report elsewhere (the
     first batch element), matching ``prompt_repr``, which likewise describes
@@ -62,9 +64,9 @@ def text_output_repr(text, tokenizer=None):
     comparable with ``output_size``, which is batch-total. Call it outside the
     timed region, as tokenizing the output takes time.
     """
+    if not text or not text.strip():
+        return "empty"
     n = count_words(text)
-    if not n:
-        return ""
     text_tokens = count_text_tokens(tokenizer, text)
     return f"text:{n}w/{text_tokens}t" if text_tokens is not None else f"text:{n}w"
 
@@ -102,7 +104,8 @@ def gen_iterate_data(
     # output_repr: compact summary of the generated output, symmetric with
     # prompt_repr. Text tasks pass "text:<N>w/<M>t" words and tokens (via
     # text_output_repr); media tasks pass their own dimensions string
-    # (e.g. "image:512x512"). Empty when neither applies.
+    # (e.g. "image:512x512"). "empty" for a generated text with nothing in it;
+    # "" when no output applies.
     iter_data["output_repr"] = output_repr or ""
     iter_data["generation_time"] = gen_time
     iter_data["latency"] = latency
