@@ -1,5 +1,5 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
-diffusers==0.39.0
+diffusers==0.40.0
 optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@dd4ed1a86f9c2abf34d8dce777da5b592765b644
 pytest==9.1.1
 transformers==5.5.4
@@ -8,7 +8,7 @@ gguf==0.19.0
 
 # rag requirements
 langchain_community==0.4.2
-langchain-core==1.6.1
+langchain-core==1.6.4
 
 # requirements for specific models
 # - Qwen/Qwen-7B
@@ -26,7 +26,7 @@ datasets==3.6.0; sys_platform != "linux"
 torchcodec==0.11.0; sys_platform == "linux"
 rouge==1.0.1
 # - microsoft/Phi-4-multimodal-instruct
-peft==0.20.0
+peft==0.21.0
 # - openbmb/MiniCPM-o-2_6
 vocos==0.1.0
 torchaudio==2.11.0
