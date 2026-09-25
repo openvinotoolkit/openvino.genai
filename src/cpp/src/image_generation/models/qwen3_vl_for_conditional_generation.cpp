@@ -408,7 +408,7 @@ Qwen3VLForConditionalGeneration& Qwen3VLForConditionalGeneration::compile(const 
     return *this;
 }
 
-ov::Tensor Qwen3VLForConditionalGeneration::drop_system_prefix(const ov::Tensor hidden_states,
+ov::Tensor Qwen3VLForConditionalGeneration::drop_system_prefix(const ov::Tensor& hidden_states,
                                                                const size_t prompt_length) const {
     const size_t hidden_size = hidden_states.get_shape()[2];
     ov::Tensor prompt_embeds(ov::element::f32, {1, prompt_length, hidden_size});
@@ -497,7 +497,7 @@ ov::Tensor Qwen3VLForConditionalGeneration::infer_vision_tower(const ov::Tensor 
 }
 
 ov::Tensor Qwen3VLForConditionalGeneration::infer(const std::string& prompt,
-                                                  const ov::Tensor condition_image,
+                                                  const ov::Tensor& condition_image,
                                                   const int max_sequence_length) {
     OPENVINO_ASSERT(m_i2i_request && m_vision_request,
                     "QwenImage 2.1 vision tower must be compiled first. Cannot infer non-compiled model");
