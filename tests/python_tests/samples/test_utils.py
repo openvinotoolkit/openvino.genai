@@ -9,18 +9,6 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-PA_FALLBACK_WARNING = (
-    "[WARNING] Paged Attention backend initialization failed. Falling back to SDPA backend. "
-    'Set ATTENTION_BACKEND="SDPA" to skip Paged Attention initialization.'
-)
-
-
-def normalize_sample_output(output: str) -> str:
-    if PA_FALLBACK_WARNING not in output:
-        return output
-    return output.replace(PA_FALLBACK_WARNING, "").strip()
-
-
 def compare_videos(video_path1: Path, video_path2: Path) -> bool:
     """Compare two videos frame by frame for exact match."""
     cap1 = cv2.VideoCapture(str(video_path1))
@@ -71,7 +59,6 @@ def run_sample(
     except subprocess.CalledProcessError as error:
         logger.error(f"Sample returned {error.returncode}. Output:\n{error.output}")
         raise
-    result.stdout = normalize_sample_output(result.stdout)
     logger.info(f"Sample output: {result.stdout}")
     return result
 
@@ -120,7 +107,7 @@ def run_js_chat(
             raise subprocess.TimeoutExpired(command, timeout)
         remaining_output, _ = proc.communicate(timeout=remaining_timeout)
         if remaining_output:
-            stdout_chunks.append(normalize_sample_output(remaining_output))
+            stdout_chunks.append(remaining_output)
         return_code = proc.returncode
     except subprocess.TimeoutExpired:
         proc.kill()
