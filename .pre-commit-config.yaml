@@ -34,3 +34,13 @@ repos:
         additional_dependencies:
           - ruff==0.14.4
           - tomli==2.3.0
+  - repo: local
+    hooks:
+      - id: git-clang-format
+        name: git-clang-format
+        entry: git-clang-format --binary clang-format --extensions=c,cc,cpp,cxx,h,hpp,hxx --style=file
+        language: python
+        additional_dependencies:
+          - clang-format==23.1.0
+        files: \.(c|cc|cpp|cxx|h|hpp|hxx)$
+        pass_filenames: false
