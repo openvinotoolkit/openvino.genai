@@ -169,6 +169,7 @@ MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
 MODEL_DEEPSEEK_OCR2 = "optimum-intel-internal-testing/tiny-random-deepseek-ocr-2"
+MODEL_LFM2_VL = "optimum-intel-internal-testing/tiny-random-lfm2-vl"
 
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
@@ -191,6 +192,7 @@ else:
         "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
         "qnguyen3/nanoLLaVA",
         MODEL_DEEPSEEK_OCR2,
+        MODEL_LFM2_VL,
         *VIDEO_MODEL_IDS,
     ]
 
@@ -212,6 +214,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     MODEL_GEMMA3N: lambda idx: "<image_soft_token>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     MODEL_DEEPSEEK_OCR2: lambda idx: "<image>",
+    MODEL_LFM2_VL: lambda idx: "<image>",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
@@ -536,11 +539,11 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     models_path = _get_ov_model(ov_model)
 
     pipeline_properties: dict = {"ATTENTION_BACKEND": ov_backend, "prompt_lookup": ov_prompt_lookup}
-    if "qwen3.5" in ov_model and ov_backend == "PA" and ov_prompt_lookup:
-        # qwen3.5 is a hybrid (linear-attention) model. Prompt lookup on the PA backend engages the
-        # linear-attention verifier, which does not yet support prefix caching. VLMPipeline enables
-        # prefix caching by default (latency-oriented scheduler config), so pass an explicit config
-        # with it disabled instead of relying on the default.
+    if ("qwen3.5" in ov_model or "lfm2" in ov_model) and ov_backend == "PA" and ov_prompt_lookup:
+        # qwen3.5 and lfm2-vl are hybrid (linear-attention / short-convolution) models. Prompt lookup
+        # on the PA backend engages the linear-attention verifier, which does not yet support prefix
+        # caching. VLMPipeline enables prefix caching by default (latency-oriented scheduler config),
+        # so pass an explicit config with it disabled instead of relying on the default.
         scheduler_config = SchedulerConfig()
         scheduler_config.enable_prefix_caching = False
         pipeline_properties["scheduler_config"] = scheduler_config
@@ -2440,6 +2443,14 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     "*tiny-videochat-flash-qwen/PA/CPP/text-only": "CVS-183813",
     # deepseek-ocr-2 text-only cases
     "*tiny-random-deepseek-ocr-2/*/text-only": "DeepSeek OCR-2 model requires image input.",
+    # lfm2-vl PagedAttention cases: LFM2-VL wraps the hybrid LFM2 language model
+    # (short-convolution + GQA attention). The PagedAttention backend does not yet
+    # reproduce that hybrid cache exactly, so greedy decoding diverges from the
+    # SDPA/optimum reference. VLMPipeline pins LFM2-VL to SDPA by default (see
+    # requires_sdpa() in pipeline.cpp); these cases only fail when PA is requested
+    # explicitly.
+    "*tiny-random-lfm2-vl/PA/CPP/text-only": "LFM2-VL hybrid cache not reproduced on PagedAttention backend (pinned to SDPA)",
+    "*tiny-random-lfm2-vl/PA/CPP/image*": "LFM2-VL hybrid cache not reproduced on PagedAttention backend (pinned to SDPA)",
 }
 
 # For these models, we will add both CPP and GRAPH pre-processing tests.
