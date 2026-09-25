@@ -398,6 +398,54 @@ TEST(DFlashCBGenerationConfig, DefaultsAssistantTokensToFive) {
     ASSERT_EQ(config.num_assistant_tokens, ov::genai::dflash_cb::DEFAULT_NUM_ASSISTANT_TOKENS);
 }
 
+TEST(DFlashCBGenerationConfig, PreservesUnsetMaxNewTokensForDraft) {
+    ov::genai::GenerationConfig config;
+    ov::genai::dflash_cb::ensure_num_assistant_tokens_is_set(config);
+    auto draft_config = config;
+
+    ov::genai::dflash_cb::add_draft_assistant_token_headroom(draft_config, config);
+
+    ASSERT_EQ(draft_config.max_new_tokens, SIZE_MAX);
+}
+
+TEST(DFlashCBGenerationConfig, ExtendsFiniteActiveLimitForDraft) {
+    constexpr size_t assistant_tokens = ov::genai::dflash_cb::DEFAULT_NUM_ASSISTANT_TOKENS;
+
+    ov::genai::GenerationConfig max_new_tokens_config;
+    max_new_tokens_config.max_new_tokens = 10;
+    max_new_tokens_config.num_assistant_tokens = assistant_tokens;
+    auto max_new_tokens_draft_config = max_new_tokens_config;
+    ov::genai::dflash_cb::add_draft_assistant_token_headroom(max_new_tokens_draft_config,
+                                                              max_new_tokens_config);
+    ASSERT_EQ(max_new_tokens_draft_config.max_new_tokens, 10 + assistant_tokens);
+
+    ov::genai::GenerationConfig max_length_config;
+    max_length_config.max_length = 100;
+    max_length_config.num_assistant_tokens = assistant_tokens;
+    auto max_length_draft_config = max_length_config;
+    ov::genai::dflash_cb::add_draft_assistant_token_headroom(max_length_draft_config, max_length_config);
+    ASSERT_EQ(max_length_draft_config.max_length, 100 + assistant_tokens);
+}
+
+TEST(DFlashCBGenerationConfig, PreservesFiniteLimitWhenHeadroomWouldOverflow) {
+    constexpr size_t assistant_tokens = ov::genai::dflash_cb::DEFAULT_NUM_ASSISTANT_TOKENS;
+
+    ov::genai::GenerationConfig max_new_tokens_config;
+    max_new_tokens_config.max_new_tokens = SIZE_MAX - 2;
+    max_new_tokens_config.num_assistant_tokens = assistant_tokens;
+    auto max_new_tokens_draft_config = max_new_tokens_config;
+    ov::genai::dflash_cb::add_draft_assistant_token_headroom(max_new_tokens_draft_config,
+                                                              max_new_tokens_config);
+    ASSERT_EQ(max_new_tokens_draft_config.max_new_tokens, max_new_tokens_config.max_new_tokens);
+
+    ov::genai::GenerationConfig max_length_config;
+    max_length_config.max_length = SIZE_MAX - 2;
+    max_length_config.num_assistant_tokens = assistant_tokens;
+    auto max_length_draft_config = max_length_config;
+    ov::genai::dflash_cb::add_draft_assistant_token_headroom(max_length_draft_config, max_length_config);
+    ASSERT_EQ(max_length_draft_config.max_length, max_length_config.max_length);
+}
+
 TEST(DFlashCBGenerationConfig, PreservesExplicitAssistantTokens) {
     ov::genai::GenerationConfig config;
     config.num_assistant_tokens = 2;
