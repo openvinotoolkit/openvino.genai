@@ -2,44 +2,43 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/video_generation/image2video_pipeline.hpp"
+#include "json_utils.hpp"
 #include "video_generation/ltx_pipeline.hpp"
 
 using namespace ov::genai;
 
 Image2VideoPipeline::Image2VideoPipeline(const std::filesystem::path& model_path) {
-    const std::string class_name = get_class_name(model_path);
+    const std::string class_name = utils::get_class_name(model_path);
     OPENVINO_ASSERT(class_name == "LTXPipeline",
-                    "Unsupported video generation pipeline '", class_name, "'. Expected an LTX-Video model.");
+                    "Unsupported image to video generation pipeline '", class_name, "'. Expected an LTX-Video model.");
     OPENVINO_ASSERT(std::filesystem::exists(model_path / "vae_encoder"),
                     "Image2VideoPipeline requires a 'vae_encoder' directory in ",
                     model_path,
                     ". For text-to-video generation without image conditioning, use Text2VideoPipeline.");
-    m_impl = std::make_unique<Impl>(VideoPipelineType::IMAGE_2_VIDEO, model_path);
+    m_impl = std::make_shared<LTXPipeline>(VideoPipelineType::IMAGE_2_VIDEO, model_path);
 }
 
 Image2VideoPipeline::Image2VideoPipeline(const std::filesystem::path& models_path,
                                           const std::string& device,
                                           const ov::AnyMap& properties) {
-    const std::string class_name = get_class_name(models_path);
+    const std::string class_name = utils::get_class_name(models_path);
     OPENVINO_ASSERT(class_name == "LTXPipeline",
-                    "Unsupported video generation pipeline '", class_name, "'. Expected an LTX-Video model.");
+                    "Unsupported image to video generation pipeline '", class_name, "'. Expected an LTX-Video model.");
     OPENVINO_ASSERT(std::filesystem::exists(models_path / "vae_encoder"),
                     "Image2VideoPipeline requires a 'vae_encoder' directory in ",
                     models_path,
                     ". For text-to-video generation without image conditioning, use Text2VideoPipeline.");
-    m_impl = std::make_unique<Impl>(VideoPipelineType::IMAGE_2_VIDEO, models_path, device, properties);
+    m_impl = std::make_shared<LTXPipeline>(VideoPipelineType::IMAGE_2_VIDEO, models_path, device, properties);
 }
 
-Image2VideoPipeline::Image2VideoPipeline(std::unique_ptr<Impl> impl) : m_impl(std::move(impl)) {}
+Image2VideoPipeline::Image2VideoPipeline(std::shared_ptr<VideoPipeline> impl) : m_impl(std::move(impl)) {}
 
 const VideoGenerationConfig& Image2VideoPipeline::get_generation_config() const {
-    return m_impl->m_generation_config;
+    return m_impl->get_generation_config();
 }
 
 void Image2VideoPipeline::set_generation_config(const VideoGenerationConfig& generation_config) {
-    utils::validate_generation_config(generation_config);
-    m_impl->m_generation_config = generation_config;
-    replace_defaults(m_impl->m_generation_config);
+    m_impl->set_generation_config(generation_config);
 }
 
 void Image2VideoPipeline::reshape(int64_t num_videos_per_prompt,
@@ -51,7 +50,7 @@ void Image2VideoPipeline::reshape(int64_t num_videos_per_prompt,
     m_impl->reshape(num_videos_per_prompt, num_frames, height, width, guidance_scale);
     m_impl->save_load_time(start_time);
 
-    auto config = m_impl->m_generation_config;
+    auto config = m_impl->get_generation_config();
     config.num_videos_per_prompt = num_videos_per_prompt;
     config.num_frames = num_frames;
     config.height = height;
@@ -90,7 +89,7 @@ VideoGenerationPerfMetrics Image2VideoPipeline::get_performance_metrics() {
 }
 
 Image2VideoPipeline Image2VideoPipeline::clone() {
-    return Image2VideoPipeline(m_impl->clone<Impl>());
+    return Image2VideoPipeline(m_impl->clone());
 }
 
 Image2VideoPipeline::~Image2VideoPipeline() = default;

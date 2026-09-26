@@ -14,4 +14,11 @@ export const VIDEO_GENERATION_MODELS: VideoGenerationModelType[] = [
     loraSupport: true,
     links: ['https://huggingface.co/Lightricks/LTX-Video'],
   },
+  {
+    architecture: 'LTX-2',
+    textToVideo: true,
+    imageToVideo: false,
+    loraSupport: false,
+    links: ['https://huggingface.co/Lightricks/LTX-2'],
+  },
 ];
