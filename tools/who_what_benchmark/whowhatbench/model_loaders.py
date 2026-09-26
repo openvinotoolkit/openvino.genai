@@ -724,16 +724,10 @@ def load_imagetext2image_model(
         model_kwargs = {"ov_config": ov_config, "safety_checker": None}
         if kwargs.get('from_onnx'):
             model_kwargs['from_onnx'] = kwargs['from_onnx']
-        config = OVPipelineForImage2Image.load_config(model_id)
-        pipeline_cls = OVPipelineForImage2Image
-        if config.get("_class_name") == "QwenImage21Pipeline":
-            from optimum.intel.openvino import OVQwenImage21Pipeline
-
-            pipeline_cls = OVQwenImage21Pipeline
         try:
-            model = pipeline_cls.from_pretrained(model_id, device=device, **model_kwargs)
+            model = OVPipelineForImage2Image.from_pretrained(model_id, device=device, **model_kwargs)
         except ValueError:
-            model = pipeline_cls.from_pretrained(
+            model = OVPipelineForImage2Image.from_pretrained(
                 model_id,
                 trust_remote_code=True,
                 use_cache=True,

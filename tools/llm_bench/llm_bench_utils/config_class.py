@@ -182,7 +182,8 @@ USE_CASES = {
     "image_gen": [
         UseCaseImageGen(
             ["stable-diffusion-", "ssd-", "tiny-sd", "small-sd", "lcm-", "sdxl", "dreamlike", "flux", "z-image"]
-        )
+        ),
+        UseCaseImageGen(["qwenimage21"], tokenizer_cls=AutoProcessor),
     ],
     "video_gen": [UseCaseVideoGen(["ltx"])],
     "visual_text_gen": [
