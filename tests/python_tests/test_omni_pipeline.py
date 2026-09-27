@@ -85,12 +85,9 @@ VIDEO_INPUT_XFAIL_REASON = (
 )
 
 OPTIMUM_IMAGE_XFAIL_REASON = (
-    "CVS-194800: GenAI and optimum agree exactly on generated token ids for a text-only prompt but "
-    "diverge once an image is attached, while still agreeing on the 57-token input length — so they "
-    "build the same sequence and merge different image embeddings into it. Undetermined whether that "
-    "is a real preprocessing difference or this checkpoint's random weights making the greedy argmax "
-    "flip on numerical noise: it cannot be arbitrated locally, because optimum only recognizes "
-    "model_type qwen3_omni_moe and every full Qwen3-Omni export at hand is dense qwen3_omni."
+    "CVS-194800: tiny-random-qwen3-omni uses three ids for the image token (config 10, processor "
+    "<|IMAGE|> 268, tokenizer <|image_pad|> 259). optimum-intel merges at id 10, matches nothing and "
+    "silently drops the image, so its ids diverge from GenAI's. On a real Qwen3-Omni export both agree."
 )
 
 AUDIO_INPUT_XFAIL_REASON = (
