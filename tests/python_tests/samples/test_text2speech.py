@@ -5,12 +5,13 @@ import os
 import subprocess  # nosec B404
 import sys
 import tempfile
+import wave
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_JS_DIR
+from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_C_DIR, SAMPLES_JS_DIR
 from test_utils import run_sample
 from utils.constants import get_ov_cache_converted_models_dir
 from utils.kokoro_test_assets import prepare_tiny_g2p_model_path
@@ -105,6 +106,7 @@ class TestTextToSpeechSample:
         tiny_kokoro_ov_path: Path,
         tiny_kokoro_speaker_embedding_file_path: str,
         input_prompt: str,
+        tmp_path: Path,
     ):
         # Run C++ sample with Kokoro model + language + explicit speaker embedding.
         cpp_sample = SAMPLES_CPP_DIR / "text2speech"
@@ -131,6 +133,21 @@ class TestTextToSpeechSample:
             "en-us",
         ]
         py_result = run_sample(py_command)
+
+        # Run the C sample and check the generated waveform container.
+        c_output = tmp_path / "kokoro_c.wav"
+        c_command = [
+            SAMPLES_C_DIR / "text2speech_c",
+            str(tiny_kokoro_ov_path),
+            input_prompt,
+            tiny_kokoro_speaker_embedding_file_path,
+            str(c_output),
+        ]
+        run_sample(c_command)
+        with wave.open(str(c_output), "rb") as audio:
+            assert audio.getframerate() == 24000
+            assert audio.getnchannels() == 1
+            assert audio.getnframes() > 0
 
         assert "Text successfully converted to audio file" in cpp_result.stdout, (
             "C++ Kokoro text2speech sample must be successfully completed"
@@ -192,7 +209,7 @@ class TestTextToSpeechSample:
     @pytest.mark.samples
     @pytest.mark.parametrize("convert_model", ["tiny-random-SpeechT5ForTextToSpeech"], indirect=True)
     @pytest.mark.parametrize("input_prompt", ["Test text to speech without speaker embedding file"])
-    def test_sample_text_to_speech_no_speaker_embedding_file(self, convert_model, input_prompt):
+    def test_sample_text_to_speech_no_speaker_embedding_file(self, convert_model, input_prompt, tmp_path: Path):
         # Run C++ sample
         # Example: text2speech spt5_model_dir "Hello everyone" --speaker_embedding_file_path xvector.bin
         cpp_sample = SAMPLES_CPP_DIR / 'text2speech'
@@ -208,6 +225,12 @@ class TestTextToSpeechSample:
         js_script = SAMPLES_JS_DIR / "speech_generation/text2speech.js"
         js_command = ["node", js_script, convert_model, input_prompt]
         js_result = run_sample(js_command)
+
+        c_output = tmp_path / "speecht5_c.wav"
+        run_sample([SAMPLES_C_DIR / "text2speech_c", convert_model, input_prompt, "-", str(c_output)])
+        with wave.open(str(c_output), "rb") as audio:
+            assert audio.getframerate() == 16000
+            assert audio.getnframes() > 0
 
         assert "Text successfully converted to audio file" in cpp_result.stdout, (
             "C++ sample text2speech must be successfully completed"
