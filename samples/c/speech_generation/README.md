@@ -9,3 +9,5 @@ text2speech_c MODEL_DIR "Hello from OpenVINO" MODEL_DIR/voices/af_heart.bin outp
 ```
 
 The sample reads a float32 speaker embedding and writes a mono 16-bit PCM WAV file. Kokoro requires an embedding. Pass `-` in its place to use the default voice of a model that provides one, such as SpeechT5. The returned waveform tensor is owned by the caller and must be released with `ov_tensor_free`.
+
+For SpeechT5, [llmware/speech-t5-tts-ov](https://huggingface.co/llmware/speech-t5-tts-ov) provides an exported model with `openvino_tokenizer.xml` and `openvino_tokenizer.bin`, which are required for text input.
