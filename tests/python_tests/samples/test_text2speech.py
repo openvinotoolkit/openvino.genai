@@ -22,33 +22,25 @@ from utils.kokoro_test_assets import prepare_tiny_kokoro_ov_path
 rng = np.random.default_rng(34231)
 
 
-def compare_c_and_python_audio(c_output: Path, python_output: Path, sample_rate: int, deterministic: bool):
-    c_audio, c_rate = sf.read(c_output, dtype="float32")
-    python_audio, python_rate = sf.read(python_output, dtype="float32")
-    assert c_rate == python_rate == sample_rate
-    assert c_audio.ndim == python_audio.ndim == 1
-    assert c_audio.size > 0
-    assert python_audio.size > 0
-    assert np.max(np.abs(c_audio)) > 1e-4
-    assert np.max(np.abs(python_audio)) > 1e-4
-    if deterministic:
-        assert c_audio.shape == python_audio.shape
-        np.testing.assert_allclose(c_audio, python_audio, rtol=0, atol=2 / 32768)
-    else:
-        # SpeechT5 waveforms and lengths vary between independent runs.
-        assert 0.5 <= c_audio.size / python_audio.size <= 2.0
+def compare_speech_audio(cpp_output: Path, python_output: Path, c_output: Path, sample_rate: int, deterministic: bool):
+    waveforms = {}
+    for name, output in (("C++", cpp_output), ("Python", python_output), ("C", c_output)):
+        audio, rate = sf.read(output, dtype="float32")
+        assert rate == sample_rate, f"{name} sample rate differs from {sample_rate}"
+        assert audio.ndim == 1 and audio.size > 0, f"{name} must produce nonempty mono audio"
+        assert np.max(np.abs(audio)) > 1e-4, f"{name} must produce non-silent audio"
+        waveforms[name] = audio
 
-
-def run_c_and_python_speech_samples(model_dir, prompt, voice_file, python_command, tmp_path, sample_rate, deterministic):
-    python_dir = tmp_path / "python"
-    python_dir.mkdir()
-    py_result = run_sample(python_command, cwd=str(python_dir))
-
-    c_output = tmp_path / "c_output_audio.wav"
-    c_command = [SAMPLES_C_DIR / "text2speech_c", model_dir, prompt, voice_file, c_output]
-    run_sample(c_command)
-    compare_c_and_python_audio(c_output, python_dir / "output_audio.wav", sample_rate, deterministic)
-    return py_result
+    for first, second in (("C++", "Python"), ("C++", "C"), ("Python", "C")):
+        first_audio, second_audio = waveforms[first], waveforms[second]
+        if deterministic:
+            assert first_audio.shape == second_audio.shape, f"{first} and {second} audio lengths differ"
+            np.testing.assert_allclose(first_audio, second_audio, rtol=0, atol=2 / 32768)
+        else:
+            # SpeechT5 waveforms and lengths vary between independent runs.
+            assert 0.5 <= first_audio.size / second_audio.size <= 2.0, (
+                f"{first} and {second} audio durations differ substantially"
+            )
 
 
 @pytest.fixture(scope="module")
@@ -97,15 +89,24 @@ class TestTextToSpeechSample:
         # Run C++ sample
         cpp_sample = SAMPLES_CPP_DIR / 'text2speech'
         cpp_command = [cpp_sample, convert_model, input_prompt, self.temp_speaker_embedding_file.name]
-        cpp_result = run_sample(cpp_command)
+        cpp_dir = tmp_path / "cpp"
+        cpp_dir.mkdir()
+        cpp_result = run_sample(cpp_command, cwd=str(cpp_dir))
 
         # Run Python sample
         py_script = SAMPLES_PY_DIR / "speech_generation/text2speech.py"
         py_command = [sys.executable, py_script, convert_model, input_prompt,
                       "--speaker_embedding_file_path", self.temp_speaker_embedding_file.name]
-        py_result = run_c_and_python_speech_samples(
-            convert_model, input_prompt, self.temp_speaker_embedding_file.name, py_command, tmp_path, 16000, False
-        )
+        python_dir = tmp_path / "python"
+        python_dir.mkdir()
+        py_result = run_sample(py_command, cwd=str(python_dir))
+
+        # Run C sample
+        c_output = tmp_path / "c_output_audio.wav"
+        c_command = [SAMPLES_C_DIR / "text2speech_c", convert_model, input_prompt,
+                     self.temp_speaker_embedding_file.name, c_output]
+        run_sample(c_command)
+        compare_speech_audio(cpp_dir / "output_audio.wav", python_dir / "output_audio.wav", c_output, 16000, False)
 
         # Run JS sample
         js_script = SAMPLES_JS_DIR / "speech_generation/text2speech.js"
@@ -149,7 +150,9 @@ class TestTextToSpeechSample:
             "--language",
             "en-us",
         ]
-        cpp_result = run_sample(cpp_command)
+        cpp_dir = tmp_path / "cpp"
+        cpp_dir.mkdir()
+        cpp_result = run_sample(cpp_command, cwd=str(cpp_dir))
 
         # Run Python sample with the same Kokoro assets.
         py_script = SAMPLES_PY_DIR / "speech_generation/text2speech.py"
@@ -163,10 +166,16 @@ class TestTextToSpeechSample:
             "--language",
             "en-us",
         ]
-        py_result = run_c_and_python_speech_samples(
-            str(tiny_kokoro_ov_path), input_prompt, tiny_kokoro_speaker_embedding_file_path, py_command, tmp_path,
-            24000, True
-        )
+        python_dir = tmp_path / "python"
+        python_dir.mkdir()
+        py_result = run_sample(py_command, cwd=str(python_dir))
+
+        # Run C sample
+        c_output = tmp_path / "c_output_audio.wav"
+        c_command = [SAMPLES_C_DIR / "text2speech_c", str(tiny_kokoro_ov_path), input_prompt,
+                     tiny_kokoro_speaker_embedding_file_path, c_output]
+        run_sample(c_command)
+        compare_speech_audio(cpp_dir / "output_audio.wav", python_dir / "output_audio.wav", c_output, 24000, True)
 
         assert "Text successfully converted to audio file" in cpp_result.stdout, (
             "C++ Kokoro text2speech sample must be successfully completed"
@@ -233,12 +242,22 @@ class TestTextToSpeechSample:
         # Example: text2speech spt5_model_dir "Hello everyone" --speaker_embedding_file_path xvector.bin
         cpp_sample = SAMPLES_CPP_DIR / 'text2speech'
         cpp_command = [cpp_sample, convert_model, input_prompt]
-        cpp_result = run_sample(cpp_command)
+        cpp_dir = tmp_path / "cpp"
+        cpp_dir.mkdir()
+        cpp_result = run_sample(cpp_command, cwd=str(cpp_dir))
 
         # Run Python sample
         py_script = SAMPLES_PY_DIR / "speech_generation/text2speech.py"
         py_command = [sys.executable, py_script, convert_model, input_prompt]
-        py_result = run_c_and_python_speech_samples(convert_model, input_prompt, "-", py_command, tmp_path, 16000, False)
+        python_dir = tmp_path / "python"
+        python_dir.mkdir()
+        py_result = run_sample(py_command, cwd=str(python_dir))
+
+        # Run C sample
+        c_output = tmp_path / "c_output_audio.wav"
+        c_command = [SAMPLES_C_DIR / "text2speech_c", convert_model, input_prompt, "-", c_output]
+        run_sample(c_command)
+        compare_speech_audio(cpp_dir / "output_audio.wav", python_dir / "output_audio.wav", c_output, 16000, False)
 
         # Run JS sample
         js_script = SAMPLES_JS_DIR / "speech_generation/text2speech.js"
