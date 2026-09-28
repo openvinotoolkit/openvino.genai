@@ -6,6 +6,7 @@ import gc
 import pytest
 import math
 import sys
+import threading
 import numpy as np
 
 from pathlib import Path
@@ -85,6 +86,26 @@ def llm_model(request: pytest.FixtureRequest) -> OVConvertedModelSchema:
 def model_facebook_opt_125m() -> OVConvertedModelSchema:
     model_id : str = "facebook/opt-125m"
     return download_and_convert_model(model_id)
+
+
+@pytest.fixture(scope="module")
+def model_tinyllama_1_1b_chat() -> OVConvertedModelSchema:
+    model_id: str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    return download_and_convert_model(model_id)
+
+
+@pytest.fixture(scope="module")
+def tinyllama_lora_adapter(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    from huggingface_hub import hf_hub_download
+
+    adapter_dir = tmp_path_factory.mktemp("tinyllama_lora")
+    return Path(
+        hf_hub_download(
+            repo_id="smangrul/tinyllama_lora_sql",
+            filename="adapter_model.safetensors",
+            local_dir=adapter_dir,
+        )
+    )
 
 
 @pytest.mark.transformers_dependent(
@@ -1301,4 +1322,176 @@ def test_cb_different_seed_produces_different_output(model_facebook_opt_125m: OV
     assert len(set(map(tuple, token_seqs))) > 1, (
         f"Requests with different rng_seeds {rng_seeds} must produce at least one distinct output, "
         f"but all produced identical token sequences: {token_seqs[0]}"
+    )
+
+
+def test_cb_add_request_accepts_empty_lora_config(model_facebook_opt_125m: OVConvertedModelSchema):
+    """add_request() must allow an explicit empty LoRA config."""
+    import openvino_genai as ov_genai
+
+    pipe = ContinuousBatchingPipeline(model_facebook_opt_125m.models_path, SchedulerConfig(), "CPU")
+
+    modes = [
+        ov_genai.AdapterConfig.Mode.MODE_AUTO,
+        ov_genai.AdapterConfig.Mode.MODE_DYNAMIC,
+        ov_genai.AdapterConfig.Mode.MODE_STATIC_RANK,
+    ]
+    for request_id, mode in enumerate(modes):
+        config = GenerationConfig()
+        config.max_new_tokens = 10
+        config.adapters = ov_genai.AdapterConfig(mode=mode)
+
+        pipe.add_request(request_id, "test prompt", generation_config=config)
+
+
+@pytest.mark.parametrize("mode_name", ["MODE_AUTO", "MODE_DYNAMIC", "MODE_STATIC_RANK"])
+def test_cb_add_request_rejects_non_empty_unsupported_lora_mode(
+    model_tinyllama_1_1b_chat: OVConvertedModelSchema, tinyllama_lora_adapter: Path, mode_name: str
+):
+    """add_request() must reject unsupported modes when LoRA adapters are present."""
+    import openvino_genai as ov_genai
+
+    pipe = ContinuousBatchingPipeline(model_tinyllama_1_1b_chat.models_path, SchedulerConfig(), "CPU")
+
+    config = GenerationConfig()
+    config.max_new_tokens = 10
+    config.adapters = ov_genai.AdapterConfig(
+        ov_genai.Adapter(tinyllama_lora_adapter), mode=getattr(ov_genai.AdapterConfig.Mode, mode_name)
+    )
+
+    with pytest.raises(
+        RuntimeError, match="MODE_DYNAMIC, MODE_AUTO, and MODE_STATIC_RANK LoRA adapters are not supported"
+    ):
+        pipe.add_request(0, "test prompt", generation_config=config)
+
+
+@pytest.mark.parametrize("mode_name", ["MODE_AUTO", "MODE_DYNAMIC", "MODE_STATIC_RANK"])
+def test_cb_add_request_rejects_non_empty_unsupported_pipeline_lora_mode(
+    model_tinyllama_1_1b_chat: OVConvertedModelSchema, tinyllama_lora_adapter: Path, mode_name: str
+):
+    """add_request() must reject unsupported pipeline modes when LoRA adapters are present."""
+    import openvino_genai as ov_genai
+
+    adapter_config = ov_genai.AdapterConfig(
+        ov_genai.Adapter(tinyllama_lora_adapter), mode=getattr(ov_genai.AdapterConfig.Mode, mode_name)
+    )
+    pipe = ContinuousBatchingPipeline(
+        model_tinyllama_1_1b_chat.models_path,
+        SchedulerConfig(),
+        "CPU",
+        properties={"adapters": adapter_config},
+    )
+
+    config = GenerationConfig()
+    config.max_new_tokens = 10
+
+    with pytest.raises(
+        RuntimeError, match="MODE_DYNAMIC, MODE_AUTO, and MODE_STATIC_RANK LoRA adapters are not supported"
+    ):
+        pipe.add_request(0, "test prompt", generation_config=config)
+
+
+@pytest.mark.parametrize("mode_name", ["MODE_AUTO", "MODE_DYNAMIC", "MODE_STATIC_RANK"])
+@pytest.mark.parametrize("backend", ["continuous_batching", "prompt_lookup", "speculative_decoding"])
+def test_cb_generate_allows_unsupported_add_request_lora_mode(
+    model_tinyllama_1_1b_chat: OVConvertedModelSchema, tinyllama_lora_adapter: Path, mode_name: str, backend: str
+):
+    """generate() applies the adapters itself, so the add_request() mode restriction must not affect any backend."""
+    import openvino_genai as ov_genai
+
+    adapter_config = ov_genai.AdapterConfig(
+        ov_genai.Adapter(tinyllama_lora_adapter), mode=getattr(ov_genai.AdapterConfig.Mode, mode_name)
+    )
+
+    properties = {"adapters": adapter_config}
+    config = GenerationConfig()
+    config.max_new_tokens = 5
+    if backend == "prompt_lookup":
+        properties["prompt_lookup"] = True
+        config.max_ngram_size = 3
+        config.num_assistant_tokens = 3
+    elif backend == "speculative_decoding":
+        properties["draft_model"] = draft_model(model_tinyllama_1_1b_chat.models_path)
+        config.num_assistant_tokens = 3
+
+    pipe = ContinuousBatchingPipeline(
+        model_tinyllama_1_1b_chat.models_path, SchedulerConfig(), "CPU", properties=properties
+    )
+
+    results = pipe.generate(["test prompt"], [config])
+
+    assert len(results[0].m_generation_ids[0]) > 0
+
+
+def test_cb_perf_metrics_available_after_concurrent_read(model_facebook_opt_125m: OVConvertedModelSchema):
+    """Metrics must be committed before the final token push so the reader never hits the assertion."""
+    models_path = model_facebook_opt_125m.models_path
+    cb_pipe = ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
+    config = GenerationConfig(max_new_tokens=10)
+
+    for i in range(50):
+        handle = cb_pipe.add_request(i, "1+1=", generation_config=config)
+        errors = []
+
+        def make_reader(h, errs):
+            def reader():
+                try:
+                    h.read_all()
+                    # no sleep: immediate call is the exact race window the fix closes
+                    metrics = h.get_perf_metrics()
+                    assert metrics.get_num_generated_tokens() > 0
+                except Exception as e:
+                    errs.append(e)
+
+            return reader
+
+        t = threading.Thread(target=make_reader(handle, errors))
+        t.start()
+        while cb_pipe.has_non_finished_requests():
+            cb_pipe.step()
+        t.join(timeout=10)
+        assert not t.is_alive(), f"Iteration {i}: reader thread did not finish within timeout"
+        assert not errors, f"Iteration {i}: get_perf_metrics() raised: {errors[0]}"
+
+
+@pytest.mark.parametrize(
+    "generation_config_factory",
+    [
+        get_greedy,
+        get_beam_search,
+        get_multinomial_temperature,
+    ],
+)
+def test_cb_perf_metrics_valid_per_sampling_mode(
+    model_facebook_opt_125m: OVConvertedModelSchema,
+    generation_config_factory,
+):
+    """get_perf_metrics() must return valid data for every sampling mode after generation."""
+    models_path = model_facebook_opt_125m.models_path
+    cb_pipe = ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
+    config = generation_config_factory()
+    config.max_new_tokens = 10
+    handle = cb_pipe.add_request(0, "What is OpenVINO?", generation_config=config)
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+    handle.read_all()
+    metrics = handle.get_perf_metrics()
+    assert metrics.get_num_generated_tokens() > 0
+    assert metrics.get_num_input_tokens() > 0
+
+
+def test_cb_perf_metrics_available_for_echo_only(model_facebook_opt_125m: OVConvertedModelSchema):
+    """Echo-only requests (max_new_tokens=0) use a separate notify path; metrics must still be set."""
+    models_path = model_facebook_opt_125m.models_path
+    cb_pipe = ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
+    config = GenerationConfig(max_new_tokens=0, echo=True)
+    handle = cb_pipe.add_request(0, "What is OpenVINO?", generation_config=config)
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+    outputs = handle.read_all()
+    metrics = handle.get_perf_metrics()
+    assert metrics.get_num_input_tokens() > 0
+    assert len(outputs) > 0
+    assert len(outputs[0].generated_ids) == metrics.get_num_input_tokens(), (
+        "Echo-only output must contain the whole prompt; got an empty/partial range instead"
     )

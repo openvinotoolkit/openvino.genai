@@ -17,7 +17,7 @@
   ],
   "type": "module",
   "engines": {
-    "node": ">=21.0.0"
+    "node": ">=22.0.0"
   },
   "keywords": [
     "openvino",

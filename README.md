@@ -10,7 +10,7 @@
 [![GitHub Release](https://img.shields.io/github/v/release/openvinotoolkit/openvino.genai?color=green)](https://github.com/openvinotoolkit/openvino.genai/releases)
 [![PyPI Downloads](https://static.pepy.tech/badge/openvino.genai)](https://pypi.org/project/openvino.genai/)
 [![NPM](https://img.shields.io/npm/v/openvino-genai-node)](https://www.npmjs.com/package/openvino-genai-node)
-![Python](https://img.shields.io/badge/python-3.10+-green)
+![Python](https://img.shields.io/badge/python-3.11+-green)
 ![OS](https://img.shields.io/badge/OS-Linux_|_Windows_|_MacOS-blue)
 
 ![](/site/static/img/openvino-genai-workflow.svg)

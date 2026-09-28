@@ -40,7 +40,7 @@ User Input (ChatHistory + images/videos + optional video metadata)
   └── PA/CB: use full-history vision inputs for the batch request
      │
      ▼
- InputsEmbedder::get_inputs_embeds() or get_inputs_embeds_with_token_type_ids()
+ InputsEmbedder::get_inputs_embeds()
   ├── Tokenize templated text
   ├── EmbeddingsModel::infer()         ← text token → embedding lookup
   └── Merge vision + text embeddings   ← model-specific merge logic
@@ -173,16 +173,6 @@ public:
 
     // Complete image/video overload; default implementation falls back to the image-only method
     virtual ov::Tensor get_inputs_embeds(
-        const std::string& prompt,
-        const std::vector<EncodedImage>& images,
-        const std::vector<EncodedVideo>& videos,
-        VLMPerfMetrics& metrics,
-        bool recalculate_merged_embeddings = true,
-        const std::vector<size_t>& image_sequence = {},
-        const std::vector<size_t>& video_sequence = {},
-        const std::vector<std::pair<size_t, size_t>>& history_vision_count = {});
-
-    virtual std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(
         const std::string& prompt,
         const std::vector<EncodedImage>& images,
         const std::vector<EncodedVideo>& videos,

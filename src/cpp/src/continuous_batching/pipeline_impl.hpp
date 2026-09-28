@@ -75,11 +75,13 @@ protected:
      * Releases non-running (finished, dropped or OOM) requests from running queue
      */
     void _free_non_running_requests();
+    void _notify_handles(const Scheduler::Output& scheduler_output);
 
     /**
-     * Notify dropped requests by pushing empty output
+     * Sets load_time and commits perf metrics onto the request's GenerationStream.
+     * Must run before any terminal/echo notification so readers never observe stale metrics.
      */
-    void _notify_requests_dropped_by_handle();
+    void _commit_perf_metrics(const SequenceGroup::Ptr& request);
 
     /**
      * Handles 'echo' generation parameter
@@ -138,7 +140,6 @@ public:
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
                                  const ov::genai::GenerationConfig& sampling_params,
-                                 std::optional<ov::Tensor> token_type_ids = std::nullopt,
                                  std::optional<ov::Tensor> prompt_ids = std::nullopt,
                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs = std::nullopt) override;
 
@@ -165,7 +166,6 @@ public:
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer,
-             const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt,
              const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list = std::nullopt,
              const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
              const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) override;

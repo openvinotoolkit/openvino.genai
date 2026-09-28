@@ -29,6 +29,10 @@ public:
         m_attention_backend = attention_backend;
     }
 
+    const std::string& get_attention_backend() const {
+        return m_attention_backend;
+    }
+
     void set_generation_config(GenerationConfig config) {
         int64_t default_eos_token_id = m_generation_config.eos_token_id;
         auto default_stop_token_ids = m_generation_config.stop_token_ids;

@@ -114,6 +114,10 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
         }
 
         std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
+        if (token.empty()) {
+            // Empty terminator pushed by notify_handle_final()/notify_handle_oom() to unblock readers.
+            return;
+        }
 
         auto streaming_status = streamer_ptr->write(token.begin()->second.generated_ids);
         if (streaming_status == ov::genai::StreamingStatus::CANCEL) {
@@ -158,6 +162,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
         raw_metrics.m_sampling_durations.emplace_back(
             ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
     }
+    sequence_group->notify_handle();
     stream_generated_tokens();
 
     // "Generation" phase
@@ -231,6 +236,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
             raw_metrics.m_sampling_durations.emplace_back(
                 ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
         }
+        sequence_group->notify_handle();
     }
 
     stream_generated_tokens();
