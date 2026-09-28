@@ -46,7 +46,11 @@ class MiniCPMVInputsPreprocessor(VLMInputsPreprocessor):
         if image is not None:
             if not isinstance(image, list):
                 image = [image]
-            im_suffix = "(<image>./</image>)" * len(image) + "\n"
+            if config.model_type == "minicpmv4_7":
+                image_token = processor.image_token
+            else:
+                image_token = "(<image>./</image>)"
+            im_suffix = image_token * len(image) + "\n"
 
         apply_chat_template_func = None
         if getattr(processor, "chat_template", None) is not None:
@@ -74,7 +78,10 @@ class MiniCPMVInputsPreprocessor(VLMInputsPreprocessor):
                     else text
                 )
 
-        inputs = processor(prompt, [self.images] if self.images is None else self.images, return_tensors="pt")
+        if config.model_type == "minicpmv4_7":
+            inputs = processor(images=self.images, text=prompt, return_tensors="pt")
+        else:
+            inputs = processor(prompt, [self.images] if self.images is None else self.images, return_tensors="pt")
         inputs.pop("image_sizes", None)
         return inputs
 

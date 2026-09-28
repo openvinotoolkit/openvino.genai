@@ -31,6 +31,7 @@ MODEL_TYPE_TO_CLS_MAPPING = {
     "phi4_multimodal": Phi4MMInputsPreprocessor,
     "phi3_v": Phi3MMInputsPreprocessor,
     "minicpmv": MiniCPMVInputsPreprocessor,
+    "minicpmv4_7": MiniCPMVInputsPreprocessor,
     "minicpmo": MiniCPMOInputsPreprocessor,
     "llava_next": LLAVAInputsPreprocessor,
     "llava-qwen2": NanoLlavaInputsPreprocessor,

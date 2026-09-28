@@ -117,6 +117,9 @@ class OptimumVLMGenerationChatAdapter(OptimumTextGenerationChatAdapter):
         self.chat_history = []
         self.past_key_values = None
         self.tokenized_history: list = []
+        self.inputs_processor.images = None
+        self.inputs_processor.videos = None
+        self.inputs_processor.chat_history = []
 
     def configure_past_key_values_for_generation(self, full_input_ids: torch.Tensor, prefix_len: int) -> dict:
         past_key_kwargs = {}
