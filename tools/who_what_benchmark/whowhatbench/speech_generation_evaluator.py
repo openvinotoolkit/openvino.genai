@@ -576,6 +576,7 @@ class Qwen3CustomVoiceWrapper:
         kwargs.setdefault("non_streaming_mode", True)
         kwargs.setdefault("repetition_penalty", 1.2)
 
+        # HF pipeline uses 'generate_custom_voice' API
         if hasattr(self.model, "generate_custom_voice"):
             wavs, sample_rate = self.model.generate_custom_voice(
                 text=prompt,
@@ -586,6 +587,7 @@ class Qwen3CustomVoiceWrapper:
             )
             return _SpeechResult(np.array(wavs[0]).reshape(-1), sample_rate)
 
+        # Optimum uses preprocess_input + generate
         if hasattr(self.model, "preprocess_input"):
             preprocess_kwargs = {
                 "text": [prompt],
@@ -605,6 +607,7 @@ class Qwen3CustomVoiceWrapper:
             waveform = speech.numpy() if hasattr(speech, "numpy") else np.asarray(speech)
             return _SpeechResult(np.asarray(waveform, dtype=np.float32).reshape(-1), int(self.model.sampling_rate))
 
+        # GenAI
         generation_properties = {"speaker": selected_speaker}
         generation_properties["language"] = resolved_language
         if selected_instruct:
@@ -648,6 +651,7 @@ class Qwen3VoiceDesignWrapper:
         kwargs.setdefault("non_streaming_mode", True)
         kwargs.setdefault("repetition_penalty", 1.2)
 
+        # HF pipeline uses 'generate_voice_design' API
         if hasattr(self.model, "generate_voice_design"):
             wavs, sample_rate = self.model.generate_voice_design(
                 text=prompt,
@@ -657,6 +661,7 @@ class Qwen3VoiceDesignWrapper:
             )
             return _SpeechResult(np.array(wavs[0]).reshape(-1), sample_rate)
 
+        # Optimum uses preprocess_input + generate
         if hasattr(self.model, "preprocess_input"):
             preprocess_kwargs = {
                 "text": [prompt],
@@ -675,6 +680,7 @@ class Qwen3VoiceDesignWrapper:
             waveform = speech.numpy() if hasattr(speech, "numpy") else np.asarray(speech)
             return _SpeechResult(np.asarray(waveform, dtype=np.float32).reshape(-1), int(self.model.sampling_rate))
 
+        # GenAI
         generation_properties = {}
         generation_properties["language"] = resolved_language
         if selected_instruct:
@@ -743,6 +749,7 @@ class Qwen3BaseWrapper:
         # Qwen3 Base currently behaves better in WWB with a slightly stronger repetition penalty.
         kwargs.setdefault("repetition_penalty", 1.2)
 
+        # HF pipeline uses 'generate_voice_clone' API
         if hasattr(self.model, "generate_voice_clone"):
             if not selected_ref_text:
                 # HF Base requires x_vector_only_mode for ref-audio-only cloning.
@@ -758,6 +765,7 @@ class Qwen3BaseWrapper:
             )
             return _SpeechResult(np.array(wavs[0]).reshape(-1), sample_rate)
 
+        # Optimum uses preprocess_input + generate
         if hasattr(self.model, "preprocess_input"):
             preprocess_kwargs = {
                 "text": [prompt],
@@ -783,6 +791,7 @@ class Qwen3BaseWrapper:
             waveform = speech.numpy() if hasattr(speech, "numpy") else np.asarray(speech)
             return _SpeechResult(np.asarray(waveform, dtype=np.float32).reshape(-1), int(self.model.sampling_rate))
 
+        # GenAI
         generation_properties = {}
         generation_properties["language"] = resolved_language
         if selected_instruct:
