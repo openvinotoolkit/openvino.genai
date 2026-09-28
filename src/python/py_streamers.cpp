@@ -76,11 +76,18 @@ public:
         // this function is a wrapper to call Python implementation of 'write' with py::dict
         py::gil_scoped_acquire acquire;
 
+        // A TextParserStreamer used as is, without a Python subclass overriding 'write', only collects
+        // the parsed message (see get_parsed_message). Calling the missing override would dereference null.
+        py::function override = py::get_override(this, "write");
+        if (!override) {
+            return StreamingStatus::RUNNING;
+        }
+
         py::dict message_py = pyutils::json_container_to_py_object(message);
-        
+
         // Call python implementation which accepts py::dict instead of JsonContainer
         // And convert back the resulting message back to JsonContainer
-        auto res = py::get_override(this, "write")(message_py);
+        auto res = override(message_py);
         message = pyutils::py_object_to_json_container(message_py);
         
         return res.cast<StreamingStatus>();

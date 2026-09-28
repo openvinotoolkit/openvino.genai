@@ -53,6 +53,25 @@ def hf_ov_genai_models(request, tmp_path_factory):
 
 
 @pytest.mark.parametrize(
+    "hf_ov_genai_models",
+    ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],  # this tokenizer is used as a stub only
+    indirect=True,
+)
+def test_text_parser_streamer_without_write_override(hf_ov_genai_models):
+    # Used as is, without a subclass implementing write(), the streamer only collects the parsed message.
+    # This used to call the missing Python override and crash the process.
+    _, genai_tokenizer = hf_ov_genai_models
+    streamer = TextParserStreamer(
+        genai_tokenizer, [ReasoningIncrementalParser(expect_open_tag=True, keep_original_content=False)]
+    )
+    for chunk in ["<think>plan", "</think>", "answer"]:
+        assert streamer._write(chunk) == StreamingStatus.RUNNING
+    message = streamer.get_parsed_message()
+    assert message["reasoning_content"] == "plan"
+    assert message["content"] == "answer"
+
+
+@pytest.mark.parametrize(
     "hf_ov_genai_models", 
     ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],  # this tokenizer is used as a stub only
     indirect=True
