@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <numeric>
 #include <set>
+#include <type_traits>
+#include "openvino/genai/image_generation/scheduler.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/op/concat.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
@@ -20,6 +22,10 @@
 #include "utils.hpp"
 
 using namespace ov::genai;
+
+// These headers must remain usable in one translation unit. Sharing the
+// qualified type name is an ODR violation even when a non-LTO build passes.
+static_assert(!std::is_same_v<ov::genai::Scheduler, ov::genai::ContinuousBatchingScheduler>);
 
 void clear_finished_sequences(std::vector<SequenceGroup::Ptr>& requests) {
     auto new_end = std::remove_if(requests.begin(), requests.end(), [] (SequenceGroup::CPtr seq_group) -> bool {
@@ -150,7 +156,7 @@ ov::Tensor embeds_matrix_to_tensor(std::vector<std::vector<float>> vec) {
 }
 
 TEST(TestScheduler, adaptive_rkv_zero_size_is_not_marked_available) {
-    Scheduler::Output output;
+    ContinuousBatchingScheduler::Output output;
     const uint64_t seq_id = 42;
 
     EXPECT_FALSE(output.has_adaptive_rkv_evictable_size(seq_id));
@@ -170,18 +176,18 @@ TEST(TestScheduler, adaptive_rkv_zero_size_is_not_marked_available) {
 }
 
 TEST(TestScheduler, output_keeps_shared_kv_global_data_alive) {
-    Scheduler::Output output;
-    auto mutable_global_data = std::make_shared<Scheduler::KVPagedAttentionGlobalData>();
+    ContinuousBatchingScheduler::Output output;
+    auto mutable_global_data = std::make_shared<ContinuousBatchingScheduler::KVPagedAttentionGlobalData>();
     mutable_global_data->xattention_block_size = 17;
     mutable_global_data->xattention_stride = 5;
     mutable_global_data->adaptive_rkv_start_size = 3;
 
-    std::shared_ptr<const Scheduler::KVPagedAttentionGlobalData> global_data = mutable_global_data;
+    std::shared_ptr<const ContinuousBatchingScheduler::KVPagedAttentionGlobalData> global_data = mutable_global_data;
     output.set_kv_paged_attention_global_data(global_data);
     mutable_global_data.reset();
     global_data.reset();
 
-    const Scheduler::KVPagedAttentionGlobalData& output_global_data = output.get_kv_paged_attention_global_data();
+    const ContinuousBatchingScheduler::KVPagedAttentionGlobalData& output_global_data = output.get_kv_paged_attention_global_data();
     EXPECT_EQ(output_global_data.xattention_block_size, 17);
     EXPECT_EQ(output_global_data.xattention_stride, 5);
     EXPECT_EQ(output_global_data.adaptive_rkv_start_size, 3);
@@ -211,7 +217,7 @@ TEST(TestScheduler, general_test) {
         std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2, sequence_group3};
 
         // schedule 3 sequence groups that use 6 kv blocks
-        Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+        ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
         auto out1 = scheduler.schedule(requests);
 
         std::vector<uint64_t> ref_ids = {0, 1, 2};
@@ -304,7 +310,7 @@ TEST(TestScheduler, hybrid_output_fills_linear_attention_block_table_in_prompt_a
                                                        TEST_BLOCK_SIZE,
                                                        /*kv_num_layers=*/1,
                                                        /*la_num_layers=*/3);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     auto prompt_out = scheduler.schedule(requests);
 
     EXPECT_EQ(orchestrator->get_cache_manager(CacheType::LINEAR_ATTENTION_CACHE).get_num_layers(), 3);
@@ -363,7 +369,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_returns_aliased_read_writ
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
     ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
@@ -411,7 +417,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_speculative_window_is_ato
                                                        TEST_BLOCK_SIZE,
                                                        /*kv_num_layers=*/1,
                                                        /*la_num_layers=*/1);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     // Two committed rows plus one concurrent window.
     scheduler.ensure_linear_attention_pool_blocks(2 + (1 + N));
 
@@ -491,7 +497,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_speculative_window_too_la
                                                        TEST_BLOCK_SIZE,
                                                        /*kv_num_layers=*/1,
                                                        /*la_num_layers=*/1);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     scheduler.ensure_linear_attention_pool_blocks(1 + (1 + N));
 
     std::ignore = scheduler.schedule(requests);
@@ -511,7 +517,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_speculative_window_too_la
 }
 
 namespace {
-Scheduler::Output run_one_speculative_step(Scheduler& scheduler,
+ContinuousBatchingScheduler::Output run_one_speculative_step(ContinuousBatchingScheduler& scheduler,
                                            std::vector<SequenceGroup::Ptr>& requests) {
     return scheduler.schedule(requests);
 }
@@ -540,7 +546,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_uses_full_preemption_for_
     std::vector<SequenceGroup::Ptr> requests = {seq_group1, seq_group2};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     auto prompt_out = scheduler.schedule(requests);
 
     EXPECT_EQ(prompt_out.m_scheduled_sequence_groups_ids.size(), 2);
@@ -588,7 +594,7 @@ TEST(TestScheduler, hybrid_admission_when_la_pool_is_bottleneck) {
     std::vector<SequenceGroup::Ptr> requests = {seq_group1, seq_group2};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
     EXPECT_EQ(out.m_scheduled_sequence_groups_ids.size(), 1);
@@ -620,7 +626,7 @@ TEST(TestScheduler, hybrid_initialize_cache_grows_fixed_size_by_total_concurrent
     std::vector<SequenceGroup::Ptr> requests = {seq_group1, seq_group2};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
 
     EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_block_count(), 0);
     std::ignore = scheduler.schedule(requests);
@@ -651,7 +657,7 @@ TEST(TestScheduler, initialize_cache_uses_sequence_aware_block_rounding) {
     }
 
     auto orchestrator = init_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
 
     std::ignore = scheduler.schedule(requests);
 
@@ -677,7 +683,7 @@ TEST(TestScheduler, dynamic_alloc_reserves_full_capacity_for_later_larger_prompt
     scheduler_config.max_num_seqs = 8;
 
     auto orchestrator = init_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
 
     // Round 1: a small prompt sizes the cache for itself.
     std::vector<int64_t> small_tokens = {0, 1, 2, 3};
@@ -722,7 +728,7 @@ TEST(TestScheduler, dynamic_alloc_reserves_capacity_for_new_prompt_on_top_of_run
     scheduler_config.max_num_seqs = 8;
 
     auto orchestrator = init_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
 
     // Round 1: a small sequence is prefilled and advanced into the generate phase (running).
     std::vector<int64_t> small_tokens = {0, 1, 2, 3};
@@ -779,7 +785,7 @@ TEST(TestScheduler, linear_attention_only_initializes_fixed_size_capacity) {
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
     auto orchestrator = init_linear_attention_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
 
     EXPECT_FALSE(orchestrator->has_token_capacity());
     auto out = scheduler.schedule(requests);
@@ -807,7 +813,7 @@ TEST(TestScheduler, hybrid_runtime_arrival_beyond_initial_fixed_capacity_schedul
     auto seq_id1 = seq_group1->get_running_sequences()[0]->get_id();
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
 
     std::vector<SequenceGroup::Ptr> requests = {seq_group1};
     std::ignore = scheduler.schedule(requests);
@@ -859,7 +865,7 @@ TEST(TestScheduler, hybrid_prefix_caching_prefill_requires_read_and_interval_wri
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
     ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
@@ -898,7 +904,7 @@ TEST(TestScheduler, hybrid_prefix_caching_prefill_uses_scheduler_config_cache_in
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
     ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
@@ -935,7 +941,7 @@ TEST(TestScheduler, hybrid_prefix_caching_reuses_active_complete_linear_attentio
     const auto producer_seq_id = producer_group->get_running_sequences()[0]->get_id();
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     std::vector<SequenceGroup::Ptr> producer_requests = {producer_group};
     std::ignore = scheduler.schedule(producer_requests);
     producer_group->finish_iteration();
@@ -993,7 +999,7 @@ TEST(TestScheduler, hybrid_prefix_caching_reuses_active_incomplete_linear_attent
     const auto producer_seq_id = producer_group->get_running_sequences()[0]->get_id();
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     std::vector<SequenceGroup::Ptr> producer_requests = {producer_group};
     std::ignore = scheduler.schedule(producer_requests);
     producer_group->finish_iteration();
@@ -1053,7 +1059,7 @@ TEST(TestScheduler, hybrid_prefix_caching_restore_uses_minimum_common_prefix_acr
     const auto first_seq_id = first_group->get_running_sequences()[0]->get_id();
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     std::vector<SequenceGroup::Ptr> first_requests = {first_group};
     std::ignore = scheduler.schedule(first_requests);
     first_group->finish_iteration();
@@ -1103,7 +1109,7 @@ TEST(TestScheduler, hybrid_prefix_caching_prefill_exactly_interval_uses_single_w
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
     ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
@@ -1141,7 +1147,7 @@ TEST(TestScheduler, hybrid_prefix_caching_prefill_interval_plus_one_uses_next_wr
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
     ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
@@ -1180,7 +1186,7 @@ TEST(TestScheduler, hybrid_prefix_caching_chunked_prefill_crossing_interval_adds
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     auto first_out = scheduler.schedule(requests);
 
     ASSERT_TRUE(first_out.has_linear_attention_paging_data(seq_id));
@@ -1226,7 +1232,7 @@ TEST(TestScheduler, direct_scheduler_rejects_prefix_caching_with_tokens_to_valid
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
 
     std::ignore = scheduler.schedule(requests);
     seq_group->finish_iteration();
@@ -1266,7 +1272,7 @@ TEST(TestScheduler, hybrid_prefix_caching_cache_interval_multiplier_one_allocate
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
     ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
@@ -1305,7 +1311,7 @@ TEST(TestScheduler, hybrid_prefix_caching_dynamic_allocation_honors_custom_cache
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
     ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
@@ -1554,7 +1560,7 @@ TEST(TestScheduler, hybrid_prefix_caching_generation_finishing_interval_reuses_s
     const auto seq_id = seq_group->get_running_sequences()[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
-    Scheduler scheduler = Scheduler(init_hybrid_cache_orchestrator(scheduler_config), scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_hybrid_cache_orchestrator(scheduler_config), scheduler_config);
 
     // Prime cache/tables with prompt scheduling.
     std::ignore = scheduler.schedule(requests);
@@ -1605,7 +1611,7 @@ TEST(TestScheduler, hybrid_prefix_caching_generation_after_completed_interval_sw
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
 
     std::ignore = scheduler.schedule(requests);
     for (auto& req : requests) {
@@ -1652,7 +1658,7 @@ TEST(TestScheduler, hybrid_prefix_caching_generation_inside_interval_reuses_same
     const auto seq_id = seq_group->get_running_sequences()[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
-    Scheduler scheduler = Scheduler(init_hybrid_cache_orchestrator(scheduler_config), scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_hybrid_cache_orchestrator(scheduler_config), scheduler_config);
 
     // Prime cache/tables with prompt scheduling.
     std::ignore = scheduler.schedule(requests);
@@ -1720,7 +1726,7 @@ TEST_P(AppendSlotsSchedulerTest, test_append_slots_considers_all_sequences) {
     auto idx1 = (*sequence_group2)[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
 
-    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
     auto out1 = scheduler.schedule(requests);
 
     std::vector<uint64_t> ref_ids = {0, 1};
@@ -1794,7 +1800,7 @@ TEST_P(PartialPreemptionSchedulerTest, test_partial_preemption) {
 
 
     // schedule 2 sequence groups that use 5 kv blocks
-    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
     auto out0 = scheduler.schedule(requests);
 
     for (auto seq: requests) {
@@ -1885,7 +1891,7 @@ TEST(TestScheduler, test_partial_preemption_beam_search) {
         std::vector<SequenceGroup::Ptr> requests = {sequence_group};
         EXPECT_NO_THROW(requests[0]->get_running_sequences()[0]->get_sequence_group_ptr());
 
-        Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+        ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
         auto out = scheduler.schedule(requests);
         for (auto sequence: sequence_group->get_not_finished_sequences()) {
             sequence->append_token(token, 0.7);
@@ -2001,7 +2007,7 @@ TEST(TestScheduler, test_partially_preempted_prompt) {
         std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
 
         // schedule 2 sequence groups that use all available 2*3 kv blocks, we used all available kv-blocks.
-        Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+        ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
         auto out1 = scheduler.schedule(requests);
 
         for (auto seq: requests) {
@@ -2101,7 +2107,7 @@ TEST(TestScheduler, prefix_caching_test) {
         std::vector<uint64_t> prompt_tokens = {0,1,2,3,4,5,6,7};
         std::vector<uint64_t> histrory_tokens = {};
         // schedule prompt
-        Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+        ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
 
         size_t chat_iterations = 10;
 
@@ -2169,7 +2175,7 @@ TEST(TestScheduler, prefix_caching_test_two_identical_sequences) {
         std::vector<uint64_t> prompt_tokens = {0,1,2,3,4,5,6,7};
         std::vector<uint64_t> histrory_tokens = {};
         // schedule prompt
-        Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+        ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
 
         size_t chat_iterations = 10;
 
@@ -2239,7 +2245,7 @@ TEST(TestScheduler, prefix_caching_with_max_new_tokens_equal_1) {
     for (auto scheduler_config: configs) {
         std::vector<uint64_t> prompt_tokens = {0,1,2,3,4,5,6,7};
         // schedule prompt
-        Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config, 32), scheduler_config);
+        ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config, 32), scheduler_config);
 
         size_t chat_iterations = 2;
 
@@ -2297,7 +2303,7 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed) {
 
     // schedule 2 sequence groups that use all available 2*3 kv blocks, we used all available kv-blocks.
     const bool can_use_partial_preemption = false;
-    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config, can_use_partial_preemption);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config, can_use_partial_preemption);
     auto out1 = scheduler.schedule(requests);
 
     for (auto req : requests)
@@ -2380,7 +2386,7 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed2) {
 
     // schedule 2 sequence groups that use all available 2*3 kv blocks, we used all available kv-blocks.
     const bool can_use_partial_preemption = false;
-    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config, can_use_partial_preemption);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config, can_use_partial_preemption);
     scheduler.schedule(requests);
     for (auto req: requests)
         req->finish_iteration();
@@ -2465,7 +2471,7 @@ std::vector<size_t> _get_indices(const std::vector<CacheBlock::Ptr>& block_table
     return retval;
 }
 
-Scheduler::Output _schedule_one_mock_generation_token_for_each_sequence_group(Scheduler& scheduler, std::vector<SequenceGroup::Ptr>& requests) {
+ContinuousBatchingScheduler::Output _schedule_one_mock_generation_token_for_each_sequence_group(ContinuousBatchingScheduler& scheduler, std::vector<SequenceGroup::Ptr>& requests) {
     auto out = scheduler.schedule(requests);
     for (auto& req : requests) {
         std::vector<Sequence::Ptr> running_sequences = req->get_running_sequences();
@@ -2500,7 +2506,7 @@ TEST(TestScheduler, FullyPreemptsCacheEvictedSequences) {
     auto idx2 = (*sequence_group2)[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
 
-    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config, 2), scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config, 2), scheduler_config);
     // prompt phase - schedules 1 block for seq 1, 5 blocks for seq 2
     auto out = scheduler.schedule(requests);
 
@@ -2592,7 +2598,7 @@ TEST(TestScheduler, prefix_caching_embeddings_test) {
         }
         std::vector<std::vector<float>> histrory_embeddings = {};
         // schedule prompt
-        Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+        ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
 
         size_t chat_iterations = 10;
 
@@ -2674,7 +2680,7 @@ TEST(TestScheduler, expected_num_scheduled_tokens_overrides_default_schedule) {
         utils::get_greedy_config());
     std::vector<SequenceGroup::Ptr> requests = {sequence_group};
 
-    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
 
     scheduler.set_expected_num_scheduled_tokens(request_id, 5);
     EXPECT_EQ(scheduler.get_expected_num_scheduled_tokens(request_id), 5);
@@ -2684,7 +2690,7 @@ TEST(TestScheduler, expected_num_scheduled_tokens_overrides_default_schedule) {
     EXPECT_FALSE(out.m_scheduled_sequence_groups_ids.empty());
 
     // Release scheduled sequences and acknowledge the iteration so that
-    // Scheduler / BlockManager state is consistent at destruction time.
+    // ContinuousBatchingScheduler / BlockManager state is consistent at destruction time.
     for (auto& seq : sequence_group->get_sequences()) {
         scheduler.free_sequence(seq->get_id());
     }
@@ -2706,7 +2712,7 @@ TEST(TestScheduler, expected_num_scheduled_tokens_does_not_override_if_greater_t
         utils::get_greedy_config());
     std::vector<SequenceGroup::Ptr> requests = {sequence_group};
 
-    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
 
     // Available tokens for the request are 12; expected value above it must be ignored.
     scheduler.set_expected_num_scheduled_tokens(request_id, 13);
@@ -2737,7 +2743,7 @@ TEST(TestScheduler, clear_expected_num_scheduled_tokens_restores_default_schedul
         utils::get_greedy_config());
     std::vector<SequenceGroup::Ptr> requests = {sequence_group};
 
-    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
 
     scheduler.set_expected_num_scheduled_tokens(request_id, 5);
     auto out1 = scheduler.schedule(requests);
@@ -2775,7 +2781,7 @@ SchedulerConfig make_speculative_linear_attention_scheduler_config() {
 }
 
 // Prompt-processes one sequence and leaves it ready for verification.
-SequenceGroup::Ptr make_prompt_processed_sequence_group(Scheduler& scheduler,
+SequenceGroup::Ptr make_prompt_processed_sequence_group(ContinuousBatchingScheduler& scheduler,
                                                        std::vector<SequenceGroup::Ptr>& requests,
                                                        const std::vector<uint64_t>& tokens) {
     SequenceGroup::Ptr seq_group = std::make_shared<SequenceGroup>(
@@ -2799,7 +2805,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_plain_step_rejects_outsta
                                                        /*kv_num_layers=*/1,
                                                        /*la_num_layers=*/1);
     auto& la_block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
 
     std::vector<SequenceGroup::Ptr> requests;
     auto seq_group = make_prompt_processed_sequence_group(scheduler, requests, {0, 1, 2, 3});
@@ -2829,7 +2835,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrowed_speculative_emit
                                                        /*kv_num_layers=*/1,
                                                        /*la_num_layers=*/1);
     auto& la_block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     scheduler.ensure_linear_attention_pool_blocks(1 + (1 + N));
 
     std::vector<SequenceGroup::Ptr> requests;
@@ -2883,7 +2889,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrowed_admission_reserv
     const size_t initial_pool = la_block_manager.get_total_block_count();
     ASSERT_LT(initial_pool, 1 + (1 + N));
 
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     EXPECT_TRUE(scheduler.ensure_linear_attention_pool_blocks(1 + (1 + N)));
     EXPECT_EQ(la_block_manager.get_total_block_count(), 1 + (1 + N));
     EXPECT_FALSE(scheduler.ensure_linear_attention_pool_blocks(1 + (1 + N)));
@@ -2917,7 +2923,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrowed_steady_state_ret
                                                        /*kv_num_layers=*/1,
                                                        /*la_num_layers=*/1);
     auto& la_block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     scheduler.ensure_linear_attention_pool_blocks(1 + (1 + N));
 
     std::vector<SequenceGroup::Ptr> requests;
@@ -3011,7 +3017,7 @@ TEST(TestScheduler, linear_attention_borrowed_release_keeps_committed_row) {
 // Shared-pool shortages must defer before reservation
 namespace {
 // Prompt-processes several sequences and leaves them ready for a speculative step.
-std::vector<SequenceGroup::Ptr> make_prompt_processed_sequence_groups(Scheduler& scheduler,
+std::vector<SequenceGroup::Ptr> make_prompt_processed_sequence_groups(ContinuousBatchingScheduler& scheduler,
                                                                      std::vector<SequenceGroup::Ptr>& requests,
                                                                      size_t num_groups,
                                                                      const std::vector<uint64_t>& tokens) {
@@ -3056,7 +3062,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrowed_speculative_wind
     ASSERT_EQ(la_block_manager.get_total_block_count(), 2 + WINDOW);
     ASSERT_EQ(la_block_manager.get_fixed_blocks_per_sequence(), 1u);
 
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     std::vector<SequenceGroup::Ptr> requests;
     auto groups = make_prompt_processed_sequence_groups(scheduler, requests, 2, {0, 1, 2, 3});
     auto seq_group_a = groups[0];
@@ -3070,7 +3076,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrowed_speculative_wind
     seq_group_b->set_num_validated_tokens(N);
 
     // The first sequence borrows the only window.
-    Scheduler::Output out1;
+    ContinuousBatchingScheduler::Output out1;
     ASSERT_NO_THROW(out1 = scheduler.schedule(requests));
     EXPECT_EQ(seq_group_a->get_num_scheduled_tokens(), WINDOW);
     ASSERT_TRUE(out1.has_linear_attention_paging_data(seq_id_a));
@@ -3090,7 +3096,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrowed_speculative_wind
     seq_group_b->set_num_validated_tokens(N);
 
     // Both defer while the first sequence still holds its borrowed rows.
-    Scheduler::Output out2;
+    ContinuousBatchingScheduler::Output out2;
     ASSERT_NO_THROW(out2 = scheduler.schedule(requests));
     EXPECT_EQ(out2.m_total_num_scheduled_tokens, 0u);
     EXPECT_TRUE(out2.m_scheduled_sequence_groups_ids.empty());
@@ -3106,7 +3112,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrowed_speculative_wind
     ASSERT_EQ(requests.size(), 1u);
     ASSERT_EQ(la_block_manager.get_num_blocks_in_use(), 1u);
 
-    Scheduler::Output out3;
+    ContinuousBatchingScheduler::Output out3;
     ASSERT_NO_THROW(out3 = scheduler.schedule(requests));
     EXPECT_EQ(seq_group_b->get_num_scheduled_tokens(), WINDOW);
     ASSERT_TRUE(out3.has_linear_attention_paging_data(seq_id_b));
@@ -3136,7 +3142,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_partial_group_reservation
                                                        /*kv_num_layers=*/1,
                                                        /*la_num_layers=*/1);
     auto& la_block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
 
     std::vector<SequenceGroup::Ptr> requests;
     auto seq_group = make_prompt_processed_sequence_group(scheduler, requests, {0, 1, 2, 3});
@@ -3173,7 +3179,7 @@ TEST(TestScheduler, linear_attention_can_reserve_temporary_blocks_agrees_with_re
                                                        /*la_num_layers=*/1);
     auto& la_block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
 
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     std::vector<SequenceGroup::Ptr> requests;
     auto seq_group = make_prompt_processed_sequence_group(scheduler, requests, {0, 1, 2, 3});
     const auto seq_id = seq_group->get_running_sequences()[0]->get_id();
@@ -3259,7 +3265,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrowed_admission_reserv
     ASSERT_EQ(la_block_manager.get_max_total_block_count(), 2 + WINDOW);
     ASSERT_EQ(la_block_manager.get_total_block_count(), 2 + WINDOW);
 
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     const size_t worst_case_pool = 2 * (1 + WINDOW);
     ASSERT_GT(worst_case_pool, 2 + WINDOW);
     ASSERT_NO_THROW(std::ignore = scheduler.ensure_linear_attention_pool_blocks(worst_case_pool));
@@ -3276,7 +3282,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrowed_admission_reserv
     groups[0]->set_num_validated_tokens(N);
     groups[1]->set_num_validated_tokens(N);
 
-    Scheduler::Output out;
+    ContinuousBatchingScheduler::Output out;
     ASSERT_NO_THROW(out = scheduler.schedule(requests));
     EXPECT_EQ(groups[0]->get_num_scheduled_tokens(), WINDOW);
     EXPECT_EQ(groups[1]->get_num_scheduled_tokens(), 0u);
@@ -3352,7 +3358,7 @@ TEST(TestScheduler, linear_attention_pool_blocks_high_water_tracks_growth_that_o
                                                        /*kv_num_layers=*/1,
                                                        /*la_num_layers=*/1);
     auto& la_block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
 
     std::vector<SequenceGroup::Ptr> requests;
     auto seq_group = make_prompt_processed_sequence_group(scheduler, requests, {0, 1, 2, 3});
@@ -3406,7 +3412,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrow_pool_budget_below_
                                                        /*cap_la_pool=*/true);
     auto& la_block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
     ASSERT_EQ(la_block_manager.get_max_total_block_count(), S_LIVE + WINDOW - 1);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
 
     // The window-only bound still passes.
     ASSERT_GE(la_block_manager.get_max_total_block_count(), WINDOW);
@@ -3441,7 +3447,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrow_pool_budget_at_liv
                                                        /*cap_la_pool=*/true);
     ASSERT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_max_total_block_count(),
               S_LIVE + WINDOW);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
 
     EXPECT_NO_THROW(scheduler.check_linear_attention_borrow_pool_floor(S_LIVE, WINDOW));
     // dynamic_split_fuse does not clamp live sequences to max_num_seqs.
@@ -3464,7 +3470,7 @@ TEST(TestScheduler, linear_attention_borrow_pool_floor_silent_while_pool_is_unca
     auto& la_block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
     ASSERT_EQ(la_block_manager.get_max_total_block_count(), 0u) << "this test is about the growing-pool case";
     ASSERT_LT(la_block_manager.get_total_block_count(), S_LIVE + WINDOW);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
 
     EXPECT_NO_THROW(scheduler.check_linear_attention_borrow_pool_floor(S_LIVE, WINDOW));
     EXPECT_TRUE(scheduler.ensure_linear_attention_pool_blocks(S_LIVE + WINDOW));
@@ -3493,7 +3499,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrow_pool_floor_counts_
                                                        /*cap_la_pool=*/true);
     auto& la_block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
     ASSERT_EQ(la_block_manager.get_max_total_block_count(), CEILING);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
 
     // Verifying-only arithmetic passes, but live-sequence arithmetic does not.
     EXPECT_NO_THROW(scheduler.check_linear_attention_borrow_pool_floor(S_VERIFYING, WINDOW));
@@ -3535,7 +3541,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrow_pool_floor_homogen
                                                            /*cap_la_pool=*/true);
         ASSERT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_max_total_block_count(),
                   S_LIVE + WINDOW - 1);
-        Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+        ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
         EXPECT_THROW(scheduler.check_linear_attention_borrow_pool_floor(S_LIVE, WINDOW), ov::Exception);
     }
     {   // Exactly at the floor: accepted, as before.
@@ -3549,7 +3555,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrow_pool_floor_homogen
                                                            /*cap_la_pool=*/true);
         ASSERT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_max_total_block_count(),
                   S_LIVE + WINDOW);
-        Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+        ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
         EXPECT_NO_THROW(scheduler.check_linear_attention_borrow_pool_floor(S_LIVE, WINDOW));
     }
     {   // The new and old growth targets also request the same number of rows.
@@ -3562,7 +3568,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrow_pool_floor_homogen
                                                            /*la_num_layers=*/1,
                                                            /*cap_la_pool=*/false);
         auto& la_block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
-        Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+        ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
         EXPECT_TRUE(scheduler.ensure_linear_attention_pool_blocks(S_LIVE + S_VERIFYING * WINDOW));
         EXPECT_GE(la_block_manager.get_total_block_count(), S_VERIFYING * (1 + WINDOW));
         EXPECT_FALSE(scheduler.ensure_linear_attention_pool_blocks(S_VERIFYING * (1 + WINDOW)));

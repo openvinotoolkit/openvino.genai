@@ -899,7 +899,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_perf_metrics(co
     request->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
 }
 
-void ContinuousBatchingPipeline::ContinuousBatchingImpl::_notify_handles(const Scheduler::Output& scheduler_output) {
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_notify_handles(const ContinuousBatchingScheduler::Output& scheduler_output) {
     for (const auto request_index : scheduler_output.m_scheduled_sequence_groups_ids) {
         const auto& request = m_requests.at(request_index);
         const bool is_echo_only = request->get_context_len() <= request->get_prompt_len() &&

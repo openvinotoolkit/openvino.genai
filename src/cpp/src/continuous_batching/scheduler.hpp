@@ -25,7 +25,7 @@
 
 namespace ov::genai {
 // Keep this internal scheduler distinct from the public image-generation
-// ov::genai::Scheduler.  Defining both classes under the same qualified name
+// ov::genai::Scheduler. Defining both classes under the same qualified name
 // violates the one-definition rule when the complete library is linked.
 class ContinuousBatchingScheduler {
 public:
