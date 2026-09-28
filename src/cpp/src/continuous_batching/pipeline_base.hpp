@@ -142,18 +142,6 @@ public:
                                  GenerationConfig sampling_params);
 
     /**
-     * Overload accepting audios. Audios are encoded before text tokenization so
-     * <|AUDIO|> placeholders resolve to fresh embeddings (Qwen3-Omni).
-     */
-    GenerationHandle add_request(uint64_t request_id,
-                                 const std::string& prompt,
-                                 const std::vector<ov::Tensor>& images,
-                                 const std::vector<ov::Tensor>& videos,
-                                 const std::vector<VideoMetadata>& videos_metadata,
-                                 const std::vector<ov::Tensor>& audios,
-                                 GenerationConfig sampling_params);
-
-    /**
      * Checks whether server (pipeline) has non-finished requests and step() should be called within a loop
      */
     virtual bool has_non_finished_requests() = 0;

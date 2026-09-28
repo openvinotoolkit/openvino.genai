@@ -1073,6 +1073,16 @@ def test_audio_cb_chat_history_leaves_prompt_calls_stateless(
     assert num_input_tokens(first[0]) == num_input_tokens(second[0])
 
 
+@pytest.mark.real_models
+@pytest.mark.vlm
+def test_audio_cb_add_request_rejects_audio(
+    qwen3_omni_cb: ContinuousBatchingPipeline, audio_1s_tensor: openvino.Tensor
+):
+    """add_request() has no audio path, so audio must raise instead of being dropped."""
+    with pytest.raises(RuntimeError, match="not supported by add_request"):
+        qwen3_omni_cb.add_request(0, "Describe", [], [], audio_generation_config(), audios=[audio_1s_tensor])
+
+
 # ----------------------------------------------------------------------------------------------
 # T-E: the SDPA `VLMPipeline` ChatHistory path. Its overload puts `audios` before
 # `videos_metadata`, the opposite of `OmniPipeline`; both are vectors, so a swap compiles silently.

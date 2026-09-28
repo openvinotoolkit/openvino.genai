@@ -516,6 +516,9 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const ov::genai::GenerationConfig& generation_config,
                const py::kwargs& kwargs
             ) -> std::shared_ptr<GenerationHandleImpl> {
+                // kwargs are not forwarded, so audios would otherwise be dropped without an error.
+                OPENVINO_ASSERT(!kwargs.contains("audios"),
+                                "Audio input is not supported by add_request(). Use generate() with audios_batches instead.");
                 const auto videos_metadata = pyutils::get_videos_metadata_from_kwargs(kwargs);
                 return pipe.add_request(
                     request_id,
