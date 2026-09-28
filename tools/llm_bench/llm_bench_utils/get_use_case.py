@@ -114,7 +114,7 @@ def get_use_case_by_model_id(model_id, task=None):
         for m_type in normalize_model_ids(use_case.supported_model_types):
             # TODO go to equality and raise error if use_cases is already found, as it will mean that
             # model with that task can be applicable to execute with different pipelines and user doesn't specify one
-            if not model_id.startswith(m_type):
+            if not model_id.lower().startswith(m_type.lower()):
                 continue
 
             if model_use_case is not None and model_use_case.task != use_case.task:
@@ -154,7 +154,8 @@ def get_use_case(model_path: Path, task: Optional[str] = None):
     if diffusers_config := safe_json_load(model_dir / "model_index.json"):
         if (pipe_type := diffusers_config.get("_class_name")) in DIFFUSERS_PIPELINE_TYPES:
             model_type = pipe_type.replace("Pipeline", "")
-            return log_and_return(USE_CASES["image_gen"][0], model_type, cur_model_name)
+            use_case, _ = get_use_case_by_model_id(model_type, "image_gen")
+            return log_and_return(use_case, model_type, cur_model_name)
         if (pipe_type := diffusers_config.get("_class_name")) in ["LTXPipeline"]:
             model_type = pipe_type.replace("Pipeline", "")
             return log_and_return(USE_CASES["video_gen"][0], model_type, cur_model_name)
