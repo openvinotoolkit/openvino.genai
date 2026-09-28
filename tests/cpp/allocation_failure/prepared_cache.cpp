@@ -19,7 +19,6 @@
 
 namespace {
 
-// The failure sweep intercepts ordinary global new/new[]; aligned allocations are not injected.
 thread_local size_t allocations_remaining = std::numeric_limits<size_t>::max();
 
 void consume_allocation_budget() {
