@@ -36,8 +36,9 @@ def compare_speech_audio(cpp_output: Path, python_output: Path, c_output: Path, 
         if deterministic:
             assert first_audio.shape == second_audio.shape, f"{first} and {second} audio lengths differ"
             # The C++ sample writes float WAV data; the C and Python samples clip to PCM16.
-            np.testing.assert_allclose(np.clip(first_audio, -1, 1), np.clip(second_audio, -1, 1),
-                                       rtol=0, atol=2 / 32768)
+            np.testing.assert_allclose(
+                np.clip(first_audio, -1, 1), np.clip(second_audio, -1, 1), rtol=0, atol=2 / 32768
+            )
         else:
             # SpeechT5 waveforms and lengths vary between independent runs.
             assert 0.5 <= first_audio.size / second_audio.size <= 2.0, (
@@ -105,8 +106,13 @@ class TestTextToSpeechSample:
 
         # Run C sample
         c_output = tmp_path / "c_output_audio.wav"
-        c_command = [SAMPLES_C_DIR / "text2speech_c", convert_model, input_prompt,
-                     self.temp_speaker_embedding_file.name, c_output]
+        c_command = [
+            SAMPLES_C_DIR / "text2speech_c",
+            convert_model,
+            input_prompt,
+            self.temp_speaker_embedding_file.name,
+            c_output,
+        ]
         run_sample(c_command)
         compare_speech_audio(cpp_dir / "output_audio.wav", python_dir / "output_audio.wav", c_output, 16000, False)
 
@@ -174,8 +180,13 @@ class TestTextToSpeechSample:
 
         # Run C sample
         c_output = tmp_path / "c_output_audio.wav"
-        c_command = [SAMPLES_C_DIR / "text2speech_c", str(tiny_kokoro_ov_path), input_prompt,
-                     tiny_kokoro_speaker_embedding_file_path, c_output]
+        c_command = [
+            SAMPLES_C_DIR / "text2speech_c",
+            str(tiny_kokoro_ov_path),
+            input_prompt,
+            tiny_kokoro_speaker_embedding_file_path,
+            c_output,
+        ]
         run_sample(c_command)
         compare_speech_audio(cpp_dir / "output_audio.wav", python_dir / "output_audio.wav", c_output, 24000, True)
 

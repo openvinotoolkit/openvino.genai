@@ -134,6 +134,10 @@ ov_genai_text2speech_decoded_results_get_speech_at(const ov_genai_text2speech_de
                                                    ov_tensor_t** speech);
 /**
  * @brief Copy base performance metrics from a decoded result.
+ *
+ * For text-to-speech, ov_genai_perf_metrics_get_throughput reports samples per second.
+ * Token-oriented metrics are not populated and return default values. Use
+ * ov_genai_text2speech_decoded_results_get_num_generated_samples to get the generated sample count.
  * @param[in] results Decoded result to query.
  * @param[out] metrics Receives new metrics owned by the caller. Release them with
  *                     ov_genai_text2speech_decoded_results_perf_metrics_free.
@@ -149,6 +153,7 @@ ov_genai_text2speech_decoded_results_get_perf_metrics(const ov_genai_text2speech
 OPENVINO_GENAI_C_EXPORTS void ov_genai_text2speech_decoded_results_perf_metrics_free(ov_genai_perf_metrics* metrics);
 /**
  * @brief Get the total number of samples reported by the generation performance metrics.
+ * This is the generated sample count for text-to-speech; token-oriented metrics are not populated.
  * @param[in] results Decoded result to query.
  * @param[out] count Receives the generated sample count.
  * @return OK on success or INVALID_C_PARAM for NULL arguments.
