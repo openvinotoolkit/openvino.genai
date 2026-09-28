@@ -219,6 +219,9 @@ def get_image_prompt(args):
                 input_image_list.append(image_data)
     else:
         input_image_list.append(output_data_list[0])
+    if args.get("strength") is not None:
+        for image_data in input_image_list:
+            image_data.setdefault("strength", args["strength"])
     return input_image_list
 
 
