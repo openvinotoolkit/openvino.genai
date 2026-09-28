@@ -12,6 +12,7 @@ from openvino_genai import (
     GenerationFinishReason,
     StreamingStatus,
     Llama3JsonToolParser,
+    Qwen3CoderToolParser,
     Phi4ReasoningParser,
     Phi4ReasoningIncrementalParser,
     DeepSeekR1ReasoningIncrementalParser,
@@ -679,6 +680,42 @@ def test_final_parser_llama_32_json(hf_ov_genai_models):
     parser = Llama3JsonToolParser()
     parser.parse(content_json)
     assert content_json["tool_calls"][0] == json.loads(json_str)
+
+
+QWEN3_CODER_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "parameters": {
+                "type": "object",
+                "properties": {"location": {"type": "string"}, "days": {"type": "integer"}},
+            },
+        },
+    }
+]
+
+
+def test_final_parser_qwen3_coder():
+    content = (
+        "Let me check.\n<tool_call>\n<function=get_weather>\n<parameter=location>\n007 Main St\n</parameter>\n"
+        "<parameter=days>\n3\n</parameter>\n</function>\n</tool_call>"
+    )
+    message = {"content": content}
+    Qwen3CoderToolParser(QWEN3_CODER_TOOLS).parse(message)
+    assert message["content"] == content
+    assert message["tool_calls"] == [{"name": "get_weather", "arguments": {"location": "007 Main St", "days": 3}}]
+
+    # Without tool definitions the values stay strings.
+    message = {"content": content}
+    Qwen3CoderToolParser().parse(message)
+    assert message["tool_calls"][0]["arguments"] == {"location": "007 Main St", "days": "3"}
+
+
+def test_final_parser_qwen3_coder_no_call():
+    message = {"content": "No tools needed: the answer is 4."}
+    Qwen3CoderToolParser(QWEN3_CODER_TOOLS).parse(message)
+    assert "tool_calls" not in message
 
 
 @pytest.mark.parametrize("model_id", ["microsoft/Phi-4-mini-reasoning"])
