@@ -17,7 +17,7 @@ from PIL import Image
 from datasets import load_dataset
 from typing import Any, Optional
 
-from whowhatbench.model_loaders import load_model
+from whowhatbench.model_loaders import TORCH_DTYPES, load_model
 from whowhatbench import EVALUATOR_REGISTRY
 from whowhatbench.utils import fix_phi3_v_eos_token_id
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
@@ -240,6 +240,11 @@ def parse_args():
         "--hf",
         action="store_true",
         help="Use AutoModelForCausalLM from transformers library to instantiate the model.",
+    )
+    parser.add_argument(
+        "--torch-dtype",
+        choices=TORCH_DTYPES,
+        help="PyTorch weight dtype with --hf. If omitted, the model-specific default is used.",
     )
     parser.add_argument(
         "--genai",
@@ -506,6 +511,8 @@ def check_args(args):
         )
     if args.hf and args.empty_adapters:
         raise ValueError("'empty_adapters' mode is not supported for HF Transformers.")
+    if args.torch_dtype is not None and not args.hf:
+        raise ValueError("--torch-dtype requires --hf")
     if args.speaker_embeddings is not None and not os.path.exists(args.speaker_embeddings):
         raise ValueError(f"Speaker embedding file does not exist: {args.speaker_embeddings}")
     if args.gt_data is not None and os.path.isdir(args.gt_data):
@@ -638,8 +645,26 @@ def load_processor(args):
         else:
             preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=False)
     except Exception:
-        preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=True)
+        if config.model_type == "minicpmv4_7":
+            preprocessor = load_minicpmv4_7_processor(preprocessor_id)
+        else:
+            preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=True)
     return preprocessor, config
+
+
+def load_minicpmv4_7_processor(model_id):
+    # The original MiniCPM-V 4.7 checkpoints ship processor configs pointing at remote code written for an older
+    # transformers, and transformers has no AutoProcessor mapping for minicpmv4_7: assemble the processor from the
+    # native classes instead (MiniCPM-V 4.7 reuses the 4.6 image and video processors).
+    from transformers import MiniCPMV4_6ImageProcessor, MiniCPMV4_6VideoProcessor, MiniCPMV4_7Processor
+
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    return MiniCPMV4_7Processor(
+        image_processor=MiniCPMV4_6ImageProcessor.from_pretrained(model_id),
+        video_processor=MiniCPMV4_6VideoProcessor.from_pretrained(model_id),
+        tokenizer=tokenizer,
+        chat_template=tokenizer.chat_template,
+    )
 
 
 def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
@@ -1002,7 +1027,8 @@ def genai_gen_reranking(model, tokenizer, query, documents):
 def is_model_with_automatic_crop(config):
     return (
         "internvl" in config.model_type
-        or "minicpmv" in config.model_type
+        # remote-code MiniCPM-V only: the native transformers ones (e.g. minicpmv4_7) return the prompt with the answer
+        or config.model_type == "minicpmv"
         or "minicpmo" in config.model_type
         or "videochat_flash_qwen" in config.model_type
     )
@@ -1456,6 +1482,8 @@ def main():
         kwargs["from_onnx"] = args.from_onnx
     if args.gguf_file:
         kwargs["gguf_file"] = args.gguf_file
+    if args.torch_dtype is not None:
+        kwargs["torch_dtype"] = args.torch_dtype
     if args.adapters is not None:
         kwargs["adapters"] = args.adapters
         if args.alphas is not None:

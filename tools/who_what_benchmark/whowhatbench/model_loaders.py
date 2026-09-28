@@ -44,6 +44,26 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+# HF INT8/INT4 loading requires quantization configuration or a quantized checkpoint, not torch_dtype.
+TORCH_DTYPES = {
+    "float32": torch.float32,
+    "float16": torch.float16,
+    "bfloat16": torch.bfloat16,
+    "fp32": torch.float32,
+    "fp16": torch.float16,
+    "bf16": torch.bfloat16,
+}
+
+
+def _resolve_torch_dtype(dtype):
+    if dtype is None or dtype == "auto" or isinstance(dtype, torch.dtype):
+        return dtype
+    try:
+        return TORCH_DTYPES[dtype]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported PyTorch dtype '{dtype}'. Supported values: {', '.join(TORCH_DTYPES)}.") from exc
+
+
 def _sanitize_load_kwargs(model_type, use_hf, use_genai, use_llamacpp, kwargs):
     sanitized_kwargs = dict(kwargs)
     n_ctx = sanitized_kwargs.get("llamacpp_n_ctx")
@@ -276,7 +296,7 @@ def load_omni_hf_pipeline(model_id, device, config, trust_remote_code=False, **k
 
 
 def load_text_hf_pipeline(model_id, device, **kwargs):
-    model_kwargs = {}
+    model_kwargs = {"torch_dtype": _resolve_torch_dtype(kwargs.get("torch_dtype"))}
     trust_remote_code = False
     config = None
     if kwargs.get('gguf_file'):
@@ -529,7 +549,10 @@ def load_visual_text_model(
         if getattr(config, "model_type", None) in OMNI_MODEL_TYPES:
             return load_omni_hf_pipeline(model_id, device, config, trust_remote_code, **kwargs)
 
-        model_kwargs = {"trust_remote_code": trust_remote_code}
+        model_kwargs = {
+            "trust_remote_code": trust_remote_code,
+            "torch_dtype": _resolve_torch_dtype(kwargs.get("torch_dtype")),
+        }
         try:
             model_cls = None
 
@@ -544,7 +567,7 @@ def load_visual_text_model(
                 model_cls = AutoModelForMultimodalLM
             elif config.model_type == "gemma3n":
                 model_cls = AutoModelForCausalLM
-                model_kwargs.update({"torch_dtype": torch.float32})
+                model_kwargs["torch_dtype"] = model_kwargs["torch_dtype"] or torch.float32
             elif transformers_version < Version("5.0.0"):
                 from transformers import AutoModelForVision2Seq
 
