@@ -4,8 +4,11 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 
+#include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
+#include <memory>
 #include <new>
 
 #include "continuous_batching/cache/block_manager.hpp"
@@ -16,8 +19,59 @@
 
 namespace {
 
-// The failure sweep intercepts ordinary global new/new[]; aligned allocations are not injected.
 thread_local size_t allocations_remaining = std::numeric_limits<size_t>::max();
+
+void consume_allocation_budget() {
+    if (allocations_remaining != std::numeric_limits<size_t>::max()) {
+        if (allocations_remaining == 0) {
+            throw std::bad_alloc();
+        }
+        --allocations_remaining;
+    }
+}
+
+void* allocate_aligned(std::size_t size, std::align_val_t alignment) {
+    consume_allocation_budget();
+
+    const std::size_t allocation_size = size == 0 ? 1 : size;
+    std::size_t alignment_size = static_cast<std::size_t>(alignment);
+    if (alignment_size < alignof(void*)) {
+        alignment_size = alignof(void*);
+    }
+
+    constexpr std::size_t pointer_size = sizeof(void*);
+    const std::size_t maximum_size = std::numeric_limits<std::size_t>::max();
+    if (alignment_size - 1 > maximum_size - pointer_size) {
+        throw std::bad_alloc();
+    }
+    const std::size_t overhead = pointer_size + alignment_size - 1;
+    if (allocation_size > maximum_size - overhead) {
+        throw std::bad_alloc();
+    }
+
+    void* allocation = std::malloc(allocation_size + overhead);
+    if (allocation == nullptr) {
+        throw std::bad_alloc();
+    }
+
+    void* aligned_allocation = static_cast<char*>(allocation) + pointer_size;
+    std::size_t available_space = allocation_size + overhead - pointer_size;
+    if (std::align(alignment_size, allocation_size, aligned_allocation, available_space) == nullptr) {
+        std::free(allocation);
+        throw std::bad_alloc();
+    }
+    std::memcpy(static_cast<char*>(aligned_allocation) - pointer_size, &allocation, pointer_size);
+    return aligned_allocation;
+}
+
+void deallocate_aligned(void* allocation) noexcept {
+    if (allocation == nullptr) {
+        return;
+    }
+    void* original_allocation = nullptr;
+    std::memcpy(&original_allocation, static_cast<char*>(allocation) - sizeof(void*), sizeof(void*));
+    std::free(original_allocation);
+}
 
 class FailAllocation {
 public:
@@ -34,12 +88,7 @@ public:
 }  // namespace
 
 void* operator new(std::size_t size) {
-    if (allocations_remaining != std::numeric_limits<size_t>::max()) {
-        if (allocations_remaining == 0) {
-            throw std::bad_alloc();
-        }
-        --allocations_remaining;
-    }
+    consume_allocation_budget();
     if (void* allocation = std::malloc(size == 0 ? 1 : size)) {
         return allocation;
     }
@@ -50,6 +99,26 @@ void* operator new[](std::size_t size) {
     return ::operator new(size);
 }
 
+void* operator new(std::size_t size, std::align_val_t alignment) {
+    return allocate_aligned(size, alignment);
+}
+
+void* operator new[](std::size_t size, std::align_val_t alignment) {
+    return ::operator new(size, alignment);
+}
+
+void* operator new(std::size_t size, std::align_val_t alignment, const std::nothrow_t&) noexcept {
+    try {
+        return ::operator new(size, alignment);
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+void* operator new[](std::size_t size, std::align_val_t alignment, const std::nothrow_t&) noexcept {
+    return ::operator new(size, alignment, std::nothrow);
+}
+
 void operator delete(void* allocation) noexcept {
     std::free(allocation);
 }
@@ -58,12 +127,58 @@ void operator delete[](void* allocation) noexcept {
     ::operator delete(allocation);
 }
 
+void operator delete(void* allocation, std::align_val_t) noexcept {
+    deallocate_aligned(allocation);
+}
+
+void operator delete[](void* allocation, std::align_val_t alignment) noexcept {
+    ::operator delete(allocation, alignment);
+}
+
+void operator delete(void* allocation, std::size_t, std::align_val_t alignment) noexcept {
+    ::operator delete(allocation, alignment);
+}
+
+void operator delete[](void* allocation, std::size_t, std::align_val_t alignment) noexcept {
+    ::operator delete[](allocation, alignment);
+}
+
+void operator delete(void* allocation, std::align_val_t alignment, const std::nothrow_t&) noexcept {
+    ::operator delete(allocation, alignment);
+}
+
+void operator delete[](void* allocation, std::align_val_t alignment, const std::nothrow_t&) noexcept {
+    ::operator delete[](allocation, alignment);
+}
+
 void operator delete(void* allocation, std::size_t) noexcept {
     ::operator delete(allocation);
 }
 
 void operator delete[](void* allocation, std::size_t) noexcept {
     ::operator delete(allocation);
+}
+
+TEST(AllocationFailureOperators, AlignedAllocationsHonorAlignmentAndFailureBudget) {
+    constexpr std::align_val_t alignment{64};
+    void* allocation = ::operator new(64, alignment);
+    EXPECT_EQ(reinterpret_cast<std::uintptr_t>(allocation) % 64, 0u);
+    ::operator delete(allocation, alignment);
+
+    void* array_allocation = ::operator new[](128, alignment);
+    EXPECT_EQ(reinterpret_cast<std::uintptr_t>(array_allocation) % 64, 0u);
+    ::operator delete[](array_allocation, alignment);
+
+    bool allocation_failed = false;
+    {
+        FailAllocation fail_allocation(0);
+        try {
+            static_cast<void>(::operator new(64, alignment));
+        } catch (const std::bad_alloc&) {
+            allocation_failed = true;
+        }
+    }
+    EXPECT_TRUE(allocation_failed);
 }
 
 namespace {

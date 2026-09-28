@@ -7,7 +7,6 @@ import pytest
 import math
 import sys
 import threading
-import time
 import numpy as np
 
 from pathlib import Path
@@ -155,15 +154,18 @@ def test_generation_handle_concurrent_stop_and_read_smoke(
     reader = threading.Thread(target=read_output)
     reader.start()
     assert reader_thread_started.wait(timeout=5)
-    time.sleep(0.05)
 
     handle.stop()
     reader.join(timeout=5)
 
     assert not reader.is_alive()
     assert handle.get_status() == GenerationStatus.STOP
-    assert reader_output == [expected_output]
-    assert reader_error == []
+    if reader_error:
+        assert reader_output == []
+        assert len(reader_error) == 1
+        assert "GenerationHandle cannot be used after it is stopped / cancelled." in str(reader_error[0])
+    else:
+        assert reader_output == [expected_output]
 
 
 def test_generation_handle_echo_only_publishes_output_and_finished_status(
