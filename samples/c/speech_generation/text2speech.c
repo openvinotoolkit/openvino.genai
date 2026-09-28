@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "openvino/genai/c/text2speech_pipeline.h"
 
@@ -81,34 +82,54 @@ done:
 }
 
 int main(int argc, char** argv) {
-    if (argc < 4 || argc > 6) {
+    const int batch = argc > 1 && strcmp(argv[1], "--batch") == 0;
+    if ((batch && argc != 8) || (!batch && (argc < 4 || argc > 6))) {
         fprintf(stderr, "Usage: %s MODEL_DIR TEXT SPEAKER_EMBEDDING.bin|- [OUTPUT.wav] [DEVICE]\n", argv[0]);
+        fprintf(stderr, "       %s --batch MODEL_DIR TEXT1 TEXT2 SPEAKER_EMBEDDING.bin|- OUTPUT1.wav OUTPUT2.wav\n",
+                argv[0]);
         return 1;
     }
-    const char* output_path = argc > 4 ? argv[4] : "output_audio.wav";
-    const char* device = argc > 5 ? argv[5] : "CPU";
+    const char* model_path = argv[batch ? 2 : 1];
+    const char* voice_path = argv[batch ? 5 : 3];
+    const char* device = !batch && argc > 5 ? argv[5] : "CPU";
     ov_genai_text2speech_pipeline* pipeline = NULL;
     ov_genai_text2speech_decoded_results* results = NULL;
     ov_tensor_t* embedding = NULL;
     ov_tensor_t* speech = NULL;
     int success = 0;
-    if (ov_genai_text2speech_pipeline_create(argv[1], device, 0, &pipeline) != OK)
+    if (ov_genai_text2speech_pipeline_create(model_path, device, 0, &pipeline) != OK)
         goto done;
-    if (!(argv[3][0] == '-' && argv[3][1] == '\0')) {
-        embedding = load_embedding(argv[3], pipeline);
+    if (!(voice_path[0] == '-' && voice_path[1] == '\0')) {
+        embedding = load_embedding(voice_path, pipeline);
         if (!embedding)
             goto done;
     }
-    if (ov_genai_text2speech_pipeline_generate(pipeline, argv[2], embedding, &results) != OK ||
-        ov_genai_text2speech_decoded_results_get_speech_at(results, 0, &speech) != OK)
+    if (batch) {
+        const char* texts[] = {argv[3], argv[4]};
+        if (ov_genai_text2speech_pipeline_generate_batch(pipeline, texts, 2, embedding, &results) != OK)
+            goto done;
+    } else if (ov_genai_text2speech_pipeline_generate(pipeline, argv[2], embedding, &results) != OK) {
         goto done;
-    size_t count = 0;
+    }
+    size_t speech_count = 0;
     uint32_t rate = 0;
-    void* data = NULL;
-    if (ov_tensor_get_size(speech, &count) != OK || ov_tensor_data(speech, &data) != OK ||
-        ov_genai_text2speech_decoded_results_get_output_sample_rate(results, &rate) != OK)
+    const size_t expected_count = batch ? 2 : 1;
+    if (ov_genai_text2speech_decoded_results_get_speeches_count(results, &speech_count) != OK ||
+        speech_count != expected_count || ov_genai_text2speech_decoded_results_get_output_sample_rate(results, &rate) != OK)
         goto done;
-    success = save_wav(output_path, (const float*)data, count, rate);
+    for (size_t i = 0; i < speech_count; ++i) {
+        size_t sample_count = 0;
+        void* data = NULL;
+        const char* output_path = batch ? argv[6 + i] : (argc > 4 ? argv[4] : "output_audio.wav");
+        if (ov_genai_text2speech_decoded_results_get_speech_at(results, i, &speech) != OK ||
+            ov_tensor_get_size(speech, &sample_count) != OK || ov_tensor_data(speech, &data) != OK ||
+            sample_count == 0 || !save_wav(output_path, (const float*)data, sample_count, rate))
+            goto done;
+        ov_tensor_free(speech);
+        speech = NULL;
+    }
+    printf("Generated %zu speech waveform(s)\n", speech_count);
+    success = 1;
 done:
     ov_tensor_free(speech);
     ov_tensor_free(embedding);

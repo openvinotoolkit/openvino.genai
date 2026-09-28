@@ -3,7 +3,7 @@ import Tabs from '@theme/Tabs';
 import { Children, ReactElement } from 'react';
 
 type LanguageTabsProps = {
-  children: ReactElement<LanguageTabItemProps, typeof TabItemPython | typeof TabItemCpp>[];
+  children: ReactElement<LanguageTabItemProps, typeof TabItemPython | typeof TabItemCpp | typeof TabItemC | typeof TabItemJS>[];
 };
 
 export function LanguageTabs({ children, ...props }: LanguageTabsProps) {
@@ -12,10 +12,12 @@ export function LanguageTabs({ children, ...props }: LanguageTabsProps) {
       return TabItemPython(child.props as TabItemProps);
     } else if (child.type === TabItemCpp) {
       return TabItemCpp(child.props as TabItemProps);
+    } else if (child.type === TabItemC) {
+      return TabItemC(child.props as TabItemProps);
     } else if (child.type === TabItemJS) {
       return TabItemJS(child.props as TabItemProps);
     } else {
-      throw new Error('LanguageTabs children must be TabItemPython, TabItemCpp or TabItemJS components');
+      throw new Error('LanguageTabs children must be TabItemPython, TabItemCpp, TabItemC or TabItemJS components');
     }
   });
 
@@ -39,6 +41,14 @@ export function TabItemPython({ children, ...props }: LanguageTabItemProps) {
 export function TabItemCpp({ children, ...props }: LanguageTabItemProps) {
   return (
     <TabItem {...props} label="C++" value="cpp">
+      {children}
+    </TabItem>
+  );
+}
+
+export function TabItemC({ children, ...props }: LanguageTabItemProps) {
+  return (
+    <TabItem {...props} label="C" value="c">
       {children}
     </TabItem>
   );

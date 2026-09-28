@@ -188,6 +188,37 @@ class TestTextToSpeechSample:
 
     @pytest.mark.speech_generation
     @pytest.mark.samples
+    def test_c_batch_text_to_speech_kokoro(
+        self,
+        tiny_kokoro_ov_path: Path,
+        tiny_kokoro_speaker_embedding_file_path: str,
+        tmp_path: Path,
+    ):
+        outputs = [tmp_path / "first.wav", tmp_path / "second.wav"]
+        command = [
+            SAMPLES_C_DIR / "text2speech_c",
+            "--batch",
+            str(tiny_kokoro_ov_path),
+            "Hello from OpenVINO GenAI.",
+            "This is a second speech sample.",
+            tiny_kokoro_speaker_embedding_file_path,
+            *outputs,
+        ]
+        result = run_sample(command)
+        assert "Generated 2 speech waveform(s)" in result.stdout
+
+        waveforms = []
+        for output in outputs:
+            audio, rate = sf.read(output, dtype="float32")
+            assert rate == 24000
+            assert audio.ndim == 1 and audio.size > 0
+            assert np.all(np.isfinite(audio))
+            assert np.max(np.abs(audio)) > 1e-4
+            waveforms.append(audio)
+        assert waveforms[0].shape != waveforms[1].shape or not np.array_equal(*waveforms)
+
+    @pytest.mark.speech_generation
+    @pytest.mark.samples
     def test_sample_kokoro_phonemize_fallback(
         self,
         tiny_kokoro_ov_path: Path,
