@@ -1001,8 +1001,6 @@ def cb_audio_run(
     """One audio per batch item."""
     return pipe.generate(
         inputs,
-        images=[[] for _ in inputs],
-        videos=[[] for _ in inputs],
         audios_batches=[[audio] for audio in audios],
         generation_config=[audio_generation_config() for _ in inputs],
     )
@@ -1042,6 +1040,37 @@ def test_audio_cb_chat_history_batch_keeps_audio_per_history(
     batch = cb_audio_run(qwen3_omni_cb, [ChatHistory(messages), ChatHistory(messages)], audios)
     singles = [cb_audio_run(qwen3_omni_cb, [ChatHistory(messages)], [audio])[0] for audio in audios]
     assert_batch_matches_single_runs(batch, singles)
+
+
+@pytest.mark.real_models
+@pytest.mark.vlm
+def test_audio_cb_positional_images_stay_images(
+    qwen3_omni_cb: ContinuousBatchingPipeline, audio_1s_tensor: openvino.Tensor
+):
+    """A positional second argument plus audios_batches must bind to images, never to videos."""
+    image = openvino.Tensor(np.zeros((64, 64, 3), dtype=np.uint8))
+    prompt = "Describe " + audio_tag(0)
+    config = [audio_generation_config()]
+    positional = qwen3_omni_cb.generate([prompt], [[image]], config, audios_batches=[[audio_1s_tensor]])
+    by_keyword = qwen3_omni_cb.generate(
+        [prompt], images=[[image]], videos=[[]], generation_config=config, audios_batches=[[audio_1s_tensor]]
+    )
+    assert positional[0].texts == by_keyword[0].texts
+    assert num_input_tokens(positional[0]) == num_input_tokens(by_keyword[0])
+
+
+@pytest.mark.real_models
+@pytest.mark.vlm
+def test_audio_cb_chat_history_leaves_prompt_calls_stateless(
+    qwen3_omni_cb: ContinuousBatchingPipeline, audio_1s_tensor: openvino.Tensor
+):
+    """A ChatHistory call must not switch later prompt calls into chat mode."""
+    prompt = "Describe " + audio_tag(0)
+    cb_audio_run(qwen3_omni_cb, [ChatHistory([{"role": "user", "content": prompt}])], [audio_1s_tensor])
+    first = cb_audio_run(qwen3_omni_cb, [prompt], [audio_1s_tensor])
+    second = cb_audio_run(qwen3_omni_cb, [prompt], [audio_1s_tensor])
+    assert first[0].texts == second[0].texts
+    assert num_input_tokens(first[0]) == num_input_tokens(second[0])
 
 
 # ----------------------------------------------------------------------------------------------

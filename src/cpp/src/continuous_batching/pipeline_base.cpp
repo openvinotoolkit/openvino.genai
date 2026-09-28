@@ -653,7 +653,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const StreamerVariant& streamer
 ) {
     auto generate_start_time = std::chrono::steady_clock::now();
-    m_is_chat_conversation = true;
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
     OPENVINO_ASSERT(histories.size() == sampling_params.size(),
         "Number of chat histories should be equal to the number of generation configs.");
