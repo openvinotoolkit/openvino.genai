@@ -1115,7 +1115,7 @@ def _get_qwen3_tts_model_type(model_id):
     return str(config.get("tts_model_type", "")).strip().lower() or None
 
 
-def _load_qwen3_hf_pipeline(model_id, device, wrapper_cls, **kwargs):
+def _load_qwen3_tts_hf_pipeline(model_id, device, wrapper_cls, **kwargs):
     from qwen_tts import Qwen3TTSModel
 
     device_map = device.lower()
@@ -1133,7 +1133,7 @@ def _load_qwen3_hf_pipeline(model_id, device, wrapper_cls, **kwargs):
     return wrapper_cls(model)
 
 
-def _load_qwen3_optimum_pipeline(model_id, device, ov_config, wrapper_cls):
+def _load_qwen3_tts_optimum_pipeline(model_id, device, ov_config, wrapper_cls):
     from optimum.intel.openvino import OVModelForTextToSpeechSeq2Seq
 
     model = OVModelForTextToSpeechSeq2Seq.from_pretrained(
@@ -1144,7 +1144,8 @@ def _load_qwen3_optimum_pipeline(model_id, device, ov_config, wrapper_cls):
     )
     return wrapper_cls(model)
 
-def _load_qwen3_genai_pipeline(model_dir, device, ov_config, wrapper_cls):
+
+def _load_qwen3_tts_genai_pipeline(model_dir, device, ov_config, wrapper_cls):
     import openvino_genai
 
     model = openvino_genai.Text2SpeechPipeline(model_dir, device=device, **(ov_config or {}))
@@ -1179,14 +1180,14 @@ def _load_qwen3_speech_generation_model(
 
     if use_hf:
         logger.info("Using Qwen3 TTS %s HF API", qwen3_variant_name)
-        return _load_qwen3_hf_pipeline(model_id, device, qwen3_wrapper_cls, **kwargs)
+        return _load_qwen3_tts_hf_pipeline(model_id, device, qwen3_wrapper_cls, **kwargs)
 
     if use_genai:
         logger.info("Using Qwen3 TTS %s GenAI API", qwen3_variant_name)
-        return _load_qwen3_genai_pipeline(model_id, device, ov_config, qwen3_wrapper_cls)
+        return _load_qwen3_tts_genai_pipeline(model_id, device, ov_config, qwen3_wrapper_cls)
 
     logger.info("Using Qwen3 TTS %s Optimum API", qwen3_variant_name)
-    return _load_qwen3_optimum_pipeline(model_id, device, ov_config, qwen3_wrapper_cls)
+    return _load_qwen3_tts_optimum_pipeline(model_id, device, ov_config, qwen3_wrapper_cls)
 
 
 def _resolve_remote_code_and_config(model_id):
