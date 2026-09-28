@@ -206,6 +206,8 @@ class TestTextToSpeechSample:
         ]
         result = run_sample(command)
         assert "Generated 2 speech waveform(s)" in result.stdout
+        assert "Applied speech speed: 1.1" in result.stdout
+        assert "Metrics: " in result.stdout
 
         waveforms = []
         for output in outputs:

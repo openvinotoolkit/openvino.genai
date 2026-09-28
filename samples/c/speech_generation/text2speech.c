@@ -94,11 +94,26 @@ int main(int argc, char** argv) {
     const char* device = !batch && argc > 5 ? argv[5] : "CPU";
     ov_genai_text2speech_pipeline* pipeline = NULL;
     ov_genai_text2speech_decoded_results* results = NULL;
+    ov_genai_speech_generation_config* config = NULL;
+    ov_genai_speech_generation_config* applied_config = NULL;
+    ov_genai_perf_metrics* metrics = NULL;
     ov_tensor_t* embedding = NULL;
     ov_tensor_t* speech = NULL;
     int success = 0;
     if (ov_genai_text2speech_pipeline_create(model_path, device, 0, &pipeline) != OK)
         goto done;
+    if (batch) {
+        float speed = 0.0f;
+        if (ov_genai_speech_generation_config_create(&config) != OK ||
+            ov_genai_speech_generation_config_set_speed(config, 1.1f) != OK ||
+            ov_genai_speech_generation_config_get_speed(config, &speed) != OK || speed != 1.1f ||
+            ov_genai_speech_generation_config_validate(config) != OK ||
+            ov_genai_text2speech_pipeline_set_generation_config(pipeline, config) != OK ||
+            ov_genai_text2speech_pipeline_get_generation_config(pipeline, &applied_config) != OK ||
+            ov_genai_speech_generation_config_get_speed(applied_config, &speed) != OK || speed != 1.1f)
+            goto done;
+        printf("Applied speech speed: %.1f\n", speed);
+    }
     if (!(voice_path[0] == '-' && voice_path[1] == '\0')) {
         embedding = load_embedding(voice_path, pipeline);
         if (!embedding)
@@ -114,6 +129,7 @@ int main(int argc, char** argv) {
     size_t speech_count = 0;
     uint32_t rate = 0;
     const size_t expected_count = batch ? 2 : 1;
+    size_t total_samples = 0;
     if (ov_genai_text2speech_decoded_results_get_speeches_count(results, &speech_count) != OK ||
         speech_count != expected_count || ov_genai_text2speech_decoded_results_get_output_sample_rate(results, &rate) != OK)
         goto done;
@@ -125,14 +141,24 @@ int main(int argc, char** argv) {
             ov_tensor_get_size(speech, &sample_count) != OK || ov_tensor_data(speech, &data) != OK ||
             sample_count == 0 || !save_wav(output_path, (const float*)data, sample_count, rate))
             goto done;
+        total_samples += sample_count;
         ov_tensor_free(speech);
         speech = NULL;
     }
+    size_t generated_samples = 0;
+    if (ov_genai_text2speech_decoded_results_get_perf_metrics(results, &metrics) != OK ||
+        ov_genai_text2speech_decoded_results_get_num_generated_samples(results, &generated_samples) != OK ||
+        generated_samples != total_samples)
+        goto done;
+    printf("Metrics: %zu generated samples\n", generated_samples);
     printf("Generated %zu speech waveform(s)\n", speech_count);
     success = 1;
 done:
     ov_tensor_free(speech);
     ov_tensor_free(embedding);
+    ov_genai_text2speech_decoded_results_perf_metrics_free(metrics);
+    ov_genai_speech_generation_config_free(applied_config);
+    ov_genai_speech_generation_config_free(config);
     ov_genai_text2speech_decoded_results_free(results);
     ov_genai_text2speech_pipeline_free(pipeline);
     if (!success)

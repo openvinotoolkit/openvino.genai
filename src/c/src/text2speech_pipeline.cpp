@@ -40,8 +40,7 @@ ov_status_e convert_embedding(const ov_tensor_t* input, ov::Tensor& output) {
         return status;
     if (!data)
         return ov_status_e::INVALID_C_PARAM;
-    output = ov::Tensor(ov::element::f32, dims);
-    std::memcpy(output.data(), data, output.get_byte_size());
+    output = ov::Tensor(ov::element::f32, dims, data);
     return ov_status_e::OK;
 }
 }  // namespace
@@ -57,8 +56,13 @@ ov_status_e ov_genai_text2speech_pipeline_create(const char* models_path,
         ov::AnyMap property;
         va_list args_ptr;
         va_start(args_ptr, pipeline);
-        for (size_t i = 0; i < property_args_size / 2; ++i) {
-            GET_PROPERTY_FROM_ARGS_LIST;
+        try {
+            for (size_t i = 0; i < property_args_size / 2; ++i) {
+                GET_PROPERTY_FROM_ARGS_LIST;
+            }
+        } catch (...) {
+            va_end(args_ptr);
+            throw;
         }
         va_end(args_ptr);
         auto result = std::make_unique<ov_genai_text2speech_pipeline>();
