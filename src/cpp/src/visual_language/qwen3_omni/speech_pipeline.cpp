@@ -352,33 +352,14 @@ ov::Tensor Qwen3OmniSpeechPipeline::embed_thinker_token(int64_t token_id) {
 }
 
 ov::Tensor Qwen3OmniSpeechPipeline::embed_talker_token(int64_t token_id) {
-    auto map_it = m_embedding_lru_map.find(token_id);
-    if (map_it != m_embedding_lru_map.end()) {
-        // Move to front (most recently used)
-        m_embedding_lru_list.splice(m_embedding_lru_list.begin(), m_embedding_lru_list, map_it->second);
-        return map_it->second->second;  // ref-counted handle, not a data copy
-    }
-
     ov::Tensor input(ov::element::i64, {1, 1});
     input.data<int64_t>()[0] = token_id;
     m_talker_text_embeddings.set_tensor("input", input);
     m_talker_text_embeddings.infer();
     auto result = m_talker_text_embeddings.get_tensor("inputs_embeds");
-
-    // One copy from inference output to owned cache entry
-    ov::Tensor cached(result.get_element_type(), result.get_shape());
-    result.copy_to(cached);
-
-    // Evict least recently used if cache is full
-    if (m_embedding_lru_list.size() >= kMaxEmbeddingCacheSize) {
-        auto& evicted = m_embedding_lru_list.back();
-        m_embedding_lru_map.erase(evicted.first);
-        m_embedding_lru_list.pop_back();
-    }
-
-    m_embedding_lru_list.emplace_front(token_id, cached);
-    m_embedding_lru_map[token_id] = m_embedding_lru_list.begin();
-    return cached;
+    ov::Tensor copy(result.get_element_type(), result.get_shape());
+    result.copy_to(copy);
+    return copy;
 }
 
 ov::Tensor Qwen3OmniSpeechPipeline::project_text(const ov::Tensor& hidden_state) {
