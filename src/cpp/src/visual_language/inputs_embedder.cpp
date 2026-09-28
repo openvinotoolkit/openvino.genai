@@ -122,6 +122,27 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
     m_tokenizer(tokenizer),
     m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) { }
 
+namespace {
+// Selects between the add_special_tokens=false and =true encodings of a chat-templated
+// prompt. Returns the special-tokens variant only when it prepends a leading token that the
+// template did not already produce (i.e. the template omitted a BOS the tokenizer would add),
+// otherwise returns the variant without special tokens to avoid duplicating a BOS that the
+// template already embeds.
+ov::Tensor select_chat_template_encoding(const ov::Tensor& ids_without_special, const ov::Tensor& ids_with_special) {
+    const size_t len_without = ids_without_special.get_size();
+    const size_t len_with = ids_with_special.get_size();
+    if (len_with > len_without && len_without > 0) {
+        const int64_t* without_data = ids_without_special.data<int64_t>();
+        const int64_t* with_data = ids_with_special.data<int64_t>();
+        // The special-tokens encoding added a leading token that the template did not emit.
+        if (with_data[0] != without_data[0]) {
+            return ids_with_special;
+        }
+    }
+    return ids_without_special;
+}
+}  // namespace
+
 ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
     bool add_special_tokens = m_add_special_tokens_is_set ? m_add_special_tokens : !(m_is_chat_conversation || m_apply_chat_template);
     ManualTimer encode_timer("Encode");
@@ -145,7 +166,21 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const s
             templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
             template_end_time = std::chrono::steady_clock::now();
             apply_template = true;
-            encoded_input_ids = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(add_special_tokens)).input_ids;
+            if (m_add_special_tokens_is_set) {
+                encoded_input_ids = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(m_add_special_tokens)).input_ids;
+            } else {
+                // A chat template string may or may not already contain the model's leading
+                // special token (BOS). Encoding with add_special_tokens=false assumes the
+                // template provides every special token, which silently drops a required BOS
+                // for models whose chat template omits it while their tokenizer is configured
+                // to add one (e.g. MiniCPM-V ChatML with add_bos_token=true). Compare both
+                // encodings and keep the special-tokens variant only when it prepends a leading
+                // token that the template did not already produce, so models whose template
+                // already embeds the BOS are not double-prefixed.
+                ov::Tensor ids_without_special = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false)).input_ids;
+                ov::Tensor ids_with_special = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(true)).input_ids;
+                encoded_input_ids = select_chat_template_encoding(ids_without_special, ids_with_special);
+            }
         } else {
             encoded_input_ids = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(add_special_tokens)).input_ids;
         }
