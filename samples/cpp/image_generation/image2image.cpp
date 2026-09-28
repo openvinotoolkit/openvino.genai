@@ -8,15 +8,19 @@
 #include "progress_bar.hpp"
 
 int32_t main(int32_t argc, char* argv[]) try {
-    OPENVINO_ASSERT(argc == 4, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' <IMAGE>");
+    OPENVINO_ASSERT(argc >= 4, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' <IMAGE> [<IMAGE> ...]");
 
-    const std::string models_path = argv[1], prompt = argv[2], image_path = argv[3];
+    const std::string models_path = argv[1], prompt = argv[2];
     const std::string device = "CPU";  // GPU can be used as well
 
-    ov::Tensor image = utils::load_image(image_path);
+    // Several images can be passed to models conditioned on a set of references, such as Qwen-Image 2.1.
+    std::vector<ov::Tensor> images;
+    for (int32_t argument = 3; argument < argc; ++argument) {
+        images.push_back(utils::load_image(argv[argument]));
+    }
 
     ov::genai::Image2ImagePipeline pipe(models_path, device);
-    ov::Tensor generated_image = pipe.generate(prompt, image,
+    ov::Tensor generated_image = pipe.generate(prompt, images,
         // controls how initial image is noised after being converted to latent space. `1` means initial image is fully noised
         ov::genai::strength(0.8f),
         ov::genai::callback(progress_bar));

@@ -66,7 +66,8 @@ def collects_input_args(image_param, model_name, infer_count=None, height=None, 
         initial_images_list = []
         for img in images:
             initial_images_list.append(read_image(img, image_as_ov_tensor))
-        input_args["image"] = initial_images_list[0]
+        # Only models conditioned on a set of references, such as Qwen-Image 2.1, accept more than one image.
+        input_args["image"] = initial_images_list if len(initial_images_list) > 1 else initial_images_list[0]
 
     if image_param.get('mask_image', None):
         input_args["mask_image"] = read_image(image_param.get('mask_image'), image_as_ov_tensor)

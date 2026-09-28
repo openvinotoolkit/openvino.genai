@@ -566,6 +566,52 @@ class TestImageGeneration:
         assert len(callback_calls) > 0, "Callback should be called at least once"
         assert image is not None
 
+    @pytest.mark.parametrize(
+        "image_generation_model", [FLUX2_KLEIN_MODEL_ID, QWEN_IMAGE_MODEL_ID, QWEN_IMAGE_21_MODEL_ID], indirect=True
+    )
+    def test_image2image_with_list_of_images(self, image_generation_model):
+        pipe = ov_genai.Image2ImagePipeline(image_generation_model, "CPU")
+
+        image = pipe.generate(
+            "test prompt",
+            [get_random_image()],
+            strength=0.8,
+            width=64,
+            height=64,
+            num_inference_steps=2,
+        )
+
+        assert image is not None
+
+    @pytest.mark.parametrize("image_generation_model", [QWEN_IMAGE_21_MODEL_ID], indirect=True)
+    def test_image2image_with_several_images(self, image_generation_model):
+        pipe = ov_genai.Image2ImagePipeline(image_generation_model, "CPU")
+
+        image = pipe.generate(
+            "test prompt",
+            [get_random_image(), get_random_image()],
+            strength=0.8,
+            width=64,
+            height=64,
+            num_inference_steps=2,
+        )
+
+        assert image is not None
+
+    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID, QWEN_IMAGE_MODEL_ID], indirect=True)
+    def test_image2image_rejects_several_images(self, image_generation_model):
+        pipe = ov_genai.Image2ImagePipeline(image_generation_model, "CPU")
+
+        with pytest.raises(RuntimeError, match="conditioned on a single"):
+            pipe.generate(
+                "test prompt",
+                [get_random_image(), get_random_image()],
+                strength=0.8,
+                width=64,
+                height=64,
+                num_inference_steps=2,
+            )
+
 
 @pytest.mark.xfail(reason="CVS-178687 z-image is not implemented in optimum-intel yet")
 class TestZImageGeneration:

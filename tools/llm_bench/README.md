@@ -239,6 +239,16 @@ python benchmark.py -m models/dreamlike_anime_1_0_ov/FP16 -p "cat wizard, gandal
 python benchmark.py -m models/dreamlike_anime_1_0_ov/FP16 -p "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney" -n 2 --task inpainting --media ./image.png --mask_image ./mask.png
 ```
 
+Models conditioned on a set of reference images, such as Qwen-Image 2.1, accept several images per prompt. List them in a JSONL file in the order the prompt refers to them as `Picture 1`, `Picture 2` and so on. Relative paths are resolved against the prompt file. Other models reject an entry that lists more than one image.
+
+```json
+{"steps": 10, "media": ["capybara.png", "cat.jpg"], "prompt": "Put the cat from Picture 2 next to the capybara from Picture 1"}
+```
+
+```sh
+python benchmark.py -m models/qwen-image-2.1-ov -pf qwen_image21_2img.jsonl -n 1 --task image-to-image
+```
+
 **Some additional parameters:**
 - `--height`: Generated image height.
 - `--width`: Generated image width.

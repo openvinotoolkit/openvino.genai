@@ -369,6 +369,8 @@ def init_timestamp(num_iters, prompt_list, prompt_idx_list):
 def resolve_media_file_path(file_path, prompt_file_path):
     if not file_path:
         return file_path
+    if isinstance(file_path, (list, tuple)):
+        return [resolve_media_file_path(entry, prompt_file_path) for entry in file_path]
     if not (file_path.startswith("http://") or file_path.startswith("https://")):
         media_file_path = Path(file_path)
         if media_file_path.is_absolute():

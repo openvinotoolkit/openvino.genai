@@ -11,7 +11,7 @@ from transformers import set_seed
 import torch
 import openvino_genai
 
-from .utils import parquet_generate_tables
+from .utils import parquet_generate_tables, resolve_image_specs
 from .registry import register_evaluator
 from .inpaint_evaluator import patched_parquet
 from .text2image_evaluator import Text2ImageEvaluator
@@ -53,6 +53,7 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
         gen_image_fn=None,
         seed=42,
         is_genai=False,
+        image_dir=None,
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -71,6 +72,7 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
         self.generation_fn = gen_image_fn
         self.is_genai = is_genai
         self.resolution = None
+        self.image_dir = image_dir
 
         if base_model:
             self.gt_data = self._generate_data(
@@ -124,10 +126,13 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
         ):
             set_seed(self.seed)
             rng = rng.manual_seed(self.seed)
+            # A row holds one condition image or, for models conditioned on a set of references such as
+            # Qwen-Image 2.1, a list of them.
+            condition_images = resolve_image_specs(image, self.image_dir, i)
             output = generation_fn(
                 model,
                 prompt,
-                image=image,
+                image=condition_images if len(condition_images) > 1 else condition_images[0],
                 num_inference_steps=self.num_inference_steps,
                 generator=openvino_genai.TorchGenerator(self.seed) if self.is_genai else rng
             )

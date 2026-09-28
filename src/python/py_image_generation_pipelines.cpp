@@ -643,6 +643,24 @@ void init_image_generation_pipelines(py::module_& m) {
             py::arg("prompt"), "Input string",
             py::arg("image"), "Initial image",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
+        .def(
+            "generate",
+            [](ov::genai::Image2ImagePipeline& pipe,
+                const std::string& prompt,
+                const std::vector<ov::Tensor>& images,
+                const py::kwargs& kwargs
+            ) -> py::typing::Union<ov::Tensor> {
+                ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
+                ov::Tensor res;
+                {
+                    py::gil_scoped_release rel;
+                    res = pipe.generate(prompt, images, params);
+                }
+                return py::cast(res);
+            },
+            py::arg("prompt"), "Input string",
+            py::arg("image"), "Initial images. Only Qwen-Image 2.1 accepts more than one image",
+            (text2image_generate_docstring + std::string(" \n ")).c_str())
         .def("decode", &ov::genai::Image2ImagePipeline::decode, py::arg("latent"))
         .def("get_performance_metrics", &ov::genai::Image2ImagePipeline::get_performance_metrics)
         .def("export_model", &ov::genai::Image2ImagePipeline::export_model, py::arg("export_path"));

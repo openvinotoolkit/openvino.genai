@@ -122,6 +122,13 @@ public:
 
     virtual ov::Tensor generate(const std::string& positive_prompt, ov::Tensor initial_image, ov::Tensor mask_image, const ov::AnyMap& properties) = 0;
 
+    virtual ov::Tensor generate(const std::string& positive_prompt, const std::vector<ov::Tensor>& initial_images, const ov::AnyMap& properties) {
+        OPENVINO_ASSERT(initial_images.size() == 1,
+                        "This pipeline is conditioned on a single 'initial_image', got ", initial_images.size(),
+                        ". Multiple condition images are supported by Qwen-Image 2.1 only");
+        return generate(positive_prompt, initial_images.front(), {}, properties);
+    }
+
     virtual ov::Tensor decode(const ov::Tensor latent) = 0;
 
     virtual ImageGenerationPerfMetrics get_performance_metrics() = 0;
