@@ -3714,3 +3714,11 @@ def test_vlm_failed_edited_chat_history_call_is_rolled_back(
         return _text_and_tokens(pipe.generate(history, images=[rollback_image], generation_config=ROLLBACK_CONFIG))
 
     assert edited_turn(fail_first=True) == edited_turn(fail_first=False)
+
+
+def test_qwen3_omni_audio_rejected_when_tokenizer_lacks_audio_tokens():
+    """The tiny export's tokenizer splits <|audio_pad|> into characters, so audio must fail with a clear error."""
+    pipe = VLMPipeline(_get_ov_model(MODEL_QWEN3_OMNI), "CPU", ATTENTION_BACKEND="SDPA")
+    audio = openvino.Tensor(np.zeros(16000, dtype=np.float32))
+    with pytest.raises(RuntimeError, match="does not encode <\\|audio_pad\\|> as the single token"):
+        pipe.generate("Describe", audios=[audio], generation_config=GenerationConfig(max_new_tokens=1))

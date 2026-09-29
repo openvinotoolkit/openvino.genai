@@ -532,6 +532,16 @@ std::vector<ov::genai::EncodedAudio> InputsEmbedderQwen3Omni::encode_audios(cons
     OPENVINO_ASSERT(has_audio_encoder(),
                     "Audio input was provided but this model has no audio encoder. Export the model with its "
                     "audio tower (openvino_audio_encoder_model.xml) to use audio.");
+    // Otherwise a tokenizer without the audio special tokens only fails later, as a placeholder
+    // mismatch that looks like a GenAI bug.
+    const ov::Tensor pad_ids =
+        m_tokenizer.encode(std::string(qwen3_omni::AUDIO_PAD_TAG), ov::genai::add_special_tokens(false)).input_ids;
+    OPENVINO_ASSERT(pad_ids.get_size() == 1 && pad_ids.data<const int64_t>()[0] == m_audio_token_id,
+                    "The tokenizer does not encode ",
+                    qwen3_omni::AUDIO_PAD_TAG,
+                    " as the single token thinker_config.audio_token_id (",
+                    m_audio_token_id,
+                    "), so audio cannot be placed in the prompt. Re-export the model with its audio special tokens.");
 
     std::vector<ov::genai::EncodedAudio> encoded;
     encoded.reserve(audios.size());
