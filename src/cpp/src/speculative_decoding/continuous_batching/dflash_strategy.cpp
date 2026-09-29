@@ -71,7 +71,8 @@ public:
           m_embedding_model(std::move(embedding_model)),
           m_request(create_draft_infer_request(model_desc, static_cast<bool>(m_embedding_model))),
           m_sampler(tokenizer),
-          m_mask_token_id(rt_info.mask_token_id) {
+          m_mask_token_id(rt_info.mask_token_id),
+          m_candidate_position_offset(rt_info.candidate_position_offset) {
         m_has_beam_idx = has_compiled_input(m_request.get_compiled_model(), "beam_idx");
         if (m_has_beam_idx) {
             m_beam_idx = ov::Tensor(ov::element::i32, {BATCH_SIZE});
@@ -207,15 +208,18 @@ private:
     }
 
     ov::Tensor build_input_ids(int64_t seed_token, size_t candidate_count) const {
-        return dflash_cb::build_draft_input_ids(seed_token, m_mask_token_id, candidate_count);
+        return dflash_cb::build_draft_input_ids(
+            seed_token, m_mask_token_id, candidate_count, m_candidate_position_offset);
     }
 
     ov::Tensor build_position_ids(size_t hidden_delta_length, size_t candidate_count) const {
-        return dflash_cb::build_draft_position_ids(m_committed_context_length, hidden_delta_length, candidate_count);
+        return dflash_cb::build_draft_position_ids(
+            m_committed_context_length, hidden_delta_length, candidate_count, m_candidate_position_offset);
     }
 
     ov::Tensor build_attention_mask(size_t hidden_delta_length, size_t candidate_count) const {
-        return dflash_cb::build_draft_attention_mask(m_committed_context_length, hidden_delta_length, candidate_count);
+        return dflash_cb::build_draft_attention_mask(
+            m_committed_context_length, hidden_delta_length, candidate_count, m_candidate_position_offset);
     }
 
     std::vector<DraftCandidateToken> sample_one_candidate(const ov::Tensor& logits) {
@@ -265,6 +269,7 @@ private:
     size_t m_prompt_length = 0;
     size_t m_committed_context_length = 0;
     int64_t m_mask_token_id = -1;
+    size_t m_candidate_position_offset = 1;
 };
 
 ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
