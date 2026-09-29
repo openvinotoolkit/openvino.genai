@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cstring>
 #include <vector>
 
 #include "visual_language/vision_registry.hpp"
@@ -114,4 +115,63 @@ TEST(VisionRegistry, MisalignedTensorMatchesAlignedCopy) {
     const auto from_copy = registry.register_audio(make_audio(samples, 0.25f));
     EXPECT_EQ(from_view, from_copy);
     EXPECT_EQ(registry.size(), 1);
+}
+
+namespace {
+
+constexpr size_t PARENT_HEIGHT = 4;
+constexpr size_t PARENT_WIDTH = 8;
+
+// Every row has its own fill, so an ROI spanning two rows differs from any single parent row.
+ov::Tensor make_striped_image() {
+    ov::Tensor image{ov::element::u8, {PARENT_HEIGHT, PARENT_WIDTH, 3}};
+    auto* data = image.data<uint8_t>();
+    for (size_t row = 0; row < PARENT_HEIGHT; ++row) {
+        std::fill_n(data + row * PARENT_WIDTH * 3, PARENT_WIDTH * 3, static_cast<uint8_t>(row + 1));
+    }
+    return image;
+}
+
+// Left half of the top two rows: strided, since each row skips the right half of the parent.
+ov::Tensor top_left_roi(const ov::Tensor& parent) {
+    return ov::Tensor{parent, ov::Coordinate{0, 0, 0}, ov::Coordinate{2, PARENT_WIDTH / 2, 3}};
+}
+
+ov::Tensor packed_copy(const ov::Tensor& tensor) {
+    ov::Tensor packed{tensor.get_element_type(), tensor.get_shape()};
+    tensor.copy_to(packed);
+    return packed;
+}
+
+}  // namespace
+
+TEST(VisionRegistry, RoiTensorMatchesPackedCopy) {
+    VisionRegistry registry;
+    const auto parent = make_striped_image();
+    const auto roi = top_left_roi(parent);
+    ASSERT_FALSE(roi.is_continuous());
+
+    const auto from_roi = registry.register_image(roi);
+    const auto from_copy = registry.register_image(packed_copy(roi));
+    EXPECT_EQ(from_roi, from_copy);
+    EXPECT_EQ(registry.size(), 1);
+}
+
+TEST(VisionRegistry, RoiTensorDoesNotMatchItsRawSpan) {
+    VisionRegistry registry;
+    const auto parent = make_striped_image();
+    const auto roi = top_left_roi(parent);
+    // Same shape as the ROI, holding the bytes the ROI's data pointer runs over: all of parent row 0.
+    ov::Tensor raw_span{ov::element::u8, roi.get_shape()};
+    std::fill_n(raw_span.data<uint8_t>(), raw_span.get_size(), uint8_t{1});
+
+    const auto span_id = registry.register_image(raw_span);
+    const auto roi_id = registry.register_image(roi);
+    EXPECT_NE(span_id, roi_id);
+    EXPECT_EQ(registry.size(), 2);
+
+    const auto& stored = registry.get_original(roi_id);
+    const auto expected = packed_copy(roi);
+    ASSERT_EQ(stored.get_byte_size(), expected.get_byte_size());
+    EXPECT_EQ(std::memcmp(stored.data(), expected.data(), expected.get_byte_size()), 0);
 }

@@ -126,18 +126,26 @@ VisionID VisionRegistry::compute_hash(const ov::Tensor& tensor) {
 }
 
 VisionID VisionRegistry::register_vision(const ov::Tensor& tensor, ModalityType type) {
-    auto id = compute_hash(tensor);
+    const auto pack = [&tensor]() {
+        ov::Tensor packed(tensor.get_element_type(), tensor.get_shape());
+        tensor.copy_to(packed);
+        return packed;
+    };
+    // Hashing and comparison read raw bytes, which for a strided ROI are not its logical content.
+    const bool is_contiguous = tensor.is_continuous();
+    ov::Tensor content = is_contiguous ? tensor : pack();
+    auto id = compute_hash(content);
 
     std::lock_guard<std::mutex> lock(m_mutex);
     // The hash samples large tensors, so a hit is only a candidate. Probe past entries with other content.
     for (auto it = m_entries.find(id); it != m_entries.end(); it = m_entries.find(++id)) {
-        if (it->second.type == type && same_content(it->second.original, tensor)) {
+        if (it->second.type == type && same_content(it->second.original, content)) {
             it->second.ref_count++;
             return id;
         }
     }
-    ov::Tensor owned_tensor(tensor.get_element_type(), tensor.get_shape());
-    tensor.copy_to(owned_tensor);
+    // A packed ROI is already a private copy; a contiguous tensor may be caller memory and needs one.
+    ov::Tensor owned_tensor = is_contiguous ? pack() : std::move(content);
     m_entries.emplace(id, VisionEntry(type, std::move(owned_tensor))).first->second.ref_count++;
     return id;
 }
