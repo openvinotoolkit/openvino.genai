@@ -49,11 +49,66 @@ To run the script:
 python recorder.py
 ```
 
+## Streaming ASR sample
+
+The repository also includes a streaming transcription example in [`asr_streaming.py`](asr_streaming.py). This sample targets Qwen3-ASR models and uses an incremental `ASRStreamingSession` instead of a single full-audio `generate()` call. Audio is fed in chunks, and the pipeline decodes once a configured amount of audio has accumulated.
+
+This pattern is useful for live applications such as microphone transcription or any source that produces audio asynchronously. The core idea is simple:
+
+- `chunk_size_sec` controls how much audio accumulates before one decode pass starts.
+- `warmup_chunks` lets the model run a few startup passes without reusing stale prefix text.
+- `context_rollback_tokens` rolls a small amount of trailing context back when computing the next prefix, which reduces boundary jitter between adjacent chunks.
+
+Each partial result exposes three fields:
+
+- `committed_text` — all stable text confirmed so far (grows monotonically across callbacks).
+- `new_committed_text` — the stable text added since the previous partial result (delta only).
+- `partial_text` — the trailing region still subject to change as more audio arrives. Always empty in the final callback fired by `finish()`.
+
+The streaming sample supports two output modes:
+
+**Default mode** — one line per partial result showing the stable delta and the unstable tail:
+```
+[partial] (English) +Okay, so today we're going to be talking about [the history of...]
+```
+
+**Inline mode (`--inline`)** — appends only `new_committed_text` without newlines, then prints a newline before the final result. Suitable for terminal-style live display:
+```
+Okay, so today we're going to be talking about the history of...
+```
+
+### 1. Stream from a WAV file
+
+```sh
+python asr_streaming.py /path/to/exported_model_dir --wav /path/to/audio.wav
+```
+
+### 2. Stream from a microphone
+
+```sh
+python asr_streaming.py /path/to/exported_model_dir --duration 10
+```
+
+You can also tune the streaming behavior:
+
+```sh
+python asr_streaming.py /path/to/exported_model_dir --wav /path/to/audio.wav \
+    --chunk-size-sec 2.0 --warmup-chunks 2 --context-rollback-tokens 5 --block-ms 250
+```
+
+Use `--inline` for a live terminal-style display:
+
+```sh
+python asr_streaming.py /path/to/exported_model_dir --wav /path/to/audio.wav --inline
+```
+
+The WAV path simply feeds the file in fixed-size chunks. It does not inject artificial delays; the session itself is synchronous and decodes as each chunk reaches the configured threshold.
+
 ## Run
 
-Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
+Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pip install -r ../../deployment-requirements.txt` and then, run the existing file-based sample using its positional arguments:
 
-`python whisper_speech_recognition.py whisper-base how_are_you_doing_today.wav`
+`python automatic_speech_recognition.py whisper-base how_are_you_doing_today.wav`
 
 Output:
 ```

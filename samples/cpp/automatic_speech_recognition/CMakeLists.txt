@@ -29,10 +29,15 @@ add_executable(automatic_speech_recognition automatic_speech_recognition.cpp aud
 target_link_libraries(automatic_speech_recognition PRIVATE openvino::genai)
 target_include_directories(automatic_speech_recognition PRIVATE "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
 set_target_properties(automatic_speech_recognition PROPERTIES
-
-    # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
 target_compile_features(automatic_speech_recognition PRIVATE cxx_std_11)
+
+add_executable(asr_streaming asr_streaming.cpp audio_utils.cpp)
+target_link_libraries(asr_streaming PRIVATE openvino::genai)
+target_include_directories(asr_streaming PRIVATE "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
+set_target_properties(asr_streaming PROPERTIES
+    INSTALL_RPATH_USE_LINK_PATH ON)
+target_compile_features(asr_streaming PRIVATE cxx_std_17)
 
 install(TARGETS automatic_speech_recognition
     RUNTIME DESTINATION samples_bin/

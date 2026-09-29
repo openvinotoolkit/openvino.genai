@@ -104,6 +104,15 @@ public:
      */
     std::optional<std::string> hotwords = std::nullopt;
 
+    /*
+     * Text belonging to the current audio window forced as the beginning of the decoder output.
+     * Unlike initial_prompt/hotwords (injected before <|startoftranscript|> as previous context),
+     * prefix tokens are appended after the SOT header and are reproduced verbatim at the start of
+     * generation. Intended for streaming reuse: set to the committed portion of the prior partial
+     * result to anchor the decoder to stable text.
+     */
+    std::optional<std::string> prefix = std::nullopt;
+
     // A list containing tokens that will be suppressed at the beginning of the sampling process.
     std::vector<int64_t> begin_suppress_tokens;
 

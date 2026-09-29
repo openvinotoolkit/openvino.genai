@@ -4,6 +4,7 @@
 #pragma once
 
 #include "automatic_speech_recognition/pipeline_base.hpp"
+#include "automatic_speech_recognition/models/whisper/streaming_session.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "utils.hpp"
 
@@ -46,6 +47,12 @@ public:
         return to_asr_results(std::move(whisper_result));
     }
 
+    std::unique_ptr<ASRStreamingSession::Impl> create_streaming_session_impl(
+        const ASRStreamingConfig& streaming_config,
+        const ASRGenerationConfig& generation_config) override {
+        return std::make_unique<WhisperASRStreamingSessionImpl>(this, streaming_config, generation_config);
+    }
+
 private:
     WhisperPipeline m_whisper_pipeline;
 
@@ -69,6 +76,7 @@ private:
         config.alignment_heads = asr_config.alignment_heads;
         config.initial_prompt = asr_config.initial_prompt;
         config.hotwords = asr_config.hotwords;
+        config.prefix = asr_config.prefix;
         config.begin_suppress_tokens = asr_config.begin_suppress_tokens;
         config.suppress_tokens = asr_config.suppress_tokens;
 
