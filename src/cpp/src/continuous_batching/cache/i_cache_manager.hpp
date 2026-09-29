@@ -15,7 +15,7 @@ namespace ov::genai {
  * @brief Abstract interface for physical cache management on a device.
  *
  * Each implementation manages a specific cache type (e.g., KV cache, sliding window cache).
- * The interface exposes only cache-type-agnostic operations used by the continuous-batching scheduler and CacheOrchestrator.
+ * The interface exposes only cache-type-agnostic operations used by the ContinuousBatchingScheduler and CacheOrchestrator.
  * Cache-type-specific accessors (e.g., get_key_cache/get_value_cache for KV caches) remain on concrete subclasses.
  */
 class ICacheManager {

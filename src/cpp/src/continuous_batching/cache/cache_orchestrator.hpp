@@ -30,7 +30,7 @@ namespace ov::genai {
  * @brief Aggregates multiple cache type managers and block managers, presenting a unified,
  *        cache-type-agnostic interface.
  *
- * Callers (e.g. the continuous-batching scheduler) interact with the orchestrator without knowing which cache types
+ * Callers (e.g. the ContinuousBatchingScheduler) interact with the orchestrator without knowing which cache types
  * are registered.  The orchestrator routes every operation to the appropriate per-type
  * manager(s) internally.
  *
@@ -357,7 +357,7 @@ public:
     }
 
     // -----------------------------------------------------------------------
-    //  Token-level API  (cache-type-agnostic interface for the continuous-batching scheduler)
+    //  Token-level API  (cache-type-agnostic interface for the ContinuousBatchingScheduler)
     // -----------------------------------------------------------------------
 
     /// @return Approximate aggregate memory cost per token across all variable-size cache types.

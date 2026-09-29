@@ -1138,7 +1138,7 @@ private:
      *   after the prompt has been fully processed.
      *
      * @param sequence_groups Full list of sequence groups; entries are accessed by scheduler IDs.
-     * @param scheduler_output Continuous-batching scheduler result with ordered `m_scheduled_sequence_groups_ids`.
+     * @param scheduler_output ContinuousBatchingScheduler result with ordered `m_scheduled_sequence_groups_ids`.
      */
     void _set_query_to_query_tensors(const std::vector<SequenceGroup::Ptr>& sequence_groups,
                                      const ContinuousBatchingScheduler::Output& scheduler_output) {
