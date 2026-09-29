@@ -102,6 +102,20 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPip
     tokenization_durations.reserve(prompts.size());
     template_durations.reserve(prompts.size());
     static ManualTimer timer("tokenize");
+    // A turn that throws, for example from the streamer, must not leave its user message behind.
+    struct ChatHistoryRollback {
+        ChatHistory& history;
+        const size_t size = history.size();
+        bool active = true;
+        ~ChatHistoryRollback() {
+            if (active) {
+                while (history.size() > size) {
+                    history.pop_back();
+                }
+            }
+        }
+    } chat_history_rollback{m_history};
+
     if (m_is_chat_conversation) {
         OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");
         m_history.push_back({{"role", "user"}, {"content", prompts.at(0)}});
@@ -190,6 +204,7 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPip
     // prompt from history
     if (m_is_chat_conversation && encoded[0].m_status == ov::genai::GenerationStatus::CANCEL)
         m_history.pop_back();
+    chat_history_rollback.active = false;
 
     return decoded;
 }
