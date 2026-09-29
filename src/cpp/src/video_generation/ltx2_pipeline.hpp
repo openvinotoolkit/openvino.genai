@@ -476,9 +476,9 @@ public:
         ov::Tensor audio_noise = merged_generation_config.generator->randn_tensor(audio_noise_shape);
         ov::Tensor audio_latent = pack_audio_latents(audio_noise);
 
-        // mu is constant: the reference evaluates calculate_shift() at max_image_seq_len, which
-        // resolves to max_shift regardless of resolution
-        const double mu = m_video_scheduler->calculate_shift(m_scheduler_config.max_image_seq_len);
+        // The reference evaluates calculate_shift() at the packed video sequence length, i.e. dim 1 of the
+        // packed latents, so mu is resolution dependent. Audio reuses the video mu, as the reference does.
+        const double mu = m_video_scheduler->calculate_shift(latent.get_shape().at(1));
         m_video_scheduler->set_timesteps_with_mu(mu, merged_generation_config.num_inference_steps, 1.0f);
         // Separate scheduler instance for audio: step() tracks per-modality state
         m_audio_scheduler->set_timesteps_with_mu(mu, merged_generation_config.num_inference_steps, 1.0f);
