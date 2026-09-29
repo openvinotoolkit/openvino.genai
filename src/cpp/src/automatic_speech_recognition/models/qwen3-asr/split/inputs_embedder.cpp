@@ -13,6 +13,24 @@ const std::string AUDIO_PAD = "<|audio_pad|>";
 const std::string AUDIO_START = "<|audio_start|>";
 const std::string AUDIO_END = "<|audio_end|>";
 const std::string AUDIO_TAG = AUDIO_START + AUDIO_PAD + AUDIO_END;
+const std::string USER_TAG = "<|im_start|>user\n";
+
+void restore_audio_tags_after_chat_template(std::string& prompt, const size_t num_audio_tags) {
+    if (num_audio_tags == 0 || prompt.find(AUDIO_TAG) != std::string::npos) {
+        return;
+    }
+
+    const size_t user_content_offset = prompt.find(USER_TAG);
+    OPENVINO_ASSERT(user_content_offset != std::string::npos,
+                    "Qwen3-ASR chat template output is missing the user message");
+
+    std::string audio_tags;
+    audio_tags.reserve(AUDIO_TAG.size() * num_audio_tags);
+    for (size_t audio_index = 0; audio_index < num_audio_tags; ++audio_index) {
+        audio_tags += AUDIO_TAG;
+    }
+    prompt.insert(user_content_offset + USER_TAG.size(), audio_tags);
+}
 
 const EncodedAudio& get_audio(const std::vector<EncodedAudio>& audios, size_t audio_id, size_t base_audio_id) {
     OPENVINO_ASSERT(audio_id >= base_audio_id && audio_id - base_audio_id < audios.size(),
@@ -155,7 +173,10 @@ ov::Tensor InputsEmbedderQwen3ASR::get_inputs_embeds(
     const std::vector<std::pair<size_t, size_t>>& history_vision_count) {
     OPENVINO_ASSERT(images.empty() && videos.empty() && image_sequence.empty() && videos_sequence.empty(),
                     "Qwen3-ASR does not support images or videos");
+    OPENVINO_ASSERT(audios_sequence.size() <= 1, "Qwen3-ASR supports only one audio per generation request");
     std::string formatted_prompt = prompt;
+
+    const bool is_chat_history = !history_vision_count.empty();
 
     if (m_apply_chat_template) {
         const auto template_start = std::chrono::steady_clock::now();
@@ -174,6 +195,14 @@ ov::Tensor InputsEmbedderQwen3ASR::get_inputs_embeds(
             {{{"role", "system"}, {"content", system_context}}, {{"role", "user"}, {"content", audio_content}}});
         formatted_prompt = m_tokenizer.apply_chat_template(history, true);
         PerfMetrics::emplace_duration(metrics.raw_metrics.chat_template_durations, template_start);
+    } else if (is_chat_history) {
+        // The ChatHistory path accepts OpenAI multipart content, for example:
+        // {"role": "user", "content": [{"type": "audio"}]}.
+        // VLMChatContext normalizes it before applying the template, producing:
+        // {"role": "user", "content": "<|audio_start|><|audio_pad|><|audio_end|>"}.
+        // The Qwen3-ASR template recognizes only multipart audio items and ignores string user content.
+        // Consequently, the rendered prompt contains no audio placeholder, so restore the tag before expansion.
+        restore_audio_tags_after_chat_template(formatted_prompt, audios_sequence.size());
     }
 
     expand_audio_tags_in_prompt(formatted_prompt, audios, audios_sequence, base_audio_id);
@@ -194,7 +223,7 @@ ov::Tensor InputsEmbedderQwen3ASR::get_inputs_embeds(
     merge_audio_embeddings(inputs_embeds, input_ids, audios, audios_sequence, base_audio_id);
     m_prev_hist_length = m_cache_state.get_state().size();
     m_cache_state.add_inputs(input_ids);
-    
+
     return inputs_embeds;
 }
 
