@@ -71,6 +71,9 @@ def conditioned_video_generation_model(video_generation_model, tmp_path) -> str:
     config_path = decoder_path / "config.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
     config["timestep_conditioning"] = True
+    config["latents_mean_data"] = [0.25] * config["latent_channels"]
+    config["latents_std_data"] = [0.5] * config["latent_channels"]
+    config["scaling_factor"] = 1.0
     config_path.write_text(json.dumps(config), encoding="utf-8")
 
     latent = ov.opset13.parameter([-1, config["latent_channels"], -1, -1, -1], np.float32, name="latent_sample")
@@ -301,6 +304,36 @@ class TestVideoGenerationPipelines:
 
         np.testing.assert_array_equal(default_result.video.data, explicit_result.video.data)
         assert not np.array_equal(default_result.video.data, no_noise_result.video.data)
+
+    def test_decode_noise_is_mixed_after_denormalization(self, conditioned_video_generation_model, tmp_path):
+        identity_model = tmp_path / "identity_normalization_model"
+        shutil.copytree(conditioned_video_generation_model, identity_model)
+        config_path = identity_model / "vae_decoder" / "config.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config["latents_mean_data"] = [0.0] * config["latent_channels"]
+        config["latents_std_data"] = [1.0] * config["latent_channels"]
+        config["scaling_factor"] = 1.0
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+
+        common_kwargs = {
+            "height": 32,
+            "width": 32,
+            "num_frames": 9,
+            "num_inference_steps": 1,
+            "decode_timestep": 0.25,
+            "decode_noise_scale": 1.0,
+        }
+        conditioned_pipe = ov_genai.Text2VideoPipeline(conditioned_video_generation_model, "CPU")
+        identity_pipe = ov_genai.Text2VideoPipeline(str(identity_model), "CPU")
+
+        conditioned_result = conditioned_pipe.generate(
+            "test prompt", **common_kwargs, generator=ov_genai.CppStdGenerator(42)
+        )
+        identity_result = identity_pipe.generate(
+            "test prompt", **common_kwargs, generator=ov_genai.CppStdGenerator(42)
+        )
+
+        np.testing.assert_array_equal(conditioned_result.video.data, identity_result.video.data)
 
     @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
     def test_num_videos_per_prompt(self, video_generation_model):

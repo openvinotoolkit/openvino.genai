@@ -213,27 +213,27 @@ class LTXPipeline : public VideoPipeline {
                                                                      m_transformer->get_config().patch_size,
                                                                      m_transformer->get_config().patch_size_t);
 
-        const float decode_noise_scale =
-            generation_config.decode_noise_scale.value_or(generation_config.decode_timestep);
-        std::optional<ov::Tensor> timestep;
-        if (m_vae->get_config().timestep_conditioning) {
-            const ov::Tensor noise = generation_config.generator->randn_tensor(unpacked.get_shape());
-            float* unpacked_data = unpacked.data<float>();
-            const float* noise_data = noise.data<const float>();
-            for (size_t i = 0; i < unpacked.get_size(); ++i) {
-                unpacked_data[i] =
-                    (1.0f - decode_noise_scale) * unpacked_data[i] + decode_noise_scale * noise_data[i];
-            }
-
-            timestep.emplace(ov::element::f32, ov::Shape{unpacked.get_shape()[0]});
-            std::fill_n(timestep->data<float>(), timestep->get_size(), generation_config.decode_timestep);
-        }
-
         ov::Tensor denormalized = video_generation_utils::denormalize_latents(
             unpacked,
             video_generation_utils::tensor_from_vector(m_vae->get_config().latents_mean_data),
             video_generation_utils::tensor_from_vector(m_vae->get_config().latents_std_data),
             m_vae->get_config().scaling_factor);
+
+        const float decode_noise_scale =
+            generation_config.decode_noise_scale.value_or(generation_config.decode_timestep);
+        std::optional<ov::Tensor> timestep;
+        if (m_vae->get_config().timestep_conditioning) {
+            const ov::Tensor noise = generation_config.generator->randn_tensor(denormalized.get_shape());
+            float* denormalized_data = denormalized.data<float>();
+            const float* noise_data = noise.data<const float>();
+            for (size_t i = 0; i < denormalized.get_size(); ++i) {
+                denormalized_data[i] =
+                    (1.0f - decode_noise_scale) * denormalized_data[i] + decode_noise_scale * noise_data[i];
+            }
+
+            timestep.emplace(ov::element::f32, ov::Shape{denormalized.get_shape()[0]});
+            std::fill_n(timestep->data<float>(), timestep->get_size(), generation_config.decode_timestep);
+        }
         return {std::move(denormalized), std::move(timestep)};
     }
 
