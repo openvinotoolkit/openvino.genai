@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import json
 from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
-from utils.ov_genai_pipelines import create_ov_pipeline
+from utils.ov_genai_pipelines import create_ov_pipeline, PipelineType
 import pytest
 from openvino_genai import (
     Tokenizer,
@@ -775,6 +775,33 @@ def test_reset_incremental_parser(tmp_path, model_id):
 
     # Also asserts that resetting streamer between generations works correctly.
     assert res_streamer_2.parsed == res.parsed
+
+
+@pytest.mark.parametrize("model_id", ["katuni4ka/tiny-random-phi3"])
+def test_streamer_error_in_generate_is_raised_to_caller(model_id):
+    # Continuous batching calls the streamer on a worker thread: its error must reach the caller, not terminate the process.
+    models_path = download_and_convert_model(model_id, padding_side="left").models_path
+    pipe = create_ov_pipeline(models_path, PipelineType.PAGED_ATTENTION)
+    tokenizer = pipe.get_tokenizer()
+
+    class NoWrite(TextParserStreamer):
+        pass
+
+    class RaisingWrite(TextParserStreamer):
+        def write(self, message):
+            raise ValueError("write failed")
+
+    class Write(TextParserStreamer):
+        def write(self, message):
+            return StreamingStatus.RUNNING
+
+    with pytest.raises(TypeError, match="must implement write"):
+        pipe.generate(['Please say "hello"'], max_new_tokens=16, streamer=NoWrite(tokenizer, []))
+    with pytest.raises(ValueError, match="write failed"):
+        pipe.generate(['Please say "hello"'], max_new_tokens=16, streamer=RaisingWrite(tokenizer, []))
+
+    # the pipeline is still usable after the failed generations
+    assert pipe.generate(['Please say "hello"'], max_new_tokens=16, streamer=Write(tokenizer, [])).texts
 
 
 @pytest.mark.parametrize("model_id", ["katuni4ka/tiny-random-phi3"])

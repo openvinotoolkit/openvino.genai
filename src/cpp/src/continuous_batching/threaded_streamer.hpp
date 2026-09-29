@@ -3,7 +3,9 @@
 
 #pragma once
 
+#include <exception>
 #include <thread>
+#include <utility>
 
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/text_streamer.hpp"
@@ -20,7 +22,11 @@ public:
         : m_streamer_ptr{utils::create_streamer(streamer, tokenizer)} {}
 
     ~ThreadedStreamerWrapper() {
-        end();
+        try {
+            end();
+        } catch (...) {
+            // a destructor must not throw; end() reports a streamer error to the caller when it is called explicitly
+        }
     }
 
     void start() {
@@ -60,6 +66,11 @@ public:
         }
 
         m_streamer_ptr->end();
+
+        // rethrow a streamer error caught in the worker thread on the caller's thread
+        if (m_worker_exception) {
+            std::rethrow_exception(std::exchange(m_worker_exception, nullptr));
+        }
     }
 
     StreamingStatus get_status() const {
@@ -76,8 +87,20 @@ private:
     SynchronizedQueue<std::variant<int64_t, std::vector<int64_t>, std::monostate>> m_squeue;
 
     std::atomic<StreamingStatus> m_status = StreamingStatus::RUNNING;
+    // written by the worker thread, read by end() after the thread is joined
+    std::exception_ptr m_worker_exception = nullptr;
 
     void _worker() {
+        try {
+            _process_queue();
+        } catch (...) {
+            // an exception must not leave the thread entry point (std::terminate): stop streaming, rethrow in end()
+            m_worker_exception = std::current_exception();
+            m_status = StreamingStatus::STOP;
+        }
+    }
+
+    void _process_queue() {
         while (m_status == StreamingStatus::RUNNING) {
             // wait for queue pull
             std::variant<int64_t, std::vector<int64_t>, std::monostate> token_variant = m_squeue.pull();
