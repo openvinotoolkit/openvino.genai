@@ -98,6 +98,10 @@ updates:
       - dependency-name: "transformers"
         versions:
           - ">=5.6"
+      # diffusers >= 0.40 requires huggingface-hub >= 1.23, which conflicts with the pinned optimum-intel revision
+      - dependency-name: "diffusers"
+        versions:
+          - ">=0.40"
       # update required more precise changes in repo and made upon request
       - dependency-name: "optimum-intel"
       # librosa >= 1.0.0 requires python3.12
