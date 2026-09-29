@@ -627,6 +627,10 @@ class _PromptSpec:
     #: Letter used by :meth:`BenchPrompter.get_prefix` in log prefixes: ``"P"``
     #: for prompts, ``"C"`` for chats (matching metrics_print's chat_mode alias).
     prefix_alias: str = "P"
+    #: CLI arg keys used as per-prompt DEFAULTS: when the arg is set, every
+    #: dict prompt lacking the key gets its value, while a value set in the
+    #: prompt file wins.  Used by image_gen for ``--strength``.
+    arg_defaults: tuple = ()
 
 
 def _text_chat_turns(entry, args):
@@ -720,7 +724,12 @@ _PROMPT_SPECS = {
         lambda data: parse_vlm_json_data(data, optional_prompt=True),
         path_keys=("media", "video"),
     ),
-    "image_gen": _PromptSpec(_image_gen_input_key, parse_image_json_data, path_keys=("media", "mask_image")),
+    "image_gen": _PromptSpec(
+        _image_gen_input_key,
+        parse_image_json_data,
+        path_keys=("media", "mask_image"),
+        arg_defaults=("strength",),
+    ),
     "video_gen": _PromptSpec(_video_gen_input_key, parse_video_json_data, path_keys=("media",)),
     "speech_to_text": _PromptSpec(
         "media",
@@ -899,6 +908,14 @@ class BenchPrompter(list):
 
         if not raw_list:
             raise RuntimeError("BenchPrompter: prompt list is empty")
+
+        for key in spec.arg_defaults:
+            if args.get(key) is None:
+                continue
+            for entry in raw_list:
+                for item in entry if isinstance(entry, list) else [entry]:
+                    if isinstance(item, dict):
+                        item.setdefault(key, args[key])
 
         for entry in raw_list:
             self.append(self._wrap(entry, args))
