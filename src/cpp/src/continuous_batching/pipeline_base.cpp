@@ -681,6 +681,20 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     std::vector<VLMChatContext> chat_contexts;
     chat_contexts.reserve(histories.size());
 
+    // Each process() commits media to its own history, so a failure later in the batch must undo
+    // the items that already succeeded too. rollback() is idempotent.
+    struct ChatContextsRollback {
+        std::vector<VLMChatContext>& chat_contexts;
+        bool active = true;
+        ~ChatContextsRollback() {
+            if (active) {
+                for (auto& chat_context : chat_contexts) {
+                    chat_context.rollback();
+                }
+            }
+        }
+    } chat_contexts_rollback{chat_contexts};
+
     for (size_t i = 0; i < histories.size(); i++) {
         OPENVINO_ASSERT(sampling_params[i].apply_chat_template,
                         "Chat template must be applied when using ChatHistory in generate method.");
@@ -805,6 +819,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             chat_contexts[i].rollback();
         }
     }
+    chat_contexts_rollback.active = false;
 
     return results;
 }
