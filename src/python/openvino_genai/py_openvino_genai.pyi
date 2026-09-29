@@ -2970,10 +2970,16 @@ class LTX2VideoTransformer3DModel:
         def in_channels(self) -> int:
             ...
         @property
+        def num_layers(self) -> int:
+            ...
+        @property
         def patch_size(self) -> int:
             ...
         @property
         def patch_size_t(self) -> int:
+            ...
+        @property
+        def perturbed_attn(self) -> bool:
             ...
         @property
         def vae_scale_factors(self) -> list[int]:
@@ -3006,15 +3012,19 @@ class LTX2VideoTransformer3DModel:
         """
     def get_config(self) -> LTX2VideoTransformer3DModel.Config:
         ...
-    def infer(self, video_latent: openvino._pyopenvino.Tensor, audio_latent: openvino._pyopenvino.Tensor, timestep: typing.SupportsFloat) -> tuple[openvino._pyopenvino.Tensor, openvino._pyopenvino.Tensor]:
+    def infer(self, video_latent: openvino._pyopenvino.Tensor, audio_latent: openvino._pyopenvino.Tensor, timestep: typing.SupportsFloat, isolate_modalities: bool = False, spatio_temporal_guidance_blocks: collections.abc.Sequence[typing.SupportsInt] = []) -> tuple[openvino._pyopenvino.Tensor, openvino._pyopenvino.Tensor]:
         """
                         Performs joint video and audio inference.
                         video_latent (ov.Tensor): Packed video latent tensor.
                         audio_latent (ov.Tensor): Packed audio latent tensor.
                         timestep (float): Current timestep.
+                        isolate_modalities (bool): Turns off audio-to-video and video-to-audio cross attention
+                            (LTX-2.3 modality isolation guidance).
+                        spatio_temporal_guidance_blocks (list[int]): Transformer block indices to perturb
+                            (LTX-2.3 Spatio-Temporal Guidance). Out-of-range indices are ignored.
                         Returns: Tuple of video and audio velocity predictions.
         """
-    def reshape(self, batch_size: typing.SupportsInt, num_frames: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, audio_num_frames: typing.SupportsInt) -> LTX2VideoTransformer3DModel:
+    def reshape(self, batch_size: typing.SupportsInt, num_frames: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, audio_num_frames: typing.SupportsInt, dynamic_batch: bool = False) -> LTX2VideoTransformer3DModel:
         """
                         Reshapes the model for specific input dimensions.
                         batch_size (int): Batch size.
@@ -3022,6 +3032,8 @@ class LTX2VideoTransformer3DModel:
                         height (int): Video height.
                         width (int): Video width.
                         audio_num_frames (int): Number of audio latent frames.
+                        dynamic_batch (bool): Leaves the batch dimension dynamic, so one compiled model serves both
+                            the batch-2 classifier-free guidance pass and the batch-1 LTX-2.3 extra guidance passes.
         """
     def set_hidden_states(self, tensor_name: str, tensor: openvino._pyopenvino.Tensor) -> None:
         """
@@ -6508,10 +6520,28 @@ class VideoGenerationConfig:
     def __init__(self) -> None:
         ...
     @property
+    def audio_guidance_rescale(self) -> float | None:
+        ...
+    @audio_guidance_rescale.setter
+    def audio_guidance_rescale(self, arg0: typing.SupportsFloat | None) -> None:
+        ...
+    @property
     def audio_guidance_scale(self) -> float | None:
         ...
     @audio_guidance_scale.setter
     def audio_guidance_scale(self, arg0: typing.SupportsFloat | None) -> None:
+        ...
+    @property
+    def audio_modality_scale(self) -> float | None:
+        ...
+    @audio_modality_scale.setter
+    def audio_modality_scale(self, arg0: typing.SupportsFloat | None) -> None:
+        ...
+    @property
+    def audio_stg_scale(self) -> float | None:
+        ...
+    @audio_stg_scale.setter
+    def audio_stg_scale(self, arg0: typing.SupportsFloat | None) -> None:
         ...
     @property
     def frame_rate(self) -> float | None:
@@ -6544,6 +6574,12 @@ class VideoGenerationConfig:
     def max_sequence_length(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
+    def modality_scale(self) -> float | None:
+        ...
+    @modality_scale.setter
+    def modality_scale(self, arg0: typing.SupportsFloat | None) -> None:
+        ...
+    @property
     def num_frames(self) -> int:
         ...
     @num_frames.setter
@@ -6560,6 +6596,18 @@ class VideoGenerationConfig:
         ...
     @num_videos_per_prompt.setter
     def num_videos_per_prompt(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def spatio_temporal_guidance_blocks(self) -> list[int] | None:
+        ...
+    @spatio_temporal_guidance_blocks.setter
+    def spatio_temporal_guidance_blocks(self, arg0: collections.abc.Sequence[typing.SupportsInt] | None) -> None:
+        ...
+    @property
+    def stg_scale(self) -> float | None:
+        ...
+    @stg_scale.setter
+    def stg_scale(self, arg0: typing.SupportsFloat | None) -> None:
         ...
     @property
     def width(self) -> int:

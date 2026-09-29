@@ -69,6 +69,26 @@ struct VideoGenerationConfig {
 
     /// Guidance scale for the audio modality. Defaults to `guidance_scale` when unset.
     std::optional<float> audio_guidance_scale = std::nullopt;
+
+    // NOTE: new fields must be appended here rather than inserted above. Pipeline default configs
+    // (e.g. LTX2_DEFAULT_CONFIG) are positional aggregate initializers, so inserting mid-struct
+    // silently shifts every value after the insertion point.
+
+    /// Scale of the Spatio-Temporal Guidance term (LTX-2.3). Enables an extra transformer pass in
+    /// which the blocks listed in `spatio_temporal_guidance_blocks` are perturbed. 0.0 disables it.
+    std::optional<float> stg_scale = std::nullopt;
+    /// Spatio-Temporal Guidance scale for the audio modality. Defaults to `stg_scale` when unset.
+    std::optional<float> audio_stg_scale = std::nullopt;
+    /// Scale of the modality isolation guidance term (LTX-2.3). Enables an extra transformer pass
+    /// with audio-to-video and video-to-audio cross attention turned off. <= 1.0 disables it.
+    std::optional<float> modality_scale = std::nullopt;
+    /// Modality isolation guidance scale for audio. Defaults to `modality_scale` when unset.
+    std::optional<float> audio_modality_scale = std::nullopt;
+    /// Guidance rescale factor for the audio modality. Defaults to `guidance_rescale` when unset.
+    std::optional<float> audio_guidance_rescale = std::nullopt;
+    /// Transformer block indices perturbed by Spatio-Temporal Guidance. Indices outside the model's
+    /// block range are ignored, matching the reference implementation.
+    std::optional<std::vector<int64_t>> spatio_temporal_guidance_blocks = std::nullopt;
 };
 
 /**
@@ -96,6 +116,19 @@ static constexpr ov::Property<size_t> num_frames{"num_frames"};
 static constexpr ov::Property<float> frame_rate{"frame_rate"};
 /// Guidance scale for the audio modality. Defaults to `guidance_scale` when unset.
 static constexpr ov::Property<float> audio_guidance_scale{"audio_guidance_scale"};
+/// Scale of the Spatio-Temporal Guidance term. 0.0 disables the extra transformer pass.
+static constexpr ov::Property<float> stg_scale{"stg_scale"};
+/// Spatio-Temporal Guidance scale for audio. Defaults to `stg_scale` when unset.
+static constexpr ov::Property<float> audio_stg_scale{"audio_stg_scale"};
+/// Scale of the modality isolation guidance term. <= 1.0 disables the extra transformer pass.
+static constexpr ov::Property<float> modality_scale{"modality_scale"};
+/// Modality isolation guidance scale for audio. Defaults to `modality_scale` when unset.
+static constexpr ov::Property<float> audio_modality_scale{"audio_modality_scale"};
+/// Guidance rescale factor for audio. Defaults to `guidance_rescale` when unset.
+static constexpr ov::Property<float> audio_guidance_rescale{"audio_guidance_rescale"};
+/// Transformer block indices perturbed by Spatio-Temporal Guidance.
+static constexpr ov::Property<std::vector<int64_t>> spatio_temporal_guidance_blocks{
+    "spatio_temporal_guidance_blocks"};
 
 /**
  * Function to pass 'VideoGenerationConfig' as property to 'generate()' call.
