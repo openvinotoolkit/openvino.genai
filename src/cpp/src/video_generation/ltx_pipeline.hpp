@@ -49,8 +49,17 @@ const VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
     std::nullopt             // decode_noise_scale
 };
 
-void check_inputs(const VideoGenerationConfig& generation_config, size_t vae_scale_factor) {
+void check_inputs(const VideoGenerationConfig& generation_config,
+                  size_t vae_scale_factor,
+                  bool timestep_conditioning) {
     utils::validate_generation_config(generation_config);
+    const float decode_noise_scale =
+        generation_config.decode_noise_scale.value_or(generation_config.decode_timestep);
+    OPENVINO_ASSERT(!timestep_conditioning || generation_config.generator,
+                    "A generator is required for a timestep-conditioned VAE decoder");
+    OPENVINO_ASSERT(timestep_conditioning ||
+                        (generation_config.decode_timestep == 0.0f && decode_noise_scale == 0.0f),
+                    "decode_timestep and decode_noise_scale require a timestep-conditioned VAE decoder");
     video_generation_utils::check_video_size(generation_config.height, generation_config.width, 32);
 
     OPENVINO_ASSERT(generation_config.max_sequence_length <= 512,
@@ -192,26 +201,22 @@ class LTXPipeline : public VideoPipeline {
                         ", width=",
                         m_latent_width,
                         ").");
+        OPENVINO_ASSERT(!m_vae->get_config().timestep_conditioning ||
+                            latent.get_element_type() == ov::element::f32,
+                        "Decode-time noise interpolation requires f32 latents, got ",
+                        latent.get_element_type());
 
         ov::Tensor unpacked = video_generation_utils::unpack_latents(latent,
-                                         m_latent_num_frames,
-                                         m_latent_height,
-                                         m_latent_width,
-                                         m_transformer->get_config().patch_size,
-                                         m_transformer->get_config().patch_size_t);
+                                                                     m_latent_num_frames,
+                                                                     m_latent_height,
+                                                                     m_latent_width,
+                                                                     m_transformer->get_config().patch_size,
+                                                                     m_transformer->get_config().patch_size_t);
 
         const float decode_noise_scale =
             generation_config.decode_noise_scale.value_or(generation_config.decode_timestep);
         std::optional<ov::Tensor> timestep;
-        if (!m_vae->get_config().timestep_conditioning) {
-            OPENVINO_ASSERT(generation_config.decode_timestep == 0.0f && decode_noise_scale == 0.0f,
-                            "decode_timestep and decode_noise_scale require a timestep-conditioned VAE decoder");
-        } else {
-            OPENVINO_ASSERT(generation_config.generator,
-                            "A generator is required for a timestep-conditioned VAE decoder");
-            OPENVINO_ASSERT(unpacked.get_element_type() == ov::element::f32,
-                            "Decode-time noise interpolation requires f32 latents, got ",
-                            unpacked.get_element_type());
+        if (m_vae->get_config().timestep_conditioning) {
             const ov::Tensor noise = generation_config.generator->randn_tensor(unpacked.get_shape());
             float* unpacked_data = unpacked.data<float>();
             const float* noise_data = noise.data<const float>();
@@ -419,7 +424,9 @@ public:
 
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const auto& transformer_config = m_transformer->get_config();
-        check_inputs(merged_generation_config, vae_scale_factor);
+        check_inputs(merged_generation_config,
+                     vae_scale_factor,
+                     m_vae->get_config().timestep_conditioning);
 
         m_transformer->set_adapters(merged_generation_config.adapters);
 
@@ -622,7 +629,9 @@ public:
 
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const auto& transformer_config = m_transformer->get_config();
-        check_inputs(merged_generation_config, vae_scale_factor);
+        check_inputs(merged_generation_config,
+                     vae_scale_factor,
+                     m_vae->get_config().timestep_conditioning);
 
         m_transformer->set_adapters(merged_generation_config.adapters);
 
@@ -791,6 +800,9 @@ public:
     VideoGenerationResult decode(const ov::Tensor& latent) override {
         VideoGenerationConfig generation_config = m_generation_config;
         utils::update_generation_config(generation_config, {});
+        check_inputs(generation_config,
+                     m_vae->get_vae_scale_factor(),
+                     m_vae->get_config().timestep_conditioning);
         VAEDecodeInputs decode_inputs = prepare_vae_decode_inputs(latent, generation_config);
 
         const auto decode_start = std::chrono::steady_clock::now();

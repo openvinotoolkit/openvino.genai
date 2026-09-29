@@ -5,6 +5,7 @@ import pytest
 import subprocess  # nosec B404
 import logging
 import json
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -58,6 +59,30 @@ def video_generation_model(request) -> str:
         logger.exception(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
         raise
 
+    return str(model_path)
+
+
+@pytest.fixture()
+def conditioned_video_generation_model(video_generation_model, tmp_path) -> str:
+    model_path = tmp_path / "conditioned_video_generation_model"
+    shutil.copytree(video_generation_model, model_path)
+
+    decoder_path = model_path / "vae_decoder"
+    config_path = decoder_path / "config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["timestep_conditioning"] = True
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+
+    latent = ov.opset13.parameter([-1, config["latent_channels"], -1, -1, -1], np.float32, name="latent_sample")
+    timestep = ov.opset13.parameter([-1], np.float32, name="timestep")
+    timestep_5d = ov.opset13.reshape(
+        timestep,
+        ov.opset13.constant(np.array([-1, 1, 1, 1, 1], dtype=np.int64)),
+        False,
+    )
+    sample = ov.opset13.add(latent, timestep_5d)
+    sample.output(0).tensor.set_names({"sample"})
+    ov.save_model(ov.Model([sample], [latent, timestep]), decoder_path / "openvino_model.xml")
     return str(model_path)
 
 
@@ -219,6 +244,63 @@ class TestVideoGenerationPipelines:
         second_video, second_audio = run()
         assert np.array_equal(first_video, second_video)
         assert np.array_equal(first_audio, second_audio)
+
+    def test_generate_rejects_decode_config_for_unconditioned_vae(self, video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        callback_called = False
+
+        def callback(step, num_steps, latent):
+            nonlocal callback_called
+            callback_called = True
+            return False
+
+        with pytest.raises(RuntimeError, match="require a timestep-conditioned VAE decoder"):
+            pipe.generate(
+                "test prompt",
+                height=32,
+                width=32,
+                num_frames=9,
+                num_inference_steps=1,
+                decode_timestep=0.1,
+                callback=callback,
+            )
+
+        assert callback_called is False
+
+    def test_decode_noise_scale_defaults_to_decode_timestep(self, conditioned_video_generation_model):
+        common_kwargs = {
+            "height": 32,
+            "width": 32,
+            "num_frames": 9,
+            "num_inference_steps": 1,
+            "decode_timestep": 0.25,
+        }
+
+        default_pipe = ov_genai.Text2VideoPipeline(conditioned_video_generation_model, "CPU")
+        default_result = default_pipe.generate(
+            "test prompt",
+            **common_kwargs,
+            generator=ov_genai.CppStdGenerator(42),
+        )
+
+        explicit_pipe = ov_genai.Text2VideoPipeline(conditioned_video_generation_model, "CPU")
+        explicit_result = explicit_pipe.generate(
+            "test prompt",
+            **common_kwargs,
+            decode_noise_scale=common_kwargs["decode_timestep"],
+            generator=ov_genai.CppStdGenerator(42),
+        )
+
+        no_noise_pipe = ov_genai.Text2VideoPipeline(conditioned_video_generation_model, "CPU")
+        no_noise_result = no_noise_pipe.generate(
+            "test prompt",
+            **common_kwargs,
+            decode_noise_scale=0.0,
+            generator=ov_genai.CppStdGenerator(42),
+        )
+
+        np.testing.assert_array_equal(default_result.video.data, explicit_result.video.data)
+        assert not np.array_equal(default_result.video.data, no_noise_result.video.data)
 
     @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
     def test_num_videos_per_prompt(self, video_generation_model):

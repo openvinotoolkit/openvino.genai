@@ -110,7 +110,17 @@ void init_video_generation_pipelines(py::module_& m) {
                  py::gil_scoped_release rel;
                  return pipe.decode(latent);
              },
-             py::arg("latent"));
+             py::arg("latent"),
+             R"(
+                Decode a packed latent tensor into a video.
+
+                The latent tensor must be obtained from the generation callback.
+
+                :param latent: Packed latent tensor produced during denoising.
+                :type latent: openvino.Tensor
+                :return: Decoded video and performance metrics.
+                :rtype: VideoGenerationResult
+             )");
 
     py::class_<ov::genai::Image2VideoPipeline>(m, "Image2VideoPipeline")
         .def(py::init([](const std::filesystem::path& models_path) {
