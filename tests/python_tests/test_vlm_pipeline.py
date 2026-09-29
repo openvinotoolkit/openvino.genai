@@ -58,6 +58,8 @@ from openvino_genai import (
     GenerationFinishReason,
     ChatHistory,
     VideoMetadata,
+    StreamerBase,
+    VLMDecodedResults,
     draft_model,
 )
 
@@ -3608,3 +3610,107 @@ def test_qwen3_omni_vision_preprocess_modes_equivalence(cat_tensor):
         f"CPP:          '{results['CPP']}'\n"
         f"OV_REARRANGE: '{results['OV_REARRANGE']}'"
     )
+
+
+# A failed generate() must leave the SDPA pipeline as if the call never happened. The failure is
+# raised from the streamer, so it lands mid-decode: after the prompt is in the KV cache and while
+# an async infer request is in flight.
+
+
+class RaisingStreamer(StreamerBase):
+    def write(self, token: int | list[int]) -> StreamingStatus:
+        raise RuntimeError("streamer failure")
+
+    def end(self) -> None:
+        pass
+
+
+ROLLBACK_CONFIG = GenerationConfig(max_new_tokens=8, do_sample=False, ignore_eos=True)
+
+
+@pytest.fixture(scope="module")
+def rollback_image() -> openvino.Tensor:
+    return openvino.Tensor(np.zeros((32, 32, 3), dtype=np.uint8))
+
+
+@pytest.fixture
+def rollback_pipe_factory() -> Callable[[], VLMPipeline]:
+    models_path = _get_ov_model(MODEL_QWEN3_OMNI)
+    return lambda: VLMPipeline(models_path, "CPU", ATTENTION_BACKEND="SDPA")
+
+
+def _text_and_tokens(result: VLMDecodedResults) -> tuple[str, int]:
+    return result.texts[0], result.perf_metrics.get_num_input_tokens()
+
+
+def test_vlm_failed_prompt_call_leaves_next_call_clean(
+    rollback_pipe_factory: Callable[[], VLMPipeline], rollback_image: openvino.Tensor
+):
+    pipe = rollback_pipe_factory()
+    with pytest.raises(RuntimeError, match="streamer failure"):
+        pipe.generate(
+            "Describe", images=[rollback_image], generation_config=ROLLBACK_CONFIG, streamer=RaisingStreamer()
+        )
+    after_failure = pipe.generate("Describe", images=[rollback_image], generation_config=ROLLBACK_CONFIG)
+    fresh = rollback_pipe_factory().generate("Describe", images=[rollback_image], generation_config=ROLLBACK_CONFIG)
+    assert _text_and_tokens(after_failure) == _text_and_tokens(fresh)
+
+
+def test_vlm_failed_chat_turn_is_rolled_back(
+    rollback_pipe_factory: Callable[[], VLMPipeline], rollback_image: openvino.Tensor
+):
+    def second_turn(fail_first: bool) -> tuple[str, int]:
+        pipe = rollback_pipe_factory()
+        pipe.start_chat()
+        pipe.generate("Hi", images=[rollback_image], generation_config=ROLLBACK_CONFIG)
+        if fail_first:
+            with pytest.raises(RuntimeError, match="streamer failure"):
+                pipe.generate(
+                    "Again", images=[rollback_image], generation_config=ROLLBACK_CONFIG, streamer=RaisingStreamer()
+                )
+        return _text_and_tokens(pipe.generate("Again", images=[rollback_image], generation_config=ROLLBACK_CONFIG))
+
+    assert second_turn(fail_first=True) == second_turn(fail_first=False)
+
+
+def test_vlm_failed_chat_history_call_is_rolled_back(
+    rollback_pipe_factory: Callable[[], VLMPipeline], rollback_image: openvino.Tensor
+):
+    pipe = rollback_pipe_factory()
+    history = ChatHistory([{"role": "user", "content": "Describe"}])
+    with pytest.raises(RuntimeError, match="streamer failure"):
+        pipe.generate(history, images=[rollback_image], generation_config=ROLLBACK_CONFIG, streamer=RaisingStreamer())
+    assert len(history) == 1
+    retried = pipe.generate(history, images=[rollback_image], generation_config=ROLLBACK_CONFIG)
+    fresh = rollback_pipe_factory().generate(
+        ChatHistory([{"role": "user", "content": "Describe"}]),
+        images=[rollback_image],
+        generation_config=ROLLBACK_CONFIG,
+    )
+    assert _text_and_tokens(retried) == _text_and_tokens(fresh)
+
+
+def test_vlm_failed_edited_chat_history_call_is_rolled_back(
+    rollback_pipe_factory: Callable[[], VLMPipeline], rollback_image: openvino.Tensor
+):
+    """A failure right after the caller edits an earlier message must not keep metadata of the edit."""
+    # A different size than the retry's image, so a registration left by the failed call shows up in the token count.
+    failed_call_image = openvino.Tensor(np.zeros((256, 256, 3), dtype=np.uint8))
+
+    def edited_turn(fail_first: bool) -> tuple[str, int]:
+        pipe = rollback_pipe_factory()
+        history = ChatHistory([{"role": "user", "content": "Describe"}])
+        answer = pipe.generate(history, images=[rollback_image], generation_config=ROLLBACK_CONFIG).texts[0]
+        history.append({"role": "assistant", "content": answer})
+        history.append({"role": "user", "content": "Again"})
+        pipe.generate(history, images=[rollback_image], generation_config=ROLLBACK_CONFIG)
+        history.pop()
+        history.append({"role": "user", "content": "Edited"})
+        if fail_first:
+            with pytest.raises(RuntimeError, match="streamer failure"):
+                pipe.generate(
+                    history, images=[failed_call_image], generation_config=ROLLBACK_CONFIG, streamer=RaisingStreamer()
+                )
+        return _text_and_tokens(pipe.generate(history, images=[rollback_image], generation_config=ROLLBACK_CONFIG))
+
+    assert edited_turn(fail_first=True) == edited_turn(fail_first=False)

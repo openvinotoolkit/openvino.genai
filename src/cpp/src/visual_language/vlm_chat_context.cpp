@@ -36,6 +36,8 @@ VLMChatContext::ProcessedChatData VLMChatContext::process(
 
     if (history_modified) {
         m_history_state->truncate_to(matching_history_length);
+        // The dropped tail is gone for good, so a rollback can only return to this shorter state.
+        m_initial_messages_metadata_count = matching_history_length;
         m_initial_base_image_index = m_history_state->get_base_image_index();
         m_initial_base_video_index = m_history_state->get_base_video_index();
         m_initial_base_audio_index = m_history_state->get_base_audio_index();
