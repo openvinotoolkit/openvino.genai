@@ -506,3 +506,16 @@ def test_schedule_yields_the_same_object_for_every_iteration(two_prompts):
     for num, p_idx, prompt in prompter.iter_schedule(2):
         seen.setdefault(p_idx, prompt)
         assert seen[p_idx] is prompt
+
+
+def test_image_gen_cli_strength_is_a_per_prompt_default(tmp_path):
+    """--strength fills prompts that lack one; a strength in the file wins."""
+    pf = write_jsonl(tmp_path / "p.jsonl", [{"prompt": "a"}, {"prompt": "b", "strength": 0.3}])
+    prompter = BenchPrompter(make_args("image_gen", pf, strength=0.8))
+    assert [p.get("strength") for p in prompter] == [0.8, 0.3]
+
+
+def test_image_gen_without_cli_strength_adds_none(tmp_path):
+    pf = write_jsonl(tmp_path / "p.jsonl", [{"prompt": "a"}, {"prompt": "b", "strength": 0.3}])
+    prompter = BenchPrompter(make_args("image_gen", pf))
+    assert [p.get("strength") for p in prompter] == [None, 0.3]
