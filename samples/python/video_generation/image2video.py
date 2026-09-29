@@ -38,7 +38,7 @@ def main():
         height=480,
         width=704,
         num_frames=args.num_frames,
-        num_inference_steps=25,
+        num_inference_steps=40,
         num_videos_per_prompt=1,
         callback=callback,
         frame_rate=frame_rate,

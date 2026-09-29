@@ -33,7 +33,7 @@ int main(int32_t argc, char* argv[]) try {
         ov::genai::height(480),
         ov::genai::width(704),
         ov::genai::num_frames(num_frames),
-        ov::genai::num_inference_steps(25),
+        ov::genai::num_inference_steps(40),
         ov::genai::num_videos_per_prompt(1),
         ov::genai::callback(progress_bar),
         ov::genai::frame_rate(frame_rate),
