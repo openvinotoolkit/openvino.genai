@@ -1083,6 +1083,14 @@ def test_audio_cb_add_request_rejects_audio(
         qwen3_omni_cb.add_request(0, "Describe", [], [], audio_generation_config(), audios=[audio_1s_tensor])
 
 
+@pytest.mark.real_models
+@pytest.mark.vlm
+def test_audio_cb_add_request_rejects_audio_tag(qwen3_omni_cb: ContinuousBatchingPipeline):
+    """Without this check the tag would reach the model as plain text."""
+    with pytest.raises(RuntimeError, match="Missing image/video/audio with index 0"):
+        qwen3_omni_cb.add_request(0, "Describe " + audio_tag(0), [], [], audio_generation_config())
+
+
 # ----------------------------------------------------------------------------------------------
 # T-E: the SDPA `VLMPipeline` ChatHistory path. Its overload puts `audios` before
 # `videos_metadata`, the opposite of `OmniPipeline`; both are vectors, so a swap compiles silently.

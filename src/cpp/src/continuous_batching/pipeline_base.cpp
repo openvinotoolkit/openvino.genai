@@ -885,9 +885,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
 
         vlm_utils::update_image_slice_counts(metrics, encoded_images);
 
-        // The 5-arg overload never fills audio; named to show the binding is deliberately unused.
+        // add_request() takes no audio. Normalizing with none still rejects an <ov_genai_audio_N> tag,
+        // which would otherwise reach the model as plain text.
         const auto [unified_prompt, image_sequence, video_sequence, unused_audio_sequence] =
-            m_inputs_embedder->normalize_prompt(prompt, 0, 0, encoded_images, encoded_videos);
+            m_inputs_embedder->normalize_prompt(prompt, 0, 0, 0, encoded_images, encoded_videos, {});
 
         inputs = m_inputs_embedder->get_inputs_embeds(
             unified_prompt,
