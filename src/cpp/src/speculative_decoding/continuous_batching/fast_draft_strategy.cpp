@@ -301,6 +301,13 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         }
     } catch (...) {
         const std::exception_ptr error = std::current_exception();
+        if (m_sync_future.valid()) {
+            try {
+                m_sync_future.get();
+            } catch (...) {
+                // Preserve the failure that entered this cleanup path.
+            }
+        }
         m_main_pipeline->fail_pipeline(error);
         m_draft_pipeline->fail_pipeline(error);
         m_draft_generations.clear();
