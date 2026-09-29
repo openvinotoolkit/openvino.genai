@@ -293,7 +293,7 @@ pip install .[qwen3_tts]
 ```
 
 **Note**: The below commands demonstrate export & run commands that maximize similarity scores with `--hf` (native `qwen-tts` pipeline) results.
-* OpenVINO models xported using `--weight-format fp32`
+* OpenVINO models exported using `--weight-format fp32`
 * For Optimum & GenAI, `--ov-config` points to `kvcache_f32.json`, which contains: `{"KV_CACHE_PRECISION": "f32"}`
 
 ##### Qwen3 TTS Voice Design
@@ -326,13 +326,13 @@ wwb --model-type speech-generation --target-model qwen3_tts_customvoice_ov --spe
 wwb --model-type speech-generation --target-model qwen3_tts_customvoice_ov --speech-voice Ryan --gt-data custom_voice/gt.csv --ov-config kvcache_f32.json --genai
 ```
 
-For 1.7B variant of CustomVoice model (`Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice`), an additional `--speech-instruct` parameter can also be specified. e.g. `--speech-instruct "Speak in a calm, professional tone."`
+For 1.7B variant of CustomVoice model (`Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`), an additional `--speech-instruct` parameter can also be specified. e.g. `--speech-instruct "Speak in a calm, professional tone."`
 
 ##### Qwen3 TTS Base
 
 Qwen3 Base requires a 24khz reference audio file. You can download an example of one from here: [clone.wav](https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-TTS-Repo/clone.wav)
 
-**Note**: The below commands show use of `--speech-ref-text`. When specified, ICL (in context learning) wil be used. Otherwise, x-vector-mode is used.
+**Note**: The below commands show use of `--speech-ref-text`. When specified, ICL (in context learning) will be used. Otherwise, x-vector-mode is used.
 
 ```sh
 # Export
