@@ -129,6 +129,13 @@ class LTX2Pipeline : public VideoPipeline {
     VideoPipelineType m_pipeline_type = VideoPipelineType::TEXT_2_VIDEO;
     std::shared_ptr<ImageResizer> m_image_resizer;
     std::shared_ptr<ImageProcessor> m_image_processor;
+    std::string m_vae_device;
+
+    void create_image_preprocessors(const std::string& device) {
+        m_image_resizer = std::make_shared<ImageResizer>(
+            device, ov::element::u8, "NHWC", ov::op::v11::Interpolate::InterpolateMode::BILINEAR_PILLOW);
+        m_image_processor = std::make_shared<ImageProcessor>(device, true);
+    }
 
     void check_inputs(const VideoGenerationConfig& generation_config) const {
         utils::validate_generation_config(generation_config);
@@ -390,11 +397,6 @@ public:
 
         m_generation_config = LTX2_DEFAULT_CONFIG;
         m_pipeline_type = pipeline_type;
-        if (pipeline_type == VideoPipelineType::IMAGE_2_VIDEO) {
-            m_image_resizer = std::make_shared<ImageResizer>(
-                "CPU", ov::element::u8, "NHWC", ov::op::v11::Interpolate::InterpolateMode::BILINEAR_PILLOW);
-            m_image_processor = std::make_shared<ImageProcessor>("CPU", true);
-        }
         m_load_time = Ms{std::chrono::steady_clock::now() - start_time};
     }
 
@@ -421,9 +423,7 @@ public:
         cloned->m_audio_vae = std::make_shared<AutoencoderKLLTX2Audio>(m_audio_vae->clone());
         cloned->m_vocoder = std::make_shared<LTX2Vocoder>(m_vocoder->clone());
         if (m_pipeline_type == VideoPipelineType::IMAGE_2_VIDEO) {
-            cloned->m_image_resizer = std::make_shared<ImageResizer>(
-                "CPU", ov::element::u8, "NHWC", ov::op::v11::Interpolate::InterpolateMode::BILINEAR_PILLOW);
-            cloned->m_image_processor = std::make_shared<ImageProcessor>("CPU", true);
+            cloned->create_image_preprocessors(m_vae_device);
         }
         return cloned;
     }
@@ -763,6 +763,10 @@ public:
         m_vae->compile(vae_device, *filtered_properties);
         m_audio_vae->compile(vae_device, *filtered_properties);
         m_vocoder->compile(vae_device, *filtered_properties);
+        if (m_pipeline_type == VideoPipelineType::IMAGE_2_VIDEO) {
+            create_image_preprocessors(vae_device);
+        }
+        m_vae_device = vae_device;
         m_is_compiled = true;
         m_compiled_batch_size_multiplier = m_reshape_batch_size_multiplier;
     }
