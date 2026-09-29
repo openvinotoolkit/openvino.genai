@@ -1,0 +1,60 @@
+Multiple distributions found for package optimum. Picked distribution: optimum
+[ INFO ] ==SUCCESS FOUND==: use_case: visual_text_gen, model_type: qwen3-5, model_Name: Qwen3.8-27B
+[ INFO ] OV Config={'CACHE_DIR': '', 'ATTENTION_BACKEND': 'PA'}
+[ INFO ] Model path=/home/rkazants/work/openvino-agent/optimum-intel/support_new_models/qwen3.8_27b_mtp/Qwen3.8-27B, openvino runtime version: 2026.5.0-23005-9b1d5c9494e, genai version: 2026.5.0.0-3421-2e3b291a30e
+[ INFO ] Scheduler parameters for CB config:
+{'enable_prefix_caching': False, 'max_num_batched_tokens': 32768}
+[ INFO ] Speculative Decoding is activated
+[ INFO ] Selected OpenVINO GenAI for benchmarking
+[ INFO ] Pipeline initialization time: 13.58s
+[ WARNING ] Input image/video is not provided. Only text generation part will be evaluated
+[ INFO ] Numbeams: 1, benchmarking iter nums(exclude warm-up): 3, prompt nums: 1, prompt idx: [0]
+[ INFO ] [warm-up][P0] Input text: [{'prompt': 'Explain what OpenVINO is and how it optimizes deep learning inference.'}]
+[ INFO ] Speculative decoding config: num_assistant_tokens 5
+[ INFO ] [warm-up][P0] Input image nums: 0
+[ INFO ] [warm-up][P0] Input video nums: 0
+[ INFO ] [warm-up][P0] Input audio nums: 0
+[ INFO ] [warm-up][P0] Text generation start: 2026-09-05T12:44:08.468075
+[ INFO ] [warm-up][P0] Text generation end: 2026-09-05T12:44:11.498812
+[ INFO ] [warm-up][P0] Input token size: 68, Output size: 128, Infer count: 44, Tokenization Time: 0.59ms, Detokenization Time: 0.55ms,  Multimodal Embeddings Preparation Time: 47.22ms, Generation Time: 3.03s, Latency: 23.6775 ms/token
+[ INFO ] [warm-up][P0] First token latency: 406.03 ms, other tokens latency: 61.00 ms/token, len of input tokens: 68 * 1
+[ INFO ] [warm-up][P0] First infer latency: 303.85 ms, other infers latency: 61.00 ms/infer, inference count: 44
+[ INFO ] [warm-up][P0] Result MD5:['c5a6812aeceefdaf3f1c634a663bfdcf']
+[ INFO ] [warm-up][P0] Generated: We need answer user: "Explain what OpenVINO is and how it optimizes deep learning inference." Need provide clear explanation. Need final answer. Need likely mention Intel OpenVINO toolkit, cross-framework, converts models to IR, optimizes for Intel hardware (CPU, GPU, NPU, VPU), graph transformations, operator fusion, quantization, memory optimization, threading, dynamic shapes, etc. Also mention inference engine, model optimization, deployment. Need be accurate. Let's craft thorough but concise. Include how it optimizes: model conversion to Intermediate Representation, graph-level optimizations (operator fusion, constant folding, layout transformation
+[ INFO ] [warm-up][P0] start: 2026-09-05T12:44:08.467992, end: 2026-09-05T12:44:11.499353
+[ INFO ] Speculative decoding config: num_assistant_tokens 5
+[ INFO ] [1][P0] Input image nums: 0
+[ INFO ] [1][P0] Input video nums: 0
+[ INFO ] [1][P0] Input audio nums: 0
+[ INFO ] [1][P0] Text generation start: 2026-09-05T12:44:11.499442
+[ INFO ] [1][P0] Text generation end: 2026-09-05T12:44:13.953422
+[ INFO ] [1][P0] Input token size: 68, Output size: 128, Infer count: 44, Tokenization Time: 0.40ms, Detokenization Time: 0.30ms,  Multimodal Embeddings Preparation Time: 1.12ms, Generation Time: 2.45s, Latency: 19.1716 ms/token
+[ INFO ] [1][P0] First token latency: 97.69 ms, other tokens latency: 54.77 ms/token, len of input tokens: 68 * 1
+[ INFO ] [1][P0] First infer latency: 96.48 ms, other infers latency: 54.77 ms/infer, inference count: 44
+[ INFO ] [1][P0] Result MD5:['c5a6812aeceefdaf3f1c634a663bfdcf']
+[ INFO ] [1][P0] start: 2026-09-05T12:44:11.499375, end: 2026-09-05T12:44:13.953781
+[ INFO ] Speculative decoding config: num_assistant_tokens 5
+[ INFO ] [2][P0] Input image nums: 0
+[ INFO ] [2][P0] Input video nums: 0
+[ INFO ] [2][P0] Input audio nums: 0
+[ INFO ] [2][P0] Text generation start: 2026-09-05T12:44:13.953859
+[ INFO ] [2][P0] Text generation end: 2026-09-05T12:44:16.403207
+[ INFO ] [2][P0] Input token size: 68, Output size: 128, Infer count: 44, Tokenization Time: 0.37ms, Detokenization Time: 0.32ms,  Multimodal Embeddings Preparation Time: 1.05ms, Generation Time: 2.45s, Latency: 19.1354 ms/token
+[ INFO ] [2][P0] First token latency: 96.21 ms, other tokens latency: 54.70 ms/token, len of input tokens: 68 * 1
+[ INFO ] [2][P0] First infer latency: 95.13 ms, other infers latency: 54.69 ms/infer, inference count: 44
+[ INFO ] [2][P0] Result MD5:['c5a6812aeceefdaf3f1c634a663bfdcf']
+[ INFO ] [2][P0] start: 2026-09-05T12:44:13.953800, end: 2026-09-05T12:44:16.403576
+[ INFO ] Speculative decoding config: num_assistant_tokens 5
+[ INFO ] [3][P0] Input image nums: 0
+[ INFO ] [3][P0] Input video nums: 0
+[ INFO ] [3][P0] Input audio nums: 0
+[ INFO ] [3][P0] Text generation start: 2026-09-05T12:44:16.403650
+[ INFO ] [3][P0] Text generation end: 2026-09-05T12:44:18.859086
+[ INFO ] [3][P0] Input token size: 68, Output size: 128, Infer count: 44, Tokenization Time: 0.44ms, Detokenization Time: 0.33ms,  Multimodal Embeddings Preparation Time: 1.11ms, Generation Time: 2.46s, Latency: 19.1830 ms/token
+[ INFO ] [3][P0] First token latency: 98.04 ms, other tokens latency: 54.80 ms/token, len of input tokens: 68 * 1
+[ INFO ] [3][P0] First infer latency: 96.93 ms, other infers latency: 54.79 ms/infer, inference count: 44
+[ INFO ] [3][P0] Result MD5:['c5a6812aeceefdaf3f1c634a663bfdcf']
+[ INFO ] [3][P0] start: 2026-09-05T12:44:16.403594, end: 2026-09-05T12:44:18.859489
+[ INFO ] <<< Warm-up iteration is excluded. >>>
+[ INFO ] [Total] Iterations: 3
+[ INFO ] [Average] P[0] Input token size: 68, 1st token latency: 97.31 ms, 2nd token latency: 54.76 ms/token, 2nd tokens throughput: 18.26 tokens/s

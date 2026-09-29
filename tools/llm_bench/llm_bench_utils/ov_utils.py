@@ -250,13 +250,13 @@ def setup_draft_model_for_sd(args, device):
             raise RuntimeError(f"==Failure ==: draft model by path:{draft_model_path} is not exists")
         log.info("Speculative Decoding is activated")
         draft_device = args.get("draft_device", None) or device
-        draft_model_load_kwargs = {}
+        draft_model_load_kwargs = dict(args.get("draft_load_config") or {})
+        if draft_model_load_kwargs:
+            log.info(f"Draft model properties: {draft_model_load_kwargs}")
         if args.get("draft_cb_config") is not None:
-            draft_model_load_kwargs = {
-                "scheduler_config": get_scheduler_config_genai(
-                    args.get("draft_cb_config"), config_name="draft CB config"
-                )
-            }
+            draft_model_load_kwargs["scheduler_config"] = get_scheduler_config_genai(
+                args.get("draft_cb_config"), config_name="draft CB config"
+            )
         draft_model["draft_model"] = openvino_genai.draft_model(
             draft_model_path, draft_device.upper(), **draft_model_load_kwargs
         )
