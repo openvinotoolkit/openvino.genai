@@ -76,11 +76,10 @@ public:
         // this function is a wrapper to call Python implementation of 'write' with py::dict
         py::gil_scoped_acquire acquire;
 
-        // A TextParserStreamer used as is, without a Python subclass overriding 'write', only collects
-        // the parsed message (see get_parsed_message). Calling the missing override would dereference null.
+        // A subclass that does not implement 'write': fail with an error instead of calling a null override.
         py::function override = py::get_override(this, "write");
         if (!override) {
-            return StreamingStatus::RUNNING;
+            throw py::type_error("TextParserStreamer subclasses must implement write(message: dict) -> StreamingStatus");
         }
 
         py::dict message_py = pyutils::json_container_to_py_object(message);
@@ -156,10 +155,15 @@ void init_streamers(py::module_& m) {
             .def("end", &TextStreamer::end);
         
     py::class_<TextParserStreamer, ConstructableTextParserStreamer, std::shared_ptr<TextParserStreamer>, TextStreamer>(m, "TextParserStreamer", text_parser_streamer_docstring)
-        .def(py::init([](const Tokenizer& tokenizer,
-                         std::vector<std::shared_ptr<IncrementalParser>> parsers) {
-                return std::make_shared<ConstructableTextParserStreamer>(tokenizer, parsers);
-            }),
+        .def(py::init(
+                 // TextParserStreamer itself: write() is pure virtual, so it has to be subclassed.
+                 [](const Tokenizer&, std::vector<std::shared_ptr<IncrementalParser>>) -> std::shared_ptr<TextParserStreamer> {
+                     throw py::type_error("TextParserStreamer is abstract: subclass it and implement write(message: dict)");
+                 },
+                 // A Python subclass.
+                 [](const Tokenizer& tokenizer, std::vector<std::shared_ptr<IncrementalParser>> parsers) {
+                     return std::make_shared<ConstructableTextParserStreamer>(tokenizer, parsers);
+                 }),
             py::arg("tokenizer"),
             py::arg("parsers") = std::vector<std::shared_ptr<IncrementalParser>>(),
             py::keep_alive<1, 3>())

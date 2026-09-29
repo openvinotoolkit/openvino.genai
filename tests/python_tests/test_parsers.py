@@ -58,17 +58,18 @@ def hf_ov_genai_models(request, tmp_path_factory):
     indirect=True,
 )
 def test_text_parser_streamer_without_write_override(hf_ov_genai_models):
-    # Used as is, without a subclass implementing write(), the streamer only collects the parsed message.
-    # This used to call the missing Python override and crash the process.
+    # write() is pure virtual: constructing TextParserStreamer itself used to succeed and then crash the
+    # process on the first chunk. It is now a TypeError, as is calling a subclass that does not implement it.
     _, genai_tokenizer = hf_ov_genai_models
-    streamer = TextParserStreamer(
-        genai_tokenizer, [ReasoningIncrementalParser(expect_open_tag=True, keep_original_content=False)]
-    )
-    for chunk in ["<think>plan", "</think>", "answer"]:
-        assert streamer._write(chunk) == StreamingStatus.RUNNING
-    message = streamer.get_parsed_message()
-    assert message["reasoning_content"] == "plan"
-    assert message["content"] == "answer"
+    with pytest.raises(TypeError, match="abstract"):
+        TextParserStreamer(genai_tokenizer, [ReasoningIncrementalParser()])
+
+    class NoWrite(TextParserStreamer):
+        pass
+
+    streamer = NoWrite(genai_tokenizer, [ReasoningIncrementalParser()])
+    with pytest.raises(TypeError, match="must implement write"):
+        streamer._write("<think>plan")
 
 
 @pytest.mark.parametrize(
