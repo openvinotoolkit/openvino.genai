@@ -557,6 +557,16 @@ GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, co
     return m_impl->add_request(request_id, prompt, images, videos, sampling_params);
 }
 
+GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id,
+                                                         const std::string& prompt,
+                                                         const std::vector<ov::Tensor>& images,
+                                                         const std::vector<ov::Tensor>& videos,
+                                                         const std::vector<ov::Tensor>& audios,
+                                                         const ov::genai::GenerationConfig& sampling_params) {
+    assert_supported_add_request_lora_modes(m_impl->get_pipeline_adapters(), sampling_params);
+    return m_impl->add_request(request_id, prompt, images, videos, {}, audios, sampling_params);
+}
+
 GenerationHandle ContinuousBatchingPipeline::add_request(
     uint64_t request_id,
     const std::string& prompt,
@@ -648,6 +658,16 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
 
 std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     const std::vector<std::string>& prompts,
+    const std::vector<std::vector<ov::Tensor>>& images,
+    const std::vector<std::vector<ov::Tensor>>& videos,
+    const std::vector<std::vector<ov::Tensor>>& audios,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer) {
+    return m_impl->generate(prompts, images, videos, {}, audios, sampling_params, streamer);
+}
+
+std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
+    const std::vector<std::string>& prompts,
     const ov::AnyMap& properties_map
 ) {
     const size_t batch_size = prompts.size();
@@ -688,6 +708,16 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     const StreamerVariant& streamer
 ) {
     return m_impl->generate(histories, images, videos, sampling_params, streamer);
+}
+
+std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
+    const std::vector<ChatHistory>& histories,
+    const std::vector<std::vector<ov::Tensor>>& images,
+    const std::vector<std::vector<ov::Tensor>>& videos,
+    const std::vector<std::vector<ov::Tensor>>& audios,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer) {
+    return m_impl->generate(histories, images, videos, {}, audios, sampling_params, streamer);
 }
 
 std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
