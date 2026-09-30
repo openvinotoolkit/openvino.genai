@@ -63,6 +63,18 @@ public:
                                  const std::vector<size_t>& videos_sequence = {},
                                  const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
+    ov::Tensor get_inputs_embeds(const std::string& prompt,
+                                 const std::vector<ov::genai::EncodedImage>& images,
+                                 const std::vector<ov::genai::EncodedVideo>& videos,
+                                 const std::vector<ov::genai::EncodedAudio>& audios,
+                                 ov::genai::VLMPerfMetrics& metrics,
+                                 bool recalculate_merged_embeddings,
+                                 const std::vector<size_t>& image_sequence,
+                                 const std::vector<size_t>& videos_sequence,
+                                 const std::vector<size_t>& audios_sequence,
+                                 size_t base_audio_id,
+                                 const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count);
+
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
 
     // returns per-layer embeddings callback, or nullptr if not available
@@ -247,6 +259,19 @@ private:
             const std::vector<size_t>& image_sequence,
             const std::vector<size_t>& videos_sequence,
             const std::vector<size_t>& audios_sequence,
+            const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count);
+
+        virtual ov::Tensor get_inputs_embeds(
+            const std::string& prompt,
+            const std::vector<ov::genai::EncodedImage>& images,
+            const std::vector<ov::genai::EncodedVideo>& videos,
+            const std::vector<ov::genai::EncodedAudio>& audios,
+            ov::genai::VLMPerfMetrics& metrics,
+            bool recalculate_merged_embeddings,
+            const std::vector<size_t>& image_sequence,
+            const std::vector<size_t>& videos_sequence,
+            const std::vector<size_t>& audios_sequence,
+            size_t base_audio_id,
             const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count);
 
         virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);

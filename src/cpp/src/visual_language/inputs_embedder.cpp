@@ -467,6 +467,21 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt,
                                      history_vision_count);
 }
 
+ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt,
+                                             const std::vector<ov::genai::EncodedImage>& images,
+                                             const std::vector<ov::genai::EncodedVideo>& videos,
+                                             const std::vector<ov::genai::EncodedAudio>& audios,
+                                             ov::genai::VLMPerfMetrics& metrics,
+                                             bool recalculate_merged_embeddings,
+                                             const std::vector<size_t>& image_sequence,
+                                             const std::vector<size_t>& videos_sequence,
+                                             const std::vector<size_t>& audios_sequence,
+                                             size_t base_audio_id,
+                                             const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
+    return m_impl->get_inputs_embeds(prompt, images, videos, audios, metrics, recalculate_merged_embeddings,
+                                     image_sequence, videos_sequence, audios_sequence, base_audio_id, history_vision_count);
+}
+
 const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::get_lm_extra_inputs() const {
     return m_impl->get_lm_extra_inputs();
 }
@@ -511,6 +526,23 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(
                              image_sequence,
                              videos_sequence,
                              history_vision_count);
+}
+
+ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(
+    const std::string& prompt,
+    const std::vector<ov::genai::EncodedImage>& images,
+    const std::vector<ov::genai::EncodedVideo>& videos,
+    const std::vector<ov::genai::EncodedAudio>& audios,
+    ov::genai::VLMPerfMetrics& metrics,
+    bool recalculate_merged_embeddings,
+    const std::vector<size_t>& image_sequence,
+    const std::vector<size_t>& videos_sequence,
+    const std::vector<size_t>& audios_sequence,
+    size_t base_audio_id,
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
+) {
+    return get_inputs_embeds(prompt, images, videos, audios, metrics, recalculate_merged_embeddings,
+                             image_sequence, videos_sequence, audios_sequence, history_vision_count);
 }
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
@@ -630,6 +662,7 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt,
                                      image_sequence,
                                      videos_sequence,
                                      audios_sequence,
+                                     0,
                                      history_vision_count);
 }
 
