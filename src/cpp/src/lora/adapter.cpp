@@ -625,7 +625,7 @@ protected:
     bool apply(NodePtr node, const NodePtr& lora_weight) override {
         auto consumers = node->get_output_target_inputs(0);
         const auto node_type = node->get_element_type();
-    
+
         // cast to node type
         auto lora_output = lora_weight;
         if (lora_weight->get_element_type() != node_type) {
@@ -1132,8 +1132,8 @@ std::string convert_gguf_name_to_hf(const std::string& name) {
         if (num_end != std::string::npos) {
             std::string layer_num = new_name.substr(num_start, num_end - num_start);
             // Verify it's actually a number
-            bool is_number = !layer_num.empty() && 
-                           std::all_of(layer_num.begin(), layer_num.end(), 
+            bool is_number = !layer_num.empty() &&
+                           std::all_of(layer_num.begin(), layer_num.end(),
                                      [](unsigned char c){ return std::isdigit(c); });
             if (is_number) {
                 std::string replacement = "model.layers." + layer_num + ".";
@@ -1176,7 +1176,7 @@ std::string convert_gguf_name_to_hf(const std::string& name) {
             pos += hf_part.length(); // continue after replaced part
         }
     }
-    
+
     return new_name;
 }
 
@@ -1628,7 +1628,7 @@ struct AdapterControllerImpl {
             // Separate constant mode
             pm.register_pass<LoRASeparateTransform>(weight_as_constant);
             pm.register_pass<LoRAReplaceConstantTransformStatic>(const_replacement_getter);
-            
+
         } else if(mode == AdapterConfig::MODE_FUSE) {
             // Fuse mode
             pm.register_pass<LoRAFuseTransform>(weight_as_constant);
@@ -1937,8 +1937,8 @@ struct AdapterControllerImpl {
         get_or_prepare_config_tensors(current_config, weight_getters);
     }
 
-    void set_new_adapter_tensors(ov::InferRequest& infer_request, bool alpha_only = false) {        
-        if (current_config.get_mode() != AdapterConfig::MODE_AUTO && 
+    void set_new_adapter_tensors(ov::InferRequest& infer_request, bool alpha_only = false) {
+        if (current_config.get_mode() != AdapterConfig::MODE_AUTO &&
             current_config.get_mode() != AdapterConfig::MODE_DYNAMIC &&
             current_config.get_mode() != AdapterConfig::MODE_STATIC_RANK ) {
             return;
@@ -2217,6 +2217,11 @@ struct AdapterControllerImpl {
         bool alpha_only
     ) {
         auto set_state_tensor = [](VariableState& variable, const ov::Tensor& tensor) {
+            // Empty LoRA states have no payload and require no packing or stride inspection.
+            if (tensor.get_size() == 0) {
+                variable.set_state(tensor);
+                return;
+            }
             if (tensor.is_continuous()) {
                 variable.set_state(tensor);
                 return;
