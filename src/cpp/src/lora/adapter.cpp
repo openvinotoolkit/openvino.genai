@@ -72,6 +72,10 @@ using namespace ov::genai::utils;
 // FIXME: Use ov::AlignedBuffer instead of std::vector. ov::AlignedBuffer is not available in public OV API
 using ConstantVector = std::vector<std::shared_ptr<v0::Constant>>;
 
+constexpr size_t concat_a_axis = 0;
+constexpr size_t concat_b_axis = 1;
+constexpr size_t concat_alpha_axis = 1;
+
 
 // Holds usual LoRA parameters alpha, A and B of a given type.
 using LoRANode = LoRAParts<std::shared_ptr<ov::Node>>;
@@ -1327,6 +1331,78 @@ class PreparedTensorCache {
 public:
     using Tensors = std::vector<LoRAParts<ov::Tensor>>;
 
+    // Cache each adapter's rank interval per layer to reuse its slice of concatenated A/B tensors.
+    // Layer-specific offsets are needed because adapter ranks and applicable layers can differ.
+    struct AdapterRange {
+        Adapter adapter;
+        size_t start_rank;
+        size_t rank;
+    };
+    using LayerRanges = std::vector<std::vector<AdapterRange>>;
+
+    // ROI tensors retain their parent; do not cache the views as additional payloads.
+    std::optional<Tensors> find_views(const AdapterConfig& config) {
+        if (config.get_mode() == AdapterConfig::MODE_STATIC_RANK || config.get_adapters().empty()) {
+            return std::nullopt;
+        }
+        const auto& requested = config.get_adapters();
+        for (auto it = m_entries.begin(); it != m_entries.end(); ++it) {
+            const auto& available = it->config.get_adapters();
+            if (it->config.get_mode() != config.get_mode() ||
+                it->config.get_tensor_name_prefix() != config.get_tensor_name_prefix() ||
+                !std::all_of(requested.begin(), requested.end(), [&](const Adapter& adapter) {
+                    return std::find(available.begin(), available.end(), adapter) != available.end();
+                })) {
+                continue;
+            }
+
+            std::vector<std::pair<size_t, size_t>> selections;
+            bool compatible = true;
+            for (const auto& ranges : it->ranges) {
+                size_t start = 0;
+                size_t rank = 0;
+                bool selected = false;
+                for (const auto& adapter : requested) {
+                    auto range = std::find_if(ranges.begin(), ranges.end(), [&](const AdapterRange& r) {
+                        return r.adapter == adapter;
+                    });
+                    if (range == ranges.end()) {
+                        continue;  // This adapter does not apply to this layer.
+                    }
+                    if (!selected) {
+                        start = range->start_rank;
+                    } else if (range->start_rank != start + rank) {
+                        compatible = false;  // Disjoint or reordered ranges need a new concat.
+                        break;
+                    }
+                    rank += range->rank;
+                    selected = true;
+                }
+                if (!compatible) {
+                    break;
+                }
+                selections.emplace_back(start, rank);
+            }
+            if (!compatible) {
+                continue;
+            }
+
+            OPENVINO_ASSERT(selections.size() == it->tensors.size());
+            Tensors views;
+            views.reserve(it->tensors.size());
+            for (size_t layer = 0; layer < it->tensors.size(); ++layer) {
+                const auto& tensors = it->tensors[layer];
+                const auto& selection = selections[layer];
+                views.push_back({tensors.alpha,
+                                 rank_view(tensors.A, concat_a_axis, selection.first, selection.second),
+                                 rank_view(tensors.B, concat_b_axis, selection.first, selection.second)});
+            }
+            m_entries.splice(m_entries.begin(), m_entries, it);
+            return views;
+        }
+        return std::nullopt;
+    }
+
     // Returns the entry matching the config, or nullptr on a miss. A hit is moved to the front,
     // so the back of the list is always the least recently used entry.
     Tensors* find(const AdapterConfig& config) {
@@ -1355,7 +1431,8 @@ public:
     // Returns tensor handles by value. ov::Tensor copies share the underlying buffer, so a
     // cache hit does not copy the tensor payload and an uncached oversized result remains alive
     // only for the caller's current apply operation.
-    Tensors insert(const AdapterConfig& config, Tensors tensors) {
+    Tensors insert(const AdapterConfig& config, Tensors tensors, LayerRanges ranges) {
+        OPENVINO_ASSERT(tensors.size() == ranges.size());
         const size_t byte_size = total_byte_size(tensors);
 
         if (byte_size > max_bytes) {
@@ -1368,7 +1445,7 @@ public:
             m_byte_size -= m_entries.back().byte_size;
             m_entries.pop_back();
         }
-        m_entries.push_front({config, std::move(tensors), byte_size});
+        m_entries.push_front({config, std::move(tensors), std::move(ranges), byte_size});
         m_byte_size += byte_size;
         return m_entries.front().tensors;
     }
@@ -1389,8 +1466,26 @@ private:
     struct Entry {
         AdapterConfig config;
         Tensors tensors;
+        LayerRanges ranges;
         size_t byte_size = 0;
     };
+
+    static ov::Tensor rank_view(const ov::Tensor& tensor, size_t axis, size_t start, size_t rank) {
+        auto shape = tensor.get_shape();
+        OPENVINO_ASSERT(axis < shape.size() && start <= shape[axis] && rank <= shape[axis] - start);
+        if (rank == 0) {
+            shape[axis] = 0;
+            return ov::Tensor(tensor.get_element_type(), shape);
+        }
+        if (start == 0 && rank == shape[axis]) {
+            return tensor;
+        }
+        ov::Coordinate begin(shape.size(), 0);
+        ov::Coordinate end(shape.begin(), shape.end());
+        begin[axis] = start;
+        end[axis] = start + rank;
+        return ov::Tensor(tensor, begin, end);
+    }
 
     // Sums the byte size of all alpha/A/B tensors, used to track the cache against its byte limit.
     static size_t total_byte_size(const Tensors& tensors) {
@@ -1636,10 +1731,10 @@ struct AdapterControllerImpl {
             ov::Tensor(lora_var_ids.alpha.data_type,
                        dynamic_to_static(lora_var_ids.alpha.data_shape)),
             ov::Tensor(lora_var_ids.A.data_type,
-                       alpha_only ? rank_collapsed_shape(lora_var_ids.A.data_shape, 0)
+                       alpha_only ? rank_collapsed_shape(lora_var_ids.A.data_shape, concat_a_axis)
                                   : dynamic_to_static(lora_var_ids.A.data_shape)),
             ov::Tensor(lora_var_ids.B.data_type,
-                       alpha_only ? rank_collapsed_shape(lora_var_ids.B.data_shape, 1)
+                       alpha_only ? rank_collapsed_shape(lora_var_ids.B.data_shape, concat_b_axis)
                                   : dynamic_to_static(lora_var_ids.B.data_shape))
         };
     }
@@ -1701,7 +1796,30 @@ struct AdapterControllerImpl {
         });
     }
 
-    // Returns cached prepared tensors for a config if present, otherwise prepares and caches them.
+    PreparedTensorCache::LayerRanges collect_adapter_ranges(
+        const AdapterConfig& config,
+        const std::vector<LoRAWeightGetter>& weight_getters) const {
+        const auto& adapters = config.get_adapters();
+        OPENVINO_ASSERT(adapters.size() == weight_getters.size());
+        PreparedTensorCache::LayerRanges layers;
+        layers.reserve(variable_ids.size());
+        for (const auto& variable : variable_ids) {
+            std::vector<PreparedTensorCache::AdapterRange> ranges;
+            size_t start = 0;
+            for (size_t i = 0; i < adapters.size(); ++i) {
+                if (auto tensors = weight_getters[i](variable.first)) {
+                    const auto rank = static_cast<size_t>(
+                        tensors->A->get_output_partial_shape(0)[concat_a_axis].get_length());
+                    ranges.push_back({adapters[i], start, rank});
+                    start += rank;
+                }
+            }
+            layers.push_back(std::move(ranges));
+        }
+        return layers;
+    }
+
+    // Returns cached tensors or parent-backed views before preparing a new concat.
     std::vector<LoRAParts<ov::Tensor>> get_or_prepare_config_tensors(
         const AdapterConfig& config,
         const std::vector<LoRAWeightGetter>& weight_getters) {
@@ -1722,7 +1840,21 @@ struct AdapterControllerImpl {
             return *cached;
         }
 
-        return prepared_tensor_cache.insert(config, prepare_config_tensors(config, weight_getters));
+        if (auto views = prepared_tensor_cache.find_views(config)) {
+            auto fresh_alphas = prepare_config_tensors(config, weight_getters, /*alpha_only=*/true);
+            OPENVINO_ASSERT(views->size() == fresh_alphas.size());
+            auto variable = variable_ids.begin();
+            for (size_t i = 0; i < views->size(); ++i, ++variable) {
+                (*views)[i].alpha = std::move(fresh_alphas[i].alpha);
+                validate_prepared_tensor((*views)[i].A, variable->second.A);
+                validate_prepared_tensor((*views)[i].B, variable->second.B);
+            }
+            return std::move(*views);
+        }
+
+        auto tensors = prepare_config_tensors(config, weight_getters);
+        auto ranges = collect_adapter_ranges(config, weight_getters);
+        return prepared_tensor_cache.insert(config, std::move(tensors), std::move(ranges));
     }
 
     void prepare_initial_configs() {
@@ -1730,30 +1862,8 @@ struct AdapterControllerImpl {
             return;
         }
 
-        if (current_config.get_mode() == AdapterConfig::MODE_STATIC_RANK) {
-            auto weight_getters = make_weight_getters(current_config);
-            get_or_prepare_config_tensors(current_config, weight_getters);
-            return;
-        }
-
-        std::vector<AdapterConfig> configs;
-        AdapterConfig empty_config(current_config.get_mode());
-        empty_config.set_tensor_name_prefix(current_config.get_tensor_name_prefix());
-        configs.push_back(std::move(empty_config));
-
-        for (const auto& adapter_and_alpha : current_config.get_adapters_and_alphas()) {
-            AdapterConfig single_config(adapter_and_alpha.first,
-                                        adapter_and_alpha.second,
-                                        current_config.get_mode());
-            single_config.set_tensor_name_prefix(current_config.get_tensor_name_prefix());
-            configs.push_back(std::move(single_config));
-        }
-        configs.push_back(current_config);
-
-        for (const auto& config : configs) {
-            auto weight_getters = make_weight_getters(config);
-            get_or_prepare_config_tensors(config, weight_getters);
-        }
+        auto weight_getters = make_weight_getters(current_config);
+        get_or_prepare_config_tensors(current_config, weight_getters);
     }
 
     void set_new_adapter_tensors(ov::InferRequest& infer_request, bool alpha_only = false) {        
@@ -1979,7 +2089,7 @@ struct AdapterControllerImpl {
             ov::ParameterVector parameters(inputs_per_adapter*inputs.size());
             ov::ResultVector results(inputs_per_adapter);
 
-            build_concat_model(parameters, results, inputs, outputs.alpha, 0, 1,
+            build_concat_model(parameters, results, inputs, outputs.alpha, 0, concat_alpha_axis,
                 alpha_only,
                 [](const LoRAWeight& lora_weight) {
                     return std::make_shared<v0::Parameter>(
@@ -1995,7 +2105,7 @@ struct AdapterControllerImpl {
                 });
 
             if(!alpha_only) {
-                build_concat_model(parameters, results, inputs, outputs.A, 1, 0,
+                build_concat_model(parameters, results, inputs, outputs.A, 1, concat_a_axis,
                     alpha_only,
                     [](const LoRAWeight& lora_weight) {
                         return std::make_shared<v0::Parameter>(
@@ -2004,7 +2114,7 @@ struct AdapterControllerImpl {
                     }
                 );
 
-                build_concat_model(parameters, results, inputs, outputs.B, 2, 1,
+                build_concat_model(parameters, results, inputs, outputs.B, 2, concat_b_axis,
                     alpha_only,
                     [](const LoRAWeight& lora_weight) {
                         return std::make_shared<v0::Parameter>(
@@ -2035,10 +2145,20 @@ struct AdapterControllerImpl {
         const LoRAParts<ov::Tensor>& new_tensors,
         bool alpha_only
     ) {
-        state[lora_indices.alpha].set_state(new_tensors.alpha);
+        auto set_state_tensor = [](VariableState& variable, const ov::Tensor& tensor) {
+            if (tensor.is_continuous()) {
+                variable.set_state(tensor);
+                return;
+            }
+            // GPU set_state does not yet combine strided reads with state transposition.
+            ov::Tensor contiguous(tensor.get_element_type(), tensor.get_shape());
+            tensor.copy_to(contiguous);
+            variable.set_state(contiguous);
+        };
+        set_state_tensor(state[lora_indices.alpha], new_tensors.alpha);
         if(!alpha_only) {
-            state[lora_indices.A].set_state(new_tensors.A);
-            state[lora_indices.B].set_state(new_tensors.B);
+            set_state_tensor(state[lora_indices.A], new_tensors.A);
+            set_state_tensor(state[lora_indices.B], new_tensors.B);
         }
     }
 
