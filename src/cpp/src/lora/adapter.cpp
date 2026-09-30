@@ -1704,16 +1704,24 @@ struct AdapterControllerImpl {
             current_config = std::move(updated_config);
         }
         bool is_new_infer_request = !last_applied_infer_request || *last_applied_infer_request != infer_request;
-        if(need_full_apply || is_new_infer_request) {
-            need_full_apply = false;
-            last_applied_infer_request = infer_request;
-            set_new_adapter_tensors(infer_request);
-        } else if(diff) {
-            if(diff.adapter || diff.tensor_name_prefix) {
+        try {
+            if(need_full_apply || is_new_infer_request) {
                 set_new_adapter_tensors(infer_request);
-            } else if(diff.alpha)  {
-                set_new_adapter_alphas(infer_request);
+                // Record initialization only after every state upload has succeeded.
+                last_applied_infer_request = infer_request;
+                need_full_apply = false;
+            } else if(diff) {
+                if(diff.adapter || diff.tensor_name_prefix) {
+                    set_new_adapter_tensors(infer_request);
+                } else if(diff.alpha) {
+                    set_new_adapter_alphas(infer_request);
+                }
             }
+        } catch (...) {
+            // Uploads may have updated only part of the state; retry with a full apply.
+            // Preserve the original error for the caller rather than retrying automatically.
+            need_full_apply = true;
+            throw;
         }
     }
 
