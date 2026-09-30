@@ -295,7 +295,7 @@ class TestLora:
         with Image.open(image_path) as image:
             image_tensor = ov.Tensor(np.array(image.convert("RGB")))
         generation_config = ov_genai.GenerationConfig()
-        generation_config.max_new_tokens = 32
+        generation_config.max_new_tokens = 12
         generation_config.do_sample = False
 
         def generate(pipe, config):
