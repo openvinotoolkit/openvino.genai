@@ -416,13 +416,10 @@ class TextAgentEvaluator(BaseEvaluator):
 
         is_awq = bool(getattr(model, "is_awq", False))
         generation_kwargs = {
-            "do_sample": bool(record.get("temperature", 0.0) > 0),
+            "do_sample": False,
             "max_new_tokens": self._record_max_new_tokens(record),
             **get_ignore_parameters_flag(),
         }
-        temperature = record.get("temperature")
-        if temperature is not None:
-            generation_kwargs["temperature"] = float(temperature)
         top_p = record.get("top_p")
         if top_p is not None:
             generation_kwargs["top_p"] = float(top_p)
@@ -453,7 +450,7 @@ class TextAgentEvaluator(BaseEvaluator):
             raise ValueError("All messages are empty in JSON record; prompt cannot be empty")
 
         kwargs = {
-            "do_sample": bool(record.get("temperature", 0.0) > 0),
+            "do_sample": False,
             "max_new_tokens": self._record_max_new_tokens(record),
             "num_assistant_tokens": int(record.get("num_assistant_tokens", self.num_assistant_tokens)),
             "assistant_confidence_threshold": float(
@@ -463,9 +460,6 @@ class TextAgentEvaluator(BaseEvaluator):
                 )
             ),
         }
-        temperature = record.get("temperature")
-        if temperature is not None:
-            kwargs["temperature"] = float(temperature)
 
         if self.empty_adapters:
             kwargs["adapters"] = openvino_genai.AdapterConfig()
