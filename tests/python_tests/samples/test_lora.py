@@ -203,8 +203,7 @@ class TestLora:
         indirect=["convert_model", "download_test_content"],
     )
     def test_visual_language_lora_switch_prepared_tensor_cache(self, convert_model, download_test_content, prompt):
-        # Checks the prepared tensor cache in AdapterControllerImpl: switching to another config
-        # must refresh the cached tensors, and switching back must give the first result again.
+        # Check alpha refresh and restored output; this does not observe cache hits directly.
         adapter_path, image_path = download_test_content
         assert os.path.exists(image_path), f"Missing test image: {image_path}"
 
@@ -246,3 +245,77 @@ class TestLora:
         assert result_a_second.texts[0] == result_a_first.texts[0], (
             "Switching A -> B -> A should reproduce the original config A output"
         )
+
+    @pytest.mark.vlm
+    @pytest.mark.parametrize(
+        "convert_model, download_test_content, prompt",
+        [
+            pytest.param(
+                "Qwen2-VL-2B-Instruct",
+                ("qwen2b_lora_100_adapter_model.safetensors", "monalisa.jpg"),
+                "Who drew this painting?",
+            ),
+        ],
+        indirect=["convert_model", "download_test_content"],
+    )
+    def test_visual_language_lora_concat_to_single_switch(self, convert_model, download_test_content, prompt, tmp_path):
+        from safetensors.torch import load_file, save_file
+
+        adapter_path, image_path = download_test_content
+        # Exercise concat intervals with different ranks and weights.
+        weights = load_file(adapter_path)
+        changed_a = changed_b = 0
+        for name, tensor in weights.items():
+            if ".lora_A." in name:
+                assert tensor.shape[0] > 1, f"Expected rank greater than one: {name}"
+                weights[name] = tensor[: tensor.shape[0] // 2].contiguous()
+                changed_a += 1
+            elif ".lora_B." in name:
+                assert tensor.shape[1] > 1, f"Expected rank greater than one: {name}"
+                weights[name] = (-tensor[:, : tensor.shape[1] // 2]).contiguous()
+                changed_b += 1
+        assert changed_a > 0 and changed_a == changed_b, "Expected paired LoRA A/B weights"
+        second_adapter_path = tmp_path / "second_adapter.safetensors"
+        save_file(weights, str(second_adapter_path))
+        del weights
+
+        adapter_a = ov_genai.Adapter(adapter_path)
+        adapter_b = ov_genai.Adapter(second_adapter_path)
+        config_a = ov_genai.AdapterConfig()
+        config_a.add(adapter_a, 2.0)
+        config_b = ov_genai.AdapterConfig()
+        config_b.add(adapter_b, 1.0)
+        config_ab = ov_genai.AdapterConfig()
+        config_ab.add(adapter_a, 2.0)
+        config_ab.add(adapter_b, 1.0)
+        config_b_zero = ov_genai.AdapterConfig()
+        config_b_zero.add(adapter_b, 0.0)
+
+        with Image.open(image_path) as image:
+            image_tensor = ov.Tensor(np.array(image.convert("RGB")))
+        generation_config = ov_genai.GenerationConfig()
+        generation_config.max_new_tokens = 32
+        generation_config.do_sample = False
+
+        def generate(pipe, config):
+            result = pipe.generate(prompt, images=[image_tensor], generation_config=generation_config, adapters=config)
+            assert result.texts and result.texts[0], "Generation should produce output"
+            return result.texts[0]
+
+        # Separate single-adapter pipelines never prepare an A+B concat.
+        expected = []
+        for config in (config_a, config_b):
+            baseline = ov_genai.VLMPipeline(convert_model, "CPU", ATTENTION_BACKEND="PA", adapters=config)
+            expected.append(generate(baseline, config))
+            del baseline
+
+        pipe = ov_genai.VLMPipeline(convert_model, "CPU", ATTENTION_BACKEND="PA", adapters=config_ab)
+        first_ab = generate(pipe, config_ab)
+        assert generate(pipe, config_a) == expected[0], "First concat interval should match adapter A alone"
+        assert generate(pipe, config_b) == expected[1], "Second concat interval should match adapter B alone"
+        assert generate(pipe, config_ab) == first_ab, "Switching back should restore the combined output"
+        assert generate(pipe, config_b_zero) == generate(pipe, ov_genai.AdapterConfig()), (
+            "Adapter B with alpha zero should match the no-adapter baseline"
+        )
+        assert generate(pipe, config_b) == expected[1], "Adapter B should be restored after alpha-zero switching"
+        assert generate(pipe, config_a) == expected[0], "Repeated selection should restore adapter A"
