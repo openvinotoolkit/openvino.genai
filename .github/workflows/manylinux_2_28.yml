@@ -559,7 +559,7 @@ jobs:
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
       EXTENSION_LIB_PATH: ${{ github.workspace }}/install/tests/
-      HF_HUB_OFFLINE: 1
+      HF_HUB_OFFLINE: 0
 
     steps:
       - name: Setup Variables
@@ -621,7 +621,7 @@ jobs:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
       NODE_VERSION: ${{ matrix.nodejs-version }}
-      HF_HUB_OFFLINE: 1
+      HF_HUB_OFFLINE: 0
       PY_INSTALL_DIR: ${{ github.workspace }}/install
 
     steps:

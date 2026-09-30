@@ -5,7 +5,6 @@ import os
 from typing import Any, Union
 
 import torch
-import datasets
 import pandas as pd
 import openvino_genai
 
@@ -14,7 +13,7 @@ from transformers import set_seed
 from contextlib import contextmanager
 from datasets.packaged_modules.parquet.parquet import Parquet
 
-from .utils import parquet_generate_tables
+from .utils import load_hub_parquet_dataset, parquet_generate_tables
 from .registry import register_evaluator
 from .text2image_evaluator import Text2ImageEvaluator
 
@@ -44,8 +43,8 @@ def prepare_default_data(num_samples=None):
     DATASET_NAME = "phiyodr/InpaintCOCO"
     NUM_SAMPLES = 10 if num_samples is None else num_samples
     set_seed(42)
-    default_dataset = datasets.load_dataset(
-        DATASET_NAME, split="test", streaming=True,
+    default_dataset = load_hub_parquet_dataset(
+        DATASET_NAME, {"test": "data/test-*"}, split="test", streaming=True
     ).filter(lambda example: example["inpaint_caption"] != "").take(NUM_SAMPLES)
     return default_dataset.map(
         lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
