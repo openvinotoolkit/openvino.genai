@@ -74,7 +74,22 @@ def _create_messages_dataset(path, as_jsonl=False, use_real_prompt=False):
     else:
         record = {
             "messages": [{"role": "user", "content": "Say hello in one word."}],
-            "tools": [],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "get_weather",
+                        "description": "Get weather for a city.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "city": {"type": "string", "description": "City name"}
+                            },
+                            "required": ["city"],
+                        },
+                    },
+                }
+            ],
         }
 
     if as_jsonl:
@@ -89,7 +104,7 @@ def _create_messages_dataset(path, as_jsonl=False, use_real_prompt=False):
     ("model_id", "model_type", "dataset_name", "as_jsonl", "use_real_prompt", "similarity_threshold"),
     [
         (
-            "optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM",
+            "Qwen/Qwen2.5-0.5B-Instruct",
             "text-agent",
             "messages.json",
             False,
@@ -97,7 +112,7 @@ def _create_messages_dataset(path, as_jsonl=False, use_real_prompt=False):
             0.9,
         ),
         (
-            "optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM",
+            "Qwen/Qwen2.5-0.5B-Instruct",
             "text-agent",
             "messages.jsonl",
             True,
@@ -105,7 +120,7 @@ def _create_messages_dataset(path, as_jsonl=False, use_real_prompt=False):
             0.9,
         ),
         pytest.param(
-            "optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM",
+            "Qwen/Qwen2.5-0.5B-Instruct",
             "text-agent",
             "messages_real.jsonl",
             True,
@@ -182,6 +197,8 @@ def test_text_agent_end_to_end(
     if prompt_path.exists():
         prompt_value = prompt_path.read_text(encoding="utf-8")
     assert expected_prompt in prompt_value
+    if model_type == "text-agent" and not use_real_prompt:
+        assert "tool" in prompt_value.lower() or "function" in prompt_value.lower()
     assert "Text-agent dataset selected from --dataset:" in hf_output
 
     optimum_output = run_wwb(
