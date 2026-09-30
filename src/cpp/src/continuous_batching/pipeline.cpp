@@ -579,8 +579,6 @@ GenerationHandle ContinuousBatchingPipeline::add_request(
     assert_supported_add_request_lora_modes(m_impl->get_pipeline_adapters(), generation_config.value());
 
     const auto multimodal_inputs = extract_multimodal_inputs(properties_map);
-    OPENVINO_ASSERT(!multimodal_inputs.audios.has_value() || multimodal_inputs.audios->empty(),
-                    "Audio input is not supported by add_request(). Use generate() with audios_batches instead.");
 
     if (!multimodal_inputs.has_value()) {
         return m_impl->add_request(request_id, prompt, generation_config.value());
