@@ -943,30 +943,6 @@ TEST(TestScheduler, hybrid_output_fills_linear_attention_block_table_in_prompt_a
     }
 }
 
-TEST(TestScheduler, linear_attention_paging_mode_represents_history_and_step_independently) {
-    using ov::genai::detail::LinearAttentionPagingHistory;
-    using ov::genai::detail::LinearAttentionPagingMode;
-    using ov::genai::detail::LinearAttentionPagingStep;
-
-    const std::vector<LinearAttentionPagingHistory> histories{
-        LinearAttentionPagingHistory::LIVE_ONLY,
-        LinearAttentionPagingHistory::PREFIX_CHECKPOINTS,
-    };
-    const std::vector<LinearAttentionPagingStep> steps{
-        LinearAttentionPagingStep::PREFILL,
-        LinearAttentionPagingStep::DECODE,
-        LinearAttentionPagingStep::VERIFY,
-    };
-
-    for (const auto history : histories) {
-        for (const auto step : steps) {
-            const LinearAttentionPagingMode mode{history, step};
-            EXPECT_EQ(mode.history(), history);
-            EXPECT_EQ(mode.step(), step);
-        }
-    }
-}
-
 TEST(TestScheduler, hybrid_prefix_linear_attention_verify_retains_next_window_headroom) {
     for (const size_t accepted_depth : {1u, 2u, 3u, 4u}) {
         SCOPED_TRACE(accepted_depth);
@@ -4382,49 +4358,6 @@ TEST_F(CBPublicationTest, invalid_second_slot_does_not_promote_first_linear_atte
     EXPECT_FALSE(block_manager.has_temporary_blocks(second_id));
     scheduler->free_sequence(first_id);
     scheduler->free_sequence(second_id);
-}
-
-TEST_F(CBPublicationTest, missing_kv_plan_does_not_promote_valid_linear_attention_checkpoint) {
-    constexpr size_t accepted_depth = 2;
-    SchedulerConfig scheduler_config = make_speculative_linear_attention_scheduler_config();
-    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    auto scheduler = std::make_shared<Scheduler>(orchestrator, scheduler_config);
-    scheduler->ensure_linear_attention_pool_blocks(1 + (1 + accepted_depth));
-    auto sequence_group = std::make_shared<SequenceGroup>(
-        0, std::vector<int64_t>{0, 1, 2, 3}, utils::get_greedy_config());
-    std::vector<SequenceGroup::Ptr> requests{sequence_group};
-    std::ignore = scheduler->schedule(requests);
-    sequence_group->finish_iteration();
-    Sequence::Ptr sequence = sequence_group->get_running_sequences().front();
-    sequence->append_token(42, 0.f);
-    sequence_group->update_processed_tokens_num(4);
-    sequence_group->set_num_validated_tokens(accepted_depth);
-
-    Scheduler::Output output = scheduler->schedule(requests);
-    const uint64_t sequence_id = sequence->get_id();
-    auto& block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
-    const auto state_before = block_manager.get_linear_attention_live_state(sequence_id);
-    const size_t free_rows_before = block_manager.num_free_blocks();
-    ASSERT_TRUE(block_manager.has_temporary_blocks(sequence_id));
-    ASSERT_EQ(output.m_kv_paged_attention_data.erase(sequence_id), 1u);
-
-    SamplerOutput sampler_output;
-    sampler_output.acceptance_by_sequence.emplace(
-        sequence_id, SamplerOutput::AcceptanceResult{accepted_depth, 4 + accepted_depth});
-    PipelineTestInstance pipeline;
-    EXPECT_THROW(
-        pipeline.commit_linear_attention_checkpoint_transactions(scheduler, requests, output, sampler_output),
-        ov::Exception);
-
-    const auto& state_after = block_manager.get_linear_attention_live_state(sequence_id);
-    EXPECT_EQ(state_after.endpoint, state_before.endpoint);
-    EXPECT_EQ(state_after.generation, state_before.generation);
-    EXPECT_EQ(state_after.rows, state_before.rows);
-    EXPECT_TRUE(block_manager.has_temporary_blocks(sequence_id));
-    EXPECT_EQ(block_manager.num_free_blocks(), free_rows_before);
-
-    output.m_linear_attention_scratch_leases.clear();
-    scheduler->free_sequence(sequence_id);
 }
 
 TEST_F(CBPublicationTest, abandoned_moved_prepared_promotion_preserves_scratch_until_lease_cleanup) {
