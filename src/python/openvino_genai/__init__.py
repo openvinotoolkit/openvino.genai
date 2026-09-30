@@ -103,6 +103,7 @@ from .py_openvino_genai import (
 from .py_openvino_genai import (
     CLIPTextModel,
     CLIPTextModelWithProjection,
+    Gemma3TextEncoder,
     Qwen3TextEncoder,
     Qwen2_5_VLForConditionalGeneration,
     Qwen3VLForConditionalGeneration,
@@ -132,6 +133,11 @@ from .py_openvino_genai import (
 from .py_openvino_genai import (
     LTXVideoTransformer3DModel,
     AutoencoderKLLTXVideo,
+    LTX2VideoTransformer3DModel,
+    AutoencoderKLLTX2Video,
+    AutoencoderKLLTX2Audio,
+    LTX2TextConnectors,
+    LTX2Vocoder,
     Image2VideoPipeline,
     Text2VideoPipeline,
     VideoGenerationConfig,
