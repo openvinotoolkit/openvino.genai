@@ -227,8 +227,8 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
             m_inputs_embedder->set_rope_delta(*rope_delta);
         }
         lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
+        return add_request(request_id, inputs_embeds, sampling_params, prompt_ids, std::move(lm_extra_inputs));
     }
-    return add_request(request_id, inputs_embeds, sampling_params, prompt_ids, std::move(lm_extra_inputs));
 }
 
 std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::MtpDecodingImpl::generate(
