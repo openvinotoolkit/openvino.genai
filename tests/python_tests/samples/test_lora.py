@@ -202,8 +202,8 @@ class TestLora:
         ],
         indirect=["convert_model", "download_test_content"],
     )
-    def test_visual_language_lora_switch_prepared_tensor_cache(self, convert_model, download_test_content, prompt):
-        # Check alpha refresh and restored output; this does not observe cache hits directly.
+    def test_visual_language_lora_alpha_switch(self, convert_model, download_test_content, prompt):
+        # Check alpha-zero equivalence and output restoration after switching.
         adapter_path, image_path = download_test_content
         assert os.path.exists(image_path), f"Missing test image: {image_path}"
 
@@ -228,7 +228,6 @@ class TestLora:
         result_b = pipe.generate(prompt, images=[image_tensor], generation_config=generation_config, adapters=config_b)
         assert len(result_b.texts[0]) > 0, "Generation with config B should produce output"
 
-        # The cache key does not include alpha, so a stale entry would make B reuse A's scaling.
         # Alpha 0.0 turns the adapter off, so B must match a run with no adapter at all.
         result_no_adapter = pipe.generate(
             prompt, images=[image_tensor], generation_config=generation_config, adapters=ov_genai.AdapterConfig()
