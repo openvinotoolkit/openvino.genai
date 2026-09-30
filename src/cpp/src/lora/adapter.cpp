@@ -14,6 +14,7 @@
 #include <unordered_set>
 #include <functional>
 #include <list>
+#include <limits>
 #include <memory>
 #include <cmath>
 
@@ -72,6 +73,8 @@ using namespace ov::genai::utils;
 // FIXME: Use ov::AlignedBuffer instead of std::vector. ov::AlignedBuffer is not available in public OV API
 using ConstantVector = std::vector<std::shared_ptr<v0::Constant>>;
 
+// These are rank axes of normalized GenAI tensors, not GPU layout axes.
+// A concatenates rows; B and broadcast alpha concatenate columns.
 constexpr size_t concat_a_axis = 0;
 constexpr size_t concat_b_axis = 1;
 constexpr size_t concat_alpha_axis = 1;
@@ -1331,6 +1334,11 @@ class PreparedTensorCache {
 public:
     using Tensors = std::vector<LoRAParts<ov::Tensor>>;
 
+    // Initial preparation uses the same per-entry byte limit as runtime insertion.
+    static constexpr size_t byte_limit() {
+        return max_bytes;
+    }
+
     // Cache each adapter's rank interval per layer to reuse its slice of concatenated A/B tensors.
     // Layer-specific offsets are needed because adapter ranks and applicable layers can differ.
     struct AdapterRange {
@@ -1340,6 +1348,7 @@ public:
     };
     using LayerRanges = std::vector<std::vector<AdapterRange>>;
 
+    // Reuse only ordered, contiguous intervals: one ROI cannot gather disjoint adapter ranges.
     // ROI tensors retain their parent; do not cache the views as additional payloads.
     std::optional<Tensors> find_views(const AdapterConfig& config) {
         if (config.get_mode() == AdapterConfig::MODE_STATIC_RANK || config.get_adapters().empty()) {
@@ -1435,6 +1444,8 @@ public:
         OPENVINO_ASSERT(tensors.size() == ranges.size());
         const size_t byte_size = total_byte_size(tensors);
 
+        // Each entry holds prepared tensors for all layers of one adapter configuration.
+        // If their total exceeds max_bytes, no layers are cached; partial per-layer caching is not supported.
         if (byte_size > max_bytes) {
             return tensors;
         }
@@ -1470,6 +1481,8 @@ private:
         size_t byte_size = 0;
     };
 
+    // Keep parent strides and move the data start to the selected rank interval.
+    // A B-column view must retain the full concat row stride to read subsequent rows correctly.
     static ov::Tensor rank_view(const ov::Tensor& tensor, size_t axis, size_t start, size_t rank) {
         auto shape = tensor.get_shape();
         OPENVINO_ASSERT(axis < shape.size() && start <= shape[axis] && rank <= shape[axis] - start);
@@ -1796,6 +1809,8 @@ struct AdapterControllerImpl {
         });
     }
 
+    // Record offsets in the same layer order as prepared tensors and the same adapter order as concat.
+    // Only adapters applicable to each layer contribute to that layer's cumulative rank.
     PreparedTensorCache::LayerRanges collect_adapter_ranges(
         const AdapterConfig& config,
         const std::vector<LoRAWeightGetter>& weight_getters) const {
@@ -1840,6 +1855,8 @@ struct AdapterControllerImpl {
             return *cached;
         }
 
+        // A/B views share the concat payload, but its alpha belongs to the parent config.
+        // Prepare the requested alpha independently so subset selection cannot reuse stale scaling.
         if (auto views = prepared_tensor_cache.find_views(config)) {
             auto fresh_alphas = prepare_config_tensors(config, weight_getters, /*alpha_only=*/true);
             OPENVINO_ASSERT(views->size() == fresh_alphas.size());
@@ -1857,12 +1874,58 @@ struct AdapterControllerImpl {
         return prepared_tensor_cache.insert(config, std::move(tensors), std::move(ranges));
     }
 
+    // Prepare only the current config; eager single/empty entries can evict useful concat tensors.
+    // This also avoids warming up rank-zero configurations incompatible with static-rank states.
     void prepare_initial_configs() {
         if (variable_ids.empty()) {
             return;
         }
 
         auto weight_getters = make_weight_getters(current_config);
+        size_t remaining_bytes = PreparedTensorCache::byte_limit();
+        // Count output payloads from shapes and declared dtypes before allocating or evaluating.
+        // An oversized initial config cannot be cached; leave its preparation to the actual apply.
+        auto account_tensor = [&](const ov::Shape& shape, const ov::element::Type& type) {
+            if (std::find(shape.begin(), shape.end(), 0) != shape.end()) {
+                return true;
+            }
+            const size_t bits = type.bitwidth();
+            OPENVINO_ASSERT(bits > 0);
+            const size_t max_elements = remaining_bytes * 8 / bits;
+            size_t elements = 1;
+            for (const auto dim : shape) {
+                if (elements > max_elements / dim) {
+                    return false;
+                }
+                elements *= dim;
+            }
+            remaining_bytes -= (elements * bits + 7) / 8;
+            return true;
+        };
+        for (const auto& variable : variable_ids) {
+            size_t rank = 0;
+            for (const auto& getter : weight_getters) {
+                if (auto tensors = getter(variable.first)) {
+                    const auto adapter_rank = static_cast<size_t>(
+                        tensors->A->get_output_partial_shape(0)[concat_a_axis].get_length());
+                    if (adapter_rank > std::numeric_limits<size_t>::max() - rank) {
+                        return;
+                    }
+                    rank += adapter_rank;
+                }
+            }
+            auto alpha_shape = dynamic_to_static(variable.second.alpha.data_shape);
+            auto a_shape = dynamic_to_static(variable.second.A.data_shape);
+            auto b_shape = dynamic_to_static(variable.second.B.data_shape);
+            alpha_shape[concat_alpha_axis] = rank;
+            a_shape[concat_a_axis] = rank;
+            b_shape[concat_b_axis] = rank;
+            if (!account_tensor(alpha_shape, variable.second.alpha.data_type) ||
+                !account_tensor(a_shape, variable.second.A.data_type) ||
+                !account_tensor(b_shape, variable.second.B.data_type)) {
+                return;
+            }
+        }
         get_or_prepare_config_tensors(current_config, weight_getters);
     }
 
@@ -2150,7 +2213,8 @@ struct AdapterControllerImpl {
                 variable.set_state(tensor);
                 return;
             }
-            // GPU set_state does not yet combine strided reads with state transposition.
+            // A B-column ROI keeps the concat row stride, which GPU state transposition cannot yet read.
+            // Materialize a temporary contiguous input for set_state; keep only the concat payload cached.
             ov::Tensor contiguous(tensor.get_element_type(), tensor.get_shape());
             tensor.copy_to(contiguous);
             variable.set_state(contiguous);

@@ -181,6 +181,8 @@ private:
         m_language = compiled_language_model.create_infer_request();
         m_language.get_tensor("attention_mask").set_shape({1, 0});
         if (m_adapter_controller) {
+            // Initialize LoRA state before the first generation and reuse constructor-prepared tensors.
+            // Subsequent unchanged applies on this request can then skip state uploads.
             m_adapter_controller->apply(m_language);
         }
 
@@ -235,6 +237,8 @@ private:
             language_model, device, lm_properties).create_infer_request();
         m_language.get_tensor("attention_mask").set_shape({1, 0});
         if (m_adapter_controller) {
+            // Initialize LoRA state before the first generation and reuse constructor-prepared tensors.
+            // Subsequent unchanged applies on this request can then skip state uploads.
             m_adapter_controller->apply(m_language);
         }
         finalize_initialization(language_model, kv_pos);
