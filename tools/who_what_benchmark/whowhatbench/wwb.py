@@ -292,13 +292,13 @@ def parse_args():
         "--decode-timestep",
         type=float,
         default=None,
-        help="Text-to-video timestep conditioning value passed to the VAE decoder.",
+        help="Text-to-video/image-to-video specific parameter that defines the timestep conditioning value passed to the VAE decoder.",
     )
     parser.add_argument(
         "--decode-noise-scale",
         type=float,
         default=None,
-        help="Text-to-video noise interpolation factor applied before VAE decoding.",
+        help="Text-to-video/image-to-video specific parameter that defines the noise interpolation factor applied before VAE decoding.",
     )
     parser.add_argument(
         "--seed",
