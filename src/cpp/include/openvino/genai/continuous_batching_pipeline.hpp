@@ -285,6 +285,7 @@ public:
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const ov::genai::GenerationConfig& sampling_params);
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const std::vector<ov::Tensor>& images, const ov::genai::GenerationConfig& sampling_params);
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const std::vector<ov::Tensor>& images, const std::vector<ov::Tensor>& videos, const ov::genai::GenerationConfig& sampling_params);
+    GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const std::vector<ov::Tensor>& images, const std::vector<ov::Tensor>& videos, const std::vector<ov::Tensor>& audios, const ov::genai::GenerationConfig& sampling_params);
 
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const ov::AnyMap& properties_map);
 
@@ -326,6 +327,14 @@ public:
 
     std::vector<VLMDecodedResults> generate(
         const std::vector<std::string>& prompts,
+        const std::vector<std::vector<ov::Tensor>>& images,
+        const std::vector<std::vector<ov::Tensor>>& videos,
+        const std::vector<std::vector<ov::Tensor>>& audios,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer=std::monostate{});
+
+    std::vector<VLMDecodedResults> generate(
+        const std::vector<std::string>& prompts,
         const ov::AnyMap& properties_map
     );
 
@@ -347,6 +356,14 @@ public:
         const std::vector<ChatHistory>& histories,
         const std::vector<std::vector<ov::Tensor>>& images,
         const std::vector<std::vector<ov::Tensor>>& videos,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer=std::monostate{});
+
+    std::vector<VLMDecodedResults> generate(
+        const std::vector<ChatHistory>& histories,
+        const std::vector<std::vector<ov::Tensor>>& images,
+        const std::vector<std::vector<ov::Tensor>>& videos,
+        const std::vector<std::vector<ov::Tensor>>& audios,
         const std::vector<GenerationConfig>& sampling_params,
         const StreamerVariant& streamer=std::monostate{});
 

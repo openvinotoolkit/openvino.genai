@@ -557,6 +557,16 @@ GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, co
     return m_impl->add_request(request_id, prompt, images, videos, sampling_params);
 }
 
+GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id,
+                                                         const std::string& prompt,
+                                                         const std::vector<ov::Tensor>& images,
+                                                         const std::vector<ov::Tensor>& videos,
+                                                         const std::vector<ov::Tensor>& audios,
+                                                         const ov::genai::GenerationConfig& sampling_params) {
+    assert_supported_add_request_lora_modes(m_impl->get_pipeline_adapters(), sampling_params);
+    return m_impl->add_request(request_id, prompt, images, videos, {}, audios, sampling_params);
+}
+
 GenerationHandle ContinuousBatchingPipeline::add_request(
     uint64_t request_id,
     const std::string& prompt,
@@ -569,6 +579,8 @@ GenerationHandle ContinuousBatchingPipeline::add_request(
     assert_supported_add_request_lora_modes(m_impl->get_pipeline_adapters(), generation_config.value());
 
     const auto multimodal_inputs = extract_multimodal_inputs(properties_map);
+    OPENVINO_ASSERT(!multimodal_inputs.audios.has_value() || multimodal_inputs.audios->empty(),
+                    "Audio input is not supported by add_request(). Use generate() with audios_batches instead.");
 
     if (!multimodal_inputs.has_value()) {
         return m_impl->add_request(request_id, prompt, generation_config.value());
@@ -580,6 +592,7 @@ GenerationHandle ContinuousBatchingPipeline::add_request(
         multimodal_inputs.images.value_or(std::vector<ov::Tensor>{}),
         multimodal_inputs.videos.value_or(std::vector<ov::Tensor>{}),
         multimodal_inputs.videos_metadata.value_or(std::vector<VideoMetadata>{}),
+        multimodal_inputs.audios.value_or(std::vector<ov::Tensor>{}),
         generation_config.value()
     );
 }
@@ -645,6 +658,16 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
 
 std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     const std::vector<std::string>& prompts,
+    const std::vector<std::vector<ov::Tensor>>& images,
+    const std::vector<std::vector<ov::Tensor>>& videos,
+    const std::vector<std::vector<ov::Tensor>>& audios,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer) {
+    return m_impl->generate(prompts, images, videos, {}, audios, sampling_params, streamer);
+}
+
+std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
+    const std::vector<std::string>& prompts,
     const ov::AnyMap& properties_map
 ) {
     const size_t batch_size = prompts.size();
@@ -653,8 +676,8 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     OPENVINO_ASSERT(properties.generation_config_batches.has_value(),
         "\"generation_config_batches\" property is required in generate with properties map");
 
-    OPENVINO_ASSERT(properties.has_vision_properties(),
-        "Vision properties are required for VLM generate with properties map. "
+    OPENVINO_ASSERT(properties.has_multimodal_properties(),
+        "Multimodal properties are required for generate with properties map. "
         "Use the text-only generate overload for LLM requests.");
 
     return m_impl->generate(
@@ -689,6 +712,16 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
 
 std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     const std::vector<ChatHistory>& histories,
+    const std::vector<std::vector<ov::Tensor>>& images,
+    const std::vector<std::vector<ov::Tensor>>& videos,
+    const std::vector<std::vector<ov::Tensor>>& audios,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer) {
+    return m_impl->generate(histories, images, videos, {}, audios, sampling_params, streamer);
+}
+
+std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
+    const std::vector<ChatHistory>& histories,
     const ov::AnyMap& properties_map
 ) {
     const size_t batch_size = histories.size();
@@ -697,8 +730,8 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     OPENVINO_ASSERT(properties.generation_config_batches.has_value(),
         "\"generation_config_batches\" property is required in generate with properties map");
 
-    OPENVINO_ASSERT(properties.has_vision_properties(),
-        "Vision properties are required for VLM generate with properties map. "
+    OPENVINO_ASSERT(properties.has_multimodal_properties(),
+        "Multimodal properties are required for generate with properties map. "
         "Use the text-only generate overload for LLM requests.");
 
     return m_impl->generate(

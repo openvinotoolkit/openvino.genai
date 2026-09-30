@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "config.hpp"
+#include "automatic_speech_recognition/models/qwen3-asr/config.hpp"
 #include "openvino/core/core.hpp"
 #include "openvino/runtime/runtime.hpp"
 #include "whisper/feature_extractor.hpp"

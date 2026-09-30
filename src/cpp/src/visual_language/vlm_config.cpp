@@ -34,6 +34,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"videochat_flash_qwen", VLMModelType::VIDEOCHAT_FLASH_QWEN},
         {"qwen3_omni", VLMModelType::QWEN3_OMNI},
         {"qwen3_omni_moe", VLMModelType::QWEN3_OMNI},
+        {"qwen3_asr", VLMModelType::QWEN3_ASR},
         {"deepseek_ocr2", VLMModelType::DEEPSEEK_OCR2},
         {"muse_glimmer", VLMModelType::MUSE_GLIMMER},
     };
@@ -97,14 +98,18 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     read_json_param(parsed, "view_separator", view_separator);
     read_json_param(parsed, "image_token_id", image_token_id);
 
-    // Qwen3-Omni: vision/audio configs are nested under thinker_config
-    if (model_type == VLMModelType::QWEN3_OMNI) {
+    if (model_type == VLMModelType::QWEN3_OMNI || model_type == VLMModelType::QWEN3_ASR) {
         read_json_param(parsed, "thinker_config.text_config.hidden_size", hidden_size);
-        read_json_param(parsed, "thinker_config.vision_config.num_position_embeddings", vision_config_num_position_embeddings);
-        read_json_param(parsed, "thinker_config.vision_config.deepstack_visual_indexes", vision_config_deepstack_visual_indexes);
         read_json_param(parsed, "thinker_config.audio_config.num_mel_bins", audio_config_num_mel_bins);
         read_json_param(parsed, "thinker_config.audio_config.n_window", audio_config_n_window);
         read_json_param(parsed, "thinker_config.audio_config.n_window_infer", audio_config_n_window_infer);
+        read_json_param(parsed, "thinker_config.audio_token_id", audio_token_id);
+    }
+
+    // Qwen3-Omni: vision/audio configs are nested under thinker_config
+    if (model_type == VLMModelType::QWEN3_OMNI) {
+        read_json_param(parsed, "thinker_config.vision_config.num_position_embeddings", vision_config_num_position_embeddings);
+        read_json_param(parsed, "thinker_config.vision_config.deepstack_visual_indexes", vision_config_deepstack_visual_indexes);
         read_json_param(parsed, "enable_audio_output", enable_audio_output);
         read_json_param(parsed, "tts_bos_token_id", tts_bos_token_id);
         read_json_param(parsed, "tts_eos_token_id", tts_eos_token_id);
@@ -113,7 +118,6 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
         read_json_param(parsed, "system_token_id", system_token_id);
         read_json_param(parsed, "user_token_id", user_token_id);
         read_json_param(parsed, "assistant_token_id", assistant_token_id);
-        read_json_param(parsed, "thinker_config.audio_token_id", audio_token_id);
         read_json_param(parsed, "thinker_config.image_token_id", image_token_id);
         read_json_param(parsed, "thinker_config.video_token_id", video_token_id);
         read_json_param(parsed, "talker_config.num_code_groups", talker_num_code_groups);

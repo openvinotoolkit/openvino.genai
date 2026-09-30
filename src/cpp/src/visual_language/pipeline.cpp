@@ -7,6 +7,7 @@
 #include <random>
 
 #include "lm_encoding.hpp"
+#include "logger.hpp"
 #include "lora/helper.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "openvino/genai/tokenizer.hpp"
@@ -79,6 +80,7 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
     bool m_is_npu = false;
     size_t m_image_id = 0;
     size_t m_video_id = 0;
+    size_t m_audio_id = 0;
     ChatHistory m_history;
 
     // if True, full history will be used as prompt on each chat generation
@@ -86,6 +88,9 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
     // It stores encoded images, videos and vision count in case when m_use_full_chat_history is true
     std::vector<ov::genai::EncodedImage> m_encoded_images;
     std::vector<ov::genai::EncodedVideo> m_encoded_videos;
+    std::vector<ov::genai::EncodedAudio> m_encoded_audios;
+    // Prompt-order audio ids across turns. Unlike 0..N, keeps reversed and repeated tags.
+    std::vector<size_t> m_history_audio_sequence;
     std::vector<std::pair<std::size_t, std::size_t>> m_history_vision_count;  // pair<video count, image count>
 
     std::string m_system_message;
@@ -357,9 +362,15 @@ public:
 
         const auto embeddings_start_time = std::chrono::steady_clock::now();
         
-        const auto audio_encoding_start = std::chrono::steady_clock::now();
-        m_inputs_embedder->encode_audios(audios);
-        PerfMetrics::emplace_duration(perf_metrics.vlm_raw_metrics.audio_encoding_durations, audio_encoding_start);
+        // Guarded so the metric holds one entry per actual encode: an unconditional emplace
+        // reports an audio encode for text-only requests too.
+        std::vector<ov::genai::EncodedAudio> encoded_audios;
+        if (!audios.empty()) {
+            const auto audio_encoding_start = std::chrono::steady_clock::now();
+            encoded_audios = m_inputs_embedder->encode_audios(audios);
+            PerfMetrics::emplace_duration(perf_metrics.vlm_raw_metrics.audio_encoding_durations,
+                                          audio_encoding_start);
+        }
 
         const auto vision_encoding_start = std::chrono::steady_clock::now();
         auto encoded_images = m_inputs_embedder->encode_images(images);
@@ -368,7 +379,41 @@ public:
 
         vlm_utils::update_image_slice_counts(perf_metrics, encoded_images);
 
-        auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
+        auto [unified_prompt, image_sequence, video_sequence, audio_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, m_audio_id, encoded_images, encoded_videos, encoded_audios);
+
+        // Restores the chat history on CANCEL or on any exception thrown during this turn.
+        // CANCEL leaves the KV cache to update_chat_history(); an exception also restores it here.
+        struct ChatTurnRollback {
+            VLMPipelineImpl& pipe;
+            const size_t history = pipe.m_history.size();
+            const size_t images = pipe.m_encoded_images.size();
+            const size_t videos = pipe.m_encoded_videos.size();
+            const size_t audios = pipe.m_encoded_audios.size();
+            const size_t audio_sequence = pipe.m_history_audio_sequence.size();
+            const size_t vision_count = pipe.m_history_vision_count.size();
+            utils::CacheState cache_state = pipe.m_inputs_embedder->get_cache_state();
+            bool active = true;
+
+            explicit ChatTurnRollback(VLMPipelineImpl& pipe) : pipe(pipe) {}
+            ~ChatTurnRollback() {
+                if (active) {
+                    restore();
+                    pipe.recover_cache_after_failed_turn(cache_state);
+                }
+            }
+
+            void restore() {
+                while (pipe.m_history.size() > history) {
+                    pipe.m_history.pop_back();
+                }
+                pipe.m_encoded_images.resize(images);
+                pipe.m_encoded_videos.resize(videos);
+                pipe.m_encoded_audios.resize(audios);
+                pipe.m_history_audio_sequence.resize(audio_sequence);
+                pipe.m_history_vision_count.resize(vision_count);
+                active = false;
+            }
+        } chat_turn_rollback{*this};
 
         if (m_is_chat_conversation) {
             m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
@@ -392,14 +437,20 @@ public:
                 std::iota(video_sequence.begin(), video_sequence.end(), 0);
                 encoded_videos = m_encoded_videos;
 
+                m_encoded_audios.reserve(m_encoded_audios.size() + encoded_audios.size());
+                m_encoded_audios.insert(m_encoded_audios.end(), encoded_audios.begin(), encoded_audios.end());
+                // Ids are absolute, so they index m_encoded_audios directly.
+                m_history_audio_sequence.insert(m_history_audio_sequence.end(),
+                                                audio_sequence.begin(),
+                                                audio_sequence.end());
+                audio_sequence = m_history_audio_sequence;
+                encoded_audios = m_encoded_audios;
+
                 m_inputs_embedder->start_chat(m_system_message);
             } else {
-                for (size_t idx = 0; idx < image_sequence.size(); idx++) {
-                   image_sequence[idx] -= m_image_id;
-                }
-                for (size_t idx = 0; idx < video_sequence.size(); idx++) {
-                    video_sequence[idx] -= m_video_id;
-                }
+                vlm_utils::rebase_media_sequence(image_sequence, m_image_id);
+                vlm_utils::rebase_media_sequence(video_sequence, m_video_id);
+                vlm_utils::rebase_media_sequence(audio_sequence, m_audio_id);
             }
         } else {
             m_inputs_embedder->set_apply_chat_template_status(generation_config.apply_chat_template);
@@ -409,8 +460,10 @@ public:
             unified_prompt,
             encoded_images,
             encoded_videos,
+            encoded_audios,
             image_sequence,
             video_sequence,
+            audio_sequence,
             m_history_vision_count,
             generation_config,
             perf_metrics,
@@ -451,29 +504,24 @@ public:
                 // encoded_images could be overriden when m_use_full_chat_history is true
                 m_image_id += images.size();
                 m_video_id += videos.size();
+                m_audio_id += audios.size();
                 // Tail of chat template is missing in KV cache.
                 // Find the tail to concatenate it with the next input prompt.
                 m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
             } else {
-                m_history.pop_back();
-                if (m_use_full_chat_history) {
-                    OPENVINO_ASSERT(images.size() <= m_encoded_images.size(), "Number of images to remove is more than stored images!");
-                    m_encoded_images.resize(m_encoded_images.size() - images.size());
-
-                    OPENVINO_ASSERT(videos.size() <= m_encoded_videos.size(), "Number of videos to remove is more than stored videos!");
-                    m_encoded_videos.resize(m_encoded_videos.size() - videos.size());
-
-                    m_history_vision_count.pop_back();
-                }
+                chat_turn_rollback.restore();
             }
         } else {
             utils::CacheState& cache_state = m_inputs_embedder->get_cache_state();
             cache_state.reset_state();
         }
+        chat_turn_rollback.active = false;
 
         if (!(m_is_chat_conversation && m_use_full_chat_history)) {
             m_encoded_images.clear();
             m_encoded_videos.clear();
+            m_encoded_audios.clear();
+            m_history_audio_sequence.clear();
             m_history_vision_count.clear();
         }
 
@@ -577,11 +625,32 @@ public:
         const auto embeddings_start_time = std::chrono::steady_clock::now();
         VLMChatContext chat_context(history, m_vision_registry, *m_inputs_embedder);
 
-        auto processed_chat_data = chat_context.process(images, videos, videos_metadata);
+        auto processed_chat_data = chat_context.process(images, videos, videos_metadata, audios);
+
+        // A failed call drops the KV cache. An empty token cache then makes the next call prefill
+        // the whole history, since the KV cache no longer holds any of it.
+        struct ChatHistoryCallRollback {
+            VLMPipelineImpl& pipe;
+            VLMChatContext& chat_context;
+            bool active = true;
+            ~ChatHistoryCallRollback() {
+                if (active) {
+                    chat_context.rollback();
+                    pipe.reset_language_state();
+                    pipe.m_language.get_tensor("attention_mask").set_shape({1, 0});
+                    pipe.m_inputs_embedder->get_cache_state().reset_state();
+                }
+            }
+        } chat_history_call_rollback{*this, chat_context};
 
         perf_metrics.vlm_raw_metrics.vision_encoding_durations.emplace_back(processed_chat_data.vision_encoding_duration);
+        auto& audio_durations = perf_metrics.vlm_raw_metrics.audio_encoding_durations;
+        audio_durations.insert(audio_durations.end(),
+                               processed_chat_data.audio_encoding_durations.begin(),
+                               processed_chat_data.audio_encoding_durations.end());
 
-        bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history;
+        bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history ||
+                                m_inputs_embedder->get_cache_state().get_state().empty();
 
         if (use_full_history) {
             reset_language_state();
@@ -610,6 +679,12 @@ public:
         const auto& video_seq = use_full_history
             ? processed_chat_data.video_sequence
             : processed_chat_data.new_video_sequence;
+        const auto& audios_embeds = use_full_history
+            ? processed_chat_data.encoded_audios
+            : processed_chat_data.new_encoded_audios;
+        const auto& audio_seq = use_full_history
+            ? processed_chat_data.audio_sequence
+            : processed_chat_data.new_audio_sequence;
         const auto& vision_counts = use_full_history
             ? processed_chat_data.vision_counts
             : std::vector<std::pair<std::size_t, std::size_t>>{ {video_seq.size(), image_seq.size()} };
@@ -620,8 +695,10 @@ public:
             templated_history,
             images_embeds,
             videos_embeds,
+            audios_embeds,
             image_seq,
             video_seq,
+            audio_seq,
             vision_counts,
             generation_config,
             perf_metrics,
@@ -653,6 +730,7 @@ public:
         if (generation_finish_info.streaming_finish_status == ov::genai::GenerationStatus::CANCEL) {
             chat_context.rollback();
         }
+        chat_history_call_rollback.active = false;
 
         auto generate_end_time = std::chrono::steady_clock::now();
         decoded.perf_metrics = VLMPerfMetrics(encoded_result.perf_metrics);
@@ -719,6 +797,7 @@ public:
         m_is_chat_conversation = false;
         m_image_id = 0;
         m_video_id = 0;
+        m_audio_id = 0;
         // Resetting state may be slow.
         reset_language_state();
         m_language.get_tensor("attention_mask").set_shape({0, 0});
@@ -727,6 +806,8 @@ public:
         m_history.clear();
         m_encoded_images.clear();
         m_encoded_videos.clear();
+        m_encoded_audios.clear();
+        m_history_audio_sequence.clear();
         m_history_vision_count.clear();
     }
 
@@ -780,6 +861,45 @@ private:
         }
     }
 
+    size_t get_kv_cache_length(size_t seq_length_axis) {
+        for (auto& state : m_language.query_state()) {
+            if (!m_adapter_controller || !m_adapter_controller->has_state_name(state.get_name())) {
+                return state.get_state().get_shape().at(seq_length_axis);
+            }
+        }
+        return 0;
+    }
+
+    // Runs while a failed turn unwinds, so it must not throw.
+    void recover_cache_after_failed_turn(utils::CacheState& snapshot) noexcept {
+        utils::CacheState& cache_state = m_inputs_embedder->get_cache_state();
+        if (!m_is_chat_conversation || m_use_full_chat_history) {
+            // Nothing in the cache outlives such a call: the next one prefills from scratch.
+            cache_state.reset_state();
+            return;
+        }
+        try {
+            // The turn may have trimmed the KV cache and written its prompt and some answer tokens.
+            // Whatever lies past the old history is trimmed by the next turn, like a cancelled answer.
+            const size_t kv_length = get_kv_cache_length(snapshot.seq_length_axis);
+            const size_t history_length = snapshot.get_state().size();
+            if (kv_length >= history_length) {
+                cache_state = snapshot;
+                cache_state.num_tokens_to_trim = kv_length - history_length;
+                m_language.get_tensor("attention_mask").set_shape({1, kv_length});
+                return;
+            }
+            GENAI_ERR("KV cache holds %zu tokens after a failed chat turn, fewer than the %zu of the chat history.",
+                      kv_length,
+                      history_length);
+        } catch (const std::exception& error) {
+            GENAI_ERR("Failed to restore the KV cache after a failed chat turn: %s", error.what());
+        }
+        reset_language_state();
+        m_language.get_tensor("attention_mask").set_shape({1, 0});
+        cache_state.reset_state();
+    }
+
     void setup_generation_config(GenerationConfig& generation_config) {
         // If stop_token_ids were not provided, take value from default m_generation_config
         if (generation_config.stop_token_ids.empty())
@@ -808,8 +928,10 @@ private:
         const std::string& unified_prompt,
         const std::vector<ov::genai::EncodedImage>& encoded_images,
         const std::vector<ov::genai::EncodedVideo>& encoded_videos,
+        const std::vector<ov::genai::EncodedAudio>& encoded_audios,
         const std::vector<size_t>& image_sequence,
         const std::vector<size_t>& video_sequence,
+        const std::vector<size_t>& audio_sequence,
         const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count,
         GenerationConfig& generation_config,
         VLMPerfMetrics& perf_metrics,
@@ -824,10 +946,12 @@ private:
             unified_prompt,
             encoded_images,
             encoded_videos,
+            encoded_audios,
             perf_metrics,
             recalculate_merged_embeddings,
             image_sequence,
             video_sequence,
+            audio_sequence,
             history_vision_count
         );
         PerfMetrics::emplace_duration(perf_metrics.vlm_raw_metrics.prepare_embeddings_durations, embeddings_start_time);
