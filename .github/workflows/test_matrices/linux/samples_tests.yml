@@ -1,8 +1,18 @@
 # Test matrix for the genai_samples_tests job.
 # Each entry runs when any of its `components` is affected (has `.test`).
 - name: LLM
+  # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
+  extra_cmd: python -m pip install transformers==5.0.0
   marker: llm and not transformers_lower_v5
-  cmd: tests/python_tests/samples
+  cmd: 'tests/python_tests/samples -k "not test_python_structured_output_sample"'
+  runner: aks-linux-4-cores-16gb
+  components:
+    - LLM_samples
+
+# Remove after fixing CVS-195645, the tests will be run in the main LLM job
+- name: TinyLlama structured output
+  marker: llm and not transformers_lower_v5
+  cmd: 'tests/python_tests/samples/test_structured_output_sample.py -k "test_python_structured_output_sample"'
   runner: aks-linux-4-cores-16gb
   components:
     - LLM_samples
