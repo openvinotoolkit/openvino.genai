@@ -32,6 +32,8 @@ class Text2VideoEvaluator(BaseEvaluator):
         metrics="similarity",
         num_inference_steps=25,
         num_frames=33,
+        decode_timestep=None,
+        decode_noise_scale=None,
         crop_prompts=True,
         num_samples=None,
         gen_video_fn=None,
@@ -57,6 +59,8 @@ class Text2VideoEvaluator(BaseEvaluator):
         self.empty_adapters = empty_adapters
         self.num_frames = num_frames or self.DEF_NUM_FRAMES
         self.frame_rate = self.DEF_FRAME_RATE
+        self.decode_timestep = decode_timestep
+        self.decode_noise_scale = decode_noise_scale
 
         if base_model:
             self.gt_data = self._generate_data(base_model, gen_video_fn, os.path.join(self.gt_dir, "reference"))
@@ -126,10 +130,16 @@ class Text2VideoEvaluator(BaseEvaluator):
             frame_rate=self.DEF_FRAME_RATE,
             guidance_scale=self.DEF_GUIDANCE_SCALE,
             guidance_rescale=self.DEF_GUIDANCE_RESCALE,
+            decode_timestep=None,
+            decode_noise_scale=None,
             generator=None,
             empty_adapters=False,
         ):
             kwargs = {"negative_prompt": negative_prompt} if guidance_scale > 1 else {}
+            if decode_timestep is not None:
+                kwargs["decode_timestep"] = decode_timestep
+            if decode_noise_scale is not None:
+                kwargs["decode_noise_scale"] = decode_noise_scale
             with torch.no_grad():
                 output = model(
                     prompt=prompt,
@@ -186,6 +196,8 @@ class Text2VideoEvaluator(BaseEvaluator):
                 frame_rate=self.frame_rate,
                 guidance_scale=input[4],
                 guidance_rescale=guidance_rescale,
+                decode_timestep=self.decode_timestep,
+                decode_noise_scale=self.decode_noise_scale,
                 generator=openvino_genai.TorchGenerator(self.seed) if self.is_genai else rng,
                 empty_adapters=self.empty_adapters,
             )
