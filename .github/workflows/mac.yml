@@ -673,7 +673,7 @@ jobs:
       - name: gtests unit tests
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          chmod +x ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
+          chmod +x ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching ${{ env.INSTALL_DIR }}/tests/tests_cache_allocation_failure
           ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching --gtest_filter="-AddSecondInputTest.*:LLMPipelineBackendRealModel*"
           ${{ env.INSTALL_DIR }}/tests/tests_cache_allocation_failure
         env:

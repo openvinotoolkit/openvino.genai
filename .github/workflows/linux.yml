@@ -835,7 +835,7 @@ jobs:
         if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          chmod +x ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
+          chmod +x ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching ${{ env.INSTALL_DIR }}/tests/tests_cache_allocation_failure
           ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching --gtest_filter="-AddSecondInputTest.*"
           ${{ env.INSTALL_DIR }}/tests/tests_cache_allocation_failure
         env:
