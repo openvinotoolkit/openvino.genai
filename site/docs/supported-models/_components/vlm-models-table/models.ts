@@ -111,6 +111,7 @@ export const VLM_MODELS: VLMModelType[] = [
       {
         name: 'MiniCPM-V-4_5',
         links: ['https://huggingface.co/openbmb/MiniCPM-V-4_5'],
+        notesLink: '#minicpm-v-4_5-notes',
       },
     ],
   },
