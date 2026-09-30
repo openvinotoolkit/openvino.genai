@@ -33,7 +33,7 @@ def main():
         ov_config = get_config_for_cache()
 
     scheduler_config = openvino_genai.SchedulerConfig()
-    pipe = openvino_genai.ContinuousBatchingPipeline(args.model_dir, scheduler_config, args.device, **ov_config)
+    pipe = openvino_genai.ContinuousBatchingPipeline(args.model_dir, scheduler_config, args.device, ov_config)
 
     audios = [read_wav(wav_file) for wav_file in args.wav_file_path]
 
