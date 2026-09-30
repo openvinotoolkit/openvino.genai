@@ -262,7 +262,8 @@ class TestLora:
         from safetensors.torch import load_file, save_file
 
         adapter_path, image_path = download_test_content
-        # Exercise concat intervals with different ranks and weights.
+        # Different ranks expose incorrect concat offsets and B row strides during subset selection.
+        # Write the modified weights only to tmp_path so the downloaded adapter stays unchanged.
         weights = load_file(adapter_path)
         changed_a = changed_b = 0
         for name, tensor in weights.items():
@@ -302,7 +303,8 @@ class TestLora:
             assert result.texts and result.texts[0], "Generation should produce output"
             return result.texts[0]
 
-        # Separate single-adapter pipelines never prepare an A+B concat.
+        # Single-adapter pipelines provide baselines without using the concat-to-single view path.
+        # Release each baseline before creating the next pipeline to limit peak model memory.
         expected = []
         for config in (config_a, config_b):
             baseline = ov_genai.VLMPipeline(convert_model, "CPU", ATTENTION_BACKEND="PA", adapters=config)
