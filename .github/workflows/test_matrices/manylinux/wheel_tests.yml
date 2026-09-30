@@ -146,7 +146,8 @@
 
 - name: API tests
   cmd: |-
-    python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "not eagle3 and not qwen35_mtp and not transformers_lower_v5" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py
+    # lfm2 conversion fails in CI: CVS-195736
+    python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "not eagle3 and not qwen35_mtp and not transformers_lower_v5 and not lfm2" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py
   timeout: 60
   components:
     - continuous_batching
