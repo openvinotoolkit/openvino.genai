@@ -1325,11 +1325,7 @@ class ContinuousBatchingPipeline:
     def generate(self, prompt: str, generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
         ...
     @typing.overload
-<<<<<<< HEAD
     def generate(self, prompts: collections.abc.Sequence[str], images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, *, audios_batches: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]] = [], **kwargs) -> list[VLMDecodedResults]:
-=======
-    def generate(self, prompts: collections.abc.Sequence[str], images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, *, audios: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]] = [], **kwargs) -> list[VLMDecodedResults]:
->>>>>>> b7cd0436c (Support CB API)
         ...
     @typing.overload
     def generate(self, prompts: collections.abc.Sequence[str], images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, *, audios_batches: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]] = []) -> list[VLMDecodedResults]:

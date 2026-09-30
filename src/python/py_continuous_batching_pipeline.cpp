@@ -602,7 +602,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const std::vector<ov::genai::GenerationConfig>& generation_config,
                const pyutils::PyBindStreamerVariant& py_streamer
             ) -> py::typing::List<ov::genai::VLMDecodedResults> {
-                return _call_cb_vlm_generate(pipe, prompts, images, videos, audios, generation_config, py_streamer);
+                return _call_cb_vlm_generate(pipe, prompts, CBMediaInputs{images, videos, audios, {}},
+                                             generation_config, py_streamer);
             },
             py::arg("prompts"),
             py::arg("images"),
@@ -638,8 +639,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
                 return pyutils::call_and_sync_py_chat_histories(
                     py_histories,
                     [&](std::vector<ov::genai::ChatHistory>& histories) {
-                        return _call_cb_vlm_generate_chat_history(
-                            pipe, histories, images, videos, audios, generation_config, py_streamer);
+                        return _call_cb_vlm_generate(pipe, histories, CBMediaInputs{images, videos, audios, {}},
+                                                     generation_config, py_streamer);
                     });
             },
             py::arg("histories"),
