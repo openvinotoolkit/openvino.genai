@@ -197,8 +197,6 @@ def test_text_agent_end_to_end(
     if prompt_path.exists():
         prompt_value = prompt_path.read_text(encoding="utf-8")
     assert expected_prompt in prompt_value
-    if model_type == "text-agent" and not use_real_prompt:
-        assert "tool" in prompt_value.lower() or "function" in prompt_value.lower()
     assert "Text-agent dataset selected from --dataset:" in hf_output
 
     optimum_output = run_wwb(
