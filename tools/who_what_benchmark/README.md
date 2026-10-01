@@ -301,15 +301,17 @@ pip install .[qwen3_tts]
 # Export
 optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign --weight-format fp32 --trust-remote-code qwen3_tts_voicedesign_ov
 
-# Collect reference
-wwb --model-type speech-generation --base-model Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign --speech-instruct "Male, 17 years old, tenor range" --gt-data voice_design/gt.csv --hf
+# Collect HF reference
+wwb --model-type speech-generation --base-model Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign --gt-data voice_design/gt.csv --hf
 
 # Compute metrics with Optimum
-wwb --model-type speech-generation --target-model qwen3_tts_voicedesign_ov --speech-instruct "Male, 17 years old, tenor range" --gt-data voice_design/gt.csv --ov-config kvcache_f32.json
+wwb --model-type speech-generation --target-model qwen3_tts_voicedesign_ov --gt-data voice_design/gt.csv --ov-config kvcache_f32.json
 
 # Compute metrics with GenAI
-wwb --model-type speech-generation --target-model qwen3_tts_voicedesign_ov --speech-instruct "Male, 17 years old, tenor range" --gt-data voice_design/gt.csv --ov-config kvcache_f32.json --genai
+wwb --model-type speech-generation --target-model qwen3_tts_voicedesign_ov --gt-data voice_design/gt.csv --ov-config kvcache_f32.json --genai
 ```
+
+**Note**: `--speech-instruct` can be optionally specified. Otherwise, it will default to `"Male, 17 years old, tenor range, gaining confidence - deeper breath support now, though vowels still tighten when nervous"`
 
 ##### Qwen3 TTS CustomVoice
 ```sh
@@ -317,36 +319,39 @@ wwb --model-type speech-generation --target-model qwen3_tts_voicedesign_ov --spe
 optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice --weight-format fp32 --trust-remote-code qwen3_tts_customvoice_ov
 
 # Collect HF reference
-wwb --model-type speech-generation --base-model Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice --speech-voice Ryan --gt-data custom_voice/gt.csv --hf
+wwb --model-type speech-generation --base-model Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice --gt-data custom_voice/gt.csv --hf
 
 # Compute metrics with Optimum
-wwb --model-type speech-generation --target-model qwen3_tts_customvoice_ov --speech-voice Ryan --gt-data custom_voice/gt.csv --ov-config kvcache_f32.json
+wwb --model-type speech-generation --target-model qwen3_tts_customvoice_ov --gt-data custom_voice/gt.csv --ov-config kvcache_f32.json
 
 # Compute metrics with GenAI
-wwb --model-type speech-generation --target-model qwen3_tts_customvoice_ov --speech-voice Ryan --gt-data custom_voice/gt.csv --ov-config kvcache_f32.json --genai
+wwb --model-type speech-generation --target-model qwen3_tts_customvoice_ov --gt-data custom_voice/gt.csv --ov-config kvcache_f32.json --genai
 ```
+**Note**: `--speech-voice` will default to "Ryan" if not specified. Other valid speakers are: "Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric", "Aiden", "Ono_Anna", and "Sohee".
 
-For 1.7B variant of CustomVoice model (`Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`), an additional `--speech-instruct` parameter can also be specified. e.g. `--speech-instruct "Speak in a calm, professional tone."`
+**Note**: For the 1.7B CustomVoice variant (`Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`), you can also pass `--speech-instruct`, for example: `--speech-instruct "Speak in a calm, professional tone."`
 
 ##### Qwen3 TTS Base
-
-Qwen3 Base requires a 24khz reference audio file. You can download an example of one from here: [clone.wav](https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-TTS-Repo/clone.wav)
-
-**Note**: The below commands show use of `--speech-ref-text`. When specified, ICL (in context learning) will be used. Otherwise, x-vector-mode is used.
 
 ```sh
 # Export
 optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-0.6B-Base --weight-format fp32 --trust-remote-code qwen3_tts_base_ov
 
 # Collect HF reference
-wwb --model-type speech-generation --base-model Qwen/Qwen3-TTS-12Hz-0.6B-Base --speech-ref-audio clone.wav --speech-ref-text "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you." --gt-data base/gt.csv --hf
+wwb --model-type speech-generation --base-model Qwen/Qwen3-TTS-12Hz-0.6B-Base --gt-data base/gt.csv --hf
 
 # Compute metrics with Optimum
-wwb --model-type speech-generation --target-model qwen3_tts_base_ov --speech-ref-audio clone.wav --speech-ref-text "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you." --gt-data base/gt.csv --ov-config kvcache_f32.json
+wwb --model-type speech-generation --target-model qwen3_tts_base_ov --gt-data base/gt.csv --ov-config kvcache_f32.json
 
 # Compute metrics with GenAI
-wwb --model-type speech-generation --target-model qwen3_tts_base_ov --speech-ref-audio clone.wav --speech-ref-text "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you." --gt-data base/gt.csv --ov-config kvcache_f32.json --genai
+wwb --model-type speech-generation --target-model qwen3_tts_base_ov --gt-data base/gt.csv --ov-config kvcache_f32.json --genai
 ```
+
+**Note** The Base model requires a 24 kHz reference audio file; reference text is optional.
+* If `--speech-ref-audio` is not specified, WWB uses "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-TTS-Repo/clone.wav".
+* If `--speech-ref-audio` is not specified and `--speech-ref-text` is also not specified, WWB uses "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you.".
+* When `--speech-ref-audio` is not specified, the default audio and default text are both used, which enables ICL (in-context learning) mode.
+* To use x-vector mode, specify `--speech-ref-audio` explicitly and do not provide `--speech-ref-text`.
 
 #### Speech Generation Scoring Overview
 The speech-generation evaluator reports these metrics:
