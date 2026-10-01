@@ -335,6 +335,35 @@ class TestVideoGenerationPipelines:
 
         np.testing.assert_array_equal(conditioned_result.video.data, identity_result.video.data)
 
+    def test_decode_callback_latent_inherits_generation_properties(self, conditioned_video_generation_model):
+        def generate_and_decode(decode_noise_scale):
+            pipe = ov_genai.Text2VideoPipeline(conditioned_video_generation_model, "CPU")
+            decoded_videos = []
+
+            def callback(_step, _num_steps, latent):
+                decoded = pipe.decode(latent)
+                decoded_videos.append(np.array(decoded.video.data, copy=True))
+                return True
+
+            pipe.generate(
+                "test prompt",
+                height=32,
+                width=32,
+                num_frames=9,
+                num_inference_steps=1,
+                decode_timestep=0.25,
+                decode_noise_scale=decode_noise_scale,
+                generator=ov_genai.CppStdGenerator(42),
+                callback=callback,
+            )
+            assert len(decoded_videos) == 1
+            return decoded_videos[0]
+
+        no_noise_video = generate_and_decode(0.0)
+        noise_video = generate_and_decode(1.0)
+
+        assert not np.array_equal(no_noise_video, noise_video)
+
     @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
     def test_num_videos_per_prompt(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")

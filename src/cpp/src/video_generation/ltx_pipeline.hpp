@@ -86,6 +86,7 @@ class LTXPipeline : public VideoPipeline {
     std::shared_ptr<T5EncoderModel> m_t5_text_encoder;
     std::shared_ptr<LTXVideoTransformer3DModel> m_transformer;
     std::shared_ptr<AutoencoderKLLTXVideo> m_vae;
+    VideoGenerationConfig m_custom_generation_config = LTX_VIDEO_DEFAULT_CONFIG;
 
     size_t m_latent_num_frames = 0;
     size_t m_latent_height = 0;
@@ -365,6 +366,7 @@ public:
         OPENVINO_ASSERT(m_is_compiled, "Cannot clone an uncompiled LTXPipeline");
         auto cloned = std::make_shared<LTXPipeline>(*this);
         cloned->m_generation_config.generator.reset();
+        cloned->m_custom_generation_config = cloned->m_generation_config;
         cloned->m_scheduler = video_generation_utils::cast_scheduler(
             Scheduler::from_config(m_models_dir / "scheduler/scheduler_config.json"));
         cloned->m_t5_text_encoder = m_t5_text_encoder->clone();
@@ -418,6 +420,7 @@ public:
         m_perf_metrics.clean_up();
 
         VideoGenerationConfig merged_generation_config = merge_generation_config(properties);
+        m_custom_generation_config = merged_generation_config;
         const size_t batch_size_multiplier = resolve_batch_size_multiplier(
             merged_generation_config, do_classifier_free_guidance(merged_generation_config.guidance_scale));
         const bool use_classifier_free_guidance = batch_size_multiplier > 1;
@@ -623,6 +626,7 @@ public:
         m_perf_metrics.clean_up();
 
         VideoGenerationConfig merged_generation_config = merge_generation_config(properties);
+        m_custom_generation_config = merged_generation_config;
         const size_t batch_size_multiplier = resolve_batch_size_multiplier(
             merged_generation_config, do_classifier_free_guidance(merged_generation_config.guidance_scale));
         const bool use_classifier_free_guidance = batch_size_multiplier > 1;
@@ -798,8 +802,7 @@ public:
     }
 
     VideoGenerationResult decode(const ov::Tensor& latent) override {
-        VideoGenerationConfig generation_config = m_generation_config;
-        utils::update_generation_config(generation_config, {});
+        VideoGenerationConfig generation_config = m_custom_generation_config;
         check_inputs(generation_config,
                      m_vae->get_vae_scale_factor(),
                      m_vae->get_config().timestep_conditioning);
