@@ -664,10 +664,6 @@ class Qwen3VoiceDesignWrapper:
         selected_language = language.strip() if isinstance(language, str) else ""
         resolved_language = selected_language or "Auto"
         selected_instruct = instruct.strip() if isinstance(instruct, str) else ""
-        selected_voice = voice.strip() if isinstance(voice, str) else ""
-
-        if selected_voice:
-            LOGGER.warning("Ignoring --speech-voice for Qwen3 VoiceDesign.")
 
         # Keep WWB speech comparisons deterministic for Qwen3 unless explicitly overridden.
         kwargs.setdefault("do_sample", False)
