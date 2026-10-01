@@ -78,7 +78,14 @@ def test_text2video_missing_optional_columns_use_defaults(monkeypatch, tmp_path)
         }
     ]
     actual_generation_values = [
-        (call["negative_prompt"], call["width"], call["height"], call["guidance_scale"]) for call in calls
+        (
+            call["negative_prompt"],
+            call["width"],
+            call["height"],
+            call["guidance_scale"],
+            call["guidance_rescale"],
+        )
+        for call in calls
     ]
     assert actual_generation_values == [
         (
@@ -86,6 +93,7 @@ def test_text2video_missing_optional_columns_use_defaults(monkeypatch, tmp_path)
             Text2VideoEvaluator.DEF_WIDTH,
             Text2VideoEvaluator.DEF_HEIGHT,
             Text2VideoEvaluator.DEF_GUIDANCE_SCALE,
+            Text2VideoEvaluator.DEF_GUIDANCE_RESCALE,
         )
     ]
 

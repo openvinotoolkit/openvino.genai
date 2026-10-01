@@ -537,6 +537,27 @@ class TestLTXVideoTransformer3DModel:
             model = ov_genai.LTXVideoTransformer3DModel(str(model_path))
             assert model is not None
 
+    @pytest.mark.parametrize("ratio_value", [pytest.param("missing", id="missing"), pytest.param(None, id="null")])
+    def test_constructor_falls_back_for_optional_compression_ratios(
+        self, video_generation_model, tmp_path, ratio_value
+    ):
+        source_path = Path(video_generation_model)
+        model_path = tmp_path / "model"
+        shutil.copytree(source_path / "transformer", model_path / "transformer")
+        (model_path / "vae_decoder").mkdir()
+
+        source_config_path = source_path / "vae_decoder" / "config.json"
+        config = json.loads(source_config_path.read_text(encoding="utf-8"))
+        for key in ("spatial_compression_ratio", "temporal_compression_ratio"):
+            if ratio_value == "missing":
+                config.pop(key, None)
+            else:
+                config[key] = ratio_value
+        (model_path / "vae_decoder" / "config.json").write_text(json.dumps(config), encoding="utf-8")
+
+        model = ov_genai.LTXVideoTransformer3DModel(str(model_path / "transformer"))
+        assert model is not None
+
     def test_get_config(self, video_generation_model):
         model_path = Path(video_generation_model) / "transformer"
         if model_path.exists():
