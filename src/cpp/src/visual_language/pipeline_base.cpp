@@ -22,7 +22,7 @@ GenerationConfig VLMPipeline::VLMBackend::resolve_generation_config(const ov::An
 
 VLMDecodedResults VLMPipeline::VLMBackend::generate(const std::string& prompt, const ov::AnyMap& config_map) {
     const auto multimodal_inputs = extract_multimodal_inputs(config_map);
-    m_pending_speech_streamer = utils::get_audio_streamer_from_map(config_map);
+    m_pending_speech_streamer = utils::get_speech_streamer_from_map(config_map);
     GenerationConfig config = resolve_generation_config(config_map);
     AudioStreamerGuard guard{m_pending_speech_streamer};
     return generate(prompt,
@@ -36,7 +36,7 @@ VLMDecodedResults VLMPipeline::VLMBackend::generate(const std::string& prompt, c
 
 VLMDecodedResults VLMPipeline::VLMBackend::generate(const ChatHistory& history, const ov::AnyMap& config_map) {
     const auto multimodal_inputs = extract_multimodal_inputs(config_map);
-    m_pending_speech_streamer = utils::get_audio_streamer_from_map(config_map);
+    m_pending_speech_streamer = utils::get_speech_streamer_from_map(config_map);
     GenerationConfig config = resolve_generation_config(config_map);
     AudioStreamerGuard guard{m_pending_speech_streamer};
     return generate(history,
