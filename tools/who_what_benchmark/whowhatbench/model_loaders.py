@@ -5,7 +5,7 @@ from pathlib import Path
 import logging
 import torch
 import os
-from .utils import _read_model_json
+from .utils import read_model_json
 
 from packaging.version import Version
 
@@ -1125,7 +1125,7 @@ def _get_qwen3_tts_wrappers():
 
 
 def _get_qwen3_tts_model_type(model_id):
-    config = _read_model_json(model_id, "config.json")
+    config = read_model_json(model_id, "config.json")
     if not isinstance(config, dict):
         return None
     if config.get("model_type") != "qwen3_tts":
