@@ -284,7 +284,7 @@ def synthetic_video_32x32_tensor() -> openvino.Tensor:
 
 
 # ----------------------------------------------------------------------------------------------
-# T-C: audio placement on the prompt path. Token assertions are same-skeleton differentials: two
+# Audio placement on the prompt path. Token assertions are same-skeleton differentials: two
 # runs, byte-identical prompt, only the tensor differs. Deleting a tag is not a valid baseline.
 #
 # Token counts are blind to where an expansion landed, so each placement test is paired with a
@@ -297,7 +297,7 @@ NATIVE_AUDIO_TAG = "<|audio_start|><|audio_pad|><|audio_end|>"
 
 # The minimum-contribution control: short enough that the encoder emits exactly one pad, so
 # `<|audio_start|><|audio_pad|><|audio_end|>` expands to a string identical to the native tag.
-# That is the input a `find`-from-zero expansion loop mis-handles (plan R8).
+# That is the input a `find`-from-zero expansion loop mis-handles.
 ONE_PAD_AUDIO_SECONDS = 0.08
 
 
@@ -676,7 +676,7 @@ def test_audio_native_tag_count_mismatch_rejected(qwen3_omni_pipe_pa: VLMPipelin
 
 
 # ----------------------------------------------------------------------------------------------
-# T-D: audio across chat turns, multipart messages, and the encoder cache. Where turn 1 differs
+# Audio across chat turns, multipart messages, and the encoder cache. Where turn 1 differs
 # between runs, its generated reply enters turn 2 and cannot be predicted exactly.
 STALE_TURN_MAX_NEW_TOKENS = 1
 
@@ -1043,7 +1043,7 @@ def test_audio_cb_add_request_rejects_audio_tag(qwen3_omni_cb: ContinuousBatchin
 
 
 # ----------------------------------------------------------------------------------------------
-# T-E: the SDPA `VLMPipeline` ChatHistory path. Its overload puts `audios` before
+# The SDPA `VLMPipeline` ChatHistory path. Its overload puts `audios` before
 # `videos_metadata`, the opposite of `OmniPipeline`; both are vectors, so a swap compiles silently.
 #
 # Cross-backend checks assert on `texts` only: `num_input_tokens` counts different things on the

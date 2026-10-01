@@ -89,11 +89,7 @@ class VlmModelInfo:
     prompt_lookup: bool
 
     def get_media_tag(self, modality_type: ModalityType) -> Callable[[int], str]:
-        # AUDIO is unreachable here: parametrize_model_with_modality never yields it, and the
-        # audio suites use their own fixture.
-        if modality_type == ModalityType.AUDIO:
-            raise ValueError("VlmModelInfo carries no audio tag; audio suites do not use ov_pipe_model")
-        return self.image_tag if modality_type == ModalityType.IMAGE else self.video_tag
+        return {ModalityType.IMAGE: self.image_tag, ModalityType.VIDEO: self.video_tag}[modality_type]
 
 
 def _is_videochat_flash_qwen_model(model_id: str) -> bool:

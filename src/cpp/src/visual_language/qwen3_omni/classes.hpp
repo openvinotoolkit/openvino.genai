@@ -104,17 +104,7 @@ public:
                             const std::string& device,
                             const ov::AnyMap device_config);
 
-    /// @brief Override to merge audio embeddings into the input embeds
-    /// alongside image/video embeddings.
-    ov::Tensor get_inputs_embeds(
-        const std::string& prompt,
-        const std::vector<ov::genai::EncodedImage>& images,
-        const std::vector<ov::genai::EncodedVideo>& videos,
-        ov::genai::VLMPerfMetrics& metrics,
-        bool recalculate_merged_embeddings = true,
-        const std::vector<size_t>& image_sequence = {},
-        const std::vector<size_t>& videos_sequence = {},
-        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {}) override;
+    using InputsEmbedderQwen3VL::get_inputs_embeds;
 
     /// @brief Audio-aware overload. Places each audio at its own placeholder run.
     ov::Tensor get_inputs_embeds(
@@ -197,6 +187,8 @@ private:
     // From VLMConfig, never a literal: the transformers config class publishes stale
     // Qwen2.5-era ids that do not match the checkpoint.
     int64_t m_audio_token_id = -1;
+    // Checked once here: encode_audios() runs per audio on the ChatHistory path.
+    bool m_tokenizer_encodes_audio_pad = false;
 
     // Merged vision model (patch_embed + transformer + merger)
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_merged_vision;

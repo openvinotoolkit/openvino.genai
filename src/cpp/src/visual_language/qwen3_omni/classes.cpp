@@ -207,6 +207,12 @@ std::shared_ptr<ov::Model> build_patch_preprocess_model() {
                                        "qwen3_omni_patch_preprocess");
 }
 
+bool encodes_audio_pad_as_single_token(Tokenizer& tokenizer, int64_t audio_token_id) {
+    const ov::Tensor pad_ids =
+        tokenizer.encode(std::string(qwen3_omni::AUDIO_PAD_TAG), ov::genai::add_special_tokens(false)).input_ids;
+    return pad_ids.get_size() == 1 && pad_ids.data<const int64_t>()[0] == audio_token_id;
+}
+
 }  // namespace
 
 namespace qwen3_omni_testing {
@@ -458,7 +464,8 @@ InputsEmbedderQwen3Omni::InputsEmbedderQwen3Omni(const VLMConfig& vlm_config,
                                                  const std::string& device,
                                                  const ov::AnyMap device_config)
     : InputsEmbedderQwen3VL(vlm_config, model_dir, tokenizer, device, device_config),
-      m_audio_token_id(vlm_config.audio_token_id) {
+      m_audio_token_id(vlm_config.audio_token_id),
+      m_tokenizer_encodes_audio_pad(encodes_audio_pad_as_single_token(m_tokenizer, m_audio_token_id)) {
     // Audio encoder is optional — check is_available() / has_audio_encoder() before encoding
     m_audio_encoder = std::make_unique<AudioEncoderQwen3Omni>(model_dir, vlm_config, device, device_config);
 
@@ -495,7 +502,8 @@ InputsEmbedderQwen3Omni::InputsEmbedderQwen3Omni(const VLMConfig& vlm_config,
                                                  const std::string& device,
                                                  const ov::AnyMap device_config)
     : InputsEmbedderQwen3VL(vlm_config, models_map, tokenizer, config_dir_path, device, device_config),
-      m_audio_token_id(vlm_config.audio_token_id) {
+      m_audio_token_id(vlm_config.audio_token_id),
+      m_tokenizer_encodes_audio_pad(encodes_audio_pad_as_single_token(m_tokenizer, m_audio_token_id)) {
     // Audio encoder is optional — check is_available() / has_audio_encoder() before encoding
     m_audio_encoder = std::make_unique<AudioEncoderQwen3Omni>(config_dir_path, vlm_config, device, device_config);
 
@@ -534,9 +542,7 @@ std::vector<ov::genai::EncodedAudio> InputsEmbedderQwen3Omni::encode_audios(cons
                     "audio tower (openvino_audio_encoder_model.xml) to use audio.");
     // Otherwise a tokenizer without the audio special tokens only fails later, as a placeholder
     // mismatch that looks like a GenAI bug.
-    const ov::Tensor pad_ids =
-        m_tokenizer.encode(std::string(qwen3_omni::AUDIO_PAD_TAG), ov::genai::add_special_tokens(false)).input_ids;
-    OPENVINO_ASSERT(pad_ids.get_size() == 1 && pad_ids.data<const int64_t>()[0] == m_audio_token_id,
+    OPENVINO_ASSERT(m_tokenizer_encodes_audio_pad,
                     "The tokenizer does not encode ",
                     qwen3_omni::AUDIO_PAD_TAG,
                     " as the single token thinker_config.audio_token_id (",
@@ -589,10 +595,12 @@ ov::Tensor InputsEmbedderQwen3Omni::get_inputs_embeds(
     const std::string& prompt,
     const std::vector<ov::genai::EncodedImage>& images,
     const std::vector<ov::genai::EncodedVideo>& videos,
+    const std::vector<ov::genai::EncodedAudio>& audios,
     ov::genai::VLMPerfMetrics& metrics,
     bool recalculate_merged_embeddings,
     const std::vector<size_t>& image_sequence,
     const std::vector<size_t>& videos_sequence,
+    const std::vector<size_t>& audios_sequence,
     const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
     auto input_embeds = InputsEmbedderQwen3VL::get_inputs_embeds(prompt,
                                                                  images,
@@ -602,29 +610,6 @@ ov::Tensor InputsEmbedderQwen3Omni::get_inputs_embeds(
                                                                  image_sequence,
                                                                  videos_sequence,
                                                                  history_vision_count);
-
-    return input_embeds;
-}
-
-ov::Tensor InputsEmbedderQwen3Omni::get_inputs_embeds(
-    const std::string& prompt,
-    const std::vector<ov::genai::EncodedImage>& images,
-    const std::vector<ov::genai::EncodedVideo>& videos,
-    const std::vector<ov::genai::EncodedAudio>& audios,
-    ov::genai::VLMPerfMetrics& metrics,
-    bool recalculate_merged_embeddings,
-    const std::vector<size_t>& image_sequence,
-    const std::vector<size_t>& videos_sequence,
-    const std::vector<size_t>& audios_sequence,
-    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
-    auto input_embeds = get_inputs_embeds(prompt,
-                                          images,
-                                          videos,
-                                          metrics,
-                                          recalculate_merged_embeddings,
-                                          image_sequence,
-                                          videos_sequence,
-                                          history_vision_count);
 
     if (audios_sequence.empty()) {
         return input_embeds;

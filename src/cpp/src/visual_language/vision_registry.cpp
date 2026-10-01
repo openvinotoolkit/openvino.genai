@@ -228,8 +228,7 @@ const ov::Tensor& VisionRegistry::get_original(const VisionID& id) const {
 void VisionRegistry::set_encoded_image(const VisionID& id, EncodedImage encoded) {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto& entry = m_entries.at(id);
-    OPENVINO_ASSERT(entry.type == ModalityType::IMAGE, 
-                    "Cannot set encoded image for video entry");
+    OPENVINO_ASSERT(entry.type == ModalityType::IMAGE, "Cannot set encoded image for a non-image entry");
     entry.encoded_image = std::move(encoded);
 }
 
@@ -242,8 +241,7 @@ bool VisionRegistry::has_encoded_image(const VisionID& id) const {
 const EncodedImage& VisionRegistry::get_encoded_image(const VisionID& id) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     const auto& entry = m_entries.at(id);
-    OPENVINO_ASSERT(entry.type == ModalityType::IMAGE,
-                    "Cannot get encoded image for video entry");
+    OPENVINO_ASSERT(entry.type == ModalityType::IMAGE, "Cannot get encoded image for a non-image entry");
     OPENVINO_ASSERT(entry.encoded_image.has_value(),
                     "Encoded image not available for id: ", id);
     return *entry.encoded_image;
@@ -252,8 +250,7 @@ const EncodedImage& VisionRegistry::get_encoded_image(const VisionID& id) const 
 void VisionRegistry::set_encoded_video(const VisionID& id, EncodedVideo encoded) {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto& entry = m_entries.at(id);
-    OPENVINO_ASSERT(entry.type == ModalityType::VIDEO,
-                    "Cannot set encoded video for image entry");
+    OPENVINO_ASSERT(entry.type == ModalityType::VIDEO, "Cannot set encoded video for a non-video entry");
     entry.encoded_video = std::move(encoded);
 }
 
@@ -266,8 +263,7 @@ bool VisionRegistry::has_encoded_video(const VisionID& id) const {
 const EncodedVideo& VisionRegistry::get_encoded_video(const VisionID& id) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     const auto& entry = m_entries.at(id);
-    OPENVINO_ASSERT(entry.type == ModalityType::VIDEO,
-                    "Cannot get encoded video for image entry");
+    OPENVINO_ASSERT(entry.type == ModalityType::VIDEO, "Cannot get encoded video for a non-video entry");
     OPENVINO_ASSERT(entry.encoded_video.has_value(),
                     "Encoded video not available for id: ", id);
     return *entry.encoded_video;

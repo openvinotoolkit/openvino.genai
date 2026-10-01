@@ -89,7 +89,7 @@ private:
         size_t start_index,
         const std::vector<size_t>& new_image_indices,
         const std::vector<size_t>& new_video_indices,
-        const std::vector<size_t>& new_audio_indices = {}
+        const std::vector<size_t>& new_audio_indices
     );
 
     std::string multipart_message_to_string(
