@@ -1076,15 +1076,6 @@ def load_speech_generation_genai_pipeline(model_dir, device="CPU", ov_config=Non
     )
 
 
-def _get_qwen3_tts_model_type(model_id):
-    config = _read_model_json(model_id, "config.json")
-    if not isinstance(config, dict):
-        return None
-    if config.get("model_type") != "qwen3_tts":
-        return None
-    return str(config.get("tts_model_type", "")).strip().lower() or None
-
-
 def _load_qwen3_tts_hf_pipeline(model_id, device, wrapper_cls, **kwargs):
     from qwen_tts import Qwen3TTSModel
 
@@ -1132,6 +1123,15 @@ def _get_qwen3_tts_wrappers():
         "voice_design": ("VoiceDesign", Qwen3VoiceDesignWrapper),
         "base": ("Base", Qwen3BaseWrapper),
     }
+
+
+def _get_qwen3_tts_model_type(model_id):
+    config = _read_model_json(model_id, "config.json")
+    if not isinstance(config, dict):
+        return None
+    if config.get("model_type") != "qwen3_tts":
+        return None
+    return str(config.get("tts_model_type", "")).strip().lower() or None
 
 
 def _load_qwen3_speech_generation_model(
