@@ -172,8 +172,10 @@ class Text2VideoEvaluator(BaseEvaluator):
         else:
             data = pd.DataFrame.from_dict(self.collect_default_data())
 
-        inputs = data.values if self.num_samples is None else data.values[: self.num_samples]
-        res_data = dict(zip(data_keys, map(list, zip(*inputs))))
+        if self.num_samples is not None:
+            data = data.iloc[: self.num_samples]
+
+        res_data = {key: data[key].tolist() for key in data_keys}
         videos = []
 
         rng = torch.Generator(device="cpu")
@@ -181,23 +183,22 @@ class Text2VideoEvaluator(BaseEvaluator):
         if not os.path.exists(videos_dir):
             os.makedirs(videos_dir)
 
-        for i, input in tqdm(enumerate(inputs), total=len(inputs), desc="Evaluate pipeline"):
+        for i, (_, row) in tqdm(enumerate(data.iterrows()), total=len(data), desc="Evaluate pipeline"):
             set_seed(self.seed)
             rng = rng.manual_seed(self.seed)
-            guidance_rescale = input[5] if len(input) > 5 else self.DEF_GUIDANCE_RESCALE
             frames = generation_fn(
                 model,
-                prompt=input[0],
-                negative_prompt=input[1],
+                prompt=row["prompt"],
+                negative_prompt=row["negative_prompt"],
                 num_inference_steps=self.num_inference_steps,
-                width=input[2],
-                height=input[3],
+                width=row["width"],
+                height=row["height"],
                 num_frames=self.num_frames,
                 frame_rate=self.frame_rate,
-                guidance_scale=input[4],
-                guidance_rescale=guidance_rescale,
-                decode_timestep=self.decode_timestep,
-                decode_noise_scale=self.decode_noise_scale,
+                guidance_scale=row["guidance_scale"],
+                guidance_rescale=row.get("guidance_rescale", self.DEF_GUIDANCE_RESCALE),
+                decode_timestep=row.get("decode_timestep", self.decode_timestep),
+                decode_noise_scale=row.get("decode_noise_scale", self.decode_noise_scale),
                 generator=openvino_genai.TorchGenerator(self.seed) if self.is_genai else rng,
                 empty_adapters=self.empty_adapters,
             )

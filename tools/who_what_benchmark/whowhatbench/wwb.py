@@ -574,6 +574,11 @@ def load_prompts(args):
         name = None
     data = load_dataset(path=path, name=name, split=split)
 
+    if args.model_type in ("text-to-video", "image-to-video"):
+        res = data.to_dict()
+        res["prompt"] = res.pop(args.dataset_field)
+        return res
+
     res = data[args.dataset_field]
     res = {"prompts": list(res)}
     return res
