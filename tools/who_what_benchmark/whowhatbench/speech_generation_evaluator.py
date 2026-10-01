@@ -41,6 +41,7 @@ QWEN3_BASE_DEFAULT_REF_TEXT = (
     "Okay. Yeah. I resent you. I love you. I respect you. "
     "But you know what? You blew it! And thanks to you."
 )
+QWEN3_CUSTOM_VOICE_DEFAULT_SPEAKER = "Ryan"
 QWEN3_VOICE_DESIGN_DEFAULT_INSTRUCT = (
     "Male, 17 years old, tenor range, gaining confidence - deeper breath support now, "
     "though vowels still tighten when nervous"
@@ -592,7 +593,7 @@ class Qwen3CustomVoiceWrapper:
 
         selected_speaker = voice.strip() if isinstance(voice, str) else ""
         if not selected_speaker:
-            raise ValueError("Qwen3 CustomVoice requires --speech-voice to select a speaker.")
+            selected_speaker = QWEN3_CUSTOM_VOICE_DEFAULT_SPEAKER
 
         selected_language = language.strip() if isinstance(language, str) else ""
         resolved_language = selected_language or "Auto"
