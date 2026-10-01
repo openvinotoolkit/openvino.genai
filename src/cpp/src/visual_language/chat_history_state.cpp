@@ -275,9 +275,9 @@ const size_t ChatHistoryInternalState::find_matching_history_length(const ChatHi
 }
 
 void ChatHistoryInternalState::truncate_to(size_t size) {
-    // No early return: media registered by a turn that failed before its metadata was added is
-    // owned by no message, and must be released too.
-    size = std::min(size, m_messages_metadata.size());
+    if (size >= m_messages_metadata.size()) {
+        return;
+    }
 
     size_t new_image_base_index = 0;
     size_t new_video_base_index = 0;

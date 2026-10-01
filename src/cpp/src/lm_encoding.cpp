@@ -102,17 +102,6 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs,
     std::function<ov::Tensor(const ov::Tensor& new_input_ids)> per_layer_embeddings_callback
 ) {
-    // Request ids restart at 0 on every call, so sampler state left by a throw would leak into the next one.
-    struct SamplerRequestsGuard {
-        Sampler& sampler;
-        const std::vector<SequenceGroup::Ptr>& sequence_groups;
-        ~SamplerRequestsGuard() {
-            for (const auto& sequence_group : sequence_groups) {
-                sampler.clear_request_info(sequence_group->get_request_id());
-            }
-        }
-    } sampler_requests_guard{sampler, sequence_groups};
-
     std::vector<GenerationHandle> generations;
     for (SequenceGroup::Ptr sequence_group : sequence_groups) {
         generations.push_back(std::make_shared<GenerationHandleImpl>(sequence_group->get_generation_stream(), sequence_group->get_sampling_parameters()));
@@ -317,14 +306,8 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         const auto infer_start = std::chrono::steady_clock::now();
         m_llm.start_async();
 
-        try {
-            stream_generated_tokens();
-            free_non_running_requests(); // to handle streaming response
-        } catch (...) {
-            // A throwing streamer must not leave the request busy, or every later call fails.
-            m_llm.wait();
-            throw;
-        }
+        stream_generated_tokens();
+        free_non_running_requests(); // to handle streaming response
 
         m_llm.wait();
 
@@ -372,6 +355,9 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     }
 
     finish_info.streaming_finish_status = sequence_groups[0]->get_generation_stream()->get_status();
+
+    for (SequenceGroup::Ptr sequence_group : sequence_groups)
+        sampler.clear_request_info(sequence_group->get_request_id());
 
     return finish_info;
 }

@@ -7,7 +7,6 @@
 #include <random>
 
 #include "lm_encoding.hpp"
-#include "logger.hpp"
 #include "lora/helper.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "openvino/genai/tokenizer.hpp"
@@ -381,40 +380,7 @@ public:
 
         auto [unified_prompt, image_sequence, video_sequence, audio_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, m_audio_id, encoded_images, encoded_videos, encoded_audios);
 
-        // Restores the chat history on CANCEL or on any exception thrown during this turn.
-        // CANCEL leaves the KV cache to update_chat_history(); an exception also restores it here.
-        struct ChatTurnRollback {
-            VLMPipelineImpl& pipe;
-            const size_t history = pipe.m_history.size();
-            const size_t images = pipe.m_encoded_images.size();
-            const size_t videos = pipe.m_encoded_videos.size();
-            const size_t audios = pipe.m_encoded_audios.size();
-            const size_t audio_sequence = pipe.m_history_audio_sequence.size();
-            const size_t vision_count = pipe.m_history_vision_count.size();
-            utils::CacheState cache_state = pipe.m_inputs_embedder->get_cache_state();
-            bool active = true;
-
-            explicit ChatTurnRollback(VLMPipelineImpl& pipe) : pipe(pipe) {}
-            ~ChatTurnRollback() {
-                if (active) {
-                    restore();
-                    pipe.recover_cache_after_failed_turn(cache_state);
-                }
-            }
-
-            void restore() {
-                while (pipe.m_history.size() > history) {
-                    pipe.m_history.pop_back();
-                }
-                pipe.m_encoded_images.resize(images);
-                pipe.m_encoded_videos.resize(videos);
-                pipe.m_encoded_audios.resize(audios);
-                pipe.m_history_audio_sequence.resize(audio_sequence);
-                pipe.m_history_vision_count.resize(vision_count);
-                active = false;
-            }
-        } chat_turn_rollback{*this};
-
+        const auto history_audio_sequence_before = m_history_audio_sequence.size();
         if (m_is_chat_conversation) {
             m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
 
@@ -509,13 +475,25 @@ public:
                 // Find the tail to concatenate it with the next input prompt.
                 m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
             } else {
-                chat_turn_rollback.restore();
+                m_history.pop_back();
+                if (m_use_full_chat_history) {
+                    OPENVINO_ASSERT(images.size() <= m_encoded_images.size(), "Number of images to remove is more than stored images!");
+                    m_encoded_images.resize(m_encoded_images.size() - images.size());
+
+                    OPENVINO_ASSERT(videos.size() <= m_encoded_videos.size(), "Number of videos to remove is more than stored videos!");
+                    m_encoded_videos.resize(m_encoded_videos.size() - videos.size());
+
+                    OPENVINO_ASSERT(audios.size() <= m_encoded_audios.size(), "Number of audios to remove is more than stored audios!");
+                    m_encoded_audios.resize(m_encoded_audios.size() - audios.size());
+                    m_history_audio_sequence.resize(history_audio_sequence_before);
+
+                    m_history_vision_count.pop_back();
+                }
             }
         } else {
             utils::CacheState& cache_state = m_inputs_embedder->get_cache_state();
             cache_state.reset_state();
         }
-        chat_turn_rollback.active = false;
 
         if (!(m_is_chat_conversation && m_use_full_chat_history)) {
             m_encoded_images.clear();
@@ -627,30 +605,13 @@ public:
 
         auto processed_chat_data = chat_context.process(images, videos, videos_metadata, audios);
 
-        // A failed call drops the KV cache. An empty token cache then makes the next call prefill
-        // the whole history, since the KV cache no longer holds any of it.
-        struct ChatHistoryCallRollback {
-            VLMPipelineImpl& pipe;
-            VLMChatContext& chat_context;
-            bool active = true;
-            ~ChatHistoryCallRollback() {
-                if (active) {
-                    chat_context.rollback();
-                    pipe.reset_language_state();
-                    pipe.m_language.get_tensor("attention_mask").set_shape({1, 0});
-                    pipe.m_inputs_embedder->get_cache_state().reset_state();
-                }
-            }
-        } chat_history_call_rollback{*this, chat_context};
-
         perf_metrics.vlm_raw_metrics.vision_encoding_durations.emplace_back(processed_chat_data.vision_encoding_duration);
         auto& audio_durations = perf_metrics.vlm_raw_metrics.audio_encoding_durations;
         audio_durations.insert(audio_durations.end(),
                                processed_chat_data.audio_encoding_durations.begin(),
                                processed_chat_data.audio_encoding_durations.end());
 
-        bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history ||
-                                m_inputs_embedder->get_cache_state().get_state().empty();
+        bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history;
 
         if (use_full_history) {
             reset_language_state();
@@ -730,7 +691,6 @@ public:
         if (generation_finish_info.streaming_finish_status == ov::genai::GenerationStatus::CANCEL) {
             chat_context.rollback();
         }
-        chat_history_call_rollback.active = false;
 
         auto generate_end_time = std::chrono::steady_clock::now();
         decoded.perf_metrics = VLMPerfMetrics(encoded_result.perf_metrics);
@@ -859,45 +819,6 @@ private:
         } else {
             m_language.reset_state();
         }
-    }
-
-    size_t get_kv_cache_length(size_t seq_length_axis) {
-        for (auto& state : m_language.query_state()) {
-            if (!m_adapter_controller || !m_adapter_controller->has_state_name(state.get_name())) {
-                return state.get_state().get_shape().at(seq_length_axis);
-            }
-        }
-        return 0;
-    }
-
-    // Runs while a failed turn unwinds, so it must not throw.
-    void recover_cache_after_failed_turn(utils::CacheState& snapshot) noexcept {
-        utils::CacheState& cache_state = m_inputs_embedder->get_cache_state();
-        if (!m_is_chat_conversation || m_use_full_chat_history) {
-            // Nothing in the cache outlives such a call: the next one prefills from scratch.
-            cache_state.reset_state();
-            return;
-        }
-        try {
-            // The turn may have trimmed the KV cache and written its prompt and some answer tokens.
-            // Whatever lies past the old history is trimmed by the next turn, like a cancelled answer.
-            const size_t kv_length = get_kv_cache_length(snapshot.seq_length_axis);
-            const size_t history_length = snapshot.get_state().size();
-            if (kv_length >= history_length) {
-                cache_state = snapshot;
-                cache_state.num_tokens_to_trim = kv_length - history_length;
-                m_language.get_tensor("attention_mask").set_shape({1, kv_length});
-                return;
-            }
-            GENAI_ERR("KV cache holds %zu tokens after a failed chat turn, fewer than the %zu of the chat history.",
-                      kv_length,
-                      history_length);
-        } catch (const std::exception& error) {
-            GENAI_ERR("Failed to restore the KV cache after a failed chat turn: %s", error.what());
-        }
-        reset_language_state();
-        m_language.get_tensor("attention_mask").set_shape({1, 0});
-        cache_state.reset_state();
     }
 
     void setup_generation_config(GenerationConfig& generation_config) {
