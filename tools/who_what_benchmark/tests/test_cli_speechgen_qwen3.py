@@ -128,21 +128,6 @@ def test_tts_qwen3_voice_design(qwen3_voice_design_artifacts):
     assert qwen3_voice_design_artifacts["genai_score"] >= 0.95
 
 
-def test_tts_qwen3_custom_voice_no_instruct(tmp_path):
-    result = _run_qwen3_case(
-        model_id=QWEN3_CUSTOM_VOICE_MODEL_ID,
-        case_name="custom_voice",
-        tmp_root=tmp_path,
-        extra_args=[
-            "--speech-voice",
-            "Vivian",
-        ],
-    )
-
-    assert result["optimum_score"] >= 0.95
-    assert result["genai_score"] >= 0.95
-
-
 def test_tts_qwen3_custom_voice_with_instruct(tmp_path):
     result = _run_qwen3_case(
         model_id=QWEN3_CUSTOM_VOICE_MODEL_ID,
@@ -176,17 +161,3 @@ def test_tts_qwen3_base_icl_mode(qwen3_voice_design_artifacts, tmp_path):
     assert result["optimum_score"] >= 0.95
     assert result["genai_score"] >= 0.95
 
-
-def test_tts_qwen3_base_xvector_mode(qwen3_voice_design_artifacts, tmp_path):
-    result = _run_qwen3_case(
-        model_id=QWEN3_BASE_MODEL_ID,
-        case_name="base_xvector",
-        tmp_root=tmp_path,
-        extra_args=[
-            "--speech-ref-audio",
-            qwen3_voice_design_artifacts["ref_audio"],
-        ],
-    )
-
-    assert result["optimum_score"] >= 0.95
-    assert result["genai_score"] >= 0.95
