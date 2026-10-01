@@ -7,7 +7,9 @@ from typing import Any, Union
 
 import logging
 import os
+import io
 from pathlib import Path
+from urllib.request import urlopen
 
 import numpy as np
 import pandas as pd
@@ -34,6 +36,11 @@ KOKORO_SPEAKER_EMB_SHAPE = (510, 1, 256)
 KOKORO_SAMPLE_RATE = 24000
 QWEN3_OMNI_SAMPLE_RATE = 24000
 QWEN3_OMNI_DEFAULT_SPEAKER = "Ethan"
+QWEN3_BASE_DEFAULT_REF_AUDIO_URL = "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-TTS-Repo/clone.wav"
+QWEN3_BASE_DEFAULT_REF_TEXT = (
+    "Okay. Yeah. I resent you. I love you. I respect you. "
+    "But you know what? You blew it! And thanks to you."
+)
 LOGGER = logging.getLogger(__name__)
 
 
@@ -81,6 +88,23 @@ def _qwen3_omni_speakers(source: Any) -> list[str]:
         return []
     speaker_id = talker.get("speaker_id") if isinstance(talker, dict) else getattr(talker, "speaker_id", None)
     return list(speaker_id.keys()) if isinstance(speaker_id, dict) else []
+
+
+def _read_audio_file(path_or_url: str, log_label: str = "audio"):
+    """Read audio from a local path or HTTP(S) URL and return (audio_data, sample_rate)."""
+    if path_or_url.startswith(("http://", "https://")):
+        LOGGER.info("Downloading %s from URL: %s", log_label, path_or_url)
+        try:
+            with urlopen(path_or_url) as response:
+                return sf.read(
+                    io.BytesIO(response.read()),
+                    dtype="float32",
+                    always_2d=False,
+                )
+        except Exception as exc:
+            raise ValueError(f"Failed to read {log_label} from '{path_or_url}': {exc}") from exc
+
+    return sf.read(path_or_url, dtype="float32", always_2d=False)
 
 
 class _Qwen3OmniSpeakerMixin:
@@ -697,6 +721,9 @@ class Qwen3BaseWrapper:
     def __init__(self, model):
         self.model = model
         self.model_type = "speech-generation"
+        self._last_ref_audio_key = None
+        self._last_ref_audio_data = None
+        self._last_ref_audio_sample_rate = None
 
     def __getattr__(self, attr):
         if attr in self.__dict__:
@@ -727,9 +754,21 @@ class Qwen3BaseWrapper:
         selected_ref_audio = ref_audio.strip() if isinstance(ref_audio, str) else ""
 
         if not selected_ref_audio:
-            raise ValueError("Qwen3 Base requires --speech-ref-audio (or speech_ref_audio column in prompt data).")
+            selected_ref_audio = QWEN3_BASE_DEFAULT_REF_AUDIO_URL
+            # if --speech-ref-audio wasn't specified, we also set ref text.
+            # This enables ICL mode by default.
+            if not selected_ref_text:
+                selected_ref_text = QWEN3_BASE_DEFAULT_REF_TEXT
 
-        audio_data, sample_rate = sf.read(selected_ref_audio, dtype="float32", always_2d=False)
+        if selected_ref_audio == self._last_ref_audio_key and self._last_ref_audio_data is not None:
+            audio_data = self._last_ref_audio_data
+            sample_rate = self._last_ref_audio_sample_rate
+        else:
+            audio_data, sample_rate = _read_audio_file(selected_ref_audio, log_label="reference audio")
+            self._last_ref_audio_key = selected_ref_audio
+            self._last_ref_audio_data = audio_data
+            self._last_ref_audio_sample_rate = sample_rate
+
         if sample_rate != 24000:
             raise ValueError(
                 f"Qwen3 Base strict check failed: reference audio sample rate must be 24000 Hz, got {sample_rate} Hz "
