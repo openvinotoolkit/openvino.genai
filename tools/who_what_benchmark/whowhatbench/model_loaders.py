@@ -6,6 +6,7 @@ import logging
 import torch
 import os
 import json
+from utils import _read_model_json
 
 from packaging.version import Version
 
@@ -1075,33 +1076,8 @@ def load_speech_generation_genai_pipeline(model_dir, device="CPU", ov_config=Non
     )
 
 
-def _load_qwen3_tts_config(model_id):
-    config = None
-
-    model_path = Path(model_id) if isinstance(model_id, str) else None
-    if model_path and model_path.is_dir():
-        config_path = model_path / "config.json"
-        if config_path.is_file():
-            try:
-                with open(config_path, "r", encoding="utf-8") as f:
-                    config = json.load(f)
-            except Exception:
-                config = None
-    else:
-        try:
-            from huggingface_hub import hf_hub_download
-
-            config_path = hf_hub_download(repo_id=model_id, filename="config.json")
-            with open(config_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
-        except Exception:
-            config = None
-
-    return config
-
-
 def _get_qwen3_tts_model_type(model_id):
-    config = _load_qwen3_tts_config(model_id)
+    config = _read_model_json(model_id, "config.json")
     if not isinstance(config, dict):
         return None
     if config.get("model_type") != "qwen3_tts":
