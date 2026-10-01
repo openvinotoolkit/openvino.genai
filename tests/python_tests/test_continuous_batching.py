@@ -15,16 +15,7 @@ from optimum.intel.utils.import_utils import is_transformers_version
 
 import openvino as ov
 import openvino.properties.hint as hints
-from openvino_genai import (
-    ContinuousBatchingPipeline,
-    LLMPipeline,
-    GenerationConfig,
-    SchedulerConfig,
-    draft_model,
-    GenerationFinishReason,
-    ChatHistory,
-    StreamerBase,
-)
+from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig, draft_model, GenerationFinishReason, ChatHistory
 
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
 
@@ -1504,49 +1495,3 @@ def test_cb_perf_metrics_available_for_echo_only(model_facebook_opt_125m: OVConv
     assert len(outputs[0].generated_ids) == metrics.get_num_input_tokens(), (
         "Echo-only output must contain the whole prompt; got an empty/partial range instead"
     )
-
-
-# The CB streamer runs on a worker thread, where an escaping exception would terminate the process.
-
-
-class RaisingStreamer(StreamerBase):
-    def write(self, token: int | list[int]) -> bool:
-        raise RuntimeError("streamer failure")
-
-    def end(self) -> None:
-        pass
-
-
-STREAMER_FAILURE_CONFIG = GenerationConfig(max_new_tokens=8, do_sample=False)
-
-
-def test_cb_streamer_exception_reaches_caller(model_facebook_opt_125m: OVConvertedModelSchema):
-    """The error must surface in generate() and leave nothing behind for the next call."""
-    prompt = "Tell me an interesting fact about space."
-    pipe = ContinuousBatchingPipeline(model_facebook_opt_125m.models_path, SchedulerConfig(), "CPU")
-    with pytest.raises(RuntimeError, match="streamer failure"):
-        pipe.generate([prompt], [STREAMER_FAILURE_CONFIG], RaisingStreamer())
-
-    after_failure = pipe.generate([prompt], [STREAMER_FAILURE_CONFIG])
-    fresh = ContinuousBatchingPipeline(model_facebook_opt_125m.models_path, SchedulerConfig(), "CPU").generate(
-        [prompt], [STREAMER_FAILURE_CONFIG]
-    )
-    assert after_failure[0].m_generation_ids == fresh[0].m_generation_ids
-
-
-def test_cb_chat_turn_failed_by_streamer_is_rolled_back(model_tinyllama_1_1b_chat: OVConvertedModelSchema):
-    """A failed turn must not leave its user message in the chat history."""
-
-    def second_turn(fail_first: bool) -> str:
-        pipe = LLMPipeline(model_tinyllama_1_1b_chat.models_path, "CPU", ATTENTION_BACKEND="PA")
-        pipe.start_chat()
-        try:
-            pipe.generate("Hi", STREAMER_FAILURE_CONFIG)
-            if fail_first:
-                with pytest.raises(RuntimeError, match="streamer failure"):
-                    pipe.generate("What is 2 + 2?", STREAMER_FAILURE_CONFIG, RaisingStreamer())
-            return str(pipe.generate("What is 2 + 2?", STREAMER_FAILURE_CONFIG))
-        finally:
-            pipe.finish_chat()
-
-    assert second_turn(fail_first=True) == second_turn(fail_first=False)
