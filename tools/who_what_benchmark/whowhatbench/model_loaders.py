@@ -6,7 +6,7 @@ import logging
 import torch
 import os
 import json
-from utils import _read_model_json
+from .utils import _read_model_json
 
 from packaging.version import Version
 
