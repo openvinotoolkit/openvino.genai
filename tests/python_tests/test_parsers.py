@@ -788,7 +788,10 @@ def test_streamer_error_in_generate_is_raised_to_caller(model_id):
         pass
 
     class RaisingWrite(TextParserStreamer):
+        calls = 0
+
         def write(self, message):
+            RaisingWrite.calls += 1
             raise ValueError("write failed")
 
     class Write(TextParserStreamer):
@@ -799,6 +802,8 @@ def test_streamer_error_in_generate_is_raised_to_caller(model_id):
         pipe.generate(['Please say "hello"'], max_new_tokens=16, streamer=NoWrite(tokenizer, []))
     with pytest.raises(ValueError, match="write failed"):
         pipe.generate(['Please say "hello"'], max_new_tokens=16, streamer=RaisingWrite(tokenizer, []))
+    # streaming stops at the first error: end() does not flush the cached text through the failed write() again
+    assert RaisingWrite.calls == 1
 
     # the pipeline is still usable after the failed generations
     assert pipe.generate(['Please say "hello"'], max_new_tokens=16, streamer=Write(tokenizer, [])).texts
