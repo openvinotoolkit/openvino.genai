@@ -242,18 +242,19 @@ public:
 
         // The condition image is preprocessed by generate() before this call because the base interface passes
         // the prompt only.
-        const auto encode = [&](const std::string& prompt) {
+        const auto encode = [&](const std::string& prompt, const bool run_vision_tower) {
             return numpy_utils::repeat(m_condition_image
-                                           ? m_text_encoder->infer(prompt, m_condition_image, generation_config.max_sequence_length)
+                                           ? m_text_encoder->infer(prompt, m_condition_image,
+                                                                   generation_config.max_sequence_length, run_vision_tower)
                                            : m_text_encoder->infer(prompt, generation_config.max_sequence_length),
                                        generation_config.num_images_per_prompt);
         };
 
-        m_positive_prompt_embeds = encode(positive_prompt);
+        m_positive_prompt_embeds = encode(positive_prompt, true);
         m_positive_image_pad_mask = m_text_encoder->get_image_pad_mask();
 
         if (do_true_cfg(generation_config)) {
-            m_negative_prompt_embeds = encode(*generation_config.negative_prompt);
+            m_negative_prompt_embeds = encode(*generation_config.negative_prompt, false);
             m_negative_image_pad_mask = m_text_encoder->get_image_pad_mask();
         }
 

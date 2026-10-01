@@ -361,6 +361,7 @@ std::shared_ptr<Qwen3VLForConditionalGeneration> Qwen3VLForConditionalGeneration
     } else if (m_vision_request) {
         cloned->m_vision_request = m_vision_request.get_compiled_model().create_infer_request();
     }
+    cloned->m_vision_output_ready = false;
 
     if (m_i2i_model) {
         cloned->m_i2i_model = m_i2i_model->clone();
@@ -462,8 +463,7 @@ ov::Tensor Qwen3VLForConditionalGeneration::infer(const std::string& prompt, con
     return drop_system_prefix(m_request.get_output_tensor(), prompt_length);
 }
 
-ov::Tensor Qwen3VLForConditionalGeneration::infer_vision_tower(const ov::Tensor condition_image,
-                                                               std::vector<ov::Tensor>& deepstack_features) {
+ov::Tensor Qwen3VLForConditionalGeneration::infer_vision_tower(const ov::Tensor condition_image) {
     const ov::Shape& image_shape = condition_image.get_shape();
     const size_t patch_size = m_vision_config.patch_size;
     const size_t granularity = patch_size * m_vision_config.spatial_merge_size;
@@ -487,24 +487,30 @@ ov::Tensor Qwen3VLForConditionalGeneration::infer_vision_tower(const ov::Tensor 
     m_vision_request.set_tensor("cos", cos);
     m_vision_request.set_tensor("sin", sin);
     m_vision_request.infer();
-
-    deepstack_features.clear();
-    for (size_t layer = 0; layer < m_vision_config.num_deepstack_layers; ++layer) {
-        deepstack_features.push_back(m_vision_request.get_output_tensor(layer + 1));
-    }
+    m_vision_output_ready = true;
 
     return m_vision_request.get_output_tensor(0);
 }
 
 ov::Tensor Qwen3VLForConditionalGeneration::infer(const std::string& prompt,
                                                   const ov::Tensor condition_image,
-                                                  const int max_sequence_length) {
+                                                  const int max_sequence_length,
+                                                  const bool run_vision_tower) {
     OPENVINO_ASSERT(m_i2i_request && m_vision_request,
                     "QwenImage 2.1 vision tower must be compiled first. Cannot infer non-compiled model");
     OPENVINO_ASSERT(max_sequence_length > 0, "'max_sequence_length' must be positive, got ", max_sequence_length);
 
+    ov::Tensor image_embeds;
+    if (run_vision_tower) {
+        image_embeds = infer_vision_tower(condition_image);
+    } else {
+        OPENVINO_ASSERT(m_vision_output_ready, "Vision tower must be inferred before reusing its output");
+        image_embeds = m_vision_request.get_output_tensor(0);
+    }
     std::vector<ov::Tensor> deepstack_features;
-    const ov::Tensor image_embeds = infer_vision_tower(condition_image, deepstack_features);
+    for (size_t layer = 0; layer < m_vision_config.num_deepstack_layers; ++layer) {
+        deepstack_features.push_back(m_vision_request.get_output_tensor(layer + 1));
+    }
     const size_t num_image_tokens = image_embeds.get_shape()[0];
 
     std::string formatted_prompt = PROMPT_TEMPLATE_WITH_IMAGE;
