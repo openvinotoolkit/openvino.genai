@@ -9,6 +9,7 @@
 
 #include "progress_bar.hpp"
 #include "imwrite_video.hpp"
+#include "save_audio.hpp"
 
 #include <openvino/genai/video_generation/text2video_pipeline.hpp>
 
@@ -38,6 +39,12 @@ int main(int32_t argc, char* argv[]) try {
     );
 
     save_video("genai_video.avi", output.video, frame_rate);
+    // TODO: Combine audio and video into one file inside GenAI for LTX-2, so users don't need ffmpeg.
+    // Models that generate audio (LTX-2) return it as a separate track. To combine both into one file:
+    //   ffmpeg -i genai_video.avi -i genai_audio.wav genai_video.mp4
+    if (output.audio_sample_rate) {
+        save_audio("genai_audio.wav", output.audio, output.audio_sample_rate);
+    }
 
     std::cout << "\nPerformance metrics:\n"
               << "  Load time: " << output.performance_stat.get_load_time() << " ms\n"
