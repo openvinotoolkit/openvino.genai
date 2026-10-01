@@ -38,8 +38,7 @@ QWEN3_OMNI_SAMPLE_RATE = 24000
 QWEN3_OMNI_DEFAULT_SPEAKER = "Ethan"
 QWEN3_BASE_DEFAULT_REF_AUDIO_URL = "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-TTS-Repo/clone.wav"
 QWEN3_BASE_DEFAULT_REF_TEXT = (
-    "Okay. Yeah. I resent you. I love you. I respect you. "
-    "But you know what? You blew it! And thanks to you."
+    "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you."
 )
 QWEN3_CUSTOM_VOICE_DEFAULT_SPEAKER = "Ryan"
 QWEN3_VOICE_DESIGN_DEFAULT_INSTRUCT = (

@@ -166,4 +166,3 @@ def test_tts_qwen3_base_icl_mode(qwen3_voice_design_artifacts, tmp_path):
 
     assert result["optimum_score"] >= 0.95
     assert result["genai_score"] >= 0.95
-
