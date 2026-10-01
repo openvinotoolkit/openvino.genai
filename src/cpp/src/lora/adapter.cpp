@@ -2216,26 +2216,10 @@ struct AdapterControllerImpl {
         const LoRAParts<ov::Tensor>& new_tensors,
         bool alpha_only
     ) {
-        auto set_state_tensor = [](VariableState& variable, const ov::Tensor& tensor) {
-            // Empty LoRA states have no payload and require no packing or stride inspection.
-            if (tensor.get_size() == 0) {
-                variable.set_state(tensor);
-                return;
-            }
-            if (tensor.is_continuous()) {
-                variable.set_state(tensor);
-                return;
-            }
-            // A B-column ROI keeps the concat row stride, which GPU state transposition cannot yet read.
-            // Materialize a temporary contiguous input for set_state; keep only the concat payload cached.
-            ov::Tensor contiguous(tensor.get_element_type(), tensor.get_shape());
-            tensor.copy_to(contiguous);
-            variable.set_state(contiguous);
-        };
-        set_state_tensor(state[lora_indices.alpha], new_tensors.alpha);
+        state[lora_indices.alpha].set_state(new_tensors.alpha);
         if(!alpha_only) {
-            set_state_tensor(state[lora_indices.A], new_tensors.A);
-            set_state_tensor(state[lora_indices.B], new_tensors.B);
+            state[lora_indices.A].set_state(new_tensors.A);
+            state[lora_indices.B].set_state(new_tensors.B);
         }
     }
 
