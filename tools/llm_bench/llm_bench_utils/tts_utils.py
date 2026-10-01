@@ -6,14 +6,17 @@ import json
 import logging as log
 from pathlib import Path
 import numpy as np
+import soundfile as sf
 
 SPEECHT5_SPEAKER_EMB_SHAPE = (1, 512)
 KOKORO_SPEAKER_EMB_SHAPE = (510, 1, 256)
 DEFAULT_KOKORO_VOICE = "af_heart"
 KOKORO_SAMPLE_RATE = 24000
 OMNI_TTS_SAMPLE_RATE = 24000
+QWEN3_TTS_SAMPLE_RATE = 24000
 DEFAULT_TTS_SAMPLE_RATE = 16000
 DEFAULT_OMNI_SPEAKER = "Ethan"
+QWEN3_TTS_VARIANTS = {"base", "custom_voice", "voice_design"}
 
 
 def is_kokoro_model_id(model_id_or_path):
@@ -93,9 +96,58 @@ def resolve_kokoro_speaker_embedding(model_path, speech_voice="", speaker_embedd
 def get_tts_sample_rate(args):
     if args.get("is_omni_model", False):
         return OMNI_TTS_SAMPLE_RATE
+    if args.get("is_qwen3_tts_model", False):
+        return QWEN3_TTS_SAMPLE_RATE
     if args.get("is_kokoro_model", False):
         return KOKORO_SAMPLE_RATE
     return DEFAULT_TTS_SAMPLE_RATE
+
+
+def get_qwen3_tts_variant(model_id_or_path):
+    model_path = Path(str(model_id_or_path))
+    if model_path.name.endswith("xml"):
+        model_path = model_path.parents[2]
+
+    config_path = model_path / "config.json"
+    config = None
+    if config_path.is_file():
+        try:
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+    else:
+        model_id = str(model_id_or_path)
+        if "/" not in model_id:
+            return None
+        try:
+            from huggingface_hub import hf_hub_download
+
+            remote_config_path = hf_hub_download(repo_id=model_id, filename="config.json")
+            config = json.loads(Path(remote_config_path).read_text(encoding="utf-8"))
+        except Exception:
+            return None
+
+    if config.get("model_type") != "qwen3_tts":
+        return None
+
+    variant = str(config.get("tts_model_type", "")).strip().lower()
+    if variant in QWEN3_TTS_VARIANTS:
+        return variant
+    return None
+
+
+def load_qwen3_reference_audio(ref_audio_path):
+    audio_data, sample_rate = sf.read(ref_audio_path, dtype="float32", always_2d=False)
+    if int(sample_rate) != QWEN3_TTS_SAMPLE_RATE:
+        raise RuntimeError(
+            f"Qwen3 Base strict check failed: reference audio sample rate must be {QWEN3_TTS_SAMPLE_RATE} Hz, "
+            f"got {int(sample_rate)} Hz for '{ref_audio_path}'."
+        )
+
+    waveform = np.asarray(audio_data, dtype=np.float32)
+    if waveform.ndim > 1:
+        waveform = np.mean(waveform, axis=-1, dtype=np.float32)
+    return waveform.reshape(-1), int(sample_rate)
 
 
 def extract_audio_array(output):

@@ -282,14 +282,29 @@ python benchmark.py -m models/ov_Kokoro-82M -p "Hello OpenVINO GenAI" -n 2 --tas
 
 # Qwen3-Omni text-to-speech
 python benchmark.py -m models/qwen3-omni/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speech_voice Ethan
+
+# Qwen3-TTS Base text-to-speech (reference audio is required)
+python benchmark.py -m models/qwen3-tts-base/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speech_ref_audio ./reference_24k.wav --speech_language english
+
+# Qwen3-TTS CustomVoice
+python benchmark.py -m models/qwen3-tts-customvoice/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speech_voice serena --speech_instruct "Speak with a calm and clear narration style."
+
+# Qwen3-TTS VoiceDesign
+python benchmark.py -m models/qwen3-tts-voicedesign/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speech_instruct "Some voice design instruct prompt"
+
+# Qwen3-TTS VoiceDesign via native PyTorch backend (HF-style path)
+python benchmark.py -m models/qwen3-tts-voicedesign/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech -f pt --speech_instruct "Some voice design instruct prompt"
 ```
 
 **Some additional parameters:**
 - `--vocoder_path`: Path to vocoder model
 - `--speech_voice`: Voice to use for Kokoro (default `af_heart`) and Qwen3-Omni (default `Ethan`)
 - `--speech_language`: Language for Kokoro models. One of `en-us`, `en-gb`, `es`, `fr-fr`, `hi`, `it`, `pt-br`, `ja`, `zh`
+- `--speech_instruct`: Instruction text for Qwen3-TTS VoiceDesign/CustomVoice
+- `--speech_ref_audio`: Reference WAV file path required for Qwen3-TTS Base
+- `--speech_ref_text`: Optional reference transcript for Qwen3-TTS Base ICL mode
 
-> **Supported Text to Speech model types:** speecht5, kokoro, qwen3-omni
+> **Supported Text to Speech model types:** speecht5, kokoro, qwen3-omni, qwen3-tts
 
 ### Speech to Text models
 ```sh

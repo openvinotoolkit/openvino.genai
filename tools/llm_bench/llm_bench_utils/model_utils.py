@@ -15,6 +15,7 @@ from llm_bench_utils.tts_utils import (
     SPEECHT5_SPEAKER_EMB_SHAPE,
     KOKORO_SPEAKER_EMB_SHAPE,
     is_kokoro_model_id,
+    get_qwen3_tts_variant,
 )
 from urllib.parse import urlparse
 
@@ -182,6 +183,9 @@ def analyze_args(args):
     model_args["task"] = args.task
     model_args["speech_language"] = args.speech_language
     model_args["speech_voice"] = args.speech_voice
+    model_args["speech_instruct"] = args.speech_instruct
+    model_args["speech_ref_audio"] = args.speech_ref_audio
+    model_args["speech_ref_text"] = args.speech_ref_text
     model_args["strength"] = args.strength
     model_args["emb_pooling_type"] = args.embedding_pooling
     model_args["emb_normalize"] = args.embedding_normalize
@@ -247,6 +251,12 @@ def analyze_args(args):
     model_args["model_type"] = model_type
     model_args["is_kokoro_model"] = use_case.task == "text_to_speech" and is_kokoro_model_id(model_path)
     model_args["is_omni_model"] = isinstance(model_type, str) and model_type.startswith("qwen3-omni")
+    model_args["qwen3_tts_variant"] = get_qwen3_tts_variant(model_path) if use_case.task == "text_to_speech" else None
+    model_args["is_qwen3_tts_model"] = (
+        use_case.task == "text_to_speech"
+        and isinstance(model_type, str)
+        and model_type.startswith("qwen3-tts")
+    )
     if use_case.task == "code_gen" and not model_args["prompt"] and not model_args["prompt_file"]:
         model_args["prompt"] = "def print_hello_world():"
     model_args["config"] = {}
