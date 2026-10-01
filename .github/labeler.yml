@@ -179,7 +179,7 @@
 - 'tests/cpp/block_manager.cpp'
 - 'tests/cpp/cache_eviction.cpp'
 - 'tests/cpp/cache_manager.cpp'
-- 'tests/cpp/scheduler.cpp'
+- 'tests/cpp/scheduler*'
 - 'tests/python_tests/data/long_prompts.txt'
 - 'tests/python_tests/data/short_prompts.txt'
 - 'tests/python_tests/data/test_dataset.py'
