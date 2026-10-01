@@ -87,6 +87,7 @@ class LTXPipeline : public VideoPipeline {
     std::shared_ptr<LTXVideoTransformer3DModel> m_transformer;
     std::shared_ptr<AutoencoderKLLTXVideo> m_vae;
     VideoGenerationConfig m_custom_generation_config = LTX_VIDEO_DEFAULT_CONFIG;
+    std::optional<ov::Tensor> m_decode_noise;
 
     size_t m_latent_num_frames = 0;
     size_t m_latent_height = 0;
@@ -96,6 +97,13 @@ class LTXPipeline : public VideoPipeline {
     VideoPipelineType m_pipeline_type = VideoPipelineType::TEXT_2_VIDEO;
     std::shared_ptr<ImageResizer> m_image_resizer = nullptr;
     std::shared_ptr<ImageProcessor> m_image_processor = nullptr;
+
+    void prepare_generation_decode_noise(const ov::Shape& shape,
+                                         const VideoGenerationConfig& generation_config) {
+        if (m_vae->get_config().timestep_conditioning) {
+            m_decode_noise = generation_config.generator->randn_tensor(shape);
+        }
+    }
 
     // Builds the initial packed latent noise. For image-to-video, pass the encoded
     // conditioning image to anchor the first frame; leave empty for text-to-video.
@@ -224,7 +232,11 @@ class LTXPipeline : public VideoPipeline {
             generation_config.decode_noise_scale.value_or(generation_config.decode_timestep);
         std::optional<ov::Tensor> timestep;
         if (m_vae->get_config().timestep_conditioning) {
-            const ov::Tensor noise = generation_config.generator->randn_tensor(denormalized.get_shape());
+            const ov::Tensor noise = m_decode_noise.has_value()
+                                         ? *m_decode_noise
+                                         : generation_config.generator->randn_tensor(denormalized.get_shape());
+            OPENVINO_ASSERT(noise.get_shape() == denormalized.get_shape(),
+                            "Decode noise shape must match denormalized latent shape");
             float* denormalized_data = denormalized.data<float>();
             const float* noise_data = noise.data<const float>();
             for (size_t i = 0; i < denormalized.get_size(); ++i) {
@@ -367,6 +379,7 @@ public:
         auto cloned = std::make_shared<LTXPipeline>(*this);
         cloned->m_generation_config.generator.reset();
         cloned->m_custom_generation_config = cloned->m_generation_config;
+        cloned->m_decode_noise.reset();
         cloned->m_scheduler = video_generation_utils::cast_scheduler(
             Scheduler::from_config(m_models_dir / "scheduler/scheduler_config.json"));
         cloned->m_t5_text_encoder = m_t5_text_encoder->clone();
@@ -389,15 +402,6 @@ public:
         return m_transformer->get_expected_batch_size();
     }
 
-    void rebuild_models() {
-        m_t5_text_encoder = std::make_shared<T5EncoderModel>(m_models_dir / "text_encoder");
-        m_transformer = std::make_shared<LTXVideoTransformer3DModel>(m_models_dir / "transformer");
-        if (m_pipeline_type == VideoPipelineType::IMAGE_2_VIDEO)
-            m_vae = std::make_shared<AutoencoderKLLTXVideo>(m_models_dir / "vae_encoder", m_models_dir / "vae_decoder");
-        else
-            m_vae = std::make_shared<AutoencoderKLLTXVideo>(m_models_dir / "vae_decoder");
-    }
-
     void reshape_models(const VideoGenerationConfig& generation_config, size_t batch_size_multiplier) override {
         m_reshape_batch_size_multiplier = batch_size_multiplier;
         m_t5_text_encoder->reshape(batch_size_multiplier, generation_config.max_sequence_length);
@@ -418,6 +422,7 @@ public:
                                    const ov::AnyMap& properties) override {
         const auto gen_start = std::chrono::steady_clock::now();
         m_perf_metrics.clean_up();
+        m_decode_noise.reset();
 
         VideoGenerationConfig merged_generation_config = merge_generation_config(properties);
         m_custom_generation_config = merged_generation_config;
@@ -462,6 +467,12 @@ public:
                                             transformer_spatial_patch_size,
                                             transformer_temporal_patch_size,
                                             image_latent_packed);
+        prepare_generation_decode_noise({merged_generation_config.num_videos_per_prompt,
+                         num_channels_latents,
+                         m_latent_num_frames,
+                         m_latent_height,
+                         m_latent_width},
+                        merged_generation_config);
 
         const size_t video_sequence_length = latent.get_shape().at(1);
         // mu must come from calculate_shift(), matching t2v and HF's reference,
@@ -594,6 +605,7 @@ public:
                 m_perf_metrics.generate_duration =
                     std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start)
                         .count();
+                m_decode_noise.reset();
                 return {video, m_perf_metrics, ov::Tensor(ov::element::f32, ov::Shape{0})};
             }
 
@@ -606,6 +618,7 @@ public:
         }
 
         VAEDecodeInputs decode_inputs = prepare_vae_decode_inputs(latent, merged_generation_config);
+        m_decode_noise.reset();
 
         const auto decode_start = std::chrono::steady_clock::now();
         ov::Tensor video = decode_inputs.timestep.has_value()
@@ -624,6 +637,7 @@ public:
     VideoGenerationResult generate(const std::string& positive_prompt, const ov::AnyMap& properties) override {
         const auto gen_start = std::chrono::steady_clock::now();
         m_perf_metrics.clean_up();
+        m_decode_noise.reset();
 
         VideoGenerationConfig merged_generation_config = merge_generation_config(properties);
         m_custom_generation_config = merged_generation_config;
@@ -666,6 +680,12 @@ public:
                                             num_channels_latents,
                                             transformer_spatial_patch_size,
                                             transformer_temporal_patch_size);
+        prepare_generation_decode_noise({merged_generation_config.num_videos_per_prompt,
+                         num_channels_latents,
+                         m_latent_num_frames,
+                         m_latent_height,
+                         m_latent_width},
+                        merged_generation_config);
 
         // Prepare timesteps
         size_t video_sequence_length = m_latent_num_frames * m_latent_height * m_latent_width;
@@ -774,6 +794,7 @@ public:
                 m_perf_metrics.generate_duration =
                     std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start)
                         .count();
+                m_decode_noise.reset();
                 return {video, m_perf_metrics, ov::Tensor(ov::element::f32, ov::Shape{0})};
             }
 
@@ -786,6 +807,7 @@ public:
         }
 
         VAEDecodeInputs decode_inputs = prepare_vae_decode_inputs(latent, merged_generation_config);
+        m_decode_noise.reset();
 
         const auto decode_start = std::chrono::steady_clock::now();
         ov::Tensor video = decode_inputs.timestep.has_value()

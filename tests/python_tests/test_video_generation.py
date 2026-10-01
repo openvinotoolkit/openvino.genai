@@ -364,6 +364,33 @@ class TestVideoGenerationPipelines:
 
         assert not np.array_equal(no_noise_video, noise_video)
 
+    def test_decode_callback_does_not_advance_generation_rng(self, conditioned_video_generation_model):
+        common_kwargs = {
+            "height": 32,
+            "width": 32,
+            "num_frames": 9,
+            "num_inference_steps": 2,
+            "decode_timestep": 0.25,
+            "decode_noise_scale": 1.0,
+        }
+
+        baseline_pipe = ov_genai.Text2VideoPipeline(conditioned_video_generation_model, "CPU")
+        baseline = baseline_pipe.generate(
+            "test prompt", **common_kwargs, generator=ov_genai.CppStdGenerator(42)
+        )
+
+        callback_pipe = ov_genai.Text2VideoPipeline(conditioned_video_generation_model, "CPU")
+
+        def callback(_step, _num_steps, latent):
+            callback_pipe.decode(latent)
+            return False
+
+        with_callback = callback_pipe.generate(
+            "test prompt", **common_kwargs, generator=ov_genai.CppStdGenerator(42), callback=callback
+        )
+
+        np.testing.assert_array_equal(baseline.video.data, with_callback.video.data)
+
     @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
     def test_num_videos_per_prompt(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
@@ -877,6 +904,34 @@ class TestImage2VideoPipeline:
         result1 = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS, generator=ov_genai.CppStdGenerator(42))
         result2 = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS, generator=ov_genai.CppStdGenerator(42))
         np.testing.assert_array_equal(result1.video.data, result2.video.data)
+
+    def test_timestep_conditioned_decode(self, conditioned_video_generation_model):
+        image = self._make_image()
+        common_kwargs = {
+            **self.GENERATE_KWARGS,
+            "decode_timestep": 0.25,
+        }
+
+        no_noise_pipe = ov_genai.Image2VideoPipeline(conditioned_video_generation_model, "CPU")
+        no_noise = no_noise_pipe.generate(
+            image,
+            "test prompt",
+            **common_kwargs,
+            decode_noise_scale=0.0,
+            generator=ov_genai.CppStdGenerator(42),
+        )
+
+        noise_pipe = ov_genai.Image2VideoPipeline(conditioned_video_generation_model, "CPU")
+        with_noise = noise_pipe.generate(
+            image,
+            "test prompt",
+            **common_kwargs,
+            decode_noise_scale=1.0,
+            generator=ov_genai.CppStdGenerator(42),
+        )
+
+        assert no_noise.video.data.shape == (1, 9, 32, 32, 3)
+        assert not np.array_equal(no_noise.video.data, with_noise.video.data)
 
     def test_lora_passthrough(self, video_generation_model):
         adapter_config = ov_genai.AdapterConfig()

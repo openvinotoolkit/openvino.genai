@@ -12,7 +12,14 @@ from conftest import convert_model, run_wwb
         (
             "optimum-intel-internal-testing/tiny-random-ltx-video",
             "text-to-video",
-            ["--taylorseer-config", '{"disable_cache_after_step": 0}'],
+            [
+                "--taylorseer-config",
+                '{"disable_cache_after_step": 0}',
+                "--decode-timestep",
+                "0",
+                "--decode-noise-scale",
+                "0",
+            ],
         ),
         ("optimum-intel-internal-testing/tiny-random-ltx2", "text-to-video", []),
     ],
