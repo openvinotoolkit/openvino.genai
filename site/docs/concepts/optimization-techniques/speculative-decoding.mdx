@@ -41,6 +41,17 @@ The single most useful diagnostic is `get_num_accepted_tokens()` divided by the 
 Aim for this to be well above 1; values close to 1 mean drafting is not paying for itself.
 :::
 
+## Prefix Caching with Speculative Decoding
+
+On the Continuous Batching backend, enable `SchedulerConfig.enable_prefix_caching` to reuse
+cached prefixes across requests with shared prompts. For hybrid-attention models, reuse
+also depends on linear-attention state checkpoints; see
+[Hybrid Attention Model Cache Management](./hybrid-attention-models-cache.md) for checkpoint
+granularity and memory-budget guidance.
+
+With MTP drafting, the main and draft models must use the same `enable_prefix_caching` setting.
+The pipeline restores both models to a common reusable prefix before processing a request.
+
 ## Speculative Decoding (Fast Draft)
 
 Fast Draft is the classic two-model setup: a smaller off-the-shelf LLM that shares the target's tokenizer drafts tokens autoregressively, and the target verifies them.
