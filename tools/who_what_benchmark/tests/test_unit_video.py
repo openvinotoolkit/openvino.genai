@@ -50,6 +50,46 @@ def test_text2video_decode_parameters_use_dataset_values_with_cli_fallback(monke
     ]
 
 
+def test_text2video_missing_optional_columns_use_defaults(monkeypatch, tmp_path):
+    evaluator = Text2VideoEvaluator.__new__(Text2VideoEvaluator)
+    _configure_evaluator(
+        evaluator,
+        {
+            "prompt": ["minimal dataset"],
+            "decode_timestep": [0.2],
+            "decode_noise_scale": [0.3],
+        },
+    )
+    calls = []
+
+    def generate_video(_model, **kwargs):
+        calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr("whowhatbench.text2video_evaluator.export_to_video", lambda *_args: None)
+    result = evaluator._generate_data(None, generate_video, str(tmp_path))
+
+    assert result[["negative_prompt", "width", "height", "guidance_scale"]].to_dict("records") == [
+        {
+            "negative_prompt": "",
+            "width": Text2VideoEvaluator.DEF_WIDTH,
+            "height": Text2VideoEvaluator.DEF_HEIGHT,
+            "guidance_scale": Text2VideoEvaluator.DEF_GUIDANCE_SCALE,
+        }
+    ]
+    actual_generation_values = [
+        (call["negative_prompt"], call["width"], call["height"], call["guidance_scale"]) for call in calls
+    ]
+    assert actual_generation_values == [
+        (
+            "",
+            Text2VideoEvaluator.DEF_WIDTH,
+            Text2VideoEvaluator.DEF_HEIGHT,
+            Text2VideoEvaluator.DEF_GUIDANCE_SCALE,
+        )
+    ]
+
+
 def test_image2video_decode_parameters_fall_back_when_dataset_columns_are_missing(monkeypatch, tmp_path):
     evaluator = Image2VideoEvaluator.__new__(Image2VideoEvaluator)
     test_data = _common_test_data()

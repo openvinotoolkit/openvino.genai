@@ -73,6 +73,7 @@ struct VideoGenerationConfig {
     /// Timestep conditioning value passed to every video in a timestep-conditioned VAE decoder batch.
     /// A non-zero value is rejected when the VAE decoder does not support timestep conditioning.
     float decode_timestep = 0.0f;
+
     /// Decode-time interpolation factor between denoised latents and random noise.
     /// If unset, decode_timestep is used. A non-zero value is rejected when the VAE decoder does not support
     /// timestep conditioning. Applied to every video in the batch.

@@ -172,6 +172,16 @@ class Text2VideoEvaluator(BaseEvaluator):
         else:
             data = pd.DataFrame.from_dict(self.collect_default_data())
 
+        optional_data_defaults = {
+            "negative_prompt": "",
+            "width": self.DEF_WIDTH,
+            "height": self.DEF_HEIGHT,
+            "guidance_scale": self.DEF_GUIDANCE_SCALE,
+        }
+        for key, default_value in optional_data_defaults.items():
+            if key not in data:
+                data[key] = default_value
+
         if self.num_samples is not None:
             data = data.iloc[: self.num_samples]
 
