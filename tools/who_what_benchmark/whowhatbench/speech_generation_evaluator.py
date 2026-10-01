@@ -41,6 +41,10 @@ QWEN3_BASE_DEFAULT_REF_TEXT = (
     "Okay. Yeah. I resent you. I love you. I respect you. "
     "But you know what? You blew it! And thanks to you."
 )
+QWEN3_VOICE_DESIGN_DEFAULT_INSTRUCT = (
+    "Male, 17 years old, tenor range, gaining confidence - deeper breath support now, "
+    "though vowels still tighten when nervous"
+)
 LOGGER = logging.getLogger(__name__)
 
 
@@ -664,6 +668,8 @@ class Qwen3VoiceDesignWrapper:
         selected_language = language.strip() if isinstance(language, str) else ""
         resolved_language = selected_language or "Auto"
         selected_instruct = instruct.strip() if isinstance(instruct, str) else ""
+        if not selected_instruct:
+            selected_instruct = QWEN3_VOICE_DESIGN_DEFAULT_INSTRUCT
 
         # Keep WWB speech comparisons deterministic for Qwen3 unless explicitly overridden.
         kwargs.setdefault("do_sample", False)
