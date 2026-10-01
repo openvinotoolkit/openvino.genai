@@ -9,6 +9,7 @@ import logging
 import os
 import io
 from pathlib import Path
+from urllib.parse import urlparse
 from urllib.request import urlopen
 
 import numpy as np
@@ -96,10 +97,20 @@ def _qwen3_omni_speakers(source: Any) -> list[str]:
 
 def _read_audio_file(path_or_url: str, log_label: str = "audio"):
     """Read audio from a local path or HTTP(S) URL and return (audio_data, sample_rate)."""
-    if path_or_url.startswith(("http://", "https://")):
+    normalized = path_or_url.strip()
+    if normalized.lower().startswith(("http://", "https://")):
+        parsed_url = urlparse(normalized)
+        if parsed_url.scheme not in {"http", "https"}:
+            raise ValueError(
+                f"Unsupported URL scheme for {log_label}: '{parsed_url.scheme}'. Only http and https are allowed."
+            )
+        if not parsed_url.netloc:
+            raise ValueError(f"Invalid URL for {log_label}: '{path_or_url}'.")
+
         LOGGER.info("Downloading %s from URL: %s", log_label, path_or_url)
         try:
-            with urlopen(path_or_url) as response:
+            # nosec B310: URL scheme and host are validated above; only http/https are permitted.
+            with urlopen(path_or_url, timeout=30) as response:
                 return sf.read(
                     io.BytesIO(response.read()),
                     dtype="float32",
@@ -894,9 +905,6 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         self.speech_ref_audio = speech_ref_audio.strip() if isinstance(speech_ref_audio, str) else ""
         self.speech_ref_text = speech_ref_text.strip() if isinstance(speech_ref_text, str) else ""
         self.max_new_tokens = max_new_tokens
-
-        if self.speech_ref_audio and not os.path.exists(self.speech_ref_audio):
-            raise ValueError(f"Reference audio file does not exist: {self.speech_ref_audio}")
 
         if self.speaker_embedding_file_path is not None and not os.path.exists(self.speaker_embedding_file_path):
             raise ValueError(f"Speaker embedding file does not exist: {self.speaker_embedding_file_path}")
