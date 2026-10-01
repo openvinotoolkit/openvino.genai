@@ -291,6 +291,8 @@
 # TODO: Include this job in the main VLM test suite once it uses Transformers 5.5 or newer.
 - name: VLM (gemma4)
   cmd: |-
+    python -m pip install --no-deps --force-reinstall "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@refs/pull/1902/head"
+    python -m pip install transformers==5.5.0
     pip show transformers optimum-intel openvino_tokenizers openvino_genai
     python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma4 and not gemma4-unified"
   timeout: 60
@@ -299,6 +301,7 @@
 
 - name: VLM (gemma4-unified)
   cmd: |-
+    python -m pip install --no-deps --force-reinstall "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@refs/pull/1902/head"
     python -m pip install transformers==5.10.0
     pip show transformers optimum-intel openvino_tokenizers openvino_genai
     python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma4-unified"

@@ -20,6 +20,23 @@ file(DOWNLOAD
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../fetch_opencv.cmake)
 
+if(POLICY CMP0135)
+    cmake_policy(SET CMP0135 NEW)
+endif()
+
+if(POLICY CMP0169)
+    cmake_policy(SET CMP0169 OLD)
+endif()
+
+include(FetchContent)
+
+if(NOT TARGET dr_libs)
+    FetchContent_Declare(dr_libs
+        URL https://github.com/mackron/dr_libs/archive/da35f9d6c7374a95353fd1df1d394d44ab66cf01.tar.gz
+        URL_HASH SHA256=2704d347f480ca1bc92233fb01747e4550cc8031735b6ea62ca9990ebb8851ae)
+    FetchContent_MakeAvailable(dr_libs)
+endif()
+
 # create main sample executable
 
 add_executable(visual_language_chat visual_language_chat.cpp load_image.cpp)
@@ -34,6 +51,21 @@ install(TARGETS visual_language_chat
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
+
+# create audio language chat sample executable
+add_executable(audio_to_text_chat audio_to_text_chat.cpp ../automatic_speech_recognition/audio_utils.cpp)
+target_include_directories(audio_to_text_chat PRIVATE "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
+target_link_libraries(audio_to_text_chat PRIVATE openvino::genai)
+
+set_target_properties(audio_to_text_chat PROPERTIES
+
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS audio_to_text_chat
+    RUNTIME DESTINATION samples_bin/
+    COMPONENT samples_bin
+    EXCLUDE_FROM_ALL)
 
 # create lora sample executable
 
