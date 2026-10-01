@@ -1,0 +1,99 @@
+// Copyright (C) 2024-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+#include <filesystem>
+#include <iostream>
+#include <openvino/genai/visual_language/pipeline.hpp>
+
+#include "../automatic_speech_recognition/audio_utils.hpp"
+
+ov::genai::StreamingStatus print_subword(std::string&& subword) {
+    std::cout << subword << std::flush;
+    return ov::genai::StreamingStatus::RUNNING;
+}
+
+int main(int argc, char* argv[]) try {
+    if (argc < 3 || argc > 6) {
+        throw std::runtime_error(std::string{"Usage "} + argv[0] +
+                                 " <MODEL_DIR> <AUDIO path> [DEVICE] [PROMPT_LOOKUP] [DRAFT_MODEL_DIR]");
+    }
+
+    ov::Tensor audio = utils::audio::read_wav_as_tensor(argv[2]);
+
+    // GPU and NPU can be used as well.
+    // Note: If NPU is selected, only language model will be run on NPU
+    std::string device = (argc >= 4) ? argv[3] : "CPU";
+    std::string lookup = (argc >= 5) ? argv[4] : "false";
+    const bool lookup_is_true = (lookup == "true" || lookup == "True" || lookup == "TRUE");
+    const bool lookup_is_false = (lookup == "false" || lookup == "False" || lookup == "FALSE");
+    std::string draft_model_dir = (argc == 6) ? argv[5] : "";
+    if (!lookup_is_true && !lookup_is_false) {
+        if (argc == 5) {
+            draft_model_dir = std::move(lookup);
+            lookup = "false";
+        } else {
+            throw std::runtime_error("PROMPT_LOOKUP must be 'true' or 'false'");
+        }
+    }
+    if (device == "NPU" && !draft_model_dir.empty()) {
+        throw std::runtime_error("DRAFT_MODEL_DIR is not supported when DEVICE is NPU for vlm");
+    }
+    const bool prompt_lookup = lookup_is_true;
+    // Prompt lookup decoding in VLM pipeline enforces ContinuousBatching backend
+    ov::AnyMap properties = {ov::genai::prompt_lookup(prompt_lookup)};
+    if (!draft_model_dir.empty()) {
+        properties.insert(ov::genai::draft_model(draft_model_dir, device));
+    }
+    if (device == "GPU") {
+        // Cache compiled models on disk for GPU to save time on the
+        // next run. It's not beneficial for CPU.
+        properties.insert({ov::cache_dir("vlm_cache")});
+    }
+    ov::genai::VLMPipeline pipe(argv[1], device, properties);
+
+    ov::genai::GenerationConfig generation_config;
+    generation_config.max_new_tokens = 100;
+    if (prompt_lookup) {
+        // Define candidates number for candidate generation
+        generation_config.num_assistant_tokens = 5;
+        // Define max_ngram_size
+        generation_config.max_ngram_size = 3;
+    }
+
+    std::string prompt;
+
+    ov::genai::ChatHistory history;
+
+    std::cout << "question:\n";
+    std::getline(std::cin, prompt);
+
+    history.push_back({{"role", "user"}, {"content", std::move(prompt)}});
+    ov::genai::VLMDecodedResults decoded_results = pipe.generate(history,
+                                                                 ov::genai::audios(std::vector{audio}),
+                                                                 ov::genai::generation_config(generation_config),
+                                                                 ov::genai::streamer(print_subword));
+    history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
+    std::cout << "\n----------\n"
+                 "question:\n";
+    while (std::getline(std::cin, prompt)) {
+        history.push_back({{"role", "user"}, {"content", std::move(prompt)}});
+        // New images and videos can be passed at each turn
+        ov::genai::VLMDecodedResults decoded_results =
+            pipe.generate(history, ov::genai::generation_config(generation_config), ov::genai::streamer(print_subword));
+        history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
+        std::cout << "\n----------\n"
+                     "question:\n";
+    }
+} catch (const std::exception& error) {
+    try {
+        std::cerr << error.what() << '\n';
+    } catch (const std::ios_base::failure&) {
+    }
+    return EXIT_FAILURE;
+} catch (...) {
+    try {
+        std::cerr << "Non-exception object thrown\n";
+    } catch (const std::ios_base::failure&) {
+    }
+    return EXIT_FAILURE;
+}
