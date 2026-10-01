@@ -627,7 +627,7 @@ jobs:
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
       EXTENSION_LIB_PATH: ${{ github.workspace }}/install/tests/
-      HF_HUB_OFFLINE: 1
+      HF_HUB_OFFLINE: 0
 
     steps:
       - name: Setup Variables
@@ -693,7 +693,7 @@ jobs:
       # The debug logging includes messages about the time it takes to read the GGUF model.
       # These messages differ from run to run, so we cannot compare the results of the CPP, Python, and JavaScript parts.
       OPENVINO_LOG_LEVEL: 1
-      HF_HUB_OFFLINE: 1
+      HF_HUB_OFFLINE: 0
 
     steps:
       - name: Setup Variables
@@ -787,7 +787,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
-      HF_HUB_OFFLINE: 1
+      HF_HUB_OFFLINE: 0
 
     steps:
       - name: Setup Variables
@@ -916,7 +916,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/openvino.genai/src/js/bin
       PY_INSTALL_DIR: ${{ github.workspace }}/install
       NODE_VERSION: ${{ matrix.nodejs-version }}
-      HF_HUB_OFFLINE: 1
+      HF_HUB_OFFLINE: 0
 
     steps:
       - name: Setup Variables
@@ -1005,7 +1005,7 @@ jobs:
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build_xgrammar
       EXTENSION_LIB_PATH: ${{ github.workspace }}/ov/tests
-      HF_HUB_OFFLINE: 1
+      HF_HUB_OFFLINE: 0
 
     steps:
       - name: Clone openvino.genai
