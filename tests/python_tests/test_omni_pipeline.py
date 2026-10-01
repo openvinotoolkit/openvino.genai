@@ -936,6 +936,55 @@ def test_audio_older_turn_reference_rejected(qwen3_omni_pipe_pa: VLMPipeline, au
         )
 
 
+@pytest.mark.real_models
+@pytest.mark.vlm
+def test_audio_failed_turn_is_rolled_back(qwen3_omni_pipe_pa: VLMPipeline, audio_1s_tensor: openvino.Tensor):
+    """A turn that throws after registering its audio must not shift the next turn's indices."""
+    history = ChatHistory()
+    history.append({"role": "user", "content": "Describe " + audio_tag(1)})
+    with pytest.raises(RuntimeError):
+        qwen3_omni_pipe_pa.generate(history, audios=[audio_1s_tensor], generation_config=audio_generation_config())
+
+    history.pop()
+    history.append({"role": "user", "content": "Describe " + audio_tag(0)})
+    retried = qwen3_omni_pipe_pa.generate(
+        history, audios=[audio_1s_tensor], generation_config=audio_generation_config()
+    )
+    fresh = audio_history_run(
+        qwen3_omni_pipe_pa, [{"role": "user", "content": "Describe " + audio_tag(0)}], [audio_1s_tensor]
+    )
+
+    assert retried.texts == fresh.texts
+    assert num_input_tokens(retried) == num_input_tokens(fresh)
+
+
+@pytest.mark.real_models
+@pytest.mark.vlm
+def test_chat_turn_rolled_back_on_exception(qwen3_omni_pipe_pa: VLMPipeline):
+    """A start_chat turn that throws after storing its video must not leave that video behind."""
+    config = GenerationConfig(max_new_tokens=STALE_TURN_MAX_NEW_TOKENS, do_sample=False, ignore_eos=True)
+    long_video = openvino.Tensor(np.zeros((8, 32, 32, 3), dtype=np.uint8))
+    short_video = openvino.Tensor(np.zeros((4, 32, 32, 3), dtype=np.uint8))
+    invalid_audio = openvino.Tensor(np.zeros((2, 16000), dtype=np.float32))
+
+    def second_turn_tokens(fail_first: bool) -> int:
+        qwen3_omni_pipe_pa.start_chat()
+        try:
+            qwen3_omni_pipe_pa.generate("Hi", generation_config=config)
+            if fail_first:
+                with pytest.raises(RuntimeError, match="1-D tensor"):
+                    qwen3_omni_pipe_pa.generate(
+                        "Describe", videos=[long_video], audios=[invalid_audio], generation_config=config
+                    )
+            return num_input_tokens(
+                qwen3_omni_pipe_pa.generate("Describe", videos=[short_video], generation_config=config)
+            )
+        finally:
+            qwen3_omni_pipe_pa.finish_chat()
+
+    assert second_turn_tokens(fail_first=True) == second_turn_tokens(fail_first=False)
+
+
 # ----------------------------------------------------------------------------------------------
 # ContinuousBatchingPipeline with a batch of two, each item with its own audio. Batch size 1 is
 # already covered: VLMPipeline with PA goes through the same code via the CB adapter.
