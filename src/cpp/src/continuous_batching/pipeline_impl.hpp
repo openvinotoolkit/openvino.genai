@@ -107,7 +107,7 @@ protected:
     void _reserve_linear_attention_scratch();
 
     /// Publishes canonical completed COW rows after successful non-speculative inference.
-    void _publish_completed_cache_blocks(const Scheduler::Output& scheduler_output);
+    void _publish_completed_cache_blocks(const ContinuousBatchingScheduler::Output& scheduler_output);
 
     virtual bool _can_publish_kv_only_completed_blocks() const {
         return true;

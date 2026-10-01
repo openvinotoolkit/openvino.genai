@@ -459,7 +459,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_release_linear_attenti
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_publish_completed_cache_blocks(
-    const Scheduler::Output& scheduler_output) {
+    const ContinuousBatchingScheduler::Output& scheduler_output) {
     for (size_t seq_group_id : scheduler_output.m_scheduled_sequence_groups_ids) {
         const SequenceGroup::Ptr& sequence_group = m_requests[seq_group_id];
         const size_t processed_after = sequence_group->get_num_processed_tokens();
