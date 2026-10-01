@@ -109,8 +109,7 @@ def _read_audio_file(path_or_url: str, log_label: str = "audio"):
 
         LOGGER.info("Downloading %s from URL: %s", log_label, path_or_url)
         try:
-            # nosec B310: URL scheme and host are validated above; only http/https are permitted.
-            with urlopen(path_or_url, timeout=30) as response:
+            with urlopen(path_or_url, timeout=30) as response:  # nosec B310
                 return sf.read(
                     io.BytesIO(response.read()),
                     dtype="float32",
