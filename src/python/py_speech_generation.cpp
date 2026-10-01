@@ -7,8 +7,11 @@
 #include <pybind11/stl/filesystem.h>
 #include <pybind11/stl_bind.h>
 
+#include "openvino/genai/scheduler_config.hpp"
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
+#include "openvino/genai/speech_generation/speech_generation_handle.hpp"
 #include "openvino/genai/speech_generation/speech_generation_perf_metrics.hpp"
+#include "openvino/genai/speech_generation/text2speech_continuous_batching_pipeline.hpp"
 #include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "py_utils.hpp"
@@ -17,8 +20,13 @@
 namespace py = pybind11;
 using ov::genai::GenerationConfig;
 using ov::genai::PerfMetrics;
+using ov::genai::SchedulerConfig;
 using ov::genai::SpeechGenerationConfig;
+using ov::genai::SpeechGenerationHandle;
+using ov::genai::SpeechGenerationHandleImpl;
+using ov::genai::SpeechGenerationOutput;
 using ov::genai::SpeechGenerationPerfMetrics;
+using ov::genai::Text2SpeechContinuousBatchingPipeline;
 using ov::genai::Text2SpeechDecodedResults;
 using ov::genai::Text2SpeechPipeline;
 
@@ -200,6 +208,32 @@ py::object call_text2speech_common_generate(Text2SpeechPipeline& pipe,
     }
     return py::cast(res);
 }
+auto text2speech_cb_pipeline_docstring = R"(
+    Text2SpeechContinuousBatchingPipeline class.
+
+    Low-level, multi-session counterpart to Text2SpeechPipeline, analogous to how
+    ContinuousBatchingPipeline is a separate, lower-level counterpart to LLMPipeline/VLMPipeline.
+    Currently only Qwen3-TTS models are supported.
+)";
+
+auto text2speech_cb_add_request_docstring = R"(
+    Adds a text-to-speech generation request to the pipeline without blocking.
+
+    :param request_id: unique id used to track the request; the caller must ensure uniqueness.
+    :type request_id: int
+
+    :param text: input text for which to generate speech.
+    :type text: str
+
+    :param speaker_embedding: vector representing the unique characteristics of a speaker's voice.
+    :type speaker_embedding: openvino.Tensor or None
+
+    :param properties: speech generation parameters specified as properties
+    :type properties: dict
+
+    :returns: a handle used to read generated audio and query/control the request's status.
+    :rtype: SpeechGenerationHandle
+)";
 
 }  // namespace
 
@@ -312,4 +346,77 @@ void init_speech_generation_pipeline(py::module_& m) {
              "Get the expected speaker embedding shape for the loaded model. "
                "SpeechT5: Shape{1, 512}. Kokoro: Shape{510, 1, 256}. "
                "Qwen3 Base: Shape{1, 1, D}.");
+
+    py::class_<SpeechGenerationOutput>(m,
+                                       "SpeechGenerationOutput",
+                                       "One incremental unit of audio produced for a single add_request() session.")
+        .def(py::init<>())
+        .def_readwrite("waveform", &SpeechGenerationOutput::waveform)
+        .def_readwrite("finish_reason", &SpeechGenerationOutput::finish_reason);
+
+    py::class_<SpeechGenerationHandleImpl, std::shared_ptr<SpeechGenerationHandleImpl>>(m, "SpeechGenerationHandle")
+        .def("get_status", &SpeechGenerationHandleImpl::get_status)
+        .def("can_read", &SpeechGenerationHandleImpl::can_read)
+        .def("is_stopped", &SpeechGenerationHandleImpl::is_stopped)
+        .def("is_cancelled", &SpeechGenerationHandleImpl::is_cancelled)
+        .def("stop",
+             &SpeechGenerationHandleImpl::stop,
+             py::arg_v("finish_reason", ov::genai::GenerationFinishReason::STOP, "GenerationFinishReason.STOP"))
+        .def("cancel", &SpeechGenerationHandleImpl::cancel)
+        .def("read", &SpeechGenerationHandleImpl::read, py::call_guard<py::gil_scoped_release>())
+        .def("read_all", &SpeechGenerationHandleImpl::read_all, py::call_guard<py::gil_scoped_release>())
+        .def("get_perf_metrics", &SpeechGenerationHandleImpl::get_perf_metrics);
+
+    py::class_<Text2SpeechContinuousBatchingPipeline>(m,
+                                                      "Text2SpeechContinuousBatchingPipeline",
+                                                      text2speech_cb_pipeline_docstring)
+        .def(
+            py::init([](const std::filesystem::path& models_path,
+                        const SchedulerConfig& scheduler_config,
+                        const std::string& device,
+                        const py::kwargs& kwargs) {
+                ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                py::gil_scoped_release rel;
+                return std::make_unique<Text2SpeechContinuousBatchingPipeline>(models_path,
+                                                                                scheduler_config,
+                                                                                device,
+                                                                                properties);
+            }),
+            py::arg("models_path"),
+            "folder with tokenizer, talker and code predictor .xml files",
+            py::arg("scheduler_config"),
+            "scheduler configuration used for PagedAttention-based scheduling of the talker backbone",
+            py::arg("device"),
+            "device on which inference will be done",
+            R"(
+            Text2SpeechContinuousBatchingPipeline class constructor.
+            models_path (os.PathLike): Path to the model file.
+            scheduler_config (SchedulerConfig): Scheduler configuration.
+            device (str): Device to run the model on (e.g., CPU).
+        )")
+        .def(
+            "add_request",
+            [](Text2SpeechContinuousBatchingPipeline& pipe,
+               uint64_t request_id,
+               const std::string& text,
+               py::object speaker_embedding,
+               const py::kwargs& kwargs) -> SpeechGenerationHandle {
+                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                py::gil_scoped_release rel;
+                if (speaker_embedding.is_none()) {
+                    return pipe.add_request(request_id, text, ov::Tensor(), properties);
+                }
+                const ov::Tensor& tensor = speaker_embedding.cast<ov::Tensor>();
+                return pipe.add_request(request_id, text, tensor, properties);
+            },
+            py::arg("request_id"),
+            py::arg("text"),
+            py::arg("speaker_embedding") = py::none(),
+            text2speech_cb_add_request_docstring)
+        .def("step", &Text2SpeechContinuousBatchingPipeline::step)
+        .def("has_non_finished_requests", &Text2SpeechContinuousBatchingPipeline::has_non_finished_requests)
+        .def("get_speaker_embedding_shape",
+             &Text2SpeechContinuousBatchingPipeline::get_speaker_embedding_shape,
+             "Get the expected speaker embedding shape for the loaded model.");
 }

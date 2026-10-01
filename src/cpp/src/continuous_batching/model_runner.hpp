@@ -488,14 +488,15 @@ public:
         OPENVINO_ASSERT(sequence_groups.size() > 0);
         auto sequence_group_type = sequence_groups[0]->get_sequence_group_type();
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
-            OPENVINO_ASSERT(m_inputs_embedder, "Inputs embedder is not set for embeddings-based model");
-
+            // m_inputs_embedder is absent for pipelines (e.g. Qwen3-TTS) that always fully supply
+            // their own generated-id embeddings and position ids, never relying on the automatic
+            // token-id-lookup fallback in append_embeddings() below.
             hidden_size = sequence_groups[0]->get_hidden_size();
 
             const size_t first_sequence_groups_id = scheduler_output.m_scheduled_sequence_groups_ids[0];
             per_layer_inputs_context.init(
                 sequence_groups[first_sequence_groups_id]->get_per_layer_inputs(),
-                m_inputs_embedder->get_per_layer_embeddings_callback()
+                m_inputs_embedder ? m_inputs_embedder->get_per_layer_embeddings_callback() : nullptr
             );
         }
 
