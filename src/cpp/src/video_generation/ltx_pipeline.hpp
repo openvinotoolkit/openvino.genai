@@ -55,8 +55,8 @@ void check_inputs(const VideoGenerationConfig& generation_config,
     utils::validate_generation_config(generation_config);
     const float decode_noise_scale =
         generation_config.decode_noise_scale.value_or(generation_config.decode_timestep);
-    OPENVINO_ASSERT(!timestep_conditioning || generation_config.generator,
-                    "A generator is required for a timestep-conditioned VAE decoder");
+    OPENVINO_ASSERT(!timestep_conditioning || decode_noise_scale == 0.0f || generation_config.generator,
+                    "A generator is required when decode_noise_scale is non-zero");
     OPENVINO_ASSERT(timestep_conditioning ||
                         (generation_config.decode_timestep == 0.0f && decode_noise_scale == 0.0f),
                     "decode_timestep and decode_noise_scale require a timestep-conditioned VAE decoder");
@@ -100,7 +100,10 @@ class LTXPipeline : public VideoPipeline {
 
     void prepare_generation_decode_noise(const ov::Shape& shape,
                                          const VideoGenerationConfig& generation_config) {
-        if (m_vae->get_config().timestep_conditioning) {
+        m_decode_noise.reset();
+        const float decode_noise_scale =
+            generation_config.decode_noise_scale.value_or(generation_config.decode_timestep);
+        if (m_vae->get_config().timestep_conditioning && decode_noise_scale != 0.0f) {
             m_decode_noise = generation_config.generator->randn_tensor(shape);
         }
     }
@@ -232,16 +235,22 @@ class LTXPipeline : public VideoPipeline {
             generation_config.decode_noise_scale.value_or(generation_config.decode_timestep);
         std::optional<ov::Tensor> timestep;
         if (m_vae->get_config().timestep_conditioning) {
-            const ov::Tensor noise = m_decode_noise.has_value()
-                                         ? *m_decode_noise
-                                         : generation_config.generator->randn_tensor(denormalized.get_shape());
-            OPENVINO_ASSERT(noise.get_shape() == denormalized.get_shape(),
-                            "Decode noise shape must match denormalized latent shape");
-            float* denormalized_data = denormalized.data<float>();
-            const float* noise_data = noise.data<const float>();
-            for (size_t i = 0; i < denormalized.get_size(); ++i) {
-                denormalized_data[i] =
-                    (1.0f - decode_noise_scale) * denormalized_data[i] + decode_noise_scale * noise_data[i];
+            if (decode_noise_scale != 0.0f) {
+                const ov::Tensor noise = m_decode_noise.has_value()
+                                             ? *m_decode_noise
+                                             : generation_config.generator->randn_tensor(denormalized.get_shape());
+                OPENVINO_ASSERT(noise.get_shape() == denormalized.get_shape(),
+                                "Decode noise shape must match denormalized latent shape");
+                if (decode_noise_scale == 1.0f) {
+                    denormalized = noise;
+                } else {
+                    float* denormalized_data = denormalized.data<float>();
+                    const float* noise_data = noise.data<const float>();
+                    for (size_t i = 0; i < denormalized.get_size(); ++i) {
+                        denormalized_data[i] =
+                            (1.0f - decode_noise_scale) * denormalized_data[i] + decode_noise_scale * noise_data[i];
+                    }
+                }
             }
 
             timestep.emplace(ov::element::f32, ov::Shape{denormalized.get_shape()[0]});

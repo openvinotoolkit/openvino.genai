@@ -391,6 +391,39 @@ class TestVideoGenerationPipelines:
 
         np.testing.assert_array_equal(baseline.video.data, with_callback.video.data)
 
+    def test_zero_decode_noise_scale_does_not_advance_generation_rng(
+        self, video_generation_model, conditioned_video_generation_model
+    ):
+        common_kwargs = {
+            "height": 32,
+            "width": 32,
+            "num_frames": 9,
+            "num_inference_steps": 1,
+        }
+        baseline_generator = ov_genai.CppStdGenerator(42)
+        conditioned_generator = ov_genai.CppStdGenerator(42)
+
+        baseline_pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        baseline_pipe.generate("test prompt", **common_kwargs, generator=baseline_generator)
+
+        conditioned_pipe = ov_genai.Text2VideoPipeline(conditioned_video_generation_model, "CPU")
+        conditioned_pipe.generate(
+            "test prompt",
+            **common_kwargs,
+            decode_timestep=0.25,
+            decode_noise_scale=0.0,
+            generator=conditioned_generator,
+        )
+
+        baseline_followup = baseline_pipe.generate(
+            "test prompt", **common_kwargs, generator=baseline_generator
+        )
+        conditioned_followup = baseline_pipe.generate(
+            "test prompt", **common_kwargs, generator=conditioned_generator
+        )
+
+        np.testing.assert_array_equal(baseline_followup.video.data, conditioned_followup.video.data)
+
     @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
     def test_num_videos_per_prompt(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
@@ -951,7 +984,8 @@ class TestImage2VideoPipeline:
             generator=ov_genai.CppStdGenerator(42),
         )
 
-        assert no_noise.video.data.shape == (1, 9, 32, 32, 3)
+        assert no_noise.video.data.shape == with_noise.video.data.shape
+        assert no_noise.video.data.ndim == 5
         assert not np.array_equal(no_noise.video.data, with_noise.video.data)
 
     def test_lora_passthrough(self, video_generation_model):
