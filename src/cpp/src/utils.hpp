@@ -405,6 +405,20 @@ ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov
 size_t get_available_gpu_memory(const std::string& device, size_t num_cache_tensors);
 
 /**
+ * @brief Available memory across every device a model runs on.
+ *
+ * A tensor-parallel model spreads its cache over all of them and reports the
+ * size of a block as the sum over the devices, so the budget has to be a sum
+ * too -- measuring one device would under-count the capacity by roughly the
+ * number of devices. Repeated names are counted once: naming the same GPU
+ * twice does not give it twice the memory.
+ *
+ * @param devices            Devices the model runs on; must not be empty.
+ * @param num_cache_tensors   Cache tensors across all of them.
+ */
+size_t get_available_gpu_memory(const std::vector<std::string>& devices, size_t num_cache_tensors);
+
+/**
  * @brief Extracts and removes blob import/export related properties from the provided map.
  */
 std::pair<ov::AnyMap, std::optional<std::filesystem::path>> extract_export_properties(const ov::AnyMap& external_properties);

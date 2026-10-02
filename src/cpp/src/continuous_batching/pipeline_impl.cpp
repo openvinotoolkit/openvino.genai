@@ -193,9 +193,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     ov::InferRequest infer_request = compiled_model.create_infer_request();
 
     // Detect cache types, create managers and block managers, normalize config
-    auto get_available_memory = [&execution_device](const std::string& /*device*/, size_t num_cache_tensors) -> size_t {
-        if (execution_device.find("GPU") != std::string::npos) {
-            return utils::get_available_gpu_memory(execution_device, num_cache_tensors);
+    auto get_available_memory = [&execution_devices](const std::string& /*device*/, size_t num_cache_tensors) -> size_t {
+        if (execution_devices.front().find("GPU") != std::string::npos) {
+            // Every device, not just the first: a tensor-parallel model keeps
+            // part of the cache on each of them.
+            return utils::get_available_gpu_memory(execution_devices, num_cache_tensors);
         }
         return get_available_cpu_memory();
     };
@@ -231,8 +233,15 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
                                                        is_use_xattention,
                                                        is_use_adaptive_rkv);
         if (eviction_config.apply_rotation) {
-            const auto& kv_mgr = static_cast<const KVCacheManager&>(cache_orchestrator->get_cache_manager(CacheType::KV_CACHE));
-            _prepare_rotation_data_storage(normalized_config, kv_mgr.get_v_head_size(0));
+            // Rotation reads the KV geometry off the cache manager, which only
+            // a pipeline-owned cache exposes. A plugin that owns its cache
+            // hands out sizes, not layouts.
+            const auto* kv_mgr = dynamic_cast<const KVCacheManager*>(
+                &cache_orchestrator->get_cache_manager(CacheType::KV_CACHE));
+            OPENVINO_ASSERT(kv_mgr,
+                            "Cache rotation is not supported on a device whose plugin manages the KV "
+                            "cache itself");
+            _prepare_rotation_data_storage(normalized_config, kv_mgr->get_v_head_size(0));
         }
     } else {
         m_scheduler = std::make_shared<Scheduler>(cache_orchestrator, normalized_config, can_use_partial_preemption);
