@@ -22,9 +22,11 @@ env:
   CMAKE_CXX_COMPILER_LAUNCHER: ccache
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
-  HF_HOME: C:/mount/caches/huggingface/win
+  HF_HOME: ${{ github.workspace }}/hf_cache
+  HF_ENDPOINT: http://hf-proxy.hf-proxy.svc.cluster.local
+  HF_HUB_DISABLE_XET: 1
   HF_TOKEN_PATH: "C:\\mount\\secrets\\huggingface\\token-primary"
-  OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win/b53e4e21/
+  OV_CACHE: ${{ github.workspace }}/ov_cache
   OPENVINO_LOG_LEVEL: 1  # Windows fails with out of memory because of too verbose logging
   ARTIFACTS_SHARE: '/mount/build-artifacts'
   BASE_PRODUCT_TYPE: public_windows_vs2022
@@ -76,7 +78,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-medium
+    runs-on: aks-linux-medium-ab
     container:
       image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
       volumes:
@@ -105,7 +107,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: aks-win-8-cores-16gb-build
+    runs-on: aks-win-8-cores-16gb-build-ab
     env:
       CMAKE_GENERATOR: 'Ninja' # Ninja is the only Windows native generator supported by ccache
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
@@ -285,7 +287,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: aks-win-8-cores-16gb-build
+    runs-on: aks-win-8-cores-16gb-build-ab
     env:
       CMAKE_GENERATOR: Ninja
       OV_INSTALL_DIR: ${{ github.workspace }}\ov
@@ -388,7 +390,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: aks-win-8-cores-16gb-build
+    runs-on: aks-win-8-cores-16gb-build-ab
     env:
       CMAKE_GENERATOR: Ninja
       OV_INSTALL_DIR: ${{ github.workspace }}\ov
@@ -510,7 +512,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-medium
+    runs-on: aks-linux-medium-ab
     container:
       image: openvinogithubactions.azurecr.io/library/python:3.12-slim
       volumes:
@@ -558,7 +560,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: aks-win-4-cores-8gb-build
+    runs-on: aks-win-4-cores-8gb-build-ab
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/install/ov
       SRC_DIR: ${{ github.workspace }}/src
@@ -610,7 +612,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: aks-win-4-cores-8gb-build
+    runs-on: aks-win-4-cores-8gb-build-ab
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
@@ -697,7 +699,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: aks-win-16-cores-32gb-test
+    runs-on: aks-win-16-cores-32gb-test-ab
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
@@ -743,7 +745,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: aks-win-8-cores-16gb-build
+    runs-on: aks-win-8-cores-16gb-build-ab
     env:
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
@@ -882,7 +884,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: aks-win-8-cores-16gb-test
+    runs-on: aks-win-8-cores-16gb-test-ab
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
@@ -959,7 +961,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: aks-win-4-cores-8gb-test
+    runs-on: aks-win-4-cores-8gb-test-ab
 
     env:
       SRC_DIR: ${{ github.workspace }}/openvino.genai
