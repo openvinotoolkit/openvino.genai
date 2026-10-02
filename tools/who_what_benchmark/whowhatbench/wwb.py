@@ -482,6 +482,21 @@ def parse_args():
         required=False,
         help="Max numbers of tokens to generate, excluding the number of tokens in the prompt; the value must be greater than 0.",
     )
+    sampling_group = parser.add_mutually_exclusive_group()
+    sampling_group.add_argument(
+        "--do-sample",
+        "--do_sample",
+        dest="do_sample",
+        action="store_true",
+        help="Enable multinomial sampling for text generation.",
+    )
+    sampling_group.add_argument(
+        "--greedy",
+        dest="do_sample",
+        action="store_false",
+        help="Disable sampling and use greedy decoding for text generation.",
+    )
+    parser.set_defaults(do_sample=None)
     parser.add_argument(
         "--sd-generation-config",
         type=str,
@@ -523,6 +538,8 @@ def check_args(args):
         raise ValueError("'empty_adapters' mode is not supported for HF Transformers.")
     if args.torch_dtype is not None and not args.hf:
         raise ValueError("--torch-dtype requires --hf")
+    if args.do_sample is not None and args.model_type not in ("text", "text-chat"):
+        raise ValueError("--do-sample and --greedy are supported only for text and text-chat model types")
     if args.speaker_embeddings is not None and not os.path.exists(args.speaker_embeddings):
         raise ValueError(f"Speaker embedding file does not exist: {args.speaker_embeddings}")
     if args.gt_data is not None and os.path.isdir(args.gt_data):
@@ -708,7 +725,6 @@ def genai_gen_text(
 
     return model.generate(
         question,
-        do_sample=False,
         max_new_tokens=max_new_tokens,
         apply_chat_template=use_chat_template,
         num_assistant_tokens=num_assistant_tokens,
@@ -743,7 +759,6 @@ def genai_gen_chat_text(
         chat_history.append({"role": "user", "content": prompt})
         decode_res = model.generate(
             chat_history,
-            do_sample=False,
             max_new_tokens=max_new_tokens,
             num_assistant_tokens=num_assistant_tokens,
             assistant_confidence_threshold=assistant_confidence_threshold,
@@ -1510,6 +1525,9 @@ def main():
             args.generation_config_extra = dict(validated)
     else:
         args.generation_config_extra = {}
+
+    if args.do_sample is not None:
+        args.generation_config_extra["do_sample"] = args.do_sample
 
     version_str = f'openvino runtime version: {ov.get_version()}'
     if args.genai:

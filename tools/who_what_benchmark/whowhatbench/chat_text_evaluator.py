@@ -74,12 +74,13 @@ def default_gen_answer(
         generate_kwargs = dict(
             input_ids=new_input_ids,
             attention_mask=attention_mask,
-            do_sample=False,
             max_new_tokens=max_new_tokens,
             return_dict_in_generate=True,
             **get_ignore_parameters_flag(),
             use_cache=True,
         )
+        if generation_config_extra:
+            generate_kwargs.update(generation_config_extra)
 
         if past_key_values is not None:
             if "transformers" in str(type(model)):

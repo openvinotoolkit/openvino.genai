@@ -208,6 +208,20 @@ def get_argparser():
         default=1,
         help="Number of beams in the decoding strategy, activates beam_search if greater than 1",
     )
+    sampling_group = parser.add_mutually_exclusive_group()
+    sampling_group.add_argument(
+        "--do_sample",
+        dest="do_sample",
+        action="store_true",
+        help="Enable multinomial sampling instead of greedy decoding.",
+    )
+    sampling_group.add_argument(
+        "--greedy",
+        dest="do_sample",
+        action="store_false",
+        help="Disable sampling and use greedy decoding.",
+    )
+    parser.set_defaults(do_sample=None)
     parser.add_argument(
         "--pruning_ratio",
         type=pruning_ratio_type,
