@@ -35,8 +35,10 @@ ARCHITECTURES = [
     "hunyuan-dense",
     "llama",
     "maincoder",
+    "mamba2",
     "minicpm",
     "mistral3",
+    "nemotron_h",
     "olmoe",
     "phi3",
     "qwen2",
@@ -138,6 +140,16 @@ def generation_config():
 # (predicate, raises, reason) applied in order; the first match marks the test xfail.
 BACKEND_LIMITATIONS = [
     (
+        lambda arch, variant, backend: arch == "mamba2" and backend == "PA",
+        RuntimeError,
+        "Pure Mamba2 has no SDPA node for explicit PA conversion",
+    ),
+    (
+        lambda arch, variant, backend: arch == "nemotron_h" and backend == "PA",
+        RuntimeError,
+        "GGUF Nemotron-H PA conversion fails the SelectiveSSM fusion-count check",
+    ),
+    (
         lambda arch, variant, backend: arch == "gemma2" and backend == "PA",
         RuntimeError,
         "Soft-capped Gemma2 attention has no SDPA node for explicit PA conversion",
@@ -212,3 +224,27 @@ def test_generated_gguf_continuous_batching(request, generated_model, numeric_to
         assert len(outputs) == 1
         assert outputs[0].generated_ids == reference["generated_ids"], model.name
         np.testing.assert_allclose(outputs[0].generated_log_probs, reference["log_probs"], atol=1e-4, rtol=0)
+
+
+def test_generated_gguf_recurrent_chat_cancel(generated_model, numeric_tokenizer):
+    arch, variant, model, references = generated_model
+    if arch not in {"mamba2", "nemotron_h"}:
+        pytest.skip("Recurrent GGUF chat regression")
+    config = {**properties(), "ATTENTION_BACKEND": "SDPA"}
+    pipeline = genai.LLMPipeline(model, numeric_tokenizer, "CPU", **config)
+    inputs = lambda ids: ov.Tensor(np.array([ids], dtype=np.int64))
+    prompt = references[0]["input_ids"]
+    pipeline.start_chat()
+    try:
+        first = pipeline.generate(inputs(prompt), generation_config()).tokens[0]
+        pipeline.generate(
+            inputs([4, 5]), generation_config(),
+            streamer=lambda text: genai.StreamingStatus.CANCEL,
+        )
+        actual = pipeline.generate(inputs([6, 7]), generation_config()).tokens
+    finally:
+        pipeline.finish_chat()
+
+    reference = genai.LLMPipeline(model, numeric_tokenizer, "CPU", **config)
+    expected = reference.generate(inputs(prompt + first + [6, 7]), generation_config()).tokens
+    assert actual == expected

@@ -63,6 +63,7 @@ int main(int argc, char** argv) {
         // weights do not need the randomly initialized quantization scale tensors.
         for (const auto& [name, tensor] : model_and_ctx.first->tensors_by_name) {
             if ((arch != LLM_ARCH_OPENAI_MOE && name.find("ssm_dt.bias") == std::string::npos &&
+                 name.find("ssm_conv1d.bias") == std::string::npos &&
                  name.find(".bias") != std::string::npos) ||
                 name.find("rope_freqs") != std::string::npos || name.find("rope_factors") != std::string::npos ||
                 name.find(".scale") != std::string::npos || name.find(".input_scale") != std::string::npos ||

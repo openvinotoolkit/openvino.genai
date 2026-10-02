@@ -502,7 +502,19 @@ std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  c
     const ov::AnyMap& filtered_properties = gguf_props.rest;
     if (is_gguf_model(model_dir)) {
 #ifdef ENABLE_GGUF
-        return create_from_gguf(model_dir.string(), gguf_props.enable_save_ov_model, gguf_props.use_legacy_reader());
+        try {
+            return create_from_gguf(model_dir.string(), gguf_props.enable_save_ov_model, gguf_props.use_legacy_reader());
+        } catch (const std::exception& error) {
+            if (!gguf_props.legacy_reader.has_value()) {
+                OPENVINO_THROW(error.what(),
+                               "\nThe default legacy GGUF reader failed to load this model. "
+                               "Try GGUF_READER=\"FRONTEND\" (Python) or "
+                               "ov::genai::gguf_reader(\"FRONTEND\") (C++). "
+                               "The OpenVINO GGUF frontend should provide better model quality and broader "
+                               "architecture support, but it is in preview and may have limitations.");
+            }
+            throw;
+        }
 #else
         OPENVINO_ASSERT("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
 #endif
@@ -542,6 +554,11 @@ CacheTypes get_cache_types(const ov::Model& model) {
     // "ReadValue" node is cache representation in stateful model
     const std::string state_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
     CacheTypes cache_types;
+    const auto recurrent_states = model.get_rt_info().find("gguf_recurrent_states");
+    if (recurrent_states != model.get_rt_info().end() &&
+        !recurrent_states->second.as<std::vector<std::string>>().empty()) {
+        cache_types.add_linear();
+    }
 
     for (const auto& op : model.get_ops()) {
         // check input size, as in LoRA adapters case it could be 0

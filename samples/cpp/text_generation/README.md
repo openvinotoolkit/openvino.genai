@@ -27,15 +27,29 @@ hf download <model> --local-dir <output_folder>
 
 To run any samples with a GGUF model, simply provide the path to the .gguf file via the `<MODEL_DIR>` parameter.
 
-GGUF files are converted with a hand-written reader that handles just `llama`, `qwen2` and
-`qwen3`, and ignores part of the file's metadata (for example `rope_freqs.weight`, so llama-3
-RoPE scaling is not applied and accuracy suffers). For anything it does not accept, convert the
-model to the IR format with the `optimum-intel` tool.
+The default legacy reader handles `llama`, `qwen2`, and `qwen3`, and ignores some metadata,
+such as `rope_freqs.weight`. The OpenVINO GGUF frontend supports more architectures and is
+expected to provide better model quality, but is in preview and may have limitations.
 
-An OpenVINO GGUF frontend covering a wider range of architectures is also available, but is not
-the default reader yet: continuous batching / PagedAttention on its converted graph needs an
-OpenVINO-side fix first. Until then, GGUF models run on the SDPA attention backend, and a
-`scheduler_config` passed alongside one is ignored.
+Select the frontend when constructing the pipeline:
+
+```cpp
+#include <iostream>
+#include <openvino/genai/llm_pipeline.hpp>
+
+int main() {
+    ov::genai::LLMPipeline pipe(
+        "model.gguf", "CPU", ov::genai::gguf_reader("FRONTEND"));
+    ov::genai::GenerationConfig config;
+    config.max_new_tokens = 64;
+    std::cout << pipe.generate("Explain why the sky is blue.", config);
+}
+```
+
+With a compatible OpenVINO build, GenAI attempts paged attention by default and falls back to
+SDPA if conversion fails. An explicit `scheduler_config` requests continuous batching and
+reports conversion errors. Mamba2 and dense Nemotron-H GGUFs currently require SDPA.
+See [Run GGUF models](https://openvinotoolkit.github.io/openvino.genai/docs/guides/gguf) for more examples and limitations.
 
 > [!NOTE]
 > The `GGUF_READER` property selects which reader converts the file. It defaults to
