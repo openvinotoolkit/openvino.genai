@@ -3577,7 +3577,7 @@ def test_qwen3_omni_vision_preprocess_modes_equivalence(cat_tensor):
     )
 
 
-def test_qwen3_omni_audio_rejected_when_tokenizer_lacks_audio_tokens(tmp_path: Path) -> None:
+def test_qwen3_omni_audio_rejected_on_audio_token_id_mismatch(tmp_path: Path) -> None:
     """Audio must fail with a clear error when the tokenizer does not map <|audio_pad|> to audio_token_id."""
     model_path = tmp_path / "qwen3_omni_audio_token_mismatch"
     shutil.copytree(_get_ov_model(MODEL_QWEN3_OMNI), model_path)
