@@ -3575,20 +3575,9 @@ def test_qwen3_omni_vision_preprocess_modes_equivalence(cat_tensor):
     )
 
 
-def test_qwen3_omni_audio_rejected_when_tokenizer_lacks_audio_tokens(tmp_path):
-    import shutil
-    from tokenizers import Tokenizer
-    from tokenizers.models import WordLevel
-
-    shutil.copytree(_get_ov_model(MODEL_QWEN3_OMNI), tmp_path, dirs_exist_ok=True)
-    backend = Tokenizer(WordLevel({"[UNK]": 0, "[EOS]": 1}, unk_token="[UNK]"))
-    tokenizer = transformers.PreTrainedTokenizerFast(
-        tokenizer_object=backend, unk_token="[UNK]", eos_token="[EOS]", pad_token="[UNK]"
-    )
-    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
-    openvino.save_model(ov_tokenizer, tmp_path / "openvino_tokenizer.xml")
-    openvino.save_model(ov_detokenizer, tmp_path / "openvino_detokenizer.xml")
-    pipe = VLMPipeline(tmp_path, "CPU", ATTENTION_BACKEND="SDPA")
+def test_qwen3_omni_audio_rejected_when_tokenizer_lacks_audio_tokens():
+    """The tiny export's tokenizer splits <|audio_pad|> into characters, so audio must fail with a clear error."""
+    pipe = VLMPipeline(_get_ov_model(MODEL_QWEN3_OMNI), "CPU", ATTENTION_BACKEND="SDPA")
     audio = openvino.Tensor(np.zeros(16000, dtype=np.float32))
-    with pytest.raises(RuntimeError, match=r"does not encode <\|audio_pad\|> as the single token"):
+    with pytest.raises(RuntimeError, match="does not encode <\\|audio_pad\\|> as the single token"):
         pipe.generate("Describe", audios=[audio], generation_config=GenerationConfig(max_new_tokens=1))
