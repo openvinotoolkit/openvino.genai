@@ -172,6 +172,11 @@ if is_transformers_version("<", "5.0"):
     # MiniCPM-o-2_6 maximum supported version of transformers is 4.51.3
     MODEL_IDS = [
         "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
+        # MiniCPM-V-4 uses a ChatML chat template that does not embed the BOS token while its
+        # tokenizer sets add_bos_token=true. It regression-guards the chat-template tokenization
+        # path that must keep the leading BOS the template omits (otherwise text-only output
+        # diverges from optimum-intel).
+        "optimum-intel-internal-testing/tiny-random-minicpm-v-4",
         "optimum-intel-internal-testing/tiny-random-internvl2",
         "optimum-intel-internal-testing/tiny-random-llava",
         "optimum-intel-internal-testing/tiny-random-llava-next",
@@ -208,6 +213,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     MODEL_DEEPSEEK_OCR2: lambda idx: "<image>",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
+    "optimum-intel-internal-testing/tiny-random-minicpm-v-4": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<image>\n",
@@ -442,6 +448,7 @@ def _get_ov_model(model_id: str) -> str:
                 load_in_8bit=False,
                 trust_remote_code=model_id in {
                     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
+                    "optimum-intel-internal-testing/tiny-random-minicpm-v-4",
                     "optimum-intel-internal-testing/tiny-random-internvl2",
                     "optimum-intel-internal-testing/tiny-random-phi3-vision",
                     "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
