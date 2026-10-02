@@ -34,6 +34,7 @@ enum class VLMModelType {
     QWEN3_OMNI,
     DEEPSEEK_OCR2,
     MUSE_GLIMMER,
+    LFM2_VL,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to
@@ -167,6 +168,38 @@ public:
     int64_t video_token_id = -1;
     // Speaker name-to-codec-token mapping
     std::map<std::string, int64_t> speaker_ids;
+
+    // LFM2-VL (lfm2_vl) specific config
+    /// @brief Downsampling (pixel unshuffle) factor applied by the multimodal projector.
+    size_t lfm2_downsample_factor = 2;
+    /// @brief Vision encoder patch size (pixels) for LFM2-VL naflex preprocessing.
+    size_t lfm2_encoder_patch_size = 16;
+    /// @brief Tile size (pixels) used when splitting large images into a grid.
+    size_t lfm2_tile_size = 512;
+    /// @brief Minimum number of image tokens produced for a single image.
+    size_t lfm2_min_image_tokens = 64;
+    /// @brief Maximum number of image tokens produced for a single (thumbnail/resized) image.
+    size_t lfm2_max_image_tokens = 256;
+    /// @brief Minimum number of tiles when image splitting is enabled.
+    size_t lfm2_min_tiles = 2;
+    /// @brief Maximum number of tiles when image splitting is enabled.
+    size_t lfm2_max_tiles = 10;
+    /// @brief Number of learned position embeddings in the naflex vision tower (square grid).
+    size_t lfm2_vision_num_patches = 256;
+    /// @brief Whether large images are split into a grid of tiles.
+    bool lfm2_do_image_splitting = true;
+    /// @brief Whether a downscaled thumbnail is appended when an image is tiled.
+    bool lfm2_use_thumbnail = true;
+    /// @brief Whether image boundary/row-col/thumbnail special tokens are inserted.
+    bool lfm2_use_image_special_tokens = true;
+    /// @brief Tolerance factor used to decide whether an image is too large for a single tile.
+    float lfm2_max_pixels_tolerance = 2.0f;
+    /// @brief LFM2-VL image start boundary token.
+    std::string lfm2_image_start_token = "<|image_start|>";
+    /// @brief LFM2-VL image end boundary token.
+    std::string lfm2_image_end_token = "<|image_end|>";
+    /// @brief LFM2-VL thumbnail boundary token.
+    std::string lfm2_image_thumbnail_token = "<|img_thumbnail|>";
 
     /// @brief Default constructor.
     VLMConfig() = default;

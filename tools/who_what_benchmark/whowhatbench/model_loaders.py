@@ -569,6 +569,17 @@ def load_visual_text_model(
             elif config.model_type == "gemma3n":
                 model_cls = AutoModelForCausalLM
                 model_kwargs["torch_dtype"] = model_kwargs["torch_dtype"] or torch.float32
+            elif config.model_type == "lfm2_vl":
+                from transformers import AutoModelForImageTextToText
+
+                model_cls = AutoModelForImageTextToText
+                # LFM2-VL checkpoints are published in bfloat16. Loading the HF
+                # reference in its native bf16 produces degenerate greedy outputs
+                # (e.g. single-word answers) that do not represent the model's
+                # real behavior and make it an invalid accuracy ground truth.
+                # Default to float32 (like gemma3n / deepseek_ocr2) unless the
+                # user explicitly requested a dtype.
+                model_kwargs["torch_dtype"] = model_kwargs["torch_dtype"] or torch.float32
             elif config.model_type == "deepseek_ocr2":
                 from transformers import AutoModelForImageTextToText
 
