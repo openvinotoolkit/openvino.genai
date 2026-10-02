@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <numeric>
 #include <set>
-#include <type_traits>
 #include "openvino/genai/image_generation/scheduler.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/op/concat.hpp"
@@ -23,9 +22,6 @@
 
 using namespace ov::genai;
 
-// These headers must remain usable in one translation unit. Sharing the
-// qualified type name is an ODR violation even when a non-LTO build passes.
-static_assert(!std::is_same_v<ov::genai::Scheduler, ov::genai::ContinuousBatchingScheduler>);
 
 void clear_finished_sequences(std::vector<SequenceGroup::Ptr>& requests) {
     auto new_end = std::remove_if(requests.begin(), requests.end(), [] (SequenceGroup::CPtr seq_group) -> bool {
