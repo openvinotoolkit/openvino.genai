@@ -103,6 +103,11 @@ The `google/gemma-4-12B-it` model uses the `Gemma4UnifiedForConditionalGeneratio
 
 The model requires `transformers>=4.57` for the export with `optimum-cli`.
 
+#### LFM2-VL {#lfm2-vl-notes}
+
+1. LFM2-VL uses a hybrid short-convolution language model that is only supported by the stateful SDPA backend. The PagedAttention / continuous-batching path is not applicable, so requests must use `ATTENTION_BACKEND="SDPA"` (selected automatically for this model type).
+2. The model requires `transformers>=5.10` and a matching `optimum-intel` for the export with `optimum-cli`.
+
 #### Qwen3.5, Qwen3.6, Qwen3.8 {#qwen3_5-notes}
 
 The model requires `transformers==5.2` for the export with `optimum-cli`.
