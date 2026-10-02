@@ -327,6 +327,14 @@ public:
     GenerationConfig get_generation_config() const;
     void set_generation_config(const GenerationConfig& config);
 
+    /**
+     * @brief Returns the maximum token capacity that a single request can consume under
+     *        the current cache configuration.
+     * @return Maximum token capacity in tokens, or std::nullopt if not using continuous batching
+     *         with a static cache budget.
+     */
+    std::optional<size_t> get_max_request_tokens() const;
+
 
     /**
     * @brief start chat with keeping history in kv cache.
