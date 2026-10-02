@@ -22,6 +22,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "Qwen/Qwen3-Embedding-0.6B",
         "convert_args": ["--trust-remote-code", "--task", "feature-extraction"],
     },
+    "Qwen3Guard-Stream-0.6B": {
+        "name": "Qwen/Qwen3Guard-Stream-0.6B",
+        "convert_args": ["--trust-remote-code", "--task", "feature-extraction"],
+    },
     "ms-marco-TinyBERT-L2-v2": {
         "name": "cross-encoder/ms-marco-TinyBERT-L2-v2",
         "convert_args": ["--trust-remote-code", "--task", "text-classification"],

@@ -4,7 +4,9 @@
 #pragma once
 
 #include <filesystem>
+#include <map>
 #include <memory>
+#include <string>
 #include <variant>
 #include <vector>
 
@@ -26,6 +28,13 @@ class EmbeddingPipelineImpl;
  */
 struct OPENVINO_GENAI_EXPORTS EmbedResult {
     ov::Tensor embeddings;
+
+    /**
+     * @brief Per token scores of every model output, by name, each shaped [batch, seq_len,
+     * num_classes]. Filled instead of `embeddings` by models that replace the single embedding
+     * with several classification heads, e.g. Qwen3Guard.
+     */
+    std::map<std::string, ov::Tensor> token_scores;
 };
 
 /**
@@ -86,6 +95,8 @@ public:
         return embed(ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
+    void reset_state();
+
     ~EmbeddingPipeline();
 
 private:
@@ -96,6 +107,18 @@ private:
  * @brief Text or batch of texts to embed via EmbeddingPipeline::embed(AnyMap).
  */
 static constexpr ov::Property<std::variant<std::string, std::vector<std::string>>> text{"text"};
+
+/**
+ * @brief Already tokenized input as an alternative to `text` for models
+ * scoring individual tokens. Lets a caller reuse ids it already has, e.g. the ones an LLMPipeline
+ * just generated.
+ */
+static constexpr ov::Property<ov::Tensor> input_ids{"input_ids"};
+
+/**
+ * @brief Mask matching `input_ids`, all ones when omitted.
+ */
+static constexpr ov::Property<ov::Tensor> attention_mask{"attention_mask"};
 
 /**
  * @brief Instruction for encoding a document or query.
