@@ -38,7 +38,9 @@ public:
         ): LLMPipelineImplBase{tokenizer, GenerationConfig()} {
         set_attention_backend(PA_BACKEND);
         auto mutable_plugin_config = plugin_config;
-        mutable_plugin_config["sampler_num_threads"] = 1;
+        if (!std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
+            mutable_plugin_config["sampler_num_threads"] = 1;
+        }
         m_impl = std::make_unique<ContinuousBatchingPipeline>(models_path, tokenizer, scheduler_config, device, mutable_plugin_config);
         m_generation_config = m_impl->get_config();
         }
@@ -54,7 +56,9 @@ public:
         ): LLMPipelineImplBase{tokenizer, GenerationConfig()} {
         set_attention_backend(PA_BACKEND);
         auto mutable_plugin_config = plugin_config;
-        mutable_plugin_config["sampler_num_threads"] = 1;
+        if (!std::filesystem::exists(model_config_dir / "openvino_text_embeddings_model.xml")) {
+            mutable_plugin_config["sampler_num_threads"] = 1;
+        }
         m_impl.reset(new ContinuousBatchingPipeline(model, tokenizer, scheduler_config, device, mutable_plugin_config, generation_config, model_config_dir));
         m_generation_config = m_impl->get_config();
     }
@@ -82,7 +86,9 @@ public:
     ): LLMPipelineImplBase{Tokenizer(models_path, plugin_config), GenerationConfig()} {
         set_attention_backend(PA_BACKEND);
         auto mutable_plugin_config = plugin_config;
-        mutable_plugin_config["sampler_num_threads"] = 1;
+        if (!std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
+            mutable_plugin_config["sampler_num_threads"] = 1;
+        }
         m_impl = std::make_unique<ContinuousBatchingPipeline>(models_path, m_tokenizer, scheduler_config, device, mutable_plugin_config);
         m_generation_config = m_impl->get_config();
     }
