@@ -396,6 +396,62 @@ def disable_diffusers_model_progress_bar(model):
         model.set_progress_bar_config(disable=True)
 
 
+class SDMetricsCollector:
+    """Collects the speculative decoding token numbers reported for every prompt."""
+
+    COLUMNS = (
+        "draft_processed_tokens",
+        "draft_candidate_tokens",
+        "num_accepted",
+        "rejected_tokens",
+        "acceptance_rate",
+        "miss_rate",
+    )
+
+    def __init__(self):
+        self.token_numbers = []
+
+    def collect(self, answer):
+        self.token_numbers.append(self._get_token_numbers(answer))
+
+    def add_columns(self, df):
+        for column in self.COLUMNS:
+            if any(numbers and column in numbers for numbers in self.token_numbers):
+                df[column] = [numbers.get(column) if numbers else None for numbers in self.token_numbers]
+
+    @staticmethod
+    def _get_token_numbers(answer):
+        # SDPerModelsPerfMetrics is set as extended_perf_metrics only for speculative decoding pipelines
+        extended_perf_metrics = getattr(answer, "extended_perf_metrics", None)
+        if not hasattr(extended_perf_metrics, "get_num_accepted_tokens"):
+            return None
+
+        token_numbers = {
+            "draft_processed_tokens": extended_perf_metrics.draft_model_metrics.get_num_generated_tokens(),
+            "num_accepted": extended_perf_metrics.get_num_accepted_tokens(),
+        }
+
+        if hasattr(extended_perf_metrics, "get_num_draft_tokens"):
+            try:
+                rejected = extended_perf_metrics.get_num_rejected_tokens()
+            except RuntimeError:
+                return token_numbers
+
+            candidates = extended_perf_metrics.get_num_draft_tokens()
+            token_numbers["draft_candidate_tokens"] = candidates
+            token_numbers["rejected_tokens"] = rejected
+            # without any candidate token the miss rate is undefined, just like the acceptance rate below
+            if candidates > 0:
+                token_numbers["miss_rate"] = rejected / candidates * 100
+
+        if hasattr(extended_perf_metrics, "get_draft_acceptance_rate"):
+            acceptance_rate = extended_perf_metrics.get_draft_acceptance_rate()
+
+            if acceptance_rate == acceptance_rate:
+                token_numbers["acceptance_rate"] = acceptance_rate * 100
+        return token_numbers
+
+
 AUDIO_SAMPLING_RATE = 16000
 # The 24th FLEURS sample is a duplicate, while dataset shuffling is unstable across versions.
 # Keep 23 because the preceding samples are already sufficiently varied.
