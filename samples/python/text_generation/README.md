@@ -50,10 +50,18 @@ hf download <model> --local-dir <output_folder>
 
 ### Using GGUF models
 
-To run any samples with a GGUF model, simply provide the path to the .gguf file via the `model_dir` parameter.
+To run samples with a GGUF model, provide the path to the `.gguf` file via the `model_dir` parameter. The default legacy reader supports `llama`, `qwen2`, and `qwen3` architectures.
 
-This capability is currently available in preview mode and supports a limited set of topologies, including SmolLM and Qwen2.5. For other models
-and architectures, we still recommend converting the model to the IR format using the `optimum-intel` tool.
+To use the OpenVINO GGUF frontend, select it when constructing the pipeline:
+
+```python
+import openvino_genai as genai
+
+pipe = genai.LLMPipeline("model.gguf", "CPU", GGUF_READER="FRONTEND")
+print(pipe.generate("Explain why the sky is blue.", max_new_tokens=64))
+```
+
+The frontend supports more architectures and is expected to provide better model quality, but is in preview and may have limitations. It requires a compatible OpenVINO build with the GGUF frontend. See [Run GGUF models](https://openvinotoolkit.github.io/openvino.genai/docs/guides/gguf) for tokenizer, chat, streaming, and saved-IR examples.
 
 ## Sample Descriptions
 ### Common information

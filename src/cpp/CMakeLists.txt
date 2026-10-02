@@ -230,6 +230,16 @@ endif()
 if(ENABLE_GGUF)
     target_link_libraries(${TARGET_NAME_OBJ} PRIVATE gguflib)
     target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE ENABLE_GGUF)
+    # GGUF conversion routes through the OpenVINO GGUF frontend + its AdaptToGenAI pass
+    # (header openvino/frontend/gguf/adapt_to_genai.hpp). The frontend is a LINKABLE_FRONTEND
+    # exported by OpenVINO as openvino::frontend::gguf.
+    if(TARGET openvino::frontend::gguf)
+        target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino::frontend::gguf)
+    else()
+        message(FATAL_ERROR "ENABLE_GGUF=ON requires the OpenVINO GGUF frontend "
+                            "(openvino::frontend::gguf). Build OpenVINO with "
+                            "-DENABLE_OV_GGUF_FRONTEND=ON.")
+    endif()
 endif()
 
 target_include_directories(${TARGET_NAME_OBJ} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")
@@ -292,6 +302,9 @@ endif()
 
 if(ENABLE_GGUF)
   target_link_libraries(${TARGET_NAME} PRIVATE gguflib)
+  if(TARGET openvino::frontend::gguf)
+    target_link_libraries(${TARGET_NAME} PRIVATE openvino::frontend::gguf)
+  endif()
 endif()
 
 target_compile_features(${TARGET_NAME} INTERFACE cxx_std_17)

@@ -411,6 +411,28 @@ static constexpr ov::Property<bool> prompt_lookup{"prompt_lookup"};
 */
 static constexpr ov::Property<bool> enable_save_ov_model{"enable_save_ov_model"};
 
+/**
+* @brief Selects which reader converts a `.gguf` file.
+*
+* Accepted values:
+*  - `"LEGACY"` (default) - the previous hand-written GGUF reader, supporting three architectures:
+*    `llama`, `qwen2`, and `qwen3`.
+*  - `"FRONTEND"` - the OpenVINO GGUF frontend, supporting a broader range of architectures.
+*    This is a preview feature that may have limitations.
+*
+* The legacy reader remains the default while the frontend is a preview feature.
+* The frontend is intended to replace the legacy reader in the future.
+*
+* On CPU, dynamic activation quantization can change generated tokens relative to a
+* floating-point reference. For reference comparisons, set `DYNAMIC_QUANTIZATION_GROUP_SIZE`
+* to `0`; `INFERENCE_PRECISION_HINT="f32"` alone does not disable it. This trades performance
+* for accuracy and does not change the quantized weights stored in the GGUF file.
+* Matching these settings does not guarantee identical output across readers or runtimes.
+*
+* Example: `LLMPipeline(model_path, "CPU", ov::genai::gguf_reader("FRONTEND"))`.
+*/
+static constexpr ov::Property<std::string> gguf_reader{"GGUF_READER"};
+
 
 }  // namespace genai
 }  // namespace ov
