@@ -238,7 +238,8 @@ def test_generated_gguf_recurrent_chat_cancel(generated_model, numeric_tokenizer
     try:
         first = pipeline.generate(inputs(prompt), generation_config()).tokens[0]
         pipeline.generate(
-            inputs([4, 5]), generation_config(),
+            inputs([4, 5]),
+            generation_config(),
             streamer=lambda text: genai.StreamingStatus.CANCEL,
         )
         actual = pipeline.generate(inputs([6, 7]), generation_config()).tokens
