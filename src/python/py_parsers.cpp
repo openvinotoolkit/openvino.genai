@@ -24,6 +24,7 @@ using ov::genai::Phi4ReasoningParser;
 using ov::genai::JsonContainer;
 using ov::genai::Llama3JsonToolParser;
 using ov::genai::Llama3PythonicToolParser;
+using ov::genai::Qwen3CoderToolParser;
 using ov::genai::Tokenizer;
 using ov::genai::StreamingStatus;
 
@@ -183,6 +184,21 @@ void init_parsers(py::module_& m) {
 
     py::class_<Llama3PythonicToolParser, std::shared_ptr<Llama3PythonicToolParser>, Parser>(m, "Llama3PythonicToolParser")
         .def(py::init<>());
+
+    py::class_<Qwen3CoderToolParser, std::shared_ptr<Qwen3CoderToolParser>, Parser>(m, "Qwen3CoderToolParser")
+        .def(py::init([](const py::object& tools) {
+                 return std::make_shared<Qwen3CoderToolParser>(
+                     tools.is_none() ? JsonContainer::array() : pyutils::py_object_to_json_container(tools));
+             }),
+             py::arg("tools") = py::none(),
+             R"(
+    Parses tool calls in the Qwen3-Coder XML format (<tool_call><function=name><parameter=key>value</parameter></function></tool_call>)
+    used by Qwen3-Coder, Qwen3.5 and Qwen3.6 into 'tool_calls' of {"name": ..., "arguments": {...}}.
+
+    :param tools: Optional tool definitions as passed to the chat template. With them, parameter values are
+                  converted to the JSON type their schema declares; without them they stay strings.
+    :type tools: list[dict] | None
+)");
     
     py::class_<IncrementalParser, ConstructableIncrementalParser, std::shared_ptr<IncrementalParser>>(m, "IncrementalParser")
         .def(py::init<>())
