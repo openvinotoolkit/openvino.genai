@@ -301,14 +301,9 @@ ov::CompiledModel compile_kokoro_model(ov::Core& core,
         return core.compile_model(model_path, device, compile_properties);
     }
 
-    // In the case of NPU, set some NPUW properties, and reshape to static.
+    auto model = core.read_model(model_path);
 
-    set_default_property(compile_properties, "NPU_USE_NPUW", std::string{"YES"});
-    set_default_property(compile_properties, "NPUW_DEVICES", std::string{"NPU,CPU"});
-    set_default_property(compile_properties, "NPUW_KOKORO", std::string{"YES"});
-
-    auto model = core.read_model(model_path, {}, compile_properties);
-
+    // In the case of NPU, reshape to static.
     std::map<std::string, ov::PartialShape> static_shapes;
     if (model->inputs().size() >= 1) {
         static_shapes.emplace(model->input(0).get_any_name(), ov::PartialShape{1, static_cast<int64_t>(static_input_ids_length)});
@@ -322,6 +317,21 @@ ov::CompiledModel compile_kokoro_model(ov::Core& core,
 
     if (!static_shapes.empty()) {
         model->reshape(static_shapes);
+    }
+
+    // enable use of NPUW's specialized Kokoro path.
+    set_default_property(compile_properties, "NPU_USE_NPUW", std::string{"YES"});
+    set_default_property(compile_properties, "NPUW_DEVICES", std::string{"NPU,CPU"});
+    set_default_property(compile_properties, "NPUW_KOKORO", std::string{"YES"});
+
+    // NPUW's KokoroCompiledModel doesn't support CACHE_DIR (it is silently ignored).
+    // It does support NPUW_CACHE_DIR, which has the same effect.
+    // So, convert CACHE_DIR to NPUW_CACHE_DIR if it has been specified.
+    auto it = compile_properties.find("CACHE_DIR");
+    if (it != compile_properties.end()) {
+        auto cache_dir_val = it->second;
+        compile_properties.erase(it);
+        compile_properties["NPUW_CACHE_DIR"] = cache_dir_val;
     }
 
     return core.compile_model(model, device, compile_properties);
