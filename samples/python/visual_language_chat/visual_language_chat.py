@@ -78,6 +78,11 @@ def main():
     if args.draft_model_dir != "":
         draft_model = openvino_genai.draft_model(args.draft_model_dir, args.device)
         properties["draft_model"] = draft_model
+        scheduler_config = openvino_genai.SchedulerConfig()
+        # EAGLE3 validation requires a checkpoint for every speculative token.
+        # Qwen3.5 linear-attention state tables support this only without prefix caching.
+        scheduler_config.enable_prefix_caching = False
+        properties["scheduler_config"] = scheduler_config
     if args.device == "GPU":
         # Cache compiled models on disk for GPU to save time on the next run.
         # It's not beneficial for CPU.

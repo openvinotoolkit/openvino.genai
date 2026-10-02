@@ -187,6 +187,10 @@ protected:
     static int64_t compute_rope_delta(const ov::Tensor& position_ids);
     void drop_requests();
     virtual void align_request_pair_processed_prefix(uint64_t) {}
+    virtual void prepare_main_validation(const GeneratedRequests&,
+                                         const std::map<int64_t, UpdateRequestResult>&) {}
+    virtual void finalize_main_validation(const GeneratedRequests&) {}
+    virtual void abort_main_validation() {}
     virtual void validate_awaiting_requests(const std::vector<SequenceGroup::Ptr>& main_awaiting_requests,
                                             const std::vector<SequenceGroup::Ptr>& draft_awaiting_requests) const {
         OPENVINO_ASSERT(main_awaiting_requests.size() == draft_awaiting_requests.size());
