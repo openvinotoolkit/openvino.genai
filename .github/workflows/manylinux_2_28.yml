@@ -24,10 +24,9 @@ env:
   SCCACHE_SERVER_PORT: 35555
   SCCACHE_CACHE_SIZE: 30G
   SCCACHE_AZURE_KEY_PREFIX: genai/manylinux_2_28
-  HF_HOME: /mount/caches/huggingface/lin
-  # mount directory leads to issue with load_dataset lock file. It's either cannot be released or there is a deadlock. Ticket: 181288
-  HF_DATASETS_CACHE: /tmp/.hf_cache/datasets/
-  OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/
+  HF_HOME: ${{ github.workspace }}/hf_cache
+  HF_ENDPOINT: http://hf-proxy.hf-proxy.svc.cluster.local
+  OV_CACHE: ${{ github.workspace }}/ov_cache
   OPENVINO_LOG_LEVEL: 1
   GENAI_ARCHIVE_NAME: genai.tar.gz
   GENAI_SAMPLES_NAME: genai_samples.tar.gz
