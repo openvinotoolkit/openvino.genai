@@ -110,7 +110,6 @@ int main(int argc, char* argv[]) try {
     std::cout << "question:\n";
     std::getline(std::cin, prompt);
 
-    size_t turn = 0;
     history.push_back({{"role", "user"}, {"content", std::move(prompt)}});
     ov::genai::OmniDecodedResults decoded_results = pipe.generate(history,
                                                                    rgbs,
@@ -121,14 +120,14 @@ int main(int argc, char* argv[]) try {
                                                                    talker_speech_config,
                                                                    print_subword);
     history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
-    save_speech(decoded_results, "output_audio_" + std::to_string(turn) + ".wav");
+    save_speech(decoded_results, "output_audio_0.wav");
 
     std::cout << "\n----------\n"
                  "question:\n";
-    while (std::getline(std::cin, prompt)) {
-        ++turn;
+    for (size_t turn = 1; std::getline(std::cin, prompt); ++turn) {
         history.push_back({{"role", "user"}, {"content", std::move(prompt)}});
-        // New images, videos and audio can be passed at each turn; here we rely on the info from turn 1.
+        // Media attaches to the turn it is supplied on, so later turns pass none at all and refer
+        // back through the history rather than re-sending turn 1's tensors.
         std::vector<ov::Tensor> turn_images, turn_videos, turn_audios;
         std::vector<ov::genai::VideoMetadata> turn_videos_metadata;
         decoded_results = pipe.generate(history,

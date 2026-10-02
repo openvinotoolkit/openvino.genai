@@ -19,7 +19,7 @@ namespace {
 std::vector<size_t> make_indices(size_t total_frames, size_t num_frames) {
     OPENVINO_ASSERT(total_frames > 0, "Video must contain at least one frame");
     OPENVINO_ASSERT(num_frames > 0, "Number of frames to sample must be positive");
-    // A short video can't yield num_frames distinct indices; sampling fewer beats emitting duplicates.
+    // A short video can't yield num_frames distinct indices; sampling fewer here instead of emitting duplicates.
     const size_t sampled_frames = std::min(total_frames, num_frames);
     std::vector<size_t> indices;
     indices.reserve(sampled_frames);
@@ -38,7 +38,7 @@ std::pair<ov::Tensor, ov::genai::VideoMetadata> utils::load_video(const fs::path
     OPENVINO_ASSERT(capture.isOpened(), "Could not open video file: ", video_path.string());
 
     // OpenCV reports 0 or -1 when a container/codec doesn't expose these. Validate as doubles first:
-    // casting -1 to size_t would sail past any positivity check downstream.
+    // casting -1 to size_t gives a huge value that passes any later positivity check.
     const double reported_frames = capture.get(cv::CAP_PROP_FRAME_COUNT);
     const double reported_width = capture.get(cv::CAP_PROP_FRAME_WIDTH);
     const double reported_height = capture.get(cv::CAP_PROP_FRAME_HEIGHT);
@@ -57,7 +57,7 @@ std::pair<ov::Tensor, ov::genai::VideoMetadata> utils::load_video(const fs::path
     uint8_t* destination = video.data<uint8_t>();
     cv::Mat frame;
     size_t decoded_frames = 0;
-    // Bound by the reported count: containers that under-report it would otherwise overrun the tensor.
+    // Stop at the reported count: a container that under-reports it would otherwise overrun the tensor.
     while (decoded_frames < total_frames && capture.read(frame)) {
         OPENVINO_ASSERT(static_cast<size_t>(frame.cols) == width &&
                             static_cast<size_t>(frame.rows) == height && frame.channels() == 3,

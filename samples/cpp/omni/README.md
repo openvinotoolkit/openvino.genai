@@ -44,6 +44,8 @@ omni_chat <MODEL_DIR> <IMAGE_FILE_OR_DIR> <AUDIO_FILE> <VIDEO_FILE>
 - `<AUDIO_FILE>` — Path to input audio file (16kHz mono WAV)
 - `<VIDEO_FILE>` — Path to an input video file
 
+This sample takes exactly one audio file. The [Python sample](../../python/omni/) takes several through a repeatable `--audio` flag.
+
 **Example:**
 
 ```bash
@@ -51,7 +53,7 @@ omni_chat <MODEL_DIR> <IMAGE_FILE_OR_DIR> <AUDIO_FILE> <VIDEO_FILE>
 ```
 
 **Interactive usage:**
-1. Images and video are loaded once at startup and available to all turns
+1. Images, video and audio are loaded once at startup and sent with the first question
 2. Type questions and press Enter
 3. Model responds with streaming text; when speech output is enabled, each turn's audio is saved to `output_audio_<turn>.wav`
 4. Continue the conversation across multiple turns

@@ -15,6 +15,7 @@ Usage:
 """
 
 import argparse
+import itertools
 from pathlib import Path
 
 import cv2
@@ -64,7 +65,7 @@ def read_video(path: str, num_frames: int = 8) -> tuple[Tensor, openvino_genai.V
         cap.release()
         raise RuntimeError(f"Could not determine the frame count of {path}. The container or codec may not expose it.")
 
-    # A short video can't yield num_frames distinct indices; sampling fewer beats emitting duplicates.
+    # A short video can't yield num_frames distinct indices; sampling fewer here instead of emitting duplicates.
     sampled_frames = min(num_frames, total_num_frames)
     step = total_num_frames / sampled_frames
     indices = [min(int(i * step), total_num_frames - 1) for i in range(sampled_frames)]
@@ -76,7 +77,7 @@ def read_video(path: str, num_frames: int = 8) -> tuple[Tensor, openvino_genai.V
     video_metadata.frames_indices = indices
 
     frames = []
-    # Bound by the reported count: containers that under-report it would otherwise grow this unbounded.
+    # Stop at the reported count: a container that under-reports it would otherwise make this list grow without limit.
     while len(frames) < total_num_frames:
         ret, frame = cap.read()
         if not ret:
@@ -148,7 +149,6 @@ def main() -> None:
 
     history = openvino_genai.ChatHistory()
     prompt = input("question:\n")
-    turn = 0
     history.append({"role": "user", "content": prompt})
     decoded_results = pipe.generate(
         history,
@@ -161,15 +161,14 @@ def main() -> None:
         streamer=streamer,
     )
     history.append({"role": "assistant", "content": decoded_results.texts[0]})
-    save_speech(decoded_results, f"output_audio_{turn}.wav")
+    save_speech(decoded_results, "output_audio_0.wav")
 
-    while True:
+    for turn in itertools.count(start=1):
         try:
             prompt = input("\n----------\nquestion:\n")
         except EOFError:
             break
 
-        turn += 1
         history.append({"role": "user", "content": prompt})
         # Media attaches to the turn it is supplied on, so later turns pass none at all and refer
         # back through the history rather than re-sending turn 1's tensors.
