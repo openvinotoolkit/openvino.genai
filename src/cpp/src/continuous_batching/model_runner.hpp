@@ -586,11 +586,18 @@ public:
                 
                 std::fill_n(deepstack_visual_embeds.data<float>(), deepstack_visual_embeds.get_size(), 0.0f);
                 
+                // Under PagedAttention, scheduled tokens are flattened into total_num_tokens and most
+                // per-token inputs are "tokens-first": inputs_embeds is {total_num_tokens, hidden_size},
+                // per_layer_inputs is {total_num_tokens, 1, ...}, and visual_pos_masks must be {total_num_tokens, 1}.
+                // Note: position_ids may be {total_num_tokens} or higher-rank (e.g. {N, 1, total_num_tokens}) for M-RoPE models.
+                // With a stateful (batch, seq) mask here, the language model's DeepStack index_put_
+                // derives scatter indices against the wrong axis and the request fails with an
+                // out-of-bounds error.
                 visual_pos_masks = _get_or_resize_tensor(m_cached_visual_pos_masks, "visual_pos_masks",
-                    {1, total_num_tokens}, ov::element::boolean);
+                    {total_num_tokens, 1}, ov::element::boolean);
 
                 visual_pos_masks_data = visual_pos_masks.data<bool>();
-                std::fill_n(visual_pos_masks_data, total_num_tokens, false);
+                std::fill_n(visual_pos_masks_data, visual_pos_masks.get_size(), false);
             }
 
             if (per_layer_inputs_context.has_per_layer_inputs) {
