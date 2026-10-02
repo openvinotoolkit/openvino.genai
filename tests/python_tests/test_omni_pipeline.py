@@ -38,7 +38,9 @@ the model-free tier instead of failing.
 
 from __future__ import annotations
 
+import json
 import platform
+import shutil
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -67,37 +69,19 @@ AUDIO_SAMPLES = AUDIO_SAMPLE_RATE
 
 OPTIMUM_COMPARE_TOKENS = 6
 
-NO_WAVEFORM_XFAIL_REASON = (
-    "CVS-194799: tiny-random-qwen3-omni's talker role token ids are outside its tokenizer's range "
-    "(im_start 151644, user 872, assistant 77091, against a max id of 769), so build_talker_input finds "
-    "no segments and speech generation raises before reaching code2wav — see "
-    "test_speech_generation_rejects_unmatched_role_tokens, which locks that error in. Same checkpoint "
-    "limitation that test_python_tool_llm_benchmark_qwen3_omni_text_to_speech xfails on, for both "
-    "--optimum and --genai."
-)
-
-VIDEO_INPUT_XFAIL_REASON = (
-    "CVS-194799: tiny-random-qwen3-omni's processor_config.json declares video_processor.patch_size=14 "
-    "(a stale Qwen2VL default) while image_processor and thinker_config.vision_config both say 16, so "
-    "the video patch dim is 2*3*14*14=1176 against an encoder built for 1536 and the infer request "
-    "fails shape.compatible(). Setting that one value to 16 makes video work on this checkpoint, and "
-    "real Qwen3-Omni models already ship 16 — the encoder and the video path itself are fine."
-)
-
 OPTIMUM_IMAGE_XFAIL_REASON = (
-    "CVS-194800: tiny-random-qwen3-omni uses three ids for the image token (config 10, processor "
-    "<|IMAGE|> 268, tokenizer <|image_pad|> 259). optimum-intel merges at id 10, matches nothing and "
-    "silently drops the image, so its ids diverge from GenAI's. On a real Qwen3-Omni export both agree."
+    "optimum-intel builds 1D position ids on prefill instead of the thinker's mRoPE positions, so once an "
+    "image is attached its ids diverge from GenAI and HF transformers, which agree. Fixed by "
+    "huggingface/optimum-intel#2042; drop this xfail once the pinned optimum-intel includes it."
 )
 
-AUDIO_INPUT_XFAIL_REASON = (
-    "CVS-194799: tiny-random-qwen3-omni is internally inconsistent for audio: "
-    "thinker_config.audio_token_id is 9, while its tokenizer maps <|AUDIO|> to 267 and has no "
-    "<|audio_pad|> token at all. GenAI injects <|audio_start|><|audio_pad|>...<|audio_end|> and merges "
-    "audio features at audio_token_id positions, so nothing matches and merge_audio_embeddings() "
-    "throws 'Audio token count mismatch: placed 0 embeddings'. Same root cause as the --genai xfail "
-    "on test_python_tool_llm_benchmark_qwen3_omni_speech_to_text."
-)
+# Real Qwen3-Omni role ids; the tiny tokenizer never produces them, so the talker finds no segments.
+UNMATCHED_ROLE_TOKEN_IDS = {
+    "im_start_token_id": 151644,
+    "system_token_id": 8948,
+    "user_token_id": 872,
+    "assistant_token_id": 77091,
+}
 
 
 class TestOmniPipelineImports:
@@ -720,12 +704,7 @@ def _extract_assert_single_waveform(result: ov_genai.OmniDecodedResults) -> np.n
 
 
 class _CapturingStreamer(ov_genai.StreamerBase):
-    """Records the raw token ids GenAI generates.
-
-    Decoded text is useless as a comparison target on tiny-random-qwen3-omni: its tokenizer covers
-    ids 0-769 while the model head emits the full Qwen vocab, so every generated id falls outside
-    the tokenizer and renders as ''. Ids sidestep the broken tokenizer entirely.
-    """
+    """Records the raw token ids GenAI generates, so a mismatch points at the first diverging token."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -832,6 +811,22 @@ def omni_pipe_from_models_map(omni_model_path: Path) -> ov_genai.OmniPipeline:
     return ov_genai.OmniPipeline(vlm, talker)
 
 
+@pytest.fixture(scope="module")
+def omni_pipe_with_unmatched_role_tokens(
+    omni_model_path: Path, tmp_path_factory: pytest.TempPathFactory
+) -> ov_genai.OmniPipeline:
+    """The exported checkpoint with only its role token ids broken in config.json.
+
+    Copied, not symlinked: the pipeline refuses to load model files that resolve outside the model dir.
+    """
+    model_dir = tmp_path_factory.mktemp("omni_unmatched_role_tokens") / "model"
+    shutil.copytree(omni_model_path, model_dir)
+    config = json.loads((model_dir / "config.json").read_text())
+    config.update(UNMATCHED_ROLE_TOKEN_IDS)
+    (model_dir / "config.json").write_text(json.dumps(config))
+    return ov_genai.OmniPipeline(model_dir, "CPU")
+
+
 @pytest.mark.skipif(
     sys.platform == "darwin" and platform.machine() == "arm64",
     reason="CVS-194249: OmniPipeline requires the continuous-batching backend, and PagedAttention is "
@@ -869,8 +864,7 @@ class TestOmniPipelineRealModel:
             f"ModelsMap-built pipeline decoded {from_map.texts!r}, path-built decoded {from_path.texts!r}"
         )
 
-        # This checkpoint decodes to '' whatever it is fed, so comparing texts alone cannot fail.
-        # Seeded sampling gives a cumulative score that does discriminate between graphs.
+        # Greedy text can agree while the sampling path differs; seeded sampling also compares the scores.
         seeded = _sampling_text_config(rng_seed=42)
         path_scores = omni_pipe.generate("Describe this.", text_config=seeded, talker_speech_config=text_only).scores
         map_scores = omni_pipe_from_models_map.generate(
@@ -882,7 +876,6 @@ class TestOmniPipelineRealModel:
             "so the two constructions did not compile the same graph"
         )
 
-    @pytest.mark.xfail(reason=NO_WAVEFORM_XFAIL_REASON, strict=True)
     def test_models_map_ctor_matches_path_ctor_speech(
         self, omni_pipe: ov_genai.OmniPipeline, omni_pipe_from_models_map: ov_genai.OmniPipeline
     ) -> None:
@@ -951,9 +944,8 @@ class TestOmniPipelineRealModel:
     def test_rng_seed_steers_sampling(self, omni_pipe: ov_genai.OmniPipeline) -> None:
         """One rng_seed reproduces its own result, and the seeds do not all produce the same one.
 
-        Asserted on scores, not texts: this checkpoint decodes to '' for every seed, so a text
-        comparison cannot fail. The cumulative score does discriminate, which is what makes this
-        the test that rng_seed actually reaches the sampler.
+        Asserted on scores, not texts: on random weights two seeds can still decode to the same short
+        text, while the cumulative score shows whether rng_seed actually reaches the sampler.
 
         The divergence check spans four seeds and only requires that they are not all identical,
         because any single pair of seeds can collide.
@@ -982,7 +974,6 @@ class TestOmniPipelineRealModel:
             f"sampling with different rng_seeds {rng_seeds} produced the same scores for every seed"
         )
 
-    @pytest.mark.xfail(reason=NO_WAVEFORM_XFAIL_REASON, strict=True)
     def test_generate_with_speech(self, omni_pipe: ov_genai.OmniPipeline) -> None:
         """With return_audio=True the talker produces a finite, non-empty waveform."""
         result = omni_pipe.generate(
@@ -996,9 +987,8 @@ class TestOmniPipelineRealModel:
     def test_matches_optimum_text(self, omni_pipe: ov_genai.OmniPipeline, optimum_reference: OptimumReference) -> None:
         """Greedy decode must produce the same token ids as optimum-intel for a text-only prompt.
 
-        Compared on ids rather than decoded text because this checkpoint's tokenizer only covers ids
-        0-769 while the model head emits the full Qwen vocab, so both stacks decode to '' and a text
-        comparison could not fail. Ids are what the two implementations actually disagree about.
+        Compared on ids rather than decoded text, so a mismatch shows the first token the two stacks
+        disagree on.
         """
         prompt = "Describe."
 
@@ -1029,7 +1019,9 @@ class TestOmniPipelineRealModel:
             f"GenAI generated {genai_ids}, optimum generated {optimum_ids} for the same image prompt"
         )
 
-    def test_speech_generation_rejects_unmatched_role_tokens(self, omni_pipe: ov_genai.OmniPipeline) -> None:
+    def test_speech_generation_rejects_unmatched_role_tokens(
+        self, omni_pipe_with_unmatched_role_tokens: ov_genai.OmniPipeline
+    ) -> None:
         """A checkpoint whose role token ids never appear in its token stream must raise, not go quiet.
 
         Speech used to warn and hand back an empty waveform list here, so a misconfigured checkpoint
@@ -1037,10 +1029,10 @@ class TestOmniPipelineRealModel:
         segment the conversation is a configuration error and has to surface as one.
 
         This is the inverse of test_generate_with_speech: that one asserts the audio a healthy
-        checkpoint owes us and xfails here, this one pins the diagnosis we give for a broken one.
+        checkpoint owes us, this one pins the diagnosis we give for a broken one.
         """
         with pytest.raises(RuntimeError, match="im_start_token_id") as excinfo:
-            omni_pipe.generate(
+            omni_pipe_with_unmatched_role_tokens.generate(
                 "Describe this.",
                 text_config=_text_config(),
                 talker_speech_config=_talker_speech_config(return_audio=True),
@@ -1069,8 +1061,8 @@ class TestOmniPipelineRealModel:
         "modality",
         [
             pytest.param("image", id="image"),
-            pytest.param("video", id="video", marks=pytest.mark.xfail(reason=VIDEO_INPUT_XFAIL_REASON, strict=True)),
-            pytest.param("audio", id="audio", marks=pytest.mark.xfail(reason=AUDIO_INPUT_XFAIL_REASON, strict=True)),
+            pytest.param("video", id="video"),
+            pytest.param("audio", id="audio"),
         ],
     )
     def test_generate_from_chat_history_all_modalities(
