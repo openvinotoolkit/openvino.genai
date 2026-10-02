@@ -355,6 +355,66 @@ def _seed_deterministic_generation():
     torch.backends.cudnn.benchmark = False
 
 
+OMNIVOICE_SAMPLE_RATE = 24000
+
+
+class OmniVoiceWrapper:
+    """Wrapper for k2-fsa/OmniVoice (HF path only).
+
+    Mirrors `KokoroModelWrapper`'s structure: a thin adapter around the
+    model's own `.generate(text=..., language=..., ...)` API, returning a
+    `_SpeechResult` compatible with `SpeechGenerationEvaluator`.
+
+    Scope note: only the reference/HF side is wired here. There is no
+    `optimum-intel` export class nor `openvino.genai` pipeline registration
+    for this non-`transformers`-library, non-autoregressive diffusion-TTS
+    architecture (see `agent-results/custom_plan.md`), so the "Optimum" and
+    "GenAI" candidate-side branches in `model_loaders.load_speech_generation_model`
+    are intentionally left unmodified -- wiring them is real future work
+    requiring either a new `OVModelForOmniVoice`-style optimum-intel class or
+    a native `openvino.genai` pipeline, each with its own review/test cycle.
+    For this pass, OV-side evaluation was instead done directly against
+    `OmniVoiceOVPipeline` (see `notebooks/omnivoice/omnivoice_ov_pipeline.py`
+    and the accompanying accuracy report), not through this WWB wrapper.
+    """
+
+    model_type = "speech-generation"
+    prompts_file = PROMPTS_FILE
+
+    def __init__(self, model_id, torch_dtype=None):
+        from omnivoice import OmniVoice
+
+        if torch_dtype is not None:
+            raise ValueError("OmniVoice inference is only validated in FP32; do not pass --torch-dtype.")
+
+        self._model = OmniVoice.from_pretrained(model_id)
+        self._model.eval()
+
+    def get_speaker_embedding_shape(self):
+        # OmniVoice selects voices via reference audio (cloning) or text
+        # instructions (design), not fixed speaker-embedding vectors.
+        return (1, 1)
+
+    def generate(self, prompt, speaker_embedding=None, language="", voice="", **_kwargs):
+        if speaker_embedding is not None:
+            raise ValueError(
+                "OmniVoice does not accept speaker embeddings. Use --speech-voice with a reference "
+                "audio path for voice cloning, or omit it for auto voice selection."
+            )
+
+        _seed_deterministic_generation()
+        ref_audio = voice.strip() if isinstance(voice, str) and voice.strip() else None
+        generate_kwargs = {"ref_audio": ref_audio} if ref_audio else {}
+
+        audio = self._model.generate(
+            text=prompt,
+            language=language.strip() or None,
+            **generate_kwargs,
+        )[0]
+
+        return _SpeechResult(np.asarray(audio, dtype=np.float32), OMNIVOICE_SAMPLE_RATE)
+
+
 class Qwen3OmniSpeechWrapper(_Qwen3OmniSpeakerMixin):
     """Wrapper for Qwen3-Omni HF (transformers) or Optimum models that emit speech via the talker module."""
 
