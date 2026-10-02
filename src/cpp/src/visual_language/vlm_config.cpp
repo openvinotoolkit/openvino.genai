@@ -36,6 +36,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"qwen3_omni_moe", VLMModelType::QWEN3_OMNI},
         {"deepseek_ocr2", VLMModelType::DEEPSEEK_OCR2},
         {"muse_glimmer", VLMModelType::MUSE_GLIMMER},
+        {"paddleocr_vl", VLMModelType::PADDLEOCR_VL},
     };
 
     auto it = model_types_map.find(value);
@@ -96,6 +97,15 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     // DeepSeek-OCR-2
     read_json_param(parsed, "view_separator", view_separator);
     read_json_param(parsed, "image_token_id", image_token_id);
+
+    // PaddleOCR-VL: the chat template emits <|IMAGE_START|><|IMAGE_PLACEHOLDER|><|IMAGE_END|>.
+    // Reuse the Qwen2-VL M-RoPE / merge path, which reads these token strings from VLMConfig.
+    if (model_type == VLMModelType::PADDLEOCR_VL) {
+        vision_start_token = "<|IMAGE_START|>";
+        image_pad_token = "<|IMAGE_PLACEHOLDER|>";
+        vision_end_token = "<|IMAGE_END|>";
+        video_pad_token = "<|VIDEO_PLACEHOLDER|>";
+    }
 
     // Qwen3-Omni: vision/audio configs are nested under thinker_config
     if (model_type == VLMModelType::QWEN3_OMNI) {
