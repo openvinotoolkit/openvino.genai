@@ -136,7 +136,7 @@ def get_argparser():
     )
     parser.add_argument(
         "-ov-c",
-        "--ov_config",
+        "--ov-config",
         default=None,
         required=False,
         help="""Path to JSON file or string in JSON format to load customized OpenVINO Runtime configurations.\n
