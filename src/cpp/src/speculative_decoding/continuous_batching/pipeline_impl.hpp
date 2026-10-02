@@ -4,6 +4,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include "continuous_batching/pipeline_impl.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "update_request_structs.hpp"
@@ -211,6 +212,58 @@ class ContinuousBatchingPipeline::ContinuousBatchingForMtpDecodingImpl
     : public ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl {
 public:
     ContinuousBatchingForMtpDecodingImpl() = default;
+
+    struct PaCacheView {
+        std::array<ov::Tensor, 4> tensors;
+        std::vector<int32_t> block_indices;
+    };
+
+    ov::CompiledModel get_compiled_model() const {
+        OPENVINO_ASSERT(m_model_runner, "Gemma4 MTP main model runner is not initialized.");
+        return m_model_runner->get_infer_request().get_compiled_model();
+    }
+
+    PaCacheView get_mtp_pa_cache(uint64_t request_id, const std::array<size_t, 2>& layers,
+                                size_t prefix_length) const {
+        OPENVINO_ASSERT(m_model_runner && m_scheduler, "Gemma4 MTP target PA cache is not initialized.");
+        const size_t block_size = m_scheduler->get_block_size(CacheType::KV_CACHE);
+        OPENVINO_ASSERT(block_size > 0 && prefix_length > 0, "Gemma4 MTP requires a nonempty PA prefix.");
+        const size_t required_blocks = (prefix_length + block_size - 1) / block_size;
+        for (const auto& request : m_requests) {
+            if (request->get_request_id() != request_id) {
+                continue;
+            }
+            const auto sequences = request->get_running_sequences();
+            OPENVINO_ASSERT(sequences.size() == 1 && request->get_num_processed_tokens() >= prefix_length,
+                            "Gemma4 MTP target must have processed the accepted PA prefix.");
+            const auto& tables = m_scheduler->get_kv_block_tables(sequences.front()->get_id());
+            OPENVINO_ASSERT(tables.size() == 1 || (layers[0] < tables.size() && layers[1] < tables.size()),
+                            "Gemma4 MTP target PA block-table layer count does not match its cache layers.");
+            const auto& full_table = tables[tables.size() == 1 ? 0 : layers[0]];
+            const auto& sliding_table = tables[tables.size() == 1 ? 0 : layers[1]];
+            OPENVINO_ASSERT(full_table.size() >= required_blocks && sliding_table.size() >= required_blocks,
+                            "Gemma4 MTP target PA block tables do not cover the accepted prefix: layers=",
+                            layers[0], ", ", layers[1], ", table layers=", tables.size(),
+                            ", required blocks=", required_blocks,
+                            ", processed tokens=", request->get_num_processed_tokens(), ".");
+            PaCacheView result;
+            result.block_indices.reserve(required_blocks);
+            for (size_t block = 0; block < required_blocks; ++block) {
+                const int full_id = full_table[block]->get_index();
+                OPENVINO_ASSERT(full_id == sliding_table[block]->get_index(),
+                                "Gemma4 MTP target full and sliding PA layers use different block tables.");
+                result.block_indices.push_back(full_id);
+            }
+            ov::InferRequest infer_request = m_model_runner->get_infer_request();
+            for (size_t i = 0; i < result.tensors.size(); ++i) {
+                const std::string name = (i % 2 == 0 ? "key_cache." : "value_cache.") +
+                                          std::to_string(layers[i / 2]);
+                result.tensors[i] = infer_request.get_tensor(name);
+            }
+            return result;
+        }
+        OPENVINO_THROW("Gemma4 MTP target PA request was not found: ", request_id);
+    }
 
     bool is_prefix_caching_enabled() const {
         return m_scheduler->get_config().enable_prefix_caching;

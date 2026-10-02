@@ -954,6 +954,22 @@ SchedulerConfig get_latency_oriented_scheduler_config() {
     return default_config;
 }
 
+SchedulerConfig get_latency_oriented_scheduler_config(const ov::AnyMap& properties) {
+    SchedulerConfig config = get_latency_oriented_scheduler_config();
+    const auto it = properties.find(DRAFT_MODEL_ARG_NAME);
+    if (it != properties.end()) {
+        const auto draft = it->second.as<ModelDesc>().model;
+        OPENVINO_ASSERT(draft, "Draft model must not be null.");
+        for (const auto& input : draft->inputs()) {
+            if (input.get_names().count("full_attention_key") != 0) {
+                config.enable_prefix_caching = false;
+                break;
+            }
+        }
+    }
+    return config;
+}
+
 bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_npu_requested) {
     auto attention_backend_it = properties.find("ATTENTION_BACKEND");
 

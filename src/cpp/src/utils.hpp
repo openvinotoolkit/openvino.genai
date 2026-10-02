@@ -360,6 +360,7 @@ void validate_vlm_model_properties(const ov::AnyMap& properties);
 std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config = std::nullopt);
 
 SchedulerConfig get_latency_oriented_scheduler_config();
+SchedulerConfig get_latency_oriented_scheduler_config(const ov::AnyMap& properties);
 
 bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_npu_requested = false);
 

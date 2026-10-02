@@ -18,6 +18,7 @@ import openvino.properties.hint as hints
 from openvino_genai import (
     ContinuousBatchingPipeline,
     LLMPipeline,
+    VLMPipeline,
     GenerationConfig,
     SchedulerConfig,
     draft_model,
@@ -38,6 +39,7 @@ from utils.hugging_face import (
     OVConvertedModelSchema,
     download_and_convert_model,
     export_with_optimum_cli,
+    generate_and_save_gemma4_mtp_assistant_model,
     run_hugging_face,
     sanitize_model_id,
 )
@@ -1099,6 +1101,92 @@ def test_qwen35_mtp_matches_main_only(qwen35_mtp_model_path: Path):
     mtp_result = mtp_pipe.generate([prompt], [generation_config])
 
     assert mtp_result[0].m_generation_ids == main_only_texts
+
+
+@pytest.fixture(scope="module")
+def gemma4_mtp_vlm_model_path() -> Path:
+    from optimum import intel
+
+    if not hasattr(intel, "OVAssistantForCausalLM"):
+        pytest.skip("Gemma4 MTP assistant export requires optimum.intel.OVAssistantForCausalLM")
+
+    model_id = "optimum-intel-internal-testing/tiny-random-gemma4"
+    model_path = get_ov_cache_converted_models_dir() / f"{sanitize_model_id(model_id)}_image-text-to-text"
+    manager = AtomicDownloadManager(model_path)
+    manager.execute(
+        lambda temp_path: export_with_optimum_cli(
+            model_id,
+            "image-text-to-text",
+            temp_path,
+            trust_remote_code=False,
+        )
+    )
+    return model_path
+
+
+def test_gemma4_mtp_pa_matches_main_only(gemma4_mtp_vlm_model_path: Path):
+    assistant_path = generate_and_save_gemma4_mtp_assistant_model(gemma4_mtp_vlm_model_path)
+    config = GenerationConfig(do_sample=False, max_new_tokens=12, num_assistant_tokens=3, ignore_eos=True)
+    prompts = ["OpenVINO is", "The sky is"]
+
+    baseline = ContinuousBatchingPipeline(gemma4_mtp_vlm_model_path, SchedulerConfig(), "CPU")
+    expected = baseline.generate(prompts, [config] * len(prompts))
+    del baseline
+
+    pipeline = ContinuousBatchingPipeline(
+        gemma4_mtp_vlm_model_path,
+        SchedulerConfig(),
+        "CPU",
+        {"draft_model": draft_model(assistant_path, "CPU")},
+    )
+    actual = pipeline.generate(prompts, [config] * len(prompts))
+    assert [r.m_generation_ids for r in actual] == [r.m_generation_ids for r in expected]
+    assert all(r.extended_perf_metrics is not None for r in actual)
+
+
+def test_gemma4_mtp_pa_shared_cache_across_blocks(gemma4_mtp_vlm_model_path: Path):
+    assistant_path = generate_and_save_gemma4_mtp_assistant_model(gemma4_mtp_vlm_model_path)
+    config = GenerationConfig(do_sample=False, max_new_tokens=40, num_assistant_tokens=3, ignore_eos=True)
+    cache_properties = {"KV_CACHE_PRECISION": "f16"}
+
+    baseline = ContinuousBatchingPipeline(
+        gemma4_mtp_vlm_model_path,
+        SchedulerConfig(),
+        "CPU",
+        cache_properties,
+    )
+    expected = baseline.generate(["OpenVINO is"], [config])[0].m_generation_ids
+    del baseline
+
+    pipeline = ContinuousBatchingPipeline(
+        gemma4_mtp_vlm_model_path,
+        SchedulerConfig(),
+        "CPU",
+        {**cache_properties, "draft_model": draft_model(assistant_path, "CPU")},
+    )
+    for _ in range(2):
+        actual = pipeline.generate(["OpenVINO is"], [config])[0].m_generation_ids
+        assert actual == expected
+
+
+def test_gemma4_mtp_pa_image_matches_main_only(gemma4_mtp_vlm_model_path: Path):
+    assistant_path = generate_and_save_gemma4_mtp_assistant_model(gemma4_mtp_vlm_model_path)
+    image = ov.Tensor(np.zeros((64, 64, 3), dtype=np.uint8))
+    config = GenerationConfig(do_sample=False, max_new_tokens=12, num_assistant_tokens=3, ignore_eos=True)
+    prompt = "Describe this picture."
+
+    baseline = VLMPipeline(gemma4_mtp_vlm_model_path, "CPU", ATTENTION_BACKEND="PA")
+    expected = baseline.generate(prompt, images=[image], generation_config=config).texts
+    del baseline
+
+    pipeline = VLMPipeline(
+        gemma4_mtp_vlm_model_path,
+        "CPU",
+        ATTENTION_BACKEND="PA",
+        draft_model=draft_model(assistant_path, "CPU"),
+    )
+    actual = pipeline.generate(prompt, images=[image], generation_config=config).texts
+    assert actual == expected
 
 
 def test_qwen35_mtp_extended_perf_metrics(qwen35_mtp_model_path: Path):

@@ -24,6 +24,17 @@ std::unordered_map<std::string, ov::Tensor> deep_copy_tensors_map(
     return dst;
 }
 
+ov::genai::GenerationStatus status_from_vlm_finish_reasons(
+    const std::vector<ov::genai::GenerationFinishReason>& reasons) {
+    if (!reasons.empty() &&
+        std::all_of(reasons.begin(), reasons.end(), [](ov::genai::GenerationFinishReason reason) {
+            return reason != ov::genai::GenerationFinishReason::NONE;
+        })) {
+        return ov::genai::GenerationStatus::FINISHED;
+    }
+    return ov::genai::GenerationStatus::RUNNING;
+}
+
 }  // namespace
 
 namespace ov::genai {
@@ -85,6 +96,7 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPip
             result.m_generation_ids = std::move(vlm_result.texts);
             result.m_scores = std::move(vlm_result.scores);
             result.m_finish_reasons = std::move(vlm_result.finish_reasons);
+            result.m_status = status_from_vlm_finish_reasons(result.m_finish_reasons);
             result.perf_metrics = std::move(vlm_result.perf_metrics);
             result.extended_perf_metrics = std::move(vlm_result.extended_perf_metrics);
             results.push_back(result);
@@ -210,6 +222,7 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPip
             result.m_generation_ids = std::move(vlm_result.texts);
             result.m_scores = std::move(vlm_result.scores);
             result.m_finish_reasons = std::move(vlm_result.finish_reasons);
+            result.m_status = status_from_vlm_finish_reasons(result.m_finish_reasons);
             result.perf_metrics = std::move(vlm_result.perf_metrics);
             result.extended_perf_metrics = std::move(vlm_result.extended_perf_metrics);
             results.push_back(result);
