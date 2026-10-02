@@ -54,6 +54,7 @@ export const EMBEDDING_MODELS: EmbeddingModelType[] = [
           'https://huggingface.co/mixedbread-ai/deepset-mxbai-embed-de-large-v1',
           'https://huggingface.co/intfloat/multilingual-e5-large-instruct',
           'https://huggingface.co/intfloat/multilingual-e5-large',
+          'https://huggingface.co/BAAI/bge-m3',
         ],
       },
     ],

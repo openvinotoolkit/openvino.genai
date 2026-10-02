@@ -177,7 +177,7 @@ jobs:
                 -S ${{ env.SRC_DIR }} \
                 -B ${{ env.BUILD_DIR }}
           /usr/bin/cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
-          for py_version in "3.10" "3.11" "3.12" "3.13"
+          for py_version in "3.11" "3.12" "3.13"
           do
             rm -rf ${{ env.BUILD_DIR }}/CMakeCache.txt
 
@@ -300,7 +300,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10', '3.11', '3.12', '3.13']
+        python-version: ['3.11', '3.12', '3.13']
     defaults:
       run:
         shell: bash

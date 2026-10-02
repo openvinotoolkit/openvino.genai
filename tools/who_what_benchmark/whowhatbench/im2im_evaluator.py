@@ -89,7 +89,7 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
                 "strength": 0.8,
                 "generator": generator,
             }
-            if model.__class__.__name__ in ("QwenImage21Pipeline", "OVQwenImage21Pipeline"):
+            if model.__class__.__name__ in ("QwenImage21Pipeline", "OVQwenImage21Img2ImgPipeline"):
                 # Qwen Image 2.1 conditions on image tokens and does not support the img2img strength argument.
                 kwargs.pop("strength")
             with torch.no_grad():
