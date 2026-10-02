@@ -7,6 +7,7 @@ import CodeExampleJS from './_code_example_js.mdx';
 
 The [`Text2SpeechPipeline`](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.Text2SpeechPipeline.html) is the main object for generating speech from text.
 It automatically loads the TTS model and vocoder from the converted model directory.
+The output sample rate is model-dependent and is returned in the generation result.
 
 <LanguageTabs>
     <TabItemPython>
@@ -53,7 +54,7 @@ Check out [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master
 
 ### Use Speaker Embedding File
 
-To generate speech using the SpeechT5 TTS model, you can specify a target voice by providing a speaker embedding file.
+To generate speech using the SpeechT5 model, you can specify a target voice by providing a speaker embedding file.
 
 This file must contain 512 32-bit floating-point values that represent the voice characteristics of the target speaker. The model will use these characteristics to synthesize the input text in the specified voice.
 
@@ -80,7 +81,7 @@ python create_speaker_embedding.py
         result = pipeline.generate("Hello OpenVINO GenAI", speaker_embedding)
 
         speech = result.speeches[0]
-        sf.write("output_audio.wav", speech.data[0], samplerate=16000)
+        sf.write("output_audio.wav", speech.data[0], samplerate=result.output_sample_rate)
         ```
     </TabItemPython>
     <TabItemCpp>
@@ -119,7 +120,8 @@ python create_speaker_embedding.py
             { speakerEmbedding },
         );
 
-        const wavData = encode([result.speeches[0].data], { sampleRate: 16000 });
+        const sampleRate = Number(result.outputSampleRate ?? result.output_sample_rate ?? 16000);
+        const wavData = encode([result.speeches[0].data], { sampleRate });
         await writeFile("output_audio.wav", wavData);
         ```
     </TabItemJS>
