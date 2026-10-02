@@ -240,7 +240,7 @@ def cb_pipeline_required(args):
         (args["cb_config"].get("cache_eviction_config") is not None or args["cb_config"].get("sparse_attention_config") is not None)
 
 
-def setup_draft_model_for_sd(args, device):
+def setup_draft_model_for_sd(args, device, ov_config):
     import openvino_genai
 
     draft_model = {}
@@ -257,8 +257,9 @@ def setup_draft_model_for_sd(args, device):
                     args.get("draft_cb_config"), config_name="draft CB config"
                 )
             }
+
         draft_model["draft_model"] = openvino_genai.draft_model(
-            draft_model_path, draft_device.upper(), **draft_model_load_kwargs
+            draft_model_path, draft_device.upper(), **draft_model_load_kwargs, **ov_config
         )
 
     return draft_model
@@ -283,7 +284,7 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_data_colle
         use_streamer_metrics = parse(version) < parse("2025.0.0") or (draft_model_path and parse(version) < parse("2025.1.0"))
 
     if kwargs.get("draft_model", ""):
-        config.update(setup_draft_model_for_sd(kwargs, device))
+        config.update(setup_draft_model_for_sd(kwargs, device, kwargs["draft_ov_config"]))
 
     if kwargs.get('max_ngram_size') and kwargs.get('num_assistant_tokens'):
         log.info("Prompt Lookup decoding is activated")
@@ -735,7 +736,7 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, memory_data
         ov_config["scheduler_config"] = get_scheduler_config_genai(cb_config)
 
     if kwargs.get("draft_model", ""):
-        ov_config.update(setup_draft_model_for_sd(kwargs, device))
+        ov_config.update(setup_draft_model_for_sd(kwargs, device, kwargs["draft_ov_config"]))
 
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()
