@@ -15,9 +15,10 @@
 
 namespace ov::genai {
 
-enum class VisionType {
+enum class ModalityType {
     IMAGE,
-    VIDEO
+    VIDEO,
+    AUDIO
 };
 
 /// @brief A pair describing image size.
@@ -86,6 +87,16 @@ struct EncodedVideo {
 
     /// @brief Video metadata, used for video input processing and prompt normalization.
     VideoMetadata metadata;
+};
+
+/// @brief Encoder output for one audio. Empty inputs stay in the list as zero-token entries,
+/// otherwise every later `<ov_genai_audio_N>` index would shift.
+struct EncodedAudio {
+    /// @brief Audio encoder output. Shape [num_audio_tokens, hidden_size], element type f32.
+    ov::Tensor audio_features;
+
+    /// @brief Placeholder count this audio expands to. Equals audio_features.get_shape()[0].
+    size_t num_audio_tokens = 0;
 };
 
 /// @brief A class used to infer embeddings of an image using
