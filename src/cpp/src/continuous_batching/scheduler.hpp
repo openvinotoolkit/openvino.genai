@@ -286,10 +286,17 @@ public:
         m_kv_paged_attention_global_data(std::make_shared<const KVPagedAttentionGlobalData>(config)),
         m_cache_orchestrator(std::move(cache_orchestrator)),
         m_snapkv_window_size(snapkv_window_size) {
+        if (m_config.cache_size == 0 && m_config.num_kv_blocks == 0 && m_cache_orchestrator) {
+            m_cache_orchestrator->set_dynamic_allocation(true);
+        }
     }
 
     void release() {
         m_cache_orchestrator.reset();
+    }
+
+    std::optional<size_t> get_max_request_tokens() const {
+        return m_cache_orchestrator ? m_cache_orchestrator->get_max_request_tokens() : std::nullopt;
     }
 
     Output schedule(std::vector<SequenceGroup::Ptr>& sequence_groups) {
@@ -915,6 +922,7 @@ private:
         // so the prompt phase can allocate without triggering _try_increase_cache.
         m_cache_orchestrator->grow_fixed_size_capacity(total_concurrent_seqs);
         m_dynamic_memory_allocation = true;
+        m_cache_orchestrator->set_dynamic_allocation(true);
     }
 
     // In dynamic-allocation mode, pre-grow the variable-size caches so a newly-arriving prompt

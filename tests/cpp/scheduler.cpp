@@ -3568,3 +3568,48 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrow_pool_floor_homogen
         EXPECT_FALSE(scheduler.ensure_linear_attention_pool_blocks(S_VERIFYING * (1 + WINDOW)));
     }
 }
+
+TEST(TestScheduler, SchedulerExposesMaxRequestTokens) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.num_kv_blocks = 8;
+    scheduler_config.enable_prefix_caching = false;
+
+    auto orchestrator = init_cache_orchestrator(scheduler_config, TEST_BLOCK_SIZE);
+    Scheduler scheduler(orchestrator, scheduler_config);
+
+    const auto max_tokens = scheduler.get_max_request_tokens();
+    ASSERT_TRUE(max_tokens.has_value());
+    EXPECT_EQ(*max_tokens, 8 * TEST_BLOCK_SIZE);
+}
+
+TEST(TestScheduler, DynamicSchedulerReturnsNulloptMaxRequestTokens) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.num_kv_blocks = 0;
+    scheduler_config.cache_size = 0;
+
+    auto orchestrator = init_cache_orchestrator(scheduler_config, TEST_BLOCK_SIZE);
+    Scheduler scheduler(orchestrator, scheduler_config);
+
+    EXPECT_FALSE(scheduler.get_max_request_tokens().has_value());
+}
+
+TEST(TestScheduler, PromptLengthAtCapacityBoundary) {
+    SchedulerConfig scheduler_config;
+    constexpr size_t num_kv_blocks = 8;
+    scheduler_config.num_kv_blocks = num_kv_blocks;
+    scheduler_config.enable_prefix_caching = false;
+
+    auto orchestrator = init_cache_orchestrator(scheduler_config, TEST_BLOCK_SIZE);
+    Scheduler scheduler(orchestrator, scheduler_config);
+
+    const auto max_tokens = scheduler.get_max_request_tokens();
+    ASSERT_TRUE(max_tokens.has_value());
+    const size_t capacity = *max_tokens;
+    EXPECT_EQ(capacity, num_kv_blocks * TEST_BLOCK_SIZE);
+
+    // Prompt exactly at capacity is within bounds
+    EXPECT_LE(capacity, *max_tokens);
+
+    // Prompt exceeding capacity by 1 token is out of bounds
+    EXPECT_GT(capacity + 1, *max_tokens);
+}

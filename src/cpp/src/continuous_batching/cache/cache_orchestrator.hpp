@@ -10,6 +10,7 @@
 #include <map>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <set>
 #include <tuple>
 #include <utility>
@@ -59,6 +60,7 @@ public:
         config.validate();
 
         auto orchestrator = std::make_shared<CacheOrchestrator>();
+        orchestrator->set_dynamic_allocation(config.cache_size == 0 && config.num_kv_blocks == 0);
 
         auto [kv_mgr, la_mgr] = detect_cache_managers(infer_request, config);
 
@@ -630,6 +632,55 @@ public:
         return total;
     }
 
+    /**
+     * @brief Returns the maximum token capacity that a single request can consume under
+     *        the current cache configuration.
+     *
+     * In static allocation mode, computes the minimum token capacity across all variable-size
+     * cache managers (e.g. KV cache and linear attention prefix cache). Fixed-size-per-sequence
+     * managers (e.g. recurrent state without prefix caching) do not constrain sequence token
+     * length and are excluded.
+     *
+     * In dynamic allocation mode (cache_size == 0 && num_kv_blocks == 0), the cache is unbounded
+     * by a static budget and grows on demand, so std::nullopt is returned.
+     *
+     * @return Maximum token capacity in tokens, or std::nullopt if dynamically allocated or unbounded.
+     */
+    std::optional<size_t> get_max_request_tokens() const {
+        if (m_is_dynamic_allocation) {
+            return std::nullopt;
+        }
+        size_t min_capacity = std::numeric_limits<size_t>::max();
+        bool has_variable_size = false;
+        for (const auto& [type, block_mgr] : m_block_managers) {
+            if (!block_mgr->is_fixed_size_per_sequence()) {
+                const size_t total_blocks = block_mgr->get_total_block_count();
+                if (total_blocks == 0) {
+                    return std::nullopt;
+                }
+                const size_t block_size = block_mgr->get_block_size();
+                size_t capacity = std::numeric_limits<size_t>::max();
+                if (block_size > 0 && total_blocks <= std::numeric_limits<size_t>::max() / block_size) {
+                    capacity = total_blocks * block_size;
+                }
+                min_capacity = std::min(min_capacity, capacity);
+                has_variable_size = true;
+            }
+        }
+        if (!has_variable_size) {
+            return std::nullopt;
+        }
+        return min_capacity;
+    }
+
+    void set_dynamic_allocation(bool is_dynamic) {
+        m_is_dynamic_allocation = is_dynamic;
+    }
+
+    bool is_dynamic_allocation() const {
+        return m_is_dynamic_allocation;
+    }
+
     // -----------------------------------------------------------------------
     //  Low-level accessors (for debugging / type-specific edge cases)
     // -----------------------------------------------------------------------
@@ -995,6 +1046,7 @@ private:
 
     // Linear-attention pool footprint high-water mark.
     size_t m_linear_attention_pool_blocks_high_water = 0;
+    bool m_is_dynamic_allocation = false;
 
     void queue_linear_attention_initial_state_zero(CacheType type,
                                                    BlockManager& block_mgr,

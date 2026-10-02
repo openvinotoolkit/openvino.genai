@@ -451,6 +451,10 @@ ov::genai::Tokenizer ov::genai::LLMPipeline::get_tokenizer() {
     return m_pimpl->get_tokenizer();
 }
 
+std::optional<size_t> ov::genai::LLMPipeline::get_max_request_tokens() const {
+    return m_pimpl ? m_pimpl->get_max_request_tokens() : std::nullopt;
+}
+
 void ov::genai::LLMPipeline::start_chat(const std::string& system_message) {
     m_pimpl->start_chat(system_message);
 }

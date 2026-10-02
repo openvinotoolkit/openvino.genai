@@ -278,6 +278,14 @@ public:
      */
     ov::genai::PipelineMetrics get_metrics() const;
 
+    /**
+     * @brief Returns the maximum token capacity that a single request can consume under
+     *        the current cache configuration.
+     * @return Maximum token capacity in tokens, or std::nullopt if the cache is dynamically
+     *         allocated or not bounded by a static budget.
+     */
+    std::optional<size_t> get_max_request_tokens() const;
+
     /// @param request_id must be unique for every add_request() call.
     /// @note LoRA adapters are only supported in MODE_STATIC or MODE_FUSE modes.
     ///       MODE_DYNAMIC, MODE_AUTO and MODE_STATIC_RANK are not supported in the add_request() + step() flow.
