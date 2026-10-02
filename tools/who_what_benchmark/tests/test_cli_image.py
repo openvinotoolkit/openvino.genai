@@ -9,7 +9,11 @@ import logging
 import tempfile
 import re
 
+from pathlib import Path
+from huggingface_hub import snapshot_download
+
 from conftest import convert_model, run_wwb
+from ov_utils import retry_request
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -249,6 +253,15 @@ def test_image_model_genai_with_taylorseer(tmp_path):
 )
 def test_image_custom_dataset(model_id, model_type, backend, tmp_path):
     GT_FILE = tmp_path / "test_sd.csv"
+    dataset_dir = Path(
+        retry_request(
+            lambda: snapshot_download(
+                "google-research-datasets/conceptual_captions",
+                repo_type="dataset",
+                allow_patterns=["unlabeled/validation-*"],
+            )
+        )
+    )
     wwb_args = [
         "--base-model",
         model_id,
@@ -261,7 +274,7 @@ def test_image_custom_dataset(model_id, model_type, backend, tmp_path):
         "--model-type",
         model_type,
         "--dataset",
-        "google-research-datasets/conceptual_captions",
+        str(dataset_dir / "unlabeled"),
         "--dataset-field",
         "caption",
         "--num-inference-steps",

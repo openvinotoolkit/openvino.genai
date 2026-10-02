@@ -6,7 +6,6 @@ import os
 import json
 from typing import Any, Union
 
-import datasets
 import numpy as np
 import pandas as pd
 from PIL import Image
@@ -18,7 +17,7 @@ import openvino_genai
 
 from .registry import register_evaluator
 from .text2video_evaluator import Text2VideoEvaluator
-from .utils import parquet_generate_tables
+from .utils import load_hub_parquet_dataset, parquet_generate_tables
 from .inpaint_evaluator import patched_parquet
 
 
@@ -27,7 +26,7 @@ def prepare_default_data(num_samples=None):
     NUM_SAMPLES = 10 if num_samples is None else num_samples
     set_seed(42)
     default_dataset = (
-        datasets.load_dataset(DATASET_NAME, split="test", streaming=True)
+        load_hub_parquet_dataset(DATASET_NAME, {"test": "data/test-*"}, split="test", streaming=True)
         .filter(lambda example: example["source_img"] is not None)
         .take(NUM_SAMPLES)
     )

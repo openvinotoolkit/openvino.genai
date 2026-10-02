@@ -12,6 +12,17 @@ import string
 from collections import Counter
 from rouge import Rouge
 
+from utils.dataset_utils import load_parquet_dataset_via_snapshot
+
+
+def load_longbench_subset(subset: str, split: str):
+    return load_parquet_dataset_via_snapshot(
+        "zai-org/LongBench",
+        {"test": f"{subset}/test-*"},
+        revision="8cbd111d8ac61f5cae05535389385177fd63a63a",
+        split=split,
+    )
+
 
 def normalize_answer(s):
     """Lower text and remove punctuation, articles and extra whitespace."""

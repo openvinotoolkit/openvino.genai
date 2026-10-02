@@ -9,9 +9,9 @@ import torch
 import pandas as pd
 from tqdm import tqdm
 from .registry import register_evaluator, BaseEvaluator
+from .utils import load_hub_parquet_dataset
 from .whowhat_metrics import RerankingSimilarity
 from transformers import set_seed
-import datasets
 import numpy as np
 
 
@@ -42,8 +42,8 @@ def prepare_default_data(num_samples=None):
     DATASET_NAME = "microsoft/ms_marco"
     NUM_SAMPLES = num_samples if num_samples else 24
     set_seed(42)
-    default_dataset = datasets.load_dataset(
-        DATASET_NAME, 'v2.1', split="test", streaming=True
+    default_dataset = load_hub_parquet_dataset(
+        DATASET_NAME, {"test": "v2.1/test-*"}, split="test", streaming=True
     ).shuffle(42).take(NUM_SAMPLES)
     return default_dataset.map(
         lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
