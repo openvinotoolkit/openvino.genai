@@ -1,11 +1,13 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-from PIL import Image
+import sys
 
+import pytest
+from PIL import Image
+from whowhatbench import wwb
 from whowhatbench.image2video_evaluator import Image2VideoEvaluator
 from whowhatbench.text2video_evaluator import Text2VideoEvaluator
-from whowhatbench.wwb import load_prompts
 
 
 def _configure_evaluator(evaluator, test_data):
@@ -138,8 +140,31 @@ def test_load_prompts_preserves_video_dataset_columns(monkeypatch):
 
     monkeypatch.setattr("whowhatbench.wwb.load_dataset", lambda **_kwargs: Dataset())
 
-    assert load_prompts(Args()) == {
+    assert wwb.load_prompts(Args()) == {
         "prompt": ["prompt"],
         "decode_timestep": [0.2],
         "decode_noise_scale": [0.3],
     }
+
+
+@pytest.mark.parametrize("model_type", ["text-to-video", "image-to-video"])
+@pytest.mark.parametrize(
+    ("cli_options", "expected_values"),
+    [
+        ([], (None, None)),
+        (["--decode-timestep", "0.2", "--decode-noise-scale", "0.3"], (0.2, 0.3)),
+    ],
+    ids=["defaults", "explicit"],
+)
+def test_video_decode_cli_options_reach_evaluator(monkeypatch, model_type, cli_options, expected_values):
+    class CapturingEvaluator:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    monkeypatch.setattr(sys, "argv", ["wwb", "--model-type", model_type, *cli_options])
+    monkeypatch.setitem(wwb.EVALUATOR_REGISTRY, model_type, CapturingEvaluator)
+    monkeypatch.setattr(wwb, "load_prompts", lambda _args: {"prompt": ["test prompt"]})
+
+    evaluator = wwb.create_evaluator(None, wwb.parse_args())
+
+    assert (evaluator.kwargs["decode_timestep"], evaluator.kwargs["decode_noise_scale"]) == expected_values
