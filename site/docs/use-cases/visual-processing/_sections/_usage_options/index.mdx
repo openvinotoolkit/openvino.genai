@@ -9,9 +9,34 @@ import Streaming from '@site/docs/use-cases/_shared/_streaming.mdx';
 Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/visual_language_chat), [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/visual_language_chat) and [JavaScript](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/js/visual_language_chat) visual language chat samples.
 :::
 
-### Use Image or Video Tags in Prompt
+### Use Media Tags in Prompt
 
-The prompt can contain `<ov_genai_image_i>` with `i` replaced with an actual zero based index to refer to an image. Reference to images used in previous prompts isn't implemented. A model's native image tag can be used instead of `<ov_genai_image_i>`. These tags are:
+The prompt can contain `<ov_genai_image_i>`, `<ov_genai_video_i>` or `<ov_genai_audio_i>`, with `i` replaced with an actual zero based index, to refer to an image, a video or an audio. Outside a chat, `i` indexes the list passed to the call. In a chat, indices are conversation-absolute: each modality counts on from the media of earlier turns. If turn 1 passed one audio, a new audio on turn 2 is `<ov_genai_audio_1>`, not `<ov_genai_audio_0>`. Reference to media used in previous prompts isn't implemented, so an index from an earlier turn is rejected. A model's native tag can be used instead of the universal one; the native tags are listed per modality below.
+
+If the prompt doesn't contain image, video or audio tags, but images, videos or audios are provided, the tags are prepended to the prompt.
+
+A tag expands to as many placeholder tokens as its media requires, so you do not write the placeholder count yourself.
+
+Tags let you place media anywhere, including between spans of text:
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        # Audio between two pieces of text, and two audios referenced by index.
+        pipe.generate("Compare <ov_genai_audio_0> against <ov_genai_audio_1> and explain", audios=[first, second])
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        // Audio between two pieces of text, and two audios referenced by index.
+        pipe.generate("Compare <ov_genai_audio_0> against <ov_genai_audio_1> and explain",
+                      ov::genai::audios(std::vector<ov::Tensor>{first, second}));
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+#### Image Tags
+
 1. InternVL2: `<image>\n`
 2. llava-1.5-7b-hf: `<image>`
 3. LLaVA-NeXT: `<image>`
@@ -31,7 +56,8 @@ The prompt can contain `<ov_genai_image_i>` with `i` replaced with an actual zer
 17. Muse Glimmer: `<|image|>`
 18. DeepSeek-OCR-2: `<image>`
 
-Model's native video tag can be used to refer to a video. These tags are:
+#### Video Tags
+
 1. LLaVA-NeXT-Video: `<video>`
 2. Qwen2-VL: `<|vision_start|><|video_pad|><|vision_end|>`
 3. Qwen2.5-VL: `<|vision_start|><|video_pad|><|vision_end|>`
@@ -40,7 +66,27 @@ Model's native video tag can be used to refer to a video. These tags are:
 6. gemma4: `<|video|>`
 7. Muse Glimmer: `<|video|>`
 
-If the prompt doesn't contain image or video tags, but images or videos are provided, the tags are prepended to the prompt.
+#### Audio Tags
+
+1. Qwen3-Omni: `<|audio_start|><|audio_pad|><|audio_end|>`
+
+#### Qwen3-Omni Notes
+
+Qwen3-Omni is trained with media placed before the text of a turn, so prepending — the default when
+you supply no tags — is the recommended form. Interleaving is supported but off-distribution.
+
+:::warning Audio and video in the same prompt
+
+Audio placeholders are positioned as text tokens, while image and video placeholders feed the 4D
+mRoPE position ids. Moving audio away from the front of the prompt therefore shifts where those
+text-positioned tokens sit relative to the vision tokens.
+
+Prompts with audio alone are unaffected, and so are prompts that leave the audio prepended. A
+prompt that interleaves audio with video has not been validated for output quality: the token
+accounting is correct and nothing raises, but generation quality may differ from the reference
+implementation. If you need that combination, compare against `transformers` on your own data
+before relying on it.
+:::
 
 ### Use Different Generation Parameters
 
