@@ -99,6 +99,12 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_ge
             if (!(eagle_mode_enabled && m_is_validation_mode_enabled)) {
                 num_processed_tokens = 0;
             }
+            // Draft pipeline only: hand off the per-token draft distributions q(.) captured this
+            // round so the main sampler can resample rejected tokens from the exact residual.
+            std::vector<std::vector<float>> draft_distributions;
+            if (!m_is_validation_mode_enabled) {
+                draft_distributions = m_sampler->extract_draft_distributions(request_id, sequence_id);
+            }
             // Publish an initialized empty tensor for unscheduled sequences.
             const ov::Tensor hidden_state = sequence->get_hidden_state();
             generated_request.insert({{sequence_id,
@@ -106,7 +112,8 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_ge
                                         sequence->get_generated_log_probs(),
                                         num_processed_tokens,
                                         hidden_state ? hidden_state : ov::Tensor(ov::element::f32, ov::Shape{0, 1, 0}),
-                                        std::move(tree_metadata_snapshot)}}});
+                                        std::move(tree_metadata_snapshot),
+                                        std::move(draft_distributions)}}});
         }
     }
     return result;
@@ -436,6 +443,26 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                 candidate_token_ids.resize(min_candidate_len);
                 candidate_token_log_probs.resize(min_candidate_len);
                 result.inserted_tokens_cnt = insert_tokens_to_sequence(running_sequence, candidate_token_ids, candidate_token_log_probs, logit_processor, is_update_logit_processor);
+                // Main pipeline only: forward the draft distributions q(.) for the tokens just
+                // inserted, aligned to the validation window (last entry == last inserted token),
+                // so the sampler can address them by offset from the end while resampling. The
+                // buffer is refreshed (or cleared) every round to avoid reusing a stale window.
+                if (m_is_validation_mode_enabled) {
+                    std::vector<std::vector<float>> window_distributions;
+                    const auto& all_distributions = candidate_sequence.draft_distributions;
+                    if (!all_distributions.empty()) {
+                        const size_t full_len = candidate_sequence.token_ids.size();
+                        const size_t base = full_len >= all_distributions.size() ? full_len - all_distributions.size() : 0;
+                        window_distributions.reserve(min_candidate_len - min_generated_tokens);
+                        for (size_t i = min_generated_tokens; i < min_candidate_len; ++i) {
+                            if (i >= base && (i - base) < all_distributions.size())
+                                window_distributions.push_back(all_distributions[i - base]);
+                            else
+                                window_distributions.emplace_back();
+                        }
+                    }
+                    m_sampler->set_candidate_distributions(request_id, running_sequence->get_grouped_id(), std::move(window_distributions));
+                }
                 // handle hidden states for eagle mode
                 if (eagle_mode_enabled && !m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) {
                     // Eagle mode hidden state management currently supports only single sequence

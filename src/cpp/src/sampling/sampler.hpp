@@ -144,6 +144,7 @@ class Sampler {
                                                  const std::pair<size_t, std::set<std::string>>& stop_strings);
 
     bool validate_candidate(Sequence::Ptr running_sequence, size_t& token_idx, Token& sampled_token,
+                            const Logits& target_logits,
                             bool& is_extend_sequence, size_t& max_removed_tokens, bool do_sample, bool has_real_probabilities,
                             std::mt19937& rng_engine);
 
@@ -174,6 +175,14 @@ class Sampler {
 
     ThreadPool m_thread_pool;
     std::shared_ptr<ov::op::v0::Constant> m_d2t_mapping;  // vocab index offset from draft to target token space (EAGLE)
+
+    // Per-round draft distributions q(.) for speculative sampling, keyed by request id then
+    // by sequence grouped id, one full-vocab vector per speculated token (generation order).
+    // On the draft sampler it is filled during sampling and drained by the pipeline; on the
+    // main sampler it is populated from the transferred candidates and read while resampling
+    // rejected tokens. Guarded by its own mutex because sequence groups are sampled in parallel.
+    std::map<uint64_t, std::map<uint64_t, std::vector<std::vector<float>>>> m_draft_distributions;
+    std::mutex m_draft_distributions_mutex;
 public:
     Sampler(const Sampler& rhs) = delete;
     Sampler(Sampler&& rhs) = delete;
@@ -191,6 +200,15 @@ public:
     }
 
     void clear_request_info(uint64_t request_id);
+
+    // Speculative sampling draft distribution plumbing (see m_draft_distributions).
+    // Draft sampler appends a proposed token's distribution; the pipeline drains a round.
+    void append_draft_distribution(uint64_t request_id, uint64_t grouped_id, std::vector<float> distribution);
+    std::vector<std::vector<float>> extract_draft_distributions(uint64_t request_id, uint64_t grouped_id);
+    // Main sampler receives the transferred round and reads q(.) for a rejected token,
+    // addressed by its offset from the end of the generated sequence (1 == last token).
+    void set_candidate_distributions(uint64_t request_id, uint64_t grouped_id, std::vector<std::vector<float>> distributions);
+    std::vector<float> get_candidate_distribution(uint64_t request_id, uint64_t grouped_id, size_t token_offset_from_end);
 
     LogitProcessor& get_logit_processor(uint64_t request_id);
     void create_logit_processor(uint64_t request_id, const GenerationConfig& sampling_parameters, const TokenIds& prompt);

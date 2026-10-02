@@ -215,7 +215,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     std::map<int64_t, UpdateRequestResult> update_sequence_info;
     // put candidates to model KV cache
     auto draft_generated_requests = m_draft_pipeline->get_generated_requests();
-    for (const auto& candidate : m_draft_pipeline->get_generated_requests()) {
+    for (const auto& candidate : draft_generated_requests) {
         auto update_result = m_main_pipeline->update_request(candidate.first, candidate.second, false);
         update_sequence_info.insert({{candidate.first, update_result}});
     }
