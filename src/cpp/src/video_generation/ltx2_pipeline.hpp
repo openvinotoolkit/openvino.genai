@@ -47,6 +47,31 @@ const VideoGenerationConfig LTX2_DEFAULT_CONFIG = VideoGenerationConfig{
     std::nullopt             // taylorseer_config
 };
 
+// LTX-2.3 defaults, mirroring diffusers 0.40's 'LTX2Pipeline.__call__'. Its guidance is three transformer
+// passes per step: classifier-free guidance, Spatio-Temporal Guidance and modality isolation.
+const VideoGenerationConfig LTX2_3_DEFAULT_CONFIG = VideoGenerationConfig{
+    std::nullopt,            // negative_prompt
+    1,                       // num_videos_per_prompt
+    nullptr,                 // generator
+    3.0f,                    // guidance_scale
+    512,                     // height
+    768,                     // width
+    30,                      // num_inference_steps
+    1024,                    // max_sequence_length
+    0.7f,                    // guidance_rescale
+    121,                     // num_frames
+    24.0f,                   // frame_rate
+    std::nullopt,            // taylorseer_config
+    std::nullopt,            // adapters
+    7.0f,                    // audio_guidance_scale
+    1.0f,                    // stg_scale
+    1.0f,                    // audio_stg_scale
+    3.0f,                    // modality_scale
+    3.0f,                    // audio_modality_scale
+    0.7f,                    // audio_guidance_rescale
+    std::vector<int64_t>{28} // spatio_temporal_guidance_blocks
+};
+
 // Repeats each batch entry of a [halves, ...] tensor num_videos times: [neg, pos] -> [neg x n, pos x n],
 // matching the [uncond videos, cond videos] latent layout
 ov::Tensor repeat_per_video(const ov::Tensor& input, size_t num_videos_per_prompt) {
@@ -63,6 +88,17 @@ ov::Tensor repeat_per_video(const ov::Tensor& input, size_t num_videos_per_promp
         }
     }
     return repeated;
+}
+
+// Conditional half of a CFG-batched tensor: [2N, ...] -> [N, ...], the layout being [uncond, cond]
+ov::Tensor conditional_half(const ov::Tensor& tensor, size_t num_videos_per_prompt) {
+    ov::Shape shape = tensor.get_shape();
+    OPENVINO_ASSERT(shape[0] == 2 * num_videos_per_prompt,
+                    "Expected a CFG-batched tensor of batch ", 2 * num_videos_per_prompt, ", got ", shape[0]);
+    shape[0] = num_videos_per_prompt;
+    ov::Tensor half(tensor.get_element_type(), shape);
+    numpy_utils::batch_copy(tensor, half, num_videos_per_prompt, 0, num_videos_per_prompt);
+    return half;
 }
 
 // [B, C, L, M] -> [B, L, C * M]
@@ -126,6 +162,9 @@ class LTX2Pipeline : public VideoPipeline {
     size_t m_latent_width = 0;
     std::filesystem::path m_models_dir;
 
+    // Points at the defaults of the loaded model version; the single source of truth for 'replace_defaults'
+    const VideoGenerationConfig* m_default_config = &LTX2_DEFAULT_CONFIG;
+
     void check_inputs(const VideoGenerationConfig& generation_config) const {
         utils::validate_generation_config(generation_config);
         video_generation_utils::check_video_size(generation_config.height,
@@ -140,7 +179,7 @@ class LTX2Pipeline : public VideoPipeline {
 
     size_t audio_num_frames_for(const VideoGenerationConfig& generation_config) const {
         const float frame_rate =
-            generation_config.frame_rate.value_or(LTX2_DEFAULT_CONFIG.frame_rate.value());
+            generation_config.frame_rate.value_or(m_default_config->frame_rate.value());
         const double audio_latents_per_second = static_cast<double>(m_audio_vae->get_config().sample_rate) /
                                                 m_audio_vae->get_config().mel_hop_length /
                                                 m_audio_vae->get_config().temporal_compression_ratio;
@@ -151,10 +190,10 @@ class LTX2Pipeline : public VideoPipeline {
         return static_cast<size_t>(std::lround(duration_s * audio_latents_per_second));
     }
 
-    void compute_hidden_states(const std::string& positive_prompt,
-                               const std::string& negative_prompt,
-                               const VideoGenerationConfig& generation_config,
-                               bool do_classifier_free_guidance) {
+    LTX2TextConnectors::Output compute_hidden_states(const std::string& positive_prompt,
+                                                     const std::string& negative_prompt,
+                                                     const VideoGenerationConfig& generation_config,
+                                                     bool do_classifier_free_guidance) {
         auto infer_start = std::chrono::steady_clock::now();
         ov::Tensor prompt_embeds = m_text_encoder->infer(positive_prompt,
                                                          negative_prompt,
@@ -172,10 +211,27 @@ class LTX2Pipeline : public VideoPipeline {
         infer_end = std::chrono::steady_clock::now();
         m_perf_metrics.encoder_inference_duration["connectors"] = Ms{infer_end - infer_start}.count();
 
-        m_transformer->set_hidden_states("encoder_hidden_states", connected.video_text_embedding);
-        m_transformer->set_hidden_states("audio_encoder_hidden_states", connected.audio_text_embedding);
-        m_transformer->set_hidden_states("encoder_attention_mask", connected.connector_attention_mask);
-        m_transformer->set_hidden_states("audio_encoder_attention_mask", connected.connector_attention_mask);
+        return connected;
+    }
+
+    // Text conditioning and positional coords for one guidance pass. The classifier-free guidance pass runs
+    // at batch 2N and binds the full tensors; LTX-2.3's extra passes run at batch N and bind the
+    // conditional half, as diffusers does at 'i == 0'.
+    struct PassConditioning {
+        ov::Tensor video_text_embedding;
+        ov::Tensor audio_text_embedding;
+        ov::Tensor connector_attention_mask;
+        ov::Tensor video_coords;
+        ov::Tensor audio_coords;
+    };
+
+    void bind_conditioning(const PassConditioning& conditioning) {
+        m_transformer->set_hidden_states("encoder_hidden_states", conditioning.video_text_embedding);
+        m_transformer->set_hidden_states("audio_encoder_hidden_states", conditioning.audio_text_embedding);
+        m_transformer->set_hidden_states("encoder_attention_mask", conditioning.connector_attention_mask);
+        m_transformer->set_hidden_states("audio_encoder_attention_mask", conditioning.connector_attention_mask);
+        m_transformer->set_hidden_states("video_coords", conditioning.video_coords);
+        m_transformer->set_hidden_states("audio_coords", conditioning.audio_coords);
     }
 
     void set_micro_conditions(size_t audio_num_frames, float frame_rate) {
@@ -353,13 +409,18 @@ public:
         }
 
         const std::string vocoder = data["vocoder"][1].get<std::string>();
-        if (vocoder == "LTX2Vocoder") {
+        // LTX-2.3's 'LTX2VocoderWithBWE' adds band-width extension (16 kHz in, 48 kHz out) inside the graph.
+        // Its IR interface is identical and the output rate is read from the config, so the same class serves both.
+        if (vocoder == "LTX2Vocoder" || vocoder == "LTX2VocoderWithBWE") {
             m_vocoder = std::make_shared<LTX2Vocoder>(root_dir / "vocoder");
         } else {
             OPENVINO_THROW("Unsupported '", vocoder, "' vocoder type");
         }
 
-        m_generation_config = LTX2_DEFAULT_CONFIG;
+        // 'model_index.json' reports 'LTX2Pipeline' for both versions, so the transformer config decides:
+        // 'perturbed_attn' is set on LTX-2.3 and absent on LTX-2.0
+        m_default_config = m_transformer->get_config().perturbed_attn ? &LTX2_3_DEFAULT_CONFIG : &LTX2_DEFAULT_CONFIG;
+        m_generation_config = *m_default_config;
         m_load_time = Ms{std::chrono::steady_clock::now() - start_time};
     }
 
@@ -391,6 +452,23 @@ public:
         return guidance_scale > 1.0;
     }
 
+    // LTX-2.3 enable predicates, matching diffusers' LTX2Pipeline. Both terms stay nullopt on LTX-2.0.
+    static bool do_spatio_temporal_guidance(const VideoGenerationConfig& config) {
+        return config.stg_scale.value_or(0.0f) > 0.0f || config.audio_stg_scale.value_or(0.0f) > 0.0f;
+    }
+
+    static bool do_modality_isolation_guidance(const VideoGenerationConfig& config) {
+        return config.modality_scale.value_or(0.0f) > 1.0f || config.audio_modality_scale.value_or(0.0f) > 1.0f;
+    }
+
+    // The extra passes run at batch N while classifier-free guidance runs at batch 2N, so the transformer's
+    // batch dimension has to stay dynamic to serve both from one compiled model. Without CFG every pass is
+    // already batch N and the static shape is kept.
+    bool needs_dynamic_transformer_batch(const VideoGenerationConfig& config, size_t batch_size_multiplier) const {
+        return batch_size_multiplier > 1 && m_transformer->get_config().perturbed_attn &&
+               (do_spatio_temporal_guidance(config) || do_modality_isolation_guidance(config));
+    }
+
     size_t get_transformer_expected_batch_size() const override {
         return m_transformer->get_expected_batch_size();
     }
@@ -404,7 +482,8 @@ public:
                                generation_config.num_frames,
                                generation_config.height,
                                generation_config.width,
-                               audio_num_frames);
+                               audio_num_frames,
+                               needs_dynamic_transformer_batch(generation_config, batch_size_multiplier));
         m_vae->reshape(generation_config.num_videos_per_prompt,
                        generation_config.num_frames,
                        generation_config.height,
@@ -431,6 +510,34 @@ public:
         OPENVINO_ASSERT(merged_generation_config.generator, "Generator must not be null");
 
         const float guidance_rescale = *merged_generation_config.guidance_rescale;
+        const float audio_guidance_rescale =
+            merged_generation_config.audio_guidance_rescale.value_or(guidance_rescale);
+
+        // LTX-2.3's extra guidance passes. Gated on the compiled model actually exposing the inputs, so a
+        // 2.3-shaped export missing one degrades to the passes it can run instead of failing.
+        const float stg_scale = merged_generation_config.stg_scale.value_or(0.0f);
+        const float audio_stg_scale = merged_generation_config.audio_stg_scale.value_or(stg_scale);
+        const float modality_scale = merged_generation_config.modality_scale.value_or(0.0f);
+        const float audio_modality_scale = merged_generation_config.audio_modality_scale.value_or(modality_scale);
+        const bool use_spatio_temporal_guidance =
+            m_transformer->has_stg_perturbation_mask() && do_spatio_temporal_guidance(merged_generation_config);
+        const bool use_modality_isolation_guidance =
+            m_transformer->has_cross_modality_gate() && do_modality_isolation_guidance(merged_generation_config);
+        const std::vector<int64_t> stg_blocks =
+            merged_generation_config.spatio_temporal_guidance_blocks.value_or(std::vector<int64_t>{});
+        OPENVINO_ASSERT(!use_spatio_temporal_guidance || !stg_blocks.empty(),
+                        "Spatio-Temporal Guidance is enabled but 'spatio_temporal_guidance_blocks' is empty, "
+                        "so no block would be perturbed. Set the blocks, or set 'stg_scale' and "
+                        "'audio_stg_scale' to 0.");
+        bool use_extra_guidance_passes = use_spatio_temporal_guidance || use_modality_isolation_guidance;
+        if (use_extra_guidance_passes && use_classifier_free_guidance &&
+            m_transformer->get_expected_batch_size() > 0) {
+            // The extra passes need batch N while this model was compiled for the batch 2N of CFG
+            GENAI_WARN("Spatio-Temporal Guidance / modality isolation guidance requested, but the compiled "
+                       "transformer has a static batch size and cannot run the extra passes. Run "
+                       "reshape/compile with these scales set to enable them.");
+            use_extra_guidance_passes = false;
+        }
 
         std::shared_ptr<ThreadedCallbackWrapper> callback_ptr = nullptr;
         auto callback_iter = properties.find(ov::genai::callback.name());
@@ -442,7 +549,7 @@ public:
         const auto& transformer_config = m_transformer->get_config();
         const size_t num_videos_per_prompt = merged_generation_config.num_videos_per_prompt;
         const float frame_rate =
-            merged_generation_config.frame_rate.value_or(LTX2_DEFAULT_CONFIG.frame_rate.value());
+            merged_generation_config.frame_rate.value_or(m_default_config->frame_rate.value());
 
         m_latent_num_frames =
             (merged_generation_config.num_frames - 1) / m_vae->get_config().temporal_compression_ratio + 1;
@@ -453,11 +560,31 @@ public:
         const size_t latent_mel_bins =
             m_audio_vae->get_config().mel_bins / m_audio_vae->get_config().mel_compression_ratio;
 
-        compute_hidden_states(positive_prompt,
-                              merged_generation_config.negative_prompt.value_or(""),
-                              merged_generation_config,
-                              use_classifier_free_guidance);
+        LTX2TextConnectors::Output connected = compute_hidden_states(positive_prompt,
+                                                                     merged_generation_config.negative_prompt.value_or(""),
+                                                                     merged_generation_config,
+                                                                     use_classifier_free_guidance);
         set_micro_conditions(audio_num_frames, frame_rate);
+
+        const size_t total_batch_size = num_videos_per_prompt * batch_size_multiplier;
+        const PassConditioning full_conditioning{connected.video_text_embedding,
+                                                 connected.audio_text_embedding,
+                                                 connected.connector_attention_mask,
+                                                 prepare_video_coords(total_batch_size, frame_rate),
+                                                 prepare_audio_coords(total_batch_size, audio_num_frames)};
+        // The extra passes are conditional-only, so they take the second half of the CFG-batched text
+        // conditioning. The coords are identical across batch entries, so they are just rebuilt smaller.
+        PassConditioning conditional_conditioning;
+        if (use_extra_guidance_passes && use_classifier_free_guidance) {
+            conditional_conditioning = {conditional_half(connected.video_text_embedding, num_videos_per_prompt),
+                                        conditional_half(connected.audio_text_embedding, num_videos_per_prompt),
+                                        conditional_half(connected.connector_attention_mask, num_videos_per_prompt),
+                                        prepare_video_coords(num_videos_per_prompt, frame_rate),
+                                        prepare_audio_coords(num_videos_per_prompt, audio_num_frames)};
+        } else {
+            conditional_conditioning = full_conditioning;
+        }
+        bind_conditioning(full_conditioning);
 
         ov::Shape video_noise_shape{num_videos_per_prompt,
                                     transformer_config.in_channels,
@@ -476,17 +603,13 @@ public:
         ov::Tensor audio_noise = merged_generation_config.generator->randn_tensor(audio_noise_shape);
         ov::Tensor audio_latent = pack_audio_latents(audio_noise);
 
-        // mu is constant: the reference evaluates calculate_shift() at max_image_seq_len, which
-        // resolves to max_shift regardless of resolution
-        const double mu = m_video_scheduler->calculate_shift(m_scheduler_config.max_image_seq_len);
+        // The reference evaluates calculate_shift() at the packed video sequence length, i.e. dim 1 of the
+        // packed latents, so mu is resolution dependent. Audio reuses the video mu, as the reference does.
+        const double mu = m_video_scheduler->calculate_shift(latent.get_shape().at(1));
         m_video_scheduler->set_timesteps_with_mu(mu, merged_generation_config.num_inference_steps, 1.0f);
         // Separate scheduler instance for audio: step() tracks per-modality state
         m_audio_scheduler->set_timesteps_with_mu(mu, merged_generation_config.num_inference_steps, 1.0f);
         std::vector<float> timesteps = m_video_scheduler->get_float_timesteps();
-
-        const size_t total_batch_size = num_videos_per_prompt * batch_size_multiplier;
-        m_transformer->set_hidden_states("video_coords", prepare_video_coords(total_batch_size, frame_rate));
-        m_transformer->set_hidden_states("audio_coords", prepare_audio_coords(total_batch_size, audio_num_frames));
 
         ov::Shape latent_shape_cfg = latent.get_shape();
         latent_shape_cfg[0] *= batch_size_multiplier;
@@ -495,34 +618,50 @@ public:
         audio_shape_cfg[0] *= batch_size_multiplier;
         ov::Tensor audio_cfg(ov::element::f32, audio_shape_cfg);
 
-        // x0-space classifier-free guidance (see LTX2Pipeline denoising loop in diffusers):
-        // x0 = sample - v * sigma; guided = x0_pos + (gs - 1) * (x0_pos - x0_neg); v = (sample - guided) / sigma
-        ov::Tensor x0_pos(ov::element::f32, {}), guided(ov::element::f32, {});
-        auto guided_velocity =
-            [&](const ov::Tensor& pred, const ov::Tensor& sample, float gs, float sigma, ov::Tensor& velocity) {
-            ov::Shape guided_shape = pred.get_shape();
-            guided_shape[0] /= batch_size_multiplier;
-            x0_pos.set_shape(guided_shape);
+        // x0-space guidance (see the LTX2Pipeline denoising loop in diffusers). With x0 = sample - v * sigma,
+        // every guidance term is a difference of x0 predictions that collapses to a difference of
+        // velocities: x0_cond - x0_other == sigma * (v_other - v_cond). So one accumulator serves all three
+        // terms, each contributing 'scale * sigma * (v_other - v_cond)':
+        //   guided = x0_cond + (gs - 1) * (x0_cond - x0_uncond_text)   classifier-free guidance
+        //                    +  stg     * (x0_cond - x0_uncond_stg)    Spatio-Temporal Guidance
+        //                    + (ms - 1) * (x0_cond - x0_uncond_modal)  modality isolation
+        // then rescale_noise_cfg(guided, x0_cond), and back to velocity: v = (sample - guided) / sigma.
+        struct GuidanceTerm {
+            float scale;
+            const float* velocity;  // the other pass's prediction, same element count as 'v_cond'
+        };
+        ov::Tensor x0_cond(ov::element::f32, {}), guided(ov::element::f32, {});
+        auto guided_velocity = [&](const float* v_cond,
+                                   const ov::Tensor& sample,
+                                   const std::vector<GuidanceTerm>& terms,
+                                   float rescale,
+                                   float sigma,
+                                   ov::Tensor& velocity) {
+            const ov::Shape& guided_shape = sample.get_shape();
+            x0_cond.set_shape(guided_shape);
             guided.set_shape(guided_shape);
 
-            const size_t elems = x0_pos.get_size();
-            const float* v_uncond = pred.data<const float>();
-            const float* v_cond = v_uncond + elems;
+            const size_t elems = x0_cond.get_size();
             const float* sample_data = sample.data<const float>();
-            float* x0_pos_data = x0_pos.data<float>();
+            float* x0_cond_data = x0_cond.data<float>();
             float* guided_data = guided.data<float>();
 
             for (size_t i = 0; i < elems; ++i) {
-                x0_pos_data[i] = sample_data[i] - v_cond[i] * sigma;
-                guided_data[i] = x0_pos_data[i] + (gs - 1.0f) * sigma * (v_uncond[i] - v_cond[i]);
+                x0_cond_data[i] = sample_data[i] - v_cond[i] * sigma;
+                guided_data[i] = x0_cond_data[i];
+            }
+            for (const GuidanceTerm& term : terms) {
+                for (size_t i = 0; i < elems; ++i) {
+                    guided_data[i] += term.scale * sigma * (term.velocity[i] - v_cond[i]);
+                }
             }
 
-            if (guidance_rescale > 0.0f) {
+            if (rescale > 0.0f) {
                 video_generation_utils::rescale_noise_cfg(guided_data,
-                                                          x0_pos_data,
+                                                          x0_cond_data,
                                                           guided_shape[0],
                                                           elems / guided_shape[0],
-                                                          guidance_rescale);
+                                                          rescale);
             }
 
             velocity.set_shape(guided_shape);
@@ -533,6 +672,33 @@ public:
             return velocity;
         };
         ov::Tensor video_velocity_buffer(ov::element::f32, {}), audio_velocity_buffer(ov::element::f32, {});
+
+        // infer() hands back the infer request's own output tensors, which the next pass overwrites, so each
+        // pass's prediction has to be copied out before the next call
+        ov::Tensor video_pred(ov::element::f32, {}), audio_pred(ov::element::f32, {});
+        ov::Tensor video_pred_stg(ov::element::f32, {}), audio_pred_stg(ov::element::f32, {});
+        ov::Tensor video_pred_modality(ov::element::f32, {}), audio_pred_modality(ov::element::f32, {});
+        auto keep = [](const ov::Tensor& source, ov::Tensor& destination) {
+            destination.set_shape(source.get_shape());
+            source.copy_to(destination);
+        };
+
+        auto run_extra_pass = [&](const ov::Tensor& video_sample,
+                                  const ov::Tensor& audio_sample,
+                                  float t,
+                                  bool isolate_modalities,
+                                  const std::vector<int64_t>& blocks,
+                                  ov::Tensor& video_out,
+                                  ov::Tensor& audio_out) {
+            const auto pass_start = std::chrono::steady_clock::now();
+            auto [video_prediction, audio_prediction] =
+                m_transformer->infer(video_sample, audio_sample, t, isolate_modalities, blocks);
+            const auto pass_duration =
+                ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - pass_start);
+            m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(pass_duration));
+            keep(video_prediction, video_out);
+            keep(audio_prediction, audio_out);
+        };
 
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
             auto step_start = std::chrono::steady_clock::now();
@@ -554,13 +720,60 @@ public:
             auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
             m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
 
-            ov::Tensor video_velocity = batch_size_multiplier > 1
-                ? guided_velocity(noise_pred_video, latent, merged_generation_config.guidance_scale, sigma,
-                                  video_velocity_buffer)
-                : noise_pred_video;
-            ov::Tensor audio_velocity = batch_size_multiplier > 1
-                ? guided_velocity(noise_pred_audio, audio_latent, audio_guidance_scale, sigma, audio_velocity_buffer)
-                : noise_pred_audio;
+            ov::Tensor video_velocity, audio_velocity;
+            if (batch_size_multiplier == 1 && !use_extra_guidance_passes) {
+                // Unguided: the single prediction is the velocity, no x0 round trip
+                video_velocity = noise_pred_video;
+                audio_velocity = noise_pred_audio;
+            } else {
+                // The conditional half of the first pass is the baseline every guidance term subtracts from.
+                // It only has to be copied out when a later pass would overwrite the output tensors.
+                if (use_extra_guidance_passes) {
+                    keep(noise_pred_video, video_pred);
+                    keep(noise_pred_audio, audio_pred);
+                }
+                const ov::Tensor& video_base = use_extra_guidance_passes ? video_pred : noise_pred_video;
+                const ov::Tensor& audio_base = use_extra_guidance_passes ? audio_pred : noise_pred_audio;
+                const size_t cond_offset = batch_size_multiplier > 1 ? latent.get_size() : 0;
+                const size_t audio_cond_offset = batch_size_multiplier > 1 ? audio_latent.get_size() : 0;
+                const float* v_cond = video_base.data<const float>() + cond_offset;
+                const float* audio_v_cond = audio_base.data<const float>() + audio_cond_offset;
+
+                std::vector<GuidanceTerm> video_terms, audio_terms;
+                if (batch_size_multiplier > 1) {
+                    // The unconditional half sits first in the [uncond, cond] batch layout
+                    video_terms.push_back({merged_generation_config.guidance_scale - 1.0f,
+                                           video_base.data<const float>()});
+                    audio_terms.push_back({audio_guidance_scale - 1.0f, audio_base.data<const float>()});
+                }
+
+                if (use_extra_guidance_passes) {
+                    // Both extra passes are conditional-only and run at batch N on the unduplicated latents
+                    bind_conditioning(conditional_conditioning);
+
+                    if (use_spatio_temporal_guidance) {
+                        run_extra_pass(latent, audio_latent, t, /* isolate_modalities */ false, stg_blocks,
+                                       video_pred_stg, audio_pred_stg);
+                        video_terms.push_back({stg_scale, video_pred_stg.data<const float>()});
+                        audio_terms.push_back({audio_stg_scale, audio_pred_stg.data<const float>()});
+                    }
+
+                    if (use_modality_isolation_guidance) {
+                        run_extra_pass(latent, audio_latent, t, /* isolate_modalities */ true, {},
+                                       video_pred_modality, audio_pred_modality);
+                        video_terms.push_back({modality_scale - 1.0f, video_pred_modality.data<const float>()});
+                        audio_terms.push_back({audio_modality_scale - 1.0f,
+                                               audio_pred_modality.data<const float>()});
+                    }
+
+                    bind_conditioning(full_conditioning);
+                }
+
+                video_velocity = guided_velocity(v_cond, latent, video_terms, guidance_rescale, sigma,
+                                                 video_velocity_buffer);
+                audio_velocity = guided_velocity(audio_v_cond, audio_latent, audio_terms,
+                                                 audio_guidance_rescale, sigma, audio_velocity_buffer);
+            }
 
             auto video_step_result = m_video_scheduler->step(video_velocity,
                                                              latent,
@@ -672,26 +885,52 @@ public:
 
 protected:
     void replace_defaults(VideoGenerationConfig& config) const override {
+        const VideoGenerationConfig& defaults = *m_default_config;
         if (-1 == config.height) {
-            config.height = LTX2_DEFAULT_CONFIG.height;
+            config.height = defaults.height;
         }
         if (-1 == config.width) {
-            config.width = LTX2_DEFAULT_CONFIG.width;
+            config.width = defaults.width;
         }
         if (-1 == config.num_inference_steps) {
-            config.num_inference_steps = LTX2_DEFAULT_CONFIG.num_inference_steps;
+            config.num_inference_steps = defaults.num_inference_steps;
         }
         if (-1 == config.max_sequence_length) {
-            config.max_sequence_length = LTX2_DEFAULT_CONFIG.max_sequence_length;
+            config.max_sequence_length = defaults.max_sequence_length;
         }
         if (!config.guidance_rescale.has_value()) {
-            config.guidance_rescale = LTX2_DEFAULT_CONFIG.guidance_rescale;
+            config.guidance_rescale = defaults.guidance_rescale;
         }
         if (0 == config.num_frames) {
-            config.num_frames = LTX2_DEFAULT_CONFIG.num_frames;
+            config.num_frames = defaults.num_frames;
         }
         if (!config.frame_rate.has_value()) {
-            config.frame_rate = LTX2_DEFAULT_CONFIG.frame_rate;
+            config.frame_rate = defaults.frame_rate;
+        }
+        // The LTX-2.3 guidance terms. LTX-2.0's defaults leave every one of them nullopt, which disables
+        // the extra passes and makes each audio term fall back to its video counterpart in 'generate()'.
+        // On LTX-2.3 they are all set, so the audio terms keep their own diffusers defaults rather than
+        // inheriting a user-supplied video value — which is what diffusers' 'audio_x = audio_x or x' does.
+        if (!config.audio_guidance_scale.has_value()) {
+            config.audio_guidance_scale = defaults.audio_guidance_scale;
+        }
+        if (!config.stg_scale.has_value()) {
+            config.stg_scale = defaults.stg_scale;
+        }
+        if (!config.audio_stg_scale.has_value()) {
+            config.audio_stg_scale = defaults.audio_stg_scale;
+        }
+        if (!config.modality_scale.has_value()) {
+            config.modality_scale = defaults.modality_scale;
+        }
+        if (!config.audio_modality_scale.has_value()) {
+            config.audio_modality_scale = defaults.audio_modality_scale;
+        }
+        if (!config.audio_guidance_rescale.has_value()) {
+            config.audio_guidance_rescale = defaults.audio_guidance_rescale;
+        }
+        if (!config.spatio_temporal_guidance_blocks.has_value()) {
+            config.spatio_temporal_guidance_blocks = defaults.spatio_temporal_guidance_blocks;
         }
     }
 
