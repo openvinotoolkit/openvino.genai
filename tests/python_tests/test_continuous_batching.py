@@ -87,6 +87,26 @@ def model_facebook_opt_125m() -> OVConvertedModelSchema:
     return download_and_convert_model(model_id)
 
 
+@pytest.fixture(scope="module")
+def model_tinyllama_1_1b_chat() -> OVConvertedModelSchema:
+    model_id: str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    return download_and_convert_model(model_id)
+
+
+@pytest.fixture(scope="module")
+def tinyllama_lora_adapter(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    from huggingface_hub import hf_hub_download
+
+    adapter_dir = tmp_path_factory.mktemp("tinyllama_lora")
+    return Path(
+        hf_hub_download(
+            repo_id="smangrul/tinyllama_lora_sql",
+            filename="adapter_model.safetensors",
+            local_dir=adapter_dir,
+        )
+    )
+
+
 @pytest.mark.transformers_dependent(
     reason="Cases with group beam search fails with optimum-intel 423b423 and transformers>=5.0, CVS-185790"
 )
@@ -1302,3 +1322,101 @@ def test_cb_different_seed_produces_different_output(model_facebook_opt_125m: OV
         f"Requests with different rng_seeds {rng_seeds} must produce at least one distinct output, "
         f"but all produced identical token sequences: {token_seqs[0]}"
     )
+
+
+def test_cb_add_request_accepts_empty_lora_config(model_facebook_opt_125m: OVConvertedModelSchema):
+    """add_request() must allow an explicit empty LoRA config."""
+    import openvino_genai as ov_genai
+
+    pipe = ContinuousBatchingPipeline(model_facebook_opt_125m.models_path, SchedulerConfig(), "CPU")
+
+    modes = [
+        ov_genai.AdapterConfig.Mode.MODE_AUTO,
+        ov_genai.AdapterConfig.Mode.MODE_DYNAMIC,
+        ov_genai.AdapterConfig.Mode.MODE_STATIC_RANK,
+    ]
+    for request_id, mode in enumerate(modes):
+        config = GenerationConfig()
+        config.max_new_tokens = 10
+        config.adapters = ov_genai.AdapterConfig(mode=mode)
+
+        pipe.add_request(request_id, "test prompt", generation_config=config)
+
+
+@pytest.mark.parametrize("mode_name", ["MODE_AUTO", "MODE_DYNAMIC", "MODE_STATIC_RANK"])
+def test_cb_add_request_rejects_non_empty_unsupported_lora_mode(
+    model_tinyllama_1_1b_chat: OVConvertedModelSchema, tinyllama_lora_adapter: Path, mode_name: str
+):
+    """add_request() must reject unsupported modes when LoRA adapters are present."""
+    import openvino_genai as ov_genai
+
+    pipe = ContinuousBatchingPipeline(model_tinyllama_1_1b_chat.models_path, SchedulerConfig(), "CPU")
+
+    config = GenerationConfig()
+    config.max_new_tokens = 10
+    config.adapters = ov_genai.AdapterConfig(
+        ov_genai.Adapter(tinyllama_lora_adapter), mode=getattr(ov_genai.AdapterConfig.Mode, mode_name)
+    )
+
+    with pytest.raises(
+        RuntimeError, match="MODE_DYNAMIC, MODE_AUTO, and MODE_STATIC_RANK LoRA adapters are not supported"
+    ):
+        pipe.add_request(0, "test prompt", generation_config=config)
+
+
+@pytest.mark.parametrize("mode_name", ["MODE_AUTO", "MODE_DYNAMIC", "MODE_STATIC_RANK"])
+def test_cb_add_request_rejects_non_empty_unsupported_pipeline_lora_mode(
+    model_tinyllama_1_1b_chat: OVConvertedModelSchema, tinyllama_lora_adapter: Path, mode_name: str
+):
+    """add_request() must reject unsupported pipeline modes when LoRA adapters are present."""
+    import openvino_genai as ov_genai
+
+    adapter_config = ov_genai.AdapterConfig(
+        ov_genai.Adapter(tinyllama_lora_adapter), mode=getattr(ov_genai.AdapterConfig.Mode, mode_name)
+    )
+    pipe = ContinuousBatchingPipeline(
+        model_tinyllama_1_1b_chat.models_path,
+        SchedulerConfig(),
+        "CPU",
+        properties={"adapters": adapter_config},
+    )
+
+    config = GenerationConfig()
+    config.max_new_tokens = 10
+
+    with pytest.raises(
+        RuntimeError, match="MODE_DYNAMIC, MODE_AUTO, and MODE_STATIC_RANK LoRA adapters are not supported"
+    ):
+        pipe.add_request(0, "test prompt", generation_config=config)
+
+
+@pytest.mark.parametrize("mode_name", ["MODE_AUTO", "MODE_DYNAMIC", "MODE_STATIC_RANK"])
+@pytest.mark.parametrize("backend", ["continuous_batching", "prompt_lookup", "speculative_decoding"])
+def test_cb_generate_allows_unsupported_add_request_lora_mode(
+    model_tinyllama_1_1b_chat: OVConvertedModelSchema, tinyllama_lora_adapter: Path, mode_name: str, backend: str
+):
+    """generate() applies the adapters itself, so the add_request() mode restriction must not affect any backend."""
+    import openvino_genai as ov_genai
+
+    adapter_config = ov_genai.AdapterConfig(
+        ov_genai.Adapter(tinyllama_lora_adapter), mode=getattr(ov_genai.AdapterConfig.Mode, mode_name)
+    )
+
+    properties = {"adapters": adapter_config}
+    config = GenerationConfig()
+    config.max_new_tokens = 5
+    if backend == "prompt_lookup":
+        properties["prompt_lookup"] = True
+        config.max_ngram_size = 3
+        config.num_assistant_tokens = 3
+    elif backend == "speculative_decoding":
+        properties["draft_model"] = draft_model(model_tinyllama_1_1b_chat.models_path)
+        config.num_assistant_tokens = 3
+
+    pipe = ContinuousBatchingPipeline(
+        model_tinyllama_1_1b_chat.models_path, SchedulerConfig(), "CPU", properties=properties
+    )
+
+    results = pipe.generate(["test prompt"], [config])
+
+    assert len(results[0].m_generation_ids[0]) > 0

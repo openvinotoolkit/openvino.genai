@@ -36,6 +36,10 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::set_config(const G
     m_generation_config = config;
 }
 
+std::optional<AdapterConfig> ContinuousBatchingPipeline::IContinuousBatchingPipeline::get_pipeline_adapters() const {
+    return m_generation_config.adapters;
+}
+
 PipelineMetrics ContinuousBatchingPipeline::IContinuousBatchingPipeline::get_metrics() const {
     return m_pipeline_metrics;
 }

@@ -42,7 +42,7 @@ npm install openvino-genai-node
 
 ## Requirements
 
-Node.js **≥ 21**. Refer to the [supported platforms](#supported-platforms) for more details.
+Node.js **≥ 22**. Refer to the [supported platforms](#supported-platforms) for more details.
 
 ## Supported platforms
 

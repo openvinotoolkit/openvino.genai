@@ -440,6 +440,15 @@ export const LLM_MODELS: LLMModelType[] = [
     ],
   },
   {
+    architecture: 'GraniteMoeHybridForCausalLM',
+    models: [
+      {
+        name: 'Granite',
+        links: ['https://huggingface.co/ibm-granite/granite-4.0-micro'],
+      },
+    ],
+  },
+  {
     architecture: 'HunYuanDenseV1ForCausalLM',
     models: [
       {
