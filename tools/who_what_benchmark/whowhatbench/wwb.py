@@ -871,7 +871,10 @@ def genai_gen_image2video(
 
         kwargs["adapters"] = openvino_genai.AdapterConfig()
     if isinstance(image, Image.Image) and image.size != (width, height):
-        image = image.resize((width, height), Image.Resampling.LANCZOS)
+        # Match the diffusers reference resampling: bilinear for LTX-2, Lanczos for LTX-Video
+        is_ltx2 = getattr(model, "config", {}).get("_class_name") == "LTX2Pipeline"
+        resample = Image.Resampling.BILINEAR if is_ltx2 else Image.Resampling.LANCZOS
+        image = image.resize((width, height), resample)
     image_data = ov.Tensor(np.array(image))
     result = model.generate(
         image_data,
