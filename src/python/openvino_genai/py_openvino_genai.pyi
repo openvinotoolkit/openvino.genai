@@ -921,6 +921,15 @@ class AutoencoderKLLTXVideo:
         @property
         def scaling_factor(self) -> float:
             ...
+        @property
+        def spatial_compression_ratio(self) -> int:
+            ...
+        @property
+        def temporal_compression_ratio(self) -> int:
+            ...
+        @property
+        def timestep_conditioning(self) -> bool:
+            ...
     @typing.overload
     def __init__(self, vae_decoder_path: os.PathLike | str | bytes) -> None:
         """
@@ -957,10 +966,19 @@ class AutoencoderKLLTXVideo:
                         device (str): Device to run the model on (e.g., CPU, GPU).
                         kwargs: Device properties.
         """
+    @typing.overload
     def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         """
                         Decodes latent video to pixel space.
                         latent (ov.Tensor): Latent video tensor.
+                        Returns: Decoded video tensor.
+        """
+    @typing.overload
+    def decode(self, latent: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+        """
+                        Decodes latent video with timestep conditioning to pixel space.
+                        latent (ov.Tensor): Latent video tensor.
+                        timestep (ov.Tensor): Float32 timestep tensor shaped [B].
                         Returns: Decoded video tensor.
         """
     def encode(self, video: openvino._pyopenvino.Tensor, generator: Generator = None) -> openvino._pyopenvino.Tensor:
@@ -5538,6 +5556,8 @@ class Text2VideoPipeline:
     @typing.overload
     def compile(self, text_encode_device: str, denoise_device: str, vae_device: str, **kwargs) -> None:
         ...
+    def decode(self, latent: openvino._pyopenvino.Tensor) -> VideoGenerationResult:
+        ...
     def generate(self, prompt: str, **kwargs) -> VideoGenerationResult:
         ...
     def get_generation_config(self) -> VideoGenerationConfig:
@@ -6535,6 +6555,18 @@ class VideoGenerationConfig:
         ...
     @audio_guidance_scale.setter
     def audio_guidance_scale(self, arg0: typing.SupportsFloat | None) -> None:
+        ...
+    @property
+    def decode_noise_scale(self) -> float | None:
+        ...
+    @decode_noise_scale.setter
+    def decode_noise_scale(self, arg0: typing.SupportsFloat | None) -> None:
+        ...
+    @property
+    def decode_timestep(self) -> float:
+        ...
+    @decode_timestep.setter
+    def decode_timestep(self, arg0: typing.SupportsFloat) -> None:
         ...
     @property
     def frame_rate(self) -> float | None:
