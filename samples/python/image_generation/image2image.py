@@ -18,13 +18,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('model_dir')
     parser.add_argument('prompt')
-    parser.add_argument('image')
+    parser.add_argument("image", nargs="+")
     args = parser.parse_args()
 
     device = 'CPU'  # GPU can be used as well
     pipe = openvino_genai.Image2ImagePipeline(args.model_dir, device)
 
-    image = read_image(args.image)
+    images = [read_image(path) for path in args.image]
 
     def callback(step, num_steps, latent):
         print(f"Step {step + 1}/{num_steps}")
@@ -32,13 +32,15 @@ def main():
 
     image_tensor = pipe.generate(
         args.prompt,
-        image,
-        strength=0.8,
-        callback=callback
+        images,
+        # strength=0.8,
+        callback=callback,
+        num_inference_steps=10,
+        generator=openvino_genai.TorchGenerator(42),
     )
 
     image = Image.fromarray(image_tensor.data[0])
-    image.save("image.bmp")
+    image.save("image_2images_updated.bmp")
 
 
 if __name__ == '__main__':

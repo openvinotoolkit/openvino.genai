@@ -142,6 +142,25 @@ public:
         return generate(positive_prompt, initial_image, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
+    /**
+     * Performs image editing conditioned on a text prompt and several reference images.
+     * @param positive_prompt Prompt to generate image(s) from
+     * @param initial_images RGB/BGR images of [1, height, width, 3] shape the generation is conditioned on. The
+     * images may differ in resolution and are referred to as "Picture 1", "Picture 2" and so on by the model.
+     * @param properties Image generation parameters specified as properties. Values in 'properties' override default value for generation parameters.
+     * @returns A tensor which has dimensions [num_images_per_prompt, height, width, channels], where channels is 3
+     * for RGB models and 4 for models decoding RGBA, such as Qwen-Image 2.1
+     */
+    ov::Tensor generate(const std::string& positive_prompt, const std::vector<ov::Tensor>& initial_images, const ov::AnyMap& properties = {});
+
+    template <typename... Properties>
+    ov::util::EnableIfAllStringAny<ov::Tensor, Properties...> generate(
+            const std::string& positive_prompt,
+            const std::vector<ov::Tensor>& initial_images,
+            Properties&&... properties) {
+        return generate(positive_prompt, initial_images, ov::AnyMap{std::forward<Properties>(properties)...});
+    }
+
     ov::Tensor decode(const ov::Tensor latent);
 
     ImageGenerationPerfMetrics get_performance_metrics();

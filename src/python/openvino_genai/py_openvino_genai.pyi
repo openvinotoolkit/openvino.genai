@@ -2301,7 +2301,39 @@ class Image2ImagePipeline:
         ...
     def export_model(self, export_path: os.PathLike | str | bytes) -> None:
         ...
+    @typing.overload
     def generate(self, prompt: str, image: openvino._pyopenvino.Tensor, **kwargs) -> openvino._pyopenvino.Tensor:
+        """
+            Generates images for text-to-image models.
+        
+            :param prompt: input prompt
+            :type prompt: str
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
+        
+            Expected parameters list:
+            prompt_2: str - second prompt,
+            prompt_3: str - third prompt,
+            negative_prompt: str - negative prompt,
+            negative_prompt_2: str - second negative prompt,
+            negative_prompt_3: str - third negative prompt,
+            num_images_per_prompt: int - number of images, that should be generated per prompt,
+            guidance_scale: float - guidance scale,
+            generation_config: GenerationConfig,
+            height: int - height of resulting images,
+            width: int - width of resulting images,
+            num_inference_steps: int - number of inference steps,
+            rng_seed: int - a seed for random numbers generator,
+            generator: openvino_genai.TorchGenerator, openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator,
+            adapters: LoRA adapters,
+            strength: strength for image to image generation. 1.0f means initial image is fully noised,
+            max_sequence_length: int - length of t5_encoder_model input
+        
+            :return: ov.Tensor with resulting images
+            :rtype: ov.Tensor
+        """
+    @typing.overload
+    def generate(self, prompt: str, image: collections.abc.Sequence[openvino._pyopenvino.Tensor], **kwargs) -> openvino._pyopenvino.Tensor:
         """
             Generates images for text-to-image models.
         
@@ -3820,6 +3852,9 @@ class Qwen3VLForConditionalGeneration:
         ...
     @typing.overload
     def infer(self, prompt: str, condition_image: openvino._pyopenvino.Tensor, max_sequence_length: typing.SupportsInt) -> openvino._pyopenvino.Tensor:
+        ...
+    @typing.overload
+    def infer(self, prompt: str, condition_image: collections.abc.Sequence[openvino._pyopenvino.Tensor], max_sequence_length: typing.SupportsInt) -> openvino._pyopenvino.Tensor:
         ...
 class QwenImage21Transformer2DModel:
     """

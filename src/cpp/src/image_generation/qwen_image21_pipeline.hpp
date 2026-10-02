@@ -243,9 +243,9 @@ public:
         // The condition image is preprocessed by generate() before this call because the base interface passes
         // the prompt only.
         const auto encode = [&](const std::string& prompt) {
-            return numpy_utils::repeat(m_condition_image
-                                           ? m_text_encoder->infer(prompt, m_condition_image, generation_config.max_sequence_length)
-                                           : m_text_encoder->infer(prompt, generation_config.max_sequence_length),
+            return numpy_utils::repeat(m_condition_images.empty()
+                                           ? m_text_encoder->infer(prompt, generation_config.max_sequence_length)
+                                           : m_text_encoder->infer(prompt, m_condition_images, generation_config.max_sequence_length),
                                        generation_config.num_images_per_prompt);
         };
 
@@ -271,16 +271,29 @@ public:
         const ov::Tensor noise = generation_config.generator->randn_tensor(latent_shape);
 
         ov::Tensor condition_latents;
-        if (m_condition_image) {
+        if (!m_condition_images.empty()) {
             const auto encode_start = std::chrono::steady_clock::now();
-            condition_latents = m_vae->encode(to_vae_input(m_condition_image));
+            const auto& vae_config = m_vae->get_config();
+
+            // Every condition image is encoded on its own because the images may differ in resolution, and the
+            // packed latents are joined along the sequence axis in the order the images were passed.
+            std::vector<ov::Tensor> packed_condition_latents;
+            packed_condition_latents.reserve(m_condition_images.size());
+            for (const ov::Tensor& condition_image : m_condition_images) {
+                ov::Tensor image_latents = m_vae->encode(to_vae_input(condition_image));
+                qwen_image21_normalize_latents(image_latents, vae_config.latents_mean, vae_config.latents_std);
+                packed_condition_latents.push_back(qwen_image21_pack_latents(image_latents));
+            }
+
+            condition_latents = packed_condition_latents.front();
+            for (size_t index = 1; index < packed_condition_latents.size(); ++index) {
+                condition_latents = numpy_utils::concat(condition_latents, packed_condition_latents[index], 1);
+            }
+
             m_perf_metrics.vae_encoder_inference_duration =
                 std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - encode_start).count();
 
-            const auto& vae_config = m_vae->get_config();
-            qwen_image21_normalize_latents(condition_latents, vae_config.latents_mean, vae_config.latents_std);
-            condition_latents = numpy_utils::repeat(qwen_image21_pack_latents(condition_latents),
-                                                    generation_config.num_images_per_prompt);
+            condition_latents = numpy_utils::repeat(condition_latents, generation_config.num_images_per_prompt);
         }
 
         return std::make_tuple(qwen_image21_pack_latents(noise), ov::Tensor(), condition_latents, noise);
@@ -299,39 +312,65 @@ public:
                         ov::Tensor initial_image,
                         ov::Tensor mask_image,
                         const ov::AnyMap& properties) override {
+        OPENVINO_ASSERT(!mask_image, "QwenImage21Pipeline does not support mask_image/inpainting");
+        std::vector<ov::Tensor> initial_images;
+        if (initial_image) {
+            initial_images.push_back(initial_image);
+        }
+        return generate(positive_prompt, initial_images, properties);
+    }
+
+    ov::Tensor generate(const std::string& positive_prompt,
+                        const std::vector<ov::Tensor>& initial_images,
+                        const ov::AnyMap& properties) override {
         const auto gen_start = std::chrono::steady_clock::now();
         m_perf_metrics.clean_up();
         m_custom_generation_config = m_generation_config;
         m_custom_generation_config.update_generation_config(properties);
 
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
-        m_condition_image = ov::Tensor();
+        m_condition_images.clear();
+        m_condition_blocks.clear();
 
         if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
-            OPENVINO_ASSERT(initial_image, "'initial_image' must not be empty for Image 2 image pipeline");
-            const ov::Shape& image_shape = initial_image.get_shape();
-            OPENVINO_ASSERT(image_shape.size() == 4 && image_shape[0] == 1 && image_shape[1] > 0 &&
-                                image_shape[2] > 0 && image_shape[3] == 3,
-                            "'initial_image' must have [1, height, width, 3] shape with non-zero spatial dimensions, got ",
-                            image_shape);
-            const Qwen3VLForConditionalGeneration::ImageSize condition_size =
-                Qwen3VLForConditionalGeneration::calculate_dimensions(
+            OPENVINO_ASSERT(!initial_images.empty(), "'initial_image' must not be empty for Image 2 image pipeline");
+
+            // Each condition image is normalized to the same area independently of the others, so images of
+            // different resolutions and aspect ratios can be combined.
+            Qwen3VLForConditionalGeneration::ImageSize condition_size;
+            for (const ov::Tensor& initial_image : initial_images) {
+                OPENVINO_ASSERT(initial_image, "'initial_image' must not be empty for Image 2 image pipeline");
+                const ov::Shape& image_shape = initial_image.get_shape();
+                OPENVINO_ASSERT(image_shape.size() == 4 && image_shape[0] == 1 && image_shape[1] > 0 &&
+                                    image_shape[2] > 0 && image_shape[3] == 3,
+                                "'initial_image' must have [1, height, width, 3] shape with non-zero spatial dimensions, got ",
+                                image_shape);
+                condition_size = Qwen3VLForConditionalGeneration::calculate_dimensions(
                     DEFAULT_OUTPUT_RESOLUTION * DEFAULT_OUTPUT_RESOLUTION,
                     static_cast<double>(image_shape[2]) / static_cast<double>(image_shape[1]));
 
-            // Without an explicit resolution the target follows the condition image's aspect ratio.
+                // One resize and normalization feed both the vision tower and the VAE: Qwen3-VL's processor uses
+                // image_mean = image_std = 0.5, which reduces to the (pixel / 127.5) - 1 the VAE expects. The
+                // processor reuses its output buffer, so the result is detached before the next image is resized.
+                const ov::Tensor processed = m_image_processor->execute(
+                    m_image_resizer->execute(initial_image, condition_size.height, condition_size.width));
+                ov::Tensor condition_image(processed.get_element_type(), processed.get_shape());
+                processed.copy_to(condition_image);
+
+                m_condition_images.push_back(condition_image);
+                m_condition_blocks.push_back(
+                    {condition_size.height / vae_scale_factor, condition_size.width / vae_scale_factor});
+            }
+
+            // Without an explicit resolution the target follows the last condition image's aspect ratio.
             if (m_custom_generation_config.height < 0) {
                 m_custom_generation_config.height = static_cast<int64_t>(condition_size.height);
             }
             if (m_custom_generation_config.width < 0) {
                 m_custom_generation_config.width = static_cast<int64_t>(condition_size.width);
             }
-
-            // One resize and normalization feed both the vision tower and the VAE: Qwen3-VL's processor uses
-            // image_mean = image_std = 0.5, which reduces to the (pixel / 127.5) - 1 the VAE expects.
-            m_condition_image = m_image_processor->execute(
-                m_image_resizer->execute(initial_image, condition_size.height, condition_size.width));
-            m_condition_block = {condition_size.height / vae_scale_factor, condition_size.width / vae_scale_factor};
+        } else {
+            OPENVINO_ASSERT(initial_images.empty(), "'initial_image' must be empty for Text 2 image pipeline");
         }
 
         if (m_custom_generation_config.height < 0) {
@@ -341,8 +380,8 @@ public:
             m_custom_generation_config.width = DEFAULT_OUTPUT_RESOLUTION;
         }
 
-        check_inputs(m_custom_generation_config, initial_image);
-        OPENVINO_ASSERT(!mask_image, "QwenImage21Pipeline does not support mask_image/inpainting");
+        check_inputs(m_custom_generation_config,
+                     initial_images.empty() ? ov::Tensor() : initial_images.front());
 
         set_lora_adapters(m_custom_generation_config.adapters);
 
@@ -365,12 +404,10 @@ public:
         const std::vector<float> timesteps = m_scheduler->get_float_timesteps();
 
         ov::Tensor latents, condition_latents;
-        std::tie(latents, std::ignore, condition_latents, std::ignore) = prepare_latents(initial_image, m_custom_generation_config);
+        std::tie(latents, std::ignore, condition_latents, std::ignore) =
+            prepare_latents(ov::Tensor(), m_custom_generation_config);
 
-        std::vector<LatentBlock> blocks;
-        if (condition_latents) {
-            blocks.push_back(m_condition_block);
-        }
+        std::vector<LatentBlock> blocks = m_condition_blocks;
         blocks.push_back({latent_height, latent_width});
 
         const JointSequenceInputs positive_inputs =
@@ -790,8 +827,8 @@ private:
     ov::Tensor m_positive_prompt_embeds, m_positive_image_pad_mask;
     ov::Tensor m_negative_prompt_embeds, m_negative_image_pad_mask;
 
-    ov::Tensor m_condition_image;
-    LatentBlock m_condition_block;
+    std::vector<ov::Tensor> m_condition_images;
+    std::vector<LatentBlock> m_condition_blocks;
 
     ImageGenerationConfig m_custom_generation_config;
     ImageGenerationPerfMetrics m_perf_metrics;

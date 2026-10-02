@@ -99,7 +99,13 @@ public:
     /// @param condition_image Normalized image of shape (1, 3, height, width) resized to get_vision_image_size().
     ov::Tensor infer(const std::string& prompt, const ov::Tensor condition_image, int max_sequence_length);
 
-    /// @brief Marks the prompt positions the vision tower reserved for the condition image.
+    /// @brief Embeds a prompt together with several condition images, referred to as "Picture 1", "Picture 2" and
+    /// so on in the prompt template. Every image occupies its own run of vision slots.
+    ov::Tensor infer(const std::string& prompt,
+                     const std::vector<ov::Tensor>& condition_images,
+                     int max_sequence_length);
+
+    /// @brief Marks the prompt positions the vision tower reserved for the condition images.
     /// @return Boolean tensor of shape (1, prompt_sequence_length). All false after a text-only infer().
     ov::Tensor get_image_pad_mask() const;
 
@@ -112,7 +118,8 @@ public:
 private:
     static const std::string SYSTEM_PREFIX;
     static const std::string PROMPT_TEMPLATE;
-    static const std::string PROMPT_TEMPLATE_WITH_IMAGE;
+
+    static std::string format_image_conditioned_prompt(const std::string& prompt, size_t num_images);
 
     ov::Tensor infer_vision_tower(const ov::Tensor condition_image, std::vector<ov::Tensor>& deepstack_features);
 

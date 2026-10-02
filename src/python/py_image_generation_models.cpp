@@ -1468,6 +1468,12 @@ void init_qwen3_vl(py::module_& m) {
                 return self.infer(prompt, condition_image, max_sequence_length);
             },
             py::arg("prompt"), py::arg("condition_image"), py::arg("max_sequence_length"))
+        .def("infer",
+            [](ov::genai::Qwen3VLForConditionalGeneration& self, const std::string& prompt, const std::vector<ov::Tensor>& condition_images, int max_sequence_length) {
+                py::gil_scoped_release rel;
+                return self.infer(prompt, condition_images, max_sequence_length);
+            },
+            py::arg("prompt"), py::arg("condition_image"), py::arg("max_sequence_length"))
         .def("has_vision_tower", &ov::genai::Qwen3VLForConditionalGeneration::has_vision_tower)
         .def("get_image_pad_mask", &ov::genai::Qwen3VLForConditionalGeneration::get_image_pad_mask)
         .def("get_config", &ov::genai::Qwen3VLForConditionalGeneration::get_config)
