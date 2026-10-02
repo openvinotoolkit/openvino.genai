@@ -569,6 +569,8 @@ GenerationHandle ContinuousBatchingPipeline::add_request(
     assert_supported_add_request_lora_modes(m_impl->get_pipeline_adapters(), generation_config.value());
 
     const auto multimodal_inputs = extract_multimodal_inputs(properties_map);
+    OPENVINO_ASSERT(!multimodal_inputs.audios.has_value() || multimodal_inputs.audios->empty(),
+                    "Audio input is not supported by add_request(). Use generate() with audios_batches instead.");
 
     if (!multimodal_inputs.has_value()) {
         return m_impl->add_request(request_id, prompt, generation_config.value());
@@ -653,9 +655,9 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     OPENVINO_ASSERT(properties.generation_config_batches.has_value(),
         "\"generation_config_batches\" property is required in generate with properties map");
 
-    OPENVINO_ASSERT(properties.has_vision_properties(),
-        "Vision properties are required for VLM generate with properties map. "
-        "Use the text-only generate overload for LLM requests.");
+    OPENVINO_ASSERT(properties.has_media_properties(),
+                    "Media properties are required for VLM generate with properties map. "
+                    "Use the text-only generate overload for LLM requests.");
 
     return m_impl->generate(
         prompts,
@@ -697,9 +699,9 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     OPENVINO_ASSERT(properties.generation_config_batches.has_value(),
         "\"generation_config_batches\" property is required in generate with properties map");
 
-    OPENVINO_ASSERT(properties.has_vision_properties(),
-        "Vision properties are required for VLM generate with properties map. "
-        "Use the text-only generate overload for LLM requests.");
+    OPENVINO_ASSERT(properties.has_media_properties(),
+                    "Media properties are required for VLM generate with properties map. "
+                    "Use the text-only generate overload for LLM requests.");
 
     return m_impl->generate(
         histories,
