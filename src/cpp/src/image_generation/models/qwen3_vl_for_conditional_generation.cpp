@@ -463,7 +463,7 @@ ov::Tensor Qwen3VLForConditionalGeneration::infer(const std::string& prompt, con
     return drop_system_prefix(m_request.get_output_tensor(), prompt_length);
 }
 
-ov::Tensor Qwen3VLForConditionalGeneration::infer_vision_tower(const ov::Tensor condition_image) {
+ov::Tensor Qwen3VLForConditionalGeneration::infer_vision_tower(const ov::Tensor& condition_image) {
     const ov::Shape& image_shape = condition_image.get_shape();
     const size_t patch_size = m_vision_config.patch_size;
     const size_t granularity = patch_size * m_vision_config.spatial_merge_size;

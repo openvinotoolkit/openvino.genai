@@ -115,7 +115,7 @@ private:
     static const std::string PROMPT_TEMPLATE;
     static const std::string PROMPT_TEMPLATE_WITH_IMAGE;
 
-    ov::Tensor infer_vision_tower(const ov::Tensor condition_image);
+    ov::Tensor infer_vision_tower(const ov::Tensor& condition_image);
 
     ov::Tensor drop_system_prefix(const ov::Tensor& hidden_states, size_t prompt_length) const;
 

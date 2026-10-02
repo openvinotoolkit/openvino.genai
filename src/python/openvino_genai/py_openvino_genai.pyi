@@ -3810,7 +3810,7 @@ class Qwen3VLForConditionalGeneration:
     def infer(self, prompt: str, max_sequence_length: typing.SupportsInt) -> openvino._pyopenvino.Tensor:
         ...
     @typing.overload
-    def infer(self, prompt: str, condition_image: openvino._pyopenvino.Tensor, max_sequence_length: typing.SupportsInt) -> openvino._pyopenvino.Tensor:
+    def infer(self, prompt: str, condition_image: openvino._pyopenvino.Tensor, max_sequence_length: typing.SupportsInt, run_vision_tower: bool = True) -> openvino._pyopenvino.Tensor:
         ...
 class QwenImage21Transformer2DModel:
     """
