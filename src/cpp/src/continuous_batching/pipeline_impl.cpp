@@ -312,6 +312,17 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     OPENVINO_ASSERT(sampling_params_copy.max_length > prompt_len,
                     "'max_length' must be greater than the number of prompt tokens");
 
+    if (m_scheduler) {
+        const auto max_request_tokens = m_scheduler->get_max_request_tokens();
+        if (max_request_tokens.has_value() && prompt_len > *max_request_tokens) {
+            OPENVINO_THROW("The requested prompt length (",
+                           prompt_len,
+                           " tokens) exceeds the maximum token capacity supported by the current cache configuration (",
+                           *max_request_tokens,
+                           " tokens). Increase cache_size / num_kv_blocks, reduce prompt length, or raise cache_interval_multiplier for hybrid models.");
+        }
+    }
+
     std::shared_ptr<SequenceGroup> sequence_group;
     if (m_model_input_type == ModelInputType::EMBEDDINGS) {
         const auto [position_ids, rope_delta] = m_inputs_embedder->get_position_ids(input_ids.get_shape()[1], 0);
@@ -371,6 +382,10 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
 bool ContinuousBatchingPipeline::ContinuousBatchingImpl::has_non_finished_requests() {
     std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
     return !m_awaiting_requests.empty() || !m_requests.empty();
+}
+
+std::optional<size_t> ContinuousBatchingPipeline::ContinuousBatchingImpl::get_max_request_tokens() const {
+    return m_scheduler ? m_scheduler->get_max_request_tokens() : std::nullopt;
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_validate_linear_verifier_constraints() const {

@@ -1203,3 +1203,7 @@ bool VLMPipeline::supports_hidden_states_collection() const {
 bool VLMPipeline::is_audio_output_enabled() const {
     return m_pimpl->is_audio_output_enabled();
 }
+
+std::optional<size_t> VLMPipeline::get_max_request_tokens() const {
+    return m_pimpl ? m_pimpl->get_max_request_tokens() : std::nullopt;
+}

@@ -148,6 +148,7 @@ public:
                                  const ov::genai::GenerationConfig& sampling_params) override;
 
     bool has_non_finished_requests() override;
+    std::optional<size_t> get_max_request_tokens() const override;
 
     virtual void generate_candidates_for_prompt_lookup();
 

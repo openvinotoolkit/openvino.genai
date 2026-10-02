@@ -537,6 +537,10 @@ PipelineMetrics ContinuousBatchingPipeline::get_metrics() const{
     return m_impl->get_metrics();
 }
 
+std::optional<size_t> ContinuousBatchingPipeline::get_max_request_tokens() const {
+    return m_impl->get_max_request_tokens();
+}
+
 GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const std::string& prompt, const ov::genai::GenerationConfig& sampling_params) {
     assert_supported_add_request_lora_modes(m_impl->get_pipeline_adapters(), sampling_params);
     return m_impl->add_request(request_id, prompt, sampling_params);
