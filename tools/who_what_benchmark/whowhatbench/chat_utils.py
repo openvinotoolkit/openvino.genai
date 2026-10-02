@@ -1,6 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import re
 from typing import Any, Union
 
 import numpy as np
@@ -10,6 +11,56 @@ from .inputs_preprocessors.vlm_inputs_preprocessor import VLMInputsPreprocessor
 
 if TYPE_CHECKING:
     from transformers import Cache
+
+
+_HARMONY_TEMPLATE_MARKER = "<|channel|>"
+_HARMONY_PROMPT_PREFIX = "<|start|>"
+
+
+def is_harmony_template(tokenizer: Any) -> bool:
+    template_getter = getattr(tokenizer, "get_original_chat_template", None)
+    if not callable(template_getter):
+        template_getter = getattr(tokenizer, "get_chat_template", None)
+    template = template_getter() if callable(template_getter) else getattr(tokenizer, "chat_template", None)
+    return isinstance(template, str) and _HARMONY_TEMPLATE_MARKER in template
+
+
+def is_native_harmony_prompt(input_text: str, tokenizer: Any) -> bool:
+    return is_harmony_template(tokenizer) and input_text.startswith(_HARMONY_PROMPT_PREFIX)
+
+
+def normalize_chat_history(input_text: str, tokenizer: Any) -> list[dict[str, str]]:
+    if is_harmony_template(tokenizer):
+        patterns = (
+            re.compile(
+                r"^<\|system\|>(?P<system>.*?)<\|end\|>\s*"
+                r"<\|user\|>(?P<user>.*?)<\|end\|>\s*<\|assistant\|>\s*$",
+                re.DOTALL,
+            ),
+            re.compile(
+                r"^<\|user\|>(?P<user>.*?)<\|end\|>\s*<\|assistant\|>\s*$",
+                re.DOTALL,
+            ),
+            re.compile(
+                r"^<\|im_start\|>system<\|im_sep\|>(?P<system>.*?)<\|im_end\|>\s*"
+                r"<\|im_start\|>user<\|im_sep\|>(?P<user>.*?)<\|im_end\|>\s*"
+                r"<\|im_start\|>assistant<\|im_sep\|>\s*$",
+                re.DOTALL,
+            ),
+        )
+
+        for pattern in patterns:
+            match = pattern.fullmatch(input_text)
+            if match is None:
+                continue
+
+            system_message = match.groupdict().get("system")
+            user_message = match.group("user")
+            if system_message is not None:
+                user_message = f"{system_message}\r\n\r\n{user_message}"
+            return [{"role": "user", "content": user_message}]
+
+    return [{"role": "user", "content": input_text}]
 
 
 def find_common_prefix_length(
