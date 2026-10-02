@@ -709,7 +709,12 @@ def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwarg
 
 
 def get_vlm_processor(model_path):
-    config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+    remote_code = False
+    try:
+        config = AutoConfig.from_pretrained(model_path, trust_remote_code=remote_code)
+    except Exception:
+        remote_code = True
+        config = AutoConfig.from_pretrained(model_path, trust_remote_code=remote_code)
     model_type = config.model_type
     if model_type == "llava-qwen2":
         processor = AutoProcessor.from_pretrained(config.mm_vision_tower, trust_remote_code=True)
@@ -719,7 +724,7 @@ def get_vlm_processor(model_path):
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         preprocessors = {"processor": None, "tokenizer": tokenizer, "config": config}
     else:
-        processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+        processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=remote_code)
         preprocessors = {"processor": processor, "tokenizer": processor, "config": config}
     return preprocessors
 
