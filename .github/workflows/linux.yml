@@ -26,6 +26,7 @@ env:
   SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64
   HF_HOME: ${{ github.workspace }}/hf_cache
   HF_ENDPOINT: http://hf-proxy.hf-proxy.svc.cluster.local
+  HF_HUB_DISABLE_XET: 1
   OV_CACHE: ${{ github.workspace }}/ov_cache
   OPENVINO_LOG_LEVEL: 1
   GENAI_ARCHIVE_NAME: genai.tar.gz
