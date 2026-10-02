@@ -2778,6 +2778,7 @@ CDPRUNER_SUPPORTED_MODELS = [
     "optimum-intel-internal-testing/tiny-random-qwen2vl",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl",
+    "optimum-intel-internal-testing/tiny-random-qwen3.5",
 ]
 
 parametrize_cdpruner_models = pytest.mark.parametrize(
@@ -2948,6 +2949,7 @@ def test_cdpruner_disable_after_enable(ov_pipe_model: VlmModelInfo, cat_tensor: 
 
 CDPRUNER_VIDEO_PRUNING_SUPPORTED_MODELS = [
     "optimum-intel-internal-testing/tiny-random-qwen3-vl",
+    "optimum-intel-internal-testing/tiny-random-qwen3.5",
 ]
 
 

@@ -192,7 +192,7 @@ public:
                              int64_t video_pad_token_id = -1) const;
 
     /**
-     * @brief Update 3D position IDs for Qwen2VL-style models (3D RoPE).
+     * @brief Update 3D RoPE position IDs, including Qwen3.5's leading text-position plane.
      */
     ov::Tensor update_position_ids_3d(const ov::Tensor& original_position_ids,
                                       const ov::Tensor& input_ids,
