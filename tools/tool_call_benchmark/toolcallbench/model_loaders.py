@@ -21,9 +21,7 @@ def load_pipeline(model_path, device="CPU", ov_config=None):
     :return: LLMPipeline or VLMPipeline instance.
     """
     vlm = os.path.exists(os.path.join(model_path, "openvino_language_model.xml"))
-    kwargs = {}
-    if ov_config:
-        kwargs["properties"] = ov_config
+    kwargs = dict(ov_config or {})
     if vlm:
         return openvino_genai.VLMPipeline(model_path, device, **kwargs)
     return openvino_genai.LLMPipeline(model_path, device, **kwargs)

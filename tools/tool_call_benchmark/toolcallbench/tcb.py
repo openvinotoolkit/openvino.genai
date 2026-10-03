@@ -10,7 +10,7 @@ import os
 import sys
 import time
 
-from toolcallbench.dataset import DATASET_SHA256, DATASET_VERSION
+from toolcallbench.dataset import DATASET_SHA256, DATASET_VERSION, _sha256, load_dataset
 from toolcallbench.evaluator import ToolCallEvaluator
 from toolcallbench.model_loaders import load_pipeline
 from toolcallbench.verdict import THRESHOLDS
@@ -85,13 +85,16 @@ def main(argv=None):
     if args.output:
         os.makedirs(args.output, exist_ok=True)
         import openvino_genai
+        meta, _ = load_dataset(args.dataset)
+        dataset_version = meta.get("version", DATASET_VERSION)
+        dataset_sha = _sha256(args.dataset) if args.dataset else DATASET_SHA256
         report["run"] = {
             "model": args.model,
             "tokenizer": tokenizer_dir,
             "device": args.device,
             "max_new_tokens": args.max_new_tokens,
-            "dataset_version": DATASET_VERSION,
-            "dataset_sha256": DATASET_SHA256,
+            "dataset_version": dataset_version,
+            "dataset_sha256": dataset_sha,
             "openvino_genai_version": getattr(openvino_genai, "__version__", "unknown"),
             "thresholds": THRESHOLDS,
             "elapsed_sec": elapsed,

@@ -93,6 +93,7 @@ class ToolCallEvaluator:
         max_turns = max(engine.max_turns, 3)
         format_valid = True
         turns = 0
+        call_seq = 0
         while not engine.done and turns < max_turns + 4:
             prompt = self.tokenizer.apply_chat_template(
                 messages, tools=case["tools"], tokenize=False, add_generation_prompt=True)
@@ -112,13 +113,16 @@ class ToolCallEvaluator:
             while len(replies) < len(parsed.calls):
                 replies.append("(no output)")
             for call, reply in zip(parsed.calls, replies):
+                call_id = f"tcb_{call_seq:06d}"
+                call_seq += 1
                 messages.append({
                     "role": "assistant", "content": None,
-                    "tool_calls": [{"type": "function",
+                    "tool_calls": [{"id": call_id, "type": "function",
                                     "function": {"name": call.get("name", ""),
                                                  "arguments": call.get("arguments", {})}}],
                 })
-                messages.append({"role": "tool", "content": str(reply)})
+                messages.append({"role": "tool", "tool_call_id": call_id,
+                                 "content": str(reply)})
         graded = engine.grade()
         return {
             "id": case["id"],

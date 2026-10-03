@@ -64,3 +64,16 @@ def test_thresholds_match_legacy_absolute_rule():
         r["format_valid"] = False
     v = compute_verdict(rows, 50)
     assert v["verdict"] == "PARTIAL"
+
+
+def test_subset_omitting_category_does_not_crash():
+    # only bash cases selected: other categories absent entirely
+    rows = [mk(f"b{i}", "bash", True) for i in range(5)]
+    v = compute_verdict(rows, 50)
+    assert v["verdict"] == "INCOMPLETE"
+    assert v["categories"]["workflow"] == "n/a"
+
+
+def test_empty_selection_is_incomplete_not_fail():
+    v = compute_verdict([], 50)
+    assert v["verdict"] == "INCOMPLETE"

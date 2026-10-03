@@ -89,3 +89,15 @@ def test_call_in_thought_flagged():
         "<think>let me call <tool_call><function=x><parameter=p>1</parameter>"
         "</function></tool_call></think> no")
     assert calls.error == "call_in_thought"
+
+
+def test_orphan_start_marker_is_malformed():
+    # <tool_call><function=x> with no end marker must not count as format-valid
+    calls = xml_parser().parse("<tool_call><function=x><parameter=p>1</parameter>")
+    assert calls.error == "malformed"
+    assert calls.calls == []
+
+
+def test_orphan_lfm_marker_is_malformed():
+    calls = lfm_parser().parse("<|tool_call_start|>[run_command(command='x")
+    assert calls.error == "malformed"

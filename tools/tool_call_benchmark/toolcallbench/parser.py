@@ -272,6 +272,12 @@ class _DialectCore:
 
     def _parse_calls(self, stripped):
         calls, malformed = [], False
+        # visible start markers that never form a complete block are malformed
+        if self.cs and self.cs in stripped:
+            pair = re.escape(self.cs) + r"[\s\S]*?" + re.escape(self.ce) if self.ce else None
+            complete = len(re.findall(pair, stripped)) if pair else len(self._blocks(stripped))
+            if complete < stripped.count(self.cs):
+                malformed = True
         if self.xml_style:
             pat = re.escape(self.cs) + r"([\s\S]*?)" + re.escape(self.ce)
             for b in re.findall(pat, stripped):

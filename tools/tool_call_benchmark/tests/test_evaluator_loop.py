@@ -13,6 +13,7 @@ pytest.importorskip("openvino_genai")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from toolcallbench.evaluator import ToolCallEvaluator
+from toolcallbench.engine import CaseEngine
 from toolcallbench.parser import ParsedOutput, ToolCallParser
 
 
@@ -73,17 +74,65 @@ def test_history_one_call_per_assistant_message():
     assert result["correct"] is True
 
 
+class FakeStreamPipeline:
+    """Pipeline whose generate() pushes scripted words through the streamer."""
+
+    def __init__(self, words):
+        self.words = words
+
+    def generate(self, prompt=None, inputs=None, generation_config=None,
+                 streamer=None, **kwargs):
+        for w in self.words:
+            streamer(w)
+
+
+class FakeStreamer:
+    def __init__(self, sink):
+        self.sink = sink
+
+    def __call__(self, word):
+        self.sink.append(word)
+
+
 def test_terminator_truncation():
-    case = {"id": "Y", "category": "bash", "kind": "bash_act",
-            "tools": [], "messages": [{"role": "user", "content": "go"}],
-            "gold": {"accept": [{"required": ["git", "status"]}]}}
+    # drive _generate itself: chunks after the first terminator must be cut
+    from toolcallbench.evaluator import ToolCallEvaluator
+    ev = ToolCallEvaluator.__new__(ToolCallEvaluator)
+    ev._streamer_chunks = []
+    ev.pipeline = FakeStreamPipeline(["call", "<|im_end|>",
+                                      "<|im_start|>user", "hallucinated"])
+    ev._streamer = FakeStreamer(ev._streamer_chunks)
+    ev.max_new_tokens = 32
+    ev.tokenizer = FakeTokenizer()
+    raw = ev._generate("prompt")
+    assert raw == "call<|im_end|>"
+
+
+def test_history_carries_paired_ids():
+    class RecordingTokenizer(FakeTokenizer):
+        seen = []
+
+        def apply_chat_template(self, messages, **kw):
+            self.seen.append(list(messages))
+            return super().apply_chat_template(messages, **kw)
+
+    case = {"id": "Z", "category": "file_edit", "kind": "file_effect",
+            "tools": [], "messages": [{"role": "user", "content": "do"}],
+            "gold": {"file": "README.md", "expect": "# r\n"}}
     outputs = [
-        ParsedOutput(calls=[{"name": "run_command",
-                             "arguments": {"command": "git status"}}], text=""),
+        ParsedOutput(calls=[{"name": "read_file", "arguments": {"path": "README.md"}}],
+                     text=""),
+        ParsedOutput(calls=[], text="done"),
     ]
     evaluator = make_evaluator(outputs, case)
-    # simulated hallucinated continuation past the terminator
-    evaluator._generate = lambda prompt: "x"
+    evaluator.tokenizer = RecordingTokenizer()
+    evaluator._generate = lambda prompt: ""
     result = evaluator.run_case(case)
-    # the StubParser consumed the scripted call; loop must finish cleanly
-    assert result["turns"] == 1
+    assert result["correct"] is True
+    # find an assistant tool_call message and its paired tool reply
+    history = RecordingTokenizer.seen[-1]
+    ids = [tc["id"] for m in history for tc in m.get("tool_calls") or []
+           if tc.get("id")]
+    tool_ids = [m["tool_call_id"] for m in history if m.get("role") == "tool"
+                and m.get("tool_call_id")]
+    assert ids and tool_ids and set(ids) == set(tool_ids)
