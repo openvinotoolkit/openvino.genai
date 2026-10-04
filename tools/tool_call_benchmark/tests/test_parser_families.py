@@ -126,3 +126,11 @@ def test_xml_block_requires_closed_tags():
     assert b.error == "malformed" and b.calls == []
     c = calls.parse("<tool_call><function=f><parameter=p>1</function></tool_call>")
     assert c.error == "malformed"
+
+
+def test_python_call_literals():
+    calls = ToolCallParser({"json_style": False, "call_start": "<|tool_call_start|>[",
+                            "call_end": "<|tool_call_end|>", "arg_open": "(",
+                            "arg_close": ")", "str_delim": chr(39)})
+    out = calls.parse("<|tool_call_start|>[deploy(force=True, v=None, off=False)]<|tool_call_end|>")
+    assert out.calls[0]["arguments"] == {"force": True, "v": None, "off": False}

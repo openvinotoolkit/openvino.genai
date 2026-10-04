@@ -170,11 +170,11 @@ class _DialectCore:
             if not (self.sdr and v.endswith(self.sdr)):
                 raise ValueError("unterminated string")
             return v[len(self.sdl): len(v) - len(self.sdr)]
-        if v == "true":
+        if v in ("true", "True"):
             return True
-        if v == "false":
+        if v in ("false", "False"):
             return False
-        if v == "null":
+        if v in ("null", "None"):
             return None
         if v.startswith(self.ao) and v.endswith(self.ac):
             return self._object(v[1:-1])

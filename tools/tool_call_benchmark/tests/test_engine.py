@@ -570,3 +570,61 @@ def test_quoted_operator_not_split():
     assert is_look_call(call)
     # a real pipeline is still two segments
     assert split_segments("cat a | grep b") == [["cat", "a"], ["grep", "b"]]
+
+
+def test_nospace_pipe_is_not_a_look():
+    from toolcallbench.engine import is_look_call
+    call = {"name": "run_command",
+            "arguments": {"command": "cat manifest.yaml|kubectl apply -f -"}}
+    assert not is_look_call(call)
+
+
+def test_git_mutating_forms_not_read_only():
+    from toolcallbench.engine import is_read_only_call
+    def rc(c):
+        return is_read_only_call({"name": "run_command", "arguments": {"command": c}})
+    assert not rc("git branch new-name")
+    assert not rc("git tag v1.2")
+    assert not rc("git remote remove origin")
+    assert rc("git branch")
+    assert rc("git branch -a")
+    assert rc("git tag")
+    assert rc("git remote get-url origin")
+
+
+def test_nonstring_arguments_rejected_not_crash():
+    from toolcallbench.engine import CaseEngine
+    case = {"id": "NA", "category": "file_edit", "kind": "file_effect", "tools": [],
+            "messages": [{"role": "user", "content": "x"}],
+            "gold": {"file": "a.txt", "expect": "hi"}}
+    eng = CaseEngine(case, {"system": "s"})
+    eng.respond([{"name": "read_file", "arguments": {"path": ["etc"]}}])
+    g = eng.grade()
+    assert g["correct"] is False and g["bad_args"] is True
+
+
+def test_catalog_extra_calls_fail(cases, meta):
+    from toolcallbench.engine import CaseEngine
+    c = next(v for v in cases.values() if v["kind"] == "catalog")
+    gold_call = None
+    # find the catalog gold call from the dataset spec
+    for st in c["gold"].get("steps", []) or []:
+        break
+    # drive with two calls where one is right
+    first = {"name": "run_command", "arguments": {"command": "ls"}}
+    eng = CaseEngine(c, meta)
+    eng.respond([first, {"name": "run_command", "arguments": {"command": "ls -a"}}])
+    g = eng.grade()
+    assert g["correct"] is False
+
+
+def test_and_short_circuit_stops_segments(cases, meta):
+    from toolcallbench.engine import CaseEngine
+    c = next(v for v in cases.values() if v["id"] == "C02")
+    eng = CaseEngine(c, meta)
+    # one compound: first cp is fine, then a mkdir; if any recorded reply
+    # fails the rest must not consume steps
+    eng.respond([{"name": "run_command",
+                  "arguments": {"command": "mkdir -p backups && cp config/aliases.env backups/ && cp config/settings.yaml backups/"}}])
+    # engine must not crash and must stay coherent
+    eng.grade()

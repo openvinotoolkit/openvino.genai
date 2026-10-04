@@ -171,3 +171,28 @@ def test_terminator_only_text_is_not_prose():
     result = evaluator.run_case(case)
     # an empty generation is not a usable refusal
     assert result["correct"] is False
+
+
+def test_call_ids_nine_alnum():
+    class RecTok(FakeTokenizer):
+        seen = []
+
+        def apply_chat_template(self, messages, **kw):
+            self.seen.append(list(messages))
+            return super().apply_chat_template(messages, **kw)
+
+    case = {"id": "ID", "category": "file_edit", "kind": "file_effect",
+            "tools": [], "messages": [{"role": "user", "content": "do"}],
+            "gold": {"file": "README.md", "expect": "# r"}}
+    outputs = [
+        ParsedOutput(calls=[{"name": "read_file", "arguments": {"path": "README.md"}}], text=""),
+        ParsedOutput(calls=[], text="done"),
+    ]
+    ev = make_evaluator(outputs, case)
+    ev.tokenizer = RecTok()
+    ev._generate = lambda prompt: ""
+    ev.run_case(case)
+    hist = RecTok.seen[-1]
+    ids = [tc["id"] for m in hist for tc in m.get("tool_calls") or []]
+    import re as _re
+    assert ids and all(_re.fullmatch(r"[0-9A-Za-z]{9}", i) for i in ids)

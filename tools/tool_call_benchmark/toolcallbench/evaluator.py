@@ -36,6 +36,7 @@ class ToolCallEvaluator:
         self.pipeline = pipeline
         self.tokenizer = tokenizer
         self.max_new_tokens = max_new_tokens
+        self._stop_tokens = set(TURN_TERMINATORS)
         self.meta, self.cases = load_dataset(dataset_path)
         config = derive_parser_config(tokenizer)
         if "error" in config:
@@ -68,6 +69,8 @@ class ToolCallEvaluator:
             # dialects whose call_end is a terminator (llama <|eom_id|>) need
             # the marker in the output or every call looks unterminated
             config.include_stop_str_in_output = True
+            if self.tokenizer.eos_token:
+                self._stop_tokens.add(self.tokenizer.eos_token)
         except Exception:  # pragma: no cover - older builds
             pass
         try:
@@ -114,7 +117,7 @@ class ToolCallEvaluator:
             text_out = parsed.text or ""
             if parsed.error in ("malformed", "call_in_thought"):
                 text_out = ""  # parser artifacts are not prose
-            for term in TURN_TERMINATORS:
+            for term in getattr(self, "_stop_tokens", TURN_TERMINATORS):
                 text_out = text_out.replace(term, "")
             replies, finished = engine.respond(parsed.calls, text=text_out.strip())
             if finished:
@@ -124,7 +127,7 @@ class ToolCallEvaluator:
             while len(replies) < len(parsed.calls):
                 replies.append("(no output)")
             for call, reply in zip(parsed.calls, replies):
-                call_id = f"tcb_{call_seq:06d}"
+                call_id = f"tcb{call_seq:06d}"  # 9 chars, alphanumeric
                 call_seq += 1
                 messages.append({
                     "role": "assistant", "content": None,
@@ -134,6 +137,8 @@ class ToolCallEvaluator:
                 })
                 messages.append({"role": "tool", "tool_call_id": call_id,
                                  "content": str(reply)})
+        if not engine.done:
+            engine.timed_out = True  # stop state never observed
         graded = engine.grade()
         return {
             "id": case["id"],
