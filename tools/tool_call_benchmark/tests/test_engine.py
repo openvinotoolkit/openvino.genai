@@ -618,13 +618,38 @@ def test_catalog_extra_calls_fail(cases, meta):
     assert g["correct"] is False
 
 
-def test_and_short_circuit_stops_segments(cases, meta):
+def test_and_short_circuit_stops_segments():
     from toolcallbench.engine import CaseEngine
-    c = next(v for v in cases.values() if v["id"] == "C02")
-    eng = CaseEngine(c, meta)
-    # one compound: first cp is fine, then a mkdir; if any recorded reply
-    # fails the rest must not consume steps
+    case = {"id": "SC", "category": "workflow", "kind": "workflow", "tools": [],
+            "messages": [{"role": "user", "content": "x"}],
+            "gold": {"steps": [
+                {"any": [{"run": {"required": ["cp", "a", "b"]},
+                           "respond": {"out": "", "err": "cp: cannot stat 'a'", "code": 1}}]},
+                {"any": [{"run": {"required": ["mkdir", "-p", "b"]},
+                           "respond": {"out": "", "err": "", "code": 0}}]},
+                {"stop": True}]}}
+    eng = CaseEngine(case, {"system": "s"})
+    replies, fin = eng.respond([{"name": "run_command",
+                                 "arguments": {"command": "cp a b && mkdir -p b && cp c d"}}])
+    g = eng.grade()
+    # the failing cp stops the chain: no later step consumed, case not passed
+    assert eng.step_i == 1, eng.step_i
+    assert g["correct"] is False
+    assert g["bucket"] in ("incomplete", "stopped_early")
+
+
+def test_or_fallback_runs_only_on_failure():
+    from toolcallbench.engine import CaseEngine
+    case = {"id": "OR", "category": "workflow", "kind": "workflow", "tools": [],
+            "messages": [{"role": "user", "content": "x"}],
+            "gold": {"steps": [
+                {"any": [{"run": {"required": ["cp", "a", "b"]},
+                           "respond": {"out": "", "err": "", "code": 0}}]},
+                {"any": [{"run": {"required": ["mkdir", "-p", "b"]},
+                           "respond": {"out": "", "err": "", "code": 0}}]},
+                {"stop": True}]}}
+    eng = CaseEngine(case, {"system": "s"})
     eng.respond([{"name": "run_command",
-                  "arguments": {"command": "mkdir -p backups && cp config/aliases.env backups/ && cp config/settings.yaml backups/"}}])
-    # engine must not crash and must stay coherent
-    eng.grade()
+                  "arguments": {"command": "cp a b || mkdir -p b"}}])
+    # cp succeeds, so the || fallback never runs: step 2 stays unconsumed
+    assert eng.step_i == 1, eng.step_i

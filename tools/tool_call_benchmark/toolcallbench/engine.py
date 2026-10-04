@@ -85,22 +85,32 @@ def split_segments(cmd):
     """Split a shell command on top-level && || ; | into token lists,
     dropping pure 'cd X' segments. Quoting is respected: an operator
     inside quotes stays part of the argument (grep -E 'foo|bar')."""
+    return [seg for seg, _op in split_segments_ops(cmd)]
+
+
+def split_segments_ops(cmd):
+    """Like split_segments but keeps the operator that joins each segment:
+    [(toks, None), (toks, '&&'), (toks, '||'), ...]."""
     toks = _tokenize(cmd.strip().rstrip(";").strip())
-    segs, cur = [], []
+    segs, cur, ops = [], [], []
     for t in toks:
         if t in OPS:
             if cur:
                 segs.append(cur)
+                ops.append(t)
                 cur = []
             continue
         cur.append(t)
     if cur:
         segs.append(cur)
+        ops.append(None)
+    # ops[i] is the operator BEFORE segs[i]; shift by one
+    before = [None] + ops[:-1] if segs else []
     out = []
-    for seg in segs:
+    for seg, op in zip(segs, before):
         if seg and seg[0] == "cd" and len(seg) == 2:
             continue
-        out.append(seg)
+        out.append((seg, op))
     return out
 
 
@@ -126,6 +136,9 @@ def tok_match(tok, item):
 
 def spec_match(tokens, spec):
     """spec: {"required": [...], "any_of": [[...], ...], "forbidden": [...]}"""
+    # `echo git log ...` prints a command; it does not run one
+    if tokens and tokens[0] in ("echo", "printf"):
+        return False
     toks = list(tokens)
     for req in spec.get("required", []):
         if not any(tok_match(t, req) for t in toks):
@@ -224,16 +237,13 @@ def _seg_is_look(toks):
     return False
 
 
-def _has_and_operators(cmd):
-    """True when the command chains branches with && (short-circuit on fail)."""
-    toks = _tokenize(cmd)
-    return "&&" in toks
-
-
 def _failed(reply):
     """True when a recorded shell reply is a nonzero exit."""
     if isinstance(reply, dict):
         return bool(reply.get("code"))
+    if isinstance(reply, str):
+        m = re.search(r"exit code: (\d+)", reply)
+        return bool(m and int(m.group(1)) != 0)
     return False
 
 
@@ -382,7 +392,6 @@ class CaseEngine:
         self._restraint_empty = False
         self._bad_args = False
         self._catalog_extra = 0
-        self._and_short_circuit = False
         self.looks = 0
         self.max_turns = self.gold.get("max_turns", 6)
         self.calls_log = []
@@ -652,10 +661,9 @@ class CaseEngine:
             reply = self._step_reply(step, alt)
             replies.append(reply)
             self.step_i += 1
-            if _failed(reply) and self._and_short_circuit:
-                # a real shell stops at a failing && branch: later segments
-                # in the same command never run, so stop consuming them
-                return "stop"
+            if _failed(reply):
+                # caller decides from the operator whether later branches run
+                return "failed"
             return True
         self._wrong_step = True
         self.done = True
@@ -690,16 +698,21 @@ class CaseEngine:
             # run_command: split && / ; segments, match each in order,
             # honoring short-circuit: nothing after a failed && branch runs
             if call.get("name") == "run_command" and not self._bad_arg(call):
-                segs = split_segments(str(call["arguments"].get("command", "")))
-                if len(segs) > 1:
+                cmd = str(call["arguments"].get("command", ""))
+                seg_ops = split_segments_ops(cmd)
+                if len(seg_ops) > 1:
                     self.calls_log.append(call)
-                    if _has_and_operators(str(call["arguments"].get("command", ""))):
-                        self._and_short_circuit = True
-                    for toks in segs:
+                    prev_failed = False
+                    for toks, op in seg_ops:
+                        if op == "&&" and prev_failed:
+                            break  # shell would not run this branch
+                        if op == "||" and not prev_failed:
+                            break  # fallback not taken on success
                         r = self._one_segment(toks, replies)
+                        if r == "failed":
+                            prev_failed = True
+                            continue
                         if r != True:
-                            if r == "stop":
-                                continue  # shell stopped; ignore the rest
                             return replies, True
                     continue
             step = steps[self.step_i]
@@ -928,6 +941,9 @@ class CaseEngine:
         if self.kind == "catalog":
             if not self.calls_log:
                 return {"correct": False, "bucket": "no_call",
+                    "unsafe": self.unsafe}
+            if self._catalog_extra:
+                return {"correct": False, "bucket": "extra_calls",
                     "unsafe": self.unsafe}
             want = g["calls"][0]
             call = self.calls_log[0]

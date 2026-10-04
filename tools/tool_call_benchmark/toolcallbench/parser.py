@@ -301,6 +301,12 @@ class _DialectCore:
                 except Exception:
                     malformed = True
                 continue
+            # a closing code fence after the call is template dressing
+            rb = b.rstrip()
+            if rb.endswith("`"):
+                fence = len(rb) - len(rb.rstrip("`"))
+                rb = rb[:len(rb) - fence].rstrip()
+                b = rb
             ob = b.find(self.ao)
             if ob == -1 or not b.rstrip().endswith(self.ac):
                 malformed = True
@@ -333,7 +339,12 @@ class _DialectCore:
                 else:
                     malformed = True
             return calls, malformed
-        for b in self.blocks(stripped):
+        blocks = self.blocks(stripped)
+        if self.json_style and not self.cs and not blocks \
+                and re.search(r'\{\s*"name"', stripped):
+            # a started but unfinished call object is not valid output
+            malformed = True
+        for b in blocks:
             b = b.strip()
             if not self.json_style and self.ac:
                 while b.endswith("]") and not b.endswith(self.ac):
@@ -355,6 +366,12 @@ class _DialectCore:
                 except Exception:
                     malformed = True
                 continue
+            # a closing code fence after the call is template dressing
+            rb = b.rstrip()
+            if rb.endswith("`"):
+                fence = len(rb) - len(rb.rstrip("`"))
+                rb = rb[:len(rb) - fence].rstrip()
+                b = rb
             ob = b.find(self.ao)
             if ob == -1 or not b.rstrip().endswith(self.ac):
                 malformed = True
