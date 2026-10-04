@@ -48,17 +48,20 @@ class _DialectCore:
         pat = re.escape(self.cs) + r"(.*?)" + (re.escape(self.ce) if self.ce else r"$")
         return re.findall(pat, text, re.DOTALL)
 
-    def _next_object(self, text, start):
-        """Index of the next brace-balanced JSON object at or after start,
-        ignoring key order and whitespace after the opening brace."""
+    def _next_object(self, text, start, limit=None):
+        """Index of the next brace-balanced, call-shaped JSON object at or
+        after start (optionally bounded by limit), ignoring key order and
+        whitespace after the opening brace."""
         DQ, SQ, BS = chr(34), chr(39), chr(92)
+        stop = len(text) if limit is None else limit
         while True:
             b = text.find("{", start)
-            if b == -1:
+            if b == -1 or b >= stop:
                 return -1
             depth, i, q = 0, b, None
             end = -1
-            while i < len(text):
+            i = b
+            while i < stop:
                 ch = text[i]
                 if q:
                     if ch == BS:
@@ -88,53 +91,89 @@ class _DialectCore:
             "name" in d or "function" in d or "tool_calls" in d)
 
     def _json_blocks(self, text):
-        """Brace-balanced JSON objects containing a name key, optionally
-        gated by call_start (if set) and validated against call_end (if set).
-        Robust against ']' inside argument arrays (mistral) and empty markers
-        (llama)."""
+        """One extraction algorithm for all JSON dialects.
+
+        Call regions are the spans between call_start and call_end when both
+        markers exist, otherwise the whole text. Every brace-balanced,
+        call-shaped object in each region is returned, so a single marker
+        followed by an array or several objects yields every call. Quoting is
+        respected when scanning, and a truncated object inside a region is
+        reported so callers can mark it malformed.
+        """
+        regions = []
+        if self.cs and self.ce:
+            for m in re.finditer(re.escape(self.cs), text):
+                s = m.end()
+                e = text.find(self.ce, s)
+                regions.append((s, len(text) if e == -1 else e))
+        elif self.cs:
+            for m in re.finditer(re.escape(self.cs), text):
+                regions.append((m.end(), len(text)))
+        else:
+            regions = [(0, len(text))]
         out = []
-        search_from = 0
-        while True:
-            if self.cs:
-                s = text.find(self.cs, search_from)
-                if s == -1:
-                    break
-                b = text.find("{", s + len(self.cs))
-            else:
-                # any brace-balanced object, whatever the key order or spacing
-                b = self._next_object(text, search_from)
+        self._truncated_json = False
+        for s, e in regions:
+            pos = s
+            while pos < e:
+                b = self._next_object(text, pos, e)
                 if b == -1:
+                    # a started object that never closes inside the region
+                    if self._region_has_open_object(text, pos, e):
+                        self._truncated_json = True
                     break
-                s = b
-            if b == -1:
-                break
-            depth, i, in_str, esc = 0, b, False, False
-            end = -1
-            while i < len(text):
-                c = text[i]
-                if in_str:
-                    if esc:
-                        esc = False
-                    elif c == "\\":
-                        esc = True
-                    elif c == '"':
-                        in_str = False
-                else:
-                    if c == '"':
-                        in_str = True
-                    elif c == "{":
+                end = b + len(text[b:e].rstrip()) - 0
+                # find the true end of the balanced object starting at b
+                depth, i, q = 0, b, None
+                close = -1
+                while i < len(text):
+                    ch = text[i]
+                    if q:
+                        if ch == chr(92):
+                            i += 1
+                        elif ch == q:
+                            q = None
+                    elif ch == chr(34) or ch == chr(39):
+                        q = ch
+                    elif ch == "{":
                         depth += 1
-                    elif c == "}":
+                    elif ch == "}":
                         depth -= 1
                         if depth == 0:
-                            end = i
+                            close = i
                             break
-                i += 1
-            if end == -1:
-                break
-            out.append(text[b:end + 1])
-            search_from = end + 1
+                    i += 1
+                if close == -1 or close >= e:
+                    self._truncated_json = True
+                    break
+                out.append(text[b:close + 1])
+                pos = close + 1
         return out
+
+    def _region_has_open_object(self, text, pos, e):
+        window = text[pos:e]
+        if re.search(r"\{\s*\"name\"|\{\s*\"tool_calls\"|\{\s*\"function\"", window):
+            # looks like a started call object; find whether it closes
+            b = window.find("{")
+            depth, i, q = 0, b, None
+            while i < len(window):
+                ch = window[i]
+                if q:
+                    if ch == chr(92):
+                        i += 1
+                    elif ch == q:
+                        q = None
+                elif ch == chr(34) or ch == chr(39):
+                    q = ch
+                elif ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return False
+                i += 1
+            return depth > 0
+        return False
 
     # ---- value parsing ----------------------------------------------------
     def _split(self, s, sep=","):
@@ -264,61 +303,6 @@ class _DialectCore:
             args[pm.group(1)] = self._xml_value(pm.group(2))
         return {"name": name, "arguments": args}
 
-    def parse(self, raw):
-        """Returns (calls, malformed) where calls=[{"name","arguments"}]."""
-        calls, malformed = [], False
-        if self.xml_style:
-            pat = re.escape(self.cs) + r"([\s\S]*?)" + re.escape(self.ce)
-            for b in re.findall(pat, raw):
-                c = self._parse_xml_block(b)
-                if isinstance(c, dict):
-                    calls.append(c)
-                elif c is None:
-                    continue
-                else:
-                    malformed = True
-            return calls, malformed
-        for b in self.blocks(raw):
-            b = b.strip()
-            if not self.json_style and self.ac:
-                # lfm-style bracket wrapper: [name(args)] -> trailing ] not part of args
-                while b.endswith("]") and not b.endswith(self.ac):
-                    b = b[:-1].rstrip()
-            if self.json_style:
-                try:
-                    d = json.loads(b)
-                    name = d.get("name") or d.get("function", {}).get("name")
-                    args = d.get("arguments") or d.get("parameters") or {}
-                    if isinstance(args, str):
-                        args = json.loads(args)
-                    if not isinstance(args, dict):
-                        malformed = True
-                        continue
-                    if name:
-                        calls.append({"name": name, "arguments": args})
-                    else:
-                        malformed = True
-                except Exception:
-                    malformed = True
-                continue
-            # a closing code fence after the call is template dressing
-            rb = b.rstrip()
-            if rb.endswith("`"):
-                fence = len(rb) - len(rb.rstrip("`"))
-                rb = rb[:len(rb) - fence].rstrip()
-                b = rb
-            ob = b.find(self.ao)
-            if ob == -1 or not b.rstrip().endswith(self.ac):
-                malformed = True
-                continue
-            name = b[:ob].strip()
-            try:
-                args = self._object(b[ob + 1: b.rstrip().rfind(self.ac)])
-            except ValueError:
-                malformed = True
-                continue
-            calls.append({"name": name, "arguments": args})
-        return calls, malformed
 
     def _parse_calls_public(self, stripped):
         return self._parse_calls(stripped)

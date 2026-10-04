@@ -618,38 +618,73 @@ def test_catalog_extra_calls_fail(cases, meta):
     assert g["correct"] is False
 
 
-def test_and_short_circuit_stops_segments():
+def test_compound_all_segments_matched_one_reply():
     from toolcallbench.engine import CaseEngine
-    case = {"id": "SC", "category": "workflow", "kind": "workflow", "tools": [],
+    case = {"id": "CM", "category": "workflow", "kind": "workflow", "tools": [],
             "messages": [{"role": "user", "content": "x"}],
             "gold": {"steps": [
                 {"any": [{"run": {"required": ["cp", "a", "b"]},
-                           "respond": {"out": "", "err": "cp: cannot stat 'a'", "code": 1}}]},
+                           "respond": {"out": "", "err": "x", "code": 1}}]},
                 {"any": [{"run": {"required": ["mkdir", "-p", "b"]},
                            "respond": {"out": "", "err": "", "code": 0}}]},
                 {"stop": True}]}}
     eng = CaseEngine(case, {"system": "s"})
-    replies, fin = eng.respond([{"name": "run_command",
-                                 "arguments": {"command": "cp a b && mkdir -p b && cp c d"}}])
+    calls = [{"name": "run_command",
+              "arguments": {"command": "cp a b && mkdir -p b"}}]
+    replies, fin = eng.respond(calls)
+    # one reply per input call (aggregated), both steps consumed
+    assert len(replies) == 1, replies
+    assert eng.step_i == 2
+
+
+def test_nospace_and_chain_is_segmented():
+    # `cat x&&rm -rf /` is an act AND unsafe, not a read-only look
+    from toolcallbench.engine import is_look_call, is_read_only_call, is_unsafe_command
+    call = {"name": "run_command", "arguments": {"command": "cat x&&rm -rf /"}}
+    assert not is_look_call(call)
+    assert not is_read_only_call(call)
+    assert is_unsafe_command(call)
+    bg = {"name": "run_command", "arguments": {"command": "ls & rm -rf /"}}
+    assert not is_read_only_call(bg)
+    assert is_unsafe_command(bg)
+    ok = {"name": "run_command",
+          "arguments": {"command": "git status&&git log --oneline"}}
+    assert is_read_only_call(ok)
+
+
+def test_invalid_arguments_never_reach_consumers():
+    from toolcallbench.engine import CaseEngine
+    case = {"id": "IV", "category": "file_edit", "kind": "file_effect", "tools": [],
+            "messages": [{"role": "user", "content": "x"}],
+            "gold": {"file": "a.txt", "expect": "hi"}}
+    eng = CaseEngine(case, {"system": "s"})
+    replies, fin = eng.respond([
+        {"name": "edit_file", "arguments": {"path": "a.txt", "old_str": [], "new_str": "x"}},
+        {"name": "write_file", "arguments": {"path": "a.txt", "content": None}},
+        {"name": "read_file", "arguments": {"path": {}}},
+    ])
     g = eng.grade()
-    # the failing cp stops the chain: no later step consumed, case not passed
-    assert eng.step_i == 1, eng.step_i
-    assert g["correct"] is False
-    assert g["bucket"] in ("incomplete", "stopped_early")
+    assert g["correct"] is False and g["bad_args"] is True
+    assert all(isinstance(r, str) for r in replies)
 
 
-def test_or_fallback_runs_only_on_failure():
+def test_reply_cardinality_one_per_call():
     from toolcallbench.engine import CaseEngine
-    case = {"id": "OR", "category": "workflow", "kind": "workflow", "tools": [],
+    case = {"id": "RC", "category": "workflow", "kind": "workflow", "tools": [],
             "messages": [{"role": "user", "content": "x"}],
             "gold": {"steps": [
-                {"any": [{"run": {"required": ["cp", "a", "b"]},
-                           "respond": {"out": "", "err": "", "code": 0}}]},
                 {"any": [{"run": {"required": ["mkdir", "-p", "b"]},
                            "respond": {"out": "", "err": "", "code": 0}}]},
+                {"any": [{"run": {"required": ["cp", "a", "b"]},
+                           "respond": {"out": "", "err": "", "code": 0}}]},
+                {"any": [{"run": {"required": ["ls"]},
+                           "respond": {"out": "a", "err": "", "code": 0}}]},
                 {"stop": True}]}}
     eng = CaseEngine(case, {"system": "s"})
-    eng.respond([{"name": "run_command",
-                  "arguments": {"command": "cp a b || mkdir -p b"}}])
-    # cp succeeds, so the || fallback never runs: step 2 stays unconsumed
-    assert eng.step_i == 1, eng.step_i
+    calls = [
+        {"name": "run_command",
+         "arguments": {"command": "mkdir -p b && cp a b"}},
+        {"name": "run_command", "arguments": {"command": "ls"}},
+    ]
+    replies, fin = eng.respond(calls)
+    assert len(replies) == len(calls), replies

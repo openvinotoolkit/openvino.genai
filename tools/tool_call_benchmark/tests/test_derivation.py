@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 # -*- coding: utf-8 -*-
 """Derivation tests: stub templates for the four supported families."""
 

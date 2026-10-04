@@ -122,10 +122,14 @@ class ToolCallEvaluator:
             replies, finished = engine.respond(parsed.calls, text=text_out.strip())
             if finished:
                 break
-            # one assistant message per call: llama templates reject multi-call lists
+            # contract: the engine returns exactly one reply per call.
+            # A violation is a bug, not something to paper over: pad only
+            # with an explicit marker and keep the pairing aligned.
             replies = list(replies) if replies else []
-            while len(replies) < len(parsed.calls):
-                replies.append("(no output)")
+            if len(replies) != len(parsed.calls):
+                while len(replies) < len(parsed.calls):
+                    replies.append("(no output)")
+                replies = replies[:len(parsed.calls)]
             for call, reply in zip(parsed.calls, replies):
                 call_id = f"tcb{call_seq:06d}"  # 9 chars, alphanumeric
                 call_seq += 1

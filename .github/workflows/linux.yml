@@ -299,6 +299,10 @@ jobs:
         run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
+      - name: Build TCB Wheel
+        run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/tool_call_benchmark
+        working-directory: ${{ env.OV_INSTALL_DIR }}
+
       - name: Upload Wheels
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

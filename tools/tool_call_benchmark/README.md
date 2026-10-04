@@ -99,6 +99,22 @@ git and pytest runs on the synthetic repository. Licensed under
 Apache-2.0. Changes to the dataset bump the version and the pinned sha256
 in `dataset.py`.
 
+## Supported command grammar
+
+The fake responder understands plain commands and compound commands joined
+by `&&`, `||`, `;`, `|` and `&`, with quoting respected (`grep -E 'a|b'` is
+one command). For classification (read, look, act, unsafe) every segment of
+a compound is evaluated and the strictest verdict wins, so `cat x && rm -rf /`
+is never a read. Inside workflows, each segment of a compound is matched
+against the step machine in order and the per-segment outputs are aggregated
+into one reply. Operator branching is deliberately NOT simulated: a `&&`
+branch after a failing command still matches, and the `||` fallback is
+matched as well. The frozen dataset contains no compound commands in gold
+paths, so nothing that is graded depends on branch semantics. Redirections
+are recognized for classification (`> file` is a write); subshells, command
+substitution, heredocs and process substitution are out of scope: anything
+the tokenizer cannot express conservatively classifies as an act.
+
 ## Limitations
 
 * Tool replies are simulated; recorded outputs are replayed verbatim, so a
