@@ -947,6 +947,7 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
         ),
     ],
 )
+@pytest.mark.skipif(**should_skip_npuw_tests())
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
 def test_qwen3_embedding_npu(emb_model, dataset_documents, config, chunk_size, threshold, task):
     NPU_FALLBACK_PROPERTIES = {"NPUW_DEVICES": "CPU", "NPUW_F16IC": "False", "NPUW_LLM_PREFILL_CHUNK_SIZE": chunk_size}
