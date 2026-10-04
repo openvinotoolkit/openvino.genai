@@ -101,3 +101,17 @@ def test_orphan_start_marker_is_malformed():
 def test_orphan_lfm_marker_is_malformed():
     calls = lfm_parser().parse("<|tool_call_start|>[run_command(command='x")
     assert calls.error == "malformed"
+
+
+def test_ce_empty_dialect_does_not_crash():
+    calls = ToolCallParser({"json_style": True, "call_start": "[TOOL]",
+                            "call_end": ""})
+    out = calls.parse('[TOOL] {"name":"f","arguments":{}}')
+    assert out.error is None and out.calls[0]["name"] == "f"
+
+
+def test_non_object_arguments_are_malformed():
+    calls = ToolCallParser({"json_style": True, "call_start": "",
+                            "call_end": ""})
+    out = calls.parse('{"name":"run_command","arguments":["x"]}')
+    assert out.error == "malformed" and out.calls == []

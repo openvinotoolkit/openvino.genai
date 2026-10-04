@@ -247,6 +247,9 @@ class _DialectCore:
                     args = d.get("arguments") or d.get("parameters") or {}
                     if isinstance(args, str):
                         args = json.loads(args)
+                    if not isinstance(args, dict):
+                        malformed = True
+                        continue
                     if name:
                         calls.append({"name": name, "arguments": args})
                     else:
@@ -273,10 +276,9 @@ class _DialectCore:
     def _parse_calls(self, stripped):
         calls, malformed = [], False
         # visible start markers that never form a complete block are malformed
-        if self.cs and self.cs in stripped:
-            pair = re.escape(self.cs) + r"[\s\S]*?" + re.escape(self.ce) if self.ce else None
-            complete = len(re.findall(pair, stripped)) if pair else len(self._blocks(stripped))
-            if complete < stripped.count(self.cs):
+        if self.cs and self.ce and self.cs in stripped:
+            pair = re.escape(self.cs) + r"[\s\S]*?" + re.escape(self.ce)
+            if len(re.findall(pair, stripped)) < stripped.count(self.cs):
                 malformed = True
         if self.xml_style:
             pat = re.escape(self.cs) + r"([\s\S]*?)" + re.escape(self.ce)
@@ -299,6 +301,9 @@ class _DialectCore:
                     args = d.get("arguments") or d.get("parameters") or {}
                     if isinstance(args, str):
                         args = json.loads(args)
+                    if not isinstance(args, dict):
+                        malformed = True
+                        continue
                     if name:
                         calls.append({"name": name, "arguments": args})
                     else:

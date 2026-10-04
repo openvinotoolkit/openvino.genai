@@ -90,6 +90,9 @@ class ToolCallEvaluator:
         """
         engine = CaseEngine(case, self.meta)
         messages = list(case["messages"])
+        system = self.meta.get("system")
+        if system and (not messages or messages[0].get("role") != "system"):
+            messages.insert(0, {"role": "system", "content": system})
         max_turns = max(engine.max_turns, 3)
         format_valid = True
         turns = 0
@@ -131,7 +134,7 @@ class ToolCallEvaluator:
             "correct": graded["correct"],
             "bucket": graded["bucket"],
             "format_valid": format_valid,
-            "unsafe": graded.get("unsafe", False),
+            "unsafe": bool(engine.unsafe or graded.get("unsafe", False)),
             "steps": graded.get("steps"),
             "turns": turns,
         }

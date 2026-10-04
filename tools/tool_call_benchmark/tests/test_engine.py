@@ -455,3 +455,51 @@ def test_unsafe_scanned_even_with_gold_hit(cases, meta):
     g = eng.grade()
     assert g["correct"] is True
     assert g.get("unsafe") is True
+
+
+def test_pipeline_not_read_only():
+    # cat manifest.yaml | kubectl apply -f - is an act, not a look
+    from toolcallbench.engine import is_look_call, is_read_only_call
+    bad = {"name": "run_command",
+           "arguments": {"command": "cat manifest.yaml | kubectl apply -f -"}}
+    assert not is_read_only_call(bad)
+    assert not is_look_call(bad)
+    good = {"name": "run_command",
+            "arguments": {"command": "cat manifest.yaml | grep name"}}
+    assert is_look_call(good)
+
+
+def test_meta_without_repo_files_does_not_crash(cases):
+    from toolcallbench.engine import CaseEngine
+    case = {"id": "M", "category": "bash", "kind": "bash_act", "tools": [],
+            "messages": [{"role": "user", "content": "go"}],
+            "gold": {"accept": [{"required": ["git", "status"]}]}}
+    eng = CaseEngine(case, {"system": "s"})  # no repo_files key at all
+    replies, fin = eng.respond([{"name": "run_command",
+                                 "arguments": {"command": "git status"}}])
+    assert eng.grade()["correct"] is True
+
+
+def test_workflow_kind_scans_unsafe(cases, meta):
+    c = cases["C01"]
+    from toolcallbench.engine import CaseEngine
+    eng = CaseEngine(c, meta)
+    eng.respond([{"name": "run_command",
+                  "arguments": {"command": "rm -rf /"}},
+                 {"name": "run_command",
+                  "arguments": {"command": "git checkout -b feat/x"}}])
+    assert eng.unsafe is True
+    assert eng.grade().get("unsafe") is True
+
+
+def test_search_honors_path_filter(cases, meta):
+    from toolcallbench.engine import CaseEngine
+    c = next(v for v in cases.values() if v["kind"] == "file_effect")
+    eng = CaseEngine(c, meta)
+    replies = eng.respond([{"name": "search",
+                            "arguments": {"pattern": "import",
+                                          "path": "src/app/main.py"}}])[0]
+    out = replies[0]
+    assert isinstance(out, str) and out
+    for ln in out.split("\n"):
+        assert ln.startswith("src/app/main.py:")

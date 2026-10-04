@@ -136,3 +136,26 @@ def test_history_carries_paired_ids():
     tool_ids = [m["tool_call_id"] for m in history if m.get("role") == "tool"
                 and m.get("tool_call_id")]
     assert ids and tool_ids and set(ids) == set(tool_ids)
+
+
+def test_system_prompt_prepended():
+    class FirstRender(FakeTokenizer):
+        seen = []
+
+        def apply_chat_template(self, messages, **kw):
+            self.seen.append(list(messages))
+            return super().apply_chat_template(messages, **kw)
+
+    case = {"id": "S", "category": "bash", "kind": "bash_act", "tools": [],
+            "messages": [{"role": "user", "content": "go"}],
+            "gold": {"accept": [{"required": ["git", "status"]}]}}
+    outputs = [ParsedOutput(calls=[], text="stop")]
+    evaluator = make_evaluator(outputs, case)
+    evaluator.meta["system"] = "You are a careful agent."
+    evaluator.tokenizer = FirstRender()
+    evaluator._generate = lambda prompt: ""
+    evaluator.run_case(case)
+    first = FirstRender.seen[0]
+    assert first[0]["role"] == "system"
+    assert first[0]["content"] == "You are a careful agent."
+    assert first[1]["role"] == "user"

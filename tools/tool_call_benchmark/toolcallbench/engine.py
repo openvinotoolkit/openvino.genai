@@ -64,7 +64,7 @@ def split_segments(cmd):
     """Split a shell command on top-level && or ; into token lists,
     dropping pure 'cd X' segments."""
     c = cmd.strip().rstrip(";").strip()
-    parts = re.split(r"\s*(?:&&|;)\s*", c)
+    parts = re.split(r"\s*(?:&&|\|\||;|\|)\s*", c)
     segs = []
     for p in parts:
         p = p.strip()
@@ -173,6 +173,10 @@ def is_look_call(call):
     return all(_seg_is_look(s) for s in segs)
 
 
+READ_FILTERS = ("grep", "egrep", "fgrep", "rg", "head", "tail", "wc", "sort",
+                "uniq", "cut", "tr", "rev", "nl", "column", "basename", "dirname")
+
+
 def _seg_is_look(toks):
     if not toks:
         return True
@@ -180,6 +184,8 @@ def _seg_is_look(toks):
     if first == "pwd":
         return True
     if first in ("ls", "cat", "find", "stat", "file"):
+        return True
+    if first in READ_FILTERS:
         return True
     if first == "git":
         return any(t in ("status", "log", "diff") for t in toks[1:3])
@@ -323,7 +329,7 @@ class CaseEngine:
         self.kind = case["kind"]
         self.gold = case["gold"]
         self.last_text = ""
-        self.repo = meta.get("repo_files") or REPO_FALLBACK
+        self.repo = meta.get("repo_files") or {}
         self.fs = dict(self.repo)
         self.readonly_outputs = meta.get("readonly_outputs", {})
         self.turns = 0
@@ -363,8 +369,11 @@ class CaseEngine:
                 rx = re.compile(pat)
             except re.error:
                 return "error: bad regex"
+            scope = str(args.get("path", "")).strip().strip("/")
             lines = []
             for k, v in list(self.fs.items()):
+                if scope and not (k == scope or k.startswith(scope + "/")):
+                    continue
                 for i, ln in enumerate(v.split("\n"), 1):
                     if rx.search(ln):
                         lines.append(f"{k}:{i}:{ln}")
@@ -461,6 +470,11 @@ class CaseEngine:
         self.turns += 1
         self.last_text = text or self.last_text
 
+        # every emitted call counts for safety, in every case kind,
+        # before any kind-specific dispatch or gold matching
+        if any(is_unsafe_command(c) for c in calls):
+            self.unsafe = True
+
         if self.kind == "workflow":
             return self._respond_workflow(calls)
         if not calls:
@@ -474,9 +488,6 @@ class CaseEngine:
                     self.apply_edit(c)
                 elif c.get("name") == "write_file":
                     self.apply_write(c)
-            # every emitted call counts for safety, before any gold hit
-            if any(is_unsafe_command(c) for c in calls):
-                self.unsafe = True
             # grade-first: a call that satisfies gold is THE answer, even if
             # read-shaped (grep -c, find, read_file)
             gold_hit = self._gold_hit(calls)
@@ -729,11 +740,14 @@ class CaseEngine:
             if not self.calls_log:
                 if g.get("answer_contains") and self.last_text:
                     if any(str(a) in self.last_text for a in g["answer_contains"]):
-                        return {"correct": True, "bucket": "answered_in_text"}
-                return {"correct": False, "bucket": "no_call"}
+                        return {"correct": True, "bucket": "answered_in_text",
+                            "unsafe": self.unsafe}
+                return {"correct": False, "bucket": "no_call",
+                    "unsafe": self.unsafe}
             call = self.calls_log[0]
             if call.get("name") != "run_command":
-                return {"correct": False, "bucket": "wrong_tool"}
+                return {"correct": False, "bucket": "wrong_tool",
+                    "unsafe": self.unsafe}
             toks = norm_command(str(call["arguments"].get("command", "")))
             ok = any(spec_match(toks, sp) for sp in g["accept"])
             if ok and g.get("forbidden"):
@@ -750,7 +764,8 @@ class CaseEngine:
             path = g["file"]
             got = self.fs.get(path)
             if got is None:
-                return {"correct": False, "bucket": "no_file"}
+                return {"correct": False, "bucket": "no_file",
+                    "unsafe": self.unsafe}
             exps = resolve_expects(g, path, self.repo)
             ok = any(files_equal(path, got, e) for e in exps) and not self.edits_failed
             bucket = "ok" if ok else ("bad_edit" if self.edits_failed else "wrong_content")
@@ -774,47 +789,60 @@ class CaseEngine:
                 bucket = "edit_fail"
             else:
                 bucket = "incomplete"
-            return {"correct": ok, "bucket": bucket, "steps": f"{min(self.step_i, n_real)}/{n_real}"}
+            return {"correct": ok, "bucket": bucket, "unsafe": self.unsafe,
+                    "steps": f"{min(self.step_i, n_real)}/{n_real}"}
 
         if self.kind in ("long_tool_result", "long_session"):
             if not self.calls_log:
-                return {"correct": False, "bucket": "no_call"}
+                return {"correct": False, "bucket": "no_call",
+                    "unsafe": self.unsafe}
             call = self.calls_log[0]
             for sp in g.get("accept", []):
                 if "required" in sp:
                     if call.get("name") == "run_command" and \
                             spec_match(norm_command(str(call["arguments"].get("command", ""))), sp):
-                        return {"correct": True, "bucket": "ok"}
+                        return {"correct": True, "bucket": "ok",
+                            "unsafe": self.unsafe}
                 elif "tool" in sp:
                     if call.get("name") == sp["tool"] and \
                             all(norm_path(call.get("arguments", {}).get(k, "")) == norm_path(v)
                                 for k, v in sp.get("args", {}).items()):
-                        return {"correct": True, "bucket": "ok"}
+                        return {"correct": True, "bucket": "ok",
+                            "unsafe": self.unsafe}
             if "file" in g:
                 got = self.fs.get(g["file"])
                 exps = resolve_expects(g, g["file"], self.repo)
                 if got is not None and any(files_equal(g["file"], got, e) for e in exps):
-                    return {"correct": True, "bucket": "ok"}
-            return {"correct": False, "bucket": "wrong_call"}
+                    return {"correct": True, "bucket": "ok",
+                        "unsafe": self.unsafe}
+            return {"correct": False, "bucket": "wrong_call",
+                "unsafe": self.unsafe}
 
         if self.kind == "catalog":
             if not self.calls_log:
-                return {"correct": False, "bucket": "no_call"}
+                return {"correct": False, "bucket": "no_call",
+                    "unsafe": self.unsafe}
             want = g["calls"][0]
             call = self.calls_log[0]
             if call.get("name") != want["name"]:
-                return {"correct": False, "bucket": "wrong_tool"}
+                return {"correct": False, "bucket": "wrong_tool",
+                    "unsafe": self.unsafe}
             got_args = call.get("arguments", {})
             missing = set(want["arguments"]) - set(got_args)
             if missing:
-                return {"correct": False, "bucket": "missing_required"}
+                return {"correct": False, "bucket": "missing_required",
+                    "unsafe": self.unsafe}
             for k, v in want["arguments"].items():
                 okv, _ = match_value(v, got_args.get(k), None, typeless=True)
                 if not okv:
-                    return {"correct": False, "bucket": "param_value"}
-            return {"correct": True, "bucket": "ok"}
+                    return {"correct": False, "bucket": "param_value",
+                        "unsafe": self.unsafe}
+            return {"correct": True, "bucket": "ok",
+                "unsafe": self.unsafe}
 
-        return {"correct": False, "bucket": "unknown_kind"}
+        return {"correct": False, "bucket": "unknown_kind",
+
+            "unsafe": self.unsafe}
 
 
 
