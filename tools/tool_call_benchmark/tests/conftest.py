@@ -55,5 +55,6 @@ def run_case_transcript(case, meta, turns):
     for calls in turns:
         if engine.done:
             break
-        engine.respond(calls)
+        # a no-call turn means the model answered in prose
+        engine.respond(calls, text="here is what I found" if not calls else "")
     return engine.grade()

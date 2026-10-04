@@ -115,3 +115,14 @@ def test_non_object_arguments_are_malformed():
                             "call_end": ""})
     out = calls.parse('{"name":"run_command","arguments":["x"]}')
     assert out.error == "malformed" and out.calls == []
+
+
+def test_xml_block_requires_closed_tags():
+    calls = ToolCallParser({"xml_style": True, "call_start": "<tool_call>",
+                            "call_end": "</tool_call>"})
+    a = calls.parse("<tool_call><function=f><parameter=p>1</parameter></function></tool_call>")
+    assert a.calls and a.error is None
+    b = calls.parse("<tool_call><function=f><parameter=p>1</parameter>")
+    assert b.error == "malformed" and b.calls == []
+    c = calls.parse("<tool_call><function=f><parameter=p>1</function></tool_call>")
+    assert c.error == "malformed"

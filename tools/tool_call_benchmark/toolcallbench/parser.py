@@ -255,6 +255,11 @@ class _DialectCore:
         if not m:
             return None
         name = m.group(1)
+        # an opened function tag must be closed and every parameter paired
+        if "</function>" not in b:
+            return False  # falsy marks the block malformed
+        if b.count("<parameter=") != b.count("</parameter>"):
+            return False
         args = {}
         for pm in re.finditer(r"<parameter=([^>\s]+)>([\s\S]*?)</parameter>", b):
             args[pm.group(1)] = self._xml_value(pm.group(2))
@@ -267,8 +272,10 @@ class _DialectCore:
             pat = re.escape(self.cs) + r"([\s\S]*?)" + re.escape(self.ce)
             for b in re.findall(pat, raw):
                 c = self._parse_xml_block(b)
-                if c:
+                if isinstance(c, dict):
                     calls.append(c)
+                elif c is None:
+                    continue
                 else:
                     malformed = True
             return calls, malformed

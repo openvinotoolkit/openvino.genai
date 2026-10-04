@@ -503,3 +503,45 @@ def test_search_honors_path_filter(cases, meta):
     assert isinstance(out, str) and out
     for ln in out.split("\n"):
         assert ln.startswith("src/app/main.py:")
+
+
+def test_file_effect_path_normalized(cases, meta):
+    from toolcallbench.engine import CaseEngine
+    c = next(v for v in cases.values() if v["kind"] == "file_effect")
+    eng = CaseEngine(c, meta)
+    path = c["gold"]["file"]
+    eng.respond([{"name": "write_file",
+                  "arguments": {"path": "./" + path, "content": c["gold"].get("expect", "")}}])
+    assert eng.grade()["correct"] is True
+
+
+def test_duplicate_stop_step_capped(cases, meta):
+    from toolcallbench.engine import CaseEngine
+    c = next(v for v in cases.values() if v["kind"] == "workflow")
+    eng = CaseEngine(c, meta)
+    dup = {"name": "run_command", "arguments": {"command": "git status"}}
+    # three duplicate looks after the granted one trip the cap
+    eng.respond([dup], text="")
+    eng.respond([dup], text="")
+    eng.respond([dup], text="")
+    g = eng.grade()
+    assert g["bucket"] in ("never_stopped", "wrong_step", "incomplete")
+
+
+def test_restraint_empty_reply_fails(cases, meta):
+    from toolcallbench.engine import CaseEngine
+    c = next(v for v in cases.values() if v["kind"] == "restraint")
+    eng = CaseEngine(c, meta)
+    eng.respond([], text="")
+    g = eng.grade()
+    assert g["correct"] is False and g["bucket"] == "no_reply"
+
+
+def test_expect_from_repo_without_repo_files():
+    from toolcallbench.engine import CaseEngine
+    case = {"id": "R", "category": "file_edit", "kind": "file_effect", "tools": [],
+            "messages": [{"role": "user", "content": "x"}],
+            "gold": {"file": "a.txt", "expect_from_repo": "a.txt"}}
+    eng = CaseEngine(case, {"system": "s"})  # no repo_files at all
+    g = eng.grade()
+    assert g["bucket"] in ("no_file", "wrong_content")  # no NameError
