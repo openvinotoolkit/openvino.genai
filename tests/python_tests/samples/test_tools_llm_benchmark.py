@@ -104,6 +104,17 @@ def tiny_kokoro_speaker_embedding_file_path(tiny_kokoro_ov_path: Path) -> str:
     return str(voice_bin_path)
 
 
+def optimum_supports_ltx2() -> bool:
+    try:
+        from optimum.intel.openvino.modeling_diffusion import OV_TEXT2VIDEO_PIPELINES_MAPPING
+    except ImportError:
+        return False
+    return "ltx2" in OV_TEXT2VIDEO_PIPELINES_MAPPING
+
+
+LTX2_OPTIMUM = pytest.mark.skipif(not optimum_supports_ltx2(), reason="optimum-intel without LTX-2 support")
+
+
 class TestBenchmarkLLM:
 
     @pytest.mark.samples
@@ -752,6 +763,66 @@ class TestBenchmarkLLM:
                     "--height",
                     "256",
                 ],
+            ),
+            pytest.param(
+                "tiny-random-ltx2",
+                [
+                    "-d",
+                    "cpu",
+                    "-n",
+                    "1",
+                    "--optimum",
+                    "--num_steps",
+                    "5",
+                    "--num_frames",
+                    "9",
+                    "--frame_rate",
+                    "25",
+                    "--width",
+                    "256",
+                    "--height",
+                    "256",
+                ],
+                marks=LTX2_OPTIMUM,
+            ),
+            pytest.param(
+                "tiny-random-ltx2",
+                [
+                    "-d",
+                    "cpu",
+                    "-n",
+                    "1",
+                    "--genai",
+                    "--num_steps",
+                    "5",
+                    "--num_frames",
+                    "9",
+                    "--width",
+                    "256",
+                    "--height",
+                    "256",
+                ],
+                marks=LTX2_OPTIMUM,
+            ),
+            pytest.param(
+                "tiny-random-ltx2",
+                [
+                    "-d",
+                    "cpu",
+                    "-n",
+                    "1",
+                    "--genai",
+                    "--static_reshape",
+                    "--num_steps",
+                    "4",
+                    "--num_frames",
+                    "9",
+                    "--width",
+                    "256",
+                    "--height",
+                    "256",
+                ],
+                marks=LTX2_OPTIMUM,
             ),
         ],
         indirect=["convert_model"],
