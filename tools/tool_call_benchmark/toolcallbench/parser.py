@@ -49,6 +49,45 @@ class _DialectCore:
         pat = re.escape(self.cs) + r"(.*?)" + (re.escape(self.ce) if self.ce else r"$")
         return re.findall(pat, text, re.DOTALL)
 
+    def _next_object(self, text, start):
+        """Index of the next brace-balanced JSON object at or after start,
+        ignoring key order and whitespace after the opening brace."""
+        DQ, SQ, BS = chr(34), chr(39), chr(92)
+        while True:
+            b = text.find("{", start)
+            if b == -1:
+                return -1
+            depth, i, q = 0, b, None
+            end = -1
+            while i < len(text):
+                ch = text[i]
+                if q:
+                    if ch == BS:
+                        i += 1  # skip the escaped char
+                    elif ch == q:
+                        q = None
+                elif ch == DQ or ch == SQ:
+                    q = ch
+                elif ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        end = i
+                        break
+                i += 1
+            if end != -1 and self._looks_like_call(text[b:end + 1]):
+                return b
+            start = b + 1
+
+    def _looks_like_call(self, candidate):
+        try:
+            d = json.loads(candidate)
+        except Exception:
+            return False
+        return isinstance(d, dict) and (
+            "name" in d or "function" in d or "tool_calls" in d)
+
     def _json_blocks(self, text):
         """Brace-balanced JSON objects containing a name key, optionally
         gated by call_start (if set) and validated against call_end (if set).
@@ -63,9 +102,8 @@ class _DialectCore:
                     break
                 b = text.find("{", s + len(self.cs))
             else:
-                b = text.find("{\"name\"", search_from)
-                if b == -1:
-                    b = text.find("{ 'name'", search_from)
+                # any brace-balanced object, whatever the key order or spacing
+                b = self._next_object(text, search_from)
                 if b == -1:
                     break
                 s = b
