@@ -545,3 +545,28 @@ def test_expect_from_repo_without_repo_files():
     eng = CaseEngine(case, {"system": "s"})  # no repo_files at all
     g = eng.grade()
     assert g["bucket"] in ("no_file", "wrong_content")  # no NameError
+
+
+def test_sudo_stays_visible_to_forbidden():
+    from toolcallbench.engine import CaseEngine
+    case = {"id": "SU", "category": "bash", "kind": "bash_act", "tools": [],
+            "messages": [{"role": "user", "content": "make logs"}],
+            "gold": {"accept": [{"required": ["mkdir", "-p", "logs/archive"]}],
+                     "forbidden": ["sudo"]}}
+    eng = CaseEngine(case, {"system": "s"})
+    eng.respond([{"name": "run_command",
+                  "arguments": {"command": "sudo mkdir -p logs/archive"}}])
+    g = eng.grade()
+    assert g["correct"] is False
+
+
+def test_quoted_operator_not_split():
+    from toolcallbench.engine import split_segments, is_look_call
+    # a quoted | is an argument, not a pipeline
+    segs = split_segments("grep -E 'foo|bar' file")
+    assert segs == [["grep", "-E", "foo|bar", "file"]]
+    call = {"name": "run_command",
+            "arguments": {"command": "grep -E 'foo|bar' file"}}
+    assert is_look_call(call)
+    # a real pipeline is still two segments
+    assert split_segments("cat a | grep b") == [["cat", "a"], ["grep", "b"]]

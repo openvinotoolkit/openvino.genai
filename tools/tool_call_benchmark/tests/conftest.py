@@ -58,3 +58,15 @@ def run_case_transcript(case, meta, turns):
         # a no-call turn means the model answered in prose
         engine.respond(calls, text="here is what I found" if not calls else "")
     return engine.grade()
+
+
+def test_frozen_long_histories_have_paired_ids(dataset):
+    meta, cases = dataset
+    for c in cases:
+        if c.get("kind") != "long_tool_result":
+            continue
+        ids = [tc["id"] for m in c["messages"] for tc in m.get("tool_calls") or []
+               if tc.get("id")]
+        tids = [m["tool_call_id"] for m in c["messages"]
+                if m.get("role") == "tool" and m.get("tool_call_id")]
+        assert ids and tids and set(ids) == set(tids), c["id"]

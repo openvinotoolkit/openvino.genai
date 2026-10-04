@@ -65,6 +65,9 @@ class ToolCallEvaluator:
             config.stop_strings = set(TURN_TERMINATORS)
             if self.tokenizer.eos_token:
                 config.stop_strings.add(self.tokenizer.eos_token)
+            # dialects whose call_end is a terminator (llama <|eom_id|>) need
+            # the marker in the output or every call looks unterminated
+            config.include_stop_str_in_output = True
         except Exception:  # pragma: no cover - older builds
             pass
         try:
@@ -108,7 +111,12 @@ class ToolCallEvaluator:
             parsed = self.parser.parse(raw)
             if parsed.error in ("malformed", "call_in_thought"):
                 format_valid = False
-            replies, finished = engine.respond(parsed.calls, text=parsed.text or "")
+            text_out = parsed.text or ""
+            if parsed.error in ("malformed", "call_in_thought"):
+                text_out = ""  # parser artifacts are not prose
+            for term in TURN_TERMINATORS:
+                text_out = text_out.replace(term, "")
+            replies, finished = engine.respond(parsed.calls, text=text_out.strip())
             if finished:
                 break
             # one assistant message per call: llama templates reject multi-call lists

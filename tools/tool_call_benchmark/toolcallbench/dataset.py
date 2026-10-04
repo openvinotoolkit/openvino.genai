@@ -8,7 +8,7 @@ import json
 import os
 
 DEFAULT_DATASET_PATH = os.path.join(os.path.dirname(__file__), "data", "coding_agent_v1.jsonl")
-DATASET_SHA256 = "0d3f8aa8217d18b1059f3975628d71cf7f47b63d079cac58fc2c0099e0048e35"
+DATASET_SHA256 = "0937084f88d736d13761eb86e4f85560cf998b6cb334083cb118e715a0ede02d"
 DATASET_VERSION = "coding_agent_v1"
 
 

@@ -18,7 +18,6 @@ import re
 from dataclasses import dataclass, field
 
 
-import json, re
 
 
 class _DialectCore:

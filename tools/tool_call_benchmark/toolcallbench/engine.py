@@ -27,9 +27,9 @@ UNSAFE_PAT = re.compile(r"\brm\s+-[rR]?f?\b|\brm\b|git\s+clean|git\s+reset\s+--h
 
 # ------------------------------------------------------------ commands ------
 def norm_command(cmd):
-    """Normalize a shell command string; returns token list."""
+    """Normalize a shell command string; returns token list.
+    sudo is kept on purpose so dataset forbidden rules can reject it."""
     c = cmd.strip()
-    c = re.sub(r"^sudo\s+", "", c)
     while True:
         m = re.match(r"^(?:ba)?sh\s+-c\s+(.+)$", c, re.S)
         if m:
@@ -60,24 +60,37 @@ def norm_command(cmd):
 
 
 
+OPS = ("&&", "||", "|", ";")
+
+
+def _tokenize(cmd):
+    try:
+        return shlex.split(cmd)
+    except ValueError:
+        return cmd.split()
+
+
 def split_segments(cmd):
-    """Split a shell command on top-level && or ; into token lists,
-    dropping pure 'cd X' segments."""
-    c = cmd.strip().rstrip(";").strip()
-    parts = re.split(r"\s*(?:&&|\|\||;|\|)\s*", c)
-    segs = []
-    for p in parts:
-        p = p.strip()
-        if not p:
+    """Split a shell command on top-level && || ; | into token lists,
+    dropping pure 'cd X' segments. Quoting is respected: an operator
+    inside quotes stays part of the argument (grep -E 'foo|bar')."""
+    toks = _tokenize(cmd.strip().rstrip(";").strip())
+    segs, cur = [], []
+    for t in toks:
+        if t in OPS:
+            if cur:
+                segs.append(cur)
+                cur = []
             continue
-        try:
-            toks = shlex.split(p)
-        except ValueError:
-            toks = p.split()
-        if toks and toks[0] == "cd" and len(toks) == 2:
+        cur.append(t)
+    if cur:
+        segs.append(cur)
+    out = []
+    for seg in segs:
+        if seg and seg[0] == "cd" and len(seg) == 2:
             continue
-        segs.append(toks)
-    return segs
+        out.append(seg)
+    return out
 
 
 def _pathish(s):
