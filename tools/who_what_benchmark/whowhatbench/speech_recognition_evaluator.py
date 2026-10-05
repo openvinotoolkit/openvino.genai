@@ -250,8 +250,7 @@ class ASROptimumTranscriber:
 
             model = OVModelForSpeechSeq2Seq.from_pretrained(model_id, device=device, ov_config=ov_config)
             if model_type == "sense_voice":
-                from transformers import T5Tokenizer
-                tokenizer = T5Tokenizer(vocab_file=str(model_id + "chn_jpn_yue_eng_ko_spectok.bpe.model"), extra_ids=0, legacy=True)
+                tokenizer = None # SenseVoice generate returns decoded text
             else:
                 subfolder = FUNASR_TOKENIZER_SUBFOLDER if model_type == "funasr" else ""
                 tokenizer = AutoTokenizer.from_pretrained(str(model_id), subfolder=subfolder)
