@@ -104,6 +104,8 @@
 
 - name: Video Generation
   cmd: |-
+    # LTX-2.3 export support landed after the optimum-intel pin in tests/python_tests/requirements.txt
+    python -m pip install -U "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@a741933e8f55cf90368c19ec4b7f0a4d98c26519"
     python -m pytest -v ./tests/python_tests/test_video_generation.py --override-ini cache_dir=/mount/caches/pytest/
   timeout: 60
   components:
