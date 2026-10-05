@@ -182,7 +182,7 @@ DecodedResults StatefulLLMPipeline::generate(
             } else {
                 ov::genai::align_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
                 if (m_npu_continuous_prefill)
-                    negotiate_npu_history_reuse(new_chat_tokens.input_ids.get_shape().at(1), config);
+                    negotiate_npu_history_reuse(new_chat_tokens.input_ids.get_shape().at(1));
                 encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_cache_state);
             }
         } else if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
@@ -220,7 +220,7 @@ DecodedResults StatefulLLMPipeline::generate(
             } else {
                 ov::genai::align_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
                 if (m_npu_continuous_prefill)
-                    negotiate_npu_history_reuse(new_chat_tokens.input_ids.get_shape().at(1), config);
+                    negotiate_npu_history_reuse(new_chat_tokens.input_ids.get_shape().at(1));
                 encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_cache_state);
             }
             // TODO: Forbid LoRA config change if we are in the chat mode, because it requires regenerating the history with LoRA applied
@@ -317,7 +317,7 @@ DecodedResults StatefulLLMPipeline::generate(
     } else {
         ov::genai::align_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
         if (m_npu_continuous_prefill)
-            negotiate_npu_history_reuse(new_chat_tokens.input_ids.get_shape().at(1), config);
+            negotiate_npu_history_reuse(new_chat_tokens.input_ids.get_shape().at(1));
         encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_cache_state);
     }
     return get_decoded_results(
@@ -381,8 +381,6 @@ EncodedResults StatefulLLMPipeline::generate(
         data->attention_mask.copy_to(attention_mask);
     }
 
-    GenerationConfig config = resolve_generation_config(generation_config);
-
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS)
         std::copy(input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_size(), std::back_inserter(m_tokenized_chat_history));
 
@@ -396,12 +394,14 @@ EncodedResults StatefulLLMPipeline::generate(
         ov::Tensor new_chat_tokens = ov::Tensor{ov::element::i64, {1, m_tokenized_chat_history.size()}, m_tokenized_chat_history.data()};
         ov::genai::align_cache_and_history(new_chat_tokens, m_cache_state);
         if (m_npu_continuous_prefill)
-            negotiate_npu_history_reuse(new_chat_tokens.get_shape().at(1), config);
+            negotiate_npu_history_reuse(new_chat_tokens.get_shape().at(1));
 
         auto encoded_input = get_chat_encoded_input(new_chat_tokens, m_cache_state);
         input_ids = encoded_input.input_ids;
         attention_mask = encoded_input.attention_mask;
     }
+
+    GenerationConfig config = resolve_generation_config(generation_config);
 
     auto batch_size = input_ids.get_shape().at(0);
 
@@ -564,39 +564,17 @@ void StatefulLLMPipeline::init_npu_continuous_prefill(const ov::CompiledModel& c
     const bool supported = compiled_model.get_property("NPUW_LLM_CONTINUOUS_PREFILL_SUPPORTED").as<bool>();
     m_npu_continuous_prefill = supported;
     m_use_full_chat_history = !supported;
-    if (supported) {
-        m_kv_cache_capacity = utils::get_npu_kv_cache_capacity(compiled_model);
-    }
 }
 
-void StatefulLLMPipeline::negotiate_npu_history_reuse(size_t full_history_len, const GenerationConfig& config) {
+void StatefulLLMPipeline::negotiate_npu_history_reuse(size_t full_history_len) {
     OPENVINO_ASSERT(m_npu_continuous_prefill);
 
-    // Validate the complete request while the full tokenized history is still in
-    // scope. A failure here must not leave a pending plugin command, so it happens
-    // before the proposal.
+    // The prompt limit applies to the full history, not just the delta sent below. It is
+    // checked before the proposal so that a rejected turn leaves no pending plugin command.
     OPENVINO_ASSERT(full_history_len <= m_max_prompt_len,
         "Stateful LLM pipeline on NPU may only process prompts or hold chat history up to ",
         m_max_prompt_len, " tokens. ", full_history_len,
         " is passed.\n Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
-    // The response budget is validated only when the caller bounded it explicitly.
-    // The default config leaves both max_new_tokens and max_length unbounded, which
-    // means "generate until EOS": there is no requested budget to validate, and the
-    // decoding loop caps generation against the KV capacity exactly as it does
-    // without continuation.
-    if (config.max_new_tokens != SIZE_MAX || config.max_length != SIZE_MAX) {
-        const size_t response_budget = config.get_max_new_tokens(full_history_len);
-        // The final sampled token is returned without being fed through the model and
-        // has no KV entry, hence the minus one on the response budget. The comparison
-        // is written as a subtraction because the budget has no upper bound and the
-        // sum could otherwise wrap around.
-        const size_t kv_entries_needed = response_budget > 0 ? response_budget - 1 : 0;
-        OPENVINO_ASSERT(full_history_len <= m_kv_cache_capacity &&
-                        kv_entries_needed <= m_kv_cache_capacity - full_history_len,
-            "The requested history of ", full_history_len, " tokens plus the response budget of ",
-            response_budget, " tokens does not fit into the NPU KV cache capacity of ",
-            m_kv_cache_capacity, " tokens.");
-    }
 
     auto& state = m_cache_state.get_state();
     const size_t k_common = state.size();
