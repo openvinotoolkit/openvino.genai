@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import json
 from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
-from utils.ov_genai_pipelines import create_ov_pipeline
+from utils.ov_genai_pipelines import create_ov_pipeline, PipelineType
 import pytest
 from openvino_genai import (
     Tokenizer,
@@ -50,6 +50,26 @@ def hf_ov_genai_models(request, tmp_path_factory):
 
     genai_tokenizer = Tokenizer(model_dir)
     return hf_tokenizer, genai_tokenizer
+
+
+@pytest.mark.parametrize(
+    "hf_ov_genai_models",
+    ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],  # this tokenizer is used as a stub only
+    indirect=True,
+)
+def test_text_parser_streamer_without_write_override(hf_ov_genai_models):
+    # write() is pure virtual: constructing TextParserStreamer itself used to succeed and then crash the
+    # process on the first chunk. It is now a TypeError, as is calling a subclass that does not implement it.
+    _, genai_tokenizer = hf_ov_genai_models
+    with pytest.raises(TypeError, match="abstract"):
+        TextParserStreamer(genai_tokenizer, [ReasoningIncrementalParser()])
+
+    class NoWrite(TextParserStreamer):
+        pass
+
+    streamer = NoWrite(genai_tokenizer, [ReasoningIncrementalParser()])
+    with pytest.raises(TypeError, match="must implement write"):
+        streamer._write("<think>plan")
 
 
 @pytest.mark.parametrize(
@@ -755,6 +775,38 @@ def test_reset_incremental_parser(tmp_path, model_id):
 
     # Also asserts that resetting streamer between generations works correctly.
     assert res_streamer_2.parsed == res.parsed
+
+
+@pytest.mark.parametrize("model_id", ["katuni4ka/tiny-random-phi3"])
+def test_streamer_error_in_generate_is_raised_to_caller(model_id):
+    # Continuous batching calls the streamer on a worker thread: its error must reach the caller, not terminate the process.
+    models_path = download_and_convert_model(model_id, padding_side="left").models_path
+    pipe = create_ov_pipeline(models_path, PipelineType.PAGED_ATTENTION)
+    tokenizer = pipe.get_tokenizer()
+
+    class NoWrite(TextParserStreamer):
+        pass
+
+    class RaisingWrite(TextParserStreamer):
+        calls = 0
+
+        def write(self, message):
+            RaisingWrite.calls += 1
+            raise ValueError("write failed")
+
+    class Write(TextParserStreamer):
+        def write(self, message):
+            return StreamingStatus.RUNNING
+
+    with pytest.raises(TypeError, match="must implement write"):
+        pipe.generate(['Please say "hello"'], max_new_tokens=16, streamer=NoWrite(tokenizer, []))
+    with pytest.raises(ValueError, match="write failed"):
+        pipe.generate(['Please say "hello"'], max_new_tokens=16, streamer=RaisingWrite(tokenizer, []))
+    # streaming stops at the first error: end() does not flush the cached text through the failed write() again
+    assert RaisingWrite.calls == 1
+
+    # the pipeline is still usable after the failed generations
+    assert pipe.generate(['Please say "hello"'], max_new_tokens=16, streamer=Write(tokenizer, [])).texts
 
 
 @pytest.mark.parametrize("model_id", ["katuni4ka/tiny-random-phi3"])
