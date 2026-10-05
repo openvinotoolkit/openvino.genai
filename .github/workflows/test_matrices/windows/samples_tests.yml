@@ -84,6 +84,6 @@
 - name: VLM audio
   marker: vlm_audio
   cmd: tests/python_tests/samples
-  runner: aks-win-4-cores-16gb-test
+  runner: aks-win-4-cores-8gb-test
   components:
     - VLM_samples
