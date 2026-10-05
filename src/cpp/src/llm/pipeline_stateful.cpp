@@ -23,9 +23,8 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     if (execution_devices[0].find("NPU") != std::string::npos) {
         OPENVINO_ASSERT(execution_devices.size() == 1u);
         m_is_npu = true;
-        m_use_full_chat_history = true;
         m_max_prompt_len = compiled_model.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
-        init_npu_continuous_prefill(compiled_model);
+        init_npu_chat_mode(compiled_model);
     }
 }
 
@@ -76,9 +75,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         utils::KVDesc kv_desc;
         std::tie(compiled_model, kv_desc) = utils::compile_decoder_for_npu(model, *filtered_properties, kv_pos);
         m_max_prompt_len = kv_desc.max_prompt_len;
-        // The capability is only known after compilation, so full chat history stops
-        // being a device rule here and becomes the fallback.
-        init_npu_continuous_prefill(compiled_model);
+        init_npu_chat_mode(compiled_model);
     } else {
        compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
     }
@@ -434,9 +431,8 @@ EncodedResults StatefulLLMPipeline::generate(
         } else if (!m_npu_continuous_prefill) {
             ov::genai::utils::trim_kv_cache(m_model_runner, m_cache_state, m_adapter_controller);
         }
-        // With continuous prefill the negotiation already issued the one command for
-        // this turn. The physical trim path stays CPU and GPU only, and no second
-        // state write may happen here.
+        // With continuous prefill the negotiation already issued this turn's only plugin
+        // command, so there is nothing to trim.
     }
 
     size_t cache_len = 0;
@@ -558,12 +554,12 @@ void StatefulLLMPipeline::start_chat(const std::string& system_message) {
     m_history.push_back({{"role", "system"}, {"content", system_message}});
 }
 
-void StatefulLLMPipeline::init_npu_continuous_prefill(const ov::CompiledModel& compiled_model) {
-    // Read the capability directly: the stored-tokens state exists regardless of
-    // support, and this property is not listed in supported_properties.
-    const bool supported = compiled_model.get_property("NPUW_LLM_CONTINUOUS_PREFILL_SUPPORTED").as<bool>();
-    m_npu_continuous_prefill = supported;
-    m_use_full_chat_history = !supported;
+void StatefulLLMPipeline::init_npu_chat_mode(const ov::CompiledModel& compiled_model) {
+    // Only the compiled model knows whether continuous prefill applies to it. The plugin
+    // reports the effective state through the enable option, and without it every chat
+    // turn resends the full history.
+    m_npu_continuous_prefill = compiled_model.get_property("NPUW_LLM_ENABLE_CONTINUOUS_PREFILL").as<bool>();
+    m_use_full_chat_history = !m_npu_continuous_prefill;
 }
 
 void StatefulLLMPipeline::negotiate_npu_history_reuse(size_t full_history_len) {
@@ -579,9 +575,8 @@ void StatefulLLMPipeline::negotiate_npu_history_reuse(size_t full_history_len) {
     auto& state = m_cache_state.get_state();
     const size_t k_common = state.size();
     if (k_common == 0) {
-        // Nothing to preserve. A full prompt at position zero is handled by the plugin
-        // whether it is idle or reset pending, and proposing zero while a reset is
-        // already pending would be a protocol error.
+        // Nothing to keep. The plugin takes a full prompt whether it is idle or has a reset
+        // pending, while a proposal on top of a pending reset would be rejected.
         return;
     }
 
