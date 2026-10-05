@@ -3610,8 +3610,8 @@ def test_qwen3_omni_vision_preprocess_modes_equivalence(cat_tensor):
     )
 
 
-# A failed generate() must leave the SDPA pipeline as if the call never happened. The failure is
-# raised from the streamer, so it lands mid-decode: after the prompt is in the KV cache and while
+# A failed generate() must leave the pipeline as if the call never happened. Most failures are
+# raised from the streamer, so they land mid-decode: after the prompt is in the KV cache and while
 # an async infer request is in flight.
 
 
@@ -3635,6 +3635,12 @@ def rollback_image() -> openvino.Tensor:
 def rollback_pipe_factory() -> Callable[[], VLMPipeline]:
     models_path = _get_ov_model(MODEL_QWEN3_OMNI)
     return lambda: VLMPipeline(models_path, "CPU", ATTENTION_BACKEND="SDPA")
+
+
+@pytest.fixture
+def rollback_pa_pipe_factory() -> Callable[[], VLMPipeline]:
+    models_path = _get_ov_model(MODEL_QWEN3_OMNI)
+    return lambda: VLMPipeline(models_path, "CPU", ATTENTION_BACKEND="PA")
 
 
 def _text_and_tokens(result: VLMDecodedResults) -> tuple[str, int]:
@@ -3712,6 +3718,46 @@ def test_vlm_failed_edited_chat_history_call_is_rolled_back(
         return _text_and_tokens(pipe.generate(history, images=[rollback_image], generation_config=ROLLBACK_CONFIG))
 
     assert edited_turn(fail_first=True) == edited_turn(fail_first=False)
+
+
+def test_vlm_failed_audio_chat_history_call_is_rolled_back(rollback_pa_pipe_factory: Callable[[], VLMPipeline]):
+    """A call that throws after registering its audio must not shift the next call's audio indices."""
+    audio = openvino.Tensor(np.zeros(16000, dtype=np.float32))
+    pipe = rollback_pa_pipe_factory()
+    # The media state lives in the ChatHistory, so the retry must reuse the history of the failed call.
+    history = ChatHistory([{"role": "user", "content": "Describe " + get_universal_tag(ModalityType.AUDIO, 1)}])
+    with pytest.raises(RuntimeError, match="Missing image/video/audio with index 1"):
+        # Index 1 does not exist, so the call fails after the audio is registered.
+        pipe.generate(history, audios=[audio], generation_config=ROLLBACK_CONFIG)
+    history.pop()
+    history.append({"role": "user", "content": "Describe " + get_universal_tag(ModalityType.AUDIO, 0)})
+    retried = pipe.generate(history, audios=[audio], generation_config=ROLLBACK_CONFIG)
+    fresh = rollback_pa_pipe_factory().generate(
+        ChatHistory([{"role": "user", "content": "Describe " + get_universal_tag(ModalityType.AUDIO, 0)}]),
+        audios=[audio],
+        generation_config=ROLLBACK_CONFIG,
+    )
+    assert _text_and_tokens(retried) == _text_and_tokens(fresh)
+
+
+def test_vlm_failed_chat_turn_drops_its_video(rollback_pa_pipe_factory: Callable[[], VLMPipeline]):
+    """A start_chat turn that throws after storing its video must not leave that video behind."""
+    long_video = openvino.Tensor(np.zeros((8, 32, 32, 3), dtype=np.uint8))
+    short_video = openvino.Tensor(np.zeros((4, 32, 32, 3), dtype=np.uint8))
+    invalid_audio = openvino.Tensor(np.zeros((2, 16000), dtype=np.float32))
+
+    def second_turn(fail_first: bool) -> tuple[str, int]:
+        pipe = rollback_pa_pipe_factory()
+        pipe.start_chat()
+        pipe.generate("Hi", generation_config=ROLLBACK_CONFIG)
+        if fail_first:
+            with pytest.raises(RuntimeError, match="1-D tensor"):
+                pipe.generate(
+                    "Describe", videos=[long_video], audios=[invalid_audio], generation_config=ROLLBACK_CONFIG
+                )
+        return _text_and_tokens(pipe.generate("Describe", videos=[short_video], generation_config=ROLLBACK_CONFIG))
+
+    assert second_turn(fail_first=True) == second_turn(fail_first=False)
 
 
 def test_qwen3_omni_audio_rejected_on_audio_token_id_mismatch(tmp_path: Path) -> None:
