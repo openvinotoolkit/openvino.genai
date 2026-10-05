@@ -19,16 +19,42 @@ from utils.network import retry_request
 logger = logging.getLogger(__name__)
 
 LTX_VIDEO_MODEL_ID = "tiny-random-ltx-video"
+LTX_VIDEO_095_MODEL_ID = "tiny-random-ltx-video-0.9.5"
 LTX2_MODEL_ID = "tiny-random-ltx2"
 
 VIDEO_GEN_MODELS = {
     LTX_VIDEO_MODEL_ID: "optimum-intel-internal-testing/tiny-random-ltx-video",
+    LTX_VIDEO_095_MODEL_ID: "johnfeng0220/tiny-random-ltx-video-0.9.5",
     LTX2_MODEL_ID: "optimum-intel-internal-testing/tiny-random-ltx2",
 }
 
 DEFAULT_VIDEO_GEN_MODEL_ID = LTX_VIDEO_MODEL_ID
 
 GEN_KWARGS = dict(height=32, width=32, num_frames=9, num_inference_steps=2)
+
+
+def _assert_timestep_conditioned_decode(
+    pipeline_class, model_path, *generation_args, expected_shape=None, **generation_kwargs
+):
+    def generate_with_decode_noise_scale(decode_noise_scale):
+        pipe = pipeline_class(model_path, "CPU")
+        result = pipe.generate(
+            *generation_args,
+            **generation_kwargs,
+            decode_timestep=0.25,
+            decode_noise_scale=decode_noise_scale,
+            generator=ov_genai.CppStdGenerator(42),
+        )
+        return np.array(result.video.data)
+
+    no_noise = generate_with_decode_noise_scale(0.0)
+    with_noise = generate_with_decode_noise_scale(1.0)
+
+    assert with_noise.shape == no_noise.shape
+    assert no_noise.ndim == 5
+    if expected_shape is not None:
+        assert no_noise.shape == expected_shape
+    assert not np.array_equal(no_noise, with_noise)
 
 
 @pytest.fixture(scope="module")
@@ -170,6 +196,19 @@ class TestVideoGenerationPipelines:
             assert audio_shape[2] > 0
         else:
             assert result.audio.size == 0
+
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_095_MODEL_ID], indirect=True)
+    def test_ltx_video_095_timestep_conditioned_decode(self, video_generation_model):
+        vae = ov_genai.AutoencoderKLLTXVideo(str(Path(video_generation_model) / "vae_decoder"))
+        assert vae.get_config().timestep_conditioning is True
+
+        _assert_timestep_conditioned_decode(
+            ov_genai.Text2VideoPipeline,
+            video_generation_model,
+            "test prompt",
+            **GEN_KWARGS,
+            expected_shape=(1, 9, 32, 32, 3),
+        )
 
     @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID], indirect=True)
     def test_audio_guidance_scale_rejected(self, video_generation_model):
@@ -959,34 +998,25 @@ class TestImage2VideoPipeline:
         result2 = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS, generator=ov_genai.CppStdGenerator(42))
         np.testing.assert_array_equal(result1.video.data, result2.video.data)
 
-    def test_timestep_conditioned_decode(self, conditioned_video_generation_model):
-        image = self._make_image()
-        common_kwargs = {
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_095_MODEL_ID], indirect=True)
+    def test_ltx_video_095_timestep_conditioned_decode(self, video_generation_model):
+        _assert_timestep_conditioned_decode(
+            ov_genai.Image2VideoPipeline,
+            video_generation_model,
+            self._make_image(),
+            "test prompt",
             **self.GENERATE_KWARGS,
-            "decode_timestep": 0.25,
-        }
-
-        no_noise_pipe = ov_genai.Image2VideoPipeline(conditioned_video_generation_model, "CPU")
-        no_noise = no_noise_pipe.generate(
-            image,
-            "test prompt",
-            **common_kwargs,
-            decode_noise_scale=0.0,
-            generator=ov_genai.CppStdGenerator(42),
+            expected_shape=(1, 9, 32, 32, 3),
         )
 
-        noise_pipe = ov_genai.Image2VideoPipeline(conditioned_video_generation_model, "CPU")
-        with_noise = noise_pipe.generate(
-            image,
+    def test_timestep_conditioned_decode(self, conditioned_video_generation_model):
+        _assert_timestep_conditioned_decode(
+            ov_genai.Image2VideoPipeline,
+            conditioned_video_generation_model,
+            self._make_image(),
             "test prompt",
-            **common_kwargs,
-            decode_noise_scale=1.0,
-            generator=ov_genai.CppStdGenerator(42),
+            **self.GENERATE_KWARGS,
         )
-
-        assert no_noise.video.data.shape == with_noise.video.data.shape
-        assert no_noise.video.data.ndim == 5
-        assert not np.array_equal(no_noise.video.data, with_noise.video.data)
 
     def test_lora_passthrough(self, video_generation_model):
         adapter_config = ov_genai.AdapterConfig()
