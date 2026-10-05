@@ -8,6 +8,9 @@
 #include <filesystem>
 #include <vector>
 
+#include <openvino/runtime/remote_tensor.hpp>
+#include <openvino/runtime/tensor.hpp>
+
 #include "types_c.h"
 
 namespace {
@@ -186,28 +189,43 @@ ov_status_e ov_genai_text2speech_decoded_results_get_speech_at(const ov_genai_te
         return ov_status_e::INVALID_C_PARAM;
     if (index >= results->object->speeches.size())
         return ov_status_e::OUT_OF_BOUNDS;
+    struct tensor_guard {
+        ov_tensor_t* tensor = nullptr;
+        ~tensor_guard() {
+            if (tensor)
+                ov_tensor_free(tensor);
+        }
+    };
     try {
         const auto& source = results->object->speeches[index];
         if (source.get_element_type() != ov::element::f32)
             return ov_status_e::UNKNOW_EXCEPTION;
+        // Snapshot the waveform into host memory first: the source may reference remote
+        // device memory, where data() throws instead of transferring to host (R.1).
+        ov::Tensor snapshot(ov::element::f32, source.get_shape());
+        if (source.is<ov::RemoteTensor>()) {
+            source.as<ov::RemoteTensor>().copy_to(snapshot);
+        } else {
+            source.copy_to(snapshot);
+        }
         const auto dims = source.get_shape();
         std::vector<int64_t> c_dims(dims.begin(), dims.end());
         shape_guard guard;
         auto status = ov_shape_create(c_dims.size(), c_dims.data(), &guard.shape);
         if (status != ov_status_e::OK)
             return status;
-        ov_tensor_t* output = nullptr;
-        status = ov_tensor_create(ov_element_type_e::F32, guard.shape, &output);
+        // Keep the allocated output tensor under RAII until ownership is transferred.
+        tensor_guard output;
+        status = ov_tensor_create(ov_element_type_e::F32, guard.shape, &output.tensor);
         if (status != ov_status_e::OK)
             return status;
         void* data = nullptr;
-        status = ov_tensor_data(output, &data);
-        if (status != ov_status_e::OK) {
-            ov_tensor_free(output);
+        status = ov_tensor_data(output.tensor, &data);
+        if (status != ov_status_e::OK)
             return status;
-        }
-        std::memcpy(data, source.data(), source.get_byte_size());
-        *speech = output;
+        std::memcpy(data, snapshot.data(), snapshot.get_byte_size());
+        *speech = output.tensor;
+        output.tensor = nullptr;  // Ownership transferred to the caller.
         return ov_status_e::OK;
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
