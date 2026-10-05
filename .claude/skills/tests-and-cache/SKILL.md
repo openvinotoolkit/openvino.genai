@@ -15,29 +15,6 @@ description: "Run, write, and fix OpenVINO GenAI Python and WWB tests, and set u
 | WWB default datasets | `tools/who_what_benchmark/whowhatbench/*_evaluator.py`, `whowhatbench/utils.py` |
 | CI test matrices | `.github/workflows/test_matrices/<platform>/{wheel_tests,samples_tests}.yml` |
 
-## Environment
-
-```sh
-python3.11 -m venv .venv311 && source .venv311/bin/activate
-python -m pip install -r tests/python_tests/requirements.txt
-python -m pip install openvino-genai "openvino-tokenizers[transformers]"   # or a locally built wheel / PYTHONPATH=<build dir>
-python -m pip install -e tools/who_what_benchmark                          # only for WWB tests
-```
-
-`.venv*` directories are git-ignored.
-
-## Running
-
-```sh
-python -m pytest -v tests/python_tests/test_llm_pipeline.py -k "<expr>"
-python -m pytest -v tests/python_tests/ --model_ids "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-python -m pytest -v tools/who_what_benchmark/tests/test_cli_vlm.py
-```
-
-- `pytest.ini` defaults to `-m "not real_models and not nightly"`. Pass `-m` explicitly to run those.
-- Sample tests need `SAMPLES_PY_DIR`, `SAMPLES_CPP_DIR`, `SAMPLES_C_DIR`, `SAMPLES_JS_DIR`.
-- Copy the exact CI command from the matching entry in `.github/workflows/test_matrices/<platform>/wheel_tests.yml`. Some entries install a different `transformers` version first.
-
 ## Caches
 
 | Variable | Content | Notes |
@@ -93,7 +70,3 @@ Pick the helper by dataset size:
 - Errors that mean a resource is missing from `$HF_HOME/hub`: `LocalEntryNotFoundError`, `ConnectionError: Couldn't reach '<repo>' on the Hub (OfflineModeIsEnabled)`, `ValueError: When using the offline mode, you must specify a weight_name`. Fix the test to go through the cache as described above instead of retrying.
 - WWB tests run `wwb` in a subprocess. The real error is in the captured output after `ERROR:conftest:'wwb ...' returned 1. Output:`, not in the `CalledProcessError` line.
 - A module-scoped fixture failure is reported once with its output. Later tests that use the same fixture only show the cached `CalledProcessError`.
-
-## Adding a Test to CI
-
-Add or extend an entry in `.github/workflows/test_matrices/<platform>/wheel_tests.yml` (or `samples_tests.yml`) with `name`, `cmd`, `timeout`, and `components`. An entry runs only when one of its `components` is affected, per `.github/scripts/build_test_matrices.py`.
