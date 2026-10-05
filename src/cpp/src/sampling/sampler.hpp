@@ -50,6 +50,16 @@ inline bool is_stop_token_id_hit_in_sequence_group(SequenceGroup::Ptr sequence_g
 
 std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx);
 
+namespace detail {
+// Exact residual resampling for a rejected draft token (Leviathan et al. 2023, Chen et al. 2023):
+// draw the replacement from the normalised residual max(0, p(x) - q(x)) so the accepted stream
+// stays exactly target-distributed, falling back to p when the residual is degenerate. Exposed
+// here so the distributional guarantee can be unit-tested without a model.
+Token residual_sample(const std::vector<float>& target_distribution,
+                      const std::vector<float>& draft_distribution,
+                      std::mt19937& rng_engine);
+}  // namespace detail
+
 struct SamplerOutput {
     // IDs of sequences that need to be dropped
     std::vector<uint64_t> m_dropped_sequences;
@@ -183,6 +193,11 @@ class Sampler {
     // rejected tokens. Guarded by its own mutex because sequence groups are sampled in parallel.
     std::map<uint64_t, std::map<uint64_t, std::vector<std::vector<float>>>> m_draft_distributions;
     std::mutex m_draft_distributions_mutex;
+
+    // Only the speculative-decoding draft sampler collects the q(.) above (set by the pipeline via
+    // set_collect_draft_distributions). The main (validation) sampler and the standalone CB sampler
+    // leave this false so regular generation never materialises a full-vocab vector per token.
+    bool m_collect_draft_distributions = false;
 public:
     Sampler(const Sampler& rhs) = delete;
     Sampler(Sampler&& rhs) = delete;
@@ -209,6 +224,13 @@ public:
     // addressed by its offset from the end of the generated sequence (1 == last token).
     void set_candidate_distributions(uint64_t request_id, uint64_t grouped_id, std::vector<std::vector<float>> distributions);
     std::vector<float> get_candidate_distribution(uint64_t request_id, uint64_t grouped_id, size_t token_offset_from_end);
+    // Single-element read of q(token_id) at a stored position, used by the acceptance test; returns
+    // a negative value when no distribution is available there (caller falls back to the draft log-prob).
+    float get_candidate_token_probability(uint64_t request_id, uint64_t grouped_id,
+                                          size_t token_offset_from_end, int64_t token_id);
+
+    // Set by the speculative pipeline to true only on the draft sampler (see m_collect_draft_distributions).
+    void set_collect_draft_distributions(bool value) { m_collect_draft_distributions = value; }
 
     LogitProcessor& get_logit_processor(uint64_t request_id);
     void create_logit_processor(uint64_t request_id, const GenerationConfig& sampling_parameters, const TokenIds& prompt);

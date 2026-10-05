@@ -3,12 +3,76 @@
 
 #include <algorithm>
 #include <cmath>
+#include <random>
+#include <vector>
 #include "gtest/gtest.h"
 
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
+#include "sampling/sampler.hpp"
 #include "speculative_decoding/continuous_batching/mtp_strategy.hpp"
 #include "speculative_decoding/continuous_batching/pipeline_impl.hpp"
 #include "utils.hpp"
+
+namespace {
+// Total variation distance between two discrete distributions of equal length.
+float total_variation_distance(const std::vector<float>& a, const std::vector<float>& b) {
+    float tvd = 0.0f;
+    for (size_t i = 0; i < a.size(); ++i)
+        tvd += std::abs(a[i] - b[i]);
+    return 0.5f * tvd;
+}
+}  // namespace
+
+// A rejected draft token must be replaced by a draw from the exact residual max(0, p - q),
+// normalised - never from p alone - so the accepted stream stays target-distributed. With a fixed
+// seed the outcome is deterministic: the empirical distribution matches the analytic residual and
+// never samples a token the draft already covers (q_i >= p_i, zero residual mass).
+TEST(SpeculativeResidualSampling, MatchesAnalyticResidualWithFixedSeed) {
+    const std::vector<float> p = {0.10f, 0.20f, 0.35f, 0.05f, 0.30f};
+    const std::vector<float> q = {0.40f, 0.05f, 0.20f, 0.05f, 0.30f};
+    // residual_i = max(0, p_i - q_i) = {0, 0.15, 0.15, 0, 0} -> normalised {0, 0.5, 0.5, 0, 0}
+    std::vector<float> expected = {0.0f, 0.15f, 0.15f, 0.0f, 0.0f};
+    float z = 0.0f;
+    for (float v : expected) z += v;
+    for (float& v : expected) v /= z;
+
+    std::mt19937 rng(1234);
+    constexpr size_t num_draws = 200000;
+    std::vector<size_t> counts(p.size(), 0);
+    for (size_t i = 0; i < num_draws; ++i) {
+        const int64_t idx = ov::genai::detail::residual_sample(p, q, rng).m_index;
+        ASSERT_GE(idx, 0);
+        ASSERT_LT(idx, static_cast<int64_t>(p.size()));
+        counts[static_cast<size_t>(idx)]++;
+    }
+
+    // Tokens the draft already covers (q_i >= p_i) carry zero residual mass and are never drawn.
+    EXPECT_EQ(counts[0], 0u);
+    EXPECT_EQ(counts[3], 0u);
+    EXPECT_EQ(counts[4], 0u);
+
+    std::vector<float> empirical(p.size());
+    for (size_t i = 0; i < p.size(); ++i)
+        empirical[i] = static_cast<float>(counts[i]) / num_draws;
+    EXPECT_LT(total_variation_distance(empirical, expected), 0.01f);
+}
+
+// When the draft already covers the target everywhere (q == p) the residual is empty; the sampler
+// must still return a valid replacement by falling back to a draw from p.
+TEST(SpeculativeResidualSampling, FallsBackToTargetWhenResidualDegenerate) {
+    const std::vector<float> p = {0.25f, 0.25f, 0.25f, 0.25f};
+    std::mt19937 rng(7);
+    constexpr size_t num_draws = 40000;
+    std::vector<size_t> counts(p.size(), 0);
+    for (size_t i = 0; i < num_draws; ++i) {
+        const int64_t idx = ov::genai::detail::residual_sample(p, p, rng).m_index;
+        ASSERT_GE(idx, 0);
+        ASSERT_LT(idx, static_cast<int64_t>(p.size()));
+        counts[static_cast<size_t>(idx)]++;
+    }
+    for (size_t i = 0; i < p.size(); ++i)
+        EXPECT_NEAR(static_cast<float>(counts[i]) / num_draws, 0.25f, 0.02f);
+}
 
 class CBForSDTest : public testing::Test, public ov::genai::ContinuousBatchingPipeline {
 protected:

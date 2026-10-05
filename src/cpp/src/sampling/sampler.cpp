@@ -1385,25 +1385,53 @@ size_t Sampler::verify_draft_tree(Sequence::Ptr& sequence,
     return accepted_steps;
 }
 
+// Numerically stable exp-weights over the surviving vector-path candidates (top_k / top_p /
+// logprobs), shared by the two readers below. When m_defer_expf is set, m_vector holds raw
+// scaled logits: subtract the max before expf so a large logit cannot overflow to +inf and
+// swamp the sum. Otherwise m_vector already holds probabilities and is summed as-is. Falls back
+// to uniform weights when the total is non-finite or non-positive. Returns per-candidate weights
+// aligned to logits.m_vector plus their sum; callers normalise by dividing by `total`.
+struct DeferredExpWeights {
+    std::vector<float> values;
+    float total = 0.0f;
+};
+static DeferredExpWeights deferred_exp_weights(const Logits& logits) {
+    DeferredExpWeights result;
+    result.values.resize(logits.m_size, 0.0f);
+    if (logits.m_size == 0)
+        return result;
+    if (logits.m_defer_expf) {
+        float max_logit = logits.m_vector[0].m_log_prob;
+        for (size_t i = 1; i < logits.m_size; ++i)
+            max_logit = std::max(max_logit, logits.m_vector[i].m_log_prob);
+        for (size_t i = 0; i < logits.m_size; ++i) {
+            result.values[i] = std::exp(logits.m_vector[i].m_log_prob - max_logit);
+            result.total += result.values[i];
+        }
+    } else {
+        for (size_t i = 0; i < logits.m_size; ++i) {
+            result.values[i] = logits.m_vector[i].m_log_prob;
+            result.total += result.values[i];
+        }
+    }
+    if (!(result.total > 0.0f && std::isfinite(result.total))) {
+        std::fill(result.values.begin(), result.values.end(), 1.0f);
+        result.total = static_cast<float>(logits.m_size);
+    }
+    return result;
+}
+
 // Target-model probability of `token_id` under the same post-processing distribution
 // _multinomial_sample draws from. Fast path: m_data is already normalised (m_data[i] == p_i).
-// Vector path (top_k / top_p / logprobs): only surviving m_vector candidates carry mass
-// (exp'd when m_defer_expf is set); a filtered-out token has zero target mass. Returns 0
-// when the token is not a candidate.
+// Vector path (top_k / top_p / logprobs): only surviving m_vector candidates carry mass; a
+// filtered-out token has zero target mass. Returns 0 when the token is not a candidate.
 static float get_target_token_probability(const Logits& target_logits, int64_t token_id) {
     if (target_logits.is_vector_initialized()) {
-        float total = 0.0f, token_weight = 0.0f;
-        bool found = false;
-        for (size_t i = 0; i < target_logits.m_size; ++i) {
-            const float w = target_logits.m_defer_expf ? std::exp(target_logits.m_vector[i].m_log_prob)
-                                                        : target_logits.m_vector[i].m_log_prob;
-            total += w;
-            if (target_logits.m_vector[i].m_index == token_id) {
-                token_weight = w;
-                found = true;
-            }
-        }
-        return (found && total > 0.0f) ? token_weight / total : 0.0f;
+        const DeferredExpWeights weights = deferred_exp_weights(target_logits);
+        for (size_t i = 0; i < target_logits.m_size; ++i)
+            if (target_logits.m_vector[i].m_index == token_id)
+                return weights.total > 0.0f ? weights.values[i] / weights.total : 0.0f;
+        return 0.0f;
     }
     if (token_id < 0 || static_cast<size_t>(token_id) >= target_logits.m_size)
         return 0.0f;
@@ -1416,19 +1444,13 @@ static float get_target_token_probability(const Logits& target_logits, int64_t t
 static std::vector<float> materialize_distribution(const Logits& logits, size_t vocab_size) {
     std::vector<float> distribution(vocab_size, 0.0f);
     if (logits.is_vector_initialized()) {
-        float total = 0.0f;
+        const DeferredExpWeights weights = deferred_exp_weights(logits);
         for (size_t i = 0; i < logits.m_size; ++i) {
             const int64_t idx = logits.m_vector[i].m_index;
             if (idx < 0 || static_cast<size_t>(idx) >= vocab_size)
                 continue;
-            const float w = logits.m_defer_expf ? std::exp(logits.m_vector[i].m_log_prob)
-                                                : logits.m_vector[i].m_log_prob;
-            distribution[idx] = w;
-            total += w;
+            distribution[idx] = weights.total > 0.0f ? weights.values[i] / weights.total : 0.0f;
         }
-        if (total > 0.0f)
-            for (float& v : distribution)
-                v /= total;
     } else {
         const size_t n = std::min(vocab_size, logits.m_size);
         for (size_t i = 0; i < n; ++i)
@@ -1442,9 +1464,9 @@ static std::vector<float> materialize_distribution(const Logits& logits, size_t 
 // the target and q the draft distribution for the same position. This keeps the accepted
 // stream exactly target-distributed, unlike drawing from p alone. Falls back to p when the
 // residual is degenerate (p fully covered by q).
-static Token residual_sample(const std::vector<float>& target_distribution,
-                             const std::vector<float>& draft_distribution,
-                             std::mt19937& rng_engine) {
+Token detail::residual_sample(const std::vector<float>& target_distribution,
+                              const std::vector<float>& draft_distribution,
+                              std::mt19937& rng_engine) {
     const size_t vocab_size = target_distribution.size();
     std::vector<float> residual(vocab_size);
     float total = 0.0f;
@@ -1504,12 +1526,18 @@ bool Sampler::validate_candidate(
 
         // Speculative sampling acceptance (Leviathan et al. 2023, Chen et al. 2023):
         // accept the draft token t with probability min(1, p(t) / q(t)), where
-        //   q(t) = draft-model probability of t (stored when t was drafted), and
+        //   q(t) = draft-model probability of t under the SAME post-filtering (top_k / top_p)
+        //          distribution it was sampled from, read back from the stored draft q(.); and
         //   p(t) = target-model probability of the SAME token t.
         // Both terms must reference the draft token *it_token_id; comparing against the
         // target's own freshly sampled token would break the guarantee that the accepted
-        // stream matches the target distribution.
-        const float q_t = std::exp(*it_log_prob);
+        // stream matches the target distribution. Fall back to the draft's generated log-prob
+        // only when no distribution was stored for this position (prompt-lookup / EAGLE d2t remap),
+        // in which case the stored q(.) and exp(log-prob) coincide anyway.
+        const float q_from_distribution = get_candidate_token_probability(
+            running_sequence->get_sequence_group_ptr()->get_request_id(),
+            running_sequence->get_grouped_id(), token_idx, *it_token_id);
+        const float q_t = q_from_distribution >= 0.0f ? q_from_distribution : std::exp(*it_log_prob);
         const float p_t = get_target_token_probability(target_logits, *it_token_id);
         const float probability_ratio = q_t > 0.f ? p_t / q_t : 0.f;
 
@@ -1660,9 +1688,11 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                     // Draft side: stash the full distribution q(.) this token was drawn from so the
                     // main sampler can build the exact residual on rejection. One full-vocab vector
                     // per proposed token (O(vocab) memory), consumed only if the token is rejected.
+                    // Gated by m_collect_draft_distributions, which the pipeline sets only on the
+                    // speculative draft sampler: regular and standalone CB generation never store it.
                     // Skipped when the draft remaps into target vocab (EAGLE d2t), where q and p live
                     // in different spaces.
-                    if (!is_validation_mode_enabled && !sampling_params.is_prompt_lookup() && !m_d2t_mapping) {
+                    if (m_collect_draft_distributions && !sampling_params.is_prompt_lookup() && !m_d2t_mapping) {
                         append_draft_distribution(sequence_group->get_request_id(), running_sequence->get_grouped_id(),
                                                   materialize_distribution(logit_vector, vocab_size));
                     }
@@ -1678,7 +1708,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                             // Resample the rejected position from the exact residual max(0, p - q).
                             // p is the target distribution captured at the reject site (conditioned on
                             // the accepted prefix); q is the draft distribution for the same position.
-                            sampled_token = residual_sample(rejected_target_distribution, draft_distribution, rng_engine);
+                            sampled_token = detail::residual_sample(rejected_target_distribution, draft_distribution, rng_engine);
                             // The rejected token plus any speculative tokens after it are dropped, so the
                             // resampled token is re-processed into the KV cache on the next iteration.
                             assisting_pipeline_info.max_removed_tokens_per_request = std::max(assisting_pipeline_info.max_removed_tokens_per_request, generated_seq_token_offset + 1);
@@ -2022,6 +2052,24 @@ std::vector<float> Sampler::get_candidate_distribution(uint64_t request_id, uint
     if (token_offset_from_end == 0 || token_offset_from_end > window.size())
         return {};
     return window[window.size() - token_offset_from_end];
+}
+
+float Sampler::get_candidate_token_probability(uint64_t request_id, uint64_t grouped_id,
+                                               size_t token_offset_from_end, int64_t token_id) {
+    std::lock_guard<std::mutex> lock(m_draft_distributions_mutex);
+    auto request_it = m_draft_distributions.find(request_id);
+    if (request_it == m_draft_distributions.end())
+        return -1.0f;
+    auto sequence_it = request_it->second.find(grouped_id);
+    if (sequence_it == request_it->second.end())
+        return -1.0f;
+    const auto& window = sequence_it->second;
+    if (token_offset_from_end == 0 || token_offset_from_end > window.size())
+        return -1.0f;
+    const auto& distribution = window[window.size() - token_offset_from_end];
+    if (token_id < 0 || static_cast<size_t>(token_id) >= distribution.size())
+        return -1.0f;
+    return distribution[token_id];
 }
 
 int64_t Sampler::GroupBeamSearcher::Group::finish(Beam beam, const ov::genai::GenerationConfig& sampling_params) {
