@@ -240,7 +240,7 @@ def cb_pipeline_required(args):
         (args["cb_config"].get("cache_eviction_config") is not None or args["cb_config"].get("sparse_attention_config") is not None)
 
 
-def setup_draft_model_for_sd(args, device):
+def setup_draft_model_for_sd(args, device, ov_config):
     import openvino_genai
 
     draft_model = {}
@@ -257,8 +257,9 @@ def setup_draft_model_for_sd(args, device):
                     args.get("draft_cb_config"), config_name="draft CB config"
                 )
             }
+
         draft_model["draft_model"] = openvino_genai.draft_model(
-            draft_model_path, draft_device.upper(), **draft_model_load_kwargs
+            draft_model_path, draft_device.upper(), **draft_model_load_kwargs, **ov_config
         )
 
     return draft_model
@@ -283,7 +284,7 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_data_colle
         use_streamer_metrics = parse(version) < parse("2025.0.0") or (draft_model_path and parse(version) < parse("2025.1.0"))
 
     if kwargs.get("draft_model", ""):
-        config.update(setup_draft_model_for_sd(kwargs, device))
+        config.update(setup_draft_model_for_sd(kwargs, device, kwargs["draft_ov_config"]))
 
     if kwargs.get('max_ngram_size') and kwargs.get('num_assistant_tokens'):
         log.info("Prompt Lookup decoding is activated")
@@ -735,7 +736,7 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, memory_data
         ov_config["scheduler_config"] = get_scheduler_config_genai(cb_config)
 
     if kwargs.get("draft_model", ""):
-        ov_config.update(setup_draft_model_for_sd(kwargs, device))
+        ov_config.update(setup_draft_model_for_sd(kwargs, device, kwargs["draft_ov_config"]))
 
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()
@@ -828,12 +829,7 @@ def create_text_embeddings_model(model_path, device, memory_data_collector, **kw
     if kwargs.get("genai", True):
         if not is_genai_available(log_msg=True):
             raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
-        try:
-            return create_genai_text_embed_model(model_path, device, memory_data_collector, **kwargs)
-        except Exception as exp:
-            raise RuntimeError(
-                f"Model is not supported by OpenVINO GenAI. GenAI pipeline loading failed with following error: {exp}"
-            )
+        return create_genai_text_embed_model(model_path, device, memory_data_collector, **kwargs)
 
     trust_remote_code = False
     if is_multimodal:
@@ -937,13 +933,7 @@ def create_image_text_gen_model(model_path, device, memory_data_collector, **kwa
         if kwargs.get("genai", True):
             if not is_genai_available(log_msg=True):
                 raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
-            try:
-                return create_genai_image_text_gen_model(model_path, device, ov_config, memory_data_collector, **kwargs)
-            except Exception as exp:
-                raise RuntimeError(
-                    f"Model type `{model_config.model_type}` is not supported by OpenVINO GenAI. "
-                    f"GenAI pipeline loading failed with following error: {exp}"
-                )
+            return create_genai_image_text_gen_model(model_path, device, ov_config, memory_data_collector, **kwargs)
 
         log.info("Selected Optimum Intel for benchmarking")
         ov_config.pop("ATTENTION_BACKEND", None)
@@ -1063,19 +1053,8 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
         if kwargs.get("genai", True):
             if not is_genai_available(log_msg=True):
                 raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
-            try:
-                return create_genai_text_2_speech_model(model_path, device, ov_config, memory_data_collector, **kwargs)
-            except Exception as exp:
-                if is_kokoro_model:
-                    model_type = "kokoro"
-                elif model_config is not None:
-                    model_type = model_config.model_type
-                else:
-                    model_type = "unknown"
-                raise RuntimeError(
-                    f"Model type `{model_type}` is not supported by OpenVINO GenAI. "
-                    f"GenAI pipeline loading failed with following error: {exp}"
-                )
+
+            return create_genai_text_2_speech_model(model_path, device, ov_config, memory_data_collector, **kwargs)
 
         if is_omni_model:
             return create_optimum_omni_text_2_speech_model(
@@ -1454,16 +1433,8 @@ def create_text_reranker_model(model_path: Path, device: str, memory_monitor, **
     if kwargs.get("genai", True):
         if not is_genai_available(log_msg=True):
             raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
-        try:
-            return create_genai_text_reranker_model(
-                model_path, device, memory_monitor, tokenizer, model_config, **kwargs
-            )
-        except Exception as exp:
-            raise RuntimeError(
-                f"Model is not supported by OpenVINO GenAI. "
-                f"GenAI pipeline loading failed with following error: {exp}"
-            )
-    kwargs['use_case'].adjust_model_class_by_config(model_config)
+        return create_genai_text_reranker_model(model_path, device, memory_monitor, tokenizer, model_config, **kwargs)
+    kwargs["use_case"].adjust_model_class_by_config(model_config)
     log.info("Selected Optimum Intel for benchmarking")
     if kwargs.get("mem_consumption"):
         memory_monitor.start()
