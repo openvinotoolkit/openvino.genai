@@ -291,7 +291,7 @@
   components:
     - visual_language
 
-# TODO: Move this job in the main VLM test once it will move to transformers 5.5.
+# TODO: Include this job in the main VLM test suite once optimum-intel commit includes gemma4 audio inputs support.
 - name: VLM (gemma4)
   cmd: |-
     python -m pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@00131a8967a21cd7bea3fe59413fb35b537d57af"
