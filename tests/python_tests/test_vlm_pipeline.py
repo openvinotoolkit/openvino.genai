@@ -32,6 +32,8 @@ import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
 patch_pyav_for_servercore.install_av_stub_module_for_windows()
 
 import inspect
+import json
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Generator, cast
@@ -3578,9 +3580,17 @@ def test_qwen3_omni_vision_preprocess_modes_equivalence(cat_tensor):
     )
 
 
-def test_qwen3_omni_audio_rejected_when_tokenizer_lacks_audio_tokens():
-    """The tiny export's tokenizer splits <|audio_pad|> into characters, so audio must fail with a clear error."""
-    pipe = VLMPipeline(_get_ov_model(MODEL_QWEN3_OMNI), "CPU", ATTENTION_BACKEND="SDPA")
+def test_qwen3_omni_audio_rejected_on_audio_token_id_mismatch(tmp_path: Path) -> None:
+    """Audio must fail with a clear error when the tokenizer does not map <|audio_pad|> to audio_token_id."""
+    model_path = tmp_path / "qwen3_omni_audio_token_mismatch"
+    shutil.copytree(_get_ov_model(MODEL_QWEN3_OMNI), model_path)
+    config_path = model_path / "config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    # Old tiny exports declared 9 while the tokenizer had no <|audio_pad|>; recreate that mismatch.
+    config["thinker_config"]["audio_token_id"] = 9
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+
+    pipe = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND="PA")
     audio = openvino.Tensor(np.zeros(16000, dtype=np.float32))
     with pytest.raises(RuntimeError, match="does not encode <\\|audio_pad\\|> as the single token"):
         pipe.generate("Describe", audios=[audio], generation_config=GenerationConfig(max_new_tokens=1))
