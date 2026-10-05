@@ -545,6 +545,31 @@ class TestVideoGenerationPipelines:
             pipe.generate("test prompt", taylorseer_config=ov_genai.TaylorSeerCacheConfig(), **GEN_KWARGS)
 
     @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID], indirect=True)
+    @pytest.mark.parametrize(
+        "decode_config",
+        [
+            {"decode_timestep": 0.25, "decode_noise_scale": 0.0},
+            {"decode_timestep": 0.0, "decode_noise_scale": 0.25},
+        ],
+        ids=["decode-timestep", "decode-noise-scale"],
+    )
+    def test_ltx2_decode_controls_rejected(self, video_generation_model, decode_config):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        with pytest.raises(RuntimeError, match="not supported for LTX2"):
+            pipe.generate("test prompt", **GEN_KWARGS, **decode_config)
+
+    @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID], indirect=True)
+    def test_ltx2_zero_decode_controls_accepted(self, video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        result = pipe.generate(
+            "test prompt",
+            **GEN_KWARGS,
+            decode_timestep=0.0,
+            decode_noise_scale=0.0,
+        )
+        assert result.video.shape == [1, 9, 32, 32, 3]
+
+    @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID], indirect=True)
     def test_image2video_rejected(self, video_generation_model):
         with pytest.raises(RuntimeError, match="LTX2Pipeline"):
             ov_genai.Image2VideoPipeline(video_generation_model)
