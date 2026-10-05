@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 FUNASR_TOKENIZER_SUBFOLDER = (
     "Qwen3-0.6B"  # Source layout: https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512/tree/main/Qwen3-0.6B
 )
-ASR_MODEL_TYPES = {"funasr", "fun_asr"}
+ASR_MODEL_TYPES = {"funasr", "fun_asr", "sense_voice"}
 AUDIO_VLM_MODEL_TYPES = {"gemma4", "gemma4_unified"}
 
 DEFAULT_ASR_INSTRUCTION = "Transcribe this audio."
@@ -167,12 +167,17 @@ class FunASROptimumTranscriber:
         import torch
 
         inputs = self.model.preprocess_input(audio, sampling_rate=AUDIO_SAMPLING_RATE, **self.preprocess_kwargs)
-        prompt_len = inputs["decoder_input_ids"].shape[-1]
+        prompt_len = -1
+        if "decoder_input_ids" in inputs:
+            prompt_len = inputs["decoder_input_ids"].shape[-1]
         with torch.inference_mode():
             tokens = self.model.generate(**inputs, max_new_tokens=max_new_tokens)
         tokens = getattr(tokens, "sequences", tokens)
-        # generate() returns the prompt followed by the generated ids, decode the generated part only.
-        return self.tokenizer.batch_decode(tokens[:, prompt_len:], skip_special_tokens=True)[0].strip()
+
+        if "decoder_input_ids" in inputs:
+            return self.tokenizer.batch_decode(tokens[:, prompt_len:], skip_special_tokens=True)[0].strip()
+        else:
+            return tokens
 
 
 class FunASRGenAITranscriber:
@@ -244,8 +249,12 @@ class ASROptimumTranscriber:
             from transformers import AutoTokenizer
 
             model = OVModelForSpeechSeq2Seq.from_pretrained(model_id, device=device, ov_config=ov_config)
-            subfolder = FUNASR_TOKENIZER_SUBFOLDER if model_type == "funasr" else ""
-            tokenizer = AutoTokenizer.from_pretrained(str(model_id), subfolder=subfolder)
+            if model_type == "sense_voice":
+                from transformers import T5Tokenizer
+                tokenizer = T5Tokenizer(vocab_file=str(model_id + "chn_jpn_yue_eng_ko_spectok.bpe.model"), extra_ids=0, legacy=True)
+            else:
+                subfolder = FUNASR_TOKENIZER_SUBFOLDER if model_type == "funasr" else ""
+                tokenizer = AutoTokenizer.from_pretrained(str(model_id), subfolder=subfolder)
             return FunASROptimumTranscriber(model, tokenizer, language or "en")
 
         model = _load_multimodal_model(model_id, device, ov_config, False, False, **kwargs)
