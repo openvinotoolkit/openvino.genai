@@ -206,6 +206,7 @@ def test_vlm_text_only(model_id, model_type, tmp_path):
     run_test(model_id, model_type, None, None, tmp_path)
 
 
+@pytest.mark.transformers_higher_v5_1
 @pytest.mark.skipif(
     Version(transformers_version) < Version("5.1"),
     reason="transformers 5.0.x reads an unset use_sliding_window in the Qwen3-Omni talker config; fixed in 5.1",
