@@ -54,7 +54,7 @@ install(TARGETS visual_language_chat
 
 # create audio language chat sample executable
 add_executable(audio_to_text_chat audio_to_text_chat.cpp ../automatic_speech_recognition/audio_utils.cpp)
-target_include_directories(audio_to_text_chat PRIVATE "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
+target_include_directories(audio_to_text_chat PRIVATE "../automatic_speech_recognition" "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
 target_link_libraries(audio_to_text_chat PRIVATE openvino::genai)
 
 set_target_properties(audio_to_text_chat PROPERTIES

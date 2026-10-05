@@ -5,6 +5,7 @@ This example showcases inference of text-generation Vision Language Models (VLMs
 The following are sample files:
  - [`visual_language_chat.py`](./visual_language_chat.py) demonstrates basic usage of the VLM pipeline which supports accelerated inference using prompt lookup decoding.
  - [`video_to_text_chat.py`](./video_to_text_chat.py) demonstrates video to text usage of the VLM pipeline.
+ - [`audio_to_text_chat.py`](./audio_to_text_chat.py) demonstrates audio to text chat with an audio-capable VLM.
  - [`benchmark_vlm.py`](./benchmark_vlm.py) shows how to benchmark a VLM in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text and calculating various performance metrics.
  - [`visual_language_lora.py`](./visual_language_lora.py) demonstrates how to apply one or more LoRA adapters to a VLM at runtime.
  - [`milebench_eval_vlm.py`](./milebench_eval_vlm.py) provides MileBench validation for VLMs, enabling evaluation of image–text reasoning and visual QA tasks across multiple subsets designed to assess the MultImodal Long-contExt capabilities of MLLMs.
@@ -95,6 +96,14 @@ Supported models with video input are listed in [this section](https://openvinot
 
 Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is recommended to run larger models on a dGPU with 32GB+ RAM.
 Modify the source code to change the device for inference to the GPU.
+
+## Run audio-to-text chat sample:
+
+Export an audio-capable VLM, such as `google/gemma-4-E2B-it`, using the export instructions above with the corresponding model ID.
+
+You can use 16 kHz example audio file: https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
+
+`python audio_to_text_chat.py ./gemma-4-E2B-it/ how_are_you_doing_today.wav`
 
 ## Run benchmark:
 
