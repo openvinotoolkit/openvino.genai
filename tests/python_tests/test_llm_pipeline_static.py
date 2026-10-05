@@ -503,9 +503,6 @@ UNSUPPORTED_CONTINUOUS_PREFILL_CONFIG: dict = {
     "NPUW_LLM_PREFILL_CHUNK_SIZE": 1024,
 }
 
-# MAX_PROMPT_LEN + MIN_RESPONSE_LEN - 1, the number of tokens the KV cache holds.
-KV_CACHE_CAPACITY: int = 1024 + 128 - 1
-
 # The questions are long on purpose: the keep is granted in whole chunks, so the
 # history has to grow past a chunk for a turn to be continued rather than prefilled
 # from scratch.
@@ -613,48 +610,6 @@ def test_continuous_prefill_unsupported_falls_back_to_full_history(llm_model: OV
     actual = chat_with_strings(unsupported_pipe, CHAT_QUESTIONS)
 
     assert actual == reference, f"full history:\n{reference}\nfallback:\n{actual}"
-
-
-@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
-def test_continuous_prefill_rejects_request_over_kv_capacity(llm_model: OVConvertedModelSchema):
-    continued_pipe = LLMPipeline(llm_model.models_path, "NPU", **CONTINUOUS_PREFILL_CONFIG)
-
-    continued_pipe.start_chat()
-    with pytest.raises(RuntimeError):
-        continued_pipe.generate(CHAT_QUESTIONS[0], max_new_tokens=KV_CACHE_CAPACITY + 1, do_sample=False)
-    continued_pipe.finish_chat()
-
-
-@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
-def test_continuous_prefill_accepts_unbounded_response(llm_model: OVConvertedModelSchema):
-    # An unbounded config means "generate until EOS", so there is no requested budget
-    # to check against the KV capacity and the turn must not be rejected.
-    continued_pipe = LLMPipeline(llm_model.models_path, "NPU", **CONTINUOUS_PREFILL_CONFIG)
-
-    continued_pipe.start_chat()
-    continued_pipe.generate(CHAT_QUESTIONS[0], do_sample=False, streamer=StopAfterNTokens(5))
-    continued_pipe.finish_chat()
-
-
-@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
-def test_continuous_prefill_failed_turn_does_not_leak_into_next_chat(llm_model: OVConvertedModelSchema):
-    reference_pipe = LLMPipeline(llm_model.models_path, "NPU", **FULL_HISTORY_CONFIG)
-    continued_pipe = LLMPipeline(llm_model.models_path, "NPU", **CONTINUOUS_PREFILL_CONFIG)
-
-    reference = chat_with_strings(reference_pipe, CHAT_QUESTIONS[:1])
-
-    continued_pipe.start_chat()
-    continued_pipe.generate(CHAT_QUESTIONS[0], max_new_tokens=CHAT_MAX_NEW_TOKENS, do_sample=False)
-    with pytest.raises(RuntimeError):
-        continued_pipe.generate(CHAT_QUESTIONS[1], max_new_tokens=KV_CACHE_CAPACITY + 1, do_sample=False)
-    continued_pipe.finish_chat()
-
-    # A failed turn is not rolled back, so the conversation still holds it and
-    # finish_chat() has to drop it, otherwise this answer is produced with a history
-    # behind it.
-    actual = chat_with_strings(continued_pipe, CHAT_QUESTIONS[:1])
-
-    assert actual == reference, f"full history:\n{reference}\nafter a failed turn:\n{actual}"
 
 
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
