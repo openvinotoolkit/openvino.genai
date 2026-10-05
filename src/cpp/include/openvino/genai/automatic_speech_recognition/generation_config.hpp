@@ -84,6 +84,12 @@ public:
 
     std::optional<std::string> context = std::nullopt;
 
+    // SenseVoiceSmall parameters
+
+    // Whether to apply inverse text normalization (ITN). Honored by SenseVoiceSmall:
+    // false conditions the model on the 'woitn' text-norm id, true on the 'withitn' id.
+    bool use_itn = false;
+
     using GenerationConfig::update_generation_config;
     void update_generation_config(const ov::AnyMap& config_map = {}) override;
 
@@ -117,5 +123,6 @@ static constexpr ov::Property<std::vector<std::pair<size_t, size_t>>> alignment_
 static constexpr ov::Property<std::string> initial_prompt{"initial_prompt"};
 static constexpr ov::Property<std::string> hotwords{"hotwords"};
 static constexpr ov::Property<std::string> context{"context"};
+static constexpr ov::Property<bool> use_itn{"use_itn"};
 
 }  // namespace ov::genai

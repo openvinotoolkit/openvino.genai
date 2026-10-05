@@ -469,6 +469,8 @@ export type WhisperGenerationConfig = GenerationConfig & {
 export type ASRGenerationConfig = WhisperGenerationConfig & {
   /** Context passed as a previous transcription to steer spelling or style. Supported by Qwen3-ASR models only. */
   context?: string;
+  /** If true, apply inverse text normalization (ITN). Only honored by SenseVoiceSmall. */
+  use_itn?: boolean;
 };
 
 /** Generation config for Text2SpeechPipeline. Extends GenerationConfig with speech-specific options. */

@@ -10,13 +10,14 @@
 
 #include "automatic_speech_recognition/models/fun-asr/pipeline.hpp"
 #include "automatic_speech_recognition/models/qwen3-asr/pipeline.hpp"
+#include "automatic_speech_recognition/models/sensevoice/pipeline.hpp"
 #include "automatic_speech_recognition/models/whisper/pipeline.hpp"
 #include "automatic_speech_recognition/pipeline_base.hpp"
 #include "utils.hpp"
 
 namespace {
 
-enum class ASRModelType { whisper, qwen3_asr, fun_asr };
+enum class ASRModelType { whisper, qwen3_asr, fun_asr, sense_voice };
 
 ASRModelType read_model_type(const std::filesystem::path& models_path) {
     auto config_path = models_path / "config.json";
@@ -31,6 +32,7 @@ ASRModelType read_model_type(const std::filesystem::path& models_path) {
         {"whisper", ASRModelType::whisper},
         {"qwen3_asr", ASRModelType::qwen3_asr},
         {"fun_asr", ASRModelType::fun_asr},
+        {"sense_voice", ASRModelType::sense_voice},
     };
 
     auto it = model_types_map.find(value);
@@ -71,6 +73,10 @@ ASRPipeline::ASRPipeline(const std::filesystem::path& models_path,
     }
     case ASRModelType::fun_asr: {
         m_impl = std::make_unique<FunASR>(models_path, device, properties);
+        break;
+    }
+    case ASRModelType::sense_voice: {
+        m_impl = std::make_unique<SenseVoiceSmall>(models_path, device, properties);
         break;
     }
     }

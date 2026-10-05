@@ -1509,6 +1509,7 @@ Napi::Value cpp_to_js<ov::genai::ASRGenerationConfig, Napi::Value>(const Napi::E
     set_napi_string_or_undefined(env, obj, "task", config.task);
     obj.Set("return_timestamps", Napi::Boolean::New(env, config.return_timestamps));
     obj.Set("word_timestamps", Napi::Boolean::New(env, config.word_timestamps));
+    obj.Set("use_itn", Napi::Boolean::New(env, config.use_itn));
     obj.Set("decoder_start_token_id", cpp_to_js<int64_t, Napi::Value>(env, config.decoder_start_token_id));
     obj.Set("pad_token_id", cpp_to_js<int64_t, Napi::Value>(env, config.pad_token_id));
     obj.Set("translate_token_id", cpp_to_js<int64_t, Napi::Value>(env, config.translate_token_id));

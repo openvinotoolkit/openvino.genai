@@ -273,6 +273,7 @@ void init_asr_pipeline(py::module_& m) {
         .def_readwrite("initial_prompt", &ASRGenerationConfig::initial_prompt)
         .def_readwrite("hotwords", &ASRGenerationConfig::hotwords)
         .def_readwrite("context", &ASRGenerationConfig::context)
+        .def_readwrite("use_itn", &ASRGenerationConfig::use_itn)
         .def("update_generation_config", [](ASRGenerationConfig& config, const py::kwargs& kwargs) {
             config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
         });

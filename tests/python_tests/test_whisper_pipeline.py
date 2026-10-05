@@ -17,6 +17,7 @@ from transformers.pipelines.automatic_speech_recognition import AutomaticSpeechR
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 import gc
 import json
+import re
 import typing
 import numpy as np
 import pathlib
@@ -36,6 +37,12 @@ from utils.asr_utils.qwen3_asr import (
     Qwen3ASROptimumPipeline,
     save_model,
     skip_if_qwen3_asr_package_is_unavailable,
+)
+from utils.asr_utils.sensevoice import (
+    SENSEVOICE_SMALL_MODEL_ID,
+    SenseVoiceSmallOptimumPipeline,
+    save_model as save_sensevoice_model,
+    skip_if_sensevoice_package_is_unavailable,
 )
 
 
@@ -91,8 +98,6 @@ def get_whisper_models_list(tiny_only=False):
     return [(model_id, prefix / model_id.split("/")[1]) for model_id in model_ids]
 
 
-
-
 # used whisper models are relatively small
 # cache them in memory to speedup tests
 @functools.lru_cache()
@@ -102,21 +107,33 @@ def read_asr_model(params, word_timestamps=False, pipeline_type=PipelineType.WHI
         skip_if_qwen3_asr_package_is_unavailable()
     elif model_id == FUN_ASR_MODEL_ID:
         skip_if_fun_asr_package_is_unavailable()
+    elif model_id == SENSEVOICE_SMALL_MODEL_ID:
+        skip_if_sensevoice_package_is_unavailable()
 
     manager = AtomicDownloadManager(path)
-    if not manager.is_complete() and not (path / "openvino_encoder_model.xml").exists():
-        save_model(model_id=model_id, tmp_path=path)
 
-    opt_model = retry_request(
-        lambda: OVModelForSpeechSeq2Seq.from_pretrained(
-            path,
-            trust_remote_code=True,
-            compile=False,
-            device="CPU",
-            load_in_8bit=False,
-            local_files_only=True,
-        )
+    expected_model_file = (
+        "openvino_model.xml" if model_id == SENSEVOICE_SMALL_MODEL_ID else "openvino_encoder_model.xml"
     )
+    if not manager.is_complete() and not (path / expected_model_file).exists():
+        if model_id == SENSEVOICE_SMALL_MODEL_ID:
+            save_sensevoice_model(model_id=model_id, tmp_path=path)
+        else:
+            save_model(model_id=model_id, tmp_path=path)
+
+    if model_id == SENSEVOICE_SMALL_MODEL_ID:
+        opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(path, local_files_only=True))
+    else:
+        opt_model = retry_request(
+            lambda: OVModelForSpeechSeq2Seq.from_pretrained(
+                path,
+                trust_remote_code=True,
+                compile=False,
+                device="CPU",
+                load_in_8bit=False,
+                local_files_only=True,
+            )
+        )
 
     if model_id == QWEN3_ASR_MODEL_ID:
         processor = retry_request(
@@ -144,6 +161,8 @@ def read_asr_model(params, word_timestamps=False, pipeline_type=PipelineType.WHI
                 )
             ),
         )
+    elif model_id == SENSEVOICE_SMALL_MODEL_ID:
+        hf_pipe = SenseVoiceSmallOptimumPipeline(model=opt_model)
     else:
         processor = retry_request(
             lambda: AutoProcessor.from_pretrained(
@@ -345,6 +364,7 @@ MODEL_PIPELINE_PAIRS = [
     ("distil-whisper/distil-small.en", PipelineType.ASR),
     (QWEN3_ASR_MODEL_ID, PipelineType.ASR),
     (FUN_ASR_MODEL_ID, PipelineType.ASR),
+    (SENSEVOICE_SMALL_MODEL_ID, PipelineType.ASR),
     # test backward compatibility for tiny model only
     ("openai/whisper-tiny", PipelineType.WHISPER),
 ]
@@ -576,6 +596,7 @@ def test_language_detection(model_descr, sample_from_multilingual_dataset, langu
             ("openai/whisper-tiny", PipelineType.WHISPER),
             (QWEN3_ASR_MODEL_ID, PipelineType.ASR),
             (FUN_ASR_MODEL_ID, PipelineType.ASR),
+            (SENSEVOICE_SMALL_MODEL_ID, PipelineType.ASR),
         ]
     ),
     indirect=True,
@@ -584,7 +605,7 @@ def test_language_detection(model_descr, sample_from_multilingual_dataset, langu
 def test_forced_language(sample_from_multilingual_dataset, pipelines_fixture):
     _, genai_pipe, model_id, _ = pipelines_fixture
 
-    config = {"language": "<|en|>"}
+    config = {"language": "en"}
     if model_id in (QWEN3_ASR_MODEL_ID, FUN_ASR_MODEL_ID):
         # tiny random model used for Qwen3-ASR testing. It was not trained to autodetect language.
         # Internal streamer suppresses language autodetection prefix, so if language is not forced all output is suppressed
@@ -595,6 +616,77 @@ def test_forced_language(sample_from_multilingual_dataset, pipelines_fixture):
     detected_language = genai_result.languages[0] if hasattr(genai_result, "languages") else genai_result.language
     expected_language = "en" if model_id not in (QWEN3_ASR_MODEL_ID, FUN_ASR_MODEL_ID) else "English"
     assert detected_language == expected_language
+
+
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params([(SENSEVOICE_SMALL_MODEL_ID, PipelineType.ASR)]),
+    indirect=True,
+)
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+def test_sensevoice_auto_language_rich_output(sample_from_dataset, pipelines_fixture):
+    _, genai_pipe, _, _ = pipelines_fixture
+
+    result = genai_pipe.generate(sample_from_dataset)
+
+    assert result.languages[0] == "en"
+
+    match = re.match(
+        r"^<\|([^|]+)\|><\|([^|]+)\|><\|([^|]+)\|><\|([^|]+)\|>",
+        result.texts[0],
+    )
+    assert match is not None
+    assert match.group(1) == "en"
+    assert match.group(4) == "woitn"
+
+
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params([(SENSEVOICE_SMALL_MODEL_ID, PipelineType.ASR)]),
+    indirect=True,
+)
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+def test_sensevoice_generation_config_validation(sample_from_dataset, pipelines_fixture):
+    _, genai_pipe, _, _ = pipelines_fixture
+
+    genai_pipe.generate(sample_from_dataset)
+
+    language_config = ov_genai.ASRGenerationConfig()
+    language_config.language = "en"
+    genai_pipe.set_generation_config(language_config)
+    genai_pipe.generate(sample_from_dataset, language_config)
+
+    invalid_config = ov_genai.ASRGenerationConfig(num_return_sequences=2)
+    with pytest.raises(RuntimeError):
+        genai_pipe.set_generation_config(invalid_config)
+    with pytest.raises(RuntimeError):
+        genai_pipe.generate(sample_from_dataset, invalid_config)
+
+
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params([(SENSEVOICE_SMALL_MODEL_ID, PipelineType.ASR)]),
+    indirect=True,
+)
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+@pytest.mark.parametrize("use_itn", [False, True])
+def test_sensevoice_use_itn(sample_from_dataset, pipelines_fixture, use_itn):
+    hf_pipe, genai_pipe, _, _ = pipelines_fixture
+    expected_tag = "withitn" if use_itn else "woitn"
+
+    config = ov_genai.ASRGenerationConfig()
+    config.use_itn = use_itn
+    object_result = genai_pipe.generate(sample_from_dataset, config)
+    kwargs_result = genai_pipe.generate(sample_from_dataset, use_itn=use_itn)
+
+    for result in (object_result, kwargs_result):
+        match = re.match(r"^<\|([^|]+)\|><\|([^|]+)\|><\|([^|]+)\|><\|([^|]+)\|>", result.texts[0])
+        assert match is not None
+        assert match.group(4) == expected_tag
+
+    reference = hf_pipe(sample_from_dataset, use_itn=use_itn)
+    assert object_result.texts[0] == reference["text"]
+    assert kwargs_result.texts[0] == reference["text"]
 
 
 @pytest.mark.transformers_lower_v5(reason="CVS-185784")
@@ -1044,6 +1136,7 @@ def streamer_for_test(request):
             ("openai/whisper-tiny", PipelineType.WHISPER),
             (QWEN3_ASR_MODEL_ID, PipelineType.ASR),
             (FUN_ASR_MODEL_ID, PipelineType.ASR),
+            (SENSEVOICE_SMALL_MODEL_ID, PipelineType.ASR),
         ]
     ),
     indirect=True,
