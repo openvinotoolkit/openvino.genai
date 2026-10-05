@@ -250,8 +250,11 @@ def analyze_args(args):
     if use_case.task == "code_gen" and not model_args["prompt"] and not model_args["prompt_file"]:
         model_args["prompt"] = "def print_hello_world():"
     model_args["config"] = {}
-    if args.load_config is not None:
-        config = get_config(args.load_config)
+    # load_config was used previously, as part of the argument alignment moving to --ov_config
+    # support both for now
+    ov_config = args.ov_config if args.ov_config is not None else args.load_config
+    if ov_config is not None:
+        config = get_config(ov_config)
         if type(config) is dict and len(config) > 0:
             model_args["config"] = config
     if model_framework == "ov":
@@ -268,12 +271,14 @@ def analyze_args(args):
     if args.cb_config:
         cb_config = get_config(args.cb_config)
     model_args["cb_config"] = cb_config
-    if args.draft_model:
-        if (args.draft_device != "NPU" and args.device != "NPU" and model_args['config']['ATTENTION_BACKEND'] != PA_ATTENTION_BACKEND):
-            log.warning("Speculative Decoding is supported only with Paged Attention Backend for non-NPU devices")
-            args.draft_model = None
     model_args['draft_model'] = args.draft_model
     model_args['draft_device'] = args.draft_device
+    model_args["draft_ov_config"] = {}
+    if args.draft_ov_config is not None:
+        draft_ov_config = get_config(args.draft_ov_config)
+        if type(draft_ov_config) is dict and len(draft_ov_config) > 0:
+            set_default_param_for_ov_config(draft_ov_config)
+            model_args["draft_ov_config"] = draft_ov_config
     draft_cb_config = None
     if args.draft_cb_config:
         draft_cb_config = get_config(args.draft_cb_config)
