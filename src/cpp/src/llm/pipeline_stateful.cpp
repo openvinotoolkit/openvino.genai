@@ -612,12 +612,12 @@ void StatefulLLMPipeline::negotiate_npu_history_reuse(size_t full_history_len, c
     // slicing must happen at the granted value, never at the proposed one.
     std::optional<ov::VariableState> channel;
     for (auto& st : m_model_runner.query_state()) {
-        if (st.get_name() == "npuw_stored_tokens_state") {
+        if (st.get_name() == utils::NPUW_STORED_TOKENS_STATE) {
             channel = st;
             break;
         }
     }
-    OPENVINO_ASSERT(channel.has_value(), "npuw_stored_tokens_state is missing while continuous prefill is enabled.");
+    OPENVINO_ASSERT(channel.has_value(), utils::NPUW_STORED_TOKENS_STATE, " is missing while continuous prefill is enabled.");
 
     ov::Tensor proposal(ov::element::i64, {1});
     proposal.data<int64_t>()[0] = static_cast<int64_t>(k_common);
