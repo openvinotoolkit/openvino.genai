@@ -608,6 +608,12 @@ export const LLM_MODELS: LLMModelType[] = [
           'https://huggingface.co/openbmb/MiniCPM5-2B',
         ],
       },
+      {
+        name: 'ALLaM',
+        links: [
+          'https://huggingface.co/humain-ai/ALLaM-7B-Instruct-preview',
+        ],
+      },
     ],
   },
   {
