@@ -169,6 +169,7 @@ TEST(MtpModelTransforms, GraftedLogitsMatchTiedWeightMatmul) {
     for (size_t i = 0; i < weights_data.size(); ++i) {
         weights_data[i] = static_cast<float>((i * 7) % 11) * 0.05f - 0.2f;
     }
+
     auto main_model = make_main_model(weights_data);
     auto mtp_model = make_mtp_model();
     graft_lm_head_on_mtp(mtp_model, main_model);
@@ -200,4 +201,5 @@ TEST(MtpModelTransforms, GraftedLogitsMatchTiedWeightMatmul) {
                 << "Mismatch at token " << t << ", vocab " << v;
         }
     }
+
 }
