@@ -25,10 +25,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::Contin
     }
     m_is_validation_mode_enabled = is_validation_mode_enabled;
     initialize_pipeline(model, scheduler_config, device, plugin_config);
-    // Only the draft sub-pipeline captures per-token draft distributions q(.) for exact residual
-    // resampling; the main (validation) pipeline and the standalone CB pipeline must not, to avoid
-    // materialising a full-vocab vector per generated token.
-    m_sampler->set_collect_draft_distributions(!is_validation_mode_enabled);
+    m_sampler->set_speculative_draft(!is_validation_mode_enabled);
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::ContinuousBatchingForSpeculativeDecodingImpl(

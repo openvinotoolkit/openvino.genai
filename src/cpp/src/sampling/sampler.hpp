@@ -50,11 +50,17 @@ inline bool is_stop_token_id_hit_in_sequence_group(SequenceGroup::Ptr sequence_g
 
 std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx);
 
+// Speculative sampling building blocks (Leviathan et al. 2023, Chen et al. 2023), exposed for unit tests.
 namespace detail {
-// Exact residual resampling for a rejected draft token (Leviathan et al. 2023, Chen et al. 2023):
-// draw the replacement from the normalised residual max(0, p(x) - q(x)) so the accepted stream
-// stays exactly target-distributed, falling back to p when the residual is degenerate. Exposed
-// here so the distributional guarantee can be unit-tested without a model.
+// Probability of token_id under the distribution _multinomial_sample draws from after logit processing;
+// 0 for a token removed by top_k / top_p / min_p.
+float get_token_probability(const Logits& logits, int64_t token_id);
+// The same distribution over the full vocabulary.
+std::vector<float> materialize_distribution(const Logits& logits, size_t vocab_size);
+// Accepts a draft token with probability min(1, p(t) / q(t)).
+bool accept_draft_token(float target_probability, float draft_probability, std::mt19937& rng_engine);
+// Replacement for a rejected draft token: a draw from the normalised residual max(0, p - q), or from p
+// when the residual is empty.
 Token residual_sample(const std::vector<float>& target_distribution,
                       const std::vector<float>& draft_distribution,
                       std::mt19937& rng_engine);
@@ -194,10 +200,9 @@ class Sampler {
     std::map<uint64_t, std::map<uint64_t, std::vector<std::vector<float>>>> m_draft_distributions;
     std::mutex m_draft_distributions_mutex;
 
-    // Only the speculative-decoding draft sampler collects the q(.) above (set by the pipeline via
-    // set_collect_draft_distributions). The main (validation) sampler and the standalone CB sampler
-    // leave this false so regular generation never materialises a full-vocab vector per token.
-    bool m_collect_draft_distributions = false;
+    // Set only on the speculative-decoding draft sampler, which then stores q(.) for every proposed
+    // token and reports post-filter log-probs (the q(t) of the acceptance test) even when logprobs > 0.
+    bool m_is_speculative_draft = false;
 public:
     Sampler(const Sampler& rhs) = delete;
     Sampler(Sampler&& rhs) = delete;
@@ -224,13 +229,8 @@ public:
     // addressed by its offset from the end of the generated sequence (1 == last token).
     void set_candidate_distributions(uint64_t request_id, uint64_t grouped_id, std::vector<std::vector<float>> distributions);
     std::vector<float> get_candidate_distribution(uint64_t request_id, uint64_t grouped_id, size_t token_offset_from_end);
-    // Single-element read of q(token_id) at a stored position, used by the acceptance test; returns
-    // a negative value when no distribution is available there (caller falls back to the draft log-prob).
-    float get_candidate_token_probability(uint64_t request_id, uint64_t grouped_id,
-                                          size_t token_offset_from_end, int64_t token_id);
 
-    // Set by the speculative pipeline to true only on the draft sampler (see m_collect_draft_distributions).
-    void set_collect_draft_distributions(bool value) { m_collect_draft_distributions = value; }
+    void set_speculative_draft(bool is_draft) { m_is_speculative_draft = is_draft; }
 
     LogitProcessor& get_logit_processor(uint64_t request_id);
     void create_logit_processor(uint64_t request_id, const GenerationConfig& sampling_parameters, const TokenIds& prompt);

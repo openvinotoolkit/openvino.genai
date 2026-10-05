@@ -978,6 +978,42 @@ Token Sampler::_greedy_sample(const Logits& logits, size_t top_logprobs) const {
     return Token(max_value, max_index);
 }
 
+// Candidate i of m_vector is drawn with probability values[i] / total: exp(logit - max_logit) when expf is
+// deferred, the stored probability otherwise, and uniform if every candidate is masked (-inf / NaN).
+struct CandidateWeights {
+    std::vector<float> values;
+    float total = 0.0f;
+    float max_logit = 0.0f;
+    bool fallback_uniform = false;
+};
+
+static CandidateWeights candidate_weights(const Logits& logits) {
+    OPENVINO_ASSERT(logits.is_vector_initialized(), "Candidate weights require initialized logits candidates.");
+    CandidateWeights result;
+    result.values.resize(logits.m_size);
+    if (logits.m_defer_expf) {
+        // m_vector holds K logits in arbitrary heap order, so scan for the max.
+        result.max_logit = logits.m_vector[0].m_log_prob;
+        for (size_t i = 1; i < logits.m_size; ++i)
+            result.max_logit = std::max(result.max_logit, logits.m_vector[i].m_log_prob);
+        for (size_t i = 0; i < logits.m_size; ++i) {
+            result.values[i] = expf(logits.m_vector[i].m_log_prob - result.max_logit);
+            result.total += result.values[i];
+        }
+    } else {
+        for (size_t i = 0; i < logits.m_size; ++i) {
+            result.values[i] = logits.m_vector[i].m_log_prob;
+            result.total += result.values[i];
+        }
+    }
+    result.fallback_uniform = !(result.total > 0.0f && std::isfinite(result.total));
+    if (result.fallback_uniform) {
+        std::fill(result.values.begin(), result.values.end(), 1.0f);
+        result.total = static_cast<float>(logits.m_size);
+    }
+    return result;
+}
+
 std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence, std::mt19937& rng_engine) {
     std::uniform_real_distribution<float> u(0.0f, 1.0f);
     std::vector<Token> out_tokens;
@@ -989,42 +1025,24 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
         OPENVINO_ASSERT(logits.is_vector_initialized(),
             "Internal error: m_defer_expf=true but m_vector not initialized. "
             "defer_expf requires top_k > 0 which always populates m_vector via TopKFilter.");
-        // m_vector holds K logits in arbitrary heap order — _multinomial_sample does its own max scan.
-        float max_val = logits.m_vector[0].m_log_prob;
-        for (size_t i = 1; i < logits.m_size; ++i)
-            if (logits.m_vector[i].m_log_prob > max_val)
-                max_val = logits.m_vector[i].m_log_prob;
         // Precompute weights once to avoid recomputing expf on every draw.
-        std::vector<float> weights(logits.m_size);
-        float sum_cum = 0.0f;
-        for (size_t i = 0; i < logits.m_size; ++i) {
-            weights[i] = expf(logits.m_vector[i].m_log_prob - max_val);
-            sum_cum += weights[i];
-        }
-        // Defensive fallback: should not occur in practice (at least one non-masked token is
-        // always guaranteed), but if all logits happen to be -inf/NaN, sample uniformly over
-        // the K candidates so generation can continue rather than aborting.
-        const bool fallback_uniform = !(sum_cum > 0.0f && std::isfinite(sum_cum));
-        if (fallback_uniform) {
-            std::fill(weights.begin(), weights.end(), 1.0f);
-            sum_cum = static_cast<float>(logits.m_size);
-        }
-        // log_sum_cum = log(Σ exp(v[i])) = log(sum_cum) + max_val (log-sum-exp identity).
-        // In the fallback case max_val may be -inf, so use 0 to keep log_sum_cum finite.
-        const float log_sum_cum = logf(sum_cum) + (fallback_uniform ? 0.0f : max_val);
+        const CandidateWeights weights = candidate_weights(logits);
+        // log_sum_cum = log(Σ exp(v[i])) = log(total) + max_logit (log-sum-exp identity).
+        // In the fallback case max_logit may be -inf, so use 0 to keep log_sum_cum finite.
+        const float log_sum_cum = logf(weights.total) + (weights.fallback_uniform ? 0.0f : weights.max_logit);
 
         for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
-            const float r = sum_cum * u(rng_engine);
+            const float r = weights.total * u(rng_engine);
             float sum_run = 0.0f;
             size_t sampled_idx = logits.m_size - 1;
             for (size_t i = 0; i < logits.m_size; ++i) {
-                sum_run += weights[i];
+                sum_run += weights.values[i];
                 if (sum_run > r) { sampled_idx = i; break; }
             }
             // When m_full_vocab_log_sum_exp is set (logprobs > 0), m_data holds the
             // original raw model logits (grammar/penalties only wrote to m_vector).
             // Return raw log-probability: log p_i = raw_logit_i − log(Σ exp(raw_logit_j)).
-            const float log_prob = fallback_uniform
+            const float log_prob = weights.fallback_uniform
                 ? std::log(1.0f / static_cast<float>(logits.m_size))
                 : (!std::isnan(logits.m_full_vocab_log_sum_exp)
                     ? logits.m_data[logits.m_vector[sampled_idx].m_index] - logits.m_full_vocab_log_sum_exp
@@ -1385,71 +1403,29 @@ size_t Sampler::verify_draft_tree(Sequence::Ptr& sequence,
     return accepted_steps;
 }
 
-// Numerically stable exp-weights over the surviving vector-path candidates (top_k / top_p /
-// logprobs), shared by the two readers below. When m_defer_expf is set, m_vector holds raw
-// scaled logits: subtract the max before expf so a large logit cannot overflow to +inf and
-// swamp the sum. Otherwise m_vector already holds probabilities and is summed as-is. Falls back
-// to uniform weights when the total is non-finite or non-positive. Returns per-candidate weights
-// aligned to logits.m_vector plus their sum; callers normalise by dividing by `total`.
-struct DeferredExpWeights {
-    std::vector<float> values;
-    float total = 0.0f;
-};
-static DeferredExpWeights deferred_exp_weights(const Logits& logits) {
-    DeferredExpWeights result;
-    result.values.resize(logits.m_size, 0.0f);
-    if (logits.m_size == 0)
-        return result;
-    if (logits.m_defer_expf) {
-        float max_logit = logits.m_vector[0].m_log_prob;
-        for (size_t i = 1; i < logits.m_size; ++i)
-            max_logit = std::max(max_logit, logits.m_vector[i].m_log_prob);
-        for (size_t i = 0; i < logits.m_size; ++i) {
-            result.values[i] = std::exp(logits.m_vector[i].m_log_prob - max_logit);
-            result.total += result.values[i];
-        }
-    } else {
-        for (size_t i = 0; i < logits.m_size; ++i) {
-            result.values[i] = logits.m_vector[i].m_log_prob;
-            result.total += result.values[i];
-        }
-    }
-    if (!(result.total > 0.0f && std::isfinite(result.total))) {
-        std::fill(result.values.begin(), result.values.end(), 1.0f);
-        result.total = static_cast<float>(logits.m_size);
-    }
-    return result;
-}
-
-// Target-model probability of `token_id` under the same post-processing distribution
-// _multinomial_sample draws from. Fast path: m_data is already normalised (m_data[i] == p_i).
-// Vector path (top_k / top_p / logprobs): only surviving m_vector candidates carry mass; a
-// filtered-out token has zero target mass. Returns 0 when the token is not a candidate.
-static float get_target_token_probability(const Logits& target_logits, int64_t token_id) {
-    if (target_logits.is_vector_initialized()) {
-        const DeferredExpWeights weights = deferred_exp_weights(target_logits);
-        for (size_t i = 0; i < target_logits.m_size; ++i)
-            if (target_logits.m_vector[i].m_index == token_id)
-                return weights.total > 0.0f ? weights.values[i] / weights.total : 0.0f;
+float detail::get_token_probability(const Logits& logits, int64_t token_id) {
+    if (logits.is_vector_initialized()) {
+        const CandidateWeights weights = candidate_weights(logits);
+        for (size_t i = 0; i < logits.m_size; ++i)
+            if (logits.m_vector[i].m_index == token_id)
+                return weights.values[i] / weights.total;
         return 0.0f;
     }
-    if (token_id < 0 || static_cast<size_t>(token_id) >= target_logits.m_size)
+    // Fast path: m_data already holds the normalised probabilities.
+    if (token_id < 0 || static_cast<size_t>(token_id) >= logits.m_size)
         return 0.0f;
-    return target_logits.m_data[token_id];
+    return logits.m_data[token_id];
 }
 
-// Full-vocabulary distribution the sampler drew from, read like get_target_token_probability
-// (fast path m_data, else the surviving m_vector candidates) and L1-normalised so a later
-// max(0, p - q) residual is a valid sub-distribution. Used to store q (draft) or capture p (target).
-static std::vector<float> materialize_distribution(const Logits& logits, size_t vocab_size) {
+std::vector<float> detail::materialize_distribution(const Logits& logits, size_t vocab_size) {
     std::vector<float> distribution(vocab_size, 0.0f);
     if (logits.is_vector_initialized()) {
-        const DeferredExpWeights weights = deferred_exp_weights(logits);
+        const CandidateWeights weights = candidate_weights(logits);
         for (size_t i = 0; i < logits.m_size; ++i) {
             const int64_t idx = logits.m_vector[i].m_index;
             if (idx < 0 || static_cast<size_t>(idx) >= vocab_size)
                 continue;
-            distribution[idx] = weights.total > 0.0f ? weights.values[i] / weights.total : 0.0f;
+            distribution[idx] = weights.values[i] / weights.total;
         }
     } else {
         const size_t n = std::min(vocab_size, logits.m_size);
@@ -1459,11 +1435,12 @@ static std::vector<float> materialize_distribution(const Logits& logits, size_t 
     return distribution;
 }
 
-// Exact residual resampling for a rejected draft token (Leviathan et al. 2023, Chen et al.
-// 2023): draw the replacement from the normalised residual max(0, p(x) - q(x)), where p is
-// the target and q the draft distribution for the same position. This keeps the accepted
-// stream exactly target-distributed, unlike drawing from p alone. Falls back to p when the
-// residual is degenerate (p fully covered by q).
+bool detail::accept_draft_token(float target_probability, float draft_probability, std::mt19937& rng_engine) {
+    const float probability_ratio = draft_probability > 0.0f ? target_probability / draft_probability : 0.0f;
+    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+    return dist(rng_engine) < probability_ratio;
+}
+
 Token detail::residual_sample(const std::vector<float>& target_distribution,
                               const std::vector<float>& draft_distribution,
                               std::mt19937& rng_engine) {
@@ -1486,13 +1463,16 @@ Token detail::residual_sample(const std::vector<float>& target_distribution,
     std::uniform_real_distribution<float> dist(0.0f, 1.0f);
     const float r = total * dist(rng_engine);
     float running = 0.0f;
-    size_t sampled_idx = vocab_size - 1;
+    // Rounding (or a draw of exactly 1.0) can leave r uncovered; then the last token with mass is
+    // kept, never a zero-mass id at the end of the vocabulary.
+    size_t sampled_idx = 0;
     for (size_t i = 0; i < vocab_size; ++i) {
+        if (residual[i] <= 0.0f)
+            continue;
+        sampled_idx = i;
         running += residual[i];
-        if (running > r) {
-            sampled_idx = i;
+        if (running > r)
             break;
-        }
     }
     // Report the token's log-probability under the target distribution, consistent with the
     // acceptance step which compares against the target probability of the draft token.
@@ -1524,28 +1504,12 @@ bool Sampler::validate_candidate(
         auto it_log_prob = generated_log_probs.rbegin();
         std::advance(it_log_prob, token_idx - 1);
 
-        // Speculative sampling acceptance (Leviathan et al. 2023, Chen et al. 2023):
-        // accept the draft token t with probability min(1, p(t) / q(t)), where
-        //   q(t) = draft-model probability of t under the SAME post-filtering (top_k / top_p)
-        //          distribution it was sampled from, read back from the stored draft q(.); and
-        //   p(t) = target-model probability of the SAME token t.
-        // Both terms must reference the draft token *it_token_id; comparing against the
-        // target's own freshly sampled token would break the guarantee that the accepted
-        // stream matches the target distribution. Fall back to the draft's generated log-prob
-        // only when no distribution was stored for this position (prompt-lookup / EAGLE d2t remap),
-        // in which case the stored q(.) and exp(log-prob) coincide anyway.
-        const float q_from_distribution = get_candidate_token_probability(
-            running_sequence->get_sequence_group_ptr()->get_request_id(),
-            running_sequence->get_grouped_id(), token_idx, *it_token_id);
-        const float q_t = q_from_distribution >= 0.0f ? q_from_distribution : std::exp(*it_log_prob);
-        const float p_t = get_target_token_probability(target_logits, *it_token_id);
-        const float probability_ratio = q_t > 0.f ? p_t / q_t : 0.f;
-
-        // Draw r ~ U[0, 1) and accept when r < min(1, p/q). A continuous distribution
-        // matches _multinomial_sample and avoids the bias of a coarse 0..100 integer draw.
-        std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-        const float r_i = dist(rng_engine);
-        is_candidate_accepted = r_i < probability_ratio;
+        // q(t) is the drafted log-prob, which the draft sampler records under the post-filter
+        // distribution it sampled from (see sample_from_sequence_group); p(t) is the target
+        // probability of the same draft token.
+        is_candidate_accepted = detail::accept_draft_token(detail::get_token_probability(target_logits, *it_token_id),
+                                                           std::exp(*it_log_prob),
+                                                           rng_engine);
     } else {
         is_candidate_accepted = *it_token_id == sampled_token.m_index;
     }
@@ -1679,22 +1643,22 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                     auto sampled_token_ids = _multinomial_sample(logit_vector, num_tokens_per_sequence, rng_engine);
                     OPENVINO_ASSERT(sampled_token_ids.size() == num_tokens_per_sequence,
                                    "Multinomial sampler returned unexpected number of tokens");
+                    // With logprobs > 0 the sampler reports raw full-vocab log-probs, but the main
+                    // sampler's acceptance test needs q(t) under the post-filter distribution.
+                    if (m_is_speculative_draft && !std::isnan(logit_vector.m_full_vocab_log_sum_exp)) {
+                        for (auto& token : sampled_token_ids)
+                            token.m_log_prob = std::log(detail::get_token_probability(logit_vector, token.m_index));
+                    }
                     // to create n sequence just in case of `sequence_group->num_total_seqs() == 1` and `sampling_params.num_return_sequences > 1`
                     if (is_generate_n_tokens) {
                         const auto forked_seq_ids = create_n_forked_sequences(sequence_group, logit_processor, sampled_token_ids);
                         sg_sampling_info.sampler_output.m_forked_sequences.insert({running_sequences[0]->get_id(), forked_seq_ids});
                     }
                     sampled_token = sampled_token_ids.front();
-                    // Draft side: stash the full distribution q(.) this token was drawn from so the
-                    // main sampler can build the exact residual on rejection. One full-vocab vector
-                    // per proposed token (O(vocab) memory), consumed only if the token is rejected.
-                    // Gated by m_collect_draft_distributions, which the pipeline sets only on the
-                    // speculative draft sampler: regular and standalone CB generation never store it.
-                    // Skipped when the draft remaps into target vocab (EAGLE d2t), where q and p live
-                    // in different spaces.
-                    if (m_collect_draft_distributions && !sampling_params.is_prompt_lookup() && !m_d2t_mapping) {
+                    // Skipped under EAGLE d2t remapping, where q and p live in different vocabularies.
+                    if (m_is_speculative_draft && !sampling_params.is_prompt_lookup() && !m_d2t_mapping) {
                         append_draft_distribution(sequence_group->get_request_id(), running_sequence->get_grouped_id(),
-                                                  materialize_distribution(logit_vector, vocab_size));
+                                                  detail::materialize_distribution(logit_vector, vocab_size));
                     }
                     // make `_speculative_sampling` in case of previous token was not accepted in speculative decoding
                     if (!is_validation_passed) {
@@ -1745,7 +1709,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                         // distribution that validated this token (conditioned on the accepted prefix).
                         // The next iteration advances one position, so its logit would resample the
                         // reject from the wrong context.
-                        rejected_target_distribution = materialize_distribution(logit_vector, vocab_size);
+                        rejected_target_distribution = detail::materialize_distribution(logit_vector, vocab_size);
                         continue;
                     }
                     // update log prob just while validation process
@@ -2052,24 +2016,6 @@ std::vector<float> Sampler::get_candidate_distribution(uint64_t request_id, uint
     if (token_offset_from_end == 0 || token_offset_from_end > window.size())
         return {};
     return window[window.size() - token_offset_from_end];
-}
-
-float Sampler::get_candidate_token_probability(uint64_t request_id, uint64_t grouped_id,
-                                               size_t token_offset_from_end, int64_t token_id) {
-    std::lock_guard<std::mutex> lock(m_draft_distributions_mutex);
-    auto request_it = m_draft_distributions.find(request_id);
-    if (request_it == m_draft_distributions.end())
-        return -1.0f;
-    auto sequence_it = request_it->second.find(grouped_id);
-    if (sequence_it == request_it->second.end())
-        return -1.0f;
-    const auto& window = sequence_it->second;
-    if (token_offset_from_end == 0 || token_offset_from_end > window.size())
-        return -1.0f;
-    const auto& distribution = window[window.size() - token_offset_from_end];
-    if (token_id < 0 || static_cast<size_t>(token_id) >= distribution.size())
-        return -1.0f;
-    return distribution[token_id];
 }
 
 int64_t Sampler::GroupBeamSearcher::Group::finish(Beam beam, const ov::genai::GenerationConfig& sampling_params) {

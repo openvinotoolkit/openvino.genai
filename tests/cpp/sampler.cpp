@@ -304,3 +304,51 @@ TEST(SamplerValidationMode, prompt_phase) {
              expected{0, 1, 2, 3};
     ASSERT_EQ(sequence_groups.front()->get_sequences().front()->get_generated_ids(), expected);
 }
+
+// Speculative sampling rejects the last candidate: its replacement is drawn from the residual of the target
+// distribution at the rejected position, and the rejected token is rolled back from the KV cache.
+TEST(SamplerValidationMode, gen_phase_multinomial_rejection) {
+    GenerationConfig sampling_config;
+    sampling_config.max_new_tokens = 30;
+    sampling_config.do_sample = true;
+    // top_k = 1 makes every target distribution one-hot, so acceptance and resampling are deterministic.
+    sampling_config.top_k = 1;
+    // create sequence group with prompt [0, 1, 2, 3, 4]
+    std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    std::vector<SequenceGroup::Ptr> sequence_groups{
+        SequenceGroup::Ptr(new SequenceGroup(0, input_tensor, sampling_config)),
+    };
+    const auto sequence = sequence_groups.front()->get_sequences().front();
+
+    // to emulate processed prompt and add next token [ 0 ]
+    sequence->append_token(0, 0.f);
+    constexpr size_t processed_before = 5;
+    sequence_groups.front()->update_processed_tokens_num(processed_before);
+
+    // append candidates [ 1, 2, 3 ], each drafted with q(t) = 1
+    size_t num_validated_tokens = 3;
+    for (size_t i = 1; i <= num_validated_tokens; ++i) {
+        sequence->append_token(i, 0.f);
+    }
+    sequence_groups.front()->set_num_validated_tokens(num_validated_tokens);
+    sequence_groups.front()->schedule_tokens(sequence_groups.front()->get_num_available_tokens_for_batching());
+
+    // the target accepts 1 and 2, prefers 4 over the candidate 3, and prefers 0 at the next position
+    std::vector<float> logits = {
+        0, 1.f, 0, 0, 0,
+        0, 0, 1.f, 0, 0,
+        0, 0, 0, 0, 1.f,
+        1.f, 0, 0, 0, 0,
+    };
+    ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{4, 1, 5}, logits.data());
+
+    Sampler sampler;
+    sampler.set_candidate_distributions(0, 0, {{0, 1.f, 0, 0, 0}, {0, 0, 1.f, 0, 0}, {0, 0, 0, 1.f, 0}});
+    sampler.sample(sequence_groups, gen_input_ids, true);
+
+    const TokenIds expected{0, 1, 2, 4};
+    EXPECT_EQ(sequence->get_generated_ids(), expected);
+    EXPECT_EQ(sequence_groups.front()->get_num_processed_tokens(), processed_before + 3)
+        << "The rejected candidate must be removed from the KV cache";
+}
