@@ -23,8 +23,9 @@ struct CBGenerateProperties {
     std::optional<std::vector<GenerationConfig>> generation_config_batches;
     StreamerVariant streamer = std::monostate();
 
-    bool has_vision_properties() const {
-        return images_batches.has_value() || videos_batches.has_value() || videos_metadata_batches.has_value();
+    bool has_media_properties() const {
+        return images_batches.has_value() || videos_batches.has_value() || videos_metadata_batches.has_value() ||
+               audios_batches.has_value();
     }
 
     template <typename T>

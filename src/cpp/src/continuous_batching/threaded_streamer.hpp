@@ -3,11 +3,14 @@
 
 #pragma once
 
+#include <exception>
 #include <thread>
+#include <utility>
 
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "logger.hpp"
 #include "synchronized_queue.hpp"
 #include "utils.hpp"
 
@@ -20,7 +23,14 @@ public:
         : m_streamer_ptr{utils::create_streamer(streamer, tokenizer)} {}
 
     ~ThreadedStreamerWrapper() {
-        end();
+        // a destructor must not throw; end() reports a streamer error to the caller when it is called explicitly
+        try {
+            end();
+        } catch (const std::exception& e) {
+            GENAI_ERR("Streamer error suppressed in ThreadedStreamerWrapper destructor: %s", e.what());
+        } catch (...) {
+            GENAI_ERR("Unknown streamer error suppressed in ThreadedStreamerWrapper destructor");
+        }
     }
 
     void start() {
@@ -48,15 +58,23 @@ public:
     }
 
     void end() {
-        if (!m_streamer_ptr) {
+        // idempotent: the destructor must not finalize the streamer a second time
+        if (!m_streamer_ptr || m_ended) {
             return;
         }
+        m_ended = true;
 
         // push stop token to unblock squeue.pull
         m_squeue.push(std::monostate());
 
         if (m_worker_thread && m_worker_thread->joinable()) {
             m_worker_thread->join();
+        }
+
+        // rethrow a streamer error caught in the worker thread on the caller's thread; skip m_streamer_ptr->end():
+        // it would flush the cached text through the failed write() again and could replace the original error
+        if (m_worker_exception) {
+            std::rethrow_exception(std::exchange(m_worker_exception, nullptr));
         }
 
         m_streamer_ptr->end();
@@ -76,8 +94,21 @@ private:
     SynchronizedQueue<std::variant<int64_t, std::vector<int64_t>, std::monostate>> m_squeue;
 
     std::atomic<StreamingStatus> m_status = StreamingStatus::RUNNING;
+    // written by the worker thread, read by end() after the thread is joined
+    std::exception_ptr m_worker_exception = nullptr;
+    bool m_ended = false;
 
     void _worker() {
+        try {
+            _process_queue();
+        } catch (...) {
+            // an exception must not leave the thread entry point (std::terminate): stop streaming, rethrow in end()
+            m_worker_exception = std::current_exception();
+            m_status = StreamingStatus::STOP;
+        }
+    }
+
+    void _process_queue() {
         while (m_status == StreamingStatus::RUNNING) {
             // wait for queue pull
             std::variant<int64_t, std::vector<int64_t>, std::monostate> token_variant = m_squeue.pull();
