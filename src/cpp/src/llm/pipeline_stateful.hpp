@@ -32,8 +32,8 @@ class StatefulLLMPipeline final : public LLMPipelineImplBase {
     utils::CacheState m_cache_state;
 
     // True when the NPU plugin advertises continuous prefill for this compiled model.
-    // Chat turns then negotiate a keep through the npuw_stored_tokens_state variable
-    // state and send only the delta instead of resending the full history.
+    // Chat turns then negotiate a keep through the NPUW stored tokens state and send
+    // only the delta instead of resending the full history.
     bool m_npu_continuous_prefill = false;
     // Past KV capacity of the largest generate variant, used to validate an explicitly
     // bounded response budget before proposing.
