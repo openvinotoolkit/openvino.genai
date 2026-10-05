@@ -112,16 +112,19 @@ auto omni_generate_prompt_docstring = R"(
     :param prompt: Input prompt
     :type prompt: str
 
-    :param images: image tensors to be prepended to the prompt
+    :param images: image tensors. Place with `<ov_genai_image_N>`; prepended if untagged
     :type images: list[ov.Tensor]
 
-    :param videos: video tensors to be prepended to the prompt
+    :param videos: video tensors. Place with `<ov_genai_video_N>`; prepended if untagged
     :type videos: list[ov.Tensor]
 
     :param videos_metadata: metadata for each video (fps, frames_indices). Must be empty or have the same length as videos.
     :type videos_metadata: list[VideoMetadata]
 
-    :param audios: audio tensors to be prepended to the prompt
+    :param audios: audio tensors. Place with `<ov_genai_audio_N>` anywhere in the prompt; untagged
+        audio is prepended, which is the recommended form. Outside a chat, N indexes this list. In a
+        chat, N is conversation-absolute: a second turn that adds one audio uses the next global
+        index, so `<ov_genai_audio_1>` rather than `<ov_genai_audio_0>`.
     :type audios: list[ov.Tensor]
 
     :param text_config: thinker text-decode config. None = use the VLM's default
