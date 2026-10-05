@@ -338,7 +338,7 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
                                            const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {
     patch_chat_template();
-    m_audio_encoder = std::make_unique<AudioEncoderGemma4>(model_dir, vlm_config.model_type, device, device_config);
+    m_audio_encoder = AudioEncoderGemma4::create(model_dir, vlm_config.model_type, device, device_config);
 
     // per-layer embeddings model is optional, large MOE models don't have it
     if (!has_per_layer_embeddings()) {
@@ -367,7 +367,7 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
     : IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
     patch_chat_template();
     m_audio_encoder =
-        std::make_unique<AudioEncoderGemma4>(models_map, vlm_config.model_type, config_dir_path, device, device_config);
+        AudioEncoderGemma4::create(models_map, vlm_config.model_type, config_dir_path, device, device_config);
 
     // per-layer embeddings model is optional, large MOE models don't have it
     if (!has_per_layer_embeddings()) {
@@ -433,7 +433,7 @@ std::vector<ov::genai::EncodedAudio> InputsEmbedderGemma4::encode_audios(const s
         return {};
     }
 
-    OPENVINO_ASSERT(m_audio_encoder && m_audio_encoder->is_available(),
+    OPENVINO_ASSERT(m_audio_encoder,
                     "Gemma4 audio input was provided, but openvino_audio_embeddings_model.xml is not available");
 
     std::vector<EncodedAudio> encoded_audios;
