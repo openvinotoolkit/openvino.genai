@@ -122,6 +122,46 @@ def test_image2video_decode_parameters_fall_back_when_dataset_columns_are_missin
     ]
 
 
+@pytest.mark.parametrize(
+    ("evaluator_class", "evaluator_module", "include_images"),
+    [
+        (Text2VideoEvaluator, "text2video_evaluator", False),
+        (Image2VideoEvaluator, "image2video_evaluator", True),
+    ],
+    ids=["text-to-video", "image-to-video"],
+)
+def test_video_decode_parameters_treat_nan_as_missing_and_preserve_zero(
+    monkeypatch, tmp_path, evaluator_class, evaluator_module, include_images
+):
+    evaluator = evaluator_class.__new__(evaluator_class)
+    test_data = {
+        "prompt": ["missing timestep", "missing noise scale"],
+        "negative_prompt": ["", ""],
+        "width": [32, 32],
+        "height": [32, 32],
+        "guidance_scale": [1.0, 1.0],
+        "decode_timestep": [float("nan"), 0.0],
+        "decode_noise_scale": [0.0, float("nan")],
+    }
+    if include_images:
+        test_data["images"] = [Image.new("RGB", (32, 32)), Image.new("RGB", (32, 32))]
+        evaluator.image_dir = None
+    _configure_evaluator(evaluator, test_data)
+    calls = []
+
+    def generate_video(_model, **kwargs):
+        calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr(f"whowhatbench.{evaluator_module}.export_to_video", lambda *_args: None)
+    evaluator._generate_data(None, generate_video, str(tmp_path))
+
+    assert [(call["decode_timestep"], call["decode_noise_scale"]) for call in calls] == [
+        (0.4, 0.0),
+        (0.0, 0.7),
+    ]
+
+
 def test_load_prompts_preserves_video_dataset_columns(monkeypatch):
     class Dataset:
         @staticmethod

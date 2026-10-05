@@ -214,8 +214,8 @@ class Image2VideoEvaluator(Text2VideoEvaluator):
                 frame_rate=self.frame_rate,
                 guidance_scale=row.get("guidance_scale", self.DEF_GUIDANCE_SCALE),
                 guidance_rescale=row.get("guidance_rescale", self.DEF_GUIDANCE_RESCALE),
-                decode_timestep=row.get("decode_timestep", self.decode_timestep),
-                decode_noise_scale=row.get("decode_noise_scale", self.decode_noise_scale),
+                decode_timestep=self._get_optional_data_value(row, "decode_timestep", self.decode_timestep),
+                decode_noise_scale=self._get_optional_data_value(row, "decode_noise_scale", self.decode_noise_scale),
                 generator=openvino_genai.TorchGenerator(self.seed) if self.is_genai else rng,
                 empty_adapters=self.empty_adapters,
             )

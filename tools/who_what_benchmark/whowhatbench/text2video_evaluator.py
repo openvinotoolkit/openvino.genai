@@ -24,6 +24,11 @@ class Text2VideoEvaluator(BaseEvaluator):
     DEF_GUIDANCE_SCALE = 3
     DEF_GUIDANCE_RESCALE = 0
 
+    @staticmethod
+    def _get_optional_data_value(row, key, default):
+        value = row.get(key, default)
+        return default if pd.isna(value) else value
+
     def __init__(
         self,
         base_model: Any = None,
@@ -207,8 +212,8 @@ class Text2VideoEvaluator(BaseEvaluator):
                 frame_rate=self.frame_rate,
                 guidance_scale=row["guidance_scale"],
                 guidance_rescale=row.get("guidance_rescale", self.DEF_GUIDANCE_RESCALE),
-                decode_timestep=row.get("decode_timestep", self.decode_timestep),
-                decode_noise_scale=row.get("decode_noise_scale", self.decode_noise_scale),
+                decode_timestep=self._get_optional_data_value(row, "decode_timestep", self.decode_timestep),
+                decode_noise_scale=self._get_optional_data_value(row, "decode_noise_scale", self.decode_noise_scale),
                 generator=openvino_genai.TorchGenerator(self.seed) if self.is_genai else rng,
                 empty_adapters=self.empty_adapters,
             )
