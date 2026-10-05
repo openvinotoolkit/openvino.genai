@@ -446,9 +446,7 @@ def load_audio_dataset(args):
     num_samples = args.num_samples if args.num_samples is not None else DEFAULT_NUM_SAMPLES
 
     if args.dataset is None:
-        data = load_hub_parquet_dataset(
-            path, {split: f"parquet-data/{name}/{split}-*"}, split=split, streaming=True
-        )
+        data = load_hub_parquet_dataset(path, {split: f"parquet-data/{name}/{split}-*"}, split=split, streaming=True)
     else:
         data = load_dataset(path=path, name=name, split=split, streaming=True)
     # datasets>=5 needs torchcodec to decode Audio; decode with soundfile instead.

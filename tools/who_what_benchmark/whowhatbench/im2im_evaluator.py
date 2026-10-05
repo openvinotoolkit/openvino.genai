@@ -29,12 +29,12 @@ def prepare_default_data(num_samples=None):
     DATASET_NAME = "paint-by-inpaint/PIPE"
     NUM_SAMPLES = 10 if num_samples is None else num_samples
     set_seed(42)
-    default_dataset = load_hub_parquet_dataset(
-        DATASET_NAME, {"test": "data/test-*"}, split="test", streaming=True
-    ).filter(lambda example: example["Instruction_VLM-LLM"] != "").take(NUM_SAMPLES)
-    return default_dataset.map(
-        lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
+    default_dataset = (
+        load_hub_parquet_dataset(DATASET_NAME, {"test": "data/test-*"}, split="test", streaming=True)
+        .filter(lambda example: example["Instruction_VLM-LLM"] != "")
+        .take(NUM_SAMPLES)
     )
+    return default_dataset.map(lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names)
 
 
 @register_evaluator("image-to-image")

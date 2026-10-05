@@ -26,9 +26,11 @@ def prepare_default_text_data(num_samples=None):
     DATASET_NAME = "microsoft/ms_marco"
     NUM_SAMPLES = num_samples if num_samples else 24
     set_seed(42)
-    default_dataset = load_hub_parquet_dataset(
-        DATASET_NAME, {"test": "v2.1/test-*"}, split="test", streaming=True
-    ).shuffle(42).take(NUM_SAMPLES)
+    default_dataset = (
+        load_hub_parquet_dataset(DATASET_NAME, {"test": "v2.1/test-*"}, split="test", streaming=True)
+        .shuffle(42)
+        .take(NUM_SAMPLES)
+    )
     return default_dataset.map(
         lambda x: {'passages': x['passages']['passage_text']}, remove_columns=default_dataset.column_names
     )
