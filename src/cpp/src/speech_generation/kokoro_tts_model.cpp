@@ -320,18 +320,25 @@ ov::CompiledModel compile_kokoro_model(ov::Core& core,
     }
 
     // enable use of NPUW's specialized Kokoro path.
-    set_default_property(compile_properties, "NPU_USE_NPUW", std::string{"YES"});
-    set_default_property(compile_properties, "NPUW_DEVICES", std::string{"NPU,CPU"});
-    set_default_property(compile_properties, "NPUW_KOKORO", std::string{"YES"});
+    ov::genai::utils::set_config_default(compile_properties, "NPU_USE_NPUW", std::string{"YES"});
+    if (ov::genai::utils::is_npuw_enabled(compile_properties)) {
+        ov::genai::utils::set_config_default(compile_properties, "NPUW_DEVICES", std::string{"NPU,CPU"});
+        ov::genai::utils::set_config_default(compile_properties, "NPUW_KOKORO", std::string{"YES"});
 
-    // NPUW's KokoroCompiledModel doesn't support CACHE_DIR (it is silently ignored).
-    // It does support NPUW_CACHE_DIR, which has the same effect.
-    // So, convert CACHE_DIR to NPUW_CACHE_DIR if it has been specified.
-    auto it = compile_properties.find("CACHE_DIR");
-    if (it != compile_properties.end()) {
-        auto cache_dir_val = it->second;
-        compile_properties.erase(it);
-        compile_properties["NPUW_CACHE_DIR"] = cache_dir_val;
+        OPENVINO_ASSERT(!(compile_properties.count("CACHE_DIR") > 0 && compile_properties.count("NPUW_CACHE_DIR") > 0),
+                        "Both CACHE_DIR and NPUW_CACHE_DIR are set for Kokoro on NPU. "
+                        "Please specify only one cache directory key.");
+
+        // NPUW's KokoroCompiledModel doesn't support CACHE_DIR (it is silently ignored).
+        // It does support NPUW_CACHE_DIR, which has the same effect.
+        // So, convert CACHE_DIR to NPUW_CACHE_DIR if it has been specified.
+        auto it = compile_properties.find("CACHE_DIR");
+        if (it != compile_properties.end()) {
+            auto cache_dir_val = it->second;
+            compile_properties.erase(it);
+            ov::genai::utils::set_config_default(compile_properties, "NPUW_CACHE_DIR", cache_dir_val);
+            GENAI_INFO("Kokoro NPU: remapped CACHE_DIR to NPUW_CACHE_DIR");
+        }
     }
 
     return core.compile_model(model, device, compile_properties);
