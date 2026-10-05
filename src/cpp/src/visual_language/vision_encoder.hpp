@@ -65,6 +65,10 @@ struct EncodedImage {
     /// @brief Resampled image, used only by MiniCPM.
     ResampledImage resampled_image;
 
+    /// @brief Per-crop patch grids (order - thumbnail first, then detail slices by rows).
+    /// Used only by MiniCPM-V 4.7.
+    std::vector<ImageSize> crop_grids;
+
     /// @brief Number of image tokens required to append to a normalized prompt
     size_t num_image_tokens = 0;
 };
@@ -83,6 +87,14 @@ struct EncodedVideo {
 
     /// @brief A number of encoded frames.
     size_t frame_num = 0;
+
+    /// @brief Per-crop patch grids of a single frame (thumbnail first, then detail slices by rows).
+    /// Every frame of the video shares this layout. Used only by MiniCPM-V 4.7.
+    std::vector<ImageSize> crop_grids;
+
+    /// @brief Slice layout {rows, cols} of a single frame (empty when a frame is not sliced).
+    /// Used only by MiniCPM-V 4.7.
+    ov::Shape slices_shape;
 
     /// @brief Video metadata, used for video input processing and prompt normalization.
     VideoMetadata metadata;
