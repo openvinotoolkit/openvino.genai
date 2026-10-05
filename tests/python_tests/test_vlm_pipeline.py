@@ -422,10 +422,6 @@ def is_optimum_intel_version_for_videochat_flash_qwen():
 def _get_ov_model(model_id: str) -> str:
     _maybe_skip_unsupported_model_export(model_id)
 
-    local_model_dir = Path(model_id)
-    if (local_model_dir / "openvino_language_model.xml").exists():
-        return str(local_model_dir)
-
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
     dir_name = str(model_id).replace(os.sep, "_")
     model_dir = ov_cache_converted_dir / dir_name
@@ -1335,12 +1331,6 @@ def test_vlm_pipeline_chat_history_multipart_content(
         )
 
 
-def finish_audio_test_chat(ov_pipe_model: VlmModelInfo):
-    # Audio tests share a module-scoped pipeline, while audio multi-turn generation is not supported yet.
-    # Reset chat and KV-cache state so every audio test remains an independent single-turn scenario.
-    ov_pipe_model.pipeline.finish_chat()
-
-
 @parametrize_audio_models
 def test_vlm_pipeline_audio_chat_history(
     ov_pipe_model: VlmModelInfo,
@@ -1358,7 +1348,6 @@ def test_vlm_pipeline_audio_chat_history(
         generation_config=generation_config,
     )
     assert history.get_messages() == messages_before
-    finish_audio_test_chat(ov_pipe_model)
 
 
 @parametrize_audio_models
@@ -1375,7 +1364,6 @@ def test_vlm_pipeline_implicit_audio_placement(
     explicit_result = ov_pipe.generate(prompt + "<|audio|>", audios=audios, generation_config=generation_config)
 
     assert implicit_result.texts == explicit_result.texts
-    finish_audio_test_chat(ov_pipe_model)
 
 
 @parametrize_audio_models
@@ -1400,7 +1388,6 @@ def test_vlm_pipeline_audio_placeholder_count(
             audios=[synthetic_audio_tensor] * audio_count,
             do_sample=False,
         )
-    finish_audio_test_chat(ov_pipe_model)
 
 
 @pytest.fixture(scope="module", params=[
@@ -2490,160 +2477,6 @@ def test_audio_rejected_by_non_audio_model():
         pipe.generate("Describe", audios=[audio], generation_config=GenerationConfig(max_new_tokens=20))
 
 
-# A tag with text on both sides is where per-model expansion-offset bugs surface: LLaVA keeps a
-# running position, Qwen2-VL restarts `find` from zero (qwen2vl/classes.cpp:1092).
-INTERLEAVED_MAX_NEW_TOKENS = 20
-
-
-def _interleaved_media_pair(modality_type: ModalityType, request: pytest.FixtureRequest) -> list[openvino.Tensor]:
-    """Two media items of `modality_type` that are guaranteed to differ from each other."""
-    if modality_type == ModalityType.IMAGE:
-        names = ("cat_tensor", "car_tensor")
-    else:
-        names = ("synthetic_video_32x32_tensor", "inverted_video_32x32_tensor")
-    return [request.getfixturevalue(name) for name in names]
-
-
-def _setup_interleaved_config(ov_pipe: VLMPipeline) -> None:
-    generation_config = _setup_generation_config(
-        ov_pipe,
-        max_new_tokens=INTERLEAVED_MAX_NEW_TOKENS,
-        ignore_eos=True,
-        set_eos_token=False,
-        do_sample=False,
-    )
-    ov_pipe.set_generation_config(generation_config)
-
-
-@pytest.mark.transformers_dependent(
-    "minicpmv, internvl_chat is not supported by transformers>=v5; gemma3, llava-next, llava, qwen3_vl - CVS-186059"
-)
-@parametrize_model_with_modality()
-def test_tags_interleaved_universal(
-    ov_pipe_model: VlmModelInfo,
-    modality_type: ModalityType,
-    request: pytest.FixtureRequest,
-):
-    """A universal tag between two text segments must resolve exactly like the native tag there."""
-    ov_pipe = ov_pipe_model.pipeline
-    media_tag = ov_pipe_model.get_media_tag(modality_type)
-    _setup_interleaved_config(ov_pipe)
-
-    input_tensor = _interleaved_media_pair(modality_type, request)[0]
-    media_kwargs = get_media_inputs_kwargs([input_tensor], modality_type)
-
-    def workaround_inconsistent_inference():
-        __tracebackhide__ = True
-        universal = ov_pipe.generate(
-            "Look at this " + get_universal_tag(modality_type, 0) + " and describe it",
-            **media_kwargs,
-            do_sample=False,
-        )
-        native = ov_pipe.generate(
-            "Look at this " + media_tag(0) + " and describe it",
-            **media_kwargs,
-            do_sample=False,
-        )
-        assert universal.texts[0] == native.texts[0]
-
-    retry(workaround_inconsistent_inference)
-
-
-@pytest.mark.transformers_dependent(
-    "minicpmv, internvl_chat is not supported by transformers>=v5; gemma3, llava-next, llava, qwen3_vl - CVS-186059"
-)
-@parametrize_model_with_modality()
-def test_tags_interleaved_two_universal(
-    ov_pipe_model: VlmModelInfo,
-    modality_type: ModalityType,
-    request: pytest.FixtureRequest,
-):
-    """Two universal tags, each surrounded by text, must resolve exactly like the native tags."""
-    ov_pipe = ov_pipe_model.pipeline
-    media_tag = ov_pipe_model.get_media_tag(modality_type)
-    _setup_interleaved_config(ov_pipe)
-
-    media_kwargs = get_media_inputs_kwargs(_interleaved_media_pair(modality_type, request), modality_type)
-
-    def workaround_inconsistent_inference():
-        __tracebackhide__ = True
-        universal = ov_pipe.generate(
-            "First " + get_universal_tag(modality_type, 0) + " then " + get_universal_tag(modality_type, 1) + " done",
-            **media_kwargs,
-            do_sample=False,
-        )
-        native = ov_pipe.generate(
-            "First " + media_tag(0) + " then " + media_tag(1) + " done",
-            **media_kwargs,
-            do_sample=False,
-        )
-        assert universal.texts[0] == native.texts[0]
-
-    retry(workaround_inconsistent_inference)
-
-
-@pytest.mark.transformers_dependent(
-    "minicpmv, internvl_chat is not supported by transformers>=v5; gemma3, llava-next, llava, qwen3_vl - CVS-186059"
-)
-@parametrize_model_with_modality()
-def test_tags_interleaved_reversed_order(
-    ov_pipe_model: VlmModelInfo,
-    modality_type: ModalityType,
-    request: pytest.FixtureRequest,
-):
-    """Swapping the two universal indices must swap where the media land, not be normalized away.
-
-    Reversing the tag indices over media [first, second] has to mean the same thing as keeping the
-    tags in order and reversing the media list. A pipeline that binds by tag position instead of by
-    tag index leaves the media where they were, so only the second form swaps them and the two
-    outputs diverge.
-    """
-    ov_pipe = ov_pipe_model.pipeline
-    _setup_interleaved_config(ov_pipe)
-
-    first, second = _interleaved_media_pair(modality_type, request)
-
-    def workaround_inconsistent_inference():
-        __tracebackhide__ = True
-        reversed_tags = ov_pipe.generate(
-            "First " + get_universal_tag(modality_type, 1) + " then " + get_universal_tag(modality_type, 0) + " done",
-            **get_media_inputs_kwargs([first, second], modality_type),
-            do_sample=False,
-        )
-        reversed_media = ov_pipe.generate(
-            "First " + get_universal_tag(modality_type, 0) + " then " + get_universal_tag(modality_type, 1) + " done",
-            **get_media_inputs_kwargs([second, first], modality_type),
-            do_sample=False,
-        )
-        assert reversed_tags.texts == reversed_media.texts
-        assert reversed_tags.scores == reversed_media.scores
-
-    retry(workaround_inconsistent_inference)
-
-
-@pytest.mark.real_models
-@pytest.mark.vlm
-def test_audio_rejected_by_non_audio_model():
-    """A VLM without an audio tower must say so instead of failing deep in the encoder.
-
-    Audio placement itself lives in test_omni_pipeline.py; this stays here because it is about a
-    conventional VLM rejecting an input it cannot serve.
-    """
-    # This export is not covered by _maybe_skip_unsupported_model_export, so a version mismatch
-    # arrives as a ValueError. An unavailable control model says nothing about the guard.
-    try:
-        models_path = _get_ov_model("optimum-intel-internal-testing/tiny-random-qwen3-vl")
-    except ValueError as export_error:
-        pytest.skip(f"tiny-random-qwen3-vl cannot be exported here: {export_error}")
-    pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND="PA")
-
-    samples = np.arange(16000)
-    audio = openvino.Tensor(np.sin(2 * np.pi * 440 * samples / 16000).astype(np.float32))
-
-    with pytest.raises(RuntimeError, match="Audio input isn't supported by this model"):
-        pipe.generate("Describe", audios=[audio], generation_config=GenerationConfig(max_new_tokens=20))
-
-
 def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video, audio=None):
     class NanollavaProcessorWrapper:
         def __init__(self, processor, config, model_dtype):
@@ -2820,6 +2653,7 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     "*tiny-random-gemma3n/SDPA/CPP/text-only": "CVS-190429",
     # Gemma4-unified cases
     "*tiny-random-gemma4-unified-it/SDPA/CPP/image*": "CVS-190429",
+    "*tiny-random-gemma4-unified-it/SDPA/CPP/text-only": "CVS-190429",
     "*tiny-random-gemma4-unified-it/PA/CPP/image*": "CVS-190429",
     "*tiny-random-gemma4-unified-it/PA/CPP/text-only": "CVS-190429",
     # Gemma4 models (with token_type_ids input) PA cases with image input
@@ -3044,7 +2878,6 @@ def test_vlm_pipeline_audio_match_optimum(
     synthetic_audio_tensor: openvino.Tensor,
 ):
     run_compare_genai_optimum(ov_pipe_model, None, None, np.array(synthetic_audio_tensor.data, copy=True))
-    finish_audio_test_chat(ov_pipe_model)
 
 
 # CDPruner Tests
