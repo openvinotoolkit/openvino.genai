@@ -96,8 +96,7 @@ private:
     };
 
     void append_main_outputs(const GeneratedRequests& generated);
-    std::vector<int64_t> draft_tokens(uint64_t request_id, const GeneratedSequence& sequence,
-                                      const GenerationConfig& config);
+    std::map<uint64_t, std::vector<int64_t>> draft_tokens(const GeneratedRequests& requests);
 
     std::map<uint64_t, RequestState> m_requests;
     std::map<uint64_t, GenerationConfig> m_request_configs;

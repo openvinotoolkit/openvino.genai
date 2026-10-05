@@ -486,85 +486,155 @@ void ContinuousBatchingPipeline::Gemma4MtpDecodingImpl::append_main_outputs(cons
     }
 }
 
-std::vector<int64_t> ContinuousBatchingPipeline::Gemma4MtpDecodingImpl::draft_tokens(
-    uint64_t request_id, const GeneratedSequence& sequence, const GenerationConfig& config) {
-    auto& state = m_requests.at(request_id);
-    if (!state.hidden_state || sequence.token_ids.empty()) {
-        return {};
-    }
-    const size_t length = state.prompt_length + sequence.token_ids.size();
-    const size_t remaining = config.get_max_new_tokens() - sequence.token_ids.size();
-    const size_t limit = std::min(config.num_assistant_tokens.value_or(m_default_num_assistant_tokens),
-                                  remaining > 0 ? remaining - 1 : 0);
-    if (limit == 0) {
-        return {};
-    }
-    const size_t shared_length = length - 1;
-    OPENVINO_ASSERT(length + limit <= static_cast<size_t>(std::numeric_limits<int32_t>::max()),
-                    "Gemma4 MTP draft requires the accepted prefix KV and an i32-compatible context length.");
+std::map<uint64_t, std::vector<int64_t>> ContinuousBatchingPipeline::Gemma4MtpDecodingImpl::draft_tokens(
+    const GeneratedRequests& requests) {
+    struct DraftSequence {
+        uint64_t request_id;
+        const GenerationConfig* config;
+        size_t length;
+        size_t limit;
+        int64_t token;
+        ov::Tensor hidden;
+        std::vector<int32_t> block_indices;
+        std::vector<int64_t> tokens;
+        bool stopped = false;
+    };
+
+    std::vector<DraftSequence> sequences;
+    std::array<ov::Tensor, 4> shared_tensors;
+    int32_t max_context_len = 0;
     auto main = std::static_pointer_cast<ContinuousBatchingForMtpDecodingImpl>(m_main_pipeline);
-    const auto shared_cache = main->get_mtp_pa_cache(request_id, m_main_cache_layers, shared_length);
-    const size_t num_blocks = shared_cache.block_indices.size();
-    ov::Tensor past_lens(ov::element::i32, {1});
-    past_lens.data<int32_t>()[0] = static_cast<int32_t>(shared_length);
-    ov::Tensor subsequence_begins(ov::element::i32, {2});
-    subsequence_begins.data<int32_t>()[0] = 0;
-    subsequence_begins.data<int32_t>()[1] = 1;
-    ov::Tensor block_indices_begins(ov::element::i32, {2});
-    block_indices_begins.data<int32_t>()[0] = 0;
-    block_indices_begins.data<int32_t>()[1] = static_cast<int32_t>(num_blocks);
-    ov::Tensor block_indices(ov::element::i32, {num_blocks});
-    std::copy(shared_cache.block_indices.begin(), shared_cache.block_indices.end(),
-              block_indices.data<int32_t>());
-    ov::Tensor max_context_len(ov::element::i32, {});
-    max_context_len.data<int32_t>()[0] = static_cast<int32_t>(length + limit);
-    m_draft_request.set_tensor("past_lens", past_lens);
-    m_draft_request.set_tensor("subsequence_begins", subsequence_begins);
-    m_draft_request.set_tensor("block_indices_begins", block_indices_begins);
-    m_draft_request.set_tensor("block_indices", block_indices);
-    m_draft_request.set_tensor("max_context_len", max_context_len);
-    for (size_t k = 0; k < m_draft_cache_names.size(); ++k) {
-        m_draft_request.set_tensor(m_draft_cache_names[k], shared_cache.tensors[k]);
+    for (const auto& [request_id, generated] : requests) {
+        if (generated.empty() || generated.begin()->second.token_ids.empty()) {
+            continue;
+        }
+        const auto& sequence = generated.begin()->second;
+        const auto& state = m_requests.at(request_id);
+        if (!state.hidden_state) {
+            continue;
+        }
+        const auto& config = m_request_configs.at(request_id);
+        const size_t remaining = config.get_max_new_tokens() - sequence.token_ids.size();
+        const size_t limit = std::min(config.num_assistant_tokens.value_or(m_default_num_assistant_tokens),
+                                      remaining > 0 ? remaining - 1 : 0);
+        if (limit == 0) {
+            continue;
+        }
+        const size_t length = state.prompt_length + sequence.token_ids.size();
+        OPENVINO_ASSERT(length + limit <= static_cast<size_t>(std::numeric_limits<int32_t>::max()),
+                        "Gemma4 MTP draft requires an i32-compatible context length.");
+        auto cache = main->get_mtp_pa_cache(request_id, m_main_cache_layers, length - 1);
+        if (sequences.empty()) {
+            shared_tensors = std::move(cache.tensors);
+        }
+        max_context_len = std::max(max_context_len, static_cast<int32_t>(length + limit));
+        sequences.push_back({request_id, &config, length, limit, sequence.token_ids.back(),
+                             state.hidden_state, std::move(cache.block_indices), {}});
     }
-    ov::Tensor position(ov::element::i64, {1});
-    position.data<int64_t>()[0] = static_cast<int64_t>(length - 1);
-    ov::Tensor hidden = state.hidden_state;
-    int64_t token = sequence.token_ids.back();
-    std::vector<int64_t> result;
-    result.reserve(limit);
-    for (size_t i = 0; i < limit; ++i) {
-        position.data<int64_t>()[0] = static_cast<int64_t>(length - 1 + i);
-        ov::Tensor ids(ov::element::i64, {1, 1});
-        ids.data<int64_t>()[0] = token;
+
+    for (size_t step = 0; ; ++step) {
+        std::vector<DraftSequence*> active;
+        size_t num_blocks = 0;
+        for (auto& sequence : sequences) {
+            if (!sequence.stopped && step < sequence.limit) {
+                active.push_back(&sequence);
+                num_blocks += sequence.block_indices.size();
+            }
+        }
+        if (active.empty()) {
+            break;
+        }
+        OPENVINO_ASSERT(active.size() <= static_cast<size_t>(std::numeric_limits<int32_t>::max()) &&
+                            num_blocks <= static_cast<size_t>(std::numeric_limits<int32_t>::max()),
+                        "Gemma4 MTP draft PA batch exceeds i32 scheduling limits.");
+
+        ov::Tensor ids(ov::element::i64, {1, active.size()});
+        ov::Tensor positions(ov::element::i64, {active.size()});
+        ov::Tensor past_lens(ov::element::i32, {active.size()});
+        ov::Tensor subsequence_begins(ov::element::i32, {active.size() + 1});
+        ov::Tensor block_indices_begins(ov::element::i32, {active.size() + 1});
+        ov::Tensor block_indices(ov::element::i32, {num_blocks});
+        size_t block_offset = 0;
+        for (size_t i = 0; i < active.size(); ++i) {
+            const auto& sequence = *active[i];
+            ids.data<int64_t>()[i] = sequence.token;
+            positions.data<int64_t>()[i] = static_cast<int64_t>(sequence.length - 1 + step);
+            past_lens.data<int32_t>()[i] = static_cast<int32_t>(sequence.length - 1);
+            subsequence_begins.data<int32_t>()[i] = static_cast<int32_t>(i);
+            block_indices_begins.data<int32_t>()[i] = static_cast<int32_t>(block_offset);
+            std::copy(sequence.block_indices.begin(), sequence.block_indices.end(),
+                      block_indices.data<int32_t>() + block_offset);
+            block_offset += sequence.block_indices.size();
+        }
+        subsequence_begins.data<int32_t>()[active.size()] = static_cast<int32_t>(active.size());
+        block_indices_begins.data<int32_t>()[active.size()] = static_cast<int32_t>(block_offset);
+
         CircularBufferQueueElementGuard<EmbeddingsRequest> guard(m_embedding->get_request_queue().get());
+        const size_t hidden_size = active.front()->hidden.get_shape()[2];
+        guard.get().cpu_tensor.set_shape({1, active.size(), hidden_size});
         const ov::Tensor embedding = m_embedding->infer(guard.get(), ids);
         const auto& embed_shape = embedding.get_shape();
-        const auto& hidden_shape = hidden.get_shape();
-        OPENVINO_ASSERT(embedding.get_element_type() == ov::element::f32 && hidden.get_element_type() == ov::element::f32 &&
-                        embed_shape == hidden_shape, "Gemma4 MTP embedding and hidden state must be equal-size f32 tensors.");
-        ov::Tensor input(ov::element::f32, {1, 2 * embed_shape[2]});
-        std::copy_n(embedding.data<const float>(), embed_shape[2], input.data<float>());
-        std::copy_n(hidden.data<const float>(), hidden_shape[2], input.data<float>() + embed_shape[2]);
+        OPENVINO_ASSERT(embedding.get_element_type() == ov::element::f32 &&
+                            embed_shape == ov::Shape({1, active.size(), hidden_size}),
+                        "Gemma4 MTP batched embeddings must have shape [1, batch, hidden_size].");
+        ov::Tensor input(ov::element::f32, {active.size(), 2 * hidden_size});
+        for (size_t i = 0; i < active.size(); ++i) {
+            OPENVINO_ASSERT(active[i]->hidden.get_element_type() == ov::element::f32 &&
+                                active[i]->hidden.get_shape() == ov::Shape({1, 1, hidden_size}),
+                            "Gemma4 MTP hidden state must have shape [1, 1, hidden_size].");
+            float* row = input.data<float>() + i * 2 * hidden_size;
+            std::copy_n(embedding.data<const float>() + i * hidden_size, hidden_size, row);
+            std::copy_n(active[i]->hidden.data<const float>(), hidden_size, row + hidden_size);
+        }
+
+        ov::Tensor context_len(ov::element::i32, {});
+        context_len.data<int32_t>()[0] = max_context_len;
+        m_draft_request.set_tensor("past_lens", past_lens);
+        m_draft_request.set_tensor("subsequence_begins", subsequence_begins);
+        m_draft_request.set_tensor("block_indices_begins", block_indices_begins);
+        m_draft_request.set_tensor("block_indices", block_indices);
+        m_draft_request.set_tensor("max_context_len", context_len);
+        for (size_t k = 0; k < m_draft_cache_names.size(); ++k) {
+            m_draft_request.set_tensor(m_draft_cache_names[k], shared_tensors[k]);
+        }
         m_draft_request.set_tensor("inputs_embeds", input);
-        m_draft_request.set_tensor("position_ids", position);
+        m_draft_request.set_tensor("position_ids", positions);
         const auto start = std::chrono::steady_clock::now();
         m_draft_request.infer();
         const auto duration = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start);
         auto& draft_metrics = m_perf_metrics.draft_model_metrics.raw_metrics;
         draft_metrics.m_inference_durations[0] += MicroSeconds(duration);
         draft_metrics.m_durations.emplace_back(duration);
-        draft_metrics.m_batch_sizes.push_back(1);
+        draft_metrics.m_batch_sizes.push_back(active.size());
         const ov::Tensor logits = m_draft_request.get_tensor("logits");
-        OPENVINO_ASSERT(logits.get_shape().size() == 3 && logits.get_shape()[0] == 1 &&
-                        logits.get_shape()[1] == 1, "Gemma4 MTP draft must emit one position of logits.");
-        const float* scores = logits.data<const float>();
-        token = std::max_element(scores, scores + logits.get_shape().back()) - scores;
-        result.push_back(token);
-        if ((!config.ignore_eos && token == config.eos_token_id) ||
-            std::find(config.stop_token_ids.begin(), config.stop_token_ids.end(), token) != config.stop_token_ids.end()) {
-            break;
+        const ov::Tensor hidden = m_draft_request.get_tensor("last_hidden_state");
+        OPENVINO_ASSERT(logits.get_shape().size() == 3 &&
+                            logits.get_shape()[0] * logits.get_shape()[1] == active.size() &&
+                            hidden.get_shape().size() == 3 &&
+                            hidden.get_shape()[0] * hidden.get_shape()[1] == active.size() &&
+                            hidden.get_shape()[2] == hidden_size,
+                        "Gemma4 MTP draft outputs must contain one row per active request.");
+        for (size_t i = 0; i < active.size(); ++i) {
+            auto& sequence = *active[i];
+            const float* scores = logits.data<const float>() + i * logits.get_shape()[2];
+            sequence.token = std::max_element(scores, scores + logits.get_shape()[2]) - scores;
+            sequence.tokens.push_back(sequence.token);
+            const auto& config = *sequence.config;
+            sequence.stopped = (!config.ignore_eos && sequence.token == config.eos_token_id) ||
+                std::find(config.stop_token_ids.begin(), config.stop_token_ids.end(), sequence.token) !=
+                    config.stop_token_ids.end();
+            if (!sequence.stopped && step + 1 < sequence.limit) {
+                ov::Tensor next_hidden(ov::element::f32, {1, 1, hidden_size});
+                std::copy_n(hidden.data<const float>() + i * hidden_size,
+                            hidden_size, next_hidden.data<float>());
+                sequence.hidden = std::move(next_hidden);
+            }
         }
-        hidden = m_draft_request.get_tensor("last_hidden_state");
+    }
+
+    std::map<uint64_t, std::vector<int64_t>> result;
+    for (auto& sequence : sequences) {
+        result.emplace(sequence.request_id, std::move(sequence.tokens));
     }
     return result;
 }
@@ -575,6 +645,7 @@ void ContinuousBatchingPipeline::Gemma4MtpDecodingImpl::step() {
         m_main_pipeline->pull_awaiting_requests();
         const auto before = m_main_pipeline->get_generated_requests();
         std::map<uint64_t, size_t> draft_counts;
+        const auto drafts = draft_tokens(before);
         for (const auto& [request_id, sequences] : before) {
             if (sequences.empty() || sequences.begin()->second.token_ids.empty()) {
                 continue;
@@ -584,13 +655,12 @@ void ContinuousBatchingPipeline::Gemma4MtpDecodingImpl::step() {
             if (!state.hidden_state) {
                 continue;
             }
-            // The preceding verifier pass may have processed rejected candidates.
-            // Only the accepted prefix participates in the next assistant pass.
             auto candidates = sequence;
-            const auto& config = m_request_configs.at(request_id);
-            auto draft = draft_tokens(request_id, sequence, config);
-            candidates.token_ids.insert(candidates.token_ids.end(), draft.begin(), draft.end());
-            candidates.log_probs.insert(candidates.log_probs.end(), draft.size(), 0.f);
+            const auto draft = drafts.find(request_id);
+            if (draft != drafts.end()) {
+                candidates.token_ids.insert(candidates.token_ids.end(), draft->second.begin(), draft->second.end());
+                candidates.log_probs.insert(candidates.log_probs.end(), draft->second.size(), 0.f);
+            }
             const auto updated = m_main_pipeline->update_request(request_id, {{sequences.begin()->first, candidates}}, false);
             draft_counts[request_id] = updated.inserted_tokens_cnt;
             m_perf_metrics.num_draft_tokens += updated.inserted_tokens_cnt;

@@ -1169,6 +1169,38 @@ def test_gemma4_mtp_pa_shared_cache_across_blocks(gemma4_mtp_vlm_model_path: Pat
         assert actual == expected
 
 
+def test_gemma4_mtp_pa_batched_draft_matches_separate_requests(gemma4_mtp_vlm_model_path: Path):
+    assistant_path = generate_and_save_gemma4_mtp_assistant_model(gemma4_mtp_vlm_model_path)
+    prompts = ["OpenVINO is", "The sky is", "Explain cache sharing."]
+    configs = [
+        GenerationConfig(do_sample=False, max_new_tokens=count, num_assistant_tokens=3, ignore_eos=True)
+        for count in (40, 12, 32)
+    ]
+    properties = {"KV_CACHE_PRECISION": "f16"}
+
+    pipeline = ContinuousBatchingPipeline(
+        gemma4_mtp_vlm_model_path,
+        SchedulerConfig(),
+        "CPU",
+        {**properties, "draft_model": draft_model(assistant_path, "CPU")},
+    )
+    batched = pipeline.generate(prompts, configs)
+    del pipeline
+    metrics = batched[0].extended_perf_metrics
+    assert metrics.get_num_draft_tokens() > 0
+    assert len(metrics.draft_model_metrics.raw_metrics.m_durations) < metrics.get_num_draft_tokens()
+
+    for prompt, config, result in zip(prompts, configs, batched):
+        separate = ContinuousBatchingPipeline(
+            gemma4_mtp_vlm_model_path,
+            SchedulerConfig(),
+            "CPU",
+            {**properties, "draft_model": draft_model(assistant_path, "CPU")},
+        )
+        actual = separate.generate([prompt], [config])[0].m_generation_ids
+        assert result.m_generation_ids == actual
+
+
 def test_gemma4_mtp_pa_image_matches_main_only(gemma4_mtp_vlm_model_path: Path):
     assistant_path = generate_and_save_gemma4_mtp_assistant_model(gemma4_mtp_vlm_model_path)
     image = ov.Tensor(np.zeros((64, 64, 3), dtype=np.uint8))
