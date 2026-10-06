@@ -42,6 +42,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "optimum-intel-internal-testing/tiny-random-qwen3-omni",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
     },
+    "tiny-random-minicpmv47": {
+        "name": "optimum-intel-internal-testing/tiny-random-minicpmv47",
+        "convert_args": ["--task", "image-text-to-text"],
+    },
     "tiny-random-gemma4": {
         "name": "optimum-intel-internal-testing/tiny-random-gemma4",
         "convert_args": ["--task", "image-text-to-text"],

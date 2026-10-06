@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 from itertools import zip_longest
 
-from transformers import AutoTokenizer, AutoProcessor, AutoConfig
+from transformers import AutoTokenizer, AutoProcessor, AutoConfig, PretrainedConfig
 import openvino as ov
 
 import pandas as pd
@@ -617,6 +617,15 @@ def load_processor(args):
     model_id = args.base_model if args.base_model is not None else args.target_model
     if model_id is None:
         return None, None
+
+    config_path = Path(model_id) / "config.json"
+    if (
+        getattr(args, "genai", False)
+        and config_path.is_file()
+        and get_json_config(config_path).get("model_type") == "minicpmv4_7"
+    ):
+        # MiniCPM-V 4.7 preprocessing is performed inside GenAI's VLMPipeline.
+        return None, PretrainedConfig.from_json_file(config_path)
 
     try:
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
