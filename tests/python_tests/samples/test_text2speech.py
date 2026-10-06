@@ -214,6 +214,8 @@ class TestTextToSpeechSample:
             "This is a second speech sample.",
             tiny_kokoro_speaker_embedding_file_path,
             *outputs,
+            "--speed",
+            "1.1",
         ]
         result = run_sample(command)
         assert "Generated 2 speech waveform(s)" in result.stdout
