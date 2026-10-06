@@ -116,7 +116,7 @@ jobs:
         commit_packages_to_provide: openvino_package.tar.gz
         # Consuming Android artifacts from OpenVINO PR https://github.com/openvinotoolkit/openvino/pull/38294.
         # Revert to `revision: latest_available_commit` (and drop branch_name/event_name) once it is merged.
-        revision: 420efc1e812cba5fbe8f5088580a2f9320c7bd55
+        revision: f5bc4d3a9b9856e4abbc2d5434aac13258e18959
         branch_name: master
         event_name: pull_request
 
