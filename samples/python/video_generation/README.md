@@ -48,6 +48,14 @@ pipeline = OVLTXPipeline.from_pretrained("Lightricks/LTX-Video", export=True, co
 pipeline.save_pretrained("ltx_video_ov/FP32")
 ```
 
+### For LTX-2.3 (Text-to-Video with Audio)
+
+```sh
+optimum-cli export openvino --model diffusers/LTX-2.3-Diffusers --task text-to-video --weight-format int8 --trust-remote-code ltx_2_3_ov/INT8
+```
+
+LTX-2.3 generates a synchronized audio track, so [`text2video.py`](./text2video.py) also writes `genai_audio.wav`. Its guidance defaults are read from the converted model and need no configuration; see the [generation config](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.VideoGenerationConfig.html) for the `stg_scale` / `modality_scale` knobs that control the extra guidance passes.
+
 ## Sample Descriptions
 
 ### Common Information
@@ -67,7 +75,7 @@ pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
 - **Description:**
   Basic video generation using a text-to-video model. This sample demonstrates how to generate videos from text prompts using the OpenVINO GenAI Text2VideoPipeline. The LTX-Video model is recommended for this sample.
 
-  Recommended models: Lightricks/LTX-Video
+  Recommended models: Lightricks/LTX-Video, diffusers/LTX-2.3-Diffusers
 
 - **Main Feature:** Generate videos from text descriptions with customizable parameters.
 

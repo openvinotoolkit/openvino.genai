@@ -8,9 +8,9 @@ import UsageOptionsSection from './_sections/_usage_options/index.mdx';
 
 # Video Generation Using Diffusers
 
-## LTX-Video Pipeline for Video Generation
+## LTX Pipelines for Video Generation
 
-LTX-Video is the DiT-based video generation model capable of generating high-quality videos from text prompts or conditioning images.
+LTX-Video and the LTX-2 family are DiT-based video generation models capable of generating high-quality videos from text prompts or conditioning images.
 
 ### Text-to-Video Pipeline
 
@@ -30,6 +30,12 @@ The image-to-video pipeline extends the text-to-video workflow with image condit
 ![LTX Pipeline Workflow](/img/ltx-pipeline.png)
 *Source: [arXiv:2501.00103](https://arxiv.org/abs/2501.00103)*
 
+### LTX-2 and LTX-2.3
+
+The LTX-2 family extends the text-to-video workflow with a synchronized audio track: alongside the video latents, the Transformer denoises audio latents that are decoded by a separate audio VAE and vocoder. `Text2VideoPipeline` returns the waveform in `audio` and its rate in `audio_sample_rate`.
+
+LTX-2.3 refines the guidance used in the denoising loop, trading compute for quality: in addition to classifier-free guidance, it runs a Spatio-Temporal Guidance pass and a modality isolation pass per step. The pipeline reads its defaults from the converted model, so LTX-2.3 reproduces the reference behavior out of the box. See [Additional Usage Options](#ltx-2-and-ltx-23-guidance-configuration) to tune or disable these terms.
+
 <ConvertModelSection>
     Download and convert LTX model [Lightricks/LTX-Video](https://huggingface.co/Lightricks/LTX-Video) to OpenVINO format from Hugging Face.
 
@@ -40,6 +46,10 @@ The image-to-video pipeline extends the text-to-video workflow with image condit
     For **image-to-video** (includes VAE encoder):
 
     <OptimumCLI model='Lightricks/LTX-Video' task='image-to-video' outputDir='LTX_Video_i2v_ov' weightFormat='fp32' trustRemoteCode />
+
+    For **LTX-2.3** (text-to-video with audio):
+
+    <OptimumCLI model='diffusers/LTX-2.3-Diffusers' task='text-to-video' outputDir='LTX_2_3_ov' weightFormat='int8' trustRemoteCode />
 </ConvertModelSection>
 
 <RunModelSection />

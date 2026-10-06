@@ -7,9 +7,19 @@
 
 namespace ov::genai::utils {
 
+bool requests_classifier_free_guidance(const VideoGenerationConfig& config) {
+    return config.guidance_scale > 1.0f || config.audio_guidance_scale.value_or(config.guidance_scale) > 1.0f;
+}
+
 void validate_generation_config(const VideoGenerationConfig& config) {
-    if (config.guidance_scale <= 1.0f && config.negative_prompt != std::nullopt) {
+    if (!requests_classifier_free_guidance(config) && config.negative_prompt != std::nullopt) {
         GENAI_WARN("Guidance scale <= 1.0 ignores negative prompt");
+    }
+}
+
+void resolve_negative_prompt(VideoGenerationConfig& config) {
+    if (!requests_classifier_free_guidance(config)) {
+        config.negative_prompt = std::nullopt;
     }
 }
 
@@ -54,10 +64,9 @@ void update_generation_config(VideoGenerationConfig& config, const ov::AnyMap& p
         }
     }
 
-    validate_generation_config(config);
-    if (config.guidance_scale <= 1.0f) {
-        config.negative_prompt = std::nullopt;
-    }
+    // Validating and dropping the negative prompt are deliberately *not* done here: both depend on the
+    // effective audio guidance scale, which only a pipeline's 'replace_defaults' can fill in. The callers
+    // do it from 'merge_generation_config' and 'check_inputs' once the defaults are resolved.
 }
 
 std::pair<std::string, ov::Any> generation_config(const VideoGenerationConfig& generation_config) {

@@ -448,17 +448,17 @@ public:
         return cloned;
     }
 
-    bool do_classifier_free_guidance(float guidance_scale) const {
-        return guidance_scale > 1.0;
-    }
-
     // LTX-2.3 enable predicates, matching diffusers' LTX2Pipeline. Both terms stay nullopt on LTX-2.0.
+    // Classifier-free guidance itself is decided by 'utils::requests_classifier_free_guidance', which also
+    // accounts for the audio scale.
     static bool do_spatio_temporal_guidance(const VideoGenerationConfig& config) {
         return config.stg_scale.value_or(0.0f) > 0.0f || config.audio_stg_scale.value_or(0.0f) > 0.0f;
     }
 
+    // 1.0 is the neutral modality scale, so it is also the fallback for an unset one: the term's weight is
+    // 'scale - 1', which a 0.0 fallback would turn into -1 instead of switching the term off.
     static bool do_modality_isolation_guidance(const VideoGenerationConfig& config) {
-        return config.modality_scale.value_or(0.0f) > 1.0f || config.audio_modality_scale.value_or(0.0f) > 1.0f;
+        return config.modality_scale.value_or(1.0f) > 1.0f || config.audio_modality_scale.value_or(1.0f) > 1.0f;
     }
 
     // The extra passes run at batch N while classifier-free guidance runs at batch 2N, so the transformer's
@@ -500,9 +500,9 @@ public:
         const float audio_guidance_scale =
             merged_generation_config.audio_guidance_scale.value_or(merged_generation_config.guidance_scale);
 
-        // Matches diffusers: CFG is enabled when either modality requests guidance
-        const bool cfg_requested =
-            do_classifier_free_guidance(merged_generation_config.guidance_scale) || audio_guidance_scale > 1.0f;
+        // Matches diffusers: CFG is enabled when either modality requests guidance. Shared with
+        // 'resolve_negative_prompt' and 'reshape()' so the three cannot disagree about whether CFG runs.
+        const bool cfg_requested = utils::requests_classifier_free_guidance(merged_generation_config);
         const size_t batch_size_multiplier = resolve_batch_size_multiplier(merged_generation_config, cfg_requested);
         const bool use_classifier_free_guidance = batch_size_multiplier > 1;
 
@@ -517,12 +517,24 @@ public:
         // 2.3-shaped export missing one degrades to the passes it can run instead of failing.
         const float stg_scale = merged_generation_config.stg_scale.value_or(0.0f);
         const float audio_stg_scale = merged_generation_config.audio_stg_scale.value_or(stg_scale);
-        const float modality_scale = merged_generation_config.modality_scale.value_or(0.0f);
+        const float modality_scale = merged_generation_config.modality_scale.value_or(1.0f);
         const float audio_modality_scale = merged_generation_config.audio_modality_scale.value_or(modality_scale);
-        const bool use_spatio_temporal_guidance =
-            m_transformer->has_stg_perturbation_mask() && do_spatio_temporal_guidance(merged_generation_config);
-        const bool use_modality_isolation_guidance =
-            m_transformer->has_cross_modality_gate() && do_modality_isolation_guidance(merged_generation_config);
+        const bool stg_requested = do_spatio_temporal_guidance(merged_generation_config);
+        const bool modality_isolation_requested = do_modality_isolation_guidance(merged_generation_config);
+        const bool use_spatio_temporal_guidance = m_transformer->has_stg_perturbation_mask() && stg_requested;
+        const bool use_modality_isolation_guidance = m_transformer->has_cross_modality_gate() && modality_isolation_requested;
+        // Degrading silently would change the algorithm without telling anyone, so say so once per call.
+        // Not an assert: LTX-2.0 and 2.3 exports predating these inputs must keep working.
+        if (stg_requested && !m_transformer->has_stg_perturbation_mask()) {
+            GENAI_WARN("'stg_scale' / 'audio_stg_scale' request Spatio-Temporal Guidance, but this "
+                       "transformer has no 'stg_perturbation_mask' input and the pass is skipped. Re-export "
+                       "the model with LTX-2.3 support, or set both scales to 0 to silence this.");
+        }
+        if (modality_isolation_requested && !m_transformer->has_cross_modality_gate()) {
+            GENAI_WARN("'modality_scale' / 'audio_modality_scale' request modality isolation guidance, but "
+                       "this transformer has no 'cross_modality_gate' input and the pass is skipped. "
+                       "Re-export the model with LTX-2.3 support, or set both scales to 1.0 to silence this.");
+        }
         const std::vector<int64_t> stg_blocks =
             merged_generation_config.spatio_temporal_guidance_blocks.value_or(std::vector<int64_t>{});
         OPENVINO_ASSERT(!use_spatio_temporal_guidance || !stg_blocks.empty(),
@@ -533,9 +545,11 @@ public:
         if (use_extra_guidance_passes && use_classifier_free_guidance &&
             m_transformer->get_expected_batch_size() > 0) {
             // The extra passes need batch N while this model was compiled for the batch 2N of CFG
-            GENAI_WARN("Spatio-Temporal Guidance / modality isolation guidance requested, but the compiled "
-                       "transformer has a static batch size and cannot run the extra passes. Run "
-                       "reshape/compile with these scales set to enable them.");
+            GENAI_WARN("Spatio-Temporal Guidance / modality isolation guidance requested, but this "
+                       "transformer was compiled for a static CFG batch and cannot run the extra passes, "
+                       "so they are skipped. To enable them, apply these scales with "
+                       "'set_generation_config()' before 'reshape()', or construct the pipeline without an "
+                       "explicit 'reshape()' so the batch dimension stays dynamic.");
             use_extra_guidance_passes = false;
         }
 
@@ -761,9 +775,18 @@ public:
                     if (use_modality_isolation_guidance) {
                         run_extra_pass(latent, audio_latent, t, /* isolate_modalities */ true, {},
                                        video_pred_modality, audio_pred_modality);
-                        video_terms.push_back({modality_scale - 1.0f, video_pred_modality.data<const float>()});
-                        audio_terms.push_back({audio_modality_scale - 1.0f,
-                                               audio_pred_modality.data<const float>()});
+                        // One pass feeds both modalities, but each contributes only above its own
+                        // threshold. diffusers adds both terms unconditionally; it can afford to because
+                        // 'audio_modality_scale or modality_scale' cannot express a scale of 0, so its
+                        // weight is never negative. 'value_or' keeps an explicit 0.0, which would weigh the
+                        // isolated prediction by -1 instead of disabling the term the docs say it disables.
+                        if (modality_scale > 1.0f) {
+                            video_terms.push_back({modality_scale - 1.0f, video_pred_modality.data<const float>()});
+                        }
+                        if (audio_modality_scale > 1.0f) {
+                            audio_terms.push_back({audio_modality_scale - 1.0f,
+                                                   audio_pred_modality.data<const float>()});
+                        }
                     }
 
                     bind_conditioning(full_conditioning);
@@ -857,7 +880,10 @@ public:
         reshaped_config.height = height;
         reshaped_config.width = width;
         reshaped_config.guidance_scale = guidance_scale;
-        const size_t batch_size_multiplier = do_classifier_free_guidance(guidance_scale) ? 2 : 1;
+        // 'reshape()' only takes the video scale, but audio can request CFG on its own - LTX-2.3 defaults
+        // 'audio_guidance_scale' to 7.0 - and 'reshaped_config' carries it. Sizing on the video scale alone
+        // compiled a batch-1 transformer that 'generate()' then could not use for guidance.
+        const size_t batch_size_multiplier = utils::requests_classifier_free_guidance(reshaped_config) ? 2 : 1;
         reshape_models(reshaped_config, batch_size_multiplier);
     }
 

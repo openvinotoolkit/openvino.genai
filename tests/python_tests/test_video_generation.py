@@ -366,11 +366,18 @@ class TestVideoGenerationPipelines:
         assert not np.array_equal(np.array(low.audio.data), np.array(high.audio.data))
 
     @pytest.mark.parametrize("video_generation_model", [LTX2_3_MODEL_ID], indirect=True)
-    def test_ltx2_3_extra_guidance_neutral_values_are_inert(self, video_generation_model):
-        """stg_scale=0 and modality_scale=1 must reproduce the CFG-only result bit for bit.
+    def test_ltx2_3_modality_scale_below_threshold_disables_only_that_modality(self, video_generation_model):
+        """A modality scale of 0.0 must drop its guidance term rather than weigh it by -1.
 
-        This is what proves cross_modality_gate=1.0 and an all-ones stg_perturbation_mask are the neutral
-        values. A swapped gate polarity is invisible any other way.
+        Both modalities share one isolated transformer pass and each term is weighted 'scale - 1', while the
+        enable predicate fires when *either* scale exceeds 1.0. So a modality left at 0.0 while the other is
+        guided contributes a -1 term, which subtracts the isolated prediction instead of disabling the term
+        the documented '<= 1.0 disables it' promises.
+
+        Checked as an equivalence rather than per modality: the transformer is joint, so a term added to one
+        modality reaches the other on the next step and neither output can be read in isolation. Both 0.0
+        and 1.0 are documented as disabling, so the two must give the same result - and they only can if the
+        term is dropped, since weighing it by 'scale - 1' gives -1 for 0.0 but 0 for 1.0.
         """
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
 
@@ -379,18 +386,49 @@ class TestVideoGenerationPipelines:
                 "test prompt",
                 negative_prompt="blurry, low quality, distorted",
                 guidance_scale=3.0,
-                guidance_rescale=0.0,
-                audio_guidance_rescale=0.0,
+                stg_scale=0.0,
+                audio_stg_scale=0.0,
                 generator=ov_genai.CppStdGenerator(42),
                 **dict(GEN_KWARGS, **overrides),
             )
             return np.array(result.video.data), np.array(result.audio.data)
 
-        neutral = run(stg_scale=0.0, audio_stg_scale=0.0, modality_scale=1.0, audio_modality_scale=1.0)
-        # Same run with the extra passes never even reachable: no STG input use, gate left at 1.0
-        cfg_only = run(stg_scale=0.0, audio_stg_scale=0.0, modality_scale=0.0, audio_modality_scale=0.0)
-        assert np.array_equal(neutral[0], cfg_only[0])
-        assert np.array_equal(neutral[1], cfg_only[1])
+        neutral_audio = run(modality_scale=3.0, audio_modality_scale=1.0)
+        zero_audio = run(modality_scale=3.0, audio_modality_scale=0.0)
+        neutral_video = run(modality_scale=1.0, audio_modality_scale=3.0)
+        zero_video = run(modality_scale=0.0, audio_modality_scale=3.0)
+
+        # Positive control: the shared pass runs and the guided modality's term really does land
+        assert not np.array_equal(run(modality_scale=1.0, audio_modality_scale=1.0)[0], neutral_audio[0]), (
+            "modality guidance did not change the output at all"
+        )
+        assert all(np.array_equal(a, b) for a, b in zip(neutral_audio, zero_audio)), (
+            "audio_modality_scale=0.0 must disable the audio term, not weigh it by -1"
+        )
+        assert all(np.array_equal(a, b) for a, b in zip(neutral_video, zero_video)), (
+            "modality_scale=0.0 must disable the video term, not weigh it by -1"
+        )
+
+    @pytest.mark.parametrize("video_generation_model", [LTX2_3_MODEL_ID], indirect=True)
+    def test_ltx2_3_negative_prompt_survives_audio_only_guidance(self, video_generation_model):
+        """guidance_scale=1.0 turns video guidance off, but LTX-2.3 defaults 'audio_guidance_scale' to 7.0,
+        which keeps classifier-free guidance on, so the negative prompt must still reach it.
+
+        It used to be dropped on the strength of the video scale alone, which left the audio pass guiding
+        against an empty prompt while reporting that the negative prompt was merely 'ignored'.
+        """
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+
+        def run(**overrides):
+            result = pipe.generate(
+                "test prompt",
+                guidance_scale=1.0,
+                generator=ov_genai.CppStdGenerator(42),
+                **dict(GEN_KWARGS, **overrides),
+            )
+            return np.array(result.audio.data)
+
+        assert not np.array_equal(run(negative_prompt="blurry, low quality, distorted"), run())
 
     @pytest.mark.parametrize("video_generation_model", [LTX2_3_MODEL_ID], indirect=True)
     def test_ltx2_3_extra_guidance_changes_output(self, video_generation_model):
@@ -516,6 +554,29 @@ class TestVideoGenerationPipelines:
 
         with pytest.raises(RuntimeError, match="guidance_scale <= 1 requested, but the compiled model expects CFG"):
             pipe.generate("test prompt", guidance_scale=1.0, audio_guidance_scale=1.0, **GEN_KWARGS)
+
+    @pytest.mark.parametrize("video_generation_model", [LTX2_3_MODEL_ID], indirect=True)
+    def test_ltx2_3_reshape_sizes_cfg_batch_for_audio_guidance(self, video_generation_model):
+        """reshape() is handed only the video guidance scale, but LTX-2.3's audio scale defaults to 7.0 and
+        requests CFG on its own, so the batch has to be sized for it.
+
+        Sizing on the video scale alone compiled a batch-1 transformer, and generate() then warned and ran
+        with no guidance at all - silently making the negative prompt a no-op.
+        """
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model)
+        pipe.reshape(1, 9, 32, 32, 1.0)
+        pipe.compile("CPU")
+
+        def run(**overrides):
+            result = pipe.generate(
+                "test prompt",
+                guidance_scale=1.0,
+                generator=ov_genai.CppStdGenerator(42),
+                **dict(GEN_KWARGS, **overrides),
+            )
+            return np.array(result.audio.data)
+
+        assert not np.array_equal(run(negative_prompt="blurry, low quality, distorted"), run())
 
     @pytest.mark.parametrize(
         "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True
