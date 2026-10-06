@@ -7,6 +7,7 @@
 
 #include "utils.hpp"
 #include "lm_encoding.hpp"
+#include "genai_itt.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/streamer_base.hpp"
 
@@ -102,6 +103,9 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs,
     std::function<ov::Tensor(const ov::Tensor& new_input_ids)> per_layer_embeddings_callback
 ) {
+    GENAI_ITT_COUNTER_INC("genai.metrics.generate_calls");
+    GENAI_ITT_COUNTER_ADD("genai.metrics.input_tokens", input_ids.get_size());
+
     std::vector<GenerationHandle> generations;
     for (SequenceGroup::Ptr sequence_group : sequence_groups) {
         generations.push_back(std::make_shared<GenerationHandleImpl>(sequence_group->get_generation_stream(), sequence_group->get_sampling_parameters()));
@@ -204,6 +208,13 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 
     raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
     raw_perf_counters.m_batch_sizes.emplace_back(sampler_output.num_generated_tokens);
+    GENAI_ITT_COUNTER_INC("genai.metrics.generated_steps");
+    GENAI_ITT_COUNTER_ADD("genai.metrics.generated_tokens", sampler_output.num_generated_tokens);
+    bool emitted_first_token_event = false;
+    if (sampler_output.num_generated_tokens > 0) {
+        GENAI_ITT_SCOPED_TASK("genai.metrics.first_token");
+        emitted_first_token_event = true;
+    }
 
     // "Generation" phase
 
@@ -326,6 +337,12 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 
         raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
         raw_perf_counters.m_batch_sizes.emplace_back(sampler_output.num_generated_tokens);
+        GENAI_ITT_COUNTER_INC("genai.metrics.generated_steps");
+        GENAI_ITT_COUNTER_ADD("genai.metrics.generated_tokens", sampler_output.num_generated_tokens);
+        if (!emitted_first_token_event && sampler_output.num_generated_tokens > 0) {
+            GENAI_ITT_SCOPED_TASK("genai.metrics.first_token");
+            emitted_first_token_event = true;
+        }
     }
 
     stream_generated_tokens();

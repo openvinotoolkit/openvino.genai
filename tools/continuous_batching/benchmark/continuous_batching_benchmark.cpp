@@ -81,7 +81,7 @@ struct Dataset {
     }
 };
 
-Dataset filtered_dataset(const std::string& models_path, const std::string& dataset_path, const size_t num_prompts, const size_t max_input_len, const size_t max_output_len) {
+Dataset filtered_dataset(const std::string& models_path, const std::string& dataset_path, const size_t num_prompts, const size_t max_input_len, const size_t max_output_len, const bool sequential_dataset) {
     std::ifstream json_file(dataset_path.c_str());
     OPENVINO_ASSERT(json_file.is_open(), "Cannot open dataset file");
 
@@ -126,6 +126,16 @@ Dataset filtered_dataset(const std::string& models_path, const std::string& data
 
         dataset.push_data(human_question, greedy_search);
         dataset.push_lens(input_len, output_len);
+    }
+
+    OPENVINO_ASSERT(num_prompts > 0 && dataset.size() >= num_prompts,
+                    "Dataset must contain at least ", num_prompts, " usable prompts");
+    if (sequential_dataset) {
+        for (size_t index = 0; index < num_prompts; ++index) {
+            sampled_dataset.push_data(dataset.m_prompts[index], dataset.m_sampling_params[index]);
+            sampled_dataset.push_lens(dataset.m_input_lens[index], dataset.m_output_lens[index]);
+        }
+        return sampled_dataset;
     }
 
     // sample dataset
@@ -290,7 +300,7 @@ public:
     }
 
     void print_statistics() {
-        std::chrono::seconds total_duration = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - start_time);
+        const std::chrono::duration<double> total_duration = std::chrono::steady_clock::now() - start_time;
         std::chrono::milliseconds mean_ttft = std::chrono::milliseconds::zero();
         std::chrono::milliseconds mean_tpot = std::chrono::milliseconds::zero();
         size_t total_input_len = 0;
@@ -456,10 +466,12 @@ int main(int argc, char* argv[]) try {
     ("draft_model", "Path to assistant model directory", cxxopts::value<std::string>()->default_value(""))
     ("num_assistant_tokens", "Number of speculative tokens generated per iteration", cxxopts::value<size_t>()->default_value("5"))
     ("dataset", "Path to dataset .json file", cxxopts::value<std::string>()->default_value("./ShareGPT_V3_unfiltered_cleaned_split.json"))
+    ("sequential_dataset", "Use the first usable prompts in dataset order instead of random sampling", cxxopts::value<bool>()->default_value("false"))
     ("max_input_len", "Max input length take from dataset", cxxopts::value<size_t>()->default_value("1024"))
     ("max_output_len", "Max output length", cxxopts::value<size_t>()->default_value("2048"))
     ("request_rate", "Number of requests per second. If this is inf, then all the requests are sent at time 0. Otherwise, we use Poisson process to synthesize the request arrival times.", cxxopts::value<std::string>()->default_value("inf"))
     ("cache_size", "Size of memory used for KV cache in GB. Default: 16", cxxopts::value<size_t>()->default_value("16"))
+    ("enable_prefix_caching", "Enable KV-cache prefix sharing", cxxopts::value<bool>()->default_value("false"))
     ("device", "Target device to run the model. Default: CPU", cxxopts::value<std::string>()->default_value("CPU"))
     ("device_config", "Plugin configuration JSON. Example: '{\"MODEL_DISTRIBUTION_POLICY\":\"TENSOR_PARALLEL\",\"PERF_COUNT\":true}' Default: {\"PERF_COUNT\":true}", cxxopts::value<std::string>()->default_value("{\"PERF_COUNT\":true}"))
     ("use_cache_eviction", "Whether to use cache eviction", cxxopts::value<bool>()->default_value("false"))
@@ -486,18 +498,20 @@ int main(int argc, char* argv[]) try {
     const std::string draft_model_path = result["draft_model"].as<std::string>();
     const size_t num_assistant_tokens = result["num_assistant_tokens"].as<size_t>();
     const std::string dataset_path = result["dataset"].as<std::string>();
+    const bool sequential_dataset = result["sequential_dataset"].as<bool>();
     const size_t max_input_len = result["max_input_len"].as<size_t>();
     const size_t max_output_len = result["max_output_len"].as<size_t>();
     const std::string request_rate = result["request_rate"].as<std::string>();
     const std::string device = result["device"].as<std::string>();
     const std::string device_config = result["device_config"].as<std::string>();
     const size_t cache_size = result["cache_size"].as<size_t>();
+    const bool enable_prefix_caching = result["enable_prefix_caching"].as<bool>();
     const bool use_cache_eviction = result["use_cache_eviction"].as<bool>();
 
     bool is_speculative_decoding_enabled = !draft_model_path.empty();
 
     // Create requests for generation
-    Dataset dataset = filtered_dataset(models_path, dataset_path, num_prompts, max_input_len, max_output_len);
+    Dataset dataset = filtered_dataset(models_path, dataset_path, num_prompts, max_input_len, max_output_len, sequential_dataset);
 
     // Perform the first inference
     ov::genai::SchedulerConfig scheduler_config;
@@ -505,6 +519,7 @@ int main(int argc, char* argv[]) try {
     scheduler_config.cache_size = cache_size,
     scheduler_config.dynamic_split_fuse = dynamic_split_fuse,
     scheduler_config.max_num_seqs = 256; // not used if dynamic_split_fuse=True
+    scheduler_config.enable_prefix_caching = enable_prefix_caching;
     if (use_cache_eviction) {
         scheduler_config.use_cache_eviction = true;
         scheduler_config.cache_eviction_config = ov::genai::CacheEvictionConfig(32, 32, 128, ov::genai::AggregationMode::NORM_SUM, false, 8, ov::genai::KVCrushConfig(0, ov::genai::KVCrushAnchorPointMode::MEAN));
@@ -513,6 +528,7 @@ int main(int argc, char* argv[]) try {
     std::cout << "Benchmarking parameters: " << std::endl;
     std::cout << "\tMax number of batched tokens: " << scheduler_config.max_num_batched_tokens << std::endl;
     std::cout << "\tScheduling type: " << (scheduler_config.dynamic_split_fuse ? "dynamic split-fuse" : "vLLM") << std::endl;
+    std::cout << "\tPrefix caching: " << (scheduler_config.enable_prefix_caching ? "enabled" : "disabled") << std::endl;
     if (!scheduler_config.dynamic_split_fuse) {
         std::cout << "\tMax number of batched sequences: " << scheduler_config.max_num_seqs << std::endl;
     }

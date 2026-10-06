@@ -23,6 +23,7 @@
 #include "visual_language/vlm_chat_context.hpp"
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/vlm_utils.hpp"
+#include "genai_itt.hpp"
 
 using namespace ov::genai;
 
@@ -336,6 +337,7 @@ public:
         const GenerationConfig& generation_config_in,
         const StreamerVariant& streamer
     ) override {
+        GENAI_ITT_SCOPED_TASK("genai.vlm.generate.prompt");
         // Local mutable copy: setup_generation_config(...) and downstream callees mutate fields
         // (rng_seed, eos_token_id, ...). The public-base signature is const-ref by contract.
         GenerationConfig generation_config = generation_config_in;
@@ -366,19 +368,30 @@ public:
         std::vector<ov::genai::EncodedAudio> encoded_audios;
         if (!audios.empty()) {
             const auto audio_encoding_start = std::chrono::steady_clock::now();
-            encoded_audios = m_inputs_embedder->encode_audios(audios);
+            {
+                GENAI_ITT_SCOPED_TASK("genai.vlm.encode_audios");
+                encoded_audios = m_inputs_embedder->encode_audios(audios);
+            }
             PerfMetrics::emplace_duration(perf_metrics.vlm_raw_metrics.audio_encoding_durations,
                                           audio_encoding_start);
         }
-
         const auto vision_encoding_start = std::chrono::steady_clock::now();
-        auto encoded_images = m_inputs_embedder->encode_images(images);
-        auto encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
+        auto encoded_images = [&]() {
+            GENAI_ITT_SCOPED_TASK("genai.vlm.encode_images");
+            return m_inputs_embedder->encode_images(images);
+        }();
+        vlm_utils::update_image_slice_counts(perf_metrics, encoded_images);
+        auto encoded_videos = [&]() {
+            GENAI_ITT_SCOPED_TASK("genai.vlm.encode_videos");
+            return m_inputs_embedder->encode_videos(videos, videos_metadata);
+        }();
+
         PerfMetrics::emplace_duration(perf_metrics.vlm_raw_metrics.vision_encoding_durations, vision_encoding_start);
 
-        vlm_utils::update_image_slice_counts(perf_metrics, encoded_images);
-
-        auto [unified_prompt, image_sequence, video_sequence, audio_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, m_audio_id, encoded_images, encoded_videos, encoded_audios);
+        auto [unified_prompt, image_sequence, video_sequence, audio_sequence] = [&]() {
+            GENAI_ITT_SCOPED_TASK("genai.vlm.normalize_prompt");
+            return m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, m_audio_id, encoded_images, encoded_videos, encoded_audios);
+        }();
 
         const auto history_audio_sequence_before = m_history_audio_sequence.size();
         if (m_is_chat_conversation) {
@@ -422,31 +435,37 @@ public:
             m_inputs_embedder->set_apply_chat_template_status(generation_config.apply_chat_template);
         }
 
-        auto finish_info = prepare_inputs_and_generate(
-            unified_prompt,
-            encoded_images,
-            encoded_videos,
-            encoded_audios,
-            image_sequence,
-            video_sequence,
-            audio_sequence,
-            m_history_vision_count,
-            generation_config,
-            perf_metrics,
-            streamer,
-            intermediate_remote_tensor,
-            embeddings_start_time
-        );
+        auto finish_info = [&]() {
+            GENAI_ITT_SCOPED_TASK("genai.vlm.prepare_and_generate");
+            return prepare_inputs_and_generate(
+                unified_prompt,
+                encoded_images,
+                encoded_videos,
+                encoded_audios,
+                image_sequence,
+                video_sequence,
+                audio_sequence,
+                m_history_vision_count,
+                generation_config,
+                perf_metrics,
+                streamer,
+                intermediate_remote_tensor,
+                embeddings_start_time
+            );
+        }();
 
         EncodedResults& encoded_result = finish_info.results;
 
         auto decode_start_time = std::chrono::steady_clock::now();
         VLMDecodedResults decoded;
-        for (size_t idx = 0; idx < encoded_result.tokens.size(); ++idx) {
-            decoded.texts.push_back(m_tokenizer.decode(encoded_result.tokens.at(idx)));
-            decoded.scores.push_back(encoded_result.scores.at(idx));
+        {
+            GENAI_ITT_SCOPED_TASK("genai.vlm.decode_results");
+            for (size_t idx = 0; idx < encoded_result.tokens.size(); ++idx) {
+                decoded.texts.push_back(m_tokenizer.decode(encoded_result.tokens.at(idx)));
+                decoded.scores.push_back(encoded_result.scores.at(idx));
+            }
+            decoded.finish_reasons = encoded_result.finish_reasons;
         }
-        decoded.finish_reasons = encoded_result.finish_reasons;
         auto decode_end_time = std::chrono::steady_clock::now();
 
         std::string decoded_results = decoded.texts.at(0);
@@ -582,6 +601,7 @@ public:
         const GenerationConfig& generation_config_in,
         const StreamerVariant& streamer
     ) override {
+        GENAI_ITT_SCOPED_TASK("genai.vlm.generate.chat");
         GenerationConfig generation_config = generation_config_in;
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;
@@ -603,7 +623,10 @@ public:
         const auto embeddings_start_time = std::chrono::steady_clock::now();
         VLMChatContext chat_context(history, m_vision_registry, *m_inputs_embedder);
 
-        auto processed_chat_data = chat_context.process(images, videos, videos_metadata, audios);
+        auto processed_chat_data = [&]() {
+            GENAI_ITT_SCOPED_TASK("genai.vlm.chat_context.process");
+            return chat_context.process(images, videos, videos_metadata, audios);
+        }();
 
         perf_metrics.vlm_raw_metrics.vision_encoding_durations.emplace_back(processed_chat_data.vision_encoding_duration);
         auto& audio_durations = perf_metrics.vlm_raw_metrics.audio_encoding_durations;
@@ -620,10 +643,13 @@ public:
         }
 
         const auto template_start = std::chrono::steady_clock::now();
-        std::string templated_history = m_tokenizer.apply_chat_template(
-            processed_chat_data.normalized_history,
-            true
-        );
+        std::string templated_history = [&]() {
+            GENAI_ITT_SCOPED_TASK("genai.vlm.apply_chat_template");
+            return m_tokenizer.apply_chat_template(
+                processed_chat_data.normalized_history,
+                true
+            );
+        }();
         PerfMetrics::emplace_duration(raw_counters.chat_template_durations, template_start);
 
         ov::genai::utils::GenerationFinishInfo generation_finish_info;
@@ -652,21 +678,24 @@ public:
 
         vlm_utils::update_image_slice_counts(perf_metrics, images_embeds);
 
-        generation_finish_info = prepare_inputs_and_generate(
-            templated_history,
-            images_embeds,
-            videos_embeds,
-            audios_embeds,
-            image_seq,
-            video_seq,
-            audio_seq,
-            vision_counts,
-            generation_config,
-            perf_metrics,
-            streamer,
-            intermediate_remote_tensor,
-            embeddings_start_time
-        );
+        generation_finish_info = [&]() {
+            GENAI_ITT_SCOPED_TASK("genai.vlm.prepare_and_generate");
+            return prepare_inputs_and_generate(
+                templated_history,
+                images_embeds,
+                videos_embeds,
+                audios_embeds,
+                image_seq,
+                video_seq,
+                audio_seq,
+                vision_counts,
+                generation_config,
+                perf_metrics,
+                streamer,
+                intermediate_remote_tensor,
+                embeddings_start_time
+            );
+        }();
 
         EncodedResults& encoded_result = generation_finish_info.results;
 
@@ -677,11 +706,14 @@ public:
 
         auto decode_start_time = std::chrono::steady_clock::now();
         VLMDecodedResults decoded;
-        for (size_t idx = 0; idx < encoded_result.tokens.size(); ++idx) {
-            decoded.texts.push_back(m_tokenizer.decode(encoded_result.tokens.at(idx)));
-            decoded.scores.push_back(encoded_result.scores.at(idx));
+        {
+            GENAI_ITT_SCOPED_TASK("genai.vlm.decode_results");
+            for (size_t idx = 0; idx < encoded_result.tokens.size(); ++idx) {
+                decoded.texts.push_back(m_tokenizer.decode(encoded_result.tokens.at(idx)));
+                decoded.scores.push_back(encoded_result.scores.at(idx));
+            }
+            decoded.finish_reasons = encoded_result.finish_reasons;
         }
-        decoded.finish_reasons = encoded_result.finish_reasons;
         auto decode_end_time = std::chrono::steady_clock::now();
 
         std::string decoded_text = decoded.texts.at(0);
@@ -860,21 +892,24 @@ private:
         const bool use_intermediate_remote_tensor,
         const std::chrono::steady_clock::time_point& embeddings_start_time
     ) {
+        GENAI_ITT_SCOPED_TASK("genai.vlm.prepare_inputs_and_generate");
         ov::Tensor inputs_embeds;
         bool recalculate_merged_embeddings = encoded_images.size() > 0 || encoded_videos.size() > 0;
 
-        inputs_embeds = m_inputs_embedder->get_inputs_embeds(
-            unified_prompt,
-            encoded_images,
-            encoded_videos,
-            encoded_audios,
-            perf_metrics,
-            recalculate_merged_embeddings,
-            image_sequence,
-            video_sequence,
-            audio_sequence,
-            history_vision_count
-        );
+        inputs_embeds = [&]() {
+            GENAI_ITT_SCOPED_TASK("genai.vlm.get_inputs_embeds");
+            return m_inputs_embedder->get_inputs_embeds(unified_prompt,
+                                                        encoded_images,
+                                                        encoded_videos,
+                                                        encoded_audios,
+                                                        perf_metrics,
+                                                        recalculate_merged_embeddings,
+                                                        image_sequence,
+                                                        video_sequence,
+                                                        audio_sequence,
+                                                        history_vision_count);
+        }();
+
         PerfMetrics::emplace_duration(perf_metrics.vlm_raw_metrics.prepare_embeddings_durations, embeddings_start_time);
 
         if (m_is_npu) {
@@ -948,22 +983,25 @@ private:
         if (m_is_npu) {
             max_kv_cache_size = ov::genai::utils::get_npu_kv_cache_capacity(m_language.get_compiled_model());
         }
-        return ov::genai::get_lm_encoded_results(
-            m_language,
-            inputs_embeds,
-            new_atten_mask,
-            streamer_ptr,
-            m_sampler,
-            std::move(requests),
-            position_ids,
-            cache_state,
-            m_embedding,
-            rope_delta,
-            max_kv_cache_size,
-            use_intermediate_remote_tensor,
-            lm_extra_inputs,
-            std::move(per_layer_callback)
-        );
+        return [&]() {
+            GENAI_ITT_SCOPED_TASK("genai.vlm.lm_generate");
+            return ov::genai::get_lm_encoded_results(
+                m_language,
+                inputs_embeds,
+                new_atten_mask,
+                streamer_ptr,
+                m_sampler,
+                std::move(requests),
+                position_ids,
+                cache_state,
+                m_embedding,
+                rope_delta,
+                max_kv_cache_size,
+                use_intermediate_remote_tensor,
+                lm_extra_inputs,
+                std::move(per_layer_callback)
+            );
+        }();
     }
 };
 
@@ -979,6 +1017,7 @@ VLMPipeline::VLMPipeline(
     const std::string& device,
     const ov::AnyMap& user_properties
 ) {
+    GENAI_ITT_SCOPED_TASK("genai.vlm.pipeline.create.path");
     auto start_time = std::chrono::steady_clock::now();
 
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
@@ -1031,6 +1070,7 @@ VLMPipeline::VLMPipeline(
     const ov::AnyMap& user_properties,
     const GenerationConfig& generation_config
 ) {
+    GENAI_ITT_SCOPED_TASK("genai.vlm.pipeline.create.models_map");
     auto start_time = std::chrono::steady_clock::now();
 
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
@@ -1084,7 +1124,11 @@ VLMDecodedResults VLMPipeline::generate(
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
-    return m_pimpl->generate(prompt, images, videos, generation_config, streamer);
+    GENAI_ITT_SCOPED_TASK("genai.vlm.pipeline.generate.prompt");
+    GENAI_ITT_SCOPED_TASK("genai.metrics.request_begin");
+    auto result = m_pimpl->generate(prompt, images, videos, generation_config, streamer);
+    GENAI_ITT_SCOPED_TASK("genai.metrics.request_end");
+    return result;
 }
 
 VLMDecodedResults VLMPipeline::generate(
@@ -1093,7 +1137,11 @@ VLMDecodedResults VLMPipeline::generate(
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
-    return m_pimpl->generate(prompt, images, generation_config, streamer);
+    GENAI_ITT_SCOPED_TASK("genai.vlm.pipeline.generate.prompt_images");
+    GENAI_ITT_SCOPED_TASK("genai.metrics.request_begin");
+    auto result = m_pimpl->generate(prompt, images, generation_config, streamer);
+    GENAI_ITT_SCOPED_TASK("genai.metrics.request_end");
+    return result;
 }
 
 VLMDecodedResults VLMPipeline::generate(
@@ -1121,7 +1169,11 @@ VLMDecodedResults VLMPipeline::generate(
     const std::string& prompt,
     const ov::AnyMap& config_map
 ) {
-    return m_pimpl->generate(prompt, config_map);
+    GENAI_ITT_SCOPED_TASK("genai.vlm.pipeline.generate.prompt_map");
+    GENAI_ITT_SCOPED_TASK("genai.metrics.request_begin");
+    auto result = m_pimpl->generate(prompt, config_map);
+    GENAI_ITT_SCOPED_TASK("genai.metrics.request_end");
+    return result;
 }
 
 VLMDecodedResults VLMPipeline::generate(
@@ -1131,7 +1183,11 @@ VLMDecodedResults VLMPipeline::generate(
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
-    return m_pimpl->generate(history, images, videos, generation_config, streamer);
+    GENAI_ITT_SCOPED_TASK("genai.vlm.pipeline.generate.chat");
+    GENAI_ITT_SCOPED_TASK("genai.metrics.request_begin");
+    auto result = m_pimpl->generate(history, images, videos, generation_config, streamer);
+    GENAI_ITT_SCOPED_TASK("genai.metrics.request_end");
+    return result;
 }
 
 VLMDecodedResults VLMPipeline::generate(
@@ -1140,7 +1196,11 @@ VLMDecodedResults VLMPipeline::generate(
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
-    return m_pimpl->generate(history, images, generation_config, streamer);
+    GENAI_ITT_SCOPED_TASK("genai.vlm.pipeline.generate.chat_images");
+    GENAI_ITT_SCOPED_TASK("genai.metrics.request_begin");
+    auto result = m_pimpl->generate(history, images, generation_config, streamer);
+    GENAI_ITT_SCOPED_TASK("genai.metrics.request_end");
+    return result;
 }
 
 VLMDecodedResults VLMPipeline::generate(
@@ -1168,15 +1228,21 @@ VLMDecodedResults VLMPipeline::generate(
     const ChatHistory& history,
     const ov::AnyMap& config_map
 ) {
-    return m_pimpl->generate(history, config_map);
+    GENAI_ITT_SCOPED_TASK("genai.vlm.pipeline.generate.chat_map");
+    GENAI_ITT_SCOPED_TASK("genai.metrics.request_begin");
+    auto result = m_pimpl->generate(history, config_map);
+    GENAI_ITT_SCOPED_TASK("genai.metrics.request_end");
+    return result;
 }
 
 void VLMPipeline::start_chat(const std::string& system_message) {
+    GENAI_ITT_SCOPED_TASK("genai.vlm.pipeline.start_chat");
     m_pimpl->finish_chat();
     m_pimpl->start_chat(system_message);
 }
 
 void VLMPipeline::finish_chat() {
+    GENAI_ITT_SCOPED_TASK("genai.vlm.pipeline.finish_chat");
     m_pimpl->finish_chat();
 }
 
@@ -1193,6 +1259,7 @@ GenerationConfig VLMPipeline::get_generation_config() const {
 }
 
 void VLMPipeline::set_generation_config(const GenerationConfig& new_config) {
+    GENAI_ITT_SCOPED_TASK("genai.vlm.pipeline.set_generation_config");
     m_pimpl->set_generation_config(new_config);
 }
 

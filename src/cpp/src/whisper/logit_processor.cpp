@@ -5,11 +5,13 @@
 
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "sampling/sampler.hpp"
+#include "genai_itt.hpp"
 
 namespace ov {
 namespace genai {
 
 void do_suppress_tokens(ov::Tensor& logits, const size_t batch_idx, const std::vector<int64_t>& suppress_tokens) {
+    GENAI_ITT_SCOPED_TASK("genai.whisper.logits.processor.suppress_tokens");
     OPENVINO_ASSERT(logits.get_shape()[0] >= batch_idx, "logits batch size doesn't match the batch number");
 
     size_t vocab_size = logits.get_shape().back();
@@ -27,6 +29,7 @@ void process_whisper_timestamp_logits(ov::Tensor& logits,
                                       const ov::genai::WhisperGenerationConfig& config,
                                       const std::vector<int64_t>& generated_tokens,
                                       bool initial_step = false) {
+    GENAI_ITT_SCOPED_TASK("genai.whisper.logits.processor.timestamps");
     const size_t batch_size = logits.get_shape().at(0);
 
     size_t vocab_size = logits.get_shape().back();
@@ -45,6 +48,7 @@ void process_whisper_timestamp_logits(ov::Tensor& logits,
     bool penultimate_was_timestamp = generated_length < 2 || generated_tokens[generated_length - 2] >= timestamp_begin;
 
     if (last_was_timestamp) {
+        GENAI_ITT_SCOPED_TASK("genai.whisper.logits.processor.timestamps.pairing_rules");
         if (penultimate_was_timestamp) {
             // has to be non-timestamp
             for (size_t i = timestamp_begin; i < vocab_size; i++) {
@@ -67,6 +71,7 @@ void process_whisper_timestamp_logits(ov::Tensor& logits,
     }
 
     if (timestamps.size() > 0) {
+        GENAI_ITT_SCOPED_TASK("genai.whisper.logits.processor.timestamps.monotonic_filter");
         size_t timestamp_last;
         // `timestamps` shouldn't decrease; forbid timestamp tokens smaller than the last
         // The following lines of code are copied from: https://github.com/openai/whisper/pull/914/files#r1137085090
@@ -84,6 +89,7 @@ void process_whisper_timestamp_logits(ov::Tensor& logits,
 
     // apply the `max_initial_timestamp` option
     if (initial_step) {
+        GENAI_ITT_SCOPED_TASK("genai.whisper.logits.processor.timestamps.initial_step");
         for (size_t i = 0; i < timestamp_begin; i++) {
             logits_data[i] = -std::numeric_limits<float>::infinity();
         }
@@ -94,6 +100,7 @@ void process_whisper_timestamp_logits(ov::Tensor& logits,
         }
     }
 
+    GENAI_ITT_SCOPED_TASK("genai.whisper.logits.processor.timestamps.logprob_gate");
     auto tokens = ov::genai::log_softmax(logits, batch_idx);
     float timestamp_exp_prov_sum = 0;
 

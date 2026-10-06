@@ -3,6 +3,7 @@
 
 #include "visual_language/vlm_chat_context.hpp"
 #include "continuous_batching/timer.hpp"
+#include "genai_itt.hpp"
 
 namespace ov::genai {
 
@@ -29,6 +30,7 @@ VLMChatContext::ProcessedChatData VLMChatContext::process(
     const std::vector<VideoMetadata>& new_videos_metadata,
     const std::vector<ov::Tensor>& new_audios
 ) {
+    GENAI_ITT_SCOPED_TASK("genai.vlm.chat_context.process");
     ProcessedChatData result;
     
     const size_t matching_history_length = m_history_state->find_matching_history_length(m_history);
@@ -105,11 +107,15 @@ void VLMChatContext::encode_visions_if_needed(
     const std::vector<size_t>& video_indices,
     const std::vector<VideoMetadata>& videos_metadata
 ) {
+    GENAI_ITT_SCOPED_TASK("genai.vlm.chat_context.encode_visions_if_needed");
     for (size_t idx : image_indices) {
         VisionID id = m_history_state->get_image_vision_id(idx);
         if (!m_vision_registry->has_encoded_image(id)) {
             const ov::Tensor& original = m_vision_registry->get_original(id);
-            const auto encoded = m_inputs_embedder.encode_images({original});
+            const auto encoded = [&]() {
+                GENAI_ITT_SCOPED_TASK("genai.vlm.chat_context.encode_single_image");
+                return m_inputs_embedder.encode_images({original});
+            }();
             m_vision_registry->set_encoded_image(id, std::move(encoded[0]));
         }
     }
@@ -127,7 +133,7 @@ void VLMChatContext::encode_visions_if_needed(
                     "Please provide metadata for all videos or none of them.");
                 resolved_videos_metadata.push_back(videos_metadata[video_metadata_idx]);
             }
-
+            GENAI_ITT_SCOPED_TASK("genai.vlm.chat_context.encode_single_video");
             const auto encoded = m_inputs_embedder.encode_videos({original}, resolved_videos_metadata);
             m_vision_registry->set_encoded_video(id, std::move(encoded[0]));
         }

@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <limits>
 #include <map>
@@ -20,6 +21,7 @@
 #include "continuous_batching/cache/cache_orchestrator.hpp"
 #include "sequence_group.hpp"
 #include "continuous_batching/sparse_attention.hpp"
+#include "genai_itt.hpp"
 #include "utils.hpp"
 #include "continuous_batching/cache/cache_eviction.hpp"
 
@@ -296,6 +298,7 @@ public:
         _validate_linear_attention_paging_modes(sequence_groups);
 
         LinearAttentionReservationTransaction linear_attention_reservations(*m_cache_orchestrator);
+        GENAI_ITT_SCOPED_TASK("genai.cb.schedule");
         Output scheduler_output;
         scheduler_output.set_kv_paged_attention_global_data(m_kv_paged_attention_global_data);
         // map of src -> dst blocks copies per cache type
@@ -342,6 +345,7 @@ public:
         // Sample after all scheduling allocations are complete.
         m_cache_orchestrator->sample_linear_attention_pool_blocks_high_water();
 
+        GENAI_ITT_SCOPED_TASK("genai.cb.copy_blocks");
         m_cache_orchestrator->copy_blocks(typed_block_copy_map);
         linear_attention_reservations.disarm();
         return scheduler_output;
@@ -628,6 +632,15 @@ private:
                     // add information to scheduler_output
                     {
                         scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
+                        if (GENAI_CB_TRACE_ENABLED()) {
+                            char sequence_event[128];
+                            std::snprintf(sequence_event,
+                                          sizeof(sequence_event),
+                                          "genai.cb.seq.step:s=%llu,t=%zu,p=1",
+                                          static_cast<unsigned long long>(seq_id),
+                                          num_scheduled_tokens);
+                            ::ov::genai::itt::ScopedTask sequence_task(sequence_event);
+                        }
                         _set_kv_paged_attention_data(scheduler_output, sequence_group, seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += num_scheduled_tokens * num_running_seqs;
 
@@ -750,6 +763,15 @@ private:
                         size_t seq_id = seq->get_id();
                         // block tables for each running sequence within a group
                         _set_kv_paged_attention_data(scheduler_output, sequence_group, seq_id);
+                        if (GENAI_CB_TRACE_ENABLED()) {
+                            char sequence_event[128];
+                            std::snprintf(sequence_event,
+                                          sizeof(sequence_event),
+                                          "genai.cb.seq.step:s=%llu,t=%zu,p=0",
+                                          static_cast<unsigned long long>(seq_id),
+                                          num_scheduled_tokens_per_seq);
+                            ::ov::genai::itt::ScopedTask sequence_task(sequence_event);
+                        }
                     }
 
                     for (auto& [type, copy_map] : per_type_copy_map) {
@@ -847,6 +869,15 @@ private:
                     {
                         scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
                         uint64_t seq_id = sequence_group->get_running_sequences()[0]->get_id();
+                        if (GENAI_CB_TRACE_ENABLED()) {
+                            char sequence_event[128];
+                            std::snprintf(sequence_event,
+                                          sizeof(sequence_event),
+                                          "genai.cb.seq.step:s=%llu,t=%zu,p=1",
+                                          static_cast<unsigned long long>(seq_id),
+                                          sequence_len);
+                            ::ov::genai::itt::ScopedTask sequence_task(sequence_event);
+                        }
                         _set_kv_paged_attention_data(scheduler_output, sequence_group, seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += sequence_len;
 

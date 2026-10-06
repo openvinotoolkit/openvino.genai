@@ -7,6 +7,7 @@
 #include "lora/helper.hpp"
 #include "lm_encoding.hpp"
 #include "openvino/genai/text_streamer.hpp"
+#include "genai_itt.hpp"
 
 #include "utils.hpp"
 
@@ -113,14 +114,22 @@ DecodedResults StatefulLLMPipeline::get_decoded_results(
     std::chrono::steady_clock::time_point tokenization_start_time,
     std::optional<float> chat_template_duration_us
 ) {
+    GENAI_ITT_SCOPED_TASK("genai.stateful.get_decoded_results");
     auto encode_stop_time =  std::chrono::steady_clock::now();
-    auto encoded_results = generate(encoded_input, generation_config, streamer);
+    EncodedResults encoded_results;
+    {
+        GENAI_ITT_SCOPED_TASK("genai.stateful.generate_encoded");
+        encoded_results = generate(encoded_input, generation_config, streamer);
+    }
 
     auto decode_start_time =  std::chrono::steady_clock::now();
     DecodedResults decoded_results;
-    decoded_results.texts = m_tokenizer.decode(encoded_results.tokens);
-    decoded_results.scores = encoded_results.scores;
-    decoded_results.finish_reasons = encoded_results.finish_reasons;
+    {
+        GENAI_ITT_SCOPED_TASK("genai.stateful.detokenize");
+        decoded_results.texts = m_tokenizer.decode(encoded_results.tokens);
+        decoded_results.scores = encoded_results.scores;
+        decoded_results.finish_reasons = encoded_results.finish_reasons;
+    }
     auto decode_stop_time =  std::chrono::steady_clock::now();
 
     // generate_durations
@@ -146,6 +155,7 @@ DecodedResults StatefulLLMPipeline::generate(
     StringInputs inputs,
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer) {
+    GENAI_ITT_SCOPED_TASK("genai.stateful.generate_string_inputs");
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::UNDEF)
         m_chat_input_type = ov::genai::utils::GenerationChatInputsType::STRING;
 
@@ -161,85 +171,92 @@ DecodedResults StatefulLLMPipeline::generate(
     auto tokenization_start_time = start_time;
     std::optional<float> chat_template_duration_us;
 
-    if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
-        if (is_chat_conversation) {
-            OPENVINO_ASSERT(input_vector->size() == 1, "Can't chat with multiple prompts");
-            m_history.push_back({{"role", "user"}, {"content", (*input_vector)[0]}});
-            constexpr bool add_generation_prompt = true;
-            const auto template_start_time = std::chrono::steady_clock::now();
-            auto new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-            chat_template_duration_us = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start_time);
-            tokenization_start_time = std::chrono::steady_clock::now();
-            auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
+    {
+        GENAI_ITT_SCOPED_TASK("genai.stateful.tokenize");
 
-            if (m_use_full_chat_history) {
-                encoded_input = new_chat_tokens;
-            } else {
-                ov::genai::align_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
-                encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_cache_state);
-            }
-        } else if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
-            std::vector<std::string> templated_input_vector;
-            for (auto& input : *input_vector) {
-                ChatHistory history({{{"role", "user"}, {"content", input}}});
+        if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
+            if (is_chat_conversation) {
+                OPENVINO_ASSERT(input_vector->size() == 1, "Can't chat with multiple prompts");
+                m_history.push_back({{"role", "user"}, {"content", (*input_vector)[0]}});
                 constexpr bool add_generation_prompt = true;
                 const auto template_start_time = std::chrono::steady_clock::now();
-                auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
-                chat_template_duration_us = chat_template_duration_us.value_or(0.0f) +
-                                            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start_time);
-                templated_input_vector.push_back(templated_prompt);
-            }
-            tokenization_start_time = std::chrono::steady_clock::now();
-            encoded_input = m_tokenizer.encode(templated_input_vector, ov::genai::add_special_tokens(false));
-        } else {
-            tokenization_start_time = std::chrono::steady_clock::now();
-            encoded_input = m_tokenizer.encode(*input_vector, ov::genai::add_special_tokens(true));
-        }
-    } else if (auto input_prompt = std::get_if<std::string>(&inputs)) {
-        std::string& prompt = *input_prompt;
-
-        if (is_chat_conversation) {
-            m_history.push_back({{"role", "user"}, {"content", prompt}});
-            constexpr bool add_generation_prompt = true;
-            const auto template_start_time = std::chrono::steady_clock::now();
-            auto new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-            chat_template_duration_us = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start_time);
-            tokenization_start_time = std::chrono::steady_clock::now();
-            // Do not add special tokens in chat scenario to be aligned with HF.
-            auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
-
-            if (m_use_full_chat_history) {
-                encoded_input = new_chat_tokens;
-            } else {
-                ov::genai::align_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
-                encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_cache_state);
-            }
-            // TODO: Forbid LoRA config change if we are in the chat mode, because it requires regenerating the history with LoRA applied
-        } else {
-            if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
-                ChatHistory history({{{"role", "user"}, {"content", prompt}}});
-                constexpr bool add_generation_prompt = true;
-                const auto template_start_time = std::chrono::steady_clock::now();
-                auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+                auto new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
                 chat_template_duration_us = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start_time);
                 tokenization_start_time = std::chrono::steady_clock::now();
-                encoded_input = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false));
-            } else {
-                // in case when chat_template was not found in tokenizer_config.json or set
+                auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
+
+                if (m_use_full_chat_history) {
+                    encoded_input = new_chat_tokens;
+                } else {
+                    ov::genai::align_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
+                    encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_cache_state);
+                }
+            } else if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
+                std::vector<std::string> templated_input_vector;
+                for (auto& input : *input_vector) {
+                    ChatHistory history({{{"role", "user"}, {"content", input}}});
+                    constexpr bool add_generation_prompt = true;
+                    const auto template_start_time = std::chrono::steady_clock::now();
+                    auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+                    chat_template_duration_us = chat_template_duration_us.value_or(0.0f) +
+                                                PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start_time);
+                    templated_input_vector.push_back(templated_prompt);
+                }
                 tokenization_start_time = std::chrono::steady_clock::now();
-                encoded_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(true));
+                encoded_input = m_tokenizer.encode(templated_input_vector, ov::genai::add_special_tokens(false));
+            } else {
+                tokenization_start_time = std::chrono::steady_clock::now();
+                encoded_input = m_tokenizer.encode(*input_vector, ov::genai::add_special_tokens(true));
+            }
+        } else if (auto input_prompt = std::get_if<std::string>(&inputs)) {
+            std::string& prompt = *input_prompt;
+
+            if (is_chat_conversation) {
+                m_history.push_back({{"role", "user"}, {"content", prompt}});
+                constexpr bool add_generation_prompt = true;
+                const auto template_start_time = std::chrono::steady_clock::now();
+                auto new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+                chat_template_duration_us = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start_time);
+                tokenization_start_time = std::chrono::steady_clock::now();
+                // Do not add special tokens in chat scenario to be aligned with HF.
+                auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
+
+                if (m_use_full_chat_history) {
+                    encoded_input = new_chat_tokens;
+                } else {
+                    ov::genai::align_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
+                    encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_cache_state);
+                }
+                // TODO: Forbid LoRA config change if we are in the chat mode, because it requires regenerating the history with LoRA applied
+            } else {
+                if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
+                    ChatHistory history({{{"role", "user"}, {"content", prompt}}});
+                    constexpr bool add_generation_prompt = true;
+                    const auto template_start_time = std::chrono::steady_clock::now();
+                    auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+                    chat_template_duration_us = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start_time);
+                    tokenization_start_time = std::chrono::steady_clock::now();
+                    encoded_input = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false));
+                } else {
+                    // in case when chat_template was not found in tokenizer_config.json or set
+                    tokenization_start_time = std::chrono::steady_clock::now();
+                    encoded_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(true));
+                }
             }
         }
     }
-
-    DecodedResults decoded_results = get_decoded_results(
-        encoded_input,
-        config,
-        streamer,
-        start_time,
-        tokenization_start_time,
-        chat_template_duration_us
-    );
+    DecodedResults decoded_results;
+    {
+        GENAI_ITT_SCOPED_TASK("genai.stateful.decode_results");
+        decoded_results = get_decoded_results(
+            encoded_input,
+            config,
+            streamer,
+            start_time,
+            tokenization_start_time,
+            chat_template_duration_us
+        );
+    }
 
     if (is_chat_conversation) {
         if (m_chat_generation_finish_status == ov::genai::GenerationStatus::CANCEL) {
