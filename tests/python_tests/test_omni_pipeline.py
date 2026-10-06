@@ -288,7 +288,7 @@ class RecordingVLM(ov_genai.VLMPipelineBase):
         self._audio_output = audio_output
         self._hidden_states = hidden_states
 
-    def generate(  # noqa: PLR0913
+    def generate(
         self,
         prompt: str | ov_genai.ChatHistory,
         images: list[ov.Tensor] | None = None,
@@ -831,7 +831,7 @@ def omni_pipe_from_models_map(omni_model_path: Path) -> ov_genai.OmniPipeline:
 def omni_pipe_with_unmatched_role_tokens(
     omni_model_path: Path, tmp_path_factory: pytest.TempPathFactory
 ) -> ov_genai.OmniPipeline:
-    """The exported checkpoint with only its role token ids broken in config.json.
+    """The exported checkpoint with only its role token ids intentionally broken in config.json.
 
     Copied, not symlinked: the pipeline refuses to load model files that resolve outside the model dir.
     """
@@ -887,7 +887,7 @@ class TestOmniPipelineRealModel:
             "Describe this.", text_config=seeded, talker_speech_config=text_only
         ).scores
 
-        assert map_scores == pytest.approx(path_scores), (
+        assert map_scores == path_scores, (
             f"seeded sampling diverged: ModelsMap-built scored {map_scores}, path-built scored {path_scores}, "
             "so the two constructions did not compile the same graph"
         )
@@ -958,20 +958,17 @@ class TestOmniPipelineRealModel:
         assert long_tokens == 24, f"max_new_tokens=24 with ignore_eos must generate 24 tokens, got {long_tokens}"
 
     def test_rng_seed_steers_sampling(self, omni_pipe: ov_genai.OmniPipeline) -> None:
-        """One rng_seed reproduces its own result, and the seeds do not all produce the same one.
+        """One rng_seed reproduces its own result, and each seed produces a different one.
 
         Asserted on scores, not texts: on random weights two seeds can still decode to the same short
         text, while the cumulative score shows whether rng_seed actually reaches the sampler.
-
-        The divergence check spans four seeds and only requires that they are not all identical,
-        because any single pair of seeds can collide.
         """
         text_only = _talker_speech_config(return_audio=False)
         seeded = _sampling_text_config(rng_seed=42)
 
         first = omni_pipe.generate("Describe this.", text_config=seeded, talker_speech_config=text_only)
         second = omni_pipe.generate("Describe this.", text_config=seeded, talker_speech_config=text_only)
-        assert first.scores == pytest.approx(second.scores), (
+        assert first.scores == second.scores, (
             f"rng_seed=42 must reproduce its own scores, got {first.scores} then {second.scores}"
         )
 
@@ -986,8 +983,8 @@ class TestOmniPipelineRealModel:
             )
             for seed in rng_seeds
         }
-        assert len(sampled) > 1, (
-            f"sampling with different rng_seeds {rng_seeds} produced the same scores for every seed"
+        assert len(sampled) == len(rng_seeds), (
+            f"sampling with different rng_seeds {rng_seeds} produced the same scores for some seeds"
         )
 
     def test_generate_with_speech(self, omni_pipe: ov_genai.OmniPipeline) -> None:
@@ -1137,6 +1134,27 @@ class TestOmniPipelineRealModel:
         assert speakers, "the checkpoint declares speakers, so list_speakers() must not be empty"
         embedding = omni_pipe.get_talker().get_speaker_embedding(speakers[0])
         assert embedding.get_size() > 0, f"speaker {speakers[0]!r} must resolve to a non-empty embedding"
+
+    def test_speaker_embedding_steers_speech(self, omni_pipe: ov_genai.OmniPipeline) -> None:
+        """A speaker's own embedding reproduces its named voice, and an altered embedding changes the speech."""
+        talker = omni_pipe.get_talker()
+        speaker = talker.list_speakers()[0]
+        embedding = talker.get_speaker_embedding(speaker)
+        altered = ov.Tensor(np.array(embedding.data) + 1.0)
+
+        def speak(voice: str | ov.Tensor) -> np.ndarray:
+            result = omni_pipe.generate(
+                "Describe this.",
+                text_config=_text_config(),
+                talker_speech_config=_talker_speech_config(return_audio=True, speaker=voice),
+            )
+            return _extract_assert_single_waveform(result)
+
+        named = speak(speaker)
+        assert np.array_equal(speak(embedding), named), (
+            f"passing the embedding of {speaker!r} as a tensor must synthesize the same waveform as its name"
+        )
+        assert not np.array_equal(speak(altered), named), "an altered speaker embedding must change the speech"
 
 
 # The tiny CI model's tokenizer lacks the audio tokens, so audio dies in the merge assert; audio
