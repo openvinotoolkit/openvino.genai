@@ -10,6 +10,7 @@
 #include "include/asr_pipeline/perf_metrics.hpp"
 #include "include/asr_pipeline/pipeline_wrapper.hpp"
 #include "include/chat_history.hpp"
+#include "include/embedding_pipeline/pipeline_wrapper.hpp"
 #include "include/image2image_pipeline/pipeline_wrapper.hpp"
 #include "include/inpainting_pipeline/pipeline_wrapper.hpp"
 #include "include/llm_pipeline/llm_pipeline_wrapper.hpp"
@@ -82,6 +83,11 @@ Napi::Object init_module(Napi::Env env, Napi::Object exports) {
                &InpaintingPipelineWrapper::get_class,
                addon_data->inpainting_pipeline);
     init_class(env, exports, "TextEmbeddingPipeline", &TextEmbeddingPipelineWrapper::get_class, addon_data->core);
+    init_class(env,
+               exports,
+               "EmbeddingPipeline",
+               &EmbeddingPipelineWrapper::get_class,
+               addon_data->embedding_pipeline);
     init_class(env,
                exports,
                "TextRerankPipeline",

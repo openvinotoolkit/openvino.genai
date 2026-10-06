@@ -13,6 +13,7 @@
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
 #include "openvino/genai/image_generation/image_generation_perf_metrics.hpp"
+#include "openvino/genai/rag/embedding_pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/genai/rag/text_rerank_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
@@ -144,6 +145,10 @@ ov::genai::ImageGenerationConfig js_to_cpp<ov::genai::ImageGenerationConfig>(con
                                                                               const Napi::Value& value);
 template <>
 std::vector<ov::Tensor> js_to_cpp<std::vector<ov::Tensor>>(const Napi::Env& env, const Napi::Value& value);
+/** @brief  A template specialization for TargetType std::vector<ov::genai::VideoMetadata> */
+template <>
+std::vector<ov::genai::VideoMetadata> js_to_cpp<std::vector<ov::genai::VideoMetadata>>(const Napi::Env& env,
+                                                                                       const Napi::Value& value);
 /**
  * @brief  Unwraps a C++ object from a JavaScript wrapper.
  * @tparam TargetType The C++ class type to extract.
@@ -207,6 +212,11 @@ Napi::Value cpp_to_js<ov::genai::EmbeddingResult, Napi::Value>(const Napi::Env& 
 template <>
 Napi::Value cpp_to_js<ov::genai::EmbeddingResults, Napi::Value>(const Napi::Env& env,
                                                                 const ov::genai::EmbeddingResults& embedding_result);
+
+/** @brief  A template specialization for TargetType Napi::Value and SourceType ov::genai::EmbedResult */
+template <>
+Napi::Value cpp_to_js<ov::genai::EmbedResult, Napi::Value>(const Napi::Env& env,
+                                                           const ov::genai::EmbedResult& embed_result);
 
 /** @brief  A template specialization for TargetType Napi::Value and SourceType std::vector<std::string> */
 template <>

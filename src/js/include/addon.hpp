@@ -11,6 +11,7 @@ struct AddonData {
     Napi::FunctionReference core;
     Napi::FunctionReference vlm_pipeline;
     Napi::FunctionReference text_rerank_pipeline;
+    Napi::FunctionReference embedding_pipeline;
     Napi::FunctionReference whisper_pipeline;
     Napi::FunctionReference asr_pipeline;
     Napi::FunctionReference text2image_pipeline;

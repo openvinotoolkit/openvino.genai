@@ -819,6 +819,46 @@ std::vector<ov::Tensor> js_to_cpp<std::vector<ov::Tensor>>(const Napi::Env& env,
 }
 
 template <>
+std::vector<ov::genai::VideoMetadata> js_to_cpp<std::vector<ov::genai::VideoMetadata>>(const Napi::Env& env,
+                                                                                       const Napi::Value& value) {
+    std::vector<ov::genai::VideoMetadata> videos_metadata;
+    if (value.IsUndefined() || value.IsNull()) {
+        return videos_metadata;
+    }
+    OPENVINO_ASSERT(value.IsArray(), "Passed argument must be an array of VideoMetadata objects.");
+    const auto array = value.As<Napi::Array>();
+    const uint32_t length = array.Length();
+    videos_metadata.reserve(length);
+    for (uint32_t i = 0; i < length; ++i) {
+        const Napi::Value item = array[i];
+        OPENVINO_ASSERT(item.IsObject(), "Each VideoMetadata entry must be an object.");
+        const auto object = item.As<Napi::Object>();
+        ov::genai::VideoMetadata metadata;
+        if (object.Has("fps")) {
+            metadata.fps = object.Get("fps").ToNumber().FloatValue();
+        }
+        if (object.Has("frames_indices")) {
+            const Napi::Value frames_indices_value = object.Get("frames_indices");
+            OPENVINO_ASSERT(frames_indices_value.IsArray(),
+                            "VideoMetadata 'frames_indices' must be an array of numbers.");
+            const auto frames_indices_array = frames_indices_value.As<Napi::Array>();
+            const uint32_t indices_length = frames_indices_array.Length();
+            std::vector<size_t> frames_indices;
+            frames_indices.reserve(indices_length);
+            for (uint32_t index = 0; index < indices_length; ++index) {
+                const int64_t frame_index = frames_indices_array.Get(index).ToNumber().Int64Value();
+                OPENVINO_ASSERT(frame_index >= 0,
+                                "VideoMetadata 'frames_indices' must contain non-negative values.");
+                frames_indices.push_back(static_cast<size_t>(frame_index));
+            }
+            metadata.frames_indices = std::move(frames_indices);
+        }
+        videos_metadata.push_back(std::move(metadata));
+    }
+    return videos_metadata;
+}
+
+template <>
 ov::genai::PerfMetrics& unwrap<ov::genai::PerfMetrics>(const Napi::Env& env, const Napi::Value& value) {
     const auto obj = value.As<Napi::Object>();
     const auto& prototype = env.GetInstanceData<AddonData>()->perf_metrics;
@@ -982,6 +1022,14 @@ Napi::Value cpp_to_js<ov::genai::EmbeddingResults, Napi::Value>(const Napi::Env&
             return js_result;
         },
         embedding_result);
+}
+
+template <>
+Napi::Value cpp_to_js<ov::genai::EmbedResult, Napi::Value>(const Napi::Env& env,
+                                                           const ov::genai::EmbedResult& embed_result) {
+    auto js_object = Napi::Object::New(env);
+    js_object.Set("embeddings", cpp_to_js<ov::Tensor, Napi::Value>(env, embed_result.embeddings));
+    return js_object;
 }
 
 template <>
