@@ -132,6 +132,18 @@ void ContinuousBatchingPipeline::MtpDecodingImpl::enable_mtp_hidden_state_pairin
     draft_mtp_pipeline->set_mtp_draft_positions_needed(true);
 }
 
+GenerationConfig ContinuousBatchingPipeline::MtpDecodingImpl::make_draft_generation_config(
+    const GenerationConfig& config) {
+    GenerationConfig draft_config = config;
+    draft_config.ignore_eos = true;
+    draft_config.stop_strings.clear();
+    if (draft_config.max_new_tokens == SIZE_MAX && draft_config.max_length == SIZE_MAX) {
+        // The draft is stopped by the target, but ignore_eos requires a finite generation limit.
+        draft_config.max_new_tokens = SIZE_MAX - 1;
+    }
+    return draft_config;
+}
+
 GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     uint64_t request_id,
     const ov::Tensor& input_ids,
@@ -141,9 +153,7 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     validate_mtp_generation_config(sampling_params);
 
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
-    auto draft_sampling_params = sampling_params;
-    draft_sampling_params.ignore_eos = true;
-    draft_sampling_params.stop_strings = {};
+    GenerationConfig draft_sampling_params = make_draft_generation_config(sampling_params);
     // Draft gets shifted embeds only; VLM extras belong to the main model.
     ov::Tensor draft_input_embeds = create_draft_input_embeds(input_ids);
     OPENVINO_ASSERT(!std::static_pointer_cast<ContinuousBatchingForMtpDecodingImpl>(m_main_pipeline)->is_prefix_caching_enabled() ||

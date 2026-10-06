@@ -61,6 +61,7 @@ protected:
     class MtpPipelineTestInstance : public ContinuousBatchingPipeline::MtpDecodingImpl {
     public:
         MtpPipelineTestInstance() = default;
+        using MtpDecodingImpl::make_draft_generation_config;
     };
 
     PipelineTestInstance m_pipeline = PipelineTestInstance();
@@ -94,6 +95,40 @@ TEST(SDPerModelsPerfMetrics, DraftOverheadDiagnosticsReturnNanWithoutDenominator
 
 TEST_F(CBForSDTest, DraftPipelineKeepsKvOnlyCompletedBlocksUnpublished) {
     EXPECT_FALSE(m_pipeline.can_publish_kv_only_completed_blocks());
+}
+
+TEST_F(CBForSDTest, MtpDraftConfigWithoutTokenLimitIgnoresEos) {
+    ov::genai::GenerationConfig config;
+    config.num_assistant_tokens = 2;
+    config.stop_strings = {"stop"};
+
+    const auto draft_config = MtpPipelineTestInstance::make_draft_generation_config(config);
+
+    EXPECT_EQ(config.max_new_tokens, SIZE_MAX);
+    EXPECT_EQ(config.max_length, SIZE_MAX);
+    EXPECT_EQ(draft_config.max_new_tokens, SIZE_MAX - 1);
+    EXPECT_EQ(draft_config.max_length, SIZE_MAX);
+    EXPECT_TRUE(draft_config.ignore_eos);
+    EXPECT_TRUE(draft_config.stop_strings.empty());
+    EXPECT_NO_THROW(draft_config.validate());
+}
+
+TEST_F(CBForSDTest, MtpDraftConfigPreservesExplicitTokenLimit) {
+    ov::genai::GenerationConfig config;
+    config.num_assistant_tokens = 2;
+    config.max_new_tokens = 200;
+    const auto draft_config = MtpPipelineTestInstance::make_draft_generation_config(config);
+
+    EXPECT_EQ(draft_config.max_new_tokens, 200);
+    EXPECT_NO_THROW(draft_config.validate());
+
+    config.max_new_tokens = SIZE_MAX;
+    config.max_length = 512;
+    const auto draft_length_config = MtpPipelineTestInstance::make_draft_generation_config(config);
+
+    EXPECT_EQ(draft_length_config.max_new_tokens, SIZE_MAX);
+    EXPECT_EQ(draft_length_config.max_length, 512);
+    EXPECT_NO_THROW(draft_length_config.validate());
 }
 
 TEST(MtpDraftUpdatePlan, PreservesAcceptedPrefixAfterPartialRejection) {

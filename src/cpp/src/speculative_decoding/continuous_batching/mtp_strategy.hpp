@@ -47,6 +47,7 @@ public:
 
 protected:
     MtpDecodingImpl() = default;
+    static GenerationConfig make_draft_generation_config(const GenerationConfig& config);
     void enable_mtp_hidden_state_pairing();
     void align_request_pair_processed_prefix(uint64_t request_id) override;
 };
