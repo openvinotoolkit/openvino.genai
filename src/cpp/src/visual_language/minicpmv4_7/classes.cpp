@@ -18,12 +18,6 @@ namespace {
 const std::string NATIVE_TAG = "<image>./</image>";
 const std::string NATIVE_VIDEO_TAG = "<video>./</video>";
 
-// Slices layout (how original image is adaptively sliced). Holds the number of slices in rows and columns.
-struct SlicesGrid {
-    size_t rows = 0;
-    size_t cols = 0;
-};
-
 size_t calc_vision_downsample_factor(size_t window_kernel_size, size_t merge_kernel_size) {
     return window_kernel_size * merge_kernel_size;
 }
@@ -32,6 +26,7 @@ int ensure_divide(double length, int divisor) {
     return std::max(static_cast<int>(std::round(length / divisor)) * divisor, divisor);
 }
 
+// TODO Refine/clarify docstring comment
 // Resizes so the area fits scale_resolution^2 while preserving aspect ratio, snapping each side to a
 // multiple of patch_size * 4 (two 2x2 spatial merges).
 ImageSize find_best_resize(double height, double width, int scale_resolution, int patch_size, bool allow_upscale) {
@@ -44,11 +39,11 @@ ImageSize find_best_resize(double height, double width, int scale_resolution, in
     return {static_cast<size_t>(ensure_divide(height, factor)), static_cast<size_t>(ensure_divide(width, factor))};
 }
 
-// Chooses the slice grid, or nullopt when the image is small enough to skip slicing.
-std::optional<SlicesGrid> get_sliced_grid(int height, int width, int max_slice_nums, int scale_resolution) {
+// TODO Consider using SlicesGrid has_slices() method instead of optional
+// Calculates slices grid, nullopt if image is too small for slicing
+std::optional<SlicesGrid> get_slices_grid(int height, int width, int max_slice_nums, int scale_resolution) {
     const double log_ratio = std::log(static_cast<double>(width) / height);
-    const double ratio =
-        static_cast<double>(width) * height / (static_cast<double>(scale_resolution) * scale_resolution);
+    const double ratio = static_cast<double>(width) * height / (static_cast<double>(scale_resolution) * scale_resolution);
     const int multiple = std::min(static_cast<int>(std::ceil(ratio)), max_slice_nums);
     if (multiple <= 1) {
         return std::nullopt;
@@ -77,6 +72,7 @@ std::optional<SlicesGrid> get_sliced_grid(int height, int width, int max_slice_n
     return best_grid;
 }
 
+// TODO Refine/clarify docstring comment
 // Returns the size the source image is resized to before being tiled into the slice grid.
 ImageSize get_refine_size(int height, int width, SlicesGrid grid, int scale_resolution, int patch_size) {
     const int grid_rows = static_cast<int>(grid.rows);
@@ -94,38 +90,41 @@ ImageSize get_refine_size(int height, int width, SlicesGrid grid, int scale_reso
     return {best.height * grid.rows, best.width * grid.cols};
 }
 
-// Splits a resized image into grid tiles of size (tile_height, tile_width), row-major.
-std::vector<clip_image_u8> divide_to_patches(const clip_image_u8& image, int tile_height, int tile_width) {
-    const int grid_y = image.ny / tile_height;
-    const int grid_x = image.nx / tile_width;
-    std::vector<clip_image_u8> tiles;
-    tiles.reserve(static_cast<size_t>(grid_y) * grid_x);
+// Splits a resized image into slices of size (slice_height, slice_width), row-major.
+std::vector<clip_image_u8> split_to_slices(const clip_image_u8& image, int slice_height, int slice_width) {
+    const int grid_y = image.ny / slice_height;
+    const int grid_x = image.nx / slice_width;
+    std::vector<clip_image_u8> slices;
+    slices.reserve(static_cast<size_t>(grid_y) * grid_x);
     for (int row = 0; row < grid_y; ++row) {
         for (int col = 0; col < grid_x; ++col) {
-            clip_image_u8 tile;
-            tile.nx = tile_width;
-            tile.ny = tile_height;
-            tile.buf.resize(static_cast<size_t>(3) * tile_width * tile_height);
-            for (int y = 0; y < tile_height; ++y) {
-                for (int x = 0; x < tile_width; ++x) {
-                    const int src_idx = 3 * ((row * tile_height + y) * image.nx + (col * tile_width + x));
-                    const int dst_idx = 3 * (y * tile_width + x);
-                    tile.buf[dst_idx] = image.buf[src_idx];
-                    tile.buf[dst_idx + 1] = image.buf[src_idx + 1];
-                    tile.buf[dst_idx + 2] = image.buf[src_idx + 2];
+            clip_image_u8 slice;
+            slice.nx = slice_width;
+            slice.ny = slice_height;
+            slice.buf.resize(static_cast<size_t>(3) * slice_width * slice_height);
+            for (int y = 0; y < slice_height; ++y) {
+                for (int x = 0; x < slice_width; ++x) {
+                    const int src_idx = 3 * ((row * slice_height + y) * image.nx + (col * slice_width + x));
+                    const int dst_idx = 3 * (y * slice_width + x);
+                    slice.buf[dst_idx] = image.buf[src_idx];
+                    slice.buf[dst_idx + 1] = image.buf[src_idx + 1];
+                    slice.buf[dst_idx + 2] = image.buf[src_idx + 2];
                 }
             }
-            tiles.push_back(std::move(tile));
+            slices.push_back(std::move(slice));
         }
     }
-    return tiles;
+    return slices;
 }
 
-// Result of adaptive slicing: thumbnail crop first, then detail slices row-major.
+// Result of adaptive slicing
 struct SlicedImage {
+    // pixel data for each crop (thumbnail first, then detail slices)
     std::vector<clip_image_u8> crops;
-    std::vector<ImageSize> crop_grids;  // patch grid (height, width) per crop
-    ov::Shape slices_shape;             // {rows, cols}; empty when the image is not sliced
+    // size of each crop in patches (height, width)
+    std::vector<ImageSize> crop_sizes;
+    // slices grid layout (rows, cols), zeroed if image is not sliced
+    SlicesGrid slices_grid;
 };
 
 // Splits a source image into crops (low-res thumbnail + optional higher-res detail slices)
@@ -137,35 +136,35 @@ SlicedImage slice_image(const clip_image_u8& source, const ProcessorConfig& conf
     const int height = source.ny;
     const int width = source.nx;
 
-    const std::optional<SlicesGrid> best_grid = get_sliced_grid(height, width, max_slice_nums, scale_resolution);
-
+    const std::optional<SlicesGrid> slices_grid = get_slices_grid(height, width, max_slice_nums, scale_resolution);
     
-    const bool allow_upscale = !best_grid.has_value();
+    const bool allow_upscale = !slices_grid.has_value();
     const ImageSize thumbnail_size = find_best_resize(height, width, scale_resolution, patch_size, allow_upscale);
     clip_image_u8 thumbnail;
     bicubic_resize(source, thumbnail, static_cast<int>(thumbnail_size.width), static_cast<int>(thumbnail_size.height));
     
     SlicedImage result;
     result.crops.push_back(std::move(thumbnail));
-    result.crop_grids.push_back({thumbnail_size.height / patch_side, thumbnail_size.width / patch_side});
+    result.crop_sizes.push_back({thumbnail_size.height / patch_side, thumbnail_size.width / patch_side});
 
-    if (best_grid.has_value()) {
-        const ImageSize refine_size = get_refine_size(height, width, *best_grid, scale_resolution, patch_size);
+    if (slices_grid.has_value()) {
+        const ImageSize refine_size = get_refine_size(height, width, *slices_grid, scale_resolution, patch_size);
         clip_image_u8 refine_img;
         bicubic_resize(source, refine_img, static_cast<int>(refine_size.width), static_cast<int>(refine_size.height));
-        const int tile_h = static_cast<int>(refine_size.height / best_grid->rows);
-        const int tile_w = static_cast<int>(refine_size.width / best_grid->cols);
-        for (auto& tile : divide_to_patches(refine_img, tile_h, tile_w)) {
-            result.crops.push_back(std::move(tile));
-            result.crop_grids.push_back(
-                {static_cast<size_t>(tile_h) / patch_side, static_cast<size_t>(tile_w) / patch_side}
+        const int slice_h = static_cast<int>(refine_size.height / slices_grid->rows);
+        const int slice_w = static_cast<int>(refine_size.width / slices_grid->cols);
+        for (auto& slice : split_to_slices(refine_img, slice_h, slice_w)) {
+            result.crops.push_back(std::move(slice));
+            result.crop_sizes.push_back(
+                {static_cast<size_t>(slice_h) / patch_side, static_cast<size_t>(slice_w) / patch_side}
             );
         }
-        result.slices_shape = ov::Shape{best_grid->rows, best_grid->cols};
+        result.slices_grid = *slices_grid;
     }
     return result;
 }
 
+// TODO Refine/clarify docstring comment
 // Packs a (grid_h x grid_w patches) crop into NaViT format [1, 3, patch_size, grid_h*grid_w*patch_size],
 // applying rescale (1/255) and per-channel normalization. Mirrors MiniCPMV4_6ImageProcessor.reshape_by_patch.
 ov::Tensor pack_crop(
@@ -201,6 +200,7 @@ ov::Tensor pack_crop(
     return pixel_values;
 }
 
+// TODO Refine/clarify docstring comment, add expected output tensor shape
 // Nearest-neighbor position ids into a num_patches_per_side^2 grid, row-major over the crop patches.
 // Distinct from the language-model M-RoPE positions built in create_position_ids.
 ov::Tensor build_vision_position_ids(size_t grid_h, size_t grid_w, size_t num_patches_per_side) {
@@ -229,6 +229,7 @@ ov::Tensor build_vision_position_ids(size_t grid_h, size_t grid_w, size_t num_pa
     return position_ids;
 }
 
+// TODO Refine/clarify docstring comment, add expected output tensor shape
 // Window-attention reorder indices (length grid_h*grid_w), grouping patches into window x window blocks.
 ov::Tensor build_window_index(size_t grid_h, size_t grid_w, size_t window_kernel_size) {
     const size_t pad_h = window_kernel_size - grid_h % window_kernel_size;
@@ -266,6 +267,7 @@ ov::Tensor build_window_index(size_t grid_h, size_t grid_w, size_t window_kernel
     return result;
 }
 
+// TODO Refine/clarify docstring comment, add expected output tensor shape
 // Reorders the post-window-merge tokens (grid / window_kernel_size per dimension) into
 // merge_kernel_size x merge_kernel_size blocks for the final spatial merger.
 ov::Tensor build_merge_index(size_t grid_h, size_t grid_w, size_t window_kernel_size, size_t merge_kernel_size) {
@@ -289,41 +291,42 @@ ov::Tensor build_merge_index(size_t grid_h, size_t grid_w, size_t window_kernel_
     return result;
 }
 
-// Number of visual tokens a crop with the given patch grid yields after the downsample.
-size_t calc_crop_token_count(const ImageSize& grid, size_t downsample_factor) {
-    return (grid.height / downsample_factor) * (grid.width / downsample_factor);
+// Calculates number of visual tokens for a crop by its size (in patches) after the downsample.
+size_t calc_crop_token_count(const ImageSize& crop_size, size_t downsample_factor) {
+    return (crop_size.height / downsample_factor) * (crop_size.width / downsample_factor);
 }
 
-// Flattens per-image crop grids into prompt order (each image's thumbnail then its slices).
-std::vector<ImageSize>
-flatten_crop_grids(const std::vector<EncodedImage>& images, const std::vector<size_t>& images_sequence) {
-    std::vector<ImageSize> grids;
+std::vector<ImageSize> flatten_images_crop_sizes(
+    const std::vector<EncodedImage>& images,
+    const std::vector<size_t>& images_sequence
+) {
+    std::vector<ImageSize> crop_sizes;
     for (size_t image_id : images_sequence) {
-        const auto& crop_grids = images.at(image_id).crop_grids;
-        grids.insert(grids.end(), crop_grids.begin(), crop_grids.end());
+        const auto& image_crop_sizes = images.at(image_id).crop_sizes;
+        crop_sizes.insert(crop_sizes.end(), image_crop_sizes.begin(), image_crop_sizes.end());
     }
-    return grids;
+    return crop_sizes;
 }
 
-// Flattens per-video crops into prompt order: every frame contributes the whole crop layout
-// (thumbnail then slices), so a video of F frames with C crops each yields F*C grids.
-std::vector<ImageSize>
-flatten_video_frame_grids(const std::vector<EncodedVideo>& videos, const std::vector<size_t>& videos_sequence) {
-    std::vector<ImageSize> grids;
+std::vector<ImageSize> flatten_videos_crop_sizes(
+    const std::vector<EncodedVideo>& videos,
+    const std::vector<size_t>& videos_sequence
+) {
+    std::vector<ImageSize> crop_sizes;
     for (size_t video_id : videos_sequence) {
         const EncodedVideo& video = videos.at(video_id);
         for (size_t frame = 0; frame < video.frame_num; ++frame) {
-            grids.insert(grids.end(), video.crop_grids.begin(), video.crop_grids.end());
+            crop_sizes.insert(crop_sizes.end(), video.crop_sizes.begin(), video.crop_sizes.end());
         }
     }
-    return grids;
+    return crop_sizes;
 }
 
 // Builds [3, 1, seq_len] position ids [T, H, W] and the rope delta (Canvas M-RoPE)
 std::pair<ov::Tensor, int64_t> create_position_ids(
     const ov::Tensor& input_ids,
-    const std::vector<ImageSize>& image_crop_grids,
-    const std::vector<ImageSize>& video_frame_grids,
+    const std::vector<ImageSize>& images_crop_sizes,
+    const std::vector<ImageSize>& videos_crop_sizes,
     int64_t image_token_id,
     int64_t video_token_id,
     size_t downsample_factor
@@ -338,6 +341,7 @@ std::pair<ov::Tensor, int64_t> create_position_ids(
         position_ids.data<int64_t>() + 2 * seq_len};
 
     int64_t max_pos = 0;
+    // TODO Clarify/rename
     auto fill_text = [&](size_t from, size_t to, int64_t start) {
         for (size_t k = from; k < to; ++k) {
             const int64_t value = start + static_cast<int64_t>(k - from);
@@ -353,7 +357,7 @@ std::pair<ov::Tensor, int64_t> create_position_ids(
     int64_t current_pos = 0;
     size_t current_idx = 0;
     size_t image_crop_index = 0;
-    size_t video_frame_index = 0;
+    size_t video_crop_index = 0;
     size_t i = 0;
     while (i < seq_len) {
         const int64_t token = input_ids_data[i];
@@ -367,8 +371,7 @@ std::pair<ov::Tensor, int64_t> create_position_ids(
             ++i;
         }
         const size_t run_len = i - run_start;
-        const auto [grid_h, grid_w] =
-            is_image ? image_crop_grids.at(image_crop_index++) : video_frame_grids.at(video_frame_index++);
+        const auto [grid_h, grid_w] = is_image ? images_crop_sizes.at(image_crop_index++) : videos_crop_sizes.at(video_crop_index++);
         const int64_t canvas_h = static_cast<int64_t>(grid_h / downsample_factor);
         const int64_t canvas_w = static_cast<int64_t>(grid_w / downsample_factor);
         const size_t frame_start = run_start - 1;
@@ -436,49 +439,47 @@ EncodedImage VisionEncoderMiniCPMv4_7::encode(const ov::Tensor& image, const ov:
 
     const clip_image_u8 source = tensor_to_clip_image_u8(image);
     SlicedImage sliced = slice_image(source, config);
-    ov::Tensor features = encode_crops(sliced.crops, sliced.crop_grids, config);
+    ov::Tensor features = encode_crops(sliced.crops, sliced.crop_sizes, config);
 
     EncodedImage encoded_image;
     encoded_image.num_image_tokens = features.get_shape().at(0);
     encoded_image.resized_source = std::move(features);
-    encoded_image.resized_source_size = sliced.crop_grids.front();
-    // slices_shape holds the {rows, cols} slice layout (empty when the image is not sliced),
-    // used to place newlines between slice rows during prompt normalization.
-    encoded_image.slices_shape = std::move(sliced.slices_shape);
-    encoded_image.crop_grids = std::move(sliced.crop_grids);
+    encoded_image.resized_source_size = sliced.crop_sizes.front();
+    encoded_image.slices_grid = sliced.slices_grid;
+    encoded_image.crop_sizes = std::move(sliced.crop_sizes);
     return encoded_image;
 }
 
 ov::Tensor VisionEncoderMiniCPMv4_7::encode_crops(
     const std::vector<clip_image_u8>& crops,
-    const std::vector<ImageSize>& crop_grids,
+    const std::vector<ImageSize>& crop_sizes,
     const ProcessorConfig& config
 ) {
-    // Side length of the vision tower's learned 2D position-embedding grid.
     const size_t num_patches_per_side = config.image_size / config.patch_size;
     const size_t window_kernel_size = config.window_kernel_size;
     const size_t merge_kernel_size = config.merge_kernel_size;
     const size_t downsample_factor = calc_vision_downsample_factor(window_kernel_size, merge_kernel_size);
 
     size_t total_tokens = 0;
-    for (const auto& grid : crop_grids) {
-        total_tokens += calc_crop_token_count(grid, downsample_factor);
+    for (const auto& crop_size : crop_sizes) {
+        total_tokens += calc_crop_token_count(crop_size, downsample_factor);
     }
 
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
 
-    // Encode crops one at a time, copying each output into the concatenated feature tensor
+    // Encode crops one at a time - copy encoder output into the concatenated feature tensor
     ov::Tensor features;
     size_t offset = 0;
     for (size_t i = 0; i < crops.size(); ++i) {
-        const size_t grid_h = crop_grids[i].height;
-        const size_t grid_w = crop_grids[i].width;
+        const size_t grid_h = crop_sizes[i].height;
+        const size_t grid_w = crop_sizes[i].width;
 
         encoder.set_tensor(
             "pixel_values",
             pack_crop(crops[i], grid_h, grid_w, config.image_mean, config.image_std, config.patch_size)
         );
+        // TODO Consider passing crop_size instead of unpacked grid_h/grid_w
         encoder.set_tensor("position_ids", build_vision_position_ids(grid_h, grid_w, num_patches_per_side));
         encoder.set_tensor("window_index", build_window_index(grid_h, grid_w, window_kernel_size));
         encoder.set_tensor("merge_index", build_merge_index(grid_h, grid_w, window_kernel_size, merge_kernel_size));
@@ -499,35 +500,35 @@ EncodedVideo VisionEncoderMiniCPMv4_7::encode_frames(const std::vector<ov::Tenso
 
     // Each frame is sliced as an image (thumbnail + optional detail slices)
     std::vector<clip_image_u8> all_crops;
-    std::vector<ImageSize> all_crop_grids;
-    std::vector<ImageSize> frame_crop_grids;
-    ov::Shape frame_slices_shape;
+    std::vector<ImageSize> all_crop_sizes;
+    std::vector<ImageSize> frame_crop_sizes;
+    SlicesGrid frame_slices_grid;
     for (size_t i = 0; i < frames.size(); ++i) {
         SlicedImage sliced = slice_image(tensor_to_clip_image_u8(frames[i]), m_video_processor_config);
         if (i == 0) {
-            frame_crop_grids = sliced.crop_grids;
-            frame_slices_shape = sliced.slices_shape;
+            frame_crop_sizes = sliced.crop_sizes;
+            frame_slices_grid = sliced.slices_grid;
             all_crops.reserve(frames.size() * sliced.crops.size());
-            all_crop_grids.reserve(frames.size() * sliced.crop_grids.size());
+            all_crop_sizes.reserve(frames.size() * sliced.crop_sizes.size());
         }
         all_crops.insert(
             all_crops.end(),
             std::make_move_iterator(sliced.crops.begin()),
             std::make_move_iterator(sliced.crops.end())
         );
-        all_crop_grids.insert(all_crop_grids.end(), sliced.crop_grids.begin(), sliced.crop_grids.end());
+        all_crop_sizes.insert(all_crop_sizes.end(), sliced.crop_sizes.begin(), sliced.crop_sizes.end());
     }
 
-    ov::Tensor features = encode_crops(all_crops, all_crop_grids, m_video_processor_config);
+    ov::Tensor features = encode_crops(all_crops, all_crop_sizes, m_video_processor_config);
 
     EncodedVideo encoded_video;
-    encoded_video.num_video_tokens = features.get_shape().at(0);
-    encoded_video.frame_num = frames.size();
-    encoded_video.resized_source_size = frame_crop_grids.front();
-    encoded_video.crop_grids = std::move(frame_crop_grids);
-    encoded_video.slices_shape = std::move(frame_slices_shape);
     // video_features holds every frame's crops concatenated as [total_tokens, hidden_size]
     encoded_video.video_features = std::move(features);
+    encoded_video.num_video_tokens = features.get_shape().at(0);
+    encoded_video.frame_num = frames.size();
+    encoded_video.resized_source_size = frame_crop_sizes.front();
+    encoded_video.crop_sizes = std::move(frame_crop_sizes);
+    encoded_video.slices_grid = frame_slices_grid;
     return encoded_video;
 }
 
@@ -614,27 +615,22 @@ NormalizedPrompt InputsEmbedderMiniCPMv4_7::normalize_prompt(
     const std::string& image_pad_token = m_vlm_config.image_pad_token;
     for (size_t new_image_id : image_sequence) {
         const EncodedImage& encoded_image = images.at(new_image_id - base_image_id);
-        const auto& crop_grids = encoded_image.crop_grids;
+        const auto& crop_sizes = encoded_image.crop_sizes;
 
         std::string expanded_tag;
         if (m_vlm_config.use_image_id) {
             expanded_tag += m_vlm_config.im_id_start + std::to_string(new_image_id) + m_vlm_config.im_id_end;
         }
 
-        expanded_tag += m_vlm_config.im_start +
-                        repeat(image_pad_token, calc_crop_token_count(crop_grids.at(0), downsample_factor)) +
-                        m_vlm_config.im_end;
+        const size_t thumbnail_tokens_num = calc_crop_token_count(crop_sizes.at(0), downsample_factor);
+        expanded_tag += m_vlm_config.im_start + repeat(image_pad_token, thumbnail_tokens_num) + m_vlm_config.im_end;
 
-        const ov::Shape& slices_shape = encoded_image.slices_shape;
-        if (!slices_shape.empty()) {
-            const size_t rows = slices_shape.at(0);
-            const size_t cols = slices_shape.at(1);
-            for (size_t row = 0; row < rows; ++row) {
-                for (size_t col = 0; col < cols; ++col) {
-                    const size_t slice_tokens =
-                        calc_crop_token_count(crop_grids.at(1 + row * cols + col), downsample_factor);
-                    expanded_tag +=
-                        m_vlm_config.slice_start + repeat(image_pad_token, slice_tokens) + m_vlm_config.slice_end;
+        const SlicesGrid& slices_grid = encoded_image.slices_grid;
+        if (slices_grid.has_slices()) {
+            for (size_t row = 0; row < slices_grid.rows; ++row) {
+                for (size_t col = 0; col < slices_grid.cols; ++col) {
+                    const size_t slice_tokens_num = calc_crop_token_count(crop_sizes.at(1 + row * slices_grid.cols + col), downsample_factor);
+                    expanded_tag += m_vlm_config.slice_start + repeat(image_pad_token, slice_tokens_num) + m_vlm_config.slice_end;
                 }
                 expanded_tag += '\n';
             }
@@ -659,22 +655,17 @@ NormalizedPrompt InputsEmbedderMiniCPMv4_7::normalize_prompt(
     for (size_t new_video_id : videos_sequence) {
         const EncodedVideo& encoded_video = videos.at(new_video_id - base_video_id);
         OPENVINO_ASSERT(encoded_video.frame_num > 0, "Video must contain at least one frame.");
-        const auto& crop_grids = encoded_video.crop_grids;
+        const auto& crop_sizes = encoded_video.crop_sizes;
 
-        std::string frame_tag = m_vlm_config.im_start +
-                                repeat(video_pad_token, calc_crop_token_count(crop_grids.at(0), downsample_factor)) +
-                                m_vlm_config.im_end;
+        const size_t thumbnail_tokens_num = calc_crop_token_count(crop_sizes.at(0), downsample_factor);
+        std::string frame_tag = m_vlm_config.im_start + repeat(video_pad_token, thumbnail_tokens_num) + m_vlm_config.im_end;
 
-        const ov::Shape& slices_shape = encoded_video.slices_shape;
-        if (!slices_shape.empty()) {
-            const size_t rows = slices_shape.at(0);
-            const size_t cols = slices_shape.at(1);
-            for (size_t row = 0; row < rows; ++row) {
-                for (size_t col = 0; col < cols; ++col) {
-                    const size_t slice_tokens =
-                        calc_crop_token_count(crop_grids.at(1 + row * cols + col), downsample_factor);
-                    frame_tag +=
-                        m_vlm_config.slice_start + repeat(video_pad_token, slice_tokens) + m_vlm_config.slice_end;
+        const SlicesGrid& slices_grid = encoded_video.slices_grid;
+        if (slices_grid.has_slices()) {
+            for (size_t row = 0; row < slices_grid.rows; ++row) {
+                for (size_t col = 0; col < slices_grid.cols; ++col) {
+                    const size_t slice_tokens_num = calc_crop_token_count(crop_sizes.at(1 + row * slices_grid.cols + col), downsample_factor);
+                    frame_tag += m_vlm_config.slice_start + repeat(video_pad_token, slice_tokens_num) + m_vlm_config.slice_end;
                 }
                 frame_tag += '\n';
             }
@@ -721,41 +712,40 @@ ov::Tensor InputsEmbedderMiniCPMv4_7::get_inputs_embeds(
     EmbeddingsRequest& req = embeddings_request_guard.get();
     ov::Tensor text_embeds = get_text_embedding(req, input_ids, metrics);
 
-    const size_t downsample_factor =
-        calc_vision_downsample_factor(m_vlm_config.vision_config_window_kernel_size, m_vlm_config.merge_kernel_size);
-    const auto image_crop_grids = flatten_crop_grids(images, image_sequence);
-    const auto video_frame_grids = flatten_video_frame_grids(videos, videos_sequence);
+    const size_t downsample_factor = calc_vision_downsample_factor(m_vlm_config.vision_config_window_kernel_size, m_vlm_config.merge_kernel_size);
+    const auto images_crop_sizes = flatten_images_crop_sizes(images, image_sequence);
+    const auto videos_crop_sizes = flatten_videos_crop_sizes(videos, videos_sequence);
     std::tie(m_position_ids, m_rope_delta) = create_position_ids(
         input_ids,
-        image_crop_grids,
-        video_frame_grids,
+        images_crop_sizes,
+        videos_crop_sizes,
         m_image_token_id,
         m_video_token_id,
         downsample_factor
     );
 
-    // Non-owning view per crop for image tokens
+    // Non-owning view per crop for image embeds
     std::vector<ov::Tensor> image_embeds;
-    image_embeds.reserve(image_crop_grids.size());
+    image_embeds.reserve(images_crop_sizes.size());
     for (size_t image_id : image_sequence) {
         const ov::Tensor& source = images.at(image_id).resized_source;
         const size_t hidden_size = source.get_shape().at(1);
         float* crop_data = const_cast<float*>(source.data<float>());
         size_t offset = 0;
-        for (const auto& grid : images.at(image_id).crop_grids) {
-            const size_t tokens = calc_crop_token_count(grid, downsample_factor);
+        for (const auto& crop_size : images.at(image_id).crop_sizes) {
+            const size_t tokens_num = calc_crop_token_count(crop_size, downsample_factor);
             image_embeds.emplace_back(
                 source.get_element_type(),
-                ov::Shape{1, tokens, hidden_size},
+                ov::Shape{1, tokens_num, hidden_size},
                 crop_data + offset * hidden_size
             );
-            offset += tokens;
+            offset += tokens_num;
         }
     }
 
-    // Non-owning view per frame-crop for video tokens
+    // Non-owning view per frame-crop for video embeds
     std::vector<ov::Tensor> video_embeds;
-    video_embeds.reserve(video_frame_grids.size());
+    video_embeds.reserve(videos_crop_sizes.size());
     for (size_t video_id : videos_sequence) {
         const EncodedVideo& video = videos.at(video_id);
         const ov::Tensor& source = video.video_features;
@@ -763,14 +753,14 @@ ov::Tensor InputsEmbedderMiniCPMv4_7::get_inputs_embeds(
         float* crop_data = const_cast<float*>(source.data<float>());
         size_t offset = 0;
         for (size_t frame = 0; frame < video.frame_num; ++frame) {
-            for (const auto& grid : video.crop_grids) {
-                const size_t tokens = calc_crop_token_count(grid, downsample_factor);
+            for (const auto& crop_size : video.crop_sizes) {
+                const size_t tokens_num = calc_crop_token_count(crop_size, downsample_factor);
                 video_embeds.emplace_back(
                     source.get_element_type(),
-                    ov::Shape{1, tokens, hidden_size},
+                    ov::Shape{1, tokens_num, hidden_size},
                     crop_data + offset * hidden_size
                 );
-                offset += tokens;
+                offset += tokens_num;
             }
         }
     }

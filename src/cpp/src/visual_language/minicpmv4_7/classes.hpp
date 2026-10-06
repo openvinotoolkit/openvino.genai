@@ -44,7 +44,7 @@ private:
     // [total_tokens, hidden_size] tensor. Shared by the image and video paths.
     ov::Tensor encode_crops(
         const std::vector<clip_image_u8>& crops,
-        const std::vector<ImageSize>& crop_grids,
+        const std::vector<ImageSize>& crop_sizes,
         const ProcessorConfig& config
     );
 };
