@@ -189,6 +189,31 @@ TEST(WhisperFeatureExtractor, ExtractNormalizationRange) {
     EXPECT_LE(out_max, expected_max + 1e-5f);
 }
 
+TEST(WhisperFeatureExtractor, ExtractNonCenteredStreamingChunk) {
+    constexpr size_t raw_size = 1680;
+    const auto raw = make_sine_wave(raw_size, 440.0f, 16000.0f);
+    WhisperFeatureExtractor ex(kQwen3OmniBins, kSamplingRate, kNFft, kHopLength);
+
+    const auto features = ex.extract(raw, false, false);
+
+    EXPECT_EQ(features.n_frames, (raw_size - kNFft) / kHopLength);
+    EXPECT_EQ(features.data.size(), kQwen3OmniBins * features.n_frames);
+}
+
+TEST(WhisperFeatureExtractor, ExtractUsesFixedGlobalLogMelMax) {
+    constexpr float global_log_mel_max = 1.5f;
+    constexpr float expected_silence_value = (global_log_mel_max - 8.0f + 4.0f) / 4.0f;
+    const std::vector<float> silence(16000, 0.0f);
+    WhisperFeatureExtractor ex(kQwen3OmniBins, kSamplingRate, kNFft, kHopLength, global_log_mel_max);
+
+    const auto features = ex.extract(silence, false);
+
+    ASSERT_FALSE(features.data.empty());
+    for (const float value : features.data) {
+        EXPECT_NEAR(value, expected_silence_value, 1e-5f);
+    }
+}
+
 TEST(WhisperFeatureExtractor, ShapeDependsOnFeatureSize) {
     const auto raw = make_sine_wave(16000, 440.0f, 16000.0f);
     WhisperFeatureExtractor wh(kWhisperBins, kSamplingRate, kNFft, kHopLength);

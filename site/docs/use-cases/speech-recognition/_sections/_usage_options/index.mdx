@@ -422,6 +422,44 @@ Such prompts can be used to steer the model to use particular spellings or style
 For the ASR API, refer to the [ASR Generation Config API](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.ASRGenerationConfig.html).
 :::
 
+### Streaming Audio Input
+
+`ASRPipeline.create_stream()` is available for Voxtral Realtime models. Each `push_audio()` call accepts the next normalized, mono 16 kHz PCM samples and returns any newly decoded text. Call `finish()` to process a final partial chunk and retrieve the complete transcription. Other ASR models continue to use `generate()` with a complete audio input.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python showLineNumbers
+        import openvino_genai as ov_genai
+
+        pipe = ov_genai.ASRPipeline(model_path, "CPU")
+        stream = pipe.create_stream()
+
+        for audio_chunk in audio_chunks:
+            partial_text = stream.push_audio(audio_chunk)
+            print(partial_text, end="", flush=True)
+
+        result = stream.finish()
+        print("\nFinal:", result.texts[0])
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp showLineNumbers
+        #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
+        #include <iostream>
+
+        ov::genai::ASRPipeline pipe(model_path, "CPU");
+        auto stream = pipe.create_stream();
+
+        for (const std::vector<float>& audio_chunk : audio_chunks) {
+            std::cout << stream.push_audio(audio_chunk) << std::flush;
+        }
+
+        const auto result = stream.finish();
+        std::cout << "\nFinal: " << result.texts[0] << std::endl;
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
 ### Performance Metrics
 
 `ASRPipeline` returns `ASRDecodedResults` with a `perf_metrics` field of type `ASRPerfMetrics`, which extends [`PerfMetrics`](/docs/guides/performance-metrics).

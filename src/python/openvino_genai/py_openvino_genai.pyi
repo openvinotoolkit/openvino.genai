@@ -277,6 +277,16 @@ class ASRPerfMetrics(PerfMetrics):
     @property
     def asr_raw_metrics(self) -> ASRRawPerfMetrics:
         ...
+
+class ASRStream:
+    """Stateful streaming audio transcription session."""
+    def push_audio(self, audio_chunk: collections.abc.Sequence[typing.SupportsFloat]) -> str:
+        """Append normalized mono 16 kHz audio samples and return newly decoded text."""
+        ...
+    def finish(self) -> ASRDecodedResults:
+        """Flush the final audio chunk and return the complete transcription."""
+        ...
+
 class ASRPipeline:
     """
     Automatic speech recognition pipeline
@@ -400,6 +410,9 @@ class ASRPipeline:
             For generic generation parameters (max_length, max_new_tokens, num_beams, temperature, etc.)
             see GenerationConfig documentation.
         """
+    def create_stream(self, generation_config: ASRGenerationConfig | None = None) -> ASRStream:
+        """Create a stateful input stream for ASR models that support incremental audio."""
+        ...
     def get_generation_config(self) -> ASRGenerationConfig:
         ...
     def get_tokenizer(self) -> Tokenizer:

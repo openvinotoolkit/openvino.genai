@@ -19,6 +19,7 @@ using ov::genai::ASRDecodedResultChunk;
 using ov::genai::ASRDecodedResults;
 using ov::genai::ASRGenerationConfig;
 using ov::genai::ASRPerfMetrics;
+using ov::genai::ASRStream;
 using ov::genai::ASRPipeline;
 using ov::genai::ASRRawPerfMetrics;
 using ov::genai::AudioInputs;
@@ -335,6 +336,15 @@ void init_asr_pipeline(py::module_& m) {
             return res;
         });
 
+    py::class_<ASRStream>(m, "ASRStream", "Stateful streaming audio transcription session")
+        .def(
+            "push_audio",
+            &ASRStream::push_audio,
+            py::arg("audio_chunk"),
+            "Append normalized mono 16 kHz audio samples and return newly decoded text."
+        )
+        .def("finish", &ASRStream::finish, "Flush the final audio chunk and return the complete transcription.");
+
     py::class_<ASRPipeline>(m, "ASRPipeline", "Automatic speech recognition pipeline")
         .def(
             py::init([](const std::filesystem::path& models_path, const std::string& device, const py::kwargs& kwargs) {
@@ -370,6 +380,12 @@ void init_asr_pipeline(py::module_& m) {
             (asr_generate_docstring + std::string(" \n ") + asr_generation_config_docstring).c_str())
 
         .def("get_tokenizer", &ASRPipeline::get_tokenizer)
+        .def(
+            "create_stream",
+            &ASRPipeline::create_stream,
+            py::arg("generation_config") = std::nullopt,
+            "Create a stateful input stream for ASR models that support incremental audio."
+        )
         .def("get_generation_config", &ASRPipeline::get_generation_config, py::return_value_policy::copy)
         .def("set_generation_config", &ASRPipeline::set_generation_config, py::arg("config"));
 }

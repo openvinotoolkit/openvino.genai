@@ -73,6 +73,27 @@ struct OPENVINO_GENAI_EXPORTS ASRDecodedResults {
 };
 
 class ASRPipelineImplBase;
+class ASRStreamImplBase;
+
+class OPENVINO_GENAI_EXPORTS ASRStream {
+public:
+    ASRStream(ASRStream&&) noexcept;
+    ASRStream& operator=(ASRStream&&) noexcept;
+    ~ASRStream();
+
+    /// Append normalized mono 16 kHz audio samples and return newly decoded text.
+    std::string push_audio(const std::vector<float>& audio_chunk);
+
+    /// Flush the final partial audio chunk and return the complete transcription.
+    ASRDecodedResults finish();
+
+private:
+    explicit ASRStream(std::unique_ptr<ASRStreamImplBase> impl);
+
+    std::unique_ptr<ASRStreamImplBase> m_impl;
+
+    friend class ASRPipeline;
+};
 
 class OPENVINO_GENAI_EXPORTS ASRPipeline {
     std::unique_ptr<ASRPipelineImplBase> m_impl;
@@ -98,6 +119,8 @@ public:
     }
 
     ASRDecodedResults generate(const AudioInputs& audio_inputs, const ov::AnyMap& config_map);
+        /// Create a stateful input stream when the selected ASR model supports incremental audio.
+        ASRStream create_stream(const std::optional<ASRGenerationConfig>& generation_config = std::nullopt);
 
     Tokenizer get_tokenizer();
     ASRGenerationConfig get_generation_config() const;
