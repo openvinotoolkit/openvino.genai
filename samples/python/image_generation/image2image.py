@@ -16,9 +16,9 @@ def read_image(path: str) -> openvino.Tensor:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('model_dir')
-    parser.add_argument('prompt')
-    parser.add_argument('image', nargs='+')
+    parser.add_argument("model_dir")
+    parser.add_argument("prompt")
+    parser.add_argument("image", nargs="+")
     args = parser.parse_args()
 
     device = 'CPU'  # GPU can be used as well
@@ -34,9 +34,6 @@ def main():
     image_tensor = pipe.generate(
         args.prompt,
         images,
-        # controls how initial image is noised after being converted to latent space
-        # Qwen-Image 2.1 accepts `1` only
-        strength=0.8,
         callback=callback
     )
 

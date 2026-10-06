@@ -21,9 +21,6 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     ov::genai::Image2ImagePipeline pipe(models_path, device);
     ov::Tensor generated_image = pipe.generate(prompt, images,
-        // controls how initial image is noised after being converted to latent space
-        // Qwen-Image 2.1 accepts `1` only
-        ov::genai::strength(0.8f),
         ov::genai::callback(progress_bar));
 
     // writes `num_images_per_prompt` images by pattern name

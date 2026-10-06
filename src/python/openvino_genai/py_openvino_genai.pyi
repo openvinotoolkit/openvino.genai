@@ -2141,10 +2141,13 @@ class Image2ImagePipeline:
     @typing.overload
     def generate(self, prompt: str, image: openvino._pyopenvino.Tensor, **kwargs) -> openvino._pyopenvino.Tensor:
         """
-            Generates images for text-to-image models.
-        
+            Generates images for image-to-image models.
+
             :param prompt: input prompt
             :type prompt: str
+
+            :param image: initial image
+            :type image: ov.Tensor
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
         
@@ -2172,10 +2175,13 @@ class Image2ImagePipeline:
     @typing.overload
     def generate(self, prompt: str, image: collections.abc.Sequence[openvino._pyopenvino.Tensor], **kwargs) -> openvino._pyopenvino.Tensor:
         """
-            Generates images for text-to-image models.
+            Generates images for image-to-image models conditioned on a set of reference images.
         
-            :param prompt: input prompt
+            :param prompt: input prompt.
             :type prompt: str
+        
+            :param image: initial images. Only Qwen-Image 2.1 accepts more than one image
+            :type image: collections.abc.Sequence[ov.Tensor]
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
         
