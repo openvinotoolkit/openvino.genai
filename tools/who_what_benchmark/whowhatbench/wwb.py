@@ -19,9 +19,14 @@ from typing import Any, Optional
 
 from whowhatbench.model_loaders import TORCH_DTYPES, load_model
 from whowhatbench import EVALUATOR_REGISTRY
-from whowhatbench.utils import fix_phi3_v_eos_token_id
+from whowhatbench.utils import fix_phi3_v_eos_token_id, patch_transformers_gguf_support
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
+<<<<<<< HEAD
 from whowhatbench.utils import get_json_config, load_audio_dataset, resolve_json_dataset_path, read_json_dataset
+=======
+from whowhatbench.utils import get_json_config, load_audio_dataset
+from whowhatbench.text_evaluator import Metrics
+>>>>>>> 273f0c09a ([wwb] Add support of kl_divergency to wwb and extend architecture for other metrcis)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -102,6 +107,20 @@ def parse_args():
         "--tokenizer",
         default=None,
         help="Tokenizer for divergency metric. If not provided, it will be load from base_model or target_model.",
+    )
+    parser.add_argument(
+        "--kld-ctx",
+        dest="kld_ctx",
+        type=positive_integer,
+        default=None,
+        help="Number of tokens for KL divergence context before splitting it into prefix and scored tail.",
+    )
+    parser.add_argument(
+        "--kld-chunk",
+        dest="kld_chunk",
+        type=positive_integer,
+        default=None,
+        help="Chunk size for KL divergence scoring loop. The selected context is still scored on its second half.",
     )
     parser.add_argument(
         "--omit-chat-template",
@@ -511,6 +530,19 @@ def parse_args():
         "Any other keys will be ignored with a warning. "
         'Example: \'{"num_assistant_tokens": 10, "branching_factor": 4, "tree_depth": 3}\'',
     )
+    parser.add_argument(
+        "--text-metrics-list",
+        nargs="+",
+        choices=[
+            Metrics.SIMILARITY.value,
+            Metrics.DIVERGENCY.value,
+            Metrics.KL_DIVERGENCY.value,
+            Metrics.TOKEN_SIMILARITY.value,
+        ],
+        required=False,
+        default=[Metrics.SIMILARITY.value],
+        help="List of metrics to compute for text generation.",
+    )
 
     return parser.parse_args()
 
@@ -614,6 +646,7 @@ def load_tokenizer(args):
     # Define kwargs based on args attributes
     kwargs = {}
     if args.gguf_file:
+        patch_transformers_gguf_support()
         kwargs['gguf_file'] = args.gguf_file
 
     tokenizer = None
@@ -660,6 +693,9 @@ def load_processor(args):
     model_id = args.base_model if args.base_model is not None else args.target_model
     if model_id is None:
         return None, None
+
+    if args.gguf_file:
+        patch_transformers_gguf_support()
 
     try:
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
@@ -796,26 +832,6 @@ def genai_gen_chat_text(
         chat_history.append({"role": "assistant", "content": decode_res.texts[0]})
 
     return answers
-
-
-def llamacpp_gen_text(
-    model,
-    tokenizer,
-    question,
-    max_new_tokens,
-    skip_question,
-    use_chat_template=False,
-    empty_adapters=False,
-    num_assistant_tokens=0,
-    assistant_confidence_threshold=0.0,
-    generation_config_extra=None,
-):
-    if use_chat_template:
-        output = model.create_chat_completion(messages=[{"role": "user", "content": question}], max_tokens=max_new_tokens, temperature=0.0)
-        return output["choices"][0]["message"]["content"]
-    else:
-        output = model(question, max_tokens=max_new_tokens, echo=False, temperature=0.0)
-        return output["choices"][0]["text"]
 
 
 def genai_gen_image(model, prompt, num_inference_steps, generator=None, empty_adapters=False):
@@ -1130,19 +1146,13 @@ def create_evaluator(base_model, args):
         if task == "text":
             tokenizer = load_tokenizer(args) if not args.llamacpp else None
 
-            if args.genai:
-                gen_answer_fn = genai_gen_text
-            elif args.llamacpp:
-                gen_answer_fn = llamacpp_gen_text
-            else:
-                gen_answer_fn = None
-
             if args.llamacpp:
                 use_chat_template = args.llamacpp_chat and not args.omit_chat_template
             else:
                 use_chat_template = (
                     tokenizer is not None and tokenizer.chat_template is not None and not args.omit_chat_template
                 )
+
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -1152,7 +1162,6 @@ def create_evaluator(base_model, args):
                 max_new_tokens=args.max_new_tokens,
                 num_samples=args.num_samples,
                 language=args.language,
-                gen_answer_fn=gen_answer_fn,
                 use_chat_template=use_chat_template,
                 long_prompt=(not args.short_prompt),
                 num_assistant_tokens=(
@@ -1164,6 +1173,11 @@ def create_evaluator(base_model, args):
                     if args.assistant_confidence_threshold is not None else 0.0
                 ),
                 generation_config_extra=args.generation_config_extra,
+                kld_ctx=args.kld_ctx,
+                kld_chunk=args.kld_chunk,
+                metrics_list=args.text_metrics_list,
+                is_genai=args.genai,
+                is_llamacpp=args.llamacpp,
             )
         elif task == "text-agent" or task == "visual-text-agent":
             tokenizer = load_tokenizer(args)
@@ -1439,6 +1453,31 @@ def print_text_results(evaluator):
         logger.info("## Diff:\n%s\n", diff)
 
 
+def print_text_results_metrics_list(evaluator, metric_of_interest=None):
+    worst_examples = evaluator.worst_examples(top_k=5, metric=metric_of_interest)
+    for i, e in enumerate(worst_examples):
+        logger.info(
+            "======================================================================================================="
+        )
+        logger.info("## Prompt %d:\n%s\n", i + 1, e["prompt"])
+        logger.info("## %s value:%.4f\n", metric_of_interest, e[metric_of_interest])
+
+        if metric_of_interest in [Metrics.DIVERGENCY.value, Metrics.SIMILARITY.value]:
+            ref_text = ""
+            actual_text = ""
+            diff = ""
+            for l1, l2 in zip_longest(e["source_model"].splitlines(), e["optimized_model"].splitlines(), fillvalue=""):
+                if l1 == "" and l2 == "":
+                    continue
+                ref_text += l1 + "\n"
+                actual_text += l2 + "\n"
+                diff += diff_strings(l1, l2) + "\n"
+
+            logger.info("## Reference text:\n%s\n", ref_text)
+            logger.info("## Actual text:\n%s\n", actual_text)
+            logger.info("## Diff:\n%s\n", diff)
+
+
 def print_image_results(evaluator):
     metric_of_interest = "similarity"
     pd.set_option('display.max_colwidth', None)
@@ -1508,6 +1547,10 @@ def _log_speech_metrics_summary(all_metrics: pd.DataFrame) -> None:
     present_component_cols = [column for column in component_cols if column in row.columns]
     component_df = row[present_component_cols]
     logger.info("%s\n%s", overall_df.to_string(index=True), component_df.to_string(index=True))
+
+
+def _format_metrics_summary(all_metrics: pd.DataFrame) -> str:
+    return all_metrics.to_string(index=True, float_format=lambda value: f"{value:.7f}")
 
 
 def print_speech_results(evaluator):
@@ -1651,6 +1694,8 @@ def main():
         kwargs["speech_language"] = args.speech_language
 
     kwargs["llamacpp_n_ctx"] = args.llamacpp_n_ctx
+    if args.llamacpp and args.text_metrics_list and Metrics.KL_DIVERGENCY.value in args.text_metrics_list:
+        kwargs["llamacpp_logits_all"] = True
 
     if args.base_model is not None:
         base_model = load_model(
@@ -1721,7 +1766,7 @@ def main():
         if args.model_type == "speech-generation":
             _log_speech_metrics_summary(all_metrics)
         else:
-            logger.info(all_metrics)
+            logger.info("%s", _format_metrics_summary(all_metrics))
 
         if args.output:
             os.makedirs(args.output, exist_ok=True)
@@ -1733,7 +1778,6 @@ def main():
 
     if args.verbose and (args.target_model or args.target_data):
         if args.model_type in [
-            "text",
             "text-agent",
             "text-chat",
             "visual-text",
@@ -1744,6 +1788,9 @@ def main():
             "visual-text-only",
         ]:
             print_text_results(evaluator)
+        elif args.model_type in ["text"]:
+            for metrcis in args.text_metrics_list:
+                print_text_results_metrics_list(evaluator, metrcis)
         elif (
             "text-to-image" in args.model_type
             or "image-to-image" in args.model_type
