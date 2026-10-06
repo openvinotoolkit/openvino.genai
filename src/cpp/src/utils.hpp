@@ -14,6 +14,7 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
+#include "openvino/genai/rag/text_rerank_pipeline.hpp"
 #include "openvino/runtime/core.hpp"
 
 #include "openvino/genai/generation_handle.hpp"
@@ -260,6 +261,11 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_embedding(cons
                                                                             const ov::AnyMap& config,
                                                                             const KVAxesPosition& kv_pos,
                                                                             const ov::genai::TextEmbeddingPipeline::Config& text_embed_config);
+
+std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_rerank(const std::shared_ptr<ov::Model>& model,
+                                                                         const ov::AnyMap& config,
+                                                                         const KVAxesPosition& kv_pos,
+                                                                         const ov::genai::TextRerankPipeline::Config& text_rerank_config);
 
 size_t get_npu_kv_cache_capacity(const ov::CompiledModel& compiled_model);
 
