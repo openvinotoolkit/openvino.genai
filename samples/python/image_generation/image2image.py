@@ -31,11 +31,7 @@ def main():
         print(f"Step {step + 1}/{num_steps}")
         return False
 
-    image_tensor = pipe.generate(
-        args.prompt,
-        images,
-        callback=callback
-    )
+    image_tensor = pipe.generate(args.prompt, images, callback=callback)
 
     image = Image.fromarray(image_tensor.data[0])
     image.save("image.bmp")
