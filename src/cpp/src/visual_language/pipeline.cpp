@@ -636,9 +636,7 @@ public:
             ~ChatHistoryCallRollback() {
                 if (active) {
                     chat_context.rollback();
-                    pipe.reset_language_state();
-                    pipe.m_language.get_tensor("attention_mask").set_shape({1, 0});
-                    pipe.m_inputs_embedder->get_cache_state().reset_state();
+                    pipe.drop_kv_cache();
                 }
             }
         } chat_history_call_rollback{*this, chat_context};
@@ -895,9 +893,18 @@ private:
         } catch (const std::exception& error) {
             GENAI_ERR("Failed to restore the KV cache after a failed chat turn: %s", error.what());
         }
-        reset_language_state();
-        m_language.get_tensor("attention_mask").set_shape({1, 0});
-        cache_state.reset_state();
+        drop_kv_cache();
+    }
+
+    // Runs while a failed call unwinds: throwing here would call std::terminate and hide the original error.
+    void drop_kv_cache() noexcept {
+        try {
+            reset_language_state();
+            m_language.get_tensor("attention_mask").set_shape({1, 0});
+        } catch (const std::exception& error) {
+            GENAI_ERR("Failed to reset the KV cache after a failed call: %s", error.what());
+        }
+        m_inputs_embedder->get_cache_state().reset_state();
     }
 
     void setup_generation_config(GenerationConfig& generation_config) {
