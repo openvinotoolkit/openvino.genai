@@ -339,15 +339,10 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
         auto [predictor_device, predictor_properties] =
             resolve_component_target(device, base_properties, roles::CODE_PREDICTOR);
 
-        // The code predictor is pinned to f32 arithmetic on GPU. It runs `num_code_groups - 1`
-        // steps inside every talker frame off a cache that is reset each frame, and in f16 - the GPU
-        // plugin's default inference precision - its logits go non-finite within the first few frames,
-        // which surfaces as `probability tensor contains either inf, nan or element < 0` out of the
-        // multinomial sampling in `code_predictor.generate`. The talker keeps default inference
-        // precision, so the bulk of the compute (28 layers vs 5) still runs in f16 on GPU.
+        // For GPU, we need to set ACTIVATIONS_SCALE_FACTOR to 8.0 to avoid nan issues.
         if (predictor_device.find("GPU") != std::string::npos &&
-            predictor_properties.find("INFERENCE_PRECISION_HINT") == predictor_properties.end()) {
-            predictor_properties["INFERENCE_PRECISION_HINT"] = std::string("f32");
+            predictor_properties.find("ACTIVATIONS_SCALE_FACTOR") == predictor_properties.end()) {
+            predictor_properties["ACTIVATIONS_SCALE_FACTOR"] = 8.0f;
         }
 
         const auto predictor_path = models_path / CODE_PREDICTOR_NAME;
