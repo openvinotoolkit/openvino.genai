@@ -775,15 +775,25 @@ ov::Tensor InputsEmbedderMiniCPMv4_7::get_inputs_embeds(
         }
     }
 
-    ov::Tensor inputs_embeds = text_embeds;
+    ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
+
+    if (image_embeds.empty() && video_embeds.empty()) {
+        text_embeds.copy_to(inputs_embeds);
+        return inputs_embeds;
+    }
+
     if (!image_embeds.empty()) {
         inputs_embeds =
-            utils::merge_text_and_image_embeddings_llava(input_ids, inputs_embeds, image_embeds, m_image_token_id);
+            utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, m_image_token_id);
+    } else {
+        inputs_embeds = std::move(text_embeds);
     }
+
     if (!video_embeds.empty()) {
         inputs_embeds =
             utils::merge_text_and_image_embeddings_llava(input_ids, inputs_embeds, video_embeds, m_video_token_id);
     }
+    
     return inputs_embeds;
 }
 
