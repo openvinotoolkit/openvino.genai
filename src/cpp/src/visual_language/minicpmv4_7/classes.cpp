@@ -609,7 +609,7 @@ NormalizedPrompt InputsEmbedderMiniCPMv4_7::normalize_prompt(
 
     // Images - expands to an optional id tag, thumbnail tags and optional slices tags (per row with newline).
     auto [unified_prompt, image_sequence] =
-        normalize(prompt, NATIVE_TAG, NATIVE_TAG + '\n', base_image_id, images.size(), VisionType::IMAGE);
+        normalize(prompt, NATIVE_TAG, NATIVE_TAG + '\n', base_image_id, images.size(), ModalityType::IMAGE);
 
     const std::string& image_pad_token = m_vlm_config.image_pad_token;
     for (size_t new_image_id : image_sequence) {
@@ -652,7 +652,7 @@ NormalizedPrompt InputsEmbedderMiniCPMv4_7::normalize_prompt(
         NATIVE_VIDEO_TAG + '\n',
         base_video_id,
         videos.size(),
-        VisionType::VIDEO
+        ModalityType::VIDEO
     );
 
     const std::string& video_pad_token = m_vlm_config.video_pad_token;
