@@ -114,7 +114,12 @@ std::vector<clip_image_u8> split_to_slices(const clip_image_u8& image, int slice
     return slices;
 }
 
-// Result of adaptive slicing
+// Result of adaptive slicing.
+// Terminology:
+// - crop - one image region sent to vision encoder graph (generic term)
+// - thumbnail - whole original image downscaled to a single crop (crop 0)
+// - slice - optional higher-res detail crop (original image is resized and split into slices grid if applicable)
+// - patch - vision encoder graph atomic unit (patch_size x patch_size pixel tile)
 struct SlicedImage {
     // pixel data for each crop (thumbnail first, then detail slices)
     std::vector<clip_image_u8> crops;
@@ -124,7 +129,7 @@ struct SlicedImage {
     SlicesGrid slices_grid;
 };
 
-// Splits a source image into crops (low-res thumbnail + optional higher-res detail slices)
+// Splits a source image into crops (low-res thumbnail + optional higher-res detail slices).
 SlicedImage slice_image(const clip_image_u8& source, const ProcessorConfig& config) {
     const int patch_size = static_cast<int>(config.patch_size);
     const size_t patch_side = config.patch_size;
@@ -482,15 +487,17 @@ EncodedImage VisionEncoderMiniCPMv4_7::encode(const ov::Tensor& image, const ov:
     const ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
 
     const clip_image_u8 source = tensor_to_clip_image_u8(image);
-    SlicedImage sliced = slice_image(source, config);
-    ov::Tensor features = encode_crops(sliced.crops, sliced.crop_sizes, config);
+    // Adaptive slicing into crops
+    SlicedImage sliced_image = slice_image(source, config);
+    // Per-crop NaViT patch packing + vision graph encoding
+    ov::Tensor features = encode_crops(sliced_image.crops, sliced_image.crop_sizes, config);
 
     EncodedImage encoded_image;
     encoded_image.num_image_tokens = features.get_shape().at(0);
     encoded_image.resized_source = std::move(features);
-    encoded_image.resized_source_size = sliced.crop_sizes.front();
-    encoded_image.slices_grid = sliced.slices_grid;
-    encoded_image.crop_sizes = std::move(sliced.crop_sizes);
+    encoded_image.resized_source_size = sliced_image.crop_sizes.front();
+    encoded_image.slices_grid = sliced_image.slices_grid;
+    encoded_image.crop_sizes = std::move(sliced_image.crop_sizes);
     return encoded_image;
 }
 
@@ -503,19 +510,19 @@ EncodedVideo VisionEncoderMiniCPMv4_7::encode_frames(const std::vector<ov::Tenso
     std::vector<ImageSize> frame_crop_sizes;
     SlicesGrid frame_slices_grid;
     for (size_t i = 0; i < frames.size(); ++i) {
-        SlicedImage sliced = slice_image(tensor_to_clip_image_u8(frames[i]), m_video_processor_config);
+        SlicedImage sliced_image = slice_image(tensor_to_clip_image_u8(frames[i]), m_video_processor_config);
         if (i == 0) {
-            frame_crop_sizes = sliced.crop_sizes;
-            frame_slices_grid = sliced.slices_grid;
-            all_crops.reserve(frames.size() * sliced.crops.size());
-            all_crop_sizes.reserve(frames.size() * sliced.crop_sizes.size());
+            frame_crop_sizes = sliced_image.crop_sizes;
+            frame_slices_grid = sliced_image.slices_grid;
+            all_crops.reserve(frames.size() * sliced_image.crops.size());
+            all_crop_sizes.reserve(frames.size() * sliced_image.crop_sizes.size());
         }
         all_crops.insert(
             all_crops.end(),
-            std::make_move_iterator(sliced.crops.begin()),
-            std::make_move_iterator(sliced.crops.end())
+            std::make_move_iterator(sliced_image.crops.begin()),
+            std::make_move_iterator(sliced_image.crops.end())
         );
-        all_crop_sizes.insert(all_crop_sizes.end(), sliced.crop_sizes.begin(), sliced.crop_sizes.end());
+        all_crop_sizes.insert(all_crop_sizes.end(), sliced_image.crop_sizes.begin(), sliced_image.crop_sizes.end());
     }
 
     ov::Tensor features = encode_crops(all_crops, all_crop_sizes, m_video_processor_config);
