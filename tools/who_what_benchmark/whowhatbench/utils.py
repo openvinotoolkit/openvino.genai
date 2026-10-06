@@ -273,15 +273,6 @@ def no_double_bos(processor):
             tokenizer.add_bos_token = orig_add_bos_token
 
 
-def load_hub_parquet_dataset(repo_id: str, data_files: dict[str, str], **kwargs):
-    """Download only the parquet files matching `data_files` patterns (split -> repo-relative glob) and load them."""
-    from huggingface_hub import snapshot_download
-
-    local_dir = Path(snapshot_download(repo_id, repo_type="dataset", allow_patterns=list(data_files.values())))
-    local_data_files = {split: (local_dir / pattern).as_posix() for split, pattern in data_files.items()}
-    return datasets.load_dataset("parquet", data_files=local_data_files, **kwargs)
-
-
 # preapre default dataset for visualtext(VLM) evalutor
 def preprocess_fn(example):
     return {
@@ -295,38 +286,32 @@ def prepare_default_data_image(num_samples=None):
     DATASET_NAME = "lmms-lab/VQAv2"
     NUM_SAMPLES = 24 if num_samples is None else num_samples
     set_seed(42)
-    default_dataset = (
-        load_hub_parquet_dataset(DATASET_NAME, {"test": "data/test-*"}, split="test", streaming=True)
-        .shuffle(42)
-        .take(NUM_SAMPLES)
-    )
+    default_dataset = datasets.load_dataset(DATASET_NAME, split="test", streaming=True).shuffle(42).take(NUM_SAMPLES)
     return default_dataset.map(lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names)
 
 
 def prepare_default_data_video(num_samples=None, num_frames=10):
-    from huggingface_hub import snapshot_download
+    from huggingface_hub import hf_hub_download
     from transformers.video_utils import load_video
 
     DATASET_NAME = "lmms-lab/LLaVA-Video-178K"
     SUBSET = "30_60_s_academic_v0_1"
     NUM_SAMPLES = 24 if num_samples is None else num_samples
-    QUESTIONS_FILE = f"{SUBSET}/30_60_s_academic_oe_v0_1_qa_processed.json"
-    # 30_60_s_academic_v0_1_videos_10.tar.gz - just the most lightweight chunk among subset
-    # https://huggingface.co/datasets/lmms-lab/LLaVA-Video-178K/tree/main/30_60_s_academic_v0_1
-    # the archive contains 56 videos
-    VIDEOS_ARCHIVE = f"{SUBSET}/{SUBSET}_videos_10.tar.gz"
 
-    local_dir = Path(
-        snapshot_download(DATASET_NAME, repo_type="dataset", allow_patterns=[QUESTIONS_FILE, VIDEOS_ARCHIVE])
-    )
     questions_per_video_set = datasets.load_dataset(
-        "json",
+        DATASET_NAME,
+        SUBSET,
         split="open_ended",
-        data_files={"open_ended": (local_dir / QUESTIONS_FILE).as_posix()},
+        data_files={"open_ended": f"{SUBSET}/30_60_s_academic_oe_v0_1_qa_processed.json"},
     )
     questions_per_video = {val["video"]: val for val in questions_per_video_set}
 
-    videos_arc_path = local_dir / VIDEOS_ARCHIVE
+    # 30_60_s_academic_v0_1_videos_10.tar.gz - just the most lightweight chunk among subset
+    # https://huggingface.co/datasets/lmms-lab/LLaVA-Video-178K/tree/main/30_60_s_academic_v0_1
+    # the archive contains 56 videos
+    videos_arc_path = hf_hub_download(
+        repo_id="lmms-lab/LLaVA-Video-178K", filename=f"{SUBSET}/{SUBSET}_videos_10.tar.gz", repo_type="dataset"
+    )
 
     # max resolution 1280x720, max size 6MB
     max_video_size_bytes = 6 * 1024 * 1024
@@ -445,10 +430,7 @@ def load_audio_dataset(args):
     audio_field = args.dataset_field if args.dataset_field not in (None, "text") else "audio"
     num_samples = args.num_samples if args.num_samples is not None else DEFAULT_NUM_SAMPLES
 
-    if args.dataset is None:
-        data = load_hub_parquet_dataset(path, {split: f"parquet-data/{name}/{split}-*"}, split=split, streaming=True)
-    else:
-        data = load_dataset(path=path, name=name, split=split, streaming=True)
+    data = load_dataset(path=path, name=name, split=split, streaming=True)
     # datasets>=5 needs torchcodec to decode Audio; decode with soundfile instead.
     data = data.cast_column(audio_field, Audio(decode=False))
     data = data.take(num_samples)

@@ -107,19 +107,6 @@ def _create_genai_adapter_config(adapters=None, alphas=None, *, none_if_empty=Fa
     return adapter_config
 
 
-def _apply_diffusers_lora_adapters(model, adapters, alphas):
-    adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
-    adapter_names = [f"adapter_{idx}" for idx in range(len(adapters))]
-    for adapter, adapter_name in zip(adapters, adapter_names):
-        adapter_path = Path(adapter)
-        # diffusers can't guess `weight_name` in offline mode even for a local file
-        if adapter_path.is_file():
-            model.load_lora_weights(adapter_path.parent, weight_name=adapter_path.name, adapter_name=adapter_name)
-        else:
-            model.load_lora_weights(adapter, adapter_name=adapter_name)
-    model.set_adapters(adapter_names, adapter_weights=alphas)
-
-
 def _add_genai_draft_model_config(ov_config, device, model_type, **kwargs):
     draft_model_path = kwargs.get("draft_model", "")
     if not draft_model_path:
@@ -462,7 +449,13 @@ def load_text2image_model(
         except Exception:
             model = DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch_dtype)
         if kwargs.get("adapters") is not None:
-            _apply_diffusers_lora_adapters(model, kwargs["adapters"], kwargs.get("alphas", None))
+            adapters = kwargs["adapters"]
+            alphas = kwargs.get("alphas", None)
+            adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
+
+            for idx, adapter in enumerate(adapters):
+                model.load_lora_weights(adapter, adapter_name=f"adapter_{idx}")
+            model.set_adapters([f"adapter_{idx}" for idx in range(len(adapters))], adapter_weights=alphas)
     else:
         logger.info("Using Optimum API")
         from optimum.intel import OVPipelineForText2Image
@@ -971,7 +964,13 @@ def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, 
         except ValueError:
             model = DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch_dtype)
         if kwargs.get("adapters") is not None:
-            _apply_diffusers_lora_adapters(model, kwargs["adapters"], kwargs.get("alphas", None))
+            adapters = kwargs["adapters"]
+            alphas = kwargs.get("alphas", None)
+            adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
+
+            for idx, adapter in enumerate(adapters):
+                model.load_lora_weights(adapter, adapter_name=f"adapter_{idx}")
+            model.set_adapters([f"adapter_{idx}" for idx in range(len(adapters))], adapter_weights=alphas)
     else:
         logger.info("Using Optimum API")
         from optimum.intel import OVPipelineForText2Video
@@ -1021,7 +1020,13 @@ def load_image2video_model(model_id, device="CPU", ov_config=None, use_hf=False,
         except ValueError:
             model = LTXImageToVideoPipeline.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch_dtype)
         if kwargs.get("adapters") is not None:
-            _apply_diffusers_lora_adapters(model, kwargs["adapters"], kwargs.get("alphas", None))
+            adapters = kwargs["adapters"]
+            alphas = kwargs.get("alphas", None)
+            adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
+
+            for idx, adapter in enumerate(adapters):
+                model.load_lora_weights(adapter, adapter_name=f"adapter_{idx}")
+            model.set_adapters([f"adapter_{idx}" for idx in range(len(adapters))], adapter_weights=alphas)
     else:
         logger.info("Using Optimum API")
         from optimum.intel import OVLTXImageToVideoPipeline

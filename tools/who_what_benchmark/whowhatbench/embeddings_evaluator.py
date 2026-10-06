@@ -3,6 +3,7 @@
 
 import os
 import torch
+import datasets
 import itertools
 
 import numpy as np
@@ -16,7 +17,7 @@ from transformers.image_utils import load_image
 
 from .whowhat_metrics import EmbedsSimilarity
 from .registry import register_evaluator, BaseEvaluator
-from .utils import load_hub_parquet_dataset, prepare_default_data_video as prepare_video_dataset
+from .utils import prepare_default_data_video as prepare_video_dataset
 
 
 DEFAULT_MAX_LENGTH = 200
@@ -26,11 +27,9 @@ def prepare_default_text_data(num_samples=None):
     DATASET_NAME = "microsoft/ms_marco"
     NUM_SAMPLES = num_samples if num_samples else 24
     set_seed(42)
-    default_dataset = (
-        load_hub_parquet_dataset(DATASET_NAME, {"test": "v2.1/test-*"}, split="test", streaming=True)
-        .shuffle(42)
-        .take(NUM_SAMPLES)
-    )
+    default_dataset = datasets.load_dataset(
+        DATASET_NAME, 'v2.1', split="test", streaming=True
+    ).shuffle(42).take(NUM_SAMPLES)
     return default_dataset.map(
         lambda x: {'passages': x['passages']['passage_text']}, remove_columns=default_dataset.column_names
     )
@@ -40,11 +39,7 @@ def prepare_default_image_data(num_samples=None):
     DATASET_NAME = "yerevann/coco-karpathy"
     NUM_SAMPLES = num_samples if num_samples else 24
     set_seed(42)
-    default_dataset = (
-        load_hub_parquet_dataset(DATASET_NAME, {"test": "data/test-*"}, split="test", streaming=True)
-        .shuffle(42)
-        .take(NUM_SAMPLES)
-    )
+    default_dataset = datasets.load_dataset(DATASET_NAME, split="test", streaming=True).shuffle(42).take(NUM_SAMPLES)
     return default_dataset.map(
         lambda x: {"images": [load_image(x["url"])] * len(x["sentences"]), "passages": x["sentences"]},
         remove_columns=default_dataset.column_names,

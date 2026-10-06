@@ -4,13 +4,14 @@
 import os
 from typing import Any, Union
 
+import datasets
 import pandas as pd
 from tqdm import tqdm
 from transformers import set_seed
 import torch
 import openvino_genai
 
-from .utils import load_hub_parquet_dataset, parquet_generate_tables
+from .utils import parquet_generate_tables
 from .registry import register_evaluator
 from .inpaint_evaluator import patched_parquet
 from .text2image_evaluator import Text2ImageEvaluator
@@ -29,12 +30,12 @@ def prepare_default_data(num_samples=None):
     DATASET_NAME = "paint-by-inpaint/PIPE"
     NUM_SAMPLES = 10 if num_samples is None else num_samples
     set_seed(42)
-    default_dataset = (
-        load_hub_parquet_dataset(DATASET_NAME, {"test": "data/test-*"}, split="test", streaming=True)
-        .filter(lambda example: example["Instruction_VLM-LLM"] != "")
-        .take(NUM_SAMPLES)
+    default_dataset = datasets.load_dataset(
+        DATASET_NAME, split="test", streaming=True
+    ).filter(lambda example: example["Instruction_VLM-LLM"] != "").take(NUM_SAMPLES)
+    return default_dataset.map(
+        lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
     )
-    return default_dataset.map(lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names)
 
 
 @register_evaluator("image-to-image")

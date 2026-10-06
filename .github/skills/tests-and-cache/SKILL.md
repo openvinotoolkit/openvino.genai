@@ -45,17 +45,15 @@ Pick the helper by dataset size:
 |---|---|
 | Small dataset, whole repo is fine | `utils.dataset_utils.load_dataset_via_snapshot(repo_id, config, split=...)` |
 | Large or sharded dataset: fetch only the needed parquet files | `utils.dataset_utils.load_parquet_dataset_via_snapshot(repo_id, {"<split>": "<repo-relative glob>"}, revision=..., split=..., streaming=...)` |
-| WWB default datasets | `whowhatbench.utils.load_hub_parquet_dataset(repo_id, {"<split>": "<glob>"}, ...)` |
-| WWB CLI `--dataset` in a test | `snapshot_download(..., repo_type="dataset", allow_patterns=[...])` in the test, then pass the local split directory (e.g. `<snapshot>/unlabeled`) |
 
 - Don't call `datasets.load_dataset("org/name", ...)` with a Hub id, with or without `streaming=True`. It resolves through the Hub API and `HF_DATASETS_CACHE`.
 - Find the files a config/split maps to with `datasets.load_dataset_builder(repo_id, config).config.data_files`. Many script-less repos keep them under `<config>/<split>-*.parquet`, `data/<split>-*`, or `parquet-data/<config>/<split>-*`.
 - A partial snapshot plus `load_dataset(<snapshot dir>)` fails with `DataFilesNotFoundError` when the README declares configs whose files weren't downloaded. Load through the `"parquet"`/`"json"` builder with explicit `data_files`, or point at the split subdirectory.
-- When changing a WWB default dataset loader, keep the samples identical: compare fingerprints of `take(N)` from the old Hub streaming loader and the new local loader. `shuffle(seed)` over many shards reorders shards, so loading a subset of shards changes the samples.
+- `shuffle(seed)` over many shards reorders shards, so loading only a subset of shards changes the selected samples.
 
 ### Diffusers LoRA
 
-`pipe.load_lora_weights(<file>)` can't guess `weight_name` without Hub access. Pass the parent directory plus `weight_name=<file name>`, as `whowhatbench.model_loaders._apply_diffusers_lora_adapters` does.
+`pipe.load_lora_weights(<file>)` can't guess `weight_name` without Hub access. Pass the parent directory plus `weight_name=<file name>`.
 
 ## Warming and Verifying the Cache
 
@@ -66,7 +64,7 @@ Pick the helper by dataset size:
 
 ## Known Pitfalls
 
-- `tqdm==4.70.0`: `thread_map` fails on generators. That makes `snapshot_download` raise `ValueError: min() arg is an empty sequence` on the first download from repos with >1000 files (e.g. `facebook/multilingual_librispeech`, `google/fleurs`, `lmms-lab/LLaVA-Video-178K`). Use `tqdm==4.70.1`.
+- `tqdm==4.70.0`: `thread_map` fails on generators. That makes `snapshot_download` raise `ValueError: min() arg is an empty sequence` on the first download from repos with >1000 files (e.g. `facebook/multilingual_librispeech`, `google/fleurs`, `lmms-lab/LLaVA-Video-178K`). `tests/python_tests/requirements.txt` pins `tqdm==4.70.1`.
 - Errors that mean a resource is missing from `$HF_HOME/hub`: `LocalEntryNotFoundError`, `ConnectionError: Couldn't reach '<repo>' on the Hub (OfflineModeIsEnabled)`, `ValueError: When using the offline mode, you must specify a weight_name`. Fix the test to go through the cache as described above instead of retrying.
 - WWB tests run `wwb` in a subprocess. The real error is in the captured output after `ERROR:conftest:'wwb ...' returned 1. Output:`, not in the `CalledProcessError` line.
 - A module-scoped fixture failure is reported once with its output. Later tests that use the same fixture only show the cached `CalledProcessError`.
