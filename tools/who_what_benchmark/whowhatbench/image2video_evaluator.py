@@ -1,12 +1,15 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import io
 import os
 import json
 from typing import Any, Union
 
 import datasets
+import numpy as np
 import pandas as pd
+from PIL import Image
 from tqdm import tqdm
 from transformers import set_seed
 from diffusers.utils import export_to_video
@@ -15,7 +18,7 @@ import openvino_genai
 
 from .registry import register_evaluator
 from .text2video_evaluator import Text2VideoEvaluator
-from .utils import parquet_generate_tables, resolve_image_spec
+from .utils import parquet_generate_tables
 from .inpaint_evaluator import patched_parquet
 
 
@@ -109,7 +112,20 @@ class Image2VideoEvaluator(Text2VideoEvaluator):
             )
             spec = f"{index}.png"
 
-        return resolve_image_spec(spec, self.image_dir, index)
+        if isinstance(spec, Image.Image):
+            return spec.convert("RGB")
+        if isinstance(spec, np.ndarray):
+            return Image.fromarray(spec).convert("RGB")
+        if isinstance(spec, dict):
+            # undecoded datasets.Image feature ({"bytes", "path"}), e.g. from streaming with datasets>=5
+            if spec.get("bytes"):
+                return Image.open(io.BytesIO(spec["bytes"])).convert("RGB")
+            spec = spec.get("path")
+        if isinstance(spec, str):
+            if not os.path.isabs(spec) and self.image_dir:
+                spec = os.path.join(self.image_dir, spec)
+            return Image.open(spec).convert("RGB")
+        raise ValueError(f"Unsupported conditioning image type at index {index}: {type(spec).__name__}")
 
     def _generate_data(self, model, gen_video_fn=None, videos_dir="reference"):
         def default_gen_video_fn(

@@ -5,7 +5,6 @@ from typing import Union, Optional
 from packaging.version import Version
 
 import os
-import io
 import sys
 import json
 import torch
@@ -23,7 +22,6 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from pathlib import Path
-from PIL import Image
 from transformers import set_seed, PreTrainedTokenizer
 from contextlib import contextmanager
 from datasets.utils.file_utils import xopen
@@ -282,30 +280,6 @@ def preprocess_fn(example):
         "images": load_image(example["image"]),
         "videos": None,
     }
-
-
-def resolve_image_spec(spec, image_dir=None, index=None):
-    """Resolve a test data conditioning image entry to a PIL RGB image."""
-    if isinstance(spec, Image.Image):
-        return spec.convert("RGB")
-    if isinstance(spec, np.ndarray):
-        return Image.fromarray(spec).convert("RGB")
-    if isinstance(spec, dict):
-        # undecoded datasets.Image feature ({"bytes", "path"}), e.g. from streaming with datasets>=5
-        if spec.get("bytes"):
-            return Image.open(io.BytesIO(spec["bytes"])).convert("RGB")
-        spec = spec.get("path")
-    if isinstance(spec, str):
-        if not os.path.isabs(spec) and image_dir:
-            spec = os.path.join(image_dir, spec)
-        return Image.open(spec).convert("RGB")
-    raise ValueError(f"Unsupported conditioning image type at index {index}: {type(spec).__name__}")
-
-
-def resolve_image_specs(spec, image_dir=None, index=None):
-    """Resolve a test data entry holding one conditioning image or a list of them to a list of PIL RGB images."""
-    specs = spec if isinstance(spec, (list, tuple)) else [spec]
-    return [resolve_image_spec(entry, image_dir, index) for entry in specs]
 
 
 def prepare_default_data_image(num_samples=None):

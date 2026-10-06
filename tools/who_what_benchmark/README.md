@@ -125,55 +125,6 @@ wwb --base-model black-forest-labs/FLUX.1-schnell --gt-data flux.1-schnell/gt.cs
 wwb --target-model FLUX.1-schnell-fp --gt-data flux.1-schnell/gt.csv --model-type text-to-image --adapters flux-schnell-lora.safetensors --alphas 0.1 --genai
 ```
 
-### Compare Image-to-image models
-
-Every sample is conditioned on an input image in addition to the prompt. By default the conditioning images come from the [paint-by-inpaint/PIPE](https://huggingface.co/datasets/paint-by-inpaint/PIPE) dataset, so no extra setup is needed.
-
-```sh
-# Export model to OpenVINO, you can specify weight format with --weight-format option, for example --weight-format fp32/fp16/int8
-optimum-cli export openvino -m dreamlike-art/dreamlike-anime-1.0 --weight-format fp16 dreamlike_anime_ov
-# Collect the references and save the mapping in the .csv file.
-wwb --base-model dreamlike-art/dreamlike-anime-1.0 --gt-data i2i_test/gt.csv --model-type image-to-image --hf
-# compute metrics with optimum-intel
-wwb --target-model dreamlike_anime_ov --gt-data i2i_test/gt.csv --model-type image-to-image --output dreamlike_i2i_optimum
-# compute metrics with GenAI
-wwb --target-model dreamlike_anime_ov --gt-data i2i_test/gt.csv --model-type image-to-image --genai --output dreamlike_i2i_genai
-```
-
-To use your own images, put a JSON file in a directory of its own and the images in a subdirectory next to it.
-
-```
-my_samples/
-├── samples.json
-└── images/
-    └── cat.jpg
-```
-
-```json
-[
-  {
-    "text": "Add a red party hat on the cat",
-    "images": "cat.jpg"
-  }
-]
-```
-
-```sh
-wwb --base-model dreamlike-art/dreamlike-anime-1.0 --gt-data i2i_test/gt.csv --model-type image-to-image \
-    --dataset my_samples --split train --image-dir my_samples/images --hf
-```
-
-Qwen-Image 2.1 also accepts several images per sample, listed in the order the prompt refers to them. Other models reject such a sample.
-
-```json
-[
-  {
-    "text": "Put the cat from Picture 2 next to the capybara from Picture 1",
-    "images": ["capybara.png", "cat.jpg"]
-  }
-]
-```
-
 ### Compare Text Rerank models
 ```sh
 # Export model to OpenVINO

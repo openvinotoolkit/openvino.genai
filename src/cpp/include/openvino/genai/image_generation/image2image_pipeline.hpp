@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <vector>
+
 #include "openvino/genai/image_generation/inpainting_pipeline.hpp"
 
 namespace ov {

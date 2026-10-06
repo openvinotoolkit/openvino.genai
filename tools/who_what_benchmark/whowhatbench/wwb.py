@@ -564,11 +564,6 @@ def load_prompts(args):
 
     res = data[args.dataset_field]
     res = {"prompts": list(res)}
-
-    for images_field in ("images", "image"):
-        if images_field in data.column_names:
-            res["images"] = list(data[images_field])
-            break
     return res
 
 
@@ -809,12 +804,10 @@ def genai_gen_image(model, prompt, num_inference_steps, generator=None, empty_ad
 
 
 def genai_gen_image2image(model, prompt, image, num_inference_steps, generator=None):
-    # Only models conditioned on a set of references, such as Qwen-Image 2.1, accept more than one image.
-    images = image if isinstance(image, (list, tuple)) else [image]
-    image_data = [ov.Tensor(np.array(img)[None]) for img in images]
+    image_data = ov.Tensor(np.array(image)[None])
     image_tensor = model.generate(
         prompt,
-        image=image_data if len(image_data) > 1 else image_data[0],
+        image=image_data,
         num_inference_steps=num_inference_steps,
         strength=0.8,
         generator=generator,
@@ -1213,7 +1206,6 @@ def create_evaluator(base_model, args):
                 gen_image_fn=genai_gen_image2image if args.genai else None,
                 is_genai=args.genai,
                 seed=args.seed,
-                image_dir=args.image_dir,
             )
         elif task == "image-inpainting":
             return EvaluatorCLS(
