@@ -87,8 +87,11 @@ ov_status_e ov_genai_text2speech_pipeline_generate_batch(ov_genai_text2speech_pi
                                                          const char* const* texts,
                                                          size_t count,
                                                          const ov_tensor_t* speaker_embedding,
+                                                         const ov_genai_speech_generation_config* config,
                                                          ov_genai_text2speech_decoded_results** results) {
     if (!pipeline || !pipeline->object || !texts || !count || !results)
+        return ov_status_e::INVALID_C_PARAM;
+    if (config && !config->object)
         return ov_status_e::INVALID_C_PARAM;
     try {
         std::vector<std::string> inputs;
@@ -102,9 +105,17 @@ ov_status_e ov_genai_text2speech_pipeline_generate_batch(ov_genai_text2speech_pi
         auto status = convert_embedding(speaker_embedding, embedding);
         if (status != ov_status_e::OK)
             return status;
+        // Per-call config override mirrors the C++ pipeline and the whisper C API: a non-NULL
+        // config replaces the pipeline's current configuration for this call only, and neither
+        // path mutates pipeline state.
         auto result = std::make_unique<ov_genai_text2speech_decoded_results>();
-        result->object =
-            std::make_shared<ov::genai::Text2SpeechDecodedResults>(pipeline->object->generate(inputs, embedding));
+        if (config && config->object) {
+            result->object = std::make_shared<ov::genai::Text2SpeechDecodedResults>(
+                pipeline->object->generate(inputs, embedding, *config->object));
+        } else {
+            result->object = std::make_shared<ov::genai::Text2SpeechDecodedResults>(
+                pipeline->object->generate(inputs, embedding));
+        }
         *results = result.release();
         return ov_status_e::OK;
     } catch (...) {
@@ -115,11 +126,12 @@ ov_status_e ov_genai_text2speech_pipeline_generate_batch(ov_genai_text2speech_pi
 ov_status_e ov_genai_text2speech_pipeline_generate(ov_genai_text2speech_pipeline* pipeline,
                                                    const char* text,
                                                    const ov_tensor_t* speaker_embedding,
+                                                   const ov_genai_speech_generation_config* config,
                                                    ov_genai_text2speech_decoded_results** results) {
     if (!text)
         return ov_status_e::INVALID_C_PARAM;
     const char* texts[] = {text};
-    return ov_genai_text2speech_pipeline_generate_batch(pipeline, texts, 1, speaker_embedding, results);
+    return ov_genai_text2speech_pipeline_generate_batch(pipeline, texts, 1, speaker_embedding, config, results);
 }
 
 ov_status_e ov_genai_text2speech_pipeline_get_generation_config(const ov_genai_text2speech_pipeline* pipeline,

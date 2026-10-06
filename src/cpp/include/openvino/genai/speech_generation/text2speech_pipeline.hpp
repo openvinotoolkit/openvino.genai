@@ -71,12 +71,34 @@ public:
                                        const ov::Tensor& speaker_embedding = ov::Tensor(),
                                        const ov::AnyMap& properties = {});
 
-    template <typename... Properties>
+    /**
+     * Generates speeches based on input texts with property overrides (string/property-key arguments only).
+     * @param texts input texts for which to generate speeches
+     * @param speaker_embedding Optional speaker embedding tensor
+     * @param properties Speech generation parameters specified as properties
+     */
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
                                        const ov::Tensor& speaker_embedding = ov::Tensor(),
                                        Properties&&... properties) {
         return generate(texts, speaker_embedding, ov::AnyMap{std::forward<Properties>(properties)...});
     }
+
+    /**
+     * Generates speeches based on input texts using a copy of the given configuration for this call only
+     * @param texts input texts for which to generate speeches
+     * @param speaker_embedding Optional speaker embedding tensor representing the unique characteristics of a speaker's
+     * voice. If not provided for SpeechT5 TSS model, the 7306th vector from the validation set of the
+     * `Matthijs/cmu-arctic-xvectors` dataset is used by default.
+     * @param config Speech generation configuration to use for this call. The pipeline's stored configuration
+     * is not modified.
+     * @returns raw audios of the input texts spoken in the specified speaker's voice; sample rate is provided in
+     * `Text2SpeechDecodedResults::output_sample_rate`
+     */
+    Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
+                                       const ov::Tensor& speaker_embedding,
+                                       const SpeechGenerationConfig& config);
 
     /// @brief Extract GenerationConfig used to get default values.
     /// @return Default values used.

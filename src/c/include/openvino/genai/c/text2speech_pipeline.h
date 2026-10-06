@@ -40,6 +40,8 @@ OPENVINO_GENAI_C_EXPORTS void ov_genai_text2speech_pipeline_free(ov_genai_text2s
  * @param[in] text NUL-terminated text prompt.
  * @param[in] speaker_embedding Optional float32 speaker tensor; NULL uses a model's default voice.
  *                              Kokoro requires a speaker tensor. The caller retains ownership.
+ * @param[in] config Optional speech generation configuration for this call; NULL uses the pipeline's
+ *                   current configuration. The configuration is copied; the caller retains ownership.
  * @param[out] results Receives a new result. Release it with ov_genai_text2speech_decoded_results_free.
  * @return OK on success, INVALID_C_PARAM for invalid arguments or a non-float32 speaker tensor,
  *         or UNKNOW_EXCEPTION if generation fails.
@@ -48,6 +50,7 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_text2speech_pipeline_generate(ov_genai_text2speech_pipeline* pipeline,
                                        const char* text,
                                        const ov_tensor_t* speaker_embedding,
+                                       const ov_genai_speech_generation_config* config,
                                        ov_genai_text2speech_decoded_results** results);
 
 /**
@@ -57,6 +60,8 @@ ov_genai_text2speech_pipeline_generate(ov_genai_text2speech_pipeline* pipeline,
  * @param[in] count Number of prompts; must be greater than zero.
  * @param[in] speaker_embedding Optional float32 speaker tensor shared by all prompts; NULL uses a model's
  *                              default voice. Kokoro requires a speaker tensor. The caller retains ownership.
+ * @param[in] config Optional speech generation configuration for this call; NULL uses the pipeline's
+ *                   current configuration. The configuration is copied; the caller retains ownership.
  * @param[out] results Receives a new result. Release it with ov_genai_text2speech_decoded_results_free.
  * @return OK on success, INVALID_C_PARAM for invalid arguments or a non-float32 speaker tensor,
  *         or UNKNOW_EXCEPTION if generation fails.
@@ -66,6 +71,7 @@ ov_genai_text2speech_pipeline_generate_batch(ov_genai_text2speech_pipeline* pipe
                                              const char* const* texts,
                                              size_t count,
                                              const ov_tensor_t* speaker_embedding,
+                                             const ov_genai_speech_generation_config* config,
                                              ov_genai_text2speech_decoded_results** results);
 
 /**

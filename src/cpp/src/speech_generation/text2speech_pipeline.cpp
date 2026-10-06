@@ -95,6 +95,14 @@ Text2SpeechDecodedResults Text2SpeechPipeline::generate(const std::vector<std::s
     return m_impl->generate(texts, speaker_embedding, request_config);
 }
 
+Text2SpeechDecodedResults Text2SpeechPipeline::generate(const std::vector<std::string>& texts,
+                                                        const ov::Tensor& speaker_embedding,
+                                                        const SpeechGenerationConfig& config) {
+    SpeechGenerationConfig request_config = config;
+    request_config.validate();
+    return m_impl->generate(texts, speaker_embedding, request_config);
+}
+
 SpeechGenerationConfig Text2SpeechPipeline::get_generation_config() const {
     return m_speech_gen_config;
 }

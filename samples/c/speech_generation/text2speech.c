@@ -188,8 +188,8 @@ int main(int argc, char** argv) {
 
     CHECK_STATUS(ov_genai_text2speech_pipeline_create(model_path, device, 0, &pipeline));
 
-    // Optional config overrides mirror the C++ sample: speed and language are only
-    // applied when explicitly requested through the corresponding flags.
+    // Optional config overrides mirror the C++ sample: speed and language are applied as a
+    // per-call configuration passed to generate, like the C++ generate(..., config) overload.
     if (speed != 0.0f || language != NULL) {
         CHECK_STATUS(ov_genai_speech_generation_config_create(&config));
         if (speed != 0.0f)
@@ -197,7 +197,6 @@ int main(int argc, char** argv) {
         if (language != NULL)
             CHECK_STATUS(ov_genai_speech_generation_config_set_language(config, language));
         CHECK_STATUS(ov_genai_speech_generation_config_validate(config));
-        CHECK_STATUS(ov_genai_text2speech_pipeline_set_generation_config(pipeline, config));
         if (speed != 0.0f)
             printf("Applied speech speed: %.1f\n", speed);
         if (language != NULL)
@@ -214,9 +213,9 @@ int main(int argc, char** argv) {
 
     if (batch) {
         const char* texts[] = {text1, text2};
-        CHECK_STATUS(ov_genai_text2speech_pipeline_generate_batch(pipeline, texts, 2, embedding, &results));
+        CHECK_STATUS(ov_genai_text2speech_pipeline_generate_batch(pipeline, texts, 2, embedding, config, &results));
     } else {
-        CHECK_STATUS(ov_genai_text2speech_pipeline_generate(pipeline, text1, embedding, &results));
+        CHECK_STATUS(ov_genai_text2speech_pipeline_generate(pipeline, text1, embedding, config, &results));
     }
 
     size_t speech_count = 0;

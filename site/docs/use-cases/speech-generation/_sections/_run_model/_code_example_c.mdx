@@ -16,7 +16,7 @@ int main(int argc, char** argv) {
     int status = 1;
 
     if (ov_genai_text2speech_pipeline_create(argv[1], "${props.device || 'CPU'}", 0, &pipeline) != OK ||
-        ov_genai_text2speech_pipeline_generate(pipeline, "Hello OpenVINO GenAI", NULL, &results) != OK ||
+        ov_genai_text2speech_pipeline_generate(pipeline, "Hello OpenVINO GenAI", NULL, NULL, &results) != OK ||
         ov_genai_text2speech_decoded_results_get_speech_at(results, 0, &speech) != OK)
         goto cleanup;
 
