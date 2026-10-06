@@ -97,8 +97,10 @@ Text2SpeechDecodedResults Text2SpeechPipeline::generate(const std::vector<std::s
 
 Text2SpeechDecodedResults Text2SpeechPipeline::generate(const std::vector<std::string>& texts,
                                                         const ov::Tensor& speaker_embedding,
-                                                        const SpeechGenerationConfig& config) {
-    SpeechGenerationConfig request_config = config;
+                                                        const std::optional<SpeechGenerationConfig>& config) {
+    // Match Whisper/ASR: a provided config replaces the pipeline's stored config for this call
+    // only; when absent, the stored config is used. Neither path mutates pipeline state.
+    SpeechGenerationConfig request_config = config.has_value() ? *config : m_speech_gen_config;
     request_config.validate();
     return m_impl->generate(texts, speaker_embedding, request_config);
 }
