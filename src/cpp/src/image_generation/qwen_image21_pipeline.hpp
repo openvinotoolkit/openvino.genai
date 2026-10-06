@@ -275,8 +275,8 @@ public:
             const auto encode_start = std::chrono::steady_clock::now();
             const auto& vae_config = m_vae->get_config();
 
-            // Every condition image is encoded on its own because the images may differ in resolution, and the
-            // packed latents are joined along the sequence axis in the order the images were passed.
+            // Every condition image is encoded on its own because, the packed latents are joined
+            // along the sequence axis in the order the images were passed.
             std::vector<ov::Tensor> packed_condition_latents;
             packed_condition_latents.reserve(m_condition_images.size());
             for (const ov::Tensor& condition_image : m_condition_images) {
@@ -335,8 +335,6 @@ public:
         if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
             OPENVINO_ASSERT(!initial_images.empty(), "'initial_image' must not be empty for Image 2 image pipeline");
 
-            // Each condition image is normalized to the same area independently of the others, so images of
-            // different resolutions and aspect ratios can be combined.
             Qwen3VLForConditionalGeneration::ImageSize condition_size;
             for (const ov::Tensor& initial_image : initial_images) {
                 OPENVINO_ASSERT(initial_image, "'initial_image' must not be empty for Image 2 image pipeline");
@@ -349,9 +347,6 @@ public:
                     DEFAULT_OUTPUT_RESOLUTION * DEFAULT_OUTPUT_RESOLUTION,
                     static_cast<double>(image_shape[2]) / static_cast<double>(image_shape[1]));
 
-                // One resize and normalization feed both the vision tower and the VAE: Qwen3-VL's processor uses
-                // image_mean = image_std = 0.5, which reduces to the (pixel / 127.5) - 1 the VAE expects. The
-                // processor reuses its output buffer, so the result is detached before the next image is resized.
                 const ov::Tensor processed = m_image_processor->execute(
                     m_image_resizer->execute(initial_image, condition_size.height, condition_size.width));
                 ov::Tensor condition_image(processed.get_element_type(), processed.get_shape());
@@ -542,17 +537,17 @@ protected:
         OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used by QwenImage21Pipeline");
         OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by QwenImage21Pipeline");
 
+        // Qwen-Image 2.1 does not support variable strength: the condition image enters the joint sequence as
+        // its own token block instead of being blended with noise, so partial denoising is not applicable.
+        OPENVINO_ASSERT(generation_config.strength == 1.0f,
+                        "'strength' generation parameter must be 1.0f for QwenImage21Pipeline");
+
         if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
             OPENVINO_ASSERT(initial_image, "'initial_image' must not be empty for Image 2 image pipeline");
             OPENVINO_ASSERT(m_text_encoder->has_vision_tower(),
                             "Image 2 image generation requires the '", VISION_ENCODER_SUBFOLDER, "' and '",
                             TEXT_ENCODER_I2I_SUBFOLDER, "' submodels");
-            // Qwen-Image 2.1 does not support variable strength: the condition image enters the joint sequence as
-            // its own token block instead of being blended with noise, so partial denoising is not applicable.
-            // Aligned with diffusers QwenImage21Pipeline which does not accept 'strength'.
         } else {
-            OPENVINO_ASSERT(generation_config.strength == 1.0f,
-                            "'strength' generation parameter must be 1.0f for Text 2 image pipeline");
             OPENVINO_ASSERT(!initial_image, "'initial_image' must be empty for Text 2 image pipeline");
         }
     }

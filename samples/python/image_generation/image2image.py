@@ -18,12 +18,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('model_dir')
     parser.add_argument('prompt')
-    parser.add_argument("image", nargs="+")
+    parser.add_argument('image', nargs='+')
     args = parser.parse_args()
 
     device = 'CPU'  # GPU can be used as well
     pipe = openvino_genai.Image2ImagePipeline(args.model_dir, device)
 
+    # Several images can be passed to models conditioned on a set of reference images, such as Qwen-Image 2.1.
     images = [read_image(path) for path in args.image]
 
     def callback(step, num_steps, latent):
@@ -33,14 +34,14 @@ def main():
     image_tensor = pipe.generate(
         args.prompt,
         images,
-        # strength=0.8,
-        callback=callback,
-        num_inference_steps=10,
-        generator=openvino_genai.TorchGenerator(42),
+        # controls how initial image is noised after being converted to latent space
+        # Qwen-Image 2.1 accepts `1` only
+        strength=0.8,
+        callback=callback
     )
 
     image = Image.fromarray(image_tensor.data[0])
-    image.save("image_2images_updated.bmp")
+    image.save("image.bmp")
 
 
 if __name__ == '__main__':

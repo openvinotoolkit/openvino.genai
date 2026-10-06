@@ -13,7 +13,7 @@ int32_t main(int32_t argc, char* argv[]) try {
     const std::string models_path = argv[1], prompt = argv[2];
     const std::string device = "CPU";  // GPU can be used as well
 
-    // Several images can be passed to models conditioned on a set of references, such as Qwen-Image 2.1.
+    // Several images can be passed to models conditioned on a set of reference images, such as Qwen-Image 2.1.
     std::vector<ov::Tensor> images;
     for (int32_t argument = 3; argument < argc; ++argument) {
         images.push_back(utils::load_image(argv[argument]));
@@ -21,7 +21,8 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     ov::genai::Image2ImagePipeline pipe(models_path, device);
     ov::Tensor generated_image = pipe.generate(prompt, images,
-        // controls how initial image is noised after being converted to latent space. `1` means initial image is fully noised
+        // controls how initial image is noised after being converted to latent space
+        // Qwen-Image 2.1 accepts `1` only
         ov::genai::strength(0.8f),
         ov::genai::callback(progress_bar));
 
