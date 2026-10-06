@@ -188,7 +188,17 @@ public:
             model = apply_postprocessing(model);
         }
 
-        ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
+        // A stateful decoder reranker (a Qwen3-Reranker-style causal LM, recognized by its
+        // beam_idx input) runs on NPU through the NPUW LLM pipeline, scoring a [N, L] batch
+        // row by row. Encoder cross-encoders keep the plain compile path.
+        ov::CompiledModel compiled_model;
+        if (device == "NPU" && m_has_beam_idx) {
+            compiled_model =
+                utils::compile_decoder_for_npu_text_rerank(model, properties, utils::get_kv_axes_pos(model), m_config)
+                    .first;
+        } else {
+            compiled_model = core.compile_model(model, device, properties);
+        }
 
         utils::print_compiled_model_properties(compiled_model, "text rerank model");
         m_request = compiled_model.create_infer_request();
