@@ -26,9 +26,8 @@ int ensure_divide(double length, int divisor) {
     return std::max(static_cast<int>(std::round(length / divisor)) * divisor, divisor);
 }
 
-// TODO Refine/clarify docstring comment
-// Resizes so the area fits scale_resolution^2 while preserving aspect ratio, snapping each side to a
-// multiple of patch_size * 4 (two 2x2 spatial merges).
+// Picks the size for resizing a crop (thumbnail or slice). Keeps aspect ratio and targets
+// model's preferred resolution, ensuring that result can be evenly divided into patches.
 ImageSize find_best_resize(double height, double width, int scale_resolution, int patch_size, bool allow_upscale) {
     if (height * width > static_cast<double>(scale_resolution) * scale_resolution || allow_upscale) {
         const double aspect_ratio = width / height;
@@ -39,14 +38,13 @@ ImageSize find_best_resize(double height, double width, int scale_resolution, in
     return {static_cast<size_t>(ensure_divide(height, factor)), static_cast<size_t>(ensure_divide(width, factor))};
 }
 
-// TODO Consider using SlicesGrid has_slices() method instead of optional
-// Calculates slices grid, nullopt if image is too small for slicing
-std::optional<SlicesGrid> get_slices_grid(int height, int width, int max_slice_nums, int scale_resolution) {
+// Calculates slices grid, zeroed (no slices) if image is too small for slicing
+SlicesGrid get_slices_grid(int height, int width, int max_slice_nums, int scale_resolution) {
     const double log_ratio = std::log(static_cast<double>(width) / height);
     const double ratio = static_cast<double>(width) * height / (static_cast<double>(scale_resolution) * scale_resolution);
     const int multiple = std::min(static_cast<int>(std::ceil(ratio)), max_slice_nums);
     if (multiple <= 1) {
-        return std::nullopt;
+        return {};
     }
 
     SlicesGrid best_grid{1, 1};
@@ -72,8 +70,7 @@ std::optional<SlicesGrid> get_slices_grid(int height, int width, int max_slice_n
     return best_grid;
 }
 
-// TODO Refine/clarify docstring comment
-// Returns the size the source image is resized to before being tiled into the slice grid.
+// Picks the size for resizing original image before it is split into slices grid.
 ImageSize get_refine_size(int height, int width, SlicesGrid grid, int scale_resolution, int patch_size) {
     const int grid_rows = static_cast<int>(grid.rows);
     const int grid_cols = static_cast<int>(grid.cols);
@@ -136,47 +133,48 @@ SlicedImage slice_image(const clip_image_u8& source, const ProcessorConfig& conf
     const int height = source.ny;
     const int width = source.nx;
 
-    const std::optional<SlicesGrid> slices_grid = get_slices_grid(height, width, max_slice_nums, scale_resolution);
-    
-    const bool allow_upscale = !slices_grid.has_value();
+    const SlicesGrid slices_grid = get_slices_grid(height, width, max_slice_nums, scale_resolution);
+
+    const bool allow_upscale = !slices_grid.has_slices();
     const ImageSize thumbnail_size = find_best_resize(height, width, scale_resolution, patch_size, allow_upscale);
     clip_image_u8 thumbnail;
     bicubic_resize(source, thumbnail, static_cast<int>(thumbnail_size.width), static_cast<int>(thumbnail_size.height));
-    
+
     SlicedImage result;
     result.crops.push_back(std::move(thumbnail));
     result.crop_sizes.push_back({thumbnail_size.height / patch_side, thumbnail_size.width / patch_side});
 
-    if (slices_grid.has_value()) {
-        const ImageSize refine_size = get_refine_size(height, width, *slices_grid, scale_resolution, patch_size);
+    if (slices_grid.has_slices()) {
+        const ImageSize refine_size = get_refine_size(height, width, slices_grid, scale_resolution, patch_size);
         clip_image_u8 refine_img;
         bicubic_resize(source, refine_img, static_cast<int>(refine_size.width), static_cast<int>(refine_size.height));
-        const int slice_h = static_cast<int>(refine_size.height / slices_grid->rows);
-        const int slice_w = static_cast<int>(refine_size.width / slices_grid->cols);
+        const int slice_h = static_cast<int>(refine_size.height / slices_grid.rows);
+        const int slice_w = static_cast<int>(refine_size.width / slices_grid.cols);
         for (auto& slice : split_to_slices(refine_img, slice_h, slice_w)) {
             result.crops.push_back(std::move(slice));
             result.crop_sizes.push_back(
                 {static_cast<size_t>(slice_h) / patch_side, static_cast<size_t>(slice_w) / patch_side}
             );
         }
-        result.slices_grid = *slices_grid;
+        result.slices_grid = slices_grid;
     }
     return result;
 }
 
-// TODO Refine/clarify docstring comment
-// Packs a (grid_h x grid_w patches) crop into NaViT format [1, 3, patch_size, grid_h*grid_w*patch_size],
-// applying rescale (1/255) and per-channel normalization. Mirrors MiniCPMV4_6ImageProcessor.reshape_by_patch.
+// Packs a crop of crop_size (height, width) patches into NaViT layout and applies normalization.
+// Shape: [1, 3, patch_size, num_patches * patch_size], num_patches = crop_h * crop_w
+// Mirrors MiniCPMV4_6ImageProcessor.reshape_by_patch.
 ov::Tensor pack_crop(
     const clip_image_u8& crop,
-    size_t grid_h,
-    size_t grid_w,
+    const ImageSize& crop_size,
     const std::array<float, 3>& norm_mean,
     const std::array<float, 3>& norm_std,
     size_t patch_size
 ) {
-    const size_t width_px = grid_w * patch_size;
-    const size_t row_len = grid_h * grid_w * patch_size;
+    const size_t crop_h = crop_size.height;
+    const size_t crop_w = crop_size.width;
+    const size_t width_px = crop_w * patch_size;
+    const size_t row_len = crop_h * crop_w * patch_size;
     ov::Tensor pixel_values{ov::element::f32, {1, 3, patch_size, row_len}};
     float* data = pixel_values.data<float>();
     for (size_t c = 0; c < 3; ++c) {
@@ -184,10 +182,10 @@ ov::Tensor pack_crop(
         const float scale = 1.0f / (255.0f * norm_std[c]);
         const float shift = norm_mean[c] / norm_std[c];
         for (size_t kh = 0; kh < patch_size; ++kh) {
-            for (size_t pr = 0; pr < grid_h; ++pr) {
+            for (size_t pr = 0; pr < crop_h; ++pr) {
                 const size_t row = pr * patch_size + kh;
-                for (size_t pc = 0; pc < grid_w; ++pc) {
-                    const size_t patch = pr * grid_w + pc;
+                for (size_t pc = 0; pc < crop_w; ++pc) {
+                    const size_t patch = pr * crop_w + pc;
                     const size_t src_base = (row * width_px + pc * patch_size) * 3 + c;
                     const size_t dst_base = (c * patch_size + kh) * row_len + patch * patch_size;
                     for (size_t kw = 0; kw < patch_size; ++kw) {
@@ -200,10 +198,12 @@ ov::Tensor pack_crop(
     return pixel_values;
 }
 
-// TODO Refine/clarify docstring comment, add expected output tensor shape
-// Nearest-neighbor position ids into a num_patches_per_side^2 grid, row-major over the crop patches.
-// Distinct from the language-model M-RoPE positions built in create_position_ids.
-ov::Tensor build_vision_position_ids(size_t grid_h, size_t grid_w, size_t num_patches_per_side) {
+// Builds per-patch position ids for vision encoder - nearest-neighbor indices into the num_patches_per_side grid.
+// Distinct from LM position_ids.
+// Shape: [num_patches], num_patches = crop_h * crop_w
+ov::Tensor build_vision_position_ids(const ImageSize& crop_size, size_t num_patches_per_side) {
+    const size_t crop_h = crop_size.height;
+    const size_t crop_w = crop_size.width;
     std::vector<double> boundaries(num_patches_per_side - 1);
     for (size_t k = 0; k < boundaries.size(); ++k) {
         boundaries[k] = static_cast<double>(k + 1) / num_patches_per_side;
@@ -211,44 +211,46 @@ ov::Tensor build_vision_position_ids(size_t grid_h, size_t grid_w, size_t num_pa
     auto to_bucket = [&boundaries](double value) -> int64_t {
         return std::upper_bound(boundaries.begin(), boundaries.end(), value) - boundaries.begin();
     };
-    std::vector<int64_t> bucket_h(grid_h);
-    std::vector<int64_t> bucket_w(grid_w);
-    for (size_t i = 0; i < grid_h; ++i) {
-        bucket_h[i] = to_bucket(static_cast<double>(i) / grid_h);
+    std::vector<int64_t> bucket_h(crop_h);
+    std::vector<int64_t> bucket_w(crop_w);
+    for (size_t i = 0; i < crop_h; ++i) {
+        bucket_h[i] = to_bucket(static_cast<double>(i) / crop_h);
     }
-    for (size_t j = 0; j < grid_w; ++j) {
-        bucket_w[j] = to_bucket(static_cast<double>(j) / grid_w);
+    for (size_t j = 0; j < crop_w; ++j) {
+        bucket_w[j] = to_bucket(static_cast<double>(j) / crop_w);
     }
-    ov::Tensor position_ids{ov::element::i64, {grid_h * grid_w}};
+    ov::Tensor position_ids{ov::element::i64, {crop_h * crop_w}};
     int64_t* data = position_ids.data<int64_t>();
-    for (size_t i = 0; i < grid_h; ++i) {
-        for (size_t j = 0; j < grid_w; ++j) {
-            data[i * grid_w + j] = bucket_h[i] * static_cast<int64_t>(num_patches_per_side) + bucket_w[j];
+    for (size_t i = 0; i < crop_h; ++i) {
+        for (size_t j = 0; j < crop_w; ++j) {
+            data[i * crop_w + j] = bucket_h[i] * static_cast<int64_t>(num_patches_per_side) + bucket_w[j];
         }
     }
     return position_ids;
 }
 
-// TODO Refine/clarify docstring comment, add expected output tensor shape
-// Window-attention reorder indices (length grid_h*grid_w), grouping patches into window x window blocks.
-ov::Tensor build_window_index(size_t grid_h, size_t grid_w, size_t window_kernel_size) {
-    const size_t pad_h = window_kernel_size - grid_h % window_kernel_size;
-    const size_t pad_w = window_kernel_size - grid_w % window_kernel_size;
-    const size_t padded_h = grid_h + pad_h;
-    const size_t padded_w = grid_w + pad_w;
+// Builds the order in which patches are grouped into windows for the vision encoder's window attention.
+// Shape: [num_patches], num_patches = crop_h * crop_w
+ov::Tensor build_window_index(const ImageSize& crop_size, size_t window_kernel_size) {
+    const size_t crop_h = crop_size.height;
+    const size_t crop_w = crop_size.width;
+    const size_t pad_h = window_kernel_size - crop_h % window_kernel_size;
+    const size_t pad_w = window_kernel_size - crop_w % window_kernel_size;
+    const size_t padded_h = crop_h + pad_h;
+    const size_t padded_w = crop_w + pad_w;
     const size_t num_windows_h = padded_h / window_kernel_size;
     const size_t num_windows_w = padded_w / window_kernel_size;
 
     constexpr int64_t PAD = -100;
     std::vector<int64_t> padded(padded_h * padded_w, PAD);
-    for (size_t i = 0; i < grid_h; ++i) {
-        for (size_t j = 0; j < grid_w; ++j) {
-            padded[i * padded_w + j] = static_cast<int64_t>(i * grid_w + j);
+    for (size_t i = 0; i < crop_h; ++i) {
+        for (size_t j = 0; j < crop_w; ++j) {
+            padded[i * padded_w + j] = static_cast<int64_t>(i * crop_w + j);
         }
     }
 
     std::vector<int64_t> window_index;
-    window_index.reserve(grid_h * grid_w);
+    window_index.reserve(crop_h * crop_w);
     for (size_t wh = 0; wh < num_windows_h; ++wh) {
         for (size_t ww = 0; ww < num_windows_w; ++ww) {
             for (size_t i = 0; i < window_kernel_size; ++i) {
@@ -267,12 +269,12 @@ ov::Tensor build_window_index(size_t grid_h, size_t grid_w, size_t window_kernel
     return result;
 }
 
-// TODO Refine/clarify docstring comment, add expected output tensor shape
-// Reorders the post-window-merge tokens (grid / window_kernel_size per dimension) into
-// merge_kernel_size x merge_kernel_size blocks for the final spatial merger.
-ov::Tensor build_merge_index(size_t grid_h, size_t grid_w, size_t window_kernel_size, size_t merge_kernel_size) {
-    const size_t post_window_h = grid_h / window_kernel_size;
-    const size_t post_window_w = grid_w / window_kernel_size;
+// Builds the order in which tokens are grouped into blocks for the vision encoder's final spatial merge.
+// Shape: [num_patches / vision_downsample_factor], where
+// num_patches = crop_h * crop_w, vision_downsample_factor = window_kernel_size * merge_kernel_size
+ov::Tensor build_merge_index(const ImageSize& crop_size, size_t window_kernel_size, size_t merge_kernel_size) {
+    const size_t post_window_h = crop_size.height / window_kernel_size;
+    const size_t post_window_w = crop_size.width / window_kernel_size;
     const size_t blocks_h = post_window_h / merge_kernel_size;
     const size_t blocks_w = post_window_w / merge_kernel_size;
     ov::Tensor result{ov::element::i64, {post_window_h * post_window_w}};
@@ -322,7 +324,7 @@ std::vector<ImageSize> flatten_videos_crop_sizes(
     return crop_sizes;
 }
 
-// Builds [3, 1, seq_len] position ids [T, H, W] and the rope delta (Canvas M-RoPE)
+// Builds [3, 1, seq_len] position ids [T, H, W] for LM and the rope delta (Canvas M-RoPE)
 std::pair<ov::Tensor, int64_t> create_position_ids(
     const ov::Tensor& input_ids,
     const std::vector<ImageSize>& images_crop_sizes,
@@ -341,8 +343,8 @@ std::pair<ov::Tensor, int64_t> create_position_ids(
         position_ids.data<int64_t>() + 2 * seq_len};
 
     int64_t max_pos = 0;
-    // TODO Clarify/rename
-    auto fill_text = [&](size_t from, size_t to, int64_t start) {
+    // Assigns identical sequential positions across all three M-RoPE channels to a text-token range.
+    auto fill_text_positions = [&](size_t from, size_t to, int64_t start) {
         for (size_t k = from; k < to; ++k) {
             const int64_t value = start + static_cast<int64_t>(k - from);
             channel[0][k] = value;
@@ -371,13 +373,13 @@ std::pair<ov::Tensor, int64_t> create_position_ids(
             ++i;
         }
         const size_t run_len = i - run_start;
-        const auto [grid_h, grid_w] = is_image ? images_crop_sizes.at(image_crop_index++) : videos_crop_sizes.at(video_crop_index++);
-        const int64_t canvas_h = static_cast<int64_t>(grid_h / downsample_factor);
-        const int64_t canvas_w = static_cast<int64_t>(grid_w / downsample_factor);
+        const auto [crop_h, crop_w] = is_image ? images_crop_sizes.at(image_crop_index++) : videos_crop_sizes.at(video_crop_index++);
+        const int64_t canvas_h = static_cast<int64_t>(crop_h / downsample_factor);
+        const int64_t canvas_w = static_cast<int64_t>(crop_w / downsample_factor);
         const size_t frame_start = run_start - 1;
 
         if (frame_start > current_idx) {
-            fill_text(current_idx, frame_start, current_pos);
+            fill_text_positions(current_idx, frame_start, current_pos);
             current_pos += static_cast<int64_t>(frame_start - current_idx);
         }
 
@@ -400,7 +402,7 @@ std::pair<ov::Tensor, int64_t> create_position_ids(
     }
 
     if (current_idx < seq_len) {
-        fill_text(current_idx, seq_len, current_pos);
+        fill_text_positions(current_idx, seq_len, current_pos);
     }
 
     const int64_t rope_delta = max_pos + 1 - static_cast<int64_t>(seq_len);
@@ -434,22 +436,6 @@ void VisionEncoderMiniCPMv4_7::update_vision_config(const VLMConfig& vlm_config)
     }
 }
 
-EncodedImage VisionEncoderMiniCPMv4_7::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
-    const ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
-
-    const clip_image_u8 source = tensor_to_clip_image_u8(image);
-    SlicedImage sliced = slice_image(source, config);
-    ov::Tensor features = encode_crops(sliced.crops, sliced.crop_sizes, config);
-
-    EncodedImage encoded_image;
-    encoded_image.num_image_tokens = features.get_shape().at(0);
-    encoded_image.resized_source = std::move(features);
-    encoded_image.resized_source_size = sliced.crop_sizes.front();
-    encoded_image.slices_grid = sliced.slices_grid;
-    encoded_image.crop_sizes = std::move(sliced.crop_sizes);
-    return encoded_image;
-}
-
 ov::Tensor VisionEncoderMiniCPMv4_7::encode_crops(
     const std::vector<clip_image_u8>& crops,
     const std::vector<ImageSize>& crop_sizes,
@@ -472,17 +458,14 @@ ov::Tensor VisionEncoderMiniCPMv4_7::encode_crops(
     ov::Tensor features;
     size_t offset = 0;
     for (size_t i = 0; i < crops.size(); ++i) {
-        const size_t grid_h = crop_sizes[i].height;
-        const size_t grid_w = crop_sizes[i].width;
-
+        const ImageSize& crop_size = crop_sizes[i];
         encoder.set_tensor(
             "pixel_values",
-            pack_crop(crops[i], grid_h, grid_w, config.image_mean, config.image_std, config.patch_size)
+            pack_crop(crops[i], crop_size, config.image_mean, config.image_std, config.patch_size)
         );
-        // TODO Consider passing crop_size instead of unpacked grid_h/grid_w
-        encoder.set_tensor("position_ids", build_vision_position_ids(grid_h, grid_w, num_patches_per_side));
-        encoder.set_tensor("window_index", build_window_index(grid_h, grid_w, window_kernel_size));
-        encoder.set_tensor("merge_index", build_merge_index(grid_h, grid_w, window_kernel_size, merge_kernel_size));
+        encoder.set_tensor("position_ids", build_vision_position_ids(crop_size, num_patches_per_side));
+        encoder.set_tensor("window_index", build_window_index(crop_size, window_kernel_size));
+        encoder.set_tensor("merge_index", build_merge_index(crop_size, window_kernel_size, merge_kernel_size));
         encoder.infer();
 
         const ov::Tensor& output = encoder.get_output_tensor();
@@ -493,6 +476,22 @@ ov::Tensor VisionEncoderMiniCPMv4_7::encode_crops(
         offset += output.get_byte_size();
     }
     return features;
+}
+
+EncodedImage VisionEncoderMiniCPMv4_7::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
+    const ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
+
+    const clip_image_u8 source = tensor_to_clip_image_u8(image);
+    SlicedImage sliced = slice_image(source, config);
+    ov::Tensor features = encode_crops(sliced.crops, sliced.crop_sizes, config);
+
+    EncodedImage encoded_image;
+    encoded_image.num_image_tokens = features.get_shape().at(0);
+    encoded_image.resized_source = std::move(features);
+    encoded_image.resized_source_size = sliced.crop_sizes.front();
+    encoded_image.slices_grid = sliced.slices_grid;
+    encoded_image.crop_sizes = std::move(sliced.crop_sizes);
+    return encoded_image;
 }
 
 EncodedVideo VisionEncoderMiniCPMv4_7::encode_frames(const std::vector<ov::Tensor>& frames) {
