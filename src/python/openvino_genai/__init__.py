@@ -31,6 +31,7 @@ from .py_openvino_genai import (
     Phi4ReasoningParser,
     Llama3JsonToolParser,
     Llama3PythonicToolParser,
+    Qwen3CoderToolParser,
     IncrementalParser,
     ReasoningIncrementalParser,
     DeepSeekR1ReasoningIncrementalParser,

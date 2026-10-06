@@ -137,6 +137,48 @@ private:
 };
 
 /**
+ * @brief Parser for the Qwen3-Coder XML tool calls format.
+ *
+ * Qwen3CoderToolParser extracts tool calls written the way the Qwen3-Coder, Qwen3.5 and Qwen3.6
+ * chat templates ask for them:
+ * <tool_call>
+ * <function=get_weather>
+ * <parameter=location>
+ * New York, NY
+ * </parameter>
+ * </function>
+ * </tool_call>
+ * Several calls may follow each other, and a call cut off by the generation limit is parsed as far
+ * as it goes. It does not modify the original content, only adds the 'tool_calls' to the message.
+ */
+class OPENVINO_GENAI_EXPORTS Qwen3CoderToolParser : public Parser {
+public:
+    /**
+     * @param tools Optional tool definitions, as passed to the chat template (OpenAI style
+     * {"type": "function", "function": {"name": ..., "parameters": {...}}} or bare {"name": ..., "parameters": {...}}).
+     * Parameter values are plain text in this format; with the definitions they are converted to the
+     * JSON type their schema declares (integer, number, boolean, object, array). Without them, or for
+     * string parameters and values that are not valid JSON, they stay strings.
+     */
+    explicit Qwen3CoderToolParser(const JsonContainer& tools = JsonContainer::array());
+    ~Qwen3CoderToolParser();
+
+    /**
+     * @brief Parse Qwen3-Coder XML tool calls from text.
+     *
+     * Adds 'tool_calls' as a list of {"name": ..., "arguments": {...}} to the JsonContainer when the
+     * 'content' holds at least one call, without modifying the original content.
+     *
+     * @param message JsonContainer containing the text to parse and to store tool call results
+     */
+    void parse(JsonContainer& message) override;
+
+private:
+    class Qwen3CoderToolParserImpl;
+    std::unique_ptr<Qwen3CoderToolParserImpl> m_impl;
+};
+
+/**
  * @brief Abstract base class for incremental parsers that process text during streaming.
  *
  * Derived classes must implement both the `parse()` and `reset()` methods, as these are pure virtual.
