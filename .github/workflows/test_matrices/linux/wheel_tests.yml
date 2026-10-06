@@ -183,7 +183,7 @@
   cmd: |-
     # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
     python -m pip install transformers==5.0.0
-    python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_image.py ./tools/who_what_benchmark/tests/test_cli_vlm.py ./tools/who_what_benchmark/tests/test_cli_videos.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
+    python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_image.py ./tools/who_what_benchmark/tests/test_cli_vlm.py ./tools/who_what_benchmark/tests/test_cli_videos.py -m "not nanollava and not transformers_lower_v5 and not transformers_higher_v5_1" -k "not videochat"
   timeout: 120
   components:
     - WWB
