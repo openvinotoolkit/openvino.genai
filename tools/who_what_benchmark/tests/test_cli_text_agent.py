@@ -82,9 +82,7 @@ def _create_messages_dataset(path, as_jsonl=False, use_real_prompt=False):
                         "description": "Get weather for a city.",
                         "parameters": {
                             "type": "object",
-                            "properties": {
-                                "city": {"type": "string", "description": "City name"}
-                            },
+                            "properties": {"city": {"type": "string", "description": "City name"}},
                             "required": ["city"],
                         },
                     },
@@ -119,16 +117,13 @@ def _create_messages_dataset(path, as_jsonl=False, use_real_prompt=False):
             False,
             0.9,
         ),
-        pytest.param(
+        (
             "Qwen/Qwen2.5-0.5B-Instruct",
             "text-agent",
             "messages_real.jsonl",
             True,
             True,
             0.9,
-            marks=pytest.mark.xfail(
-                reason="Known mismatch: deterministic GenAI ChatHistory path is not HF-prompt equivalent for messages_real.jsonl"
-            ),
         ),
         (
             "optimum-intel-internal-testing/tiny-random-llava",

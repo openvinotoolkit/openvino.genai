@@ -387,23 +387,12 @@ class TextAgentEvaluator(BaseEvaluator):
 
         return self._apply_tokenizer_chat_template_to_prompt(tokenizer, messages, tools)
 
-    def _build_prompt_text_without_tools(self, tokenizer, messages, chat_template, backend_name: str) -> str:
-        logger.warning(
-            "Retrying prompt rendering without tools in %s path due to incompatible tools format",
-            backend_name,
-        )
-
-        return self._build_templated_prompt(tokenizer, messages, None, chat_template, backend_name)
-
-    def _build_prompt_text(self, tokenizer, messages, tools, chat_template, backend_name: str) -> str:
-        return self._build_templated_prompt(tokenizer, messages, tools, chat_template, backend_name)
-
     def _generate_non_genai(self, model, tokenizer, record: Dict[str, Any], chat_template: Optional[str]) -> str:
         messages = record["messages"]
 
         tools = record.get("tools")
         device = getattr(model, "device", "cpu")
-        prompt = self._build_prompt_text(tokenizer, messages, tools, chat_template, backend_name="HF")
+        prompt = self._build_templated_prompt(tokenizer, messages, tools, chat_template, backend_name="HF")
         inputs = tokenizer(prompt, return_tensors="pt").to(device)
 
         if "input_ids" not in inputs or inputs["input_ids"].shape[-1] == 0:
