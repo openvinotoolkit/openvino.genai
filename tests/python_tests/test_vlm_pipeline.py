@@ -503,6 +503,9 @@ def _get_ov_model(model_id: str) -> str:
                 pass
 
         processor.save_pretrained(temp_dir)
+        if model.config.model_type == "mistral3":
+            # Align with optimum-cli: HF repo nests image processor settings in processor_config.json only.
+            processor.image_processor.save_pretrained(temp_dir)
         model.save_pretrained(temp_dir)
 
     manager.execute(convert_to_temp)

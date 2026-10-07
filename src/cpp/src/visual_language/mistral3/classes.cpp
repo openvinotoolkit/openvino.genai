@@ -17,16 +17,19 @@ namespace {
 const std::string NATIVE_TAG = "[IMG]";
 const std::string IMG_BREAK_TAG = "[IMG_BREAK]";
 const std::string IMG_END_TAG = "[IMG_END]";
+// Fixed by the Pixtral architecture: the projector expects vision_hidden_size * SPATIAL_MERGE_SIZE^2 inputs.
+constexpr size_t SPATIAL_MERGE_SIZE = 2;
 
 /// Preprocess an image for the Pixtral vision encoder.
-/// 1. Compute patch-aligned target dimensions (multiples of patch_size * spatial_merge_size).
+/// 1. Compute patch-aligned target dimensions (multiples of patch_size * SPATIAL_MERGE_SIZE).
 /// 2. Resize directly to the target using bicubic interpolation.
 /// 3. Normalize with CLIP mean/std.
 /// Returns a float32 tensor in CHW layout together with the resulting patch grid size.
 std::pair<ov::Tensor, ImageSize> preprocess_image_mistral3(const ov::Tensor& image,
                                                            const ProcessorConfig& config,
-                                                           size_t patch_size,
-                                                           size_t spatial_merge_size) {
+                                                           size_t patch_size) {
+    OPENVINO_ASSERT(config.longest_edge > 0, "longest_edge must be positive");
+    OPENVINO_ASSERT(patch_size > 0, "patch_size must be positive");
     clip_image_u8 input_image = tensor_to_clip_image_u8(image);
 
     const int orig_w = input_image.nx;
@@ -42,9 +45,9 @@ std::pair<ov::Tensor, ImageSize> preprocess_image_mistral3(const ov::Tensor& ima
         new_w = static_cast<int>(orig_w / ratio);
     }
 
-    // Snap dimensions up to the nearest multiple of (patch_size * spatial_merge_size)
-    // so the patch grid is divisible by spatial_merge_size (required by the unfold operation).
-    const int effective_patch = static_cast<int>(patch_size * spatial_merge_size);
+    // Snap dimensions up to the nearest multiple of (patch_size * SPATIAL_MERGE_SIZE)
+    // so the patch grid is divisible by SPATIAL_MERGE_SIZE (required by the unfold operation).
+    const int effective_patch = static_cast<int>(patch_size * SPATIAL_MERGE_SIZE);
     const int target_h = ((new_h - 1) / effective_patch + 1) * effective_patch;
     const int target_w = ((new_w - 1) / effective_patch + 1) * effective_patch;
 
@@ -122,6 +125,7 @@ ov::Tensor merge_image_embeddings(const ov::Tensor& input_ids,
                                   const ov::Tensor& text_embeds,
                                   const std::vector<ov::Tensor>& image_embeds,
                                   int64_t image_token_id) {
+    OPENVINO_ASSERT(image_token_id != -1, "Image token id is not initialized");
     const auto text_embeds_shape = text_embeds.get_shape();
     OPENVINO_ASSERT(text_embeds_shape.size() == 3,
                     "Expected text embeddings of rank 3 [B, S, H], got rank ", text_embeds_shape.size());
@@ -153,6 +157,8 @@ ov::Tensor merge_image_embeddings(const ov::Tensor& input_ids,
             }
         }
     }
+    OPENVINO_ASSERT(embed_idx + 1 == image_embeds.size() && img_idx == embed_len,
+                    "Fewer [IMG] tokens in input than image embeddings available");
 
     return inputs_embeds;
 }
@@ -165,8 +171,7 @@ EncodedImage VisionEncoderMistral3::encode(const ov::Tensor& image, const ov::An
 
     const ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
 
-    auto [pixel_values, grid_size] =
-        preprocess_image_mistral3(image, config, config.patch_size, config.spatial_merge_size);
+    auto [pixel_values, grid_size] = preprocess_image_mistral3(image, config, config.patch_size);
 
     encoder.set_tensor("pixel_values", pixel_values);
     encoder.infer();
@@ -217,7 +222,6 @@ InputsEmbedderMistral3::InputsEmbedderMistral3(
 
 std::vector<ov::genai::EncodedImage> InputsEmbedderMistral3::encode_images(const std::vector<ov::Tensor>& images) {
     std::vector<EncodedImage> encoded_images;
-    const size_t spatial_merge_size = m_vision_encoder->get_processor_config().spatial_merge_size;
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
     encoded_images.reserve(single_images.size());
 
@@ -234,7 +238,7 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderMistral3::encode_images(const
         }
 
         // Spatial merge: [h*w, D] -> [h/sms * w/sms, D * sms^2]
-        ov::Tensor merged = spatial_merge(features, grid_size, spatial_merge_size);
+        ov::Tensor merged = spatial_merge(features, grid_size, SPATIAL_MERGE_SIZE);
 
         // Multi-modal projector: [N_merged, D * sms^2] -> [N_merged, text_hidden_size]
         CircularBufferQueueElementGuard<ov::InferRequest> projector_guard(m_ireq_queue_multi_modal_projector.get());
@@ -246,8 +250,8 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderMistral3::encode_images(const
         ov::Tensor projected(proj_output.get_element_type(), proj_output.get_shape());
         std::memcpy(projected.data(), proj_output.data(), proj_output.get_byte_size());
 
-        const size_t h_merged = grid_size.height / spatial_merge_size;
-        const size_t w_merged = grid_size.width / spatial_merge_size;
+        const size_t h_merged = grid_size.height / SPATIAL_MERGE_SIZE;
+        const size_t w_merged = grid_size.width / SPATIAL_MERGE_SIZE;
 
         EncodedImage result;
         result.resized_source = std::move(projected);
