@@ -341,12 +341,29 @@ class TestCustomTalkerSubclass:
         embedding = talker.get_speaker_embedding("alice")
         assert embedding.shape == [1, 1, 4]
 
+    @pytest.mark.parametrize(
+        "generate",
+        [lambda talker, *args, **kwargs: talker.generate(*args, **kwargs), ov_genai.TalkerBase.generate],
+        ids=["python_override", "cpp_binding"],
+    )
+    def test_typed_generate_dispatch(self, generate: Callable[..., ov_genai.TalkerResults]) -> None:
+        """The typed generate() reaches the Python override both from the instance and through the C++ binding."""
+        talker = RecordingTalker()
+        config = ov_genai.OmniTalkerSpeechConfig()
+        config.return_audio = False
+
+        generate(talker, ov_genai.VLMDecodedResults(), talker_speech_config=config)
+
+        assert talker.generate_calls == 1
+        assert talker.last_return_audio is False, "talker_speech_config must reach the override"
+
     def test_property_bag_generate_reduces_to_typed_override(self) -> None:
         """The kwargs generate() resolves the property bag and dispatches to the typed Python override.
 
         Called through TalkerBase rather than the instance on purpose: a Python subclass's own
         `generate` shadows the binding, so only the base entry point exercises the C++ AnyMap
-        overload and the trampoline reduction behind it.
+        overload and the trampoline reduction behind it. test_typed_generate_dispatch covers the
+        instance call.
         """
         talker = RecordingTalker()
 
@@ -443,11 +460,31 @@ class TestCustomVLMSubclass:
         assert vlm.is_audio_output_enabled() is False
         assert vlm.supports_hidden_states_collection() is False
 
+    @pytest.mark.parametrize(
+        "generate",
+        [lambda vlm, *args, **kwargs: vlm.generate(*args, **kwargs), ov_genai.VLMPipelineBase.generate],
+        ids=["python_override", "cpp_binding"],
+    )
+    def test_typed_generate_dispatch(self, generate: Callable[..., ov_genai.VLMDecodedResults]) -> None:
+        """The typed generate() reaches the Python override both from the instance and through the C++ binding."""
+        vlm = RecordingVLM()
+        media = ov.Tensor(np.zeros((1, 4, 4, 3), dtype=np.uint8))
+        config = ov_genai.GenerationConfig()
+        config.max_new_tokens = 7
+
+        generate(vlm, "describe", images=[media], generation_config=config)
+
+        assert vlm.generate_calls == 1
+        assert vlm.last_prompt == "describe"
+        assert len(vlm.last_images) == 1, "images must reach the override"
+        assert vlm.last_max_new_tokens == 7, "generation_config must reach the override"
+
     def test_property_bag_generate_reduces_to_typed_override(self) -> None:
         """The kwargs generate() unpacks media and GenerationConfig fields into the typed override.
 
         Called through VLMPipelineBase for the same reason as the talker case: the subclass's own
-        `generate` would otherwise shadow the binding under test.
+        `generate` would otherwise shadow the binding under test. test_typed_generate_dispatch
+        covers the instance call.
         """
         vlm = RecordingVLM()
         media = ov.Tensor(np.zeros((1, 4, 4, 3), dtype=np.uint8))
