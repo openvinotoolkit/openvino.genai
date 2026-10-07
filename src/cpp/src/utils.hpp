@@ -261,6 +261,11 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_embedding(cons
                                                                             const KVAxesPosition& kv_pos,
                                                                             const ov::genai::TextEmbeddingPipeline::Config& text_embed_config);
 
+ov::CompiledModel compile_kokoro_for_npu_speech_generation(ov::Core& core,
+                                                            const std::filesystem::path& model_path,
+                                                            const ov::AnyMap& properties,
+                                                            size_t static_input_ids_length);
+
 size_t get_npu_kv_cache_capacity(const ov::CompiledModel& compiled_model);
 
 /// @brief Reads the runtime KV cache element type from a compiled model's key_cache.* / value_cache.* inputs.

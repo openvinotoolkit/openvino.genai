@@ -11,7 +11,6 @@
 #include <cstdlib>
 #include <fstream>
 #include <locale>
-#include <map>
 #include <numeric>
 #include <optional>
 #include <sstream>
@@ -301,47 +300,10 @@ ov::CompiledModel compile_kokoro_model(ov::Core& core,
         return core.compile_model(model_path, device, compile_properties);
     }
 
-    auto model = core.read_model(model_path);
-
-    // In the case of NPU, reshape to static.
-    std::map<std::string, ov::PartialShape> static_shapes;
-    if (model->inputs().size() >= 1) {
-        static_shapes.emplace(model->input(0).get_any_name(), ov::PartialShape{1, static_cast<int64_t>(static_input_ids_length)});
-    }
-    if (model->inputs().size() >= 2) {
-        static_shapes.emplace(model->input(1).get_any_name(), ov::PartialShape{1, 256});
-    }
-    if (model->inputs().size() >= 3) {
-        static_shapes.emplace(model->input(2).get_any_name(), ov::PartialShape{1});
-    }
-
-    if (!static_shapes.empty()) {
-        model->reshape(static_shapes);
-    }
-
-    // enable use of NPUW's specialized Kokoro path.
-    ov::genai::utils::set_config_default(compile_properties, "NPU_USE_NPUW", std::string{"YES"});
-    if (ov::genai::utils::is_npuw_enabled(compile_properties)) {
-        ov::genai::utils::set_config_default(compile_properties, "NPUW_DEVICES", std::string{"NPU,CPU"});
-        ov::genai::utils::set_config_default(compile_properties, "NPUW_KOKORO", std::string{"YES"});
-
-        OPENVINO_ASSERT(!(compile_properties.count("CACHE_DIR") > 0 && compile_properties.count("NPUW_CACHE_DIR") > 0),
-                        "Both CACHE_DIR and NPUW_CACHE_DIR are set for Kokoro on NPU. "
-                        "Please specify only one cache directory key.");
-
-        // NPUW's KokoroCompiledModel doesn't support CACHE_DIR (it is silently ignored).
-        // It does support NPUW_CACHE_DIR, which has the same effect.
-        // So, convert CACHE_DIR to NPUW_CACHE_DIR if it has been specified.
-        auto it = compile_properties.find("CACHE_DIR");
-        if (it != compile_properties.end()) {
-            auto cache_dir_val = it->second;
-            compile_properties.erase(it);
-            ov::genai::utils::set_config_default(compile_properties, "NPUW_CACHE_DIR", cache_dir_val);
-            GENAI_INFO("Kokoro NPU: remapped CACHE_DIR to NPUW_CACHE_DIR");
-        }
-    }
-
-    return core.compile_model(model, device, compile_properties);
+    return ov::genai::utils::compile_kokoro_for_npu_speech_generation(core,
+                                                                      model_path,
+                                                                      compile_properties,
+                                                                      static_input_ids_length);
 }
 
 double sum_tensor_prefix_as_double(const ov::Tensor& tensor, const size_t count) {
