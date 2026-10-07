@@ -14,10 +14,11 @@ namespace ov::genai {
 
 namespace {
 
+// Same across current Mistral3 (Pixtral) models and stored as top-level keys of processor_config.json, outside the
+// "image_processor" section that ProcessorConfig parses, so they are hardcoded rather than read from config.
 const std::string NATIVE_TAG = "[IMG]";
 const std::string IMG_BREAK_TAG = "[IMG_BREAK]";
 const std::string IMG_END_TAG = "[IMG_END]";
-// Fixed by the Pixtral architecture: the projector expects vision_hidden_size * SPATIAL_MERGE_SIZE^2 inputs.
 constexpr size_t SPATIAL_MERGE_SIZE = 2;
 
 /// Preprocess an image for the Pixtral vision encoder.
