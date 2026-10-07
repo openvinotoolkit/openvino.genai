@@ -149,7 +149,7 @@ namespace ov {
 namespace genai {
 namespace utils {
 
-enum class ModelType { Default, Whisper, TextEmbedding };
+enum class ModelType { Default, Whisper, TextEmbedding, TextRerank };
 
 Tensor init_attention_mask(const Tensor& input_ids) {
     auto shape = input_ids.get_shape();
@@ -792,11 +792,23 @@ void get_npu_text_embedding_config(ov::AnyMap& properties,
     update_npu_config_text_embedding(properties, kv_pos, kv_desc);
 }
 
+void get_npu_text_rerank_config(ov::AnyMap& properties,
+                                const KVAxesPosition& kv_pos,
+                                KVDesc& kv_desc,
+                                const TextRerankPipeline::Config& text_rerank_config) {
+    const auto max_length = static_cast<uint32_t>(text_rerank_config.max_length.value_or(1024u));
+    kv_desc.max_prompt_len = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(max_length);
+    kv_desc.min_response_len = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u);
+    update_npu_config(properties, kv_pos, kv_desc);
+    update_config(properties, {"NPUW_TEXT_RERANK", "YES"});
+}
+
 std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_impl(const std::shared_ptr<ov::Model>& model,
                                                                   const ov::AnyMap& config,
                                                                   const KVAxesPosition& kv_pos,
                                                                   ModelType model_type,
-                                                                  const TextEmbeddingPipeline::Config& text_embed_config = {}) {
+                                                                  const TextEmbeddingPipeline::Config& text_embed_config = {},
+                                                                  const TextRerankPipeline::Config& text_rerank_config = {}) {
     ov::CompiledModel compiled;
     ov::AnyMap properties = config;
     KVDesc kv_desc;
@@ -811,6 +823,9 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_impl(const std::sha
         switch (model_type) {
         case ModelType::TextEmbedding:
             get_npu_text_embedding_config(properties, kv_pos, kv_desc, text_embed_config);
+            break;
+        case ModelType::TextRerank:
+            get_npu_text_rerank_config(properties, kv_pos, kv_desc, text_rerank_config);
             break;
         case ModelType::Whisper:
             get_npu_model_config(properties, kv_pos, kv_desc, true);
@@ -846,6 +861,13 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_embedding(cons
                                                                             const KVAxesPosition& kv_pos,
                                                                             const TextEmbeddingPipeline::Config& text_embed_config) {
     return compile_decoder_for_npu_impl(model, config, kv_pos, ModelType::TextEmbedding, text_embed_config);
+}
+
+std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_rerank(const std::shared_ptr<ov::Model>& model,
+                                                                         const ov::AnyMap& config,
+                                                                         const KVAxesPosition& kv_pos,
+                                                                         const TextRerankPipeline::Config& text_rerank_config) {
+    return compile_decoder_for_npu_impl(model, config, kv_pos, ModelType::TextRerank, {}, text_rerank_config);
 }
 
 size_t get_npu_kv_cache_capacity(const ov::CompiledModel& compiled_model) {
