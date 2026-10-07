@@ -156,6 +156,12 @@ export const VLM_MODELS: VLMModelType[] = [
           'https://huggingface.co/Qwen/Qwen2-VL-7B',
         ],
       },
+      {
+        name: 'MinerU2.5',
+        links: [
+          'https://huggingface.co/opendatalab/MinerU2.5-Pro-2604-1.2B',
+        ],
+      },
     ],
   },
   {

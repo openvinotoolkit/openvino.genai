@@ -547,9 +547,88 @@ def check_args(args):
         args.dataset_field = "text"
 
 
+def _resolve_local_media(value, base_dir, loader):
+    """Resolve a single media cell from a local dataset into an in-memory object.
+
+    Empty / NaN cells become ``None``. Non-empty string values are treated as
+    file paths (resolved against ``base_dir`` when relative) or URLs and are
+    loaded via ``loader``. The behaviour is generic and independent of any
+    specific model.
+    """
+    if value is None:
+        return None
+    # pandas represents empty cells as float('nan')
+    if isinstance(value, float) and pd.isna(value):
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if not (text.startswith("http://") or text.startswith("https://")) and not os.path.isabs(text):
+        text = os.path.join(base_dir, text)
+    return loader(text)
+
+
+def load_local_dataset(args):
+    """Load a dataset from a local tabular file (currently CSV).
+
+    Supports plain prompt datasets as well as visual-text datasets that provide
+    ``prompts``, ``images`` and ``videos`` columns. Image paths are resolved
+    deterministically (relative to ``--image-dir`` when set, otherwise relative
+    to the dataset file directory) and loaded into PIL images so that WWB can
+    generate ground truth locally without the remote default dataset.
+    """
+    from transformers.image_utils import load_image
+
+    dataset_path = os.path.abspath(args.dataset)
+    base_dir = os.path.abspath(args.image_dir) if getattr(args, "image_dir", None) else os.path.dirname(dataset_path)
+
+    df = pd.read_csv(dataset_path, keep_default_na=True)
+
+    prompt_field = args.dataset_field if args.dataset_field in df.columns else "prompts"
+    if prompt_field not in df.columns:
+        raise ValueError(
+            f"Local dataset '{dataset_path}' must contain a '{prompt_field}' column with prompts. "
+            f"Available columns: {list(df.columns)}"
+        )
+
+    if args.num_samples is not None:
+        df = df.head(args.num_samples)
+
+    res = {"prompts": list(df[prompt_field])}
+
+    if "images" in df.columns:
+        res["images"] = [
+            _resolve_local_media(v, base_dir, load_image) for v in df["images"]
+        ]
+    if "videos" in df.columns:
+        # Videos are passed through as resolved file paths; downstream loaders
+        # (e.g. transformers.video_utils.load_video) accept path strings.
+        def _resolve_video(value):
+            if value is None or (isinstance(value, float) and pd.isna(value)):
+                return None
+            text = str(value).strip()
+            if not text:
+                return None
+            if not (text.startswith("http://") or text.startswith("https://")) and not os.path.isabs(text):
+                text = os.path.join(base_dir, text)
+            return text
+
+        res["videos"] = [_resolve_video(v) for v in df["videos"]]
+
+    # For visual-text tasks the evaluator expects prompts/images/videos keys.
+    if "images" in res or "videos" in res:
+        n = len(res["prompts"])
+        res.setdefault("images", [None] * n)
+        res.setdefault("videos", [None] * n)
+
+    return res
+
+
 def load_prompts(args):
     if args.dataset is None:
         return None
+    if os.path.isfile(args.dataset):
+        return load_local_dataset(args)
     split = "validation"
     if args.split is not None:
         split = args.split
