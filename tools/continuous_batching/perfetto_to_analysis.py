@@ -54,7 +54,7 @@ from collections import defaultdict
 # ── Sub-task names that appear as direct or indirect children of genai.cb.step ─
 STEP_SUBTASKS = [
     "genai.cb.scheduling",
-    "genai.cb.copy_blocks",   # child of scheduling
+    "genai.cb.copy_blocks",  # child of scheduling
     "genai.cb.forward",
     "genai.cb.sample",
     "genai.cb.fork_free",
@@ -64,13 +64,13 @@ STEP_SUBTASKS = [
 
 # Short aliases for the subtask keys stored in the output
 SUBTASK_KEY = {
-    "genai.cb.scheduling":    "scheduling_us",
-    "genai.cb.copy_blocks":   "copy_blocks_us",
-    "genai.cb.forward":       "forward_us",
-    "genai.cb.sample":        "sample_us",
-    "genai.cb.fork_free":     "fork_free_us",
+    "genai.cb.scheduling": "scheduling_us",
+    "genai.cb.copy_blocks": "copy_blocks_us",
+    "genai.cb.forward": "forward_us",
+    "genai.cb.sample": "sample_us",
+    "genai.cb.fork_free": "fork_free_us",
     "genai.cb.notify_dropped": "notify_dropped_us",
-    "genai.cb.cleanup":       "cleanup_us",
+    "genai.cb.cleanup": "cleanup_us",
 }
 
 HW_COUNTERS = ["cpi", "cpu_load", "cpu_op_freq"]
@@ -100,11 +100,11 @@ def _parse_blk_name(name: str):
     if not m:
         return None
     return {
-        "kind":   m.group("kind"),
+        "kind": m.group("kind"),
         "seq_id": int(m.group("s")),
-        "pi":     int(m.group("pi")),
-        "hash":   int(m.group("h"), 16) if m.group("h") else 0,
-        "extra":  int(m.group("x")) if m.group("x") else 0,
+        "pi": int(m.group("pi")),
+        "hash": int(m.group("h"), 16) if m.group("h") else 0,
+        "extra": int(m.group("x")) if m.group("x") else 0,
     }
 
 
@@ -135,7 +135,7 @@ def _parse_blk_event(event: dict):
     if not name.startswith(prefix) or "seq_id" not in args or "physical_index" not in args:
         return None
     return {
-        "kind": name[len(prefix):],
+        "kind": name[len(prefix) :],
         "seq_id": _metadata_int(event, "seq_id"),
         "pi": _metadata_int(event, "physical_index"),
         "hash": _metadata_int(event, "hash"),
@@ -202,9 +202,9 @@ def _replay_block_events(steps_out: list, blk_sorted: list, first_ts: float) -> 
     blk_sorted: [(ts_abs, parsed_event), ...] sorted by ts_abs
     Returns list of snapshot dicts compatible with trace_viz.html renderMemGrid().
     """
-    phys_to_seqs: dict = defaultdict(set)   # pi → set of seq_ids
-    seq_to_pis:  dict = defaultdict(list)   # seq_id → ordered list of pi
-    phys_hash:   dict = {}                  # pi → hash
+    phys_to_seqs: dict = defaultdict(set)  # pi → set of seq_ids
+    seq_to_pis: dict = defaultdict(list)  # seq_id → ordered list of pi
+    phys_hash: dict = {}  # pi → hash
 
     blk_idx = 0
     snapshots = []
@@ -220,11 +220,11 @@ def _replay_block_events(steps_out: list, blk_sorted: list, first_ts: float) -> 
                 break
             blk_idx += 1
 
-            kind   = ev["kind"]
+            kind = ev["kind"]
             seq_id = ev["seq_id"]
-            pi     = ev["pi"]
-            h      = ev["hash"]
-            extra  = ev["extra"]
+            pi = ev["pi"]
+            h = ev["hash"]
+            extra = ev["extra"]
 
             if kind in ("alloc", "hit"):
                 seq_to_pis[seq_id].append(pi)
@@ -261,31 +261,31 @@ def _replay_block_events(steps_out: list, blk_sorted: list, first_ts: float) -> 
                         seq_to_pis.pop(seq_id, None)
 
         # Emit snapshot after processing this step's events
-        used   = len(phys_to_seqs)
+        used = len(phys_to_seqs)
         shared = sum(1 for s in phys_to_seqs.values() if len(s) > 1)
-        frag   = round(shared / used, 4) if used > 0 else 0.0
+        frag = round(shared / used, 4) if used > 0 else 0.0
 
         seqs_snap = {}
         for sid, pis in seq_to_pis.items():
             seqs_snap[str(sid)] = [
-                {"pi": p,
-                 "r":  len(phys_to_seqs.get(p, set())),
-                 "h":  phys_hash.get(p, 0)}
-                for p in pis
+                {"pi": p, "r": len(phys_to_seqs.get(p, set())), "h": phys_hash.get(p, 0)} for p in pis
             ]
 
-        snapshots.append({
-            "step_id":       step["step_id"],
-            "used_blocks":   used,
-            "shared_blocks": shared,
-            "fragmentation": frag,
-            "sequences":     seqs_snap,
-        })
+        snapshots.append(
+            {
+                "step_id": step["step_id"],
+                "used_blocks": used,
+                "shared_blocks": shared,
+                "fragmentation": frag,
+                "sequences": seqs_snap,
+            }
+        )
 
     return snapshots
 
 
 # ── Loading ──────────────────────────────────────────────────────────────────
+
 
 def load_perfetto(path: str) -> list:
     print(f"Loading {path} …", file=sys.stderr)
@@ -299,10 +299,11 @@ def load_perfetto(path: str) -> list:
 
 # ── Core extraction ──────────────────────────────────────────────────────────
 
+
 def extract(events: list) -> dict:
     # ── Partition events ─────────────────────────────────────────────────────
     genai_complete = [e for e in events if _is_genai_category(e.get("cat", "")) and e.get("ph") == "X"]
-    hw_events      = [e for e in events if e.get("ph") == "C" and e.get("name") in HW_COUNTERS]
+    hw_events = [e for e in events if e.get("ph") == "C" and e.get("name") in HW_COUNTERS]
 
     # Block state transition events (ph:X, name starts with "genai.cb.blk.")
     blk_raw = [e for e in genai_complete if e.get("name", "").startswith("genai.cb.blk.")]
@@ -313,10 +314,7 @@ def extract(events: list) -> dict:
             blk_sorted.append((e["ts"], parsed))
     blk_sorted.sort(key=lambda x: x[0])
 
-    step_events = sorted(
-        [e for e in genai_complete if e["name"] == "genai.cb.step"],
-        key=lambda e: e["ts"]
-    )
+    step_events = sorted([e for e in genai_complete if e["name"] == "genai.cb.step"], key=lambda e: e["ts"])
     if not step_events:
         cb_event_counts = defaultdict(int)
         for event in genai_complete:
@@ -340,9 +338,11 @@ def extract(events: list) -> dict:
             "and continuous-batching benchmark are being captured."
         )
 
-    print(f"  Found {len(step_events)} steps, {len(genai_complete)} genai events, "
-          f"{len(hw_events)} hw counter samples, {len(blk_sorted)} block events",
-          file=sys.stderr)
+    print(
+        f"  Found {len(step_events)} steps, {len(genai_complete)} genai events, "
+        f"{len(hw_events)} hw counter samples, {len(blk_sorted)} block events",
+        file=sys.stderr,
+    )
 
     # ── Build task_id → event and parent_id → children index ─────────────────
     # task_id is a pair (d1, d2) but d2 is always 0 in practice — use d1.
@@ -356,7 +356,7 @@ def extract(events: list) -> dict:
         by_parent_id[pid].append(e)
 
     # ── Parse config event (emitted once on first step) ──────────────────────
-    cfg_blk_sz   = 0   # block_size_tokens from genai.cb.config
+    cfg_blk_sz = 0  # block_size_tokens from genai.cb.config
     cfg_blk_total = 0  # total_kv_blocks from genai.cb.config
     for e in genai_complete:
         config = _parse_config_event(e)
@@ -372,10 +372,10 @@ def extract(events: list) -> dict:
         if done is not None:
             seq_id = done["seq_id"]
             req_done[seq_id] = {
-                "req_id":     done["request_id"],
+                "req_id": done["request_id"],
                 "prompt_len": done["prompt_len"],
-                "gen_len":    done["generated_len"],
-                "ts":         e["ts"],
+                "gen_len": done["generated_len"],
+                "ts": e["ts"],
             }
 
     # ── Step timeline ─────────────────────────────────────────────────────────
@@ -384,8 +384,8 @@ def extract(events: list) -> dict:
 
     for step_id, se in enumerate(step_events):
         step_task_id = se["args"]["task_id.d1"]
-        ts_us        = int(se["ts"] - first_ts)
-        duration_us  = int(se["dur"])
+        ts_us = int(se["ts"] - first_ts)
+        duration_us = int(se["dur"])
 
         # Direct children of this step
         direct_children = by_parent_id.get(step_task_id, [])
@@ -427,22 +427,24 @@ def extract(events: list) -> dict:
 
         tps = int(sched_tokens / duration_us * 1_000_000) if duration_us > 0 and sched_tokens > 0 else 0
 
-        steps_out.append({
-            "step_id":          step_id,
-            "ts_us":            ts_us,
-            "active":           active,
-            "waiting":          waiting,
-            "total":            active + waiting,
-            "cache_usage":      0.0,
-            "cache_bytes":      0,
-            "total_tokens":     0,
-            "is_prefill":       is_prefill,
-            "duration_us":      duration_us,
-            "preemption_count": 0,
-            "step_tokens":      sched_tokens,
-            "throughput_tps":   tps,
-            "subtasks":         subtasks,
-        })
+        steps_out.append(
+            {
+                "step_id": step_id,
+                "ts_us": ts_us,
+                "active": active,
+                "waiting": waiting,
+                "total": active + waiting,
+                "cache_usage": 0.0,
+                "cache_bytes": 0,
+                "total_tokens": 0,
+                "is_prefill": is_prefill,
+                "duration_us": duration_us,
+                "preemption_count": 0,
+                "step_tokens": sched_tokens,
+                "throughput_tps": tps,
+                "subtasks": subtasks,
+            }
+        )
 
     # ── Hardware counter correlation ─────────────────────────────────────────
     # Sort HW samples per counter; for each step window compute the average.
@@ -473,13 +475,13 @@ def extract(events: list) -> dict:
         memory_snapshots = _replay_block_events(steps_out, blk_sorted, first_ts)
 
         # Prefer ITT-emitted config; fall back to observed max pi
-        total_kv_blocks = cfg_blk_total if cfg_blk_total > 0 else (
-            max((ev["pi"] for _, ev in blk_sorted), default=0) + 1
+        total_kv_blocks = (
+            cfg_blk_total if cfg_blk_total > 0 else (max((ev["pi"] for _, ev in blk_sorted), default=0) + 1)
         )
 
         # Prefix hits happen during request admission; later decode allocations
         # are not cache lookup misses and must not dilute this rate.
-        hit_count   = sum(1 for _, ev in blk_sorted if ev["kind"] == "hit")
+        hit_count = sum(1 for _, ev in blk_sorted if ev["kind"] == "hit")
         alloc_count = sum(1 for _, ev in blk_sorted if ev["kind"] == "alloc")
         if cfg_blk_sz > 0 and req_done:
             prompt_lengths_by_request = {}
@@ -490,8 +492,7 @@ def extract(events: list) -> dict:
                     prompt_lengths_by_request.get(req_id, 0),
                 )
             prompt_block_count = sum(
-                (prompt_len + cfg_blk_sz - 1) // cfg_blk_sz
-                for prompt_len in prompt_lengths_by_request.values()
+                (prompt_len + cfg_blk_sz - 1) // cfg_blk_sz for prompt_len in prompt_lengths_by_request.values()
             )
         else:
             prompt_block_count = 0
@@ -499,8 +500,9 @@ def extract(events: list) -> dict:
         if prompt_block_count > 0:
             prefix_cache_hit_rate = round(min(hit_count, prompt_block_count) / prompt_block_count, 4)
         else:
-            prefix_cache_hit_rate = round(hit_count / (hit_count + alloc_count), 4) \
-                if (hit_count + alloc_count) > 0 else 0.0
+            prefix_cache_hit_rate = (
+                round(hit_count / (hit_count + alloc_count), 4) if (hit_count + alloc_count) > 0 else 0.0
+            )
 
         # Hits per sequence (for seq_summaries)
         hit_blocks_per_seq: dict = defaultdict(int)
@@ -510,18 +512,16 @@ def extract(events: list) -> dict:
 
         # Peak cache usage from snapshots
         peak_used = max((s["used_blocks"] for s in memory_snapshots), default=0)
-        peak_cache_usage = round(peak_used / total_kv_blocks, 4) \
-            if total_kv_blocks > 0 else 0.0
+        peak_cache_usage = round(peak_used / total_kv_blocks, 4) if total_kv_blocks > 0 else 0.0
 
         # Back-fill per-step cache_usage from snapshots
         for step, snap in zip(steps_out, memory_snapshots):
-            step["cache_usage"] = round(snap["used_blocks"] / total_kv_blocks, 4) \
-                if total_kv_blocks > 0 else 0.0
+            step["cache_usage"] = round(snap["used_blocks"] / total_kv_blocks, 4) if total_kv_blocks > 0 else 0.0
     else:
-        total_kv_blocks       = cfg_blk_total
+        total_kv_blocks = cfg_blk_total
         prefix_cache_hit_rate = 0.0
-        peak_cache_usage      = 0.0
-        hit_blocks_per_seq    = {}
+        peak_cache_usage = 0.0
+        hit_blocks_per_seq = {}
 
     block_size_tokens = cfg_blk_sz  # 0 if config event not captured yet
     block_meta = {"block_size_tokens": block_size_tokens, "total_kv_blocks": total_kv_blocks}
@@ -529,7 +529,7 @@ def extract(events: list) -> dict:
     # ── seq_summaries from req.done events + memory snapshots ────────────────
     # first_step / last_step per seq_id from snapshot presence
     seq_first_step: dict = {}
-    seq_last_step:  dict = {}
+    seq_last_step: dict = {}
     for snap in memory_snapshots:
         sid_int_set = {int(k) for k in snap["sequences"]}
         for sid in sid_int_set:
@@ -539,36 +539,33 @@ def extract(events: list) -> dict:
 
     seq_summaries = []
     for seq_id, info in req_done.items():
-        prompt_len  = info["prompt_len"]
-        gen_len     = info["gen_len"]
-        hit_blks    = hit_blocks_per_seq.get(seq_id, 0)
-        hit_tokens  = min(hit_blks * block_size_tokens, prompt_len) \
-            if block_size_tokens > 0 else 0
-        hit_pct     = round(hit_tokens / prompt_len, 3) if prompt_len > 0 else 0.0
-        first_step  = seq_first_step.get(seq_id, 0)
-        last_step   = seq_last_step.get(seq_id, first_step)
-        seq_summaries.append({
-            "seq_id":            seq_id,
-            "req_id":            info["req_id"],
-            "prompt_len":        prompt_len,
-            "gen_len":           gen_len,
-            "first_step":        first_step,
-            "last_step":         last_step,
-            "step_span":         last_step - first_step + 1,
-            "prefix_hit_tokens": hit_tokens,
-            "prefix_hit_pct":    hit_pct,
-        })
+        prompt_len = info["prompt_len"]
+        gen_len = info["gen_len"]
+        hit_blks = hit_blocks_per_seq.get(seq_id, 0)
+        hit_tokens = min(hit_blks * block_size_tokens, prompt_len) if block_size_tokens > 0 else 0
+        hit_pct = round(hit_tokens / prompt_len, 3) if prompt_len > 0 else 0.0
+        first_step = seq_first_step.get(seq_id, 0)
+        last_step = seq_last_step.get(seq_id, first_step)
+        seq_summaries.append(
+            {
+                "seq_id": seq_id,
+                "req_id": info["req_id"],
+                "prompt_len": prompt_len,
+                "gen_len": gen_len,
+                "first_step": first_step,
+                "last_step": last_step,
+                "step_span": last_step - first_step + 1,
+                "prefix_hit_tokens": hit_tokens,
+                "prefix_hit_pct": hit_pct,
+            }
+        )
     seq_summaries.sort(key=lambda x: x["seq_id"])
 
     request_ids = {summary["req_id"] for summary in seq_summaries}
     request_ids_with_prefix_hits = {
-        summary["req_id"]
-        for summary in seq_summaries
-        if hit_blocks_per_seq.get(summary["seq_id"], 0) > 0
+        summary["req_id"] for summary in seq_summaries if hit_blocks_per_seq.get(summary["seq_id"], 0) > 0
     }
-    prefix_cache_request_hit_rate = (
-        len(request_ids_with_prefix_hits) / len(request_ids) if request_ids else 0.0
-    )
+    prefix_cache_request_hit_rate = len(request_ids_with_prefix_hits) / len(request_ids) if request_ids else 0.0
 
     # ── Per-sequence prefill window from block events ─────────────────────────
     # Using step-level is_prefill is wrong: it's True whenever ANY sequence in
@@ -631,7 +628,7 @@ def extract(events: list) -> dict:
                         if seq_step is not None:
                             sid, tokens, is_prefill = seq_step
                             seq_step_map[sid] = {
-                                "tokens":     tokens,
+                                "tokens": tokens,
                                 "is_prefill": bool(is_prefill),
                             }
             else:
@@ -640,15 +637,13 @@ def extract(events: list) -> dict:
                 if seq_step is not None:
                     sid, tokens, is_prefill = seq_step
                     seq_step_map[sid] = {
-                        "tokens":     tokens,
+                        "tokens": tokens,
                         "is_prefill": bool(is_prefill),
                     }
         if seq_step_map:
             seq_step_by_step[step_id] = seq_step_map
             # Re-derive step-level is_prefill from authoritative per-seq data
-            steps_out[step_id]["is_prefill"] = any(
-                v["is_prefill"] for v in seq_step_map.values()
-            )
+            steps_out[step_id]["is_prefill"] = any(v["is_prefill"] for v in seq_step_map.values())
 
     sequences_dict: dict = {}
     for snap in memory_snapshots:
@@ -658,14 +653,14 @@ def extract(events: list) -> dict:
             if sid_str not in sequences_dict:
                 done_info = req_done.get(sid, {})
                 sequences_dict[sid_str] = {
-                    "req_id":       done_info.get("req_id", sid),
-                    "prompt_len":   done_info.get("prompt_len", 0),
-                    "max_gen_len":  done_info.get("gen_len", 0),
-                    "first_step":   step_id,
-                    "last_step":    step_id,
-                    "steps":        [],
-                    "status":       [],
-                    "is_prefill":   [],
+                    "req_id": done_info.get("req_id", sid),
+                    "prompt_len": done_info.get("prompt_len", 0),
+                    "max_gen_len": done_info.get("gen_len", 0),
+                    "first_step": step_id,
+                    "last_step": step_id,
+                    "steps": [],
+                    "status": [],
+                    "is_prefill": [],
                     "sched_tokens": [],
                 }
             entry = sequences_dict[sid_str]
@@ -701,12 +696,14 @@ def extract(events: list) -> dict:
             if t0 <= done_ts < t1:
                 finish_step = step["step_id"]
                 break
-        events_out.append({
-            "event":   "FINISH",
-            "step_id": finish_step,
-            "req_id":  info["req_id"],
-            "seq_id":  seq_id,
-        })
+        events_out.append(
+            {
+                "event": "FINISH",
+                "step_id": finish_step,
+                "req_id": info["req_id"],
+                "seq_id": seq_id,
+            }
+        )
 
     # ── Histograms derived from per-step data ─────────────────────────────────
     batch_hist: dict = defaultdict(int)
@@ -717,8 +714,7 @@ def extract(events: list) -> dict:
         if s["step_tokens"] > 0:
             sched_hist[s["step_tokens"]] += 1
 
-    sched_tokens_hist = [{"tokens": t, "count": c}
-                         for t, c in sorted(sched_hist.items())]
+    sched_tokens_hist = [{"tokens": t, "count": c} for t, c in sorted(sched_hist.items())]
 
     # ── Aggregate metrics ────────────────────────────────────────────────────
     durations = sorted([s["duration_us"] for s in steps_out if s["duration_us"] > 0])
@@ -734,56 +730,56 @@ def extract(events: list) -> dict:
         vals = [s["subtasks"][key] for s in steps_out]
         avg_sub[key] = int(sum(vals) / len(vals)) if vals else 0
 
-    total_dur  = sum(s["duration_us"] for s in steps_out)
-    total_fwd  = sum(s["subtasks"].get("forward_us", 0) for s in steps_out)
+    total_dur = sum(s["duration_us"] for s in steps_out)
+    total_fwd = sum(s["subtasks"].get("forward_us", 0) for s in steps_out)
     forward_fraction = round(total_fwd / total_dur, 4) if total_dur > 0 else 0.0
 
     metrics = {
-        "total_steps":              len(steps_out),
-        "total_preemptions":        0,
-        "total_ooms":               0,
-        "total_finishes":           len(seq_summaries),
-        "peak_cache_usage":         peak_cache_usage,
-        "prefix_cache_hit_rate":    prefix_cache_hit_rate,
+        "total_steps": len(steps_out),
+        "total_preemptions": 0,
+        "total_ooms": 0,
+        "total_finishes": len(seq_summaries),
+        "peak_cache_usage": peak_cache_usage,
+        "prefix_cache_hit_rate": prefix_cache_hit_rate,
         "prefix_cache_requests_with_hits": len(request_ids_with_prefix_hits),
         "prefix_cache_request_count": len(request_ids),
         "prefix_cache_request_hit_rate": round(prefix_cache_request_hit_rate, 4),
-        "avg_step_duration_us":     int(sum(durations) / len(durations)) if durations else 0,
-        "p50_step_duration_us":     percentile(durations, 50),
-        "p99_step_duration_us":     percentile(durations, 99),
+        "avg_step_duration_us": int(sum(durations) / len(durations)) if durations else 0,
+        "p50_step_duration_us": percentile(durations, 50),
+        "p99_step_duration_us": percentile(durations, 99),
         "preemption_rate_per_step": [0] * len(steps_out),
-        "avg_subtask_us":           avg_sub,
-        "forward_fraction":         forward_fraction,
+        "avg_subtask_us": avg_sub,
+        "forward_fraction": forward_fraction,
     }
 
     return {
-        "steps":             steps_out,
-        "sequences":         sequences_dict,
-        "seq_summaries":     seq_summaries,
-        "events":            events_out,
-        "memory_snapshots":  memory_snapshots,
-        "batch_hist":        dict(sorted(batch_hist.items())),
+        "steps": steps_out,
+        "sequences": sequences_dict,
+        "seq_summaries": seq_summaries,
+        "events": events_out,
+        "memory_snapshots": memory_snapshots,
+        "batch_hist": dict(sorted(batch_hist.items())),
         "sched_tokens_hist": sched_tokens_hist,
-        "metrics":           metrics,
-        "block_meta":        block_meta,
-        "source":            "perfetto",
-        "subtask_legend":    SUBTASK_KEY,
-        "hw_counter_names":  list(hw_by_name.keys()),
+        "metrics": metrics,
+        "block_meta": block_meta,
+        "source": "perfetto",
+        "subtask_legend": SUBTASK_KEY,
+        "hw_counter_names": list(hw_by_name.keys()),
     }
 
 
 # ── Entry point ──────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(
         description="Convert a Perfetto/Chrome Trace JSON to analysis.json for trace_viz.html."
     )
     parser.add_argument("perfetto", help="Input Perfetto JSON file (Chrome Trace Event format)")
-    parser.add_argument("--out",    default="analysis.json",
-                        help="Output analysis JSON file (default: analysis.json)")
-    parser.add_argument("--model",  default="", help="Model name to embed in the report")
+    parser.add_argument("--out", default="analysis.json", help="Output analysis JSON file (default: analysis.json)")
+    parser.add_argument("--model", default="", help="Model name to embed in the report")
     parser.add_argument("--device", default="", help="Inference device (e.g. CPU, GPU)")
-    parser.add_argument("--notes",  default="", help="Free-form notes to embed in the report")
+    parser.add_argument("--notes", default="", help="Free-form notes to embed in the report")
     args = parser.parse_args()
 
     events = load_perfetto(args.perfetto)
@@ -793,23 +789,23 @@ def main():
     result = extract(events)
 
     result["run_info"] = {
-        "model":             args.model or os.path.basename(args.perfetto),
-        "device":            args.device,
-        "notes":             args.notes,
-        "trace_file":        os.path.basename(args.perfetto),
-        "analyzed_at":       datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "model": args.model or os.path.basename(args.perfetto),
+        "device": args.device,
+        "notes": args.notes,
+        "trace_file": os.path.basename(args.perfetto),
+        "analyzed_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "block_size_tokens": 0,
-        "total_kv_blocks":   0,
-        "source":            "perfetto",
+        "total_kv_blocks": 0,
+        "source": "perfetto",
     }
 
     print(f"Writing {args.out} …", file=sys.stderr)
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump(result, fh, separators=(",", ":"))
 
-    m   = result["metrics"]
+    m = result["metrics"]
     sub = m.get("avg_subtask_us", {})
-    bm  = result.get("block_meta", {})
+    bm = result.get("block_meta", {})
     snaps = result.get("memory_snapshots", [])
     print(
         f"\nSummary\n"
