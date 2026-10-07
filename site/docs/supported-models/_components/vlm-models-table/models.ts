@@ -119,6 +119,7 @@ export const VLM_MODELS: VLMModelType[] = [
           'https://huggingface.co/openbmb/MiniCPM-V-4.7-1B',
           'https://huggingface.co/openbmb/MiniCPM-V-4.7-35B-A3B',
         ],
+        notesLink: '#minicpmv4_7-notes',
       },
     ],
   },
