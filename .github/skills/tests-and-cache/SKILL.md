@@ -64,7 +64,7 @@ Pick the helper by dataset size:
 
 ## Known Pitfalls
 
-- `tqdm==4.70.0`: `thread_map` fails on generators. That makes `snapshot_download` raise `ValueError: min() arg is an empty sequence` on the first download from repos with >1000 files (e.g. `facebook/multilingual_librispeech`, `google/fleurs`, `lmms-lab/LLaVA-Video-178K`). `tests/python_tests/requirements.txt` pins `tqdm==4.70.1`.
+- `tqdm==4.70.0`: `thread_map` fails on generators. That makes `snapshot_download` raise `ValueError: min() arg is an empty sequence` on the first download from repos with >1000 files (e.g. `facebook/multilingual_librispeech`, `google/fleurs`, `lmms-lab/LLaVA-Video-178K`). `tests/python_tests/requirements.txt` pins `tqdm==4.69.1` because whowhatbench caps tqdm at `<=4.70.0`.
 - Errors that mean a resource is missing from `$HF_HOME/hub`: `LocalEntryNotFoundError`, `ConnectionError: Couldn't reach '<repo>' on the Hub (OfflineModeIsEnabled)`, `ValueError: When using the offline mode, you must specify a weight_name`. Fix the test to go through the cache as described above instead of retrying.
 - WWB tests run `wwb` in a subprocess. The real error is in the captured output after `ERROR:conftest:'wwb ...' returned 1. Output:`, not in the `CalledProcessError` line.
 - A module-scoped fixture failure is reported once with its output. Later tests that use the same fixture only show the cached `CalledProcessError`.

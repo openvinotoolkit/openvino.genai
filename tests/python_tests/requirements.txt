@@ -5,7 +5,7 @@ pytest==9.1.1
 transformers==5.5.4
 hf_transfer==0.1.9
 # tqdm 4.70.0 thread_map fails on generators, which breaks snapshot_download for repos with >1000 files
-tqdm==4.70.1
+tqdm==4.69.1
 gguf==0.19.0
 
 # rag requirements
