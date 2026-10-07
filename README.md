@@ -10,7 +10,7 @@
 [![GitHub Release](https://img.shields.io/github/v/release/openvinotoolkit/openvino.genai?color=green)](https://github.com/openvinotoolkit/openvino.genai/releases)
 [![PyPI Downloads](https://static.pepy.tech/badge/openvino.genai)](https://pypi.org/project/openvino.genai/)
 [![NPM](https://img.shields.io/npm/v/openvino-genai-node)](https://www.npmjs.com/package/openvino-genai-node)
-![Python](https://img.shields.io/badge/python-3.10+-green)
+![Python](https://img.shields.io/badge/python-3.11+-green)
 ![OS](https://img.shields.io/badge/OS-Linux_|_Windows_|_MacOS-blue)
 
 ![](/site/static/img/openvino-genai-workflow.svg)
@@ -65,12 +65,13 @@ OpenVINO™ GenAI library provides very lightweight C++, Python, and Node.js API
  - [Text generation using Large Language Models (LLMs)](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/text-generation/) - Chat with local Llama, Phi, Qwen and other models
  - [Visual processing using Vision Language Model (VLMs)](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/) - Analyze images/videos with LLaVa, MiniCPM-V and other models
  - [Image generation using Diffusers](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-generation/) - Generate images with Stable Diffusion & Flux models
+ - [Video generation using Diffusers](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/video-generation/) - Generate videos with LTX models
  - [Speech recognition using Whisper](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/speech-recognition/) - Convert speech to text using Whisper models
  - [Speech generation using SpeechT5](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/speech-generation/) - Convert text to speech using SpeechT5 TTS models
  - [Semantic search using Text Embedding](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/text-embedding) - Compute embeddings for documents and queries to enable efficient retrieval in RAG workflows
  - [Text Rerank for Retrieval-Augmented Generation (RAG)](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/text-rerank) - Analyze the relevance and accuracy of documents and queries for your RAG workflows
 
-Library efficiently supports LoRA adapters for Text and Image generation scenarios:
+Library efficiently supports LoRA adapters for Text, Image and Video generation scenarios:
 - Load multiple adapters per model
 - Select active adapters for every generation
 - Mix multiple adapters with coefficients via alpha blending

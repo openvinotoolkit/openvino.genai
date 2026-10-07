@@ -108,7 +108,9 @@ class GenAIMultimodalTranscriber:
 
 
 class FunASRSourceTranscriber:
-    def __init__(self, model_id: str, language: str = "") -> None:
+    def __init__(self, model_id: str, language: str = "", torch_dtype=None) -> None:
+        import torch
+
         try:
             from funasr import AutoModel
         except ImportError as error:
@@ -118,6 +120,14 @@ class FunASRSourceTranscriber:
             ) from error
 
         self.language = language or None
+        precision_kwargs = {}
+        if torch_dtype is not None:
+            precision_kwargs = {
+                "fp16": False,
+                "bf16": False,
+                "llm_dtype": {torch.float32: "fp32", torch.float16: "fp16", torch.bfloat16: "bf16"}[torch_dtype],
+            }
+
         with _silenced_output():
             self.model = AutoModel(
                 model=str(model_id),
@@ -125,7 +135,12 @@ class FunASRSourceTranscriber:
                 device="cpu",
                 disable_update=True,
                 trust_remote_code=True,
+                **precision_kwargs,
             )
+
+        if torch_dtype is not None:
+            # Cast only the decoder: casting the audio encoder breaks inference with its FP32 inputs.
+            self.model.model.llm.to(dtype=torch_dtype)
 
     def transcribe(self, audio, max_new_tokens: int) -> str:
         import torch
@@ -192,7 +207,11 @@ class ASRHFTranscriber:
     def create(model_id, device="CPU", ov_config=None, language="", **kwargs):
         if _get_asr_model_type(model_id) in ASR_MODEL_TYPES:
             logger.info("Using FunASR API")
-            return FunASRSourceTranscriber(model_id, language or "en")
+            return FunASRSourceTranscriber(
+                model_id,
+                language or "en",
+                torch_dtype=kwargs.get("torch_dtype"),
+            )
 
         model = _load_multimodal_model(model_id, device, ov_config, True, False, **kwargs)
         return MultimodalTranscriber(model, model_id, language or "English")
