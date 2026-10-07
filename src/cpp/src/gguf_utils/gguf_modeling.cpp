@@ -11,11 +11,8 @@
 #include <openvino/openvino.hpp>
 #include "openvino/runtime/core.hpp"
 #include "openvino/opsets/opset13.hpp"
-#include "openvino/pass/manager.hpp"
-#include "openvino/frontend/extension/decoder_transformation.hpp"
-#include "openvino/frontend/gguf/adapt_to_genai.hpp"
+#include "openvino/frontend/gguf/extension/genai.hpp"
 #include "openvino/frontend/gguf/frontend.hpp"
-#include "openvino/frontend/gguf/make_stateful.hpp"
 
 #include "gguf_utils/building_blocks.hpp"
 #include "gguf_utils/gguf_modeling.hpp"
@@ -145,8 +142,7 @@ std::shared_ptr<ov::Model> create_language_model(
 
 std::shared_ptr<ov::Model> convert_gguf_with_frontend(const std::string& model_path) {
     ov::frontend::gguf::FrontEnd frontend;
-    frontend.add_extension(std::make_shared<ov::frontend::DecoderTransformationExtension>(
-        ov::frontend::gguf::pass::GGUFMakeStateful()));
+    frontend.add_extension(std::make_shared<ov::frontend::gguf::GenAIExtension>());
     return frontend.convert(frontend.load(model_path));
 }
 
@@ -179,12 +175,6 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
         ov::genai::utils::print_gguf_debug_info(ss.str());
 
         model = convert_gguf_with_frontend(model_path);
-
-        // AdaptToGenAI rewires IO to what StatefulLLMPipeline expects
-        // (input_ids / attention_mask / position_ids / beam_idx -> logits).
-        ov::pass::Manager manager;
-        manager.register_pass<ov::frontend::gguf::pass::AdaptToGenAI>();
-        manager.run_passes(model);
     }
 
     if (enable_save_ov_model) {

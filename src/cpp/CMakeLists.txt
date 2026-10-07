@@ -230,8 +230,8 @@ endif()
 if(ENABLE_GGUF)
     target_link_libraries(${TARGET_NAME_OBJ} PRIVATE gguflib)
     target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE ENABLE_GGUF)
-    # GGUF conversion routes through the OpenVINO GGUF frontend + its AdaptToGenAI pass
-    # (header openvino/frontend/gguf/adapt_to_genai.hpp). The frontend is a LINKABLE_FRONTEND
+    # GGUF conversion routes through the OpenVINO GGUF frontend + its GenAIExtension
+    # (header openvino/frontend/gguf/extension/genai.hpp). The frontend is a LINKABLE_FRONTEND
     # exported by OpenVINO as openvino::frontend::gguf.
     if(TARGET openvino::frontend::gguf)
         target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino::frontend::gguf)

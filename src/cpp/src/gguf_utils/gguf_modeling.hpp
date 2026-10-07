@@ -9,11 +9,8 @@
 
 /// \brief Load and convert a .gguf file with the OpenVINO GGUF frontend.
 ///
-/// The frontend always converts to a stateless graph (explicit KV-cache input/output pairs, like
-/// optimum-intel before its own make-stateful pass). GGUFMakeStateful is registered as a
-/// transformation extension so the frontend turns each cache into a ReadValue/Concat/Assign state
-/// during conversion; it is scoped to this call rather than registered globally via
-/// ov::Core::add_extension. The caller is responsible for the GenAI IO adaptation that follows.
+/// GenAIExtension prepares stateful caches and GenAI IO inside the frontend conversion.
+/// Registration is scoped to this frontend instance.
 std::shared_ptr<ov::Model> convert_gguf_with_frontend(const std::string& model_path);
 
 /// \brief Convert a .gguf file into an ov::Model.
