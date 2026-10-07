@@ -73,6 +73,7 @@ wwb --target-model phi-3-openvino --gt-data gt.csv --model-type text --genai
 > **NOTE**: use `--model-type text-chat` option to run evaluation in chat mode<br>
 > **NOTE**: for llama.cpp in `--model-type text`, use `--llamacpp-chat` to force chat-completions formatting.<br>
 > **NOTE**: for llama.cpp in `--model-type text`, use `--llamacpp-n-ctx` to set context window size; if omitted, WWB uses 8192.<br>
+> **NOTE**: Harmony text models normalize legacy single-turn and ChatML prompt wrappers before applying the model chat template. Native Harmony prompts are left unchanged.<br>
 
 ### Compare Visual Language Models with image inputs (VLMs)
 ```sh
