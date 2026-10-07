@@ -68,6 +68,22 @@ public:
         const std::vector<EncodedImage>& images
     ) const override;
 
+protected:
+    // MiniCPM-V's chat template omits BOS, while some MiniCPM tokenizers are configured
+    // to prepend it (add_bos_token=true, e.g. MiniCPM-V-4). For those, GenAI must keep the
+    // tokenizer's special tokens enabled even when a chat template is applied so tokenization
+    // matches the HF/optimum reference (leading <s>). Other MiniCPM variants (e.g. the
+    // Qwen2-based 2.6 / o-2.6) do not prepend BOS and must stay unchanged. The decision is
+    // derived from the tokenizer itself (probed once in the constructor), not hard-coded.
+    bool add_special_tokens_when_chat_templated() const override { return m_tokenizer_prepends_special_token; }
+
+private:
+    // True when the tokenizer prepends a leading special token (BOS) under add_special_tokens.
+    bool m_tokenizer_prepends_special_token = false;
+
+    // Probe the tokenizer to detect whether it prepends a leading special (BOS) token.
+    static bool probe_tokenizer_prepends_special_token(const Tokenizer& tokenizer);
+
 };
 
 } // namespace ov::genai

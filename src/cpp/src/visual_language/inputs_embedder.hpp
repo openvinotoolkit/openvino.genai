@@ -341,6 +341,14 @@ private:
 
         virtual ov::Tensor apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);
 
+        // Most chat templates already embed the tokenizer's special tokens (e.g. BOS),
+        // so the tokenizer must not add them again when a chat template is applied.
+        // A few models (e.g. MiniCPM-V) use a chat template that omits BOS while their
+        // tokenizer is configured to prepend it (add_bos_token=true). Such embedders
+        // override this to keep the tokenizer's special tokens enabled even when a chat
+        // template is applied, matching the HF/optimum reference tokenization.
+        virtual bool add_special_tokens_when_chat_templated() const { return false; }
+
         ov::Tensor update_history(const ov::Tensor& new_chat_tokens);
 
         ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);

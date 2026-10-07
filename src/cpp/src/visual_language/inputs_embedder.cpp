@@ -123,7 +123,9 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
     m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) { }
 
 ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
-    bool add_special_tokens = m_add_special_tokens_is_set ? m_add_special_tokens : !(m_is_chat_conversation || m_apply_chat_template);
+    bool add_special_tokens = m_add_special_tokens_is_set
+        ? m_add_special_tokens
+        : (!(m_is_chat_conversation || m_apply_chat_template) || add_special_tokens_when_chat_templated());
     ManualTimer encode_timer("Encode");
     encode_timer.start();
 
