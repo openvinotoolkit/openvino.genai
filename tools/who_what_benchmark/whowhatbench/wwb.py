@@ -547,9 +547,60 @@ def check_args(args):
         args.dataset_field = "text"
 
 
+def _load_local_visual_text_csv(args):
+    """Load a local CSV dataset for visual-text tasks.
+
+    The CSV must contain a ``prompts`` column and may contain ``images`` and
+    ``videos`` columns. Image/video entries are treated as file paths and are
+    resolved deterministically: absolute paths are used as-is, relative paths
+    are resolved against ``--image-dir`` when provided, otherwise against the
+    directory containing the CSV. Empty cells are treated as missing (None).
+    """
+    from transformers.image_utils import load_image
+
+    csv_path = os.path.abspath(args.dataset)
+    base_dir = os.path.abspath(args.image_dir) if getattr(args, "image_dir", None) else os.path.dirname(csv_path)
+    data = pd.read_csv(csv_path, keep_default_na=False)
+
+    if "prompts" not in data.columns:
+        raise ValueError(
+            f"Local visual-text dataset '{csv_path}' must contain a 'prompts' column, got {list(data.columns)}."
+        )
+
+    def _resolve(path):
+        if path is None:
+            return None
+        path = str(path).strip()
+        if path == "":
+            return None
+        if not os.path.isabs(path):
+            path = os.path.join(base_dir, path)
+        return path
+
+    prompts = list(data["prompts"])
+    num = len(prompts)
+
+    if "images" in data.columns:
+        images = [load_image(_resolve(p)) if _resolve(p) is not None else None for p in data["images"]]
+    else:
+        images = [None] * num
+
+    if "videos" in data.columns:
+        videos = [_resolve(p) for p in data["videos"]]
+    else:
+        videos = [None] * num
+
+    return {"prompts": prompts, "images": images, "videos": videos}
+
+
 def load_prompts(args):
     if args.dataset is None:
         return None
+    # Local CSV datasets (with prompts/images/videos columns) for visual-text tasks.
+    if args.model_type in ("visual-text", "visual-video-text", "visual-text-only") and (
+        os.path.isfile(args.dataset) and args.dataset.lower().endswith(".csv")
+    ):
+        return _load_local_visual_text_csv(args)
     split = "validation"
     if args.split is not None:
         split = args.split
