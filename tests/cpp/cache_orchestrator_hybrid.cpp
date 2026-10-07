@@ -215,7 +215,7 @@ TEST(TestCacheOrchestratorHybrid, AppendSlotsZerosReusedLinearAttentionBlockForN
     config.max_num_batched_tokens = 16;
     config.dynamic_split_fuse = false;
     config.max_num_seqs = 1;
-    Scheduler scheduler(orchestrator, config);
+    ContinuousBatchingScheduler scheduler(orchestrator, config);
 
     std::vector<int64_t> first_tokens = {1, 2, 3, 4};
     auto first_group = std::make_shared<SequenceGroup>(
@@ -290,7 +290,7 @@ TEST(TestCacheOrchestratorHybrid, SchedulerEmitsSpeculativeLinearAttentionCheckp
     config.max_num_batched_tokens = 4;
     config.dynamic_split_fuse = false;
     config.max_num_seqs = 1;
-    Scheduler scheduler(orchestrator, config);
+    ContinuousBatchingScheduler scheduler(orchestrator, config);
 
     std::vector<int64_t> tokens = {1, 2, 3, 4};
     auto group = std::make_shared<SequenceGroup>(
