@@ -871,10 +871,10 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_rerank(const s
     return compile_decoder_for_npu_impl(model, config, kv_pos, ModelType::TextRerank, {}, text_rerank_config);
 }
 
-ov::CompiledModel compile_kokoro_for_npu_speech_generation(ov::Core& core,
-                                                           const std::filesystem::path& model_path,
+ov::CompiledModel compile_kokoro_for_npu_speech_generation(const std::filesystem::path& model_path,
                                                            const ov::AnyMap& properties,
                                                            size_t static_input_ids_length) {
+    auto& core = singleton_core();
     auto model = core.read_model(model_path);
 
     std::map<std::string, ov::PartialShape> static_shapes;

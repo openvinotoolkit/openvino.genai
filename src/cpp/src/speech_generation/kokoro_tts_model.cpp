@@ -284,8 +284,7 @@ void set_default_property(ov::AnyMap& config, const std::string& key, const ov::
     }
 }
 
-ov::CompiledModel compile_kokoro_model(ov::Core& core,
-                                       const std::filesystem::path& model_path,
+ov::CompiledModel compile_kokoro_model(const std::filesystem::path& model_path,
                                        const std::string& device,
                                        const ov::AnyMap& properties,
                                        const bool npu_requested,
@@ -297,11 +296,10 @@ ov::CompiledModel compile_kokoro_model(ov::Core& core,
     }
 
     if (!npu_requested) {
-        return core.compile_model(model_path, device, compile_properties);
+        return ov::genai::utils::singleton_core().compile_model(model_path, device, compile_properties);
     }
 
-    return ov::genai::utils::compile_kokoro_for_npu_speech_generation(core,
-                                                                      model_path,
+    return ov::genai::utils::compile_kokoro_for_npu_speech_generation(model_path,
                                                                       compile_properties,
                                                                       static_input_ids_length);
 }
@@ -858,7 +856,6 @@ KokoroTTSImpl::KokoroTTSImpl(const std::filesystem::path& models_path,
                              const std::string& device,
                              const ov::AnyMap& properties) {
     m_models_path = models_path;
-    ov::Core core = ov::genai::utils::singleton_core();
     const bool npu_requested = device == "NPU";
 
     m_runtime = std::make_shared<KokoroRuntime>(models_path);
@@ -868,8 +865,7 @@ KokoroTTSImpl::KokoroTTSImpl(const std::filesystem::path& models_path,
         m_static_input_ids_length = m_runtime->context_length();
     }
 
-    auto compiled = compile_kokoro_model(core,
-                                         models_path / "openvino_model.xml",
+    auto compiled = compile_kokoro_model(models_path / "openvino_model.xml",
                                          device,
                                          properties,
                                          npu_requested,
