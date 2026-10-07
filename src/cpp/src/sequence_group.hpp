@@ -279,6 +279,7 @@ public:
 
     void update_generated_log_prob(size_t idx, float log_prob) {
         OPENVINO_ASSERT(idx < m_generated_log_probs.size());
+        m_cumulative_log_prob += log_prob - m_generated_log_probs[idx];
         m_generated_log_probs[idx] = log_prob;
     }
 

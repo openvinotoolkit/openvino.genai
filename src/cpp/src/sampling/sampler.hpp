@@ -61,9 +61,9 @@ std::vector<float> materialize_distribution(const Logits& logits, size_t vocab_s
 bool accept_draft_token(float target_probability, float draft_probability, std::mt19937& rng_engine);
 // Replacement for a rejected draft token: a draw from the normalised residual max(0, p - q), or from p
 // when the residual is empty.
-Token residual_sample(const std::vector<float>& target_distribution,
-                      const std::vector<float>& draft_distribution,
-                      std::mt19937& rng_engine);
+int64_t residual_sample(const std::vector<float>& target_distribution,
+                        const std::vector<float>& draft_distribution,
+                        std::mt19937& rng_engine);
 }  // namespace detail
 
 struct SamplerOutput {

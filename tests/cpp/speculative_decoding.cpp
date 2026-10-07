@@ -64,7 +64,7 @@ TEST(SpeculativeResidualSampling, FallsBackToTargetWhenResidualDegenerate) {
 
     std::mt19937 rng(7);
     const auto empirical = empirical_distribution(p.size(), 40000, [&] {
-        return ov::genai::detail::residual_sample(p, p, rng).m_index;
+        return ov::genai::detail::residual_sample(p, p, rng);
     });
 
     EXPECT_LT(total_variation_distance(empirical, p), 0.02f);
@@ -89,7 +89,7 @@ TEST(SpeculativeSampling, EmittedTokensFollowTargetDistribution) {
         const float q_t = ov::genai::detail::get_token_probability(draft, t);
         if (ov::genai::detail::accept_draft_token(p_t, q_t, rng))
             return t;
-        return ov::genai::detail::residual_sample(p, q, rng).m_index;
+        return ov::genai::detail::residual_sample(p, q, rng);
     });
 
     // Token 0 is proposed by the draft but removed by the target's top_k, so it must never be emitted.
