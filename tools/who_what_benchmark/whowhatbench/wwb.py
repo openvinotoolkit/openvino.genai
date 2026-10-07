@@ -21,12 +21,8 @@ from whowhatbench.model_loaders import TORCH_DTYPES, load_model
 from whowhatbench import EVALUATOR_REGISTRY
 from whowhatbench.utils import fix_phi3_v_eos_token_id, patch_transformers_gguf_support
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
-<<<<<<< HEAD
 from whowhatbench.utils import get_json_config, load_audio_dataset, resolve_json_dataset_path, read_json_dataset
-=======
-from whowhatbench.utils import get_json_config, load_audio_dataset
-from whowhatbench.text_evaluator import Metrics
->>>>>>> 273f0c09a ([wwb] Add support of kl_divergency to wwb and extend architecture for other metrcis)
+from whowhatbench.text_metrics_collection import Metrics
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -107,20 +103,6 @@ def parse_args():
         "--tokenizer",
         default=None,
         help="Tokenizer for divergency metric. If not provided, it will be load from base_model or target_model.",
-    )
-    parser.add_argument(
-        "--kld-ctx",
-        dest="kld_ctx",
-        type=positive_integer,
-        default=None,
-        help="Number of tokens for KL divergence context before splitting it into prefix and scored tail.",
-    )
-    parser.add_argument(
-        "--kld-chunk",
-        dest="kld_chunk",
-        type=positive_integer,
-        default=None,
-        help="Chunk size for KL divergence scoring loop. The selected context is still scored on its second half.",
     )
     parser.add_argument(
         "--omit-chat-template",
@@ -531,7 +513,7 @@ def parse_args():
         'Example: \'{"num_assistant_tokens": 10, "branching_factor": 4, "tree_depth": 3}\'',
     )
     parser.add_argument(
-        "--text-metrics-list",
+        "--metrics",
         nargs="+",
         choices=[
             Metrics.SIMILARITY.value,
@@ -541,7 +523,28 @@ def parse_args():
         ],
         required=False,
         default=[Metrics.SIMILARITY.value],
-        help="List of metrics to compute for text generation.",
+        help="List of metrics to compute. It applicable for text generation now.\n"
+        "similarity: Compute the similarity between generated and reference text. Default. \n"
+        "divergency: Compute the FDT, FDT norm, SDT, SDT norm between generated and reference encoded answer. \n"
+        "kl_divergency: Compute the KL divergence for the prompt tokens. Prompt is divided to two part: prefix and scored tail. "
+        "Scored tail is used for the actual KL divergence computation. Context/scoring range may be adjasted with --kld-ctx, --kld-chunk. \n"
+        "token_similarity: Collect the tokenized prompt and generated results, no checks are performed at that moment.",
+    )
+    parser.add_argument(
+        "--kld-ctx",
+        dest="kld_ctx",
+        type=positive_integer,
+        default=None,
+        help="Applicable with `--metrics kl_divergency`. "
+        "KL divergence is calculated based on prompt tokens. This parameter specifies the number of tokens for KL divergence which "
+        "will be used for evaluation. Context will be split it into prefix and scored tail.",
+    )
+    parser.add_argument(
+        "--kld-chunk",
+        dest="kld_chunk",
+        type=positive_integer,
+        default=None,
+        help="Chunk size for KL divergence scoring loop. The selected context is still scored on its second half.",
     )
 
     return parser.parse_args()
@@ -593,6 +596,9 @@ def check_args(args):
 
     if args.dataset_field is None and args.model_type != "speech-recognition":
         args.dataset_field = "text"
+
+    if args.metrics != [Metrics.SIMILARITY.value] and args.model_type != "text":
+        raise ValueError(f"For --model-type {args.model_type}, only --metrics={Metrics.SIMILARITY.value} is supported.")
 
 
 def load_prompts(args):
@@ -1175,7 +1181,7 @@ def create_evaluator(base_model, args):
                 generation_config_extra=args.generation_config_extra,
                 kld_ctx=args.kld_ctx,
                 kld_chunk=args.kld_chunk,
-                metrics_list=args.text_metrics_list,
+                metrics_list=args.metrics,
                 is_genai=args.genai,
                 is_llamacpp=args.llamacpp,
             )
@@ -1694,7 +1700,7 @@ def main():
         kwargs["speech_language"] = args.speech_language
 
     kwargs["llamacpp_n_ctx"] = args.llamacpp_n_ctx
-    if args.llamacpp and args.text_metrics_list and Metrics.KL_DIVERGENCY.value in args.text_metrics_list:
+    if args.llamacpp and args.metrics and Metrics.KL_DIVERGENCY.value in args.metrics:
         kwargs["llamacpp_logits_all"] = True
 
     if args.base_model is not None:
@@ -1789,7 +1795,7 @@ def main():
         ]:
             print_text_results(evaluator)
         elif args.model_type in ["text"]:
-            for metrcis in args.text_metrics_list:
+            for metrcis in args.metrics:
                 print_text_results_metrics_list(evaluator, metrcis)
         elif (
             "text-to-image" in args.model_type

@@ -3,30 +3,29 @@
 
 import sys
 import logging
-import subprocess  # nosec B404
 from pathlib import Path
 
 import pandas as pd
 import pytest
-import torch
 
 WWB_ROOT = Path(__file__).resolve().parents[1]
 if str(WWB_ROOT) not in sys.path:
     sys.path.insert(0, str(WWB_ROOT))
 
-from whowhatbench.text_evaluator import (  # noqa: E402
+from whowhatbench.text_generation_strategies import (  # noqa: E402
     CompositeGenerationStrategy,
     GenAISelfSufficientGeneration,
     GenerationStrategy,
     LlamaCPPReferenceBaseGenerationStrategy,
     LlamaCPPSelfSufficientGeneration,
-    Metrics,
     ReferenceBaseGenerationStrategy,
     SelfSufficientGenerationStrategy,
 )
 
+from whowhatbench.text_metrics_collection import Metrics  # noqa: E402
+
 from conftest import run_wwb  # noqa: E402
-from test_cli_text import base_model_path, target_model_path, model_id  # noqa: E402
+from test_cli_text import base_model_path, target_model_path  # noqa: E402
 
 
 logging.basicConfig(level=logging.INFO)
@@ -93,7 +92,7 @@ def _run_text_wwb(tmp_path, metrics_list, base_model=base_model_path, target_mod
             "--short-prompt",
             "--output",
             output_dir,
-            "--text-metrics-list",
+            "--metrics",
             *metrics_list,
             *extra_args,
         ]
@@ -146,8 +145,10 @@ def test_cli_reference_strategy_kl_divergency(tmp_path):
             "--short-prompt",
             "--output",
             output_dir,
-            "--text-metrics-list",
-            [KL_DIVERGENCY, TOKEN_SIMILARITY, SIMILARITY],
+            "--metrics",
+            KL_DIVERGENCY,
+            TOKEN_SIMILARITY,
+            SIMILARITY,
         ]
     )
 
@@ -166,8 +167,10 @@ def test_cli_reference_strategy_kl_divergency(tmp_path):
             "--short-prompt",
             "--output",
             output_dir,
-            "--text-metrics-list",
-            [KL_DIVERGENCY, TOKEN_SIMILARITY, SIMILARITY],
+            "--metrics",
+            KL_DIVERGENCY,
+            TOKEN_SIMILARITY,
+            SIMILARITY,
         ]
     )
     metrics = pd.read_csv(output_dir / "metrics.csv")
@@ -177,7 +180,7 @@ def test_cli_reference_strategy_kl_divergency(tmp_path):
     assert metrics[SIMILARITY].values[0] > 0.99
     assert metrics[KL_DIVERGENCY].values[0] < 3.0
 
-    output = run_wwb(
+    run_wwb(
         [
             "--target-model",
             target_model_path,
@@ -192,8 +195,10 @@ def test_cli_reference_strategy_kl_divergency(tmp_path):
             "--short-prompt",
             "--output",
             output_dir,
-            "--text-metrics-list",
-            [KL_DIVERGENCY, TOKEN_SIMILARITY, SIMILARITY],
+            "--metrics",
+            KL_DIVERGENCY,
+            TOKEN_SIMILARITY,
+            SIMILARITY,
         ]
     )
 
@@ -210,7 +215,7 @@ def test_cli_composite_strategy_similarity_and_kl_divergency(chdir_tmp):
     assert all(answer for answer in gt_data["answers"].values)
     _assert_npy_artifacts_exist(gt_data, "logits_path")
     _assert_npy_artifacts_exist(gt_data, "prompt_input_ids_path")
-    _assert_npy_artifacts_exist(gt_data, "generated_token_ids")
+    _assert_npy_artifacts_exist(gt_data, "generated_token_ids_path")
     assert "similarity" in metrics.columns
     assert "kl_divergency" in metrics.columns
     assert "kl_divergency_p99" in metrics.columns

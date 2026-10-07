@@ -236,7 +236,7 @@ class KLDivergency:
     MIN_BASE_LOG_PROB = -16.0
 
     def _calculate_kl_per_token(self, gold_logits: torch.Tensor, prediction_logits: torch.Tensor) -> torch.Tensor:
-        # formula from llama.preplexity tool
+        # formula from llama-perplexity tool
         gold_logits = gold_logits.to(dtype=torch.float64)
         prediction_logits = prediction_logits.to(dtype=torch.float64)
 
@@ -251,10 +251,6 @@ class KLDivergency:
             torch.zeros_like(gold_probs),
         )
         return kl_terms.sum(dim=-1)
-
-    @staticmethod
-    def _round_metric_value(value: float) -> float:
-        return round(float(value), 7)
 
     def evaluate(self, gts, predictions):
         logits_gold = gts["logits_path"].values
