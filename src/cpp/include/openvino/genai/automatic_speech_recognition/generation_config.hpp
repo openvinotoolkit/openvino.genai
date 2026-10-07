@@ -86,8 +86,8 @@ public:
 
     // SenseVoiceSmall parameters
 
-    // Whether to apply inverse text normalization (ITN). Honored by SenseVoiceSmall:
-    // false conditions the model on the 'woitn' text-norm id, true on the 'withitn' id.
+    // Whether to apply inverse text normalization (ITN), rendering recognized text in written
+    // form (digits, dates, punctuation) rather than spelled-out spoken words.
     bool use_itn = false;
 
     using GenerationConfig::update_generation_config;

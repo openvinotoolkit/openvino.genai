@@ -211,6 +211,7 @@ export interface ASRPipeline {
         perfMetrics: ASRPerfMetrics;
         chunks?: ASRDecodedResultChunk[][];
         words?: ASRDecodedResultChunk[][];
+        features?: Array<Record<string, unknown>>;
       },
     ) => void,
   ): void;

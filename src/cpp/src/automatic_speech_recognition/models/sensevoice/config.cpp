@@ -22,6 +22,7 @@ SenseVoiceSmallConfig::SenseVoiceSmallConfig(const std::filesystem::path& json_p
     read_json_param(data, "blank_id", blank_id);
     read_json_param(data, "lid_dict", lid_dict);
     read_json_param(data, "textnorm_dict", textnorm_dict);
+    read_json_param(data, "dither", dither);
 
     validate();
 }

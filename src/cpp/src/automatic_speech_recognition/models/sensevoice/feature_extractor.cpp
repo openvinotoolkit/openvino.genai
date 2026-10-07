@@ -61,7 +61,8 @@ std::pair<std::vector<float>, std::vector<float>> load_cmvn(const std::filesyste
 
 namespace ov::genai {
 
-SenseVoiceSmallFeatureExtractor::SenseVoiceSmallFeatureExtractor(const std::filesystem::path& cmvn_file) {
+SenseVoiceSmallFeatureExtractor::SenseVoiceSmallFeatureExtractor(const std::filesystem::path& cmvn_file, float dither)
+    : m_fbank_lfr(dither) {
     auto [shifts, scales] = load_cmvn(cmvn_file);
     OPENVINO_ASSERT(shifts.size() == feature_size && scales.size() == feature_size,
                     "am.mvn CMVN statistics do not match the expected ",

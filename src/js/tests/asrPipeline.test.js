@@ -197,6 +197,51 @@ describe("ASRPipeline with word_timestamps=true (Whisper backend)", () => {
   });
 });
 
+describe("ASRPipeline features forwarding", () => {
+  // Mock the native pipeline to verify feature forwarding without a SenseVoice model.
+  it("generate() forwards native features into ASRDecodedResults", async () => {
+    const pipeline = new ASRPipelineClass(WHISPER_MODEL_PATH, "CPU");
+    const nativeFeatures = [{ emotion: "HAPPY", event: "Speech" }];
+    pipeline.pipeline = {
+      generate(_rawSpeech, _config, _streamer, callback) {
+        callback(null, {
+          texts: ["hello"],
+          scores: [0],
+          perfMetrics: {},
+          languages: ["en"],
+          chunks: undefined,
+          words: undefined,
+          features: nativeFeatures,
+        });
+      },
+    };
+
+    const result = await pipeline.generate(new Float32Array(10));
+
+    assert.ok(Array.isArray(result.features));
+    assert.strictEqual(result.features.length, 1);
+    assert.deepStrictEqual(result.features[0], { emotion: "HAPPY", event: "Speech" });
+  });
+
+  it("generate() leaves features undefined when the native layer omits them", async () => {
+    const pipeline = new ASRPipelineClass(WHISPER_MODEL_PATH, "CPU");
+    pipeline.pipeline = {
+      generate(_rawSpeech, _config, _streamer, callback) {
+        callback(null, {
+          texts: ["hello"],
+          scores: [0],
+          perfMetrics: {},
+          languages: ["en"],
+        });
+      },
+    };
+
+    const result = await pipeline.generate(new Float32Array(10));
+
+    assert.strictEqual(result.features, undefined);
+  });
+});
+
 describe("ASRPerfMetrics (Whisper backend)", () => {
   let pipeline;
   let rawSpeech;

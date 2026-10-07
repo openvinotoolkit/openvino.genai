@@ -26,7 +26,7 @@ class SenseVoiceSmallFeatureExtractor {
 public:
     static constexpr size_t feature_size = FunASRFeatureExtractor::mel_bins * FunASRFeatureExtractor::lfr_window;
 
-    explicit SenseVoiceSmallFeatureExtractor(const std::filesystem::path& cmvn_file);
+    SenseVoiceSmallFeatureExtractor(const std::filesystem::path& cmvn_file, float dither);
 
     ov::Tensor extract(const std::vector<float>& audio) const;
 

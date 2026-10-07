@@ -31,9 +31,9 @@ private:
     ASRGenerationConfig resolve_generation_config(const std::optional<ASRGenerationConfig>& generation_config) const;
     void validate_generation_config(const ASRGenerationConfig& config) const;
 
+    SenseVoiceSmallConfig m_config;
     SenseVoiceSmallFeatureExtractor m_feature_extractor;
     ov::InferRequest m_request;
-    SenseVoiceSmallConfig m_config;
 };
 
 }  // namespace ov::genai

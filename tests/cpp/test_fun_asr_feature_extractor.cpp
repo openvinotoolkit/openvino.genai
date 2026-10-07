@@ -47,6 +47,20 @@ std::filesystem::path write_mvn(const std::string& name,
     return path;
 }
 
+bool tensors_equal(const ov::Tensor& left, const ov::Tensor& right) {
+    if (left.get_shape() != right.get_shape()) {
+        return false;
+    }
+    const float* left_data = left.data<const float>();
+    const float* right_data = right.data<const float>();
+    for (size_t index = 0; index < left.get_size(); ++index) {
+        if (left_data[index] != right_data[index]) {
+            return false;
+        }
+    }
+    return true;
+}
+
 }  // namespace
 
 TEST(FunASRFeatureExtractor, ProducesLfrFeatures) {
@@ -81,6 +95,15 @@ TEST(FunASRFeatureExtractor, RejectsOneSampleAudio) {
     EXPECT_THROW(FunASRFeatureExtractor{}.extract({0.5f}), ov::Exception);
 }
 
+TEST(FunASRFeatureExtractor, DitherChangesFeatures) {
+    const std::vector<float> audio = pseudo_random_audio();
+
+    const ov::Tensor baseline = FunASRFeatureExtractor{0.0f}.extract(audio);
+    const ov::Tensor dithered = FunASRFeatureExtractor{1.0f}.extract(audio);
+
+    EXPECT_FALSE(tensors_equal(dithered, baseline));
+}
+
 TEST(SenseVoiceSmallFeatureExtractor, IdentityCmvnPreservesFunAsrFeatures) {
     const auto mvn = write_mvn("identity.mvn",
                                std::vector<float>(kFeatureSize, 0.0f),
@@ -88,7 +111,7 @@ TEST(SenseVoiceSmallFeatureExtractor, IdentityCmvnPreservesFunAsrFeatures) {
     const std::vector<float> audio = pseudo_random_audio();
 
     const ov::Tensor fun = FunASRFeatureExtractor{}.extract(audio);
-    const ov::Tensor sv = SenseVoiceSmallFeatureExtractor{mvn}.extract(audio);
+    const ov::Tensor sv = SenseVoiceSmallFeatureExtractor{mvn, 0.0f}.extract(audio);
 
     EXPECT_EQ(sv.get_shape(), (ov::Shape{1, 17, kFeatureSize}));
     EXPECT_EQ(sv.get_element_type(), ov::element::f32);
@@ -112,7 +135,7 @@ TEST(SenseVoiceSmallFeatureExtractor, AppliesCmvnMath) {
     const std::vector<float> audio = pseudo_random_audio();
 
     const ov::Tensor fun = FunASRFeatureExtractor{}.extract(audio);
-    const ov::Tensor sv = SenseVoiceSmallFeatureExtractor{mvn}.extract(audio);
+    const ov::Tensor sv = SenseVoiceSmallFeatureExtractor{mvn, 0.0f}.extract(audio);
 
     const float* fun_data = fun.data<const float>();
     const float* sv_data = sv.data<const float>();
@@ -128,5 +151,5 @@ TEST(SenseVoiceSmallFeatureExtractor, AppliesCmvnMath) {
 
 TEST(SenseVoiceSmallFeatureExtractor, RejectsIncompatibleMvnDimension) {
     const auto mvn = write_mvn("wrongdim.mvn", std::vector<float>(100, 0.0f), std::vector<float>(100, 1.0f));
-    EXPECT_THROW((SenseVoiceSmallFeatureExtractor{mvn}), ov::Exception);
+    EXPECT_THROW((SenseVoiceSmallFeatureExtractor{mvn, 0.0f}), ov::Exception);
 }

@@ -12,6 +12,7 @@
 #include <variant>
 #include <vector>
 
+#include "openvino/core/any.hpp"
 #include "openvino/genai/automatic_speech_recognition/generation_config.hpp"
 #include "openvino/genai/automatic_speech_recognition/perf_metrics.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
@@ -45,6 +46,15 @@ struct OPENVINO_GENAI_EXPORTS ASRDecodedResults {
 
     std::optional<std::vector<std::vector<ASRDecodedResultChunk>>> chunks = std::nullopt;
     std::optional<std::vector<std::vector<ASRDecodedResultChunk>>> words = std::nullopt;
+
+    /**
+     * @brief Optional model-specific features for each transcription.
+     *
+     * Models that do not support such features leave this unset. When present (as with
+     * SenseVoiceSmall), `features[i]` corresponds to `texts[i]`, and each map may contain
+     * `emotion`, `event`, both, or neither; an empty map is valid when no metadata is predicted.
+     */
+    std::optional<std::vector<ov::AnyMap>> features = std::nullopt;
 
     operator std::string() const {
         std::stringstream ss;

@@ -148,6 +148,13 @@ export class ASRDecodedResults extends DecodedResults {
     public languages: string[] = [],
     public chunks?: ASRDecodedResultChunk[][],
     public words?: ASRDecodedResultChunk[][],
+    /**
+     * Optional model-specific features for each transcription.
+     * When present, `features[i]` corresponds to `texts[i]`; each map may contain
+     * `emotion`, `event`, both, or neither (an empty map when no metadata is predicted).
+     * SenseVoiceSmall provides `emotion` and `event`.
+     */
+    public features?: Array<Record<string, unknown>>,
   ) {
     super(texts, scores, perfMetrics, []);
     this.perfMetrics = perfMetrics;

@@ -40,6 +40,7 @@ ASRGenerationConfig::ASRGenerationConfig(const std::filesystem::path& json_path)
 
     read_json_param(data, "lang_to_id", lang_to_id);
     read_json_param(data, "alignment_heads", alignment_heads);
+    read_json_param(data, "use_itn", use_itn);
 
     apply_chat_template = false;
 }

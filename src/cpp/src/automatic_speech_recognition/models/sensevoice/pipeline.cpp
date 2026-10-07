@@ -4,11 +4,16 @@
 #include "pipeline.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
+#include <map>
+#include <optional>
+#include <string>
 #include <variant>
 #include <vector>
 
 #include "openvino/core/except.hpp"
+#include "openvino/genai/tokenizer.hpp"
 #include "utils.hpp"
 
 namespace {
@@ -25,9 +30,17 @@ std::vector<int64_t> ctc_greedy_decode(const ov::Tensor& logits,
                                        const ov::Tensor& encoder_out_lens,
                                        int64_t blank_id) {
     const ov::Shape shape = logits.get_shape();
+    OPENVINO_ASSERT(shape.size() == 3,
+                    "SenseVoiceSmall expects rank-3 [batch, time, vocab] 'logits', but got shape ",
+                    shape,
+                    ".");
     const size_t length = shape[1];
     const size_t vocab_size = shape[2];
 
+    OPENVINO_ASSERT(encoder_out_lens.get_element_type() == ov::element::i32,
+                    "SenseVoiceSmall expects 'encoder_out_lens' of type i32, but got ",
+                    encoder_out_lens.get_element_type(),
+                    ".");
     const int32_t valid_signed = encoder_out_lens.data<const int32_t>()[0];
     const size_t valid = std::min(static_cast<size_t>(std::max(valid_signed, 0)), length);
 
@@ -46,22 +59,52 @@ std::vector<int64_t> ctc_greedy_decode(const ov::Tensor& logits,
     return token_ids;
 }
 
-std::string extract_predicted_language(const std::string& text,
+struct SenseVoiceRichPrefix {
+    size_t rich_token_count = 0;
+    std::string language;
+    std::optional<std::string> emotion;
+    std::optional<std::string> event;
+};
+
+std::optional<std::string> parse_rich_tag(const std::string& decoded) {
+    const size_t begin = decoded.find_first_not_of(" \t\n\r");
+    if (begin == std::string::npos) {
+        return std::nullopt;
+    }
+    const size_t end = decoded.find_last_not_of(" \t\n\r");
+    const std::string trimmed = decoded.substr(begin, end - begin + 1);
+    if (trimmed.size() < 4 || trimmed.compare(0, 2, "<|") != 0 ||
+        trimmed.compare(trimmed.size() - 2, 2, "|>") != 0) {
+        return std::nullopt;
+    }
+    return trimmed.substr(2, trimmed.size() - 4);
+}
+
+SenseVoiceRichPrefix parse_rich_prefix(ov::genai::Tokenizer& tokenizer,
+                                       const std::vector<int64_t>& token_ids,
                                        const std::map<std::string, int64_t>& lid_dict) {
-    const std::string open = "<|";
-    const std::string close = "|>";
-    if (text.rfind(open, 0) != 0) {
-        return "";
+    SenseVoiceRichPrefix prefix;
+    // SenseVoice prefix order: language, emotion, event, textnorm.
+    // Textnorm is consumed but not exposed as a result feature.
+    std::array<std::optional<std::string>, 4> tags;
+    const size_t max_rich = std::min<size_t>(tags.size(), token_ids.size());
+    for (size_t i = 0; i < max_rich; ++i) {
+        std::optional<std::string> tag = parse_rich_tag(tokenizer.decode(std::vector<int64_t>{token_ids[i]}));
+        if (!tag.has_value()) {
+            break;
+        }
+        tags[i] = std::move(tag);
+        ++prefix.rich_token_count;
     }
-    const size_t end = text.find(close, open.size());
-    if (end == std::string::npos) {
-        return "";
+    if (tags[0].has_value()) {
+        const std::string& language = *tags[0];
+        if (language != "auto" && language != "nospeech" && lid_dict.find(language) != lid_dict.end()) {
+            prefix.language = language;
+        }
     }
-    const std::string tag = text.substr(open.size(), end - open.size());
-    if (tag == "auto" || tag == "nospeech" || lid_dict.find(tag) == lid_dict.end()) {
-        return "";
-    }
-    return tag;
+    prefix.emotion = tags[1];
+    prefix.event = tags[2];
+    return prefix;
 }
 
 }  // namespace
@@ -72,8 +115,8 @@ SenseVoiceSmall::SenseVoiceSmall(const std::filesystem::path& models_path,
                                  const std::string& device,
                                  const ov::AnyMap& properties)
     : ASRPipelineImplBase(models_path),
-      m_feature_extractor(models_path / "am.mvn"),
-      m_config(models_path / "config.json") {
+      m_config(models_path / "config.json"),
+      m_feature_extractor(models_path / "am.mvn", m_config.dither) {
     ov::AnyMap properties_copy = properties;
     erase_allowed_asr_ctor_properties(properties_copy);
 
@@ -131,8 +174,12 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudioInputs& audio_inputs,
 
     const std::vector<int64_t> token_ids = ctc_greedy_decode(logits, encoder_out_lens, m_config.blank_id);
 
+    const SenseVoiceRichPrefix rich_prefix = parse_rich_prefix(m_tokenizer, token_ids, m_config.lid_dict);
+    const std::vector<int64_t> transcription_token_ids(token_ids.begin() + rich_prefix.rich_token_count,
+                                                       token_ids.end());
+
     const auto detokenization_start_time = std::chrono::steady_clock::now();
-    const std::string text = m_tokenizer.decode(token_ids);
+    const std::string text = m_tokenizer.decode(transcription_token_ids);
     const auto detokenization_stop_time = std::chrono::steady_clock::now();
     results.texts.push_back(text);
     results.perf_metrics.raw_metrics.detokenization_durations.emplace_back(
@@ -141,11 +188,20 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudioInputs& audio_inputs,
     results.scores.push_back(0.0f);
     const std::string result_language = (config.language.has_value() && config.language.value() != "auto")
                                             ? config.language.value()
-                                            : extract_predicted_language(text, m_config.lid_dict);
+                                            : rich_prefix.language;
     results.languages.push_back(result_language);
 
+    ov::AnyMap feature_entry;
+    if (rich_prefix.emotion.has_value()) {
+        feature_entry.emplace("emotion", rich_prefix.emotion.value());
+    }
+    if (rich_prefix.event.has_value()) {
+        feature_entry.emplace("event", rich_prefix.event.value());
+    }
+    results.features = std::vector<ov::AnyMap>{std::move(feature_entry)};
+
     if (streamer) {
-        streamer->write(token_ids);
+        streamer->write(transcription_token_ids);
         streamer->end();
     }
 

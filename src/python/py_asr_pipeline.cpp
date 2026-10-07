@@ -12,6 +12,7 @@
 #include "openvino/genai/automatic_speech_recognition/generation_config.hpp"
 #include "openvino/genai/automatic_speech_recognition/perf_metrics.hpp"
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
+#include "py_any_converter.hpp"
 #include "py_utils.hpp"
 #include "tokenizer/tokenizers_path.hpp"
 
@@ -67,6 +68,11 @@ auto asr_decoded_results_docstring = R"(
     perf_metrics:       performance metrics with tpot, ttft, etc. of type ov::genai::ASRPerfMetrics.
     chunks:             optional chunks of resulting sequences with timestamps
     words:              optional chunks of resulting words with timestamps
+    features:           optional model-specific features for each transcription.
+                        Models without feature support leave this unset (None in Python).
+                        When present, features[i] corresponds to texts[i]. For SenseVoiceSmall, each map may
+                        contain "emotion", "event", both, or neither; an empty map is valid when no
+                        metadata is predicted.
 )";
 
 auto asr_decoded_result_chunk_docstring = R"(
@@ -169,6 +175,12 @@ auto asr_generation_config_docstring = R"(
 
     :param context: System prompt context prepended to Qwen3-ASR transcription requests.
     :type context: Optional[str]
+
+    SenseVoiceSmall parameters:
+
+    :param use_itn: Whether to enable inverse text normalization for SenseVoiceSmall.
+                    Defaults to False (`woitn`); when True, the `withitn` mode is used.
+    :type use_itn: bool
 
     For generic generation parameters (max_length, max_new_tokens, num_beams, temperature, etc.)
     see GenerationConfig documentation.
@@ -325,6 +337,18 @@ void init_asr_pipeline(py::module_& m) {
         .def_readonly("languages", &ASRDecodedResults::languages)
         .def_readonly("chunks", &ASRDecodedResults::chunks)
         .def_readonly("words", &ASRDecodedResults::words)
+        .def_property_readonly("features",
+                               [](const ASRDecodedResults& dr)
+                                   -> py::typing::Optional<py::typing::List<py::typing::Dict<py::str, py::object>>> {
+                                   if (!dr.features.has_value()) {
+                                       return py::none();
+                                   }
+                                   py::list features;
+                                   for (const auto& entry : dr.features.value()) {
+                                       features.append(pyutils::any_map_to_py_object(entry));
+                                   }
+                                   return features;
+                               })
         .def_readonly("perf_metrics", &ASRDecodedResults::perf_metrics)
         .def("__repr__", [](const ASRDecodedResults& dr) -> py::str {
             auto valid_utf8_strings = pyutils::handle_utf8((std::vector<std::string>)dr);

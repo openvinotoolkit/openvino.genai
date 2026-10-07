@@ -178,6 +178,7 @@ export class ASRPipeline {
       res.languages,
       res.chunks,
       res.words,
+      res.features,
     );
   }
 
