@@ -193,7 +193,7 @@ class Sampler {
     std::shared_ptr<ov::op::v0::Constant> m_d2t_mapping;  // vocab index offset from draft to target token space (EAGLE)
 
     // Per-round draft distributions q(.) for speculative sampling, keyed by request id then
-    // by sequence grouped id, one full-vocab vector per speculated token (generation order).
+    // by sequence grouped id, one vector per speculated token (generation order), indexed by target ids.
     // On the draft sampler it is filled during sampling and drained by the pipeline; on the
     // main sampler it is populated from the transferred candidates and read while resampling
     // rejected tokens. Guarded by its own mutex because sequence groups are sampled in parallel.

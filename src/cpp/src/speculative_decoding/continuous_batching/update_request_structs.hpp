@@ -25,7 +25,7 @@ struct GeneratedSequence {
     ov::Tensor hidden_states;
     std::shared_ptr<const TreeMetaData> tree_metadata;
     // Full draft-model probability distributions q(.) for the speculated tokens of the
-    // current round, in generation order (one full-vocab vector per proposed token).
+    // current round, in generation order (one vector per proposed token, indexed by target ids).
     // Consumed by the main sampler to draw the exact residual max(0, p - q) when a draft
     // token is rejected under multinomial speculative decoding. Empty for greedy decoding
     // or when the draft did not expose per-token distributions.

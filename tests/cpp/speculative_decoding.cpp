@@ -8,6 +8,7 @@
 #include "gtest/gtest.h"
 
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
+#include "openvino/op/constant.hpp"
 #include "sampling/sampler.hpp"
 #include "speculative_decoding/continuous_batching/mtp_strategy.hpp"
 #include "speculative_decoding/continuous_batching/pipeline_impl.hpp"
@@ -135,6 +136,30 @@ TEST(SpeculativeSampling, OnlyDraftSamplerRecordsPostFilterDistribution) {
     const auto sequence = sample_one_token(draft_sampler);
     const int64_t token = sequence->get_generated_ids().back();
     ASSERT_TRUE(token == 2 || token == 3) << "token " << token;
+    EXPECT_NEAR(std::exp(sequence->get_generated_log_probs().back()), q[token], 1e-5f);
+
+    const auto distributions = draft_sampler.extract_draft_distributions(0, 0);
+    ASSERT_EQ(distributions.size(), 1u);
+    ASSERT_EQ(distributions[0].size(), q.size());
+    for (size_t i = 0; i < q.size(); ++i)
+        EXPECT_NEAR(distributions[0][i], q[i], 1e-6f) << "token " << i;
+}
+
+// An EAGLE draft samples over its own vocabulary, where draft id i is target id i + d2t[i]. It stores q(.) by
+// target ids, the space of the emitted token and of the main model's p(.).
+TEST(SpeculativeSampling, EagleDraftRecordsDistributionInTargetVocabulary) {
+    const std::vector<int64_t> d2t = {0, 2, 3, 5};  // draft ids 0..3 -> target ids 0, 3, 5, 8
+    std::vector<float> q(9, 0.0f);
+    q[5] = 1.0f / (1.0f + std::exp(2.0f));
+    q[8] = 1.0f / (1.0f + std::exp(-2.0f));
+
+    ov::genai::Sampler draft_sampler;
+    draft_sampler.set_speculative_draft(true);
+    draft_sampler.set_d2t_for_decoding(
+        std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{d2t.size()}, d2t));
+    const auto sequence = sample_one_token(draft_sampler);
+    const int64_t token = sequence->get_generated_ids().back();
+    ASSERT_TRUE(token == 5 || token == 8) << "token " << token;
     EXPECT_NEAR(std::exp(sequence->get_generated_log_probs().back()), q[token], 1e-5f);
 
     const auto distributions = draft_sampler.extract_draft_distributions(0, 0);

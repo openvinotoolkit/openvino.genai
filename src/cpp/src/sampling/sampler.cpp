@@ -1435,6 +1435,23 @@ std::vector<float> detail::materialize_distribution(const Logits& logits, size_t
     return distribution;
 }
 
+// Re-indexes an EAGLE draft distribution by target ids: draft id i is target id i + d2t[i].
+static std::vector<float> to_target_vocab(const std::vector<float>& draft_distribution,
+                                          const int64_t* d2t,
+                                          size_t d2t_size) {
+    const size_t num_mapped = std::min(draft_distribution.size(), d2t_size);
+    size_t target_size = 0;
+    for (size_t i = 0; i < num_mapped; ++i) {
+        const int64_t target_id = static_cast<int64_t>(i) + d2t[i];
+        OPENVINO_ASSERT(target_id >= 0, "d2t maps draft token ", i, " to negative target id ", target_id);
+        target_size = std::max(target_size, static_cast<size_t>(target_id) + 1);
+    }
+    std::vector<float> target_distribution(target_size, 0.0f);
+    for (size_t i = 0; i < num_mapped; ++i)
+        target_distribution[static_cast<size_t>(static_cast<int64_t>(i) + d2t[i])] = draft_distribution[i];
+    return target_distribution;
+}
+
 bool detail::accept_draft_token(float target_probability, float draft_probability, std::mt19937& rng_engine) {
     const float probability_ratio = draft_probability > 0.0f ? target_probability / draft_probability : 0.0f;
     std::uniform_real_distribution<float> dist(0.0f, 1.0f);
@@ -1447,6 +1464,8 @@ Token detail::residual_sample(const std::vector<float>& target_distribution,
     const size_t vocab_size = target_distribution.size();
     std::vector<float> residual(vocab_size);
     float total = 0.0f;
+    // q is indexed by target ids and may be shorter than p (smaller draft vocabulary) or empty (no q
+    // recorded); missing ids have q = 0.
     for (size_t i = 0; i < vocab_size; ++i) {
         const float q = i < draft_distribution.size() ? draft_distribution[i] : 0.0f;
         residual[i] = std::max(0.0f, target_distribution[i] - q);
@@ -1529,31 +1548,6 @@ bool Sampler::validate_candidate(
     }
 
     return true;
-}
-
-float get_p_prime(Sequence::Ptr& running_sequence,
-                  const Token& sampled_token,
-                  size_t token_offset) {
-    auto generated_log_probs = running_sequence->get_generated_log_probs();
-    auto it_log_prob = generated_log_probs.rbegin();
-    std::advance(it_log_prob, token_offset - 1);
-
-    running_sequence->remove_last_tokens(token_offset);
-
-    float cumulative_prob = 0;
-    for (auto& log_prob : running_sequence->get_generated_log_probs()) {
-        cumulative_prob += std::exp(log_prob);
-    }
-
-    if (cumulative_prob == 0.f) {
-        return 1.f;
-    }
-    
-    float p_n = std::exp(sampled_token.m_log_prob),
-          q_n = std::exp(*it_log_prob),
-          p_prime = std::max(0.f, (p_n - q_n)) / std::log(cumulative_prob);
-
-    return p_prime;
 }
 
 std::pair<size_t, std::set<std::string>>
@@ -1655,40 +1649,31 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                         sg_sampling_info.sampler_output.m_forked_sequences.insert({running_sequences[0]->get_id(), forked_seq_ids});
                     }
                     sampled_token = sampled_token_ids.front();
-                    // Skipped under EAGLE d2t remapping, where q and p live in different vocabularies.
-                    if (m_is_speculative_draft && !sampling_params.is_prompt_lookup() && !m_d2t_mapping) {
-                        append_draft_distribution(sequence_group->get_request_id(), running_sequence->get_grouped_id(),
-                                                  detail::materialize_distribution(logit_vector, vocab_size));
+                    if (m_is_speculative_draft && !sampling_params.is_prompt_lookup()) {
+                        std::vector<float> draft_distribution =
+                            detail::materialize_distribution(logit_vector, vocab_size);
+                        if (m_d2t_mapping) {
+                            ov::Tensor d2t_tensor = m_d2t_mapping->get_tensor_view();
+                            if (const int64_t* d2t = d2t_tensor.data<int64_t>())
+                                draft_distribution = to_target_vocab(draft_distribution, d2t, d2t_tensor.get_size());
+                        }
+                        append_draft_distribution(sequence_group->get_request_id(),
+                                                  running_sequence->get_grouped_id(),
+                                                  std::move(draft_distribution));
                     }
                     // make `_speculative_sampling` in case of previous token was not accepted in speculative decoding
                     if (!is_validation_passed) {
-                        // Prefer exact residual resampling: draw from max(0, p - q) using the draft
-                        // distribution q(.) captured for this position; fall back to the historic
-                        // sample-from-target reweighting when q(.) is unavailable.
+                        // Resample the rejected position from the residual max(0, p - q): p was captured at the
+                        // reject site (conditioned on the accepted prefix), q is the draft distribution of the same
+                        // position. If the draft recorded no q for it, the residual is p itself.
                         const std::vector<float> draft_distribution =
                             get_candidate_distribution(sequence_group->get_request_id(), running_sequence->get_grouped_id(),
                                                        generated_seq_token_offset + 1);
-                        if (!draft_distribution.empty()) {
-                            // Resample the rejected position from the exact residual max(0, p - q).
-                            // p is the target distribution captured at the reject site (conditioned on
-                            // the accepted prefix); q is the draft distribution for the same position.
-                            sampled_token = detail::residual_sample(rejected_target_distribution, draft_distribution, rng_engine);
-                            // The rejected token plus any speculative tokens after it are dropped, so the
-                            // resampled token is re-processed into the KV cache on the next iteration.
-                            assisting_pipeline_info.max_removed_tokens_per_request = std::max(assisting_pipeline_info.max_removed_tokens_per_request, generated_seq_token_offset + 1);
-                            running_sequence->remove_last_tokens(generated_seq_token_offset + 1);
-                        } else {
-                            // No draft q(.) available for this position (e.g. EAGLE d2t remap):
-                            // deliberately retain the pre-fix reweight-from-p behaviour.
-                            float p_prime = get_p_prime(running_sequence, sampled_token, generated_seq_token_offset + 1);
-                            assisting_pipeline_info.max_removed_tokens_per_request = std::max(assisting_pipeline_info.max_removed_tokens_per_request, generated_seq_token_offset);
-                            // update prob only in case candidate prob > sampled token prob
-                            if (p_prime > 0.f) {
-                                auto prob = std::exp(sampled_token.m_log_prob);
-                                prob /= p_prime;
-                                sampled_token.m_log_prob = std::log(prob);
-                            }
-                        }
+                        sampled_token = detail::residual_sample(rejected_target_distribution, draft_distribution, rng_engine);
+                        // The rejected token plus any speculative tokens after it are dropped, so the
+                        // resampled token is re-processed into the KV cache on the next iteration.
+                        assisting_pipeline_info.max_removed_tokens_per_request = std::max(assisting_pipeline_info.max_removed_tokens_per_request, generated_seq_token_offset + 1);
+                        running_sequence->remove_last_tokens(generated_seq_token_offset + 1);
                     }
                 }
                 if (!is_validation_mode_enabled && m_d2t_mapping) { // compute token offset for draft model in speculative sampling
