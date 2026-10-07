@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <variant>
 #include <fstream>
+#include <map>
 #include <memory>
 #include <regex>
 
@@ -897,6 +898,51 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_rerank(const s
                                                                          const KVAxesPosition& kv_pos,
                                                                          const TextRerankPipeline::Config& text_rerank_config) {
     return compile_decoder_for_npu_impl(model, config, kv_pos, ModelType::TextRerank, {}, text_rerank_config);
+}
+
+ov::CompiledModel compile_kokoro_for_npu_speech_generation(const std::filesystem::path& model_path,
+                                                           const ov::AnyMap& properties,
+                                                           size_t static_input_ids_length) {
+    auto& core = singleton_core();
+    auto model = core.read_model(model_path, {}, properties);
+
+    std::map<std::string, ov::PartialShape> static_shapes;
+    if (model->inputs().size() >= 1) {
+        static_shapes.emplace(model->input(0).get_any_name(),
+                              ov::PartialShape{1, static_cast<int64_t>(static_input_ids_length)});
+    }
+    if (model->inputs().size() >= 2) {
+        static_shapes.emplace(model->input(1).get_any_name(), ov::PartialShape{1, 256});
+    }
+    if (model->inputs().size() >= 3) {
+        static_shapes.emplace(model->input(2).get_any_name(), ov::PartialShape{1});
+    }
+
+    if (!static_shapes.empty()) {
+        model->reshape(static_shapes);
+    }
+
+    ov::AnyMap compile_properties = properties;
+
+    set_config_default(compile_properties, "NPU_USE_NPUW", std::string{"YES"});
+    if (is_npuw_enabled(compile_properties)) {
+        set_config_default(compile_properties, "NPUW_DEVICES", std::string{"NPU,CPU"});
+        set_config_default(compile_properties, "NPUW_KOKORO", std::string{"YES"});
+
+        OPENVINO_ASSERT(!(compile_properties.count("CACHE_DIR") > 0 && compile_properties.count("NPUW_CACHE_DIR") > 0),
+                        "Both CACHE_DIR and NPUW_CACHE_DIR are set for Kokoro on NPU. "
+                        "Please specify only one cache directory key.");
+
+        auto it = compile_properties.find("CACHE_DIR");
+        if (it != compile_properties.end()) {
+            auto cache_dir_val = it->second;
+            compile_properties.erase(it);
+            set_config_default(compile_properties, "NPUW_CACHE_DIR", cache_dir_val);
+            GENAI_INFO("Kokoro NPU: remapped CACHE_DIR to NPUW_CACHE_DIR");
+        }
+    }
+
+    return core.compile_model(model, "NPU", compile_properties);
 }
 
 size_t get_npu_kv_cache_capacity(const ov::CompiledModel& compiled_model) {
