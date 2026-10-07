@@ -590,6 +590,11 @@ def load_visual_text_model(
 
             if config.model_type == "mistral3":
                 # Checkpoint weights are bf16 while the processor emits fp32 pixel_values.
+                if model_kwargs["torch_dtype"] not in (None, torch.float32):
+                    logger.warning(
+                        "Mistral3 uses float32 because pixel_values are float32. Ignoring %s arg.",
+                        model_kwargs["torch_dtype"],
+                    )
                 model_kwargs.update({"torch_dtype": torch.float32})
 
             model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
