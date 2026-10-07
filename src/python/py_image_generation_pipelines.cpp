@@ -74,8 +74,9 @@ auto image2image_generate_docstring = std::string(R"(
 
 auto image2image_generate_several_images_docstring = std::string(R"(
     Generates images for image-to-image models conditioned on a set of reference images.
+    The images are referred to as 'Picture 1', 'Picture 2' and so on in the prompt.
 
-    :param prompt: input prompt. The images are referred to as 'Picture 1', 'Picture 2' and so on in the prompt
+    :param prompt: input prompt
     :type prompt: str
 
     :param image: initial images. Only Qwen-Image 2.1 accepts more than one image
