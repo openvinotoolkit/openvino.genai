@@ -46,6 +46,21 @@ ov_status_e convert_embedding(const ov_tensor_t* input, ov::Tensor& output) {
     output = ov::Tensor(ov::element::f32, dims, data);
     return ov_status_e::OK;
 }
+
+ov::AnyMap speech_properties(const ov::genai::SpeechGenerationConfig& config) {
+    // Supply every speech setting so an explicit C config replaces any stored speech settings
+    // for this request. The C++ generate method applies these to a request-local copy.
+    ov::AnyMap properties{{"minlenratio", config.minlenratio},
+                          {"maxlenratio", config.maxlenratio},
+                          {"threshold", config.threshold},
+                          {"speed", config.speed},
+                          {"language", config.language},
+                          {"max_phoneme_length", config.max_phoneme_length}};
+    properties["phonemize_fallback_model_dir"] = config.phonemize_fallback_model_dir
+                                                     ? ov::Any(*config.phonemize_fallback_model_dir)
+                                                     : ov::Any{};
+    return properties;
+}
 }  // namespace
 
 ov_status_e ov_genai_text2speech_pipeline_create(const char* models_path,
@@ -105,13 +120,12 @@ ov_status_e ov_genai_text2speech_pipeline_generate_batch(ov_genai_text2speech_pi
         auto status = convert_embedding(speaker_embedding, embedding);
         if (status != ov_status_e::OK)
             return status;
-        // Per-call config override mirrors the C++ pipeline and the whisper C API: a non-NULL
-        // config replaces the pipeline's current configuration for this call only, and neither
-        // path mutates pipeline state.
         auto result = std::make_unique<ov_genai_text2speech_decoded_results>();
         if (config && config->object) {
+            config->object->validate();
+            const ov::AnyMap properties = speech_properties(*config->object);
             result->object = std::make_shared<ov::genai::Text2SpeechDecodedResults>(
-                pipeline->object->generate(inputs, embedding, *config->object));
+                pipeline->object->generate(inputs, embedding, properties));
         } else {
             result->object = std::make_shared<ov::genai::Text2SpeechDecodedResults>(
                 pipeline->object->generate(inputs, embedding));

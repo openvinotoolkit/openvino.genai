@@ -188,8 +188,7 @@ int main(int argc, char** argv) {
 
     CHECK_STATUS(ov_genai_text2speech_pipeline_create(model_path, device, 0, &pipeline));
 
-    // Optional config overrides mirror the C++ sample: speed and language are applied as a
-    // per-call configuration passed to generate, like the C++ generate(..., config) overload.
+    // Apply optional speed and language settings to this generation call.
     if (speed != 0.0f || language != NULL) {
         CHECK_STATUS(ov_genai_speech_generation_config_create(&config));
         if (speed != 0.0f)

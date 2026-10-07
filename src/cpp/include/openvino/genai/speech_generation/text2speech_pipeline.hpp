@@ -3,8 +3,6 @@
 
 #pragma once
 
-#include <optional>
-
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
 #include "openvino/genai/speech_generation/speech_generation_perf_metrics.hpp"
@@ -70,36 +68,15 @@ public:
      * `Text2SpeechDecodedResults::output_sample_rate`
      */
     Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
-                                       const ov::Tensor& speaker_embedding,
-                                       const ov::AnyMap& properties);
+                                       const ov::Tensor& speaker_embedding = ov::Tensor(),
+                                       const ov::AnyMap& properties = {});
 
-    /**
-     * Generates speeches based on input texts with property overrides (property-key arguments only).
-     * @param texts input texts for which to generate speeches
-     * @param speaker_embedding Speaker embedding tensor
-     * @param properties Speech generation parameters specified as properties
-     */
     template <typename... Properties>
-    util::EnableIfAllStringAny<Text2SpeechDecodedResults, Properties...> generate(const std::vector<std::string>& texts,
-                                                                                  const ov::Tensor& speaker_embedding,
-                                                                                  Properties&&... properties) {
-        return generate(texts, speaker_embedding, AnyMap{std::forward<Properties>(properties)...});
-    }
-
-    /**
-     * Generates speeches based on input texts using a copy of the given configuration for this call only
-     * @param texts input texts for which to generate speeches
-     * @param speaker_embedding Optional speaker embedding tensor representing the unique characteristics of a speaker's
-     * voice. If not provided for SpeechT5 TSS model, the 7306th vector from the validation set of the
-     * `Matthijs/cmu-arctic-xvectors` dataset is used by default.
-     * @param config Optional speech generation configuration to use for this call. When it is not
-     * provided, the pipeline's stored configuration is used. Neither case modifies the stored configuration.
-     * @returns raw audios of the input texts spoken in the specified speaker's voice; sample rate is provided in
-     * `Text2SpeechDecodedResults::output_sample_rate`
-     */
     Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
                                        const ov::Tensor& speaker_embedding = ov::Tensor(),
-                                       const std::optional<SpeechGenerationConfig>& config = std::nullopt);
+                                       Properties&&... properties) {
+        return generate(texts, speaker_embedding, ov::AnyMap{std::forward<Properties>(properties)...});
+    }
 
     /// @brief Extract GenerationConfig used to get default values.
     /// @return Default values used.
