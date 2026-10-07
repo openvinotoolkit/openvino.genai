@@ -75,9 +75,9 @@ using ConstantVector = std::vector<std::shared_ptr<v0::Constant>>;
 
 // These are rank axes of normalized GenAI tensors, not GPU layout axes.
 // A concatenates rows; B and broadcast alpha concatenate columns.
-constexpr size_t concat_a_axis = 0;
-constexpr size_t concat_b_axis = 1;
-constexpr size_t concat_alpha_axis = 1;
+constexpr size_t CONCAT_A_AXIS = 0;
+constexpr size_t CONCAT_B_AXIS = 1;
+constexpr size_t CONCAT_ALPHA_AXIS = 1;
 
 
 // Holds usual LoRA parameters alpha, A and B of a given type.
@@ -1402,9 +1402,9 @@ public:
             for (size_t layer = 0; layer < it->tensors.size(); ++layer) {
                 const auto& tensors = it->tensors[layer];
                 const auto& selection = selections[layer];
-                views.push_back({rank_view(tensors.alpha, concat_alpha_axis, selection.first, selection.second),
-                                 rank_view(tensors.A, concat_a_axis, selection.first, selection.second),
-                                 rank_view(tensors.B, concat_b_axis, selection.first, selection.second)});
+                views.push_back({rank_view(tensors.alpha, CONCAT_ALPHA_AXIS, selection.first, selection.second),
+                                 rank_view(tensors.A, CONCAT_A_AXIS, selection.first, selection.second),
+                                 rank_view(tensors.B, CONCAT_B_AXIS, selection.first, selection.second)});
             }
             m_entries.splice(m_entries.begin(), m_entries, it);
             return views;
@@ -1752,10 +1752,10 @@ struct AdapterControllerImpl {
             ov::Tensor(lora_var_ids.alpha.data_type,
                        dynamic_to_static(lora_var_ids.alpha.data_shape)),
             ov::Tensor(lora_var_ids.A.data_type,
-                       alpha_only ? rank_collapsed_shape(lora_var_ids.A.data_shape, concat_a_axis)
+                       alpha_only ? rank_collapsed_shape(lora_var_ids.A.data_shape, CONCAT_A_AXIS)
                                   : dynamic_to_static(lora_var_ids.A.data_shape)),
             ov::Tensor(lora_var_ids.B.data_type,
-                       alpha_only ? rank_collapsed_shape(lora_var_ids.B.data_shape, concat_b_axis)
+                       alpha_only ? rank_collapsed_shape(lora_var_ids.B.data_shape, CONCAT_B_AXIS)
                                   : dynamic_to_static(lora_var_ids.B.data_shape))
         };
     }
@@ -1832,7 +1832,7 @@ struct AdapterControllerImpl {
             for (size_t i = 0; i < adapters.size(); ++i) {
                 if (auto tensors = weight_getters[i](variable.first)) {
                     const auto rank = static_cast<size_t>(
-                        tensors->A->get_output_partial_shape(0)[concat_a_axis].get_length());
+                        tensors->A->get_output_partial_shape(0)[CONCAT_A_AXIS].get_length());
                     ranges.push_back({adapters[i], start, rank});
                     start += rank;
                 }
@@ -1919,7 +1919,7 @@ struct AdapterControllerImpl {
             for (const auto& getter : weight_getters) {
                 if (auto tensors = getter(variable.first)) {
                     const auto adapter_rank = static_cast<size_t>(
-                        tensors->A->get_output_partial_shape(0)[concat_a_axis].get_length());
+                        tensors->A->get_output_partial_shape(0)[CONCAT_A_AXIS].get_length());
                     if (adapter_rank > std::numeric_limits<size_t>::max() - rank) {
                         return;
                     }
@@ -1929,9 +1929,9 @@ struct AdapterControllerImpl {
             auto alpha_shape = dynamic_to_static(variable.second.alpha.data_shape);
             auto a_shape = dynamic_to_static(variable.second.A.data_shape);
             auto b_shape = dynamic_to_static(variable.second.B.data_shape);
-            alpha_shape[concat_alpha_axis] = rank;
-            a_shape[concat_a_axis] = rank;
-            b_shape[concat_b_axis] = rank;
+            alpha_shape[CONCAT_ALPHA_AXIS] = rank;
+            a_shape[CONCAT_A_AXIS] = rank;
+            b_shape[CONCAT_B_AXIS] = rank;
             if (!account_tensor(alpha_shape, variable.second.alpha.data_type) ||
                 !account_tensor(a_shape, variable.second.A.data_type) ||
                 !account_tensor(b_shape, variable.second.B.data_type)) {
@@ -2164,7 +2164,7 @@ struct AdapterControllerImpl {
             ov::ParameterVector parameters(inputs_per_adapter*inputs.size());
             ov::ResultVector results(inputs_per_adapter);
 
-            build_concat_model(parameters, results, inputs, outputs.alpha, 0, concat_alpha_axis,
+            build_concat_model(parameters, results, inputs, outputs.alpha, 0, CONCAT_ALPHA_AXIS,
                 alpha_only,
                 [](const LoRAWeight& lora_weight) {
                     return std::make_shared<v0::Parameter>(
@@ -2180,7 +2180,7 @@ struct AdapterControllerImpl {
                 });
 
             if(!alpha_only) {
-                build_concat_model(parameters, results, inputs, outputs.A, 1, concat_a_axis,
+                build_concat_model(parameters, results, inputs, outputs.A, 1, CONCAT_A_AXIS,
                     alpha_only,
                     [](const LoRAWeight& lora_weight) {
                         return std::make_shared<v0::Parameter>(
@@ -2189,7 +2189,7 @@ struct AdapterControllerImpl {
                     }
                 );
 
-                build_concat_model(parameters, results, inputs, outputs.B, 2, concat_b_axis,
+                build_concat_model(parameters, results, inputs, outputs.B, 2, CONCAT_B_AXIS,
                     alpha_only,
                     [](const LoRAWeight& lora_weight) {
                         return std::make_shared<v0::Parameter>(
