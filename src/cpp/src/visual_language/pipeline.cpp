@@ -870,6 +870,13 @@ private:
 
     // Runs while a failed turn unwinds, so it must not throw.
     void recover_cache_after_failed_turn(utils::CacheState& snapshot) noexcept {
+        try {
+            // Undoes model-specific embedder state the same way as a cancelled turn. Its token cache
+            // changes do not matter: every path below overwrites the cache state.
+            m_inputs_embedder->update_chat_history("", ov::genai::GenerationStatus::CANCEL);
+        } catch (const std::exception& error) {
+            GENAI_ERR("Failed to roll back the inputs embedder after a failed chat turn: %s", error.what());
+        }
         utils::CacheState& cache_state = m_inputs_embedder->get_cache_state();
         if (!m_is_chat_conversation || m_use_full_chat_history) {
             // Nothing in the cache outlives such a call: the next one prefills from scratch.

@@ -3704,6 +3704,24 @@ def test_vlm_failed_first_chat_turn_is_rolled_back(
     assert first_turn(fail_first=True) == first_turn(fail_first=False)
 
 
+def test_vlm_failed_chat_turn_rolls_back_videochat_embedder_state():
+    """Embedders that count visual tokens per turn, like VideoChat-Flash, must drop the failed turn's count."""
+    models_path = _get_ov_model(VIDEOCHAT_FLASH_QWEN_MODEL_ID)
+    # VideoChat-Flash takes video only.
+    video = openvino.Tensor(np.zeros((4, 32, 32, 3), dtype=np.uint8))
+
+    def second_turn(fail_first: bool) -> tuple[str, int]:
+        pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND="SDPA")
+        pipe.start_chat()
+        pipe.generate("Hi", videos=[video], generation_config=ROLLBACK_CONFIG)
+        if fail_first:
+            with pytest.raises(RuntimeError, match="streamer failure"):
+                pipe.generate("Again", videos=[video], generation_config=ROLLBACK_CONFIG, streamer=RaisingStreamer())
+        return _text_and_tokens(pipe.generate("Again", videos=[video], generation_config=ROLLBACK_CONFIG))
+
+    assert second_turn(fail_first=True) == second_turn(fail_first=False)
+
+
 def test_cb_failed_chat_history_batch_is_rolled_back(rollback_image: openvino.Tensor):
     """A later history that fails must also undo the media an earlier history of the batch registered.
 
