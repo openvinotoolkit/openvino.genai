@@ -1339,7 +1339,7 @@ public:
         return max_bytes;
     }
 
-    // Cache each adapter's rank interval per layer to reuse its slice of concatenated A/B tensors.
+    // Cache each adapter's rank interval per layer to reuse its slice of concatenated alpha/A/B tensors.
     // Layer-specific offsets are needed because adapter ranks and applicable layers can differ.
     struct AdapterRange {
         Adapter adapter;
@@ -1402,7 +1402,7 @@ public:
             for (size_t layer = 0; layer < it->tensors.size(); ++layer) {
                 const auto& tensors = it->tensors[layer];
                 const auto& selection = selections[layer];
-                views.push_back({tensors.alpha,
+                views.push_back({rank_view(tensors.alpha, concat_alpha_axis, selection.first, selection.second),
                                  rank_view(tensors.A, concat_a_axis, selection.first, selection.second),
                                  rank_view(tensors.B, concat_b_axis, selection.first, selection.second)});
             }
@@ -1808,8 +1808,8 @@ struct AdapterControllerImpl {
         return prepared_tensors;
     }
 
-    // Returns whether both configs assign the same alpha to every adapter. Callers must have
-    // already established that the adapter lists match (see PreparedTensorCache::same_key).
+    // Compare requested alphas; the cached config may also contain unselected adapters.
+    // Callers must establish that every lhs adapter exists in rhs.
     bool same_alphas(const AdapterConfig& lhs, const AdapterConfig& rhs) const {
         const auto& adapters = lhs.get_adapters();
         return std::all_of(adapters.begin(), adapters.end(), [&](const Adapter& adapter) {
@@ -1863,14 +1863,18 @@ struct AdapterControllerImpl {
             return *cached;
         }
 
-        // A/B views share the concat payload, but its alpha belongs to the parent config.
-        // Prepare the requested alpha independently so subset selection cannot reuse stale scaling.
+        // Reuse alpha rank views too when the selected adapters keep their cached scaling.
         if (auto views = prepared_tensor_cache.find_views(config)) {
-            auto fresh_alphas = prepare_config_tensors(config, weight_getters, /*alpha_only=*/true);
-            OPENVINO_ASSERT(views->size() == fresh_alphas.size());
+            if (!same_alphas(config, prepared_tensor_cache.front_config())) {
+                auto fresh_alphas = prepare_config_tensors(config, weight_getters, /*alpha_only=*/true);
+                OPENVINO_ASSERT(views->size() == fresh_alphas.size());
+                for (size_t i = 0; i < views->size(); ++i) {
+                    (*views)[i].alpha = std::move(fresh_alphas[i].alpha);
+                }
+            }
             auto variable = variable_ids.begin();
             for (size_t i = 0; i < views->size(); ++i, ++variable) {
-                (*views)[i].alpha = std::move(fresh_alphas[i].alpha);
+                validate_prepared_tensor((*views)[i].alpha, variable->second.alpha);
                 validate_prepared_tensor((*views)[i].A, variable->second.A);
                 validate_prepared_tensor((*views)[i].B, variable->second.B);
             }
