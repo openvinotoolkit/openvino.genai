@@ -391,7 +391,10 @@ public:
             const size_t audios = pipe.m_encoded_audios.size();
             const size_t audio_sequence = pipe.m_history_audio_sequence.size();
             const size_t vision_count = pipe.m_history_vision_count.size();
-            utils::CacheState cache_state = pipe.m_inputs_embedder->get_cache_state();
+            // Only chat with KV cache reuse restores from the snapshot, so other modes skip the copy.
+            utils::CacheState cache_state = pipe.m_is_chat_conversation && !pipe.m_use_full_chat_history
+                                                ? pipe.m_inputs_embedder->get_cache_state()
+                                                : utils::CacheState{};
             bool active = true;
 
             explicit ChatTurnRollback(VLMPipelineImpl& pipe) : pipe(pipe) {}
