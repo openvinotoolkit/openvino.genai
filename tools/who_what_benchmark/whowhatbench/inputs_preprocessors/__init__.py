@@ -9,6 +9,7 @@ from .qwen3 import Qwen3VLInputsPreprocessor, Qwen3_5VLInputsPreprocessor, Qwen3
 from .gemma3 import Gemma3InputsPreprocessor
 from .gemma4 import Gemma4InputsPreprocessor, Gemma4UnifiedInputsPreprocessor, Gemma3nInputsPreprocessor
 from .muse_glimmer import MuseGlimmerInputsPreprocessor
+from .deepseek_ocr2 import DeepseekOCR2InputsPreprocessor
 from .mistral3 import Mistral3InputsPreprocessor
 from .vlm_inputs_preprocessor import VLMInputsPreprocessor
 
@@ -36,6 +37,7 @@ MODEL_TYPE_TO_CLS_MAPPING = {
     "llava_next": LLAVAInputsPreprocessor,
     "llava-qwen2": NanoLlavaInputsPreprocessor,
     "internvl_chat": InternVLInputsPreprocessor,
+    "deepseek_ocr2": DeepseekOCR2InputsPreprocessor,
     "mistral3": Mistral3InputsPreprocessor,
 }
 

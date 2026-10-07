@@ -219,16 +219,24 @@ def get_image_prompt(args):
                 input_image_list.append(image_data)
     else:
         input_image_list.append(output_data_list[0])
+    if args.get("strength") is not None:
+        for image_data in input_image_list:
+            image_data.setdefault("strength", args["strength"])
     return input_image_list
 
 
 def get_video_gen_prompt(args):
     input_list = []
-    output_data_list, is_json_data = get_param_from_file(args, ["prompt", "negative_prompt"])
+    input_key = ["prompt", "negative_prompt"]
+    if args.get("task") == "image-to-video":
+        input_key = ["media", "prompt", "negative_prompt"]
+    output_data_list, is_json_data = get_param_from_file(args, input_key)
     if is_json_data is True:
         media_param_list = parse_video_json_data(output_data_list)
         if len(media_param_list) > 0:
             for text in media_param_list:
+                if args["prompt_file"] is not None and len(args["prompt_file"]) > 0 and "media" in text:
+                    text["media"] = resolve_media_file_path(text.get("media"), args["prompt_file"][0])
                 input_list.append(text)
     else:
         input_list.append(output_data_list[0])

@@ -152,14 +152,14 @@ python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_b
 
 ## 5. Running on 2-Socket Platforms
 
-The benchmarking script sets `openvino.properties.streams.num(1)` by default. For multi-socket platforms, use `numactl` on Linux or the `--load_config` option to modify behavior.
+The benchmarking script sets `openvino.properties.streams.num(1)` by default. For multi-socket platforms, use `numactl` on Linux or the `--ov_config` option to modify behavior.
 
 | OpenVINO Version    | Behaviors                                       |
 |:--------------------|:------------------------------------------------|
 | Before 2024.0.0     | streams.num(1) <br>execute on 2 sockets.        |
 | 2024.0.0            | streams.num(1) <br>execute on the same socket as the APP is running on. |
 
-For example, `--load_config config.json` as following will result in streams.num(1) and execute on 2 sockets.
+For example, `--ov_config config.json` as following will result in streams.num(1) and execute on 2 sockets.
 ```json
 {
   "INFERENCE_NUM_THREADS": <NUMBER>
@@ -381,6 +381,11 @@ python benchmark.py -m models/codegen-350M-multi -p "def hello_world():" -n 2 --
 ### Video Generation Models
 ```sh
 python benchmark.py -m models/LTX-Video/FP16 -p "A cat plays with ball on the christmas tree." --negative_prompt "worst quality, inconsistent motion, blurry, jittery, distorted" --num_frames 5 -n 2 --num_steps 25 --task text-to-video
+```
+
+Image-to-video requires an input image (`-i`/`--media`) and a model directory containing a `vae_encoder`. The prompt should describe how the input image animates:
+```sh
+python benchmark.py -m models/LTX-Video/FP16 -i input.png -p "The camera slowly pushes in as the scene comes to life with gentle, natural motion." --num_frames 5 -n 2 --num_steps 25 --task image-to-video
 ```
 
 **Some additional parameters:**
