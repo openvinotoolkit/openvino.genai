@@ -23,9 +23,10 @@ OpenVINO GenAI Continuous Batching pipeline:
   genai.cb.blk.hash       — block hash updated after new tokens appended
   genai.cb.blk.free       — block freed from a sequence
 
-  Block event name format:
-    genai.cb.blk.<kind>:s=<seq_id>,pi=<phys_idx>[,h=<hash_hex>][,x=<extra>]
-  where x encodes: hit → ref_count, cow → new_phys_idx
+    Current block events use stable names (for example `genai.cb.blk.alloc`) and
+    numeric task metadata (`seq_id`, `physical_index`, `hash`, `extra`). The
+    converter also accepts the earlier format that encoded these values in the
+    event name.
 
 Hardware performance counters (cpi, cpu_load, cpu_op_freq) are correlated by
 timestamp and averaged per step.
@@ -105,6 +106,93 @@ def _parse_blk_name(name: str):
         "hash":   int(m.group("h"), 16) if m.group("h") else 0,
         "extra":  int(m.group("x")) if m.group("x") else 0,
     }
+
+
+def _metadata_int(event: dict, key: str, default: int = 0) -> int:
+    value = event.get("args", {}).get(key)
+    if value is None:
+        return default
+    if isinstance(value, str):
+        value = value.strip()
+        if value.endswith(";"):
+            value = value[:-1].rstrip()
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"Expected integer ITT metadata '{key}' on event '{event.get('name', '')}', got {value!r}"
+        ) from exc
+
+
+def _parse_blk_event(event: dict):
+    name = event.get("name", "")
+    legacy = _parse_blk_name(name)
+    if legacy is not None:
+        return legacy
+
+    prefix = "genai.cb.blk."
+    args = event.get("args", {})
+    if not name.startswith(prefix) or "seq_id" not in args or "physical_index" not in args:
+        return None
+    return {
+        "kind": name[len(prefix):],
+        "seq_id": _metadata_int(event, "seq_id"),
+        "pi": _metadata_int(event, "physical_index"),
+        "hash": _metadata_int(event, "hash"),
+        "extra": _metadata_int(event, "extra"),
+    }
+
+
+def _parse_config_event(event: dict):
+    args = event.get("args", {})
+    if "block_size_tokens" in args and "total_kv_blocks" in args:
+        return _metadata_int(event, "block_size_tokens"), _metadata_int(event, "total_kv_blocks")
+    match = _CFG_RE.match(event.get("name", ""))
+    if match:
+        return int(match.group("blk_sz")), int(match.group("blks"))
+    return None
+
+
+def _parse_step_metadata(event: dict):
+    args = event.get("args", {})
+    required = ("active", "waiting", "scheduled_tokens", "is_prefill")
+    if all(key in args for key in required):
+        return tuple(_metadata_int(event, key) for key in required)
+    match = _META_RE.match(event.get("name", ""))
+    if match:
+        return tuple(int(match.group(key)) for key in ("a", "w", "s", "p"))
+    return None
+
+
+def _parse_done_event(event: dict):
+    args = event.get("args", {})
+    required = ("request_id", "seq_id", "prompt_len", "generated_len")
+    if all(key in args for key in required):
+        return {key: _metadata_int(event, key) for key in required}
+    match = _DONE_RE.match(event.get("name", ""))
+    if match:
+        return {
+            "request_id": int(match.group("req")),
+            "seq_id": int(match.group("seq")),
+            "prompt_len": int(match.group("prompt")),
+            "generated_len": int(match.group("gen")),
+        }
+    return None
+
+
+def _parse_sequence_step(event: dict):
+    args = event.get("args", {})
+    required = ("seq_id", "scheduled_tokens", "is_prefill")
+    if all(key in args for key in required):
+        return tuple(_metadata_int(event, key) for key in required)
+    match = _SEQ_STEP_RE.match(event.get("name", ""))
+    if match:
+        return tuple(int(match.group(key)) for key in ("s", "t", "p"))
+    return None
+
+
+def _is_genai_category(category: str) -> bool:
+    return category == "ov.genai" or category == "ov::genai" or category.startswith("ov::genai::")
 
 
 def _replay_block_events(steps_out: list, blk_sorted: list, first_ts: float) -> list:
@@ -213,14 +301,14 @@ def load_perfetto(path: str) -> list:
 
 def extract(events: list) -> dict:
     # ── Partition events ─────────────────────────────────────────────────────
-    genai_complete = [e for e in events if e.get("cat") == "ov.genai" and e.get("ph") == "X"]
+    genai_complete = [e for e in events if _is_genai_category(e.get("cat", "")) and e.get("ph") == "X"]
     hw_events      = [e for e in events if e.get("ph") == "C" and e.get("name") in HW_COUNTERS]
 
     # Block state transition events (ph:X, name starts with "genai.cb.blk.")
-    blk_raw = [e for e in genai_complete if e["name"].startswith("genai.cb.blk.")]
+    blk_raw = [e for e in genai_complete if e.get("name", "").startswith("genai.cb.blk.")]
     blk_sorted: list = []
     for e in blk_raw:
-        parsed = _parse_blk_name(e["name"])
+        parsed = _parse_blk_event(e)
         if parsed is not None:
             blk_sorted.append((e["ts"], parsed))
     blk_sorted.sort(key=lambda x: x[0])
@@ -236,9 +324,7 @@ def extract(events: list) -> dict:
             if name.startswith("genai.cb."):
                 cb_event_counts[name.split(":", 1)[0]] += 1
 
-        observed = ", ".join(
-            f"{name} ({count})" for name, count in sorted(cb_event_counts.items())[:12]
-        )
+        observed = ", ".join(f"{name} ({count})" for name, count in sorted(cb_event_counts.items())[:12])
         if cb_event_counts:
             raise ValueError(
                 "Found GenAI continuous-batching events, but no complete "
@@ -246,11 +332,11 @@ def extract(events: list) -> dict:
                 "The capture is missing the step parent event; it may have started "
                 "mid-step or ended before the benchmark completed. Record from "
                 "before the first request through the benchmark's 'Benchmark finished' "
-                "message, and export complete events in the 'ov.genai' category."
+                "message, and export complete events from the GenAI ITT domains."
             )
         raise ValueError(
             "No 'genai.cb.step' spans or other 'genai.cb.*' events found in "
-            "complete 'ov.genai' events. Verify the ITT-enabled GenAI library "
+            "complete GenAI-domain events. Verify the ITT-enabled GenAI library "
             "and continuous-batching benchmark are being captured."
         )
 
@@ -273,23 +359,22 @@ def extract(events: list) -> dict:
     cfg_blk_sz   = 0   # block_size_tokens from genai.cb.config
     cfg_blk_total = 0  # total_kv_blocks from genai.cb.config
     for e in genai_complete:
-        m = _CFG_RE.match(e["name"])
-        if m:
-            cfg_blk_sz    = int(m.group("blk_sz"))
-            cfg_blk_total = int(m.group("blks"))
+        config = _parse_config_event(e)
+        if config is not None:
+            cfg_blk_sz, cfg_blk_total = config
             break
 
     # ── Parse req.done events → keyed by seq_id ──────────────────────────────
     # {seq_id → {req_id, prompt_len, gen_len, step_id_when_done}}
     req_done: dict = {}
     for e in genai_complete:
-        m = _DONE_RE.match(e["name"])
-        if m:
-            seq_id = int(m.group("seq"))
+        done = _parse_done_event(e)
+        if done is not None:
+            seq_id = done["seq_id"]
             req_done[seq_id] = {
-                "req_id":     int(m.group("req")),
-                "prompt_len": int(m.group("prompt")),
-                "gen_len":    int(m.group("gen")),
+                "req_id":     done["request_id"],
+                "prompt_len": done["prompt_len"],
+                "gen_len":    done["generated_len"],
                 "ts":         e["ts"],
             }
 
@@ -308,12 +393,10 @@ def extract(events: list) -> dict:
         # Parse step.meta from direct children
         active, waiting, sched_tokens, is_prefill = 0, 0, 0, False
         for child in direct_children:
-            m = _META_RE.match(child["name"])
-            if m:
-                active       = int(m.group("a"))
-                waiting      = int(m.group("w"))
-                sched_tokens = int(m.group("s"))
-                is_prefill   = bool(int(m.group("p")))
+            metadata = _parse_step_metadata(child)
+            if metadata is not None:
+                active, waiting, sched_tokens, is_prefill_value = metadata
+                is_prefill = bool(is_prefill_value)
                 break
 
         # Gather subtask durations — also look one level deeper (copy_blocks
@@ -394,11 +477,30 @@ def extract(events: list) -> dict:
             max((ev["pi"] for _, ev in blk_sorted), default=0) + 1
         )
 
-        # Prefix hit count from "hit" events
+        # Prefix hits happen during request admission; later decode allocations
+        # are not cache lookup misses and must not dilute this rate.
         hit_count   = sum(1 for _, ev in blk_sorted if ev["kind"] == "hit")
         alloc_count = sum(1 for _, ev in blk_sorted if ev["kind"] == "alloc")
-        prefix_cache_hit_rate = round(hit_count / (hit_count + alloc_count), 4) \
-            if (hit_count + alloc_count) > 0 else 0.0
+        if cfg_blk_sz > 0 and req_done:
+            prompt_lengths_by_request = {}
+            for info in req_done.values():
+                req_id = info["req_id"]
+                prompt_lengths_by_request[req_id] = max(
+                    info["prompt_len"],
+                    prompt_lengths_by_request.get(req_id, 0),
+                )
+            prompt_block_count = sum(
+                (prompt_len + cfg_blk_sz - 1) // cfg_blk_sz
+                for prompt_len in prompt_lengths_by_request.values()
+            )
+        else:
+            prompt_block_count = 0
+
+        if prompt_block_count > 0:
+            prefix_cache_hit_rate = round(min(hit_count, prompt_block_count) / prompt_block_count, 4)
+        else:
+            prefix_cache_hit_rate = round(hit_count / (hit_count + alloc_count), 4) \
+                if (hit_count + alloc_count) > 0 else 0.0
 
         # Hits per sequence (for seq_summaries)
         hit_blocks_per_seq: dict = defaultdict(int)
@@ -458,6 +560,16 @@ def extract(events: list) -> dict:
         })
     seq_summaries.sort(key=lambda x: x["seq_id"])
 
+    request_ids = {summary["req_id"] for summary in seq_summaries}
+    request_ids_with_prefix_hits = {
+        summary["req_id"]
+        for summary in seq_summaries
+        if hit_blocks_per_seq.get(summary["seq_id"], 0) > 0
+    }
+    prefix_cache_request_hit_rate = (
+        len(request_ids_with_prefix_hits) / len(request_ids) if request_ids else 0.0
+    )
+
     # ── Per-sequence prefill window from block events ─────────────────────────
     # Using step-level is_prefill is wrong: it's True whenever ANY sequence in
     # the batch is prefilling, so a decode sequence looks like it's prefilling
@@ -515,21 +627,21 @@ def extract(events: list) -> dict:
                 sched_tid = child["args"].get("task_id.d1")
                 if sched_tid is not None:
                     for gc in by_parent_id.get(sched_tid, []):
-                        m2 = _SEQ_STEP_RE.match(gc["name"])
-                        if m2:
-                            sid = int(m2.group("s"))
+                        seq_step = _parse_sequence_step(gc)
+                        if seq_step is not None:
+                            sid, tokens, is_prefill = seq_step
                             seq_step_map[sid] = {
-                                "tokens":     int(m2.group("t")),
-                                "is_prefill": bool(int(m2.group("p"))),
+                                "tokens":     tokens,
+                                "is_prefill": bool(is_prefill),
                             }
             else:
                 # Also accept direct children for forward-compatibility
-                m2 = _SEQ_STEP_RE.match(child["name"])
-                if m2:
-                    sid = int(m2.group("s"))
+                seq_step = _parse_sequence_step(child)
+                if seq_step is not None:
+                    sid, tokens, is_prefill = seq_step
                     seq_step_map[sid] = {
-                        "tokens":     int(m2.group("t")),
-                        "is_prefill": bool(int(m2.group("p"))),
+                        "tokens":     tokens,
+                        "is_prefill": bool(is_prefill),
                     }
         if seq_step_map:
             seq_step_by_step[step_id] = seq_step_map
@@ -633,6 +745,9 @@ def extract(events: list) -> dict:
         "total_finishes":           len(seq_summaries),
         "peak_cache_usage":         peak_cache_usage,
         "prefix_cache_hit_rate":    prefix_cache_hit_rate,
+        "prefix_cache_requests_with_hits": len(request_ids_with_prefix_hits),
+        "prefix_cache_request_count": len(request_ids),
+        "prefix_cache_request_hit_rate": round(prefix_cache_request_hit_rate, 4),
         "avg_step_duration_us":     int(sum(durations) / len(durations)) if durations else 0,
         "p50_step_duration_us":     percentile(durations, 50),
         "p99_step_duration_us":     percentile(durations, 99),
@@ -710,7 +825,9 @@ def main():
         f"  Block size (tok):   {bm.get('block_size_tokens', 0)}\n"
         f"  Total KV blocks:    {bm.get('total_kv_blocks', 0)}\n"
         f"  Peak cache usage:   {m['peak_cache_usage']:.1%}\n"
-        f"  Prefix hit rate:    {m['prefix_cache_hit_rate']:.1%}\n"
+        f"  Prompt-block hit rate: {m['prefix_cache_hit_rate']:.1%}\n"
+        f"  Requests with hits: {m['prefix_cache_requests_with_hits']}/{m['prefix_cache_request_count']} "
+        f"({m['prefix_cache_request_hit_rate']:.1%})\n"
         f"  Requests finished:  {m['total_finishes']}\n"
         f"  Seq summaries:      {len(result.get('seq_summaries', []))}\n",
         file=sys.stderr,

@@ -114,18 +114,18 @@ DecodedResults StatefulLLMPipeline::get_decoded_results(
     std::chrono::steady_clock::time_point tokenization_start_time,
     std::optional<float> chat_template_duration_us
 ) {
-    GENAI_ITT_SCOPED_TASK("genai.stateful.get_decoded_results");
+    GENAI_ITT_SCOPED_TASK_LLM("genai.stateful.get_decoded_results");
     auto encode_stop_time =  std::chrono::steady_clock::now();
     EncodedResults encoded_results;
     {
-        GENAI_ITT_SCOPED_TASK("genai.stateful.generate_encoded");
+        GENAI_ITT_SCOPED_TASK_LLM("genai.stateful.generate_encoded");
         encoded_results = generate(encoded_input, generation_config, streamer);
     }
 
     auto decode_start_time =  std::chrono::steady_clock::now();
     DecodedResults decoded_results;
     {
-        GENAI_ITT_SCOPED_TASK("genai.stateful.detokenize");
+        GENAI_ITT_SCOPED_TASK_LLM("genai.stateful.detokenize");
         decoded_results.texts = m_tokenizer.decode(encoded_results.tokens);
         decoded_results.scores = encoded_results.scores;
         decoded_results.finish_reasons = encoded_results.finish_reasons;
@@ -155,7 +155,7 @@ DecodedResults StatefulLLMPipeline::generate(
     StringInputs inputs,
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer) {
-    GENAI_ITT_SCOPED_TASK("genai.stateful.generate_string_inputs");
+    GENAI_ITT_SCOPED_TASK_LLM("genai.stateful.generate_string_inputs");
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::UNDEF)
         m_chat_input_type = ov::genai::utils::GenerationChatInputsType::STRING;
 
@@ -172,7 +172,7 @@ DecodedResults StatefulLLMPipeline::generate(
     std::optional<float> chat_template_duration_us;
 
     {
-        GENAI_ITT_SCOPED_TASK("genai.stateful.tokenize");
+        GENAI_ITT_SCOPED_TASK_LLM("genai.stateful.tokenize");
 
         if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
             if (is_chat_conversation) {
@@ -247,7 +247,7 @@ DecodedResults StatefulLLMPipeline::generate(
     }
     DecodedResults decoded_results;
     {
-        GENAI_ITT_SCOPED_TASK("genai.stateful.decode_results");
+        GENAI_ITT_SCOPED_TASK_LLM("genai.stateful.decode_results");
         decoded_results = get_decoded_results(
             encoded_input,
             config,

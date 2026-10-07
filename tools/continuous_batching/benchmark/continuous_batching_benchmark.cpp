@@ -188,6 +188,7 @@ class GenerationInfo {
         std::chrono::milliseconds mean_tpot = std::chrono::milliseconds::zero();
         size_t num_output_tokens = 0;
         size_t num_input_tokens = 0;
+        size_t num_prefix_cache_hit_tokens = 0;
     };
 
     ov::genai::GenerationHandle generation_handle;
@@ -248,6 +249,7 @@ public:
             generation_metrics.mean_ttft /= sequences_info.size();
             generation_metrics.mean_tpot /= sequences_info.size();
             generation_metrics.num_input_tokens = input_len;
+            generation_metrics.num_prefix_cache_hit_tokens = generation_handle->get_perf_metrics().num_prefix_cache_hit_tokens;
         }
         return generation_metrics;
     }
@@ -305,6 +307,8 @@ public:
         std::chrono::milliseconds mean_tpot = std::chrono::milliseconds::zero();
         size_t total_input_len = 0;
         size_t total_output_len = 0;
+        size_t total_prefix_cache_hit_tokens = 0;
+        size_t requests_with_prefix_hits = 0;
         
     
         for (GenerationInfo& generation_info : generations_info){
@@ -313,12 +317,16 @@ public:
             mean_tpot += generation_metrics.mean_tpot;
             total_input_len += generation_metrics.num_input_tokens;
             total_output_len += generation_metrics.num_output_tokens;
+            total_prefix_cache_hit_tokens += generation_metrics.num_prefix_cache_hit_tokens;
+            requests_with_prefix_hits += generation_metrics.num_prefix_cache_hit_tokens > 0;
         }
         mean_ttft /= generations_info.size();
         mean_tpot /= generations_info.size();
         std::cout << "Benchmark duration: " << total_duration.count() << " s" << std::endl;
         std::cout << "Total number of input tokens: " << total_input_len << std::endl;
         std::cout << "Total number of output tokens: " << total_output_len << std::endl;
+        std::cout << "Prefix cache hit tokens: " << total_prefix_cache_hit_tokens << " / " << total_input_len << std::endl;
+        std::cout << "Requests with prefix cache hits: " << requests_with_prefix_hits << " / " << generations_info.size() << std::endl;
         std::cout << "Input throughput: " << total_input_len / total_duration.count() << " tokens / s" << std::endl;
         std::cout << "Output throughput: " << total_output_len / total_duration.count() << " tokens / s" << std::endl;
         std::cout << "Mean TTFT: " << mean_ttft.count() << " ms" << std::endl;

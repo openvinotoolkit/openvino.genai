@@ -25,33 +25,15 @@ inline void blk_event(const char* kind, size_t seq_id, size_t phys_idx, size_t h
         return;
     }
 
-    char event_name[128];
+    char event_name[64];
+    std::snprintf(event_name, sizeof(event_name), "genai.cb.blk.%s", kind);
+    ::ov::genai::itt::ScopedTask event_task(event_name, ::ov::genai::itt::Domain::ContinuousBatching);
+    event_task.add_metadata("seq_id", seq_id);
+    event_task.add_metadata("physical_index", phys_idx);
+    event_task.add_metadata("hash", hash);
     if (extra > 0) {
-        std::snprintf(event_name,
-                      sizeof(event_name),
-                      "genai.cb.blk.%s:s=%zu,pi=%zu,h=%zx,x=%zu",
-                      kind,
-                      seq_id,
-                      phys_idx,
-                      hash,
-                      extra);
-    } else if (hash > 0) {
-        std::snprintf(event_name,
-                      sizeof(event_name),
-                      "genai.cb.blk.%s:s=%zu,pi=%zu,h=%zx",
-                      kind,
-                      seq_id,
-                      phys_idx,
-                      hash);
-    } else {
-        std::snprintf(event_name,
-                      sizeof(event_name),
-                      "genai.cb.blk.%s:s=%zu,pi=%zu",
-                      kind,
-                      seq_id,
-                      phys_idx);
+        event_task.add_metadata("extra", extra);
     }
-    ::ov::genai::itt::ScopedTask event_task(event_name);
 }
 }  // namespace
 
@@ -1331,7 +1313,7 @@ public:
             for (size_t layer_idx = 0; layer_idx < effective_num_layers; layer_idx++) {
                blocks_to_free.push_back(block_table[layer_idx][i]);
             }
-                blk_event("free", seq_id, blocks_to_free[0]->get_index(), blocks_to_free[0]->get_hash());
+            blk_event("free", seq_id, blocks_to_free[0]->get_index(), blocks_to_free[0]->get_hash());
             free_cached_blocks(blocks_to_free);
         }
 

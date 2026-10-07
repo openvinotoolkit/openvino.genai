@@ -234,7 +234,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::InferRequest& request,
     const ov::genai::Tokenizer& tokenizer,
     OptionalGenerationConfig generation_config) {
-    GENAI_ITT_SCOPED_TASK("genai.llm.pipeline.create.infer_request");
+    GENAI_ITT_SCOPED_TASK_LLM("genai.llm.pipeline.create.infer_request");
     auto start_time = std::chrono::steady_clock::now();
     m_pimpl = std::make_unique<StatefulLLMPipeline>(request, tokenizer, generation_config);
     m_pimpl->save_load_time(start_time);
@@ -247,7 +247,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::string& device,
     const ov::AnyMap& user_properties) :
     m_device(device) {
-    GENAI_ITT_SCOPED_TASK("genai.llm.pipeline.create.path_with_tokenizer");
+    GENAI_ITT_SCOPED_TASK_LLM("genai.llm.pipeline.create.path_with_tokenizer");
     auto start_time = std::chrono::steady_clock::now();
 
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
@@ -292,7 +292,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::string& device,
     const ov::AnyMap& user_properties) :
     m_device(device) {
-    GENAI_ITT_SCOPED_TASK("genai.llm.pipeline.create.path");
+    GENAI_ITT_SCOPED_TASK_LLM("genai.llm.pipeline.create.path");
     auto start_time = std::chrono::steady_clock::now();
 
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
@@ -343,7 +343,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::AnyMap& user_properties,
     const ov::genai::GenerationConfig& generation_config) :
     m_device(device) {
-    GENAI_ITT_SCOPED_TASK("genai.llm.pipeline.create.model_buffer");
+    GENAI_ITT_SCOPED_TASK_LLM("genai.llm.pipeline.create.model_buffer");
     auto start_time = std::chrono::steady_clock::now();
 
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
@@ -397,19 +397,18 @@ DecodedResults LLMPipeline::generate(
         StringInputs inputs,
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer) {
-    GENAI_ITT_SCOPED_TASK("genai.llm.pipeline.generate.inputs");
-    GENAI_ITT_SCOPED_TASK("genai.metrics.request_begin");
+    GENAI_ITT_SCOPED_TASK_LLM("genai.llm.pipeline.generate.inputs");
+    GENAI_ITT_SCOPED_REGION_D(GENAI_ITT_METRICS_DOMAIN(), "genai.metrics.request_begin");
 
     auto result = run_generate_with_parsers(generation_config, streamer, [&]() -> DecodedResults {
         return m_pimpl->generate(inputs, generation_config, streamer);
     });
-    GENAI_ITT_SCOPED_TASK("genai.metrics.request_end");
     return result;
 }
 
 DecodedResults LLMPipeline::generate(StringInputs text, const ov::AnyMap& config_map) {
-    GENAI_ITT_SCOPED_TASK("genai.llm.pipeline.generate.inputs_map");
-    GENAI_ITT_SCOPED_TASK("genai.metrics.request_begin");
+    GENAI_ITT_SCOPED_TASK_LLM("genai.llm.pipeline.generate.inputs_map");
+    GENAI_ITT_SCOPED_REGION_D(GENAI_ITT_METRICS_DOMAIN(), "genai.metrics.request_begin");
     auto config_arg = utils::get_config_from_map(config_map);
     GenerationConfig config = config_arg.value_or(get_generation_config());
     config.update_generation_config(config_map);
@@ -418,7 +417,6 @@ DecodedResults LLMPipeline::generate(StringInputs text, const ov::AnyMap& config
     auto result = run_generate_with_parsers(config_arg, streamer, [&]() -> DecodedResults {
         return m_pimpl->generate(text, config, streamer);
     });
-    GENAI_ITT_SCOPED_TASK("genai.metrics.request_end");
     return result;
 }
 
@@ -426,18 +424,17 @@ DecodedResults LLMPipeline::generate(
         const ChatHistory& history,
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer) {
-    GENAI_ITT_SCOPED_TASK("genai.llm.pipeline.generate.chat");
-    GENAI_ITT_SCOPED_TASK("genai.metrics.request_begin");
+    GENAI_ITT_SCOPED_TASK_LLM("genai.llm.pipeline.generate.chat");
+    GENAI_ITT_SCOPED_REGION_D(GENAI_ITT_METRICS_DOMAIN(), "genai.metrics.request_begin");
     auto result = run_generate_with_parsers(generation_config, streamer, [&]() -> DecodedResults {
         return m_pimpl->generate(history, generation_config, streamer);
     });
-    GENAI_ITT_SCOPED_TASK("genai.metrics.request_end");
     return result;
 }
 
 DecodedResults LLMPipeline::generate(const ChatHistory& history, const ov::AnyMap& config_map) {
-    GENAI_ITT_SCOPED_TASK("genai.llm.pipeline.generate.chat_map");
-    GENAI_ITT_SCOPED_TASK("genai.metrics.request_begin");
+    GENAI_ITT_SCOPED_TASK_LLM("genai.llm.pipeline.generate.chat_map");
+    GENAI_ITT_SCOPED_REGION_D(GENAI_ITT_METRICS_DOMAIN(), "genai.metrics.request_begin");
     auto config_arg = utils::get_config_from_map(config_map);
     GenerationConfig config = config_arg.value_or(get_generation_config());
     config.update_generation_config(config_map);
@@ -446,7 +443,6 @@ DecodedResults LLMPipeline::generate(const ChatHistory& history, const ov::AnyMa
     auto result = run_generate_with_parsers(config, streamer, [&]() -> DecodedResults {
         return m_pimpl->generate(history, config, streamer);
     });
-    GENAI_ITT_SCOPED_TASK("genai.metrics.request_end");
     return result;
 }
 
@@ -454,22 +450,20 @@ EncodedResults LLMPipeline::generate(
     const EncodedInputs& inputs,
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer) {
-    GENAI_ITT_SCOPED_TASK("genai.llm.pipeline.generate.encoded");
-    GENAI_ITT_SCOPED_TASK("genai.metrics.request_begin");
+    GENAI_ITT_SCOPED_TASK_LLM("genai.llm.pipeline.generate.encoded");
+    GENAI_ITT_SCOPED_REGION_D(GENAI_ITT_METRICS_DOMAIN(), "genai.metrics.request_begin");
     auto result = m_pimpl->generate(inputs, generation_config, streamer);
-    GENAI_ITT_SCOPED_TASK("genai.metrics.request_end");
     return result;
 }
 
 EncodedResults LLMPipeline::generate(const EncodedInputs& inputs, const ov::AnyMap& config_map) {
-    GENAI_ITT_SCOPED_TASK("genai.llm.pipeline.generate.encoded_map");
-    GENAI_ITT_SCOPED_TASK("genai.metrics.request_begin");
+    GENAI_ITT_SCOPED_TASK_LLM("genai.llm.pipeline.generate.encoded_map");
+    GENAI_ITT_SCOPED_REGION_D(GENAI_ITT_METRICS_DOMAIN(), "genai.metrics.request_begin");
     auto config_arg = utils::get_config_from_map(config_map);
     GenerationConfig config = config_arg.value_or(get_generation_config());
     config.update_generation_config(config_map);
 
     auto result = m_pimpl->generate(inputs, config, utils::get_streamer_from_map(config_map));
-    GENAI_ITT_SCOPED_TASK("genai.metrics.request_end");
     return result;
 }
 
@@ -482,17 +476,17 @@ ov::genai::Tokenizer ov::genai::LLMPipeline::get_tokenizer() {
 }
 
 void ov::genai::LLMPipeline::start_chat(const std::string& system_message) {
-    GENAI_ITT_SCOPED_TASK("genai.llm.pipeline.start_chat");
+    GENAI_ITT_SCOPED_TASK_LLM("genai.llm.pipeline.start_chat");
     m_pimpl->start_chat(system_message);
 }
 
 void ov::genai::LLMPipeline::finish_chat() {
-    GENAI_ITT_SCOPED_TASK("genai.llm.pipeline.finish_chat");
+    GENAI_ITT_SCOPED_TASK_LLM("genai.llm.pipeline.finish_chat");
     m_pimpl->finish_chat();
 }
 
 void ov::genai::LLMPipeline::set_generation_config(const GenerationConfig& config) {
-    GENAI_ITT_SCOPED_TASK("genai.llm.pipeline.set_generation_config");
+    GENAI_ITT_SCOPED_TASK_LLM("genai.llm.pipeline.set_generation_config");
     m_pimpl->set_generation_config(config);
 }
 

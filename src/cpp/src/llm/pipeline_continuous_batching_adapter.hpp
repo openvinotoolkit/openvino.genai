@@ -93,7 +93,7 @@ public:
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer
     ) override {
-        GENAI_ITT_COUNTER_INC("genai.metrics.generate_calls");
+        GENAI_ITT_COUNTER_INC_METRICS("genai.metrics.generate_calls");
         // Get the current timestamp in order to evaluate total generate duration.
         auto start_time =  std::chrono::steady_clock::now();
         
@@ -163,7 +163,7 @@ public:
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer
     ) override {
-        GENAI_ITT_COUNTER_INC("genai.metrics.generate_calls");
+        GENAI_ITT_COUNTER_INC_METRICS("genai.metrics.generate_calls");
         auto start_time =  std::chrono::steady_clock::now();
         const GenerationConfig& config = generation_config.value_or(m_generation_config);
         std::vector<ChatHistory> histories = std::vector{history};
@@ -224,7 +224,7 @@ public:
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer
     ) override {
-        GENAI_ITT_COUNTER_INC("genai.metrics.generate_calls");
+        GENAI_ITT_COUNTER_INC_METRICS("genai.metrics.generate_calls");
         // Get the current timestamp in order to evaluate total generate duration.
         auto start_time =  std::chrono::steady_clock::now();
 

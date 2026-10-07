@@ -3,7 +3,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <cstdio>
 #include <optional>
 #include <thread>
 
@@ -251,13 +250,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     m_sampler = std::make_shared<Sampler>(m_tokenizer, sampler_num_threads);
 
     if (GENAI_CB_TRACE_ENABLED()) {
-        char config_event[128];
-        std::snprintf(config_event,
-                      sizeof(config_event),
-                      "genai.cb.config:blk_sz=%zu,blks=%zu",
-                      m_scheduler->get_block_size(CacheType::KV_CACHE),
-                      normalized_config.num_kv_blocks);
-        ::ov::genai::itt::ScopedTask config_task(config_event);
+        ::ov::genai::itt::ScopedTask config_event("genai.cb.config",
+                                                  ::ov::genai::itt::Domain::ContinuousBatching);
+        config_event.add_metadata("block_size_tokens", m_scheduler->get_block_size(CacheType::KV_CACHE));
+        config_event.add_metadata("total_kv_blocks", normalized_config.num_kv_blocks);
     }
 
     // If eos_token_id was not provided, take value
@@ -486,7 +482,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_linear_attentio
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
-    GENAI_ITT_SCOPED_TASK("genai.cb.step");
+    GENAI_ITT_SCOPED_TASK_CB("genai.cb.step");
     static ManualTimer step_timer("step()");
     step_timer.start();
 
@@ -497,7 +493,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     Scheduler::Output scheduler_output;
 
     {
-        GENAI_ITT_SCOPED_TASK("genai.cb.scheduling");
+        GENAI_ITT_SCOPED_TASK_CB("genai.cb.scheduling");
         static ManualTimer scheduling_timer("scheduling");
         scheduling_timer.start();
         scheduler_output = m_scheduler->schedule(m_requests);
@@ -529,15 +525,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
             request->is_waiting() ? ++waiting_requests : ++active_requests;
         }
 
-        char step_metadata[128];
-        std::snprintf(step_metadata,
-                      sizeof(step_metadata),
-                      "genai.cb.step.meta:a=%zu,w=%zu,s=%zu,p=%d",
-                      active_requests,
-                      waiting_requests,
-                      scheduler_output.m_total_num_scheduled_tokens,
-                      scheduler_output.is_prompt ? 1 : 0);
-        ::ov::genai::itt::ScopedTask metadata_task(step_metadata);
+        ::ov::genai::itt::ScopedTask step_metadata("genai.cb.step.meta",
+                               ::ov::genai::itt::Domain::ContinuousBatching);
+        step_metadata.add_metadata("active", active_requests);
+        step_metadata.add_metadata("waiting", waiting_requests);
+        step_metadata.add_metadata("scheduled_tokens", scheduler_output.m_total_num_scheduled_tokens);
+        step_metadata.add_metadata("is_prefill", scheduler_output.is_prompt ? 1 : 0);
     }
 
     // if no tokens were scheduled, we are out of memory => free all requests and return
@@ -573,7 +566,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     ov::Tensor logits;
 
     {
-        GENAI_ITT_SCOPED_TASK("genai.cb.forward");
+        GENAI_ITT_SCOPED_TASK_CB("genai.cb.forward");
         static ManualTimer timer("forward");
         const auto infer_start = std::chrono::steady_clock::now();
         timer.start();
@@ -605,7 +598,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
 
     SamplerOutput sampler_output;
     {
-        GENAI_ITT_SCOPED_TASK("genai.cb.sample");
+        GENAI_ITT_SCOPED_TASK_CB("genai.cb.sample");
         static ManualTimer timer("sample");
         timer.start();
         const auto sample_start = std::chrono::steady_clock::now();
@@ -623,7 +616,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
 
     // process sampler_output (e.g. fork or drop sequences from BlockScheduler)
     {
-        GENAI_ITT_SCOPED_TASK("genai.cb.fork_free");
+        GENAI_ITT_SCOPED_TASK_CB("genai.cb.fork_free");
         static ManualTimer free_fork_timer("fork / free sequence");
         free_fork_timer.start();
 
@@ -680,21 +673,18 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
                 continue;
             }
             for (const auto& sequence : request->get_sequences()) {
-                char request_event[256];
-                std::snprintf(request_event,
-                              sizeof(request_event),
-                              "genai.cb.req.done:req=%llu,seq=%llu,prompt=%zu,gen=%zu",
-                              static_cast<unsigned long long>(request->get_request_id()),
-                              static_cast<unsigned long long>(sequence->get_id()),
-                              request->get_prompt_len(),
-                              sequence->get_generated_len());
-                ::ov::genai::itt::ScopedTask done_task(request_event);
+                ::ov::genai::itt::ScopedTask done_task("genai.cb.req.done",
+                                                       ::ov::genai::itt::Domain::ContinuousBatching);
+                done_task.add_metadata("request_id", request->get_request_id());
+                done_task.add_metadata("seq_id", sequence->get_id());
+                done_task.add_metadata("prompt_len", request->get_prompt_len());
+                done_task.add_metadata("generated_len", sequence->get_generated_len());
             }
         }
     }
 
     {
-        GENAI_ITT_SCOPED_TASK("genai.cb.cleanup");
+        GENAI_ITT_SCOPED_TASK_CB("genai.cb.cleanup");
         static ManualTimer clean_up_requests_timer("free non running requests");
         clean_up_requests_timer.start();
         _free_non_running_requests();

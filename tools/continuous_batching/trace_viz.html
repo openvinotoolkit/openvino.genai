@@ -166,7 +166,8 @@
   <div class="metric"><span class="label">Preemptions</span><span class="value" id="m-pre">—</span></div>
   <div class="metric"><span class="label">OOMs</span><span class="value" id="m-oom">—</span></div>
   <div class="metric"><span class="label">Peak cache</span><span class="value" id="m-cache">—</span></div>
-  <div class="metric"><span class="label">Prefix hit rate</span><span class="value" id="m-pfx">—</span></div>
+  <div class="metric"><span class="label">Prompt-block hit rate</span><span class="value" id="m-pfx">—</span></div>
+  <div class="metric"><span class="label">Requests with prefix hits</span><span class="value" id="m-pfx-requests">—</span></div>
   <div class="metric"><span class="label">p50 step (µs)</span><span class="value" id="m-p50">—</span></div>
   <div class="metric"><span class="label">p99 step (µs)</span><span class="value" id="m-p99">—</span></div>
   <div class="metric"><span class="label">Peak tok/s</span><span class="value" id="m-tps">—</span></div>
@@ -476,7 +477,17 @@ function fillMetrics(m, data) {
   document.getElementById("m-pre").textContent   = m.total_preemptions.toLocaleString();
   document.getElementById("m-oom").textContent   = m.total_ooms.toLocaleString();
   document.getElementById("m-cache").textContent = (m.peak_cache_usage * 100).toFixed(1) + "%";
-  document.getElementById("m-pfx").textContent   = (m.prefix_cache_hit_rate * 100).toFixed(1) + "%";
+  document.getElementById("m-pfx").textContent = (m.prefix_cache_hit_rate * 100).toFixed(1) + "%";
+  const seqSummaries = data.seq_summaries || [];
+  const prefixRequestCount = m.prefix_cache_request_count ??
+    new Set(seqSummaries.map(summary => summary.req_id)).size;
+  const prefixHitRequests = m.prefix_cache_requests_with_hits ??
+    new Set(seqSummaries.filter(summary => (summary.prefix_hit_tokens || 0) > 0)
+                         .map(summary => summary.req_id)).size;
+  const prefixRequestRate = m.prefix_cache_request_hit_rate ??
+    (prefixRequestCount > 0 ? prefixHitRequests / prefixRequestCount : 0);
+  document.getElementById("m-pfx-requests").textContent =
+    `${prefixHitRequests}/${prefixRequestCount} (${(prefixRequestRate * 100).toFixed(1)}%)`;
   document.getElementById("m-p50").textContent   = m.p50_step_duration_us.toLocaleString();
   document.getElementById("m-p99").textContent   = m.p99_step_duration_us.toLocaleString();
 

@@ -51,9 +51,16 @@ Load the temporary `analysis.json` with the HTML page's file picker. The
 converter expects `genai.cb.step` spans and associated metadata events for step
 counts, per-sequence scheduling, request completion, and KV-block lifecycle.
 Check that the output reports nonzero steps and sequences, and that memory
-snapshots are present when KV-block events were captured.
+snapshots are present when KV-block events were captured. The global prefix
+hit rate is hit prompt blocks divided by total prompt blocks; decode-time KV
+allocations are excluded from its denominator. The report also shows the
+request-level hit rate: unique completed requests with at least one cached
+prompt block divided by all completed requests.
 
 If conversion reports CB events but no complete `genai.cb.step` span, the trace
 is incomplete for report reconstruction. Start capture before launching the
 benchmark and stop only after it prints `Benchmark finished`; do not filter the
 `ov.genai` events during export.
+
+The converter also handles UT exports that serialize numeric ITT metadata as
+decimal strings with a trailing semicolon (for example, `"seq_id": "0;"`).

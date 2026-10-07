@@ -5,7 +5,6 @@
 #pragma once
 
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
 #include <limits>
 #include <map>
@@ -298,7 +297,7 @@ public:
         _validate_linear_attention_paging_modes(sequence_groups);
 
         LinearAttentionReservationTransaction linear_attention_reservations(*m_cache_orchestrator);
-        GENAI_ITT_SCOPED_TASK("genai.cb.schedule");
+        GENAI_ITT_SCOPED_TASK_CB("genai.cb.schedule");
         Output scheduler_output;
         scheduler_output.set_kv_paged_attention_global_data(m_kv_paged_attention_global_data);
         // map of src -> dst blocks copies per cache type
@@ -345,7 +344,7 @@ public:
         // Sample after all scheduling allocations are complete.
         m_cache_orchestrator->sample_linear_attention_pool_blocks_high_water();
 
-        GENAI_ITT_SCOPED_TASK("genai.cb.copy_blocks");
+        GENAI_ITT_SCOPED_TASK_CB("genai.cb.copy_blocks");
         m_cache_orchestrator->copy_blocks(typed_block_copy_map);
         linear_attention_reservations.disarm();
         return scheduler_output;
@@ -633,13 +632,12 @@ private:
                     {
                         scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
                         if (GENAI_CB_TRACE_ENABLED()) {
-                            char sequence_event[128];
-                            std::snprintf(sequence_event,
-                                          sizeof(sequence_event),
-                                          "genai.cb.seq.step:s=%llu,t=%zu,p=1",
-                                          static_cast<unsigned long long>(seq_id),
-                                          num_scheduled_tokens);
-                            ::ov::genai::itt::ScopedTask sequence_task(sequence_event);
+                            ::ov::genai::itt::ScopedTask sequence_task(
+                                "genai.cb.seq.step",
+                                ::ov::genai::itt::Domain::ContinuousBatching);
+                            sequence_task.add_metadata("seq_id", seq_id);
+                            sequence_task.add_metadata("scheduled_tokens", num_scheduled_tokens);
+                            sequence_task.add_metadata("is_prefill", 1);
                         }
                         _set_kv_paged_attention_data(scheduler_output, sequence_group, seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += num_scheduled_tokens * num_running_seqs;
@@ -764,13 +762,12 @@ private:
                         // block tables for each running sequence within a group
                         _set_kv_paged_attention_data(scheduler_output, sequence_group, seq_id);
                         if (GENAI_CB_TRACE_ENABLED()) {
-                            char sequence_event[128];
-                            std::snprintf(sequence_event,
-                                          sizeof(sequence_event),
-                                          "genai.cb.seq.step:s=%llu,t=%zu,p=0",
-                                          static_cast<unsigned long long>(seq_id),
-                                          num_scheduled_tokens_per_seq);
-                            ::ov::genai::itt::ScopedTask sequence_task(sequence_event);
+                            ::ov::genai::itt::ScopedTask sequence_task(
+                                "genai.cb.seq.step",
+                                ::ov::genai::itt::Domain::ContinuousBatching);
+                            sequence_task.add_metadata("seq_id", seq_id);
+                            sequence_task.add_metadata("scheduled_tokens", num_scheduled_tokens_per_seq);
+                            sequence_task.add_metadata("is_prefill", 0);
                         }
                     }
 
@@ -870,13 +867,12 @@ private:
                         scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
                         uint64_t seq_id = sequence_group->get_running_sequences()[0]->get_id();
                         if (GENAI_CB_TRACE_ENABLED()) {
-                            char sequence_event[128];
-                            std::snprintf(sequence_event,
-                                          sizeof(sequence_event),
-                                          "genai.cb.seq.step:s=%llu,t=%zu,p=1",
-                                          static_cast<unsigned long long>(seq_id),
-                                          sequence_len);
-                            ::ov::genai::itt::ScopedTask sequence_task(sequence_event);
+                            ::ov::genai::itt::ScopedTask sequence_task(
+                                "genai.cb.seq.step",
+                                ::ov::genai::itt::Domain::ContinuousBatching);
+                            sequence_task.add_metadata("seq_id", seq_id);
+                            sequence_task.add_metadata("scheduled_tokens", sequence_len);
+                            sequence_task.add_metadata("is_prefill", 1);
                         }
                         _set_kv_paged_attention_data(scheduler_output, sequence_group, seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += sequence_len;
