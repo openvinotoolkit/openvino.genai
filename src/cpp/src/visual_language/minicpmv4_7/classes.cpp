@@ -528,9 +528,9 @@ EncodedVideo VisionEncoderMiniCPMv4_7::encode_frames(const std::vector<ov::Tenso
     ov::Tensor features = encode_crops(all_crops, all_crop_sizes, m_video_processor_config);
 
     EncodedVideo encoded_video;
+    encoded_video.num_video_tokens = features.get_shape().at(0);
     // video_features holds every frame's crops concatenated as [total_tokens, hidden_size]
     encoded_video.video_features = std::move(features);
-    encoded_video.num_video_tokens = features.get_shape().at(0);
     encoded_video.frame_num = frames.size();
     encoded_video.resized_source_size = frame_crop_sizes.front();
     encoded_video.crop_sizes = std::move(frame_crop_sizes);
