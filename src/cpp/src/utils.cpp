@@ -875,7 +875,7 @@ ov::CompiledModel compile_kokoro_for_npu_speech_generation(const std::filesystem
                                                            const ov::AnyMap& properties,
                                                            size_t static_input_ids_length) {
     auto& core = singleton_core();
-    auto model = core.read_model(model_path);
+    auto model = core.read_model(model_path, {}, properties);
 
     std::map<std::string, ov::PartialShape> static_shapes;
     if (model->inputs().size() >= 1) {
