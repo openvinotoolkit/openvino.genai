@@ -3,6 +3,7 @@
 
 import shutil
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import openvino
 import pytest
@@ -45,4 +46,12 @@ def delete_rt_info(configs: list[tuple], temp_path):
                         del rt_info[modified_key]
                     except KeyError:
                         pass
-        openvino.save_model(tokenizer, model_path)
+        # save_model reads lazily loaded constants from the original BIN, so writing to the same path invalidates them.
+        # Tracking issue: CVS-193798
+        with TemporaryDirectory(dir=temp_path) as temporary_dir:
+            temporary_model_path = Path(temporary_dir) / model_path.name
+            openvino.save_model(tokenizer, temporary_model_path)
+            del rt_info
+            del tokenizer
+            temporary_model_path.with_suffix(".bin").replace(model_path.with_suffix(".bin"))
+            temporary_model_path.replace(model_path)

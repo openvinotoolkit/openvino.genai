@@ -422,4 +422,19 @@ Such prompts can be used to steer the model to use particular spellings or style
 For the ASR API, refer to the [ASR Generation Config API](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.ASRGenerationConfig.html).
 :::
 
+### Performance Metrics
+
+`ASRPipeline` returns `ASRDecodedResults` with a `perf_metrics` field of type `ASRPerfMetrics`, which extends [`PerfMetrics`](/docs/guides/performance-metrics).
+
+In addition to common metrics (TTFT, TPOT, throughput, etc.), `ASRPerfMetrics` provides:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `get_features_extraction_duration()` | `MeanStdPair`, ms | Time spent extracting audio features (mel spectrogram) |
+| `get_encode_inference_duration()` | `MeanStdPair`, ms | Encoder model inference duration |
+| `get_decode_inference_duration()` | `MeanStdPair`, ms | Decoder model inference duration (all token generation steps) |
+| `get_word_level_timestamps_processing_duration()` | `MeanStdPair`, ms | Time spent processing word-level timestamps |
+
+Raw values are available in the `asr_raw_metrics` field of `ASRPerfMetrics`.
+
 <Streaming />

@@ -130,7 +130,7 @@ struct SchedulerConfig {
         if (cache_interval_multiplier.has_value()) {
             oss << "  cache_interval_multiplier: " << cache_interval_multiplier.value() << "\n";
         } else {
-            oss << "  cache_interval_multiplier: unset\n";
+            oss << "  cache_interval_multiplier: unset (auto defined model-dependent)\n";
         }
         oss << "  dynamic_split_fuse: " << std::boolalpha << dynamic_split_fuse << "\n";
         oss << "  use_cache_eviction: " << std::boolalpha << use_cache_eviction << "\n";

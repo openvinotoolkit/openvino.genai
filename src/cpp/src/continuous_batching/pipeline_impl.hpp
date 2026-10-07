@@ -16,7 +16,7 @@ void prepare_model_for_paged_attention(const std::shared_ptr<ov::Model>& model,
 
 class ContinuousBatchingPipeline::ContinuousBatchingImpl : public ContinuousBatchingPipeline::IContinuousBatchingPipeline {
 protected:
-    std::shared_ptr<Scheduler> m_scheduler;
+    std::shared_ptr<ContinuousBatchingScheduler> m_scheduler;
     std::shared_ptr<ModelRunner> m_model_runner;
     std::optional<AdapterController> m_adapter_controller;
     std::shared_ptr<Sampler> m_sampler;
@@ -75,11 +75,13 @@ protected:
      * Releases non-running (finished, dropped or OOM) requests from running queue
      */
     void _free_non_running_requests();
+    void _notify_handles(const ContinuousBatchingScheduler::Output& scheduler_output);
 
     /**
-     * Notify dropped requests by pushing empty output
+     * Sets load_time and commits perf metrics onto the request's GenerationStream.
+     * Must run before any terminal/echo notification so readers never observe stale metrics.
      */
-    void _notify_requests_dropped_by_handle();
+    void _commit_perf_metrics(const SequenceGroup::Ptr& request);
 
     /**
      * Handles 'echo' generation parameter
@@ -89,15 +91,15 @@ protected:
     /**
      * Performs KV cache eviction is enabled / requireed
      */
-    void _maybe_evict_cache_blocks(const SchedulerConfig& sched_config, const Scheduler::Output& scheduler_output);
+    void _maybe_evict_cache_blocks(const SchedulerConfig& sched_config, const ContinuousBatchingScheduler::Output& scheduler_output);
 
 
     void _register_step_cache_usage(float step_cache_usage);
     void _reset_cache_usage_statistics();
     float _get_current_running_average_cache_usage() const;
-    void _compute_cache_rotation_data(const std::vector<SequenceGroup::Ptr>& sequence_groups, const Scheduler::Output& scheduler_output);
+    void _compute_cache_rotation_data(const std::vector<SequenceGroup::Ptr>& sequence_groups, const ContinuousBatchingScheduler::Output& scheduler_output);
     void _prepare_rotation_data_storage(const SchedulerConfig& normalized_config, size_t embedding_size);
-    void _set_adaptive_rkv_diversity_blocks(const SchedulerConfig& sched_config, const Scheduler::Output& scheduler_output);
+    void _set_adaptive_rkv_diversity_blocks(const SchedulerConfig& sched_config, const ContinuousBatchingScheduler::Output& scheduler_output);
 
     void _validate_linear_verifier_constraints() const;
 
@@ -105,13 +107,13 @@ protected:
     void _reserve_linear_attention_scratch();
 
     /// Commits speculative LA checkpoint transactions after sampling.
-    virtual void _commit_linear_attention_checkpoint_transactions(const Scheduler::Output& scheduler_output);
+    virtual void _commit_linear_attention_checkpoint_transactions(const ContinuousBatchingScheduler::Output& scheduler_output);
 
     /// Mirrors the scheduler's cumulative speculative LA counters into the pipeline metrics.
     void _publish_linear_attention_pool_metric();
 
     /// Returns borrowed LA rows of every scheduled sequence to the pool (used on the failure path).
-    void _release_linear_attention_borrowed_rows(const Scheduler::Output& scheduler_output);
+    void _release_linear_attention_borrowed_rows(const ContinuousBatchingScheduler::Output& scheduler_output);
 
     virtual void drop_requests();
 
@@ -138,7 +140,6 @@ public:
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
                                  const ov::genai::GenerationConfig& sampling_params,
-                                 std::optional<ov::Tensor> token_type_ids = std::nullopt,
                                  std::optional<ov::Tensor> prompt_ids = std::nullopt,
                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs = std::nullopt) override;
 
@@ -165,7 +166,6 @@ public:
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer,
-             const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt,
              const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list = std::nullopt,
              const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
              const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) override;

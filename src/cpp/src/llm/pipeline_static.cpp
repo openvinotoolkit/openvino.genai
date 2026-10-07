@@ -60,6 +60,10 @@ void stream_generated_tokens(std::shared_ptr<ov::genai::StreamerBase> streamer_p
                              ov::genai::GenerationHandle& handle) {
     if (streamer_ptr && handle->can_read()) {
         std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
+        if (token.empty()) {
+            // Empty terminator pushed by notify_handle_final()/notify_handle_oom() to unblock readers.
+            return;
+        }
         auto streaming_status = streamer_ptr->write(token.begin()->second.generated_ids);
         if (streaming_status == ov::genai::StreamingStatus::TOOL_CALL_STOP) {
             handle->stop(ov::genai::GenerationFinishReason::TOOL_CALL);
@@ -332,6 +336,7 @@ EncodedResults StatefulLLMPipeline::generate(
     SamplerOutput sampler_output = m_sampler.sample({sequence_group}, logits);
     raw_perf_counters.m_sampling_durations.emplace_back(
         PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
+    sequence_group->notify_handle();
     stream_generated_tokens(streamer_ptr, handle);
 
     int64_t input_ids_data = -1;
@@ -368,6 +373,7 @@ EncodedResults StatefulLLMPipeline::generate(
         SamplerOutput sampler_output = m_sampler.sample({sequence_group}, m_request.get_tensor("logits"));
         raw_perf_counters.m_sampling_durations.emplace_back(
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
+        sequence_group->notify_handle();
         stream_generated_tokens(streamer_ptr, handle);
     }
 

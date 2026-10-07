@@ -21,6 +21,8 @@ bool has_token_type_ids_input(const T& inputs) {
 
 ov::AnyMap remove_config_properties(const ov::AnyMap& properties);
 
+TextEmbeddingPipeline::Config get_text_embedding_config(const ov::AnyMap& properties);
+
 void reshape_model(std::shared_ptr<ov::Model>& model,
                    const TextEmbeddingPipeline::Config& config,
                    std::optional<size_t> max_position_embeddings);

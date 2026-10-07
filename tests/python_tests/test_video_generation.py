@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 
 import numpy as np
+import openvino as ov
 import openvino_genai as ov_genai
 
 from utils.constants import get_ov_cache_converted_models_dir
@@ -15,19 +16,38 @@ from utils.network import retry_request
 
 logger = logging.getLogger(__name__)
 
-MODEL_ID = "tiny-random-ltx-video"
-MODEL_NAME = "optimum-intel-internal-testing/tiny-random-ltx-video"
+LTX_VIDEO_MODEL_ID = "tiny-random-ltx-video"
+LTX2_MODEL_ID = "tiny-random-ltx2"
+
+VIDEO_GEN_MODELS = {
+    LTX_VIDEO_MODEL_ID: "optimum-intel-internal-testing/tiny-random-ltx-video",
+    LTX2_MODEL_ID: "optimum-intel-internal-testing/tiny-random-ltx2",
+}
+
+DEFAULT_VIDEO_GEN_MODEL_ID = LTX_VIDEO_MODEL_ID
+
+GEN_KWARGS = dict(height=32, width=32, num_frames=9, num_inference_steps=2)
 
 
 @pytest.fixture(scope="module")
-def video_generation_model() -> str:
+def video_generation_model(request) -> str:
+    model_id = getattr(request, "param", DEFAULT_VIDEO_GEN_MODEL_ID)
+    model_name = VIDEO_GEN_MODELS[model_id]
     models_dir = get_ov_cache_converted_models_dir()
-    model_path = Path(models_dir) / MODEL_ID / MODEL_NAME
+    model_path = Path(models_dir) / model_id / model_name
 
     manager = AtomicDownloadManager(model_path)
 
     def convert_model(temp_path: Path) -> None:
-        command = ["optimum-cli", "export", "openvino", "--model", MODEL_NAME, "--trust-remote-code", str(temp_path)]
+        command = [
+            "optimum-cli",
+            "export",
+            "openvino",
+            "--model",
+            model_name,
+            "--trust-remote-code",
+            str(temp_path),
+        ]
         logger.info(f"Conversion command: {' '.join(command)}")
         retry_request(lambda: subprocess.run(command, check=True, text=True, encoding="utf-8", capture_output=True))
 
@@ -70,13 +90,9 @@ class TestVideoGenerationConfig:
         assert config.height == 32
         assert config.width == 64
 
-    def test_config_validate_guidance_scale_with_negative_prompt(self):
+    def test_config_validate_guidance_scale_with_negative_prompt(self, video_generation_model):
         """guidance_scale <= 1 with negative_prompt is accepted (warning only)."""
-        pipe_path = get_ov_cache_converted_models_dir() / MODEL_ID / MODEL_NAME
-        if not pipe_path.exists():
-            pytest.skip("Model not available for validation test")
-
-        pipe = ov_genai.Text2VideoPipeline(str(pipe_path), "CPU")
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
         config = ov_genai.VideoGenerationConfig()
         config.guidance_scale = 0.5
         config.negative_prompt = "bad quality"
@@ -87,124 +103,138 @@ class TestVideoGenerationConfig:
         assert retrieved.negative_prompt == "bad quality"
 
 
-class TestText2VideoPipelineConstructor:
+class TestVideoGenerationPipelines:
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
     def test_constructor_path_only(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model)
         assert pipe is not None
 
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
     def test_constructor_with_device(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
         assert pipe is not None
 
-
-class TestText2VideoPipelineGenerate:
-    def test_generate_basic(self, video_generation_model):
+    @pytest.mark.parametrize(
+        ("video_generation_model", "audio_sample_rate"),
+        [(LTX_VIDEO_MODEL_ID, 0), (LTX2_MODEL_ID, 24000)],
+        indirect=["video_generation_model"],
+    )
+    def test_generate_basic(self, video_generation_model, audio_sample_rate):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
-        result = pipe.generate("test prompt", height=32, width=32, num_frames=9, num_inference_steps=2)
-        assert result is not None
-        assert result.video is not None
+        result = pipe.generate("test prompt", **GEN_KWARGS)
+        assert result.video.shape == [1, 9, 32, 32, 3]
+        assert result.video.element_type.to_dtype() == np.uint8
+        assert hasattr(result, "perf_metrics")
+        assert result.audio_sample_rate == audio_sample_rate
+        if audio_sample_rate:
+            audio_shape = list(result.audio.shape)
+            assert len(audio_shape) == 3
+            assert audio_shape[0] == 1
+            assert audio_shape[1] == 2
+            assert audio_shape[2] > 0
+        else:
+            assert result.audio.size == 0
 
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID], indirect=True)
+    def test_audio_guidance_scale_rejected(self, video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        with pytest.raises(RuntimeError, match="audio_guidance_scale"):
+            pipe.generate("test prompt", audio_guidance_scale=5.0, **GEN_KWARGS)
+
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
     def test_generate_with_negative_prompt(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
-        result = pipe.generate(
-            "test prompt",
-            negative_prompt="bad quality",
-            height=32,
-            width=32,
-            num_frames=9,
-            num_inference_steps=2,
-            guidance_scale=3.0,
-        )
-        assert result is not None
-        assert result.video is not None
+        result = pipe.generate("test prompt", negative_prompt="bad quality", guidance_scale=3.0, **GEN_KWARGS)
+        assert result.video.shape == [1, 9, 32, 32, 3]
 
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
     def test_generate_with_guidance_rescale(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
         result = pipe.generate(
             "test prompt",
             negative_prompt="bad quality",
-            height=32,
-            width=32,
-            num_frames=9,
-            num_inference_steps=2,
             guidance_scale=3.0,
             guidance_rescale=0.7,
+            **GEN_KWARGS,
         )
-        assert result is not None
-        assert result.video is not None
+        assert result.video.shape == [1, 9, 32, 32, 3]
 
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
     def test_guidance_rescale_differs_from_no_rescale(self, video_generation_model):
-        import numpy as np
-
-        generator_seed = 42
-        common_kwargs = dict(
-            negative_prompt="bad quality",
-            height=32,
-            width=32,
-            num_frames=9,
-            num_inference_steps=2,
-            guidance_scale=3.0,
-        )
-
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
 
-        result_no_rescale = pipe.generate(
-            "test prompt",
-            **common_kwargs,
-            guidance_rescale=0.0,
-            generator=ov_genai.CppStdGenerator(generator_seed),
-        )
-        result_rescaled = pipe.generate(
-            "test prompt",
-            **common_kwargs,
-            guidance_rescale=0.7,
-            generator=ov_genai.CppStdGenerator(generator_seed),
-        )
+        def run(guidance_rescale):
+            result = pipe.generate(
+                "test prompt",
+                negative_prompt="blurry, low quality, distorted",
+                guidance_scale=3.0,
+                guidance_rescale=guidance_rescale,
+                generator=ov_genai.CppStdGenerator(42),
+                **GEN_KWARGS,
+            )
+            return np.array(result.video.data)
 
-        frames_no_rescale = np.array(result_no_rescale.video)
-        frames_rescaled = np.array(result_rescaled.video)
-        assert not np.array_equal(frames_no_rescale, frames_rescaled), (
-            "guidance_rescale=0.7 should produce different output than guidance_rescale=0.0"
-        )
+        assert not np.array_equal(run(0.0), run(0.7))
 
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
     def test_generate_with_callback(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
-
         callback_calls = []
 
         def callback(step, num_steps, latent):
             callback_calls.append((step, num_steps))
             return False
 
-        result = pipe.generate(
-            "test prompt", height=32, width=32, num_frames=9, num_inference_steps=2, callback=callback
-        )
+        result = pipe.generate("test prompt", callback=callback, **GEN_KWARGS)
+        assert result.video.shape == [1, 9, 32, 32, 3]
+        assert callback_calls == [(0, 2), (1, 2)]
 
-        assert result.video is not None
-        assert len(callback_calls) == 2
-        assert callback_calls[0] == (0, 2)
-        assert callback_calls[1] == (1, 2)
-
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
     def test_generate_callback_early_stop(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
 
         def callback(step, num_steps, latent):
-            return step >= 1
+            return True
 
-        result = pipe.generate(
-            "test prompt", height=32, width=32, num_frames=9, num_inference_steps=5, callback=callback
-        )
+        result = pipe.generate("test prompt", callback=callback, **GEN_KWARGS)
+        assert len(list(result.video.shape)) == 0
 
-        assert result.video is not None
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
+    def test_generate_deterministic_with_seed(self, video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
 
+        def run():
+            result = pipe.generate("test prompt", generator=ov_genai.CppStdGenerator(42), **GEN_KWARGS)
+            return np.array(result.video.data), np.array(result.audio.data)
 
-class TestText2VideoPipelineConfig:
+        first_video, first_audio = run()
+        second_video, second_audio = run()
+        assert np.array_equal(first_video, second_video)
+        assert np.array_equal(first_audio, second_audio)
+
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
+    def test_num_videos_per_prompt(self, video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        result = pipe.generate("test prompt", num_videos_per_prompt=2, **GEN_KWARGS)
+        assert result.video.shape == [2, 9, 32, 32, 3]
+        if result.audio_sample_rate:
+            assert list(result.audio.shape)[0] == 2
+
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
+    def test_num_frames_floored_with_matching_audio(self, video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        result = pipe.generate("test prompt", **dict(GEN_KWARGS, num_frames=10))
+        reference = pipe.generate("test prompt", **GEN_KWARGS)
+        assert result.video.shape == [1, 9, 32, 32, 3]
+        assert result.audio.shape == reference.audio.shape
+
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
     def test_get_generation_config(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
         config = pipe.get_generation_config()
-        assert config is not None
         assert isinstance(config, ov_genai.VideoGenerationConfig)
 
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
     def test_set_generation_config(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
         config = ov_genai.VideoGenerationConfig()
@@ -217,29 +247,108 @@ class TestText2VideoPipelineConfig:
         retrieved_config = pipe.get_generation_config()
         assert retrieved_config.num_frames == 17
 
+    @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID], indirect=True)
+    def test_ltx2_default_config(self, video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model)
+        config = pipe.get_generation_config()
+        assert config.guidance_scale == pytest.approx(4.0)
+        assert config.height == 512
+        assert config.width == 768
+        assert config.num_frames == 121
+        assert config.num_inference_steps == 40
+        assert config.max_sequence_length == 1024
+        assert config.audio_guidance_scale is None
 
-class TestVideoGenerationResult:
-    def test_result_has_video(self, video_generation_model):
+    @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID], indirect=True)
+    def test_audio_guidance_scale_roundtrip(self, video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model)
+        config = pipe.get_generation_config()
+        config.audio_guidance_scale = 7.0
+        pipe.set_generation_config(config)
+        assert pipe.get_generation_config().audio_guidance_scale == pytest.approx(7.0)
+
+    @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID], indirect=True)
+    def test_audio_guidance_scale_affects_audio(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
-        result = pipe.generate("test prompt", height=32, width=32, num_frames=9, num_inference_steps=2)
-        assert hasattr(result, "video")
-        assert result.video is not None
 
-    def test_result_has_perf_metrics(self, video_generation_model):
+        # negative prompt must differ from the prompt in token length: the tiny-random tokenizer
+        # maps every input to the same token id, so equal lengths make CFG a no-op
+        def run(audio_guidance_scale):
+            return pipe.generate(
+                "test prompt",
+                negative_prompt="blurry, low quality, distorted",
+                guidance_scale=3.0,
+                audio_guidance_scale=audio_guidance_scale,
+                generator=ov_genai.CppStdGenerator(42),
+                **GEN_KWARGS,
+            )
+
+        low = run(1.5)
+        high = run(7.0)
+        assert not np.array_equal(np.array(low.audio.data), np.array(high.audio.data))
+
+    @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID], indirect=True)
+    def test_taylorseer_rejected(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
-        result = pipe.generate("test prompt", height=32, width=32, num_frames=9, num_inference_steps=2)
-        assert hasattr(result, "perf_metrics")
+        with pytest.raises(RuntimeError, match="TaylorSeer"):
+            pipe.generate("test prompt", taylorseer_config=ov_genai.TaylorSeerCacheConfig(), **GEN_KWARGS)
 
+    @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID], indirect=True)
+    def test_image2video_rejected(self, video_generation_model):
+        with pytest.raises(RuntimeError, match="LTX2Pipeline"):
+            ov_genai.Image2VideoPipeline(video_generation_model)
 
-class TestGenerators:
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
     def test_cpp_std_generator(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
-        generator = ov_genai.CppStdGenerator(42)
+        result = pipe.generate("test prompt", generator=ov_genai.CppStdGenerator(42), **GEN_KWARGS)
+        assert result.video.shape == [1, 9, 32, 32, 3]
 
-        result = pipe.generate(
-            "test prompt", height=32, width=32, num_frames=9, num_inference_steps=2, generator=generator
-        )
-        assert result.video is not None
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
+    def test_reshape(self, video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model)
+        pipe.reshape(1, 9, 32, 32, 3.0)
+        pipe.compile("CPU")
+
+        result = pipe.generate("test prompt", negative_prompt="bad quality", num_inference_steps=2)
+        assert result.video.shape == [1, 9, 32, 32, 3]
+
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
+    def test_reshape_multiple_videos_with_cfg(self, video_generation_model):
+        """Widest timestep shape: batch is num_videos_per_prompt * 2 when CFG is enabled."""
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model)
+        pipe.reshape(2, 9, 32, 32, 3.0)
+        pipe.compile("CPU")
+
+        result = pipe.generate("test prompt", num_videos_per_prompt=2, **GEN_KWARGS)
+        assert result.video.shape == [2, 9, 32, 32, 3]
+
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
+    def test_generate_without_cfg_default_compile(self, video_generation_model):
+        """Regression test: direct-compile constructor should work with guidance_scale <= 1."""
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        result = pipe.generate("test prompt", guidance_scale=1.0, **GEN_KWARGS)
+        assert result.video.shape == [1, 9, 32, 32, 3]
+
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
+    def test_generate_without_cfg_after_reshape_with_cfg(self, video_generation_model):
+        """Test: reshape with CFG then generate without CFG should raise error."""
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model)
+        pipe.reshape(1, 9, 32, 32, 3.0)
+        pipe.compile("CPU")
+
+        with pytest.raises(RuntimeError, match="guidance_scale <= 1 requested, but the compiled model expects CFG"):
+            pipe.generate("test prompt", guidance_scale=1.0, **GEN_KWARGS)
+
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
+    def test_generate_with_cfg_after_reshape_without_cfg(self, video_generation_model):
+        """Regression test: reshape without CFG then generate with CFG triggers rebuild."""
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model)
+        pipe.reshape(1, 9, 32, 32, 1.0)
+        pipe.compile("CPU")
+
+        result = pipe.generate("test prompt", guidance_scale=3.0, **GEN_KWARGS)
+        assert result.video.shape == [1, 9, 32, 32, 3]
 
 
 class TestLTXVideoTransformer3DModel:
@@ -276,59 +385,83 @@ class TestAutoEncoderKLLTXVideo:
             assert hasattr(config, "scaling_factor")
 
 
-class TestText2VideoPipelineAdvanced:
-    def test_reshape(self, video_generation_model):
-        pipe = ov_genai.Text2VideoPipeline(video_generation_model)
-        pipe.reshape(1, 9, 32, 32, 3.0)
-        pipe.compile("CPU")
+class TestAutoEncoderKLLTXVideoEncoder:
+    @pytest.fixture(autouse=True)
+    def require_encoder(self, video_generation_model):
+        if not Path(video_generation_model, "vae_encoder").exists():
+            pytest.skip("vae_encoder not available in test model")
+        if not Path(video_generation_model, "vae_decoder").exists():
+            pytest.skip("vae_decoder not available in test model")
 
-        result = pipe.generate("test prompt", num_inference_steps=2)
-        assert result.video is not None
+    def _make_vae(self, video_generation_model, compiled=True):
+        enc = str(Path(video_generation_model) / "vae_encoder")
+        dec = str(Path(video_generation_model) / "vae_decoder")
+        return ov_genai.AutoencoderKLLTXVideo(enc, dec, "CPU") if compiled else ov_genai.AutoencoderKLLTXVideo(enc, dec)
 
-    def test_generate_without_cfg_default_compile(self, video_generation_model):
-        """Regression test: direct-compile constructor should work with guidance_scale <= 1."""
-        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
-        result = pipe.generate(
-            "test prompt",
-            guidance_scale=1.0,
-            height=32,
-            width=32,
-            num_frames=9,
-            num_inference_steps=2,
-        )
-        assert result.video is not None
+    def _encoder_output_name(self, video_generation_model):
+        enc_xml = str(Path(video_generation_model) / "vae_encoder" / "openvino_model.xml")
+        return ov.Core().read_model(enc_xml).outputs[0].get_any_name()
 
-    def test_generate_without_cfg_after_reshape_with_cfg(self, video_generation_model):
-        """Test: reshape with CFG then generate without CFG should raise error."""
-        pipe = ov_genai.Text2VideoPipeline(video_generation_model)
-        pipe.reshape(1, 9, 32, 32, 3.0)
-        pipe.compile("CPU")
+    def test_constructor_with_encoder(self, video_generation_model):
+        assert self._make_vae(video_generation_model, compiled=False) is not None
 
-        with pytest.raises(RuntimeError, match="guidance_scale <= 1 requested, but the compiled model expects CFG"):
-            pipe.generate(
-                "test prompt",
-                guidance_scale=1.0,
-                height=32,
-                width=32,
-                num_frames=9,
-                num_inference_steps=2,
+    def test_encode_without_compile_raises(self, video_generation_model):
+        vae = self._make_vae(video_generation_model, compiled=False)
+        dummy = ov.Tensor(np.zeros([1, 3, 9, 32, 32], dtype=np.float32))
+        with pytest.raises(RuntimeError, match="must be compiled first"):
+            vae.encode(dummy, ov_genai.CppStdGenerator(42))
+
+    def test_encode_without_encoder_raises(self, video_generation_model):
+        decoder_path = Path(video_generation_model) / "vae_decoder"
+        if not decoder_path.exists():
+            pytest.skip("vae_decoder not available in test model")
+        vae = ov_genai.AutoencoderKLLTXVideo(str(decoder_path))
+        vae.compile("CPU")
+        dummy = ov.Tensor(np.zeros([1, 3, 9, 32, 32], dtype=np.float32))
+        with pytest.raises(RuntimeError, match="without 'VAE encoder' capability"):
+            vae.encode(dummy, ov_genai.CppStdGenerator(42))
+
+    def test_encode_output_shape(self, video_generation_model):
+        vae = self._make_vae(video_generation_model)
+        config = vae.get_config()
+        dummy = ov.Tensor(np.zeros([1, 3, 9, 32, 32], dtype=np.float32))
+        latent = vae.encode(dummy, ov_genai.CppStdGenerator(42))
+        assert latent is not None
+        shape = latent.shape
+        assert len(shape) == 5, f"Expected 5D latent [B, C, F, H, W], got shape {shape}"
+        assert shape[0] == 1
+        assert shape[1] == config.latent_channels
+
+    def test_encode_is_deterministic(self, video_generation_model):
+        vae = self._make_vae(video_generation_model)
+        video = ov.Tensor(np.ones([1, 3, 9, 32, 32], dtype=np.float32) * 0.5)
+        latent1 = vae.encode(video, ov_genai.CppStdGenerator(42))
+        latent2 = vae.encode(video, ov_genai.CppStdGenerator(42))
+        np.testing.assert_array_equal(latent1.data, latent2.data)
+
+    def test_encode_varies_with_seed(self, video_generation_model):
+        vae = self._make_vae(video_generation_model)
+        output_name = self._encoder_output_name(video_generation_model)
+        video = ov.Tensor(np.ones([1, 3, 9, 32, 32], dtype=np.float32) * 0.5)
+        latent1 = vae.encode(video, ov_genai.CppStdGenerator(42))
+        latent2 = vae.encode(video, ov_genai.CppStdGenerator(99))
+        if output_name == "latent_parameters":
+            assert not np.array_equal(latent1.data, latent2.data), (
+                "Different generator seeds should produce different latents"
             )
+        elif output_name == "latent_sample":
+            np.testing.assert_array_equal(latent1.data, latent2.data)
+        else:
+            pytest.skip(f"Unexpected encoder output name '{output_name}'")
 
-    def test_generate_with_cfg_after_reshape_without_cfg(self, video_generation_model):
-        """Regression test: reshape without CFG then generate with CFG triggers rebuild."""
-        pipe = ov_genai.Text2VideoPipeline(video_generation_model)
-        pipe.reshape(1, 9, 32, 32, 1.0)
-        pipe.compile("CPU")
-
-        result = pipe.generate(
-            "test prompt",
-            guidance_scale=3.0,
-            height=32,
-            width=32,
-            num_frames=9,
-            num_inference_steps=2,
-        )
-        assert result.video is not None
+    def test_encode_none_generator_raises_for_stochastic_encoder(self, video_generation_model):
+        output_name = self._encoder_output_name(video_generation_model)
+        if output_name != "latent_parameters":
+            pytest.skip("Encoder is deterministic (latent_sample) — generator=None is valid")
+        vae = self._make_vae(video_generation_model)
+        video = ov.Tensor(np.ones([1, 3, 9, 32, 32], dtype=np.float32) * 0.5)
+        with pytest.raises(RuntimeError, match="requires a non-null generator"):
+            vae.encode(video, None)
 
 
 class TestTaylorSeer:
@@ -433,3 +566,82 @@ class TestLoRAVideoGeneration:
         assert hasattr(model, "set_adapters")
 
         model.set_adapters(None)
+
+
+class TestImage2VideoPipeline:
+    GENERATE_KWARGS = dict(height=32, width=32, num_frames=9, num_inference_steps=2)
+
+    @pytest.fixture(autouse=True)
+    def require_encoder(self, video_generation_model):
+        if not Path(video_generation_model, "vae_encoder").exists():
+            pytest.skip("vae_encoder not present in test model")
+
+    def _make_image(self, height=32, width=32):
+        # Structured content: a uniform image makes conditioning-related assertions vacuous.
+        image_data = np.random.randint(0, 255, (1, height, width, 3), dtype=np.uint8)
+        return ov.Tensor(image_data)
+
+    def test_constructor_without_encoder_raises(self, video_generation_model, tmp_path):
+        no_encoder_dir = tmp_path / "no_encoder_model"
+        no_encoder_dir.mkdir()
+        import shutil
+
+        for subdir in ["text_encoder", "transformer", "vae_decoder", "scheduler"]:
+            src = Path(video_generation_model) / subdir
+            if src.exists():
+                shutil.copytree(src, no_encoder_dir / subdir)
+        model_index = Path(video_generation_model) / "model_index.json"
+        if model_index.exists():
+            shutil.copy(model_index, no_encoder_dir / "model_index.json")
+        with pytest.raises(RuntimeError, match="vae_encoder"):
+            ov_genai.Image2VideoPipeline(str(no_encoder_dir))
+
+    def test_generate_runs(self, video_generation_model):
+        pipe = ov_genai.Image2VideoPipeline(video_generation_model, "CPU")
+        image = self._make_image()
+        result = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS)
+        assert result is not None
+        assert result.video is not None
+        assert result.video.data.shape == (1, 9, 32, 32, 3)
+
+    def test_reshape(self, video_generation_model):
+        pipe = ov_genai.Image2VideoPipeline(video_generation_model)
+        pipe.reshape(1, 9, 32, 32, 3.0)
+        pipe.compile("CPU")
+
+        result = pipe.generate(self._make_image(), "test prompt", **self.GENERATE_KWARGS)
+        assert result.video is not None
+        assert result.video.data.shape == (1, 9, 32, 32, 3)
+
+    def test_reshape_updates_generation_config(self, video_generation_model):
+        pipe = ov_genai.Image2VideoPipeline(video_generation_model)
+        pipe.reshape(1, 9, 32, 32, 3.0)
+
+        config = pipe.get_generation_config()
+        assert config.num_videos_per_prompt == 1
+        assert config.num_frames == 9
+        assert config.height == 32
+        assert config.width == 32
+        assert config.guidance_scale == 3.0
+
+    def test_reshape_multiple_videos_per_prompt(self, video_generation_model):
+        pipe = ov_genai.Image2VideoPipeline(video_generation_model)
+        pipe.reshape(2, 9, 32, 32, 3.0)
+        pipe.compile("CPU")
+
+        result = pipe.generate(self._make_image(), "test prompt", **self.GENERATE_KWARGS, num_videos_per_prompt=2)
+        assert result.video.data.shape == (2, 9, 32, 32, 3)
+
+    def test_determinism(self, video_generation_model):
+        pipe = ov_genai.Image2VideoPipeline(video_generation_model, "CPU")
+        image = self._make_image()
+        result1 = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS, generator=ov_genai.CppStdGenerator(42))
+        result2 = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS, generator=ov_genai.CppStdGenerator(42))
+        np.testing.assert_array_equal(result1.video.data, result2.video.data)
+
+    def test_lora_passthrough(self, video_generation_model):
+        adapter_config = ov_genai.AdapterConfig()
+        pipe = ov_genai.Image2VideoPipeline(video_generation_model, "CPU")
+        image = self._make_image()
+        result = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS, adapters=adapter_config)
+        assert result.video is not None

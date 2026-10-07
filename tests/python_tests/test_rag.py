@@ -463,6 +463,28 @@ def test_embedding_pipeline_matches_text_embedding_pipeline(emb_model):
     )
 
 
+@pytest.mark.parametrize("emb_model", [EMBEDDINGS_TEST_MODELS[0]], indirect=True)
+def test_embedding_pipeline_honors_wrapped_text_embedding_config(emb_model):
+    text = "What is OpenVINO?"
+    config = TextEmbeddingPipeline.Config(pooling_type=TextEmbeddingPipeline.PoolingType.MEAN)
+    wrapped_config_pipeline = EmbeddingPipeline(emb_model.models_path, "CPU", text_embedding_config=config)
+    direct_config_pipeline = EmbeddingPipeline(
+        emb_model.models_path,
+        "CPU",
+        pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
+    )
+
+    wrapped_config_result = wrapped_config_pipeline.embed(text)
+    direct_config_result = direct_config_pipeline.embed(text)
+
+    np.testing.assert_allclose(
+        wrapped_config_result.embeddings.data,
+        direct_config_result.embeddings.data,
+        atol=MAX_EMBEDDING_ERROR,
+        rtol=0,
+    )
+
+
 @pytest.mark.parametrize("emb_model", ["BAAI/bge-small-en-v1.5"], indirect=True)
 def test_embedding_pipeline_prompt_matches_embed_instruction(emb_model):
     text = "What is OpenVINO?"
@@ -578,9 +600,12 @@ def run_text_embedding_pipeline_with_ref(
     validate_embedding_results(genai_result, langchain_result)
 
 
-def assert_rerank_results(result_1: list[tuple[int, float]], result_2: list[tuple[int, float]]):
+def assert_rerank_results(
+    result_1: list[tuple[int, float]], result_2: list[tuple[int, float]], score_diff_max: float | None = None
+):
     __tracebackhide__ = True
-    score_diff_max = 1e-6 if sys.platform != "darwin" else 2e-4  # ARM64 macs have different results
+    if score_diff_max is None:
+        score_diff_max = 1e-6 if sys.platform != "darwin" else 2e-4  # ARM64 macs have different results
     assert len(result_1) == len(result_2), f"Results length mismatch: {len(result_1)} != {len(result_2)}"
     for pair_1, pair_2 in zip(result_1, result_2):
         assert pair_1[0] == pair_2[0], f"Document IDs do not match: {pair_1[0]} != {pair_2[0]}"
@@ -648,11 +673,13 @@ def run_text_rerank_genai(
     query: str,
     documents: list[str],
     config: TextRerankPipeline.Config | None = None,
+    device: str = "CPU",
+    properties: dict | None = None,
 ):
     if not config:
         config = TextRerankPipeline.Config()
 
-    reranker = TextRerankPipeline(models_path, "CPU", config=config)
+    reranker = TextRerankPipeline(models_path, device, config=config, **(properties or {}))
 
     sync_result = reranker.rerank(
         query=query,
@@ -925,7 +952,7 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
         ),
     ],
 )
-@pytest.mark.xfail(reason="Ticket - 186607")
+@pytest.mark.skipif(**should_skip_npuw_tests())
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
 def test_qwen3_embedding_npu(emb_model, dataset_documents, config, chunk_size, threshold, task):
     NPU_FALLBACK_PROPERTIES = {"NPUW_DEVICES": "CPU", "NPUW_F16IC": "False", "NPUW_LLM_PREFILL_CHUNK_SIZE": chunk_size}
@@ -1206,6 +1233,35 @@ def test_qwen3_seq_cls_rerank_documents(rerank_model: OVConvertedModelSchema, qu
     )
 
     assert_rerank_results(opt_result, genai_result)
+
+
+@pytest.mark.parametrize("llm_model", [QWEN3_RERANK], indirect=True)
+@pytest.mark.parametrize("query", ["Which planet is known as the Red Planet?"])
+@pytest.mark.parametrize("task", ["Given a web search query, retrieve relevant passages that answer the query"])
+@pytest.mark.parametrize(
+    "documents",
+    [
+        [
+            "Venus is often called Earth's twin because of its similar size and proximity.",
+            "Mars, known for its reddish appearance, is often referred to as the Red Planet.",
+            "Jupiter, the largest planet in our solar system, has a prominent red spot.",
+            "Saturn, famous for its rings, is sometimes mistaken for the Red Planet.",
+        ]
+    ],
+)
+@pytest.mark.skipif(**should_skip_npuw_tests())
+def test_qwen3_rerank_npu(llm_model: OVConvertedModelSchema, query, task, documents):
+    config = TextRerankPipeline.Config(top_n=4, padding_side="left")
+    formatted_query = qwen3_reranker_format_queries(query, task)
+    formatted_documents = [qwen3_reranker_format_document(doc) for doc in documents]
+
+    cpu_result = run_text_rerank_genai(llm_model.models_path, formatted_query, formatted_documents, config)
+    npu_result = run_text_rerank_genai(
+        llm_model.models_path, formatted_query, formatted_documents, config, "NPU", NPUW_CPU_PROPERTIES
+    )
+
+    assert_rerank_results(cpu_result, npu_result, score_diff_max=1e-3)
+
 
 @pytest.mark.parametrize("llm_model", [QWEN3_RERANK], indirect=True)
 @pytest.mark.parametrize("query", ["Which planet is known as the Red Planet?"])

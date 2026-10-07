@@ -22,6 +22,7 @@
 #include "continuous_batching/cache/block_manager.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
 #include "continuous_batching/cache/linear_attention_cache_manager.hpp"
+#include "logger.hpp"
 
 namespace ov::genai {
 
@@ -29,7 +30,7 @@ namespace ov::genai {
  * @brief Aggregates multiple cache type managers and block managers, presenting a unified,
  *        cache-type-agnostic interface.
  *
- * Callers (e.g. Scheduler) interact with the orchestrator without knowing which cache types
+ * Callers (e.g. the ContinuousBatchingScheduler) interact with the orchestrator without knowing which cache types
  * are registered.  The orchestrator routes every operation to the appropriate per-type
  * manager(s) internally.
  *
@@ -46,7 +47,7 @@ public:
      *        and return a fully populated CacheOrchestrator.
      *
      * @param infer_request         The inference request (provides compiled model info).
-     * @param[in,out] config        Scheduler configuration.  num_kv_blocks is derived from
+     * @param[in,out] config        Scheduling configuration.  num_kv_blocks is derived from
      *                              cache_size when it is zero.
      * @param get_available_memory  Returns available device memory in bytes given the device
      *                              string and number of cache tensors across all cache types.
@@ -356,7 +357,7 @@ public:
     }
 
     // -----------------------------------------------------------------------
-    //  Token-level API  (cache-type-agnostic interface for the Scheduler)
+    //  Token-level API  (cache-type-agnostic interface for the ContinuousBatchingScheduler)
     // -----------------------------------------------------------------------
 
     /// @return Approximate aggregate memory cost per token across all variable-size cache types.
@@ -810,19 +811,30 @@ private:
                         "Prefix caching for hybrid (linear-attention) models requires the model to expose KV cache inputs, but no KV cache manager is registered");
         const size_t kv_block_size = kv_manager->get_block_size();
 
-        // An explicit user multiplier is always honoured.
+        size_t multiplier = 0;
+        const char* multiplier_source = nullptr;
         if (config.cache_interval_multiplier.has_value()) {
-            return config.get_cache_interval(kv_block_size);
+            multiplier = config.cache_interval_multiplier.value();
+            multiplier_source = "configured";
+        } else {
+            multiplier = adaptive_cache_interval_multiplier(la_manager->get_block_size_in_bytes(),
+                                                            kv_manager->get_block_size_in_bytes());
+            multiplier_source = "auto";
         }
 
-        const size_t multiplier = adaptive_cache_interval_multiplier(la_manager->get_block_size_in_bytes(),
-                                                                     kv_manager->get_block_size_in_bytes());
-        // Keep the same overflow guard as SchedulerConfig::get_cache_interval() for consistency.
         OPENVINO_ASSERT(multiplier == 0 ||
                             kv_block_size <= std::numeric_limits<std::size_t>::max() / multiplier,
-                        "Derived cache_interval_multiplier is too large for KV cache block size. multiplier: ",
+                        "Linear-attention cache_interval_multiplier is too large for KV cache block size. multiplier: ",
                         multiplier, ", kv_block_size: ", kv_block_size);
-        return kv_block_size * multiplier;
+        const size_t cache_interval = kv_block_size * multiplier;
+        GENAI_INFO("Linear-attention prefix cache checkpoint interval: %zu tokens "
+                   "(cache_interval_multiplier=%zu, %s; LA checkpoint size=%zu bytes; KV block size=%zu bytes)",
+                   cache_interval,
+                   multiplier,
+                   multiplier_source,
+                   la_manager->get_block_size_in_bytes(),
+                   kv_manager->get_block_size_in_bytes());
+        return cache_interval;
     }
 
     /**

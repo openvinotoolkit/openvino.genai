@@ -56,15 +56,21 @@ def get_param_from_file(args, input_key):
                     else:
                         raise RuntimeError(f'== {input_key} path should not be empty string ==')
         else:
-            if args["use_case"].task not in ["visual_text_gen", "image_gen", "video_gen", "text_embed"]:
+            if args["use_case"].task not in [
+                "visual_text_gen",
+                "visual_text_gen_chat",
+                "image_gen",
+                "video_gen",
+                "text_embed",
+            ]:
                 raise RuntimeError(
                     "Multiple sources for benchmarking supported for Visual Language Models / Image To Image Models / Inpainting Models / Multimodal Embeddings"
                 )
             data_dict = {}
             if "media" in input_key:
                 if args["media"] is None and args["images"] is None:
-                    if args["use_case"].task == "visual_text_gen":
-                        if args["video"] is None:
+                    if args["use_case"].task in ["visual_text_gen", "visual_text_gen_chat"]:
+                        if args["video"] is None and args["media"] is None:
                             log.warn("Input image/video is not provided. Only text generation part will be evaluated")
                     elif args["use_case"].task == "text_embed":
                         pass
@@ -76,7 +82,7 @@ def get_param_from_file(args, input_key):
                 data_dict["video"] = args["video"]
 
             if args["prompt"] is None:
-                if args["use_case"].task == "visual_text_gen":
+                if args["use_case"].task in ["visual_text_gen", "visual_text_gen_chat"]:
                     data_dict["prompt"] = "What is OpenVINO?" if data_dict.get("media") is None else "Describe image"
                 elif args["use_case"].task == "image_gen":
                     data_dict["prompt"] = "sailing ship in storm by Leonardo da Vinci"
@@ -244,14 +250,17 @@ def analyze_args(args):
     if use_case.task == "code_gen" and not model_args["prompt"] and not model_args["prompt_file"]:
         model_args["prompt"] = "def print_hello_world():"
     model_args["config"] = {}
-    if args.load_config is not None:
-        config = get_config(args.load_config)
+    # load_config was used previously, as part of the argument alignment moving to --ov_config
+    # support both for now
+    ov_config = args.ov_config if args.ov_config is not None else args.load_config
+    if ov_config is not None:
+        config = get_config(ov_config)
         if type(config) is dict and len(config) > 0:
             model_args["config"] = config
     if model_framework == "ov":
         set_default_param_for_ov_config(model_args["config"])
         if "ATTENTION_BACKEND" not in model_args["config"] and not optimum and args.device != "NPU":
-            if use_case.task in ["text_gen", "visual_text_gen"]:
+            if use_case.task in ["text_gen", "text_gen_chat", "visual_text_gen", "visual_text_gen_chat"]:
                 model_args["config"]["ATTENTION_BACKEND"] = PA_ATTENTION_BACKEND
         log.info(f"OV Config={model_args['config']}")
     elif model_framework == 'pt':
@@ -262,12 +271,14 @@ def analyze_args(args):
     if args.cb_config:
         cb_config = get_config(args.cb_config)
     model_args["cb_config"] = cb_config
-    if args.draft_model:
-        if (args.draft_device != "NPU" and args.device != "NPU" and model_args['config']['ATTENTION_BACKEND'] != PA_ATTENTION_BACKEND):
-            log.warning("Speculative Decoding is supported only with Paged Attention Backend for non-NPU devices")
-            args.draft_model = None
     model_args['draft_model'] = args.draft_model
     model_args['draft_device'] = args.draft_device
+    model_args["draft_ov_config"] = {}
+    if args.draft_ov_config is not None:
+        draft_ov_config = get_config(args.draft_ov_config)
+        if type(draft_ov_config) is dict and len(draft_ov_config) > 0:
+            set_default_param_for_ov_config(draft_ov_config)
+            model_args["draft_ov_config"] = draft_ov_config
     draft_cb_config = None
     if args.draft_cb_config:
         draft_cb_config = get_config(args.draft_cb_config)

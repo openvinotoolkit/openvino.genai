@@ -55,6 +55,11 @@ size_t PerfMetrics::get_num_input_tokens() {
     return num_input_tokens;
 }
 
+size_t PerfMetrics::get_num_prefix_cache_hit_tokens() {
+    evaluate_statistics();
+    return num_prefix_cache_hit_tokens;
+}
+
 MeanStdPair PerfMetrics::get_ttft() {
     evaluate_statistics();
     return ttft;
@@ -244,6 +249,7 @@ PerfMetrics PerfMetrics::operator+(const PerfMetrics& right) const {
 
     res.num_generated_tokens += right.num_generated_tokens;
     res.num_input_tokens += right.num_input_tokens;
+    res.num_prefix_cache_hit_tokens += right.num_prefix_cache_hit_tokens;
     res.m_evaluated = false;
     return res;
 }

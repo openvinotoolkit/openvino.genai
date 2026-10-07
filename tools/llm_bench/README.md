@@ -152,14 +152,14 @@ python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_b
 
 ## 5. Running on 2-Socket Platforms
 
-The benchmarking script sets `openvino.properties.streams.num(1)` by default. For multi-socket platforms, use `numactl` on Linux or the `--load_config` option to modify behavior.
+The benchmarking script sets `openvino.properties.streams.num(1)` by default. For multi-socket platforms, use `numactl` on Linux or the `--ov_config` option to modify behavior.
 
 | OpenVINO Version    | Behaviors                                       |
 |:--------------------|:------------------------------------------------|
 | Before 2024.0.0     | streams.num(1) <br>execute on 2 sockets.        |
 | 2024.0.0            | streams.num(1) <br>execute on the same socket as the APP is running on. |
 
-For example, `--load_config config.json` as following will result in streams.num(1) and execute on 2 sockets.
+For example, `--ov_config config.json` as following will result in streams.num(1) and execute on 2 sockets.
 ```json
 {
   "INFERENCE_NUM_THREADS": <NUMBER>
@@ -215,6 +215,14 @@ python benchmark.py -m models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --tas
 optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code models/MiniCPM-V-2_6
 # run benchmark.py
 python benchmark.py -m models/MiniCPM-V-2_6/ -p "What is openvino?" -n 2 --task visual_text_gen -i ./image.png
+```
+
+```sh
+# convert model to OpenVINO IR format
+optimum-cli export openvino -m google/gemma-3n-E2B-it gemma-3n-E2B-it --task=image-text-to-text
+# chat iteration
+python benchmark.py -m ./models/gemma-3n-E2B-it/ -n 2 --task visual_text_gen_chat --chat_iter 3
+python benchmark.py -m ./models/gemma-3n-E2B-it/ -n 2 --task visual_text_gen_chat -pf ./prompts/vlm_chat.jsonl
 ```
 
 > **Supported VLM model types:** llava, llava-next, qwen2-vl, llava-qwen2, internvl-chat, minicpmv, phi3-v, minicpm-v, minicpmo, maira2, qwen2-5-vl
@@ -373,6 +381,11 @@ python benchmark.py -m models/codegen-350M-multi -p "def hello_world():" -n 2 --
 ### Video Generation Models
 ```sh
 python benchmark.py -m models/LTX-Video/FP16 -p "A cat plays with ball on the christmas tree." --negative_prompt "worst quality, inconsistent motion, blurry, jittery, distorted" --num_frames 5 -n 2 --num_steps 25 --task text-to-video
+```
+
+Image-to-video requires an input image (`-i`/`--media`) and a model directory containing a `vae_encoder`. The prompt should describe how the input image animates:
+```sh
+python benchmark.py -m models/LTX-Video/FP16 -i input.png -p "The camera slowly pushes in as the scene comes to life with gentle, natural motion." --num_frames 5 -n 2 --num_steps 25 --task image-to-video
 ```
 
 **Some additional parameters:**

@@ -17,7 +17,7 @@ from PIL import Image
 from datasets import load_dataset
 from typing import Any, Optional
 
-from whowhatbench.model_loaders import load_model
+from whowhatbench.model_loaders import TORCH_DTYPES, load_model
 from whowhatbench import EVALUATOR_REGISTRY
 from whowhatbench.utils import fix_phi3_v_eos_token_id
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
@@ -131,6 +131,7 @@ def parse_args():
             "text-chat",
             "text-to-image",
             "text-to-video",
+            "image-to-video",
             "speech-generation",
             "visual-text",
             "visual-text-chat",
@@ -156,6 +157,7 @@ def parse_args():
         "image-to-image - for image generation based on image and prompt, \n"
         "image-inpainting - for image generation based on image, mask and prompt, \n"
         "text-to-video - for video generation, \n"
+        "image-to-video - for video generation conditioned on an input image and prompt, \n"
         "text-reranking - for reranking a list of texts based on relevance to query, \n"
         "text-embedding - for creation of embedding for a list of texts, \n"
         "image-embedding - for creation of embedding for a list of texts and images, \n"
@@ -240,6 +242,11 @@ def parse_args():
         "--hf",
         action="store_true",
         help="Use AutoModelForCausalLM from transformers library to instantiate the model.",
+    )
+    parser.add_argument(
+        "--torch-dtype",
+        choices=TORCH_DTYPES,
+        help="PyTorch weight dtype with --hf. If omitted, the model-specific default is used.",
     )
     parser.add_argument(
         "--genai",
@@ -396,6 +403,14 @@ def parse_args():
         "Config option assistant_confidence_threshold for Speculative decoding.",
     )
     parser.add_argument(
+        "--image-dir",
+        type=str,
+        default=None,
+        help="Directory holding the conditioning images for image-to-video generation. Relative filenames in the "
+        "test data's 'images'/'image' column are resolved against it; when the column is absent the images are "
+        "looked up as 0.png, 1.png, ... Not needed for the default dataset.",
+    )
+    parser.add_argument(
         "--video-frames-num",
         type=int,
         default=None,
@@ -506,6 +521,8 @@ def check_args(args):
         )
     if args.hf and args.empty_adapters:
         raise ValueError("'empty_adapters' mode is not supported for HF Transformers.")
+    if args.torch_dtype is not None and not args.hf:
+        raise ValueError("--torch-dtype requires --hf")
     if args.speaker_embeddings is not None and not os.path.exists(args.speaker_embeddings):
         raise ValueError(f"Speaker embedding file does not exist: {args.speaker_embeddings}")
     if args.gt_data is not None and os.path.isdir(args.gt_data):
@@ -833,6 +850,46 @@ def genai_gen_text2video(
     return [Image.fromarray(frame) for frame in result.video.data[0]]
 
 
+def genai_gen_image2video(
+    model,
+    prompt,
+    image,
+    negative_prompt,
+    num_inference_steps,
+    width=704,
+    height=480,
+    num_frames=25,
+    frame_rate=25,
+    guidance_scale=3,
+    guidance_rescale=0,
+    generator=None,
+    empty_adapters=False,
+):
+    kwargs = {"negative_prompt": negative_prompt} if guidance_scale > 1 else {}
+    if empty_adapters:
+        import openvino_genai
+
+        kwargs["adapters"] = openvino_genai.AdapterConfig()
+    if isinstance(image, Image.Image) and image.size != (width, height):
+        image = image.resize((width, height), Image.Resampling.LANCZOS)
+    image_data = ov.Tensor(np.array(image))
+    result = model.generate(
+        image_data,
+        prompt,
+        num_inference_steps=num_inference_steps,
+        width=width,
+        height=height,
+        num_frames=num_frames,
+        frame_rate=frame_rate,
+        guidance_scale=guidance_scale,
+        guidance_rescale=guidance_rescale,
+        max_sequence_length=256,
+        generator=generator,
+        **kwargs,
+    )
+    return [Image.fromarray(frame) for frame in result.video.data[0]]
+
+
 def _is_voice_pack_enabled_model(model):
     if not hasattr(model, "model_dir"):
         return False
@@ -992,7 +1049,10 @@ def genai_gen_embedding(model, tokenizer, processor, texts, images, videos, prom
         for video in videos:
             media_inputs["videos"].append(ov.Tensor(np.stack(video, axis=0)))
 
-    return np.asarray(model.embed(*text_input, **media_inputs).embeddings.data, dtype=np.float32)
+    if "TextEmbeddingPipeline" in str(type(model.model)):
+        return np.asarray(model.embed_documents(*text_input), dtype=np.float32)
+    else:
+        return np.asarray(model.embed(*text_input, **media_inputs).embeddings.data, dtype=np.float32)
 
 
 def genai_gen_reranking(model, tokenizer, query, documents):
@@ -1081,6 +1141,20 @@ def create_evaluator(base_model, args):
                 is_genai=args.genai,
                 seed=args.seed,
                 empty_adapters=args.empty_adapters,
+            )
+        elif task == "image-to-video":
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                test_data=prompts,
+                num_samples=args.num_samples,
+                num_inference_steps=args.num_inference_steps,
+                num_frames=args.video_frames_num,
+                gen_video_fn=genai_gen_image2video if args.genai else None,
+                is_genai=args.genai,
+                seed=args.seed,
+                empty_adapters=args.empty_adapters,
+                image_dir=args.image_dir,
             )
         elif task == "speech-generation":
             return EvaluatorCLS(
@@ -1456,6 +1530,8 @@ def main():
         kwargs["from_onnx"] = args.from_onnx
     if args.gguf_file:
         kwargs["gguf_file"] = args.gguf_file
+    if args.torch_dtype is not None:
+        kwargs["torch_dtype"] = args.torch_dtype
     if args.adapters is not None:
         kwargs["adapters"] = args.adapters
         if args.alphas is not None:
@@ -1480,9 +1556,13 @@ def main():
             logger.info(f"draft_cb_config: {draft_cb_config}")
         kwargs["draft_cb_config"] = draft_cb_config
 
-    # Create TaylorSeerCacheConfig for text-to-image and text-to-video pipelines
+    # Create TaylorSeerCacheConfig for text-to-image, text-to-video, and image-to-video pipelines
     taylorseer_config = None
-    if args.taylorseer_config and args.genai and args.model_type in ["text-to-image", "text-to-video"]:
+    if (
+        args.taylorseer_config
+        and args.genai
+        and args.model_type in ["text-to-image", "text-to-video", "image-to-video"]
+    ):
         ts_cfg = get_json_config(args.taylorseer_config)
         if not isinstance(ts_cfg, dict):
             raise ValueError(f"--taylorseer-config must be a JSON object, got {type(ts_cfg).__name__}")
@@ -1594,6 +1674,7 @@ def main():
             "text-to-image" in args.model_type
             or "image-to-image" in args.model_type
             or "text-to-video" in args.model_type
+            or "image-to-video" in args.model_type
         ):
             print_image_results(evaluator)
         elif args.model_type in ["speech-generation"]:

@@ -60,10 +60,13 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
 void WhisperStatefullDecoder::start_async(const Tensor& encoder_hidden_state,
                                           const Tensor& input_ids,
                                           const Tensor& beam_idx) {
-    const size_t batch_size = input_ids.get_shape().at(0);
     const size_t seq_len = input_ids.get_shape().at(1);
 
-    _set_encoder_hidden_states_tensor(encoder_hidden_state, batch_size, m_request);
+    // Cross-attention K/V are initialized from the batch-1 encoder output
+    // and broadcast across beams. Rebind the encoder output to use the current audio chunk.
+    OPENVINO_ASSERT(encoder_hidden_state.get_shape().at(0) == 1,
+                    "Whisper encoder hidden state is expected to have batch 1.");
+    m_request.set_tensor("encoder_hidden_states", encoder_hidden_state);
 
     if (m_has_cache_position) {
         _set_cache_position_tensor(seq_len);
@@ -99,10 +102,6 @@ void WhisperStatefullDecoder::reset_state() {
     if (m_has_cache_position) {
         m_request.set_tensor("cache_position", create_host_tensor(ov::element::i64, {0}));
     }
-
-    Shape encoder_hidden_states_shape{m_request.get_tensor("encoder_hidden_states").get_shape()};
-    encoder_hidden_states_shape[0] = 0;
-    m_request.set_tensor("encoder_hidden_states", create_host_tensor(ov::element::f32, encoder_hidden_states_shape));
 };
 
 ov::Tensor WhisperStatefullDecoder::create_host_tensor(const element::Type element_type, const Shape& shape) {

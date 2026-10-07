@@ -11,7 +11,11 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
+#include <cstdint>
+#include <filesystem>
 #include <limits>
+#include <numeric>
 #include <vector>
 
 #include "openvino/genai/omni/talker_speech_config.hpp"
@@ -112,4 +116,149 @@ TEST(OmniTalkerSpeechConfigAudioChunkFrames, IgnoresChunkFramesWhenReturnAudioFa
     EXPECT_NO_THROW({ ov::genai::validate_omni_talker_speech_config(cfg); });
     cfg.audio_chunk_frames = std::numeric_limits<size_t>::max();
     EXPECT_NO_THROW({ ov::genai::validate_omni_talker_speech_config(cfg); });
+}
+
+// ---- CVS-193623: mel chunking must not duplicate audio ----
+
+namespace {
+
+using Encoder = ov::genai::AudioEncoderQwen3Omni;
+
+// Every shipped Qwen3-Omni config uses n_window = 50, so the chunk width is 100 frames.
+constexpr size_t kNWindow = 50;
+constexpr size_t kFramesPerSecond = 100;  // 16 kHz / hop 160
+
+// Python floors on integer division, C++ truncates. The formula below feeds
+// negative numerators, so the difference changes the result.
+int64_t floor_div(int64_t a, int64_t b) {
+    const int64_t q = a / b;
+    return (a % b != 0 && ((a < 0) != (b < 0))) ? q - 1 : q;
+}
+
+// Port of _get_feat_extract_output_lengths() from transformers, so the test checks against
+// upstream instead of restating our own code. The 100 and 13 are upstream literals and assume
+// n_window == 50. Kept expression-for-expression identical to the source, including the
+// redundant `+ 1 - 1`, so the two can be compared by eye.
+// https://github.com/huggingface/transformers/blob/b856a67bea4fdbb5368de1c8a9f183df048dafbe/src/transformers/models/qwen3_omni_moe/modeling_qwen3_omni_moe.py#L152-L159
+int64_t upstream_output_length(int64_t n_frames) {
+    const int64_t leave = n_frames % 100;
+    const int64_t feat = floor_div(leave - 1, 2) + 1;
+    return floor_div(floor_div(feat - 1, 2) + 1 - 1, 2) + 1 + floor_div(n_frames, 100) * 13;
+}
+
+size_t total_audio_tokens(size_t n_frames) {
+    size_t total = 0;
+    for (size_t len : Encoder::plan_chunk_frame_lens(n_frames, kNWindow)) {
+        total += Encoder::get_feat_extract_output_length(len);
+    }
+    return total;
+}
+
+}  // namespace
+
+TEST(AudioEncoderChunking, ChunksAreDisjointAndCoverEveryFrameExactlyOnce) {
+    // More than n_frames means duplicated audio, less means dropped audio.
+    for (size_t n_frames : {1u, 50u, 99u, 100u, 101u, 200u, 1442u, 4000u}) {
+        const auto lens = Encoder::plan_chunk_frame_lens(n_frames, kNWindow);
+        const size_t covered = std::accumulate(lens.begin(), lens.end(), size_t{0});
+        EXPECT_EQ(covered, n_frames) << "n_frames=" << n_frames;
+
+        // Only the tail may be short; every other chunk is a full n_window * 2.
+        for (size_t i = 0; i + 1 < lens.size(); i++) {
+            EXPECT_EQ(lens[i], kNWindow * 2) << "n_frames=" << n_frames << " chunk=" << i;
+        }
+        ASSERT_FALSE(lens.empty());
+        EXPECT_GT(lens.back(), 0u);
+        EXPECT_LE(lens.back(), kNWindow * 2);
+    }
+}
+
+TEST(AudioEncoderChunking, TokenCountMatchesTransformers) {
+    for (size_t n_frames = 1; n_frames <= 4000; n_frames++) {
+        EXPECT_EQ(static_cast<int64_t>(total_audio_tokens(n_frames)), upstream_output_length(n_frames))
+            << "n_frames=" << n_frames;
+    }
+}
+
+TEST(AudioEncoderChunking, TokenCountForKnownDurations) {
+    // HF processor values. A drift here means the model gets a different amount
+    // of audio than it saw in training.
+    EXPECT_EQ(total_audio_tokens(kFramesPerSecond / 2), 7u);   // 0.5 s
+    EXPECT_EQ(total_audio_tokens(kFramesPerSecond), 13u);      // 1 s
+    EXPECT_EQ(total_audio_tokens(kFramesPerSecond * 2), 26u);  // 2 s
+    EXPECT_EQ(total_audio_tokens(kFramesPerSecond * 4), 52u);  // 4 s
+
+    // The CVS-193623 utterance (LibriSpeech test-clean 3575-170457-0015, 14.425 s).
+    // Overlapping windows gave 337 tokens at n_window_infer=200 and 262 at 800.
+    EXPECT_EQ(total_audio_tokens(1442), 188u);
+}
+
+TEST(AudioEncoderChunking, RejectsDegenerateInput) {
+    EXPECT_THROW({ Encoder::plan_chunk_frame_lens(0, kNWindow); }, ov::Exception);
+    EXPECT_THROW({ Encoder::plan_chunk_frame_lens(100, 0); }, ov::Exception);
+    // n_window * 2 would wrap to 0 and the chunk count would divide by it.
+    constexpr size_t overflowing_window = std::numeric_limits<size_t>::max() / 2 + 1;
+    EXPECT_THROW({ Encoder::plan_chunk_frame_lens(100, overflowing_window); }, ov::Exception);
+}
+
+// ---- preprocess_audio() tensor shapes ----
+
+namespace {
+
+// The encoder model is optional: when the .xml is absent the constructor returns early but
+// still initialises the config and the mel extractor, so preprocess_audio() runs without a
+// compiled model. Point it at a directory that holds no audio encoder.
+Encoder make_encoder_without_model() {
+    return Encoder(std::filesystem::temp_directory_path(), ov::genai::VLMConfig{}, "CPU", {});
+}
+
+ov::Tensor make_pcm(size_t n_samples) {
+    ov::Tensor pcm(ov::element::f32, {n_samples});
+    auto* data = pcm.data<float>();
+    // A plain tone: preprocess_audio() only reshapes, so the content is irrelevant.
+    for (size_t i = 0; i < n_samples; i++) {
+        data[i] = 0.1f * std::sin(0.05f * static_cast<float>(i));
+    }
+    return pcm;
+}
+
+}  // namespace
+
+TEST(AudioEncoderPreprocess, FeatureWidthAndMaskWidthAgree) {
+    // The encoder multiplies its CNN output by padded_mask_after_cnn, so the post-CNN width
+    // implied by padded_feature must equal the mask width.
+    auto encoder = make_encoder_without_model();
+
+    // 0.25 s and 0.5 s sit below one chunk (100 frames); 1 s and 3 s span whole chunks.
+    for (size_t n_samples : {4000u, 8000u, 16000u, 48000u}) {
+        auto [feature, mask, aftercnn_lens, cu_seqlens] = encoder.preprocess_audio(make_pcm(n_samples));
+
+        const auto feature_shape = feature.get_shape();
+        const auto mask_shape = mask.get_shape();
+        ASSERT_EQ(feature_shape.size(), 3u);
+        ASSERT_EQ(mask_shape.size(), 2u);
+
+        EXPECT_EQ(feature_shape[0], mask_shape[0]) << "n_samples=" << n_samples;
+        EXPECT_EQ(Encoder::get_feat_extract_output_length(feature_shape[2]), mask_shape[1])
+            << "n_samples=" << n_samples;
+    }
+}
+
+TEST(AudioEncoderPreprocess, ShortAudioKeepsOneNarrowChunk) {
+    // 0.5 s is the case the old code got wrong: one chunk was padded out to a full 100 frames.
+    auto encoder = make_encoder_without_model();
+    auto [feature, mask, aftercnn_lens, cu_seqlens] = encoder.preprocess_audio(make_pcm(8000));
+
+    EXPECT_EQ(feature.get_shape()[0], 1u);
+    EXPECT_LT(feature.get_shape()[2], kNWindow * 2) << "sub-chunk audio must not be padded to a full chunk";
+
+    // One value for the whole utterance, and it must equal the emitted token count.
+    ASSERT_EQ(aftercnn_lens.get_shape(), ov::Shape{1});
+    const auto total_tokens = static_cast<size_t>(aftercnn_lens.data<const int64_t>()[0]);
+    EXPECT_EQ(total_tokens, mask.get_shape()[1]);
+
+    // cu_seqlens is a cumulative sum starting at 0 and ending at the token count.
+    const auto* cu = cu_seqlens.data<const int32_t>();
+    EXPECT_EQ(cu[0], 0);
+    EXPECT_EQ(static_cast<size_t>(cu[cu_seqlens.get_size() - 1]), total_tokens);
 }

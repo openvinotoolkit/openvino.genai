@@ -483,7 +483,7 @@ ov::Tensor InputsEmbedderDeepseekOCR2::get_inputs_embeds(const std::string& unif
     ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
-    ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
+    ov::Tensor text_embeds = get_text_embedding(req, input_ids, metrics);
 
     size_t total_visual_tokens = 0;
     for (const ov::Tensor& image_embed : image_embeds) {

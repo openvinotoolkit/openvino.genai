@@ -41,7 +41,7 @@ TextEmbeddingPipelineImpl::TextEmbeddingPipelineImpl(const std::filesystem::path
     : m_text_embedding_pipeline(std::make_unique<TextEmbeddingPipeline>(
           models_path,
           device,
-          TextEmbeddingPipeline::Config(properties),
+          utils::get_text_embedding_config(properties),
           utils::remove_config_properties(properties))) {}
 
 EmbedResult TextEmbeddingPipelineImpl::embed(const StringInputs& text, const ov::AnyMap& properties) {
