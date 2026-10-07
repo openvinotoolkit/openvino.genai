@@ -36,6 +36,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"qwen3_omni_moe", VLMModelType::QWEN3_OMNI},
         {"deepseek_ocr2", VLMModelType::DEEPSEEK_OCR2},
         {"muse_glimmer", VLMModelType::MUSE_GLIMMER},
+        {"lfm2_vl", VLMModelType::LFM2_VL},
     };
 
     auto it = model_types_map.find(value);
@@ -96,6 +97,22 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     // DeepSeek-OCR-2
     read_json_param(parsed, "view_separator", view_separator);
     read_json_param(parsed, "image_token_id", image_token_id);
+
+    // LFM2-VL
+    if (model_type == VLMModelType::LFM2_VL) {
+        read_json_param(parsed, "downsample_factor", lfm2_downsample_factor);
+        read_json_param(parsed, "encoder_patch_size", lfm2_encoder_patch_size);
+        read_json_param(parsed, "tile_size", lfm2_tile_size);
+        read_json_param(parsed, "min_image_tokens", lfm2_min_image_tokens);
+        read_json_param(parsed, "max_image_tokens", lfm2_max_image_tokens);
+        read_json_param(parsed, "min_tiles", lfm2_min_tiles);
+        read_json_param(parsed, "max_tiles", lfm2_max_tiles);
+        read_json_param(parsed, "do_image_splitting", lfm2_do_image_splitting);
+        read_json_param(parsed, "use_thumbnail", lfm2_use_thumbnail);
+        read_json_param(parsed, "use_image_special_tokens", lfm2_use_image_special_tokens);
+        read_json_param(parsed, "max_pixels_tolerance", lfm2_max_pixels_tolerance);
+        read_json_param(parsed, "vision_config.num_patches", lfm2_vision_num_patches);
+    }
 
     // Qwen3-Omni: vision/audio configs are nested under thinker_config
     if (model_type == VLMModelType::QWEN3_OMNI) {
