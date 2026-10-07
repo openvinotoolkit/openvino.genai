@@ -18,30 +18,41 @@ namespace {
 const std::string NATIVE_TAG = "<image>./</image>";
 const std::string NATIVE_VIDEO_TAG = "<video>./</video>";
 
-size_t calc_vision_downsample_factor(size_t window_kernel_size, size_t merge_kernel_size) {
+size_t calc_vision_downsample_factor(const size_t window_kernel_size, const size_t merge_kernel_size) {
     return window_kernel_size * merge_kernel_size;
 }
 
-int ensure_divide(double length, int divisor) {
+int ensure_divide(const double length, const int divisor) {
     return std::max(static_cast<int>(std::round(length / divisor)) * divisor, divisor);
 }
 
 // Picks the size for resizing a crop (thumbnail or slice). Keeps aspect ratio and targets
 // model's preferred resolution, ensuring that result can be evenly divided into patches.
-ImageSize find_best_resize(double height, double width, int scale_resolution, int patch_size, bool allow_upscale) {
+ImageSize find_best_resize(
+    const double height,
+    const double width,
+    const int scale_resolution,
+    const int patch_size,
+    const bool allow_upscale
+) {
+    double new_height = height;
+    double new_width = width;
     if (height * width > static_cast<double>(scale_resolution) * scale_resolution || allow_upscale) {
         const double aspect_ratio = width / height;
-        height = scale_resolution / std::sqrt(aspect_ratio);
-        width = height * aspect_ratio;
+        new_height = scale_resolution / std::sqrt(aspect_ratio);
+        new_width = new_height * aspect_ratio;
     }
     const int factor = patch_size * 4;
-    return {static_cast<size_t>(ensure_divide(height, factor)), static_cast<size_t>(ensure_divide(width, factor))};
+    return {
+        static_cast<size_t>(ensure_divide(new_height, factor)),
+        static_cast<size_t>(ensure_divide(new_width, factor))};
 }
 
 // Calculates slices grid, zeroed (no slices) if image is too small for slicing
-SlicesGrid get_slices_grid(int height, int width, int max_slice_nums, int scale_resolution) {
+SlicesGrid get_slices_grid(const int height, const int width, const int max_slice_nums, const int scale_resolution) {
     const double log_ratio = std::log(static_cast<double>(width) / height);
-    const double ratio = static_cast<double>(width) * height / (static_cast<double>(scale_resolution) * scale_resolution);
+    const double ratio =
+        static_cast<double>(width) * height / (static_cast<double>(scale_resolution) * scale_resolution);
     const int multiple = std::min(static_cast<int>(std::ceil(ratio)), max_slice_nums);
     if (multiple <= 1) {
         return {};
@@ -71,7 +82,13 @@ SlicesGrid get_slices_grid(int height, int width, int max_slice_nums, int scale_
 }
 
 // Picks the size for resizing original image before it is split into slices grid.
-ImageSize get_refine_size(int height, int width, SlicesGrid grid, int scale_resolution, int patch_size) {
+ImageSize get_refine_size(
+    const int height,
+    const int width,
+    const SlicesGrid& grid,
+    const int scale_resolution,
+    const int patch_size
+) {
     const int grid_rows = static_cast<int>(grid.rows);
     const int grid_cols = static_cast<int>(grid.cols);
     const int refine_height = ensure_divide(height, grid_rows);
@@ -88,7 +105,7 @@ ImageSize get_refine_size(int height, int width, SlicesGrid grid, int scale_reso
 }
 
 // Splits a resized image into slices of size (slice_height, slice_width), row-major.
-std::vector<clip_image_u8> split_to_slices(const clip_image_u8& image, int slice_height, int slice_width) {
+std::vector<clip_image_u8> split_to_slices(const clip_image_u8& image, const int slice_height, const int slice_width) {
     const int grid_y = image.ny / slice_height;
     const int grid_x = image.nx / slice_width;
     std::vector<clip_image_u8> slices;
@@ -174,7 +191,7 @@ ov::Tensor pack_crop(
     const ImageSize& crop_size,
     const std::array<float, 3>& norm_mean,
     const std::array<float, 3>& norm_std,
-    size_t patch_size
+    const size_t patch_size
 ) {
     const size_t crop_h = crop_size.height;
     const size_t crop_w = crop_size.width;
@@ -206,7 +223,7 @@ ov::Tensor pack_crop(
 // Builds per-patch position ids for vision encoder - nearest-neighbor indices into the num_patches_per_side grid.
 // Distinct from LM position_ids.
 // Shape: [num_patches], num_patches = crop_h * crop_w
-ov::Tensor build_vision_position_ids(const ImageSize& crop_size, size_t num_patches_per_side) {
+ov::Tensor build_vision_position_ids(const ImageSize& crop_size, const size_t num_patches_per_side) {
     const size_t crop_h = crop_size.height;
     const size_t crop_w = crop_size.width;
     std::vector<double> boundaries(num_patches_per_side - 1);
@@ -236,7 +253,7 @@ ov::Tensor build_vision_position_ids(const ImageSize& crop_size, size_t num_patc
 
 // Builds the order in which patches are grouped into windows for the vision encoder's window attention.
 // Shape: [num_patches], num_patches = crop_h * crop_w
-ov::Tensor build_window_index(const ImageSize& crop_size, size_t window_kernel_size) {
+ov::Tensor build_window_index(const ImageSize& crop_size, const size_t window_kernel_size) {
     const size_t crop_h = crop_size.height;
     const size_t crop_w = crop_size.width;
     const size_t pad_h = window_kernel_size - crop_h % window_kernel_size;
@@ -277,7 +294,11 @@ ov::Tensor build_window_index(const ImageSize& crop_size, size_t window_kernel_s
 // Builds the order in which tokens are grouped into blocks for the vision encoder's final spatial merge.
 // Shape: [num_patches / vision_downsample_factor], where
 // num_patches = crop_h * crop_w, vision_downsample_factor = window_kernel_size * merge_kernel_size
-ov::Tensor build_merge_index(const ImageSize& crop_size, size_t window_kernel_size, size_t merge_kernel_size) {
+ov::Tensor build_merge_index(
+    const ImageSize& crop_size,
+    const size_t window_kernel_size,
+    const size_t merge_kernel_size
+) {
     const size_t post_window_h = crop_size.height / window_kernel_size;
     const size_t post_window_w = crop_size.width / window_kernel_size;
     const size_t blocks_h = post_window_h / merge_kernel_size;
@@ -299,7 +320,7 @@ ov::Tensor build_merge_index(const ImageSize& crop_size, size_t window_kernel_si
 }
 
 // Calculates number of visual tokens for a crop by its size (in patches) after the downsample.
-size_t calc_crop_token_count(const ImageSize& crop_size, size_t downsample_factor) {
+size_t calc_crop_token_count(const ImageSize& crop_size, const size_t downsample_factor) {
     return (crop_size.height / downsample_factor) * (crop_size.width / downsample_factor);
 }
 
@@ -334,9 +355,9 @@ std::pair<ov::Tensor, int64_t> create_position_ids(
     const ov::Tensor& input_ids,
     const std::vector<ImageSize>& images_crop_sizes,
     const std::vector<ImageSize>& videos_crop_sizes,
-    int64_t image_token_id,
-    int64_t video_token_id,
-    size_t downsample_factor
+    const int64_t image_token_id,
+    const int64_t video_token_id,
+    const size_t downsample_factor
 ) {
     const size_t seq_len = input_ids.get_size();
     const int64_t* input_ids_data = input_ids.data<int64_t>();
@@ -378,7 +399,8 @@ std::pair<ov::Tensor, int64_t> create_position_ids(
             ++i;
         }
         const size_t run_len = i - run_start;
-        const auto [crop_h, crop_w] = is_image ? images_crop_sizes.at(image_crop_index++) : videos_crop_sizes.at(video_crop_index++);
+        const auto [crop_h, crop_w] =
+            is_image ? images_crop_sizes.at(image_crop_index++) : videos_crop_sizes.at(video_crop_index++);
         const int64_t canvas_h = static_cast<int64_t>(crop_h / downsample_factor);
         const int64_t canvas_w = static_cast<int64_t>(crop_w / downsample_factor);
         const size_t frame_start = run_start - 1;
@@ -789,7 +811,7 @@ ov::Tensor InputsEmbedderMiniCPMv4_7::get_inputs_embeds(
         inputs_embeds =
             utils::merge_text_and_image_embeddings_llava(input_ids, inputs_embeds, video_embeds, m_video_token_id);
     }
-    
+
     return inputs_embeds;
 }
 
