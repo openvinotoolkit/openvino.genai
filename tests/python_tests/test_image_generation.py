@@ -575,7 +575,6 @@ class TestImageGeneration:
         image = pipe.generate(
             "test prompt",
             [get_random_image()],
-            strength=0.8,
             width=64,
             height=64,
             num_inference_steps=2,
@@ -590,7 +589,6 @@ class TestImageGeneration:
         image = pipe.generate(
             "test prompt",
             [get_random_image(), get_random_image(height=96, width=48)],
-            strength=0.8,
             width=64,
             height=64,
             num_inference_steps=2,
