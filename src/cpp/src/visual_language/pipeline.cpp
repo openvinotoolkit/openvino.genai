@@ -876,6 +876,12 @@ private:
             cache_state.reset_state();
             return;
         }
+        if (snapshot.get_state().empty()) {
+            // A failed first turn: trimming the whole KV cache would build a zero-size tensor, see
+            // update_chat_history(). Drop it instead.
+            drop_kv_cache();
+            return;
+        }
         try {
             // The turn may have trimmed the KV cache and written its prompt and some answer tokens.
             // Whatever lies past the old history is trimmed by the next turn, like a cancelled answer.

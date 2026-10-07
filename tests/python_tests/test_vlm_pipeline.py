@@ -3631,16 +3631,25 @@ def rollback_image() -> openvino.Tensor:
     return openvino.Tensor(np.zeros((32, 32, 3), dtype=np.uint8))
 
 
+def _rollback_pipe_factory(attention_backend: str) -> Callable[[], VLMPipeline]:
+    models_path = _get_ov_model(MODEL_QWEN3_OMNI)
+    return lambda: VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=attention_backend)
+
+
 @pytest.fixture
 def rollback_pipe_factory() -> Callable[[], VLMPipeline]:
-    models_path = _get_ov_model(MODEL_QWEN3_OMNI)
-    return lambda: VLMPipeline(models_path, "CPU", ATTENTION_BACKEND="SDPA")
+    return _rollback_pipe_factory("SDPA")
 
 
 @pytest.fixture
 def rollback_pa_pipe_factory() -> Callable[[], VLMPipeline]:
-    models_path = _get_ov_model(MODEL_QWEN3_OMNI)
-    return lambda: VLMPipeline(models_path, "CPU", ATTENTION_BACKEND="PA")
+    return _rollback_pipe_factory("PA")
+
+
+@pytest.fixture(params=["SDPA", "PA"])
+def rollback_any_backend_pipe_factory(request: pytest.FixtureRequest) -> Callable[[], VLMPipeline]:
+    """PA runs the turn through the continuous batching rollback, SDPA through the VLMPipeline one."""
+    return _rollback_pipe_factory(request.param)
 
 
 def _text_and_tokens(result: VLMDecodedResults) -> tuple[str, int]:
@@ -3661,10 +3670,10 @@ def test_vlm_failed_prompt_call_leaves_next_call_clean(
 
 
 def test_vlm_failed_chat_turn_is_rolled_back(
-    rollback_pipe_factory: Callable[[], VLMPipeline], rollback_image: openvino.Tensor
+    rollback_any_backend_pipe_factory: Callable[[], VLMPipeline], rollback_image: openvino.Tensor
 ):
     def second_turn(fail_first: bool) -> tuple[str, int]:
-        pipe = rollback_pipe_factory()
+        pipe = rollback_any_backend_pipe_factory()
         pipe.start_chat()
         pipe.generate("Hi", images=[rollback_image], generation_config=ROLLBACK_CONFIG)
         if fail_first:
@@ -3673,6 +3682,60 @@ def test_vlm_failed_chat_turn_is_rolled_back(
                     "Again", images=[rollback_image], generation_config=ROLLBACK_CONFIG, streamer=RaisingStreamer()
                 )
         return _text_and_tokens(pipe.generate("Again", images=[rollback_image], generation_config=ROLLBACK_CONFIG))
+
+    assert second_turn(fail_first=True) == second_turn(fail_first=False)
+
+
+def test_vlm_failed_first_chat_turn_is_rolled_back(
+    rollback_any_backend_pipe_factory: Callable[[], VLMPipeline], rollback_image: openvino.Tensor
+):
+    """The first turn after start_chat() has no history to keep, so its whole KV cache must go."""
+
+    def first_turn(fail_first: bool) -> tuple[str, int]:
+        pipe = rollback_any_backend_pipe_factory()
+        pipe.start_chat()
+        if fail_first:
+            with pytest.raises(RuntimeError, match="streamer failure"):
+                pipe.generate(
+                    "Hi", images=[rollback_image], generation_config=ROLLBACK_CONFIG, streamer=RaisingStreamer()
+                )
+        return _text_and_tokens(pipe.generate("Hi", images=[rollback_image], generation_config=ROLLBACK_CONFIG))
+
+    assert first_turn(fail_first=True) == first_turn(fail_first=False)
+
+
+def test_cb_failed_chat_history_batch_is_rolled_back(rollback_image: openvino.Tensor):
+    """A later history that fails must also undo the media an earlier history of the batch registered.
+
+    The histories need a successful first turn: the binding copies them into C++ and syncs them back
+    only on success, so a history without internal state would come back clean either way.
+    """
+    models_path = _get_ov_model(MODEL_QWEN3_OMNI)
+    images = [[rollback_image], [rollback_image]]
+    configs = [ROLLBACK_CONFIG] * 2
+    # A different size than the retry's image, so an image the first history kept from the failed call
+    # shows up in its token count.
+    failed_call_image = openvino.Tensor(np.zeros((256, 256, 3), dtype=np.uint8))
+
+    def ask(history: ChatHistory, image_index: int) -> None:
+        history.append({"role": "user", "content": f"{get_universal_tag(ModalityType.IMAGE, image_index)} Describe"})
+
+    def second_turn(fail_first: bool) -> list[tuple[str, int]]:
+        pipe = ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
+        batch = [ChatHistory(), ChatHistory()]
+        for history in batch:
+            ask(history, 0)
+        for history, answer in zip(batch, pipe.generate(batch, images=images, generation_config=configs)):
+            history.append({"role": "assistant", "content": answer.texts[0]})
+        ask(batch[0], 1)
+        if fail_first:
+            # The second history holds images 0 and 1, so index 2 fails after the first history registered its image.
+            ask(batch[1], 2)
+            with pytest.raises(RuntimeError, match="Missing image/video/audio with index 2"):
+                pipe.generate(batch, images=[[failed_call_image], [rollback_image]], generation_config=configs)
+            batch[1].pop()
+        ask(batch[1], 1)
+        return [_text_and_tokens(result) for result in pipe.generate(batch, images=images, generation_config=configs)]
 
     assert second_turn(fail_first=True) == second_turn(fail_first=False)
 
