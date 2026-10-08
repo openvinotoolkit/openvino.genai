@@ -66,7 +66,7 @@ public:
         result.attention_mask = ov::Tensor(ov::element::i64, {1, sequence_length});
         std::fill_n(result.attention_mask.data<int64_t>(), result.attention_mask.get_size(), int64_t{1});
 
-        result.lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
+        result.lm_extra_inputs = vlm_utils::deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs());
 
         PerfMetrics::emplace_duration(metrics.vlm_raw_metrics.prepare_embeddings_durations, prepare_start);
         result.vlm_perf_metrics = VLMPerfMetrics(metrics);
@@ -122,7 +122,7 @@ public:
         result.attention_mask = ov::Tensor(ov::element::i64, {1, sequence_length});
         std::fill_n(result.attention_mask.data<int64_t>(), result.attention_mask.get_size(), int64_t{1});
 
-        result.lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
+        result.lm_extra_inputs = vlm_utils::deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs());
 
         PerfMetrics::emplace_duration(metrics.vlm_raw_metrics.prepare_embeddings_durations, prepare_start);
         result.vlm_perf_metrics = VLMPerfMetrics(metrics);
