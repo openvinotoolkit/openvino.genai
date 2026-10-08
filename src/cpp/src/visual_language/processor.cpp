@@ -69,7 +69,8 @@ public:
         result.lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
 
         PerfMetrics::emplace_duration(metrics.vlm_raw_metrics.prepare_embeddings_durations, prepare_start);
-        result.raw_perf_metrics = metrics.vlm_raw_metrics;
+        result.vlm_perf_metrics = VLMPerfMetrics(metrics);
+
         return result;
     }
 
@@ -124,7 +125,8 @@ public:
         result.lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
 
         PerfMetrics::emplace_duration(metrics.vlm_raw_metrics.prepare_embeddings_durations, prepare_start);
-        result.raw_perf_metrics = metrics.vlm_raw_metrics;
+        result.vlm_perf_metrics = VLMPerfMetrics(metrics);
+
         return result;
     }
 

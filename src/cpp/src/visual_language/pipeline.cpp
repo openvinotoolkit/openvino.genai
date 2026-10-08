@@ -882,15 +882,16 @@ public:
         PerfMetrics::emplace_duration(res_raw_counters.generate_durations, generate_start_time, generate_end_time);
         PerfMetrics::emplace_duration(res_raw_counters.detokenization_durations, decode_start_time, decode_end_time);
 
-        // Merge raw perf metrics from VLMProcessor
-        auto& out_vlm = decoded.perf_metrics.vlm_raw_metrics;
-        const auto& in_vlm = inputs.raw_perf_metrics;
-        out_vlm.prepare_embeddings_durations.insert(out_vlm.prepare_embeddings_durations.end(),
-            in_vlm.prepare_embeddings_durations.begin(), in_vlm.prepare_embeddings_durations.end());
-        out_vlm.vision_encoding_durations.insert(out_vlm.vision_encoding_durations.end(),
-            in_vlm.vision_encoding_durations.begin(), in_vlm.vision_encoding_durations.end());
-        out_vlm.text_embedding_durations.insert(out_vlm.text_embedding_durations.end(),
-            in_vlm.text_embedding_durations.begin(), in_vlm.text_embedding_durations.end());
+        // Merge common raw perf metrics from ProcessedInputs
+        auto& dst_raw_metrics = decoded.perf_metrics.raw_metrics;
+        const auto& src_raw_metrics = inputs.vlm_perf_metrics.raw_metrics;
+        dst_raw_metrics.tokenization_durations.insert(dst_raw_metrics.tokenization_durations.end(),
+            src_raw_metrics.tokenization_durations.begin(), src_raw_metrics.tokenization_durations.end());
+        dst_raw_metrics.chat_template_durations.insert(dst_raw_metrics.chat_template_durations.end(),
+            src_raw_metrics.chat_template_durations.begin(), src_raw_metrics.chat_template_durations.end());
+
+        // Merge VLM raw perf metrics from ProcessedInputs
+        decoded.perf_metrics.vlm_raw_metrics = inputs.vlm_perf_metrics.vlm_raw_metrics;
 
         decoded.perf_metrics.m_evaluated = false;
         decoded.perf_metrics.evaluate_statistics(generate_start_time);

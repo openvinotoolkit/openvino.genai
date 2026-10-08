@@ -27,7 +27,7 @@ struct ProcessedInputs {
     ov::Tensor position_ids;
     std::unordered_map<std::string, ov::Tensor> lm_extra_inputs;
     std::optional<int64_t> rope_delta;
-    VLMRawPerfMetrics raw_perf_metrics;
+    VLMPerfMetrics vlm_perf_metrics;
 };
 
 class OPENVINO_GENAI_EXPORTS VLMProcessor {

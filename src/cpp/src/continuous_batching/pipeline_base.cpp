@@ -794,7 +794,17 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         VLMDecodedResults gen_result;
         gen_result.perf_metrics = VLMPerfMetrics(result.perf_metrics);
         gen_result.extended_perf_metrics = result.extended_perf_metrics;
-        gen_result.perf_metrics.vlm_raw_metrics = inputs[i].raw_perf_metrics;
+        
+        // Merge common raw perf metrics from ProcessedInputs
+        auto& dst_raw_metrics = gen_result.perf_metrics.raw_metrics;
+        const auto& src_raw_metrics = inputs[i].vlm_perf_metrics.raw_metrics;
+        dst_raw_metrics.tokenization_durations.insert(dst_raw_metrics.tokenization_durations.end(),
+            src_raw_metrics.tokenization_durations.begin(), src_raw_metrics.tokenization_durations.end());
+        dst_raw_metrics.chat_template_durations.insert(dst_raw_metrics.chat_template_durations.end(),
+            src_raw_metrics.chat_template_durations.begin(), src_raw_metrics.chat_template_durations.end());
+
+        // Merge VLM raw perf metrics from ProcessedInputs
+        gen_result.perf_metrics.vlm_raw_metrics = inputs[i].vlm_perf_metrics.vlm_raw_metrics;
 
         auto decode_start_time = std::chrono::steady_clock::now();
         for (size_t idx = 0; idx < result.m_generation_ids.size(); ++idx) {
@@ -894,8 +904,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
     const GenerationConfig& sampling_params
 ) {
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
-    ov::genai::VLMPerfMetrics metrics;
-    metrics.vlm_raw_metrics = inputs.raw_perf_metrics;
+    ov::genai::VLMPerfMetrics metrics = ov::genai::VLMPerfMetrics(inputs.vlm_perf_metrics);
     // FIXME prompt_ids is not populated for VLM prompt lookup with add_request API
     std::optional<ov::Tensor> prompt_ids;
     GenerationHandle handle;
