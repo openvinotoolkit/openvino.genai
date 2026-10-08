@@ -213,12 +213,13 @@ def analyze_args(args):
     if model_args["torch_compile_backend"] is None and has_torch_compile_options:
         log.warning("torch.compile configuration options provided, but backend is not selected, openvino backend will be used")
         model_args["torch_compile_backend"] = "openvino"
-    model_args['convert_tokenizer'] = args.convert_tokenizer
-    model_args['subsequent'] = args.subsequent
-    model_args['output_dir'] = args.output_dir
-    model_args['lora'] = args.lora
-    model_args['lora_alphas'] = args.lora_alphas
-    model_args['lora_mode'] = args.lora_mode
+    model_args["convert_tokenizer"] = args.convert_tokenizer
+    model_args["subsequent"] = args.subsequent
+    model_args["output_dir"] = args.output_dir
+    model_args["output_image"] = args.output_image
+    model_args["lora"] = args.lora
+    model_args["lora_alphas"] = args.lora_alphas
+    model_args["lora_mode"] = args.lora_mode
     model_args["empty_lora"] = args.empty_lora
     model_args["taylorseer_config"] = get_config(args.taylorseer_config) if args.taylorseer_config else None
     model_args["devices"] = args.device

@@ -106,6 +106,7 @@ python benchmark.py -m models/llama-2-7b-chat/ -pf prompts/llama-2-7b-chat_l.jso
       More information about properties, please, find [OpenVINO documentation](https://docs.openvino.ai/2026/api/c_cpp_api/group__ov__runtime__cpp__prop__api.html).
 - `--optimum`: Use Optimum Intel pipelines for benchmarking.
 - `--from_onnx`: Allow initialize Optimum OpenVINO model using ONNX.
+- `--output_image`: Generated image file path. Additional outputs receive prompt, iteration, and batch suffixes.
 - `--pruning_ratio`: Percentage of visual tokens to prune (valid range: 0-100). If this option is not provided, pruning is disabled.
 - `--relevance_weight`: Float value from 0 to 1, control the trade-off between diversity and relevance for visual tokens pruning, a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.
 

@@ -226,6 +226,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
     mem_consumption.update_marker("model")
     pipe, pretrain_time, use_genai, callback = FW_UTILS[framework].create_image_gen_model(model_path, device, mem_consumption, **args)
     iter_data_list = []
+    args["first_prompt_idx"] = prompt_idx_list[0] if prompt_idx_list else None
 
     if framework == "ov" and not use_genai:
         stable_diffusion_hook.new_text_encoder(pipe)

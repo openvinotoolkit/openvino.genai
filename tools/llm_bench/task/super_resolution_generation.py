@@ -84,6 +84,7 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
                 prompt_idx_list.append(i)
     if len(image_list) == 0:
         raise RuntimeError('==Failure prompts is empty ==')
+    args["first_prompt_idx"] = prompt_idx_list[0]
     log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, image nums: {len(image_list)}, prompt idx: {prompt_idx_list}')
 
     # if num_iters == 0, just output warm-up data

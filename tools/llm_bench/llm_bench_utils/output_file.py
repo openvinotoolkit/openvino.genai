@@ -4,6 +4,7 @@
 import os
 import cv2
 import json
+from pathlib import Path
 
 import numpy as np
 import soundfile as sf
@@ -11,8 +12,7 @@ import soundfile as sf
 
 def get_file_path(output_dir, file_name):
     if output_dir is not None:
-        if os.path.exists(output_dir) is False:
-            os.mkdir(output_dir)
+        os.makedirs(output_dir, exist_ok=True)
         out_path = output_dir
     else:
         out_path = '.'
@@ -135,6 +135,29 @@ def output_gen_text(
 
 
 def output_gen_image(img, args, prompt_idx, iteration, batchsize_idx, proc_id, suffix):
+    if args.get("output_image"):
+        img_save_path = Path(args["output_image"])
+        if not img_save_path.suffix:
+            img_save_path = img_save_path.with_suffix(suffix)
+
+        output_suffixes = []
+        if prompt_idx != args["first_prompt_idx"]:
+            output_suffixes.append(f"p{prompt_idx}")
+        if iteration:
+            output_suffixes.append(f"iter{iteration}")
+        if args["batch_size"] > 1 and batchsize_idx is not None:
+            output_suffixes.append(f"bs{batchsize_idx}")
+        if output_suffixes:
+            img_save_path = img_save_path.with_name(
+                f"{img_save_path.stem}_{'_'.join(output_suffixes)}{img_save_path.suffix}"
+            )
+
+        if not img_save_path.is_absolute() and args["output_dir"] is not None:
+            img_save_path = Path(args["output_dir"]) / img_save_path
+        img_save_path.parent.mkdir(parents=True, exist_ok=True)
+        img.save(img_save_path)
+        return str(img_save_path)
+
     img_save_name = construct_file_name(
         args["batch_size"],
         args["model_name"],

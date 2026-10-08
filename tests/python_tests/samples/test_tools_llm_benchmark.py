@@ -273,10 +273,30 @@ class TestBenchmarkLLM:
         )
 
     @pytest.mark.samples
-    @pytest.mark.parametrize("sample_args",
+    @pytest.mark.parametrize(
+        ("sample_args", "expected_output_names"),
         [
-            ["-d", "cpu", "-n", "1", "--num_steps", "4", "--optimum"],
-            ["-d", "cpu", "-n", "1", "--num_steps", "4"],
+            (
+                ["-d", "cpu", "-n", "1", "--num_steps", "4", "--optimum", "-pi", "1", "999"],
+                ["generated.png", "generated_iter1.png"],
+            ),
+            (
+                ["-d", "cpu", "-n", "1", "--num_steps", "4", "--optimum", "-pi", "1", "0"],
+                ["generated.png", "generated_p0.png", "generated_iter1.png", "generated_p0_iter1.png"],
+            ),
+            (
+                ["-d", "cpu", "-n", "1", "--num_steps", "4", "-bs", "2"],
+                [
+                    "generated_bs0.png",
+                    "generated_bs1.png",
+                    "generated_p1_bs0.png",
+                    "generated_p1_bs1.png",
+                    "generated_iter1_bs0.png",
+                    "generated_iter1_bs1.png",
+                    "generated_p1_iter1_bs0.png",
+                    "generated_p1_iter1_bs1.png",
+                ],
+            ),
         ],
     )
     @pytest.mark.parametrize("convert_model", ["tiny-random-latent-consistency"], indirect=True)
@@ -284,13 +304,14 @@ class TestBenchmarkLLM:
         "generate_llm_bench_input_generation_jsonl", [("image_generation.jsonl", image_generation_json)], indirect=True
     )
     def test_python_tool_llm_benchmark_jsonl(
-        self, convert_model, generate_llm_bench_input_generation_jsonl, sample_args
+        self, convert_model, generate_llm_bench_input_generation_jsonl, sample_args, expected_output_names, tmp_path
     ):
         """
-        Test Speculative Decoding via GenAI with JSONL input
+        Test image generation via GenAI with JSONL input and explicit output paths.
         """
         # Run Python benchmark
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
+        output_dir = tmp_path / "missing" / "outputs"
         benchmark_py_command = [
             sys.executable,
             benchmark_script,
@@ -298,8 +319,13 @@ class TestBenchmarkLLM:
             convert_model,
             "-pf",
             generate_llm_bench_input_generation_jsonl,
+            "-od",
+            output_dir,
+            "-oi",
+            "nested/generated",
         ] + sample_args
         run_sample(benchmark_py_command)
+        assert sorted(path.name for path in (output_dir / "nested").iterdir()) == sorted(expected_output_names)
 
 
     @pytest.mark.samples

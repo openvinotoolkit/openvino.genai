@@ -263,6 +263,11 @@ def get_argparser():
     )
     parser.add_argument("-od", "--output_dir", help="Save the input text and generated text, images to files")
     parser.add_argument(
+        "-oi",
+        "--output_image",
+        help="Generated image file path. Additional outputs receive prompt, iteration, and batch suffixes.",
+    )
+    parser.add_argument(
         "--genai",
         action="store_true",
         help="[DEPRECATED] Use OpenVINO GenAI optimized pipelines for benchmarking. Enabled by default",
