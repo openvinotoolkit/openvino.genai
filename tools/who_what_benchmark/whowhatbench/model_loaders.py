@@ -970,10 +970,15 @@ def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, 
         pipeline_cls = LTX2Pipeline if _is_ltx2_model(model_id) else LTXPipeline
         logger.info(f"Using HF Transformers API ({pipeline_cls.__name__})")
         torch_dtype = _resolve_torch_dtype(kwargs.get("torch_dtype")) or torch.float32
-        try:
-            model = pipeline_cls.from_pretrained(model_id, torch_dtype=torch_dtype)
-        except ValueError:
-            model = pipeline_cls.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch_dtype)
+        if kwargs.get("gguf_file"):
+            from .ltx2_gguf import load_ltx2_pipeline_from_gguf
+
+            model = load_ltx2_pipeline_from_gguf(model_id, kwargs["gguf_file"], torch_dtype)
+        else:
+            try:
+                model = pipeline_cls.from_pretrained(model_id, torch_dtype=torch_dtype)
+            except ValueError:
+                model = pipeline_cls.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch_dtype)
         if kwargs.get("adapters") is not None:
             adapters = kwargs["adapters"]
             alphas = kwargs.get("alphas", None)

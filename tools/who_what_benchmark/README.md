@@ -192,6 +192,17 @@ wwb --target-model ltx-video-model --gt-data video_gen_test/gt.csv --model-type 
 wwb --target-model ltx-video-model --gt-data video_gen_test/gt.csv --model-type text-to-video --genai --output ltx_video_genai
 ```
 
+### Compare Text-to-video GGUF models (LTX-2)
+
+GGUF files of the LTX-2 diffusion model with the original tensor names, such as the ones of [unsloth/LTX-2.3-GGUF](https://huggingface.co/unsloth/LTX-2.3-GGUF), are evaluated in the diffusers pipeline of the same model: `--gguf-file` replaces the transformer weights and the text connector weights the file has. Everything else, including the text projections of the connectors that unsloth/LTX-2.3-GGUF ships in a separate file, comes from the pipeline, so use the pipeline of the same model variant (for example, the `dev` GGUF files with `diffusers/LTX-2.3-Diffusers`). The file is given as a local path or as `<org>/<repo>/<file>.gguf` on the Hugging Face Hub. `--gguf-file` applies to every model of a run, so the references are collected in a separate run without it. LTX-2.3 requires diffusers 0.38 or newer.
+
+```sh
+# Collect the references with the original diffusers pipeline
+wwb --base-model diffusers/LTX-2.3-Diffusers --gt-data ltx23_gguf_test/gt.csv --model-type text-to-video --hf --torch-dtype bf16
+# Compute the metrics with the weights of the GGUF file
+wwb --target-model diffusers/LTX-2.3-Diffusers --gguf-file unsloth/LTX-2.3-GGUF/ltx-2.3-22b-dev-Q8_0.gguf --gt-data ltx23_gguf_test/gt.csv --model-type text-to-video --hf --torch-dtype bf16
+```
+
 ### Compare Text-to-video models with LoRA (LTX-Video)
 
 Community LoRA adapters for LTX-Video are available on [HuggingFace](https://huggingface.co/models?other=base_model:adapter:Lightricks/LTX-Video).

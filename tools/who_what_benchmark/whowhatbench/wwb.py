@@ -369,7 +369,11 @@ def parse_args():
         default=None,
         help="Path to GGUF model file for tokenizer loading. \n"
         "If the base/target model is a local path, gguf-file should be just the filename (e.g., 'model.gguf'). \n"
-        "If the base/target model is a HuggingFace model ID, gguf-file should be a relative path.",
+        "If the base/target model is a HuggingFace model ID, gguf-file should be a relative path. \n"
+        "For text-to-video with --hf: a GGUF file of the LTX-2 diffusion model with the original tensor names, "
+        "as a local path or <org>/<repo>/<file>.gguf (e.g. unsloth/LTX-2.3-GGUF/ltx-2.3-22b-dev-Q8_0.gguf). "
+        "Its transformer and text connector weights replace those of the diffusers LTX-2 pipeline given as the model; "
+        "the other weights come from the pipeline.",
     )
     parser.add_argument(
         "--draft-model",
@@ -523,6 +527,14 @@ def check_args(args):
         raise ValueError("'empty_adapters' mode is not supported for HF Transformers.")
     if args.torch_dtype is not None and not args.hf:
         raise ValueError("--torch-dtype requires --hf")
+    if args.gguf_file and args.model_type == "text-to-video":
+        if not args.hf:
+            raise ValueError("--gguf-file with --model-type text-to-video requires --hf")
+        if args.base_model and args.target_model:
+            raise ValueError(
+                "--gguf-file would be used for both --base-model and --target-model. "
+                "Collect the reference data with --base-model in a separate run without --gguf-file."
+            )
     if args.speaker_embeddings is not None and not os.path.exists(args.speaker_embeddings):
         raise ValueError(f"Speaker embedding file does not exist: {args.speaker_embeddings}")
     if args.gt_data is not None and os.path.isdir(args.gt_data):
