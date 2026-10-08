@@ -134,9 +134,7 @@ void ContinuousBatchingPipeline::MtpDecodingImpl::enable_mtp_hidden_state_pairin
 
 GenerationConfig ContinuousBatchingPipeline::MtpDecodingImpl::make_draft_generation_config(
     const GenerationConfig& config) {
-    GenerationConfig draft_config = config;
-    draft_config.ignore_eos = true;
-    draft_config.stop_strings.clear();
+    GenerationConfig draft_config = make_draft_sampling_params(config);
     if (draft_config.max_new_tokens == SIZE_MAX && draft_config.max_length == SIZE_MAX) {
         // The draft is stopped by the target, but ignore_eos requires a finite generation limit.
         draft_config.max_new_tokens = SIZE_MAX - 1;
