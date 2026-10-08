@@ -22,8 +22,14 @@ bool are_tokenizers_equal(Tokenizer& lhs, Tokenizer& rhs) {
     
     ov::Shape shape_lhs = encoded_string_lhs.get_shape(),
               shape_rhs = encoded_string_rhs.get_shape();
+    if (shape_lhs != shape_rhs) {
+        return false;
+    }
+    const int64_t* ids_lhs = encoded_string_lhs.data<const int64_t>();
+    const int64_t* ids_rhs = encoded_string_rhs.data<const int64_t>();
 
-    return shape_lhs == shape_rhs && lhs.get_eos_token_id() == rhs.get_eos_token_id() &&
+    return std::equal(ids_lhs, ids_lhs + encoded_string_lhs.get_size(), ids_rhs) &&
+           lhs.get_eos_token_id() == rhs.get_eos_token_id() &&
            lhs.get_bos_token_id() == rhs.get_bos_token_id() && lhs.get_pad_token_id() == rhs.get_pad_token_id();
 }
 
