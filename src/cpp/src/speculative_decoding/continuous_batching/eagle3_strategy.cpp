@@ -423,8 +423,9 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
                                   const std::vector<GenerationConfig>& sampling_params) {
         OPENVINO_ASSERT(!streamer_ptr->has_callback() ||
                         (input_ids.size() == 1 &&
-                         (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_tree_search())),
-                        "Eagle3 streaming only supports batch size=1 with greedy or tree search");
+                         (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial() ||
+                          sampling_params[0].is_tree_search())),
+                        "Eagle3 streaming only supports batch size=1 with greedy, multinomial or tree search");
     };
     strategy.start_timer = [](){
         return std::chrono::steady_clock::now();

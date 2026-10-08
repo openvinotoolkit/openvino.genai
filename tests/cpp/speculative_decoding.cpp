@@ -235,12 +235,12 @@ TEST_F(CBForSDTest, MtpAdmissionRejectsTreeSearch) {
     expect_mtp_request_rejected(pipeline, config, "does not support tree search");
 }
 
-TEST_F(CBForSDTest, MtpAdmissionRejectsNonGreedyDecoding) {
+TEST_F(CBForSDTest, MtpAdmissionRejectsBeamSearch) {
     MtpPipelineTestInstance pipeline;
     auto config = valid_mtp_config();
-    config.do_sample = true;
+    config.num_beams = 2;
 
-    expect_mtp_request_rejected(pipeline, config, "supports greedy decoding only");
+    expect_mtp_request_rejected(pipeline, config, "supports greedy and multinomial decoding only");
 }
 
 TEST_F(CBForSDTest, MtpAdmissionRejectsParallelSampling) {
@@ -262,13 +262,18 @@ TEST_F(CBForSDTest, MtpAdmissionRejectsZeroAssistantTokens) {
 TEST_F(CBForSDTest, MtpSupportedConfigPassesAdmissionValidation) {
     MtpPipelineTestInstance pipeline;
     ov::Tensor invalid_input(ov::element::f32, ov::Shape{});
+    auto sampled_config = valid_mtp_config();
+    sampled_config.do_sample = true;
+    sampled_config.top_k = 20;
 
-    try {
-        pipeline.add_request(0, invalid_input, valid_mtp_config());
-        FAIL() << "Expected the scalar test tensor to be rejected after admission validation";
-    } catch (const ov::Exception& exception) {
-        EXPECT_NE(std::string(exception.what()).find("MTP draft input embeds expect shape"), std::string::npos)
-            << exception.what();
+    for (const auto& config : {valid_mtp_config(), sampled_config}) {
+        try {
+            pipeline.add_request(0, invalid_input, config);
+            FAIL() << "Expected the scalar test tensor to be rejected after admission validation";
+        } catch (const ov::Exception& exception) {
+            EXPECT_NE(std::string(exception.what()).find("MTP draft input embeds expect shape"), std::string::npos)
+                << exception.what();
+        }
     }
 }
 

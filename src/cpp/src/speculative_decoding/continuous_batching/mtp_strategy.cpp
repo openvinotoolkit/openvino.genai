@@ -20,8 +20,8 @@ void validate_mtp_generation_config(const GenerationConfig& config) {
                     "assistant_confidence_threshold must be 0.f.");
     OPENVINO_ASSERT(!config.is_tree_search(),
                     "MTP speculative decoding does not support tree search.");
-    OPENVINO_ASSERT(config.is_greedy_decoding(),
-                    "MTP speculative decoding supports greedy decoding only.");
+    OPENVINO_ASSERT(config.is_greedy_decoding() || config.is_multinomial(),
+                    "MTP speculative decoding supports greedy and multinomial decoding only.");
     OPENVINO_ASSERT(config.num_return_sequences == 1,
                     "MTP speculative decoding does not support parallel sampling; "
                     "num_return_sequences must be 1.");
@@ -261,8 +261,9 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::MtpDecodingImpl
                                   const std::vector<ov::Tensor>& input_ids,
                                   const std::vector<GenerationConfig>& sampling_params) {
         OPENVINO_ASSERT(!streamer_ptr->has_callback() ||
-                            (input_ids.size() == 1 && sampling_params[0].is_greedy_decoding()),
-                        "MTP streaming only supports batch size=1 with greedy decoding.");
+                            (input_ids.size() == 1 &&
+                             (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial())),
+                        "MTP streaming only supports batch size=1 with greedy/multinomial decoding.");
     };
     strategy.start_timer = []() { return std::chrono::steady_clock::now(); };
     strategy.stop_timer = [](const TimePoint& start) {
