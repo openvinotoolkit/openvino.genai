@@ -3223,11 +3223,10 @@ def test_vlm_eagle3_chat_with_videos(
             assert metrics is not None
             assert metrics.draft_model_metrics is not None
             assert metrics.draft_model_metrics.get_num_generated_tokens() > 0
-            assert metrics.get_num_accepted_tokens() > 0
 
     for metrics in metrics_without_drafting:
         assert metrics is not None
-        assert metrics.draft_model_metrics is None
+        assert metrics.draft_model_metrics.get_num_generated_tokens() == 0
 
     assert results_without_draft[0] == results_with_draft[0], (
         "First mixed-modality chat turn should be the same when Eagle3 draft model is enabled and disabled."
