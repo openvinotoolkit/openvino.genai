@@ -155,22 +155,21 @@ optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign --trust
 optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-0.6B-Base --trust-remote-code qwen3_tts_base_ov
 ```
 
-`--language` accepts the model's language names (for example `english`, `chinese`). Pass `auto` (or omit) to
-let the model adapt automatically.
+Use `--language` to set the language. The supported languages are: ["Auto", "Chinese", "English", "Japanese", "Korean", "German", "French", "Russian", "Portuguese", "Spanish", and "Italian"]. "Auto" will be used by default if not specified.
 
 ### 3) `qwen3_tts customvoice`
 
 Speak with one of the model's built-in speakers.
 
 ```
-qwen3_tts customvoice qwen3_tts_customvoice_ov "Hello from Qwen3 CustomVoice." --speaker ryan --language english
+qwen3_tts customvoice qwen3_tts_customvoice_ov "Hello from Qwen3 CustomVoice." --speaker ryan
 ```
 
 `--instruct` is optional and steers tone/emotion/pace.
 Note: Only supported in 1.7B variant of CustomVoice -- `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`
 
 ```
-qwen3_tts customvoice qwen3_tts_customvoice_ov "Hello from Qwen3 CustomVoice." --speaker ryan --language english --instruct "Speak in a calm, professional tone."
+qwen3_tts customvoice qwen3_tts_customvoice_ov "Hello from Qwen3 CustomVoice." --speaker ryan --instruct "Speak in a calm, professional tone."
 ```
 
 For `Qwen3-TTS-12Hz-1.7B/0.6B-CustomVoice` models, the supported speaker list and speaker descriptions are provided below. We recommend using each speaker's native language for the best quality. Of course, each speaker can speak any language supported by the model.
@@ -192,27 +191,39 @@ For `Qwen3-TTS-12Hz-1.7B/0.6B-CustomVoice` models, the supported speaker list an
 Design a new voice purely from a natural-language description. There is no speaker list; `--instruct` is required.
 
 ```
-qwen3_tts voice-design qwen3_tts_voicedesign_ov "H-hey! You dropped your... uh... calculus notebook? I mean, I think it's yours? Maybe?" --language english --instruct "Male, 17 years old, tenor range, gaining confidence - deeper breath support now, though vowels still tighten when nervous"
+qwen3_tts voice-design qwen3_tts_voicedesign_ov "H-hey! You dropped your... uh... calculus notebook? I mean, I think it's yours? Maybe?" --instruct "Male, 17 years old, tenor range, gaining confidence - deeper breath support now, though vowels still tighten when nervous"
 ```
 
 ### 5) `qwen3_tts base`
 
-Clone a voice from a short reference recording. Two modes are selected automatically from the inputs:
+Clone a voice from a short reference recording. 
+
+You can download this 24 kHz reference audio file to use for following examples:
+https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-TTS-Repo/clone.wav
+
+Save this file locally as clone.wav, then pass it via `--ref_audio_wav_path`.
+
+Note: The reference audio must be 24 kHz.
+
+Two modes are selected automatically from the inputs:
 
 - **x-vector mode** (fast, identity only): provide reference audio (or a pre-saved speaker embedding). `--ref_text` is not required.
 - **ICL mode** (higher fidelity): additionally provide the reference transcript via `--ref_text`.
 
+`--ref_text` is the transcript for the reference recording given in `--ref_audio_wav_path`.
+
+If you're using the example audio file given above, then `--ref_text` should be set to: "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you."
+
+
 Clone directly from reference audio (x-vector mode):
 ```
-qwen3_tts base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path reference_24k.wav --language english
+qwen3_tts base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path clone.wav
 ```
 
 Clone from reference audio + transcript (ICL mode):
 ```
-qwen3_tts base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path reference_24k.wav --ref_text "This is the reference transcript." --language english
+qwen3_tts base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path clone.wav --ref_text "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you."
 ```
-
-> **Note:** reference audio must already be mono/stereo at 24000 Hz. OV GenAI does not resample reference audio.
 
 #### Reusing a reference prompt (save once, reuse many times)
 
@@ -220,30 +231,31 @@ Extracting the speaker embedding and reference codes from audio is the expensive
 recomputing them on every run, clone once from reference audio and save the artifacts that `generate(...)`
 returns on the result (`speaker_embedding` and `ref_codec_ids`):
 
-Save from a first x-vector run:
+For x-vector mode: Save speaker embedding:
 ```
-qwen3_tts base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path reference_24k.wav --language english --save_speaker_embedding_file_path qwen_speaker_embedding.bin
-```
-
-Save from a first ICL run (also emits reference codes):
-```
-qwen3_tts base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path reference_24k.wav --ref_text "This is the reference transcript." --language english --save_speaker_embedding_file_path qwen_speaker_embedding.bin --save_ref_codec_ids_file_path qwen_ref_code.bin
+qwen3_tts base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path clone.wav --save_speaker_embedding_file_path qwen_speaker_embedding.bin
 ```
 
-Reuse the saved speaker embedding (x-vector mode, no encoder pass):
+For ICL mode: Save speaker embedding & ref codec ids:
 ```
-qwen3_tts base qwen3_tts_base_ov "Hello again." --speaker_embedding_file_path qwen_speaker_embedding.bin --language english
+qwen3_tts base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path clone.wav --ref_text "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you." --save_speaker_embedding_file_path qwen_speaker_embedding.bin --save_ref_codec_ids_file_path qwen_ref_code.bin
 ```
 
-Reuse saved embedding + reference codes (ICL mode, no encoder pass):
+For x-vector mode: Reuse the saved speaker embedding (ref-audio not needed anymore):
 ```
-qwen3_tts base qwen3_tts_base_ov "Hello again." --speaker_embedding_file_path qwen_speaker_embedding.bin --ref_text "This is the reference transcript." --ref_codec_ids_file_path qwen_ref_code.bin --language english
+qwen3_tts base qwen3_tts_base_ov "Hello again." --speaker_embedding_file_path qwen_speaker_embedding.bin
+```
+
+For ICL mode: Reuse saved embedding + reference codes (ref-audio not needed anymore):
+Note: `--ref_text` is still required here.
+```
+qwen3_tts base qwen3_tts_base_ov "Hello again." --speaker_embedding_file_path qwen_speaker_embedding.bin --ref_codec_ids_file_path qwen_ref_code.bin --ref_text "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you."
 ```
 
 The saved files use simple flat-binary layouts owned by this sample (the speaker embedding is raw
-float32; the reference codes carry a small shape header), so no external tooling is required.
+float32; the reference codes carry a small shape header).
 
-All samples produce WAV output.
+For Qwen3-TTS Base examples above, output is 24 kHz WAV.
 
 Refer to [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#speech-generation-models) for model details.
 
