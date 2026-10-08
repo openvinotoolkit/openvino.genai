@@ -34,6 +34,19 @@ inline void update_image_slice_counts(VLMPerfMetrics& metrics, const std::vector
     }
 }
 
+inline std::unordered_map<std::string, ov::Tensor> deep_copy_tensors_map(
+    const std::unordered_map<std::string, ov::Tensor>& src
+) {
+    std::unordered_map<std::string, ov::Tensor> dst;
+    dst.reserve(src.size());
+    for (const auto& [name, tensor] : src) {
+        ov::Tensor tensor_copy(tensor.get_element_type(), tensor.get_shape());
+        tensor.copy_to(tensor_copy);
+        dst.emplace(name, std::move(tensor_copy));
+    }
+    return dst;
+}
+
 std::vector<std::variant<ov::Tensor, size_t>> split_tokenize(const std::string& text,
                                                              ov::genai::Tokenizer& tokenizer,
                                                              const std::regex& native_pattern);

@@ -10,22 +10,6 @@
 #include "visual_language/vlm_chat_context.hpp"
 #include "visual_language/vlm_utils.hpp"
 
-namespace {
-
-std::unordered_map<std::string, ov::Tensor> deep_copy_tensors_map(
-    const std::unordered_map<std::string, ov::Tensor>& src) {
-    std::unordered_map<std::string, ov::Tensor> dst;
-    dst.reserve(src.size());
-    for (const auto& [name, tensor] : src) {
-        ov::Tensor tensor_copy(tensor.get_element_type(), tensor.get_shape());
-        tensor.copy_to(tensor_copy);
-        dst.emplace(name, std::move(tensor_copy));
-    }
-    return dst;
-}
-
-}  // namespace
-
 namespace ov::genai {
 
 GenerationConfig ContinuousBatchingPipeline::IContinuousBatchingPipeline::get_config() const {
@@ -464,7 +448,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
             position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[i].get_shape()[1], 0));
 
-            lm_extra_inputs_list.push_back(deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs()));
+            lm_extra_inputs_list.push_back(vlm_utils::deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs()));
 
             PerfMetrics::emplace_duration(vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations, start_get_inputs_embeds);
         }
@@ -701,7 +685,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[i].get_shape()[1], 0));
 
-        lm_extra_inputs_list.push_back(deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs()));
+        lm_extra_inputs_list.push_back(vlm_utils::deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs()));
 
         PerfMetrics::emplace_duration(vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations, start_get_inputs_embeds);
     }
