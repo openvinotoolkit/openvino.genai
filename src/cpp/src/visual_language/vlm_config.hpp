@@ -115,6 +115,12 @@ public:
     std::string video_token = "<|video|>";
     /// @brief A string token denoting end of image embeddings for Gemma4 model.
     std::string eoi_token = "<image|>";
+    /// @brief A string token denoting start of audio embeddings for Gemma4 model.
+    std::string boa_token = "<|audio>";
+    /// @brief A placeholder for audio embeddings in text for Gemma4 model.
+    std::string audio_token = "<|audio|>";
+    /// @brief A string token denoting end of audio embeddings for Gemma4 model.
+    std::string eoa_token = "<audio|>";
 
     /// @brief Hidden size of Gemma4 per-layer embedding input used during inference.
     size_t hidden_size_per_layer_input = 0;

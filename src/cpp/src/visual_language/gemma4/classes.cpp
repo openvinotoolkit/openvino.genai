@@ -20,10 +20,6 @@ namespace {
 
 constexpr float DEFAULT_METADATA_FPS = 24.0f;
 
-constexpr std::string_view AUDIO_BEGIN_TAG = "<|audio>";
-constexpr std::string_view AUDIO_TOKEN = "<|audio|>";
-constexpr std::string_view AUDIO_END_TAG = "<audio|>";
-
 /// @brief Compute target dimensions for aspect-ratio-preserving resize.
 /// Total pixel count should match max_patches * patch_size^2
 /// Dimensions are divisible by pooling_kernel_size * patch_size.
@@ -506,7 +502,7 @@ NormalizedPrompt InputsEmbedderGemma4::normalize_prompt(const std::string& promp
                                                         const std::vector<EncodedAudio>& audios) const {
     NormalizedPrompt result = normalize_prompt(prompt, base_image_id, base_video_id, images, videos);
 
-    const std::string audio_token{AUDIO_TOKEN};
+    const std::string& audio_token = m_vlm_config.audio_token;
     // Gemma4 processor places untagged audio after the text, unlike images and videos.
     if (result.unified_prompt.find(audio_token) == std::string::npos &&
         !std::regex_search(result.unified_prompt, UNIVERSAL_AUDIO_PATTERN)) {
@@ -527,20 +523,23 @@ void InputsEmbedderGemma4::expand_audio_tags_in_prompt(std::string& unified_prom
                                                        const std::vector<EncodedAudio>& encoded_audios,
                                                        const std::vector<size_t>& audios_sequence,
                                                        size_t audio_base_id) const {
+    const std::string& boa = m_vlm_config.boa_token;
+    const std::string& eoa = m_vlm_config.eoa_token;
+    const std::string& audio_token = m_vlm_config.audio_token;
     size_t search_offset = 0;
     for (size_t audio_id : audios_sequence) {
         const size_t num_audio_tokens = encoded_audios.at(audio_id - audio_base_id).num_audio_tokens;
         std::string expanded_tag;
-        expanded_tag.reserve(AUDIO_BEGIN_TAG.size() + num_audio_tokens * AUDIO_TOKEN.size() + AUDIO_END_TAG.size());
-        expanded_tag += AUDIO_BEGIN_TAG;
+        expanded_tag.reserve(boa.size() + num_audio_tokens * audio_token.size() + eoa.size());
+        expanded_tag += boa;
         for (size_t token = 0; token < num_audio_tokens; ++token) {
-            expanded_tag += AUDIO_TOKEN;
+            expanded_tag += audio_token;
         }
-        expanded_tag += AUDIO_END_TAG;
+        expanded_tag += eoa;
 
-        const size_t pos = unified_prompt.find(AUDIO_TOKEN, search_offset);
+        const size_t pos = unified_prompt.find(audio_token, search_offset);
         OPENVINO_ASSERT(pos != std::string::npos, "Failed to find audio token in prompt during expansion");
-        unified_prompt.replace(pos, AUDIO_TOKEN.size(), expanded_tag);
+        unified_prompt.replace(pos, audio_token.size(), expanded_tag);
         search_offset = pos + expanded_tag.size();
     }
 }
