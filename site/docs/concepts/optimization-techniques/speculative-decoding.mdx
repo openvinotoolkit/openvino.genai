@@ -10,10 +10,12 @@ import OptimumCLI from '@site/src/components/OptimumCLI';
 
 Speculative decoding (also referred to as [assisted-generation](https://huggingface.co/blog/assisted-generation#understanding-text-generation-latency)) is a latency-oriented optimization for autoregressive text generation.
 A small, cheap *drafter* proposes one or more candidate continuations, and the larger *target* (main) model validates them in a single forward pass.
-Tokens that the target would have produced anyway are accepted; the first divergent token is replaced by the target's own sample, and drafting resumes from there.
+With greedy decoding, candidates that match the target's own choice are accepted; the first mismatch is replaced by the target's token, and drafting resumes from there.
+With multinomial sampling (`do_sample=true`), validation follows [speculative sampling](https://arxiv.org/abs/2211.17192): a candidate is accepted with probability `min(1, p/q)`, where `p` and `q` are the probabilities the target and the drafter assign to it after penalties, temperature, top-k, top-p and min-p.
+The first rejected candidate is replaced by a sample from the normalized residual `max(0, p - q)`, and drafting resumes from there.
 
 Because validation is parallel over the candidate length, each accepted draft token replaces a sequential decode step of the target model with (a fraction of) one batched step.
-When acceptance is high, this yields end-to-end speedups on memory-bandwidth-bound decoding without changing the model output distribution in theory (the standard verification scheme is statistically equivalent to sampling from the target).
+When acceptance is high, this yields end-to-end speedups on memory-bandwidth-bound decoding without changing the model output distribution: sampled tokens follow the same distribution as sampling from the target alone.
 
 OpenVINO GenAI implements three drafting strategies. They differ only in *how candidates are produced* — the target-side validation step is shared.
 
@@ -28,6 +30,7 @@ All three strategies are available through the `LLMPipeline` Python and C++ APIs
 Prompt Lookup Decoding and EAGLE3 are additionally supported in `VLMPipeline` (e.g. Qwen3-VL).
 
 The Continuous Batching backend supports multi-request batching; the Stateful backend is single-request.
+Multinomial sampling is supported on the Continuous Batching backend, except with EAGLE3 tree drafting; the Stateful backend supports greedy decoding only.
 :::
 
 Every strategy is configured in two places: the drafter is selected when the pipeline is **constructed**, and the drafting behavior is tuned **per request** through `GenerationConfig`.
