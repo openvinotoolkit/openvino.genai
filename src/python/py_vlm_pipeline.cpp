@@ -340,7 +340,7 @@ An input image without explicit slicing metadata counts as one slice.)")
         .def_readwrite("position_ids", &ov::genai::ProcessedInputs::position_ids)
         .def_readwrite("lm_extra_inputs", &ov::genai::ProcessedInputs::lm_extra_inputs)
         .def_readwrite("rope_delta", &ov::genai::ProcessedInputs::rope_delta)
-        .def_readonly("raw_perf_metrics", &ov::genai::ProcessedInputs::raw_perf_metrics);
+        .def_readonly("vlm_perf_metrics", &ov::genai::ProcessedInputs::vlm_perf_metrics);
 
     py::class_<ov::genai::VLMProcessor>(m, "VLMProcessor", vlm_processor_docstring)
         .def(py::init([](
