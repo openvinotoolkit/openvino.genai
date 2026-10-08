@@ -287,6 +287,13 @@ std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_ima
     return encoded_images;
 }
 
+std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_images(
+    const std::vector<ov::Tensor>& images,
+    bool has_video_inputs
+) {
+    return encode_images(images);
+}
+
 ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(
     const std::string& prompt,
     const std::vector<ov::genai::EncodedImage>& images,
@@ -307,6 +314,14 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedder::IInputsEmbedder::encode_vid
 ) {
     throw_if_video_not_implemented(videos);
     return {};
+}
+
+std::vector<ov::genai::EncodedVideo> InputsEmbedder::IInputsEmbedder::encode_videos(
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<VideoMetadata>& videos_metadata,
+    const std::vector<ov::genai::EncodedImage>& images
+) {
+    return encode_videos(videos, videos_metadata);
 }
 
 NormalizedPrompt InputsEmbedder::IInputsEmbedder::normalize_prompt(
@@ -467,11 +482,26 @@ std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::ve
     return m_impl->encode_images(images);
 }
 
+std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(
+    const std::vector<ov::Tensor>& images,
+    bool has_video_inputs
+) {
+    return m_impl->encode_images(images, has_video_inputs);
+}
+
 std::vector<ov::genai::EncodedVideo> InputsEmbedder::encode_videos(
     const std::vector<ov::Tensor>& videos,
     const std::vector<VideoMetadata>& videos_metadata
 ) {
     return m_impl->encode_videos(videos, videos_metadata);
+}
+
+std::vector<ov::genai::EncodedVideo> InputsEmbedder::encode_videos(
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<VideoMetadata>& videos_metadata,
+    const std::vector<ov::genai::EncodedImage>& images
+) {
+    return m_impl->encode_videos(videos, videos_metadata, images);
 }
 
 std::vector<EncodedAudio> InputsEmbedder::encode_audios(const std::vector<ov::Tensor>& audios) {

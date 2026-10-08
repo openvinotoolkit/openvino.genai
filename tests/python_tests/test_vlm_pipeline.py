@@ -146,8 +146,9 @@ if is_transformers_version("<", "5.0"):
     # llava_next_video is not supported yet by optimum-intel 423b423 with transformers 5.0
     # qwen3_vl fails with error: "Eltwise shape infer input shapes dim index: 1 mismatch", CVS-186059
     VIDEO_MODEL_IDS = [
-        "optimum-intel-internal-testing/tiny-random-minicpmv-4_5",
+        "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5",
         "optimum-intel-internal-testing/tiny-random-llava-next-video",
+        "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5",
         "optimum-intel-internal-testing/tiny-random-qwen3-vl",
         VIDEOCHAT_FLASH_QWEN_MODEL_ID,
     ]
@@ -445,6 +446,7 @@ def _get_ov_model(model_id: str) -> str:
                 load_in_8bit=False,
                 trust_remote_code=model_id in {
                     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
+                    "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5",
                     "optimum-intel-internal-testing/tiny-random-internvl2",
                     "optimum-intel-internal-testing/tiny-random-phi3-vision",
                     "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
@@ -2490,7 +2492,7 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
             text=prompt, image=image, video=video, processor=processor, tokenizer=tokenizer, config=optimum_model.config
         )
 
-    max_new_tokens = 100
+    max_new_tokens = 20 if model_id == "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5" else 100
     output_ids = optimum_model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
     input_ids = inputs["input_ids"] if isinstance(inputs, dict) else inputs.input_ids
     generated_ids = [output_ids[len(input_ids) :] for input_ids, output_ids in zip(input_ids, output_ids)]
