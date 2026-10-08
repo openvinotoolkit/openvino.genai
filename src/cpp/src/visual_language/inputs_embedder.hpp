@@ -405,7 +405,7 @@ private:
     friend class InputsEmbedderDeepseekOCR2;
     friend class InputsEmbedderVideoChatFlashQwen;
     friend class InputsEmbedderMuseGlimmer;
-};
+    friend class InputsEmbedderMolmo2;};
 
 template <typename Func>
 std::pair<std::string, std::vector<size_t>> universal_to_native(

@@ -75,6 +75,23 @@ public:
     size_t max_patches = 6;
     std::array<uint8_t, 3> background_color{127, 127, 127};
 
+    // molmo2 (allenai/MolmoWeb-4B) specific params
+    /// @brief Maximum number of overlapping high-resolution crops per image.
+    size_t molmo2_max_crops = 8;
+    /// @brief Overlap margins (in patches) removed on each side when tiling crops.
+    size_t molmo2_overlap_margin_left = 4;
+    size_t molmo2_overlap_margin_right = 4;
+    /// @brief Vision-adapter pooling window (patches pooled into one image token).
+    size_t molmo2_pooling_h = 2;
+    size_t molmo2_pooling_w = 2;
+    /// @brief Whether column tokens are inserted between rows of high-res image patches.
+    bool molmo2_image_use_col_tokens = true;
+    /// @brief Whether the low-res (global) crop uses the dedicated low-res start token.
+    bool molmo2_use_single_crop_start_token = false;
+    /// @brief Column-token behavior for the low-res (global) crop. -1 means "follow
+    /// molmo2_image_use_col_tokens"; 0/1 override it explicitly.
+    int molmo2_use_single_crop_col_tokens = -1;
+
     /// @brief Default constructor
     ProcessorConfig() = default;
 

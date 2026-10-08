@@ -43,6 +43,9 @@ file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py"
           "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.pyi"
           "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/py_openvino_genai.pyi"
      DESTINATION "${CMAKE_BINARY_DIR}/openvino_genai/")
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/_cli"
+     DESTINATION "${CMAKE_BINARY_DIR}/openvino_genai/"
+     PATTERN "__pycache__" EXCLUDE)
 
 if(OpenVINODeveloperPackage_FOUND)
     # TODO: commit changes separately
@@ -71,6 +74,10 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py"
               "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/py_openvino_genai.pyi"
         DESTINATION python/openvino_genai
         COMPONENT pygenai_${Python3_VERSION_MAJOR}_${Python3_VERSION_MINOR})
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/_cli"
+        DESTINATION python/openvino_genai
+        COMPONENT pygenai_${Python3_VERSION_MAJOR}_${Python3_VERSION_MINOR}
+        PATTERN "__pycache__" EXCLUDE)
 install(TARGETS ${TARGET_NAME}
         LIBRARY DESTINATION python/openvino_genai
         COMPONENT pygenai_${Python3_VERSION_MAJOR}_${Python3_VERSION_MINOR})

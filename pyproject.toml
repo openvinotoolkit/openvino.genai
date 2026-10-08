@@ -33,6 +33,20 @@ dependencies = [
 ]
 [project.optional-dependencies]
 testing = ["pytest>=6.0"]
+# genai-cli: export of Hugging Face models to OpenVINO IR. The transformers version each model needs is
+# provided at export time by an ephemeral uv overlay, optimum-intel is only fetched for models genai-cli
+# does not convert natively.
+export = [
+    "torch>=2.6",
+    "transformers",
+    "huggingface_hub",
+    "nncf",
+    "packaging",
+    "uv",
+]
+
+[project.scripts]
+genai-cli = "openvino_genai._cli.main:main"
 
 [tool.py-build-cmake.module]
 directory = "src/python"
