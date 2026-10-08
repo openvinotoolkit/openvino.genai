@@ -1744,9 +1744,8 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
         !static_cast<bool>(generation_config.ref_codec_ids);
 
     ov::Tensor effective_speaker_embedding = speaker_embedding;
-    if (base_model && x_vector_only_mode && !effective_speaker_embedding && generation_config.ref_audio) {
+    if (base_model && !effective_speaker_embedding && generation_config.ref_audio) {
         effective_speaker_embedding = extract_qwen3_speaker_embedding_from_audio(generation_config.ref_audio);
-        // Falls through to the normal synthesis loop with effective_speaker_embedding.
     }
 
     // Surface the resolved speaker embedding so callers can persist and reuse it (x-vector mode).
@@ -1763,26 +1762,29 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
          static_cast<bool>(generation_config.ref_codec_ids));
 
     if (has_qwen_voice_clone_props) {
-        ov::Tensor resolved_speaker_embedding = effective_speaker_embedding;
-        if (!resolved_speaker_embedding && generation_config.ref_audio) {
-            resolved_speaker_embedding = extract_qwen3_speaker_embedding_from_audio(generation_config.ref_audio);
-        }
+        OPENVINO_ASSERT(!generation_config.ref_text.empty(),
+                        "Qwen3 Base ICL voice cloning requires non-empty 'ref_text'.");
 
-        OPENVINO_ASSERT(resolved_speaker_embedding,
-                        "Qwen3 Base voice cloning via generate(...) requires either speaker_embedding or ref_audio");
+        OPENVINO_ASSERT(effective_speaker_embedding,
+                        "Qwen3 Base ICL voice cloning requires a speaker source: pass 'speaker_embedding' "
+                        "or provide 'ref_audio'.");
 
         ov::Tensor resolved_ref_code = generation_config.ref_codec_ids;
         if (!resolved_ref_code && generation_config.ref_audio) {
             resolved_ref_code = extract_qwen3_ref_code_from_audio(generation_config.ref_audio);
         }
 
+        OPENVINO_ASSERT(resolved_ref_code,
+                        "Qwen3 Base ICL voice cloning requires reference codec ids: pass 'ref_codec_ids' "
+                        "or provide 'ref_audio' so ref codes can be extracted.");
+
         Qwen3VoiceClonePrompt prompt;
-        prompt.ref_spk_embedding = resolved_speaker_embedding;
+        prompt.ref_spk_embedding = effective_speaker_embedding;
         prompt.ref_text = generation_config.ref_text;
         prompt.ref_code = resolved_ref_code;
 
         // Surface the resolved clone artifacts so callers can persist and reuse them (ICL mode).
-        result.speaker_embedding = resolved_speaker_embedding;
+        result.speaker_embedding = effective_speaker_embedding;
         result.ref_codec_ids = resolved_ref_code;
 
         for (const auto& text : texts) {
