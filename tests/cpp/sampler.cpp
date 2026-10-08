@@ -713,3 +713,103 @@ TEST(SamplerValidationMode, prompt_phase) {
              expected{0, 1, 2, 3};
     ASSERT_EQ(sequence_groups.front()->get_sequences().front()->get_generated_ids(), expected);
 }
+
+namespace {
+// Emulates a processed prompt [0, 1, 2, 3, 4] followed by the main model's token 0, then appends the draft candidates
+// and schedules them for validation.
+SequenceGroup::Ptr make_validation_group(const GenerationConfig& config, const std::vector<int64_t>& candidates) {
+    std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    auto group = std::make_shared<SequenceGroup>(0, input_tensor, config);
+    auto sequence = group->get_sequences().front();
+    sequence->append_token(0, 1.f);
+    group->update_processed_tokens_num(input_vector.size());
+    for (const auto candidate : candidates) {
+        sequence->append_token(candidate, 1.f);
+    }
+    group->set_num_validated_tokens(candidates.size());
+    group->schedule_tokens(group->get_num_available_tokens_for_batching());
+    return group;
+}
+}  // namespace
+
+// min_new_tokens = 2 masks the stop token for the first two generated tokens only, so the stop candidate drafted as
+// the fourth token must be accepted.
+TEST(SamplerValidationMode, lifts_min_new_tokens_mask_inside_validation_window) {
+    auto config = ov::genai::utils::get_greedy_config();
+    config.max_new_tokens = 30;
+    config.min_new_tokens = 2;
+    config.stop_token_ids = {4};
+    auto group = make_validation_group(config, {1, 2, 4});
+    std::vector<float> logits = {
+        0, 5.f, 0, 0, 0,
+        0, 0, 5.f, 0, 0,
+        1.f, 0, 0, 0, 5.f,
+        5.f, 0, 0, 0, 0,
+    };
+    Sampler sampler;
+    sampler.sample({group}, ov::Tensor(ov::element::f32, ov::Shape{4, 1, 5}, logits.data()), true);
+
+    EXPECT_EQ(group->get_sequences().front()->get_generated_ids(), (TokenIds{0, 1, 2, 4}));
+}
+
+// min_new_tokens = 5 masks the stop token for the first five generated tokens. Rejecting candidate 2 in favour of 3
+// leaves three generated tokens, so the stop token must stay masked at the fourth even though its logit is largest.
+TEST(SamplerValidationMode, keeps_min_new_tokens_mask_after_rejection) {
+    auto config = ov::genai::utils::get_greedy_config();
+    config.max_new_tokens = 30;
+    config.min_new_tokens = 5;
+    config.stop_token_ids = {4};
+    auto group = make_validation_group(config, {1, 2});
+    auto sequence = group->get_sequences().front();
+    std::vector<float> window_logits = {
+        0, 5.f, 0, 0, 0,
+        0, 0, 0, 5.f, 0,
+        5.f, 0, 0, 0, 0,
+    };
+    Sampler sampler;
+    sampler.sample({group}, ov::Tensor(ov::element::f32, ov::Shape{3, 1, 5}, window_logits.data()), true);
+    ASSERT_EQ(sequence->get_generated_ids(), (TokenIds{0, 1, 3}));
+
+    group->schedule_tokens(group->get_num_available_tokens_for_batching());
+    std::vector<float> next_logits = {0, 0, 4.f, 0, 5.f};
+    sampler.sample({group}, ov::Tensor(ov::element::f32, ov::Shape{1, 1, 5}, next_logits.data()), true);
+
+    EXPECT_EQ(sequence->get_generated_ids(), (TokenIds{0, 1, 3, 2}));
+    EXPECT_FALSE(sequence->has_finished());
+}
+
+// The parallel samples of a request share one logit processor. Each must still see the request's generated length,
+// so the stop token stays masked for all of them until min_new_tokens tokens are generated.
+TEST(SamplerMinNewTokens, masks_stop_token_for_every_parallel_sample) {
+    GenerationConfig config;
+    config.max_new_tokens = 10;
+    config.do_sample = true;
+    config.top_k = 1;
+    config.num_return_sequences = 3;
+    config.min_new_tokens = 3;
+    config.stop_token_ids = {4};
+    std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    auto group = std::make_shared<SequenceGroup>(0, input_tensor, config);
+    Sampler sampler;
+
+    group->schedule_tokens(input_vector.size());
+    group->set_output_seq_len(1);
+    std::vector<float> prompt_logits = {0, 5.f, 0, 0, 4.f};
+    sampler.sample({group}, ov::Tensor(ov::element::f32, ov::Shape{1, 1, 5}, prompt_logits.data()));
+    ASSERT_EQ(group->num_running_seqs(), 3);
+
+    for (size_t step = 0; step < 2; ++step) {
+        group->schedule_tokens(1);
+        std::vector<float> logits;
+        for (size_t sample = 0; sample < 3; ++sample) {
+            logits.insert(logits.end(), {0, 0, 4.f, 0, 5.f});
+        }
+        sampler.sample({group}, ov::Tensor(ov::element::f32, ov::Shape{3, 1, 5}, logits.data()));
+    }
+
+    for (const auto& sequence : group->get_sequences()) {
+        EXPECT_EQ(sequence->get_generated_ids(), (TokenIds{1, 2, 2}));
+    }
+}

@@ -1534,6 +1534,9 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                 }
 
                 auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id, logit_token_offset);
+                // The processor is shared by the sequences of the group and by the positions of a validation window,
+                // so min_new_tokens is evaluated against the tokens generated before this position of this sequence.
+                logit_processor.update_generated_len(generated_and_verified_len);
                 logit_processor.apply(logit_vector);
                 
                 Token sampled_token;
@@ -1859,7 +1862,7 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
                 sequence_group->update_processed_tokens_num(min_processed_tokens);
             }
             auto& logit_processor = get_logit_processor(sequence_group->get_request_id());
-            logit_processor.update_generated_len(min_processed_tokens);
+            logit_processor.update_generated_len(assisting_pipeline_info.min_generated_len);
         }
         if (assisting_pipeline_info.updated_validation_len) {
             sequence_group->set_num_validated_tokens(assisting_pipeline_info.updated_validation_len);
