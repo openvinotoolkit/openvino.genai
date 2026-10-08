@@ -61,12 +61,11 @@ public:
                                  const std::vector<size_t>& videos_sequence = {},
                                  const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
-    // Returns draft-specific input embeddings prepared for speculative (Eagle3) decoding,
-    // or an empty tensor when the embedder does not provide dedicated draft embeddings.
-    // Aligned with the vLLM implementation.
-    ov::Tensor get_draft_inputs_embeds() const;
+    // Returns cached text embeddings used to prepare Eagle3 speculative-decoding inputs.
+    // Returns an empty tensor when no cached text embeddings are available.
+    ov::Tensor get_cached_text_embeds() const;
 
-    void set_draft_inputs_embeds_cache_enabled(bool enabled);
+    void set_cached_text_embeds_enabled(bool enabled);
 
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
 
@@ -172,9 +171,9 @@ private:
         // position ids
         ov::Tensor m_position_ids;
         int64_t m_rope_delta = 0;
-        // Cached text-only embeddings for speculative (eagle3) draft path.
-        ov::Tensor m_draft_inputs_embeds;
-        bool m_draft_inputs_embeds_cache_enabled = false;
+        // Text-only embeddings cached for the speculative (Eagle3) draft path.
+        ov::Tensor m_cached_text_embeds;
+        bool m_cached_text_embeds_enabled = false;
         virtual ~IInputsEmbedder() = default;
 
     public:
@@ -278,27 +277,30 @@ private:
             const std::vector<EncodedImage>& images,
             const std::vector<EncodedVideo>& videos) const;
 
-        virtual ov::Tensor get_draft_inputs_embeds() const {
-            return m_draft_inputs_embeds;
+        virtual ov::Tensor get_cached_text_embeds() const {
+            return m_cached_text_embeds;
         }
 
-        void set_draft_inputs_embeds_cache_enabled(bool enabled) {
-            m_draft_inputs_embeds_cache_enabled = enabled;
+        void set_cached_text_embeds_enabled(bool enabled) {
+            m_cached_text_embeds_enabled = enabled;
             if (!enabled) {
-                m_draft_inputs_embeds = ov::Tensor();
+                m_cached_text_embeds = ov::Tensor();
             }
         }
 
-        void cache_draft_inputs_embeds(const ov::Tensor& text_embeds) {
-            if (!m_draft_inputs_embeds_cache_enabled) {
+        void set_cached_text_embeds(const ov::Tensor& text_embeds) {
+            if (!m_cached_text_embeds_enabled) {
                 return;
             }
-            OPENVINO_ASSERT(text_embeds && text_embeds.get_size() > 0, "Cannot cache an empty draft embeddings tensor");
-            if (!m_draft_inputs_embeds || m_draft_inputs_embeds.get_element_type() != text_embeds.get_element_type() ||
-                m_draft_inputs_embeds.get_shape() != text_embeds.get_shape()) {
-                m_draft_inputs_embeds = ov::Tensor(text_embeds.get_element_type(), text_embeds.get_shape());
+            OPENVINO_ASSERT(text_embeds, "Cannot cache an empty text embeddings tensor");
+            if (!m_cached_text_embeds || m_cached_text_embeds.get_element_type() != text_embeds.get_element_type() ||
+                m_cached_text_embeds.get_shape() != text_embeds.get_shape()) {
+                m_cached_text_embeds = ov::Tensor(text_embeds.get_element_type(), text_embeds.get_shape());
             }
-            text_embeds.copy_to(m_draft_inputs_embeds);
+            OPENVINO_ASSERT(m_cached_text_embeds.get_element_type() == text_embeds.get_element_type() &&
+                                m_cached_text_embeds.get_shape() == text_embeds.get_shape(),
+                            "Cached and source text embeddings must have matching element types and shapes");
+            text_embeds.copy_to(m_cached_text_embeds);
         }
 
     protected:

@@ -3210,12 +3210,24 @@ def test_vlm_eagle3_chat_with_videos(
     results_with_draft_tree, metrics_with_draft_tree = run_two_round_chat(
         ov_pipe_with_draft, generation_config_with_draft_tree
     )
+    generation_config_without_drafting = _setup_generation_config(
+        ov_pipe_with_draft, max_new_tokens=20, do_sample=False
+    )
+    generation_config_without_drafting.num_assistant_tokens = 0
+    results_without_drafting, metrics_without_drafting = run_two_round_chat(
+        ov_pipe_with_draft, generation_config_without_drafting
+    )
 
     for metrics_list in (metrics_with_draft, metrics_with_draft_tree):
         for metrics in metrics_list:
             assert metrics is not None
             assert metrics.draft_model_metrics is not None
             assert metrics.draft_model_metrics.get_num_generated_tokens() > 0
+            assert metrics.get_num_accepted_tokens() > 0
+
+    for metrics in metrics_without_drafting:
+        assert metrics is not None
+        assert metrics.draft_model_metrics is None
 
     assert results_without_draft[0] == results_with_draft[0], (
         "First mixed-modality chat turn should be the same when Eagle3 draft model is enabled and disabled."
@@ -3228,6 +3240,9 @@ def test_vlm_eagle3_chat_with_videos(
     )
     assert results_without_draft[1] == results_with_draft_tree[1], (
         "Second mixed-modality chat turn should be the same when Eagle3 draft model and tree search are enabled and disabled."
+    )
+    assert results_without_draft == results_without_drafting, (
+        "Mixed-modality chat results should be the same when drafting is disabled with num_assistant_tokens=0."
     )
 
 

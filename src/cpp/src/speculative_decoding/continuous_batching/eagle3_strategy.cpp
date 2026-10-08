@@ -13,7 +13,7 @@ namespace {
 
 constexpr char kDraftEmbeddingsExtraInputName[] = "__ov_genai_internal_draft_embeddings";
 
-ov::Tensor take_request_draft_embeddings(std::optional<std::unordered_map<std::string, ov::Tensor>>& lm_extra_inputs) {
+ov::Tensor extract_draft_embeddings(std::optional<std::unordered_map<std::string, ov::Tensor>>& lm_extra_inputs) {
     if (!lm_extra_inputs.has_value()) {
         return {};
     }
@@ -46,7 +46,6 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
 
     if (main_model_desc.inputs_embedder) {
         m_inputs_embedder = main_model_desc.inputs_embedder;
-        m_inputs_embedder->set_draft_inputs_embeds_cache_enabled(true);
         m_model_input_type = ModelInputType::EMBEDDINGS;
         m_vision_registry = std::make_shared<VisionRegistry>();
     }
@@ -274,19 +273,30 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::update_eagle_pipeline_param
 
 std::unordered_map<std::string, ov::Tensor>
 ContinuousBatchingPipeline::Eagle3DecodingImpl::prepare_lm_extra_inputs(
-    std::unordered_map<std::string, ov::Tensor> lm_extra_inputs) const {
-    auto prepared_inputs = IContinuousBatchingPipeline::prepare_lm_extra_inputs(std::move(lm_extra_inputs));
-    if (m_inputs_embedder) {
-        // For embeddings input mode, pass precomputed draft embeddings via extra inputs
-        // so add_request() can consume them for draft-path first-token trimming.
-        const ov::Tensor draft_inputs_embeds = m_inputs_embedder->get_draft_inputs_embeds();
-        if (draft_inputs_embeds && draft_inputs_embeds.get_size() > 0) {
-            ov::Tensor draft_copy(draft_inputs_embeds.get_element_type(), draft_inputs_embeds.get_shape());
-            draft_inputs_embeds.copy_to(draft_copy);
-            prepared_inputs[kDraftEmbeddingsExtraInputName] = std::move(draft_copy);
+    std::unordered_map<std::string, ov::Tensor> lm_extra_inputs,
+    const GenerationConfig& sampling_params) const {
+    auto prepared_inputs = IContinuousBatchingPipeline::prepare_lm_extra_inputs(std::move(lm_extra_inputs), sampling_params);
+    const bool drafting_disabled = sampling_params.num_assistant_tokens.has_value() &&
+                                   sampling_params.num_assistant_tokens.value() == 0;
+    if (m_inputs_embedder && !drafting_disabled) {
+        // Preserve each request's text embeddings before the embedder reuses its cache.
+        const ov::Tensor cached_text_embeds = m_inputs_embedder->get_cached_text_embeds();
+        if (cached_text_embeds) {
+            ov::Tensor cached_text_embeds_copy(cached_text_embeds.get_element_type(), cached_text_embeds.get_shape());
+            cached_text_embeds.copy_to(cached_text_embeds_copy);
+            prepared_inputs[kDraftEmbeddingsExtraInputName] = std::move(cached_text_embeds_copy);
         }
     }
     return prepared_inputs;
+}
+
+void ContinuousBatchingPipeline::Eagle3DecodingImpl::prepare_inputs_embedder(
+    const GenerationConfig& sampling_params) const {
+    if (m_inputs_embedder) {
+        const bool drafting_disabled = sampling_params.num_assistant_tokens.has_value() &&
+                                       sampling_params.num_assistant_tokens.value() == 0;
+        m_inputs_embedder->set_cached_text_embeds_enabled(!drafting_disabled);
+    }
 }
 
 GenerationHandle
@@ -298,7 +308,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     if (sampling_params.num_assistant_tokens.has_value() && sampling_params.num_assistant_tokens.value() == 0) {
         // No speculative draft for this request: run only the main model.
-        take_request_draft_embeddings(lm_extra_inputs);
+        extract_draft_embeddings(lm_extra_inputs);
         return m_main_pipeline->add_request(request_id,
                                             input_ids,
                                             sampling_params,
@@ -312,11 +322,10 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
 
     // Extract draft-only embeddings that were staged in lm_extra_inputs and remove
     // them so the main pipeline receives only its regular auxiliary inputs.
-    ov::Tensor request_draft_embeddings = take_request_draft_embeddings(lm_extra_inputs);
+    ov::Tensor draft_embeddings = extract_draft_embeddings(lm_extra_inputs);
     // remove first token from input_ids to create the draft model input
     // refer to: https://github.com/SafeAILab/EAGLE/blob/main/eagle/model/cnets.py#L617
-    ov::Tensor draft_input = create_draft_input(
-        request_draft_embeddings && request_draft_embeddings.get_size() > 0 ? request_draft_embeddings : input_ids);
+    ov::Tensor draft_input = create_draft_input(draft_embeddings ? draft_embeddings : input_ids);
     std::optional<ov::Tensor> draft_prompt_ids = prompt_ids;
     ov::Tensor main_position_ids;
     std::optional<int64_t> main_rope_delta;
