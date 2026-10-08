@@ -343,8 +343,8 @@ It cannot be combined with beam search or multinomial sampling — set `tree_dep
 :::
 
 :::warning EAGLE3 Streaming
-Streaming is restricted to batch size 1, with either greedy decoding or tree search.
-Beam search and multinomial sampling are not supported.
+Streaming is restricted to batch size 1, with greedy decoding, multinomial sampling or tree drafting.
+Beam search is not supported.
 
 `assistant_confidence_threshold` must be 0 for EAGLE3 — dynamic-length drafting is a Fast Draft feature.
 :::
