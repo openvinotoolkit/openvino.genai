@@ -273,12 +273,9 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::update_eagle_pipeline_param
 
 std::unordered_map<std::string, ov::Tensor>
 ContinuousBatchingPipeline::Eagle3DecodingImpl::prepare_lm_extra_inputs(
-    std::unordered_map<std::string, ov::Tensor> lm_extra_inputs,
-    const GenerationConfig& sampling_params) const {
-    auto prepared_inputs = IContinuousBatchingPipeline::prepare_lm_extra_inputs(std::move(lm_extra_inputs), sampling_params);
-    const bool drafting_disabled = sampling_params.num_assistant_tokens.has_value() &&
-                                   sampling_params.num_assistant_tokens.value() == 0;
-    if (m_inputs_embedder && !drafting_disabled) {
+    std::unordered_map<std::string, ov::Tensor> lm_extra_inputs) const {
+    auto prepared_inputs = IContinuousBatchingPipeline::prepare_lm_extra_inputs(std::move(lm_extra_inputs));
+    if (m_inputs_embedder) {
         // Preserve each request's text embeddings before the embedder reuses its cache.
         const ov::Tensor cached_text_embeds = m_inputs_embedder->get_cached_text_embeds();
         if (cached_text_embeds) {

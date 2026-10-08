@@ -82,8 +82,7 @@ protected:
 protected:
     virtual void prepare_inputs_embedder(const GenerationConfig& sampling_params) const;
     virtual std::unordered_map<std::string, ov::Tensor> prepare_lm_extra_inputs(
-        std::unordered_map<std::string, ov::Tensor> lm_extra_inputs,
-        const GenerationConfig& sampling_params) const;
+        std::unordered_map<std::string, ov::Tensor> lm_extra_inputs) const;
 public:
     GenerationConfig get_config() const;
     void set_config(const GenerationConfig& config);
