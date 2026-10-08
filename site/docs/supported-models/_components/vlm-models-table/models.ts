@@ -111,6 +111,19 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'MiniCPMV4_7',
+    models: [
+      {
+        name: 'MiniCPM-V-4.7',
+        links: [
+          'https://huggingface.co/openbmb/MiniCPM-V-4.7-1B',
+          'https://huggingface.co/openbmb/MiniCPM-V-4.7-35B-A3B',
+        ],
+        notesLink: '#minicpmv4_7-notes',
+      },
+    ],
+  },
+  {
     architecture: 'MuseGlimmerForConditionalGeneration',
     models: [
       {
