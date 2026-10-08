@@ -440,7 +440,7 @@ An input image without explicit slicing metadata counts as one slice.)")
         R"(
             VLMPipeline class constructor.
             models_path (os.PathLike): Path to the folder with exported model files.
-            device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            device (str): Device to run the model on (e.g., CPU, GPU).
             kwargs: Device properties
         )")
 
@@ -467,7 +467,7 @@ An input image without explicit slicing metadata counts as one slice.)")
             models (dict[str, tuple[str, openvino.Tensor]]): A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
             tokenizer (Tokenizer): Genai Tokenizers.
             config_dir_path (os.PathLike): Path to folder with model configs.
-            device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            device (str): Device to run the model on (e.g., CPU, GPU).
             generation_config (GenerationConfig | None): Device properties.
             kwargs: Device properties
         )")
@@ -490,7 +490,7 @@ An input image without explicit slicing metadata counts as one slice.)")
             VLMPipeline constructor from models path and VLMProcessor.
             models_path (os.PathLike): Path to folder with exported language model files.
             processor (VLMProcessor): VLMProcessor instance.
-            device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            device (str): Device to run the model on (e.g., CPU, GPU).
             kwargs: Device properties.
         )")
 
@@ -517,7 +517,7 @@ An input image without explicit slicing metadata counts as one slice.)")
             models (ov::genai::ModelsMap): Map with in-memory models.
             processor (VLMProcessor): VLMProcessor instance.
             config_dir_path (os.PathLike): Path to folder with model configs.
-            device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            device (str): Device to run the model on (e.g., CPU, GPU).
             generation_config (Optional[GenerationConfig]): Generation configuration.
             kwargs: Device properties.
         )")
