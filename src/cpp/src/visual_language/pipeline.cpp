@@ -1234,7 +1234,7 @@ VLMPipeline::VLMPipeline(
     utils::validate_vlm_model_properties(properties);
 
     // TODO Support NPU with VLMProcessor
-    OPENVINO_ASSERT(device != "NPU",
+    OPENVINO_ASSERT(device.find("NPU") == std::string::npos,
         "VLMPipeline construction from a VLMProcessor isn't supported for NPU device");
 
     utils::extract_extensions_to_core(properties);
@@ -1285,7 +1285,7 @@ VLMPipeline::VLMPipeline(
     utils::validate_vlm_model_properties(properties);
 
     // TODO Support NPU with VLMProcessor
-    OPENVINO_ASSERT(device != "NPU",
+    OPENVINO_ASSERT(device.find("NPU") == std::string::npos,
         "VLMPipeline construction from a VLMProcessor isn't supported for NPU device");
 
     utils::extract_extensions_to_core(properties);
