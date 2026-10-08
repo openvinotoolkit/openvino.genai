@@ -155,20 +155,6 @@ BACKEND_LIMITATIONS = [
         "Soft-capped Gemma2 attention has no SDPA node for explicit PA conversion",
     ),
     (
-        lambda arch, variant, backend: variant == "moe"
-        and backend != "SDPA"
-        and arch in {"bailingmoe2", "ernie4_5-moe"},
-        AssertionError,
-        "GGUF hybrid MoE PA prefill disagrees with llama.cpp CPU; SDPA passes",
-    ),
-    (
-        lambda arch, variant, backend: variant == "moe"
-        and backend != "SDPA"
-        and arch in {"llama", "minicpm", "mistral3", "olmoe", "qwen3moe", "gpt-oss"},
-        RuntimeError,
-        "GGUF MoE PA prefill has token-axis shape errors in PagedAttention/Reshape",
-    ),
-    (
         lambda arch, variant, backend: arch == "gpt-oss",
         AssertionError,
         "Generated GPT-OSS F32 logits diverge from llama.cpp CPU before decoding",

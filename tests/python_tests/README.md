@@ -104,8 +104,7 @@ Known limitations are isolated from the passing cases:
 | --- | --- |
 | Qwen3.5 PA/default/continuous batching | Skipped: recurrent state needs SDPA |
 | Gemma2 explicit PA/continuous batching | Strict xfail: soft-capped attention has no SDPA node for PA conversion; automatic fallback passes |
-| MoE PA/default/continuous batching | Strict xfail: token-axis shape errors or incorrect prefill output after PA conversion |
-| GPT-OSS SDPA | Strict xfail: first-token mismatch against llama.cpp CPU |
+| GPT-OSS SDPA/PA/default/continuous batching | Strict xfail: first-token mismatch against llama.cpp CPU |
 
 Expected failures still execute and become failures on unexpected passes, so fixes
 require removing the corresponding markers. Generator/build/reference failures are
