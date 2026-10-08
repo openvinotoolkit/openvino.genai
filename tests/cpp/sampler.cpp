@@ -779,6 +779,29 @@ TEST(SamplerValidationMode, keeps_min_new_tokens_mask_after_rejection) {
     EXPECT_FALSE(sequence->has_finished());
 }
 
+// Accepted candidates report the main model's log-probabilities, and the sequence score must follow them.
+TEST(SamplerValidationMode, accepted_candidates_update_sequence_score) {
+    auto config = ov::genai::utils::get_greedy_config();
+    config.max_new_tokens = 30;
+    auto group = make_validation_group(config, {1, 2});
+    auto sequence = group->get_sequences().front();
+    std::vector<float> logits = {
+        0, 2.f, 0, 0, 0,
+        0, 0, 3.f, 0, 0,
+        0, 0, 0, 1.f, 0,
+    };
+    Sampler sampler;
+    sampler.sample({group}, ov::Tensor(ov::element::f32, ov::Shape{3, 1, 5}, logits.data()), true);
+    ASSERT_EQ(sequence->get_generated_ids(), (TokenIds{0, 1, 2, 3}));
+
+    const auto& log_probs = sequence->get_generated_log_probs();
+    float sum = 0.0f;
+    for (const auto log_prob : log_probs) {
+        sum += log_prob;
+    }
+    EXPECT_FLOAT_EQ(sequence->get_cumulative_log_prob(), sum);
+}
+
 // The parallel samples of a request share one logit processor. Each must still see the request's generated length,
 // so the stop token stays masked for all of them until min_new_tokens tokens are generated.
 TEST(SamplerMinNewTokens, masks_stop_token_for_every_parallel_sample) {
