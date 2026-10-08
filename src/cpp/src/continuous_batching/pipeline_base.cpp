@@ -580,10 +580,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     if (m_is_chat_conversation) {
         m_inputs_embedder->update_chat_history(results[0].texts[0], encoded_results[0].m_status);
         if (encoded_results[0].m_status != ov::genai::GenerationStatus::CANCEL) {
+            m_history.push_back({{"role", "assistant"}, {"content", results[0].texts[0]}});
             m_image_id += encoded_images.size();
             m_video_id += encoded_videos.size();
             m_audio_id += encoded_audios.size();
-            m_history.push_back({{"role", "assistant"}, {"content", results[0].texts[0]}});
         } else {
             chat_turn_rollback.restore();
         }
