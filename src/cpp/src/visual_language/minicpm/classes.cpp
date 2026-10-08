@@ -787,13 +787,34 @@ VisionEncoderMiniCPM::VisionEncoderMiniCPM(
 }
 
 
+bool InputsEmbedderMiniCPM::probe_tokenizer_prepends_special_token(const Tokenizer& tokenizer) {
+    // Compare tokenization of an empty string with and without special tokens.
+    // If enabling special tokens introduces a differing leading token, the tokenizer
+    // prepends a BOS-like special token (MiniCPM-V-4). Qwen2-based MiniCPM variants
+    // (2.6 / o-2.6) do not, so this returns false and leaves their behavior unchanged.
+    Tokenizer tok = tokenizer;
+    ov::Tensor with = tok.encode(std::string{}, ov::genai::add_special_tokens(true)).input_ids;
+    ov::Tensor without = tok.encode(std::string{}, ov::genai::add_special_tokens(false)).input_ids;
+    if (with.get_size() <= without.get_size()) {
+        return false;
+    }
+    const int64_t* with_data = with.data<int64_t>();
+    if (without.get_size() == 0) {
+        return with.get_size() > 0;
+    }
+    const int64_t* without_data = without.data<int64_t>();
+    // A prepended special token shifts the first real token: the leading ids differ.
+    return with_data[0] != without_data[0];
+}
+
 InputsEmbedderMiniCPM::InputsEmbedderMiniCPM(
     const VLMConfig& vlm_config,
     const std::filesystem::path& model_dir,
     const Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {}
+    IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config),
+    m_tokenizer_prepends_special_token(probe_tokenizer_prepends_special_token(tokenizer)) {}
 
 InputsEmbedderMiniCPM::InputsEmbedderMiniCPM(
     const VLMConfig& vlm_config,
@@ -802,6 +823,7 @@ InputsEmbedderMiniCPM::InputsEmbedderMiniCPM(
     const std::filesystem::path& config_dir_path,
     const std::string& device,
     const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
+    IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config),
+    m_tokenizer_prepends_special_token(probe_tokenizer_prepends_special_token(tokenizer)) {}
 
 } // namespace ov::genai
