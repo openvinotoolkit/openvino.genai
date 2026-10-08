@@ -409,6 +409,7 @@ std::shared_ptr<Qwen3VLForConditionalGeneration> Qwen3VLForConditionalGeneration
     } else if (m_vision_request) {
         cloned->m_vision_request = m_vision_request.get_compiled_model().create_infer_request();
     }
+    cloned->m_vision_outputs = VisionOutputs();
 
     if (m_i2i_model) {
         cloned->m_i2i_model = m_i2i_model->clone();
@@ -456,7 +457,7 @@ Qwen3VLForConditionalGeneration& Qwen3VLForConditionalGeneration::compile(const 
     return *this;
 }
 
-ov::Tensor Qwen3VLForConditionalGeneration::drop_system_prefix(const ov::Tensor hidden_states,
+ov::Tensor Qwen3VLForConditionalGeneration::drop_system_prefix(const ov::Tensor& hidden_states,
                                                                const size_t prompt_length) const {
     const size_t hidden_size = hidden_states.get_shape()[2];
     ov::Tensor prompt_embeds(ov::element::f32, {1, prompt_length, hidden_size});
@@ -510,7 +511,7 @@ ov::Tensor Qwen3VLForConditionalGeneration::infer(const std::string& prompt, con
     return drop_system_prefix(m_request.get_output_tensor(), prompt_length);
 }
 
-ov::Tensor Qwen3VLForConditionalGeneration::infer_vision_tower(const ov::Tensor condition_image,
+ov::Tensor Qwen3VLForConditionalGeneration::infer_vision_tower(const ov::Tensor& condition_image,
                                                                std::vector<ov::Tensor>& deepstack_features) {
     const ov::Shape& image_shape = condition_image.get_shape();
     const size_t patch_size = m_vision_config.patch_size;
@@ -538,7 +539,7 @@ ov::Tensor Qwen3VLForConditionalGeneration::infer_vision_tower(const ov::Tensor 
 
     // The infer request reuses its output buffers, so the results are detached before the next image overwrites
     // them.
-    const auto detach = [](const ov::Tensor source) {
+    const auto detach = [](const ov::Tensor& source) {
         ov::Tensor detached(source.get_element_type(), source.get_shape());
         source.copy_to(detached);
         return detached;
@@ -553,43 +554,61 @@ ov::Tensor Qwen3VLForConditionalGeneration::infer_vision_tower(const ov::Tensor 
 }
 
 ov::Tensor Qwen3VLForConditionalGeneration::infer(const std::string& prompt,
-                                                  const ov::Tensor condition_image,
-                                                  const int max_sequence_length) {
-    return infer(prompt, std::vector<ov::Tensor>{condition_image}, max_sequence_length);
+                                                  const ov::Tensor& condition_image,
+                                                  const int max_sequence_length,
+                                                  const bool run_vision_tower) {
+    return infer(prompt, std::vector<ov::Tensor>{condition_image}, max_sequence_length, run_vision_tower);
 }
 
 ov::Tensor Qwen3VLForConditionalGeneration::infer(const std::string& prompt,
                                                   const std::vector<ov::Tensor>& condition_images,
-                                                  const int max_sequence_length) {
+                                                  const int max_sequence_length,
+                                                  const bool run_vision_tower) {
     OPENVINO_ASSERT(m_i2i_request && m_vision_request,
                     "QwenImage 2.1 vision tower must be compiled first. Cannot infer non-compiled model");
     OPENVINO_ASSERT(max_sequence_length > 0, "'max_sequence_length' must be positive, got ", max_sequence_length);
     OPENVINO_ASSERT(!condition_images.empty(), "At least one condition image is required");
 
     const size_t merge_size = m_vision_config.spatial_merge_size;
-    std::vector<ov::Tensor> image_embeds_per_image;
-    std::vector<std::vector<ov::Tensor>> deepstack_per_image;
-    std::vector<size_t> image_token_counts;
     std::vector<ImageSize> merged_grids;
-
+    merged_grids.reserve(condition_images.size());
     for (const ov::Tensor& condition_image : condition_images) {
-        std::vector<ov::Tensor> deepstack_features;
-        image_embeds_per_image.push_back(infer_vision_tower(condition_image, deepstack_features));
-        deepstack_per_image.push_back(std::move(deepstack_features));
-        image_token_counts.push_back(image_embeds_per_image.back().get_shape()[0]);
         merged_grids.push_back({condition_image.get_shape()[2] / m_vision_config.patch_size / merge_size,
                                 condition_image.get_shape()[3] / m_vision_config.patch_size / merge_size});
     }
 
-    const ov::Tensor image_embeds = concat_vision_tokens(image_embeds_per_image);
-    std::vector<ov::Tensor> deepstack_features(m_vision_config.num_deepstack_layers);
-    for (size_t layer = 0; layer < m_vision_config.num_deepstack_layers; ++layer) {
-        std::vector<ov::Tensor> layer_features;
-        for (const std::vector<ov::Tensor>& per_image : deepstack_per_image) {
-            layer_features.push_back(per_image[layer]);
+    if (run_vision_tower) {
+        std::vector<ov::Tensor> image_embeds_per_image;
+        std::vector<std::vector<ov::Tensor>> deepstack_per_image;
+        image_embeds_per_image.reserve(condition_images.size());
+        deepstack_per_image.reserve(condition_images.size());
+
+        m_vision_outputs.image_token_counts.clear();
+        for (const ov::Tensor& condition_image : condition_images) {
+            std::vector<ov::Tensor> deepstack_features;
+            image_embeds_per_image.push_back(infer_vision_tower(condition_image, deepstack_features));
+            deepstack_per_image.push_back(std::move(deepstack_features));
+            m_vision_outputs.image_token_counts.push_back(image_embeds_per_image.back().get_shape()[0]);
         }
-        deepstack_features[layer] = concat_vision_tokens(layer_features);
+
+        m_vision_outputs.image_embeds = concat_vision_tokens(image_embeds_per_image);
+        m_vision_outputs.deepstack_features.assign(m_vision_config.num_deepstack_layers, ov::Tensor());
+        for (size_t layer = 0; layer < m_vision_config.num_deepstack_layers; ++layer) {
+            std::vector<ov::Tensor> layer_features;
+            layer_features.reserve(deepstack_per_image.size());
+            for (const std::vector<ov::Tensor>& per_image : deepstack_per_image) {
+                layer_features.push_back(per_image[layer]);
+            }
+            m_vision_outputs.deepstack_features[layer] = concat_vision_tokens(layer_features);
+        }
+    } else {
+        OPENVINO_ASSERT(m_vision_outputs.image_token_counts.size() == condition_images.size(),
+                        "Vision tower must be inferred for the same condition images before reusing its output");
     }
+
+    const std::vector<size_t>& image_token_counts = m_vision_outputs.image_token_counts;
+    const ov::Tensor& image_embeds = m_vision_outputs.image_embeds;
+    const std::vector<ov::Tensor>& deepstack_features = m_vision_outputs.deepstack_features;
 
     const std::string formatted_prompt = format_image_conditioned_prompt(prompt, condition_images.size());
 

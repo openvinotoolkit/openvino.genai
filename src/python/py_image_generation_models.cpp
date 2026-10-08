@@ -1463,17 +1463,19 @@ void init_qwen3_vl(py::module_& m) {
             },
             py::arg("prompt"), py::arg("max_sequence_length"))
         .def("infer",
-            [](ov::genai::Qwen3VLForConditionalGeneration& self, const std::string& prompt, const ov::Tensor& condition_image, int max_sequence_length) {
+            [](ov::genai::Qwen3VLForConditionalGeneration& self, const std::string& prompt, const ov::Tensor& condition_image, int max_sequence_length, bool run_vision_tower) {
                 py::gil_scoped_release rel;
-                return self.infer(prompt, condition_image, max_sequence_length);
+                return self.infer(prompt, condition_image, max_sequence_length, run_vision_tower);
             },
-            py::arg("prompt"), py::arg("condition_image"), py::arg("max_sequence_length"))
+            py::arg("prompt"), py::arg("condition_image"), py::arg("max_sequence_length"), py::arg("run_vision_tower") = true,
+            "Set run_vision_tower=False only after infer() has encoded the same condition image.")
         .def("infer",
-            [](ov::genai::Qwen3VLForConditionalGeneration& self, const std::string& prompt, const std::vector<ov::Tensor>& condition_images, int max_sequence_length) {
+            [](ov::genai::Qwen3VLForConditionalGeneration& self, const std::string& prompt, const std::vector<ov::Tensor>& condition_images, int max_sequence_length, bool run_vision_tower) {
                 py::gil_scoped_release rel;
-                return self.infer(prompt, condition_images, max_sequence_length);
+                return self.infer(prompt, condition_images, max_sequence_length, run_vision_tower);
             },
-            py::arg("prompt"), py::arg("condition_image"), py::arg("max_sequence_length"))
+            py::arg("prompt"), py::arg("condition_image"), py::arg("max_sequence_length"), py::arg("run_vision_tower") = true,
+            "Set run_vision_tower=False only after infer() has encoded the same condition images.")
         .def("has_vision_tower", &ov::genai::Qwen3VLForConditionalGeneration::has_vision_tower)
         .def("get_image_pad_mask", &ov::genai::Qwen3VLForConditionalGeneration::get_image_pad_mask)
         .def("get_config", &ov::genai::Qwen3VLForConditionalGeneration::get_config)
