@@ -65,6 +65,13 @@
   components:
     - VLM_samples
 
+- name: Qwen3-Omni
+  marker: qwen3_omni
+  cmd: tests/python_tests/samples
+  runner: aks-win-16-cores-32gb-test
+  components:
+    - VLM_samples
+
 - name: Eagle3 decoding
   extra_cmd: python -m pip install transformers==4.57.6
   marker: eagle3_decoding
