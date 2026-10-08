@@ -765,6 +765,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer
 ) {
+    OPENVINO_ASSERT(!inputs.empty(), "ProcessedInputs batch must not be empty");
     OPENVINO_ASSERT(inputs.size() == sampling_params.size(),
         "Number of ProcessedInputs (", inputs.size(), ") must match sampling_params (", sampling_params.size(), ")");
     auto generate_start_time = std::chrono::steady_clock::now();
@@ -775,10 +776,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     input_embeds_list.reserve(inputs.size());
     position_ids_list.reserve(inputs.size());
     lm_extra_inputs_list.reserve(inputs.size());
-    for (const auto& in : inputs) {
-        input_embeds_list.push_back(in.inputs_embeds);
-        position_ids_list.emplace_back(in.position_ids, in.rope_delta);
-        lm_extra_inputs_list.push_back(in.lm_extra_inputs);
+    for (const auto& input : inputs) {
+        input_embeds_list.push_back(input.inputs_embeds);
+        position_ids_list.emplace_back(input.position_ids, input.rope_delta);
+        lm_extra_inputs_list.push_back(input.lm_extra_inputs);
     }
 
     // FIXME Replace nullopt with populated prompt_ids with audios input/omni pipeline support
