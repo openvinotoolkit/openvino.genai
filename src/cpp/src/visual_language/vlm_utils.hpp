@@ -20,6 +20,10 @@
 namespace ov::genai::vlm_utils {
 
 inline size_t get_image_slice_count(const EncodedImage& image) {
+    // MiniCPMv4_7 stores slices layout in slices_grid
+    if (image.slices_grid.has_slices()) {
+        return image.slices_grid.rows * image.slices_grid.cols;
+    }
     // Models that do not explicitly tile images leave slices_shape empty; in
     // that case the encoded image is one processed image slice.
     if (image.slices_shape.size() < 2) {

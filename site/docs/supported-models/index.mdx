@@ -71,7 +71,12 @@ pip install timm einops
 2. `--task image-text-to-text` is required for `optimum-cli export openvino --trust-remote-code` because `image-text-to-text` isn't `MiniCPM-o-2_6`'s native task.
 
 #### MiniCPM-V-4_5 {#minicpm-v-4_5-notes}
-`openbmb/MiniCPM-V-4_5` is supported only with `transformers<5.0`.
+
+The model requires `transformers<5.0` for the export with `optimum-cli`.
+
+#### MiniCPM-V-4.7 {#minicpmv4_7-notes}
+
+The model requires `transformers>=5.18.0` for the export with `optimum-cli`.
 
 #### phi3_v {#phi3_v-notes}
 
