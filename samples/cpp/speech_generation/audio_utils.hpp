@@ -12,12 +12,18 @@
 
 namespace utils {
 namespace audio {
+
+inline constexpr uint32_t COMMON_SAMPLE_RATE = 16000;
+
 /**
- * Reads a mono or stereo 16kHz WAV file and returns it as mono float samples.
+ * Reads a mono or stereo WAV file and returns it as mono float samples.
  *
  * @param filename Path to the WAV file, a WAV buffer, or "-" to read from stdin
+ * @param expected_sample_rate Expected sample rate of the WAV file in Hz.
+ *                             Optional; defaults to COMMON_SAMPLE_RATE (16000).
  */
-ov::genai::RawSpeechInput read_wav(const std::string& filename);
+ov::genai::RawSpeechInput read_wav(const std::string& filename,
+                                   uint32_t expected_sample_rate = COMMON_SAMPLE_RATE);
 
 /**
  * Reads a WAV file into a 1-D f32 ov::Tensor without copying the decoded samples.
@@ -26,8 +32,11 @@ ov::genai::RawSpeechInput read_wav(const std::string& filename);
  * owns the samples directly.
  *
  * @param filename Path to the WAV file
+ * @param expected_sample_rate Expected sample rate of the WAV file in Hz.
+ *                             Optional; defaults to COMMON_SAMPLE_RATE (16000).
  */
-ov::Tensor read_wav_as_tensor(const std::string& filename);
+ov::Tensor read_wav_as_tensor(const std::string& filename,
+                              uint32_t expected_sample_rate = COMMON_SAMPLE_RATE);
 
 /**
  * This function saves an audio waveform, provided as an array of floating-point samples, to a WAV file.
@@ -41,7 +50,7 @@ void save_to_wav(const float* waveform_ptr,
                  size_t waveform_size,
                  const std::filesystem::path& file_path,
                  uint32_t bits_per_sample,
-                 uint32_t sample_rate = 16000);
+                 uint32_t sample_rate = COMMON_SAMPLE_RATE);
 
 /**
  * Reads a binary file of float32 values and returns an ov::Tensor with the given shape.
@@ -54,18 +63,5 @@ void save_to_wav(const float* waveform_ptr,
 ov::Tensor read_speaker_embedding(const std::filesystem::path& file_path,
                                   const ov::Shape& shape);
 
-/**
- * Reads a WAV file into a mono float32 waveform tensor with shape [T].
- *
- * Sample-side utility only. This does not change the OV GenAI core API contract:
- * callers remain responsible for providing 24000 Hz reference audio tensors to
- * the backend. The sample uses this helper to construct that tensor from disk.
- *
- * @param file_path  Path to the WAV file.
- * @param expected_sample_rate Required sample rate in Hz.
- * @returns ov::Tensor{f32, {T}} containing mono waveform samples.
- */
-ov::Tensor read_wav_mono_f32(const std::filesystem::path& file_path,
-                             uint32_t expected_sample_rate);
 }  // namespace audio
 }  // namespace utils

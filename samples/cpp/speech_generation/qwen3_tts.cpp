@@ -181,7 +181,7 @@ int run_base(const std::vector<std::string>& args) {
         properties["language"] = language;
     }
     if (ref_audio_wav_path.has_value()) {
-        properties["ref_audio"] = utils::audio::read_wav_mono_f32(*ref_audio_wav_path, 24000);
+        properties["ref_audio"] = utils::audio::read_wav_as_tensor(*ref_audio_wav_path, 24000);
     }
     if (!ref_text.empty()) {
         properties["ref_text"] = ref_text;
