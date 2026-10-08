@@ -799,8 +799,7 @@ public:
         utils::CacheState& cache_state = m_inputs_embedder->get_cache_state();
         cache_state.reset_state();
 
-        const ov::Tensor& inputs_embeds = inputs.inputs_embeds;
-        const size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
+        const size_t inputs_embeds_size = inputs.inputs_embeds.get_shape().at(1);
 
         const bool use_intermediate_remote_tensor = !m_is_npu;
         if (m_is_npu) {
@@ -820,18 +819,13 @@ public:
         perf_metrics.num_input_tokens = prompt_ids.get_size();
 
         std::vector<SequenceGroup::Ptr> requests;
-        requests.push_back(std::make_shared<SequenceGroup>(0, prompt_ids, generation_config));
+        const size_t requies_id = 0;
+        requests.push_back(std::make_shared<SequenceGroup>(requies_id, prompt_ids, generation_config));
 
         std::shared_ptr<StreamerBase> streamer_ptr = utils::create_streamer(streamer, m_tokenizer);
         OPENVINO_ASSERT(streamer_ptr == nullptr || generation_config.num_return_sequences == 1 &&
             (generation_config.is_greedy_decoding() || generation_config.is_multinomial()),
             "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
-
-        ov::Tensor attention_mask{ov::element::i64, { 1, history_size + inputs_embeds_size }};
-        std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), 1);
-
-        ov::Tensor position_ids = inputs.position_ids;
-        std::optional<int64_t> rope_delta = inputs.rope_delta;
 
         auto per_layer_callback = m_inputs_embedder->get_per_layer_embeddings_callback();
 
@@ -846,15 +840,15 @@ public:
 
         auto finish_info = ov::genai::get_lm_encoded_results(
             m_language,
-            inputs_embeds,
-            attention_mask,
+            inputs.inputs_embeds,
+            inputs.attention_mask,
             streamer_ptr,
             m_sampler,
             std::move(requests),
-            position_ids,
+            inputs.position_ids,
             cache_state,
             m_embedding,
-            rope_delta,
+            inputs.rope_delta,
             max_kv_cache_size,
             use_intermediate_remote_tensor,
             inputs.lm_extra_inputs,
