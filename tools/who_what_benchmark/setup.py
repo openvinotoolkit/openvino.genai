@@ -72,6 +72,8 @@ setup(
         "qwen3_tts": [
             "qwen-tts",
             "transformers==4.57.3",
+            "torch==2.11.0",
+            "torchaudio==2.11.0",
             "optimum-intel[nncf] @ https://github.com/huggingface/optimum-intel/archive/c46fb912366bc9d25b8395621d885a457369228d.tar.gz",
         ],
     },

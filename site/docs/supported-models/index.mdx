@@ -147,6 +147,14 @@ Speech generation pipeline does **not** support LoRA adapters.
 
 <SpeechGenerationModelsTable />
 
+:::warning Speech Generation Models Notes
+Qwen3-TTS models require the `qwen-tts` package, as well as `transformers==4.57.3`, `torch==2.11.0`, `torchaudio==2.11.0` for export with `optimum-cli`:
+
+```bash
+pip install qwen-tts transformers==4.57.3 torch==2.11.0 torchaudio==2.11.0
+```
+:::
+
 ## Embedding Models
 
 Embedding models are used with the `EmbeddingPipeline`, which supports both text-only and multimodal (text, image, and video) embedding models.

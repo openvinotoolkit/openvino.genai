@@ -67,7 +67,7 @@ optimum-cli export openvino -m hexgrad/Kokoro-82M ov_Kokoro-82M --trust-remote-c
 Export a Qwen3-TTS model to OpenVINO (choose the variant matching the sample you want to run), for example:
 
 ```sh
-pip install qwen-tts
+pip install qwen-tts transformers==4.57.3 torch==2.11.0 torchaudio==2.11.0
 optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice --trust-remote-code qwen3_tts_customvoice_ov
 optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign --trust-remote-code qwen3_tts_voicedesign_ov
 optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-0.6B-Base         --trust-remote-code qwen3_tts_base_ov
