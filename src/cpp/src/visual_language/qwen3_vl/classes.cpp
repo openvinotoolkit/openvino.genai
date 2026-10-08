@@ -789,6 +789,12 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
                                        vision_start_token_id,
                                        vision_end_token_id,
                                        m_vision_encoder->get_processor_config().merge_size,
+                                       m_vlm_config.model_type == VLMModelType::QWEN3_OMNI
+                                           ? PositionPlaneLayout::THW_TEXT
+                                           : (m_vlm_config.model_type == VLMModelType::QWEN3_5 ||
+                                                      m_vlm_config.model_type == VLMModelType::QWEN3_5_MOE
+                                                  ? PositionPlaneLayout::TEXT_THW
+                                                  : PositionPlaneLayout::THW),
                                        deepstack_ptr};
 
         if (auto pruning_result = execute_pruning_pipeline(pruning_context)) {
