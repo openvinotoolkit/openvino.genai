@@ -146,6 +146,7 @@ if is_transformers_version("<", "5.0"):
     # llava_next_video is not supported yet by optimum-intel 423b423 with transformers 5.0
     # qwen3_vl fails with error: "Eltwise shape infer input shapes dim index: 1 mismatch", CVS-186059
     VIDEO_MODEL_IDS = [
+        "optimum-intel-internal-testing/tiny-random-minicpmv-4_5",
         "optimum-intel-internal-testing/tiny-random-llava-next-video",
         "optimum-intel-internal-testing/tiny-random-qwen3-vl",
         VIDEOCHAT_FLASH_QWEN_MODEL_ID,
