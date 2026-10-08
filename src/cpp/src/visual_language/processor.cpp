@@ -9,6 +9,7 @@
 #include "visual_language/processor_bridge.hpp"
 #include "visual_language/vision_registry.hpp"
 #include "visual_language/vlm_chat_context.hpp"
+#include "visual_language/vlm_utils.hpp"
 
 namespace ov::genai {
 
@@ -36,6 +37,8 @@ public:
         std::vector<EncodedImage> encoded_images = m_inputs_embedder->encode_images(images);
         std::vector<EncodedVideo> encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
         PerfMetrics::emplace_duration(metrics.vlm_raw_metrics.vision_encoding_durations, vision_start);
+
+        vlm_utils::update_image_slice_counts(metrics, encoded_images);
 
         auto [unified_prompt, image_sequence, video_sequence] =
             m_inputs_embedder->normalize_prompt(prompt, 0, 0, encoded_images, encoded_videos);
@@ -86,6 +89,7 @@ public:
         VLMChatContext chat_context(history, m_vision_registry, *m_inputs_embedder);
         VLMChatContext::ProcessedChatData chat_data = chat_context.process(images, videos, videos_metadata);
         metrics.vlm_raw_metrics.vision_encoding_durations.emplace_back(chat_data.vision_encoding_duration);
+        vlm_utils::update_image_slice_counts(metrics, chat_data.encoded_images);
 
         constexpr bool add_generation_prompt = true;
         const std::string templated_prompt = m_inputs_embedder->get_tokenizer().apply_chat_template(
