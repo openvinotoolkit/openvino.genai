@@ -34,6 +34,15 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "Qwen/Qwen3-Reranker-0.6B",
         "convert_args": ["--trust-remote-code", "--task", "text-generation"],
     },
+    "tiny-random-Phi3ForCausalLM": {
+        "name": "optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM",
+        "convert_args": ["--trust-remote-code", "--task", "text-generation"],
+    },
+    "Qwen2.5-0.5B-Instruct": {
+        "name": "Qwen/Qwen2.5-0.5B-Instruct",
+        "cache_name": "Qwen2.5-0.5B-Instruct-v2",
+        "convert_args": ["--trust-remote-code"],
+    },
     "tiny-random-qwen2vl": {
         "name": "optimum-intel-internal-testing/tiny-random-qwen2vl",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
@@ -140,7 +149,8 @@ def convert_model(model_name: str) -> str:
     model_id = parts[1]
 
     convert_args = MODELS[model_id]["convert_args"]
-    model_path = Path(models_dir) / f"wwb_{model_id}"
+    cache_name = MODELS[model_id].get("cache_name", model_id)
+    model_path = Path(models_dir) / f"wwb_{cache_name}"
 
     manager = AtomicDownloadManager(model_path)
 
