@@ -39,17 +39,13 @@ inline std::vector<std::string> windows_utf8_argv(int argc, char* argv[]) {
         }
     };
 
-    std::vector<std::string> args;
     int wide_argc = 0;
     std::unique_ptr<LPWSTR, LocalFreeDeleter> wide_argv(CommandLineToArgvW(GetCommandLineW(), &wide_argc));
     if (wide_argv == nullptr || wide_argc <= 0) {
-        args.reserve(static_cast<size_t>(argc));
-        for (int i = 0; i < argc; ++i) {
-            args.emplace_back(argv[i]);
-        }
-        return args;
+        return std::vector<std::string>(argv, argv + argc);
     }
 
+    std::vector<std::string> args;
     args.reserve(static_cast<size_t>(wide_argc));
     for (int i = 0; i < wide_argc; ++i) {
         const wchar_t* warg = wide_argv.get()[i];
@@ -70,12 +66,7 @@ inline std::vector<std::string> normalized_argv(int argc, char* argv[]) {
 #ifdef _WIN32
     return windows_utf8_argv(argc, argv);
 #else
-    std::vector<std::string> args;
-    args.reserve(static_cast<size_t>(argc));
-    for (int i = 0; i < argc; ++i) {
-        args.emplace_back(argv[i]);
-    }
-    return args;
+    return std::vector<std::string>(argv, argv + argc);
 #endif
 }
 
