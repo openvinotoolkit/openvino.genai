@@ -2725,7 +2725,11 @@ def test_cdpruner_chat_mode(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Te
 def test_cdpruner_chat_history_api(
     ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, car_tensor: openvino.Tensor
 ):
-    """Test CDPruner with ChatHistory API to verify pruned content is used in subsequent turns."""
+    """Test CDPruner with ChatHistory API across vision and text-only turns.
+
+    Full-history models replay original images and prune them again on each turn;
+    incremental models retain pruned vision tokens in their chat history.
+    """
     ov_pipe = ov_pipe_model.pipeline
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
 

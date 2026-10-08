@@ -432,8 +432,9 @@ public:
 
         std::string decoded_results = decoded.texts.at(0);
         if (m_is_chat_conversation) {
-            // Update m_history with pruned content if pruning is enabled
-            if (generation_config.pruning_ratio > 0) {
+            // Full-history replay re-encodes the original images on every turn, so its
+            // prompt must retain the original number of vision pad tokens.
+            if (generation_config.pruning_ratio > 0 && !m_use_full_chat_history) {
                 auto history_state = ChatHistoryInternalState::get_or_create(m_history, m_vision_registry);
                 size_t last_user_idx = history_state->get_last_user_message_index();
 
@@ -632,8 +633,9 @@ public:
 
         EncodedResults& encoded_result = generation_finish_info.results;
 
-        // Update pruned content after generation (CDPruner has run during prepare_inputs_and_generate)
-        if (generation_config.pruning_ratio > 0) {
+        // Full-history replay re-encodes the original images on every turn, so its
+        // normalized prompt must retain the original number of vision pad tokens.
+        if (generation_config.pruning_ratio > 0 && !m_use_full_chat_history) {
             chat_context.apply_pruning_to_last_message();
         }
 
