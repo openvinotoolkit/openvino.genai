@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Arguments of ``genai-cli export openvino``.
+"""Arguments of ``genai-cli export``.
 
 The options mirror ``optimum-cli export openvino`` one to one, so that a command line written for
 optimum-intel works with genai-cli unchanged (and is forwarded verbatim when genai-cli falls back

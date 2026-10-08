@@ -48,6 +48,114 @@ def _processor_chat_template(model_dir: Path) -> Optional[str]:
     return None
 
 
+def _patch_text_model_for_export(text_model) -> None:
+    """Rewrites the Molmo2 decoder blocks into the canonical Hugging Face (Qwen3-like) form before torch.export.
+
+    The math is unchanged, but the exported graph gets the patterns OpenVINO plugins fuse: separate Q/K/V and
+    gate/up projections instead of Molmo2's fused ``att_proj`` / ``ff_proj``, plain RMSNorm without autocast regions,
+    rotate-half RoPE and a direct scaled_dot_product_attention call with static head counts. Molmo2 reshapes heads
+    with ``-1`` which, with the symbolic batch / sequence sizes of torch.export, leaves the head dimension dynamic in
+    the OpenVINO model: the GPU plugin then neither fuses RoPE nor computes GQA attention correctly, and the
+    PagedAttention transformation fails.
+    """
+    import types
+
+    import torch
+    from torch import nn
+
+    def split_linear(linear: nn.Linear, sizes: List[int]) -> List[nn.Linear]:
+        layers, start = [], 0
+        for size in sizes:
+            layer = nn.Linear(linear.in_features, size, bias=linear.bias is not None, dtype=linear.weight.dtype)
+            layer.weight = nn.Parameter(linear.weight[start : start + size].detach().clone(), requires_grad=False)
+            if linear.bias is not None:
+                layer.bias = nn.Parameter(linear.bias[start : start + size].detach().clone(), requires_grad=False)
+            layers.append(layer)
+            start += size
+        return layers
+
+    def rms_norm_forward(self, x):
+        input_dtype = x.dtype
+        x = x.to(torch.float32)
+        x = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+        return self.weight * x.to(input_dtype)
+
+    def rotate_half(x):
+        x1 = x[..., : x.shape[-1] // 2]
+        x2 = x[..., x.shape[-1] // 2 :]
+        return torch.cat((-x2, x1), dim=-1)
+
+    def repeat_kv(x, n_rep: int):
+        if n_rep == 1:
+            return x
+        batch, num_kv_heads, seq_len, head_dim = x.shape
+        x = x[:, :, None, :, :].expand(batch, num_kv_heads, n_rep, seq_len, head_dim)
+        return x.reshape(batch, num_kv_heads * n_rep, seq_len, head_dim)
+
+    class Attention(nn.Module):
+        def __init__(self, attn):
+            super().__init__()
+            self.layer_idx = attn.layer_idx
+            self.head_dim = attn.head_dim
+            self.num_heads = attn.num_heads
+            self.num_kv_heads = attn.num_key_value_heads
+            self.num_kv_groups = attn.num_key_value_groups
+            self.scaling = attn.scaling
+            self.qk_norm_type = attn.qk_norm_type
+            self.q_norm, self.k_norm = attn.q_norm, attn.k_norm
+            self.q_proj, self.k_proj, self.v_proj = split_linear(attn.att_proj, list(attn.fused_dims))
+            self.o_proj = attn.attn_out
+
+        def forward(self, hidden_states, position_embeddings, attention_mask, past_key_values=None, **kwargs):
+            # Literal head counts keep the head dimensions static in the exported graph (with `-1` they become dynamic,
+            # which breaks the RoPE / SDPA / PagedAttention transformations of OpenVINO plugins).
+            input_shape = hidden_states.shape[:-1]
+            query, key, value = self.q_proj(hidden_states), self.k_proj(hidden_states), self.v_proj(hidden_states)
+            if self.q_norm is not None and self.qk_norm_type != "qwen3":
+                query, key = self.q_norm(query), self.k_norm(key)
+            query = query.view(*input_shape, self.num_heads, self.head_dim)
+            key = key.view(*input_shape, self.num_kv_heads, self.head_dim)
+            value = value.view(*input_shape, self.num_kv_heads, self.head_dim)
+            if self.q_norm is not None and self.qk_norm_type == "qwen3":
+                query, key = self.q_norm(query), self.k_norm(key)
+            query, key, value = query.transpose(1, 2), key.transpose(1, 2), value.transpose(1, 2)
+
+            cos, sin = position_embeddings
+            cos, sin = cos.unsqueeze(1), sin.unsqueeze(1)
+            query = query * cos + rotate_half(query) * sin
+            key = key * cos + rotate_half(key) * sin
+            key, value = past_key_values.update(key, value, self.layer_idx)
+
+            attn_output = torch.nn.functional.scaled_dot_product_attention(
+                query,
+                repeat_kv(key, self.num_kv_groups),
+                repeat_kv(value, self.num_kv_groups),
+                attn_mask=attention_mask,
+                scale=self.scaling,
+            )
+            attn_output = attn_output.transpose(1, 2).reshape(*input_shape, self.num_heads * self.head_dim)
+            return self.o_proj(attn_output), None
+
+    class MLP(nn.Module):
+        def __init__(self, mlp):
+            super().__init__()
+            intermediate_size = mlp.ff_out.in_features
+            # Molmo2 computes `x, gate = ff_proj(x).chunk(2)` and `act(gate) * x`.
+            self.up_proj, self.gate_proj = split_linear(mlp.ff_proj, [intermediate_size, intermediate_size])
+            self.down_proj = mlp.ff_out
+            self.act = mlp.act
+
+        def forward(self, x):
+            return self.down_proj(self.act(self.gate_proj(x)) * self.up_proj(x))
+
+    for module in text_model.modules():
+        if type(module).__name__ == "Molmo2RMSNorm":
+            module.forward = types.MethodType(rms_norm_forward, module)
+    for block in text_model.blocks:
+        block.self_attn = Attention(block.self_attn)
+        block.mlp = MLP(block.mlp)
+
+
 def _build_export_modules():
     import torch
 
@@ -166,11 +274,13 @@ class Molmo2Exporter(NativeExporter):
                 torch.rand(2, num_crops, num_patches, pixels_per_patch),
                 torch.randint(0, num_crops * num_patches, (2, 7, 4)),
             ),
-            dynamic_shapes={"images": {0: dynamic, 1: dynamic}, "pooled_patches_idx": {0: dynamic, 1: dynamic}},
+            # The pooling window differs between images (2x2) and video frames (3x3).
+            dynamic_shapes={"images": {0: dynamic, 1: dynamic}, "pooled_patches_idx": {0: dynamic, 1: dynamic, 2: dynamic}},
         )
         vision_embeddings = convert_exported_program(ep, ["images", "pooled_patches_idx"], ["last_hidden_state"])
 
         logger.info("Exporting the language model")
+        _patch_text_model_for_export(model.model.transformer)
         batch, seq_len, past_len = 2, 5, 3
         num_layers = text_config.num_hidden_layers
         kv_shape = (batch, text_config.num_key_value_heads, past_len, text_config.head_dim)

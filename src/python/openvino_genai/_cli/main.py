@@ -3,9 +3,9 @@
 
 """genai-cli: exports Hugging Face models to OpenVINO IRs for OpenVINO GenAI.
 
-Usage mirrors optimum-cli::
+Usage (the export options are the ones of ``optimum-cli export openvino``)::
 
-    genai-cli export openvino -m <model id or path> [options] <output dir>
+    genai-cli export -m <model id or path> [options] <output dir>
 
 Models listed in ``openvino_genai._cli.exporters`` are converted natively with torch.export; every other model is
 exported through optimum-intel. In both cases the model is exported with the transformers version it is supported
@@ -28,15 +28,12 @@ def _build_parser() -> ArgumentParser:
     parser = ArgumentParser("genai-cli", description="OpenVINO GenAI command line tool.")
     commands = parser.add_subparsers(dest="command", metavar="{export}")
     commands.required = True
-    export_parser = commands.add_parser("export", help="Export models to OpenVINO IR.")
-    exporters = export_parser.add_subparsers(dest="exporter", metavar="{openvino}")
-    exporters.required = True
-    openvino_parser = exporters.add_parser(
-        "openvino",
+    export_parser = commands.add_parser(
+        "export",
         help="Export a Hugging Face model to OpenVINO IR for OpenVINO GenAI pipelines.",
         description="Export a Hugging Face model to OpenVINO IR for OpenVINO GenAI pipelines.",
     )
-    add_export_openvino_args(openvino_parser)
+    add_export_openvino_args(export_parser)
     return parser
 
 
@@ -96,6 +93,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
 
-    # Arguments after `export openvino`, forwarded to optimum-cli as is.
-    export_argv = argv[argv.index("openvino") + 1 :]
+    # Arguments after `export`, forwarded to `optimum-cli export openvino` as is.
+    export_argv = argv[argv.index("export") + 1 :]
     return _export_openvino(parser, args, argv, export_argv)

@@ -5,6 +5,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <fstream>
+#include <numeric>
+
+#include <nlohmann/json.hpp>
 
 #include "visual_language/clip.hpp"
 
@@ -310,6 +315,46 @@ Molmo2Preprocessed preprocess_molmo2_image(const clip_image_u8& img, const Proce
     return out;
 }
 
+// Port of Molmo2VideoProcessor.sample_frames: indices of the frames to keep from a video of total_frames frames
+// recorded at fps. NumPy semantics are kept: linspace + astype(int) truncates, np.round rounds half to even.
+std::vector<size_t> sample_frames(size_t total_frames, float fps, const std::string& mode, size_t num_frames, float max_fps) {
+    auto linspace_int = [](double stop, size_t num) {
+        std::vector<size_t> out(num);
+        const double step = num > 1 ? stop / static_cast<double>(num - 1) : 0.0;
+        for (size_t i = 0; i < num; ++i) {
+            out[i] = static_cast<size_t>(i + 1 == num && num > 1 ? stop : static_cast<double>(i) * step);
+        }
+        return out;
+    };
+    OPENVINO_ASSERT(mode == "uniform_last_frame", "Molmo2: unsupported frame_sample_mode '", mode, "'");
+    if (max_fps > 0.0f) {
+        const double duration = static_cast<double>(total_frames) / fps;
+        if (total_frames <= 2) {
+            std::vector<size_t> all(total_frames);
+            std::iota(all.begin(), all.end(), 0);
+            return all;
+        }
+        if (duration > static_cast<double>(num_frames - 1) / max_fps) {
+            return linspace_int(static_cast<double>(total_frames - 1), std::min(num_frames, total_frames));
+        }
+        const double step = static_cast<double>(fps) / max_fps;
+        const double stop = static_cast<double>(total_frames - 1);
+        std::vector<double> float_indices;
+        for (size_t i = 0; static_cast<double>(i) * step < stop; ++i) {
+            float_indices.push_back(static_cast<double>(i) * step);
+        }
+        if (float_indices.empty() || std::nearbyint(float_indices.back()) != stop) {
+            float_indices.push_back(stop);
+        }
+        std::vector<size_t> indices;
+        for (double v : float_indices) {
+            indices.push_back(static_cast<size_t>(std::nearbyint(v)));
+        }
+        return indices;
+    }
+    return linspace_int(static_cast<double>(total_frames - 1), std::min(num_frames, total_frames));
+}
+
 } // namespace
 
 EncodedImage VisionEncoderMolmo2::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
@@ -353,6 +398,65 @@ EncodedImage VisionEncoderMolmo2::encode(const ov::Tensor& image, const ov::AnyM
     return encoded;
 }
 
+EncodedVideo VisionEncoderMolmo2::encode_frames(const std::vector<ov::Tensor>& frames) {
+    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
+    ov::InferRequest& encoder = infer_request_guard.get();
+    const VideoProcessorConfig& config = m_video_processor_config;
+
+    const int base_h = static_cast<int>(config.size_height);
+    const int base_w = static_cast<int>(config.size_width);
+    const int patch = static_cast<int>(config.patch_size);
+    const int pool_h = static_cast<int>(config.molmo2_pooling_h);
+    const int pool_w = static_cast<int>(config.molmo2_pooling_w);
+    const int crop_patches_h = base_h / patch;
+    const int crop_patches_w = base_w / patch;
+    const size_t n_patches = static_cast<size_t>(crop_patches_h) * crop_patches_w;
+    const size_t pixels_per_patch = static_cast<size_t>(patch) * patch * 3;
+
+    std::vector<int64_t> patch_idx(n_patches);
+    std::iota(patch_idx.begin(), patch_idx.end(), 0);
+    int grid_h = 0, grid_w = 0;
+    const std::vector<int64_t> frame_pool = arange_for_pooling(patch_idx, crop_patches_h, crop_patches_w, pool_h, pool_w, grid_h, grid_w);
+    const size_t pool_area = static_cast<size_t>(pool_h) * pool_w;
+    const size_t tokens_per_frame = frame_pool.size() / pool_area;
+
+    std::vector<float> pixel_values;
+    pixel_values.reserve(frames.size() * n_patches * pixels_per_patch);
+    std::vector<int64_t> pooled_idx;
+    pooled_idx.reserve(frames.size() * frame_pool.size());
+    for (size_t f = 0; f < frames.size(); ++f) {
+        clip_image_u8 frame = tensor_to_clip_image_u8(frames[f]);
+        std::vector<float> resized = resize_bilinear_norm(frame.buf, frame.ny, frame.nx, base_h, base_w, config.image_mean, config.image_std);
+        append_patches(resized, base_h, base_w, patch, pixel_values);
+        const int64_t offset = static_cast<int64_t>(f * n_patches);
+        for (int64_t v : frame_pool) {
+            pooled_idx.push_back(v >= 0 ? v + offset : v);
+        }
+    }
+
+    ov::Tensor images_t(ov::element::f32, {1, frames.size(), n_patches, pixels_per_patch});
+    std::copy(pixel_values.begin(), pixel_values.end(), images_t.data<float>());
+    ov::Tensor pooled_t(ov::element::i64, {1, frames.size() * tokens_per_frame, pool_area});
+    std::copy(pooled_idx.begin(), pooled_idx.end(), pooled_t.data<int64_t>());
+    encoder.set_tensor("images", images_t);
+    encoder.set_tensor("pooled_patches_idx", pooled_t);
+    encoder.infer();
+
+    const ov::Tensor& infer_output = encoder.get_tensor("last_hidden_state");  // [frames * tokens_per_frame, hidden]
+    const size_t num_tokens = infer_output.get_shape().at(0);
+    OPENVINO_ASSERT(num_tokens == frames.size() * tokens_per_frame,
+                    "Molmo2 vision backbone returned ", num_tokens, " video tokens, expected ", frames.size() * tokens_per_frame);
+    ov::Tensor video_features(infer_output.get_element_type(), ov::Shape{1, num_tokens, infer_output.get_shape().at(1)});
+    std::memcpy(video_features.data(), infer_output.data(), infer_output.get_byte_size());
+
+    EncodedVideo encoded;
+    encoded.video_features = std::move(video_features);
+    encoded.num_video_tokens = num_tokens;
+    encoded.resized_source_size = ImageSize{static_cast<size_t>(grid_h), static_cast<size_t>(grid_w)};
+    encoded.frame_num = frames.size();
+    return encoded;
+}
+
 InputsEmbedderMolmo2::InputsEmbedderMolmo2(
     const VLMConfig& vlm_config,
     const std::filesystem::path& model_dir,
@@ -360,6 +464,7 @@ InputsEmbedderMolmo2::InputsEmbedderMolmo2(
     const std::string& device,
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {
+        read_molmo2_configs(model_dir);
         patch_chat_template();
     }
 
@@ -371,8 +476,29 @@ InputsEmbedderMolmo2::InputsEmbedderMolmo2(
     const std::string& device,
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
+        read_molmo2_configs(config_dir_path);
         patch_chat_template();
     }
+
+void InputsEmbedderMolmo2::read_molmo2_configs(const std::filesystem::path& config_dir) {
+    auto read_json = [&](const char* name) {
+        std::ifstream stream(config_dir / name);
+        return stream.is_open() ? nlohmann::json::parse(stream) : nlohmann::json::object();
+    };
+    auto read = [](const nlohmann::json& json, const char* key, auto& value) {
+        if (json.contains(key) && !json.at(key).is_null()) {
+            value = json.at(key).get<std::decay_t<decltype(value)>>();
+        }
+    };
+    const nlohmann::json processor = read_json("processor_config.json");
+    read(processor, "video_use_col_tokens", m_video_use_col_tokens);
+    read(processor, "use_frame_special_tokens", m_use_frame_special_tokens);
+    const nlohmann::json video = read_json("video_preprocessor_config.json");
+    read(video, "frame_sample_mode", m_frame_sample_mode);
+    read(video, "num_frames", m_num_frames);
+    read(video, "max_fps", m_max_fps);
+    read(video, "sampling_fps", m_sampling_fps);
+}
 
 bool InputsEmbedderMolmo2::has_token_type_ids() const {
     return true;
@@ -440,33 +566,89 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderMolmo2::encode_images(const s
 }
 
 NormalizedPrompt InputsEmbedderMolmo2::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
-    const std::string image_tag = m_vlm_config.image_token;  // "<|image|>"
-    auto [normalized, images_sequence] = normalize(prompt, image_tag, image_tag, base_id, images.size());
+    return normalize_prompt(prompt, base_id, 0, images, {});
+}
 
-    // Strip the image placeholders: Molmo2 collects all images to the front of the sequence.
+std::vector<ov::genai::EncodedVideo> InputsEmbedderMolmo2::encode_videos(const std::vector<ov::Tensor>& videos,
+                                                                         const std::vector<VideoMetadata>& videos_metadata) {
+    OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
+                    "Number of videos and videos metadata must match if metadata provided.");
+    std::vector<EncodedVideo> encoded_videos;
+    for (size_t i = 0; i < videos.size(); ++i) {
+        const size_t total_frames = videos[i].get_shape().at(0);
+        VideoMetadata metadata = i < videos_metadata.size() ? videos_metadata[i] : VideoMetadata{};
+        if (metadata.fps <= 0.0f) {
+            // Without metadata the frames are treated as sampled at the model's sampling rate.
+            metadata.fps = m_sampling_fps;
+        }
+        if (metadata.frames_indices.empty()) {
+            metadata.frames_indices = sample_frames(total_frames, metadata.fps, m_frame_sample_mode, m_num_frames, m_max_fps);
+        }
+        const ov::Tensor sampled = sample_video_if_needed(videos[i], metadata);
+        EncodedVideo encoded = m_vision_encoder->encode_frames(to_single_image_tensors({sampled}));
+        encoded.metadata = std::move(metadata);
+        encoded_videos.emplace_back(std::move(encoded));
+    }
+    return encoded_videos;
+}
+
+std::string InputsEmbedderMolmo2::build_video_tokens(const EncodedVideo& video) const {
+    const std::string& start = m_use_frame_special_tokens ? std::string("<frame_start>") : m_vlm_config.molmo2_im_start;
+    const std::string& end = m_use_frame_special_tokens ? std::string("<frame_end>") : m_vlm_config.molmo2_im_end;
+    const size_t grid_h = video.resized_source_size.height;
+    const size_t grid_w = video.resized_source_size.width;
+    std::string result;
+    for (size_t f = 0; f < video.frame_num; ++f) {
+        char timestamp[32];
+        std::snprintf(timestamp, sizeof(timestamp), "%.1f",
+                      static_cast<double>(video.metadata.frames_indices.at(f)) / static_cast<double>(video.metadata.fps));
+        result += (f > 0 ? " " : "") + std::string(timestamp) + " " + start;
+        for (size_t r = 0; r < grid_h; ++r) {
+            for (size_t c = 0; c < grid_w; ++c) result += m_vlm_config.molmo2_im_patch;
+            if (m_video_use_col_tokens) result += m_vlm_config.molmo2_im_col;
+        }
+        result += end;
+    }
+    return result;
+}
+
+NormalizedPrompt InputsEmbedderMolmo2::normalize_prompt(const std::string& prompt,
+                                                        size_t base_image_id,
+                                                        size_t base_video_id,
+                                                        const std::vector<EncodedImage>& images,
+                                                        const std::vector<EncodedVideo>& videos) const {
+    const std::string& image_tag = m_vlm_config.image_token;  // "<|image|>"
+    const std::string& video_tag = m_vlm_config.video_token;  // "<|video|>"
+    auto [with_images, images_sequence] = normalize(prompt, image_tag, image_tag, base_image_id, images.size());
+    auto [normalized, videos_sequence] = normalize(with_images, video_tag, video_tag, base_video_id, videos.size(), VisionType::VIDEO);
+
+    // Molmo2's chat template moves all visual inputs in front of the "User:" role prefix: drop the tags from the text.
     std::string text_part;
-    text_part.reserve(normalized.size());
-    size_t pos = 0;
-    while (pos < normalized.size()) {
-        size_t found = normalized.find(image_tag, pos);
+    for (size_t pos = 0; pos < normalized.size();) {
+        const size_t image_pos = normalized.find(image_tag, pos);
+        const size_t video_pos = normalized.find(video_tag, pos);
+        const size_t found = std::min(image_pos, video_pos);
         if (found == std::string::npos) {
             text_part.append(normalized, pos, std::string::npos);
             break;
         }
         text_part.append(normalized, pos, found - pos);
-        pos = found + image_tag.size();
+        pos = found + (found == image_pos ? image_tag.size() : video_tag.size());
     }
 
     std::string unified_prompt;
     for (size_t new_image_id : images_sequence) {
-        const EncodedImage& enc = images.at(new_image_id - base_id);
+        const EncodedImage& enc = images.at(new_image_id - base_image_id);
         unified_prompt += build_image_tokens(enc.resized_source_size.height, enc.resized_source_size.width,
                                              static_cast<size_t>(enc.patches_grid.first),
                                              static_cast<size_t>(enc.patches_grid.second));
     }
+    for (size_t new_video_id : videos_sequence) {
+        unified_prompt += build_video_tokens(videos.at(new_video_id - base_video_id));
+    }
     unified_prompt += "User: ";
     unified_prompt += text_part;
-    return {std::move(unified_prompt), std::move(images_sequence), {}};
+    return {std::move(unified_prompt), std::move(images_sequence), std::move(videos_sequence)};
 }
 
 ov::Tensor InputsEmbedderMolmo2::get_inputs_embeds(const std::string& prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
@@ -477,20 +659,40 @@ ov::Tensor InputsEmbedderMolmo2::get_inputs_embeds(const std::string& prompt, co
 }
 
 std::pair<ov::Tensor, ov::Tensor> InputsEmbedderMolmo2::get_inputs_embeds_with_token_type_ids(const std::string& unified_prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
+    return get_inputs_embeds_with_token_type_ids(unified_prompt, images, {}, metrics, recalculate_merged_embeddings, image_sequence, {}, {});
+}
+
+std::pair<ov::Tensor, ov::Tensor> InputsEmbedderMolmo2::get_inputs_embeds_with_token_type_ids(
+    const std::string& unified_prompt,
+    const std::vector<EncodedImage>& images,
+    const std::vector<EncodedVideo>& videos,
+    VLMPerfMetrics& metrics,
+    bool recalculate_merged_embeddings,
+    const std::vector<size_t>& image_sequence,
+    const std::vector<size_t>& videos_sequence,
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
+    // Vision features in prompt order: images first, then videos (see normalize_prompt).
+    std::vector<const ov::Tensor*> vision_features;
+    for (size_t id : image_sequence) vision_features.push_back(&images.at(id).resized_source);
+    for (size_t id : videos_sequence) vision_features.push_back(&videos.at(id).video_features);
+    return merge_embeddings(unified_prompt, vision_features, metrics);
+}
+
+std::pair<ov::Tensor, ov::Tensor> InputsEmbedderMolmo2::merge_embeddings(const std::string& unified_prompt,
+                                                                         const std::vector<const ov::Tensor*>& vision_features,
+                                                                         VLMPerfMetrics& metrics) {
     // Tokenize the normalized prompt (no BOS is added by the tokenizer for the templated path).
     ov::Tensor encoded_input_ids = get_encoded_input_ids(unified_prompt, metrics);
     const size_t base_len = encoded_input_ids.get_size();
 
     // Molmo2 prepends a single BOS token at the very start of the sequence, mirroring the reference
-    // Molmo2Processor.insert_bos (the BOS is inserted once, before the first valid token). In a chat
-    // conversation the BOS therefore belongs only to the first prefill; later turns extend the
-    // existing KV cache without another BOS. m_prev_hist_length == 0 identifies that first prefill:
-    // the pipeline resets the KV-cache state before every non-chat generate, so single-turn
-    // generation always prepends the BOS, while a multi-turn chat prepends it exactly once. Adding a
-    // BOS on every turn instead would leave stray, untracked tokens in the KV cache that the chat
-    // rollback (computed from the BOS-free KVCacheState) cannot trim, breaking cancelled-turn state.
+    // Molmo2Processor.insert_bos. Every prompt embedded outside of an incremental chat (including the continuous
+    // batching pipeline, which re-embeds the whole templated history on each turn) is a complete sequence and gets the
+    // BOS. In an incremental chat (VLMPipeline start_chat) later turns extend the existing KV cache, so the BOS belongs
+    // only to the first prefill (m_prev_hist_length == 0, set by get_encoded_input_ids); adding it on every turn would
+    // leave untracked tokens in the KV cache that the chat rollback cannot trim.
     const int64_t molmo_bos = 151645;
-    const bool prepend_bos = (m_prev_hist_length == 0);
+    const bool prepend_bos = !m_is_chat_conversation || m_prev_hist_length == 0;
     const size_t seq_len = prepend_bos ? base_len + 1 : base_len;
     ov::Tensor input_ids(ov::element::i64, ov::Shape{1, seq_len});
     int64_t* ids = input_ids.data<int64_t>();
@@ -528,19 +730,16 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderMolmo2::get_inputs_embeds_with_t
         tt[i] = std::find(image_token_ids.begin(), image_token_ids.end(), id) != image_token_ids.end() ? 1 : 0;
     }
 
-    if (images.empty() || image_sequence.empty()) {
+    if (vision_features.empty()) {
         return {inputs_embeds, token_type_ids};
     }
 
-    // Additive merge: Molmo2 adds pooled image features to the "<im_patch>" placeholder embeddings.
-    // Concatenate the per-image vision embeddings in prompt order and add each row at the next
-    // "<im_patch>" position.
+    // Additive merge: Molmo2 adds pooled image / frame features to the "<im_patch>" placeholder embeddings.
+    // Concatenate the vision embeddings in prompt order and add each row at the next "<im_patch>" position.
     float* embeds_data = inputs_embeds.data<float>();
-    size_t cur_image = 0;                  // index into image_sequence
-    const float* cur_vision = image_sequence.empty() ? nullptr
-        : images.at(image_sequence.at(0)).resized_source.data<const float>();
-    size_t cur_vision_rows = image_sequence.empty() ? 0
-        : images.at(image_sequence.at(0)).resized_source.get_shape().at(1);
+    size_t cur_image = 0;                  // index into vision_features
+    const float* cur_vision = vision_features.at(0)->data<const float>();
+    size_t cur_vision_rows = vision_features.at(0)->get_shape().at(1);
     size_t cur_row = 0;
 
     for (size_t i = 0; i < seq_len; ++i) {
@@ -550,13 +749,12 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderMolmo2::get_inputs_embeds_with_t
         // Advance to the next image that still has rows.
         while (cur_vision != nullptr && cur_row >= cur_vision_rows) {
             ++cur_image;
-            if (cur_image >= image_sequence.size()) {
+            if (cur_image >= vision_features.size()) {
                 cur_vision = nullptr;
                 break;
             }
-            const EncodedImage& enc = images.at(image_sequence.at(cur_image));
-            cur_vision = enc.resized_source.data<const float>();
-            cur_vision_rows = enc.resized_source.get_shape().at(1);
+            cur_vision = vision_features.at(cur_image)->data<const float>();
+            cur_vision_rows = vision_features.at(cur_image)->get_shape().at(1);
             cur_row = 0;
         }
         OPENVINO_ASSERT(cur_vision != nullptr,

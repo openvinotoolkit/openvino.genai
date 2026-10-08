@@ -50,8 +50,6 @@ class Molmo2InputsPreprocessor(VLMInputsPreprocessor):
     ):
         if processor is None:
             raise ValueError("Processor is required.")
-        if video is not None:
-            raise ValueError("Video input is not supported")
         if audio is not None:
             raise ValueError("Audio input is not supported")
 
@@ -61,7 +59,29 @@ class Molmo2InputsPreprocessor(VLMInputsPreprocessor):
         if image is not None:
             images = image if isinstance(image, list) else [image]
             content.extend([{"type": "image", "image": img} for img in images])
+        if video is not None:
+            content.append({"type": "video", "video": "placeholder"})
         content.append({"type": "text", "text": text})
+
+        if video is not None:
+            if self.chat_mode:
+                raise ValueError("Video input is not supported in chat mode")
+            # The video comes as already decoded frames without metadata. Like OpenVINO GenAI, treat the frames as
+            # sampled at the model's sampling fps, then let the processor apply Molmo2 frame sampling and timestamps.
+            from transformers.video_utils import VideoMetadata
+
+            frames = np.asarray(video)
+            fps = float(getattr(processor.video_processor, "sampling_fps", 2) or 2)
+            prompt = processor.apply_chat_template(
+                [{"role": "user", "content": content}], tokenize=False, add_generation_prompt=True
+            )
+            return processor(
+                text=[prompt],
+                images=image,
+                videos=[frames],
+                video_metadata=[VideoMetadata(total_num_frames=len(frames), fps=fps)],
+                return_tensors="pt",
+            )
 
         if self.chat_mode:
             self.chat_history.append({"role": "user", "content": content})
