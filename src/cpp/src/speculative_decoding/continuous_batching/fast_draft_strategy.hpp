@@ -180,6 +180,8 @@ protected:
     }
 
     static int64_t compute_rope_delta(const ov::Tensor& position_ids);
+    // The draft copy of a request never stops on its own.
+    static GenerationConfig make_draft_sampling_params(const GenerationConfig& sampling_params);
     void drop_requests();
     virtual void align_request_pair_processed_prefix(uint64_t) {}
     virtual void validate_awaiting_requests(const std::vector<SequenceGroup::Ptr>& main_awaiting_requests,
