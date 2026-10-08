@@ -437,10 +437,7 @@ std::vector<ov::genai::EncodedAudio> InputsEmbedderGemma4::encode_audios(const s
     for (const ov::Tensor& audio : audios) {
         ov::Tensor audio_features = m_audio_encoder->encode(audio);
         const ov::Shape& shape = audio_features.get_shape();
-        OPENVINO_ASSERT(shape.size() == 2,
-                        "Gemma4 encoded audio must have shape [tokens, hidden_size], got rank ",
-                        shape.size());
-        const size_t num_audio_tokens = shape[0];
+        const size_t num_audio_tokens = shape[1];
         encoded_audios.push_back({std::move(audio_features), num_audio_tokens});
     }
     return encoded_audios;
@@ -727,56 +724,17 @@ ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(
     }
 
     if (!audios_sequence.empty()) {
-        merge_audio_embeddings(inputs_embeds, input_ids, audios, audios_sequence);
+        OPENVINO_ASSERT(m_vlm_config.audio_token_id >= 0, "Gemma4 audio_token_id is not configured");
+        std::vector<ov::Tensor> audio_embeds;
+        audio_embeds.reserve(audios_sequence.size());
+        for (size_t audio_id : audios_sequence) {
+            audio_embeds.push_back(audios.at(audio_id).audio_features);
+        }
+        inputs_embeds =
+            utils::merge_text_and_image_embeddings_llava(input_ids, inputs_embeds, audio_embeds, m_vlm_config.audio_token_id);
     }
 
     return inputs_embeds;
-}
-
-void InputsEmbedderGemma4::merge_audio_embeddings(ov::Tensor& input_embeds,
-                                                  const ov::Tensor& input_ids,
-                                                  const std::vector<EncodedAudio>& audios,
-                                                  const std::vector<size_t>& audios_sequence) const {
-    OPENVINO_ASSERT(m_vlm_config.audio_token_id >= 0, "Gemma4 audio_token_id is not configured");
-    const ov::Shape& embeds_shape = input_embeds.get_shape();
-    OPENVINO_ASSERT(embeds_shape.size() == 3 && embeds_shape[0] == 1,
-                    "Gemma4 input embeddings must have shape [1, sequence, hidden_size]");
-    OPENVINO_ASSERT(input_embeds.get_element_type() == ov::element::f32,
-                    "Gemma4 input embeddings must be f32 for audio merge, got ",
-                    input_embeds.get_element_type());
-    OPENVINO_ASSERT(input_ids.get_size() == embeds_shape[1],
-                    "Gemma4 input ID count must match the embedding sequence length");
-    const size_t hidden_size = embeds_shape[2];
-    for (size_t audio_id : audios_sequence) {
-        const size_t audio_hidden_size = audios.at(audio_id).audio_features.get_shape()[1];
-        OPENVINO_ASSERT(audio_hidden_size == hidden_size,
-                        "Gemma4 audio embedding hidden size ",
-                        audio_hidden_size,
-                        " does not match text embedding hidden size ",
-                        hidden_size);
-    }
-
-    const int64_t* ids = input_ids.data<const int64_t>();
-    float* destination = input_embeds.data<float>();
-    size_t sequence_index = 0;
-    size_t audio_token_index = 0;
-    for (size_t token = 0; token < embeds_shape[1]; ++token) {
-        if (ids[token] != m_vlm_config.audio_token_id) {
-            continue;
-        }
-        OPENVINO_ASSERT(sequence_index < audios_sequence.size(),
-                        "Gemma4 prompt contains more audio tokens than encoded audio embeddings");
-        const EncodedAudio& audio = audios[audios_sequence[sequence_index]];
-        std::memcpy(destination + token * hidden_size,
-                    audio.audio_features.data<const float>() + audio_token_index * hidden_size,
-                    hidden_size * sizeof(float));
-        if (++audio_token_index == audio.num_audio_tokens) {
-            audio_token_index = 0;
-            ++sequence_index;
-        }
-    }
-    OPENVINO_ASSERT(sequence_index == audios_sequence.size() && audio_token_index == 0,
-                    "Gemma4 prompt contains fewer audio tokens than encoded audio embeddings");
 }
 
 bool InputsEmbedderGemma4::has_token_type_ids() const {

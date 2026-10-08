@@ -14,6 +14,7 @@ namespace ov::genai {
 class AudioEncoderGemma4 {
 public:
     virtual ~AudioEncoderGemma4() = default;
+    /// @brief Return owned audio embeddings with shape [1, tokens, hidden_size].
     virtual ov::Tensor encode(const ov::Tensor& audio) = 0;
 
     static std::unique_ptr<AudioEncoderGemma4> create(const std::filesystem::path& model_dir,

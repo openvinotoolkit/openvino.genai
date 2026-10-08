@@ -55,7 +55,7 @@ public:
         const ov::Tensor& output = request.get_tensor("last_hidden_state");
         const ov::Shape& output_shape = output.get_shape();
 
-        ov::Tensor result(ov::element::f32, {output_shape[1], output_shape[2]});
+        ov::Tensor result(ov::element::f32, output_shape);
         std::memcpy(result.data<float>(), output.data<const float>(), output.get_byte_size());
         return result;
     }
@@ -121,7 +121,7 @@ public:
         const bool* output_mask_data = output_mask.data<const bool>();
         const size_t valid_tokens = std::count(output_mask_data, output_mask_data + output_shape[1], true);
         const size_t hidden_size = output_shape[2];
-        ov::Tensor result(ov::element::f32, {valid_tokens, hidden_size});
+        ov::Tensor result(ov::element::f32, {1, valid_tokens, hidden_size});
         const float* source = output.data<const float>();
         float* destination = result.data<float>();
         for (size_t token = 0; token < output_shape[1]; ++token) {

@@ -126,11 +126,6 @@ private:
                                      const std::vector<size_t>& audios_sequence,
                                      size_t audio_base_id) const;
 
-    void merge_audio_embeddings(ov::Tensor& input_embeds,
-                                const ov::Tensor& input_ids,
-                                const std::vector<EncodedAudio>& audios,
-                                const std::vector<size_t>& audios_sequence) const;
-
     ov::Tensor get_per_layer_embeddings(const ov::Tensor& input_ids);
 
     bool has_per_layer_embeddings() const {
