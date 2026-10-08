@@ -963,6 +963,29 @@ public:
         return m_block_table.count(seq_id) > 0;
     }
 
+    /// @return Number of blocks stored for the sequence, or 0 if it has no block table.
+    size_t get_num_stored_blocks(uint64_t seq_id) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        const auto it = m_block_table.find(seq_id);
+        return (it == m_block_table.end() || it->second.empty()) ? 0 : it->second[0].size();
+    }
+
+    /**
+     * Frees the highest logical blocks of a sequence so that at most keep_blocks remain.
+     * @param seq_id Sequence identifier; must have a block table.
+     * @param keep_blocks Number of lowest stored blocks to retain.
+     */
+    void trim_sequence(uint64_t seq_id, size_t keep_blocks) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        const auto it = m_block_table.find(seq_id);
+        OPENVINO_ASSERT(it != m_block_table.end() && !it->second.empty(),
+                        "Cannot trim sequence ", seq_id, " without a block table");
+        const size_t num_stored_blocks = it->second[0].size();
+        if (num_stored_blocks > keep_blocks) {
+            free_sequence_partially(seq_id, num_stored_blocks - keep_blocks);
+        }
+    }
+
     /**
      * @return The number of cache blocks available to be assigned to new sequences.
      */
