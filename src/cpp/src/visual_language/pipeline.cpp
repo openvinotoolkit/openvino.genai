@@ -639,12 +639,12 @@ public:
             m_inputs_embedder->update_chat_history(decoded_results, finish_info.streaming_finish_status);
 
             if (finish_info.streaming_finish_status != ov::genai::GenerationStatus::CANCEL) {
-                m_image_id += new_image_count;
-                m_video_id += videos.size();
-                m_audio_id += audios.size();
                 // Tail of chat template is missing in KV cache.
                 // Find the tail to concatenate it with the next input prompt.
                 m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
+                m_image_id += new_image_count;
+                m_video_id += videos.size();
+                m_audio_id += audios.size();
             } else {
                 chat_turn_rollback.restore();
             }
