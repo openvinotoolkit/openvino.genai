@@ -196,7 +196,7 @@ qwen3_tts voice-design qwen3_tts_voicedesign_ov "H-hey! You dropped your... uh..
 
 ### 5) `qwen3_tts base`
 
-Clone a voice from a short reference recording. 
+Clone a voice from a short reference recording.
 
 You can download this 24 kHz reference audio file to use for following examples:
 https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-TTS-Repo/clone.wav
