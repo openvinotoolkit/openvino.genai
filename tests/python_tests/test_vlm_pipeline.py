@@ -188,9 +188,9 @@ else:
         "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
         "qnguyen3/nanoLLaVA",
         MODEL_DEEPSEEK_OCR2,
+        "optimum-intel-internal-testing/tiny-random-mistral3",
         *VIDEO_MODEL_IDS,
     ]
-
 
 ADD_REQUEST_MODEL_IDS = [
     MODEL_IDS[0],
@@ -207,6 +207,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-qwen3.5": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
     MODEL_GEMMA3N: lambda idx: "<image_soft_token>",
+    "optimum-intel-internal-testing/tiny-random-mistral3": lambda idx: "[IMG]",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     MODEL_DEEPSEEK_OCR2: lambda idx: "<image>",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
@@ -240,6 +241,7 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
 
 RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-gemma3": 32,
+    "optimum-intel-internal-testing/tiny-random-mistral3": 32,
     "qnguyen3/nanoLLaVA": 384,
     "optimum-intel-internal-testing/tiny-random-llava-next-video": 336,
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": 448,
@@ -498,6 +500,9 @@ def _get_ov_model(model_id: str) -> str:
                 pass
 
         processor.save_pretrained(temp_dir)
+        if model.config.model_type == "mistral3":
+            # Align with optimum-cli: HF repo nests image processor settings in processor_config.json only.
+            processor.image_processor.save_pretrained(temp_dir)
         model.save_pretrained(temp_dir)
 
     manager.execute(convert_to_temp)
@@ -1909,6 +1914,7 @@ else:
         ("optimum-intel-internal-testing/tiny-random-gemma4-unified-it", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-gemma4-31B", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-qwen3.5", "SDPA"),
+        ("optimum-intel-internal-testing/tiny-random-mistral3", "PA"),
     ]
 
 
