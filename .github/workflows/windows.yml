@@ -493,6 +493,10 @@ jobs:
           # py-build-cmake only reads the `local`, `cross` and `override` config settings, any other
           # key (`cmake.args`, ...) is silently ignored, hence the `override=` form below.
           $gilOption = if ('${{ matrix.python-version }}'.EndsWith('t')) { 'OFF' } else { 'ON' }
+          if ($gilOption -eq 'OFF') {
+            # Windows ships a single pyconfig.h for both ABIs, so only CMake >= 3.30 resolves pythonXYt.lib
+            & $pythonExecutablePath -m pip install "cmake>=3.30"
+          }
 
           & $pythonExecutablePath -m pip wheel -v --no-deps --no-build-isolation --wheel-dir ${{ env.WHEELS_DIR }} `
             --config-settings=override=cmake.generator='Ninja' `
