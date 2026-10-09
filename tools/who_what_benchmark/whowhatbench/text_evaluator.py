@@ -175,7 +175,14 @@ class TextEvaluator(BaseEvaluator):
             else:
                 tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens, **get_ignore_parameters_flag())
             if crop_question:
-                tokens = tokens[:, inputs["input_ids"].shape[-1] :]
+                # Encoder-decoder (seq2seq / text2text-generation) models return
+                # only the freshly generated decoder tokens, so the prompt length
+                # must not be cropped from the output as it is for decoder-only LMs.
+                is_encoder_decoder = getattr(
+                    getattr(model, "config", None), "is_encoder_decoder", False
+                )
+                if not is_encoder_decoder:
+                    tokens = tokens[:, inputs["input_ids"].shape[-1] :]
             return self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
 
         gen_answer_fn = gen_answer_fn or default_gen_answer
