@@ -100,6 +100,7 @@
 'category: VLM samples':
 - 'samples/cpp/visual_language_chat/**/*'
 - 'samples/python/visual_language_chat/**/*'
+- 'tests/python_tests/samples/test_audio_to_text_chat.py'
 - 'tests/python_tests/samples/test_benchmark_vlm.py'
 - 'tests/python_tests/samples/test_visual_language_chat.py'
 

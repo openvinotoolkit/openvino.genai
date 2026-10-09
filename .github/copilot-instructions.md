@@ -51,6 +51,7 @@ Follow these rules when writing, modifying, or reviewing code in this repository
 23. Avoid reporting the same algorithmic branch choice multiple times.
 24. Avoid ambiguous words like "some" or "capable".
 25. It's fine to call `tensor.data<T>()` without preceding assertion on `tensor.get_element_type()` because `data<>()` performs the necessary type check internally.
+26. Use all available cores for building code from source.
 
 ## Code Review Instructions for PRs
 

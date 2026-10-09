@@ -43,6 +43,13 @@
 #   components:
 #     - VLM_samples
 
+- name: VLM audio
+  marker: vlm_audio
+  cmd: tests/python_tests/samples
+  runner: aks-linux-4-cores-16gb
+  components:
+    - VLM_samples
+
 - name: Rag
   marker: rag
   cmd: tests/python_tests/samples
