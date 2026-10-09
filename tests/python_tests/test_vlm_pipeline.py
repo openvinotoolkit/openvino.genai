@@ -61,6 +61,7 @@ from openvino_genai import (
     ChatHistory,
     VideoMetadata,
     draft_model,
+    Parser,
 )
 
 from utils.network import retry_request
@@ -863,6 +864,29 @@ def test_vlm_readonly_image_tensor(ov_pipe_model: VlmModelInfo, cat_image_32x32)
         images=[readonly_image_tensor],
         generation_config=generation_config,
     )
+
+
+class _MarkingParser(Parser):
+    """Records that it ran and what content it saw."""
+
+    def parse(self, message: dict):
+        message["seen_content"] = message["content"]
+
+
+@parametrize_one_model_backends
+def test_vlm_pipeline_applies_parsers(ov_pipe_model: VlmModelInfo, cat_image_32x32):
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=5)
+    generation_config.parsers = [_MarkingParser()]
+
+    res = ov_pipe.generate(PROMPTS[0], images=[cat_image_32x32], generation_config=generation_config)
+    assert len(res.parsed) == len(res.texts) == 1
+    assert res.parsed[0]["content"] == res.texts[0]
+    assert res.parsed[0]["seen_content"] == res.texts[0]
+
+    # Keyword arguments go through the AnyMap overload.
+    res = ov_pipe.generate(PROMPTS[0], images=[cat_image_32x32], max_new_tokens=5, parsers=[_MarkingParser()])
+    assert res.parsed[0]["seen_content"] == res.texts[0]
 
 
 @pytest.mark.parametrize(
