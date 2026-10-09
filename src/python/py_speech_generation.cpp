@@ -94,24 +94,56 @@ auto text_to_speech_generate_docstring = R"(
                              to prepare this tensor externally and pass it explicitly.
     :type speaker_embedding: openvino.Tensor or None
 
-    :param properties: speech generation parameters specified as properties
-    :type properties: dict
+    :param generation_config: speech generation configuration override
+    :type generation_config: SpeechGenerationConfig or None
+
+    :param kwargs: arbitrary keyword arguments with keys corresponding to SpeechGenerationConfig fields.
+    :type kwargs: dict
 
     :returns: raw audios of the input texts spoken in the specified speaker's voice;
               sample rate is provided via Text2SpeechDecodedResults.output_sample_rate
     :rtype: Text2SpeechDecodedResults
 )";
 
-SpeechGenerationConfig update_speech_generation_config_from_kwargs(const SpeechGenerationConfig& config,
-                                                                   const py::kwargs& kwargs) {
-    if (kwargs.empty())
-        return config;
+std::optional<SpeechGenerationConfig> update_speech_generation_config_from_kwargs(
+    const std::optional<SpeechGenerationConfig>& config,
+    const py::kwargs& kwargs) {
+    if (!config.has_value() && kwargs.empty())
+        return std::nullopt;
 
-    SpeechGenerationConfig res_config = config;
+    SpeechGenerationConfig res_config;
+    if (config.has_value())
+        res_config = *config;
+
     if (!kwargs.empty())
         res_config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
 
     return res_config;
+}
+
+py::object call_text2speech_common_generate(Text2SpeechPipeline& pipe,
+                                            const std::vector<std::string>& texts,
+                                            py::object speaker_embedding,
+                                            const std::optional<SpeechGenerationConfig>& generation_config,
+                                            const py::kwargs& kwargs) {
+    // TTS config should be initialized from generation_config.json in case of only kwargs provided.
+    // If full config was provided then rely on it as a base config.
+    const std::optional<SpeechGenerationConfig> base_config =
+        generation_config.has_value() ? generation_config : pipe.get_generation_config();
+    const std::optional<SpeechGenerationConfig> updated_config =
+        update_speech_generation_config_from_kwargs(base_config, kwargs);
+
+    ov::genai::Text2SpeechDecodedResults res;
+    {
+        py::gil_scoped_release rel;
+        if (speaker_embedding.is_none()) {
+            res = pipe.generate(texts, ov::Tensor(), updated_config);
+        } else {
+            const ov::Tensor& tensor = speaker_embedding.cast<ov::Tensor>();
+            res = pipe.generate(texts, tensor, updated_config);
+        }
+    }
+    return py::cast(res);
 }
 
 }  // namespace
@@ -123,7 +155,7 @@ void init_speech_generation_pipeline(py::module_& m) {
                                                          speech_generation_config_docstring)
         .def(py::init<std::filesystem::path>(), py::arg("json_path"), "path where generation_config.json is stored")
         .def(py::init([](const py::kwargs& kwargs) {
-            return update_speech_generation_config_from_kwargs(SpeechGenerationConfig(), kwargs);
+            return *update_speech_generation_config_from_kwargs(SpeechGenerationConfig(), kwargs);
         }))
         .def_readwrite("speed", &SpeechGenerationConfig::speed)
         .def_readwrite("minlenratio", &SpeechGenerationConfig::minlenratio)
@@ -173,24 +205,21 @@ void init_speech_generation_pipeline(py::module_& m) {
             [](Text2SpeechPipeline& pipe,
                const std::string& text,
                py::object speaker_embedding,
+               const std::optional<SpeechGenerationConfig>& generation_config,
                const py::kwargs& kwargs) -> py::typing::Union<ov::genai::Text2SpeechDecodedResults> {
-                ov::genai::Text2SpeechDecodedResults res;
-                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
-                {
-                    py::gil_scoped_release rel;
-                    if (speaker_embedding.is_none()) {
-                        res = pipe.generate(text, ov::Tensor(), properties);
-                    } else {
-                        const ov::Tensor& tensor = speaker_embedding.cast<ov::Tensor>();
-                        res = pipe.generate(text, tensor, properties);
-                    }
-                }
-                return py::cast(res);
+                return call_text2speech_common_generate(
+                    pipe,
+                    std::vector<std::string>{text},
+                    speaker_embedding,
+                    generation_config,
+                    kwargs);
             },
             py::arg("text"),
             "input text for which to generate speech.",
             py::arg("speaker_embedding") = py::none(),
             "vector representing the unique characteristics of a speaker's voice.",
+            py::arg("generation_config") = std::nullopt,
+            "generation_config",
             (text_to_speech_generate_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
 
         .def(
@@ -198,24 +227,16 @@ void init_speech_generation_pipeline(py::module_& m) {
             [](Text2SpeechPipeline& pipe,
                const std::vector<std::string>& texts,
                py::object speaker_embedding,
+               const std::optional<SpeechGenerationConfig>& generation_config,
                const py::kwargs& kwargs) -> py::typing::Union<ov::genai::Text2SpeechDecodedResults> {
-                ov::genai::Text2SpeechDecodedResults res;
-                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
-                {
-                    py::gil_scoped_release rel;
-                    if (speaker_embedding.is_none()) {
-                        res = pipe.generate(texts, ov::Tensor(), properties);
-                    } else {
-                        const ov::Tensor& tensor = speaker_embedding.cast<ov::Tensor>();
-                        res = pipe.generate(texts, tensor, properties);
-                    }
-                }
-                return py::cast(res);
+                return call_text2speech_common_generate(pipe, texts, speaker_embedding, generation_config, kwargs);
             },
             py::arg("texts"),
             "a list of input texts for which to generate speeches.",
             py::arg("speaker_embedding") = py::none(),
             "vector representing the unique characteristics of a speaker's voice.",
+            py::arg("generation_config") = std::nullopt,
+            "generation_config",
             (text_to_speech_generate_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
 
         .def("get_generation_config", &Text2SpeechPipeline::get_generation_config, py::return_value_policy::copy)

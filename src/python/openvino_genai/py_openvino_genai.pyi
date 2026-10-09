@@ -5436,7 +5436,7 @@ class Text2SpeechPipeline:
                     device (str): Device to run the model on (e.g., CPU, GPU).
         """
     @typing.overload
-    def generate(self, text: str, speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
+    def generate(self, text: str, speaker_embedding: typing.Any = None, generation_config: openvino_genai.py_openvino_genai.SpeechGenerationConfig | None = None, **kwargs) -> Text2SpeechDecodedResults:
         """
             Generates speeches based on input texts
         
@@ -5491,7 +5491,7 @@ class Text2SpeechPipeline:
             :type phonemize_fallback_model_dir: str | None
         """
     @typing.overload
-    def generate(self, texts: collections.abc.Sequence[str], speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
+    def generate(self, texts: collections.abc.Sequence[str], speaker_embedding: typing.Any = None, generation_config: openvino_genai.py_openvino_genai.SpeechGenerationConfig | None = None, **kwargs) -> Text2SpeechDecodedResults:
         """
             Generates speeches based on input texts
         
