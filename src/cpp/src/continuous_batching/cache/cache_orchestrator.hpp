@@ -23,6 +23,7 @@
 #include "continuous_batching/cache/kv_cache_manager.hpp"
 #include "continuous_batching/cache/linear_attention_cache_manager.hpp"
 #include "logger.hpp"
+#include "continuous_batching/cache/plugin_managed_cache_manager.hpp"
 
 namespace ov::genai {
 
@@ -622,6 +623,13 @@ public:
         return first_cache_manager.get_device();
     }
 
+    /// Every device the cache is spread over -- one for a plain model, several
+    /// for a tensor-parallel one.
+    std::vector<std::string> get_devices() const {
+        OPENVINO_ASSERT(!m_cache_managers.empty(), "No cache types registered");
+        return m_cache_managers.begin()->second->get_devices();
+    }
+
     size_t get_num_cache_tensors() const {
         size_t total = 0;
         for (const auto& [type, cache_mgr] : m_cache_managers) {
@@ -781,13 +789,21 @@ private:
      *        Validates that LA-specific config fields are not set when no LA cache is present.
      *        Returns a tuple of (kv_manager, la_manager).
      */
-    static std::tuple<std::unique_ptr<KVCacheManager>, std::unique_ptr<LinearAttentionCacheManager>>
+    static std::tuple<std::unique_ptr<ICacheManager>, std::unique_ptr<LinearAttentionCacheManager>>
     detect_cache_managers(ov::InferRequest& infer_request, const SchedulerConfig& config) {
         ov::CompiledModel compiled_model = infer_request.get_compiled_model();
 
-        std::unique_ptr<KVCacheManager> kv_manager;
+        std::unique_ptr<ICacheManager> kv_manager;
         if (KVCacheManager::has_cache_inputs(compiled_model)) {
-            kv_manager = std::make_unique<KVCacheManager>(infer_request);
+            // A plugin that splits the cache across devices owns it: only it
+            // knows the split, so it allocates and it keeps the pieces.
+            if (auto controller = PluginManagedCacheManager::find_controller(compiled_model)) {
+                kv_manager = std::make_unique<PluginManagedCacheManager>(
+                    std::move(controller),
+                    compiled_model.get_property(ov::execution_devices));
+            } else {
+                kv_manager = std::make_unique<KVCacheManager>(infer_request);
+            }
         }
 
         std::unique_ptr<LinearAttentionCacheManager> la_manager;
@@ -801,7 +817,7 @@ private:
         return {std::move(kv_manager), std::move(la_manager)};
     }
 
-    static size_t get_linear_attention_cache_interval(const KVCacheManager* kv_manager,
+    static size_t get_linear_attention_cache_interval(const ICacheManager* kv_manager,
                                                       const LinearAttentionCacheManager* la_manager,
                                                       const SchedulerConfig& config) {
         if (!la_manager || !config.enable_prefix_caching) {
@@ -843,7 +859,7 @@ private:
      *        Returns a tuple of (num_kv_blocks, num_la_blocks).
      */
     static std::tuple<size_t, size_t>
-    normalize_block_counts(const KVCacheManager* kv_manager,
+    normalize_block_counts(const ICacheManager* kv_manager,
                           const LinearAttentionCacheManager* la_manager,
                           const SchedulerConfig& config,
                           size_t cache_interval,
@@ -935,7 +951,7 @@ private:
     /**
      * @brief Create a BlockManager for KV cache and register it with this orchestrator.
      */
-    void register_kv_cache(std::unique_ptr<KVCacheManager> kv_manager,
+    void register_kv_cache(std::unique_ptr<ICacheManager> kv_manager,
                            const SchedulerConfig& config) {
         const bool per_layer_control = config.use_cache_eviction;
         const size_t num_block_table_layers = per_layer_control ? kv_manager->get_num_layers() : 1;
