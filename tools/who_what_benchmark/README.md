@@ -192,6 +192,8 @@ wwb --target-model ltx-video-model --gt-data video_gen_test/gt.csv --model-type 
 wwb --target-model ltx-video-model --gt-data video_gen_test/gt.csv --model-type text-to-video --genai --output ltx_video_genai
 ```
 
+> **NOTE**: The `--decode-timestep` and `--decode-noise-scale` options are available for models whose VAE decoder supports timestep conditioning.
+
 ### Compare Text-to-video models with LoRA (LTX-Video)
 
 Community LoRA adapters for LTX-Video are available on [HuggingFace](https://huggingface.co/models?other=base_model:adapter:Lightricks/LTX-Video).
@@ -224,6 +226,8 @@ wwb --target-model ltx-video-model --gt-data i2v_test/gt.csv --model-type image-
 # compute metrics with GenAI
 wwb --target-model ltx-video-model --gt-data i2v_test/gt.csv --model-type image-to-video --genai --output ltx_i2v_genai
 ```
+
+> **NOTE**: The `--decode-timestep` and `--decode-noise-scale` options are available for models whose VAE decoder supports timestep conditioning.
 
 To condition on your own images, point `--image-dir` at the directory holding them. Relative filenames in the test data's `images`/`image` column are resolved against it; if the column is missing, the images are looked up as `0.png`, `1.png`, ... matching the prompt order.
 

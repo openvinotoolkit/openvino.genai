@@ -305,6 +305,18 @@ def parse_args():
         help="Text-to-image/text-to-video specific parameter that defines the number of denoising steps.",
     )
     parser.add_argument(
+        "--decode-timestep",
+        type=float,
+        default=None,
+        help="Text-to-video/image-to-video specific parameter that defines the timestep conditioning value passed to the VAE decoder.",
+    )
+    parser.add_argument(
+        "--decode-noise-scale",
+        type=float,
+        default=None,
+        help="Text-to-video/image-to-video specific parameter that defines the noise interpolation factor applied before VAE decoding.",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=42,
@@ -586,6 +598,11 @@ def load_prompts(args):
     if not separator:
         name = None
     data = load_dataset(path=path, name=name, split=dataset_split)
+
+    if args.model_type in ("text-to-video", "image-to-video"):
+        res = data.to_dict()
+        res["prompt"] = res.pop(args.dataset_field)
+        return res
 
     res = data[args.dataset_field]
     prompts = {"prompts": list(res)}
@@ -869,10 +886,16 @@ def genai_gen_text2video(
     frame_rate=25,
     guidance_scale=3,
     guidance_rescale=0,
+    decode_timestep=None,
+    decode_noise_scale=None,
     generator=None,
     empty_adapters=False,
 ):
     kwargs = {"negative_prompt": negative_prompt} if guidance_scale > 1 else {}
+    if decode_timestep is not None:
+        kwargs["decode_timestep"] = decode_timestep
+    if decode_noise_scale is not None:
+        kwargs["decode_noise_scale"] = decode_noise_scale
     if empty_adapters:
         import openvino_genai
 
@@ -905,10 +928,16 @@ def genai_gen_image2video(
     frame_rate=25,
     guidance_scale=3,
     guidance_rescale=0,
+    decode_timestep=None,
+    decode_noise_scale=None,
     generator=None,
     empty_adapters=False,
 ):
     kwargs = {"negative_prompt": negative_prompt} if guidance_scale > 1 else {}
+    if decode_timestep is not None:
+        kwargs["decode_timestep"] = decode_timestep
+    if decode_noise_scale is not None:
+        kwargs["decode_noise_scale"] = decode_noise_scale
     if empty_adapters:
         import openvino_genai
 
@@ -1209,6 +1238,8 @@ def create_evaluator(base_model, args):
                 num_samples=args.num_samples,
                 num_inference_steps=args.num_inference_steps,
                 num_frames=args.video_frames_num,
+                decode_timestep=args.decode_timestep,
+                decode_noise_scale=args.decode_noise_scale,
                 gen_video_fn=genai_gen_text2video if args.genai else None,
                 is_genai=args.genai,
                 seed=args.seed,
@@ -1222,6 +1253,8 @@ def create_evaluator(base_model, args):
                 num_samples=args.num_samples,
                 num_inference_steps=args.num_inference_steps,
                 num_frames=args.video_frames_num,
+                decode_timestep=args.decode_timestep,
+                decode_noise_scale=args.decode_noise_scale,
                 gen_video_fn=genai_gen_image2video if args.genai else None,
                 is_genai=args.genai,
                 seed=args.seed,
