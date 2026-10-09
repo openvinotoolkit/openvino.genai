@@ -4,170 +4,12 @@
 #include "include/text2image_pipeline/pipeline_wrapper.hpp"
 
 #include <filesystem>
-#include <future>
-#include <iostream>
-#include <optional>
 #include <thread>
 
 #include "include/helper.hpp"
 #include "include/image_decode_worker.hpp"
+#include "include/image_generation_inference_thread.hpp"
 #include "include/text2image_pipeline/init_worker.hpp"
-
-namespace {
-
-struct Text2ImageTsfnContext {
-    Text2ImageTsfnContext(std::string prompt,
-                          ov::AnyMap generation_properties,
-                          std::shared_ptr<std::atomic<bool>> is_busy,
-                          std::shared_ptr<std::atomic<bool>> is_generating)
-        : prompt(std::move(prompt)),
-          generation_properties(std::move(generation_properties)),
-          is_busy(std::move(is_busy)),
-          is_generating(std::move(is_generating)) {}
-
-    std::thread native_thread;
-    Napi::ThreadSafeFunction callback_tsfn;
-    std::optional<Napi::ThreadSafeFunction> streamer_tsfn;
-    std::string prompt;
-    ov::AnyMap generation_properties;
-    std::vector<std::string> callback_exceptions;
-    std::shared_ptr<std::atomic<bool>> is_busy;
-    std::shared_ptr<std::atomic<bool>> is_generating;
-    std::shared_ptr<ov::genai::Text2ImagePipeline> pipe = nullptr;
-};
-
-void text2image_perform_inference_thread(Text2ImageTsfnContext* context) {
-    auto report_error = [context](const std::string& message) {
-        auto status = context->callback_tsfn.BlockingCall([message](Napi::Env env, Napi::Function js_callback) {
-            try {
-                js_callback.Call({Napi::Error::New(env, "text2image_perform_inference_thread error. " + message).Value(),
-                                  env.Null()});
-            } catch (const std::exception& err) {
-                std::cerr << "The callback failed when returning an error from text2image_perform_inference_thread. Details:\n"
-                          << err.what() << std::endl;
-                std::cerr << "Original error message:\n" << message << std::endl;
-            }
-        });
-        if (status != napi_ok) {
-            std::cerr << "The BlockingCall failed with status " << status
-                      << " when trying to return an error from text2image_perform_inference_thread." << std::endl;
-            std::cerr << "Original error message:\n" << message << std::endl;
-        }
-    };
-    auto finalize = [context]() {
-        context->callback_tsfn.Release();
-        if (context->streamer_tsfn.has_value()) {
-            context->streamer_tsfn->Release();
-        }
-    };
-
-    try {
-        if (context->streamer_tsfn.has_value()) {
-            context->generation_properties["callback"] =
-                std::function<bool(size_t, size_t, ov::Tensor&)>(
-                    [context](size_t step, size_t num_steps, ov::Tensor& latent) -> bool {
-                        auto result_promise = std::make_shared<std::promise<bool>>();
-                        auto result_future = result_promise->get_future();
-                        // Release the inference request while the JS step callback runs so it may call decode().
-                        context->is_busy->store(false);
-                        napi_status status = context->streamer_tsfn->BlockingCall(
-                            [step, num_steps, &latent, result_promise, context](
-                                Napi::Env env, Napi::Function js_callback) {
-                                try {
-                                    auto js_result =
-                                        js_callback.Call({Napi::Number::New(env, static_cast<double>(step)),
-                                                          Napi::Number::New(env, static_cast<double>(num_steps)),
-                                                          cpp_to_js<ov::Tensor, Napi::Value>(env, latent)});
-                                    if (js_result.IsBoolean()) {
-                                        result_promise->set_value(js_result.As<Napi::Boolean>().Value());
-                                    } else if (js_result.IsPromise()) {
-                                        Napi::Object promise = js_result.As<Napi::Object>();
-                                        Napi::Function then = promise.Get("then").As<Napi::Function>();
-                                        auto on_fulfilled = Napi::Function::New(
-                                            env, [result_promise, context](const Napi::CallbackInfo& cb) {
-                                                if (cb.Length() > 0 && cb[0].IsBoolean()) {
-                                                    result_promise->set_value(cb[0].As<Napi::Boolean>().Value());
-                                                } else {
-                                                    context->callback_exceptions.push_back(
-                                                        "Step callback must resolve to a boolean.");
-                                                    result_promise->set_value(true);  // stop on invalid resolved value
-                                                }
-                                            });
-                                        auto on_rejected = Napi::Function::New(
-                                            env, [result_promise, context](const Napi::CallbackInfo& cb) {
-                                                std::string message = "Step callback promise rejected";
-                                                if (cb.Length() > 0 && cb[0].IsObject()) {
-                                                    Napi::Value msg = cb[0].As<Napi::Object>().Get("message");
-                                                    if (msg.IsString()) {
-                                                        message = msg.As<Napi::String>().Utf8Value();
-                                                    }
-                                                }
-                                                context->callback_exceptions.push_back(message);
-                                                result_promise->set_value(true);  // stop on rejection
-                                            });
-                                        then.Call(promise, {on_fulfilled, on_rejected});
-                                    } else {
-                                        context->callback_exceptions.push_back(
-                                            "Step callback must return a boolean or a Promise<boolean>.");
-                                        result_promise->set_value(true);  // stop on invalid return type
-                                    }
-                                } catch (const std::exception& err) {
-                                    context->callback_exceptions.push_back(err.what());
-                                    result_promise->set_value(true);  // stop on exception
-                                }
-                            });
-                        if (status != napi_ok) {
-                            context->is_busy->store(true);
-                            context->callback_exceptions.push_back(
-                                "Step callback BlockingCall failed with status: " +
-                                std::to_string(static_cast<int>(status)));
-                            return true;  // stop
-                        }
-                        bool stop = result_future.get();
-                        context->is_busy->store(true);
-                        return stop;
-                    });
-        }
-
-        ov::Tensor result = context->pipe->generate(context->prompt, context->generation_properties);
-        context->is_busy->store(false);
-        context->is_generating->store(false);
-
-        if (!context->callback_exceptions.empty()) {
-            std::string combined_error = "Step callback exceptions occurred:\n";
-            for (size_t i = 0; i < context->callback_exceptions.size(); ++i) {
-                combined_error += "[" + std::to_string(i + 1) + "] " + context->callback_exceptions[i] + "\n";
-            }
-            report_error(combined_error);
-        } else {
-            auto final_result = std::make_shared<ov::Tensor>(std::move(result));
-            auto final_callback_error = std::make_shared<std::string>();
-
-            napi_status status = context->callback_tsfn.BlockingCall(
-                [final_result, final_callback_error](Napi::Env env, Napi::Function js_callback) {
-                    try {
-                        js_callback.Call({env.Null(), cpp_to_js<ov::Tensor, Napi::Value>(env, *final_result)});
-                    } catch (const std::exception& err) {
-                        *final_callback_error = "The final callback failed. Details:\n" + std::string(err.what());
-                    }
-                });
-            if (status != napi_ok) {
-                report_error("The final BlockingCall failed with status " +
-                             std::to_string(static_cast<int>(status)));
-            } else if (!final_callback_error->empty()) {
-                report_error(*final_callback_error);
-            }
-        }
-    } catch (const std::exception& ex) {
-        context->is_busy->store(false);
-        context->is_generating->store(false);
-        report_error(ex.what());
-    }
-
-    finalize();
-}
-
-}  // namespace
 
 Text2ImagePipelineWrapper::Text2ImagePipelineWrapper(const Napi::CallbackInfo& info)
     : Napi::ObjectWrap<Text2ImagePipelineWrapper>(info) {}
@@ -233,11 +75,23 @@ Napi::Value Text2ImagePipelineWrapper::generate(const Napi::CallbackInfo& info) 
         auto generation_properties = js_to_cpp<ov::AnyMap>(env, info[1]);
         Napi::Function callback = info[3].As<Napi::Function>();
 
-        auto* context = new Text2ImageTsfnContext(std::move(prompt),
-                                                  std::move(generation_properties),
-                                                  this->is_busy,
-                                                  this->is_generating);
-        context->pipe = this->pipe;
+        auto pipe = this->pipe;
+        auto is_busy = this->is_busy;
+        auto* context = new InferenceThreadContext(this->is_generating, "text2image_perform_inference_thread");
+        context->streamer_exception_header = "Step callback exceptions occurred:";
+        context->on_finished = [is_busy] {
+            is_busy->store(false);
+        };
+        context->run_generate = [context, pipe, is_busy, prompt = std::move(prompt),
+                                 properties = std::move(generation_properties)]() mutable -> JsResultProducer {
+            if (context->streamer_tsfn.has_value()) {
+                properties["callback"] = make_image_generation_step_callback(context, is_busy);
+            }
+            ov::Tensor result = pipe->generate(prompt, properties);
+            return [result = std::move(result)](Napi::Env env) -> Napi::Value {
+                return cpp_to_js<ov::Tensor, Napi::Value>(env, result);
+            };
+        };
 
         // streamer at index 2 can be a function or null/undefined
         OPENVINO_ASSERT(info[2].IsUndefined() || info[2].IsNull() || info[2].IsFunction(),
@@ -255,7 +109,7 @@ Napi::Value Text2ImagePipelineWrapper::generate(const Napi::CallbackInfo& info) 
                 delete context;
             });
 
-        context->native_thread = std::thread(text2image_perform_inference_thread, context);
+        context->native_thread = std::thread(perform_generate_thread, context);
     } catch (const std::exception& ex) {
         this->is_busy->store(false);
         this->is_generating->store(false);
