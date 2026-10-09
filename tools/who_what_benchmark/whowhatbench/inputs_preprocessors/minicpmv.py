@@ -117,3 +117,57 @@ class MiniCPMVInputsPreprocessor(VLMInputsPreprocessor):
             inputs["tgt_sizes"] = [[tgt_sizes[0][i] for i in keep_image_idx]]
 
         return inputs
+
+
+class MiniCPMV4_7InputsPreprocessor(VLMInputsPreprocessor):
+    """Preprocess native Transformers MiniCPM-V 4.7 image/video conversations."""
+
+    def __init__(self, chat_mode: bool = False, model: Optional[Any] = None):
+        super().__init__(chat_mode, model=model)
+
+    def update_chat_history_with_answer(self, answer):
+        self.chat_history.append({"role": "assistant", "content": [{"type": "text", "text": answer}]})
+
+    def preprocess_inputs(
+        self,
+        text: str,
+        image: Optional[Union["Image", list["Image"]]] = None,
+        processor: Optional[AutoImageProcessor] = None,
+        tokenizer: Optional[PreTrainedTokenizer] = None,
+        config: Optional[PretrainedConfig] = None,
+        video: Optional[Union["VideoInput", list["VideoInput"]]] = None,
+        audio: Optional[np.ndarray] = None,
+    ):
+        if processor is None:
+            raise ValueError("Processor is required.")
+        if audio is not None:
+            raise ValueError("Audio input is not supported")
+
+        content = []
+        if image is not None:
+            images = image if isinstance(image, list) else [image]
+            content.extend({"type": "image", "image": value} for value in images)
+        if video is not None:
+            videos = video if isinstance(video, list) else [video]
+            content.extend({"type": "video", "video": value} for value in videos)
+        content.append({"type": "text", "text": text})
+
+        message = {"role": "user", "content": content}
+        if self.chat_mode:
+            self.chat_history.append(message)
+            conversation = self.chat_history
+        else:
+            conversation = [message]
+
+        kwargs = {}
+        if video is not None and not isinstance(video, str):
+            # WWB supplies already-decoded frames without sampling metadata.
+            kwargs["do_sample_frames"] = False
+        return processor.apply_chat_template(
+            conversation,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt",
+            **kwargs,
+        )
