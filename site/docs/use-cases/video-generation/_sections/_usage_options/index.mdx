@@ -66,6 +66,80 @@ You can adjust several parameters to control the video generation process, inclu
     </TabItemCpp>
 </LanguageTabs>
 
+#### LTX-2 and LTX-2.3 Guidance Configuration
+
+LTX-2 models generate video and audio jointly, so guidance can be tuned per modality with `audio_guidance_scale` and `audio_guidance_rescale`. Left unset, each takes the loaded model's own default: LTX-2.3 ships audio defaults that are independent of the video ones (`audio_guidance_scale=7.0` against `guidance_scale=3.0`), while LTX-2 has none and falls back to its video counterpart. One consequence worth knowing: on LTX-2.3, `guidance_scale=1.0` does **not** switch guidance off, because the audio scale still asks for it.
+
+LTX-2.3 adds two further guidance terms, each costing one extra transformer pass per denoising step:
+
+- **Spatio-Temporal Guidance (STG)** — `stg_scale` weighs a pass in which the transformer blocks listed in `spatio_temporal_guidance_blocks` have their self-attention perturbed.
+- **Modality isolation** — `modality_scale` weighs a pass with video-to-audio and audio-to-video cross attention disabled.
+
+The pipeline picks its defaults from the converted model, so no configuration is needed to reproduce the reference behavior: LTX-2.3 starts with both terms enabled (`stg_scale`/`audio_stg_scale` at 1.0, `modality_scale`/`audio_modality_scale` at 3.0, `spatio_temporal_guidance_blocks=[28]`), while LTX-2 uses plain classifier-free guidance. To fall back to classifier-free guidance only, set all four scales to their disabling values — `stg_scale=0.0, audio_stg_scale=0.0, modality_scale=1.0, audio_modality_scale=1.0`. Zeroing only the video scales is not enough: a pass runs whenever either modality still asks for it.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        import openvino_genai as ov_genai
+
+        pipe = ov_genai.Text2VideoPipeline(model_path, "CPU")
+        fps = 24
+        output = pipe.generate(
+          prompt,
+          # highlight-start
+          guidance_scale=3.0,
+          audio_guidance_scale=7.0,
+          stg_scale=1.0,
+          audio_stg_scale=1.0,
+          modality_scale=3.0,
+          audio_modality_scale=3.0,
+          spatio_temporal_guidance_blocks=[28],
+          # highlight-end
+          frame_rate=fps
+        )
+
+        save_video("genai_video.avi", output.video, fps)
+        save_audio("genai_audio.wav", output.audio, output.audio_sample_rate)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        #include "openvino/genai/video_generation/text2video_pipeline.hpp"
+        #include "imwrite_video.hpp"
+        #include "save_audio.hpp"
+
+        int main(int argc, char* argv[]) {
+            const std::string models_path = argv[1], prompt = argv[2];
+
+            ov::genai::Text2VideoPipeline pipe(models_path, "CPU");
+            float fps = 24;
+            ov::genai::VideoGenerationResult output = pipe.generate(
+                prompt,
+                // highlight-start
+                ov::genai::guidance_scale(3.0f),
+                ov::genai::audio_guidance_scale(7.0f),
+                ov::genai::stg_scale(1.0f),
+                ov::genai::audio_stg_scale(1.0f),
+                ov::genai::modality_scale(3.0f),
+                ov::genai::audio_modality_scale(3.0f),
+                ov::genai::spatio_temporal_guidance_blocks(std::vector<int64_t>{28}),
+                // highlight-end
+                ov::genai::frame_rate(fps)
+            );
+
+            save_video("genai_video.avi", output.video, fps);
+            save_audio("genai_audio.wav", output.audio, output.audio_sample_rate);
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+:::note
+- These parameters apply to the LTX-2 family only. Passing them to an LTX-Video pipeline raises an exception rather than being silently ignored. On an LTX-2 model, whose exported Transformer has no guidance inputs, `stg_scale` and `modality_scale` have no effect.
+- Enabling Spatio-Temporal Guidance with an empty `spatio_temporal_guidance_blocks` is an error: with no block to perturb, the extra pass would only cost time.
+- The extra passes run at batch `num_videos_per_prompt`, while classifier-free guidance runs at twice that. Serving both from one compiled Transformer needs a dynamic batch dimension, which the pipeline keeps only if the scales are known at reshape time. If you use the explicit `reshape()` + `compile()` flow, apply them with `set_generation_config()` beforehand; otherwise the extra passes are skipped with a warning at generation time.
+:::
+
 ### Working with LoRA Adapters
 
 For video generation models like LTX-Video, LoRA adapters can modify the generation process to produce videos with specific artistic styles, content types, or quality enhancements.
@@ -81,8 +155,24 @@ Refer to the [LoRA Adapters](/docs/guides/lora-adapters) for more details on wor
 - `num_videos_per_prompt`: Specifies how many video variations to generate in a single request for the same prompt.
 - `num_inference_steps`: Defines denoising iteration count. Higher values increase quality and generation time, lower values generate faster with less detail.
 - `guidance_scale`: Balances prompt adherence vs. creativity. Higher values follow prompt more strictly, lower values allow more creative freedom.
+- `guidance_rescale`: Rescales the guided prediction towards the unguided one to counter overexposure. `0.0` disables rescaling.
 - `generator`: Controls randomness for reproducible results. Same generator seed produces identical videos across runs.
 - `frame_rate`: Target video FPS used by the pipeline.
+
+LTX-2 family only:
+
+- `audio_guidance_scale`: `guidance_scale` for the audio modality. Unset means the model's own default, which on LTX-2.3 is independent of `guidance_scale`.
+- `audio_guidance_rescale`: `guidance_rescale` for the audio modality, resolved the same way.
+
+LTX-2.3 only:
+
+- `stg_scale`: Weight of the Spatio-Temporal Guidance term. `0.0` disables it for the video modality.
+- `audio_stg_scale`: `stg_scale` for the audio modality. `0.0` disables it for the audio modality.
+- `spatio_temporal_guidance_blocks`: Transformer block indices whose self-attention is perturbed by Spatio-Temporal Guidance. Indices outside the model's block range are ignored.
+- `modality_scale`: Weight of the modality isolation term. `<= 1.0` disables it for the video modality.
+- `audio_modality_scale`: `modality_scale` for the audio modality. `<= 1.0` disables it for the audio modality.
+
+Each pair shares one extra transformer pass, but a modality is guided only when its own scale is above the threshold, so you can guide one modality and leave the other untouched. The pass itself runs whenever either scale asks for it.
 
 For the full list of generation parameters, refer to the [Video Generation Config API](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.VideoGenerationConfig.html).
 
