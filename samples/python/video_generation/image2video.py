@@ -7,7 +7,7 @@ import numpy as np
 import openvino as ov
 import openvino_genai
 from PIL import Image
-from video_utils import save_video
+from video_utils import save_audio, save_video
 
 
 def read_image(path: str) -> ov.Tensor:
@@ -38,7 +38,7 @@ def main():
         height=480,
         width=704,
         num_frames=args.num_frames,
-        num_inference_steps=25,
+        num_inference_steps=40,
         num_videos_per_prompt=1,
         callback=callback,
         frame_rate=frame_rate,
@@ -47,6 +47,11 @@ def main():
     )
 
     save_video("genai_video.avi", output.video, frame_rate)
+    # TODO: Combine audio and video into one file inside GenAI for LTX-2, so users don't need ffmpeg.
+    # Models that generate audio (LTX-2) return it as a separate track. To combine both into one file:
+    #   ffmpeg -i genai_video.avi -i genai_audio.wav genai_video.mp4
+    if output.audio_sample_rate:
+        save_audio("genai_audio.wav", output.audio, output.audio_sample_rate)
 
     print(f"\nPerformance metrics:")
     print(f"  Load time: {output.perf_metrics.get_load_time():.2f} ms")

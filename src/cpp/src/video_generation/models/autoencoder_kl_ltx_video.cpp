@@ -22,80 +22,11 @@
 #include "utils.hpp"
 #include "json_utils.hpp"
 #include "lora/helper.hpp"
+#include "video_generation/video_generation_utils.hpp"
 
 using namespace ov::genai;
 
 namespace {
-
-class DiagonalGaussianDistribution {
-public:
-    explicit DiagonalGaussianDistribution(ov::Tensor parameters) : m_params(std::move(parameters)) {
-        OPENVINO_ASSERT(m_params.get_element_type() == ov::element::f32,
-            "DiagonalGaussianDistribution requires f32 encoder output, got ",
-            m_params.get_element_type());
-
-        const ov::Shape& full_shape = m_params.get_shape();
-        OPENVINO_ASSERT(full_shape.size() >= 2, "Parameters tensor rank must be at least 2");
-        OPENVINO_ASSERT(full_shape[1] % 2 == 0, "Channel dimension must be even to split mean and logvar");
-
-        m_channels = full_shape[1] / 2;
-        m_spatial = 1;
-        for (size_t i = 2; i < full_shape.size(); ++i)
-            m_spatial *= full_shape[i];
-
-        ov::Shape std_shape = full_shape;
-        std_shape[1] = m_channels;
-        m_std = ov::Tensor(m_params.get_element_type(), std_shape);
-
-        const float* src = m_params.data<float>();
-        float* std_data = m_std.data<float>();
-        const size_t batch = full_shape[0];
-
-        for (size_t b = 0; b < batch; ++b) {
-            for (size_t c = 0; c < m_channels; ++c) {
-                const size_t lvar_off = (b * full_shape[1] + m_channels + c) * m_spatial;
-                const size_t dst_off  = (b * m_channels + c) * m_spatial;
-                for (size_t s = 0; s < m_spatial; ++s) {
-                    const float logvar = std::min(std::max(src[lvar_off + s], -30.0f), 20.0f);
-                    std_data[dst_off + s] = std::exp(0.5f * logvar);
-                }
-            }
-        }
-    }
-
-    ov::Tensor sample(std::shared_ptr<ov::genai::Generator> generator) const {
-        OPENVINO_ASSERT(generator, "Generator must not be nullptr");
-
-        ov::Shape sample_shape = m_params.get_shape();
-        sample_shape[1] = m_channels;
-        ov::Tensor result = generator->randn_tensor(sample_shape);
-        OPENVINO_ASSERT(result.get_element_type() == ov::element::f32,
-            "Generator::randn_tensor() must return an f32 tensor, got ",
-            result.get_element_type());
-
-        const float* params_data = m_params.data<float>();
-        const float* std_data = m_std.data<float>();
-        float* result_data = result.data<float>();
-        const size_t batch = m_params.get_shape()[0];
-        const size_t full_channels = m_params.get_shape()[1];
-
-        for (size_t b = 0; b < batch; ++b) {
-            for (size_t c = 0; c < m_channels; ++c) {
-                const size_t mean_off = (b * full_channels + c) * m_spatial;
-                const size_t dst_off  = (b * m_channels + c) * m_spatial;
-                for (size_t s = 0; s < m_spatial; ++s) {
-                    result_data[dst_off + s] = params_data[mean_off + s] + std_data[dst_off + s] * result_data[dst_off + s];
-                }
-            }
-        }
-
-        return result;
-    }
-
-private:
-    ov::Tensor m_params, m_std;
-    size_t m_channels, m_spatial;
-};
 
 // for BW compatibility with 2024.6.0
 ov::AnyMap handle_scale_factor(std::shared_ptr<ov::Model> model, const std::string& device, ov::AnyMap properties) {
@@ -305,7 +236,7 @@ ov::Tensor AutoencoderKLLTXVideo::encode(const ov::Tensor& video, std::shared_pt
             "AutoencoderKLLTXVideo::encode requires a non-null generator when encoder output is "
             "'latent_parameters', because latent sampling is performed from distribution parameters. "
             "A generator is not required when encoder output is 'latent_sample'.");
-        latent = DiagonalGaussianDistribution(output).sample(generator);
+        latent = video_generation_utils::DiagonalGaussianDistribution(output).sample(generator);
     } else {
         OPENVINO_ASSERT(false, "Unexpected output name for AutoencoderKLLTXVideo encoder '", output_name, "'");
     }

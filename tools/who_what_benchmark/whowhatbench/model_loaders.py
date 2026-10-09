@@ -1010,19 +1010,33 @@ def load_image2video_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
     )
 
 
+def _image2video_hf_class(model_id):
+    # diffusers has no image-to-video auto class and the model index names the text-to-video pipeline
+    from diffusers import DiffusionPipeline
+
+    class_name = DiffusionPipeline.load_config(model_id)["_class_name"]
+    if class_name in ("LTX2Pipeline", "LTX2ImageToVideoPipeline"):
+        from diffusers import LTX2ImageToVideoPipeline
+
+        return LTX2ImageToVideoPipeline
+    from diffusers import LTXImageToVideoPipeline
+
+    return LTXImageToVideoPipeline
+
+
 def load_image2video_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
     if use_genai:
         logger.info("Using OpenVINO GenAI API")
         model = load_image2video_genai_pipeline(model_id, device, ov_config, **kwargs)
     elif use_hf:
-        from diffusers import LTXImageToVideoPipeline
+        pipeline_class = _image2video_hf_class(model_id)
 
         logger.info("Using HF Transformers API")
         torch_dtype = _resolve_torch_dtype(kwargs.get("torch_dtype")) or torch.float32
         try:
-            model = LTXImageToVideoPipeline.from_pretrained(model_id, torch_dtype=torch_dtype)
+            model = pipeline_class.from_pretrained(model_id, torch_dtype=torch_dtype)
         except ValueError:
-            model = LTXImageToVideoPipeline.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch_dtype)
+            model = pipeline_class.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch_dtype)
         if kwargs.get("adapters") is not None:
             adapters = kwargs["adapters"]
             alphas = kwargs.get("alphas", None)
@@ -1033,18 +1047,18 @@ def load_image2video_model(model_id, device="CPU", ov_config=None, use_hf=False,
             model.set_adapters([f"adapter_{idx}" for idx in range(len(adapters))], adapter_weights=alphas)
     else:
         logger.info("Using Optimum API")
-        from optimum.intel import OVLTXImageToVideoPipeline
+        from optimum.intel import OVPipelineForImage2Video
 
         if "adapters" in kwargs and kwargs["adapters"] is not None:
-            raise ValueError("Adapters are not supported for OVLTXImageToVideoPipeline.")
+            raise ValueError("Adapters are not supported for OVPipelineForImage2Video.")
 
         model_kwargs = {"ov_config": ov_config, "safety_checker": None}
         if kwargs.get("from_onnx"):
             model_kwargs["from_onnx"] = kwargs["from_onnx"]
         try:
-            model = OVLTXImageToVideoPipeline.from_pretrained(model_id, device=device, **model_kwargs)
+            model = OVPipelineForImage2Video.from_pretrained(model_id, device=device, **model_kwargs)
         except ValueError:
-            model = OVLTXImageToVideoPipeline.from_pretrained(
+            model = OVPipelineForImage2Video.from_pretrained(
                 model_id, trust_remote_code=True, use_cache=True, device=device, **model_kwargs
             )
 

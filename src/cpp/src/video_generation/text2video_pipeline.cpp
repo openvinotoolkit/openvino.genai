@@ -15,7 +15,7 @@ Text2VideoPipeline::Text2VideoPipeline(const std::filesystem::path& model_path) 
     if (class_name == "LTXPipeline") {
         m_impl = std::make_shared<LTXPipeline>(VideoPipelineType::TEXT_2_VIDEO, model_path);
     } else if (class_name == "LTX2Pipeline") {
-        m_impl = std::make_shared<LTX2Pipeline>(model_path);
+        m_impl = std::make_shared<LTX2Pipeline>(VideoPipelineType::TEXT_2_VIDEO, model_path);
     } else {
         OPENVINO_THROW("Unsupported text to video generation pipeline '", class_name, "'");
     }
@@ -28,7 +28,7 @@ Text2VideoPipeline::Text2VideoPipeline(const std::filesystem::path& models_dir,
     if (class_name == "LTXPipeline") {
         m_impl = std::make_shared<LTXPipeline>(VideoPipelineType::TEXT_2_VIDEO, models_dir, device, properties);
     } else if (class_name == "LTX2Pipeline") {
-        m_impl = std::make_shared<LTX2Pipeline>(models_dir, device, properties);
+        m_impl = std::make_shared<LTX2Pipeline>(VideoPipelineType::TEXT_2_VIDEO, models_dir, device, properties);
     } else {
         OPENVINO_THROW("Unsupported text to video generation pipeline '", class_name, "'");
     }
