@@ -13,6 +13,7 @@
 #include "visual_language/qwen3_vl/classes.hpp"
 #include "visual_language/qwen3_5/classes.hpp"
 #include "visual_language/qwen3_omni/classes.hpp"
+#include "automatic_speech_recognition/models/qwen3-asr/split/inputs_embedder.hpp"
 #include "visual_language/phi3_vision/classes.hpp"
 #include "visual_language/phi4mm/classes.hpp"
 #include "visual_language/minicpm/classes.hpp"
@@ -85,6 +86,13 @@ void InputsEmbedder::IInputsEmbedder::finish_chat() {
     m_is_chat_conversation = false;
     m_cache_state.reset_state();
 }
+
+InputsEmbedder::IInputsEmbedder::IInputsEmbedder(const VLMConfig& vlm_config,
+                                                 const Tokenizer& tokenizer,
+                                                 EmbeddingsModel::Ptr embedding)
+    : m_vlm_config{vlm_config},
+      m_embedding{std::move(embedding)},
+      m_tokenizer{tokenizer} {}
 
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const VLMConfig& vlm_config,
@@ -363,6 +371,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderQwen3_5>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN3_OMNI) {
         m_impl = std::make_shared<InputsEmbedderQwen3Omni>(vlm_config, model_dir, tokenizer, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::QWEN3_ASR) {
+        m_impl = std::make_shared<InputsEmbedderQwen3ASR>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3N) {
@@ -417,6 +427,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
         m_impl = std::make_shared<InputsEmbedderQwen3_5>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN3_OMNI) {
         m_impl = std::make_shared<InputsEmbedderQwen3Omni>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::QWEN3_ASR) {
+        m_impl = std::make_shared<InputsEmbedderQwen3ASR>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3N) {
@@ -458,6 +470,21 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt,
                                      images_sequence,
                                      videos_sequence,
                                      history_vision_count);
+}
+
+ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt,
+                                             const std::vector<ov::genai::EncodedImage>& images,
+                                             const std::vector<ov::genai::EncodedVideo>& videos,
+                                             const std::vector<ov::genai::EncodedAudio>& audios,
+                                             ov::genai::VLMPerfMetrics& metrics,
+                                             bool recalculate_merged_embeddings,
+                                             const std::vector<size_t>& image_sequence,
+                                             const std::vector<size_t>& videos_sequence,
+                                             const std::vector<size_t>& audios_sequence,
+                                             size_t base_audio_id,
+                                             const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
+    return m_impl->get_inputs_embeds(prompt, images, videos, audios, metrics, recalculate_merged_embeddings,
+                                     image_sequence, videos_sequence, audios_sequence, base_audio_id, history_vision_count);
 }
 
 const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::get_lm_extra_inputs() const {
@@ -504,6 +531,23 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(
                              image_sequence,
                              videos_sequence,
                              history_vision_count);
+}
+
+ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(
+    const std::string& prompt,
+    const std::vector<ov::genai::EncodedImage>& images,
+    const std::vector<ov::genai::EncodedVideo>& videos,
+    const std::vector<ov::genai::EncodedAudio>& audios,
+    ov::genai::VLMPerfMetrics& metrics,
+    bool recalculate_merged_embeddings,
+    const std::vector<size_t>& image_sequence,
+    const std::vector<size_t>& videos_sequence,
+    const std::vector<size_t>& audios_sequence,
+    size_t base_audio_id,
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
+) {
+    return get_inputs_embeds(prompt, images, videos, audios, metrics, recalculate_merged_embeddings,
+                             image_sequence, videos_sequence, audios_sequence, history_vision_count);
 }
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
@@ -623,6 +667,7 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt,
                                      image_sequence,
                                      videos_sequence,
                                      audios_sequence,
+                                     0,
                                      history_vision_count);
 }
 

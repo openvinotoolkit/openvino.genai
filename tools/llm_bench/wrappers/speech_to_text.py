@@ -42,11 +42,23 @@ class FunASROptimumPipeline:
 
 class Qwen3ASROptimumPipeline:
     SAMPLE_RATE = 16000
-    EOS_TOKEN_IDS = [151643, 151645]
 
     def __init__(self, model, processor):
         self.model = model
         self.processor = processor
+
+    def prepare_generation_inputs(self, inputs):
+        if hasattr(self.model, "audio_encoder"):
+            return inputs
+        tokenizer = self.processor.tokenizer
+        return {
+            "input_features": inputs["input_features"],
+            "decoder_input_ids": inputs["input_ids"],
+            "attention_mask": inputs.get("feature_attention_mask"),
+            "decoder_start_token_id": self.model.config.decoder_start_token_id,
+            "eos_token_id": [tokenizer.pad_token_id, tokenizer.eos_token_id],
+            "pad_token_id": tokenizer.pad_token_id,
+        }
 
     def preprocess(self, sample, **kwargs):
         start = time.perf_counter()
@@ -73,12 +85,9 @@ class Qwen3ASROptimumPipeline:
         inputs, preprocess_time, language = self.preprocess(sample, **kwargs)
 
         start_gen = time.perf_counter()
-        output_ids = self.model.generate(
-            input_features=inputs["input_features"],
-            decoder_input_ids=inputs["input_ids"],
-            eos_token_id=self.EOS_TOKEN_IDS,
-            max_new_tokens=max_new_tokens,
-        )
+        generation_inputs = self.prepare_generation_inputs(inputs)
+        output_ids = self.model.generate(**generation_inputs, max_new_tokens=max_new_tokens, do_sample=False)
+        output_ids = getattr(output_ids, "sequences", output_ids)
         end_gen = time.perf_counter()
         generation_time = end_gen - start_gen
 

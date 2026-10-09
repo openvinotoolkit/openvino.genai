@@ -8,11 +8,11 @@
 using ov::genai::CBGenerateProperties;
 
 TEST(CBGenerateProperties, NoMediaIsNotMedia) {
-    EXPECT_FALSE(CBGenerateProperties{}.has_media_properties());
+    EXPECT_FALSE(CBGenerateProperties{}.has_multimodal_properties());
 }
 
 TEST(CBGenerateProperties, AudioOnlyCountsAsMedia) {
     CBGenerateProperties properties;
     properties.audios_batches = std::vector<std::vector<ov::Tensor>>{{}};
-    EXPECT_TRUE(properties.has_media_properties());
+    EXPECT_TRUE(properties.has_multimodal_properties());
 }
