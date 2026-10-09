@@ -53,8 +53,8 @@ install(TARGETS visual_language_chat
         EXCLUDE_FROM_ALL)
 
 # create audio language chat sample executable
-add_executable(audio_to_text_chat audio_to_text_chat.cpp ../automatic_speech_recognition/audio_utils.cpp)
-target_include_directories(audio_to_text_chat PRIVATE "../automatic_speech_recognition" "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
+add_executable(audio_to_text_chat audio_to_text_chat.cpp ../speech_generation/audio_utils.cpp)
+target_include_directories(audio_to_text_chat PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.." "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
 target_link_libraries(audio_to_text_chat PRIVATE openvino::genai)
 
 set_target_properties(audio_to_text_chat PROPERTIES

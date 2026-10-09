@@ -5,7 +5,7 @@
 #include <iostream>
 #include <openvino/genai/visual_language/pipeline.hpp>
 
-#include "audio_utils.hpp"
+#include "speech_generation/audio_utils.hpp"
 
 ov::genai::StreamingStatus print_subword(std::string&& subword) {
     std::cout << subword << std::flush;
