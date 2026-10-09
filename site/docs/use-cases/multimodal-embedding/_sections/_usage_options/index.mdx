@@ -1,7 +1,7 @@
 ## Additional Usage Options
 
 :::tip
-Check out the [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/rag/image_video_embedding.py) RAG samples for multimodal embedding examples.
+Check out the [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/rag/image_video_embedding.py) and [JavaScript](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/js/rag/image_video_embedding.js) RAG samples for multimodal embedding examples.
 For a text embedding example, check out the [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/rag), [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/rag), and [JavaScript](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/js/rag) samples.
 :::
 
@@ -30,12 +30,12 @@ Some models support a special instruction that describes how an input should be 
         ```
     </TabItemCpp>
     <TabItemJS>
-
-:::info
-JS bindings currently expose only `TextEmbeddingPipeline` (text-only).
-Multimodal `EmbeddingPipeline` support in JS is not available yet.
-:::
-
+        ```javascript
+        const embedding = await pipeline.embed(
+            "a photo of a cat",
+            { embedding_prompt: "Represent this text for retrieval: " }
+        );
+        ```
     </TabItemJS>
 </LanguageTabs>
 
@@ -133,11 +133,9 @@ The embedding behavior of the pipeline can be tuned by passing configuration par
     </TabItemCpp>
     <TabItemJS>
         ```javascript
-        // JS bindings currently expose only TextEmbeddingPipeline (text-only).
-        // EmbeddingPipeline (multimodal) support in JS is not available yet.
-        import { TextEmbeddingPipeline, PoolingType } from "openvino-genai-node";
+        import { EmbeddingPipeline, PoolingType } from "openvino-genai-node";
 
-        const pipeline = await TextEmbeddingPipeline(
+        const pipeline = await EmbeddingPipeline(
             models_path,
             "CPU",
             {
@@ -150,7 +148,7 @@ The embedding behavior of the pipeline can be tuned by passing configuration par
         );
 
         // Embed the text query
-        const query = await pipeline.embedQuery("a photo of a cat");
+        const query = await pipeline.embed("a photo of a cat");
         ```
     </TabItemJS>
 </LanguageTabs>
