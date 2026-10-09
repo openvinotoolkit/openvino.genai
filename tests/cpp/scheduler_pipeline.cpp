@@ -5,9 +5,11 @@
 #include <gtest/gtest.h>
 #include <algorithm>
 #include <chrono>
+#include <exception>
 #include <future>
 #include <numeric>
 #include <set>
+#include <typeinfo>
 #include "openvino/runtime/core.hpp"
 #include "openvino/op/constant.hpp"
 #include "openvino/op/parameter.hpp"
@@ -22,6 +24,29 @@
 #include "utils.hpp"
 
 using namespace ov::genai;
+
+namespace {
+
+void expect_same_exception(const std::exception_ptr& actual, const std::exception_ptr& expected) {
+    ASSERT_NE(actual, nullptr);
+    ASSERT_NE(expected, nullptr);
+    try {
+        std::rethrow_exception(expected);
+    } catch (const std::exception& expected_error) {
+        try {
+            std::rethrow_exception(actual);
+        } catch (const std::exception& actual_error) {
+            EXPECT_EQ(typeid(actual_error), typeid(expected_error));
+            EXPECT_STREQ(actual_error.what(), expected_error.what());
+        } catch (...) {
+            FAIL() << "Actual failure is not a std::exception";
+        }
+    } catch (...) {
+        FAIL() << "Expected failure is not a std::exception";
+    }
+}
+
+}  // namespace
 
 class CBFailureBoundaryTest : public testing::Test, public ContinuousBatchingPipeline {
 protected:
@@ -367,7 +392,7 @@ TEST_F(CBNotificationOrderingTest, CandidateFailurePublishesNoGeneratedOutputAnd
             step_failure = std::current_exception();
         }
 
-        EXPECT_EQ(step_failure, pipeline.get_candidate_failure());
+        expect_same_exception(step_failure, pipeline.get_candidate_failure());
         EXPECT_FALSE(pipeline.output_was_visible_at_candidate_commit());
         EXPECT_EQ(handle->get_status(), GenerationStatus::FAILED);
         std::exception_ptr reader_failure;
@@ -376,7 +401,7 @@ TEST_F(CBNotificationOrderingTest, CandidateFailurePublishesNoGeneratedOutputAnd
         } catch (...) {
             reader_failure = std::current_exception();
         }
-        EXPECT_EQ(reader_failure, pipeline.get_candidate_failure());
+        expect_same_exception(reader_failure, pipeline.get_candidate_failure());
     }
 }
 
@@ -398,7 +423,7 @@ TEST_F(CBLinearAttentionFailureGateTest,
     }
 
     ASSERT_NE(step_failure, nullptr);
-    EXPECT_EQ(step_failure, pipeline.transaction_failure());
+    expect_same_exception(step_failure, pipeline.transaction_failure());
     EXPECT_TRUE(pipeline.sampler_acceptance_observed());
     EXPECT_TRUE(active_handle->can_read());
     EXPECT_TRUE(awaiting_handle->can_read());
@@ -416,7 +441,7 @@ TEST_F(CBLinearAttentionFailureGateTest,
         } catch (...) {
             reader_failure = std::current_exception();
         }
-        EXPECT_EQ(reader_failure, pipeline.transaction_failure());
+        expect_same_exception(reader_failure, pipeline.transaction_failure());
     };
     expect_original_failure(active_handle, false);
     expect_original_failure(awaiting_handle, true);
@@ -429,7 +454,7 @@ TEST_F(CBLinearAttentionFailureGateTest,
     } catch (...) {
         reuse_failure = std::current_exception();
     }
-    EXPECT_EQ(reuse_failure, pipeline.transaction_failure());
+    expect_same_exception(reuse_failure, pipeline.transaction_failure());
 }
 
 TEST_F(CBNotificationOrderingTest, SuccessfulStepPublishesGeneratedAndTerminalOutputAfterCandidateCommit) {
@@ -526,7 +551,7 @@ TEST_F(CBFailureBoundaryTest, StepFailureFailsActiveAndAwaitingRequestsAndReject
         step_failure = std::current_exception();
     }
 
-    EXPECT_EQ(step_failure, pipeline.get_step_failure());
+    expect_same_exception(step_failure, pipeline.get_step_failure());
     EXPECT_EQ(active_handle->get_status(), GenerationStatus::FAILED);
     EXPECT_EQ(awaiting_handle->get_status(), GenerationStatus::FAILED);
     ASSERT_EQ(active_reader.wait_for(1s), std::future_status::ready);
@@ -538,7 +563,7 @@ TEST_F(CBFailureBoundaryTest, StepFailureFailsActiveAndAwaitingRequestsAndReject
         } catch (...) {
             reader_failure = std::current_exception();
         }
-        EXPECT_EQ(reader_failure, pipeline.get_step_failure());
+        expect_same_exception(reader_failure, pipeline.get_step_failure());
     };
     expect_reader_failure(active_reader);
     expect_reader_failure(awaiting_reader);
@@ -554,7 +579,7 @@ TEST_F(CBFailureBoundaryTest, StepFailureFailsActiveAndAwaitingRequestsAndReject
     } catch (...) {
         reuse_failure = std::current_exception();
     }
-    EXPECT_EQ(reuse_failure, pipeline.get_step_failure());
+    expect_same_exception(reuse_failure, pipeline.get_step_failure());
 }
 
 TEST_F(CBFailureBoundaryTest, FailedPipelineRejectsAdmissionWithOriginalFailure) {
@@ -570,7 +595,7 @@ TEST_F(CBFailureBoundaryTest, FailedPipelineRejectsAdmissionWithOriginalFailure)
         } catch (...) {
             failure = std::current_exception();
         }
-        EXPECT_EQ(failure, pipeline.get_step_failure());
+        expect_same_exception(failure, pipeline.get_step_failure());
     };
 
     expect_original_failure([&pipeline] { pipeline.add_request(1, ov::Tensor{}, GenerationConfig{}); });

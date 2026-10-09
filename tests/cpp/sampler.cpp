@@ -281,16 +281,16 @@ TEST(SamplerNotificationTest, precommitFailurePublishesNoGeneratedOutputAndPrese
     sampler.sample(sequence_groups, make_logits(1), false, false);
     ASSERT_FALSE(sequence_group->get_generation_stream()->can_read());
 
-    const std::exception_ptr failure = std::make_exception_ptr(std::runtime_error("injected precommit failure"));
-    sequence_group->fail_generation(failure);
+    sequence_group->fail_generation(std::make_exception_ptr(std::runtime_error("injected precommit failure")));
 
-    std::exception_ptr reader_failure;
-    try {
-        sequence_group->get_generation_stream()->read();
-    } catch (...) {
-        reader_failure = std::current_exception();
-    }
-    EXPECT_EQ(reader_failure, failure);
+    EXPECT_THROW(
+        try {
+            sequence_group->get_generation_stream()->read();
+        } catch (const std::runtime_error& error) {
+            EXPECT_STREQ(error.what(), "injected precommit failure");
+            throw;
+        },
+        std::runtime_error);
 }
 
 TEST(SamplerNotificationTest, deferredEchoUsesPreCounterUpdateRange) {
