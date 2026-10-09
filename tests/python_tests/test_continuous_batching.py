@@ -456,7 +456,8 @@ def get_hybrid_prefix_caching_scheduler_config(num_kv_blocks: int, cache_interva
 
 HYBRID_PREEMPTION_MODELS_LIST = [
     pytest.param(model_id, marks=pytest.mark.skip(reason="CVS-195736: LFM2 conversion fails in CI"))
-    if model_id == "optimum-intel-internal-testing/tiny-random-lfm2" else model_id
+    if model_id == "optimum-intel-internal-testing/tiny-random-lfm2"
+    else model_id
     for model_id in LINEAR_ATTENTION_MODELS_LIST
 ]
 
