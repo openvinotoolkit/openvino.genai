@@ -1,12 +1,26 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <thread>
+
 #include "include/helper.hpp"
 #include "include/embedding_pipeline/pipeline_wrapper.hpp"
 #include "include/embedding_pipeline/init_worker.hpp"
 #include "include/embedding_pipeline/embed_worker.hpp"
 
 EmbeddingPipelineWrapper::EmbeddingPipelineWrapper(const Napi::CallbackInfo& info) : Napi::ObjectWrap<EmbeddingPipelineWrapper>(info) {};
+
+EmbeddingPipelineWrapper::~EmbeddingPipelineWrapper() {
+    if (!this->pipe) {
+        return;
+    }
+    // init() builds the pipeline (and its OpenVINO CPU executor pools) on a libuv worker thread;
+    // releasing it on the main V8 GC thread races their teardown and crashes on Windows/macOS.
+    std::thread destroyer([pipe = std::move(this->pipe)]() mutable {
+        pipe.reset();
+    });
+    destroyer.join();
+}
 
 Napi::Function EmbeddingPipelineWrapper::get_class(Napi::Env env) {
     return DefineClass(

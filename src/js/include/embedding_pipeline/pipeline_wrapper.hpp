@@ -9,6 +9,7 @@
 class EmbeddingPipelineWrapper : public Napi::ObjectWrap<EmbeddingPipelineWrapper> {
     public:
         EmbeddingPipelineWrapper(const Napi::CallbackInfo& info);
+        ~EmbeddingPipelineWrapper();
         static Napi::Function get_class(Napi::Env env);
         Napi::Value init(const Napi::CallbackInfo& info);
         Napi::Value embed(const Napi::CallbackInfo& info);
