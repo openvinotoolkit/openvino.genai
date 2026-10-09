@@ -761,6 +761,8 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
     }
 
     if ((!images.empty() || !videos.empty()) && is_cdpruner_active()) {
+        OPENVINO_ASSERT(m_vlm_config.model_type != VLMModelType::QWEN3_OMNI,
+                        "CDPruner does not support Qwen3-Omni visual inputs");
         std::vector<std::array<size_t, 3>> video_grids_per_frame;
         for (size_t vid_id : videos_sequence) {
             const auto& [gt, gh, gw] = videos_grid_thw[vid_id];
@@ -789,12 +791,10 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
                                        vision_start_token_id,
                                        vision_end_token_id,
                                        m_vision_encoder->get_processor_config().merge_size,
-                                       m_vlm_config.model_type == VLMModelType::QWEN3_OMNI
-                                           ? PositionPlaneLayout::THW_TEXT
-                                           : (m_vlm_config.model_type == VLMModelType::QWEN3_5 ||
-                                                      m_vlm_config.model_type == VLMModelType::QWEN3_5_MOE
-                                                  ? PositionPlaneLayout::TEXT_THW
-                                                  : PositionPlaneLayout::THW),
+                                       m_vlm_config.model_type == VLMModelType::QWEN3_5 ||
+                                               m_vlm_config.model_type == VLMModelType::QWEN3_5_MOE
+                                           ? PositionPlaneLayout::TEXT_THW
+                                           : PositionPlaneLayout::THW,
                                        deepstack_ptr};
 
         if (auto pruning_result = execute_pruning_pipeline(pruning_context)) {

@@ -14,7 +14,7 @@
 
 namespace ov::genai {
 
-enum class PositionPlaneLayout { ONE_D, THW, TEXT_THW, THW_TEXT };
+enum class PositionPlaneLayout { ONE_D, THW, TEXT_THW };
 
 // Forward declarations
 class EncodedImage;

@@ -502,8 +502,6 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_3d(
                     "3D RoPE position ID shape does not match the model's plane layout");
 
     const size_t position_plane_offset = layout == PositionPlaneLayout::TEXT_THW ? 1 : 0;
-    const bool has_text_plane = pos_shape[0] == 4;
-    const size_t text_plane_index = layout == PositionPlaneLayout::THW_TEXT ? 3 : 0;
     const size_t batch_size = pos_shape[1];
     const size_t seq_len = pos_shape[2];
     const size_t region_count = reordered_combined_grid_thw.size();
@@ -598,7 +596,7 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_3d(
     ov::Tensor new_position_ids(original_position_ids.get_element_type(), {pos_shape[0], batch_size, new_seq_len});
     const size_t plane_size = batch_size * new_seq_len;
     int64_t* position_data = new_position_ids.data<int64_t>();
-    int64_t* text_position_data = has_text_plane ? position_data + text_plane_index * plane_size : nullptr;
+    int64_t* text_position_data = layout == PositionPlaneLayout::TEXT_THW ? position_data : nullptr;
     int64_t* pos_data[3] = {position_data + position_plane_offset * plane_size,
                             position_data + (position_plane_offset + 1) * plane_size,
                             position_data + (position_plane_offset + 2) * plane_size};
@@ -625,15 +623,6 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_3d(
                 OPENVINO_ASSERT(visual_idx < keep_flags_out[image_idx].size(),
                                 "Visual token index out of bounds in update_position_ids_3d");
                 if (keep_flags_out[image_idx][visual_idx]) {
-                    if (layout == PositionPlaneLayout::THW_TEXT) {
-                        for (size_t plane = 0; plane < 4; ++plane) {
-                            position_data[plane * plane_size + out_offset + write_idx] =
-                                original_position_data[plane * batch_size * seq_len + batch_offset + seq_idx];
-                        }
-                        ++write_idx;
-                        ++visual_idx;
-                        continue;
-                    }
                     const auto& region = regions[image_idx];
                     size_t local_idx = visual_idx % region.spatial_area;
                     size_t temporal_idx = visual_idx / region.spatial_area;
@@ -670,20 +659,6 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_3d(
             }
 
             // Write text token position
-            if (layout == PositionPlaneLayout::THW_TEXT) {
-                for (size_t plane = 0; plane < 4; ++plane) {
-                    position_data[plane * plane_size + out_offset + write_idx] =
-                        original_position_data[plane * batch_size * seq_len + batch_offset + seq_idx];
-                }
-                ++write_idx;
-                ++next_pos;
-                if (token_id == vision_start_token_id) {
-                    inside_vision = true;
-                    visual_idx = 0;
-                    grid_base = next_pos;
-                }
-                continue;
-            }
             if (text_position_data != nullptr) {
                 text_position_data[out_offset + write_idx] = static_cast<int64_t>(write_idx);
             }
@@ -855,9 +830,8 @@ int64_t VisionTokenPruningProcessor::calculate_rope_delta(const ov::Tensor& posi
                     "Position ID shape does not match the model's plane layout");
     const size_t plane_size = layout == PositionPlaneLayout::ONE_D ? 0 : shape[1] * shape[2];
     const size_t first = layout == PositionPlaneLayout::TEXT_THW ? plane_size : 0;
-    const size_t last = layout == PositionPlaneLayout::THW_TEXT ? 3 * plane_size : position_ids.get_size();
     const int64_t* data = position_ids.data<const int64_t>();
-    return *std::max_element(data + first, data + last) + 1 - static_cast<int64_t>(shape.back());
+    return *std::max_element(data + first, data + position_ids.get_size()) + 1 - static_cast<int64_t>(shape.back());
 }
 
 std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProcessor::execute(
