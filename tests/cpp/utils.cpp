@@ -3,8 +3,13 @@
 //
 
 #include <algorithm>
+#include <functional>
+#include <memory>
+#include <variant>
+
 #include <gtest/gtest.h>
 #include <openvino/runtime/properties.hpp>
+#include "openvino/genai/omni/pipeline.hpp"
 #include "utils.hpp"
 
 
@@ -259,4 +264,44 @@ TEST(TestValidateVlmModelProperties, throws_with_role_name_in_message) {
     } catch (const ov::Exception& e) {
         EXPECT_NE(std::string(e.what()).find("bogus_role"), std::string::npos);
     }
+}
+
+namespace {
+
+class DummySpeechStreamer : public ov::genai::OmniSpeechStreamerBase {
+public:
+    ov::genai::StreamingStatus write(const ov::Tensor& chunk) override {
+        return ov::genai::StreamingStatus::RUNNING;
+    }
+    void end() override {}
+};
+
+}  // namespace
+
+TEST(TestGetSpeechStreamerFromMap, returns_monostate_when_key_absent) {
+    ov::AnyMap props = {{"CACHE_DIR", std::string("/tmp")}};
+    EXPECT_TRUE(std::holds_alternative<std::monostate>(get_speech_streamer_from_map(props)));
+}
+
+TEST(TestGetSpeechStreamerFromMap, round_trips_a_callback) {
+    std::function<ov::genai::StreamingStatus(const ov::Tensor&)> callback =
+        [](const ov::Tensor&) { return ov::genai::StreamingStatus::RUNNING; };
+    ov::AnyMap props = {ov::genai::speech_streamer(callback)};
+
+    auto streamer = get_speech_streamer_from_map(props);
+    ASSERT_TRUE(std::holds_alternative<std::function<ov::genai::StreamingStatus(const ov::Tensor&)>>(streamer));
+}
+
+TEST(TestGetSpeechStreamerFromMap, round_trips_a_streamer_object) {
+    auto dummy = std::make_shared<DummySpeechStreamer>();
+    ov::AnyMap props = {ov::genai::speech_streamer(dummy)};
+
+    auto streamer = get_speech_streamer_from_map(props);
+    ASSERT_TRUE(std::holds_alternative<std::shared_ptr<ov::genai::OmniSpeechStreamerBase>>(streamer));
+    EXPECT_EQ(std::get<std::shared_ptr<ov::genai::OmniSpeechStreamerBase>>(streamer), dummy);
+}
+
+TEST(TestGetSpeechStreamerFromMap, round_trips_monostate) {
+    ov::AnyMap props = {ov::genai::speech_streamer(std::monostate{})};
+    EXPECT_TRUE(std::holds_alternative<std::monostate>(get_speech_streamer_from_map(props)));
 }
