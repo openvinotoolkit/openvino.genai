@@ -378,12 +378,16 @@ jobs:
           $python_exec_path -m pip install "${build_reqs[@]}" ${{ needs.openvino_download.outputs.ov_wheel_source }}
 
           cmake_args="-DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_C_COMPILER_LAUNCHER=sccache"
-          # Free threaded interpreters ship without the GIL, so the bindings must be built accordingly
+          # Free threaded interpreters ship without the GIL, so the bindings must be built accordingly.
+          # py-build-cmake only reads the `local`, `cross` and `override` config settings, any other
+          # key (`cmake.args`, ...) is silently ignored, hence the `override=` form below.
+          gil_option="ON"
           if [[ "${{ matrix.python-version }}" == *t ]]; then
-            cmake_args="$cmake_args -DENABLE_GIL_PYTHON_API=OFF"
+            gil_option="OFF"
           fi
 
           $python_exec_path -m pip wheel -v --no-deps --no-build-isolation --wheel-dir ${{ env.WHEELS_DIR }} \
+              --config-settings=override=cmake.options.ENABLE_GIL_PYTHON_API="$gil_option" \
               --config-settings=cmake.args="$cmake_args" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}

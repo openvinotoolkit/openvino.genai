@@ -140,6 +140,18 @@ else()
     if(NOT EXIT_CODE EQUAL 0)
         set(pybind11_stubgen_AVAILABLE OFF)
     endif()
+
+    # pybind11-stubgen has to import openvino, whose frontend extensions are not declared
+    # free-threading safe. Loading them re-enables the GIL at runtime, which crashes a
+    # free-threaded interpreter, so fall back to the .pyi files stored next to the sources.
+    execute_process(
+        COMMAND ${Python3_EXECUTABLE} -c "import sysconfig; print(sysconfig.get_config_var('Py_GIL_DISABLED') or 0)"
+        OUTPUT_VARIABLE python3_gil_disabled
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+    if(python3_gil_disabled STREQUAL "1")
+        set(pybind11_stubgen_AVAILABLE OFF)
+    endif()
 endif()
 
 if(pybind11_stubgen_AVAILABLE)
