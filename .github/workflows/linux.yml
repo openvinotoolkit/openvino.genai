@@ -850,6 +850,14 @@ jobs:
         env:
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
 
+      # Fast unit tests for the shared prompt handler. No model download and no
+      # network, so they run ahead of the sample tests to fail early.
+      - name: Test LLM Benchmark Prompt Handler
+        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench }}
+        run: |
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+          python -m pytest -v ${{ env.SRC_DIR }}/tools/llm_bench/tests
+
       - name: Test LLM Benchmark Tools Image2Video
         if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench }}
         run: |

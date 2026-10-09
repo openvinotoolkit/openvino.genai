@@ -114,6 +114,42 @@ python benchmark.py -m models/llama-2-7b-chat/ -pf prompts/llama-2-7b-chat_l.jso
 python ./benchmark.py -h # for more information
 ```
 
+**Report fields (CSV columns / JSON keys):**
+
+Each record is identified by:
+
+- `iteration`: iteration number; `0` is the warm-up (excluded from averages). Aggregate rows use `avg` / `min` / `median`.
+- `prompt_idx`: zero-based index of the prompt the record belongs to, in the order given by `-p` / `-pf`. When `--prompt_index` selects a subset, `prompt_idx` keeps the original indices. (`chat_idx` is the analogous per-chat index used by the chat pipeline.)
+
+Input/output descriptors — `input_size` and `output_size` are the **raw** numeric sizes the pipeline records; `prompt_repr` and `output_repr` are human-readable summaries derived from the prompt/output itself:
+
+- `input_size`: **batch-total** count of input tokens the model sequence processed (`= per-prompt tokens × batch_size`). For visual-language models this **includes image/video tokens**, not just text. Empty for tasks whose input is not tokenized into a sequence (speech-to-text audio, super-resolution image); their input size is given by `prompt_repr` instead.
+- `prompt_repr`: human-readable **input** summary of a single prompt: text as a word count (`w` suffix), media as dimensions. Words are runs of letters/digits, so punctuation is not counted (attached or standalone), `don't` and `state-of-the-art` are one word each, and every CJK/kana character is one word. Text-generation and visual-language tasks (chat included) append the token count of the prompt text alone (`/<M>t`): no special tokens, no chat template, no image/video tokens. Examples: `text:7w/9t`, `text:7w/9t + image:512x512`, `text:7w` (task without a tokenizer), `audio:30.0s@44100Hz`, `image:128x128` (super-resolution low-res input). Use `input_size` for the length the model actually processed. When one media key names several files (a list of paths, or a directory) they are folded into a single token: `image:512x512 x3` when they share dimensions, `image:512x512|640x480` when they differ.
+- `output_size`: **batch-total** generated output size — generated text tokens for text/VLM/speech-to-text, **audio samples** for text-to-speech, empty for image/video generation.
+- `output_repr`: human-readable **output** summary of a single item, symmetric with `prompt_repr`: generated text as a word count plus the token count of the text alone (`text:<N>w/<M>t`, same rules as `prompt_repr`; the token count is per item, so not comparable with the batch-total `output_size`), media as dimensions (`image:512x512` — super-resolution upscaled output, `audio:48000sa@22050Hz`, `video:640x480@16f`), reranking as the number of ranked documents returned (`docs:2`). A generated text that is empty (or whitespace only) is reported as `empty` — typically a broken model whose tokens all decode to nothing, while `output_size` still counts them. Empty for embeddings.
+
+> **Batch size:** the `*_size` fields are **batch totals** (× `batch_size`), while the `*_repr` strings describe a **single** prompt/item. Divide by the `batch_size` column for a per-prompt figure. The reprs are intentionally *not* prefixed with a batch count (e.g. no `4×(text:7w)`): batching differs per task — text pipelines replicate the same prompt `batch_size` times, whereas image generation produces `batch_size` images from one prompt — so a single multiplier on the repr would be misleading.
+
+> **Note (text-to-speech):** TTS has no discrete output "tokens" — `output_size` reports the number of generated **audio samples**, and `output_repr` shows `audio:<samples>sa@<rate>Hz`. Divide samples by the sample rate for the duration in seconds.
+
+**Iteration order:**
+
+`--subsequent` selects how iterations and prompts are nested. With `-n 2` over prompts `P0`, `P1` (iteration `0` is the warm-up):
+
+| Mode | Order | Run sequence |
+| --- | --- | --- |
+| `--subsequent` **absent** (default) | interleaved — all prompts within each iteration | `(0,P0) (0,P1) (1,P0) (1,P1) (2,P0) (2,P1)` |
+| `--subsequent` **present** | subsequent — all iterations of one prompt before the next | `(0,P0) (1,P0) (2,P0) (0,P1) (1,P1) (2,P1)` |
+
+This applies uniformly to every task. The order affects report row order, and — because it changes what sits in the KV/model cache between runs, and how long the device has been under load — it can move the measured latencies too. Keep it fixed when comparing runs.
+
+> ⚠️ **Changed behaviour:** two tasks did not previously follow the table above.
+>
+> - **Video generation** interpreted the flag **inverted**: without `--subsequent` it ran prompt-major, and with it, iteration-major. It now matches every other task, so a `video_gen` command line that omits the flag runs in the opposite order to before. Add `--subsequent` to reproduce the old default ordering.
+> - **Super-resolution** ignored `--subsequent` entirely and always ran iteration-major. It now honours the flag; omitting it preserves the old ordering.
+>
+> Per-iteration results are computed the same way in both cases — only the order changes — but benchmark numbers from before and after this change are not directly comparable for these two tasks.
+
 #### Benchmarking the Original PyTorch Model:
 To benchmark the original PyTorch model, first download the model locally and then run benchmark by specifying PyTorch as the framework with parameter `-f pt`
 
@@ -413,7 +449,7 @@ python benchmark.py -m models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --tas
 - `-mc, --memory_consumption`: Enables memory usage information collection mode. If the value is 1, output the maximum memory consumption in warm-up iterations. If the value is 2, output the maximum memory consumption in all iterations. Then 3 means separated process, warm-up only, 4 - separated process with all iterations.
 - `--memory_consumption_interval`: Interval sampling for memory consumption check in seconds, smaller value will lead to more precised memory consumption, but may affects performance.
 - `--memory_consumption_cooldown`: Time for relaxing before workload, it allows to deallocate system resources by portable heap-trimming helper.
-- `-mc_dir, --memory_consumption_dir`: Path to store memory consumption logs and chart.
+- `-mc_dir, --memory_consumption_dir`: Path to store memory consumption logs and chart. For process-based monitoring (`-mc 3`/`4`) it defaults to `./memory_consumption`.
 - `--memory_sampler`: set of metrics to collect: base, full, or win-gpu.
 
 ## 9. Additional Resources
