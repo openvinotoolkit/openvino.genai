@@ -640,6 +640,7 @@ class BlockManager {
     std::map<uint64_t, std::vector<BlocksPerLayer>> m_block_table;
     std::map<uint64_t, std::vector<BlocksPerLayer>> m_temporary_block_table;
     std::map<uint64_t, size_t> m_block_table_logical_start;
+    std::set<uint64_t> m_inexact_restored_checkpoint;
 
     std::mutex m_cached_blocks_map_mutex;
 public:
@@ -715,6 +716,12 @@ public:
     size_t get_block_table_logical_start(uint64_t seq_id) const {
         auto it = m_block_table_logical_start.find(seq_id);
         return it == m_block_table_logical_start.end() ? 0 : it->second;
+    }
+
+    /// @return Earliest checkpoint known to contain state at its exact interval boundary.
+    size_t get_earliest_complete_checkpoint(uint64_t seq_id) const {
+        const size_t first_boundary = (get_block_table_logical_start(seq_id) + 1) * m_block_size;
+        return m_inexact_restored_checkpoint.count(seq_id) ? first_boundary + m_block_size : first_boundary;
     }
 
     size_t get_num_layers() const {
@@ -801,6 +808,7 @@ public:
 
         if (block_table[0].size() == 0) {
             m_block_table_logical_start.erase(seq_id);
+            m_inexact_restored_checkpoint.erase(seq_id);
             OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
          }
         return blocks_to_free[0]->is_free();
@@ -961,6 +969,58 @@ public:
     const bool has_block_table(uint64_t seq_id) {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         return m_block_table.count(seq_id) > 0;
+    }
+
+    /// @return Number of blocks stored for the sequence, or 0 if it has no block table.
+    size_t get_num_stored_blocks(uint64_t seq_id) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        const auto it = m_block_table.find(seq_id);
+        return (it == m_block_table.end() || it->second.empty()) ? 0 : it->second[0].size();
+    }
+
+    /// @return Sorted resume positions at or below which trimming this group makes a physical block available.
+    std::vector<size_t> get_releasable_block_positions(SequenceGroup::Ptr group) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        std::map<const CacheBlock*, std::pair<size_t, size_t>> block_references_and_position;
+        for (const auto& sequence : group->get_not_finished_sequences()) {
+            const uint64_t seq_id = sequence->get_id();
+            const auto it = m_block_table.find(seq_id);
+            if (it == m_block_table.end()) {
+                return {};
+            }
+            const size_t logical_start = get_block_table_logical_start_unlocked(seq_id);
+            const auto& blocks = it->second[0];
+            for (size_t idx = 0; idx < blocks.size(); ++idx) {
+                const size_t block_position = (logical_start + idx) * m_block_size;
+                auto entry = block_references_and_position.try_emplace(blocks[idx].get(), 0, block_position).first;
+                ++entry->second.first;
+                entry->second.second = std::min(entry->second.second, block_position);
+            }
+        }
+        std::vector<size_t> positions;
+        for (const auto& [block, references_and_position] : block_references_and_position) {
+            if (static_cast<size_t>(block->get_references_count()) == references_and_position.first) {
+                positions.push_back(references_and_position.second);
+            }
+        }
+        std::sort(positions.begin(), positions.end());
+        return positions;
+    }
+
+    /**
+     * Frees the highest logical blocks of a sequence so that at most keep_blocks remain.
+     * @param seq_id Sequence identifier; must have a block table.
+     * @param keep_blocks Number of lowest stored blocks to retain.
+     */
+    void trim_sequence(uint64_t seq_id, size_t keep_blocks) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        const auto it = m_block_table.find(seq_id);
+        OPENVINO_ASSERT(it != m_block_table.end() && !it->second.empty(),
+                        "Cannot trim sequence ", seq_id, " without a block table");
+        const size_t num_stored_blocks = it->second[0].size();
+        if (num_stored_blocks > keep_blocks) {
+            free_sequence_partially(seq_id, num_stored_blocks - keep_blocks);
+        }
     }
 
     /**
@@ -1255,6 +1315,9 @@ public:
         OPENVINO_ASSERT(m_block_table.count(child_id) == 0);
         m_block_table[child_id].resize(m_num_layers);
         m_block_table_logical_start[child_id] = get_block_table_logical_start(parent_id);
+        if (m_inexact_restored_checkpoint.count(parent_id)) {
+            m_inexact_restored_checkpoint.insert(child_id);
+        }
         for (size_t layer_idx = 0; layer_idx < m_num_layers; layer_idx++) {
             m_block_table[child_id][layer_idx].reserve(m_block_table[parent_id][layer_idx].size());
             for (CacheBlock::Ptr &block: m_block_table[parent_id][layer_idx]) {
@@ -1293,6 +1356,7 @@ public:
 
         OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
         m_block_table_logical_start.erase(seq_id);
+        m_inexact_restored_checkpoint.erase(seq_id);
     }
 
     /**
@@ -1334,6 +1398,7 @@ public:
             OPENVINO_ASSERT(all_freed_completely, "block tables across layers should only be empty all at once");
             OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
             m_block_table_logical_start.erase(seq_id);
+            m_inexact_restored_checkpoint.erase(seq_id);
         }
     }
 
@@ -1489,6 +1554,7 @@ public:
             if (it == m_block_table.end() || it->second.empty() || it->second[0].empty()) {
                 if (num_logical_blocks == 0 && it != m_block_table.end()) {
                     m_block_table_logical_start.erase(seq_id);
+                    m_inexact_restored_checkpoint.erase(seq_id);
                     OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
                 }
                 continue;
@@ -1632,6 +1698,7 @@ public:
 
         m_temporary_block_table.clear();
         m_allocator.clear();
+        m_inexact_restored_checkpoint.clear();
         m_prefix_hash_to_cached_blocks.clear();
         m_cached_content_length_ref_counts.clear();
         m_cached_hash_to_content_length.clear();
@@ -1693,6 +1760,12 @@ private:
 
         if (m_restore_latest_prefix_block_only) {
             m_block_table_logical_start[seq_id] = plan.logical_block_start;
+            const size_t first_boundary = (plan.logical_block_start + 1) * m_block_size;
+            if (plan.block_content_lengths.front() != first_boundary && plan.processed_tokens >= first_boundary) {
+                m_inexact_restored_checkpoint.insert(seq_id);
+            } else {
+                m_inexact_restored_checkpoint.erase(seq_id);
+            }
         } else {
             m_block_table_logical_start.erase(seq_id);
         }

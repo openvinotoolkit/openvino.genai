@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <limits>
+#include <numeric>
 
 #include "continuous_batching/scheduler.hpp"
 #include "openvino/genai/generation_config.hpp"
@@ -618,6 +619,48 @@ TEST(TestBlockManager, PrefixRestorePlanningCapsFullRestoreToLatestStateRestore)
 
     kv_block_manager.free_sequence(consumer_seq_id);
     state_block_manager.free_sequence(consumer_seq_id);
+}
+
+TEST(TestBlockManager, PartialRestoredStateIsNotAnExactPreemptionCheckpoint) {
+    constexpr size_t block_size = 4;
+    ov::genai::BlockManager block_manager(16, true, block_size, 1, 0, true);
+
+    std::vector<int64_t> partial_tokens = {0, 1, 2, 3, 4, 5, 6};
+    auto partial_producer = create_sequence_group(partial_tokens, 32);
+    partial_producer->schedule_tokens(partial_tokens.size());
+    block_manager.append_slots(partial_producer);
+    partial_producer->finish_iteration();
+    block_manager.free_sequence(partial_producer->get_running_sequences().front()->get_id());
+
+    std::vector<int64_t> complete_tokens(16);
+    std::iota(complete_tokens.begin(), complete_tokens.end(), 0);
+    auto complete_producer = create_sequence_group(complete_tokens, 33);
+    complete_producer->schedule_tokens(complete_tokens.size());
+    block_manager.append_slots(complete_producer);
+    complete_producer->finish_iteration();
+    block_manager.free_sequence(complete_producer->get_running_sequences().front()->get_id());
+
+    std::vector<int64_t> consumer_tokens(20);
+    std::iota(consumer_tokens.begin(), consumer_tokens.end(), 0);
+    auto consumer = create_sequence_group(consumer_tokens, 34);
+    ov::genai::BlockManager::PrefixRestorePlan plan;
+    plan.block_content_lengths = {7, 12, 16};
+    plan.cache_token_position = 16;
+    plan.processed_tokens = 16;
+    plan.logical_block_start = 1;
+    ASSERT_TRUE(block_manager.restore_cached_blocks(consumer, plan));
+
+    const auto parent = consumer->get_running_sequences().front();
+    EXPECT_EQ(block_manager.get_block_table_logical_start(parent->get_id()), 1);
+    EXPECT_EQ(block_manager.get_num_stored_blocks(parent->get_id()), 3);
+    EXPECT_EQ(block_manager.get_earliest_complete_checkpoint(parent->get_id()), 12);
+
+    const auto child = consumer->fork_sequence(parent);
+    block_manager.fork_sequence(parent->get_id(), child->get_id());
+    EXPECT_EQ(block_manager.get_earliest_complete_checkpoint(child->get_id()), 12);
+
+    block_manager.free_sequence(parent->get_id());
+    block_manager.free_sequence(child->get_id());
 }
 
 TEST(TestBlockManager, PrefixRestoreStalePlanReturnsFalseWithoutRestoring) {

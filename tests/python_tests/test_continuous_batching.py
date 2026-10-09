@@ -5,6 +5,7 @@ import os
 import gc
 import pytest
 import math
+import random
 import sys
 import threading
 import numpy as np
@@ -42,7 +43,7 @@ from utils.ov_genai_pipelines import (
     GenerationChatInputsType,
 )
 from utils.comparation import compare_generation_results
-from data.models import CHAT_MODELS_LIST
+from data.models import CHAT_MODELS_LIST, LINEAR_ATTENTION_MODELS_LIST
 from data.test_dataset import get_test_dataset
 from utils.custom_op import assert_ir_contains_op_type, get_extension_model, get_extension_lib_path, CustomAdd
 
@@ -439,6 +440,82 @@ def test_preemption(model_facebook_opt_125m: OVConvertedModelSchema, params):
         scheduler_config=scheduler_params,
         generation_config=generation_config
     )
+
+
+def get_hybrid_prefix_caching_scheduler_config(num_kv_blocks: int, cache_interval_multiplier: int) -> SchedulerConfig:
+    scheduler_config = SchedulerConfig()
+    scheduler_config.num_kv_blocks = num_kv_blocks
+    scheduler_config.num_linear_attention_blocks = 64
+    scheduler_config.cache_interval_multiplier = cache_interval_multiplier
+    scheduler_config.enable_prefix_caching = True
+    scheduler_config.dynamic_split_fuse = True
+    scheduler_config.max_num_batched_tokens = 256
+    scheduler_config.max_num_seqs = 16
+    return scheduler_config
+
+
+HYBRID_PREEMPTION_MODELS_LIST = [
+    pytest.param(model_id, marks=pytest.mark.skip(reason="CVS-195736: LFM2 conversion fails in CI"))
+    if model_id == "optimum-intel-internal-testing/tiny-random-lfm2"
+    else model_id
+    for model_id in LINEAR_ATTENTION_MODELS_LIST
+]
+
+
+@pytest.mark.transformers_dependent(
+    reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
+)
+@pytest.mark.parametrize("llm_model", HYBRID_PREEMPTION_MODELS_LIST, indirect=True)
+def test_hybrid_prefix_caching_preemption_matches_unconstrained_cache(llm_model: OVConvertedModelSchema):
+    prompts = ["What is OpenVINO?", "Why is the Sun yellow?", "Tell me something about Canada", "1+1="]
+    generation_configs = [GenerationConfig(max_new_tokens=64, ignore_eos=True, do_sample=False)] * len(prompts)
+
+    reference_pipe = ContinuousBatchingPipeline(
+        llm_model.models_path, get_hybrid_prefix_caching_scheduler_config(256, 1), "CPU"
+    )
+    reference = reference_pipe.generate(prompts, generation_configs)
+
+    # A smaller interval gives preempted victims checkpoints to rewind to instead of recomputing from scratch.
+    constrained_pipe = ContinuousBatchingPipeline(
+        llm_model.models_path, get_hybrid_prefix_caching_scheduler_config(4, 1), "CPU"
+    )
+    constrained = constrained_pipe.generate(prompts, generation_configs)
+
+    assert constrained_pipe.get_metrics().max_cache_usage >= 99.0, "KV pool was not under pressure"
+    for ref, res in zip(reference, constrained):
+        assert res.m_generation_ids == ref.m_generation_ids
+
+
+@pytest.mark.transformers_dependent(
+    reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
+)
+@pytest.mark.parametrize("llm_model", HYBRID_PREEMPTION_MODELS_LIST, indirect=True)
+def test_hybrid_prefix_caching_preemption_with_cancellations_does_not_raise(llm_model: OVConvertedModelSchema):
+    # Deterministic add_request / step / cancel workload from model_server#4428.
+    pipe = ContinuousBatchingPipeline(llm_model.models_path, get_hybrid_prefix_caching_scheduler_config(16, 64), "CPU")
+    base_prompt = "Explain the history of distributed systems and consensus algorithms such as Paxos and Raft. "
+    prompt_pool = [base_prompt * n for n in (1, 2, 4, 8)]
+
+    rng = random.Random(1000)  # nosec B311 - reproducible test schedule, not security-sensitive
+    # Handles must stay alive: dropping one stops its request.
+    handles, cancel_at = {}, {}
+    next_id = step = 0
+    for _ in range(3):
+        for _ in range(12):
+            config = GenerationConfig(min_new_tokens=32, max_new_tokens=rng.randint(64, 192))
+            handles[next_id] = pipe.add_request(next_id, rng.choice(prompt_pool), config)
+            if rng.random() < 0.75:
+                cancel_at[next_id] = step + rng.randint(5, 60)
+            next_id += 1
+        while pipe.has_non_finished_requests():
+            pipe.step()
+            step += 1
+            for request_id in [rid for rid, at in cancel_at.items() if step >= at]:
+                handles[request_id].cancel()
+                del cancel_at[request_id]
+
+    assert pipe.get_metrics().max_cache_usage >= 99.0, "KV pool was not under pressure"
+
 
 multinomial_params = RandomSamplingTestStruct(
     generation_config=[
