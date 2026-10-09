@@ -46,9 +46,8 @@ public:
     // Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
     std::map<std::string, int64_t> lang_to_id;
 
-    // If `true` the pipeline will return word-level timestamps.
-    // When enabled ov::genai::word_timestamps(true) property should be passed to ASRPipeline constructor:
-    // ASRPipeline("model_path", "CPU", ov::genai::word_timestamps(true));
+    // If `true`, requests word-level timestamps.
+    // Whisper requires the word_timestamps property; Qwen3-ASR requires a forced aligner.
     bool word_timestamps = false;
 
     // Encoder attention alignment heads used for word-level timestamps prediction.

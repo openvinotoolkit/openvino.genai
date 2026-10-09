@@ -597,7 +597,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::s
         return;
     }
 
-    Scheduler::Output scheduler_output;
+    ContinuousBatchingScheduler::Output scheduler_output;
     scheduler_output.m_scheduled_sequence_groups_ids.reserve(m_requests.size());
 
     for (size_t request_idx = 0; request_idx < m_requests.size(); ++request_idx) {
