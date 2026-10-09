@@ -207,20 +207,20 @@ class PreparedCacheAllocationFailure : public testing::TestWithParam<size_t>,
 protected:
     class Pipeline : public ContinuousBatchingImpl {
     public:
-        Pipeline(const std::shared_ptr<ov::genai::Scheduler>& scheduler,
+        Pipeline(const std::shared_ptr<ov::genai::ContinuousBatchingScheduler>& scheduler,
                  const std::vector<SequenceGroup::Ptr>& groups) {
             m_scheduler = scheduler;
             m_requests = groups;
         }
 
-        void commit(ov::genai::Scheduler::Output& output, const ov::genai::SamplerOutput& sampling) {
+        void commit(ov::genai::ContinuousBatchingScheduler::Output& output, const ov::genai::SamplerOutput& sampling) {
             _commit_linear_attention_checkpoint_transactions(output, sampling);
         }
     };
 
     class DraftPipeline : public ContinuousBatchingForSpeculativeDecodingImpl {
     public:
-        DraftPipeline(const std::shared_ptr<ov::genai::Scheduler>& scheduler, const SequenceGroup::Ptr& group) {
+        DraftPipeline(const std::shared_ptr<ov::genai::ContinuousBatchingScheduler>& scheduler, const SequenceGroup::Ptr& group) {
             m_scheduler = scheduler;
             m_requests = {group};
             m_sampler = std::make_shared<ov::genai::Sampler>();
@@ -247,7 +247,7 @@ protected:
     public:
         using ContinuousBatchingForMtpDecodingImpl::validate_prefix_cache_support;
 
-        MtpPipeline(const std::shared_ptr<ov::genai::Scheduler>& scheduler,
+        MtpPipeline(const std::shared_ptr<ov::genai::ContinuousBatchingScheduler>& scheduler,
                     const std::vector<SequenceGroup::Ptr>& groups) {
             m_scheduler = scheduler;
             m_awaiting_requests = groups;
@@ -256,7 +256,7 @@ protected:
 
     class MtpAdmissionChild : public MtpPipeline {
     public:
-        explicit MtpAdmissionChild(const std::shared_ptr<ov::genai::Scheduler>& scheduler)
+        explicit MtpAdmissionChild(const std::shared_ptr<ov::genai::ContinuousBatchingScheduler>& scheduler)
             : MtpPipeline(scheduler, {}) {}
 
         ov::genai::GenerationHandle add_request(
@@ -370,8 +370,8 @@ TEST_P(PreparedCacheAllocationFailure, EmbeddingPrefixVerificationRequiresStrate
 }
 
 TEST_P(PreparedCacheAllocationFailure, DraftFailurePropagatesToMainPipeline) {
-    auto main_scheduler = std::make_shared<ov::genai::Scheduler>(make_orchestrator(), ov::genai::SchedulerConfig{});
-    auto draft_scheduler = std::make_shared<ov::genai::Scheduler>(make_orchestrator(), ov::genai::SchedulerConfig{});
+    auto main_scheduler = std::make_shared<ov::genai::ContinuousBatchingScheduler>(make_orchestrator(), ov::genai::SchedulerConfig{});
+    auto draft_scheduler = std::make_shared<ov::genai::ContinuousBatchingScheduler>(make_orchestrator(), ov::genai::SchedulerConfig{});
     auto main_group = make_group(0);
     auto draft_group = make_group(0);
     auto main_pipeline = std::make_shared<DraftPipeline>(main_scheduler, main_group);
@@ -409,7 +409,7 @@ TEST_P(PreparedCacheAllocationFailure, DraftFailurePropagatesToMainPipeline) {
 
 TEST_P(PreparedCacheAllocationFailure, MtpAdmissionRollbackReleasesOnlyFailedRequest) {
     auto orchestrator = make_orchestrator();
-    auto scheduler = std::make_shared<ov::genai::Scheduler>(orchestrator, ov::genai::SchedulerConfig{});
+    auto scheduler = std::make_shared<ov::genai::ContinuousBatchingScheduler>(orchestrator, ov::genai::SchedulerConfig{});
     auto failed = make_group(0);
     auto neighbor = make_group(1);
     for (const CacheType type : {CacheType::KV_CACHE, CacheType::LINEAR_ATTENTION_CACHE}) {
@@ -446,7 +446,7 @@ TEST_P(PreparedCacheAllocationFailure, MtpPrefixGuardRejectsOnlyLinearAttentionD
         for (const bool prefix_enabled : {false, true}) {
             ov::genai::SchedulerConfig config;
             config.enable_prefix_caching = prefix_enabled;
-            auto scheduler = std::make_shared<ov::genai::Scheduler>(cache, config);
+            auto scheduler = std::make_shared<ov::genai::ContinuousBatchingScheduler>(cache, config);
             MtpPipeline pipeline(scheduler, {});
             EXPECT_NO_THROW(pipeline.validate_prefix_cache_support(config, true));
             if (has_linear_attention && prefix_enabled) {
@@ -514,9 +514,9 @@ TEST_P(PreparedCacheAllocationFailure, MtpPairedAdmissionRollsBackAcrossInjected
         ov::genai::SchedulerConfig scheduler_config;
         scheduler_config.enable_prefix_caching = true;
         auto main_child = std::make_shared<MtpAdmissionChild>(
-            std::make_shared<ov::genai::Scheduler>(main_cache, scheduler_config));
+            std::make_shared<ov::genai::ContinuousBatchingScheduler>(main_cache, scheduler_config));
         auto draft_child = std::make_shared<MtpAdmissionChild>(
-            std::make_shared<ov::genai::Scheduler>(draft_cache, scheduler_config));
+            std::make_shared<ov::genai::ContinuousBatchingScheduler>(draft_cache, scheduler_config));
         MtpAdmissionStrategy strategy(main_child, draft_child);
         const auto neighbor_handle = strategy.add_request(99, embeddings, config, prompt_ids);
         const auto main_neighbor = main_child->get_awaiting_requests().front();
@@ -788,7 +788,7 @@ TEST_P(PreparedCacheAllocationFailure, HybridDraftRejectionRestoresBeforeRecompu
         }
         ov::genai::SchedulerConfig config;
         config.enable_prefix_caching = prefix_caching;
-        auto scheduler = std::make_shared<ov::genai::Scheduler>(orchestrator, config, false, 1, false);
+        auto scheduler = std::make_shared<ov::genai::ContinuousBatchingScheduler>(orchestrator, config, false, 1, false);
         ov::genai::GenerationConfig generation_config;
         generation_config.num_assistant_tokens = 4;
         auto group = std::make_shared<SequenceGroup>(
@@ -1082,9 +1082,9 @@ TEST_P(PreparedCacheAllocationFailure, PipelinePreparationPreservesBothCountersA
     ov::genai::SchedulerConfig config;
     config.num_kv_blocks = 24;
     config.num_linear_attention_blocks = 24;
-    auto scheduler = std::make_shared<ov::genai::Scheduler>(orchestrator, config);
+    auto scheduler = std::make_shared<ov::genai::ContinuousBatchingScheduler>(orchestrator, config);
     Pipeline pipeline(scheduler, groups);
-    ov::genai::Scheduler::Output output;
+    ov::genai::ContinuousBatchingScheduler::Output output;
     ov::genai::SamplerOutput sampling;
     std::vector<BlockManager::LinearAttentionLiveState> original_states;
     std::vector<int> selected_rows;
