@@ -1114,6 +1114,17 @@ def _is_kokoro_model_id(model_id):
     return "kokoro" in model_id.lower()
 
 
+def _is_omnivoice_model_id(model_id):
+    if not isinstance(model_id, str):
+        return False
+
+    model_path = Path(model_id)
+    if model_path.is_dir() and (model_path / "audio_tokenizer").is_dir():
+        return True
+
+    return "omnivoice" in model_id.lower()
+
+
 def _wrap_qwen3_omni(model, model_id, remote_code):
     from transformers import AutoProcessor
     from .speech_generation_evaluator import Qwen3OmniSpeechWrapper
@@ -1125,7 +1136,7 @@ def _wrap_qwen3_omni(model, model_id, remote_code):
 
 
 def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
-    from .speech_generation_evaluator import KokoroModelWrapper, SpeechT5Wrapper
+    from .speech_generation_evaluator import KokoroModelWrapper, OmniVoiceWrapper, SpeechT5Wrapper
 
     vocoder_path = kwargs.get("vocoder_path")
 
@@ -1133,6 +1144,13 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
         if _is_kokoro_model_id(model_id):
             logger.info("Using Kokoro HF API")
             return KokoroModelWrapper(
+                model_id,
+                torch_dtype=_resolve_torch_dtype(kwargs.get("torch_dtype")),
+            )
+
+        if _is_omnivoice_model_id(model_id):
+            logger.info("Using OmniVoice HF API")
+            return OmniVoiceWrapper(
                 model_id,
                 torch_dtype=_resolve_torch_dtype(kwargs.get("torch_dtype")),
             )
