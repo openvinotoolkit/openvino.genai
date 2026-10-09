@@ -136,6 +136,38 @@ std::shared_ptr<CacheOrchestrator> create_hybrid_orchestrator(
     return orchestrator;
 }
 
+std::shared_ptr<CacheOrchestrator> create_prefix_hybrid_orchestrator(
+        size_t num_kv_blocks,
+        size_t num_la_blocks,
+        size_t kv_block_size = TEST_BLOCK_SIZE,
+        size_t la_cache_interval = TEST_BLOCK_SIZE) {
+    ov::Core core;
+    ov::InferRequest request = core.compile_model(
+        create_hybrid_model(core, TEST_NUM_DECODER_LAYERS)).create_infer_request();
+
+    auto kv_manager = std::make_unique<KVCacheManager>(request);
+    auto kv_block_manager = std::make_unique<BlockManager>(
+        num_kv_blocks, true, kv_block_size, 1);
+
+    auto orchestrator = std::make_shared<CacheOrchestrator>();
+    orchestrator->register_cache_type(
+        CacheType::KV_CACHE, std::move(kv_manager), std::move(kv_block_manager));
+
+    auto la_manager = std::make_unique<LinearAttentionCacheManager>(request);
+    auto la_block_manager = std::make_unique<BlockManager>(
+        num_la_blocks,
+        true,
+        la_cache_interval,
+        1,
+        0,
+        true);
+
+    orchestrator->register_cache_type(
+        CacheType::LINEAR_ATTENTION_CACHE, std::move(la_manager), std::move(la_block_manager));
+
+    return orchestrator;
+}
+
 }  // namespace
 
 TEST(TestLinearAttentionCacheManager, HasCacheInputsIgnoresMalformedStateTableSuffixes) {
@@ -691,4 +723,98 @@ TEST(TestCacheOrchestratorHybrid, PartialPreemptionIsDisallowedWhenFixedSizeVict
 
     orchestrator->free_sequence(victim_seq->get_id());
     orchestrator->free_sequence(target_seq->get_id());
+}
+
+/// @test GetMaxRequestTokens_KVOnly
+/// Verify get_max_request_tokens computes num_kv_blocks * block_size for a standard KV cache.
+TEST(TestCacheOrchestratorHybrid, GetMaxRequestTokens_KVOnly) {
+    ov::Core core;
+    ov::InferRequest request = core.compile_model(get_dummy_model(core, 1)).create_infer_request();
+
+    constexpr size_t num_kv_blocks = 10;
+    constexpr size_t block_size = 16;
+    auto kv_manager = std::make_unique<KVCacheManager>(request);
+    auto kv_block_manager = std::make_unique<BlockManager>(num_kv_blocks, false, block_size, 1);
+
+    auto orchestrator = std::make_shared<CacheOrchestrator>();
+    orchestrator->register_cache_type(CacheType::KV_CACHE, std::move(kv_manager), std::move(kv_block_manager));
+
+    const auto max_tokens = orchestrator->get_max_request_tokens();
+    ASSERT_TRUE(max_tokens.has_value());
+    EXPECT_EQ(*max_tokens, num_kv_blocks * block_size);
+}
+
+/// @test GetMaxRequestTokens_HybridNoPrefixCaching
+/// Verify that fixed-size linear attention cache (no prefix caching) is excluded from
+/// token capacity calculation, so KV cache capacity governs.
+TEST(TestCacheOrchestratorHybrid, GetMaxRequestTokens_HybridNoPrefixCaching) {
+    constexpr size_t num_kv_blocks = 10;
+    constexpr size_t num_la_blocks = 2;
+    constexpr size_t kv_block_size = TEST_BLOCK_SIZE;
+
+    auto orchestrator = create_hybrid_orchestrator(
+        num_kv_blocks,
+        num_la_blocks,
+        kv_block_size,
+        /*num_layers=*/1,
+        /*la_fixed_blocks_per_seq=*/1);
+
+    const auto max_tokens = orchestrator->get_max_request_tokens();
+    ASSERT_TRUE(max_tokens.has_value());
+    EXPECT_EQ(*max_tokens, num_kv_blocks * kv_block_size);
+}
+
+/// @test GetMaxRequestTokens_HybridPrefixCaching_MinGoverns
+/// Verify that under hybrid prefix caching, the smaller capacity between KV cache and
+/// linear attention prefix cache determines the max request tokens.
+TEST(TestCacheOrchestratorHybrid, GetMaxRequestTokens_HybridPrefixCaching_KVDominates) {
+    constexpr size_t num_kv_blocks = 10;
+    constexpr size_t kv_block_size = 16;       // 160 tokens
+    constexpr size_t num_la_blocks = 4;
+    constexpr size_t la_cache_interval = 64;   // 256 tokens
+
+    auto orchestrator = create_prefix_hybrid_orchestrator(
+        num_kv_blocks, num_la_blocks, kv_block_size, la_cache_interval);
+
+    const auto max_tokens = orchestrator->get_max_request_tokens();
+    ASSERT_TRUE(max_tokens.has_value());
+    EXPECT_EQ(*max_tokens, num_kv_blocks * kv_block_size);
+}
+
+TEST(TestCacheOrchestratorHybrid, GetMaxRequestTokens_HybridPrefixCaching_LADominates) {
+    constexpr size_t num_kv_blocks = 20;
+    constexpr size_t kv_block_size = 16;       // 320 tokens
+    constexpr size_t num_la_blocks = 2;
+    constexpr size_t la_cache_interval = 64;   // 128 tokens
+
+    auto orchestrator = create_prefix_hybrid_orchestrator(
+        num_kv_blocks, num_la_blocks, kv_block_size, la_cache_interval);
+
+    const auto max_tokens = orchestrator->get_max_request_tokens();
+    ASSERT_TRUE(max_tokens.has_value());
+    EXPECT_EQ(*max_tokens, num_la_blocks * la_cache_interval);
+}
+
+/// @test GetMaxRequestTokens_DynamicAllocationReturnsNullopt
+/// Verify that dynamic allocation mode returns std::nullopt.
+TEST(TestCacheOrchestratorHybrid, GetMaxRequestTokens_DynamicAllocationReturnsNullopt) {
+    auto orchestrator = std::make_shared<CacheOrchestrator>();
+    orchestrator->set_dynamic_allocation(true);
+
+    EXPECT_FALSE(orchestrator->get_max_request_tokens().has_value());
+}
+
+/// @test GetMaxRequestTokens_UnallocatedZeroBlocksReturnsNullopt
+/// Verify that a variable-size cache registered with 0 blocks returns std::nullopt.
+TEST(TestCacheOrchestratorHybrid, GetMaxRequestTokens_UnallocatedZeroBlocksReturnsNullopt) {
+    ov::Core core;
+    ov::InferRequest request = core.compile_model(get_dummy_model(core, 1)).create_infer_request();
+
+    auto kv_manager = std::make_unique<KVCacheManager>(request);
+    auto kv_block_manager = std::make_unique<BlockManager>(0, false, 16, 1);
+
+    auto orchestrator = std::make_shared<CacheOrchestrator>();
+    orchestrator->register_cache_type(CacheType::KV_CACHE, std::move(kv_manager), std::move(kv_block_manager));
+
+    EXPECT_FALSE(orchestrator->get_max_request_tokens().has_value());
 }

@@ -209,4 +209,8 @@ private:
         decoded.full_token_ids = result.full_token_ids;
         return decoded;
     }
+
+    std::optional<size_t> get_max_request_tokens() const override {
+        return m_impl.get_max_request_tokens();
+    }
 };
