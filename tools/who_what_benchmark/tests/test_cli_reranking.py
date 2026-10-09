@@ -5,6 +5,7 @@ import sys
 import pytest
 import shutil
 import logging
+import numpy as np
 from pathlib import Path
 from test_cli_image import get_similarity
 from conftest import convert_model, run_wwb
@@ -123,6 +124,121 @@ def test_reranking_optimum(model_id, threshold, tmp_path):
             "--model-type",
             "text-reranking",
             "--genai",
+        ]
+    )
+
+    remove_artifacts(outputs_path)
+
+
+@pytest.mark.parametrize("batch_size", [1, 4])
+@pytest.mark.xfail(sys.platform == "darwin", reason="Hangs. Ticket 175534", run=False)
+def test_reranking_with_batch(batch_size, tmp_path):
+    model_id = "Qwen/Qwen3-Reranker-0.6B"
+    SIMILARITY_THRESHOLD = 0.99
+    gt_file = Path(tmp_path) / f"gt_batch_{batch_size}.csv"
+    model_path = convert_model(model_id)
+
+    # Collect reference with HF model using the requested document batch size.
+    run_wwb(
+        [
+            "--base-model",
+            model_id,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            gt_file,
+            "--device",
+            "CPU",
+            "--model-type",
+            "text-reranking",
+            "--embeds_batch_size",
+            str(batch_size),
+            "--hf",
+        ]
+    )
+
+    assert gt_file.exists()
+    assert Path(tmp_path, "reference").exists()
+
+    # Test Optimum with the requested document batch size.
+    outputs_path = tmp_path / f"optimum_batch_{batch_size}"
+    outputs = run_wwb(
+        [
+            "--target-model",
+            model_path,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            gt_file,
+            "--device",
+            "CPU",
+            "--model-type",
+            "text-reranking",
+            "--output",
+            outputs_path,
+            "--embeds_batch_size",
+            str(batch_size),
+        ]
+    )
+
+    assert (outputs_path / "target").exists()
+    assert (outputs_path / "target.csv").exists()
+    assert (outputs_path / "metrics_per_question.csv").exists()
+    assert (outputs_path / "metrics.csv").exists()
+    assert "Metrics for model" in outputs
+    assert get_similarity(outputs) >= SIMILARITY_THRESHOLD
+    remove_artifacts(outputs_path)
+
+    # Test GenAI with the requested document batch size.
+    outputs_path = tmp_path / f"genai_batch_{batch_size}"
+    outputs = run_wwb(
+        [
+            "--target-model",
+            model_path,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            gt_file,
+            "--device",
+            "CPU",
+            "--model-type",
+            "text-reranking",
+            "--genai",
+            "--output",
+            outputs_path,
+            "--embeds_batch_size",
+            str(batch_size),
+        ]
+    )
+
+    assert (outputs_path / "target").exists()
+    assert (outputs_path / "target.csv").exists()
+    assert (outputs_path / "metrics_per_question.csv").exists()
+    assert (outputs_path / "metrics.csv").exists()
+    assert "Metrics for model" in outputs
+    assert get_similarity(outputs) >= SIMILARITY_THRESHOLD
+
+    scores = np.load(outputs_path / "target" / "scores_0.npy")
+    document_indices = np.sort(scores[:, 0].astype(int))
+    assert len(document_indices) > 1
+    np.testing.assert_array_equal(document_indices, np.arange(len(document_indices)))
+
+    # Test evaluation from saved target data without loading models.
+    run_wwb(
+        [
+            "--target-data",
+            outputs_path / "target.csv",
+            "--num-samples",
+            "1",
+            "--gt-data",
+            gt_file,
+            "--device",
+            "CPU",
+            "--model-type",
+            "text-reranking",
+            "--genai",
+            "--embeds_batch_size",
+            str(batch_size),
         ]
     )
 
