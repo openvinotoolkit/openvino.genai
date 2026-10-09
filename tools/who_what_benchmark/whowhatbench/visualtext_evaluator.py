@@ -124,7 +124,7 @@ class VisualTextEvaluator(TextEvaluator):
 
         return res
 
-    def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
+    def _generate_data(self, model, gen_answer_fn=None, generation_config=None, output_dir=None):
         def default_gen_answer(
             model,
             prompt,

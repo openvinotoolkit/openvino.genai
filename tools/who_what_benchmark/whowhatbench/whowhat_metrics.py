@@ -228,6 +228,83 @@ class TranscriptSimilarity:
         return {"similarity": self._similarity(references, hypotheses)}, {"similarity": per_prompt}
 
 
+class KLDivergency:
+    # ~0 	        distributions are almost identical
+    # 0.001 – 0.05	minor differences
+    # 0.05 – 0.5	noticeable differences in predictions
+    # > 1           significantly different distributions
+    MIN_BASE_LOG_PROB = -16.0
+
+    def _calculate_kl_per_token(self, gold_logits: torch.Tensor, prediction_logits: torch.Tensor) -> torch.Tensor:
+        # formula from llama-perplexity tool
+        gold_logits = gold_logits.to(dtype=torch.float64)
+        prediction_logits = prediction_logits.to(dtype=torch.float64)
+
+        gold_log_probs = torch.log_softmax(gold_logits, dim=-1)
+        prediction_log_probs = torch.log_softmax(prediction_logits, dim=-1)
+        valid_mask = gold_log_probs > self.MIN_BASE_LOG_PROB
+
+        gold_probs = torch.exp(gold_log_probs)
+        kl_terms = torch.where(
+            valid_mask,
+            gold_probs * (gold_log_probs - prediction_log_probs),
+            torch.zeros_like(gold_probs),
+        )
+        return kl_terms.sum(dim=-1)
+
+    def evaluate(self, gts, predictions):
+        logits_gold = gts["logits_path"].values
+        logits_prediction = predictions["logits_path"].values
+
+        metric_per_question = {
+            "kl_divergency": [],
+            "kl_divergency_p99": [],
+            "kl_divergency_p95": [],
+            "kl_divergency_p10": [],
+            "kl_divergency_min": [],
+            "kl_divergency_max": [],
+        }
+        all_kl_values = []
+
+        for gold_path, prediction_path in tqdm(
+            zip(logits_gold, logits_prediction),
+            total=min(len(logits_gold), len(logits_prediction)),
+            desc="KL divergence evaluation",
+        ):
+            with open(gold_path, "rb") as f:
+                gold_logits = torch.from_numpy(np.load(f))
+
+            with open(prediction_path, "rb") as f:
+                prediction_logits = torch.from_numpy(np.load(f))
+
+            if gold_logits.shape != prediction_logits.shape:
+                raise ValueError(
+                    f"Logit tensor shape mismatch: {gold_path} has shape {gold_logits.shape}, "
+                    f"but {prediction_path} has shape {prediction_logits.shape}"
+                )
+            kl_per_step = self._calculate_kl_per_token(gold_logits, prediction_logits)
+            kl_values = kl_per_step.detach().cpu().numpy().reshape(-1)
+
+            metric_per_question["kl_divergency"].append(round(float(np.mean(kl_values)), 7))
+            metric_per_question["kl_divergency_p99"].append(round(float(np.percentile(kl_values, 99)), 7))
+            metric_per_question["kl_divergency_p95"].append(round(float(np.percentile(kl_values, 95)), 7))
+            metric_per_question["kl_divergency_p10"].append(round(float(np.percentile(kl_values, 10)), 7))
+            metric_per_question["kl_divergency_min"].append(round(float(np.min(kl_values)), 7))
+            metric_per_question["kl_divergency_max"].append(round(float(np.max(kl_values)), 7))
+            all_kl_values.append(kl_values)
+
+        all_kl_values_np = np.concatenate(all_kl_values) if all_kl_values else np.array([], dtype=np.float32)
+        metric_dict = {
+            "kl_divergency": round(float(np.mean(all_kl_values_np)), 7),
+            "kl_divergency_p99": round(float(np.percentile(all_kl_values_np, 99)), 7),
+            "kl_divergency_p95": round(float(np.percentile(all_kl_values_np, 95)), 7),
+            "kl_divergency_p10": round(float(np.percentile(all_kl_values_np, 10)), 7),
+            "kl_divergency_min": round(float(np.min(all_kl_values_np)), 7),
+            "kl_divergency_max": round(float(np.max(all_kl_values_np)), 7),
+        }
+        return metric_dict, metric_per_question
+
+
 # Image metrics
 def evaluate_image_similarity(processor, model, data_gold, data_prediction):
     images_gold = data_gold["images"].values
