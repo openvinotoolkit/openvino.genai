@@ -5,6 +5,7 @@ from pathlib import Path
 import logging
 import torch
 import os
+from .utils import read_model_json
 
 from packaging.version import Version
 
@@ -1078,6 +1079,90 @@ def load_speech_generation_genai_pipeline(model_dir, device="CPU", ov_config=Non
     )
 
 
+def _load_qwen3_tts_hf_pipeline(model_id, device, wrapper_cls, **kwargs):
+    from qwen_tts import Qwen3TTSModel
+
+    device_map = device.lower()
+    if device_map == "gpu":
+        device_map = "cuda"
+    if device_map.startswith("cuda") and not torch.cuda.is_available():
+        device_map = "cpu"
+    torch_dtype = _resolve_torch_dtype(kwargs.get("torch_dtype"))
+
+    from_pretrained_kwargs = {"device_map": device_map}
+    if torch_dtype is not None:
+        from_pretrained_kwargs["dtype"] = torch_dtype
+
+    model = Qwen3TTSModel.from_pretrained(model_id, **from_pretrained_kwargs)
+    return wrapper_cls(model)
+
+
+def _load_qwen3_tts_optimum_pipeline(model_id, device, ov_config, wrapper_cls):
+    from optimum.intel.openvino import OVModelForTextToSpeechSeq2Seq
+
+    model = OVModelForTextToSpeechSeq2Seq.from_pretrained(
+        model_id,
+        device=device,
+        ov_config=ov_config,
+        trust_remote_code=True,
+    )
+    return wrapper_cls(model)
+
+
+def _load_qwen3_tts_genai_pipeline(model_dir, device, ov_config, wrapper_cls):
+    import openvino_genai
+
+    model = openvino_genai.Text2SpeechPipeline(model_dir, device=device, **(ov_config or {}))
+    return wrapper_cls(model)
+
+
+def _get_qwen3_tts_wrappers():
+    from .speech_generation_evaluator import Qwen3CustomVoiceWrapper
+    from .speech_generation_evaluator import Qwen3VoiceDesignWrapper
+    from .speech_generation_evaluator import Qwen3BaseWrapper
+
+    return {
+        "custom_voice": ("CustomVoice", Qwen3CustomVoiceWrapper),
+        "voice_design": ("VoiceDesign", Qwen3VoiceDesignWrapper),
+        "base": ("Base", Qwen3BaseWrapper),
+    }
+
+
+def _get_qwen3_tts_model_type(model_id):
+    config = read_model_json(model_id, "config.json")
+    if not isinstance(config, dict):
+        return None
+    if config.get("model_type") != "qwen3_tts":
+        return None
+    return str(config.get("tts_model_type", "")).strip().lower() or None
+
+
+def _load_qwen3_speech_generation_model(
+    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs
+):
+    qwen3_tts_model_type = _get_qwen3_tts_model_type(model_id)
+    if qwen3_tts_model_type is None:
+        return None
+
+    qwen3_tts_wrappers = _get_qwen3_tts_wrappers()
+    qwen3_tts_wrapper = qwen3_tts_wrappers.get(qwen3_tts_model_type)
+    if qwen3_tts_wrapper is None:
+        raise ValueError(f"Unsupported Qwen3 TTS Model type: {qwen3_tts_model_type}")
+
+    qwen3_variant_name, qwen3_wrapper_cls = qwen3_tts_wrapper
+
+    if use_hf:
+        logger.info("Using Qwen3 TTS %s HF API", qwen3_variant_name)
+        return _load_qwen3_tts_hf_pipeline(model_id, device, qwen3_wrapper_cls, **kwargs)
+
+    if use_genai:
+        logger.info("Using Qwen3 TTS %s GenAI API", qwen3_variant_name)
+        return _load_qwen3_tts_genai_pipeline(model_id, device, ov_config, qwen3_wrapper_cls)
+
+    logger.info("Using Qwen3 TTS %s Optimum API", qwen3_variant_name)
+    return _load_qwen3_tts_optimum_pipeline(model_id, device, ov_config, qwen3_wrapper_cls)
+
+
 def _resolve_remote_code_and_config(model_id):
     remote_code = False
     try:
@@ -1126,6 +1211,10 @@ def _wrap_qwen3_omni(model, model_id, remote_code):
 
 def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
     from .speech_generation_evaluator import KokoroModelWrapper, SpeechT5Wrapper
+
+    qwen3_tts_model = _load_qwen3_speech_generation_model(model_id, device, ov_config, use_hf, use_genai, **kwargs)
+    if qwen3_tts_model is not None:
+        return qwen3_tts_model
 
     vocoder_path = kwargs.get("vocoder_path")
 
