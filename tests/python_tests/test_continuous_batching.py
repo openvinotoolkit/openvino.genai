@@ -484,13 +484,11 @@ def test_hybrid_prefix_caching_preemption_matches_unconstrained_cache(llm_model:
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 def test_hybrid_prefix_caching_preemption_with_cancellations_does_not_raise(llm_model: OVConvertedModelSchema):
     # Deterministic add_request / step / cancel workload from model_server#4428.
-    pipe = ContinuousBatchingPipeline(
-        llm_model.models_path, get_hybrid_prefix_caching_scheduler_config(16, 64), "CPU"
-    )
+    pipe = ContinuousBatchingPipeline(llm_model.models_path, get_hybrid_prefix_caching_scheduler_config(16, 64), "CPU")
     base_prompt = "Explain the history of distributed systems and consensus algorithms such as Paxos and Raft. "
     prompt_pool = [base_prompt * n for n in (1, 2, 4, 8)]
 
-    rng = random.Random(1000)
+    rng = random.Random(1000)  # nosec B311 - reproducible test schedule, not security-sensitive
     # Handles must stay alive: dropping one stops its request.
     handles, cancel_at = {}, {}
     next_id = step = 0

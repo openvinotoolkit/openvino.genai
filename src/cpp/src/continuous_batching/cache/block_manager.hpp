@@ -970,6 +970,35 @@ public:
         return (it == m_block_table.end() || it->second.empty()) ? 0 : it->second[0].size();
     }
 
+    /// @return Sorted resume positions at or below which trimming this group makes a physical block available.
+    std::vector<size_t> get_releasable_block_positions(SequenceGroup::Ptr group) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        std::map<const CacheBlock*, std::pair<size_t, size_t>> block_references_and_position;
+        for (const auto& sequence : group->get_not_finished_sequences()) {
+            const uint64_t seq_id = sequence->get_id();
+            const auto it = m_block_table.find(seq_id);
+            if (it == m_block_table.end()) {
+                return {};
+            }
+            const size_t logical_start = get_block_table_logical_start_unlocked(seq_id);
+            const auto& blocks = it->second[0];
+            for (size_t idx = 0; idx < blocks.size(); ++idx) {
+                const size_t block_position = (logical_start + idx) * m_block_size;
+                auto entry = block_references_and_position.try_emplace(blocks[idx].get(), 0, block_position).first;
+                ++entry->second.first;
+                entry->second.second = std::min(entry->second.second, block_position);
+            }
+        }
+        std::vector<size_t> positions;
+        for (const auto& [block, references_and_position] : block_references_and_position) {
+            if (static_cast<size_t>(block->get_references_count()) == references_and_position.first) {
+                positions.push_back(references_and_position.second);
+            }
+        }
+        std::sort(positions.begin(), positions.end());
+        return positions;
+    }
+
     /**
      * Frees the highest logical blocks of a sequence so that at most keep_blocks remain.
      * @param seq_id Sequence identifier; must have a block table.

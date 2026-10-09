@@ -819,35 +819,36 @@ private:
         const auto kv_it = m_block_managers.find(CacheType::KV_CACHE);
         BlockManager* kv_mgr = kv_it == m_block_managers.end() ? nullptr : kv_it->second.get();
 
-        const size_t num_sequences = sequences.size();
-        // Only the shortfall against the free pool must come from the victim.
-        auto blocks_to_release_per_sequence = [&](BlockManager& block_mgr) {
+        auto block_deficit = [&](BlockManager& block_mgr) {
             const size_t required = block_mgr.required_blocks_count(target);
             const size_t free_blocks = block_mgr.num_free_blocks();
-            const size_t deficit = required > free_blocks ? required - free_blocks : 0;
-            return (deficit + num_sequences - 1) / num_sequences;
+            return required > free_blocks ? required - free_blocks : 0;
         };
 
         const size_t cache_interval = la_mgr.get_block_size();
-        const size_t la_blocks_to_release = blocks_to_release_per_sequence(la_mgr);
-        size_t kv_blocks_to_release = 0;
+        const size_t la_deficit = block_deficit(la_mgr);
+        size_t kv_deficit = 0;
         if (kv_mgr) {
             OPENVINO_ASSERT(cache_interval % kv_mgr->get_block_size() == 0,
                             "Linear attention cache interval ", cache_interval,
                             " must be a multiple of the KV cache block size ", kv_mgr->get_block_size());
-            kv_blocks_to_release = blocks_to_release_per_sequence(*kv_mgr);
+            kv_deficit = block_deficit(*kv_mgr);
         }
 
-        size_t resume_tokens = processed_tokens;
+        if (la_deficit == 0 && kv_deficit == 0) {
+            return std::nullopt;
+        }
+
+        size_t latest_resume_tokens = processed_tokens - 1;
         size_t min_resume_tokens = 0;
         for (const auto& sequence : sequences) {
             const uint64_t seq_id = sequence->get_id();
             const size_t la_start = la_mgr.get_block_table_logical_start(seq_id);
             const size_t la_stored = la_mgr.get_num_stored_blocks(seq_id);
-            if (la_stored == 0 || la_stored < la_blocks_to_release) {
+            if (la_stored == 0) {
                 return std::nullopt;
             }
-            resume_tokens = std::min(resume_tokens, (la_start + la_stored - la_blocks_to_release) * cache_interval);
+            latest_resume_tokens = std::min(latest_resume_tokens, (la_start + la_stored) * cache_interval);
             // Block la_start holds the earliest checkpoint this sequence still owns.
             min_resume_tokens = std::max(min_resume_tokens, (la_start + 1) * cache_interval);
 
@@ -855,19 +856,36 @@ private:
                 const size_t kv_block_size = kv_mgr->get_block_size();
                 const size_t kv_start = kv_mgr->get_block_table_logical_start(seq_id);
                 const size_t kv_stored = kv_mgr->get_num_stored_blocks(seq_id);
-                if (kv_stored == 0 || kv_stored < kv_blocks_to_release) {
+                if (kv_stored == 0) {
                     return std::nullopt;
                 }
-                resume_tokens = std::min(resume_tokens, (kv_start + kv_stored - kv_blocks_to_release) * kv_block_size);
+                latest_resume_tokens = std::min(latest_resume_tokens, (kv_start + kv_stored) * kv_block_size);
                 min_resume_tokens = std::max(min_resume_tokens, (kv_start + 1) * kv_block_size);
             }
         }
 
-        resume_tokens = resume_tokens / cache_interval * cache_interval;
-        if (resume_tokens < min_resume_tokens || resume_tokens >= processed_tokens) {
-            return std::nullopt;
+        size_t resume_tokens = latest_resume_tokens / cache_interval * cache_interval;
+        const auto la_positions = la_mgr.get_releasable_block_positions(victim);
+        const auto kv_positions = kv_mgr ? kv_mgr->get_releasable_block_positions(victim) : std::vector<size_t>{};
+        std::optional<size_t> partial_progress;
+        while (resume_tokens >= min_resume_tokens) {
+            const size_t la_released = static_cast<size_t>(la_positions.end() -
+                std::lower_bound(la_positions.begin(), la_positions.end(), resume_tokens));
+            const size_t kv_released = static_cast<size_t>(kv_positions.end() -
+                std::lower_bound(kv_positions.begin(), kv_positions.end(), resume_tokens));
+            if (la_released >= la_deficit && kv_released >= kv_deficit) {
+                return resume_tokens;
+            }
+            if (!partial_progress && (la_deficit == 0 || la_released > 0) &&
+                (kv_deficit == 0 || kv_released > 0)) {
+                partial_progress = resume_tokens;
+            }
+            if (resume_tokens < cache_interval) {
+                break;
+            }
+            resume_tokens -= cache_interval;
         }
-        return resume_tokens;
+        return partial_progress;
     }
 
     /**
