@@ -58,6 +58,10 @@ EmbedResult EmbeddingPipeline::embed(const ov::AnyMap& properties) {
     return m_impl->embed(text_input, images_vec, videos_vec, videos_metadata_vec, properties);
 }
 
+void EmbeddingPipeline::reset_state() {
+    m_impl->reset_state();
+}
+
 EmbeddingPipeline::~EmbeddingPipeline() = default;
 
 }  // namespace genai

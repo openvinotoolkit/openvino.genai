@@ -39,6 +39,42 @@ std::optional<size_t> read_max_position_embeddings(const std::filesystem::path& 
     return max_position_embeddings;
 }
 
+template <typename Ports>
+bool has_port(const Ports& ports, const std::string& name) {
+    return std::any_of(ports.begin(), ports.end(), [&](const auto& port) {
+        return port.get_names().count(name) > 0;
+    });
+}
+
+ov::Tensor ones_mask(size_t batch, size_t seq_len) {
+    ov::Tensor mask(ov::element::i64, Shape{batch, seq_len});
+    std::fill_n(mask.data<int64_t>(), batch * seq_len, static_cast<int64_t>(1));
+    return mask;
+}
+
+ov::Tensor position_ids_from_mask(const ov::Tensor& attention_mask, size_t chunk_len) {
+    const ov::Shape& mask_shape = attention_mask.get_shape();
+    const size_t batch = mask_shape[0];
+    const size_t seq_len = mask_shape[1];
+    OPENVINO_ASSERT(chunk_len <= seq_len, "attention_mask must cover the tokens passed to the model");
+    const int64_t* mask = attention_mask.data<int64_t>();
+
+    ov::Tensor position_ids(ov::element::i64, Shape{batch, chunk_len});
+    int64_t* data = position_ids.data<int64_t>();
+    const size_t cached = seq_len - chunk_len;
+
+    for (size_t b = 0; b < batch; b++) {
+        int64_t position = 0;
+        for (size_t i = 0; i < seq_len; i++) {
+            if (i >= cached) {
+                data[b * chunk_len + i - cached] = position;
+            }
+            position += mask[b * seq_len + i];
+        }
+    }
+    return position_ids;
+}
+
 }  // namespace
 
 namespace ov {
@@ -81,6 +117,13 @@ public:
 
         auto model = core.read_model(models_path / "openvino_model.xml", {}, std::as_const(properties));
 
+        m_scores_tokens = !has_port(model->outputs(), "last_hidden_state");
+        m_has_position_ids = has_port(model->inputs(), "position_ids");
+        m_stateful = has_port(model->inputs(), "beam_idx");
+        for (const auto& output : model->outputs()) {
+            m_output_names.push_back(output.get_any_name());
+        }
+
         bool is_seq_len_fixed = true;
         m_tokenization_params.insert({truncation.name(), true});
 
@@ -99,9 +142,11 @@ public:
 
         if (m_config.padding_side) {
             m_tokenization_params.insert({padding_side.name(), *m_config.padding_side});
+        } else if (m_scores_tokens) {
+            m_tokenization_params.insert({padding_side.name(), "right"});
         }
 
-        if (device == "NPU") {
+        if (device == "NPU" && !m_scores_tokens) {
             m_request = create_text_embedding_npu_request(model,
                                                           m_config,
                                                           properties,
@@ -110,9 +155,14 @@ public:
             m_post_request = create_text_embedding_npu_post_request(model, m_config);
         } else {
             if (m_config.batch_size.has_value() || m_config.max_length.has_value()) {
+                OPENVINO_ASSERT(!(m_stateful && m_config.pad_to_max_length.value_or(false)),
+                                "pad_to_max_length fixes the sequence length, which a model carrying its own "
+                                "KV cache cannot use. Export the model with `--task feature-extraction`.");
                 utils::reshape_model(model, m_config, m_max_position_embeddings);
             }
-            model = utils::apply_postprocessing(model, m_config);
+            if (!m_scores_tokens) {
+                model = utils::apply_postprocessing(model, m_config);
+            }
             auto compiled_model = core.compile_model(model, device, properties);
             utils::print_compiled_model_properties(compiled_model, "text embedding model");
             m_request = compiled_model.create_infer_request();
@@ -161,6 +211,50 @@ public:
         OPENVINO_THROW("Embedding result type is not supported");
     };
 
+    bool scores_tokens() const {
+        return m_scores_tokens;
+    };
+
+    bool is_stateful() const {
+        return m_stateful;
+    };
+
+    std::map<std::string, ov::Tensor> score(const std::vector<std::string>& texts) {
+        OPENVINO_ASSERT(!texts.empty(), "No texts to score");
+        const TokenizedInputs encoded = m_tokenizer.encode(texts, m_tokenization_params);
+        return score(encoded.input_ids, encoded.attention_mask);
+    };
+
+    std::map<std::string, ov::Tensor> score(const ov::Tensor& input_ids, const ov::Tensor& attention_mask) {
+        const ov::Shape shape = validate_scoring_input(input_ids);
+        const ov::Tensor mask = attention_mask ? attention_mask : ones_mask(shape[0], shape[1]);
+        OPENVINO_ASSERT(mask.get_shape() == shape, "attention_mask must have the same shape as input_ids");
+
+        reset_state();
+        set_score_inputs(input_ids, mask);
+        return run_scoring();
+    };
+
+    std::map<std::string, ov::Tensor> score_next(const ov::Tensor& input_ids) {
+        OPENVINO_ASSERT(m_stateful,
+                        "score_next() needs the KV cache to live in the model. Export it with "
+                        "`--task feature-extraction-with-past`, or call score() instead.");
+        const ov::Shape shape = validate_scoring_input(input_ids);
+        OPENVINO_ASSERT(shape[0] == 1, "score_next() continues a single sequence, expected [1, chunk_len]");
+
+        // the model only sees the new tokens, but attends over the whole sequence cached so far
+        set_score_inputs(input_ids, ones_mask(1, m_past_length + shape[1]));
+        m_past_length += shape[1];
+        return run_scoring();
+    };
+
+    void reset_state() {
+        if (m_stateful) {
+            m_request.reset_state();
+        }
+        m_past_length = 0;
+    };
+
 private:
     Tokenizer m_tokenizer;
     InferRequest m_request;
@@ -169,6 +263,50 @@ private:
     AnyMap m_tokenization_params;
     std::optional<size_t> m_max_position_embeddings;
     ov::Tensor m_attention_mask;
+
+    bool m_scores_tokens = false;
+    bool m_has_position_ids = false;
+    bool m_stateful = false;
+    size_t m_past_length = 0;
+    std::vector<std::string> m_output_names;
+
+    ov::Shape validate_scoring_input(const ov::Tensor& input_ids) const {
+        const ov::Shape shape = input_ids.get_shape();
+        OPENVINO_ASSERT(shape.size() == 2, "input_ids must be shaped [batch, seq_len], got ", shape);
+        OPENVINO_ASSERT(input_ids.get_element_type() == ov::element::i64,
+                        "input_ids must be i64, got ",
+                        input_ids.get_element_type());
+        return shape;
+    }
+
+    void set_score_inputs(const ov::Tensor& input_ids, const ov::Tensor& attention_mask) {
+        m_request.set_tensor("input_ids", input_ids);
+        m_request.set_tensor("attention_mask", attention_mask);
+
+        if (m_has_position_ids) {
+            m_request.set_tensor("position_ids", position_ids_from_mask(attention_mask, input_ids.get_shape()[1]));
+        }
+
+        if (m_stateful) {
+            ov::Tensor beam_idx(ov::element::i32, Shape{input_ids.get_shape()[0]});
+            std::fill_n(beam_idx.data<int32_t>(), beam_idx.get_size(), 0);
+            m_request.set_tensor("beam_idx", beam_idx);
+        }
+    }
+
+    std::map<std::string, ov::Tensor> run_scoring() {
+        m_request.infer();
+
+        std::map<std::string, ov::Tensor> scores;
+        for (const std::string& name : m_output_names) {
+            const ov::Tensor scored = m_request.get_tensor(name);
+            // a copy, so the result stays valid once the next call overwrites the request's tensors
+            ov::Tensor copy(scored.get_element_type(), scored.get_shape());
+            scored.copy_to(copy);
+            scores.emplace(name, copy);
+        }
+        return scores;
+    }
 
     ov::Tensor post_model_infer(const ov::Tensor& input) {
         if (!m_post_request) {
@@ -210,6 +348,10 @@ private:
     }
 
     void start_embed_async(std::vector<std::string>& texts) {
+        OPENVINO_ASSERT(!m_scores_tokens,
+                        "This model scores every token through several outputs instead of pooling them into "
+                        "a single embedding, use score() instead of the embed* family.");
+
         if (m_config.batch_size.has_value()) {
             // if batch_size is set, model shape is fixed
             // provide user friendly error message if number of texts is not equal to batch_size
@@ -337,6 +479,31 @@ void TextEmbeddingPipeline::start_embed_query_async(const std::string& text) {
 
 EmbeddingResult TextEmbeddingPipeline::wait_embed_query() {
     return m_impl->wait_embed_query();
+}
+
+bool TextEmbeddingPipeline::scores_tokens() const {
+    return m_impl->scores_tokens();
+}
+
+bool TextEmbeddingPipeline::is_stateful() const {
+    return m_impl->is_stateful();
+}
+
+std::map<std::string, ov::Tensor> TextEmbeddingPipeline::score(const std::vector<std::string>& texts) {
+    return m_impl->score(texts);
+}
+
+std::map<std::string, ov::Tensor> TextEmbeddingPipeline::score(const ov::Tensor& input_ids,
+                                                               const ov::Tensor& attention_mask) {
+    return m_impl->score(input_ids, attention_mask);
+}
+
+std::map<std::string, ov::Tensor> TextEmbeddingPipeline::score_next(const ov::Tensor& input_ids) {
+    return m_impl->score_next(input_ids);
+}
+
+void TextEmbeddingPipeline::reset_state() {
+    m_impl->reset_state();
 }
 
 TextEmbeddingPipeline::~TextEmbeddingPipeline() = default;
