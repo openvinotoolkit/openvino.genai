@@ -440,6 +440,7 @@ void VisionTokenPruningProcessor::adjust_position_ids(ov::Tensor& position_ids,
                                                       int64_t vision_start_token_id,
                                                       size_t spatial_merge_size,
                                                       std::vector<std::vector<bool>>& keep_flags_per_region_out,
+                                                      PositionPlaneLayout layout,
                                                       int64_t video_pad_token_id) const {
     const auto kept_indices_per_image = get_last_selected_tokens();
     OPENVINO_ASSERT(!combined_sequence.empty(), "Vision region sequence must not be empty when pruning visual tokens");
@@ -453,12 +454,11 @@ void VisionTokenPruningProcessor::adjust_position_ids(ov::Tensor& position_ids,
         reordered_combined_grid_thw.push_back(combined_grid_thw.at(region_idx));
     }
 
-    // Detect position encoding type from shape
     const ov::Shape& pos_shape = position_ids.get_shape();
-    const bool is_3d_encoding = (pos_shape.size() == 3 && pos_shape[0] == 3);
-
-    if (is_3d_encoding) {
-        // 3D RoPE position encoding (Qwen2VL style)
+    if (layout != PositionPlaneLayout::ONE_D) {
+        OPENVINO_ASSERT(pos_shape.size() == 3 && pos_shape[0] == (layout == PositionPlaneLayout::THW ? 3 : 4),
+                        "Position ID shape does not match the model's plane layout");
+        // 3D RoPE position encoding (Qwen2VL/Qwen3.5 style)
         position_ids = update_position_ids_3d(position_ids,
                                               input_ids,
                                               vision_start_token_id,
@@ -467,8 +467,10 @@ void VisionTokenPruningProcessor::adjust_position_ids(ov::Tensor& position_ids,
                                               kept_indices_per_image,
                                               spatial_merge_size,
                                               keep_flags_per_region_out,
+                                              layout,
                                               video_pad_token_id);
     } else {
+        OPENVINO_ASSERT(pos_shape.size() == 2, "1D position IDs must be [batch, seq_len]");
         // 1D position encoding (LLaVA, MiniCPM, etc.)
         position_ids = update_position_ids_1d(position_ids,
                                               input_ids,
@@ -482,7 +484,7 @@ void VisionTokenPruningProcessor::adjust_position_ids(ov::Tensor& position_ids,
     }
 }
 
-// 3D position IDs update for Qwen2VL-style models
+// Update 3D RoPE position IDs for Qwen2VL-style and Qwen3.5-style layouts.
 ov::Tensor VisionTokenPruningProcessor::update_position_ids_3d(
     const ov::Tensor& original_position_ids,
     const ov::Tensor& input_ids,
@@ -492,10 +494,14 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_3d(
     const std::vector<std::vector<size_t>>& kept_indices_per_image,
     size_t spatial_merge_size,
     std::vector<std::vector<bool>>& keep_flags_out,
+    PositionPlaneLayout layout,
     int64_t video_pad_token_id) const {
     const ov::Shape& pos_shape = original_position_ids.get_shape();
-    OPENVINO_ASSERT(pos_shape.size() == 3 && pos_shape[0] == 3, "Position ids must be [3, batch, seq_len]");
+    OPENVINO_ASSERT(layout != PositionPlaneLayout::ONE_D && pos_shape.size() == 3 &&
+                        pos_shape[0] == (layout == PositionPlaneLayout::THW ? 3 : 4),
+                    "3D RoPE position ID shape does not match the model's plane layout");
 
+    const size_t position_plane_offset = layout == PositionPlaneLayout::TEXT_THW ? 1 : 0;
     const size_t batch_size = pos_shape[1];
     const size_t seq_len = pos_shape[2];
     const size_t region_count = reordered_combined_grid_thw.size();
@@ -587,11 +593,15 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_3d(
     size_t new_seq_len = seq_len - total_removed;
 
     // Allocate new position IDs tensor
-    ov::Tensor new_position_ids(original_position_ids.get_element_type(), {3, batch_size, new_seq_len});
-    int64_t* pos_data[3] = {new_position_ids.data<int64_t>(),
-                            new_position_ids.data<int64_t>() + batch_size * new_seq_len,
-                            new_position_ids.data<int64_t>() + 2 * batch_size * new_seq_len};
+    ov::Tensor new_position_ids(original_position_ids.get_element_type(), {pos_shape[0], batch_size, new_seq_len});
+    const size_t plane_size = batch_size * new_seq_len;
+    int64_t* position_data = new_position_ids.data<int64_t>();
+    int64_t* text_position_data = layout == PositionPlaneLayout::TEXT_THW ? position_data : nullptr;
+    int64_t* pos_data[3] = {position_data + position_plane_offset * plane_size,
+                            position_data + (position_plane_offset + 1) * plane_size,
+                            position_data + (position_plane_offset + 2) * plane_size};
 
+    const int64_t* original_position_data = original_position_ids.data<const int64_t>();
     const int64_t* input_ids_data = input_ids.data<const int64_t>();
 
     // Process each batch
@@ -599,7 +609,6 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_3d(
         size_t write_idx = 0, image_idx = 0, visual_idx = 0;
         bool inside_vision = false;
         int64_t next_pos = 0, grid_base = 0;
-        int64_t max_pos[3] = {-1, -1, -1};  // temporal, height, width
         size_t batch_offset = batch_idx * seq_len;
         size_t out_offset = batch_idx * new_seq_len;
 
@@ -624,9 +633,11 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_3d(
                                            grid_base + static_cast<int64_t>(row),
                                            grid_base + static_cast<int64_t>(col)};
 
+                    if (text_position_data != nullptr) {
+                        text_position_data[out_offset + write_idx] = static_cast<int64_t>(write_idx);
+                    }
                     for (int dim = 0; dim < 3; ++dim) {
                         pos_data[dim][out_offset + write_idx] = pos_vals[dim];
-                        max_pos[dim] = std::max(max_pos[dim], pos_vals[dim]);
                     }
                     ++write_idx;
                 }
@@ -637,13 +648,20 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_3d(
             // Handle end of vision region
             if (inside_vision) {
                 inside_vision = false;
-                next_pos = std::max({max_pos[0], max_pos[1], max_pos[2]}) + 1;
+                // Keep the original post-region RoPE offset. Using the maximum
+                // coordinate among retained patches is incorrect when pruning
+                // drops the last row/column and can corrupt subsequent positions.
+                const size_t original_position_offset =
+                    (position_plane_offset * batch_size + batch_idx) * seq_len + seq_idx;
+                next_pos = original_position_data[original_position_offset];
                 ++image_idx;
                 visual_idx = 0;
-                std::fill(max_pos, max_pos + 3, next_pos - 1);
             }
 
             // Write text token position
+            if (text_position_data != nullptr) {
+                text_position_data[out_offset + write_idx] = static_cast<int64_t>(write_idx);
+            }
             for (int dim = 0; dim < 3; ++dim) {
                 pos_data[dim][out_offset + write_idx] = next_pos;
             }
@@ -801,6 +819,19 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_1d(
     }
 
     return new_position_ids;
+}
+
+int64_t VisionTokenPruningProcessor::calculate_rope_delta(const ov::Tensor& position_ids, PositionPlaneLayout layout) {
+    const ov::Shape& shape = position_ids.get_shape();
+    OPENVINO_ASSERT(!shape.empty() && shape.back() > 0, "Position IDs must have a nonempty sequence");
+    OPENVINO_ASSERT(layout == PositionPlaneLayout::ONE_D ? shape.size() == 2
+                                                        : shape.size() == 3 &&
+                                                              shape[0] == (layout == PositionPlaneLayout::THW ? 3 : 4),
+                    "Position ID shape does not match the model's plane layout");
+    const size_t plane_size = layout == PositionPlaneLayout::ONE_D ? 0 : shape[1] * shape[2];
+    const size_t first = layout == PositionPlaneLayout::TEXT_THW ? plane_size : 0;
+    const int64_t* data = position_ids.data<const int64_t>();
+    return *std::max_element(data + first, data + position_ids.get_size()) + 1 - static_cast<int64_t>(shape.back());
 }
 
 std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProcessor::execute(
@@ -1044,6 +1075,7 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
                         context.vision_start_token_id,
                         spatial_merge_size,
                         result.keep_flags_per_region,
+                        context.position_plane_layout,
                         context.video_pad_token_id);
 
     // ---- Step 6: Validate metadata ----
@@ -1086,12 +1118,7 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
                                                             context.video_pad_token_id);
 
     // ---- Step 9: Update rope_delta ----
-    {
-        const int64_t* pos_data = position_ids.data<const int64_t>();
-        const int64_t max_pos = *std::max_element(pos_data, pos_data + position_ids.get_size());
-        const size_t pos_seq_len = position_ids.get_shape().back();
-        result.updated_rope_delta = max_pos + 1 - static_cast<int64_t>(pos_seq_len);
-    }
+    result.updated_rope_delta = calculate_rope_delta(position_ids, context.position_plane_layout);
 
     // ---- Step 10: Update cache state ----
     {

@@ -14,6 +14,8 @@
 
 namespace ov::genai {
 
+enum class PositionPlaneLayout { ONE_D, THW, TEXT_THW };
+
 // Forward declarations
 class EncodedImage;
 namespace utils {
@@ -57,6 +59,9 @@ struct PruningContext {
 
     // Spatial merge size from the vision encoder (1 = no merge).
     size_t spatial_merge_size = 1;
+
+    // Plane order of position_ids supplied by the model.
+    PositionPlaneLayout position_plane_layout;
 
     // Optional in/out deepstack tensor of shape [L, total_visual_tokens, D]
     // in merger order [video; image]. Pruned in place when non-null.
@@ -179,6 +184,7 @@ public:
      * @param vision_start_token_id Token ID for vision start marker
      * @param spatial_merge_size Spatial merge size for coordinate conversion
      * @param keep_flags_per_region_out Output: keep flags for each vision region
+     * @param layout Position ID plane layout supplied by the model
      * @param video_pad_token_id Token ID for video padding (optional, default -1 means not applicable)
      */
     void adjust_position_ids(ov::Tensor& position_ids,
@@ -189,10 +195,11 @@ public:
                              int64_t vision_start_token_id,
                              size_t spatial_merge_size,
                              std::vector<std::vector<bool>>& keep_flags_per_region_out,
+                             PositionPlaneLayout layout,
                              int64_t video_pad_token_id = -1) const;
 
     /**
-     * @brief Update 3D position IDs for Qwen2VL-style models (3D RoPE).
+     * @brief Update 3D RoPE position IDs, including Qwen3.5's leading text-position plane.
      */
     ov::Tensor update_position_ids_3d(const ov::Tensor& original_position_ids,
                                       const ov::Tensor& input_ids,
@@ -202,7 +209,11 @@ public:
                                       const std::vector<std::vector<size_t>>& kept_indices_per_image,
                                       size_t spatial_merge_size,
                                       std::vector<std::vector<bool>>& keep_flags_out,
+                                      PositionPlaneLayout layout,
                                       int64_t video_pad_token_id = -1) const;
+
+    /** @brief Calculate rope_delta from the RoPE planes, excluding a separate text plane. */
+    static int64_t calculate_rope_delta(const ov::Tensor& position_ids, PositionPlaneLayout layout);
 
     /**
      * @brief Update 1D position IDs for LLaVA-style models.
