@@ -86,5 +86,8 @@ ov::genai::ProcessorConfig ov::genai::ProcessorConfig::from_any_map(
     read_anymap_param(config_map, "max_image_tokens", extracted_config.max_image_tokens);
     read_anymap_param(config_map, "pooling_kernel_size", extracted_config.pooling_kernel_size);
     read_anymap_param(config_map, "max_soft_tokens", extracted_config.max_soft_tokens);
+    read_anymap_param(config_map, "image_size", extracted_config.image_size);
+    read_anymap_param(config_map, "window_kernel_size", extracted_config.window_kernel_size);
+    read_anymap_param(config_map, "merge_kernel_size", extracted_config.merge_kernel_size);
     return extracted_config;
 }
