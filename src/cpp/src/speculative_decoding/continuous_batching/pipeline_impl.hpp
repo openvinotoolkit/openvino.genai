@@ -168,6 +168,14 @@ public:
         eagle_mode_enabled = true;
     };
 
+    void step() override {
+        // draft model may be disabled by num_assistant_tokens = 0
+        if (!m_is_validation_mode_enabled) {
+            m_batch_size = 0;
+        }
+        ContinuousBatchingForSpeculativeDecodingImpl::step();
+    }
+
     bool is_requests_empty();
 
     /**

@@ -3326,9 +3326,12 @@ def test_vlm_eagle3_chat_with_videos(
         "What did you see across both inputs?",
     ]
 
-    def run_two_round_chat(pipe: VLMPipeline, generation_config: GenerationConfig) -> list[str]:
+    def run_two_round_chat(
+        pipe: VLMPipeline, generation_config: GenerationConfig
+    ) -> tuple[list[str], list[object | None]]:
         history = ChatHistory()
         results = []
+        extended_perf_metrics = []
 
         for round_idx, prompt in enumerate(prompts):
             history.append({"role": "user", "content": prompt})
@@ -3342,13 +3345,14 @@ def test_vlm_eagle3_chat_with_videos(
                 **generate_kwargs,
             )
             results.append(result.texts[0].strip())
+            extended_perf_metrics.append(result.extended_perf_metrics)
             history.append({"role": "assistant", "content": result.texts[0]})
 
-        return results
+        return results, extended_perf_metrics
 
     ov_pipe = VLMPipeline(model_path, "CPU")
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
-    results_without_draft = run_two_round_chat(ov_pipe, generation_config)
+    results_without_draft, _ = run_two_round_chat(ov_pipe, generation_config)
 
     ov_draft = draft_model(draft_model_path, "CPU")
     ov_pipe_with_draft = VLMPipeline(
@@ -3360,8 +3364,30 @@ def test_vlm_eagle3_chat_with_videos(
     generation_config_with_draft_tree = _setup_generation_config(
         ov_pipe_with_draft, max_new_tokens=20, tree_search=True, do_sample=False
     )
-    results_with_draft = run_two_round_chat(ov_pipe_with_draft, generation_config_with_draft)
-    results_with_draft_tree = run_two_round_chat(ov_pipe_with_draft, generation_config_with_draft_tree)
+    results_with_draft, metrics_with_draft = run_two_round_chat(ov_pipe_with_draft, generation_config_with_draft)
+    results_with_draft_tree, metrics_with_draft_tree = run_two_round_chat(
+        ov_pipe_with_draft, generation_config_with_draft_tree
+    )
+    generation_config_without_drafting = _setup_generation_config(
+        ov_pipe_with_draft, max_new_tokens=20, do_sample=False
+    )
+    generation_config_without_drafting.num_assistant_tokens = 0
+    results_without_drafting, metrics_without_drafting = run_two_round_chat(
+        ov_pipe_with_draft, generation_config_without_drafting
+    )
+
+    for metrics_list in (metrics_with_draft, metrics_with_draft_tree):
+        for metrics in metrics_list:
+            assert metrics is not None
+            assert metrics.draft_model_metrics is not None
+            assert metrics.draft_model_metrics.get_num_generated_tokens() > 0
+
+    for round_idx, metrics in enumerate(metrics_without_drafting):
+        assert metrics is not None
+        draft_tokens = metrics.draft_model_metrics.get_num_generated_tokens()
+        assert draft_tokens == 0, (
+            f"Chat round {round_idx + 1} generated {draft_tokens} draft tokens with drafting disabled."
+        )
 
     assert results_without_draft[0] == results_with_draft[0], (
         "First mixed-modality chat turn should be the same when Eagle3 draft model is enabled and disabled."
@@ -3374,6 +3400,9 @@ def test_vlm_eagle3_chat_with_videos(
     )
     assert results_without_draft[1] == results_with_draft_tree[1], (
         "Second mixed-modality chat turn should be the same when Eagle3 draft model and tree search are enabled and disabled."
+    )
+    assert results_without_draft == results_without_drafting, (
+        "Mixed-modality chat results should be the same when drafting is disabled with num_assistant_tokens=0."
     )
 
 

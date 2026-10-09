@@ -28,6 +28,15 @@ std::unordered_map<std::string, ov::Tensor> deep_copy_tensors_map(
 
 namespace ov::genai {
 
+void ContinuousBatchingPipeline::IContinuousBatchingPipeline::prepare_inputs_embedder(
+    const GenerationConfig&) const {}
+
+std::unordered_map<std::string, ov::Tensor>
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::prepare_lm_extra_inputs(
+    std::unordered_map<std::string, ov::Tensor> lm_extra_inputs) const {
+    return lm_extra_inputs;
+}
+
 GenerationConfig ContinuousBatchingPipeline::IContinuousBatchingPipeline::get_config() const {
     return m_generation_config;
 }
@@ -419,6 +428,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         size_t cache_size_before = prepare_prompt_ids(prompt, sampling_params[0]);
 
+        prepare_inputs_embedder(sampling_params[0]);
         input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(
             templated_history,
             m_history_images,
@@ -436,7 +446,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[0].get_shape()[1], 0));
 
-        lm_extra_inputs_list.push_back(m_inputs_embedder->get_lm_extra_inputs());
+        lm_extra_inputs_list.push_back(
+            prepare_lm_extra_inputs(m_inputs_embedder->get_lm_extra_inputs()));
 
         PerfMetrics::emplace_duration(vlm_perf_metrics[0].vlm_raw_metrics.prepare_embeddings_durations, start_get_inputs_embeds);
     } else {
@@ -471,6 +482,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
             size_t cache_size_before = prepare_prompt_ids(prompt, sampling_params[i]);
 
+            prepare_inputs_embedder(sampling_params[i]);
             input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(
                 unified_prompt,
                 encoded_images,
@@ -488,7 +500,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
             position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[i].get_shape()[1], 0));
 
-            lm_extra_inputs_list.push_back(deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs()));
+            lm_extra_inputs_list.push_back(
+                prepare_lm_extra_inputs(deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs())));
 
             PerfMetrics::emplace_duration(vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations, start_get_inputs_embeds);
         }
@@ -704,6 +717,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         const size_t cache_size_before =
             capture_prompt_ids ? m_inputs_embedder->get_cache_state().get_state().size() : 0;
 
+        prepare_inputs_embedder(sampling_params[i]);
         input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(
             templated_history,
             processed_chat_data.encoded_images,
@@ -729,7 +743,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[i].get_shape()[1], 0));
 
-        lm_extra_inputs_list.push_back(deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs()));
+        lm_extra_inputs_list.push_back(
+            prepare_lm_extra_inputs(deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs())));
 
         PerfMetrics::emplace_duration(vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations, start_get_inputs_embeds);
     }
@@ -838,6 +853,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
         const auto [unified_prompt, image_sequence, video_sequence, unused_audio_sequence] =
             m_inputs_embedder->normalize_prompt(prompt, 0, 0, 0, encoded_images, encoded_videos, {});
 
+        prepare_inputs_embedder(sampling_params);
         inputs = m_inputs_embedder->get_inputs_embeds(
             unified_prompt,
             encoded_images,
@@ -854,7 +870,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
             inputs,
             sampling_params,
             prompt_ids,
-            m_inputs_embedder->get_lm_extra_inputs()
+            prepare_lm_extra_inputs(m_inputs_embedder->get_lm_extra_inputs())
         );
         handle->m_generation_stream->set_vlm_perf_metrics(std::move(metrics));
     }
