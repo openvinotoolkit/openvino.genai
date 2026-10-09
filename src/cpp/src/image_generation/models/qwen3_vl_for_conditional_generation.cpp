@@ -188,18 +188,19 @@ std::pair<ov::Tensor, ov::Tensor> build_vision_rotary_embeddings(
     return {cos, sin};
 }
 
-// 3D M-RoPE position ids. Text tokens advance a shared position on all three axes; the image block lays its
-// tokens out on a temporal/height/width grid starting at the position reached by the preceding text.
+// 3D M-RoPE position ids. Text tokens advance a shared position on all three axes; every image block lays its
+// tokens out on a temporal/height/width grid starting at the position reached by the preceding text. The grids
+// are consumed in the order the image runs appear.
 ov::Tensor build_mrope_position_ids(const ov::Tensor input_ids,
                                     const int64_t image_token_id,
-                                    const size_t merged_height,
-                                    const size_t merged_width) {
+                                    const std::vector<Qwen3VLForConditionalGeneration::ImageSize>& merged_grids) {
     const size_t sequence_length = input_ids.get_shape()[1];
     const int64_t* ids_data = input_ids.data<const int64_t>();
 
     ov::Tensor position_ids(ov::element::i64, {3, 1, sequence_length});
     int64_t* position_data = position_ids.data<int64_t>();
 
+    size_t grid_index = 0;
     int64_t current_position = 0;
     for (size_t token = 0; token < sequence_length;) {
         if (ids_data[token] != image_token_id) {
@@ -211,6 +212,12 @@ ov::Tensor build_mrope_position_ids(const ov::Tensor input_ids,
             continue;
         }
 
+        OPENVINO_ASSERT(grid_index < merged_grids.size(),
+                        "Prompt contains more image runs than there are condition images");
+        const size_t merged_height = merged_grids[grid_index].height;
+        const size_t merged_width = merged_grids[grid_index].width;
+        ++grid_index;
+
         for (size_t row = 0; row < merged_height; ++row) {
             for (size_t col = 0; col < merged_width; ++col, ++token) {
                 position_data[0 * sequence_length + token] = current_position;
@@ -220,8 +227,35 @@ ov::Tensor build_mrope_position_ids(const ov::Tensor input_ids,
         }
         current_position += static_cast<int64_t>(std::max(merged_height, merged_width));
     }
+    OPENVINO_ASSERT(grid_index == merged_grids.size(),
+                    "Prompt contains fewer image runs than there are condition images");
 
     return position_ids;
+}
+
+// Joins per-image vision outputs of shape (tokens, hidden) along the token axis.
+ov::Tensor concat_vision_tokens(const std::vector<ov::Tensor>& tensors) {
+    OPENVINO_ASSERT(!tensors.empty(), "Cannot concatenate an empty list of vision outputs");
+    if (tensors.size() == 1) {
+        return tensors.front();
+    }
+
+    const size_t hidden_size = tensors.front().get_shape()[1];
+    size_t total_tokens = 0;
+    for (const ov::Tensor& tensor : tensors) {
+        OPENVINO_ASSERT(tensor.get_shape()[1] == hidden_size,
+                        "Vision outputs must share the hidden size, got ", tensor.get_shape()[1], " and ", hidden_size);
+        total_tokens += tensor.get_shape()[0];
+    }
+
+    ov::Tensor joined(tensors.front().get_element_type(), {total_tokens, hidden_size});
+    float* joined_data = joined.data<float>();
+    for (const ov::Tensor& tensor : tensors) {
+        std::copy_n(tensor.data<const float>(), tensor.get_size(), joined_data);
+        joined_data += tensor.get_size();
+    }
+
+    return joined;
 }
 
 // Scatters the DeepStack features into the image-pad positions of a dense additive tensor.
@@ -261,10 +295,24 @@ const std::string Qwen3VLForConditionalGeneration::SYSTEM_PREFIX =
 const std::string Qwen3VLForConditionalGeneration::PROMPT_TEMPLATE =
     Qwen3VLForConditionalGeneration::SYSTEM_PREFIX + "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n";
 
-// The vision prefix only appears in the image-conditioned template.
-const std::string Qwen3VLForConditionalGeneration::PROMPT_TEMPLATE_WITH_IMAGE =
-    Qwen3VLForConditionalGeneration::SYSTEM_PREFIX +
-    "<|im_start|>user\nPicture 1: <|vision_start|><|image_pad|><|vision_end|>{}<|im_end|>\n<|im_start|>assistant\n";
+// Condition images are referenced in the prompt itself, one vision span per image, numbered starting from one.
+std::string Qwen3VLForConditionalGeneration::format_image_conditioned_prompt(const std::string& prompt,
+                                                                            const size_t num_images) {
+    std::string vision_prefix;
+    for (size_t index = 0; index < num_images; ++index) {
+        if (index > 0) {
+            vision_prefix += " ";
+        }
+        vision_prefix += "Picture " + std::to_string(index + 1) + ": <|vision_start|><|image_pad|><|vision_end|>";
+    }
+
+    std::string formatted = PROMPT_TEMPLATE;
+    const std::string placeholder = "{}";
+    const size_t placeholder_pos = formatted.find(placeholder);
+    OPENVINO_ASSERT(placeholder_pos != std::string::npos, "Prompt template must contain '{}'");
+    formatted.replace(placeholder_pos, placeholder.length(), vision_prefix + prompt);
+    return formatted;
+}
 
 Qwen3VLForConditionalGeneration::Config::Config(const std::filesystem::path& config_path) {
     std::ifstream file(config_path);
@@ -361,7 +409,7 @@ std::shared_ptr<Qwen3VLForConditionalGeneration> Qwen3VLForConditionalGeneration
     } else if (m_vision_request) {
         cloned->m_vision_request = m_vision_request.get_compiled_model().create_infer_request();
     }
-    cloned->m_vision_output_ready = false;
+    cloned->m_vision_outputs = VisionOutputs();
 
     if (m_i2i_model) {
         cloned->m_i2i_model = m_i2i_model->clone();
@@ -463,7 +511,8 @@ ov::Tensor Qwen3VLForConditionalGeneration::infer(const std::string& prompt, con
     return drop_system_prefix(m_request.get_output_tensor(), prompt_length);
 }
 
-ov::Tensor Qwen3VLForConditionalGeneration::infer_vision_tower(const ov::Tensor& condition_image) {
+ov::Tensor Qwen3VLForConditionalGeneration::infer_vision_tower(const ov::Tensor& condition_image,
+                                                               std::vector<ov::Tensor>& deepstack_features) {
     const ov::Shape& image_shape = condition_image.get_shape();
     const size_t patch_size = m_vision_config.patch_size;
     const size_t granularity = patch_size * m_vision_config.spatial_merge_size;
@@ -487,40 +536,84 @@ ov::Tensor Qwen3VLForConditionalGeneration::infer_vision_tower(const ov::Tensor&
     m_vision_request.set_tensor("cos", cos);
     m_vision_request.set_tensor("sin", sin);
     m_vision_request.infer();
-    m_vision_output_ready = true;
 
-    return m_vision_request.get_output_tensor(0);
+    // The infer request reuses its output buffers, so the results are detached before the next image overwrites
+    // them.
+    const auto detach = [](const ov::Tensor& source) {
+        ov::Tensor detached(source.get_element_type(), source.get_shape());
+        source.copy_to(detached);
+        return detached;
+    };
+
+    deepstack_features.clear();
+    for (size_t layer = 0; layer < m_vision_config.num_deepstack_layers; ++layer) {
+        deepstack_features.push_back(detach(m_vision_request.get_output_tensor(layer + 1)));
+    }
+
+    return detach(m_vision_request.get_output_tensor(0));
 }
 
 ov::Tensor Qwen3VLForConditionalGeneration::infer(const std::string& prompt,
                                                   const ov::Tensor& condition_image,
                                                   const int max_sequence_length,
                                                   const bool run_vision_tower) {
+    return infer(prompt, std::vector<ov::Tensor>{condition_image}, max_sequence_length, run_vision_tower);
+}
+
+ov::Tensor Qwen3VLForConditionalGeneration::infer(const std::string& prompt,
+                                                  const std::vector<ov::Tensor>& condition_images,
+                                                  const int max_sequence_length,
+                                                  const bool run_vision_tower) {
     OPENVINO_ASSERT(m_i2i_request && m_vision_request,
                     "QwenImage 2.1 vision tower must be compiled first. Cannot infer non-compiled model");
     OPENVINO_ASSERT(max_sequence_length > 0, "'max_sequence_length' must be positive, got ", max_sequence_length);
+    OPENVINO_ASSERT(!condition_images.empty(), "At least one condition image is required");
 
-    ov::Tensor image_embeds;
+    const size_t merge_size = m_vision_config.spatial_merge_size;
+    std::vector<ImageSize> merged_grids;
+    merged_grids.reserve(condition_images.size());
+    for (const ov::Tensor& condition_image : condition_images) {
+        merged_grids.push_back({condition_image.get_shape()[2] / m_vision_config.patch_size / merge_size,
+                                condition_image.get_shape()[3] / m_vision_config.patch_size / merge_size});
+    }
+
     if (run_vision_tower) {
-        image_embeds = infer_vision_tower(condition_image);
+        std::vector<ov::Tensor> image_embeds_per_image;
+        std::vector<std::vector<ov::Tensor>> deepstack_per_image;
+        image_embeds_per_image.reserve(condition_images.size());
+        deepstack_per_image.reserve(condition_images.size());
+
+        m_vision_outputs.image_token_counts.clear();
+        for (const ov::Tensor& condition_image : condition_images) {
+            std::vector<ov::Tensor> deepstack_features;
+            image_embeds_per_image.push_back(infer_vision_tower(condition_image, deepstack_features));
+            deepstack_per_image.push_back(std::move(deepstack_features));
+            m_vision_outputs.image_token_counts.push_back(image_embeds_per_image.back().get_shape()[0]);
+        }
+
+        m_vision_outputs.image_embeds = concat_vision_tokens(image_embeds_per_image);
+        m_vision_outputs.deepstack_features.assign(m_vision_config.num_deepstack_layers, ov::Tensor());
+        for (size_t layer = 0; layer < m_vision_config.num_deepstack_layers; ++layer) {
+            std::vector<ov::Tensor> layer_features;
+            layer_features.reserve(deepstack_per_image.size());
+            for (const std::vector<ov::Tensor>& per_image : deepstack_per_image) {
+                layer_features.push_back(per_image[layer]);
+            }
+            m_vision_outputs.deepstack_features[layer] = concat_vision_tokens(layer_features);
+        }
     } else {
-        OPENVINO_ASSERT(m_vision_output_ready, "Vision tower must be inferred before reusing its output");
-        image_embeds = m_vision_request.get_output_tensor(0);
+        OPENVINO_ASSERT(m_vision_outputs.image_token_counts.size() == condition_images.size(),
+                        "Vision tower must be inferred for the same condition images before reusing its output");
     }
-    std::vector<ov::Tensor> deepstack_features;
-    for (size_t layer = 0; layer < m_vision_config.num_deepstack_layers; ++layer) {
-        deepstack_features.push_back(m_vision_request.get_output_tensor(layer + 1));
-    }
-    const size_t num_image_tokens = image_embeds.get_shape()[0];
 
-    std::string formatted_prompt = PROMPT_TEMPLATE_WITH_IMAGE;
-    const std::string placeholder = "{}";
-    const size_t placeholder_pos = formatted_prompt.find(placeholder);
-    OPENVINO_ASSERT(placeholder_pos != std::string::npos, "Prompt template must contain '{}'");
-    formatted_prompt.replace(placeholder_pos, placeholder.length(), prompt);
+    const std::vector<size_t>& image_token_counts = m_vision_outputs.image_token_counts;
+    const ov::Tensor& image_embeds = m_vision_outputs.image_embeds;
+    const std::vector<ov::Tensor>& deepstack_features = m_vision_outputs.deepstack_features;
 
-    // The template carries a single '<|image_pad|>'; the processor expands it into one token per merged vision
-    // patch, so the placeholder is repeated here to match the vision tower output length.
+    const std::string formatted_prompt = format_image_conditioned_prompt(prompt, condition_images.size());
+
+    // The template carries one '<|image_pad|>' per image; the processor expands each into one token per merged
+    // vision patch, so every placeholder is repeated here to match its image's vision tower output length.
     const ov::Tensor template_ids =
         m_tokenizer.encode(formatted_prompt, ov::genai::add_special_tokens(false)).input_ids;
     const size_t template_length = template_ids.get_shape()[1];
@@ -528,14 +621,14 @@ ov::Tensor Qwen3VLForConditionalGeneration::infer(const std::string& prompt,
 
     const std::ptrdiff_t template_image_tokens =
         std::count(template_data, template_data + template_length, m_config.image_token_id);
-    OPENVINO_ASSERT(template_image_tokens == 1,
-                    "Image conditioned prompt must contain exactly one '<|image_pad|>' token, got ",
-                    template_image_tokens, ". Remove '<|image_pad|>' from the prompt");
+    OPENVINO_ASSERT(static_cast<size_t>(template_image_tokens) == condition_images.size(),
+                    "Image conditioned prompt must contain exactly ", condition_images.size(),
+                    " '<|image_pad|>' tokens, got ", template_image_tokens,
+                    ". Remove '<|image_pad|>' from the prompt");
 
-    const int64_t* image_token_position =
-        std::find(template_data, template_data + template_length, m_config.image_token_id);
-    const size_t prefix_length = static_cast<size_t>(image_token_position - template_data);
-    const size_t token_count = template_length - 1 + num_image_tokens;
+    const size_t total_image_tokens =
+        std::accumulate(image_token_counts.begin(), image_token_counts.end(), size_t{0});
+    const size_t token_count = template_length - condition_images.size() + total_image_tokens;
 
     OPENVINO_ASSERT(token_count > m_system_prefix_length,
                     "Tokenized prompt length (", token_count, ") must be greater than the system prefix length (",
@@ -547,20 +640,20 @@ ov::Tensor Qwen3VLForConditionalGeneration::infer(const std::string& prompt,
 
     ov::Tensor input_ids(ov::element::i64, {1, token_count});
     int64_t* ids_data = input_ids.data<int64_t>();
-    std::copy_n(template_data, prefix_length, ids_data);
-    std::fill_n(ids_data + prefix_length, num_image_tokens, m_config.image_token_id);
-    std::copy_n(template_data + prefix_length + 1,
-                template_length - prefix_length - 1,
-                ids_data + prefix_length + num_image_tokens);
+    int64_t* ids_cursor = ids_data;
+    size_t image_index = 0;
+    for (size_t token = 0; token < template_length; ++token) {
+        if (template_data[token] == m_config.image_token_id) {
+            ids_cursor = std::fill_n(ids_cursor, image_token_counts[image_index++], m_config.image_token_id);
+        } else {
+            *ids_cursor++ = template_data[token];
+        }
+    }
 
     ov::Tensor attention_mask(ov::element::i64, {1, token_count});
     std::fill_n(attention_mask.data<int64_t>(), token_count, int64_t{1});
 
-    const size_t merge_size = m_vision_config.spatial_merge_size;
-    const ov::Tensor position_ids = build_mrope_position_ids(input_ids,
-                                                             m_config.image_token_id,
-                                                             condition_image.get_shape()[2] / m_vision_config.patch_size / merge_size,
-                                                             condition_image.get_shape()[3] / m_vision_config.patch_size / merge_size);
+    const ov::Tensor position_ids = build_mrope_position_ids(input_ids, m_config.image_token_id, merged_grids);
     const ov::Tensor deepstack_dense =
         build_deepstack_dense(deepstack_features, input_ids, m_config.image_token_id, m_config.hidden_size);
 
