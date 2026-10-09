@@ -372,8 +372,8 @@ public:
         }
 
         const auto vision_encoding_start = std::chrono::steady_clock::now();
-        auto encoded_images = m_inputs_embedder->encode_images(images);
-        auto encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
+        auto encoded_images = m_inputs_embedder->encode_images(images, !videos.empty());
+        auto encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata, encoded_images);
         PerfMetrics::emplace_duration(perf_metrics.vlm_raw_metrics.vision_encoding_durations, vision_encoding_start);
 
         vlm_utils::update_image_slice_counts(perf_metrics, encoded_images);

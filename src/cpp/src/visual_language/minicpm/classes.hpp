@@ -40,6 +40,12 @@ public:
         const std::string& device,
         const ov::AnyMap device_config);
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
+
+    ov::Tensor resample_image(const EncodedImage& image, size_t pad_to_max);
+
+    ov::Tensor resample_video(const std::vector<EncodedImage>& frames,
+                              const std::vector<size_t>& temporal_ids,
+                              size_t pad_to_max = 0);
 };
 
 class InputsEmbedderMiniCPM : public InputsEmbedder::IInputsEmbedder {
@@ -60,12 +66,44 @@ public:
         const std::string& device,
         const ov::AnyMap device_config);
 
+    std::vector<EncodedImage> encode_images(
+        const std::vector<ov::Tensor>& images,
+        bool has_video_inputs
+    ) override;
+
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) override;
+
+    ov::Tensor get_inputs_embeds(const std::string& prompt,
+                                 const std::vector<ov::genai::EncodedImage>& images,
+                                 const std::vector<ov::genai::EncodedVideo>& videos,
+                                 ov::genai::VLMPerfMetrics& metrics,
+                                 bool recalculate_merged_embeddings,
+                                 const std::vector<size_t>& image_sequence,
+                                 const std::vector<size_t>& videos_sequence,
+                                 const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) override;
+
+    std::vector<ov::genai::EncodedVideo> encode_videos(
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata = {}) override;
+
+    std::vector<ov::genai::EncodedVideo> encode_videos(
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata,
+        const std::vector<EncodedImage>& images
+    ) override;
 
     NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
         const std::vector<EncodedImage>& images
+    ) const override;
+
+    NormalizedPrompt normalize_prompt(
+        const std::string& prompt,
+        size_t base_image_id,
+        size_t base_video_id,
+        const std::vector<EncodedImage>& images,
+        const std::vector<EncodedVideo>& videos
     ) const override;
 
 };
