@@ -1801,6 +1801,47 @@ TEST(TestScheduler, hybrid_prefix_caching_partial_preemption_counts_shared_physi
     free_all_sequences(*orchestrator, requests);
 }
 
+TEST(TestScheduler, hybrid_prefix_caching_partial_preemption_requires_sufficient_checkpoint) {
+    SchedulerConfig config;
+    config.max_num_batched_tokens = 32;
+    config.num_kv_blocks = 4;
+    config.num_linear_attention_blocks = 3;
+    config.cache_interval_multiplier = 2;
+    config.enable_prefix_caching = true;
+    config.dynamic_split_fuse = true;
+    config.max_num_seqs = 4;
+
+    std::vector<uint64_t> target_tokens = {0, 1, 2, 3};
+    std::vector<uint64_t> victim_tokens(12);
+    std::iota(victim_tokens.begin(), victim_tokens.end(), 100);
+    auto victim_config = utils::get_greedy_config();
+    victim_config.do_sample = true;
+    victim_config.num_return_sequences = 2;
+    auto target = std::make_shared<SequenceGroup>(
+        0, ov::Tensor(ov::element::i64, {target_tokens.size()}, target_tokens.data()), utils::get_greedy_config());
+    auto victim = std::make_shared<SequenceGroup>(
+        1, ov::Tensor(ov::element::i64, {victim_tokens.size()}, victim_tokens.data()), victim_config);
+    std::vector<SequenceGroup::Ptr> requests = {target, victim};
+    auto orchestrator = init_hybrid_cache_orchestrator(config);
+    ContinuousBatchingScheduler scheduler(orchestrator, config);
+
+    EXPECT_EQ(scheduler.schedule(requests).m_scheduled_sequence_groups_ids.size(), 2);
+    for (const auto& request : requests) {
+        request->finish_iteration();
+    }
+    const auto parent = victim->get_running_sequences().front();
+    const auto child = victim->fork_sequence(parent);
+    scheduler.fork_sequence(parent->get_id(), child->get_id());
+    target->schedule_tokens(8);
+
+    EXPECT_FALSE(orchestrator->can_partially_preempt(victim, target));
+    EXPECT_EQ(victim->get_num_processed_tokens(), 12);
+    EXPECT_EQ(orchestrator->get_kv_block_tables(parent->get_id())[0].size(), 3);
+
+    target->clear_scheduled_tokens();
+    free_all_sequences(*orchestrator, requests);
+}
+
 TEST(TestScheduler, hybrid_prefix_caching_partial_preemption_skips_blocks_held_by_other_request) {
     SchedulerConfig config;
     config.max_num_batched_tokens = 32;

@@ -454,10 +454,17 @@ def get_hybrid_prefix_caching_scheduler_config(num_kv_blocks: int, cache_interva
     return scheduler_config
 
 
+HYBRID_PREEMPTION_MODELS_LIST = [
+    pytest.param(model_id, marks=pytest.mark.skip(reason="CVS-195736: LFM2 conversion fails in CI"))
+    if model_id == "optimum-intel-internal-testing/tiny-random-lfm2" else model_id
+    for model_id in LINEAR_ATTENTION_MODELS_LIST
+]
+
+
 @pytest.mark.transformers_dependent(
     reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
 )
-@pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("llm_model", HYBRID_PREEMPTION_MODELS_LIST, indirect=True)
 def test_hybrid_prefix_caching_preemption_matches_unconstrained_cache(llm_model: OVConvertedModelSchema):
     prompts = ["What is OpenVINO?", "Why is the Sun yellow?", "Tell me something about Canada", "1+1="]
     generation_configs = [GenerationConfig(max_new_tokens=64, ignore_eos=True, do_sample=False)] * len(prompts)
@@ -481,7 +488,7 @@ def test_hybrid_prefix_caching_preemption_matches_unconstrained_cache(llm_model:
 @pytest.mark.transformers_dependent(
     reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
 )
-@pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("llm_model", HYBRID_PREEMPTION_MODELS_LIST, indirect=True)
 def test_hybrid_prefix_caching_preemption_with_cancellations_does_not_raise(llm_model: OVConvertedModelSchema):
     # Deterministic add_request / step / cancel workload from model_server#4428.
     pipe = ContinuousBatchingPipeline(llm_model.models_path, get_hybrid_prefix_caching_scheduler_config(16, 64), "CPU")
