@@ -51,10 +51,16 @@ public:
 
     void multistep();
 
+    void fail_pipeline(std::exception_ptr error) noexcept {
+        _fail_pipeline(std::move(error));
+    }
+
     void finish_request(int64_t request_id = -1);
     void pull_awaiting_requests(bool is_pause_request = false);
     GeneratedRequests get_generated_requests();
-    UpdateRequestResult update_request(uint64_t request_id, const GeneratedSequences& candidates, bool is_update_logit_processor);
+    UpdateRequestResult update_request(uint64_t request_id,
+                                       const GeneratedSequences& candidates,
+                                       bool is_update_logit_processor);
     void sync_generated_embeddings();
     bool is_requests_empty();
 
@@ -123,6 +129,9 @@ public:
 protected:
     void finish_request(SequenceGroup::Ptr request);
     void _pull_awaiting_requests() override {};
+    bool _can_publish_kv_only_completed_blocks() const override {
+        return false;
+    }
     bool eagle_mode_enabled = false;
     bool mtp_mode_enabled = false;
 };
@@ -203,6 +212,57 @@ class ContinuousBatchingPipeline::ContinuousBatchingForMtpDecodingImpl
 public:
     ContinuousBatchingForMtpDecodingImpl() = default;
 
+    bool is_prefix_caching_enabled() const {
+        return m_scheduler->get_config().enable_prefix_caching;
+    }
+
+    void discard_awaiting_request(uint64_t request_id) {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        for (auto request = m_awaiting_requests.begin(); request != m_awaiting_requests.end(); ++request) {
+            if ((*request)->get_request_id() != request_id) {
+                continue;
+            }
+            for (const auto& sequence : (*request)->get_sequences()) {
+                m_scheduler->free_sequence(sequence->get_id());
+            }
+            m_awaiting_requests.erase(request);
+            return;
+        }
+    }
+
+    size_t restore_awaiting_prefix(uint64_t request_id, size_t ceiling) {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        for (const auto& group : m_awaiting_requests) {
+            if (group->get_request_id() != request_id) {
+                continue;
+            }
+            for (const auto& sequence : group->get_sequences()) {
+                m_scheduler->free_sequence(sequence->get_id());
+            }
+            group->update_processed_tokens_num(0);
+            if (m_scheduler->get_config().enable_prefix_caching) {
+                m_scheduler->restore_cached_blocks(group, ceiling);
+            }
+            group->set_num_prefix_cache_hit_tokens(group->get_num_processed_tokens());
+            return group->get_num_processed_tokens();
+        }
+        OPENVINO_THROW("MTP prefix restore requires an awaiting request: ", request_id);
+    }
+
+    bool supports_embedding_prefix_verification() const override {
+        return true;
+    }
+
+    void initialize_prefix_cache(const SequenceGroup::Ptr& group) override {
+        for (const auto& sequence : group->get_sequences()) {
+            sequence->set_prefix_cache_policy(group->get_prompt_len());
+        }
+    }
+
+    bool _can_publish_kv_only_completed_blocks() const override {
+        return true;
+    }
+
     ContinuousBatchingForMtpDecodingImpl(const std::shared_ptr<ov::Model>& model,
                                          const std::shared_ptr<InputsEmbedder>& inputs_embedder,
                                          const Tokenizer& tokenizer,
@@ -219,6 +279,7 @@ public:
                                                        plugin_config,
                                                        is_validation_mode_enabled) {
         mtp_mode_enabled = true;
+        validate_prefix_cache_support(scheduler_config, is_validation_mode_enabled);
         m_inputs_embedder = inputs_embedder;
         m_model_runner->set_inputs_embedder(inputs_embedder);
         m_model_input_type = ModelInputType::EMBEDDINGS;
@@ -228,6 +289,14 @@ public:
         if (m_model_runner) {
             m_model_runner->enable_mtp_draft_positions(is_needed);
         }
+    }
+
+protected:
+    void validate_prefix_cache_support(const SchedulerConfig& scheduler_config,
+                                       bool is_validation_mode_enabled) const {
+        OPENVINO_ASSERT(!scheduler_config.enable_prefix_caching || is_validation_mode_enabled ||
+                    !m_scheduler->has_linear_attention_cache(),
+                "Prefix-enabled MTP draft pipelines with linear-attention state are not supported");
     }
 };
 }
