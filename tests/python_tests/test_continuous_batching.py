@@ -24,6 +24,7 @@ from utils.generation_config import get_greedy, get_beam_search, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
 from utils.atomic_download import AtomicDownloadManager
 from utils.constants import get_default_llm_properties, get_ov_cache_converted_models_dir
+from utils.network import retry_request
 from utils.hugging_face import (
     OVConvertedModelSchema,
     download_and_convert_model,
@@ -95,17 +96,14 @@ def model_tinyllama_1_1b_chat() -> OVConvertedModelSchema:
 
 
 @pytest.fixture(scope="module")
-def tinyllama_lora_adapter(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    from huggingface_hub import hf_hub_download
+def tinyllama_lora_adapter() -> Path:
+    from huggingface_hub import snapshot_download
 
-    adapter_dir = tmp_path_factory.mktemp("tinyllama_lora")
-    return Path(
-        hf_hub_download(
-            repo_id="smangrul/tinyllama_lora_sql",
-            filename="adapter_model.safetensors",
-            local_dir=adapter_dir,
-        )
+    filename = "adapter_model.safetensors"
+    adapter_dir = retry_request(
+        lambda: snapshot_download(repo_id="smangrul/tinyllama_lora_sql", allow_patterns=[filename])
     )
+    return Path(adapter_dir) / filename
 
 
 @pytest.mark.transformers_dependent(
