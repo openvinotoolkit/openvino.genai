@@ -416,11 +416,11 @@ public:
      */
     size_t free_group_partially_for_target(SequenceGroup::Ptr victim, SequenceGroup::CPtr target) {
         if (has_checkpointed_linear_attention_cache()) {
-            const auto resume_tokens = plan_checkpointed_partial_preemption(victim, target);
-            OPENVINO_ASSERT(resume_tokens.has_value(),
+            const auto resume_position = plan_checkpointed_partial_preemption(victim, target);
+            OPENVINO_ASSERT(resume_position.has_value(),
                             "Internal error: partial preemption of request ", victim->get_request_id(),
                             " was not allowed by can_partially_preempt");
-            return apply_checkpointed_partial_preemption(victim, *resume_tokens);
+            return apply_checkpointed_partial_preemption(victim, *resume_position);
         }
 
         size_t tokens_to_release = 0;
@@ -839,8 +839,8 @@ private:
             return std::nullopt;
         }
 
-        size_t latest_resume_tokens = processed_tokens - 1;
-        size_t min_resume_tokens = 0;
+        size_t latest_resume_position = processed_tokens - 1;
+        size_t min_resume_position = 0;
         for (const auto& sequence : sequences) {
             const uint64_t seq_id = sequence->get_id();
             const size_t la_start = la_mgr.get_block_table_logical_start(seq_id);
@@ -848,9 +848,8 @@ private:
             if (la_stored == 0) {
                 return std::nullopt;
             }
-            latest_resume_tokens = std::min(latest_resume_tokens, (la_start + la_stored) * cache_interval);
-            // Block la_start holds the earliest checkpoint this sequence still owns.
-            min_resume_tokens = std::max(min_resume_tokens, (la_start + 1) * cache_interval);
+            latest_resume_position = std::min(latest_resume_position, (la_start + la_stored) * cache_interval);
+            min_resume_position = std::max(min_resume_position, la_mgr.get_earliest_complete_checkpoint(seq_id));
 
             if (kv_mgr) {
                 const size_t kv_block_size = kv_mgr->get_block_size();
@@ -859,26 +858,26 @@ private:
                 if (kv_stored == 0) {
                     return std::nullopt;
                 }
-                latest_resume_tokens = std::min(latest_resume_tokens, (kv_start + kv_stored) * kv_block_size);
-                min_resume_tokens = std::max(min_resume_tokens, (kv_start + 1) * kv_block_size);
+                latest_resume_position = std::min(latest_resume_position, (kv_start + kv_stored) * kv_block_size);
+                min_resume_position = std::max(min_resume_position, (kv_start + 1) * kv_block_size);
             }
         }
 
-        size_t resume_tokens = latest_resume_tokens / cache_interval * cache_interval;
+        size_t resume_position = latest_resume_position / cache_interval * cache_interval;
         const auto la_positions = la_mgr.get_releasable_block_positions(victim);
         const auto kv_positions = kv_mgr ? kv_mgr->get_releasable_block_positions(victim) : std::vector<size_t>{};
-        while (resume_tokens >= min_resume_tokens) {
+        while (resume_position >= min_resume_position) {
             const size_t la_released = static_cast<size_t>(la_positions.end() -
-                std::lower_bound(la_positions.begin(), la_positions.end(), resume_tokens));
+                std::lower_bound(la_positions.begin(), la_positions.end(), resume_position));
             const size_t kv_released = static_cast<size_t>(kv_positions.end() -
-                std::lower_bound(kv_positions.begin(), kv_positions.end(), resume_tokens));
+                std::lower_bound(kv_positions.begin(), kv_positions.end(), resume_position));
             if (la_released >= la_deficit && kv_released >= kv_deficit) {
-                return resume_tokens;
+                return resume_position;
             }
-            if (resume_tokens < cache_interval) {
+            if (resume_position < cache_interval) {
                 break;
             }
-            resume_tokens -= cache_interval;
+            resume_position -= cache_interval;
         }
         return std::nullopt;
     }
@@ -887,19 +886,19 @@ private:
      * @brief Trims every unfinished sequence of the victim back to the planned checkpoint.
      * @return Number of processed tokens to preempt from the victim.
      */
-    size_t apply_checkpointed_partial_preemption(SequenceGroup::Ptr victim, size_t resume_tokens) {
+    size_t apply_checkpointed_partial_preemption(SequenceGroup::Ptr victim, size_t resume_position) {
         auto& la_mgr = *m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE);
         const auto kv_it = m_block_managers.find(CacheType::KV_CACHE);
         const size_t cache_interval = la_mgr.get_block_size();
         for (const auto& sequence : victim->get_not_finished_sequences()) {
             const uint64_t seq_id = sequence->get_id();
-            la_mgr.trim_sequence(seq_id, resume_tokens / cache_interval - la_mgr.get_block_table_logical_start(seq_id));
+            la_mgr.trim_sequence(seq_id, resume_position / cache_interval - la_mgr.get_block_table_logical_start(seq_id));
             if (kv_it != m_block_managers.end()) {
                 auto& kv_mgr = *kv_it->second;
-                kv_mgr.trim_sequence(seq_id, resume_tokens / kv_mgr.get_block_size() - kv_mgr.get_block_table_logical_start(seq_id));
+                kv_mgr.trim_sequence(seq_id, resume_position / kv_mgr.get_block_size() - kv_mgr.get_block_table_logical_start(seq_id));
             }
         }
-        return victim->get_num_processed_tokens() - resume_tokens;
+        return victim->get_num_processed_tokens() - resume_position;
     }
 
     /**

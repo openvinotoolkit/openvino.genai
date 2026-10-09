@@ -1801,6 +1801,67 @@ TEST(TestScheduler, hybrid_prefix_caching_partial_preemption_counts_shared_physi
     free_all_sequences(*orchestrator, requests);
 }
 
+TEST(TestScheduler, hybrid_prefix_caching_preemption_rejects_inexact_restored_checkpoint) {
+    SchedulerConfig config;
+    config.num_kv_blocks = 5;
+    config.num_linear_attention_blocks = 16;
+    config.cache_interval_multiplier = 1;
+    config.enable_prefix_caching = true;
+    config.dynamic_split_fuse = true;
+    config.max_num_batched_tokens = 32;
+    config.max_num_seqs = 4;
+
+    auto orchestrator = init_hybrid_cache_orchestrator(config);
+    auto& kv_mgr = orchestrator->get_block_manager(CacheType::KV_CACHE);
+    auto& la_mgr = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+
+    std::vector<uint64_t> target_tokens = {0, 1, 2, 3};
+    std::vector<uint64_t> victim_tokens(16);
+    std::iota(victim_tokens.begin(), victim_tokens.end(), 100);
+    auto target = std::make_shared<SequenceGroup>(
+        0, ov::Tensor(ov::element::i64, {target_tokens.size()}, target_tokens.data()), utils::get_greedy_config());
+    auto victim = std::make_shared<SequenceGroup>(
+        1, ov::Tensor(ov::element::i64, {victim_tokens.size()}, victim_tokens.data()), utils::get_greedy_config());
+
+    target->schedule_tokens(target_tokens.size());
+    kv_mgr.append_slots(target);
+    la_mgr.append_slots(target);
+    target->finish_iteration();
+    victim->schedule_tokens(victim_tokens.size());
+    kv_mgr.append_slots(victim);
+    victim->finish_iteration();
+
+    std::vector<uint64_t> partial_tokens(victim_tokens.begin(), victim_tokens.begin() + 7);
+    auto partial_producer = std::make_shared<SequenceGroup>(
+        2, ov::Tensor(ov::element::i64, {partial_tokens.size()}, partial_tokens.data()), utils::get_greedy_config());
+    partial_producer->schedule_tokens(partial_tokens.size());
+    la_mgr.append_slots(partial_producer);
+    partial_producer->finish_iteration();
+    la_mgr.free_sequence(partial_producer->get_running_sequences().front()->get_id());
+
+    auto full_producer = std::make_shared<SequenceGroup>(
+        3, ov::Tensor(ov::element::i64, {victim_tokens.size()}, victim_tokens.data()), utils::get_greedy_config());
+    full_producer->schedule_tokens(victim_tokens.size());
+    la_mgr.append_slots(full_producer);
+    full_producer->finish_iteration();
+    la_mgr.free_sequence(full_producer->get_running_sequences().front()->get_id());
+
+    BlockManager::PrefixRestorePlan plan;
+    plan.block_content_lengths = {7, 12, 16};
+    plan.cache_token_position = 16;
+    plan.processed_tokens = 16;
+    plan.logical_block_start = 1;
+    ASSERT_TRUE(la_mgr.restore_cached_blocks(victim, plan));
+    target->schedule_tokens(8);
+
+    const auto victim_seq_id = victim->get_running_sequences().front()->get_id();
+    EXPECT_EQ(la_mgr.get_earliest_complete_checkpoint(victim_seq_id), 12);
+    EXPECT_FALSE(orchestrator->can_partially_preempt(victim, target));
+
+    target->clear_scheduled_tokens();
+    free_all_sequences(*orchestrator, {target, victim});
+}
+
 TEST(TestScheduler, hybrid_prefix_caching_partial_preemption_requires_sufficient_checkpoint) {
     SchedulerConfig config;
     config.max_num_batched_tokens = 32;
