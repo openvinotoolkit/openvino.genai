@@ -372,6 +372,12 @@ jobs:
         run: |
           python_exec_path=$(python${{ matrix.python-version }} -c "import sys; print(sys.executable)")
 
+          # The image's pip (24.0) predates free-threaded wheel tag support (needs packaging>=24.1),
+          # so it can silently accept a GIL-built wheel for the free-threaded interpreter.
+          if [[ "${{ matrix.python-version }}" == *t ]]; then
+            $python_exec_path -m pip install --upgrade "pip>=24.1"
+          fi
+
           # Install build requirements read from pyproject so the list isn't duplicated here; --no-build-isolation skips pip's auto build-deps and a stable OpenVINO path keeps sccache warm.
           mapfile -t build_reqs < <(python3.11 -c "import sys, tomllib; print('\n'.join(tomllib.load(open(sys.argv[1], 'rb'))['build-system']['requires']))" "${{ env.SRC_DIR }}/pyproject.toml")
           $python_exec_path -m pip install "${build_reqs[@]}" ${{ needs.openvino_download.outputs.ov_wheel_source }}
