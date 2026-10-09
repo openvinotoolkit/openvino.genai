@@ -201,11 +201,12 @@ public:
         if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
             // The condition image is encoded once, at the resolution derived from the requested aspect ratio rather
             // than from the requested output size.
-            const Qwen3VLForConditionalGeneration::ImageSize condition_size =
-                Qwen3VLForConditionalGeneration::calculate_dimensions(
-                    DEFAULT_OUTPUT_RESOLUTION * DEFAULT_OUTPUT_RESOLUTION,
-                    static_cast<double>(width) / static_cast<double>(height));
-            m_vae->reshape_encoder(1, static_cast<int>(condition_size.height), static_cast<int>(condition_size.width));
+            m_reshaped_condition_size = Qwen3VLForConditionalGeneration::calculate_dimensions(
+                DEFAULT_OUTPUT_RESOLUTION * DEFAULT_OUTPUT_RESOLUTION,
+                static_cast<double>(width) / static_cast<double>(height));
+            m_vae->reshape_encoder(1,
+                                   static_cast<int>(m_reshaped_condition_size.height),
+                                   static_cast<int>(m_reshaped_condition_size.width));
         }
         m_vae->reshape_decoder(num_images_per_prompt, height, width);
     }
@@ -242,18 +243,19 @@ public:
 
         // The condition image is preprocessed by generate() before this call because the base interface passes
         // the prompt only.
-        const auto encode = [&](const std::string& prompt) {
+        const auto encode = [&](const std::string& prompt, const bool run_vision_tower) {
             return numpy_utils::repeat(m_condition_image
-                                           ? m_text_encoder->infer(prompt, m_condition_image, generation_config.max_sequence_length)
+                                           ? m_text_encoder->infer(prompt, m_condition_image,
+                                                                   generation_config.max_sequence_length, run_vision_tower)
                                            : m_text_encoder->infer(prompt, generation_config.max_sequence_length),
                                        generation_config.num_images_per_prompt);
         };
 
-        m_positive_prompt_embeds = encode(positive_prompt);
+        m_positive_prompt_embeds = encode(positive_prompt, true);
         m_positive_image_pad_mask = m_text_encoder->get_image_pad_mask();
 
         if (do_true_cfg(generation_config)) {
-            m_negative_prompt_embeds = encode(*generation_config.negative_prompt);
+            m_negative_prompt_embeds = encode(*generation_config.negative_prompt, false);
             m_negative_image_pad_mask = m_text_encoder->get_image_pad_mask();
         }
 
@@ -318,6 +320,13 @@ public:
                 Qwen3VLForConditionalGeneration::calculate_dimensions(
                     DEFAULT_OUTPUT_RESOLUTION * DEFAULT_OUTPUT_RESOLUTION,
                     static_cast<double>(image_shape[2]) / static_cast<double>(image_shape[1]));
+            OPENVINO_ASSERT(m_reshaped_condition_size.height == 0 ||
+                                (m_reshaped_condition_size.height == condition_size.height &&
+                                 m_reshaped_condition_size.width == condition_size.width),
+                            "'initial_image' is encoded at ", condition_size.height, "x", condition_size.width,
+                            ", while reshape() fixed the VAE encoder to ", m_reshaped_condition_size.height, "x",
+                            m_reshaped_condition_size.width,
+                            ". Pass an image whose aspect ratio matches the reshaped one");
 
             // Without an explicit resolution the target follows the condition image's aspect ratio.
             if (m_custom_generation_config.height < 0) {
@@ -792,6 +801,7 @@ private:
 
     ov::Tensor m_condition_image;
     LatentBlock m_condition_block;
+    Qwen3VLForConditionalGeneration::ImageSize m_reshaped_condition_size;
 
     ImageGenerationConfig m_custom_generation_config;
     ImageGenerationPerfMetrics m_perf_metrics;
