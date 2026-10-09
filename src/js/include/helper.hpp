@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <set>
 
+#include "any_converter.hpp"
 #include "openvino/core/type/element_type.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
@@ -175,16 +176,6 @@ ov::genai::ImageGenerationPerfMetrics& unwrap<ov::genai::ImageGenerationPerfMetr
                                                                                        const Napi::Value& value);
 
 ov::genai::ChatHistory unwrap_chat_history(const Napi::Env& env, const Napi::Value& value);
-
-/**
- * @brief  Template function to convert C++ data types into Javascript data types
- * @tparam TargetType Destinated Javascript data type.
- * @tparam SourceType C++ data type.
- * @param info Contains the environment in which to construct a JavaScript object.
- * @return SourceType converted to a TargetType.
- */
-template <typename SourceType, typename TargetType>
-TargetType cpp_to_js(const Napi::Env& env, const SourceType& value);
 
 /** @brief  A template specialization for TargetType Napi::Value and SourceType int64_t */
 template <>

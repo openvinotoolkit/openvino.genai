@@ -37,6 +37,17 @@ from utils.asr_utils.qwen3_asr import (
     save_model,
     skip_if_qwen3_asr_package_is_unavailable,
 )
+from utils.asr_utils.sensevoice import (
+    SENSEVOICE_MODEL_IDS,
+    SENSEVOICE_RICH_TAG_TOKEN_IDS,
+    SENSEVOICE_SMALL_MODEL_ID,
+    SENSEVOICE_SMALL_TINY_MODEL_ID,
+    SenseVoiceSmallOptimumPipeline,
+    check_sensevoice_support,
+    save_model as save_sensevoice_model,
+    skip_if_sensevoice_package_is_unavailable,
+    split_sensevoice_prefix,
+)
 
 
 class PipelineType(enum.Enum):
@@ -91,8 +102,6 @@ def get_whisper_models_list(tiny_only=False):
     return [(model_id, prefix / model_id.split("/")[1]) for model_id in model_ids]
 
 
-
-
 # used whisper models are relatively small
 # cache them in memory to speedup tests
 @functools.lru_cache()
@@ -102,21 +111,31 @@ def read_asr_model(params, word_timestamps=False, pipeline_type=PipelineType.WHI
         skip_if_qwen3_asr_package_is_unavailable()
     elif model_id == FUN_ASR_MODEL_ID:
         skip_if_fun_asr_package_is_unavailable()
+    elif model_id in SENSEVOICE_MODEL_IDS:
+        skip_if_sensevoice_package_is_unavailable()
 
     manager = AtomicDownloadManager(path)
-    if not manager.is_complete() and not (path / "openvino_encoder_model.xml").exists():
-        save_model(model_id=model_id, tmp_path=path)
 
-    opt_model = retry_request(
-        lambda: OVModelForSpeechSeq2Seq.from_pretrained(
-            path,
-            trust_remote_code=True,
-            compile=False,
-            device="CPU",
-            load_in_8bit=False,
-            local_files_only=True,
+    expected_model_file = "openvino_model.xml" if model_id in SENSEVOICE_MODEL_IDS else "openvino_encoder_model.xml"
+    if not manager.is_complete() and not (path / expected_model_file).exists():
+        if model_id in SENSEVOICE_MODEL_IDS:
+            save_sensevoice_model(model_id=model_id, tmp_path=path)
+        else:
+            save_model(model_id=model_id, tmp_path=path)
+
+    if model_id in SENSEVOICE_MODEL_IDS:
+        opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(path, local_files_only=True))
+    else:
+        opt_model = retry_request(
+            lambda: OVModelForSpeechSeq2Seq.from_pretrained(
+                path,
+                trust_remote_code=True,
+                compile=False,
+                device="CPU",
+                load_in_8bit=False,
+                local_files_only=True,
+            )
         )
-    )
 
     if model_id == QWEN3_ASR_MODEL_ID:
         processor = retry_request(
@@ -144,6 +163,8 @@ def read_asr_model(params, word_timestamps=False, pipeline_type=PipelineType.WHI
                 )
             ),
         )
+    elif model_id in SENSEVOICE_MODEL_IDS:
+        hf_pipe = SenseVoiceSmallOptimumPipeline(model=opt_model)
     else:
         processor = retry_request(
             lambda: AutoProcessor.from_pretrained(
@@ -345,6 +366,7 @@ MODEL_PIPELINE_PAIRS = [
     ("distil-whisper/distil-small.en", PipelineType.ASR),
     (QWEN3_ASR_MODEL_ID, PipelineType.ASR),
     (FUN_ASR_MODEL_ID, PipelineType.ASR),
+    (SENSEVOICE_SMALL_TINY_MODEL_ID, PipelineType.ASR),
     # test backward compatibility for tiny model only
     ("openai/whisper-tiny", PipelineType.WHISPER),
 ]
@@ -576,6 +598,7 @@ def test_language_detection(model_descr, sample_from_multilingual_dataset, langu
             ("openai/whisper-tiny", PipelineType.WHISPER),
             (QWEN3_ASR_MODEL_ID, PipelineType.ASR),
             (FUN_ASR_MODEL_ID, PipelineType.ASR),
+            (SENSEVOICE_SMALL_TINY_MODEL_ID, PipelineType.ASR),
         ]
     ),
     indirect=True,
@@ -584,7 +607,7 @@ def test_language_detection(model_descr, sample_from_multilingual_dataset, langu
 def test_forced_language(sample_from_multilingual_dataset, pipelines_fixture):
     _, genai_pipe, model_id, _ = pipelines_fixture
 
-    config = {"language": "<|en|>"}
+    config = {"language": "en"}
     if model_id in (QWEN3_ASR_MODEL_ID, FUN_ASR_MODEL_ID):
         # tiny random model used for Qwen3-ASR testing. It was not trained to autodetect language.
         # Internal streamer suppresses language autodetection prefix, so if language is not forced all output is suppressed
@@ -595,6 +618,171 @@ def test_forced_language(sample_from_multilingual_dataset, pipelines_fixture):
     detected_language = genai_result.languages[0] if hasattr(genai_result, "languages") else genai_result.language
     expected_language = "en" if model_id not in (QWEN3_ASR_MODEL_ID, FUN_ASR_MODEL_ID) else "English"
     assert detected_language == expected_language
+
+
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params([(SENSEVOICE_SMALL_TINY_MODEL_ID, PipelineType.ASR)]),
+    indirect=True,
+)
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+def test_sensevoice_auto_language_and_features(sample_from_dataset, pipelines_fixture):
+    _, genai_pipe, _, _ = pipelines_fixture
+
+    result = genai_pipe.generate(sample_from_dataset)
+
+    assert len(result.texts) == 1
+    assert not result.texts[0].startswith("<|")
+    assert len(result.languages) == len(result.texts)
+    assert all(isinstance(language, str) for language in result.languages)
+
+    # The tiny-random model has unpredictable rich-tag predictions.
+    # Check result structure rather than specific emotion/event values.
+    assert result.features is not None
+    assert len(result.features) == len(result.texts)
+    for feature in result.features:
+        assert isinstance(feature, dict)
+        assert set(feature.keys()) <= {"emotion", "event"}
+        assert all(isinstance(value, str) and value for value in feature.values())
+
+
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params([(SENSEVOICE_SMALL_TINY_MODEL_ID, PipelineType.ASR)]),
+    indirect=True,
+)
+def test_sensevoice_rich_tag_detokenizer_contract(pipelines_fixture):
+    _, genai_pipe, _, _ = pipelines_fixture
+    tokenizer = genai_pipe.get_tokenizer()
+
+    for group in SENSEVOICE_RICH_TAG_TOKEN_IDS.values():
+        for token_id, expected_tag in group.items():
+            assert tokenizer.decode([token_id]).strip() == expected_tag
+
+
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params([(SENSEVOICE_SMALL_TINY_MODEL_ID, PipelineType.ASR)]),
+    indirect=True,
+)
+def test_sensevoice_reference_prefix_parser_extracts_fields(pipelines_fixture):
+    """Check rich-tag extraction by the Python reference parser."""
+    _, genai_pipe, _, _ = pipelines_fixture
+    tokenizer = genai_pipe.get_tokenizer()
+
+    prefix_ids = [24885, 25004, 24993, 25016]  # <|en|> <|NEUTRAL|> <|Speech|> <|withitn|>
+    raw_text = tokenizer.decode(prefix_ids) + "hello world"
+
+    rest, language, emotion, event = split_sensevoice_prefix(raw_text)
+
+    assert language == "en"
+    assert emotion == "NEUTRAL"
+    assert event == "Speech"
+    assert not rest.startswith("<|")
+    assert rest == "hello world"
+
+
+@pytest.mark.nightly
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params([(SENSEVOICE_SMALL_MODEL_ID, PipelineType.ASR)]),
+    indirect=True,
+)
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+def test_sensevoice_semantic(sample_from_dataset, pipelines_fixture):
+    hf_pipe, genai_pipe, _, _ = pipelines_fixture
+
+    result = genai_pipe.generate(sample_from_dataset)
+    reference = hf_pipe(sample_from_dataset)
+
+    assert not result.texts[0].startswith("<|")
+    assert result.texts[0].strip() == reference["text"].strip()
+    assert result.languages[0] == "en"
+    assert result.features is not None
+    assert result.features[0]["emotion"] == "HAPPY"
+    assert result.features[0]["event"] == "Speech"
+
+    reference_false = hf_pipe(sample_from_dataset, use_itn=False)
+    reference_true = hf_pipe(sample_from_dataset, use_itn=True)
+    assert reference_false["text"] != reference_true["text"]
+
+    genai_false = genai_pipe.generate(sample_from_dataset, use_itn=False)
+    genai_true = genai_pipe.generate(sample_from_dataset, use_itn=True)
+    assert not genai_false.texts[0].startswith("<|")
+    assert not genai_true.texts[0].startswith("<|")
+    assert genai_false.texts[0].strip() == reference_false["text"].strip()
+    assert genai_true.texts[0].strip() == reference_true["text"].strip()
+
+
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params([(SENSEVOICE_SMALL_TINY_MODEL_ID, PipelineType.ASR)]),
+    indirect=True,
+)
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+def test_sensevoice_generation_config_validation(sample_from_dataset, pipelines_fixture):
+    _, genai_pipe, _, _ = pipelines_fixture
+
+    genai_pipe.generate(sample_from_dataset)
+
+    # read_asr_model is lru_cached, so genai_pipe is shared; restore the config set below.
+    original_config = genai_pipe.get_generation_config()
+    try:
+        language_config = ov_genai.ASRGenerationConfig()
+        language_config.language = "en"
+        genai_pipe.set_generation_config(language_config)
+        genai_pipe.generate(sample_from_dataset, language_config)
+
+        invalid_config = ov_genai.ASRGenerationConfig(num_return_sequences=2)
+        with pytest.raises(RuntimeError):
+            genai_pipe.set_generation_config(invalid_config)
+        with pytest.raises(RuntimeError):
+            genai_pipe.generate(sample_from_dataset, invalid_config)
+    finally:
+        genai_pipe.set_generation_config(original_config)
+
+
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params([(SENSEVOICE_SMALL_TINY_MODEL_ID, PipelineType.ASR)]),
+    indirect=True,
+)
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+@pytest.mark.parametrize("use_itn", [False, True])
+def test_sensevoice_use_itn(sample_from_dataset, pipelines_fixture, use_itn):
+    _, genai_pipe, _, _ = pipelines_fixture
+
+    config = ov_genai.ASRGenerationConfig()
+    config.use_itn = use_itn
+    object_result = genai_pipe.generate(sample_from_dataset, config)
+    kwargs_result = genai_pipe.generate(sample_from_dataset, use_itn=use_itn)
+
+    for result in (object_result, kwargs_result):
+        assert len(result.texts) == 1
+        assert not result.texts[0].startswith("<|")
+        assert result.features is not None
+        assert len(result.features) == len(result.texts)
+        assert set(result.features[0].keys()) <= {"emotion", "event"}
+
+
+def test_sensevoice_support_guard_requires_sensevoice_symbol(monkeypatch):
+    import importlib.util
+    import types
+
+    import optimum.intel.openvino as optimum_openvino
+
+    real_find_spec = importlib.util.find_spec
+    monkeypatch.setattr(
+        importlib.util,
+        "find_spec",
+        lambda name, *args, **kwargs: object() if name == "funasr" else real_find_spec(name, *args, **kwargs),
+    )
+
+    fake_modeling_funasr = types.ModuleType("optimum.intel.openvino.modeling_funasr")
+    monkeypatch.setattr(optimum_openvino, "modeling_funasr", fake_modeling_funasr, raising=False)
+
+    with pytest.raises(ImportError, match="PR #2038"):
+        check_sensevoice_support()
 
 
 @pytest.mark.transformers_lower_v5(reason="CVS-185784")
@@ -1044,6 +1232,7 @@ def streamer_for_test(request):
             ("openai/whisper-tiny", PipelineType.WHISPER),
             (QWEN3_ASR_MODEL_ID, PipelineType.ASR),
             (FUN_ASR_MODEL_ID, PipelineType.ASR),
+            (SENSEVOICE_SMALL_TINY_MODEL_ID, PipelineType.ASR),
         ]
     ),
     indirect=True,
@@ -1059,28 +1248,26 @@ def test_streamers(sample_from_dataset, pipelines_fixture, streamer_for_test):
 
     result = genai_pipe.generate(sample_from_dataset, streamer=streamer, **generate_kwargs)
 
-    expected = result.texts[0]
-
-    assert expected == result_handler.decode(genai_pipe.get_tokenizer())
+    assert result.texts[0] == result_handler.decode(genai_pipe.get_tokenizer())
     result_handler.reset()
 
     config = genai_pipe.get_generation_config()
-    genai_pipe.generate(sample_from_dataset, config, streamer=streamer, **generate_kwargs)
+    result = genai_pipe.generate(sample_from_dataset, config, streamer=streamer, **generate_kwargs)
 
-    assert expected == result_handler.decode(genai_pipe.get_tokenizer())
+    assert result.texts[0] == result_handler.decode(genai_pipe.get_tokenizer())
     result_handler.reset()
 
-    genai_pipe.generate(sample_from_dataset, config, streamer=streamer, **generate_kwargs)
+    result = genai_pipe.generate(sample_from_dataset, config, streamer=streamer, **generate_kwargs)
 
-    assert expected == result_handler.decode(genai_pipe.get_tokenizer())
+    assert result.texts[0] == result_handler.decode(genai_pipe.get_tokenizer())
     result_handler.reset()
 
-    genai_pipe.generate(sample_from_dataset, generation_config=config, streamer=streamer, **generate_kwargs)
+    result = genai_pipe.generate(sample_from_dataset, generation_config=config, streamer=streamer, **generate_kwargs)
 
-    assert expected == result_handler.decode(genai_pipe.get_tokenizer())
+    assert result.texts[0] == result_handler.decode(genai_pipe.get_tokenizer())
     result_handler.reset()
 
-    genai_pipe.generate(sample_from_dataset, return_timestamps=True, streamer=streamer, **generate_kwargs)
+    result = genai_pipe.generate(sample_from_dataset, return_timestamps=True, streamer=streamer, **generate_kwargs)
 
-    assert expected == result_handler.decode(genai_pipe.get_tokenizer())
+    assert result.texts[0] == result_handler.decode(genai_pipe.get_tokenizer())
     result_handler.reset()

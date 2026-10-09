@@ -210,6 +210,113 @@ Language handling depends on the model architecture. Models with language identi
     </TabItemJS>
 </LanguageTabs>
 
+### SenseVoiceSmall-specific Options and Features
+
+:::info
+These features are specific to SenseVoiceSmall used with `ASRPipeline`. They do not apply to other ASR model architectures.
+:::
+
+:::note
+SenseVoiceSmall uses plain language codes such as `en`, `zh`, `yue`, `ja`, and `ko` rather than Whisper-style tokens such as `<|en|>`. Use `auto` for automatic language identification.
+:::
+
+#### Inverse Text Normalization
+
+SenseVoiceSmall supports inverse text normalization (ITN) during transcription. By default, `use_itn=false` selects the `woitn` mode. Set `use_itn=true` to select the `withitn` mode.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        pipe = ov_genai.ASRPipeline(model_path, "CPU")
+
+        # Example output for the same audio with ITN disabled and enabled:
+        #   use_itn=False: "...presented him with fifty pieces of gold"
+        #   use_itn=True:  "...presented him with 50 pieces of gold."
+        result = pipe.generate(raw_speech, use_itn=True)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        ov::genai::ASRPipeline pipe(model_path, "CPU");
+
+        // Enable inverse text normalization (default: false)
+        auto result = pipe.generate(raw_speech, ov::genai::use_itn(true));
+        ```
+    </TabItemCpp>
+    <TabItemJS>
+        ```javascript
+        const pipeline = await ASRPipeline(modelPath, "CPU");
+
+        // Enable inverse text normalization (default: false)
+        const result = await pipeline.generate(rawSpeech, {
+          generationConfig: { use_itn: true },
+        });
+        ```
+    </TabItemJS>
+</LanguageTabs>
+
+#### Emotion and Audio Event Detection
+
+SenseVoiceSmall also predicts emotion and audio-event information for each transcription. The transcription text is returned in `texts`, the detected or specified language in `languages`, and the model-specific features in `features`. Each entry in `features` corresponds to the transcription at the same index in `texts`.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        result = pipe.generate(raw_speech)
+
+        print("Text:", result.texts[0])
+        print("Language:", result.languages[0])
+
+        if result.features:
+            features = result.features[0]
+            if "emotion" in features:
+                print("Emotion:", features["emotion"])
+            if "event" in features:
+                print("Audio event:", features["event"])
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        auto result = pipe.generate(raw_speech);
+
+        std::cout << "Text: " << result.texts[0] << std::endl;
+        std::cout << "Language: " << result.languages[0] << std::endl;
+
+        if (result.features.has_value() && !result.features->empty()) {
+            const auto& features = result.features->at(0);
+            if (features.count("emotion")) {
+                std::cout << "Emotion: " << features.at("emotion").as<std::string>() << std::endl;
+            }
+            if (features.count("event")) {
+                std::cout << "Audio event: " << features.at("event").as<std::string>() << std::endl;
+            }
+        }
+        ```
+    </TabItemCpp>
+    <TabItemJS>
+        ```javascript
+        const result = await pipeline.generate(rawSpeech);
+
+        console.log("Text:", result.texts[0]);
+        console.log("Language:", result.languages[0]);
+
+        if (result.features?.length) {
+            const features = result.features[0];
+            if ("emotion" in features) {
+                console.log("Emotion:", features.emotion);
+            }
+            if ("event" in features) {
+                console.log("Audio event:", features.event);
+            }
+        }
+        ```
+    </TabItemJS>
+</LanguageTabs>
+
+:::note
+SenseVoiceSmall does not currently generate segment-level or word-level timestamps. `return_timestamps` and `word_timestamps` are accepted but ignored, and `chunks` and `words` remain unset. Normal transcription and streaming are unaffected.
+:::
+
 ### Whisper-specific Features
 
 :::info

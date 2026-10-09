@@ -40,6 +40,7 @@ ASRGenerationConfig::ASRGenerationConfig(const std::filesystem::path& json_path)
 
     read_json_param(data, "lang_to_id", lang_to_id);
     read_json_param(data, "alignment_heads", alignment_heads);
+    read_json_param(data, "use_itn", use_itn);
 
     apply_chat_template = false;
 }
@@ -68,6 +69,7 @@ void ASRGenerationConfig::update_generation_config(const ov::AnyMap& config_map)
     read_anymap_param(config_map, "initial_prompt", initial_prompt);
     read_anymap_param(config_map, "hotwords", hotwords);
     read_anymap_param(config_map, "context", context);
+    read_anymap_param(config_map, "use_itn", use_itn);
 
     GenerationConfig::update_generation_config(config_map);
 }

@@ -9,6 +9,7 @@
 #include "include/addon.hpp"
 #include "include/asr_pipeline/perf_metrics.hpp"
 #include "include/chat_history.hpp"
+#include "include/napi_number.hpp"
 #include "include/parser.hpp"
 #include "include/perf_metrics.hpp"
 #include "include/text2image_pipeline/perf_metrics.hpp"
@@ -27,10 +28,6 @@ constexpr const char* LANG_TO_ID_KEY = "lang_to_id";
 constexpr const char* ALIGNMENT_HEADS_KEY = "alignment_heads";
 constexpr const char* SUPPRESS_TOKENS_KEY = "suppress_tokens";
 constexpr const char* BEGIN_SUPPRESS_TOKENS_KEY = "begin_suppress_tokens";
-
-// Safe integer range for JS Number: -(2^53 - 1) .. (2^53 - 1).
-constexpr int64_t NAPI_NUMBER_MIN_INTEGER = -(1LL << 53) + 1;
-constexpr int64_t NAPI_NUMBER_MAX_INTEGER = (1LL << 53) - 1;
 
 /** True if the JS Number has no fractional part. */
 bool is_js_integer(const Napi::Env& env, const Napi::Number& value) {
@@ -994,23 +991,17 @@ Napi::Value cpp_to_js<std::optional<std::string>, Napi::Value>(const Napi::Env& 
 
 template <>
 Napi::Value cpp_to_js<int64_t, Napi::Value>(const Napi::Env& env, const int64_t& value) {
-    if (value >= NAPI_NUMBER_MIN_INTEGER && value <= NAPI_NUMBER_MAX_INTEGER) {
-        return Napi::Number::New(env, value);
-    }
-    return Napi::BigInt::New(env, value);
+    return ov::js::number_or_bigint(env, value);
 }
 
 template <>
 Napi::Value cpp_to_js<size_t, Napi::Value>(const Napi::Env& env, const size_t& value) {
-    if (value <= NAPI_NUMBER_MAX_INTEGER) {
-        return Napi::Number::New(env, value);
-    }
-    return Napi::BigInt::New(env, static_cast<uint64_t>(value));
+    return ov::js::number_or_bigint(env, value);
 }
 
 template <>
 Napi::Value cpp_to_js<float, Napi::Value>(const Napi::Env& env, const float& value) {
-    return Napi::Number::New(env, std::round(static_cast<double>(value) * 1e7) / 1e7);
+    return ov::js::rounded_number(env, value);
 }
 
 template <>
@@ -1509,6 +1500,7 @@ Napi::Value cpp_to_js<ov::genai::ASRGenerationConfig, Napi::Value>(const Napi::E
     set_napi_string_or_undefined(env, obj, "task", config.task);
     obj.Set("return_timestamps", Napi::Boolean::New(env, config.return_timestamps));
     obj.Set("word_timestamps", Napi::Boolean::New(env, config.word_timestamps));
+    obj.Set("use_itn", Napi::Boolean::New(env, config.use_itn));
     obj.Set("decoder_start_token_id", cpp_to_js<int64_t, Napi::Value>(env, config.decoder_start_token_id));
     obj.Set("pad_token_id", cpp_to_js<int64_t, Napi::Value>(env, config.pad_token_id));
     obj.Set("translate_token_id", cpp_to_js<int64_t, Napi::Value>(env, config.translate_token_id));
@@ -1811,6 +1803,9 @@ Napi::Object to_asr_decoded_result(const Napi::Env& env, const ov::genai::ASRDec
     }
     if (results.words.has_value()) {
         obj.Set("words", to_nested_chunks(results.words.value()));
+    }
+    if (results.features.has_value()) {
+        obj.Set("features", cpp_to_js<std::vector<ov::AnyMap>, Napi::Value>(env, results.features.value()));
     }
     return obj;
 }

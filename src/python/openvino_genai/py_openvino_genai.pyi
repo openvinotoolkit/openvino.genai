@@ -44,11 +44,19 @@ class ASRDecodedResults:
         perf_metrics:       performance metrics with tpot, ttft, etc. of type ov::genai::ASRPerfMetrics.
         chunks:             optional chunks of resulting sequences with timestamps
         words:              optional chunks of resulting words with timestamps
+        features:           optional model-specific features for each transcription.
+                            Models without feature support leave this unset (None in Python).
+                            When present, features[i] corresponds to texts[i]. For SenseVoiceSmall, each map may
+                            contain "emotion", "event", both, or neither; an empty map is valid when no
+                            metadata is predicted.
     """
     def __repr__(self) -> str:
         ...
     @property
     def chunks(self) -> list[list[ASRDecodedResultChunk]] | None:
+        ...
+    @property
+    def features(self) -> list[dict[str, typing.Any]] | None:
         ...
     @property
     def languages(self) -> list[str]:
@@ -176,6 +184,12 @@ class ASRGenerationConfig(GenerationConfig):
         :param context: System prompt context prepended to Qwen3-ASR transcription requests.
         :type context: Optional[str]
     
+        SenseVoiceSmall parameters:
+    
+        :param use_itn: Whether to enable inverse text normalization for SenseVoiceSmall.
+                        Defaults to False (`woitn`); when True, the `withitn` mode is used.
+        :type use_itn: bool
+    
         For generic generation parameters (max_length, max_new_tokens, num_beams, temperature, etc.)
         see GenerationConfig documentation.
     """
@@ -186,6 +200,7 @@ class ASRGenerationConfig(GenerationConfig):
     language: str | None
     return_timestamps: bool
     task: str | None
+    use_itn: bool
     word_timestamps: bool
     @typing.overload
     def __init__(self, json_path: os.PathLike | str | bytes) -> None:
@@ -422,6 +437,12 @@ class ASRPipeline:
         
             :param context: System prompt context prepended to Qwen3-ASR transcription requests.
             :type context: Optional[str]
+        
+            SenseVoiceSmall parameters:
+        
+            :param use_itn: Whether to enable inverse text normalization for SenseVoiceSmall.
+                            Defaults to False (`woitn`); when True, the `withitn` mode is used.
+            :type use_itn: bool
         
             For generic generation parameters (max_length, max_new_tokens, num_beams, temperature, etc.)
             see GenerationConfig documentation.
