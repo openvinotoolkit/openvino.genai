@@ -27,8 +27,34 @@ hf download <model> --local-dir <output_folder>
 
 To run any samples with a GGUF model, simply provide the path to the .gguf file via the `<MODEL_DIR>` parameter.
 
-This capability is currently available in preview mode and supports a limited set of topologies, including SmolLM and Qwen2.5. For other models
-and architectures, we still recommend converting the model to the IR format using the `optimum-intel` tool.
+The default legacy reader handles `llama`, `qwen2`, and `qwen3`, and ignores some metadata,
+such as `rope_freqs.weight`. The OpenVINO GGUF frontend supports more architectures and is
+expected to provide better model quality, but is in preview and may have limitations.
+
+Select the frontend when constructing the pipeline:
+
+```cpp
+#include <iostream>
+#include <openvino/genai/llm_pipeline.hpp>
+
+int main() {
+    ov::genai::LLMPipeline pipe(
+        "model.gguf", "CPU", ov::genai::gguf_reader("FRONTEND"));
+    ov::genai::GenerationConfig config;
+    config.max_new_tokens = 64;
+    std::cout << pipe.generate("Explain why the sky is blue.", config);
+}
+```
+
+With a compatible OpenVINO build, GenAI attempts paged attention by default and falls back to
+SDPA if conversion fails. An explicit `scheduler_config` requests continuous batching and
+reports conversion errors. Mamba2 and dense Nemotron-H GGUFs currently require SDPA.
+See [Run GGUF models](https://openvinotoolkit.github.io/openvino.genai/docs/guides/gguf) for more examples and limitations.
+
+> [!NOTE]
+> The `GGUF_READER` property selects which reader converts the file. It defaults to
+> `"LEGACY"`, the hand-written reader described above; passing `ov::genai::gguf_reader("FRONTEND")`
+> (C++) or `GGUF_READER="FRONTEND"` (Python) uses the OpenVINO GGUF frontend instead.
 
 ## Sample Descriptions
 ### Common information

@@ -22,6 +22,28 @@ std::tuple<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>, std::map<std:
 create_tokenizer_from_config(const std::shared_ptr<void>& shared_object_ov_tokenizers,
                              const std::filesystem::path& gguf_model_path);
 
+/// \brief Build the OpenVINO tokenizer/detokenizer from a .gguf file's tokenizer metadata,
+///        without re-reading the file.
+/// \param shared_object_ov_tokenizers loaded openvino_tokenizers shared object
+/// \param tokenizer_metadata the `tokenizer.*` metadata (see ov::genai::GGUFTokenizerParameters)
+/// \return (tokenizer model, detokenizer model, tokenizer_config map for token ids/chat template)
+std::tuple<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>, std::map<std::string, GGUFMetaData>>
+create_tokenizer_from_parameters(const std::shared_ptr<void>& shared_object_ov_tokenizers,
+                                 const ov::AnyMap& tokenizer_metadata);
+
+/// \brief Read the GGUF tokenizer metadata the GGUF frontend attached to a converted model's
+///        runtime info. Throws if the model is null or carries no such metadata.
+const ov::AnyMap& gguf_tokenizer_metadata_from_model(const std::shared_ptr<ov::Model>& model);
+
+/// \brief Same, but moves the metadata out of the model and drops the runtime info entry. It holds
+///        the whole vocabulary (tens of MB for large ones) and nothing reads it once the Tokenizer
+///        is built, so hand ownership to the Tokenizer rather than copying and keeping both.
+ov::AnyMap take_gguf_tokenizer_metadata(const std::shared_ptr<ov::Model>& model);
+
+/// \brief Drop that metadata without reading it, for callers that build the Tokenizer some other
+///        way. No-op if absent.
+void erase_gguf_tokenizer_metadata(const std::shared_ptr<ov::Model>& model);
+
 std::shared_ptr<void> load_shared_object(const std::filesystem::path& path);
 
 void* get_symbol(const std::shared_ptr<void>& shared_object, const char* symbolName);

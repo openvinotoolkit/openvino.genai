@@ -22,6 +22,7 @@
 #include "openvino/op/transpose.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "gguf_utils/gguf_modeling.hpp"
+#include "gguf_utils/gguf_tokenizer.hpp"
 
 
 #include "sampling/sampler.hpp"
@@ -31,6 +32,8 @@ namespace ov {
 namespace genai {
 const std::string PA_BACKEND = "PA";
 const std::string SDPA_BACKEND = "SDPA";
+const std::string FRONTEND_GGUF_READER = "FRONTEND";
+const std::string LEGACY_GGUF_READER = "LEGACY";
 }
 }
 
@@ -410,13 +413,6 @@ ov::Core& singleton_core() {
 }
 
 
-namespace {
-bool is_gguf_model(const std::filesystem::path& file_path) {
-    return file_path.extension() == ".gguf";
-}
-
-} // namespace
-
 const std::string PER_MODEL_PROPERTIES = "MODEL_PROPERTIES";
 
 ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device) {
@@ -466,17 +462,32 @@ ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string&
     return result;
 }
 
-std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties) {
-    bool enable_save_ov_model = false;
-    ov::AnyMap properties = external_properties;
+GGUFProperties extract_gguf_properties(const ov::AnyMap& external_properties) {
+    GGUFProperties result;
+    result.rest = external_properties;
 
-    auto it = properties.find(ov::genai::enable_save_ov_model.name());
-    if (it != properties.end()) {
-        enable_save_ov_model = it->second.as<bool>();
-        properties.erase(it);
+    auto save_it = result.rest.find(ov::genai::enable_save_ov_model.name());
+    if (save_it != result.rest.end()) {
+        result.enable_save_ov_model = save_it->second.as<bool>();
+        result.rest.erase(save_it);
     }
 
-    return {properties, enable_save_ov_model};
+    auto reader_it = result.rest.find(ov::genai::gguf_reader.name());
+    if (reader_it != result.rest.end()) {
+        const auto reader = reader_it->second.as<std::string>();
+        OPENVINO_ASSERT(reader == FRONTEND_GGUF_READER || reader == LEGACY_GGUF_READER,
+                        "GGUF reader must be either '",
+                        FRONTEND_GGUF_READER,
+                        "' or '",
+                        LEGACY_GGUF_READER,
+                        "', got '",
+                        reader,
+                        "'");
+        result.legacy_reader = reader == LEGACY_GGUF_READER;
+        result.rest.erase(reader_it);
+    }
+
+    return result;
 }
 
 void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16) {
@@ -495,10 +506,23 @@ void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::str
 }
 
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& properties) {
-    auto [filtered_properties, enable_save_ov_model] = extract_gguf_properties(properties);
+    const auto gguf_props = extract_gguf_properties(properties);
+    const ov::AnyMap& filtered_properties = gguf_props.rest;
     if (is_gguf_model(model_dir)) {
 #ifdef ENABLE_GGUF
-        return create_from_gguf(model_dir.string(), enable_save_ov_model);
+        try {
+            return create_from_gguf(model_dir.string(), gguf_props.enable_save_ov_model, gguf_props.use_legacy_reader());
+        } catch (const std::exception& error) {
+            if (!gguf_props.legacy_reader.has_value()) {
+                OPENVINO_THROW(error.what(),
+                               "\nThe default legacy GGUF reader failed to load this model. "
+                               "Try GGUF_READER=\"FRONTEND\" (Python) or "
+                               "ov::genai::gguf_reader(\"FRONTEND\") (C++). "
+                               "The OpenVINO GGUF frontend should provide better model quality and broader "
+                               "architecture support, but it is in preview and may have limitations.");
+            }
+            throw;
+        }
 #else
         OPENVINO_ASSERT("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
 #endif
@@ -538,6 +562,11 @@ CacheTypes get_cache_types(const ov::Model& model) {
     // "ReadValue" node is cache representation in stateful model
     const std::string state_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
     CacheTypes cache_types;
+    const auto recurrent_states = model.get_rt_info().find("gguf_recurrent_states");
+    if (recurrent_states != model.get_rt_info().end() &&
+        !recurrent_states->second.as<std::vector<std::string>>().empty()) {
+        cache_types.add_linear();
+    }
 
     for (const auto& op : model.get_ops()) {
         // check input size, as in LoRA adapters case it could be 0

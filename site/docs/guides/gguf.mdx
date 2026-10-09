@@ -1,0 +1,68 @@
+---
+sidebar_position: 7
+---
+
+# Run GGUF models
+
+OpenVINO GenAI can load a local `.gguf` file directly, including its tokenizer metadata. No Optimum export is required. Use a GenAI build with `ENABLE_GGUF=ON` and a compatible OpenVINO build that includes the GGUF frontend.
+
+The default `GGUF_READER="LEGACY"` supports the `llama`, `qwen2`, and `qwen3` architectures. Select `GGUF_READER="FRONTEND"` explicitly to use the OpenVINO GGUF frontend, which supports more architectures and is expected to provide better model quality through more complete handling of GGUF metadata.
+
+:::warning Preview feature
+The GGUF frontend is in preview. Architecture, quantization, tokenizer, and attention-backend support depend on the OpenVINO version. Generated output can differ from other runtimes. If the default legacy reader fails, GenAI includes a suggestion to try the frontend in the error message; retry by selecting it explicitly.
+:::
+
+## Generate text
+
+Replace `model.gguf` with the path to your downloaded model. For a base model without a chat template, set `apply_chat_template=False` in Python or `config.apply_chat_template = false` in C++.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        import openvino_genai as genai
+
+        pipe = genai.LLMPipeline("model.gguf", "CPU", GGUF_READER="FRONTEND")
+        print(pipe.generate("Explain why the sky is blue.", max_new_tokens=64))
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        #include <iostream>
+        #include <openvino/genai/llm_pipeline.hpp>
+
+        int main() {
+            ov::genai::LLMPipeline pipe(
+                "model.gguf", "CPU", ov::genai::gguf_reader("FRONTEND"));
+            ov::genai::GenerationConfig config;
+            config.max_new_tokens = 64;
+            std::cout << pipe.generate("Explain why the sky is blue.", config);
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+## Use the tokenizer and stream a chat
+
+The pipeline constructs its tokenizer from the frontend's model metadata. You can also construct `genai.Tokenizer("model.gguf")` independently, without exporting tokenizer IR files.
+
+```python
+import openvino_genai as genai
+
+pipe = genai.LLMPipeline("model.gguf", "CPU", GGUF_READER="FRONTEND")
+tokenizer = pipe.get_tokenizer()
+encoded = tokenizer.encode("Hello", add_special_tokens=False)
+print(tokenizer.decode(encoded.input_ids))
+
+history = genai.ChatHistory()
+history.append({"role": "user", "content": "Explain gravity in one sentence."})
+result = pipe.generate(
+    history,
+    max_new_tokens=64,
+    streamer=lambda text: print(text, end="", flush=True),
+)
+history.append({"role": "assistant", "content": result.texts[0]})
+history.append({"role": "user", "content": "Now give an example."})
+print(pipe.generate(history, max_new_tokens=64))
+```
+
+Chat requires a suitable template in the GGUF metadata. See [Tokenization](./tokenization.mdx) for configuring the tokenizer and [Streaming](./streaming.mdx) for streamer behavior.
