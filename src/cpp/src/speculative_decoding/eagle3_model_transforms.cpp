@@ -456,12 +456,8 @@ std::shared_ptr<ov::Model> create_eagle3_kv_update_model(const std::shared_ptr<o
                                                     std::make_shared<op::v0::Constant>(element::i32, ov::Shape{1}, 0));
         value_scatter->set_friendly_name("updated_value_cache_" + std::to_string(i));
 
-        // Concat key and value scatter outputs along last axis
-        auto concat =
-            std::make_shared<ov::op::v0::Concat>(ov::OutputVector{key_scatter->output(0), value_scatter->output(0)},
-                                                 -1);
-        concat->set_friendly_name("kv_cache_pair_concat_" + std::to_string(i));
-        results.push_back(std::make_shared<op::v0::Result>(concat));
+        results.push_back(std::make_shared<op::v0::Result>(key_scatter));
+        results.push_back(std::make_shared<op::v0::Result>(value_scatter));
     }
 
     auto model = std::make_shared<Model>(results, inputs, "kv_cache_reorder_model");
