@@ -2,6 +2,8 @@ import importlib.util
 
 import pytest
 
+FUN_ASR_MODEL_ID = "optimum-intel-internal-testing/tiny-random-fun-asr"
+
 
 def skip_if_fun_asr_package_is_unavailable():
     if importlib.util.find_spec("funasr") is None:
