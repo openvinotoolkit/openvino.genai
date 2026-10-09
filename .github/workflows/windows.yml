@@ -489,13 +489,15 @@ jobs:
           $buildReqs = @(& $pythonExecutablePath -c "import sys, tomli; print('\n'.join(tomli.load(open(sys.argv[1], 'rb'))['build-system']['requires']))" "${{ env.SRC_DIR }}/pyproject.toml")
           & $pythonExecutablePath -m pip install @buildReqs ${{ needs.openvino_download.outputs.ov_wheel_source }}
 
-          # Free threaded interpreters ship without the GIL, so the bindings must be built accordingly
-          $cmakeArgs = if ('${{ matrix.python-version }}'.EndsWith('t')) { '-DENABLE_GIL_PYTHON_API=OFF' } else { '-DENABLE_GIL_PYTHON_API=ON' }
+          # Free threaded interpreters ship without the GIL, so the bindings must be built accordingly.
+          # py-build-cmake only reads the `local`, `cross` and `override` config settings, any other
+          # key (`cmake.args`, ...) is silently ignored, hence the `override=` form below.
+          $gilOption = if ('${{ matrix.python-version }}'.EndsWith('t')) { 'OFF' } else { 'ON' }
 
           & $pythonExecutablePath -m pip wheel -v --no-deps --no-build-isolation --wheel-dir ${{ env.WHEELS_DIR }} `
             --config-settings=override=cmake.generator='Ninja' `
             --config-settings=override=cmake.build_path='${{ env.BUILD_DIR }}/genai' `
-            --config-settings=cmake.args="$cmakeArgs" `
+            --config-settings=override=cmake.options.ENABLE_GIL_PYTHON_API="$gilOption" `
             --config-settings='override=wheel.build_tag="${{ github.run_number }}"' `
             ${{ needs.openvino_download.outputs.ov_wheel_source }} `
             ${{ env.SRC_DIR }}
