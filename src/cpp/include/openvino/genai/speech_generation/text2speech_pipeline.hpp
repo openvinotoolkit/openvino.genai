@@ -103,7 +103,8 @@ public:
                                        const ov::Tensor& speaker_embedding = ov::Tensor(),
                                        const std::optional<SpeechGenerationConfig>& generation_config = std::nullopt);
 
-    template <typename... Properties>
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
                                        const ov::Tensor& speaker_embedding = ov::Tensor(),
                                        Properties&&... properties) {
