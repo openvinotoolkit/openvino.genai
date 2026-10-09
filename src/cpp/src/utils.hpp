@@ -273,6 +273,10 @@ ov::CompiledModel compile_kokoro_for_npu_speech_generation(const std::filesystem
 
 size_t get_npu_kv_cache_capacity(const ov::CompiledModel& compiled_model);
 
+// NPUW variable state that reports the stored token count and, with continuous prefill,
+// carries the per-turn keep proposal and grant. The name is defined by the NPU plugin.
+constexpr const char* NPUW_STORED_TOKENS_STATE = "npuw_stored_tokens_state";
+
 /// @brief Reads the runtime KV cache element type from a compiled model's key_cache.* / value_cache.* inputs.
 /// Plugins may resolve the actual cache precision (e.g. CPU promoting to bf16 based on the resolved inference
 /// precision) independently of the ov::hint::kv_cache_precision property, so the precision must be read from the

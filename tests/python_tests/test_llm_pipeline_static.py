@@ -433,13 +433,25 @@ def test_terminate_finish_reason_by_sampler(
     assert encoded_results.finish_reasons == [expected_finish_reason]
 
 
-# FIXME: Known problem, output differs from stateful pipeline starting from 3rd prompt!
-@pytest.mark.skip(reason="JIRA-144780: Output differs from stateful pipeline")
+# Continuous prefill keeps the plugin's KV cache across chat turns and prefills only the
+# new tokens. The plugin applies it whenever chunked prefill is on, which needs a chunk
+# smaller than MAX_PROMPT_LEN. The keep is granted in whole chunks, so a small chunk lets
+# it engage on short chats.
+CONTINUOUS_PREFILL_CONFIG: dict = {**DEFAULT_CONFIG, "NPUW_LLM_PREFILL_CHUNK_SIZE": 64}
+
+CHAT_PIPELINE_CONFIGS: list = [
+    *PIPELINE_CONFIGS,
+    pytest.param(CONTINUOUS_PREFILL_CONFIG, id="continuous_prefill"),
+]
+
+
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
-@pytest.mark.parametrize("npu_config", PIPELINE_CONFIGS, indirect=True)
+@pytest.mark.parametrize("npu_config", CHAT_PIPELINE_CONFIGS, indirect=True)
 def test_chat_generation(
     ov_model: LLMPipeline,
     npu_model: LLMPipeline,
+    npu_config: dict,
+    tokenizer: Tokenizer,
 ):
     def generate_with_chat_mode(pipe: LLMPipeline, questions: list[str]) -> list[str]:
         pipe.start_chat()
@@ -447,13 +459,19 @@ def test_chat_generation(
         pipe.finish_chat()
         return answers
 
-    def generate_with_chat_history(pipe: LLMPipeline, questions: list[str]) -> ChatHistory:
+    def generate_with_chat_history(pipe: LLMPipeline, questions: list[str]) -> tuple[ChatHistory, list[int]]:
         chat_history = ChatHistory()
+        num_input_tokens = []
         for question in questions:
             chat_history.append({"role": "user", "content": question})
             decoded_results = pipe.generate(chat_history, max_new_tokens=50, do_sample=False)
+            num_input_tokens.append(decoded_results.perf_metrics.get_num_input_tokens())
             chat_history.append({"role": "assistant", "content": decoded_results.texts[0]})
-        return chat_history
+        return chat_history, num_input_tokens
+
+    def num_history_tokens(messages: list[dict]) -> int:
+        templated = tokenizer.apply_chat_template(ChatHistory(messages), add_generation_prompt=True)
+        return tokenizer.encode(templated, add_special_tokens=False).input_ids.get_shape()[1]
 
     questions = ["1+1=", "What is the previous answer?", "Why is the Sun yellow?", "What was my first question?"]
 
@@ -463,9 +481,9 @@ def test_chat_generation(
         f"CPU output:\n{answers_chat_mode_stateful}\nNPU output:\n{answers_chat_mode_static}"
     )
 
-    chat_history_stateful = generate_with_chat_history(ov_model, questions)
+    chat_history_stateful, _ = generate_with_chat_history(ov_model, questions)
     messages_stateful = chat_history_stateful.get_messages()
-    chat_history_static = generate_with_chat_history(npu_model, questions)
+    chat_history_static, num_input_tokens_static = generate_with_chat_history(npu_model, questions)
     messages_static = chat_history_static.get_messages()
     assert messages_stateful == messages_static, f"CPU output:\n{messages_stateful}\nNPU output:\n{messages_static}"
 
@@ -473,6 +491,19 @@ def test_chat_generation(
     assert answers_chat_mode_static == answers_chat_history_static, (
         f"NPU chat mode output:\n{answers_chat_mode_static}\nNPU chat history output:\n{answers_chat_history_static}"
     )
+
+    # Matching outputs do not show which prefill path ran, so check how many tokens each
+    # turn sent: the default config resends the whole history, continuous prefill sends
+    # less once it can keep a chunk of it.
+    user_turns = [i for i, msg in enumerate(messages_static) if msg["role"] == "user"]
+    num_full_history_tokens = [num_history_tokens(messages_static[: i + 1]) for i in user_turns]
+    if npu_config is DEFAULT_CONFIG:
+        assert num_input_tokens_static == num_full_history_tokens
+    elif npu_config is CONTINUOUS_PREFILL_CONFIG:
+        assert num_input_tokens_static[0] == num_full_history_tokens[0]
+        assert any(
+            sent < full for sent, full in zip(num_input_tokens_static[1:], num_full_history_tokens[1:])
+        ), f"sent per turn: {num_input_tokens_static}, full history per turn: {num_full_history_tokens}"
 
 
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
