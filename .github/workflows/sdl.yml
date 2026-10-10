@@ -50,6 +50,11 @@ jobs:
           python -m flake8 . --config=./setup.cfg
         working-directory: ${{ github.workspace }}/tools/who_what_benchmark
 
+      - name: Lint with flake8 (TCB)
+        run: |
+          python -m flake8 . --config=./setup.cfg
+        working-directory: ${{ github.workspace }}/tools/tool_call_benchmark
+
       - name: Lint with flake8 (LLM)
         run: |
           # stop the build if there are Python syntax errors or undefined names
