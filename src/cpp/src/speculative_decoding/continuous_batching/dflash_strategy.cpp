@@ -336,6 +336,9 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
         retained_hidden_state_locators,
         m_rt_info.target_layer_ids);
 
+    // Run the draft's hidden-state FC inside the target so the exchanged hidden buffer is reduced.
+    utils::dflash::move_fc_from_draft_to_main(draft_model_desc.model, main_model);
+
     m_tokenizer = main_model_desc.tokenizer;
     auto main_generation_config = main_model_desc.generation_config;
     dflash_cb::ensure_num_assistant_tokens_is_set(main_generation_config);

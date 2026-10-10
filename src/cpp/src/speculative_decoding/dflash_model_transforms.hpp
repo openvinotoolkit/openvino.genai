@@ -75,6 +75,21 @@ void expose_target_hidden_states(std::shared_ptr<ov::Model>& model,
 void reshape_draft_hidden_states_input_for_cb(std::shared_ptr<ov::Model>& model);
 
 /**
+ * @brief Moves the draft's hidden-state FC projection into the target model.
+ *
+ * The DFlash draft reduces the concatenated multi-layer hidden states via an input FC
+ * (`MatMul(hidden_states, fc_weight)`) before its decoder body. Running that FC inside the target
+ * (on the exposed `last_hidden_state`) shrinks the published hidden state to the reduced width, so
+ * the hidden-state buffer exchanged between target and draft is `reduced_hidden / concat_hidden`
+ * times smaller. The FC weight subgraph (including any decompression chain) is cloned into the
+ * target, the draft FC is removed with its consumers rewired to the `hidden_states` Parameter, and
+ * that Parameter is resized to the reduced width. No-op when the draft has no such FC.
+ * Run after `expose_target_hidden_states` and before `reshape_draft_hidden_states_input_for_cb`.
+ */
+void move_fc_from_draft_to_main(const std::shared_ptr<ov::Model>& draft_model,
+                                const std::shared_ptr<ov::Model>& main_model);
+
+/**
  * @brief Grafts the target lm_head onto the draft model.
  *
  * Clones only the weight side (input(1)) of the target's final lm_head MatMul - including any INT4
