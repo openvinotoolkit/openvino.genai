@@ -32,6 +32,8 @@ import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
 patch_pyav_for_servercore.install_av_stub_module_for_windows()
 
 import inspect
+import json
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Generator, cast
@@ -172,6 +174,7 @@ if is_transformers_version("<", "5.0"):
     # MiniCPM-o-2_6 maximum supported version of transformers is 4.51.3
     MODEL_IDS = [
         "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
+        "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5",
         "optimum-intel-internal-testing/tiny-random-internvl2",
         "optimum-intel-internal-testing/tiny-random-llava",
         "optimum-intel-internal-testing/tiny-random-llava-next",
@@ -208,6 +211,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     MODEL_DEEPSEEK_OCR2: lambda idx: "<image>",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
+    "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<image>\n",
@@ -442,6 +446,7 @@ def _get_ov_model(model_id: str) -> str:
                 load_in_8bit=False,
                 trust_remote_code=model_id in {
                     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
+                    "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5",
                     "optimum-intel-internal-testing/tiny-random-internvl2",
                     "optimum-intel-internal-testing/tiny-random-phi3-vision",
                     "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
@@ -3575,9 +3580,17 @@ def test_qwen3_omni_vision_preprocess_modes_equivalence(cat_tensor):
     )
 
 
-def test_qwen3_omni_audio_rejected_when_tokenizer_lacks_audio_tokens():
-    """The tiny export's tokenizer splits <|audio_pad|> into characters, so audio must fail with a clear error."""
-    pipe = VLMPipeline(_get_ov_model(MODEL_QWEN3_OMNI), "CPU", ATTENTION_BACKEND="SDPA")
+def test_qwen3_omni_audio_rejected_on_audio_token_id_mismatch(tmp_path: Path) -> None:
+    """Audio must fail with a clear error when the tokenizer does not map <|audio_pad|> to audio_token_id."""
+    model_path = tmp_path / "qwen3_omni_audio_token_mismatch"
+    shutil.copytree(_get_ov_model(MODEL_QWEN3_OMNI), model_path)
+    config_path = model_path / "config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    # Old tiny exports declared 9 while the tokenizer had no <|audio_pad|>; recreate that mismatch.
+    config["thinker_config"]["audio_token_id"] = 9
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+
+    pipe = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND="PA")
     audio = openvino.Tensor(np.zeros(16000, dtype=np.float32))
     with pytest.raises(RuntimeError, match="does not encode <\\|audio_pad\\|> as the single token"):
         pipe.generate("Describe", audios=[audio], generation_config=GenerationConfig(max_new_tokens=1))
