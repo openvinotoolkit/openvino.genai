@@ -132,16 +132,14 @@ py::object call_text2speech_common_generate(Text2SpeechPipeline& pipe,
         generation_config.has_value() ? generation_config : pipe.get_generation_config();
     const std::optional<SpeechGenerationConfig> updated_config =
         update_speech_generation_config_from_kwargs(base_config, kwargs);
+    const ov::Tensor speaker_embedding_tensor = speaker_embedding.is_none() ?
+                                                ov::Tensor() :
+                                                speaker_embedding.cast<ov::Tensor>();
 
     ov::genai::Text2SpeechDecodedResults res;
     {
         py::gil_scoped_release rel;
-        if (speaker_embedding.is_none()) {
-            res = pipe.generate(texts, ov::Tensor(), updated_config);
-        } else {
-            const ov::Tensor& tensor = speaker_embedding.cast<ov::Tensor>();
-            res = pipe.generate(texts, tensor, updated_config);
-        }
+        res = pipe.generate(texts, speaker_embedding_tensor, updated_config);
     }
     return py::cast(res);
 }
