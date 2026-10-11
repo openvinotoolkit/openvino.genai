@@ -5449,8 +5449,11 @@ class Text2SpeechPipeline:
                                      to prepare this tensor externally and pass it explicitly.
             :type speaker_embedding: openvino.Tensor or None
         
-            :param properties: speech generation parameters specified as properties
-            :type properties: dict
+            :param generation_config: speech generation configuration override
+            :type generation_config: SpeechGenerationConfig or None
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to SpeechGenerationConfig fields.
+            :type kwargs: dict
         
             :returns: raw audios of the input texts spoken in the specified speaker's voice;
                       sample rate is provided via Text2SpeechDecodedResults.output_sample_rate
@@ -5504,8 +5507,11 @@ class Text2SpeechPipeline:
                                      to prepare this tensor externally and pass it explicitly.
             :type speaker_embedding: openvino.Tensor or None
         
-            :param properties: speech generation parameters specified as properties
-            :type properties: dict
+            :param generation_config: speech generation configuration override
+            :type generation_config: SpeechGenerationConfig or None
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to SpeechGenerationConfig fields.
+            :type kwargs: dict
         
             :returns: raw audios of the input texts spoken in the specified speaker's voice;
                       sample rate is provided via Text2SpeechDecodedResults.output_sample_rate
