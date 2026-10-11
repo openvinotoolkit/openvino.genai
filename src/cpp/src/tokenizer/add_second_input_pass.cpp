@@ -182,7 +182,7 @@ void AddSecondInputPass::insert_splits() {
     // we temporarily set it to zero as a workaround. 
     // The following line to use 1 instead of 0 is kept for future reference: once bug CSV-160624 is resolved
     // auto one_const = make_constant({1});
-    ends_2 = std::make_shared<Select>(m_equal_node, zero_const, ends_2);
+    ends_2 = std::make_shared<Select>(m_equal_node, one_const, ends_2);
 
     // Broadcast shapes
     auto broadcasted_shape = std::make_shared<Maximum>(param_1_shape, param_2_shape);
