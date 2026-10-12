@@ -36,9 +36,6 @@ class MiniCPMVInputsPreprocessor(VLMInputsPreprocessor):
     ):
         if processor is None:
             raise ValueError("Processor is required.")
-        if config.model_type == "minicpmv4_7":
-            return self._preprocess_minicpmv4_7(text, image, video, audio, processor)
-
         if video is not None and len(video) > 0:
             raise ValueError("Video input is not supported")
         if audio is not None and len(audio) > 0:
@@ -81,39 +78,6 @@ class MiniCPMVInputsPreprocessor(VLMInputsPreprocessor):
         inputs.pop("image_sizes", None)
         return inputs
 
-    def _preprocess_minicpmv4_7(self, text, image, video, audio, processor):
-        if audio is not None and len(audio) > 0:
-            raise ValueError("Audio input is not supported")
-
-        content = []
-        if image is not None:
-            images = image if isinstance(image, list) else [image]
-            content.extend({"type": "image", "image": value} for value in images)
-        if video is not None:
-            videos = video if isinstance(video, list) else [video]
-            content.extend({"type": "video", "video": value} for value in videos)
-        content.append({"type": "text", "text": text})
-
-        message = {"role": "user", "content": content}
-        if self.chat_mode:
-            self.chat_history.append(message)
-            conversation = self.chat_history
-        else:
-            conversation = [message]
-
-        kwargs = {}
-        if video is not None and not isinstance(video, str):
-            # LLM Benchmark supplies already-decoded frames without sampling metadata.
-            kwargs["do_sample_frames"] = False
-        return processor.apply_chat_template(
-            conversation,
-            add_generation_prompt=True,
-            tokenize=True,
-            return_dict=True,
-            return_tensors="pt",
-            **kwargs,
-        )
-
     def align_inputs_with_cache(self, model: Any, inputs: dict, full_tokenized_chat: torch.Tensor, prefix_len: int):
         if "transformers" in str(type(model)):
             return inputs
@@ -153,3 +117,49 @@ class MiniCPMVInputsPreprocessor(VLMInputsPreprocessor):
             inputs["tgt_sizes"] = [[tgt_sizes[0][i] for i in keep_image_idx]]
 
         return inputs
+
+
+class MiniCPMV47InputsPreprocessor(MiniCPMVInputsPreprocessor):
+    def preprocess_inputs(
+        self,
+        text: str,
+        image: Optional[Union["Image", list["Image"]]] = None,
+        processor: Optional[AutoImageProcessor] = None,
+        tokenizer: Optional[PreTrainedTokenizer] = None,
+        config: Optional[PretrainedConfig] = None,
+        video: Optional[Union["VideoInput", list["VideoInput"]]] = None,
+        audio: Optional[np.ndarray] = None,
+    ):
+        if processor is None:
+            raise ValueError("Processor is required.")
+        if audio is not None and len(audio) > 0:
+            raise ValueError("Audio input is not supported")
+
+        content = []
+        if image is not None:
+            images = image if isinstance(image, list) else [image]
+            content.extend({"type": "image", "image": value} for value in images)
+        if video is not None:
+            videos = video if isinstance(video, list) else [video]
+            content.extend({"type": "video", "video": value} for value in videos)
+        content.append({"type": "text", "text": text})
+
+        message = {"role": "user", "content": content}
+        if self.chat_mode:
+            self.chat_history.append(message)
+            conversation = self.chat_history
+        else:
+            conversation = [message]
+
+        kwargs = {}
+        if video is not None and not isinstance(video, str):
+            # LLM Benchmark supplies already-decoded frames without sampling metadata.
+            kwargs["do_sample_frames"] = False
+        return processor.apply_chat_template(
+            conversation,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt",
+            **kwargs,
+        )

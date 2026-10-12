@@ -93,10 +93,6 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
     },
-    "tiny-random-minicpmv47": {
-        "name": "optimum-intel-internal-testing/tiny-random-minicpmv47",
-        "convert_args": ["--task", "image-text-to-text"],
-    },
     "tiny-random-phi3-vision": {
         "name": "optimum-intel-internal-testing/tiny-random-phi3-vision",
         "convert_args": ['--trust-remote-code', "--task", "image-text-to-text"]

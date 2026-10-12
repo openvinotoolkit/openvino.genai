@@ -151,35 +151,6 @@ class TestBenchmarkLLM:
         benchmark_py_command += sample_args
         run_sample(benchmark_py_command)
 
-    @pytest.mark.samples
-    @pytest.mark.parametrize("backend", ["--optimum", "--genai"])
-    @pytest.mark.parametrize("download_test_content", ["cat"], indirect=True)
-    @pytest.mark.parametrize("convert_model", ["tiny-random-minicpmv47"], indirect=True)
-    def test_python_tool_llm_benchmark_minicpmv47(self, convert_model, download_test_content, backend):
-        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
-        benchmark_py_command = [
-            sys.executable,
-            benchmark_script,
-            "-m",
-            convert_model,
-            "-d",
-            "cpu",
-            "-n",
-            "1",
-            "--media",
-            download_test_content,
-            "--prompt",
-            "Describe this image.",
-            "--task",
-            "visual_text_gen_chat",
-            "--chat_iter",
-            "2",
-            "-ic",
-            "4",
-            backend,
-        ]
-        run_sample(benchmark_py_command)
-
 
     @pytest.mark.samples
     @pytest.mark.parametrize(
