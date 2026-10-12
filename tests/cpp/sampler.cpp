@@ -304,3 +304,102 @@ TEST(SamplerValidationMode, prompt_phase) {
              expected{0, 1, 2, 3};
     ASSERT_EQ(sequence_groups.front()->get_sequences().front()->get_generated_ids(), expected);
 }
+
+// Speculative sampling rejects the last candidate: its replacement is drawn from the residual of the target
+// distribution at the rejected position, and the rejected token is rolled back from the KV cache.
+TEST(SamplerValidationMode, gen_phase_multinomial_rejection) {
+    GenerationConfig sampling_config;
+    sampling_config.max_new_tokens = 30;
+    sampling_config.do_sample = true;
+    // top_k = 1 makes every target distribution one-hot, so acceptance and resampling are deterministic.
+    sampling_config.top_k = 1;
+    // create sequence group with prompt [0, 1, 2, 3, 4]
+    std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    std::vector<SequenceGroup::Ptr> sequence_groups{
+        SequenceGroup::Ptr(new SequenceGroup(0, input_tensor, sampling_config)),
+    };
+    const auto sequence = sequence_groups.front()->get_sequences().front();
+
+    // to emulate processed prompt and add next token [ 0 ]
+    sequence->append_token(0, 0.f);
+    constexpr size_t processed_before = 5;
+    sequence_groups.front()->update_processed_tokens_num(processed_before);
+
+    // append candidates [ 1, 2, 3 ], each drafted with q(t) = 1
+    size_t num_validated_tokens = 3;
+    for (size_t i = 1; i <= num_validated_tokens; ++i) {
+        sequence->append_token(i, 0.f);
+    }
+    sequence_groups.front()->set_num_validated_tokens(num_validated_tokens);
+    sequence_groups.front()->schedule_tokens(sequence_groups.front()->get_num_available_tokens_for_batching());
+
+    // the target accepts 1 and 2, prefers 4 over the candidate 3, and prefers 0 at the next position
+    std::vector<float> logits = {
+        0, 1.f, 0, 0, 0,
+        0, 0, 1.f, 0, 0,
+        0, 0, 0, 0, 1.f,
+        1.f, 0, 0, 0, 0,
+    };
+    ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{4, 1, 5}, logits.data());
+
+    Sampler sampler;
+    sampler.set_candidate_distributions(0, 0, {{0, 1.f, 0, 0, 0}, {0, 0, 1.f, 0, 0}, {0, 0, 0, 1.f, 0}});
+    sampler.sample(sequence_groups, gen_input_ids, true);
+
+    const TokenIds expected{0, 1, 2, 4};
+    EXPECT_EQ(sequence->get_generated_ids(), expected);
+    EXPECT_EQ(sequence_groups.front()->get_num_processed_tokens(), processed_before + 3)
+        << "The rejected candidate must be removed from the KV cache";
+}
+
+// With logprobs > 0, an accepted candidate the target did not sample itself and the replacement of a rejected
+// candidate both report the raw target log-prob of their own position, and the score sums the reported log-probs.
+TEST(SamplerValidationMode, gen_phase_multinomial_reports_target_log_probs) {
+    GenerationConfig sampling_config;
+    sampling_config.max_new_tokens = 30;
+    sampling_config.do_sample = true;
+    sampling_config.top_k = 2;
+    sampling_config.logprobs = 1;
+    std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    std::vector<SequenceGroup::Ptr> sequence_groups{
+        SequenceGroup::Ptr(new SequenceGroup(0, input_tensor, sampling_config)),
+    };
+    const auto sequence = sequence_groups.front()->get_sequences().front();
+    sequence->append_token(0, 0.f);
+    sequence_groups.front()->update_processed_tokens_num(input_vector.size());
+
+    // Candidate 1 is accepted, as p(1) = 1 / (1 + e^10) exceeds q(1), although the target almost surely samples 0.
+    // Candidate 3 is outside the target's top_k, so it is rejected and replaced by 0 or 1.
+    sequence->append_token(1, std::log(1e-5f));
+    sequence->append_token(3, 0.f);
+    sequence_groups.front()->set_num_validated_tokens(2);
+    sequence_groups.front()->schedule_tokens(sequence_groups.front()->get_num_available_tokens_for_batching());
+
+    constexpr size_t vocab_size = 5;
+    std::vector<float> logits = {
+        10.f, 0, -10.f, -10.f, -10.f,
+        1.f, 0.5f, 0, 0, 0,
+        0, 0, 0, 0, 0,
+    };
+    ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{3, 1, vocab_size}, logits.data());
+
+    Sampler sampler;
+    sampler.sample(sequence_groups, gen_input_ids, true);
+
+    const auto raw_log_prob = [&](size_t position, int64_t token) {
+        float sum = 0.f;
+        for (size_t i = 0; i < vocab_size; ++i)
+            sum += std::exp(logits[position * vocab_size + i]);
+        return logits[position * vocab_size + token] - std::log(sum);
+    };
+    const auto& ids = sequence->get_generated_ids();
+    const auto& log_probs = sequence->get_generated_log_probs();
+    ASSERT_EQ(ids.size(), 3u);
+    EXPECT_EQ(ids[1], 1);
+    ASSERT_TRUE(ids[2] == 0 || ids[2] == 1) << "replacement " << ids[2];
+    EXPECT_NEAR(log_probs[1], raw_log_prob(0, 1), 1e-4f);
+    EXPECT_NEAR(log_probs[2], raw_log_prob(1, ids[2]), 1e-4f);
+    EXPECT_NEAR(sequence->get_cumulative_log_prob(), log_probs[0] + log_probs[1] + log_probs[2], 1e-4f);
+}

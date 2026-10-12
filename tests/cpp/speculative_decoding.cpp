@@ -3,12 +3,171 @@
 
 #include <algorithm>
 #include <cmath>
+#include <random>
+#include <vector>
 #include "gtest/gtest.h"
 
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
+#include "openvino/op/constant.hpp"
+#include "sampling/sampler.hpp"
 #include "speculative_decoding/continuous_batching/mtp_strategy.hpp"
 #include "speculative_decoding/continuous_batching/pipeline_impl.hpp"
 #include "utils.hpp"
+
+namespace {
+// Total variation distance between two discrete distributions of equal length.
+float total_variation_distance(const std::vector<float>& a, const std::vector<float>& b) {
+    float tvd = 0.0f;
+    for (size_t i = 0; i < a.size(); ++i)
+        tvd += std::abs(a[i] - b[i]);
+    return 0.5f * tvd;
+}
+
+// Frequencies of the token ids returned by `draw` over `num_draws` calls.
+template <typename Draw>
+std::vector<float> empirical_distribution(size_t vocab_size, size_t num_draws, Draw draw) {
+    std::vector<size_t> counts(vocab_size, 0);
+    for (size_t i = 0; i < num_draws; ++i)
+        ++counts.at(static_cast<size_t>(draw()));  // throws for an id outside the vocabulary
+    std::vector<float> frequencies(vocab_size);
+    for (size_t i = 0; i < vocab_size; ++i)
+        frequencies[i] = static_cast<float>(counts[i]) / num_draws;
+    return frequencies;
+}
+
+// Logits on the m_vector path as the logit processor leaves them: the surviving top_k candidates holding
+// scaled raw logits when expf is deferred, otherwise probabilities (top_p truncates without renormalising).
+ov::genai::Logits candidate_logits(std::vector<ov::genai::Token> candidates, bool defer_expf) {
+    ov::genai::Logits logits(nullptr, candidates.size());
+    logits.m_vector = std::move(candidates);
+    logits.m_defer_expf = defer_expf;
+    return logits;
+}
+
+// Softmax over the candidates' logits in double precision, where these magnitudes neither overflow nor underflow.
+std::vector<float> reference_softmax(const std::vector<ov::genai::Token>& candidates, size_t vocab_size) {
+    double total = 0.0;
+    for (const auto& candidate : candidates)
+        total += std::exp(static_cast<double>(candidate.m_log_prob));
+    std::vector<float> probabilities(vocab_size, 0.0f);
+    for (const auto& candidate : candidates) {
+        const double probability = std::exp(static_cast<double>(candidate.m_log_prob)) / total;
+        probabilities[candidate.m_index] = static_cast<float>(probability);
+    }
+    return probabilities;
+}
+}  // namespace
+
+// With q == p the residual is empty, so the replacement is drawn from p itself rather than uniformly.
+TEST(SpeculativeResidualSampling, FallsBackToTargetWhenResidualDegenerate) {
+    const std::vector<float> p = {0.1f, 0.2f, 0.3f, 0.4f};
+
+    std::mt19937 rng(7);
+    const auto empirical = empirical_distribution(p.size(), 40000, [&] {
+        return ov::genai::detail::residual_sample(p, p, rng);
+    });
+
+    EXPECT_LT(total_variation_distance(empirical, p), 0.02f);
+}
+
+// One speculative step emits tokens distributed exactly as the target p (Leviathan et al. 2023, Theorem 1):
+// draw t ~ q, accept it with min(1, p(t) / q(t)), otherwise resample from the residual. The target is on the
+// deferred top_k path with logits that overflow a naive expf; the draft holds top_p-truncated probabilities.
+TEST(SpeculativeSampling, EmittedTokensFollowTargetDistribution) {
+    constexpr size_t vocab_size = 6;
+    const std::vector<ov::genai::Token> target_candidates = {{120.0f, 4}, {119.0f, 1}, {117.0f, 3}};
+    const auto target = candidate_logits(target_candidates, true);
+    const auto draft = candidate_logits({{0.4f, 1}, {0.2f, 3}, {0.2f, 4}, {0.1f, 0}}, false);
+    const auto p = ov::genai::detail::materialize_distribution(target, vocab_size);
+    const auto q = ov::genai::detail::materialize_distribution(draft, vocab_size);
+
+    std::mt19937 rng(42);
+    std::discrete_distribution<int64_t> propose(q.begin(), q.end());
+    const auto empirical = empirical_distribution(vocab_size, 200000, [&] {
+        const int64_t t = propose(rng);
+        const float p_t = ov::genai::detail::get_token_probability(target, t);
+        const float q_t = ov::genai::detail::get_token_probability(draft, t);
+        if (ov::genai::detail::accept_draft_token(p_t, q_t, rng))
+            return t;
+        return ov::genai::detail::residual_sample(p, q, rng);
+    });
+
+    // Token 0 is proposed by the draft but removed by the target's top_k, so it must never be emitted.
+    EXPECT_EQ(empirical[0], 0.0f);
+    EXPECT_LT(total_variation_distance(empirical, reference_softmax(target_candidates, vocab_size)), 0.01f);
+}
+
+namespace {
+// Samples one token for request 0 (a single sequence, grouped id 0) from logits {0, 1, 2, 3} with T = 0.5,
+// top_k = 2 and logprobs = 1. Post-filter, tokens 3 and 2 remain with scaled logits 6 and 4.
+ov::genai::Sequence::Ptr sample_one_token(ov::genai::Sampler& sampler) {
+    ov::genai::GenerationConfig config;
+    config.max_new_tokens = 10;
+    config.do_sample = true;
+    config.temperature = 0.5f;
+    config.top_k = 2;
+    config.logprobs = 1;
+
+    std::vector<int64_t> prompt = {7};
+    ov::Tensor input_ids(ov::element::i64, {1, 1}, prompt.data());
+    auto sequence_group = std::make_shared<ov::genai::SequenceGroup>(0, input_ids, config);
+    sequence_group->get_sequences().front()->append_token(1, 0.0f);
+    sequence_group->update_processed_tokens_num(1);
+    sequence_group->schedule_tokens(1);
+
+    std::vector<float> logits = {0.0f, 1.0f, 2.0f, 3.0f};
+    sampler.sample({sequence_group}, ov::Tensor(ov::element::f32, {1, 1, logits.size()}, logits.data()));
+    return sequence_group->get_sequences().front();
+}
+}  // namespace
+
+// Only the draft sampler stores q(.), so regular generation never keeps a full-vocab vector per token. The draft
+// also records each token's log-prob under q(.), because the main sampler reads q(t) from it, even when
+// logprobs > 0 makes the sampler report raw full-vocab log-probs.
+TEST(SpeculativeSampling, OnlyDraftSamplerRecordsPostFilterDistribution) {
+    const std::vector<float> q = {0.0f, 0.0f, 1.0f / (1.0f + std::exp(2.0f)), 1.0f / (1.0f + std::exp(-2.0f))};
+
+    ov::genai::Sampler regular_sampler;
+    sample_one_token(regular_sampler);
+    EXPECT_TRUE(regular_sampler.extract_draft_distributions(0, 0).empty());
+
+    ov::genai::Sampler draft_sampler;
+    draft_sampler.set_speculative_draft(true);
+    const auto sequence = sample_one_token(draft_sampler);
+    const int64_t token = sequence->get_generated_ids().back();
+    ASSERT_TRUE(token == 2 || token == 3) << "token " << token;
+    EXPECT_NEAR(std::exp(sequence->get_generated_log_probs().back()), q[token], 1e-5f);
+
+    const auto distributions = draft_sampler.extract_draft_distributions(0, 0);
+    ASSERT_EQ(distributions.size(), 1u);
+    ASSERT_EQ(distributions[0].size(), q.size());
+    for (size_t i = 0; i < q.size(); ++i)
+        EXPECT_NEAR(distributions[0][i], q[i], 1e-6f) << "token " << i;
+}
+
+// An EAGLE draft samples over its own vocabulary, where draft id i is target id i + d2t[i]. It stores q(.) by
+// target ids, the space of the emitted token and of the main model's p(.).
+TEST(SpeculativeSampling, EagleDraftRecordsDistributionInTargetVocabulary) {
+    const std::vector<int64_t> d2t = {0, 2, 3, 5};  // draft ids 0..3 -> target ids 0, 3, 5, 8
+    std::vector<float> q(9, 0.0f);
+    q[5] = 1.0f / (1.0f + std::exp(2.0f));
+    q[8] = 1.0f / (1.0f + std::exp(-2.0f));
+
+    ov::genai::Sampler draft_sampler;
+    draft_sampler.set_speculative_draft(true);
+    draft_sampler.set_d2t_for_decoding(
+        std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{d2t.size()}, d2t));
+    const auto sequence = sample_one_token(draft_sampler);
+    const int64_t token = sequence->get_generated_ids().back();
+    ASSERT_TRUE(token == 5 || token == 8) << "token " << token;
+    EXPECT_NEAR(std::exp(sequence->get_generated_log_probs().back()), q[token], 1e-5f);
+
+    const auto distributions = draft_sampler.extract_draft_distributions(0, 0);
+    ASSERT_EQ(distributions.size(), 1u);
+    ASSERT_EQ(distributions[0].size(), q.size());
+    for (size_t i = 0; i < q.size(); ++i)
+        EXPECT_NEAR(distributions[0][i], q[i], 1e-6f) << "token " << i;
+}
 
 class CBForSDTest : public testing::Test, public ov::genai::ContinuousBatchingPipeline {
 protected:
@@ -42,6 +201,14 @@ protected:
 
         void enable_mtp_mode() {
             mtp_mode_enabled = true;
+        }
+
+        void enable_validation_mode() {
+            m_is_validation_mode_enabled = true;
+        }
+
+        ov::genai::Sampler& get_sampler() {
+            return *m_sampler;
         }
 
         bool is_waiting(uint64_t request_id) const {
@@ -395,6 +562,44 @@ TEST_F(CBForSDTest, add_tokens__one_sequence) {
     ASSERT_NE(after.at(0).at(0).log_probs, before.at(0).at(0).log_probs);
     ASSERT_EQ(after.at(0).at(0).token_ids, tokens);
     ASSERT_EQ(after.at(0).at(0).log_probs, log_probs);
+}
+
+// The main sampler resamples a rejected token from the q(.) it finds at that token's offset from the end of
+// the sequence, so the transferred window must line up with the draft tokens just inserted.
+TEST_F(CBForSDTest, draft_distributions_follow_inserted_tokens__one_sequence) {
+    m_pipeline.enable_validation_mode();
+    std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    m_pipeline.add_request(0, input_tensor);
+
+    std::vector<int64_t> tokens = { 0, 1, 2 };
+    std::vector<float> log_probs = { 0.1f, 0.2f, 0.3f };
+    ov::genai::GeneratedSequences candidate{{ 0, ov::genai::GeneratedSequence(tokens, log_probs) }};
+    auto update_result = m_pipeline.update_request(0, candidate, true);
+    ASSERT_EQ(update_result.inserted_tokens_cnt, 3);
+
+    // The draft proposed tokens 3 and 4 this round, with one q(.) per proposal in generation order.
+    tokens = { 0, 1, 2, 3, 4 };
+    log_probs = { 0.1f, 0.2f, 0.3f, 0.4f, 0.5f };
+    const std::vector<std::vector<float>> draft_distributions = {{0.0f, 0.0f, 0.0f, 1.0f, 0.0f},
+                                                                 {0.0f, 0.0f, 0.0f, 0.0f, 1.0f}};
+    ov::genai::GeneratedSequences candidate_1{
+        { 0, ov::genai::GeneratedSequence(tokens, log_probs, 0, {}, nullptr, draft_distributions) }};
+    update_result = m_pipeline.update_request(0, candidate_1, true);
+    ASSERT_EQ(update_result.inserted_tokens_cnt, 2);
+
+    auto& sampler = m_pipeline.get_sampler();
+    EXPECT_EQ(sampler.get_candidate_distribution(0, 0, 1), draft_distributions[1]);
+    EXPECT_EQ(sampler.get_candidate_distribution(0, 0, 2), draft_distributions[0]);
+    EXPECT_TRUE(sampler.get_candidate_distribution(0, 0, 3).empty());
+
+    // A round without q(.) must not leave the previous window behind.
+    tokens.push_back(5);
+    log_probs.push_back(0.6f);
+    ov::genai::GeneratedSequences candidate_2{{ 0, ov::genai::GeneratedSequence(tokens, log_probs) }};
+    update_result = m_pipeline.update_request(0, candidate_2, true);
+    ASSERT_EQ(update_result.inserted_tokens_cnt, 1);
+    EXPECT_TRUE(sampler.get_candidate_distribution(0, 0, 1).empty());
 }
 
 TEST_F(CBForSDTest, dflash_candidate_update_without_logit_processor_update__one_sequence) {
