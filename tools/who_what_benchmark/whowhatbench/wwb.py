@@ -1319,7 +1319,7 @@ def create_evaluator(base_model, args):
                 processor=processor,
                 tokenizer=tokenizer,
                 gt_data=args.gt_data,
-                test_data=get_prompts(),
+                test_data={"passages": prompts["prompts"]} if (prompts := get_prompts()) else None,
                 num_samples=args.num_samples,
                 gen_embeds_fn=genai_gen_embedding if args.genai else None,
                 pooling_type=args.embeds_pooling_type,

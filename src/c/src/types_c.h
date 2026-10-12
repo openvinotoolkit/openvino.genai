@@ -6,6 +6,7 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
+#include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
 #include "openvino/genai/visibility.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/chat_history.hpp"
@@ -113,6 +114,18 @@ struct ov_genai_whisper_generation_config_opaque {
  */
 struct ov_genai_whisper_pipeline_opaque {
     std::shared_ptr<ov::genai::WhisperPipeline> object;
+};
+
+struct ov_genai_speech_generation_config_opaque {
+    std::shared_ptr<ov::genai::SpeechGenerationConfig> object;
+};
+
+struct ov_genai_text2speech_decoded_results_opaque {
+    std::shared_ptr<ov::genai::Text2SpeechDecodedResults> object;
+};
+
+struct ov_genai_text2speech_pipeline_opaque {
+    std::shared_ptr<ov::genai::Text2SpeechPipeline> object;
 };
 
 /**
