@@ -148,6 +148,18 @@ std::pair<std::string, std::string> Qwen3EncoderDecoderASR::parse_asr_output(con
     return {language, text_part};
 }
 
+
+std::vector<std::pair<std::string, std::string>> Qwen3EncoderDecoderASR::parse_chunk_results(
+    const std::vector<std::string>& infer_results,
+    const std::optional<std::string>& forced_language) {
+    std::vector<std::pair<std::string, std::string>> parsed_results;
+    parsed_results.reserve(infer_results.size());
+    for (const std::string& raw : infer_results) {
+        parsed_results.push_back(parse_asr_output(raw, forced_language));
+    }
+    return parsed_results;
+}
+
 std::pair<std::vector<std::string>, std::vector<std::string>> Qwen3EncoderDecoderASR::merge_chunk_results(
     const std::vector<AudioChunk>& chunks,
     const std::vector<std::pair<std::string, std::string>>& parsed_results) {
@@ -170,6 +182,48 @@ std::pair<std::vector<std::string>, std::vector<std::string>> Qwen3EncoderDecode
 
     return {std::move(merged_texts), std::move(merged_languages)};
 }
+
+
+void Qwen3EncoderDecoderASR::align_words(const std::vector<AudioChunk>& chunks,
+                           const std::vector<std::pair<std::string, std::string>>& parsed_results,
+                           ASRDecodedResults& results) {
+    size_t num_samples = 0;
+    for (const auto& chunk : chunks) {
+        num_samples = std::max(num_samples, chunk.orig_batch + 1);
+    }
+
+    std::vector<std::vector<ASRDecodedResultChunk>> words(num_samples);
+
+    for (size_t i = 0; i < chunks.size(); ++i) {
+        const auto& [language, text] = parsed_results[i];
+        if (text.empty()) {
+            continue;
+        }
+
+        const auto align_start = std::chrono::steady_clock::now();
+        std::vector<ASRDecodedResultChunk> chunk_words =
+            m_forced_aligner->align(chunks[i].wav, text, ov::genai::language(language));
+        const auto align_stop = std::chrono::steady_clock::now();
+        results.perf_metrics.asr_raw_metrics.word_level_timestamps_processing_durations.emplace_back(
+            MicroSeconds(PerfMetrics::get_microsec(align_stop - align_start)));
+
+        const float chunk_offset_sec = chunks[i].offset_sec;
+        for (ASRDecodedResultChunk& word : chunk_words) {
+            word.start_ts += chunk_offset_sec;
+            word.end_ts += chunk_offset_sec;
+        }
+
+        if (!chunk_words.empty()) {
+            std::vector<ASRDecodedResultChunk>& sample_words = words[chunks[i].orig_batch];
+            sample_words.insert(sample_words.end(),
+                                std::make_move_iterator(chunk_words.begin()),
+                                std::make_move_iterator(chunk_words.end()));
+        }
+    }
+
+    results.words = std::move(words);
+}
+
 
 std::vector<std::string> Qwen3EncoderDecoderASR::extend_audio_tokens(const std::vector<std::string>& prompts,
                                                        const std::vector<size_t>& audio_lengths) {
