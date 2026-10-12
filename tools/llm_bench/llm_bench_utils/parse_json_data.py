@@ -60,8 +60,9 @@ def parse_image_json_data(json_data_list):
             if param in json_data:
                 image_param[param] = json_data[param]
 
-        if 'guidance_scale' in json_data:
-            image_param['guidance_scale'] = float(json_data['guidance_scale'])
+        for param in ["guidance_scale", "strength"]:
+            if param in json_data:
+                image_param[param] = float(json_data[param])
 
         image_param_list.append(image_param)
     return image_param_list

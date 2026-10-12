@@ -20,6 +20,10 @@
 namespace ov::genai::vlm_utils {
 
 inline size_t get_image_slice_count(const EncodedImage& image) {
+    // MiniCPMv4_7 stores slices layout in slices_grid
+    if (image.slices_grid.has_slices()) {
+        return image.slices_grid.rows * image.slices_grid.cols;
+    }
     // Models that do not explicitly tile images leave slices_shape empty; in
     // that case the encoded image is one processed image slice.
     if (image.slices_shape.size() < 2) {
@@ -31,6 +35,20 @@ inline size_t get_image_slice_count(const EncodedImage& image) {
 inline void update_image_slice_counts(VLMPerfMetrics& metrics, const std::vector<EncodedImage>& images) {
     for (const auto& image : images) {
         metrics.vlm_raw_metrics.per_image_slice_counts.emplace_back(get_image_slice_count(image));
+    }
+}
+
+/// @brief Rebase conversation-absolute media indices onto one turn's encoded list. Asserts rather
+/// than wrapping: a size_t underflow here would index far out of bounds instead of failing.
+inline void rebase_media_sequence(std::vector<size_t>& sequence, size_t base_id) {
+    for (auto& index : sequence) {
+        OPENVINO_ASSERT(index >= base_id,
+                        "Media index ",
+                        index,
+                        " is below this turn's base index ",
+                        base_id,
+                        ". Referring to media from an earlier turn is not supported.");
+        index -= base_id;
     }
 }
 

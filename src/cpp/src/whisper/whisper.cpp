@@ -294,7 +294,7 @@ ov::Tensor encode(ov::InferRequest& request,
     // reset input tensor
     auto devices = request.get_compiled_model().get_property(ov::execution_devices);
     OPENVINO_ASSERT(devices.size() > 0, "No execution devices found!");
-    size_t batch_size = (devices[0] == "NPU") ? 1 : 0;
+    size_t batch_size = (devices[0].rfind("NPU", 0) == 0) ? 1 : 0;
     request.set_tensor("input_features", ov::Tensor(ov::element::f32, {batch_size, feature_size, nb_max_frames}));
 
     return request.get_tensor("last_hidden_state");
