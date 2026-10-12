@@ -19,6 +19,7 @@
 #include "openvino/runtime/remote_context.hpp"
 #include "openvino/runtime/remote_tensor.hpp"
 #include "continuous_batching/cache/i_cache_manager.hpp"
+#include "continuous_batching/cache/kv_cache_disk_layout.hpp"
 
 namespace ov::genai {
 
@@ -101,6 +102,52 @@ class LinearAttentionCacheManager : public ICacheManager {
 
         std::string prefix = name.substr(0, pos + suffix.size() - 1);  // e.g. "conv_state_table"
         return {prefix, layer_idx};
+    }
+
+    // --- Block-level raw byte I/O, used by LinearAttentionOffloadCache. Mirrors KVCacheManager's
+    // equivalent helpers; kept separate since the tensor layouts (state-table groups vs key/value) differ. ---
+
+    static void assert_block_stride(const ov::Tensor& tensor, size_t block_bytes) {
+        OPENVINO_ASSERT(tensor.get_byte_size() == block_bytes * tensor.get_shape()[0],
+                        "Linear attention cache tensor byte size does not match the per-block layout");
+    }
+
+    static ov::Shape get_single_block_shape(const ov::Tensor& tensor) {
+        ov::Shape shape = tensor.get_shape();
+        shape[0] = 1;
+        return shape;
+    }
+
+    static ov::RemoteTensor make_block_roi(const ov::Tensor& tensor, size_t block_id) {
+        const ov::Shape shape = tensor.get_shape();
+        ov::Coordinate begin(shape.size(), 0);
+        ov::Coordinate end(shape.begin(), shape.end());
+        begin[0] = block_id;
+        end[0] = block_id + 1;
+        return ov::RemoteTensor(tensor.as<ov::RemoteTensor>(), begin, end);
+    }
+
+    static void copy_block_from_tensor(uint8_t* destination, const ov::Tensor& tensor, size_t block_id, size_t block_bytes) {
+        assert_block_stride(tensor, block_bytes);
+        if (tensor.is<ov::RemoteTensor>()) {
+            // Device memory exposes no host pointer, so the copy targets the caller's buffer directly.
+            ov::Tensor destination_view(tensor.get_element_type(), get_single_block_shape(tensor), destination);
+            make_block_roi(tensor, block_id).copy_to(destination_view);
+            return;
+        }
+        const auto* source = static_cast<const uint8_t*>(tensor.data()) + block_id * block_bytes;
+        std::memcpy(destination, source, block_bytes);
+    }
+
+    static void copy_block_to_tensor(ov::Tensor& tensor, size_t block_id, const uint8_t* source, size_t block_bytes) {
+        assert_block_stride(tensor, block_bytes);
+        if (tensor.is<ov::RemoteTensor>()) {
+            ov::Tensor source_view(tensor.get_element_type(), get_single_block_shape(tensor), const_cast<uint8_t*>(source));
+            make_block_roi(tensor, block_id).copy_from(source_view);
+            return;
+        }
+        auto* destination = static_cast<uint8_t*>(tensor.data()) + block_id * block_bytes;
+        std::memcpy(destination, source, block_bytes);
     }
 
 public:
@@ -301,6 +348,53 @@ public:
             }
         }
         m_num_allocated_blocks = 0;
+    }
+
+    /**
+     * @brief Byte layout of one physical block across all state-table groups, used as the single
+     * source of truth for offload slot sizes and offsets. Mirrors KVCacheManager::get_block_layout();
+     * linear attention blocks have no key/value split, so the "value" side of the layout is left empty.
+     */
+    KVCacheDiskLayout get_block_layout() const {
+        std::vector<size_t> segment_sizes;
+        for (const auto& group : m_groups) {
+            for (size_t layer_idx : group.sorted_indices) {
+                const auto& info = group.layers.at(layer_idx);
+                segment_sizes.push_back(layer_bytes_per_block(info.partial_shape, info.precision));
+            }
+        }
+        return KVCacheDiskLayout(segment_sizes, std::vector<size_t>(segment_sizes.size(), 0));
+    }
+
+    std::vector<uint8_t> read_block(size_t block_id) const {
+        OPENVINO_ASSERT(block_id < m_num_allocated_blocks, "Invalid linear attention cache block ID ", block_id);
+        const KVCacheDiskLayout layout = get_block_layout();
+        std::vector<uint8_t> block_data(layout.get_slot_size());
+        size_t segment_idx = 0;
+        for (const auto& group : m_groups) {
+            for (size_t layer_idx : group.sorted_indices) {
+                const auto& info = group.layers.at(layer_idx);
+                const auto segment = layout.get_key_segment(segment_idx++);
+                copy_block_from_tensor(block_data.data() + segment.offset, info.tensor, block_id, segment.size);
+            }
+        }
+        return block_data;
+    }
+
+    void write_block(size_t block_id, const std::vector<uint8_t>& block_data) {
+        OPENVINO_ASSERT(block_id < m_num_allocated_blocks, "Invalid linear attention cache block ID ", block_id);
+        const KVCacheDiskLayout layout = get_block_layout();
+        OPENVINO_ASSERT(block_data.size() == layout.get_slot_size(),
+                        "Unexpected linear attention cache block byte size: got ", block_data.size(),
+                        ", expected ", layout.get_slot_size());
+        size_t segment_idx = 0;
+        for (auto& group : m_groups) {
+            for (size_t layer_idx : group.sorted_indices) {
+                auto& info = group.layers.at(layer_idx);
+                const auto segment = layout.get_key_segment(segment_idx++);
+                copy_block_to_tensor(info.tensor, block_id, block_data.data() + segment.offset, segment.size);
+            }
+        }
     }
 };
 

@@ -4,15 +4,11 @@
 
 #include <gtest/gtest.h>
 
-#include <algorithm>
-#include <cstdint>
 #include <filesystem>
 #include <memory>
-#include <unordered_map>
 #include <vector>
 
 #include "continuous_batching/cache/block_manager.hpp"
-#include "continuous_batching/cache/i_kv_cache_storage_backend.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
 #include "continuous_batching/cache/kv_cache_offload_cache.hpp"
 #include "continuous_batching/cache/kv_cache_offload_manager.hpp"
@@ -60,135 +56,13 @@ CacheOffloadConfig make_offload_config(const CacheFixture& fixture, size_t num_s
 
 std::unique_ptr<KVCacheOffloadCache> make_offload_cache(CacheFixture& fixture, size_t num_slots) {
     auto backend = std::make_unique<KVCacheOffloadManager>(fixture.cache_manager->get_block_layout(),
-                                                           make_offload_config(fixture, num_slots));
+                                                           make_offload_config(fixture, num_slots),
+                                                           "CPU");
     return std::make_unique<KVCacheOffloadCache>(*fixture.cache_manager, std::move(backend), /*max_queued_stores=*/8);
-}
-
-std::unique_ptr<KVCacheOffloadCache> make_offload_cache_with_host_pool(CacheFixture& fixture,
-                                                                       size_t num_slots,
-                                                                       size_t host_cache_slots) {
-    auto backend = std::make_unique<KVCacheOffloadManager>(fixture.cache_manager->get_block_layout(),
-                                                           make_offload_config(fixture, num_slots));
-    return std::make_unique<KVCacheOffloadCache>(*fixture.cache_manager,
-                                                 std::move(backend),
-                                                 /*max_queued_stores=*/8,
-                                                 /*wait_for_buffer=*/false,
-                                                 /*enable_detailed_logging=*/false,
-                                                 host_cache_slots);
 }
 
 BlocksPerLayer make_block_set(int physical_block_id) {
     return BlocksPerLayer{std::make_shared<CacheBlock>(physical_block_id)};
-}
-
-/// Minimal third-party-style IKVCacheStorageBackend: proves KVCacheOffloadCache's hash index, LRU
-/// eviction and store/load orchestration live entirely on the KVCacheOffloadCache side of the seam, with
-/// zero dependency on the file-based DefaultFileStorageBackend (KVCacheOffloadManager). Does not support
-/// persistence (get_recovered_hashes() is always empty), matching a plugin that declares no such
-/// capability. Stores each layer's bytes separately (indexed by layer_idx) rather than assuming a single
-/// flat per-slot byte layout, since it has no access to the real KVCacheDiskLayout.
-class InMemoryMockStorageBackend : public IKVCacheStorageBackend {
-public:
-    explicit InMemoryMockStorageBackend(std::size_t num_slots) : m_slots(num_slots) {
-        m_free_slots.reserve(num_slots);
-        for (std::size_t i = num_slots; i-- > 0;) {
-            m_free_slots.push_back(i);
-        }
-    }
-
-    void initialize(const std::string&, const StorageModelMetadata&, const ov::AnyMap&) override {}
-
-    bool has_block(std::uint64_t block_hash) const override {
-        return m_hash_to_slot.find(block_hash) != m_hash_to_slot.end();
-    }
-
-    std::vector<bool> has_blocks(const std::vector<std::uint64_t>& block_hashes) const override {
-        std::vector<bool> result(block_hashes.size());
-        for (std::size_t i = 0; i < block_hashes.size(); ++i) {
-            result[i] = has_block(block_hashes[i]);
-        }
-        return result;
-    }
-
-    bool write_blocks(const std::vector<BlockIORequest>& requests) override {
-        for (const auto& request : requests) {
-            std::size_t slot_id;
-            auto existing = m_hash_to_slot.find(request.block_hash);
-            if (existing != m_hash_to_slot.end()) {
-                slot_id = existing->second;
-            } else {
-                OPENVINO_ASSERT(!m_free_slots.empty());
-                slot_id = m_free_slots.back();
-                m_free_slots.pop_back();
-                m_hash_to_slot[request.block_hash] = slot_id;
-            }
-            auto& layers = m_slots[slot_id];
-            if (layers.size() <= request.layer_idx) {
-                layers.resize(request.layer_idx + 1);
-            }
-            const auto* data = static_cast<const uint8_t*>(request.host_buffer);
-            layers[request.layer_idx].assign(data, data + request.buffer_size_bytes);
-            ++num_writes;
-        }
-        return true;
-    }
-
-    bool read_blocks(const std::vector<BlockIORequest>& requests) override {
-        for (const auto& request : requests) {
-            auto it = m_hash_to_slot.find(request.block_hash);
-            if (it == m_hash_to_slot.end()) {
-                return false;
-            }
-            const auto& layer_data = m_slots[it->second].at(request.layer_idx);
-            OPENVINO_ASSERT(layer_data.size() == request.buffer_size_bytes);
-            auto* data = static_cast<uint8_t*>(request.host_buffer);
-            std::copy(layer_data.begin(), layer_data.end(), data);
-        }
-        return true;
-    }
-
-    void evict_blocks(const std::vector<std::uint64_t>& block_hashes) override {
-        for (const auto hash : block_hashes) {
-            auto it = m_hash_to_slot.find(hash);
-            if (it == m_hash_to_slot.end()) {
-                continue;
-            }
-            m_free_slots.push_back(it->second);
-            m_hash_to_slot.erase(it);
-        }
-    }
-
-    void flush_manifest() override {}
-    void shutdown() override {}
-
-    std::size_t get_num_slots() const override {
-        return m_slots.size();
-    }
-
-    std::size_t get_num_free_slots() const override {
-        return m_free_slots.size();
-    }
-
-    const std::vector<std::uint64_t>& get_recovered_hashes() const override {
-        static const std::vector<std::uint64_t> empty;
-        return empty;
-    }
-
-    std::string describe() const override {
-        return "InMemoryMockStorageBackend";
-    }
-
-    std::size_t num_writes = 0;
-
-private:
-    std::vector<std::vector<std::vector<uint8_t>>> m_slots;  // [slot_id][layer_idx] -> bytes
-    std::vector<std::size_t> m_free_slots;
-    std::unordered_map<std::uint64_t, std::size_t> m_hash_to_slot;
-};
-
-std::unique_ptr<KVCacheOffloadCache> make_offload_cache_with_mock_backend(CacheFixture& fixture, size_t num_slots) {
-    auto backend = std::make_unique<InMemoryMockStorageBackend>(num_slots);
-    return std::make_unique<KVCacheOffloadCache>(*fixture.cache_manager, std::move(backend), /*max_queued_stores=*/8);
 }
 
 SequenceGroup::Ptr make_group(const std::vector<int64_t>& tokens, uint64_t request_id) {
@@ -198,166 +72,6 @@ SequenceGroup::Ptr make_group(const std::vector<int64_t>& tokens, uint64_t reque
 }
 
 }  // namespace
-
-TEST(TestKVCacheOffloadCache, HostCacheDisabledByDefaultKeepsNoHostEntries) {
-    CacheFixture fixture;
-    auto offload_cache = make_offload_cache(fixture, 2);
-    fixture.fill_block(0, /*seed=*/1);
-
-    offload_cache->on_blocks_overwritten(/*hash=*/9, make_block_set(0));
-    offload_cache->flush();
-
-    EXPECT_EQ(offload_cache->get_num_entries(), 1);
-    EXPECT_EQ(offload_cache->get_num_host_entries(), 0);
-}
-
-TEST(TestKVCacheOffloadCache, L1HitAvoidsDiskRead) {
-    CacheFixture fixture;
-    auto offload_cache = make_offload_cache_with_host_pool(fixture, /*num_slots=*/2, /*host_cache_slots=*/2);
-    const auto expected = fixture.fill_block(0, /*seed=*/13);
-
-    offload_cache->on_blocks_overwritten(/*hash=*/21, make_block_set(0));
-    offload_cache->flush();
-    ASSERT_EQ(offload_cache->get_num_host_entries(), 1);
-
-    fixture.fill_block(1, /*seed=*/0);
-    ASSERT_TRUE(offload_cache->load_into(/*hash=*/21, /*block_index=*/1));
-
-    EXPECT_EQ(fixture.cache_manager->read_block(1), expected);
-    EXPECT_EQ(offload_cache->get_statistics().num_load_host, 1);
-    EXPECT_EQ(offload_cache->get_statistics().num_load_disk, 0);
-}
-
-TEST(TestKVCacheOffloadCache, HostPoolEvictsIndependentlyFromDisk) {
-    CacheFixture fixture(/*num_blocks=*/NUM_PHYSICAL_BLOCKS);
-    // Disk has room for both blocks, but the host pool only has room for the most recent one.
-    auto offload_cache = make_offload_cache_with_host_pool(fixture, /*num_slots=*/4, /*host_cache_slots=*/1);
-    const auto first = fixture.fill_block(0, /*seed=*/5);
-    const auto second = fixture.fill_block(1, /*seed=*/90);
-
-    offload_cache->on_blocks_overwritten(/*hash=*/100, make_block_set(0));
-    offload_cache->flush();
-    offload_cache->on_blocks_overwritten(/*hash=*/200, make_block_set(1));
-    offload_cache->flush();
-
-    // Both survive on disk...
-    EXPECT_EQ(offload_cache->get_num_entries(), 2);
-    // ...but only the newer one is still resident in the host pool.
-    EXPECT_EQ(offload_cache->get_num_host_entries(), 1);
-    EXPECT_EQ(offload_cache->get_statistics().num_host_evictions, 1);
-
-    fixture.fill_block(2, /*seed=*/0);
-    fixture.fill_block(3, /*seed=*/0);
-
-    // The evicted-from-host hash still round-trips correctly, just via a disk read this time.
-    ASSERT_TRUE(offload_cache->load_into(/*hash=*/100, /*block_index=*/2));
-    EXPECT_EQ(fixture.cache_manager->read_block(2), first);
-    EXPECT_EQ(offload_cache->get_statistics().num_load_disk, 1);
-
-    ASSERT_TRUE(offload_cache->load_into(/*hash=*/200, /*block_index=*/3));
-    EXPECT_EQ(fixture.cache_manager->read_block(3), second);
-    EXPECT_EQ(offload_cache->get_statistics().num_load_host, 1);
-}
-
-TEST(TestKVCacheOffloadCache, GetLocationReportsUnknownHashAsNone) {
-    CacheFixture fixture;
-    auto offload_cache = make_offload_cache(fixture, 2);
-
-    const auto location = offload_cache->get_location(/*hash=*/12345);
-    EXPECT_FALSE(location.is_known());
-    EXPECT_FALSE(location.in_flight);
-    EXPECT_FALSE(location.host_resident);
-    EXPECT_FALSE(location.disk_resident);
-}
-
-TEST(TestKVCacheOffloadCache, GetLocationNeverOverlapsInFlightWithDisk) {
-    CacheFixture fixture;
-    auto offload_cache = make_offload_cache(fixture, 2);
-    fixture.fill_block(0, /*seed=*/4);
-
-    offload_cache->on_blocks_overwritten(/*hash=*/55, make_block_set(0));
-    // The background writer may already have published by now; either outcome is valid, but a hash must
-    // never be observed as both still queued and already durable on disk at the same time.
-    const auto location = offload_cache->get_location(55);
-    EXPECT_TRUE(location.is_known());
-    EXPECT_FALSE(location.in_flight && location.disk_resident);
-
-    offload_cache->flush();
-    const auto after_flush = offload_cache->get_location(55);
-    EXPECT_FALSE(after_flush.in_flight);
-    EXPECT_TRUE(after_flush.disk_resident);
-}
-
-TEST(TestKVCacheOffloadCache, GetLocationIsHostAndDiskAfterPublishWithHostCacheEnabled) {
-    CacheFixture fixture;
-    auto offload_cache = make_offload_cache_with_host_pool(fixture, /*num_slots=*/2, /*host_cache_slots=*/2);
-    fixture.fill_block(0, /*seed=*/8);
-
-    offload_cache->on_blocks_overwritten(/*hash=*/77, make_block_set(0));
-    offload_cache->flush();
-
-    const auto location = offload_cache->get_location(77);
-    EXPECT_FALSE(location.in_flight);
-    EXPECT_TRUE(location.host_resident);
-    EXPECT_TRUE(location.disk_resident);
-}
-
-TEST(TestKVCacheOffloadCache, L1IsSeededBeforeDiskWriteCompletes) {
-    CacheFixture fixture;
-    auto offload_cache = make_offload_cache_with_host_pool(fixture, /*num_slots=*/2, /*host_cache_slots=*/2);
-    const auto expected = fixture.fill_block(0, /*seed=*/17);
-
-    offload_cache->on_blocks_overwritten(/*hash=*/88, make_block_set(0));
-    // Host residency is set synchronously inside on_blocks_overwritten, so it must be visible immediately,
-    // with no dependency on the background writer having reached disk yet.
-    EXPECT_TRUE(offload_cache->get_location(88).host_resident);
-
-    fixture.fill_block(1, /*seed=*/0);
-    ASSERT_TRUE(offload_cache->load_into(/*hash=*/88, /*block_index=*/1));
-    EXPECT_EQ(fixture.cache_manager->read_block(1), expected);
-    // The background writer may already have published by the time load_into runs, so the hit can
-    // legitimately land on either the in-flight or the host path; only their sum is deterministic.
-    const auto stats = offload_cache->get_statistics();
-    EXPECT_EQ(stats.num_load_staging + stats.num_load_host, 1);
-
-    offload_cache->flush();
-    EXPECT_TRUE(offload_cache->get_location(88).disk_resident);
-}
-
-TEST(TestKVCacheOffloadCache, GetLocationIsDiskOnlyWhenHostCacheDisabled) {
-    CacheFixture fixture;
-    auto offload_cache = make_offload_cache(fixture, 2);  // host_cache_slots defaults to 0
-    fixture.fill_block(0, /*seed=*/2);
-
-    offload_cache->on_blocks_overwritten(/*hash=*/33, make_block_set(0));
-    offload_cache->flush();
-
-    const auto location = offload_cache->get_location(33);
-    EXPECT_FALSE(location.host_resident);
-    EXPECT_TRUE(location.disk_resident);
-}
-
-TEST(TestKVCacheOffloadCache, GetLocationIsHostOnlyAfterDiskReclaimsSlot) {
-    CacheFixture fixture(/*num_blocks=*/NUM_PHYSICAL_BLOCKS);
-    // Disk has room for only one slot, the host pool has room for two: storing a second hash reclaims
-    // the first hash's disk slot, but the host pool keeps both, so the first hash becomes host-only.
-    auto offload_cache = make_offload_cache_with_host_pool(fixture, /*num_slots=*/1, /*host_cache_slots=*/2);
-    fixture.fill_block(0, /*seed=*/6);
-    fixture.fill_block(1, /*seed=*/70);
-
-    offload_cache->on_blocks_overwritten(/*hash=*/300, make_block_set(0));
-    offload_cache->flush();
-    offload_cache->on_blocks_overwritten(/*hash=*/400, make_block_set(1));
-    offload_cache->flush();
-
-    const auto first_location = offload_cache->get_location(300);
-    EXPECT_TRUE(first_location.host_resident);
-    EXPECT_FALSE(first_location.disk_resident);
-
-    const auto second_location = offload_cache->get_location(400);
-    EXPECT_TRUE(second_location.host_resident);
-    EXPECT_TRUE(second_location.disk_resident);
-}
 
 TEST(TestKVCacheOffloadCache, StoresBlockContentsOnOverwrite) {
     CacheFixture fixture;
@@ -370,22 +84,10 @@ TEST(TestKVCacheOffloadCache, StoresBlockContentsOnOverwrite) {
     EXPECT_TRUE(offload_cache->contains(42));
     EXPECT_EQ(offload_cache->get_num_entries(), 1);
     EXPECT_EQ(offload_cache->get_statistics().num_stored, 1);
-    EXPECT_EQ(offload_cache->get_statistics().num_queue_peak, 1);
 
     std::vector<uint8_t> restored;
     ASSERT_TRUE(offload_cache->read(42, restored));
     EXPECT_EQ(restored, expected);
-}
-
-TEST(TestKVCacheOffloadCache, RejectsExcessiveBufferSlots) {
-    CacheFixture fixture;
-    auto backend = std::make_unique<KVCacheOffloadManager>(fixture.cache_manager->get_block_layout(),
-                                                           make_offload_config(fixture, 1));
-
-    EXPECT_THROW(KVCacheOffloadCache(*fixture.cache_manager,
-                                     std::move(backend),
-                                     CACHE_OFFLOAD_MAX_BUFFER_SLOTS + 1),
-                 ov::Exception);
 }
 
 TEST(TestKVCacheOffloadCache, KeepsFirstCopyOfKnownHash) {
@@ -423,51 +125,6 @@ TEST(TestKVCacheOffloadCache, KeepsDistinctHashesInSeparateSlots) {
     EXPECT_EQ(restored, first);
     ASSERT_TRUE(offload_cache->read(2, restored));
     EXPECT_EQ(restored, second);
-}
-
-TEST(TestKVCacheOffloadCache, LoadIntoManyMatchesPerRequestOrderAndResults) {
-    CacheFixture fixture(/*num_blocks=*/NUM_PHYSICAL_BLOCKS);
-    auto offload_cache = make_offload_cache(fixture, 2);
-    const auto first = fixture.fill_block(0, /*seed=*/11);
-    const auto second = fixture.fill_block(1, /*seed=*/77);
-
-    offload_cache->on_blocks_overwritten(/*hash=*/1, make_block_set(0));
-    offload_cache->on_blocks_overwritten(/*hash=*/2, make_block_set(1));
-    offload_cache->flush();
-
-    fixture.fill_block(2, /*seed=*/0);
-    fixture.fill_block(3, /*seed=*/0);
-    const auto results = offload_cache->load_into_many({{1, 2}, {2, 3}});
-
-    ASSERT_EQ(results.size(), 2u);
-    EXPECT_TRUE(results[0]);
-    EXPECT_TRUE(results[1]);
-    EXPECT_EQ(fixture.cache_manager->read_block(2), first);
-    EXPECT_EQ(fixture.cache_manager->read_block(3), second);
-    EXPECT_EQ(offload_cache->get_statistics().num_loaded, 2);
-}
-
-TEST(TestKVCacheOffloadCache, LoadIntoManyReportsPerRequestMissWithoutAffectingOthers) {
-    CacheFixture fixture(/*num_blocks=*/NUM_PHYSICAL_BLOCKS);
-    auto offload_cache = make_offload_cache(fixture, 2);
-    const auto known = fixture.fill_block(0, /*seed=*/9);
-
-    offload_cache->on_blocks_overwritten(/*hash=*/1, make_block_set(0));
-    offload_cache->flush();
-
-    const auto untouched = fixture.fill_block(2, /*seed=*/0);
-    fixture.fill_block(3, /*seed=*/0);
-    // Middle request (hash 999) is unknown; it must not stop the other two from being served.
-    const auto results = offload_cache->load_into_many({{1, 3}, {999, 2}, {1, 3}});
-
-    ASSERT_EQ(results.size(), 3u);
-    EXPECT_TRUE(results[0]);
-    EXPECT_FALSE(results[1]);
-    EXPECT_TRUE(results[2]);
-    EXPECT_EQ(fixture.cache_manager->read_block(3), known);
-    // block_index=2 was never touched since its request (hash 999) missed.
-    EXPECT_EQ(fixture.cache_manager->read_block(2), untouched);
-    EXPECT_EQ(offload_cache->get_statistics().num_load_misses, 1);
 }
 
 TEST(TestKVCacheOffloadCache, ReplacesOldestEntryWhenFileIsFull) {
@@ -591,7 +248,6 @@ TEST(TestKVCacheOffloadCache, LoadsStoredContentsIntoAnotherBlock) {
 
     EXPECT_EQ(fixture.cache_manager->read_block(2), expected);
     EXPECT_EQ(offload_cache->get_statistics().num_loaded, 1);
-    EXPECT_EQ(offload_cache->get_statistics().num_load_disk, 1);
 }
 
 TEST(TestKVCacheOffloadCache, LoadReportsMissForUnknownHash) {
@@ -601,7 +257,6 @@ TEST(TestKVCacheOffloadCache, LoadReportsMissForUnknownHash) {
 
     EXPECT_FALSE(offload_cache->load_into(/*hash=*/12345, /*block_index=*/1));
     EXPECT_EQ(fixture.cache_manager->read_block(1), untouched);
-    EXPECT_EQ(offload_cache->get_statistics().num_load_misses, 1);
 }
 
 TEST(TestKVCacheOffloadCache, WarmPrefixCacheRestoresBlocksFromDisk) {
@@ -639,54 +294,6 @@ TEST(TestKVCacheOffloadCache, WarmPrefixCacheRestoresBlocksFromDisk) {
     EXPECT_GT(num_warmed, 0);
     EXPECT_EQ(offload_cache->get_statistics().num_loaded, num_warmed);
     // The warmed blocks are unowned, so the regular restore path can now claim them.
-    EXPECT_TRUE(block_manager.restore_cached_blocks(consumer));
-    EXPECT_GT(consumer->get_num_processed_tokens(), 0);
-
-    block_manager.set_overwritten_block_observer(nullptr);
-    block_manager.free_sequence(consumer->get_running_sequences().at(0)->get_id());
-}
-
-TEST(TestKVCacheOffloadCache, WarmPrefixCacheRestoresBlocksFromHostPoolUnderMemoryPressure) {
-    constexpr size_t block_size = 4;
-    CacheFixture fixture(/*num_blocks=*/2);
-    // Disk backend is also configured (a persisted entry always exists), but the L1 host pool has
-    // room for every evicted block, so the restore below should be served from L1, not L2.
-    auto offload_cache = make_offload_cache_with_host_pool(fixture, /*num_slots=*/2, /*host_cache_slots=*/2);
-
-    BlockManager block_manager(/*num_blocks=*/2, /*enable_prefix_caching=*/true, block_size, /*num_layers=*/1);
-    block_manager.set_overwritten_block_observer(offload_cache.get());
-
-    const std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7};
-    auto producer = make_group(tokens, /*request_id=*/8);
-    producer->schedule_tokens(tokens.size());
-    block_manager.append_slots(producer);
-    producer->finish_iteration();
-    block_manager.free_sequence(producer->get_running_sequences().at(0)->get_id());
-
-    // Simulate device memory pressure: an unrelated sequence forces the cached prefix out of the
-    // (2-block) device pool, pushing its contents into the L1 host pool.
-    const std::vector<int64_t> pressure_tokens = {40, 41, 42, 43, 44, 45, 46, 47};
-    auto pressure = make_group(pressure_tokens, /*request_id=*/9);
-    pressure->schedule_tokens(pressure_tokens.size());
-    block_manager.append_slots(pressure);
-    const auto pressure_seq_id = pressure->get_running_sequences().at(0)->get_id();
-    offload_cache->flush();
-    ASSERT_GT(offload_cache->get_num_host_entries(), 0);
-    block_manager.free_sequence(pressure_seq_id);
-
-    auto consumer = make_group(tokens, /*request_id=*/10);
-    size_t num_warmed = 0;
-    {
-        KVCacheOffloadCache::ScopedReclamationPause keep_entries(*offload_cache);
-        num_warmed = block_manager.warm_prefix_cache(consumer, *offload_cache);
-    }
-
-    EXPECT_GT(num_warmed, 0);
-    // The whole point of this test: the restore came from L1, not from a disk read.
-    EXPECT_GT(offload_cache->get_statistics().num_load_host, 0);
-    EXPECT_EQ(offload_cache->get_statistics().num_load_disk, 0);
-    // The warmed blocks are unowned, so the regular restore path can now claim them, and the request
-    // ends up with processed tokens regardless of which tier served the restore.
     EXPECT_TRUE(block_manager.restore_cached_blocks(consumer));
     EXPECT_GT(consumer->get_num_processed_tokens(), 0);
 
@@ -794,9 +401,6 @@ TEST(TestKVCacheOffloadCache, ServesStoredBlockWhileTheWriteIsStillQueued) {
     fixture.fill_block(3, /*seed=*/0);
     ASSERT_TRUE(offload_cache->load_into(/*hash=*/64, /*block_index=*/3));
     EXPECT_EQ(fixture.cache_manager->read_block(3), expected);
-    // The background writer may have already published by the time load_into runs, so the hit can
-    // legitimately land on either source; only their sum is deterministic.
-    EXPECT_EQ(offload_cache->get_statistics().num_load_staging + offload_cache->get_statistics().num_load_disk, 1);
 
     offload_cache->flush();
     EXPECT_EQ(offload_cache->get_num_entries(), 1);
@@ -842,92 +446,4 @@ TEST(TestKVCacheOffloadCache, HandlesCopyOnWriteOfSharedBlock) {
     block_manager.set_overwritten_block_observer(nullptr);
     block_manager.free_sequence(first->get_running_sequences().at(0)->get_id());
     block_manager.free_sequence(second->get_running_sequences().at(0)->get_id());
-}
-
-TEST(TestKVCacheOffloadCache, RecoversEntriesFromPersistedCacheAcrossRestart) {
-    const auto directory = std::filesystem::temp_directory_path() /
-                           ("ov_genai_offload_cache_persist_" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()));
-    std::filesystem::create_directories(directory);
-
-    CacheFixture fixture;
-    CacheOffloadConfig config = make_offload_config(fixture, /*num_slots=*/2);
-    config.storage_cache_dir = directory.string();
-    config.enable_persistence = true;
-    config.model_fingerprint = "model-x";
-    config.tokenizer_fingerprint = "tokenizer-x";
-
-    const auto expected = fixture.fill_block(0, /*seed=*/3);
-    {
-        auto backend = std::make_unique<KVCacheOffloadManager>(fixture.cache_manager->get_block_layout(), config);
-        KVCacheOffloadCache offload_cache(*fixture.cache_manager, std::move(backend), /*max_queued_stores=*/8);
-        offload_cache.on_blocks_overwritten(/*hash=*/21, make_block_set(0));
-        offload_cache.flush();
-        EXPECT_EQ(offload_cache.get_num_entries(), 1);
-        // offload_cache and its backend destruct here; the persisted files must survive.
-    }
-
-    auto reopened_backend = std::make_unique<KVCacheOffloadManager>(fixture.cache_manager->get_block_layout(), config);
-    ASSERT_EQ(reopened_backend->get_recovered_hashes().size(), 1u);
-    {
-        KVCacheOffloadCache reopened_cache(*fixture.cache_manager, std::move(reopened_backend), /*max_queued_stores=*/8);
-
-        EXPECT_EQ(reopened_cache.get_num_entries(), 1u);
-        const auto location = reopened_cache.get_location(/*hash=*/21);
-        EXPECT_TRUE(location.disk_resident);
-
-        std::vector<uint8_t> actual;
-        EXPECT_TRUE(reopened_cache.read(/*hash=*/21, actual));
-        EXPECT_EQ(actual, expected);
-    }
-
-    std::filesystem::remove_all(directory);
-}
-
-TEST(TestKVCacheOffloadCache, WorksWithThirdPartyStorageBackend) {
-    // Proves the IKVCacheStorageBackend seam is real: KVCacheOffloadCache's hash index, publish and load
-    // orchestration behave identically when the backend is a non-file, in-memory mock rather than the
-    // built-in DefaultFileStorageBackend (KVCacheOffloadManager).
-    CacheFixture fixture;
-    auto offload_cache = make_offload_cache_with_mock_backend(fixture, /*num_slots=*/2);
-    const auto expected = fixture.fill_block(0, /*seed=*/9);
-
-    offload_cache->on_blocks_overwritten(/*hash=*/55, make_block_set(0));
-    offload_cache->flush();
-
-    EXPECT_EQ(offload_cache->get_num_entries(), 1);
-    EXPECT_TRUE(offload_cache->contains(55));
-
-    std::vector<uint8_t> restored;
-    ASSERT_TRUE(offload_cache->read(/*hash=*/55, restored));
-    EXPECT_EQ(restored, expected);
-
-    EXPECT_TRUE(offload_cache->load_into(55, /*block_index=*/1));
-    const auto loaded = fixture.cache_manager->read_block(1);
-    EXPECT_EQ(loaded, expected);
-}
-
-TEST(TestKVCacheOffloadCache, EvictionAndMissPolicyAreBackendAgnostic) {
-    // The mock backend has no eviction logic of its own (evict_blocks() only returns the slot to a free
-    // list); LRU replacement and miss reporting must therefore be entirely KVCacheOffloadCache's doing.
-    CacheFixture fixture;
-    auto offload_cache = make_offload_cache_with_mock_backend(fixture, /*num_slots=*/1);
-    fixture.fill_block(0, /*seed=*/1);
-    offload_cache->on_blocks_overwritten(/*hash=*/100, make_block_set(0));
-    offload_cache->flush();
-    ASSERT_EQ(offload_cache->get_num_free_slots(), 0);
-
-    const auto newer = fixture.fill_block(1, /*seed=*/60);
-    offload_cache->on_blocks_overwritten(/*hash=*/200, make_block_set(1));
-    offload_cache->flush();
-
-    EXPECT_EQ(offload_cache->get_num_entries(), 1);
-    EXPECT_FALSE(offload_cache->contains(100));
-    EXPECT_EQ(offload_cache->get_statistics().num_replaced, 1);
-
-    std::vector<uint8_t> restored;
-    ASSERT_TRUE(offload_cache->read(200, restored));
-    EXPECT_EQ(restored, newer);
-
-    std::vector<uint8_t> miss;
-    EXPECT_FALSE(offload_cache->read(/*hash=*/999, miss));
 }

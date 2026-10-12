@@ -60,17 +60,17 @@ SchedulerConfig make_scheduler_config(bool use_offload) {
     config.max_num_seqs = 4;
     config.dynamic_split_fuse = false;
     config.enable_prefix_caching = true;
-    config.enable_kv_cache_offloading = use_offload;
+    config.use_cache_offload = use_offload;
     if (use_offload) {
         // Room for far more blocks than the device cache holds, so eviction lands on disk.
-        config.cache_offload_config.capacity_bytes = 8u * 1024u * 1024u;
+        config.cache_offload_config.capacity_bytes = 256u * 1024u * 1024u;
+        // Also exercise linear attention cache offload for hybrid models (e.g. Qwen3.5); harmless
+        // when the model has no linear attention layers, since enable_linear_attention_cache_offload
+        // is only invoked when a linear attention cache manager was actually registered.
+        config.cache_offload_config.linear_attention_capacity_bytes = 128u * 1024u * 1024u;
         // Freeing a sequence releases its whole block table at once, so a staging pool smaller than
         // that burst silently drops most of the blocks and the disk cache fills up only slowly.
         config.cache_offload_config.buffer_slots = 128;
-        // Gives the shared-prefix regeneration tests below a real L1 host-tier hit (not just L2 disk),
-        // on actual hardware: new_plan.md Phase 2's acceptance bar requires proving generated tokens are
-        // unaffected by which tier serves the restore, and this is the only place that exercises it.
-        config.cache_offload_config.host_cache_slots = 16;
     }
     return config;
 }
@@ -268,13 +268,21 @@ namespace {
 std::vector<std::string> run_vlm_sequence(const std::string& model_path, bool use_offload, size_t num_kv_blocks) {
     auto scheduler_config = make_scheduler_config(use_offload);
     scheduler_config.num_kv_blocks = num_kv_blocks;
+    const bool is_gpu = offload_e2e_device().find("GPU") != std::string::npos;
+    if (is_gpu) {
+        scheduler_config.cache_interval_multiplier = 4;
+        scheduler_config.num_linear_attention_blocks = 6;
+    }
+    // The filler prompt below tokenizes much longer under this model's tokenizer than the
+    // default 512 budget assumes.
+    scheduler_config.max_num_batched_tokens = 2048;
 
     ov::AnyMap properties;
     properties.insert(ov::genai::scheduler_config(scheduler_config));
-    VLMPipeline pipeline(model_path, "CPU", properties);
+    VLMPipeline pipeline(model_path, offload_e2e_device(), properties);
 
-    const std::string shared_prefix = repeat("The quick brown fox jumps over the lazy dog. ", 40);
-    const std::string filler = repeat("Completely unrelated tokens to evict the cached prefix. ", 80);
+    const std::string shared_prefix = repeat("The quick brown fox jumps over the lazy dog. ", is_gpu ? 12 : 40);
+    const std::string filler = repeat("Completely unrelated tokens to evict the cached prefix. ", is_gpu ? 30 : 80);
     const auto generation_config = make_greedy_config();
 
     std::vector<std::string> outputs;
@@ -300,11 +308,11 @@ TEST(TestKVCacheOffloadEndToEnd, HybridModelProducesTheSameTextAsWithoutOffload)
         GTEST_SKIP() << VLM_MODEL_PATH_ENV << " is not set, skipping hybrid KV cache offload end-to-end test.";
     }
 
-    // Large enough to hold a request, small enough that the shared prefix cannot survive the filler.
-    constexpr size_t HYBRID_NUM_KV_BLOCKS = 24;
+    // The GPU prompts are shortened to fit the device cache while still forcing prefix eviction.
+    const size_t hybrid_num_kv_blocks = offload_e2e_device().find("GPU") != std::string::npos ? 24 : 32;
 
-    const auto baseline = run_vlm_sequence(model_path, /*use_offload=*/false, HYBRID_NUM_KV_BLOCKS);
-    const auto with_offload = run_vlm_sequence(model_path, /*use_offload=*/true, HYBRID_NUM_KV_BLOCKS);
+    const auto baseline = run_vlm_sequence(model_path, /*use_offload=*/false, hybrid_num_kv_blocks);
+    const auto with_offload = run_vlm_sequence(model_path, /*use_offload=*/true, hybrid_num_kv_blocks);
 
     ASSERT_EQ(baseline.size(), with_offload.size());
     for (size_t i = 0; i < baseline.size(); ++i) {

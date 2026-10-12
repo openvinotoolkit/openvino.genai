@@ -339,82 +339,6 @@ public:
         }
     }
 
-    /**
-     * @brief Writes multiple physical blocks in one call, coalescing runs of contiguous physical block IDs
-     * into a single device transfer per layer instead of one per block. Falls back to exactly the same
-     * per-block calls as write_block() for any ID that isn't part of a run, so correctness never depends
-     * on the destination layout.
-     *
-     * @p flat_blocks_data uses the same per-block byte layout as write_block(), concatenated in order (i.e.
-     * block-major: for block i, all layers' key/value segments per KVCacheDiskLayout, back to back). Device
-     * tensors are laid out per-layer instead, so a contiguous run's segment bytes are not already contiguous
-     * across blocks in this buffer; they are repacked into a small per-run, per-segment scratch buffer before
-     * the single device transfer, which is a host-side copy far cheaper than the device call it replaces.
-     *
-     * @param block_ids Destination physical block IDs, one per block-sized chunk of @p flat_blocks_data.
-     * @param flat_blocks_data block_ids.size() blocks' worth of bytes, concatenated in order.
-     */
-    void write_blocks(const std::vector<size_t>& block_ids, const std::vector<uint8_t>& flat_blocks_data) {
-        if (block_ids.empty()) {
-            return;
-        }
-        const KVCacheDiskLayout layout = get_block_layout();
-        const size_t slot_size = layout.get_slot_size();
-        OPENVINO_ASSERT(flat_blocks_data.size() == block_ids.size() * slot_size,
-                        "Unexpected batch KV cache byte size: got ", flat_blocks_data.size(),
-                        ", expected ", block_ids.size() * slot_size);
-        for (size_t id : block_ids) {
-            OPENVINO_ASSERT(id < m_num_allocated_kv_blocks, "Invalid KV cache block ID ", id);
-        }
-        GENAI_INFO("[KV_TRACE] KVCacheManager write_blocks count=%zu bytes=%zu device=%s remote=%s",
-                   block_ids.size(),
-                   flat_blocks_data.size(),
-                   m_device.c_str(),
-                   m_context ? "true" : "false");
-
-        std::vector<uint8_t> scratch;  // reused across runs/layers to avoid repeated allocation
-        size_t run_start = 0;
-        while (run_start < block_ids.size()) {
-            size_t run_length = 1;
-            while (run_start + run_length < block_ids.size() &&
-                   block_ids[run_start + run_length] == block_ids[run_start + run_length - 1] + 1) {
-                ++run_length;
-            }
-            for (size_t layer = 0; layer < m_num_layers; ++layer) {
-                write_segment_run(m_key_cache[layer], block_ids[run_start], run_length,
-                                  flat_blocks_data, run_start, slot_size, layout.get_key_segment(layer), scratch);
-                write_segment_run(m_value_cache[layer], block_ids[run_start], run_length,
-                                  flat_blocks_data, run_start, slot_size, layout.get_value_segment(layer), scratch);
-            }
-            run_start += run_length;
-        }
-    }
-
-
-private:
-    /// Writes one layer's segment for a contiguous run of blocks, repacking into @p scratch first when the
-    /// run is longer than one block, since the source segment bytes are strided by slot_size in @p flat_data.
-    static void write_segment_run(ov::Tensor& tensor,
-                                  size_t first_block_id,
-                                  size_t run_length,
-                                  const std::vector<uint8_t>& flat_data,
-                                  size_t run_start_index,
-                                  size_t slot_size,
-                                  const KVCacheDiskLayout::Segment& segment,
-                                  std::vector<uint8_t>& scratch) {
-        if (run_length == 1) {
-            copy_block_to_tensor(tensor, first_block_id, flat_data.data() + run_start_index * slot_size + segment.offset, segment.size);
-            return;
-        }
-        scratch.resize(run_length * segment.size);
-        for (size_t k = 0; k < run_length; ++k) {
-            const uint8_t* block_segment = flat_data.data() + (run_start_index + k) * slot_size + segment.offset;
-            std::memcpy(scratch.data() + k * segment.size, block_segment, segment.size);
-        }
-        copy_block_range_to_tensor(tensor, first_block_id, run_length, scratch.data(), segment.size);
-    }
-
-public:
 
 private:
     static size_t get_block_byte_size(const ov::PartialShape& cache_shape, const ov::element::Type& precision) {
@@ -445,23 +369,6 @@ private:
         ov::Coordinate end(shape.begin(), shape.end());
         begin[0] = block_id;
         end[0] = block_id + 1;
-        return ov::RemoteTensor(tensor.as<ov::RemoteTensor>(), begin, end);
-    }
-
-    /// @return The shape of `run_length` contiguous blocks, i.e. the cache shape with the block axis set
-    /// to `run_length` instead of the tensor's full block count.
-    static ov::Shape get_block_run_shape(const ov::Tensor& tensor, size_t run_length) {
-        ov::Shape shape = tensor.get_shape();
-        shape[0] = run_length;
-        return shape;
-    }
-
-    static ov::RemoteTensor make_block_run_roi(const ov::Tensor& tensor, size_t first_block_id, size_t run_length) {
-        const ov::Shape shape = tensor.get_shape();
-        ov::Coordinate begin(shape.size(), 0);
-        ov::Coordinate end(shape.begin(), shape.end());
-        begin[0] = first_block_id;
-        end[0] = first_block_id + run_length;
         return ov::RemoteTensor(tensor.as<ov::RemoteTensor>(), begin, end);
     }
 
@@ -496,26 +403,6 @@ private:
         }
         auto* destination = static_cast<uint8_t*>(tensor.data()) + block_id * block_bytes;
         std::memcpy(destination, source, block_bytes);
-    }
-
-    /// Writes `run_length` contiguous blocks' worth of one segment in a single device transfer. @p source
-    /// must already be `run_length * block_bytes` contiguous bytes (the caller repacks strided input into
-    /// this shape beforehand); this function never introduces staging for non-contiguous requests.
-    static void copy_block_range_to_tensor(ov::Tensor& tensor,
-                                           size_t first_block_id,
-                                           size_t run_length,
-                                           const uint8_t* source,
-                                           size_t block_bytes) {
-        assert_block_stride(tensor, block_bytes);
-        if (tensor.is<ov::RemoteTensor>()) {
-            ov::Tensor source_view(tensor.get_element_type(),
-                                   get_block_run_shape(tensor, run_length),
-                                   const_cast<uint8_t*>(source));
-            make_block_run_roi(tensor, first_block_id, run_length).copy_from(source_view);
-            return;
-        }
-        auto* destination = static_cast<uint8_t*>(tensor.data()) + first_block_id * block_bytes;
-        std::memcpy(destination, source, run_length * block_bytes);
     }
 
 

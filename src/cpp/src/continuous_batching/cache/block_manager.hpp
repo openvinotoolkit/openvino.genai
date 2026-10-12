@@ -111,24 +111,6 @@ public:
      */
     virtual bool load_into(size_t hash, size_t block_index) = 0;
 
-    /**
-     * @brief Fills multiple physical cache blocks in one call, in order.
-     *
-     * The default implementation just calls load_into() once per request, so a single-block-only
-     * implementation is still correct without overriding this. Override it when a batch can genuinely be
-     * served more efficiently than N independent calls (e.g. one lock acquisition instead of N).
-     * @param requests Pairs of (hash, destination physical block index), in order.
-     * @return One result per request, in the same order, true where the block was filled.
-     */
-    virtual std::vector<bool> load_into_many(const std::vector<std::pair<size_t, size_t>>& requests) {
-        std::vector<bool> results;
-        results.reserve(requests.size());
-        for (const auto& request : requests) {
-            results.push_back(load_into(request.first, request.second));
-        }
-        return results;
-    }
-
 };
 
 /**
@@ -171,10 +153,6 @@ class OverwritableBlocksHashStore {
             }
         }
         OPENVINO_ASSERT(m_blocks.count(hash) == 0);
-        const auto timestamp = std::chrono::steady_clock::now();
-        for (const auto& block : blocks_for_all_layers) {
-            block->set_timestamp(timestamp);
-        }
         m_blocks[hash] = blocks_for_all_layers;
     }
 
@@ -1648,16 +1626,6 @@ public:
         // Hold every chain block until the walk is over. A warmed block keeps the timestamp it was created
         // with, so releasing it immediately would make it the very next block the allocator overwrites.
         std::vector<BlocksPerLayer> chain;
-
-        // Blocks the source still has to fill, allocated eagerly but not yet counted as restored: a
-        // contiguous prefix chain can't tolerate a hole, so none of these are committed until the single
-        // batched call below reports, in order, which ones actually succeeded.
-        struct PendingLoad {
-            size_t hash;
-            BlocksPerLayer blocks;
-        };
-        std::vector<PendingLoad> pending;
-
         for (size_t content_len = m_block_size; content_len <= prompt_len; content_len += m_block_size) {
             const auto hash = sequence->get_hash(content_len, m_block_size);
             if (m_allocator.has_cached_block(hash, m_prefix_hash_to_cached_blocks)) {
@@ -1670,38 +1638,16 @@ public:
 
             auto blocks = allocate_cached_block(hash, content_len);
             OPENVINO_ASSERT(!blocks.empty(), "Failed to allocate a block for prefix cache warm-up");
-            pending.push_back(PendingLoad{hash, std::move(blocks)});
-        }
-
-        if (!pending.empty()) {
-            std::vector<std::pair<size_t, size_t>> requests;
-            requests.reserve(pending.size());
-            for (const auto& item : pending) {
-                requests.emplace_back(item.hash, static_cast<size_t>(item.blocks[0]->get_index()));
-            }
-            // One call for the whole pending run instead of one per block; a plain per-block source still
-            // works correctly here since IExternalPrefixSource::load_into_many() falls back to load_into().
-            const auto results = source.load_into_many(requests);
-            OPENVINO_ASSERT(results.size() == pending.size(),
-                            "KV cache offload source returned ", results.size(),
-                            " results for ", pending.size(), " requests");
-
-            for (size_t i = 0; i < pending.size(); ++i) {
-                if (results[i]) {
-                    chain.push_back(std::move(pending[i].blocks));
-                    ++num_restored;
-                    continue;
-                }
-                // A partially filled block must never become visible under its hash, and neither can any
-                // block later in the chain: everything from the first miss onward is discarded, exactly
-                // what a strictly sequential per-block load would have stopped at.
-                for (size_t j = i; j < pending.size(); ++j) {
-                    m_prefix_hash_to_cached_blocks.erase(pending[j].hash);
-                    unregister_cached_hash(pending[j].hash);
-                    m_allocator.free_uncached(pending[j].blocks);
-                }
+            if (!source.load_into(hash, static_cast<size_t>(blocks[0]->get_index()))) {
+                // A partially filled block must never become visible under its hash.
+                m_prefix_hash_to_cached_blocks.erase(hash);
+                unregister_cached_hash(hash);
+                m_allocator.free_uncached(blocks);
                 break;
             }
+
+            chain.push_back(std::move(blocks));
+            ++num_restored;
         }
 
         // Drop ownership so that the regular restore path can claim the chain by hash.

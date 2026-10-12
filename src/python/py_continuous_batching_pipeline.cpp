@@ -114,32 +114,22 @@ auto cache_offload_config_docstring = R"(
     SchedulerConfig.use_cache_eviction.
 
     Parameters:
-    :param storage_cache_dir: existing directory to place the offload file in. When empty, the system temporary directory is used.
-    :type storage_cache_dir: str
+    :param path: existing directory to place the offload file in. When empty, the system temporary directory is used.
+    :type path: str
 
     :param capacity_bytes: upper bound of the offload file size in bytes. The usable slot count is derived from this.
     :type capacity_bytes: int
 
-    :param storage_cache_size: upper bound of the offload file size in GiB, as a coarser alternative to capacity_bytes.
-      Only used when greater than 0 and capacity_bytes is 0.
-    :type storage_cache_size: int
+    :param linear_attention_capacity_bytes: upper bound of the linear attention state offload file size in bytes,
+        in a separate file from the KV cache offload file. When 0 (default), linear attention cache offload is
+        disabled even if the model has linear attention layers.
+    :type linear_attention_capacity_bytes: int
 
     :param buffer_slots: number of staging buffers reserved for transfers.
     :type buffer_slots: int
 
     :param use_page_cache: whether the offload file may go through the OS page cache. Direct I/O is not implemented yet.
     :type use_page_cache: bool
-
-    :param storage_backend_type: selects the storage backend implementation: "default" (built-in file-based
-      backend) or "plugin" (load a third-party vendor shared library from storage_plugin_path).
-    :type storage_backend_type: str
-
-    :param storage_plugin_path: path to a third-party storage plugin shared library exporting the
-      ov_genai_get_ssd_plugin C ABI symbol. Required when storage_backend_type is "plugin".
-    :type storage_plugin_path: str
-
-    :param storage_plugin_properties: vendor-specific properties passed through to a loaded storage plugin.
-    :type storage_plugin_properties: dict
 )";
 auto scheduler_config_docstring = R"(
     SchedulerConfig to construct ContinuousBatchingPipeline
@@ -479,46 +469,25 @@ void init_continuous_batching_pipeline(py::module_& m) {
 
     py::class_<CacheOffloadConfig>(m, "CacheOffloadConfig", cache_offload_config_docstring)
             .def(py::init<>())
-            .def(py::init([](const std::string& storage_cache_dir, size_t capacity_bytes, size_t storage_cache_size,
-                             size_t buffer_slots, bool use_page_cache, const std::string& storage_backend_type,
-                             const std::string& storage_plugin_path,
-                             const std::map<std::string, py::object>& storage_plugin_properties) {
+            .def(py::init([](const std::string& path, size_t capacity_bytes, size_t buffer_slots, bool use_page_cache,
+                             size_t linear_attention_capacity_bytes) {
                 CacheOffloadConfig config;
-                config.storage_cache_dir = storage_cache_dir;
+                config.path = path;
                 config.capacity_bytes = capacity_bytes;
-                config.storage_cache_size = storage_cache_size;
+                config.linear_attention_capacity_bytes = linear_attention_capacity_bytes;
                 config.buffer_slots = buffer_slots;
                 config.use_page_cache = use_page_cache;
-                config.storage_backend_type = storage_backend_type;
-                config.storage_plugin_path = storage_plugin_path;
-                config.storage_plugin_properties = pyutils::properties_to_any_map(storage_plugin_properties);
                 return config; }),
-                 py::arg("storage_cache_dir") = std::string{},
+                 py::arg("path") = std::string{},
                  py::arg("capacity_bytes") = 0,
-                 py::arg("storage_cache_size") = 0,
                  py::arg("buffer_slots") = 2,
                  py::arg("use_page_cache") = true,
-                 py::arg("storage_backend_type") = std::string{"default"},
-                 py::arg("storage_plugin_path") = std::string{},
-                 py::arg("storage_plugin_properties") = std::map<std::string, py::object>{})
-            .def_readwrite("storage_cache_dir", &CacheOffloadConfig::storage_cache_dir)
+                 py::arg("linear_attention_capacity_bytes") = 0)
+            .def_readwrite("path", &CacheOffloadConfig::path)
             .def_readwrite("capacity_bytes", &CacheOffloadConfig::capacity_bytes)
-            .def_readwrite("storage_cache_size", &CacheOffloadConfig::storage_cache_size)
+            .def_readwrite("linear_attention_capacity_bytes", &CacheOffloadConfig::linear_attention_capacity_bytes)
             .def_readwrite("buffer_slots", &CacheOffloadConfig::buffer_slots)
-            .def_readwrite("wait_for_buffer", &CacheOffloadConfig::wait_for_buffer)
-            .def_readwrite("enable_detailed_logging", &CacheOffloadConfig::enable_detailed_logging)
             .def_readwrite("use_page_cache", &CacheOffloadConfig::use_page_cache)
-            .def_readwrite("host_cache_slots", &CacheOffloadConfig::host_cache_slots)
-            .def_readwrite("enable_persistence", &CacheOffloadConfig::enable_persistence)
-            .def_readwrite("model_fingerprint", &CacheOffloadConfig::model_fingerprint)
-            .def_readwrite("tokenizer_fingerprint", &CacheOffloadConfig::tokenizer_fingerprint)
-            .def_readwrite("storage_backend_type", &CacheOffloadConfig::storage_backend_type)
-            .def_readwrite("storage_plugin_path", &CacheOffloadConfig::storage_plugin_path)
-            .def_property("storage_plugin_properties",
-                          [](const CacheOffloadConfig& self) { return self.storage_plugin_properties; },
-                          [](CacheOffloadConfig& self, const std::map<std::string, py::object>& properties) {
-                              self.storage_plugin_properties = pyutils::properties_to_any_map(properties);
-                          })
             .def("to_string", &CacheOffloadConfig::to_string);
 
     py::class_<SchedulerConfig>(m, "SchedulerConfig", scheduler_config_docstring)
@@ -535,7 +504,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readwrite("cache_eviction_config", &SchedulerConfig::cache_eviction_config)
         .def_readwrite("use_sparse_attention", &SchedulerConfig::use_sparse_attention)
         .def_readwrite("sparse_attention_config", &SchedulerConfig::sparse_attention_config)
-        .def_readwrite("enable_kv_cache_offloading", &SchedulerConfig::enable_kv_cache_offloading)
+        .def_readwrite("use_cache_offload", &SchedulerConfig::use_cache_offload)
         .def_readwrite("cache_offload_config", &SchedulerConfig::cache_offload_config)
         .def("to_string", &SchedulerConfig::to_string);
 
