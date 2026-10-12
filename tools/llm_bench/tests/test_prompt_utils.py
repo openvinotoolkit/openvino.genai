@@ -324,7 +324,7 @@ def test_vlm_chat_turns_replicates_a_one_turn_chat():
 
 
 def test_vlm_chat_turns_keeps_a_multi_turn_list_despite_chat_iter():
-    turns = [{"prompt": "a"}, {"prompt": "b"}]
+    turns = [{"prompt": "a", "media": "cat.png"}, {"prompt": "b"}]
     assert _vlm_chat_turns(turns, {"chat_iter": 9}) == turns
 
 
@@ -333,7 +333,7 @@ def test_vlm_chat_turns_keeps_a_multi_turn_list_despite_chat_iter():
 # --------------------------------------------------------------------------- #
 
 
-def test_prompter_loads_a_text_jsonl(tmp_path):
+def test_prompter_loads_text_jsonl(tmp_path):
     pf = write_jsonl(tmp_path / "p.jsonl", [{"prompt": "first"}, {"prompt": "second"}])
     prompter = BenchPrompter(make_args("text_gen", pf))
     assert [p["prompt"] for p in prompter] == ["first", "second"]
