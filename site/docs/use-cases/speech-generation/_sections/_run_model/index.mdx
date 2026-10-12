@@ -167,7 +167,7 @@ This lets you keep pipeline defaults unchanged while customizing parameters for 
         ov::genai::SpeechGenerationConfig config = pipeline.get_generation_config();
         // Update fields needed for the current request.
         // ...
-        auto result = pipeline.generate("Hello OpenVINO GenAI", std::nullopt, config);
+        auto result = pipeline.generate("Hello OpenVINO GenAI", ov::Tensor{}, config);
         ```
     </TabItemCpp>
     <TabItemC>

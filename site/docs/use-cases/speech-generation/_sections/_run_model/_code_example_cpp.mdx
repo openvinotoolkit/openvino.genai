@@ -12,7 +12,7 @@ int main(int argc, char* argv[]) {
 
     // Optional: use per-call generation config without changing pipeline defaults.
     // ov::genai::SpeechGenerationConfig config = pipeline.get_generation_config();
-    // auto result = pipeline.generate("Hello OpenVINO GenAI", std::nullopt, config);
+    // auto result = pipeline.generate("Hello OpenVINO GenAI", ov::Tensor{}, config);
 
     auto waveform_size = result.speeches[0].get_size();
     auto waveform_ptr = result.speeches[0].data<const float>();
