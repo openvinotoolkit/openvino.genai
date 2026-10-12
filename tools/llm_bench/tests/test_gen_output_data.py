@@ -4,13 +4,9 @@
 
 """Unit tests for the text size helpers in ``llm_bench_utils.gen_output_data``."""
 
-import types
-
-import numpy as np
 import pytest
 
 from llm_bench_utils.gen_output_data import (
-    count_text_tokens,
     count_words,
     embed_iterate_data,
     gen_iterate_data,
@@ -60,52 +56,11 @@ def test_text_output_repr_empty_output():
     assert text_output_repr("", FakeHFTokenizer()) == "empty"
 
 
-# --------------------------------------------------------------------------- #
-# count_text_tokens                                                            #
-# --------------------------------------------------------------------------- #
-
-
 class FakeHFTokenizer:
-    """Mimics a HF tokenizer: ``encode`` returns a plain list of ids."""
-
-    def __init__(self):
-        self.kwargs = None
+    """Mimics a HF tokenizer: one token per whitespace-separated chunk."""
 
     def encode(self, text, **kwargs):
-        self.kwargs = kwargs
         return list(range(len(text.split())))
-
-
-class FakeGenAITokenizer:
-    """Mimics ``openvino_genai.Tokenizer``: ``encode`` returns TokenizedInputs."""
-
-    def encode(self, text, **kwargs):
-        return types.SimpleNamespace(input_ids=np.zeros((1, 4 * len(text.split()))))
-
-
-def test_count_text_tokens_hf_tokenizer_skips_special_tokens():
-    tok = FakeHFTokenizer()
-    assert count_text_tokens(tok, "a b c") == 3
-    assert tok.kwargs == {"add_special_tokens": False}
-
-
-def test_count_text_tokens_genai_tokenizer():
-    assert count_text_tokens(FakeGenAITokenizer(), "a b") == 8
-
-
-def test_count_text_tokens_unwraps_a_processor():
-    processor = types.SimpleNamespace(tokenizer=FakeHFTokenizer())
-    assert count_text_tokens(processor, "a b") == 2
-
-
-def test_count_text_tokens_is_none_when_unknown():
-    class Broken:
-        def encode(self, text, **kwargs):
-            raise RuntimeError("no encode for you")
-
-    assert count_text_tokens(Broken(), "a b") is None
-    assert count_text_tokens(None, "a b") is None
-    assert count_text_tokens(FakeHFTokenizer(), "") is None
 
 
 def test_gen_iterate_data_stores_text_tokens():
@@ -116,7 +71,6 @@ def test_gen_iterate_data_stores_text_tokens():
 
 def test_text_output_repr_appends_token_count():
     assert text_output_repr("Hello , world .", FakeHFTokenizer()) == "text:2w/4t"
-    assert text_output_repr("Hello world", FakeGenAITokenizer()) == "text:2w/8t"
     assert text_output_repr("...", FakeHFTokenizer()) == "text:0w/1t"
 
 

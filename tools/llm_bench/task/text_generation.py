@@ -314,13 +314,19 @@ def run_text_generation(
         [log.debug("[{}]{:.4f}".format(idx, tm)) for idx, tm in enumerate(tm_infer_list)]
         if args["num_beams"] == 1 and generated_token_size != len(tm_infer_list):
             log.warning(f"Output token size({generated_token_size}) is not equal to infer count({len(tm_infer_list)})")
+    # generated_text may include the prompt (decoder-only models echo it), so
+    # describe only the newly generated tokens of the first batch element.
+    first_gen_size = calc_generated_token_size_optimum(
+        result, 0, model, input_tokens, input_token_size, args["model_name"]
+    )
+    output_text = tokenizer.decode(result[0][len(result[0]) - first_gen_size :]) if first_gen_size > 0 else ""
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
         in_size=input_token_size * args["batch_size"],
         in_text_tokens=gen_output_data.count_text_tokens(tokenizer, input_text),
         infer_count=len(tm_infer_list),
         out_size=num_tokens,
-        output_repr=gen_output_data.text_output_repr(generated_text[0], tokenizer),
+        output_repr=gen_output_data.text_output_repr(output_text, tokenizer),
         gen_time=generation_time,
         latency=per_token_time,
         res_md5=result_md5_list,
