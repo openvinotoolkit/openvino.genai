@@ -53,14 +53,7 @@ def test_text_output_repr_empty_output():
     assert text_output_repr("") == "empty"
     assert text_output_repr("  \n\t") == "empty"
     assert text_output_repr(None) == "empty"
-    assert text_output_repr("", FakeHFTokenizer()) == "empty"
-
-
-class FakeHFTokenizer:
-    """Mimics a HF tokenizer: one token per whitespace-separated chunk."""
-
-    def encode(self, text, **kwargs):
-        return list(range(len(text.split())))
+    assert text_output_repr("", 3) == "empty"
 
 
 def test_gen_iterate_data_stores_text_tokens():
@@ -70,19 +63,21 @@ def test_gen_iterate_data_stores_text_tokens():
 
 
 def test_text_output_repr_appends_token_count():
-    assert text_output_repr("Hello , world .", FakeHFTokenizer()) == "text:2w/4t"
-    assert text_output_repr("...", FakeHFTokenizer()) == "text:0w/1t"
+    assert text_output_repr("Hello , world .", 4) == "text:2w/4t"
+    assert text_output_repr("...", 1) == "text:0w/1t"
+    assert text_output_repr("Hello world", 0) == "text:2w/0t"
 
 
 def test_text_output_repr_drops_unknown_token_count():
-    class Broken:
-        def encode(self, text, **kwargs):
-            raise RuntimeError("no encode for you")
-
-    assert text_output_repr("Hello world", Broken()) == "text:2w"
     assert text_output_repr("Hello world", None) == "text:2w"
 
 
 def test_embed_iterate_data_output_repr():
     assert embed_iterate_data()["output_repr"] == ""  # embeddings
     assert embed_iterate_data(output_repr="docs:2")["output_repr"] == "docs:2"  # rerankers
+
+
+def test_embed_iterate_data_input_text_tokens():
+    assert embed_iterate_data(in_text_tokens=5)["input_text_tokens"] == 5  # rerankers
+    assert embed_iterate_data(in_text_tokens=None)["input_text_tokens"] == ""
+    assert embed_iterate_data()["input_text_tokens"] == ""  # embeddings

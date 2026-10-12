@@ -442,10 +442,10 @@ def run_visual_language_generation_chat_common(
         iter_data = gen_output_data.gen_iterate_data(
             iter_idx=iter_num,
             in_size=chat_iteration_result.input_size,
-            in_text_tokens=gen_output_data.count_text_tokens(pipeline.tokenizer, prompts[0]),
+            in_text_tokens=chat_iteration_result.input_size,
             infer_count=chat_iteration_result.infer_count,
             out_size=chat_iteration_result.output_size,
-            output_repr=gen_output_data.text_output_repr(chat_iteration_result.answer_text, pipeline.tokenizer),
+            output_repr=gen_output_data.text_output_repr(chat_iteration_result.answer_text, chat_iteration_result.output_size),
             gen_time=chat_iteration_result.generation_time,
             latency=per_token_time,
             res_md5=result_md5_list,

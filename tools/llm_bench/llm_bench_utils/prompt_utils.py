@@ -427,11 +427,11 @@ class BenchPrompt(dict):
         suffix, see :func:`~llm_bench_utils.gen_output_data.count_words`),
         images/videos as pixel dimensions, audio as duration.
 
-        *text_tokens* is the token count of the prompt text alone, appended as
+        *text_tokens* is the prompt's tokenized length as the model received
+        it (chat template, special and media tokens included), appended as
         ``/<M>t``. It is known only once a pipeline has run, so ``repr()``
-        omits it and :meth:`_stamp_records` passes it from each record. The
-        model's full tokenized input (chat template, media tokens) is reported
-        separately as ``input_size``.
+        omits it and :meth:`_stamp_records` passes it from each record. It is
+        the per-prompt share of ``input_size``, which is batch-total.
         """
         self.probe()
         parts = []
