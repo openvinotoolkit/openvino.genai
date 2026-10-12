@@ -4,13 +4,15 @@ sidebar_position: 7
 
 # Run GGUF models
 
-OpenVINO GenAI can load a local `.gguf` file directly, including its tokenizer metadata. No Optimum export is required. Use a GenAI build with `ENABLE_GGUF=ON` and a compatible OpenVINO build that includes the GGUF frontend.
+OpenVINO GenAI can load a local `.gguf` file directly, including its tokenizer metadata. No Optimum export is required. `ENABLE_GGUF` is enabled by default in GenAI CMake. Use a compatible OpenVINO build that includes the GGUF frontend.
 
 The default `GGUF_READER="LEGACY"` supports the `llama`, `qwen2`, and `qwen3` architectures. Select `GGUF_READER="FRONTEND"` explicitly to use the OpenVINO GGUF frontend, which supports more architectures and is expected to provide better model quality through more complete handling of GGUF metadata.
 
 :::warning Preview feature
 The GGUF frontend is in preview. Architecture, quantization, tokenizer, and attention-backend support depend on the OpenVINO version. Generated output can differ from other runtimes. If the default legacy reader fails, GenAI includes a suggestion to try the frontend in the error message; retry by selecting it explicitly.
 :::
+
+Prefer models quantized in `Q4_0` format for better performance and accuracy.
 
 ## Generate text
 

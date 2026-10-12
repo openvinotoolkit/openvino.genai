@@ -31,6 +31,8 @@ The default legacy reader handles `llama`, `qwen2`, and `qwen3`, and ignores som
 such as `rope_freqs.weight`. The OpenVINO GGUF frontend supports more architectures and is
 expected to provide better model quality, but is in preview and may have limitations.
 
+Prefer models quantized in `Q4_0` format for better performance and accuracy.
+
 Select the frontend when constructing the pipeline:
 
 ```cpp

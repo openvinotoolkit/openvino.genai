@@ -8,6 +8,7 @@
 
 #include "add_second_input_pass.hpp"
 #include "logger.hpp"
+#include "gguf_utils/gguf_utils.hpp"
 #include "openvino/genai/version.hpp"
 #include "sampling/structured_output/structured_output_controller.hpp"
 
@@ -264,7 +265,7 @@ Tokenizer::TokenizerImpl::TokenizerImpl(const GGUFTokenizerParameters& gguf_toke
     ScopedVar env_manager(tokenizers_relative_to_genai());
     m_shared_object_ov_tokenizers = load_shared_object(resolve_ov_tokenizers_path());
 
-    const auto gguf_props = utils::extract_gguf_properties(properties);
+    const auto gguf_props = gguf_utils::extract_gguf_properties(properties);
     std::shared_ptr<ov::Model> ov_tokenizer, ov_detokenizer;
     std::map<std::string, GGUFMetaData> tokenizer_config{};
     std::tie(ov_tokenizer, ov_detokenizer, tokenizer_config) =
@@ -326,8 +327,8 @@ void Tokenizer::TokenizerImpl::finalize_gguf_tokenizer(const std::shared_ptr<ov:
             m->set_rt_info(m_eos_token, "eos_token");
             m->set_rt_info(m_chat_template, "chat_template");
         }
-        ov::genai::utils::save_openvino_model(ov_tokenizer, save_ov_tokenizer_path.string(), false);
-        ov::genai::utils::save_openvino_model(ov_detokenizer, save_ov_detokenizer_path.string(), false);
+        ov::genai::gguf_utils::save_openvino_model(ov_tokenizer, save_ov_tokenizer_path.string(), false);
+        ov::genai::gguf_utils::save_openvino_model(ov_detokenizer, save_ov_detokenizer_path.string(), false);
     }
 
     setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), filtered_properties);
@@ -368,7 +369,7 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
 
     std::shared_ptr<ov::Model> ov_tokenizer = nullptr;
     std::shared_ptr<ov::Model> ov_detokenizer = nullptr;
-    const auto gguf_props = utils::extract_gguf_properties(properties);
+    const auto gguf_props = gguf_utils::extract_gguf_properties(properties);
     const ov::AnyMap& filtered_properties = gguf_props.rest;
 
     if (ov::genai::is_gguf_model(models_path)) {

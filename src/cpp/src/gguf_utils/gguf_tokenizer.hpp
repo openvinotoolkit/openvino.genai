@@ -4,8 +4,13 @@
 #pragma once
 
 #include <filesystem>
+#include <map>
+#include <tuple>
+#include <unordered_map>
 
-#include "gguf.hpp"
+#include "gguf_metadata.hpp"
+#include "openvino/core/any.hpp"
+#include "openvino/core/model.hpp"
 
 using FactoryCreateType = ov::OutputVector (*)(const std::string& op_type,
                                                const ov::OutputVector& inputs,
@@ -13,8 +18,6 @@ using FactoryCreateType = ov::OutputVector (*)(const std::string& op_type,
 
 namespace ov {
 namespace genai {
-bool is_gguf_model(const std::filesystem::path& file_path);
-
 std::map<std::string, GGUFMetaData> tokenizer_config_from_meta(
     const std::unordered_map<std::string, GGUFMetaData>& metadata);
 

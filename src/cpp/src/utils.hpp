@@ -29,10 +29,6 @@ namespace genai {
 extern const std::string PA_BACKEND;
 extern const std::string SDPA_BACKEND;
 
-// Values of the ov::genai::gguf_reader property; see llm_pipeline.hpp.
-extern const std::string FRONTEND_GGUF_READER;
-extern const std::string LEGACY_GGUF_READER;
-
 }  // namespace genai
 }  // namespace ov
 
@@ -141,30 +137,6 @@ std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared
 
 ov::Core& singleton_core();
 
-/// @brief The GGUF-specific properties, pulled out of a user property map.
-///
-/// They configure conversion, not inference, so they must never reach ov::Core::compile_model --
-/// the plugin rejects unknown properties. extract_gguf_properties() is the single place that
-/// removes them, and `rest` is what callers forward on.
-struct GGUFProperties {
-    /// The caller's properties with every GGUF-specific key removed.
-    ov::AnyMap rest;
-    /// ov::genai::enable_save_ov_model: serialize the converted model next to the .gguf.
-    bool enable_save_ov_model = false;
-    /// ov::genai::gguf_reader, when the user set it: true for LEGACY_GGUF_READER,
-    /// false for FRONTEND_GGUF_READER. Empty when the property was absent.
-    std::optional<bool> legacy_reader;
-
-    /// The legacy reader is still the default when the user expressed no preference.
-    bool use_legacy_reader() const {
-        return legacy_reader.value_or(true);
-    }
-};
-
-/// @brief Split the GGUF-specific properties out of a user property map, validating their values.
-/// Mirrors extract_attention_backend(), which does the same for ATTENTION_BACKEND.
-GGUFProperties extract_gguf_properties(const ov::AnyMap& external_properties);
-
 /// @brief Key used in the main properties map to carry per-model property sub-maps.
 /// Value shape: ov::AnyMap keyed by model role (e.g. "vision_embeddings").
 extern const std::string PER_MODEL_PROPERTIES;
@@ -268,8 +240,6 @@ ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front
 bool env_setup_for_print_debug_info();
 
 void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title);
-
-void print_gguf_debug_info(const std::string& debug_info);
 
 void print_scheduler_config_info(const SchedulerConfig &scheduler_config);
 
@@ -433,8 +403,6 @@ void log_attention_backend(const std::string& attention_backend);
 // Print an INFO message about the Paged Attention initialization failure and the SDPA fallback,
 // followed by a DEBUG message with the original exception details.
 void log_paged_attention_fallback(const ov::Exception& exception);
-
-void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16);
 
 ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov::Tensor& text_embeds, const std::vector<ov::Tensor>& image_embeds, int64_t image_token_id);
 

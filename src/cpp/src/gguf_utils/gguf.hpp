@@ -15,13 +15,11 @@
 #include <variant>
 
 #include "openvino/openvino.hpp"
+#include "gguf_metadata.hpp"
 
 extern "C" {
 #include <gguflib.h>
 }
-
-using GGUFMetaData =
-    std::variant<std::monostate, float, int, ov::Tensor, std::string, std::vector<std::string>, std::vector<int32_t>>;
 
 using GGUFLoad = std::tuple<std::unordered_map<std::string, GGUFMetaData>,
                             std::unordered_map<std::string, ov::Tensor>,
