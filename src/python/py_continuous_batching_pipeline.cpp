@@ -226,56 +226,36 @@ py::object _call_cb_generate(
     return results;
 }
 
+using MediaBatches = std::vector<std::vector<ov::Tensor>>;
+
+struct CBMediaInputs {
+    MediaBatches images;
+    MediaBatches videos;
+    MediaBatches audios;
+    std::vector<std::vector<ov::genai::VideoMetadata>> videos_metadata;
+};
+
+// Inputs is either prompts or ChatHistory objects; both map onto the same C++ generate() overload set.
+template <typename Inputs>
 py::object _call_cb_vlm_generate(
     ContinuousBatchingPipeline& pipe,
-    const std::vector<std::string>& prompts,
-    const std::vector<std::vector<ov::Tensor>>& images_batches,
-    const std::vector<std::vector<ov::Tensor>>& videos_batches,
+    const Inputs& inputs,
+    const CBMediaInputs& media,
     const std::vector<ov::genai::GenerationConfig>& generation_configs,
-    const pyutils::PyBindStreamerVariant& py_streamer,
-    const py::kwargs& kwargs = {}
+    const pyutils::PyBindStreamerVariant& py_streamer
 ) {
     ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
-    const auto videos_metadata_batches = pyutils::get_videos_metadata_batches_from_kwargs(kwargs);
 
     std::vector<ov::genai::VLMDecodedResults> generated_results;
     {
         py::gil_scoped_release rel;
-        generated_results = pipe.generate(
-            prompts,
-            ov::genai::images_batches(images_batches),
-            ov::genai::videos_batches(videos_batches),
-            ov::genai::videos_metadata_batches(videos_metadata_batches),
-            ov::genai::generation_config_batches(generation_configs),
-            ov::genai::streamer(streamer)
-        );
-    }
-    return py::cast(generated_results);
-}
-
-py::object _call_cb_vlm_generate_chat_history(
-    ContinuousBatchingPipeline& pipe,
-    const std::vector<ChatHistory>& histories,
-    const std::vector<std::vector<ov::Tensor>>& images_batches,
-    const std::vector<std::vector<ov::Tensor>>& videos_batches,
-    const std::vector<ov::genai::GenerationConfig>& generation_configs,
-    const pyutils::PyBindStreamerVariant& py_streamer,
-    const py::kwargs& kwargs = {}
-) {
-    ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
-    const auto videos_metadata_batches = pyutils::get_videos_metadata_batches_from_kwargs(kwargs);
-
-    std::vector<ov::genai::VLMDecodedResults> generated_results;
-    {
-        py::gil_scoped_release rel;
-        generated_results = pipe.generate(
-            histories,
-            ov::genai::images_batches(images_batches),
-            ov::genai::videos_batches(videos_batches),
-            ov::genai::videos_metadata_batches(videos_metadata_batches),
-            ov::genai::generation_config_batches(generation_configs),
-            ov::genai::streamer(streamer)
-        );
+        generated_results = pipe.generate(inputs,
+                                          ov::genai::images_batches(media.images),
+                                          ov::genai::videos_batches(media.videos),
+                                          ov::genai::videos_metadata_batches(media.videos_metadata),
+                                          ov::genai::audios_batches(media.audios),
+                                          ov::genai::generation_config_batches(generation_configs),
+                                          ov::genai::streamer(streamer));
     }
     return py::cast(generated_results);
 }
@@ -536,6 +516,9 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const ov::genai::GenerationConfig& generation_config,
                const py::kwargs& kwargs
             ) -> std::shared_ptr<GenerationHandleImpl> {
+                // kwargs are not forwarded, so audios would otherwise be dropped without an error.
+                OPENVINO_ASSERT(!kwargs.contains("audios"),
+                                "Audio input is not supported by add_request(). Use generate() with audios_batches instead.");
                 const auto videos_metadata = pyutils::get_videos_metadata_from_kwargs(kwargs);
                 return pipe.add_request(
                     request_id,
@@ -634,50 +617,84 @@ void init_continuous_batching_pipeline(py::module_& m) {
             "generate",
             [](ContinuousBatchingPipeline& pipe,
                const std::vector<std::string>& prompts,
-               const std::vector<std::vector<ov::Tensor>>& images,
-               const std::vector<std::vector<ov::Tensor>>& videos,
+               const MediaBatches& images,
+               const MediaBatches& videos,
                const std::vector<ov::genai::GenerationConfig>& generation_config,
                const pyutils::PyBindStreamerVariant& py_streamer,
+               const MediaBatches& audios_batches,
                const py::kwargs& kwargs
             ) -> py::typing::List<ov::genai::VLMDecodedResults> {
-                return _call_cb_vlm_generate(pipe, prompts, images, videos, generation_config, py_streamer, kwargs);
+                const CBMediaInputs media{images, videos, audios_batches,
+                                          pyutils::get_videos_metadata_batches_from_kwargs(kwargs)};
+                return _call_cb_vlm_generate(pipe, prompts, media, generation_config, py_streamer);
             },
             py::arg("prompts"),
             py::arg("images"),
             py::arg("videos"),
             py::arg("generation_config"),
-            py::arg("streamer") = std::monostate{}
+            py::arg("streamer") = std::monostate{},
+            py::kw_only(),
+            py::arg("audios_batches") = MediaBatches{}
         )
+        // No **kwargs here on purpose: a positional second argument is ambiguous between images and
+        // videos, and it is kwargs such as videos_metadata_batches that route it to the videos overload.
         .def(
             "generate",
             [](ContinuousBatchingPipeline& pipe,
                const std::vector<std::string>& prompts,
-               const std::vector<std::vector<ov::Tensor>>& images,
+               const MediaBatches& images,
                const std::vector<ov::genai::GenerationConfig>& generation_config,
-               const pyutils::PyBindStreamerVariant& py_streamer
+               const pyutils::PyBindStreamerVariant& py_streamer,
+               const MediaBatches& audios_batches
             ) -> py::typing::List<ov::genai::VLMDecodedResults> {
-                return _call_cb_vlm_generate(pipe, prompts, images, {}, generation_config, py_streamer);
+                return _call_cb_vlm_generate(pipe, prompts, CBMediaInputs{images, {}, audios_batches, {}},
+                                             generation_config, py_streamer);
             },
             py::arg("prompts"),
             py::arg("images"),
             py::arg("generation_config"),
-            py::arg("streamer") = std::monostate{}
+            py::arg("streamer") = std::monostate{},
+            py::kw_only(),
+            py::arg("audios_batches") = MediaBatches{}
         )
         .def(
             "generate",
             [](ContinuousBatchingPipeline& pipe,
                const std::vector<std::string>& prompts,
-               const std::vector<std::vector<ov::Tensor>>& videos,
+               const MediaBatches& videos,
                const std::vector<ov::genai::GenerationConfig>& generation_config,
                const pyutils::PyBindStreamerVariant& py_streamer,
+               const MediaBatches& audios_batches,
                const py::kwargs& kwargs
             ) -> py::typing::List<ov::genai::VLMDecodedResults> {
-                return _call_cb_vlm_generate(pipe, prompts, {}, videos, generation_config, py_streamer, kwargs);
+                const CBMediaInputs media{{}, videos, audios_batches,
+                                          pyutils::get_videos_metadata_batches_from_kwargs(kwargs)};
+                return _call_cb_vlm_generate(pipe, prompts, media, generation_config, py_streamer);
             },
             py::arg("prompts"),
             py::arg("videos"),
             py::arg("generation_config"),
-            py::arg("streamer") = std::monostate{}
+            py::arg("streamer") = std::monostate{},
+            py::kw_only(),
+            py::arg("audios_batches") = MediaBatches{}
+        )
+        // Must stay after the text-only overload: without audios_batches the call is plain text generation.
+        .def(
+            "generate",
+            [](ContinuousBatchingPipeline& pipe,
+               const std::vector<std::string>& prompts,
+               const std::vector<ov::genai::GenerationConfig>& generation_config,
+               const pyutils::PyBindStreamerVariant& py_streamer,
+               const MediaBatches& audios_batches
+            ) -> py::typing::List<ov::genai::VLMDecodedResults> {
+                return _call_cb_vlm_generate(pipe, prompts, CBMediaInputs{{}, {}, audios_batches, {}},
+                                             generation_config, py_streamer);
+            },
+            py::arg("prompts"),
+            py::arg("generation_config"),
+            py::arg("streamer") = std::monostate{},
+            py::kw_only(),
+            py::arg("audios_batches")
         )
 
         .def(
@@ -708,62 +725,98 @@ void init_continuous_batching_pipeline(py::module_& m) {
             "generate",
             [](ContinuousBatchingPipeline& pipe,
                py::list py_histories,
-               const std::vector<std::vector<ov::Tensor>>& images,
-               const std::vector<std::vector<ov::Tensor>>& videos,
+               const MediaBatches& images,
+               const MediaBatches& videos,
                const std::vector<ov::genai::GenerationConfig>& generation_config,
                const pyutils::PyBindStreamerVariant& py_streamer,
+               const MediaBatches& audios_batches,
                const py::kwargs& kwargs
             ) -> py::typing::List<ov::genai::VLMDecodedResults> {
+                const CBMediaInputs media{images, videos, audios_batches,
+                                          pyutils::get_videos_metadata_batches_from_kwargs(kwargs)};
                 return pyutils::call_and_sync_py_chat_histories(
                     py_histories,
                     [&](std::vector<ov::genai::ChatHistory>& histories) {
-                        return _call_cb_vlm_generate_chat_history(pipe, histories, images, videos, generation_config, py_streamer, kwargs);
+                        return _call_cb_vlm_generate(pipe, histories, media, generation_config, py_streamer);
                     });
             },
             py::arg("histories"),
             py::arg("images"),
             py::arg("videos"),
             py::arg("generation_config"),
-            py::arg("streamer") = std::monostate{}
+            py::arg("streamer") = std::monostate{},
+            py::kw_only(),
+            py::arg("audios_batches") = MediaBatches{}
         )
+        // No **kwargs, same reason as the prompts overload with images only.
         .def(
             "generate",
             [](ContinuousBatchingPipeline& pipe,
                py::list py_histories,
-               const std::vector<std::vector<ov::Tensor>>& images,
+               const MediaBatches& images,
                const std::vector<ov::genai::GenerationConfig>& generation_config,
-               const pyutils::PyBindStreamerVariant& py_streamer
+               const pyutils::PyBindStreamerVariant& py_streamer,
+               const MediaBatches& audios_batches
             ) -> py::typing::List<ov::genai::VLMDecodedResults> {
+                const CBMediaInputs media{images, {}, audios_batches, {}};
                 return pyutils::call_and_sync_py_chat_histories(
                     py_histories,
                     [&](std::vector<ov::genai::ChatHistory>& histories) {
-                        return _call_cb_vlm_generate_chat_history(pipe, histories, images, {}, generation_config, py_streamer);
-                    }
-                );
+                        return _call_cb_vlm_generate(pipe, histories, media, generation_config, py_streamer);
+                    });
             },
             py::arg("histories"),
             py::arg("images"),
             py::arg("generation_config"),
-            py::arg("streamer") = std::monostate{}
+            py::arg("streamer") = std::monostate{},
+            py::kw_only(),
+            py::arg("audios_batches") = MediaBatches{}
         )
         .def(
             "generate",
             [](ContinuousBatchingPipeline& pipe,
                py::list py_histories,
-               const std::vector<std::vector<ov::Tensor>>& videos,
+               const MediaBatches& videos,
                const std::vector<ov::genai::GenerationConfig>& generation_config,
                const pyutils::PyBindStreamerVariant& py_streamer,
+               const MediaBatches& audios_batches,
                const py::kwargs& kwargs
             ) -> py::typing::List<ov::genai::VLMDecodedResults> {
+                const CBMediaInputs media{{}, videos, audios_batches,
+                                          pyutils::get_videos_metadata_batches_from_kwargs(kwargs)};
                 return pyutils::call_and_sync_py_chat_histories(
                     py_histories,
                     [&](std::vector<ov::genai::ChatHistory>& histories) {
-                        return _call_cb_vlm_generate_chat_history(pipe, histories, {}, videos, generation_config, py_streamer, kwargs);
+                        return _call_cb_vlm_generate(pipe, histories, media, generation_config, py_streamer);
                     });
             },
             py::arg("histories"),
             py::arg("videos"),
             py::arg("generation_config"),
-            py::arg("streamer") = std::monostate{}
+            py::arg("streamer") = std::monostate{},
+            py::kw_only(),
+            py::arg("audios_batches") = MediaBatches{}
+        )
+        // Must stay after the text-only ChatHistory overload.
+        .def(
+            "generate",
+            [](ContinuousBatchingPipeline& pipe,
+               py::list py_histories,
+               const std::vector<ov::genai::GenerationConfig>& generation_config,
+               const pyutils::PyBindStreamerVariant& py_streamer,
+               const MediaBatches& audios_batches
+            ) -> py::typing::List<ov::genai::VLMDecodedResults> {
+                const CBMediaInputs media{{}, {}, audios_batches, {}};
+                return pyutils::call_and_sync_py_chat_histories(
+                    py_histories,
+                    [&](std::vector<ov::genai::ChatHistory>& histories) {
+                        return _call_cb_vlm_generate(pipe, histories, media, generation_config, py_streamer);
+                    });
+            },
+            py::arg("histories"),
+            py::arg("generation_config"),
+            py::arg("streamer") = std::monostate{},
+            py::kw_only(),
+            py::arg("audios_batches")
         );
 }

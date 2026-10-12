@@ -91,10 +91,13 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
     result_md5_list = []
     mem_consumption.start(num)
     input_text_list = [input_text] * args['batch_size']
-    if type(pipe).__name__ in ("QwenImage21Pipeline", "OVQwenImage21Pipeline"):
+    if args.get("model_type") == "QwenImage21":
         tokenizer = pipe.processor.tokenizer
         if input_args.pop("strength", None) is not None:
             log.warning("Qwen-Image-2.1 does not support strength; ignoring it.")
+        if "guidance_scale" in input_args:
+            input_args["true_cfg_scale"] = input_args.pop("guidance_scale")
+            input_args["negative_prompt"] = [""] * args["batch_size"]
     else:
         tokenizer = pipe.tokenizer
     input_data = tokenizer(input_text, return_tensors="pt")
@@ -158,6 +161,12 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
         for bs_idx, in_text in enumerate(input_text_list):
             llm_bench_utils.output_file.output_image_input_text(in_text, args, image_id, bs_idx, proc_id)
     callback.reset()
+
+    if args.get("model_type") == "QwenImage21":
+        if input_args.pop("strength", None) is not None:
+            log.warning("The model does not support strength; ignoring it.")
+        if input_args.get("guidance_scale", 1.0) > 1:
+            input_args["negative_prompt"] = ""
 
     if (args['empty_lora'] and (pipe.get_generation_config().adapters is not None)):
         import openvino_genai
