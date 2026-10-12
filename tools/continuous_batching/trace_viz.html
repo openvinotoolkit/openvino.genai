@@ -1,0 +1,1208 @@
+<!DOCTYPE html>
+<!--
+  OpenVINO GenAI Continuous Batching Trace Visualizer
+  ====================================================
+  Self-contained static HTML — no server required.
+
+  Usage:
+    1. Run perfetto_to_analysis.py on the exported Perfetto JSON
+    2. Produce analysis.json with the converter's --out option
+    3. Open this file in a browser and load analysis.json via the button
+
+  Panels
+  ------
+  1.  Scheduler Timeline   — active/waiting requests, cache usage %, waiting queue overlay
+  2.  Tokens / Second      — prefill vs decode throughput per step
+  3.  Step Duration        — per-step latency bar chart
+  3b. Step Phase Breakdown — forward/scheduling/sample/overhead stacked bar (Perfetto source)
+  4.  Sequence Swimlanes   — per-sequence status across all steps
+  5.  Request Gantt        — per-request lifetime bar (first→last step), RUNNING vs WAITING
+  6.  Batch Size Histogram — distribution of concurrent active sequences
+  7.  Scheduled Tokens     — distribution of tokens processed per step
+  8.  Prefix Hit Summary   — per-request prompt tokens served from cache
+  9.  Memory Grid          — PagedAttention block layout at a selected step
+  10. Events              — preemptions, OOMs, finishes scatter plot
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>GenAI CB Trace Visualizer</title>
+<style>
+  :root {
+    --bg: #1a1a2e; --surface: #16213e; --panel: #0f3460;
+    --accent: #e94560; --text: #eaeaea; --muted: #8899aa;
+    --prefill: #f5a623; --decode: #4a9eff; --wait: #888;
+    --oom: #e94560; --finish: #50fa7b; --preempt: #ff79c6;
+    --shared: #bd93f9;
+    --tps-prefill: #f5a623; --tps-decode: #50fa7b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.5 'Segoe UI', system-ui, sans-serif; }
+
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; background: var(--surface); border-bottom: 1px solid #333;
+  }
+  header h1 { font-size: 15px; font-weight: 600; letter-spacing: .5px; }
+  header .sub { color: var(--muted); font-size: 12px; }
+
+  #load-btn {
+    margin-left: auto;
+    padding: 6px 14px; background: var(--accent); color: #fff;
+    border: none; border-radius: 4px; cursor: pointer; font-size: 12px;
+  }
+  #load-btn:hover { opacity: .85; }
+
+  #metrics-bar {
+    display: flex; gap: 24px; padding: 8px 16px;
+    background: var(--surface); border-bottom: 1px solid #333; font-size: 12px;
+    flex-wrap: wrap;
+  }
+  .metric { display: flex; flex-direction: column; }
+  .metric .label { color: var(--muted); font-size: 11px; }
+  .metric .value { font-weight: 700; font-size: 14px; }
+
+  #panels { display: flex; flex-direction: column; gap: 2px; }
+
+  /* Each row inside #panels */
+  .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2px; }
+  .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+  .row-1 { display: grid; grid-template-columns: 1fr; gap: 2px; }
+
+  .panel {
+    background: var(--panel); padding: 8px 12px; overflow: hidden;
+    display: flex; flex-direction: column; min-height: 160px;
+  }
+  .panel h2 {
+    font-size: 11px; font-weight: 600; color: var(--muted);
+    margin-bottom: 6px; text-transform: uppercase; letter-spacing: .8px;
+    flex-shrink: 0;
+  }
+  .panel svg { flex: 1; width: 100%; }
+
+  /* Memory grid panel */
+  #panel-mem { overflow: visible; min-height: 180px; }
+  #mem-svg-wrap { overflow-y: auto; overflow-x: hidden; flex: 1; min-height: 120px; max-height: 60vh; }
+  #mem-svg-wrap svg { display: block; }
+
+  /* Gantt panel */
+  #panel-gantt { min-height: 120px; }
+
+  /* Prefix hit table */
+  #panel-pfx { min-height: 140px; }
+  #pfx-table-wrap { flex: 1; overflow-y: auto; max-height: 200px; }
+  #pfx-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  #pfx-table th {
+    position: sticky; top: 0; background: var(--panel);
+    color: var(--muted); text-align: right; padding: 2px 8px;
+    font-weight: 600; border-bottom: 1px solid #333;
+  }
+  #pfx-table th:first-child { text-align: left; }
+  #pfx-table td { text-align: right; padding: 2px 8px; border-bottom: 1px solid #1a1a2e; }
+  #pfx-table td:first-child { text-align: left; }
+  #pfx-table tr:hover td { background: #1e2a4a; }
+  .pfx-bar-cell { position: relative; min-width: 80px; }
+  .pfx-bar { position: absolute; left: 0; top: 2px; bottom: 2px;
+             background: var(--shared); opacity: .35; border-radius: 2px; }
+
+  /* swimlane colours */
+  .seq-RUNNING  { fill: var(--decode); }
+  .seq-PREFILL  { fill: var(--prefill); }
+  .seq-WAITING  { fill: var(--wait); }
+  .seq-OOM      { fill: var(--oom); }
+  .seq-FINISHED { fill: var(--finish); }
+
+  /* memory grid */
+  .blk-free { fill: #1e1e30; stroke: #383850; stroke-width:.5; }
+  .blk-used { stroke: #000; stroke-width:.5; }
+
+  #tooltip {
+    position: fixed; pointer-events: none; display: none;
+    background: #111; border: 1px solid #555; border-radius: 4px;
+    padding: 6px 10px; font-size: 11px; line-height: 1.6; z-index: 999;
+    max-width: 280px;
+  }
+
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; padding: 2px 0 4px; font-size: 11px; flex-shrink: 0; }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+  .panel-ctrl-row { display:flex; align-items:center; gap:8px; padding:2px 0 4px; flex-shrink:0; font-size:11px; color:var(--muted); }
+  .panel-ctrl-row input[type=number] { width:72px; background:#0d1b2e; color:var(--text); border:1px solid #445; border-radius:3px; padding:1px 5px; font-size:11px; }
+  .panel-ctrl-row input[type=number]:focus { outline:none; border-color:var(--accent); }
+
+  #step-slider-wrap { display: flex; align-items: center; gap: 10px; font-size: 11px; padding: 4px 0; flex-shrink: 0; }
+  #step-slider { flex: 1; }
+
+  .axis text { fill: var(--muted); font-size: 10px; }
+  .axis line, .axis path { stroke: #444; }
+
+  /* Step Phase Breakdown panel (Perfetto source) */
+  #panel-phases { min-height: 160px; }
+  .panel-unavail { opacity: .35; }
+  .panel-unavail h2::after { content: " — no data"; color: var(--muted); font-weight:400; text-transform:none; letter-spacing:0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>GenAI CB Trace Visualizer</h1>
+  <div id="run-info-header" style="display:none; flex:1; margin-left:16px;">
+    <div style="font-size:13px; font-weight:600; color:var(--text)" id="ri-model">—</div>
+    <div style="font-size:11px; color:var(--muted)">
+      <span id="ri-device"></span><span id="ri-sep" style="display:none"> · </span><span id="ri-notes"></span>
+      <span style="margin-left:8px; color:#556" id="ri-ts"></span>
+    </div>
+  </div>
+  <span class="sub" id="default-sub">OpenVINO Continuous Batching · offline analysis</span>
+  <button id="load-btn">Load analysis.json</button>
+  <input type="file" id="file-input" accept=".json" style="display:none"/>
+</header>
+
+<div id="metrics-bar">
+  <div class="metric"><span class="label">Steps</span><span class="value" id="m-steps">—</span></div>
+  <div class="metric"><span class="label">Sequences</span><span class="value" id="m-seqs">—</span></div>
+  <div class="metric"><span class="label">Finishes</span><span class="value" id="m-fin">—</span></div>
+  <div class="metric"><span class="label">Preemptions</span><span class="value" id="m-pre">—</span></div>
+  <div class="metric"><span class="label">OOMs</span><span class="value" id="m-oom">—</span></div>
+  <div class="metric"><span class="label">Peak cache</span><span class="value" id="m-cache">—</span></div>
+  <div class="metric"><span class="label">Prompt-block hit rate</span><span class="value" id="m-pfx">—</span></div>
+  <div class="metric"><span class="label">Requests with prefix hits</span><span class="value" id="m-pfx-requests">—</span></div>
+  <div class="metric"><span class="label">p50 step (µs)</span><span class="value" id="m-p50">—</span></div>
+  <div class="metric"><span class="label">p99 step (µs)</span><span class="value" id="m-p99">—</span></div>
+  <div class="metric"><span class="label">Peak tok/s</span><span class="value" id="m-tps">—</span></div>
+</div>
+
+<div id="panels">
+
+  <!-- Row A: Timeline | Tokens/sec | Step Duration -->
+  <div class="row-3">
+    <div class="panel" id="panel-timeline">
+      <h2>1 · Scheduler Timeline</h2>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--decode)"></div>Active</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--wait)"></div>Waiting</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--accent);opacity:.6"></div>Cache %</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--preempt)"></div>Preempt</div>
+      </div>
+      <svg id="svg-timeline"></svg>
+    </div>
+
+    <div class="panel" id="panel-tps">
+      <h2>2 · Tokens / Second</h2>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--tps-prefill)"></div>Prefill step</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--tps-decode)"></div>Decode step</div>
+      </div>
+      <svg id="svg-tps"></svg>
+    </div>
+
+    <div class="panel" id="panel-dur">
+      <h2>3 · Step Duration (µs)</h2>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--prefill)"></div>Prefill</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--decode)"></div>Decode</div>
+      </div>
+      <div class="panel-ctrl-row">
+        <label for="dur-ymax">Y max (µs):</label>
+        <input type="number" id="dur-ymax" placeholder="auto" min="1">
+        <span style="color:#556;font-size:10px">clip outliers</span>
+      </div>
+      <svg id="svg-dur"></svg>
+    </div>
+  </div>
+
+  <!-- Row A2: Step Phase Breakdown (visible when source=perfetto) -->
+  <div class="row-1" id="row-phases" style="display:none">
+    <div class="panel" id="panel-phases">
+      <h2>3b · Step Phase Breakdown (ITT)</h2>
+      <div class="legend" id="phases-legend"></div>
+      <div class="panel-ctrl-row">
+        <label for="phases-ymax">Y max (µs):</label>
+        <input type="number" id="phases-ymax" placeholder="auto" min="1">
+        <span style="color:#556;font-size:10px">clip outliers</span>
+      </div>
+      <svg id="svg-phases"></svg>
+    </div>
+  </div>
+
+  <!-- Row B: Swimlanes | Gantt -->
+  <div class="row-2">
+    <div class="panel" id="panel-swim">
+      <h2>4 · Sequence Swimlanes</h2>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--prefill)"></div>Prefill</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--decode)"></div>Decode</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--wait)"></div>Waiting</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--finish)"></div>Finished</div>
+      </div>
+      <svg id="svg-swim"></svg>
+    </div>
+
+    <div class="panel" id="panel-gantt">
+      <h2>5 · Request Gantt</h2>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--decode)"></div>Running</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--wait)"></div>Waiting / gap</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--prefill)"></div>Prefill</div>
+      </div>
+      <svg id="svg-gantt"></svg>
+    </div>
+  </div>
+
+  <!-- Row C: Batch hist | Sched-tokens hist -->
+  <div class="row-2">
+    <div class="panel" id="panel-batchhist">
+      <h2>6 · Batch Size Distribution (active sequences / step)</h2>
+      <svg id="svg-batchhist"></svg>
+    </div>
+
+    <div class="panel" id="panel-schedhist">
+      <h2>7 · Scheduled Tokens / Step Distribution</h2>
+      <svg id="svg-schedhist"></svg>
+    </div>
+  </div>
+
+  <!-- Row D: Prefix hit summary (full width) -->
+  <div class="row-1">
+    <div class="panel" id="panel-pfx">
+      <h2>8 · Per-Request Prefix Cache Hit Summary</h2>
+      <div id="pfx-table-wrap">
+        <table id="pfx-table">
+          <thead><tr>
+            <th>Seq</th><th>Req</th>
+            <th>Prompt (tok)</th><th>Cached (tok)</th>
+            <th>Hit %</th><th>Gen (tok)</th><th>Step span</th>
+          </tr></thead>
+          <tbody id="pfx-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row E: Memory Grid (full width) -->
+  <div class="row-1">
+    <div class="panel" id="panel-mem">
+      <h2>9 · PagedAttention Block Grid <span id="mem-block-caption" style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0"></span></h2>
+      <div class="legend" style="margin-bottom:4px">
+        <div class="legend-item"><div class="legend-dot" style="background:#9b59b6"></div>Sequence (colors independent of swimlanes)</div>
+        <div class="legend-item">
+          <svg width="12" height="12" style="flex-shrink:0"><rect width="12" height="12" fill="#9b59b6"/>
+            <line x1="0" y1="4" x2="8" y2="12" stroke="#fff" stroke-width="1.5" stroke-opacity=".55"/>
+            <line x1="4" y1="0" x2="12" y2="8" stroke="#fff" stroke-width="1.5" stroke-opacity=".55"/>
+          </svg>
+          Prefix-cached / shared
+        </div>
+        <div class="legend-item"><div class="legend-dot" style="background:#1e1e30;border:1px solid #444"></div>Free</div>
+      </div>
+      <div id="step-slider-wrap">
+        <span>Step:</span>
+        <input type="range" id="step-slider" min="0" max="0" value="0"/>
+        <input type="number" id="step-input" min="0" max="0" value="0"
+               style="width:58px;background:#0d1b2e;color:var(--text);border:1px solid #445;border-radius:3px;padding:1px 4px;font-size:11px;text-align:center"/>
+        <button id="play-btn" title="Play all steps at 2 steps/sec"
+                style="padding:1px 9px;background:#0f3460;color:var(--text);border:1px solid #446;border-radius:3px;cursor:pointer;font-size:12px">▶</button>
+        <span style="margin-left:16px">Cell:</span>
+        <input type="range" id="zoom-slider" min="4" max="48" value="8" style="width:80px"/>
+        <span id="zoom-label" style="min-width:28px">8px</span>
+        <span style="margin-left:auto;font-size:11px;color:var(--muted)" id="mem-stats"></span>
+      </div>
+      <div id="mem-svg-wrap"><svg id="svg-mem"></svg></div>
+    </div>
+  </div>
+
+  <!-- Row F: Events (full width) -->
+  <div class="row-1">
+    <div class="panel" id="panel-events">
+      <h2>10 · Events (Preemptions · OOMs · Finishes)</h2>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--preempt)"></div>Preempt</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--oom)"></div>OOM</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--finish)"></div>Finish</div>
+      </div>
+      <svg id="svg-events"></svg>
+    </div>
+  </div>
+
+</div><!-- #panels -->
+
+<div id="tooltip"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script>
+// ── Globals ────────────────────────────────────────────────────────────────
+let DATA = null;
+let MEM_ZOOM = 8;
+let MEM_SNAP = 0;
+let playInterval = null;
+
+// ── File loading ────────────────────────────────────────────────────────────
+document.getElementById("load-btn").addEventListener("click", () => {
+  document.getElementById("file-input").click();
+});
+document.getElementById("file-input").addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      DATA = JSON.parse(ev.target.result);
+      render(DATA);
+    } catch(err) {
+      alert("Failed to parse analysis.json: " + err);
+    }
+  };
+  reader.readAsText(file);
+});
+
+// ── Tooltip helpers ─────────────────────────────────────────────────────────
+const tooltip = document.getElementById("tooltip");
+function showTip(html, event) {
+  tooltip.innerHTML = html;
+  tooltip.style.display = "block";
+  moveTip(event);
+}
+function moveTip(event) {
+  const x = event.clientX + 14, y = event.clientY - 10;
+  tooltip.style.left = x + "px";
+  tooltip.style.top  = y + "px";
+}
+function hideTip() { tooltip.style.display = "none"; }
+
+// ── Colour palettes ─────────────────────────────────────────────────────────
+const MEM_PALETTE = [
+  "#c77dff","#00c9a7","#ffc300","#3a86ff","#ff6b6b",
+  "#06d6a0","#ffd166","#118ab2","#e07a5f","#a8dadc","#f4a261","#457b9d"
+];
+function seqColor(seqId) { return MEM_PALETTE[seqId % MEM_PALETTE.length]; }
+
+// ── Render entry point ──────────────────────────────────────────────────────
+function render(data) {
+  fillRunInfo(data.run_info, data);
+  fillMetrics(data.metrics, data);
+  renderTimeline(data);
+  renderTps(data);
+  renderDuration(data);
+  renderPhaseBreakdown(data);
+  renderSwimLanes(data);
+  renderGantt(data);
+  renderBatchHist(data);
+  renderSchedHist(data);
+  renderPrefixTable(data);
+  renderMemGrid(data, 0);
+  renderEvents(data);
+
+  // Stop any ongoing playback when new data is loaded
+  if (playInterval) { clearInterval(playInterval); playInterval = null; }
+  document.getElementById("play-btn").textContent = "▶";
+
+  const snaps = data.memory_snapshots || [];
+  const stepSlider = document.getElementById("step-slider");
+  const stepInput  = document.getElementById("step-input");
+  const maxSnap    = Math.max(0, snaps.length - 1);
+  stepSlider.min = stepInput.min = 0;
+  stepSlider.max = stepInput.max = maxSnap;
+  stepSlider.value = stepInput.value = 0;
+  MEM_SNAP = 0;
+
+  stepSlider.addEventListener("input", () => {
+    MEM_SNAP = +stepSlider.value;
+    stepInput.value = MEM_SNAP;
+    renderMemGrid(data, MEM_SNAP);
+  });
+
+  stepInput.addEventListener("input", () => {
+    const v = Math.max(0, Math.min(maxSnap, Math.floor(+stepInput.value || 0)));
+    stepInput.value = v;
+    stepSlider.value = v;
+    MEM_SNAP = v;
+    renderMemGrid(data, MEM_SNAP);
+  });
+
+  const zoomSlider = document.getElementById("zoom-slider");
+  zoomSlider.addEventListener("input", () => {
+    MEM_ZOOM = +zoomSlider.value;
+    document.getElementById("zoom-label").textContent = MEM_ZOOM + "px";
+    renderMemGrid(data, MEM_SNAP);
+  });
+
+  if (snaps.length > 0) renderMemGrid(data, 0);
+}
+
+// ── Run info header ─────────────────────────────────────────────────────────
+function fillRunInfo(ri, data) {
+  if (data.block_meta && ri) {
+    ri.block_size_tokens = ri.block_size_tokens || data.block_meta.block_size_tokens;
+    ri.total_kv_blocks   = ri.total_kv_blocks   || data.block_meta.total_kv_blocks;
+  }
+  if (!ri) return;
+  const seqCount = Object.keys(data.sequences || {}).length;
+
+  document.getElementById("run-info-header").style.display = "block";
+  document.getElementById("default-sub").style.display = "none";
+
+  const model = ri.model || "";
+  document.getElementById("ri-model").textContent = model.replace(/.*[/\\]/, "") || "—";
+
+  const parts = [];
+  if (ri.device) parts.push(ri.device);
+  parts.push(`${seqCount} sequence${seqCount !== 1 ? "s" : ""}`);
+  if (ri.notes) parts.push(ri.notes);
+  document.getElementById("ri-device").textContent = parts.join(" · ");
+  document.getElementById("ri-sep").style.display = ri.analyzed_at ? "inline" : "none";
+  document.getElementById("ri-ts").textContent = ri.analyzed_at || "";
+}
+
+// ── Metrics bar ─────────────────────────────────────────────────────────────
+function fillMetrics(m, data) {
+  // Dim panels whose data is absent — check actual data, not source type
+  const panelChecks = {
+    "panel-swim":      () => Object.keys(data.sequences || {}).length === 0,
+    "panel-gantt":     () => (data.seq_summaries || []).length === 0,
+    "panel-batchhist": () => Object.keys(data.batch_hist || {}).length === 0,
+    "panel-schedhist": () => (data.sched_tokens_hist || []).length === 0,
+    "panel-pfx":       () => (data.seq_summaries || []).length === 0,
+    "panel-mem":       () => (data.memory_snapshots || []).length === 0,
+    "panel-tps":       () => !data.steps || data.steps.every(s => (s.throughput_tps || 0) <= 0),
+  };
+  Object.entries(panelChecks).forEach(([id, check]) => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle("panel-unavail", check());
+  });
+
+  const seqCount = Object.keys(data.sequences || {}).length;
+  document.getElementById("m-steps").textContent = m.total_steps.toLocaleString();
+  document.getElementById("m-seqs").textContent  = seqCount.toLocaleString();
+  document.getElementById("m-fin").textContent   = m.total_finishes.toLocaleString();
+  document.getElementById("m-pre").textContent   = m.total_preemptions.toLocaleString();
+  document.getElementById("m-oom").textContent   = m.total_ooms.toLocaleString();
+  document.getElementById("m-cache").textContent = (m.peak_cache_usage * 100).toFixed(1) + "%";
+  document.getElementById("m-pfx").textContent = (m.prefix_cache_hit_rate * 100).toFixed(1) + "%";
+  const seqSummaries = data.seq_summaries || [];
+  const prefixRequestCount = m.prefix_cache_request_count ??
+    new Set(seqSummaries.map(summary => summary.req_id)).size;
+  const prefixHitRequests = m.prefix_cache_requests_with_hits ??
+    new Set(seqSummaries.filter(summary => (summary.prefix_hit_tokens || 0) > 0)
+                         .map(summary => summary.req_id)).size;
+  const prefixRequestRate = m.prefix_cache_request_hit_rate ??
+    (prefixRequestCount > 0 ? prefixHitRequests / prefixRequestCount : 0);
+  document.getElementById("m-pfx-requests").textContent =
+    `${prefixHitRequests}/${prefixRequestCount} (${(prefixRequestRate * 100).toFixed(1)}%)`;
+  document.getElementById("m-p50").textContent   = m.p50_step_duration_us.toLocaleString();
+  document.getElementById("m-p99").textContent   = m.p99_step_duration_us.toLocaleString();
+
+  const peakTps = d3.max(data.steps || [], d => d.throughput_tps) || 0;
+  document.getElementById("m-tps").textContent =
+    peakTps > 1000 ? (peakTps / 1000).toFixed(1) + "k" : peakTps.toLocaleString();
+}
+
+// ── Shared axis helper ───────────────────────────────────────────────────────
+function panelDims(svgEl, h) {
+  const W = svgEl.parentElement.clientWidth - 24;
+  const H = h;
+  svgEl.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  return { W, H };
+}
+
+// ── Panel 1: Timeline ───────────────────────────────────────────────────────
+function renderTimeline(data) {
+  const steps = data.steps;
+  if (!steps || steps.length === 0) return;
+
+  const el = document.getElementById("svg-timeline");
+  const { W, H } = panelDims(el, 130);
+  const svg = d3.select(el);
+  svg.selectAll("*").remove();
+
+  const margin = {top:10, right:44, bottom:22, left:36};
+  const iW = W - margin.left - margin.right;
+  const iH = H - margin.top  - margin.bottom;
+  const g  = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+  const x  = d3.scaleLinear().domain([0, steps.length - 1]).range([0, iW]);
+  const maxReq = d3.max(steps, d => d.total) || 1;
+  const y  = d3.scaleLinear().domain([0, maxReq]).range([iH, 0]);
+  const yC = d3.scaleLinear().domain([0, 1]).range([iH, 0]);
+
+  // Cache usage area
+  g.append("path").datum(steps)
+    .attr("fill", "var(--accent)").attr("opacity", 0.2)
+    .attr("d", d3.area().x((_, i) => x(i)).y0(iH).y1(d => yC(d.cache_usage)));
+
+  // Waiting area
+  g.append("path").datum(steps)
+    .attr("fill", "var(--wait)").attr("opacity", .5)
+    .attr("d", d3.area().x((_, i) => x(i)).y0(iH).y1(d => y(d.waiting)));
+
+  // Active line
+  g.append("path").datum(steps)
+    .attr("fill","none").attr("stroke","var(--decode)").attr("stroke-width",1.5)
+    .attr("d", d3.line().x((_, i) => x(i)).y(d => y(d.active)));
+
+  // Preemption markers
+  steps.forEach((s, i) => {
+    if (s.preemption_count > 0)
+      g.append("line").attr("x1",x(i)).attr("x2",x(i)).attr("y1",0).attr("y2",iH)
+       .attr("stroke","var(--preempt)").attr("stroke-width",1).attr("opacity",.7);
+  });
+
+  g.append("g").attr("class","axis").attr("transform",`translate(0,${iH})`).call(d3.axisBottom(x).ticks(6).tickFormat(d3.format("d")));
+  g.append("g").attr("class","axis").call(d3.axisLeft(y).ticks(4).tickFormat(d3.format("d")));
+  g.append("g").attr("class","axis").attr("transform",`translate(${iW},0)`).call(d3.axisRight(yC).ticks(3).tickFormat(d3.format(".0%")));
+
+  g.append("rect").attr("width",iW).attr("height",iH).attr("fill","transparent")
+    .on("mousemove", function(event) {
+      const i = Math.round(x.invert(d3.pointer(event,this)[0]));
+      const s = steps[Math.max(0, Math.min(i, steps.length-1))];
+      showTip(`<b>Step ${s.step_id}</b><br>
+        Active: ${s.active} · Waiting: ${s.waiting}<br>
+        Cache: ${(s.cache_usage*100).toFixed(1)}%<br>
+        Tokens: ${s.total_tokens} · Prefill: ${s.is_prefill}<br>
+        Duration: ${s.duration_us.toLocaleString()} µs<br>
+        Preemptions: ${s.preemption_count}`, event);
+    }).on("mouseleave", hideTip);
+}
+
+// ── Panel 2: Tokens/sec ─────────────────────────────────────────────────────
+function renderTps(data) {
+  const steps = data.steps;
+  if (!steps || steps.length === 0) return;
+
+  const el = document.getElementById("svg-tps");
+  const { W, H } = panelDims(el, 130);
+  const svg = d3.select(el);
+  svg.selectAll("*").remove();
+
+  const margin = {top:10, right:10, bottom:22, left:52};
+  const iW = W - margin.left - margin.right;
+  const iH = H - margin.top  - margin.bottom;
+  const g  = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+  const x   = d3.scaleLinear().domain([0, steps.length-1]).range([0, iW]);
+  const maxTps = d3.max(steps, d => d.throughput_tps) || 1;
+  const y   = d3.scaleLinear().domain([0, maxTps]).range([iH, 0]).nice();
+  const bW  = Math.max(1, iW / steps.length - 0.5);
+
+  steps.forEach((s, i) => {
+    if (s.throughput_tps <= 0) return;
+    g.append("rect")
+      .attr("x", x(i) - bW/2).attr("y", y(s.throughput_tps))
+      .attr("width", bW).attr("height", iH - y(s.throughput_tps))
+      .attr("fill", s.is_prefill ? "var(--tps-prefill)" : "var(--tps-decode)")
+      .attr("opacity", 0.85)
+      .on("mouseover", ev => showTip(
+        `<b>Step ${s.step_id}</b><br>${s.throughput_tps.toLocaleString()} tok/s<br>` +
+        `${s.step_tokens} tokens · ${s.duration_us.toLocaleString()} µs<br>` +
+        `${s.is_prefill ? "Prefill" : "Decode"} step`, ev))
+      .on("mousemove", moveTip).on("mouseleave", hideTip);
+  });
+
+  g.append("g").attr("class","axis").attr("transform",`translate(0,${iH})`).call(d3.axisBottom(x).ticks(6).tickFormat(d3.format("d")));
+  g.append("g").attr("class","axis").call(d3.axisLeft(y).ticks(4).tickFormat(v => v >= 1000 ? (v/1000).toFixed(0)+"k" : v));
+}
+
+// ── Panel 3: Step Duration ──────────────────────────────────────────────────
+function renderDuration(data) {
+  const steps = data.steps;
+  if (!steps || steps.length === 0) return;
+
+  const el = document.getElementById("svg-dur");
+  const { W, H } = panelDims(el, 130);
+  const svg = d3.select(el);
+  svg.selectAll("*").remove();
+
+  const margin = {top:10, right:10, bottom:22, left:52};
+  const iW = W - margin.left - margin.right;
+  const iH = H - margin.top  - margin.bottom;
+  const g  = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+  const withDur = steps.filter(s => s.duration_us > 0);
+  if (withDur.length === 0) return;
+
+  const rawMax = d3.max(withDur, d => d.duration_us) || 1;
+  const ymaxEl = document.getElementById("dur-ymax");
+  const ymaxVal = ymaxEl && ymaxEl.value ? +ymaxEl.value : 0;
+  const maxD = (ymaxVal > 0 && ymaxVal < rawMax) ? ymaxVal : rawMax;
+
+  const x   = d3.scaleLinear().domain([0, steps.length-1]).range([0, iW]);
+  const y   = d3.scaleLinear().domain([0, maxD]).range([iH, 0]).nice();
+  const bW  = Math.max(1, iW / steps.length - 0.5);
+
+  // Clip-indicator stripe pattern for bars that exceed the y max
+  if (ymaxVal > 0 && ymaxVal < rawMax) {
+    const defs = svg.append("defs");
+    const pat = defs.append("pattern").attr("id","clip-stripe")
+      .attr("patternUnits","userSpaceOnUse").attr("width",5).attr("height",5);
+    pat.append("rect").attr("width",5).attr("height",5).attr("fill","#e94560").attr("opacity",.35);
+    pat.append("line").attr("x1",0).attr("y1",0).attr("x2",5).attr("y2",5)
+      .attr("stroke","#fff").attr("stroke-width",1.5).attr("stroke-opacity",.4);
+  }
+
+  steps.forEach((s, i) => {
+    if (s.duration_us <= 0) return;
+    const clipped = ymaxVal > 0 && s.duration_us > ymaxVal;
+    const dispDur = clipped ? ymaxVal : s.duration_us;
+    const barY = y(dispDur);
+    const barH = iH - barY;
+    const fill = s.is_prefill ? "var(--prefill)" : "var(--decode)";
+    g.append("rect")
+      .attr("x", x(i) - bW/2).attr("y", barY)
+      .attr("width", bW).attr("height", Math.max(1, barH))
+      .attr("fill", clipped ? "url(#clip-stripe)" : fill)
+      .attr("opacity", clipped ? 1 : 0.75)
+      .on("mouseover", ev => showTip(
+        `<b>Step ${s.step_id}</b><br>${s.duration_us.toLocaleString()} µs` +
+        (clipped ? ` <i>(clipped at ${ymaxVal.toLocaleString()})</i>` : "") + `<br>` +
+        `${s.is_prefill ? "Prefill" : "Decode"} · active: ${s.active}`, ev))
+      .on("mousemove", moveTip).on("mouseleave", hideTip);
+  });
+
+  // Clip line
+  if (ymaxVal > 0 && ymaxVal < rawMax) {
+    g.append("line").attr("x1",0).attr("x2",iW).attr("y1",y(ymaxVal)).attr("y2",y(ymaxVal))
+      .attr("stroke","var(--accent)").attr("stroke-width",1).attr("stroke-dasharray","4,3").attr("opacity",.7);
+  }
+
+  g.append("g").attr("class","axis").attr("transform",`translate(0,${iH})`).call(d3.axisBottom(x).ticks(6).tickFormat(d3.format("d")));
+  g.append("g").attr("class","axis").call(d3.axisLeft(y).ticks(4).tickFormat(v => v >= 1000 ? (v/1000).toFixed(0)+"k" : v));
+}
+
+// ── Panel 3b: Step Phase Breakdown (Perfetto source) ───────────────────────
+const PHASE_COLORS = {
+  forward_us:        "#4a9eff",   // decode blue — dominant, model compute
+  scheduling_us:     "#f5a623",   // amber — scheduler overhead
+  sample_us:         "#50fa7b",   // green — sampling
+  copy_blocks_us:    "#bd93f9",   // purple — KV block copy
+  cleanup_us:        "#888",      // gray — cleanup
+  fork_free_us:      "#ff79c6",   // pink — fork/free
+  notify_dropped_us: "#e94560",   // red — dropped
+  unaccounted_us:    "#333",      // dark — gap / untracked
+};
+const PHASE_LABELS = {
+  forward_us:        "Forward pass",
+  scheduling_us:     "Scheduling",
+  sample_us:         "Sampling",
+  copy_blocks_us:    "Copy blocks",
+  cleanup_us:        "Cleanup",
+  fork_free_us:      "Fork/free",
+  notify_dropped_us: "Notify dropped",
+  unaccounted_us:    "Unaccounted",
+};
+const PHASE_ORDER = [
+  "forward_us","scheduling_us","sample_us","copy_blocks_us",
+  "cleanup_us","fork_free_us","notify_dropped_us","unaccounted_us"
+];
+
+function renderPhaseBreakdown(data) {
+  const steps = data.steps || [];
+  const isPerfetto = data.source === "perfetto";
+
+  // Show/hide the row
+  document.getElementById("row-phases").style.display = isPerfetto ? "" : "none";
+  if (!isPerfetto || steps.length === 0) return;
+
+  // Check that subtask data is actually present
+  if (!steps[0].subtasks) return;
+
+  // Build phase legend
+  const legendEl = document.getElementById("phases-legend");
+  legendEl.innerHTML = "";
+  PHASE_ORDER.forEach(key => {
+    if (key === "unaccounted_us") return;
+    const item = document.createElement("div");
+    item.className = "legend-item";
+    item.innerHTML = `<div class="legend-dot" style="background:${PHASE_COLORS[key]}"></div>${PHASE_LABELS[key]}`;
+    legendEl.appendChild(item);
+  });
+
+  const el = document.getElementById("svg-phases");
+  const { W, H } = panelDims(el, 150);
+  const svg = d3.select(el);
+  svg.selectAll("*").remove();
+
+  const margin = {top:8, right:10, bottom:22, left:52};
+  const iW = W - margin.left - margin.right;
+  const iH = H - margin.top  - margin.bottom;
+  const g  = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+  const x  = d3.scaleBand().domain(d3.range(steps.length)).range([0, iW]).padding(0.1);
+  const rawMaxDur = d3.max(steps, s => s.duration_us) || 1;
+  const ymaxEl2 = document.getElementById("phases-ymax");
+  const ymaxVal2 = ymaxEl2 && ymaxEl2.value ? +ymaxEl2.value : 0;
+  const maxDur = (ymaxVal2 > 0 && ymaxVal2 < rawMaxDur) ? ymaxVal2 : rawMaxDur;
+  const y  = d3.scaleLinear().domain([0, maxDur]).range([iH, 0]).nice();
+
+  // Stacked bars: for each step, draw segments bottom-to-top in PHASE_ORDER
+  steps.forEach((s, i) => {
+    let base = s.duration_us;  // start from top, stack downward (largest first = forward)
+    PHASE_ORDER.forEach(key => {
+      const dur = (s.subtasks || {})[key] || 0;
+      if (dur <= 0) return;
+      base -= dur;
+      const barY  = y(base + dur);
+      const barH  = Math.max(1, iH - y(dur));  // height = iH - y(dur)
+      const actualH = y(base) - y(base + dur);
+
+      g.append("rect")
+        .attr("x", x(i)).attr("y", y(base + dur))
+        .attr("width", x.bandwidth()).attr("height", Math.max(1, actualH))
+        .attr("fill", PHASE_COLORS[key] || "#444")
+        .attr("opacity", key === "unaccounted_us" ? 0.3 : 0.85)
+        .on("mouseover", ev => showTip(
+          `<b>Step ${s.step_id}</b><br>${PHASE_LABELS[key]}: ${dur.toLocaleString()} µs<br>` +
+          `(${(dur/s.duration_us*100).toFixed(1)}% of step)<br>` +
+          `Total: ${s.duration_us.toLocaleString()} µs`, ev))
+        .on("mousemove", moveTip).on("mouseleave", hideTip);
+    });
+  });
+
+  // Clip line for phase breakdown
+  if (ymaxVal2 > 0 && ymaxVal2 < rawMaxDur) {
+    g.append("line").attr("x1",0).attr("x2",iW).attr("y1",y(ymaxVal2)).attr("y2",y(ymaxVal2))
+      .attr("stroke","var(--accent)").attr("stroke-width",1).attr("stroke-dasharray","4,3").attr("opacity",.7);
+  }
+
+  g.append("g").attr("class","axis").attr("transform",`translate(0,${iH})`).call(d3.axisBottom(x).tickValues(d3.range(0,steps.length,Math.max(1,Math.floor(steps.length/8)))).tickFormat(i => steps[i]?.step_id ?? i));
+  g.append("g").attr("class","axis").call(d3.axisLeft(y).ticks(4).tickFormat(v => v>=1000?(v/1000).toFixed(0)+"k":v));
+  g.append("text").attr("x",-iH/2).attr("y",-38).attr("transform","rotate(-90)").attr("text-anchor","middle").attr("font-size",9).attr("fill","var(--muted)").text("µs");
+}
+
+// ── Panel 4: Swimlanes ──────────────────────────────────────────────────────
+function renderSwimLanes(data) {
+  const steps  = data.steps;
+  const seqMap = data.sequences || {};
+  const seqIds = Object.keys(seqMap).map(Number).sort((a, b) => seqMap[a].first_step - seqMap[b].first_step);
+  if (seqIds.length === 0 || steps.length === 0) return;
+
+  const el  = document.getElementById("svg-swim");
+  const MAX_ROWS = 80;
+  const shown    = seqIds.slice(0, MAX_ROWS);
+  const ROW_H    = Math.max(3, Math.floor(160 / shown.length));
+  const W        = el.parentElement.clientWidth - 24;
+  const H        = ROW_H * shown.length + 30;
+  el.setAttribute("viewBox", `0 0 ${W} ${H}`);
+
+  const svg = d3.select(el);
+  svg.selectAll("*").remove();
+
+  const margin = {top:4, left:40, right:10, bottom:20};
+  const iW = W - margin.left - margin.right;
+  const g  = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+  const x     = d3.scaleLinear().domain([0, steps.length-1]).range([0, iW]);
+  const stepW = Math.max(1, iW / steps.length);
+  const stepIdx = new Map(steps.map((s, i) => [s.step_id, i]));
+
+  shown.forEach((sid, row) => {
+    const d = seqMap[sid];
+    const y = row * ROW_H;
+    d.steps.forEach((stepId, j) => {
+      const xi     = stepIdx.get(stepId) ?? 0;
+      const status = d.status[j];
+      const pfill  = d.is_prefill[j];
+      let fill;
+      if (status === "FINISHED")   fill = "var(--finish)";
+      else if (status === "OOM")   fill = "var(--oom)";
+      else if (status === "WAITING") fill = "var(--wait)";
+      else if (pfill)              fill = "var(--prefill)";
+      else                         fill = "var(--decode)";
+
+      g.append("rect")
+        .attr("x", x(xi)).attr("y", y)
+        .attr("width", stepW+0.5).attr("height", ROW_H)
+        .attr("fill", fill)
+        .on("mouseover", ev => showTip(`seq ${sid} req ${d.req_id}<br>Step ${stepId} · ${status}${pfill?" (prefill)":""}<br>Tokens: ${d.sched_tokens[j]}`, ev))
+        .on("mousemove", moveTip).on("mouseleave", hideTip);
+    });
+    if (ROW_H >= 6)
+      g.append("text").attr("x",-4).attr("y", y+ROW_H-1)
+       .attr("text-anchor","end").attr("font-size", Math.min(ROW_H-1,9))
+       .attr("fill","var(--muted)").text(sid);
+  });
+
+  g.append("g").attr("class","axis").attr("transform",`translate(0,${shown.length*ROW_H})`).call(d3.axisBottom(x).ticks(6).tickFormat(d3.format("d")));
+}
+
+// ── Panel 5: Request Gantt ──────────────────────────────────────────────────
+function renderGantt(data) {
+  const steps  = data.steps || [];
+  const seqMap = data.sequences || {};
+  const seqIds = Object.keys(seqMap).map(Number).sort((a, b) => seqMap[a].first_step - seqMap[b].first_step);
+  if (seqIds.length === 0 || steps.length === 0) return;
+
+  const el  = document.getElementById("svg-gantt");
+  const W   = el.parentElement.clientWidth - 24;
+
+  const ROW_H = 18;
+  const PAD   = 4;
+  const H     = seqIds.length * (ROW_H + PAD) + 36;
+  el.setAttribute("viewBox", `0 0 ${W} ${H}`);
+
+  const svg = d3.select(el);
+  svg.selectAll("*").remove();
+
+  const margin = {top:8, left:48, right:10, bottom:22};
+  const iW = W - margin.left - margin.right;
+  const g  = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+  const maxStep = d3.max(seqIds, sid => seqMap[sid].last_step) || steps.length-1;
+  const x = d3.scaleLinear().domain([0, maxStep]).range([0, iW]);
+
+  // Build step_id → index for timestamp lookup
+  const stepTs  = new Map(steps.map(s => [s.step_id, s.ts_us]));
+  const firstTs = steps.length ? steps[0].ts_us : 0;
+
+  seqIds.forEach((sid, row) => {
+    const d = seqMap[sid];
+    const cy = row * (ROW_H + PAD);
+
+    // Background bar: full lifespan (gray = "could have been running")
+    g.append("rect")
+      .attr("x", x(d.first_step)).attr("y", cy)
+      .attr("width", Math.max(1, x(d.last_step) - x(d.first_step)))
+      .attr("height", ROW_H)
+      .attr("fill", "#333").attr("rx", 2);
+
+    // Segment each step the sequence appears in
+    const stepSet = new Set(d.steps);
+    d.steps.forEach((stepId, j) => {
+      const xi   = x(stepId);
+      const next = d.steps[j+1];
+      const barW = next ? Math.max(1, x(next) - xi) : Math.max(2, x(stepId+1) - xi);
+      const status = d.status[j];
+      const pfill  = d.is_prefill[j];
+
+      let fill;
+      if (pfill)                    fill = "var(--prefill)";
+      else if (status === "RUNNING") fill = "var(--decode)";
+      else if (status === "WAITING") fill = "var(--wait)";
+      else if (status === "FINISHED") fill = "var(--finish)";
+      else                           fill = "var(--oom)";
+
+      g.append("rect")
+        .attr("x", xi).attr("y", cy)
+        .attr("width", barW).attr("height", ROW_H)
+        .attr("fill", fill).attr("opacity", 0.9).attr("rx", 1)
+        .on("mouseover", ev => showTip(
+          `<b>Seq ${sid}</b> (req ${d.req_id})<br>` +
+          `Step ${stepId} · ${status}${pfill?" (prefill)":""}<br>` +
+          `Span: steps ${d.first_step}–${d.last_step} (${d.last_step-d.first_step+1} steps)<br>` +
+          `Prompt: ${d.prompt_len} tok · Gen: ${d.max_gen_len} tok`, ev))
+        .on("mousemove", moveTip).on("mouseleave", hideTip);
+    });
+
+    // Label
+    g.append("text")
+      .attr("x", -4).attr("y", cy + ROW_H/2 + 4)
+      .attr("text-anchor","end").attr("font-size", 9).attr("fill","var(--muted)")
+      .text(`s${sid}`);
+  });
+
+  g.append("g").attr("class","axis").attr("transform",`translate(0,${seqIds.length*(ROW_H+PAD)})`).call(d3.axisBottom(x).ticks(6).tickFormat(d3.format("d")));
+  // Step axis label
+  g.append("text").attr("x", iW/2).attr("y", seqIds.length*(ROW_H+PAD)+32)
+   .attr("text-anchor","middle").attr("font-size",9).attr("fill","var(--muted)").text("step");
+}
+
+// ── Panel 6: Batch Size Histogram ───────────────────────────────────────────
+function renderBatchHist(data) {
+  const hist = data.batch_hist;
+  if (!hist) return;
+
+  const entries = Object.entries(hist).map(([k,v]) => ({size: +k, count: +v}))
+                         .sort((a,b) => a.size - b.size);
+  if (entries.length === 0) return;
+
+  const el = document.getElementById("svg-batchhist");
+  const { W, H } = panelDims(el, 120);
+  const svg = d3.select(el);
+  svg.selectAll("*").remove();
+
+  const margin = {top:8, right:10, bottom:30, left:44};
+  const iW = W - margin.left - margin.right;
+  const iH = H - margin.top  - margin.bottom;
+  const g  = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+  const x = d3.scaleBand().domain(entries.map(d => d.size)).range([0, iW]).padding(0.2);
+  const y = d3.scaleLinear().domain([0, d3.max(entries, d => d.count)]).range([iH, 0]).nice();
+
+  g.selectAll("rect").data(entries).join("rect")
+    .attr("x", d => x(d.size)).attr("y", d => y(d.count))
+    .attr("width", x.bandwidth()).attr("height", d => iH - y(d.count))
+    .attr("fill", "var(--decode)").attr("opacity", .75)
+    .on("mouseover", (ev, d) => showTip(`<b>${d.size} active seqs</b><br>${d.count} steps (${(d.count/(data.steps||[]).length*100).toFixed(1)}%)`, ev))
+    .on("mousemove", moveTip).on("mouseleave", hideTip);
+
+  g.append("g").attr("class","axis").attr("transform",`translate(0,${iH})`).call(d3.axisBottom(x).tickFormat(d3.format("d")));
+  g.append("g").attr("class","axis").call(d3.axisLeft(y).ticks(4).tickFormat(d3.format("d")));
+  g.append("text").attr("x",iW/2).attr("y",iH+26).attr("text-anchor","middle").attr("font-size",9).attr("fill","var(--muted)").text("active sequences");
+}
+
+// ── Panel 7: Scheduled Tokens Histogram ─────────────────────────────────────
+function renderSchedHist(data) {
+  const hist = data.sched_tokens_hist;
+  if (!hist || hist.length === 0) return;
+
+  const el = document.getElementById("svg-schedhist");
+  const { W, H } = panelDims(el, 120);
+  const svg = d3.select(el);
+  svg.selectAll("*").remove();
+
+  const margin = {top:8, right:10, bottom:30, left:44};
+  const iW = W - margin.left - margin.right;
+  const iH = H - margin.top  - margin.bottom;
+  const g  = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+  const x = d3.scaleBand().domain(hist.map(d => d.tokens)).range([0, iW]).padding(0.2);
+  const y = d3.scaleLinear().domain([0, d3.max(hist, d => d.count)]).range([iH, 0]).nice();
+
+  const colorScale = d3.scaleSequential(d3.interpolateOrRd)
+    .domain([0, d3.max(hist, d => d.tokens)]);
+
+  g.selectAll("rect").data(hist).join("rect")
+    .attr("x", d => x(d.tokens)).attr("y", d => y(d.count))
+    .attr("width", x.bandwidth()).attr("height", d => iH - y(d.count))
+    .attr("fill", d => colorScale(d.tokens)).attr("opacity", .85)
+    .on("mouseover", (ev, d) => showTip(`<b>${d.tokens} tokens/step</b><br>${d.count} steps`, ev))
+    .on("mousemove", moveTip).on("mouseleave", hideTip);
+
+  const maxTok = d3.max(hist, d => d.tokens);
+  const fmt = v => v >= 1000 ? (v/1000).toFixed(1)+"k" : String(v);
+  g.append("g").attr("class","axis").attr("transform",`translate(0,${iH})`).call(
+    d3.axisBottom(x).tickValues(
+      hist.filter((_, i) => i % Math.max(1, Math.floor(hist.length/6)) === 0).map(d => d.tokens)
+    ).tickFormat(fmt)
+  );
+  g.append("g").attr("class","axis").call(d3.axisLeft(y).ticks(4).tickFormat(d3.format("d")));
+  g.append("text").attr("x",iW/2).attr("y",iH+26).attr("text-anchor","middle").attr("font-size",9).attr("fill","var(--muted)").text("tokens scheduled per step");
+}
+
+// ── Panel 8: Prefix Hit Summary ─────────────────────────────────────────────
+function renderPrefixTable(data) {
+  const summaries = data.seq_summaries || [];
+  const tbody = document.getElementById("pfx-tbody");
+  tbody.innerHTML = "";
+  if (summaries.length === 0) return;
+
+  const maxPrompt = d3.max(summaries, d => d.prompt_len) || 1;
+
+  summaries.forEach(s => {
+    const tr = document.createElement("tr");
+    const pct = (s.prefix_hit_pct * 100).toFixed(1);
+    const barW = Math.round(s.prefix_hit_pct * 100);
+
+    tr.innerHTML = `
+      <td>${s.seq_id}</td>
+      <td>${s.req_id}</td>
+      <td>${s.prompt_len}</td>
+      <td class="pfx-bar-cell">
+        <div class="pfx-bar" style="width:${barW}%"></div>
+        <span style="position:relative">${s.prefix_hit_tokens}</span>
+      </td>
+      <td style="color:${s.prefix_hit_pct > 0.5 ? 'var(--finish)' : s.prefix_hit_pct > 0 ? 'var(--prefill)' : 'var(--muted)'}">${pct}%</td>
+      <td>${s.gen_len}</td>
+      <td>${s.step_span}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ── Panel 9: Memory Grid ────────────────────────────────────────────────────
+function renderMemGrid(data, snapIdx) {
+  const snaps = data.memory_snapshots || [];
+  if (snaps.length === 0) return;
+  const snap = snaps[snapIdx];
+  const ri   = data.run_info || {};
+
+  const bsTok  = ri.block_size_tokens || 0;
+  const totBlk = ri.total_kv_blocks   || 0;
+  const capParts = [];
+  if (bsTok  > 0) capParts.push(`${bsTok} tok/block`);
+  if (totBlk > 0) capParts.push(`${totBlk} total`);
+  document.getElementById("mem-block-caption").textContent =
+    capParts.length ? `— ${capParts.join(" · ")}` : "";
+
+  const siEl = document.getElementById("step-input");
+  if (siEl) siEl.value = snap.step_id;
+  document.getElementById("mem-stats").textContent =
+    `used: ${snap.used_blocks} · shared: ${snap.shared_blocks} · frag: ${(snap.fragmentation*100).toFixed(1)}%`;
+
+  const wrap = document.getElementById("mem-svg-wrap");
+  const el   = document.getElementById("svg-mem");
+  const W    = wrap.clientWidth || (el.parentElement.clientWidth - 24);
+
+  const CS   = MEM_ZOOM;
+  const GAP  = CS >= 6 ? 1 : 0;
+  const BW   = CS - GAP;
+  const BH   = CS - GAP;
+  const COLS = Math.max(1, Math.floor(W / CS));
+
+  const physMap = new Map();
+  let maxPi = 0;
+  for (const [sid, blocks] of Object.entries(snap.sequences || {})) {
+    for (const blk of blocks) {
+      physMap.set(blk.pi, {sid: +sid, r: blk.r, h: blk.h});
+      if (blk.pi > maxPi) maxPi = blk.pi;
+    }
+  }
+
+  const total = Math.max(maxPi + 1, totBlk || 0);
+  if (total === 0) return;
+
+  const ROWS = Math.ceil(total / COLS);
+  const H    = ROWS * CS;
+
+  el.setAttribute("width",  W);
+  el.setAttribute("height", H);
+  el.setAttribute("viewBox", `0 0 ${W} ${H}`);
+
+  const svg = d3.select(el);
+  svg.selectAll("*").remove();
+
+  const stripeW = Math.max(4, Math.round(CS * 0.55));
+  const defs = svg.append("defs");
+  const pat  = defs.append("pattern")
+    .attr("id","shared-stripe").attr("patternUnits","userSpaceOnUse")
+    .attr("width",stripeW).attr("height",stripeW)
+    .attr("patternTransform","rotate(45)");
+  pat.append("rect").attr("width",stripeW).attr("height",stripeW).attr("fill","none");
+  pat.append("line").attr("x1",0).attr("y1",0).attr("x2",0).attr("y2",stripeW)
+    .attr("stroke","white").attr("stroke-width", Math.max(1.5, stripeW*0.38))
+    .attr("stroke-opacity",0.5);
+
+  const SHOW_LABEL = BW >= 14 && BH >= 10;
+
+  for (let pi = 0; pi < total; pi++) {
+    const col  = pi % COLS;
+    const row  = Math.floor(pi / COLS);
+    const cx   = col * CS;
+    const cy   = row * CS;
+    const info = physMap.get(pi);
+
+    if (!info) {
+      svg.append("rect").attr("x",cx).attr("y",cy).attr("width",BW).attr("height",BH)
+        .attr("class","blk-free")
+        .on("mouseover", ev => showTip(`Block ${pi}<br><i>free</i>`, ev))
+        .on("mousemove", moveTip).on("mouseleave", hideTip);
+    } else {
+      const color  = seqColor(info.sid);
+      const shared = info.r > 1;
+      const tipHtml =
+        `<b>Block ${pi}</b><br>Seq ${info.sid} · ` +
+        (shared ? `<b style="color:#ffd166">shared by ${info.r} seqs</b>` : `private`) +
+        (bsTok ? `<br>${bsTok} tokens` : "") +
+        `<br>Hash: ${info.h ? "0x"+info.h.toString(16).slice(0,10) : "—"}`;
+
+      svg.append("rect").attr("x",cx).attr("y",cy).attr("width",BW).attr("height",BH)
+        .attr("class","blk-used").attr("fill",color).attr("opacity", shared ? 1 : 0.7)
+        .on("mouseover", ev => showTip(tipHtml, ev))
+        .on("mousemove", moveTip).on("mouseleave", hideTip);
+
+      if (shared)
+        svg.append("rect").attr("x",cx).attr("y",cy).attr("width",BW).attr("height",BH)
+          .attr("fill","url(#shared-stripe)").style("pointer-events","none");
+
+      if (SHOW_LABEL)
+        svg.append("text").attr("x", cx+BW/2).attr("y", cy+BH/2+3.5)
+          .attr("text-anchor","middle").attr("font-size", Math.min(BH-3,9))
+          .attr("fill","#000").attr("fill-opacity",.65).style("pointer-events","none")
+          .text(info.sid);
+    }
+  }
+}
+
+// ── Panel 10: Events ─────────────────────────────────────────────────────────
+function renderEvents(data) {
+  const steps  = data.steps || [];
+  const events = (data.events || []).filter(e => ["PREEMPT","OOM","FINISH"].includes(e.event));
+  if (steps.length === 0) return;
+
+  const el = document.getElementById("svg-events");
+  const { W, H } = panelDims(el, 110);
+  const svg = d3.select(el);
+  svg.selectAll("*").remove();
+
+  const margin = {top:8, left:60, right:10, bottom:22};
+  const iW = W - margin.left - margin.right;
+  const iH = H - margin.top  - margin.bottom;
+  const g  = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+  const x       = d3.scaleLinear().domain([0, steps.length-1]).range([0, iW]);
+  const evTypes = ["PREEMPT","OOM","FINISH"];
+  const y       = d3.scaleBand().domain(evTypes).range([0, iH]).padding(0.3);
+  const COLOR   = {PREEMPT:"var(--preempt)", OOM:"var(--oom)", FINISH:"var(--finish)"};
+  const stepIdx = new Map(steps.map((s, i) => [s.step_id, i]));
+
+  evTypes.forEach(ev => {
+    g.append("line")
+      .attr("x1",0).attr("x2",iW)
+      .attr("y1", y(ev)+y.bandwidth()/2).attr("y2", y(ev)+y.bandwidth()/2)
+      .attr("stroke","#333").attr("stroke-dasharray","2,4");
+  });
+
+  events.forEach(ev => {
+    const xi  = stepIdx.get(ev.step_id) ?? 0;
+    const typ = ev.event;
+    if (!y(typ)) return;
+    g.append("circle")
+      .attr("cx", x(xi)).attr("cy", y(typ)+y.bandwidth()/2)
+      .attr("r", 4).attr("fill", COLOR[typ]||"#fff").attr("opacity",.85)
+      .on("mouseover", mvEv => showTip(`<b>${typ}</b> step ${ev.step_id}<br>req ${ev.req_id} · seq ${ev.seq_id}`, mvEv))
+      .on("mousemove", moveTip).on("mouseleave", hideTip);
+  });
+
+  g.append("g").attr("class","axis").attr("transform",`translate(0,${iH})`).call(d3.axisBottom(x).ticks(8).tickFormat(d3.format("d")));
+  g.append("g").attr("class","axis").call(d3.axisLeft(y));
+}
+
+// ── Y-max input listeners (wired once at page load) ─────────────────────────
+document.getElementById("dur-ymax").addEventListener("input", () => { if (DATA) renderDuration(DATA); });
+document.getElementById("phases-ymax").addEventListener("input", () => { if (DATA) renderPhaseBreakdown(DATA); });
+
+// ── Play button ──────────────────────────────────────────────────────────────
+document.getElementById("play-btn").addEventListener("click", () => {
+  if (playInterval) {
+    clearInterval(playInterval);
+    playInterval = null;
+    document.getElementById("play-btn").textContent = "▶";
+    return;
+  }
+  if (!DATA) return;
+  const snaps = DATA.memory_snapshots || [];
+  if (snaps.length === 0) return;
+  document.getElementById("play-btn").textContent = "⏹";
+  playInterval = setInterval(() => {
+    MEM_SNAP = (MEM_SNAP + 1) % snaps.length;
+    document.getElementById("step-slider").value = MEM_SNAP;
+    document.getElementById("step-input").value  = MEM_SNAP;
+    renderMemGrid(DATA, MEM_SNAP);
+    // Auto-stop when we've looped back to 0
+    if (MEM_SNAP === 0) {
+      clearInterval(playInterval);
+      playInterval = null;
+      document.getElementById("play-btn").textContent = "▶";
+    }
+  }, 500);
+});
+
+// ── Resize ───────────────────────────────────────────────────────────────────
+let resizeTimer;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (!DATA) return;
+    renderTimeline(DATA);
+    renderTps(DATA);
+    renderDuration(DATA);
+    renderPhaseBreakdown(DATA);
+    renderSwimLanes(DATA);
+    renderGantt(DATA);
+    renderBatchHist(DATA);
+    renderSchedHist(DATA);
+    renderMemGrid(DATA, MEM_SNAP);
+    renderEvents(DATA);
+  }, 150);
+});
+</script>
+</body>
+</html>

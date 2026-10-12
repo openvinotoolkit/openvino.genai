@@ -17,6 +17,25 @@
 
 #include "logger.hpp"
 #include "sequence_group.hpp"
+#include "genai_itt.hpp"
+
+namespace {
+inline void blk_event(const char* kind, size_t seq_id, size_t phys_idx, size_t hash = 0, size_t extra = 0) {
+    if (!GENAI_CB_TRACE_ENABLED()) {
+        return;
+    }
+
+    char event_name[64];
+    std::snprintf(event_name, sizeof(event_name), "genai.cb.blk.%s", kind);
+    ::ov::genai::itt::ScopedTask event_task(event_name, ::ov::genai::itt::Domain::ContinuousBatching);
+    event_task.add_metadata("seq_id", seq_id);
+    event_task.add_metadata("physical_index", phys_idx);
+    event_task.add_metadata("hash", hash);
+    if (extra > 0) {
+        event_task.add_metadata("extra", extra);
+    }
+}
+}  // namespace
 
 namespace ov::genai {
 
@@ -794,6 +813,7 @@ public:
         for (size_t layer_idx = 0; layer_idx < m_num_layers; layer_idx++) {
             blocks_to_free.push_back(block_table[layer_idx].back());
         }
+        blk_event("free", seq_id, blocks_to_free[0]->get_index(), blocks_to_free[0]->get_hash());
         free_cached_blocks(blocks_to_free);
         for (size_t layer_idx = 0; layer_idx < m_num_layers; layer_idx++) {
             block_table[layer_idx].resize(block_table[layer_idx].size() - 1);
@@ -1024,6 +1044,7 @@ public:
                 BlocksPerLayer blocks = m_allocator.allocate_uncached_block();
                 OPENVINO_ASSERT(!blocks.empty(), "Temporary cache block allocation returned no blocks");
                 const int block_index = blocks.front()->get_index();
+                blk_event("alloc", seq_id, static_cast<size_t>(block_index));
                 temporary_blocks.push_back(std::move(blocks));
                 block_indices.push_back(block_index);
             }
@@ -1034,6 +1055,7 @@ public:
             }
         } catch (...) {
             for (const auto& blocks : temporary_blocks) {
+                blk_event("free", seq_id, static_cast<size_t>(blocks.front()->get_index()));
                 m_allocator.free_uncached(blocks);
             }
             throw;
@@ -1048,6 +1070,7 @@ public:
             return;
         }
         for (const auto& blocks : it->second) {
+            blk_event("free", seq_id, static_cast<size_t>(blocks.front()->get_index()));
             m_allocator.free_uncached(blocks);
         }
         m_temporary_block_table.erase(it);
@@ -1086,12 +1109,14 @@ public:
             previous_blocks.push_back(block_table[layer_idx][0]);
             block_table[layer_idx][0] = selected_blocks[layer_idx];
         }
+        blk_event("free", seq_id, previous_blocks[0]->get_index(), previous_blocks[0]->get_hash());
         m_allocator.free_uncached(previous_blocks);
 
         for (size_t idx = 0; idx < temporary_blocks.size(); ++idx) {
             if (idx == selected_index) {
                 continue;
             }
+            blk_event("free", seq_id, static_cast<size_t>(temporary_blocks[idx].front()->get_index()));
             m_allocator.free_uncached(temporary_blocks[idx]);
         }
         m_temporary_block_table.erase(temporary_it);
@@ -1288,6 +1313,7 @@ public:
             for (size_t layer_idx = 0; layer_idx < effective_num_layers; layer_idx++) {
                blocks_to_free.push_back(block_table[layer_idx][i]);
             }
+            blk_event("free", seq_id, blocks_to_free[0]->get_index(), blocks_to_free[0]->get_hash());
             free_cached_blocks(blocks_to_free);
         }
 
@@ -1317,6 +1343,7 @@ public:
                 size_t block_idx = layer_block_table.size() - idx - 1;
                 blocks_to_free.push_back(layer_block_table[block_idx]);
             }
+            blk_event("free", seq_id, blocks_to_free[0]->get_index(), blocks_to_free[0]->get_hash());
             free_cached_blocks(blocks_to_free);
         }
 
@@ -1378,6 +1405,10 @@ public:
                 auto block = per_layer_block_table[logical_block_idx];
                 per_layer_cache_blocks_to_free.push_back(block);
             }
+            blk_event("free",
+                      seq_id,
+                      per_layer_cache_blocks_to_free[0]->get_index(),
+                      per_layer_cache_blocks_to_free[0]->get_hash());
             free_cached_blocks(per_layer_cache_blocks_to_free);
         }
 
@@ -1565,6 +1596,7 @@ public:
                         auto& last_block = last_blocks[i];
                         copy_blocks_map[last_block->get_index()].push_back(new_block->get_index());
                     }
+                    blk_event("cow", seq_id, last_blocks[0]->get_index(), 0, new_blocks_for_all_layers[0]->get_index());
                     free_cached_blocks(last_blocks);
                 } else {
                     // we are the only users of this block
@@ -1581,6 +1613,7 @@ public:
                         m_prefix_hash_to_cached_blocks[hash] = last_blocks;
                         unregister_cached_hash(prev_hash);
                         register_cached_content_length(hash, content_length);
+                        blk_event("hash", seq_id, last_blocks[0]->get_index(), hash);
                     }
                 }
             }
@@ -1689,6 +1722,8 @@ private:
                 block->set_timestamp(timestamp);
                 block_table[layer_idx].push_back(block);
             }
+            blk_event("hit", seq_id, blocks[0]->get_index(), blocks[0]->get_hash(),
+                      static_cast<size_t>(blocks[0]->get_references_count()));
         }
 
         if (m_restore_latest_prefix_block_only) {
@@ -1906,6 +1941,9 @@ private:
                     ov::genai::CacheBlock::Ptr block = m_allocator.allocate_block(layer_idx);
                     OPENVINO_ASSERT(block != nullptr);
                     m_block_table[sequence_id][layer_idx].push_back(block);
+                    if (layer_idx == 0) {
+                        blk_event("alloc", sequence_id, block->get_index());
+                    }
                 }
             }
         } else {
@@ -1938,6 +1976,7 @@ private:
                 for (size_t layer_idx = 0; layer_idx < blocks_for_all_layers.size(); layer_idx++) {
                     m_block_table[sequence_id][layer_idx].push_back(blocks_for_all_layers[layer_idx]);
                 }
+                blk_event("alloc", sequence_id, blocks_for_all_layers[0]->get_index(), hash);
             }
         }
     }

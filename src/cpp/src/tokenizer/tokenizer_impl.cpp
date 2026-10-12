@@ -8,6 +8,7 @@
 #include "add_second_input_pass.hpp"
 #include "sampling/structured_output/structured_output_controller.hpp"
 #include "openvino/genai/version.hpp"
+#include "genai_itt.hpp"
 
 namespace ov {
 namespace genai {
@@ -624,6 +625,7 @@ void Tokenizer::TokenizerImpl::infer_special_tokens_if_necessary() {
 }
 
 TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::string& prompt, const ov::AnyMap& tokenization_params) {
+    GENAI_ITT_SCOPED_TASK_TOKENIZER("genai.tokenizer.encode.single");
     OPENVINO_ASSERT(m_ireq_queue_tokenizer, "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
                                             "Tokenizer::encode is not available");
 
@@ -641,7 +643,10 @@ TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::string& prompt, cons
         infer_request_guard.get().set_input_tensor(1, ov::Tensor{ov::element::string, {0}});
     }
 
-    infer_request_guard.get().infer();
+    {
+        GENAI_ITT_SCOPED_TASK_TOKENIZER("genai.tokenizer.encode.single.infer");
+        infer_request_guard.get().infer();
+    }
 
     return get_copied_results(
         infer_request_guard.get().get_tensor("input_ids"),
@@ -650,6 +655,7 @@ TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::string& prompt, cons
 }
 
 TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::vector<std::pair<std::string, std::string>>& prompts_pairs, const ov::AnyMap& tokenization_params) {
+    GENAI_ITT_SCOPED_TASK_TOKENIZER("genai.tokenizer.encode.paired_strings");
     OPENVINO_ASSERT(m_ireq_queue_tokenizer, "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
                                             "Tokenizer::encode is not available");
     size_t batch_size = prompts_pairs.size();
@@ -664,6 +670,7 @@ TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::vector<std::pair<std
 }
 
 TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::vector<std::string>& prompts_1, const std::vector<std::string>& prompts_2, const ov::AnyMap& tokenization_params) {
+    GENAI_ITT_SCOPED_TASK_TOKENIZER("genai.tokenizer.encode.paired");
     OPENVINO_ASSERT(m_ireq_queue_tokenizer, "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
                                             "Tokenizer::encode is not available");
     OPENVINO_ASSERT(prompts_1.size() == prompts_2.size() || prompts_1.size() == 1 || prompts_2.size() == 1,
@@ -676,7 +683,10 @@ TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::vector<std::string>&
         infer_request_guard.get().set_input_tensor(0, ov::Tensor{ov::element::string, {prompts_1.size()}, const_cast<std::string*>(prompts_1.data())});
         infer_request_guard.get().set_input_tensor(1, ov::Tensor{ov::element::string, {prompts_2.size()}, const_cast<std::string*>(prompts_2.data())});
 
-        infer_request_guard.get().infer();
+        {
+            GENAI_ITT_SCOPED_TASK_TOKENIZER("genai.tokenizer.encode.paired.infer");
+            infer_request_guard.get().infer();
+        }
 
         result = get_copied_results(
             infer_request_guard.get().get_tensor("input_ids"),
@@ -698,6 +708,7 @@ TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::vector<std::string>&
 }
 
 TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::vector<std::string>& prompts, const ov::AnyMap& tokenization_params) {
+    GENAI_ITT_SCOPED_TASK_TOKENIZER("genai.tokenizer.encode.batch");
     OPENVINO_ASSERT(m_ireq_queue_tokenizer, "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
                                             "Tokenizer::encode is not available");
 
@@ -716,7 +727,10 @@ TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::vector<std::string>&
             // The subgraph within the ov::Model will handle this scenario, ensuring the output remains correct.
             infer_request_guard.get().set_input_tensor(1, ov::Tensor{ov::element::string, {0}});
         }
-        infer_request_guard.get().infer();
+        {
+            GENAI_ITT_SCOPED_TASK_TOKENIZER("genai.tokenizer.encode.batch.infer");
+            infer_request_guard.get().infer();
+        }
 
         unpadded = get_copied_results(
             infer_request_guard.get().get_tensor("input_ids"),
@@ -737,17 +751,22 @@ TokenizedInputs Tokenizer::TokenizerImpl::get_copied_results(ov::Tensor input_id
 }
 
 std::string Tokenizer::TokenizerImpl::decode(const std::vector<int64_t>& tokens, const ov::AnyMap& detokenization_params) {
+    GENAI_ITT_SCOPED_TASK_TOKENIZER("genai.tokenizer.decode.single");
     OPENVINO_ASSERT(m_ireq_queue_detokenizer, "Detokenizer model has not been provided. Tokenizer::decode is not available");
 
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_detokenizer.get());
     set_state_if_necessary(infer_request_guard, detokenization_params);
     size_t batch_size = 1;
     infer_request_guard.get().set_input_tensor(ov::Tensor{ov::element::i64, {batch_size, tokens.size()}, const_cast<int64_t*>(tokens.data())});
-    infer_request_guard.get().infer();
+    {
+        GENAI_ITT_SCOPED_TASK_TOKENIZER("genai.tokenizer.decode.single.infer");
+        infer_request_guard.get().infer();
+    }
     return infer_request_guard.get().get_output_tensor().data<std::string>()[0];
 }
 
 std::vector<std::string> Tokenizer::TokenizerImpl::decode(const ov::Tensor& tokens, const ov::AnyMap& detokenization_params) {
+    GENAI_ITT_SCOPED_TASK_TOKENIZER("genai.tokenizer.decode.tensor");
     OPENVINO_ASSERT(m_ireq_queue_detokenizer, "Detokenizer model has not been provided. Tokenizer::decode is not available");
     OPENVINO_ASSERT(tokens.get_element_type() == ov::element::i64, "tokens tensor element type should be an i64");
     OPENVINO_ASSERT(tokens.get_shape().size() == 2, "tokens tensor should of rank 2 with shape [batch_size, seq_len]");
@@ -755,7 +774,10 @@ std::vector<std::string> Tokenizer::TokenizerImpl::decode(const ov::Tensor& toke
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_detokenizer.get());
     set_state_if_necessary(infer_request_guard, detokenization_params);
     infer_request_guard.get().set_input_tensor(tokens);
-    infer_request_guard.get().infer();
+    {
+        GENAI_ITT_SCOPED_TASK_TOKENIZER("genai.tokenizer.decode.tensor.infer");
+        infer_request_guard.get().infer();
+    }
 
     auto res = infer_request_guard.get().get_output_tensor();
     auto res_data = res.data<std::string>();
@@ -763,6 +785,7 @@ std::vector<std::string> Tokenizer::TokenizerImpl::decode(const ov::Tensor& toke
 }
 
 std::vector<std::string> Tokenizer::TokenizerImpl::decode(const std::vector<std::vector<int64_t>>& lines, const ov::AnyMap& detokenization_params) {
+    GENAI_ITT_SCOPED_TASK_TOKENIZER("genai.tokenizer.decode.batch");
     OPENVINO_ASSERT(m_ireq_queue_detokenizer, "Detokenizer model has not been provided. Tokenizer::decode is not available");
 
     auto compare_lengths = [](const std::vector<int64_t>& a, const std::vector<int64_t>& b) {
@@ -783,7 +806,10 @@ std::vector<std::string> Tokenizer::TokenizerImpl::decode(const std::vector<std:
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_detokenizer.get());
     set_state_if_necessary(infer_request_guard, detokenization_params);
     infer_request_guard.get().set_input_tensor(tokens);
-    infer_request_guard.get().infer();
+    {
+        GENAI_ITT_SCOPED_TASK_TOKENIZER("genai.tokenizer.decode.batch.infer");
+        infer_request_guard.get().infer();
+    }
     auto res = infer_request_guard.get().get_output_tensor();
     auto res_data = res.data<std::string>();
     return std::vector<std::string>(res_data, res_data + res.get_shape()[0]);
@@ -816,6 +842,7 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
     const std::optional<JsonContainer>& tools,
     const std::optional<JsonContainer>& extra_context
 ) const {
+    GENAI_ITT_SCOPED_TASK_TOKENIZER("genai.tokenizer.apply_chat_template");
     std::string chat_tpl;
     if (chat_template.empty()) {
         std::lock_guard<std::mutex> lock(m_chat_template_mutex);

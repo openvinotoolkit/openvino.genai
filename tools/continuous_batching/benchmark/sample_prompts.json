@@ -1,0 +1,26 @@
+[
+  {
+    "conversations": [
+      {"from": "human", "value": "Explain how a compiler turns source code into a runnable program in three short steps."},
+      {"from": "gpt", "value": "The compiler parses the source code, optimizes an intermediate representation, and emits executable machine instructions."}
+    ]
+  },
+  {
+    "conversations": [
+      {"from": "human", "value": "What is the difference between a process and a thread in an operating system?"},
+      {"from": "gpt", "value": "A process owns its address space and resources, while threads within one process share those resources and execute independently."}
+    ]
+  },
+  {
+    "conversations": [
+      {"from": "human", "value": "List two reasons to use a cache when serving machine learning inference requests."},
+      {"from": "gpt", "value": "A cache can reuse repeated computations and reduce memory traffic, improving request latency and overall throughput."}
+    ]
+  },
+  {
+    "conversations": [
+      {"from": "human", "value": "Describe what happens when several text generation requests are batched together."},
+      {"from": "gpt", "value": "The scheduler combines ready requests into a model step, runs inference, then returns generated tokens to each request."}
+    ]
+  }
+]

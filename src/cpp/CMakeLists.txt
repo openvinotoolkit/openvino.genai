@@ -216,6 +216,17 @@ endif()
 set(TARGET_NAME openvino_genai)
 set(TARGET_NAME_OBJ ${TARGET_NAME}_obj)
 
+set(genai_itt_target "")
+if(ENABLE_PROFILING_ITT)
+    if(TARGET ittapi::ittnotify)
+        set(genai_itt_target ittapi::ittnotify)
+    elseif(TARGET ittapi::ittapi)
+        set(genai_itt_target ittapi::ittapi)
+    else()
+        message(WARNING "ENABLE_PROFILING_ITT is ON, but no ITT backend target was found")
+    endif()
+endif()
+
 add_library(${TARGET_NAME_OBJ} OBJECT ${SOURCE_FILES})
 
 target_include_directories(${TARGET_NAME_OBJ}
@@ -239,6 +250,10 @@ target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino::runtime openvino::thr
 if(OPENVINO_GENAI_HAS_MISAKI_CPP)
     target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino_genai_misaki_cpp)
     target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE OPENVINO_GENAI_HAS_MISAKI_CPP=1)
+endif()
+if(genai_itt_target)
+    target_link_libraries(${TARGET_NAME_OBJ} PRIVATE ${genai_itt_target})
+    target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE ENABLE_PROFILING_ITT)
 endif()
 
 # Add OpenCL support if enabled via OpenVINO configuration
@@ -279,6 +294,10 @@ target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE openvino::
 
 if(OPENVINO_GENAI_HAS_MISAKI_CPP)
     target_link_libraries(${TARGET_NAME} PRIVATE openvino_genai_misaki_cpp)
+endif()
+if(genai_itt_target)
+    target_link_libraries(${TARGET_NAME} PRIVATE ${genai_itt_target})
+    target_compile_definitions(${TARGET_NAME} PRIVATE ENABLE_PROFILING_ITT)
 endif()
 
 # Add OpenCL support if enabled via OpenVINO configuration
