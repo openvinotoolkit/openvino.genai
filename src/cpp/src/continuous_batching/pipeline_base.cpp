@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "logger.hpp"
 #include "visual_language/chat_history_state.hpp"
 #include "visual_language/vlm_chat_context.hpp"
 #include "visual_language/vlm_utils.hpp"
@@ -42,6 +43,16 @@ std::optional<AdapterConfig> ContinuousBatchingPipeline::IContinuousBatchingPipe
 
 PipelineMetrics ContinuousBatchingPipeline::IContinuousBatchingPipeline::get_metrics() const {
     return m_pipeline_metrics;
+}
+
+void ContinuousBatchingPipeline::IContinuousBatchingPipeline::recover_embedder_after_failed_turn() noexcept {
+    try {
+        // The embedder runs in non-chat mode and clears its per-image token counts at the end of
+        // get_inputs_embeds(). A throw before that end leaves them set; CANCEL drops them.
+        m_inputs_embedder->update_chat_history("", ov::genai::GenerationStatus::CANCEL);
+    } catch (const std::exception& error) {
+        GENAI_ERR("Failed to roll back the inputs embedder after a failed chat turn: %s", error.what());
+    }
 }
 
 Tokenizer ContinuousBatchingPipeline::IContinuousBatchingPipeline::get_tokenizer() {
@@ -362,6 +373,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     std::vector<EncodedVideo> encoded_videos = {};
     std::vector<EncodedAudio> encoded_audios = {};
     // Restores the chat history on CANCEL or on any exception thrown during this turn.
+    // CANCEL leaves the embedder to update_chat_history(); an exception also restores it here.
     struct ChatTurnRollback {
         IContinuousBatchingPipeline& pipe;
         const size_t history = pipe.m_history.size();
@@ -378,6 +390,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         ~ChatTurnRollback() {
             if (active) {
                 restore();
+                if (pipe.m_is_chat_conversation) {
+                    pipe.recover_embedder_after_failed_turn();
+                }
             }
         }
 
@@ -696,15 +711,17 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     // the items that already succeeded too. rollback() is idempotent.
     struct ChatContextsRollback {
         std::vector<VLMChatContext>& chat_contexts;
+        IContinuousBatchingPipeline& pipe;
         bool active = true;
         ~ChatContextsRollback() {
             if (active) {
                 for (auto& chat_context : chat_contexts) {
                     chat_context.rollback();
                 }
+                pipe.recover_embedder_after_failed_turn();
             }
         }
-    } chat_contexts_rollback{chat_contexts};
+    } chat_contexts_rollback{chat_contexts, *this};
 
     for (size_t i = 0; i < histories.size(); i++) {
         OPENVINO_ASSERT(sampling_params[i].apply_chat_template,

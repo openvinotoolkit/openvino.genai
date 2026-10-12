@@ -3704,14 +3704,15 @@ def test_vlm_failed_first_chat_turn_is_rolled_back(
     assert first_turn(fail_first=True) == first_turn(fail_first=False)
 
 
-def test_vlm_failed_chat_turn_rolls_back_videochat_embedder_state():
+@pytest.mark.parametrize("attention_backend", ["SDPA", "PA"])
+def test_vlm_failed_chat_turn_rolls_back_videochat_embedder_state(attention_backend: str):
     """Embedders that count visual tokens per turn, like VideoChat-Flash, must drop the failed turn's count."""
     models_path = _get_ov_model(VIDEOCHAT_FLASH_QWEN_MODEL_ID)
     # VideoChat-Flash takes video only.
     video = openvino.Tensor(np.zeros((4, 32, 32, 3), dtype=np.uint8))
 
     def second_turn(fail_first: bool) -> tuple[str, int]:
-        pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND="SDPA")
+        pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=attention_backend)
         pipe.start_chat()
         pipe.generate("Hi", videos=[video], generation_config=ROLLBACK_CONFIG)
         if fail_first:
