@@ -60,6 +60,54 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::finish
     request->set_generation_status(GenerationStatus::STOP);
 }
 
+std::optional<uint64_t>
+ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::reserve_linear_attention_checkpoints_for_next_step(
+    uint64_t request_id,
+    size_t num_checkpoints) {
+    if (!m_scheduler->has_linear_attention_cache()) {
+        return std::nullopt;
+    }
+
+    const auto request_it = std::find_if(m_requests.begin(), m_requests.end(), [request_id](const auto& request) {
+        return request->get_request_id() == request_id;
+    });
+    OPENVINO_ASSERT(request_it != m_requests.end(),
+                    "Cannot reserve Eagle3 linear-attention checkpoints: request ",
+                    request_id,
+                    " is not running.");
+
+    const auto& running_sequences = (*request_it)->get_running_sequences();
+    OPENVINO_ASSERT(running_sequences.size() == 1,
+                    "Eagle3 linear-attention checkpointing supports one running sequence per request.");
+    OPENVINO_ASSERT(num_checkpoints == (*request_it)->get_num_tokens_to_validate() + 1,
+                    "Eagle3 linear-attention checkpoint count must match the validation window for request ",
+                    request_id,
+                    ": requested ",
+                    num_checkpoints,
+                    ", expected ",
+                    (*request_it)->get_num_tokens_to_validate() + 1,
+                    ".");
+    return running_sequences.front()->get_id();
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::promote_linear_attention_checkpoint_for_sequence(
+    uint64_t sequence_id,
+    size_t checkpoint_slot) {
+    m_scheduler->promote_linear_attention_checkpoint(sequence_id, checkpoint_slot);
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::release_linear_attention_checkpoints_for_sequence(
+    uint64_t sequence_id) {
+    m_scheduler->release_linear_attention_checkpoints(sequence_id);
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingForEagle3DecodingImpl::_commit_linear_attention_checkpoint_transactions(
+    const Scheduler::Output& scheduler_output) {
+    if (!m_is_validation_mode_enabled) {
+        ContinuousBatchingImpl::_commit_linear_attention_checkpoint_transactions(scheduler_output);
+    }
+}
+
 void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::finish_request(int64_t request_id) {
     auto it = m_requests.begin();
     while (it != m_requests.end()) {
