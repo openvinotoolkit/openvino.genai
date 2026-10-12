@@ -141,6 +141,54 @@ python create_speaker_embedding.py
     </TabItemJS>
 </LanguageTabs>
 
+### Use Generation Configuration Per Call
+
+`Text2SpeechPipeline.generate()` can consume a generation configuration object per call.
+This lets you keep pipeline defaults unchanged while customizing parameters for a specific request.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        import openvino_genai
+
+        pipeline = openvino_genai.Text2SpeechPipeline(model_path, "CPU")
+
+        config = pipeline.get_generation_config()
+        # Update fields needed for the current request.
+        # ...
+        result = pipeline.generate("Hello OpenVINO GenAI", generation_config=config)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        #include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
+
+        ov::genai::Text2SpeechPipeline pipeline(model_path, "CPU");
+        ov::genai::SpeechGenerationConfig config = pipeline.get_generation_config();
+        // Update fields needed for the current request.
+        // ...
+        auto result = pipeline.generate("Hello OpenVINO GenAI", std::nullopt, config);
+        ```
+    </TabItemCpp>
+    <TabItemC>
+        ```c
+        ov_genai_speech_generation_config* config = NULL;
+        ov_genai_text2speech_decoded_results* results = NULL;
+
+        ov_genai_text2speech_pipeline_get_generation_config(pipeline, &config);
+        /* Update fields needed for the current request. */
+        /* ... */
+        ov_genai_text2speech_pipeline_generate(pipeline,
+                                               "Hello OpenVINO GenAI",
+                                               NULL,
+                                               config,
+                                               &results);
+        ```
+    </TabItemC>
+</LanguageTabs>
+
+If both a config object and per-argument overrides are provided (where supported), per-argument overrides take precedence.
+
 ### Performance Metrics
 
 `Text2SpeechPipeline` returns `Text2SpeechDecodedResults` with a `perf_metrics` field of type `SpeechGenerationPerfMetrics`, which extends [`PerfMetrics`](/docs/guides/performance-metrics).

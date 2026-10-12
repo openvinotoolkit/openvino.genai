@@ -20,6 +20,13 @@ int main(int argc, char** argv) {
         ov_genai_text2speech_decoded_results_get_speech_at(results, 0, &speech) != OK)
         goto cleanup;
 
+    /* Optional: get and pass per-call generation config.
+     * ov_genai_speech_generation_config* config = NULL;
+     * ov_genai_text2speech_pipeline_get_generation_config(pipeline, &config);
+     * ov_genai_text2speech_pipeline_generate(pipeline, "Hello OpenVINO GenAI", NULL, config, &results);
+     * ov_genai_speech_generation_config_free(config);
+     */
+
     size_t sample_count = 0;
     uint32_t sample_rate = 0;
     void* samples = NULL;
