@@ -19,6 +19,9 @@ int main(int argc, char* argv[]) {
 
     // To input videos frames, use 'ov::genai::videos' property, frames tensor layout = [Frame, H, W, C]
     // pipe.generate(prompt, ov::genai::videos(std::vector<ov::Tensor>{frames}), ov::genai::max_new_tokens(100));
+
+    // Models supporting audios take 'ov::genai::audios' as mono float32 PCM at 16 kHz
+    // pipe.generate(prompt, ov::genai::audios(std::vector<ov::Tensor>{audio}), ov::genai::max_new_tokens(100));
 }
 `}
 </CodeBlock>

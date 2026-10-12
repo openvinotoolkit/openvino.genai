@@ -424,7 +424,7 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     // amount of processed tokens, e.g. prompt can be processed using multiple consequence inferences
     // so, we need to track which part of the prompt we have already processed
     size_t m_num_processed_tokens = 0;
-    // a number of scheduled tokens by Scheduler::schedule logic
+    // a number of scheduled tokens by ContinuousBatchingScheduler::schedule logic
     size_t m_num_scheduled_tokens = 0;
     // context length of longest sequence within a group
     size_t m_max_content_len = 0;
