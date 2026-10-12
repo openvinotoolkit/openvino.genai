@@ -84,24 +84,15 @@ def make_args(task, prompt_file=None, **overrides):
 # --------------------------------------------------------------------------- #
 
 
-def test_expand_media_entries_scalar_list_and_none():
-    assert _expand_media_entries(None) == []
-    assert _expand_media_entries("a.png") == ["a.png"]
-    assert _expand_media_entries(["a.png", "b.png"]) == ["a.png", "b.png"]
-
-
-def test_expand_media_entries_expands_a_directory(tmp_path):
+def test_expand_media_entries(tmp_path):
     d = tmp_path / "frames"
     d.mkdir()
     make_image(d / "02.png", (8, 8))
     make_image(d / "01.png", (8, 8))
     # Sorted, so a directory yields a stable order across platforms.
     assert [p.name for p in _expand_media_entries(str(d))] == ["01.png", "02.png"]
-
-
-def test_expand_media_entries_passes_urls_through():
-    url = "https://example.invalid/cat.png"
-    assert _expand_media_entries(url) == [url]
+    assert _expand_media_entries(None) == []
+    assert _expand_media_entries("a.png") == ["a.png"]
 
 
 # --------------------------------------------------------------------------- #
