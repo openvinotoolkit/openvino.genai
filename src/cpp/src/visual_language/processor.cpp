@@ -4,7 +4,9 @@
 #include "openvino/genai/visual_language/processor.hpp"
 
 #include <chrono>
+#include <mutex>
 
+#include "utils.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/processor_bridge.hpp"
 #include "visual_language/vision_registry.hpp"
@@ -12,6 +14,30 @@
 #include "visual_language/vlm_utils.hpp"
 
 namespace ov::genai {
+
+namespace {
+
+// Saves the embedder's cache state on construction and restores it on destruction, so a stateless
+// process() call does not change state within shared InputsEmbedder.
+// Temporary solution until cache state is owned by pipeline.
+class ScopedCacheState {
+public:
+    explicit ScopedCacheState(utils::CacheState& cache_state)
+        : m_cache_state(cache_state), m_saved(cache_state) {
+        m_cache_state.reset_state();
+    }
+    ~ScopedCacheState() {
+        m_cache_state = m_saved;
+    }
+    ScopedCacheState(const ScopedCacheState&) = delete;
+    ScopedCacheState& operator=(const ScopedCacheState&) = delete;
+
+private:
+    utils::CacheState& m_cache_state;
+    utils::CacheState m_saved;
+};
+
+}  // namespace
 
 class VLMProcessor::VLMProcessorImpl {
 public:
@@ -28,8 +54,9 @@ public:
         VLMPerfMetrics metrics;
         const auto prepare_start = std::chrono::steady_clock::now();
 
-        // VLMProcessor is stateless - reset cache
-        m_inputs_embedder->get_cache_state().reset_state();
+        std::lock_guard<std::mutex> lock(m_process_mutex);
+        // snapshot + restore cache state for shared inputs embedder
+        ScopedCacheState cache_guard(m_inputs_embedder->get_cache_state());
         // prompt expected to be already templated
         m_inputs_embedder->set_apply_chat_template_status(false);
 
@@ -86,9 +113,10 @@ public:
         VLMPerfMetrics metrics;
         const auto prepare_start = std::chrono::steady_clock::now();
 
-        // VLMProcessor is stateless - reset cache
-        m_inputs_embedder->get_cache_state().reset_state();
-        
+        std::lock_guard<std::mutex> lock(m_process_mutex);
+        // snapshot + restore cache state for shared inputs embedder
+        ScopedCacheState cache_guard(m_inputs_embedder->get_cache_state());
+
         // Chat history internal state is tracked per-history via VLMChatContext
         VLMChatContext chat_context(history, m_vision_registry, *m_inputs_embedder);
         VLMChatContext::ProcessedChatData chat_data = chat_context.process(images, videos, videos_metadata);
@@ -144,6 +172,9 @@ public:
 private:
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
     std::shared_ptr<VisionRegistry> m_vision_registry;
+
+    // Serializes process() calls that mutate shared InputsEmbedder
+    std::mutex m_process_mutex;
 };
 
 VLMProcessor::VLMProcessor(
