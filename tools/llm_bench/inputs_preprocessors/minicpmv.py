@@ -36,6 +36,9 @@ class MiniCPMVInputsPreprocessor(VLMInputsPreprocessor):
     ):
         if processor is None:
             raise ValueError("Processor is required.")
+        if config.model_type == "minicpmv4_7":
+            return self._preprocess_minicpmv4_7(text, image, video, audio, processor)
+
         if video is not None and len(video) > 0:
             raise ValueError("Video input is not supported")
         if audio is not None and len(audio) > 0:
@@ -46,11 +49,7 @@ class MiniCPMVInputsPreprocessor(VLMInputsPreprocessor):
         if image is not None:
             if not isinstance(image, list):
                 image = [image]
-            if config.model_type == "minicpmv4_7":
-                image_token = processor.image_token
-            else:
-                image_token = "(<image>./</image>)"
-            im_suffix = image_token * len(image) + "\n"
+            im_suffix = "(<image>./</image>)" * len(image) + "\n"
 
         apply_chat_template_func = None
         if getattr(processor, "chat_template", None) is not None:
@@ -78,12 +77,42 @@ class MiniCPMVInputsPreprocessor(VLMInputsPreprocessor):
                     else text
                 )
 
-        if config.model_type == "minicpmv4_7":
-            inputs = processor(images=self.images, text=prompt, return_tensors="pt")
-        else:
-            inputs = processor(prompt, [self.images] if self.images is None else self.images, return_tensors="pt")
+        inputs = processor(prompt, [self.images] if self.images is None else self.images, return_tensors="pt")
         inputs.pop("image_sizes", None)
         return inputs
+
+    def _preprocess_minicpmv4_7(self, text, image, video, audio, processor):
+        if audio is not None and len(audio) > 0:
+            raise ValueError("Audio input is not supported")
+
+        content = []
+        if image is not None:
+            images = image if isinstance(image, list) else [image]
+            content.extend({"type": "image", "image": value} for value in images)
+        if video is not None:
+            videos = video if isinstance(video, list) else [video]
+            content.extend({"type": "video", "video": value} for value in videos)
+        content.append({"type": "text", "text": text})
+
+        message = {"role": "user", "content": content}
+        if self.chat_mode:
+            self.chat_history.append(message)
+            conversation = self.chat_history
+        else:
+            conversation = [message]
+
+        kwargs = {}
+        if video is not None and not isinstance(video, str):
+            # LLM Benchmark supplies already-decoded frames without sampling metadata.
+            kwargs["do_sample_frames"] = False
+        return processor.apply_chat_template(
+            conversation,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt",
+            **kwargs,
+        )
 
     def align_inputs_with_cache(self, model: Any, inputs: dict, full_tokenized_chat: torch.Tensor, prefix_len: int):
         if "transformers" in str(type(model)):

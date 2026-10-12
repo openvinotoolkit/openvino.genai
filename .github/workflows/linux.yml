@@ -866,7 +866,16 @@ jobs:
           # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
           python -m pip install transformers==5.0.0
           python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
-          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and not transformers_lower_v5 and not transformers_higher_v5_1" -k "not image2video"
+          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and not transformers_lower_v5 and not transformers_higher_v5_1" -k "not image2video and not minicpmv47"
+        env:
+          SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
+      - name: Test LLM Benchmark Tools with MiniCPM-V 4.7
+        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench }}
+        run: |
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+          python -m pip install transformers==5.18.0
+          python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@7d376625304c4cde44fbb2a93bb43a3cc7484ff7#egg=optimum-intel"
+          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -k "minicpmv47"
         env:
           SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
       - name: Test LLM Benchmark Tools transformers under 5.0

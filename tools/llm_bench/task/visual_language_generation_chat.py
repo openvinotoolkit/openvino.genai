@@ -53,6 +53,7 @@ FULL_CHAT_MODEL_TYPES = {
     "qwen3_5_moe",
     "llava_next",
     "llava-qwen2",
+    "minicpmv4_7",
     "qwen3_omni",
     "qwen3_omni_moe",
 }
