@@ -85,6 +85,7 @@
 'category: automatic speech recognition samples':
 - 'samples/cpp/automatic_speech_recognition/**/*'
 - 'samples/python/automatic_speech_recognition/**/*'
+- 'samples/cpp/speech_generation/audio_utils.*'
 
 'category: Image generation samples':
 - 'samples/cpp/image_generation/**/*'
@@ -100,7 +101,11 @@
 'category: VLM samples':
 - 'samples/cpp/visual_language_chat/**/*'
 - 'samples/python/visual_language_chat/**/*'
+- 'samples/cpp/omni/**/*'
+- 'samples/python/omni/**/*'
+- 'samples/cpp/speech_generation/audio_utils.*'
 - 'tests/python_tests/samples/test_benchmark_vlm.py'
+- 'tests/python_tests/samples/test_omni_chat.py'
 - 'tests/python_tests/samples/test_visual_language_chat.py'
 
 'category: RAG samples':
