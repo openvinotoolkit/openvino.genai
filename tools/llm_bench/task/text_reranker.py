@@ -128,6 +128,7 @@ class TextRerankerOptimum(CommonPipeline):
         prompt_index: int,
         tokenization_time: list,
         output_repr: str = "",
+        in_text_tokens: int | None = None,
     ):
         return gen_output_data.embed_iterate_data(
             iter_idx=iter_num,
@@ -142,6 +143,7 @@ class TextRerankerOptimum(CommonPipeline):
             prompt_idx=prompt_index,
             tokenization_time=tokenization_time,
             output_repr=output_repr,
+            in_text_tokens=in_text_tokens,
         )
 
     def postprocess_output_info(
@@ -160,6 +162,7 @@ class TextRerankerOptimum(CommonPipeline):
         prev_md5: int,
         proc_id: int,
         bench_hook: object | None,
+        in_text_tokens: int | None = None,
     ):
         tm_list = []
         tm_infer_list = []
@@ -183,6 +186,7 @@ class TextRerankerOptimum(CommonPipeline):
             prompt_index,
             tokenization_time,
             output_repr=f"docs:{len(generation_result)}",
+            in_text_tokens=in_text_tokens,
         )
         metrics_print.print_metrics(
             iter_num,
@@ -225,6 +229,7 @@ class TextRerankerOptimum(CommonPipeline):
             None,
             proc_id,
             bench_hook,
+            in_text_tokens=input_tokens[0].numel(),
         )
 
         if bench_hook is not None:
@@ -300,6 +305,7 @@ class TextRerankerGenAI(CommonPipeline):
         prompt_index: int,
         tokenization_time: list,
         output_repr: str = "",
+        in_text_tokens: int | None = None,
     ):
         return gen_output_data.embed_iterate_data(
             iter_idx=iter_num,
@@ -314,6 +320,7 @@ class TextRerankerGenAI(CommonPipeline):
             prompt_idx=prompt_index,
             tokenization_time=tokenization_time,
             output_repr=output_repr,
+            in_text_tokens=in_text_tokens,
         )
 
     def postprocess_output_info(
@@ -332,6 +339,7 @@ class TextRerankerGenAI(CommonPipeline):
         prev_md5: int,
         proc_id: int,
         bench_hook: object | None,
+        in_text_tokens: int | None = None,
     ):
         tm_list = [generation_time]
         tm_infer_list = [generation_time]
@@ -348,6 +356,7 @@ class TextRerankerGenAI(CommonPipeline):
             prompt_index,
             tokenization_time,
             output_repr=f"docs:{len(generation_result)}",
+            in_text_tokens=in_text_tokens,
         )
 
         self.print_generated(iter_num, generation_result, prompt_index)
@@ -392,6 +401,7 @@ class TextRerankerGenAI(CommonPipeline):
             None,
             proc_id,
             bench_hook,
+            in_text_tokens=tokenized_input[0].numel(),
         )
         return iter_data, []
 
@@ -430,6 +440,9 @@ def run_text_reranker_benchmark(
             launch(text_reranker_pipeline, num, p_idx, iter_timestamp, prompt["prompt"], proc_id, bench_hook)
         )
         prompt.stamp_repr(iter_data_list, before)
+        # The documents ranked against the query are part of the input too.
+        for record in iter_data_list[before:]:
+            record["prompt_repr"] += f" + docs:{len(text_reranker_pipeline.texts)}"
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args["batch_size"], False, True, latency_unit="text")
     return iter_data_list, pretrain_time, iter_timestamp
