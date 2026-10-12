@@ -14,15 +14,15 @@ if str(WWB_ROOT) not in sys.path:
 
 from whowhatbench.text_generation_strategies import (  # noqa: E402
     CompositeGenerationStrategy,
-    GenAISelfSufficientGeneration,
+    GenAIGeneration,
     GenerationStrategy,
-    LlamaCPPReferenceBaseGenerationStrategy,
-    LlamaCPPSelfSufficientGeneration,
-    ReferenceBaseGenerationStrategy,
-    SelfSufficientGenerationStrategy,
+    LlamaCPPKLDivergencyGeneration,
+    LlamaCPPGeneration,
+    KLDivergencyGeneration,
+    OptimumHFGeneration,
 )
 
-from whowhatbench.text_metrics_collection import Metrics  # noqa: E402
+from tools.who_what_benchmark.whowhatbench.artifacts_manager import Metrics  # noqa: E402
 
 from conftest import run_wwb  # noqa: E402
 from test_cli_text import base_model_path, target_model_path  # noqa: E402
@@ -40,11 +40,11 @@ TOKEN_SIMILARITY = Metrics.TOKEN_SIMILARITY.value
 @pytest.mark.parametrize(
     ("metrics_list", "is_genai", "is_llamacpp", "expected_cls"),
     [
-        ([SIMILARITY], False, False, SelfSufficientGenerationStrategy),
-        ([SIMILARITY], True, False, GenAISelfSufficientGeneration),
-        ([SIMILARITY], False, True, LlamaCPPSelfSufficientGeneration),
-        ([KL_DIVERGENCY], False, False, ReferenceBaseGenerationStrategy),
-        ([KL_DIVERGENCY], False, True, LlamaCPPReferenceBaseGenerationStrategy),
+        ([SIMILARITY], False, False, OptimumHFGeneration),
+        ([SIMILARITY], True, False, GenAIGeneration),
+        ([SIMILARITY], False, True, LlamaCPPGeneration),
+        ([KL_DIVERGENCY], False, False, KLDivergencyGeneration),
+        ([KL_DIVERGENCY], False, True, LlamaCPPKLDivergencyGeneration),
     ],
 )
 def test_factory_creates_single_strategy(metrics_list, is_genai, is_llamacpp, expected_cls):
@@ -56,8 +56,8 @@ def test_factory_creates_single_strategy(metrics_list, is_genai, is_llamacpp, ex
 @pytest.mark.parametrize(
     ("is_llamacpp", "expected_classes"),
     [
-        (False, [SelfSufficientGenerationStrategy, ReferenceBaseGenerationStrategy]),
-        (True, [LlamaCPPSelfSufficientGeneration, LlamaCPPReferenceBaseGenerationStrategy]),
+        (False, [OptimumHFGeneration, KLDivergencyGeneration]),
+        (True, [LlamaCPPGeneration, LlamaCPPKLDivergencyGeneration]),
     ],
 )
 def test_factory_creates_composite_for_similarity_and_kl(is_llamacpp, expected_classes):

@@ -9,7 +9,7 @@ import numpy as np
 from abc import ABC, abstractmethod
 
 from .utils import patch_awq_for_inference, get_ignore_parameters_flag
-from .text_metrics_collection import GenerationResults, Metrics
+from .artifacts_manager import GenerationResults, Metrics
 
 
 logging.basicConfig(level=logging.INFO)
@@ -45,7 +45,7 @@ class BaseGenerationStrategy(ABC):
         pass
 
 
-class LlamaCPPSelfSufficientGeneration(BaseGenerationStrategy):
+class LlamaCPPGeneration(BaseGenerationStrategy):
     def __init__(self, metrcis_list: list = None):
         super().__init__(metrcis_list)
 
@@ -76,7 +76,7 @@ class LlamaCPPSelfSufficientGeneration(BaseGenerationStrategy):
         return GenerationResults(answer_text=output_text)
 
 
-class GenAISelfSufficientGeneration(BaseGenerationStrategy):
+class GenAIGeneration(BaseGenerationStrategy):
     def __init__(self, metrcis_list: list = None):
         super().__init__(metrcis_list)
 
@@ -197,7 +197,7 @@ class GenAISelfSufficientGeneration(BaseGenerationStrategy):
         )
 
 
-class SelfSufficientGenerationStrategy(BaseGenerationStrategy):
+class OptimumHFGeneration(BaseGenerationStrategy):
     def __init__(self, metrcis_list: list = None):
         super().__init__(metrcis_list)
 
@@ -252,7 +252,7 @@ class SelfSufficientGenerationStrategy(BaseGenerationStrategy):
         )
 
 
-class ReferenceBaseGenerationStrategy(BaseGenerationStrategy):
+class KLDivergencyGeneration(BaseGenerationStrategy):
     def __init__(self, metrcis_list: list = None, kld_ctx: int = None, kld_chunk: int = None):
         super().__init__(metrcis_list)
         self.kld_ctx = kld_ctx
@@ -364,7 +364,7 @@ class ReferenceBaseGenerationStrategy(BaseGenerationStrategy):
         )
 
 
-class LlamaCPPReferenceBaseGenerationStrategy(ReferenceBaseGenerationStrategy):
+class LlamaCPPKLDivergencyGeneration(KLDivergencyGeneration):
     def _score_kl_prompt_tokens_chunked(self, model, current_input_ids):
         tokens = current_input_ids[0].tolist() if current_input_ids.dim() > 1 else current_input_ids.tolist()
         ctx_size = min(self.kld_ctx or len(tokens), len(tokens))
@@ -508,15 +508,15 @@ class GenerationStrategy:
     @staticmethod
     def _create_self_sufficient(metrics_list, is_genai, is_llamacpp) -> BaseGenerationStrategy:
         if is_genai:
-            return GenAISelfSufficientGeneration(metrics_list)
+            return GenAIGeneration(metrics_list)
         if is_llamacpp:
-            return LlamaCPPSelfSufficientGeneration(metrics_list)
-        return SelfSufficientGenerationStrategy(metrics_list)
+            return LlamaCPPGeneration(metrics_list)
+        return OptimumHFGeneration(metrics_list)
 
     @staticmethod
     def _create_reference(metrics_list, is_genai, is_llamacpp, kld_ctx, kld_chunk) -> BaseGenerationStrategy:
         if is_genai:
             raise ValueError("KL divergency is not supported for GenAI models.")
         if is_llamacpp:
-            return LlamaCPPReferenceBaseGenerationStrategy(metrics_list, kld_ctx, kld_chunk)
-        return ReferenceBaseGenerationStrategy(metrics_list, kld_ctx, kld_chunk)
+            return LlamaCPPKLDivergencyGeneration(metrics_list, kld_ctx, kld_chunk)
+        return KLDivergencyGeneration(metrics_list, kld_ctx, kld_chunk)

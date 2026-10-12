@@ -22,7 +22,7 @@ from whowhatbench import EVALUATOR_REGISTRY
 from whowhatbench.utils import fix_phi3_v_eos_token_id, patch_transformers_gguf_support
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
 from whowhatbench.utils import get_json_config, load_audio_dataset, resolve_json_dataset_path, read_json_dataset
-from whowhatbench.text_metrics_collection import Metrics
+from tools.who_what_benchmark.whowhatbench.artifacts_manager import Metrics
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -526,7 +526,7 @@ def parse_args():
         help="List of metrics to compute. It applicable for text generation now.\n"
         "similarity: Compute the similarity between generated and reference text. Default. \n"
         "divergency: Compute the FDT, FDT norm, SDT, SDT norm between generated and reference encoded answer. \n"
-        "kl_divergency: Compute the KL divergence for the prompt tokens. Prompt is divided to two part: prefix and scored tail. "
+        "kl_divergency: Compute the KL divergence for the prompt tokens. Prompt is divided into two parts: prefix and scored tail. "
         "Scored tail is used for the actual KL divergence computation. Context/scoring range may be adjasted with --kld-ctx, --kld-chunk. \n"
         "token_similarity: Collect the tokenized prompt and generated results, no checks are performed at that moment.",
     )

@@ -12,7 +12,7 @@ from importlib.resources import files
 from .registry import register_evaluator, BaseEvaluator
 from .whowhat_metrics import TextDivergency, TextSimilarity, KLDivergency
 from .text_generation_strategies import GenerationStrategy
-from .text_metrics_collection import Metrics, ArtifactsSchema, ArtifactsManager
+from .artifacts_manager import Metrics, ArtifactsSchema, ArtifactsManager
 
 
 PROMPTS_FILE = 'text_prompts.yaml'

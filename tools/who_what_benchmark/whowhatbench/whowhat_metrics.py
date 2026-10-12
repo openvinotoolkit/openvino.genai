@@ -233,7 +233,6 @@ class KLDivergency:
     # 0.001 – 0.05	minor differences
     # 0.05 – 0.5	noticeable differences in predictions
     # > 1           significantly different distributions
-    MIN_BASE_LOG_PROB = -16.0
 
     def _calculate_kl_per_token(self, gold_logits: torch.Tensor, prediction_logits: torch.Tensor) -> torch.Tensor:
         # formula from llama-perplexity tool
@@ -242,7 +241,7 @@ class KLDivergency:
 
         gold_log_probs = torch.log_softmax(gold_logits, dim=-1)
         prediction_log_probs = torch.log_softmax(prediction_logits, dim=-1)
-        valid_mask = gold_log_probs > self.MIN_BASE_LOG_PROB
+        valid_mask = torch.isfinite(gold_log_probs)
 
         gold_probs = torch.exp(gold_log_probs)
         kl_terms = torch.where(
