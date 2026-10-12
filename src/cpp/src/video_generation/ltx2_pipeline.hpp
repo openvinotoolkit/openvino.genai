@@ -165,7 +165,6 @@ class LTX2Pipeline : public VideoPipeline {
     const VideoGenerationConfig* m_default_config = &LTX2_DEFAULT_CONFIG;
 
     void check_inputs(const VideoGenerationConfig& generation_config) const {
-        utils::validate_generation_config(generation_config);
         video_generation_utils::check_video_size(generation_config.height,
                                                  generation_config.width,
                                                  m_vae->get_config().spatial_compression_ratio);

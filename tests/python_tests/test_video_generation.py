@@ -1,9 +1,11 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import json
 import os
 import pytest
 import subprocess  # nosec B404
+import sys
 import logging
 from pathlib import Path
 
@@ -171,6 +173,37 @@ class TestVideoGenerationPipelines:
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
         with pytest.raises(RuntimeError, match=field):
             pipe.generate("test prompt", **{field: value}, **GEN_KWARGS)
+
+    @pytest.mark.parametrize(
+        "video_generation_model, guidance, warns",
+        [
+            (LTX_VIDEO_MODEL_ID, {"guidance_scale": 1.0}, True),
+            (LTX2_MODEL_ID, {"guidance_scale": 1.0}, True),
+            (LTX2_MODEL_ID, {"guidance_scale": 3.0}, False),
+            # LTX-2.3's audio guidance scale defaults to 7.0 and keeps CFG on, so the negative prompt is used
+            (LTX2_3_MODEL_ID, {"guidance_scale": 1.0}, False),
+            (LTX2_3_MODEL_ID, {"guidance_scale": 1.0, "audio_guidance_scale": 1.0}, True),
+        ],
+        indirect=["video_generation_model"],
+    )
+    def test_ignored_negative_prompt_warns(self, video_generation_model, guidance, warns):
+        """The warning has to be issued before the unused negative prompt is dropped.
+
+        Runs in a subprocess because the log level is read once per process from OPENVINO_LOG_LEVEL.
+        """
+        script = (
+            "import json, sys, openvino_genai as g\n"
+            "pipe = g.Text2VideoPipeline(sys.argv[1], 'CPU')\n"
+            "pipe.generate('test prompt', negative_prompt='blurry', **json.loads(sys.argv[2]))\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script, video_generation_model, json.dumps({**GEN_KWARGS, **guidance})],
+            env={**os.environ, "OPENVINO_LOG_LEVEL": "1"},  # WARNING
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert ("ignores negative prompt" in result.stdout + result.stderr) == warns
 
     @pytest.mark.parametrize(
         "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True
