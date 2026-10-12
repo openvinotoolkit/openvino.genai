@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTX2Audio', 'AutoencoderKLLTX2Video', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'Gemma3TextEncoder', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTX2TextConnectors', 'LTX2VideoTransformer3DModel', 'LTX2Vocoder', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3CoderToolParser', 'Qwen3TextEncoder', 'Qwen3VLForConditionalGeneration', 'QwenImage21Transformer2DModel', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
+__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRForcedAligner', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTX2Audio', 'AutoencoderKLLTX2Video', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'Gemma3TextEncoder', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTX2TextConnectors', 'LTX2VideoTransformer3DModel', 'LTX2Vocoder', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3CoderToolParser', 'Qwen3TextEncoder', 'Qwen3VLForConditionalGeneration', 'QwenImage21Transformer2DModel', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
 class ASRDecodedResultChunk:
     """
     
@@ -65,6 +65,23 @@ class ASRDecodedResults:
     @property
     def words(self) -> list[list[ASRDecodedResultChunk]] | None:
         ...
+class ASRForcedAligner:
+    """
+    Standalone forced aligner for word-level timestamps
+    """
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+        """
+                    ASRForcedAligner class constructor.
+                    models_path (os.PathLike): Path to the forced-aligner model directory.
+                    device (str): Device to run the model on (e.g., CPU, GPU).
+        
+                    Constructor keyword arguments are OpenVINO compile properties.
+        """
+    def align(self, audio: collections.abc.Sequence[typing.SupportsFloat], transcript: str, language: str | None = None) -> list[ASRDecodedResultChunk]:
+        """
+                    Aligns a transcript to audio and returns word-level timestamps relative to the audio start.
+                    Returns list[ASRDecodedResultChunk].
+        """
 class ASRGenerationConfig(GenerationConfig):
     """
     
@@ -120,8 +137,10 @@ class ASRGenerationConfig(GenerationConfig):
         :type lang_to_id: dict[str, int]
     
         :param word_timestamps: If `true` the pipeline will return word-level timestamps.
-                                When enabled word_timestamps=True property should be passed to ASRPipeline constructor:
-                                ASRPipeline("model_path", "CPU", word_timestamps=True)
+                                For Whisper, word_timestamps=True must also be passed to the
+                                ASRPipeline constructor.
+                                For Qwen3-ASR, ASRPipeline must be constructed with a
+                                pre-configured ASRForcedAligner.
         :type word_timestamps: bool
     
         :param alignment_heads: Encoder attention alignment heads used for word-level timestamps prediction.
@@ -286,6 +305,11 @@ class ASRPipeline:
                     ASRPipeline class constructor.
                     models_path (os.PathLike): Path to the model file.
                     device (str): Device to run the model on (e.g., CPU, GPU).
+        
+                    Constructor keyword arguments include OpenVINO compile properties and:
+                    forced_aligner (ASRForcedAligner): Pre-constructed forced aligner instance.
+                        Only supported for Qwen3-ASR. Required when requesting
+                        generate(..., word_timestamps=True).
         """
     def generate(self, audio_inputs: collections.abc.Sequence[typing.SupportsFloat], generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> ASRDecodedResults:
         """
@@ -360,8 +384,10 @@ class ASRPipeline:
             :type lang_to_id: dict[str, int]
         
             :param word_timestamps: If `true` the pipeline will return word-level timestamps.
-                                    When enabled word_timestamps=True property should be passed to ASRPipeline constructor:
-                                    ASRPipeline("model_path", "CPU", word_timestamps=True)
+                                    For Whisper, word_timestamps=True must also be passed to the
+                                    ASRPipeline constructor.
+                                    For Qwen3-ASR, ASRPipeline must be constructed with a
+                                    pre-configured ASRForcedAligner.
             :type word_timestamps: bool
         
             :param alignment_heads: Encoder attention alignment heads used for word-level timestamps prediction.
@@ -1290,25 +1316,31 @@ class ContinuousBatchingPipeline:
     def generate(self, prompt: str, generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
         ...
     @typing.overload
-    def generate(self, prompts: collections.abc.Sequence[str], images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> list[VLMDecodedResults]:
+    def generate(self, prompts: collections.abc.Sequence[str], images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, *, audios_batches: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]] = [], **kwargs) -> list[VLMDecodedResults]:
         ...
     @typing.overload
-    def generate(self, prompts: collections.abc.Sequence[str], images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[VLMDecodedResults]:
+    def generate(self, prompts: collections.abc.Sequence[str], images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, *, audios_batches: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]] = []) -> list[VLMDecodedResults]:
         ...
     @typing.overload
-    def generate(self, prompts: collections.abc.Sequence[str], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> list[VLMDecodedResults]:
+    def generate(self, prompts: collections.abc.Sequence[str], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, *, audios_batches: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]] = [], **kwargs) -> list[VLMDecodedResults]:
+        ...
+    @typing.overload
+    def generate(self, prompts: collections.abc.Sequence[str], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, *, audios_batches: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]]) -> list[VLMDecodedResults]:
         ...
     @typing.overload
     def generate(self, histories: list, generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
         ...
     @typing.overload
-    def generate(self, histories: list, images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> list[VLMDecodedResults]:
+    def generate(self, histories: list, images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, *, audios_batches: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]] = [], **kwargs) -> list[VLMDecodedResults]:
         ...
     @typing.overload
-    def generate(self, histories: list, images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[VLMDecodedResults]:
+    def generate(self, histories: list, images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, *, audios_batches: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]] = []) -> list[VLMDecodedResults]:
         ...
     @typing.overload
-    def generate(self, histories: list, videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> list[VLMDecodedResults]:
+    def generate(self, histories: list, videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, *, audios_batches: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]] = [], **kwargs) -> list[VLMDecodedResults]:
+        ...
+    @typing.overload
+    def generate(self, histories: list, generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, *, audios_batches: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]]) -> list[VLMDecodedResults]:
         ...
     def get_config(self) -> GenerationConfig:
         ...
@@ -3234,16 +3266,19 @@ class OmniPipeline:
             :param prompt: Input prompt
             :type prompt: str
         
-            :param images: image tensors to be prepended to the prompt
+            :param images: image tensors. Place with `<ov_genai_image_N>`; prepended if untagged
             :type images: list[ov.Tensor]
         
-            :param videos: video tensors to be prepended to the prompt
+            :param videos: video tensors. Place with `<ov_genai_video_N>`; prepended if untagged
             :type videos: list[ov.Tensor]
         
             :param videos_metadata: metadata for each video (fps, frames_indices). Must be empty or have the same length as videos.
             :type videos_metadata: list[VideoMetadata]
         
-            :param audios: audio tensors to be prepended to the prompt
+            :param audios: audio tensors. Place with `<ov_genai_audio_N>` anywhere in the prompt; untagged
+                audio is prepended, which is the recommended form. Outside a chat, N indexes this list. In a
+                chat, N is conversation-absolute: a second turn that adds one audio uses the next global
+                index, so `<ov_genai_audio_1>` rather than `<ov_genai_audio_0>`.
             :type audios: list[ov.Tensor]
         
             :param text_config: thinker text-decode config. None = use the VLM's default
@@ -3820,8 +3855,10 @@ class Qwen3VLForConditionalGeneration:
     def infer(self, prompt: str, max_sequence_length: typing.SupportsInt) -> openvino._pyopenvino.Tensor:
         ...
     @typing.overload
-    def infer(self, prompt: str, condition_image: openvino._pyopenvino.Tensor, max_sequence_length: typing.SupportsInt) -> openvino._pyopenvino.Tensor:
-        ...
+    def infer(self, prompt: str, condition_image: openvino._pyopenvino.Tensor, max_sequence_length: typing.SupportsInt, run_vision_tower: bool = True) -> openvino._pyopenvino.Tensor:
+        """
+        Set run_vision_tower=False only after infer() has encoded the same condition image.
+        """
 class QwenImage21Transformer2DModel:
     """
     QwenImage21Transformer2DModel class.
@@ -6134,8 +6171,8 @@ class VLMPipeline(VLMPipelineBase):
         
             :param prompt: Input prompt
             :type prompt: str
-            For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
+            For using media tags in prompt, see:
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-media-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -6143,7 +6180,9 @@ class VLMPipeline(VLMPipelineBase):
             :param videos: list of frames
             :type videos: list[ov.Tensor]
         
-            :param audios: audio tensors to be prepended to the prompt (for multimodal models supporting audio input)
+            :param audios: audio tensors, for models supporting audio input. Place with `<ov_genai_audio_N>`;
+                prepended if untagged. In a chat, N is conversation-absolute: a second turn that adds one
+                audio uses `<ov_genai_audio_1>`, not `<ov_genai_audio_0>`
             :type audios: list[ov.Tensor]
         
             :param generation_config: generation_config
@@ -6174,8 +6213,8 @@ class VLMPipeline(VLMPipelineBase):
         
             :param prompt: Input prompt
             :type prompt: str
-            For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
+            For using media tags in prompt, see:
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-media-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -6183,7 +6222,9 @@ class VLMPipeline(VLMPipelineBase):
             :param videos: list of frames
             :type videos: list[ov.Tensor]
         
-            :param audios: audio tensors to be prepended to the prompt (for multimodal models supporting audio input)
+            :param audios: audio tensors, for models supporting audio input. Place with `<ov_genai_audio_N>`;
+                prepended if untagged. In a chat, N is conversation-absolute: a second turn that adds one
+                audio uses `<ov_genai_audio_1>`, not `<ov_genai_audio_0>`
             :type audios: list[ov.Tensor]
         
             :param generation_config: generation_config
@@ -6214,8 +6255,8 @@ class VLMPipeline(VLMPipelineBase):
         
             :param prompt: Input prompt
             :type prompt: str
-            For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
+            For using media tags in prompt, see:
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-media-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -6223,7 +6264,9 @@ class VLMPipeline(VLMPipelineBase):
             :param videos: list of frames
             :type videos: list[ov.Tensor]
         
-            :param audios: audio tensors to be prepended to the prompt (for multimodal models supporting audio input)
+            :param audios: audio tensors, for models supporting audio input. Place with `<ov_genai_audio_N>`;
+                prepended if untagged. In a chat, N is conversation-absolute: a second turn that adds one
+                audio uses `<ov_genai_audio_1>`, not `<ov_genai_audio_0>`
             :type audios: list[ov.Tensor]
         
             :param generation_config: generation_config
@@ -6254,8 +6297,8 @@ class VLMPipeline(VLMPipelineBase):
         
             :param prompt: Input prompt
             :type prompt: str
-            For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
+            For using media tags in prompt, see:
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-media-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -6263,7 +6306,9 @@ class VLMPipeline(VLMPipelineBase):
             :param videos: list of frames
             :type videos: list[ov.Tensor]
         
-            :param audios: audio tensors to be prepended to the prompt (for multimodal models supporting audio input)
+            :param audios: audio tensors, for models supporting audio input. Place with `<ov_genai_audio_N>`;
+                prepended if untagged. In a chat, N is conversation-absolute: a second turn that adds one
+                audio uses `<ov_genai_audio_1>`, not `<ov_genai_audio_0>`
             :type audios: list[ov.Tensor]
         
             :param generation_config: generation_config
@@ -6294,8 +6339,8 @@ class VLMPipeline(VLMPipelineBase):
         
             :param prompt: Input prompt
             :type prompt: str
-            For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
+            For using media tags in prompt, see:
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-media-tags-in-prompt
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
         
@@ -6303,7 +6348,7 @@ class VLMPipeline(VLMPipelineBase):
             image: ov.Tensor - input image,
             images: list[ov.Tensor] - input images,
             videos: list[ov.Tensor] - input videos,
-            audios: list[ov.Tensor] - audio tensors to be prepended to the prompt (for multimodal models supporting audio input),
+            audios: list[ov.Tensor] - audio tensors, for models supporting audio input. In a chat, `<ov_genai_audio_N>` indices are conversation-absolute,
             videos_metadata: list[VideoMetadata] - metadata for each video,
             generation_config: GenerationConfig,
             streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped,
@@ -6320,8 +6365,8 @@ class VLMPipeline(VLMPipelineBase):
         
             :param history: Chat history
             :type history: ChatHistory
-            For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
+            For using media tags in prompt, see:
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-media-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -6329,7 +6374,9 @@ class VLMPipeline(VLMPipelineBase):
             :param videos: list of frames
             :type videos: list[ov.Tensor]
         
-            :param audios: audio tensors to be prepended to the prompt (for multimodal models supporting audio input)
+            :param audios: audio tensors, for models supporting audio input. Place with `<ov_genai_audio_N>`;
+                prepended if untagged. In a chat, N is conversation-absolute: a second turn that adds one
+                audio uses `<ov_genai_audio_1>`, not `<ov_genai_audio_0>`
             :type audios: list[ov.Tensor]
         
             :param generation_config: generation_config
@@ -6360,8 +6407,8 @@ class VLMPipeline(VLMPipelineBase):
         
             :param history: Chat history
             :type history: ChatHistory
-            For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
+            For using media tags in prompt, see:
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-media-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -6369,7 +6416,9 @@ class VLMPipeline(VLMPipelineBase):
             :param videos: list of frames
             :type videos: list[ov.Tensor]
         
-            :param audios: audio tensors to be prepended to the prompt (for multimodal models supporting audio input)
+            :param audios: audio tensors, for models supporting audio input. Place with `<ov_genai_audio_N>`;
+                prepended if untagged. In a chat, N is conversation-absolute: a second turn that adds one
+                audio uses `<ov_genai_audio_1>`, not `<ov_genai_audio_0>`
             :type audios: list[ov.Tensor]
         
             :param generation_config: generation_config
@@ -6400,8 +6449,8 @@ class VLMPipeline(VLMPipelineBase):
         
             :param history: Chat history
             :type history: ChatHistory
-            For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
+            For using media tags in prompt, see:
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-media-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -6409,7 +6458,9 @@ class VLMPipeline(VLMPipelineBase):
             :param videos: list of frames
             :type videos: list[ov.Tensor]
         
-            :param audios: audio tensors to be prepended to the prompt (for multimodal models supporting audio input)
+            :param audios: audio tensors, for models supporting audio input. Place with `<ov_genai_audio_N>`;
+                prepended if untagged. In a chat, N is conversation-absolute: a second turn that adds one
+                audio uses `<ov_genai_audio_1>`, not `<ov_genai_audio_0>`
             :type audios: list[ov.Tensor]
         
             :param generation_config: generation_config
@@ -6440,8 +6491,8 @@ class VLMPipeline(VLMPipelineBase):
         
             :param history: Chat history
             :type history: ChatHistory
-            For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
+            For using media tags in prompt, see:
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-media-tags-in-prompt
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
         
@@ -6449,7 +6500,7 @@ class VLMPipeline(VLMPipelineBase):
             image: ov.Tensor - input image,
             images: list[ov.Tensor] - input images,
             videos: list[ov.Tensor] - input videos,
-            audios: list[ov.Tensor] - audio tensors to be prepended to the prompt (for multimodal models supporting audio input),
+            audios: list[ov.Tensor] - audio tensors, for models supporting audio input. In a chat, `<ov_genai_audio_N>` indices are conversation-absolute,
             videos_metadata: list[VideoMetadata] - metadata for each video,
             generation_config: GenerationConfig,
             streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped,
