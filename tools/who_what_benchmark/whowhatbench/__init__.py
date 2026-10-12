@@ -11,10 +11,12 @@ from .inpaint_evaluator import InpaintingEvaluator
 from .embeddings_evaluator import EmbeddingsEvaluator
 from .reranking_evaluator import RerankingEvaluator
 from .text2video_evaluator import Text2VideoEvaluator
+from .image2video_evaluator import Image2VideoEvaluator
 from .chat_text_evaluator import ChatTextEvaluator
 from .speech_generation_evaluator import SpeechGenerationEvaluator
 from .speech_recognition_evaluator import SpeechRecognitionEvaluator
 from .chat_visualtext_evaluator import ChatVisualTextEvaluator
+from .text_agent_evaluator import TextAgentEvaluator
 
 
 __all__ = [
@@ -28,9 +30,11 @@ __all__ = [
     "EmbeddingsEvaluator",
     "RerankingEvaluator",
     "Text2VideoEvaluator",
+    "Image2VideoEvaluator",
     "ChatTextEvaluator",
     "SpeechGenerationEvaluator",
     "SpeechRecognitionEvaluator",
     "ChatVisualTextEvaluator",
+    "TextAgentEvaluator",
     "EVALUATOR_REGISTRY",
 ]

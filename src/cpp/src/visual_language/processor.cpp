@@ -40,8 +40,11 @@ public:
 
         vlm_utils::update_image_slice_counts(metrics, encoded_images);
 
-        auto [unified_prompt, image_sequence, video_sequence] =
-            m_inputs_embedder->normalize_prompt(prompt, 0, 0, encoded_images, encoded_videos);
+        std::vector<ov::genai::EncodedAudio> encoded_audios;
+
+        // TODO Support audios encodeing
+        auto [unified_prompt, image_sequence, video_sequence, audio_sequence] =
+            m_inputs_embedder->normalize_prompt(prompt, 0, 0, 0, encoded_images, encoded_videos, encoded_audios);
 
         const bool recalculate_merged_embeddings = !encoded_images.empty() || !encoded_videos.empty();
 

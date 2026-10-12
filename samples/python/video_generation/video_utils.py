@@ -26,3 +26,21 @@ def save_video(filename: str, video_tensor, fps: int = 25):
 
         writer.release()
         print(f"Wrote {output_path} ({num_frames} frames, {width}x{height} @ {fps} fps)")
+
+
+def save_audio(filename: str, audio_tensor, sample_rate: int):
+    import soundfile as sf
+
+    batch_size, num_channels, num_samples = audio_tensor.shape
+    audio_data = audio_tensor.data
+
+    for b in range(batch_size):
+        if batch_size == 1:
+            output_path = filename
+        else:
+            base, ext = filename.rsplit(".", 1) if "." in filename else (filename, "wav")
+            output_path = f"{base}_b{b}.{ext}"
+
+        # [C, S] -> [S, C], 32-bit float PCM
+        sf.write(output_path, audio_data[b].T, sample_rate, subtype="FLOAT")
+        print(f"Wrote {output_path} ({num_samples} samples, {num_channels} channels @ {sample_rate} Hz)")

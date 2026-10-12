@@ -22,6 +22,7 @@ void update_generation_config(VideoGenerationConfig& config, const ov::AnyMap& p
     read_anymap_param(properties, "guidance_rescale", config.guidance_rescale);
     read_anymap_param(properties, "num_frames", config.num_frames);
     read_anymap_param(properties, "frame_rate", config.frame_rate);
+    read_anymap_param(properties, "audio_guidance_scale", config.audio_guidance_scale);
     read_anymap_param(properties, "num_videos_per_prompt", config.num_videos_per_prompt);
 
     read_anymap_param(properties, "negative_prompt", config.negative_prompt);

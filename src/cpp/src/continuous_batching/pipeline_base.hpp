@@ -55,10 +55,13 @@ protected:
     std::vector<ov::genai::EncodedImage> m_history_images;
     std::vector<size_t> m_history_image_ids;
     std::vector<ov::genai::EncodedVideo> m_history_videos;
+    std::vector<ov::genai::EncodedAudio> m_history_audios;
+    std::vector<size_t> m_history_audio_ids;
     std::vector<size_t> m_history_video_ids;
     std::vector<std::pair<std::size_t, std::size_t>> m_history_vision_count;  // pair<video count, image count>
     size_t m_image_id = 0;
     size_t m_video_id = 0;
+    size_t m_audio_id = 0;
 
     float m_load_time_ms = 0.0f;
     // to access m_load_time_ms
@@ -67,13 +70,6 @@ protected:
     ModelInputType m_model_input_type = ModelInputType::TOKENS;
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
     std::mutex m_embeddings_mutex;
-
-    // Per-request audio batches passed by the audios-aware generate() overloads.
-    // Populated under m_embeddings_mutex by the audio overload and consumed inside the
-    // per-prompt loop right before tokenization, so each prompt sees its own audio
-    // embeddings (m_inputs_embedder->encode_audios overwrites internal cache state).
-    // Empty when the no-audio overloads are used.
-    std::vector<std::vector<ov::Tensor>> m_pending_audios_batches;
 
     std::shared_ptr<VisionRegistry> m_vision_registry;
 
@@ -85,7 +81,15 @@ public:
     Tokenizer get_tokenizer();
 
     /**
-     * Adds requests to awaiting queue using encoded inputs
+     * Returns LoRA adapters the pipeline itself was constructed with.
+     * Wrapper pipelines forward the call to the pipeline actually holding the adapters.
+     */
+    virtual std::optional<AdapterConfig> get_pipeline_adapters() const;
+
+    /**
+     * Adds requests to awaiting queue using encoded inputs.
+     * @note LoRA adapters are only supported in MODE_STATIC or MODE_FUSE modes.
+     *       MODE_DYNAMIC, MODE_AUTO and MODE_STATIC_RANK are not supported in the add_request() + step() flow.
      */
     virtual GenerationHandle add_request(uint64_t request_id,
                                          const ov::Tensor& input_ids,
@@ -94,8 +98,10 @@ public:
                                          std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs = std::nullopt) = 0;
 
     /**
-     * Adds request to running queue based on string input
-     * This step also performs tokenization's encode
+     * Adds request to running queue based on string input.
+     * This step also tokenizes the prompt (Tokenizer::encode).
+     * @note LoRA adapters are only supported in MODE_STATIC or MODE_FUSE modes.
+     *       MODE_DYNAMIC, MODE_AUTO and MODE_STATIC_RANK are not supported in the add_request() + step() flow.
      */
     virtual GenerationHandle add_request(uint64_t request_id,
                                          const std::string& prompt,
@@ -104,6 +110,8 @@ public:
     /**
      * Adds request to running queue based on string input and vector of images
      * This step also performs tokenization's encode
+     * @note LoRA adapters are only supported in MODE_STATIC or MODE_FUSE modes.
+     *       MODE_DYNAMIC, MODE_AUTO and MODE_STATIC_RANK are not supported in the add_request() + step() flow.
      */
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
@@ -113,6 +121,8 @@ public:
     /**
      * Adds request to running queue based on string input and vector of images and videos
      * This step also performs tokenization's encode
+     * @note LoRA adapters are only supported in MODE_STATIC or MODE_FUSE modes.
+     * MODE_DYNAMIC, MODE_AUTO and MODE_STATIC_RANK are not supported in the add_request() + step() flow.
      */
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
@@ -129,18 +139,6 @@ public:
                                  const std::vector<ov::Tensor>& images,
                                  const std::vector<ov::Tensor>& videos,
                                  const std::vector<VideoMetadata>& videos_metadata,
-                                 GenerationConfig sampling_params);
-
-    /**
-     * Overload accepting audios. Audios are encoded under m_embeddings_mutex before text tokenization so
-     * <|AUDIO|> placeholders resolve to fresh embeddings (Qwen3-Omni).
-     */
-    GenerationHandle add_request(uint64_t request_id,
-                                 const std::string& prompt,
-                                 const std::vector<ov::Tensor>& images,
-                                 const std::vector<ov::Tensor>& videos,
-                                 const std::vector<VideoMetadata>& videos_metadata,
-                                 const std::vector<ov::Tensor>& audios,
                                  GenerationConfig sampling_params);
 
     /**

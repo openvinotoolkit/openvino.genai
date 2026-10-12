@@ -128,7 +128,8 @@ public:
      * @param positive_prompt Prompt to generate image(s) from
      * @param initial_image RGB/BGR image of [1, height, width, 3] shape used to initialize latent image
      * @param properties Image generation parameters specified as properties. Values in 'properties' override default value for generation parameters.
-     * @returns A tensor which has dimensions [num_images_per_prompt, height, width, 3]
+     * @returns A tensor which has dimensions [num_images_per_prompt, height, width, channels], where channels is 3
+     * for RGB models and 4 for models decoding RGBA, such as Qwen-Image 2.1
      * @note Output image size is the same as initial image size, but rounded down to be divisible by VAE scale factor (usually, 8)
      */
     ov::Tensor generate(const std::string& positive_prompt, ov::Tensor initial_image, const ov::AnyMap& properties = {});
