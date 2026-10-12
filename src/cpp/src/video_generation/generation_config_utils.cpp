@@ -64,9 +64,7 @@ void update_generation_config(VideoGenerationConfig& config, const ov::AnyMap& p
         }
     }
 
-    // Validating and dropping the negative prompt are deliberately *not* done here: both depend on the
-    // effective audio guidance scale, which only a pipeline's 'replace_defaults' can fill in. The callers
-    // do it from 'merge_generation_config' and 'check_inputs' once the defaults are resolved.
+    // Negative-prompt handling needs the resolved defaults, so it happens in 'merge_generation_config'
 }
 
 std::pair<std::string, ov::Any> generation_config(const VideoGenerationConfig& generation_config) {

@@ -93,8 +93,7 @@ LTX2VideoTransformer3DModel& LTX2VideoTransformer3DModel::compile(const std::str
     m_has_cross_modality_gate = has_exact_input(compiled_model, "cross_modality_gate");
     m_has_stg_perturbation_mask = has_exact_input(compiled_model, "stg_perturbation_mask");
     if (m_has_stg_perturbation_mask) {
-        // The mask is one entry per transformer block. The export usually pins the dimension; fall back to
-        // the config when it does not.
+        // One mask entry per transformer block; fall back to the config if the export leaves it dynamic
         const auto& mask_shape = compiled_model.input("stg_perturbation_mask").get_partial_shape();
         m_num_stg_blocks = mask_shape[0].is_static() ? mask_shape[0].get_length() : m_config.num_layers;
         OPENVINO_ASSERT(m_num_stg_blocks > 0,
@@ -159,9 +158,7 @@ std::pair<ov::Tensor, ov::Tensor> LTX2VideoTransformer3DModel::infer(const ov::T
         m_request.set_tensor("audio_timestep", audio_timestep);
     }
 
-    // Both LTX-2.3 guidance inputs are re-bound on every call, including at their neutral values: the infer
-    // request keeps the tensors of the previous pass otherwise, which would leak one pass's perturbation
-    // into the next.
+    // Re-bound on every call, so one pass's perturbation cannot leak into the next
     if (m_has_cross_modality_gate) {
         // 1.0 lets audio and video attend to each other, as LTX-2.0 always does; 0.0 isolates them
         ov::Tensor cross_modality_gate(ov::element::f32, ov::Shape{});
@@ -199,15 +196,8 @@ LTX2VideoTransformer3DModel& LTX2VideoTransformer3DModel::reshape(int64_t batch_
                                                                   int64_t num_frames,
                                                                   int64_t height,
                                                                   int64_t width,
-                                                                  int64_t audio_num_frames,
-                                                                  bool dynamic_batch) {
+                                                                  int64_t audio_num_frames) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
-
-    // LTX-2.3's extra guidance passes run at batch 1 while classifier-free guidance runs at batch 2, so one
-    // statically shaped model cannot serve both and compiling twice would double the transformer's weights.
-    if (dynamic_batch) {
-        batch_size = -1;
-    }
 
     const int64_t patch_size = m_config.patch_size;
     const int64_t patch_size_t = m_config.patch_size_t;

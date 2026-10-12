@@ -475,9 +475,8 @@ class TestVideoGenerationPipelines:
             return np.array(result.video.data).astype(np.int16)
 
         off = run([0], 0.0)
-        # An all-ones mask makes the STG pass reproduce the conditional prediction, so its delta is ~0.
-        # It is run at batch 1 against CFG's batch 2, hence the 1-LSB tolerance rather than exact equality.
-        assert np.abs(off - run([28], 1.0)).max() <= 1, "index 28 must be ignored, not perturb block 0"
+        # An all-ones mask makes the STG pass reproduce the conditional prediction, so its delta is exactly 0
+        assert np.array_equal(off, run([28], 1.0)), "index 28 must be ignored, not perturb block 0"
         assert not np.array_equal(off, run([0], 1.0)), "block 0 must perturb where block 28 cannot"
 
     @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True)
@@ -558,11 +557,8 @@ class TestVideoGenerationPipelines:
     @pytest.mark.parametrize("video_generation_model", [LTX2_3_MODEL_ID], indirect=True)
     def test_ltx2_3_reshape_sizes_cfg_batch_for_audio_guidance(self, video_generation_model):
         """reshape() is handed only the video guidance scale, but LTX-2.3's audio scale defaults to 7.0 and
-        requests CFG on its own, so the batch has to be sized for it.
-
-        Sizing on the video scale alone compiled a batch-1 transformer, and generate() then warned and ran
-        with no guidance at all - silently making the negative prompt a no-op.
-        """
+        requests CFG on its own, so the CFG batch has to be sized for it. Otherwise generate() runs without
+        guidance and the negative prompt becomes a no-op."""
         pipe = ov_genai.Text2VideoPipeline(video_generation_model)
         pipe.reshape(1, 9, 32, 32, 1.0)
         pipe.compile("CPU")
@@ -577,6 +573,32 @@ class TestVideoGenerationPipelines:
             return np.array(result.audio.data)
 
         assert not np.array_equal(run(negative_prompt="blurry, low quality, distorted"), run())
+
+    @pytest.mark.parametrize("video_generation_model", [LTX2_3_MODEL_ID], indirect=True)
+    def test_ltx2_3_extra_guidance_runs_after_static_reshape_with_cfg(self, video_generation_model):
+        """CFG runs as two batch-N passes, so a transformer reshaped to a static batch still serves the
+        batch-N extra guidance passes. They used to be skipped once CFG pinned the batch at 2N."""
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model)
+        pipe.reshape(1, 9, 32, 32, 3.0)
+        pipe.compile("CPU")
+
+        def run(**overrides):
+            result = pipe.generate(
+                "test prompt",
+                negative_prompt="blurry, low quality, distorted",
+                guidance_scale=3.0,
+                generator=ov_genai.CppStdGenerator(42),
+                # the tiny transformer has num_layers=1, so the 2.3 default of [28] is out of range
+                spatio_temporal_guidance_blocks=[0],
+                **dict(GEN_KWARGS, **overrides),
+            )
+            return np.array(result.video.data)
+
+        off = run(stg_scale=0.0, audio_stg_scale=0.0, modality_scale=1.0, audio_modality_scale=1.0)
+        stg = run(stg_scale=1.0, audio_stg_scale=1.0, modality_scale=1.0, audio_modality_scale=1.0)
+        modality = run(stg_scale=0.0, audio_stg_scale=0.0, modality_scale=3.0, audio_modality_scale=3.0)
+        assert not np.array_equal(off, stg), "Spatio-Temporal Guidance was skipped after a static reshape"
+        assert not np.array_equal(off, modality), "Modality isolation was skipped after a static reshape"
 
     @pytest.mark.parametrize(
         "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True

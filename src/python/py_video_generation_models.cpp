@@ -332,7 +332,6 @@ void init_ltx2_video_transformer_3d_model(py::module_& m) {
              py::arg("height"),
              py::arg("width"),
              py::arg("audio_num_frames"),
-             py::arg("dynamic_batch") = false,
              R"(
                 Reshapes the model for specific input dimensions.
                 batch_size (int): Batch size.
@@ -340,8 +339,6 @@ void init_ltx2_video_transformer_3d_model(py::module_& m) {
                 height (int): Video height.
                 width (int): Video width.
                 audio_num_frames (int): Number of audio latent frames.
-                dynamic_batch (bool): Leaves the batch dimension dynamic, so one compiled model serves both
-                    the batch-2 classifier-free guidance pass and the batch-1 LTX-2.3 extra guidance passes.
             )")
         .def("set_hidden_states",
              &ov::genai::LTX2VideoTransformer3DModel::set_hidden_states,

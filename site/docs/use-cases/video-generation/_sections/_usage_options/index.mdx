@@ -137,7 +137,6 @@ The pipeline picks its defaults from the converted model, so no configuration is
 :::note
 - These parameters apply to the LTX-2 family only. Passing them to an LTX-Video pipeline raises an exception rather than being silently ignored. On an LTX-2 model, whose exported Transformer has no guidance inputs, `stg_scale` and `modality_scale` have no effect.
 - Enabling Spatio-Temporal Guidance with an empty `spatio_temporal_guidance_blocks` is an error: with no block to perturb, the extra pass would only cost time.
-- The extra passes run at batch `num_videos_per_prompt`, while classifier-free guidance runs at twice that. Serving both from one compiled Transformer needs a dynamic batch dimension, which the pipeline keeps only if the scales are known at reshape time. If you use the explicit `reshape()` + `compile()` flow, apply them with `set_generation_config()` beforehand; otherwise the extra passes are skipped with a warning at generation time.
 :::
 
 ### Working with LoRA Adapters

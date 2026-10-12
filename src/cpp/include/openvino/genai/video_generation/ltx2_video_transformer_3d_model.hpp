@@ -78,14 +78,11 @@ public:
                                             bool isolate_modalities = false,
                                             const std::vector<int64_t>& stg_blocks = {});
 
-    /// @param dynamic_batch Leaves the batch dimension dynamic so a single compiled model serves both the
-    /// batch-2 classifier-free guidance pass and the batch-1 LTX-2.3 extra guidance passes.
     LTX2VideoTransformer3DModel& reshape(int64_t batch_size,
                                          int64_t num_frames,
                                          int64_t height,
                                          int64_t width,
-                                         int64_t audio_num_frames,
-                                         bool dynamic_batch = false);
+                                         int64_t audio_num_frames);
 
     size_t get_expected_batch_size() const;
 

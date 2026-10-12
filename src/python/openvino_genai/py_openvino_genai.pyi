@@ -3030,7 +3030,7 @@ class LTX2VideoTransformer3DModel:
                             (LTX-2.3 Spatio-Temporal Guidance). Out-of-range indices are ignored.
                         Returns: Tuple of video and audio velocity predictions.
         """
-    def reshape(self, batch_size: typing.SupportsInt, num_frames: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, audio_num_frames: typing.SupportsInt, dynamic_batch: bool = False) -> LTX2VideoTransformer3DModel:
+    def reshape(self, batch_size: typing.SupportsInt, num_frames: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, audio_num_frames: typing.SupportsInt) -> LTX2VideoTransformer3DModel:
         """
                         Reshapes the model for specific input dimensions.
                         batch_size (int): Batch size.
@@ -3038,8 +3038,6 @@ class LTX2VideoTransformer3DModel:
                         height (int): Video height.
                         width (int): Video width.
                         audio_num_frames (int): Number of audio latent frames.
-                        dynamic_batch (bool): Leaves the batch dimension dynamic, so one compiled model serves both
-                            the batch-2 classifier-free guidance pass and the batch-1 LTX-2.3 extra guidance passes.
         """
     def set_hidden_states(self, tensor_name: str, tensor: openvino._pyopenvino.Tensor) -> None:
         """

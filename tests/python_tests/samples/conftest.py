@@ -181,6 +181,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "optimum-intel-internal-testing/tiny-random-ltx2",
         "convert_args": ["--trust-remote-code"],
     },
+    "tiny-random-ltx2.3": {
+        "name": "optimum-intel-internal-testing/tiny-random-ltx2.3",
+        "convert_args": ["--trust-remote-code"],
+    },
     "tiny-random-flux": {
         "name": "optimum-intel-internal-testing/tiny-random-flux",
         "convert_args": ["--trust-remote-code", "--weight-format", "fp16"],
