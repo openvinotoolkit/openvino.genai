@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <string_view>
-#include "continuous_batching/cache/kv_cache_isolation_seed.hpp"
 #include "sequence_group.hpp"
 
 namespace ov {
@@ -25,15 +24,6 @@ size_t Sequence::_make_hash(size_t content_length, size_t block_size) {
         OPENVINO_ASSERT(filled_blocks_count <= m_prefix_hashes.size());
         if (filled_blocks_count > 0) {
             content.emplace_back(m_prefix_hashes[filled_blocks_count - 1]);
-        } else {
-            // Block-0: mix in the request's tenant isolation seed, if any, so two different tenants can
-            // never collide even for identical prompts. 0 (the default, unconfigured case) injects nothing,
-            // leaving the hash chain byte-for-byte identical to a build without tenant isolation.
-            const auto& sampling_params = sequence_group->get_sampling_parameters();
-            const uint64_t isolation_seed = compute_prefix_isolation_seed(sampling_params.tenant_id, sampling_params.cache_salt);
-            if (isolation_seed != 0) {
-                content.emplace_back(static_cast<int64_t>(isolation_seed));
-            }
         }
 
         // get tokens corresponding to current block

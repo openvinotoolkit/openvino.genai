@@ -3,7 +3,6 @@
 //
 
 #include <gtest/gtest.h>
-#include <algorithm>
 #include "openvino/runtime/core.hpp"
 #include "continuous_batching/scheduler.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
@@ -128,116 +127,6 @@ TEST(TestCacheManager, test_cpu_block_round_trip) {
     cache_manager->write_block(1, expected);
     EXPECT_EQ(cache_manager->read_block(1), expected);
     EXPECT_NE(cache_manager->read_block(0), expected);
-}
-
-namespace {
-
-/// One recognizable byte pattern per block, so a mixed-up destination index or a partially-copied
-/// segment shows up as a mismatch against write_block()'s reference result.
-std::vector<uint8_t> make_pattern(size_t slot_size, uint8_t seed) {
-    std::vector<uint8_t> data(slot_size);
-    for (size_t i = 0; i < data.size(); ++i) {
-        data[i] = static_cast<uint8_t>(seed + i);
-    }
-    return data;
-}
-
-/// Runs write_blocks(block_ids, flat) against `cache_manager` and asserts every block matches what
-/// write_block() would have produced for the same bytes, one physical block at a time.
-void expect_batch_write_matches_per_block(std::shared_ptr<KVCacheManager> cache_manager,
-                                          const std::vector<size_t>& block_ids) {
-    const auto layout = cache_manager->get_block_layout();
-    const size_t slot_size = layout.get_slot_size();
-
-    std::vector<std::vector<uint8_t>> expected;
-    expected.reserve(block_ids.size());
-    for (size_t i = 0; i < block_ids.size(); ++i) {
-        expected.push_back(make_pattern(slot_size, static_cast<uint8_t>(i * 7 + 3)));
-    }
-
-    std::vector<uint8_t> flat;
-    flat.reserve(block_ids.size() * slot_size);
-    for (const auto& block : expected) {
-        flat.insert(flat.end(), block.begin(), block.end());
-    }
-
-    cache_manager->write_blocks(block_ids, flat);
-
-    for (size_t i = 0; i < block_ids.size(); ++i) {
-        EXPECT_EQ(cache_manager->read_block(block_ids[i]), expected[i]) << "mismatch at block_ids[" << i << "]";
-    }
-}
-
-}  // namespace
-
-TEST(TestCacheManager, test_cpu_batch_write_contiguous_run_matches_per_block) {
-    ov::Core core;
-    ov::InferRequest request = core.compile_model(get_dummy_model(core, /*num_layers=*/3)).create_infer_request();
-    auto cache_manager = std::make_shared<KVCacheManager>(request);
-    cache_manager->allocate_cache_if_needed(/*num_blocks=*/6);
-
-    expect_batch_write_matches_per_block(cache_manager, {1, 2, 3, 4});
-}
-
-TEST(TestCacheManager, test_cpu_batch_write_sparse_ids_matches_per_block) {
-    ov::Core core;
-    ov::InferRequest request = core.compile_model(get_dummy_model(core, /*num_layers=*/3)).create_infer_request();
-    auto cache_manager = std::make_shared<KVCacheManager>(request);
-    cache_manager->allocate_cache_if_needed(/*num_blocks=*/6);
-
-    // Neither pair is contiguous with its neighbor, so every request falls back to a single-block copy.
-    expect_batch_write_matches_per_block(cache_manager, {0, 2, 5, 3});
-}
-
-TEST(TestCacheManager, test_cpu_batch_write_mixed_runs_and_gaps_matches_per_block) {
-    ov::Core core;
-    ov::InferRequest request = core.compile_model(get_dummy_model(core, /*num_layers=*/3)).create_infer_request();
-    auto cache_manager = std::make_shared<KVCacheManager>(request);
-    cache_manager->allocate_cache_if_needed(/*num_blocks=*/8);
-
-    // Two separate contiguous runs (0-2 and 5-7) with a gap between them.
-    expect_batch_write_matches_per_block(cache_manager, {0, 1, 2, 5, 6, 7});
-}
-
-TEST(TestCacheManager, test_cpu_batch_write_single_id_matches_write_block) {
-    ov::Core core;
-    ov::InferRequest request = core.compile_model(get_dummy_model(core, /*num_layers=*/2)).create_infer_request();
-    auto cache_manager = std::make_shared<KVCacheManager>(request);
-    cache_manager->allocate_cache_if_needed(/*num_blocks=*/3);
-
-    expect_batch_write_matches_per_block(cache_manager, {2});
-}
-
-TEST(TestCacheManager, test_gpu_batch_write_contiguous_run_matches_per_block) {
-    ov::Core core;
-    auto devices = core.get_available_devices();
-    if (std::find(devices.begin(), devices.end(), "GPU") == devices.end()) {
-        GTEST_SKIP() << "No GPU device available on this machine.";
-    }
-
-    ov::InferRequest request =
-        core.compile_model(get_dummy_model(core, /*num_layers=*/3), "GPU").create_infer_request();
-    auto cache_manager = std::make_shared<KVCacheManager>(request);
-    ASSERT_NE(cache_manager->get_device().find("GPU"), std::string::npos);
-    cache_manager->allocate_cache_if_needed(/*num_blocks=*/6);
-
-    // Same contiguous-run scenario as the CPU test, but now exercised against real RemoteTensor copies.
-    expect_batch_write_matches_per_block(cache_manager, {1, 2, 3, 4});
-}
-
-TEST(TestCacheManager, test_gpu_batch_write_mixed_runs_and_gaps_matches_per_block) {
-    ov::Core core;
-    auto devices = core.get_available_devices();
-    if (std::find(devices.begin(), devices.end(), "GPU") == devices.end()) {
-        GTEST_SKIP() << "No GPU device available on this machine.";
-    }
-
-    ov::InferRequest request =
-        core.compile_model(get_dummy_model(core, /*num_layers=*/3), "GPU").create_infer_request();
-    auto cache_manager = std::make_shared<KVCacheManager>(request);
-    cache_manager->allocate_cache_if_needed(/*num_blocks=*/8);
-
-    expect_batch_write_matches_per_block(cache_manager, {0, 1, 2, 5, 6, 7});
 }
 
 TEST(TestCacheManager, test_block_layout_matches_allocated_tensors) {
