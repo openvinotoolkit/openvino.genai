@@ -395,6 +395,8 @@ An input image without explicit slicing metadata counts as one slice.)")
         })
         .def("set_chat_template", &ov::genai::VLMPipeline::set_chat_template, py::arg("chat_template"))
         .def("get_tokenizer", &ov::genai::VLMPipeline::get_tokenizer)
+        .def("get_max_request_tokens", &ov::genai::VLMPipeline::get_max_request_tokens,
+             R"(Returns the maximum token capacity that a single request can consume under the current cache configuration, or None if dynamically allocated or not configured.)")
         .def("get_generation_config", &ov::genai::VLMPipeline::get_generation_config, py::return_value_policy::copy)
         .def("set_generation_config", &ov::genai::VLMPipeline::set_generation_config, py::arg("config"))
         .def(

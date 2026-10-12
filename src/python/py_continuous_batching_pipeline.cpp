@@ -479,6 +479,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def("get_tokenizer", &ContinuousBatchingPipeline::get_tokenizer)
         .def("get_config", &ContinuousBatchingPipeline::get_config)
         .def("get_metrics", &ContinuousBatchingPipeline::get_metrics)
+        .def("get_max_request_tokens", &ContinuousBatchingPipeline::get_max_request_tokens,
+             R"(Returns the maximum token capacity that a single request can consume under the current cache configuration, or None if dynamically allocated.)")
 
         .def(
             "add_request",
