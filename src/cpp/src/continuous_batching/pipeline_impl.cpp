@@ -19,6 +19,7 @@
 #include "continuous_batching/cache/cache_state_dumper.hpp"
 #include "continuous_batching/paged_attention_transformations.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
+#include "continuous_batching/session_snapshot.hpp"
 #include "lora/helper.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "openvino/pass/sdpa_to_paged_attention.hpp"
@@ -374,6 +375,79 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
 bool ContinuousBatchingPipeline::ContinuousBatchingImpl::has_non_finished_requests() {
     std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
     return !m_awaiting_requests.empty() || !m_requests.empty();
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::save_state(uint64_t request_id, const std::string& path) {
+    OPENVINO_ASSERT(!m_scheduler->get_config().use_cache_eviction,
+                    "Session snapshot save/restore is not supported together with use_cache_eviction");
+
+    SequenceGroup::Ptr sequence_group;
+    {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        for (auto& candidate : m_requests) {
+            if (candidate->get_request_id() == request_id) {
+                sequence_group = candidate;
+                break;
+            }
+        }
+        if (!sequence_group) {
+            for (auto& candidate : m_awaiting_requests) {
+                if (candidate->get_request_id() == request_id) {
+                    sequence_group = candidate;
+                    break;
+                }
+            }
+        }
+    }
+    OPENVINO_ASSERT(sequence_group, "No active request with id ", request_id, " to save a session snapshot for");
+    OPENVINO_ASSERT(sequence_group->get_sequence_group_type() == SequenceGroupType::TOKENS,
+                    "Session snapshot only supports models that take plain token ids as input; this model routes "
+                    "requests through an input embeddings model (e.g. a natively multimodal model, even for "
+                    "text-only prompts) and is not yet supported");
+
+    auto running_sequences = sequence_group->get_running_sequences();
+    OPENVINO_ASSERT(running_sequences.size() == 1,
+                    "Session snapshot only supports a single (non-beam-search, non-forked) sequence per request, "
+                    "got ", running_sequences.size());
+    const auto& sequence = running_sequences[0];
+
+    TokenIds token_ids = sequence_group->get_prompt_ids();
+    const auto& generated_ids = sequence->get_generated_ids();
+    token_ids.insert(token_ids.end(), generated_ids.begin(), generated_ids.end());
+
+    SessionSnapshot::save(m_scheduler->get_cache_orchestrator(), sequence->get_id(), token_ids, path);
+}
+
+GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::restore_state(
+        uint64_t request_id,
+        const std::string& path,
+        const ov::genai::GenerationConfig& sampling_params) {
+    OPENVINO_ASSERT(!m_scheduler->get_config().use_cache_eviction,
+                    "Session snapshot save/restore is not supported together with use_cache_eviction");
+
+    auto loaded = SessionSnapshot::load(m_scheduler->get_cache_orchestrator(), path);
+
+    auto sampling_params_copy = sampling_params;
+    if (sampling_params_copy.stop_token_ids.empty())
+        sampling_params_copy.stop_token_ids = m_generation_config.stop_token_ids;
+    if (sampling_params_copy.eos_token_id == -1)
+        sampling_params_copy.set_eos_token_id(m_generation_config.eos_token_id);
+    sampling_params_copy.validate();
+    OPENVINO_ASSERT(sampling_params_copy.max_length > loaded.token_ids.size(),
+                    "'max_length' must be greater than the number of restored session tokens");
+
+    auto sequence_group = std::make_shared<SequenceGroup>(request_id, loaded.token_ids, sampling_params_copy);
+    auto running_sequences = sequence_group->get_running_sequences();
+    OPENVINO_ASSERT(running_sequences.size() == 1, "Internal error: restored sequence group has more than one sequence");
+
+    m_scheduler->get_cache_orchestrator().inject_sequence_cache_state(running_sequences[0], sequence_group, loaded.blocks_per_type);
+
+    {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        m_awaiting_requests.push_back(sequence_group);
+    }
+
+    return std::make_shared<GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params_copy);
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {

@@ -405,6 +405,32 @@ def get_argparser():
         help="Path to file with Continuous Batching Scheduler settings or dict",
     )
     parser.add_argument(
+        "--session_snapshot_save",
+        required=False,
+        default=None,
+        help="Path to write a ContinuousBatchingPipeline session snapshot to. When set, each prompt is "
+        "generated for --session_snapshot_save_steps steps (instead of the full --infer_count) and then "
+        "saved via save_state(), instead of being benchmarked normally. Forces ContinuousBatchingPipeline "
+        "and requires batch_size=1, num_beams=1. Mutually exclusive with --session_snapshot_restore.",
+    )
+    parser.add_argument(
+        "--session_snapshot_save_steps",
+        default=5,
+        type=greater_than_zero,
+        help="Number of continuous-batching steps to run before saving via --session_snapshot_save "
+        "(roughly: enough steps to finish prefill plus a couple of decode steps).",
+    )
+    parser.add_argument(
+        "--session_snapshot_restore",
+        required=False,
+        default=None,
+        help="Path to a ContinuousBatchingPipeline session snapshot (written by --session_snapshot_save) to "
+        "restore via restore_state() instead of tokenizing/prefilling the prompt from scratch. The prompt "
+        "text/file is ignored; the request's token history comes entirely from the snapshot. Forces "
+        "ContinuousBatchingPipeline and requires batch_size=1, num_beams=1. Mutually exclusive with "
+        "--session_snapshot_save.",
+    )
+    parser.add_argument(
         "--draft_model",
         required=False,
         default=None,
@@ -689,6 +715,14 @@ def main():
         exit(1)
     if args.streaming and args.tokens_len is None:
         log.error("--streaming requires --tokens_len to be set.")
+        exit(1)
+    if args.session_snapshot_save is not None and args.session_snapshot_restore is not None:
+        log.error("--session_snapshot_save and --session_snapshot_restore are mutually exclusive.")
+        exit(1)
+    if (args.session_snapshot_save is not None or args.session_snapshot_restore is not None) and (
+        args.batch_size != 1 or args.num_beams != 1
+    ):
+        log.error("--session_snapshot_save/--session_snapshot_restore require batch_size=1 and num_beams=1.")
         exit(1)
     model_path, framework, model_args = analyze_args(args)
     # Set the device for running OpenVINO backend for torch.compile()

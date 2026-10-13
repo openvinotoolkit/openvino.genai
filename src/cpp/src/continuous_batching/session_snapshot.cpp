@@ -1,0 +1,220 @@
+// Copyright (C) 2023-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+#include "continuous_batching/session_snapshot.hpp"
+
+#include <cstring>
+#include <fstream>
+
+#include "continuous_batching/cache/block_manager.hpp"
+#include "continuous_batching/cache/cache_orchestrator.hpp"
+#include "continuous_batching/cache/kv_cache_manager.hpp"
+#include "continuous_batching/cache/linear_attention_cache_manager.hpp"
+#include "openvino/core/except.hpp"
+
+namespace ov::genai {
+
+namespace {
+
+constexpr char MAGIC[8] = {'O', 'V', 'G', 'S', 'E', 'S', 'S', '1'};
+constexpr uint32_t FORMAT_VERSION = 1;
+
+#pragma pack(push, 1)
+struct FileHeader {
+    char magic[8];
+    uint32_t format_version;
+    uint32_t device_len;
+    uint8_t kv_present;
+    uint8_t la_present;
+    uint32_t kv_num_layers;
+    uint64_t kv_block_size_in_bytes;
+    uint64_t la_block_size_in_bytes;
+    uint64_t num_tokens;
+    uint64_t num_kv_blocks;
+    uint64_t kv_slot_bytes;
+    uint64_t la_slot_bytes;
+    uint64_t kv_payload_checksum;
+    uint64_t la_payload_checksum;
+};
+#pragma pack(pop)
+
+uint64_t fnv1a(const uint8_t* data, size_t size, uint64_t seed = 1469598103934665603ULL) {
+    uint64_t hash = seed;
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= data[i];
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+uint64_t checksum_blocks(const std::vector<std::vector<uint8_t>>& blocks) {
+    uint64_t hash = 1469598103934665603ULL;
+    for (const auto& block : blocks) {
+        hash = fnv1a(block.data(), block.size(), hash);
+    }
+    return hash;
+}
+
+void write_exact(std::ofstream& out, const void* data, size_t size) {
+    out.write(reinterpret_cast<const char*>(data), static_cast<std::streamsize>(size));
+    OPENVINO_ASSERT(out.good(), "Failed to write session snapshot file");
+}
+
+void read_exact(std::ifstream& in, void* data, size_t size) {
+    in.read(reinterpret_cast<char*>(data), static_cast<std::streamsize>(size));
+    OPENVINO_ASSERT(in.good(), "Session snapshot file is truncated or unreadable");
+}
+
+/// @return The physical block indices for `seq_id`'s shared (layer-0) block table, in logical order.
+std::vector<size_t> logical_block_indices(const BlockManager& block_mgr, uint64_t seq_id) {
+    const auto& block_tables = block_mgr.get_block_tables(seq_id);
+    OPENVINO_ASSERT(!block_tables.empty(), "Sequence has no block table for this cache type");
+    std::vector<size_t> indices;
+    indices.reserve(block_tables[0].size());
+    for (const auto& block : block_tables[0]) {
+        indices.push_back(static_cast<size_t>(block->get_index()));
+    }
+    return indices;
+}
+
+}  // namespace
+
+void SessionSnapshot::save(CacheOrchestrator& orchestrator,
+                           uint64_t seq_id,
+                           const std::vector<int64_t>& token_ids,
+                           const std::filesystem::path& path) {
+    const bool has_kv = orchestrator.has_kv_cache();
+    const bool has_la = orchestrator.has_linear_attention_cache();
+    OPENVINO_ASSERT(has_kv, "Session snapshot requires a model with KV cache inputs");
+
+    std::vector<std::vector<uint8_t>> kv_blocks;
+    uint64_t kv_block_size_in_bytes = 0;
+    uint64_t kv_slot_bytes = 0;
+    uint32_t kv_num_layers = 0;
+    {
+        auto& kv_manager = static_cast<KVCacheManager&>(orchestrator.get_cache_manager(CacheType::KV_CACHE));
+        kv_block_size_in_bytes = kv_manager.get_block_size_in_bytes();
+        kv_num_layers = static_cast<uint32_t>(kv_manager.get_num_layers());
+        kv_slot_bytes = kv_manager.get_block_layout().get_slot_size();
+
+        const auto indices = logical_block_indices(orchestrator.get_block_manager(CacheType::KV_CACHE), seq_id);
+        kv_blocks.reserve(indices.size());
+        for (size_t physical_index : indices) {
+            kv_blocks.push_back(kv_manager.read_block(physical_index));
+        }
+    }
+
+    std::vector<std::vector<uint8_t>> la_blocks;
+    uint64_t la_block_size_in_bytes = 0;
+    uint64_t la_slot_bytes = 0;
+    if (has_la) {
+        auto& la_manager =
+            static_cast<LinearAttentionCacheManager&>(orchestrator.get_cache_manager(CacheType::LINEAR_ATTENTION_CACHE));
+        la_block_size_in_bytes = la_manager.get_block_size_in_bytes();
+        la_slot_bytes = la_manager.get_block_layout().get_slot_size();
+
+        const auto indices =
+            logical_block_indices(orchestrator.get_block_manager(CacheType::LINEAR_ATTENTION_CACHE), seq_id);
+        OPENVINO_ASSERT(!indices.empty(), "Linear attention cache has no block allocated for this sequence");
+        // Only the latest checkpoint is needed: the recurrent state already summarizes all prior history.
+        la_blocks.push_back(la_manager.read_block(indices.back()));
+    }
+
+    FileHeader header{};
+    std::memcpy(header.magic, MAGIC, sizeof(MAGIC));
+    header.format_version = FORMAT_VERSION;
+    const std::string device = orchestrator.get_device();
+    header.device_len = static_cast<uint32_t>(device.size());
+    header.kv_present = has_kv ? 1 : 0;
+    header.la_present = has_la ? 1 : 0;
+    header.kv_num_layers = kv_num_layers;
+    header.kv_block_size_in_bytes = kv_block_size_in_bytes;
+    header.la_block_size_in_bytes = la_block_size_in_bytes;
+    header.num_tokens = token_ids.size();
+    header.num_kv_blocks = kv_blocks.size();
+    header.kv_slot_bytes = kv_slot_bytes;
+    header.la_slot_bytes = la_slot_bytes;
+    header.kv_payload_checksum = checksum_blocks(kv_blocks);
+    header.la_payload_checksum = has_la ? checksum_blocks(la_blocks) : 0;
+
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    OPENVINO_ASSERT(out.is_open(), "Failed to create session snapshot file at '", path.string(), "'");
+    write_exact(out, &header, sizeof(header));
+    write_exact(out, device.data(), device.size());
+    write_exact(out, token_ids.data(), token_ids.size() * sizeof(int64_t));
+    for (const auto& block : kv_blocks) {
+        write_exact(out, block.data(), block.size());
+    }
+    for (const auto& block : la_blocks) {
+        write_exact(out, block.data(), block.size());
+    }
+}
+
+SessionSnapshot::Loaded SessionSnapshot::load(const CacheOrchestrator& orchestrator, const std::filesystem::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    OPENVINO_ASSERT(in.is_open(), "Session snapshot file not found at '", path.string(), "'");
+
+    FileHeader header{};
+    read_exact(in, &header, sizeof(header));
+    OPENVINO_ASSERT(std::memcmp(header.magic, MAGIC, sizeof(MAGIC)) == 0,
+                    "File at '", path.string(), "' is not a valid OpenVINO GenAI session snapshot");
+    OPENVINO_ASSERT(header.format_version == FORMAT_VERSION,
+                    "Session snapshot format version ", header.format_version,
+                    " is not supported (expected ", FORMAT_VERSION, ")");
+
+    std::string device(header.device_len, '\0');
+    read_exact(in, device.data(), header.device_len);
+
+    OPENVINO_ASSERT(header.kv_present && orchestrator.has_kv_cache(),
+                    "Session snapshot/model mismatch: snapshot KV cache presence differs from the loaded model");
+    OPENVINO_ASSERT(static_cast<bool>(header.la_present) == orchestrator.has_linear_attention_cache(),
+                    "Session snapshot/model mismatch: snapshot linear-attention cache presence differs from the "
+                    "loaded model");
+    OPENVINO_ASSERT(device == orchestrator.get_device(),
+                    "Session snapshot was captured on device '", device, "' but the current pipeline uses '",
+                    orchestrator.get_device(), "'");
+
+    {
+        const auto& kv_manager = static_cast<const KVCacheManager&>(orchestrator.get_cache_manager(CacheType::KV_CACHE));
+        OPENVINO_ASSERT(header.kv_num_layers == kv_manager.get_num_layers() &&
+                        header.kv_block_size_in_bytes == kv_manager.get_block_size_in_bytes() &&
+                        header.kv_slot_bytes == kv_manager.get_block_layout().get_slot_size(),
+                        "Session snapshot was captured with an incompatible KV cache layout for the currently "
+                        "loaded model");
+    }
+    if (header.la_present) {
+        const auto& la_manager = static_cast<const LinearAttentionCacheManager&>(
+            orchestrator.get_cache_manager(CacheType::LINEAR_ATTENTION_CACHE));
+        OPENVINO_ASSERT(header.la_block_size_in_bytes == la_manager.get_block_size_in_bytes() &&
+                        header.la_slot_bytes == la_manager.get_block_layout().get_slot_size(),
+                        "Session snapshot was captured with an incompatible linear-attention cache layout for the "
+                        "currently loaded model");
+    }
+
+    Loaded result;
+    result.token_ids.resize(header.num_tokens);
+    read_exact(in, result.token_ids.data(), header.num_tokens * sizeof(int64_t));
+
+    std::vector<std::vector<uint8_t>> kv_blocks(header.num_kv_blocks);
+    for (auto& block : kv_blocks) {
+        block.resize(header.kv_slot_bytes);
+        read_exact(in, block.data(), block.size());
+    }
+    OPENVINO_ASSERT(checksum_blocks(kv_blocks) == header.kv_payload_checksum,
+                    "Session snapshot KV cache payload failed its integrity check (file may be corrupted)");
+    result.blocks_per_type[CacheType::KV_CACHE] = std::move(kv_blocks);
+
+    if (header.la_present) {
+        std::vector<std::vector<uint8_t>> la_blocks(1);
+        la_blocks[0].resize(header.la_slot_bytes);
+        read_exact(in, la_blocks[0].data(), la_blocks[0].size());
+        OPENVINO_ASSERT(checksum_blocks(la_blocks) == header.la_payload_checksum,
+                        "Session snapshot linear-attention cache payload failed its integrity check (file may be "
+                        "corrupted)");
+        result.blocks_per_type[CacheType::LINEAR_ATTENTION_CACHE] = std::move(la_blocks);
+    }
+
+    return result;
+}
+
+}  // namespace ov::genai

@@ -170,6 +170,65 @@ public:
     }
 
     /**
+     * @brief Allocates fresh physical blocks for `sequence` sized to its full (already-known)
+     * token count and writes previously-saved cache bytes directly into them, then marks the
+     * sequence group as fully processed so the Scheduler treats it as ready to decode the next
+     * token instead of re-running prefill. Used by SessionSnapshot::load() restore.
+     *
+     * @param blocks_per_type KV: one entry per logical block, in token order. Linear attention
+     *                        (if present): exactly one entry (the latest checkpoint).
+     */
+    void inject_sequence_cache_state(Sequence::Ptr sequence,
+                                     SequenceGroup::Ptr seq_group,
+                                     const std::map<CacheType, std::vector<std::vector<uint8_t>>>& blocks_per_type) {
+        const size_t full_length = seq_group->get_prompt_len();
+        // Bypasses the Scheduler, so dynamic cache allocation (num_kv_blocks == 0) would otherwise
+        // never grow the pool before allocate_tokens() below requires it; mirrors what
+        // Scheduler::_initialize_cache()/_try_increase_cache() do for normally-arriving requests.
+        ensure_sequence_token_capacity({{full_length, 1}});
+        ensure_sequence_capacity(seq_group);
+        allocate_tokens(sequence, seq_group, full_length, full_length);
+        // Growing the logical block count above does not resize the physical cache tensors;
+        // Scheduler::schedule() normally does this every step via the same call.
+        allocate_cache_if_needed();
+
+        const uint64_t seq_id = sequence->get_id();
+        {
+            auto& kv_manager = static_cast<KVCacheManager&>(get_cache_manager(CacheType::KV_CACHE));
+            const auto& kv_blocks = blocks_per_type.at(CacheType::KV_CACHE);
+            const auto& block_table = get_block_manager(CacheType::KV_CACHE).get_block_tables(seq_id)[0];
+            OPENVINO_ASSERT(block_table.size() == kv_blocks.size(),
+                            "Session snapshot KV block count does not match the freshly allocated block table: ",
+                            "allocated=", block_table.size(), " saved=", kv_blocks.size(), " full_length=", full_length);
+            for (size_t i = 0; i < block_table.size(); ++i) {
+                kv_manager.write_block(static_cast<size_t>(block_table[i]->get_index()), kv_blocks[i]);
+            }
+        }
+
+        if (has_linear_attention_cache()) {
+            auto it = blocks_per_type.find(CacheType::LINEAR_ATTENTION_CACHE);
+            OPENVINO_ASSERT(it != blocks_per_type.end(),
+                            "Session snapshot has no linear attention cache payload, but the current model has "
+                            "linear attention cache inputs");
+            auto& la_manager = static_cast<LinearAttentionCacheManager&>(get_cache_manager(CacheType::LINEAR_ATTENTION_CACHE));
+            const auto& la_block_table = get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_block_tables(seq_id)[0];
+            OPENVINO_ASSERT(!la_block_table.empty(), "No linear attention block allocated for the restored sequence");
+            la_manager.write_block(static_cast<size_t>(la_block_table.back()->get_index()), it->second.at(0));
+        }
+
+        // Mark all but the LAST token as processed, not the full length: the invariant the rest of
+        // the pipeline relies on is that "processed tokens == prompt length" is reached in the very
+        // same step that also samples the first generated token (normal prefill's last chunk both
+        // computes attention for the final prompt token and samples the next one). Marking the full
+        // length processed here - with no sampling having happened yet for this brand-new Sequence -
+        // would desynchronize get_context_len() from the sequence's actual m_generated_ids size on
+        // the next step (see Sequence::_make_hash's bookkeeping), so instead leave the last cached
+        // token to be (cheaply) re-threaded through one ordinary prompt-completion step.
+        OPENVINO_ASSERT(full_length > 0, "Session snapshot token history must not be empty");
+        seq_group->update_processed_tokens_num(full_length - 1);
+    }
+
+    /**
      * @brief Register a cache type with its managers.
      *
      * @param type              Cache type identifier.
@@ -719,6 +778,10 @@ public:
     // -----------------------------------------------------------------------
 
     const ICacheManager& get_cache_manager(CacheType type) const {
+        return *m_cache_managers.at(type);
+    }
+
+    ICacheManager& get_cache_manager(CacheType type) {
         return *m_cache_managers.at(type);
     }
 

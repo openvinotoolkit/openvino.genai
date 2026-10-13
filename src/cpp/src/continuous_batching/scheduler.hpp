@@ -296,6 +296,11 @@ public:
         return m_config;
     }
 
+    /// @return The underlying cache orchestrator, used by session snapshot save/restore.
+    CacheOrchestrator& get_cache_orchestrator() {
+        return *m_cache_orchestrator;
+    }
+
     bool has_linear_attention_cache() const {
         return m_cache_orchestrator->has_linear_attention_cache();
     }

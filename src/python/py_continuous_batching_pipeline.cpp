@@ -622,6 +622,33 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def("step", &ContinuousBatchingPipeline::step)
         .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
 
+        .def(
+            "save_state",
+            &ContinuousBatchingPipeline::save_state,
+            py::arg("request_id"),
+            py::arg("path"),
+            R"(Captures a single, non-beam-search request's full KV (and, for hybrid models,
+linear-attention) cache state and token history to `path`, so it can be resumed later via
+restore_state() - even in a new process - without re-running prefill. Requires exactly one
+running sequence for the request and `use_cache_eviction` disabled.)"
+        )
+        .def(
+            "restore_state",
+            [](ContinuousBatchingPipeline& pipe,
+               uint64_t request_id,
+               const std::string& path,
+               const ov::genai::GenerationConfig& generation_config
+            ) -> std::shared_ptr<GenerationHandleImpl> {
+                return pipe.restore_state(request_id, path, generation_config);
+            },
+            py::arg("request_id"),
+            py::arg("path"),
+            py::arg("generation_config"),
+            R"(Restores a previously-saved request from `path` and adds it to the running queue,
+ready to continue generation with `generation_config` on the next step()/generate() call
+without re-running prefill.)"
+        )
+
         .def("start_chat", [](ContinuousBatchingPipeline& pipe, const std::string& system_message) {
             PyErr_WarnEx(PyExc_DeprecationWarning,
                          "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "

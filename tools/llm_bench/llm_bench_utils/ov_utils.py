@@ -240,10 +240,14 @@ def get_scheduler_config_genai(config_data, config_name="CB config"):
 
 
 def cb_pipeline_required(args):
-    return args['config'].get("ATTENTION_BACKEND", PA_ATTENTION_BACKEND) == PA_ATTENTION_BACKEND and args.get("cb_config") is not None and\
-        (args["cb_config"].get("cache_eviction_config") is not None or
-         args["cb_config"].get("sparse_attention_config") is not None or
-         args["cb_config"].get("use_cache_offload", False))
+    return args['config'].get("ATTENTION_BACKEND", PA_ATTENTION_BACKEND) == PA_ATTENTION_BACKEND and (
+        (args.get("cb_config") is not None and
+         (args["cb_config"].get("cache_eviction_config") is not None or
+          args["cb_config"].get("sparse_attention_config") is not None or
+          args["cb_config"].get("use_cache_offload", False))) or
+        args.get("session_snapshot_save") is not None or
+        args.get("session_snapshot_restore") is not None
+    )
 
 
 def create_genai_text_gen_model(model_path, device, ov_config, memory_data_collector, **kwargs):
@@ -287,6 +291,10 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_data_colle
     start = time.perf_counter()
     if cb_pipeline_required(kwargs):
         ov_config.pop("ATTENTION_BACKEND", None)
+        if "scheduler_config" not in config:
+            # cb_pipeline_required() can force a ContinuousBatchingPipeline for
+            # --session_snapshot_save/--session_snapshot_restore even without --cb_config.
+            config["scheduler_config"] = get_scheduler_config_genai({})
         log.info("Pipeline will be initialized with ContinuousBatchingPipeline")
         llm_pipe = openvino_genai.ContinuousBatchingPipeline(model_path, device=device.upper(), properties=ov_config, **config)
     else:

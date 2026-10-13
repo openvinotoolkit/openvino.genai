@@ -289,6 +289,22 @@ public:
 
     bool has_non_finished_requests();
 
+    /**
+     * @brief Captures a single, non-beam-search request's full KV (and, for hybrid models,
+     * linear-attention) cache state and token history to `path`, so it can be resumed later via
+     * restore_state() - even in a new process - without re-running prefill. Requires exactly one
+     * running sequence for the request and `use_cache_eviction` disabled.
+     */
+    void save_state(uint64_t request_id, const std::string& path);
+
+    /**
+     * @brief Restores a previously-saved request from `path` and adds it to the running queue,
+     * ready to continue generation with `sampling_params` on the next step()/generate() call
+     * without re-running prefill.
+     * @param request_id must be unique for every add_request()/restore_state() call.
+     */
+    GenerationHandle restore_state(uint64_t request_id, const std::string& path, const ov::genai::GenerationConfig& sampling_params);
+
     /// Higher level interface, which can process multiple prompts in continuous batching manner
     std::vector<EncodedGenerationResult> generate(const std::vector<ov::Tensor>& input_ids, const std::vector<ov::genai::GenerationConfig>& sampling_params, const ov::genai::StreamerVariant& streamer=std::monostate{});
     std::vector<GenerationResult> generate(const std::vector<std::string>& prompts, const std::vector<ov::genai::GenerationConfig>& sampling_params, const ov::genai::StreamerVariant& streamer=std::monostate{});
