@@ -403,7 +403,25 @@ An input image without explicit slicing metadata counts as one slice.)")
             py::arg("images") = std::vector<ov::Tensor>{}, "Input images",
             py::arg("videos") = std::vector<ov::Tensor>{}, "Input videos",
             py::arg("videos_metadata") = std::vector<ov::genai::VideoMetadata>{}, "Per-video metadata",
-                R"(Process string prompt and optional images/videos into ProcessedInputs.)")
+            R"(Process string prompt and optional images/videos into ProcessedInputs.)"
+        )
+        .def(
+            "process",
+            [](ov::genai::VLMProcessor& processor,
+               const std::string& prompt,
+               const py::kwargs& kwargs
+            )  -> py::typing::Union<ov::genai::ProcessedInputs> {
+                auto args_map = pyutils::kwargs_to_any_map(kwargs);
+                ov::genai::ProcessedInputs res;
+                {
+                    py::gil_scoped_release rel;
+                    res = processor.process(prompt, args_map);
+                }
+                return py::cast(res);
+            },
+            py::arg("prompt"), "Input prompt",
+            R"(Process string prompt and arbitrary keyword arguments with keys corresponding to process() params.)"
+        )
         .def("process",
             [](ov::genai::VLMProcessor& processor,
                const ov::genai::ChatHistory& history,
@@ -418,7 +436,25 @@ An input image without explicit slicing metadata counts as one slice.)")
             py::arg("images") = std::vector<ov::Tensor>{}, "Input images",
             py::arg("videos") = std::vector<ov::Tensor>{}, "Input videos",
             py::arg("videos_metadata") = std::vector<ov::genai::VideoMetadata>{}, "Per-video metadata",
-                R"(Process chat history and optional images/videos into ProcessedInputs.)")
+            R"(Process chat history and optional images/videos into ProcessedInputs.)"
+        )
+        .def(
+            "process",
+            [](ov::genai::VLMProcessor& processor,
+               const ov::genai::ChatHistory& history,
+               const py::kwargs& kwargs
+            )  -> py::typing::Union<ov::genai::ProcessedInputs> {
+                auto args_map = pyutils::kwargs_to_any_map(kwargs);
+                ov::genai::ProcessedInputs res;
+                {
+                    py::gil_scoped_release rel;
+                    res = processor.process(history, args_map);
+                }
+                return py::cast(res);
+            },
+            py::arg("history"), "Chat history",
+            R"(Process chat history and arbitrary keyword arguments with keys corresponding to process() params.)"
+        )
         .def("get_tokenizer", &ov::genai::VLMProcessor::get_tokenizer);
 
     // Abstract public base. Registered (without a constructor) so that a VLMPipeline can be

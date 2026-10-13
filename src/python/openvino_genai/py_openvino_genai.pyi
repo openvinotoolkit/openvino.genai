@@ -6602,9 +6602,19 @@ class VLMProcessor:
         Process string prompt and optional images/videos into ProcessedInputs.
         """
     @typing.overload
+    def process(self, prompt: str, **kwargs) -> ProcessedInputs:
+        """
+        Process string prompt and arbitrary keyword arguments with keys corresponding to process() params.
+        """
+    @typing.overload
     def process(self, history: ChatHistory, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = []) -> ProcessedInputs:
         """
         Process chat history and optional images/videos into ProcessedInputs.
+        """
+    @typing.overload
+    def process(self, history: ChatHistory, **kwargs) -> ProcessedInputs:
+        """
+        Process chat history and arbitrary keyword arguments with keys corresponding to process() params.
         """
 class VLMRawPerfMetrics:
     """
