@@ -146,7 +146,9 @@ def run_visual_language_generation_optimum(
         in_text_tokens=input_token_size,
         infer_count=len(tm_infer_list),
         out_size=num_tokens,
-        output_repr=gen_output_data.text_output_repr(generated_text[0], len(result[0]) - input_data["input_ids"][0].numel()),
+        output_repr=gen_output_data.text_output_repr(
+            generated_text[0], len(result[0]) - input_data["input_ids"][0].numel()
+        ),
         gen_time=generation_time,
         latency=per_token_time,
         res_md5=result_md5_list,
