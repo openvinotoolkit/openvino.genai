@@ -628,11 +628,12 @@ public:
 
         const auto decode_start = std::chrono::steady_clock::now();
         ov::Tensor video = m_vae->decode(postprocessed);
-        m_perf_metrics.vae_decoder_inference_duration =
+        VideoGenerationPerfMetrics decode_metrics;
+        decode_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
 
-        return VideoGenerationResult{video, m_perf_metrics, ov::Tensor(ov::element::f32, ov::Shape{0})};
+        return VideoGenerationResult{video, std::move(decode_metrics), ov::Tensor(ov::element::f32, ov::Shape{0})};
     }
 
     void reshape(int64_t num_videos_per_prompt,
