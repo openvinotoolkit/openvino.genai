@@ -21,7 +21,16 @@ class TestText2Video:
         [
             pytest.param("tiny-random-ltx-video", PROMPT, False),
             pytest.param("tiny-random-ltx2", PROMPT, True),
-            pytest.param("tiny-random-ltx2.3", PROMPT, True),
+            pytest.param(
+                "tiny-random-ltx2.3",
+                PROMPT,
+                True,
+                marks=pytest.mark.skipif(
+                    sys.platform == "win32",
+                    reason="The Windows sample runner has no git, which building optimum-intel with LTX-2.3 support "
+                    "from source requires, and no release includes it yet",
+                ),
+            ),
         ],
         indirect=["convert_model"],
     )
