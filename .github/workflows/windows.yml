@@ -861,8 +861,7 @@ jobs:
 
       - name: Test Samples (Python and C++)
         run: |
-          # Required for C++ samples. Extended here, not in 'env:', where '%PATH%' is not expanded and the
-          # system PATH (git included) would be lost.
+          # Required for C++ samples. `env.PATH: "%PATH%"` is not expanded by GHA, produces `PATH: "%PATH%"` literally. Expansion required for `pip install git+https`. If `PATH` not expanded correctly `git` is not found and installation fails.
           $env:PATH = "${{ env.INSTALL_DIR }}/runtime/bin/intel64/${{ matrix.build-type }};${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/bin;$env:PATH"
           ${{ matrix.test.extra_cmd }}
           python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
