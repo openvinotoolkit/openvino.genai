@@ -893,26 +893,34 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
         "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
 
     std::vector<GenerationHandle> generations;
-    for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
-        OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
-        if (position_ids_list.has_value()) {
-            const auto [position_ids, rope_delta] = (*position_ids_list)[request_id];
-            m_inputs_embedder->set_position_ids(position_ids);
-            if (rope_delta.has_value()) {
-                m_inputs_embedder->set_rope_delta(*rope_delta);
+    try {
+        for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
+            OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
+            if (position_ids_list.has_value()) {
+                const auto [position_ids, rope_delta] = (*position_ids_list)[request_id];
+                m_inputs_embedder->set_position_ids(position_ids);
+                if (rope_delta.has_value()) {
+                    m_inputs_embedder->set_rope_delta(*rope_delta);
+                }
             }
+
+            const bool has_valid_prompt_ids = prompt_ids.has_value() && request_id < prompt_ids->size();
+            const bool has_valid_lm_extra_inputs =
+                lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
+
+            generations.push_back(add_request(
+                request_id,
+                input_ids[request_id],
+                sampling_params[request_id],
+                has_valid_prompt_ids ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
+                has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt));
         }
-
-        const bool has_valid_prompt_ids = prompt_ids.has_value() && request_id < prompt_ids->size();
-        const bool has_valid_lm_extra_inputs =
-            lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
-
-        generations.push_back(add_request(
-            request_id,
-            input_ids[request_id],
-            sampling_params[request_id],
-            has_valid_prompt_ids ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
-            has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt));
+    } catch (...) {
+        // The queue was empty on entry, so every awaiting request belongs to this call. Left queued, they
+        // would make every later generate() fail the running-state check above.
+        _pull_awaiting_requests();
+        drop_requests();
+        throw;
     }
 
     auto all_requests =
