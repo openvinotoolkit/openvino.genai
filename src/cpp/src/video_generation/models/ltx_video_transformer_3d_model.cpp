@@ -21,9 +21,11 @@ std::pair<int64_t, int64_t> get_compression_ratio(const std::filesystem::path& c
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", config_path);
     nlohmann::json data = nlohmann::json::parse(file);
 
-    std::vector<bool> spatio_temporal_scaling;
-    int64_t patch_size, patch_size_t;
-    int64_t spatial_compression_ratio = 0, temporal_compression_ratio = 0;
+    std::vector<bool> spatio_temporal_scaling{true, true, true, false};
+    int64_t patch_size = 4;
+    int64_t patch_size_t = 1;
+    int64_t spatial_compression_ratio = 0;
+    int64_t temporal_compression_ratio = 0;
 
     utils::read_json_param(data, "spatio_temporal_scaling", spatio_temporal_scaling);
     utils::read_json_param(data, "patch_size", patch_size);
@@ -31,7 +33,8 @@ std::pair<int64_t, int64_t> get_compression_ratio(const std::filesystem::path& c
     utils::read_json_param(data, "spatial_compression_ratio", spatial_compression_ratio);
     utils::read_json_param(data, "temporal_compression_ratio", temporal_compression_ratio);
 
-    const auto compression_factor = std::pow(2, std::accumulate(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), 0));
+    const auto compression_factor =
+        std::pow(2, std::accumulate(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), 0));
     if (spatial_compression_ratio == 0) {
         spatial_compression_ratio = patch_size * compression_factor;
     }
