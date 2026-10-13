@@ -5,7 +5,6 @@ import sys
 import pytest
 from dataclasses import dataclass
 from pathlib import Path
-import datasets
 from tqdm import tqdm
 
 from openvino_genai import ContinuousBatchingPipeline, GenerationConfig, CacheEvictionConfig, AggregationMode
@@ -15,7 +14,7 @@ from utils.constants import get_default_llm_properties
 from utils.hugging_face import download_and_convert_model
 from data.test_dataset import get_test_dataset
 from kv_cache_eviction_utils import get_scheduler_config
-from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
+from utils.longbench import dataset2maxlen, evaluate, load_longbench_subset, preprocess_prompt, post_process_pred
 from optimum.intel.utils.import_utils import is_transformers_version
 
 
@@ -280,7 +279,7 @@ def test_optimized_generation_longbench(test_struct):
     generation_config.num_return_sequences = 1
     generation_config.max_new_tokens = max_new_tokens
 
-    data = datasets.load_dataset("zai-org/LongBench", subset, split="test[:16]", revision="8cbd1")
+    data = load_longbench_subset(subset, split="test[:16]")
     with tqdm(total=len(data)) as progress_bar:
         batch = []
         answers = []

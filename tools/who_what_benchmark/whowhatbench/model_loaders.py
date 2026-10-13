@@ -158,6 +158,9 @@ class GenAIModelWrapper:
             "text-reranking",
             "visual-text-chat",
             "visual-text-only",
+            "visual-text-agent",
+            "visual-text-only",
+            "visual-text-agent",
         ):
             try:
                 self.config = AutoConfig.from_pretrained(model_dir)
@@ -314,6 +317,7 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
         if not kwargs.get("gguf_file") and config and getattr(config, "quantization_config", None):
             is_gptq = config.quantization_config["quant_method"] == "gptq"
             is_awq = config.quantization_config["quant_method"] == "awq"
+
         with mock_AwqQuantizer_validate_environment(is_awq), mock_torch_cuda_is_available(is_gptq or is_awq):
             model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map="cpu", **model_kwargs)
         if is_awq:
@@ -724,16 +728,10 @@ def load_imagetext2image_model(
         model_kwargs = {"ov_config": ov_config, "safety_checker": None}
         if kwargs.get('from_onnx'):
             model_kwargs['from_onnx'] = kwargs['from_onnx']
-        config = OVPipelineForImage2Image.load_config(model_id)
-        pipeline_cls = OVPipelineForImage2Image
-        if config.get("_class_name") == "QwenImage21Pipeline":
-            from optimum.intel.openvino import OVQwenImage21Pipeline
-
-            pipeline_cls = OVQwenImage21Pipeline
         try:
-            model = pipeline_cls.from_pretrained(model_id, device=device, **model_kwargs)
+            model = OVPipelineForImage2Image.from_pretrained(model_id, device=device, **model_kwargs)
         except ValueError:
-            model = pipeline_cls.from_pretrained(
+            model = OVPipelineForImage2Image.from_pretrained(
                 model_id,
                 trust_remote_code=True,
                 use_cache=True,
@@ -961,14 +959,14 @@ def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, 
         logger.info("Using OpenVINO GenAI API")
         model = load_text2video_genai_pipeline(model_id, device, ov_config, **kwargs)
     elif use_hf:
-        from diffusers import LTXPipeline
+        from diffusers import DiffusionPipeline
 
         logger.info("Using HF Transformers API")
         torch_dtype = _resolve_torch_dtype(kwargs.get("torch_dtype")) or torch.float32
         try:
-            model = LTXPipeline.from_pretrained(model_id, torch_dtype=torch_dtype)
+            model = DiffusionPipeline.from_pretrained(model_id, torch_dtype=torch_dtype)
         except ValueError:
-            model = LTXPipeline.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch_dtype)
+            model = DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch_dtype)
         if kwargs.get("adapters") is not None:
             adapters = kwargs["adapters"]
             alphas = kwargs.get("alphas", None)
@@ -979,18 +977,18 @@ def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, 
             model.set_adapters([f"adapter_{idx}" for idx in range(len(adapters))], adapter_weights=alphas)
     else:
         logger.info("Using Optimum API")
-        from optimum.intel import OVLTXPipeline
+        from optimum.intel import OVPipelineForText2Video
 
         if "adapters" in kwargs and kwargs["adapters"] is not None:
-            raise ValueError("Adapters are not supported for OVLTXPipeline.")
+            raise ValueError("Adapters are not supported for OVPipelineForText2Video.")
 
         model_kwargs = {"ov_config": ov_config, "safety_checker": None}
         if kwargs.get("from_onnx"):
             model_kwargs["from_onnx"] = kwargs["from_onnx"]
         try:
-            model = OVLTXPipeline.from_pretrained(model_id, device=device, **model_kwargs)
+            model = OVPipelineForText2Video.from_pretrained(model_id, device=device, **model_kwargs)
         except ValueError:
-            model = OVLTXPipeline.from_pretrained(
+            model = OVPipelineForText2Video.from_pretrained(
                 model_id, trust_remote_code=True, use_cache=True, device=device, **model_kwargs
             )
 
@@ -1238,11 +1236,17 @@ def load_model(
 
     sanitized_kwargs = _sanitize_load_kwargs(model_type, use_hf, use_genai, use_llamacpp, kwargs)
 
-    if model_type == "text" or model_type == "text-chat":
+    if model_type in ("text", "text-agent", "text-chat"):
         return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp, **sanitized_kwargs)
     elif model_type == "text-to-image":
         return load_text2image_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
-    elif model_type in ["visual-text", "visual-video-text", "visual-text-chat", "visual-text-only"]:
+    elif model_type in (
+        "visual-text",
+        "visual-video-text",
+        "visual-text-chat",
+        "visual-text-agent",
+        "visual-text-only",
+    ):
         sanitized_kwargs["model_type"] = model_type
         return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "image-to-image":
