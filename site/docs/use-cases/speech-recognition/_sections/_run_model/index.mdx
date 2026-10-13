@@ -1,6 +1,7 @@
 import CodeExampleCPP from './_code_example_cpp.mdx';
 import CodeExamplePython from './_code_example_python.mdx';
 import CodeExampleJS from './_code_example_js.mdx';
+import CodeExampleC from './_code_example_c.mdx';
 
 ## Run Model Using OpenVINO GenAI
 
@@ -33,6 +34,16 @@ It will automatically load the model, tokenizer, detokenizer and default generat
             </TabItem>
         </Tabs>
     </TabItemCpp>
+    <TabItemC>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <CodeExampleC device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <CodeExampleC device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemC>
     <TabItemJS>
         <Tabs groupId="device">
             <TabItem label="CPU" value="cpu">

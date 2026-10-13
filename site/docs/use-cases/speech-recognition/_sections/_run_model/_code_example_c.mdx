@@ -1,0 +1,27 @@
+import CodeBlock from '@theme/CodeBlock';
+
+The C API accepts normalized mono float samples at 16 kHz. Pass `NULL` as the
+configuration to use the model defaults. Check each returned status before
+using its output.
+
+<CodeBlock language="c" showLineNumbers>
+{`#include "openvino/genai/c/asr_pipeline.h"
+
+/* raw_speech contains raw_speech_size normalized audio samples. */
+ov_genai_asr_pipeline* pipeline = NULL;
+ov_genai_asr_decoded_results* results = NULL;
+ov_status_e status = ov_genai_asr_pipeline_create(model_path, "${props.device || 'CPU'}", 0, &pipeline);
+if (status == OK) {
+    status = ov_genai_asr_pipeline_generate(pipeline, raw_speech, raw_speech_size, NULL, &results);
+}
+if (status == OK) {
+    /* Query the buffer size with get_string(results, NULL, &size),
+       then allocate and fill the buffer to read the transcription. */
+}
+ov_genai_asr_decoded_results_free(results);
+ov_genai_asr_pipeline_free(pipeline);
+`}
+</CodeBlock>
+
+See the [complete C sample](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/c/automatic_speech_recognition)
+for WAV loading, error handling, generation configuration, and segment and word timestamps.
