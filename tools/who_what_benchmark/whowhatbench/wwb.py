@@ -22,7 +22,7 @@ from whowhatbench import EVALUATOR_REGISTRY
 from whowhatbench.utils import fix_phi3_v_eos_token_id, patch_transformers_gguf_support
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
 from whowhatbench.utils import get_json_config, load_audio_dataset, resolve_json_dataset_path, read_json_dataset
-from tools.who_what_benchmark.whowhatbench.artifacts_manager import Metrics
+from whowhatbench.artifacts_manager import Metrics
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
