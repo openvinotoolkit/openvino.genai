@@ -82,6 +82,9 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
     size_t m_video_id = 0;
     size_t m_audio_id = 0;
     ChatHistory m_history;
+    // Set when a failed chat turn dropped the KV cache while earlier turns had media. Their embeddings
+    // are already released, so the history cannot be prefilled again.
+    bool m_chat_state_lost = false;
 
     // if True, full history will be used as prompt on each chat generation
     bool m_use_full_chat_history = false;
@@ -353,6 +356,10 @@ public:
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
+
+        OPENVINO_ASSERT(!m_chat_state_lost,
+                        "A failed chat turn dropped the KV cache, and the media of earlier turns is no longer "
+                        "available to prefill the history again. Call finish_chat() and start a new chat.");
 
         if (!m_is_chat_conversation) {
             reset_language_state();
@@ -806,6 +813,7 @@ public:
 
     void finish_chat() override {
         m_is_chat_conversation = false;
+        m_chat_state_lost = false;
         m_image_id = 0;
         m_video_id = 0;
         m_audio_id = 0;
@@ -920,6 +928,8 @@ private:
             GENAI_ERR("Failed to restore the KV cache after a failed chat turn: %s", error.what());
         }
         drop_kv_cache();
+        // Media ids advance only after a successful turn, so they count the media of earlier turns.
+        m_chat_state_lost = m_image_id > 0 || m_video_id > 0 || m_audio_id > 0;
     }
 
     // Runs while a failed call unwinds: throwing here would call std::terminate and hide the original error.
