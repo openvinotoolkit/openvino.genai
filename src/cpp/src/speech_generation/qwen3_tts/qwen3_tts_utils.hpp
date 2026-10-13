@@ -190,23 +190,37 @@ inline ov::Tensor clone_tensor(const ov::Tensor& src) {
     return dst;
 }
 
-// Concatenate tensors of shape [1, T_i, H] along the sequence dimension.
+// Concatenate embedding tensors along the sequence dimension.
+// Accepts either [1, T, H] (canonical) or [T, 1, H] (layout variant seen on
+// some exports/devices) and treats both as T sequence rows with hidden size H.
 inline ov::Tensor concat_embed(const std::vector<ov::Tensor>& tensors) {
     OPENVINO_ASSERT(!tensors.empty(), "concat_embed requires at least one tensor");
     OPENVINO_ASSERT(tensors.front().get_shape().size() == 3,
-                    "concat_embed expects tensors of shape [1, T, H], got ", tensors.front().get_shape());
+                    "concat_embed expects tensors of shape [1, T, H] or [T, 1, H], got ", tensors.front().get_shape());
+
+    const ov::Shape first_shape = tensors.front().get_shape();
+    OPENVINO_ASSERT(first_shape[0] == 1 || first_shape[1] == 1,
+                    "concat_embed expects tensors of shape [1, T, H] or [T, 1, H], got ", first_shape);
+
     const size_t h = tensors.front().get_shape()[2];
     size_t total_len = 0;
     for (const auto& t : tensors) {
-        OPENVINO_ASSERT(t.get_shape().size() == 3 && t.get_shape()[0] == 1 && t.get_shape()[2] == h,
-                        "concat_embed expects tensors of shape [1, T, ", h, "], got ", t.get_shape());
-        total_len += t.get_shape()[1];
+        const ov::Shape shape = t.get_shape();
+        OPENVINO_ASSERT(shape.size() == 3 && shape[2] == h,
+                        "concat_embed expects tensors of shape [1, T, ", h, "] or [T, 1, ", h, "], got ",
+                        shape);
+        OPENVINO_ASSERT(shape[0] == 1 || shape[1] == 1,
+                        "concat_embed expects tensors of shape [1, T, ", h, "] or [T, 1, ", h, "], got ",
+                        shape);
+        total_len += (shape[0] == 1) ? shape[1] : shape[0];
     }
     ov::Tensor out(ov::element::f32, ov::Shape{1, total_len, h});
     float* out_ptr = out.data<float>();
     size_t cursor = 0;
     for (const auto& t : tensors) {
-        const size_t sz = t.get_size();
+        const ov::Shape shape = t.get_shape();
+        const size_t t_len = (shape[0] == 1) ? shape[1] : shape[0];
+        const size_t sz = t_len * h;
         std::copy_n(t.data<const float>(), sz, out_ptr + cursor);
         cursor += sz;
     }

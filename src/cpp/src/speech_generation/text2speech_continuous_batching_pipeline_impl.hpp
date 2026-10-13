@@ -28,6 +28,9 @@ public:
     /// @brief Get the expected speaker embedding shape for this backend.
     virtual ov::Shape get_speaker_embedding_shape() const = 0;
 
+    /// @brief Get output sample rate of produced waveforms for this backend.
+    virtual uint32_t get_output_sample_rate() const = 0;
+
     virtual ~Text2SpeechContinuousBatchingPipelineImpl() = default;
 };
 

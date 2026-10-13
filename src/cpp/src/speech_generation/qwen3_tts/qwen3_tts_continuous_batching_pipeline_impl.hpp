@@ -30,6 +30,7 @@ public:
     void step() override;
     bool has_non_finished_requests() const override;
     ov::Shape get_speaker_embedding_shape() const override;
+    uint32_t get_output_sample_rate() const override;
 
 private:
     std::shared_ptr<ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl> m_impl;

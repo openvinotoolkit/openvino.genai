@@ -39,5 +39,9 @@ ov::Shape Qwen3TTSContinuousBatchingPipelineImpl::get_speaker_embedding_shape() 
     return m_impl->get_speaker_embedding_shape();
 }
 
+uint32_t Qwen3TTSContinuousBatchingPipelineImpl::get_output_sample_rate() const {
+    return m_impl->get_output_sample_rate();
+}
+
 }  // namespace genai
 }  // namespace ov

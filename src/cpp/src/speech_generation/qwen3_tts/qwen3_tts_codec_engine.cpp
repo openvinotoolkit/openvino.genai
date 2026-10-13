@@ -429,7 +429,30 @@ ov::Tensor Qwen3TTSCodecEngine::infer_embedding_seq(ov::InferRequest& request, c
     // infers of this same request (e.g. building a multi-part prefill from several
     // embedding lookups before concatenating them).
     auto out = clone_tensor(request.get_output_tensor(0));
-    return out;
+    const ov::Shape shape = out.get_shape();
+    OPENVINO_ASSERT(shape.size() == 3,
+                    "Qwen3 embedding output is expected to be rank-3 [1,T,H] or [T,1,H], got ",
+                    shape);
+
+    if (shape[0] == 1) {
+        return out;
+    }
+
+    OPENVINO_ASSERT(shape[1] == 1,
+                    "Qwen3 embedding output is expected to be [1,T,H] or [T,1,H], got ",
+                    shape);
+
+    // Some exports/devices return [T, 1, H]. Canonicalize to [1, T, H] so all
+    // prompt assembly code can remain layout-agnostic.
+    ov::Tensor transposed(out.get_element_type(), ov::Shape{1, shape[0], shape[2]});
+    const size_t t = shape[0];
+    const size_t h = shape[2];
+    const float* src = out.data<const float>();
+    float* dst = transposed.data<float>();
+    for (size_t i = 0; i < t; ++i) {
+        std::copy_n(src + i * h, h, dst + i * h);
+    }
+    return transposed;
 }
 
 // Read fixed dimensions from the static all-heads code predictor IR and

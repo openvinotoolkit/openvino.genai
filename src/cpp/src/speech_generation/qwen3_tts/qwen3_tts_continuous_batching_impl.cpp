@@ -190,7 +190,12 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::generate_candid
             continue;
         }
 
-        for (auto& sequence : sequence_group->get_running_sequences()) {
+        // Process newly sampled tokens for every sequence, not only RUNNING ones.
+        // A sequence can become FINISHED in the same step that sampled its last
+        // token due to max_new_tokens; that token still needs code-group
+        // expansion and embedding injection to preserve SDPA-equivalent output
+        // length/content.
+        for (auto& sequence : sequence_group->get_sequences()) {
             if (sequence->get_generated_len() <= sequence->get_generated_ids_embeds().size()) {
                 continue;  // no new token sampled this step (mid multi-step prefill, or already synced)
             }
@@ -225,8 +230,37 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::process_new_fra
         return;
     }
 
-    ov::Tensor past_hidden = sequence->get_hidden_state();
-    auto groups = m_engine.generate_codec_groups(past_hidden, token, state.generation_config, state.rng);
+    const ov::Tensor sequence_hidden = sequence->get_hidden_state();
+    const ov::Shape hidden_shape = sequence_hidden.get_shape();
+    OPENVINO_ASSERT(hidden_shape.size() == 3,
+                    "Unexpected talker hidden-state rank for Qwen3-TTS CB: ",
+                    hidden_shape.size());
+    OPENVINO_ASSERT(hidden_shape[2] == hidden,
+                    "Unexpected talker hidden-state width for Qwen3-TTS CB. Expected ",
+                    hidden,
+                    ", got ",
+                    hidden_shape[2]);
+
+    // Match SDPA path semantics: code-group expansion is conditioned on the
+    // hidden state of the latest sampled token only, not on the full sequence.
+    ov::Tensor last_hidden(ov::element::f32, ov::Shape{1, 1, hidden});
+    if (hidden_shape[0] == 1) {
+        OPENVINO_ASSERT(hidden_shape[1] > 0,
+                        "Talker hidden-state sequence length must be > 0");
+        const size_t last_idx = hidden_shape[1] - 1;
+        const float* src = sequence_hidden.data<const float>() + last_idx * hidden;
+        std::copy_n(src, hidden, last_hidden.data<float>());
+    } else {
+        OPENVINO_ASSERT(hidden_shape[1] == 1 && hidden_shape[0] > 0,
+                        "Unexpected talker hidden-state shape for Qwen3-TTS CB: ",
+                        hidden_shape,
+                        ". Expected [1,T,H] or [T,1,H]");
+        const size_t last_idx = hidden_shape[0] - 1;
+        const float* src = sequence_hidden.data<const float>() + last_idx * hidden;
+        std::copy_n(src, hidden, last_hidden.data<float>());
+    }
+
+    auto groups = m_engine.generate_codec_groups(last_hidden, token, state.generation_config, state.rng);
     state.all_codes.insert(state.all_codes.end(), groups.begin(), groups.end());
 
     auto token_embed = m_engine.infer_embedding(m_engine.talker_embedding(), groups[0]);
@@ -286,6 +320,10 @@ ov::Shape ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::get_speake
         return ov::Shape{1, 1, m_engine.speaker_embedding_dim()};
     }
     return ov::Shape{};
+}
+
+uint32_t ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::get_output_sample_rate() const {
+    return m_engine.output_sample_rate();
 }
 
 }  // namespace genai

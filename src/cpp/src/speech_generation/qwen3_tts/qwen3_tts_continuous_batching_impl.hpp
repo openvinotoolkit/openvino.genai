@@ -42,6 +42,7 @@ public:
                                               const SpeechGenerationConfig& generation_config);
 
     ov::Shape get_speaker_embedding_shape() const;
+    uint32_t get_output_sample_rate() const;
 
 protected:
     void generate_candidates_for_prompt_lookup() override;
