@@ -161,6 +161,32 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
     return m_main_pipeline->add_request(request_id, prompt, sampling_params);
 }
 
+void ContinuousBatchingPipeline::SpeculativeDecodingImpl::save_state(uint64_t request_id, const std::string& path) {
+    // Each half is a plain ContinuousBatchingImpl under the hood, so the existing single-model
+    // save_state() (single-sequence, no cache eviction, RUNNING-only, etc.) applies unchanged to
+    // both; saving them as two independent files avoids having to redesign the file format for a
+    // two-pipeline case.
+    m_main_pipeline->save_state(request_id, path + ".main");
+    m_draft_pipeline->save_state(request_id, path + ".draft");
+}
+
+GenerationHandle ContinuousBatchingPipeline::SpeculativeDecodingImpl::restore_state(
+        uint64_t request_id,
+        const std::string& path,
+        const ov::genai::GenerationConfig& sampling_params) {
+    std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+    auto draft_sampling_params = sampling_params;
+    draft_sampling_params.ignore_eos = true;
+    draft_sampling_params.stop_strings = {};
+    m_draft_generations.insert({request_id, m_draft_pipeline->restore_state(request_id, path + ".draft", draft_sampling_params)});
+    auto main_handle = m_main_pipeline->restore_state(request_id, path + ".main", sampling_params);
+    // No-op for the base (FastDraft) strategy; Eagle3DecodingImpl overrides this to re-sync main
+    // and draft to the same processed-token count, since the two sides may have been saved (and
+    // therefore restored) with slightly different histories.
+    align_request_pair_processed_prefix(request_id);
+    return main_handle;
+}
+
 bool ContinuousBatchingPipeline::SpeculativeDecodingImpl::has_non_finished_requests() {
     return m_main_pipeline->has_non_finished_requests();
 }

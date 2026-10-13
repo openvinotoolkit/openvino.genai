@@ -17,7 +17,7 @@ namespace ov::genai {
 namespace {
 
 constexpr char MAGIC[8] = {'O', 'V', 'G', 'S', 'E', 'S', 'S', '1'};
-constexpr uint32_t FORMAT_VERSION = 1;
+constexpr uint32_t FORMAT_VERSION = 2;
 
 #pragma pack(push, 1)
 struct FileHeader {
@@ -26,15 +26,22 @@ struct FileHeader {
     uint32_t device_len;
     uint8_t kv_present;
     uint8_t la_present;
+    uint8_t is_embeddings;
     uint32_t kv_num_layers;
     uint64_t kv_block_size_in_bytes;
     uint64_t la_block_size_in_bytes;
-    uint64_t num_tokens;
+    uint64_t num_tokens;  // number of positions (prompt + generated-so-far), for both sequence group types
     uint64_t num_kv_blocks;
     uint64_t kv_slot_bytes;
     uint64_t la_slot_bytes;
     uint64_t kv_payload_checksum;
     uint64_t la_payload_checksum;
+    // Only meaningful when is_embeddings is set.
+    uint64_t hidden_size;
+    uint64_t position_dims;  // number of i64 values per position (3 for M-RoPE, 1 otherwise)
+    int64_t rope_delta;
+    uint64_t embeds_payload_checksum;
+    uint64_t position_ids_payload_checksum;
 };
 #pragma pack(pop)
 
@@ -77,15 +84,90 @@ std::vector<size_t> logical_block_indices(const BlockManager& block_mgr, uint64_
     return indices;
 }
 
+/// Flattens the prompt + generated-so-far embeddings into one contiguous [num_positions * hidden_size] f32 buffer.
+std::vector<uint8_t> flatten_embeds(const std::vector<std::vector<float>>& prompt_embeds,
+                                    const std::vector<std::vector<float>>& generated_embeds,
+                                    size_t hidden_size) {
+    const size_t total_positions = prompt_embeds.size() + generated_embeds.size();
+    std::vector<uint8_t> buffer(total_positions * hidden_size * sizeof(float));
+    float* dst = reinterpret_cast<float*>(buffer.data());
+    for (const auto& position : prompt_embeds) {
+        OPENVINO_ASSERT(position.size() == hidden_size, "Inconsistent embedding hidden size");
+        std::memcpy(dst, position.data(), hidden_size * sizeof(float));
+        dst += hidden_size;
+    }
+    for (const auto& position : generated_embeds) {
+        OPENVINO_ASSERT(position.size() == hidden_size, "Inconsistent embedding hidden size");
+        std::memcpy(dst, position.data(), hidden_size * sizeof(float));
+        dst += hidden_size;
+    }
+    return buffer;
+}
+
+/// Flattens one small tensor per position (as produced by Sequence::append_position_ids) into one
+/// contiguous [num_positions * position_dims] i64 buffer.
+std::vector<uint8_t> flatten_position_ids(const std::vector<ov::Tensor>& position_ids_list, size_t position_dims) {
+    std::vector<uint8_t> buffer(position_ids_list.size() * position_dims * sizeof(int64_t));
+    int64_t* dst = reinterpret_cast<int64_t*>(buffer.data());
+    for (const auto& position : position_ids_list) {
+        OPENVINO_ASSERT(position.get_size() == position_dims, "Inconsistent position ids element size");
+        std::memcpy(dst, position.data<const int64_t>(), position_dims * sizeof(int64_t));
+        dst += position_dims;
+    }
+    return buffer;
+}
+
 }  // namespace
 
 void SessionSnapshot::save(CacheOrchestrator& orchestrator,
-                           uint64_t seq_id,
-                           const std::vector<int64_t>& token_ids,
+                           const SequenceGroup::CPtr& seq_group,
+                           const Sequence::CPtr& sequence,
                            const std::filesystem::path& path) {
     const bool has_kv = orchestrator.has_kv_cache();
     const bool has_la = orchestrator.has_linear_attention_cache();
     OPENVINO_ASSERT(has_kv, "Session snapshot requires a model with KV cache inputs");
+
+    const uint64_t seq_id = sequence->get_id();
+    const bool is_embeddings = seq_group->get_sequence_group_type() == SequenceGroupType::EMBEDDINGS;
+
+    std::vector<int64_t> token_ids;
+    std::vector<uint8_t> embeds_bytes;
+    std::vector<uint8_t> position_ids_bytes;
+    uint64_t hidden_size = 0;
+    uint64_t position_dims = 0;
+    uint64_t num_positions = 0;
+    int64_t rope_delta = 0;
+
+    if (is_embeddings) {
+        // V1 scope: text-only history. Any of these being set means images/video/other multimodal
+        // state is part of the conversation, which this format does not yet capture. The tensor
+        // fields are default-constructed (empty `_impl`) when unused, so check with `operator!()`
+        // rather than calling get_size()/get_shape() on them, which throw on an unset tensor.
+        OPENVINO_ASSERT(!seq_group->get_token_type_ids().has_value() &&
+                        !seq_group->get_deepstack_visual_embeds() &&
+                        !seq_group->get_visual_pos_masks().has_value() &&
+                        !seq_group->get_per_layer_inputs(),
+                        "Session snapshot only supports text-only requests for embeddings-routed models "
+                        "(e.g. no images/video in the conversation history)");
+
+        hidden_size = seq_group->get_hidden_size();
+        const auto& prompt_embeds = seq_group->get_input_embeds();
+        const auto& generated_embeds = sequence->get_generated_ids_embeds();
+        num_positions = prompt_embeds.size() + generated_embeds.size();
+        embeds_bytes = flatten_embeds(prompt_embeds, generated_embeds, hidden_size);
+
+        const auto& position_ids_list = sequence->get_position_ids_list();
+        OPENVINO_ASSERT(position_ids_list.size() == num_positions,
+                        "Internal error: position ids count does not match the embeddings count");
+        position_dims = position_ids_list.empty() ? 0 : position_ids_list.front().get_size();
+        position_ids_bytes = flatten_position_ids(position_ids_list, position_dims);
+        rope_delta = sequence->get_rope_delta();
+    } else {
+        token_ids = seq_group->get_prompt_ids();
+        const auto& generated = sequence->get_generated_ids();
+        token_ids.insert(token_ids.end(), generated.begin(), generated.end());
+        num_positions = token_ids.size();
+    }
 
     std::vector<std::vector<uint8_t>> kv_blocks;
     uint64_t kv_block_size_in_bytes = 0;
@@ -127,21 +209,32 @@ void SessionSnapshot::save(CacheOrchestrator& orchestrator,
     header.device_len = static_cast<uint32_t>(device.size());
     header.kv_present = has_kv ? 1 : 0;
     header.la_present = has_la ? 1 : 0;
+    header.is_embeddings = is_embeddings ? 1 : 0;
     header.kv_num_layers = kv_num_layers;
     header.kv_block_size_in_bytes = kv_block_size_in_bytes;
     header.la_block_size_in_bytes = la_block_size_in_bytes;
-    header.num_tokens = token_ids.size();
+    header.num_tokens = num_positions;
     header.num_kv_blocks = kv_blocks.size();
     header.kv_slot_bytes = kv_slot_bytes;
     header.la_slot_bytes = la_slot_bytes;
     header.kv_payload_checksum = checksum_blocks(kv_blocks);
     header.la_payload_checksum = has_la ? checksum_blocks(la_blocks) : 0;
+    header.hidden_size = hidden_size;
+    header.position_dims = position_dims;
+    header.rope_delta = rope_delta;
+    header.embeds_payload_checksum = is_embeddings ? fnv1a(embeds_bytes.data(), embeds_bytes.size()) : 0;
+    header.position_ids_payload_checksum = is_embeddings ? fnv1a(position_ids_bytes.data(), position_ids_bytes.size()) : 0;
 
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     OPENVINO_ASSERT(out.is_open(), "Failed to create session snapshot file at '", path.string(), "'");
     write_exact(out, &header, sizeof(header));
     write_exact(out, device.data(), device.size());
-    write_exact(out, token_ids.data(), token_ids.size() * sizeof(int64_t));
+    if (is_embeddings) {
+        write_exact(out, embeds_bytes.data(), embeds_bytes.size());
+        write_exact(out, position_ids_bytes.data(), position_ids_bytes.size());
+    } else {
+        write_exact(out, token_ids.data(), token_ids.size() * sizeof(int64_t));
+    }
     for (const auto& block : kv_blocks) {
         write_exact(out, block.data(), block.size());
     }
@@ -192,8 +285,31 @@ SessionSnapshot::Loaded SessionSnapshot::load(const CacheOrchestrator& orchestra
     }
 
     Loaded result;
-    result.token_ids.resize(header.num_tokens);
-    read_exact(in, result.token_ids.data(), header.num_tokens * sizeof(int64_t));
+    result.is_embeddings = header.is_embeddings != 0;
+    if (result.is_embeddings) {
+        result.hidden_size = header.hidden_size;
+        result.rope_delta = header.rope_delta;
+
+        std::vector<uint8_t> embeds_bytes(header.num_tokens * header.hidden_size * sizeof(float));
+        read_exact(in, embeds_bytes.data(), embeds_bytes.size());
+        OPENVINO_ASSERT(fnv1a(embeds_bytes.data(), embeds_bytes.size()) == header.embeds_payload_checksum,
+                        "Session snapshot embeddings payload failed its integrity check (file may be corrupted)");
+        result.input_embeds = ov::Tensor(ov::element::f32, ov::Shape{1, header.num_tokens, header.hidden_size});
+        std::memcpy(result.input_embeds.data(), embeds_bytes.data(), embeds_bytes.size());
+
+        std::vector<uint8_t> position_ids_bytes(header.num_tokens * header.position_dims * sizeof(int64_t));
+        read_exact(in, position_ids_bytes.data(), position_ids_bytes.size());
+        OPENVINO_ASSERT(fnv1a(position_ids_bytes.data(), position_ids_bytes.size()) == header.position_ids_payload_checksum,
+                        "Session snapshot position ids payload failed its integrity check (file may be corrupted)");
+        const ov::Shape position_ids_shape = header.position_dims > 1
+                                                  ? ov::Shape{header.position_dims, 1, header.num_tokens}
+                                                  : ov::Shape{1, header.num_tokens};
+        result.position_ids = ov::Tensor(ov::element::i64, position_ids_shape);
+        std::memcpy(result.position_ids.data(), position_ids_bytes.data(), position_ids_bytes.size());
+    } else {
+        result.token_ids.resize(header.num_tokens);
+        read_exact(in, result.token_ids.data(), header.num_tokens * sizeof(int64_t));
+    }
 
     std::vector<std::vector<uint8_t>> kv_blocks(header.num_kv_blocks);
     for (auto& block : kv_blocks) {

@@ -145,28 +145,14 @@ TEST(TestSessionSnapshotEndToEnd, RestoredRequestContinuesIdenticallyToUninterru
 }
 
 // Qwen3.5 is natively multimodal: even plain text-only prompts are routed through an input
-// embeddings model (ModelInputType::EMBEDDINGS), which SessionSnapshot's V1 token-id-based format
-// does not support. save_state() must reject this clearly instead of silently producing a
-// corrupted/mismatched snapshot.
-TEST(TestSessionSnapshotEndToEnd, SaveRejectsEmbeddingsBasedModels) {
+// embeddings model (ModelInputType::EMBEDDINGS). This also exercises the linear-attention cache
+// payload for real, since Qwen3.5 is a hybrid (KV + linear-attention) model.
+TEST(TestSessionSnapshotEndToEnd, HybridModelRestoredRequestContinuesIdenticallyToUninterruptedRun) {
     const char* model_path = std::getenv(VLM_MODEL_PATH_ENV);
     if (model_path == nullptr || *model_path == '\0') {
         GTEST_SKIP() << VLM_MODEL_PATH_ENV << " is not set, skipping hybrid session snapshot end-to-end test.";
     }
-
-    ContinuousBatchingPipeline pipeline(model_path, make_scheduler_config(), session_snapshot_device());
-    const std::string prompt = repeat("The quick brown fox jumps over the lazy dog. ", 10) + " Continue the story:";
-    constexpr uint64_t REQUEST_ID = 47;
-    auto handle = pipeline.add_request(REQUEST_ID, prompt, make_greedy_config(1000));
-    for (size_t i = 0; i < 15 && handle->get_status() == GenerationStatus::RUNNING; ++i) {
-        pipeline.step();
-    }
-    ASSERT_EQ(handle->get_status(), GenerationStatus::RUNNING)
-        << "the request finished naturally before it could be interrupted, test setup is invalid";
-
-    const auto snapshot_path =
-        std::filesystem::temp_directory_path() / "openvino_genai_session_snapshot_embeddings_test.bin";
-    EXPECT_THROW(pipeline.save_state(REQUEST_ID, snapshot_path.string()), ov::Exception);
+    run_round_trip_test(model_path);
 }
 
 TEST(TestSessionSnapshotEndToEnd, RestoreRejectsAMissingFile) {
@@ -254,12 +240,7 @@ TEST(TestSessionSnapshotEndToEnd, SaveRejectsCacheEviction) {
  * cached-tail token is re-threaded through one step). This is the exact win the feature targets:
  * skipping re-prefill of the full history after a process restart.
  */
-TEST(TestSessionSnapshotEndToEnd, RestoreAvoidsFullPrefillLatency) {
-    const char* model_path = std::getenv(MODEL_PATH_ENV);
-    if (model_path == nullptr || *model_path == '\0') {
-        GTEST_SKIP() << MODEL_PATH_ENV << " is not set, skipping session snapshot end-to-end test.";
-    }
-
+void run_prefill_latency_comparison(const std::string& model_path) {
     // Long enough that prefill cost dominates per-request overhead and the TTFT gap is clearly visible.
     const std::string long_prompt = repeat("The quick brown fox jumps over the lazy dog. ", 400);
 
@@ -315,4 +296,20 @@ TEST(TestSessionSnapshotEndToEnd, RestoreAvoidsFullPrefillLatency) {
     EXPECT_GT(restore_ttft_ms, 0.0f);
     EXPECT_LT(restore_ttft_ms, baseline_ttft_ms)
         << "restoring from a session snapshot should avoid the full-prefill cost paid by the baseline";
+}
+
+TEST(TestSessionSnapshotEndToEnd, RestoreAvoidsFullPrefillLatency) {
+    const char* model_path = std::getenv(MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0') {
+        GTEST_SKIP() << MODEL_PATH_ENV << " is not set, skipping session snapshot end-to-end test.";
+    }
+    run_prefill_latency_comparison(model_path);
+}
+
+TEST(TestSessionSnapshotEndToEnd, HybridModelRestoreAvoidsFullPrefillLatency) {
+    const char* model_path = std::getenv(VLM_MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0') {
+        GTEST_SKIP() << VLM_MODEL_PATH_ENV << " is not set, skipping hybrid session snapshot end-to-end test.";
+    }
+    run_prefill_latency_comparison(model_path);
 }

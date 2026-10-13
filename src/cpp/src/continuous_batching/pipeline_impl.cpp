@@ -400,10 +400,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::save_state(uint64_t req
         }
     }
     OPENVINO_ASSERT(sequence_group, "No active request with id ", request_id, " to save a session snapshot for");
-    OPENVINO_ASSERT(sequence_group->get_sequence_group_type() == SequenceGroupType::TOKENS,
-                    "Session snapshot only supports models that take plain token ids as input; this model routes "
-                    "requests through an input embeddings model (e.g. a natively multimodal model, even for "
-                    "text-only prompts) and is not yet supported");
 
     auto running_sequences = sequence_group->get_running_sequences();
     OPENVINO_ASSERT(running_sequences.size() == 1,
@@ -411,11 +407,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::save_state(uint64_t req
                     "got ", running_sequences.size());
     const auto& sequence = running_sequences[0];
 
-    TokenIds token_ids = sequence_group->get_prompt_ids();
-    const auto& generated_ids = sequence->get_generated_ids();
-    token_ids.insert(token_ids.end(), generated_ids.begin(), generated_ids.end());
-
-    SessionSnapshot::save(m_scheduler->get_cache_orchestrator(), sequence->get_id(), token_ids, path);
+    SessionSnapshot::save(m_scheduler->get_cache_orchestrator(), sequence_group, sequence, path);
 }
 
 GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::restore_state(
@@ -426,6 +418,10 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::restore_sta
                     "Session snapshot save/restore is not supported together with use_cache_eviction");
 
     auto loaded = SessionSnapshot::load(m_scheduler->get_cache_orchestrator(), path);
+    OPENVINO_ASSERT(loaded.is_embeddings == (m_model_input_type == ModelInputType::EMBEDDINGS),
+                    "Session snapshot/model mismatch: the snapshot was captured for a ",
+                    loaded.is_embeddings ? "embeddings-routed" : "plain token-id", " model, but the currently "
+                    "loaded model is ", m_model_input_type == ModelInputType::EMBEDDINGS ? "embeddings-routed" : "plain token-id");
 
     auto sampling_params_copy = sampling_params;
     if (sampling_params_copy.stop_token_ids.empty())
@@ -433,10 +429,24 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::restore_sta
     if (sampling_params_copy.eos_token_id == -1)
         sampling_params_copy.set_eos_token_id(m_generation_config.eos_token_id);
     sampling_params_copy.validate();
-    OPENVINO_ASSERT(sampling_params_copy.max_length > loaded.token_ids.size(),
-                    "'max_length' must be greater than the number of restored session tokens");
 
-    auto sequence_group = std::make_shared<SequenceGroup>(request_id, loaded.token_ids, sampling_params_copy);
+    SequenceGroup::Ptr sequence_group;
+    if (loaded.is_embeddings) {
+        OPENVINO_ASSERT(sampling_params_copy.max_length > loaded.input_embeds.get_shape()[1],
+                        "'max_length' must be greater than the number of restored session positions");
+        sequence_group = std::make_shared<SequenceGroup>(request_id,
+                                                         loaded.input_embeds,
+                                                         sampling_params_copy,
+                                                         std::nullopt,  // token_type_ids: not supported in V1
+                                                         std::nullopt,  // lm_extra_inputs: not supported in V1
+                                                         loaded.position_ids,
+                                                         loaded.rope_delta,
+                                                         std::nullopt);  // prompt_ids: for detokenization/echo only
+    } else {
+        OPENVINO_ASSERT(sampling_params_copy.max_length > loaded.token_ids.size(),
+                        "'max_length' must be greater than the number of restored session tokens");
+        sequence_group = std::make_shared<SequenceGroup>(request_id, loaded.token_ids, sampling_params_copy);
+    }
     auto running_sequences = sequence_group->get_running_sequences();
     OPENVINO_ASSERT(running_sequences.size() == 1, "Internal error: restored sequence group has more than one sequence");
 
