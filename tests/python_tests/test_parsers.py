@@ -578,6 +578,37 @@ def test_incremental_phi4_reason_parser_nostreamer(answer):
 
 
 @pytest.mark.parametrize("keep_original_content", [True, False])
+@pytest.mark.parametrize(
+    "split_answer",
+    [
+        ["The answer", " to 2 + 1", " is 3."],
+        ["The answer is <", "th", "e same: 3."],
+        ["a < b", " and <th", "ree> c"],
+        ["Hi ", "<thi", "nk>r</think>", "done"],
+        ["Hi <think>r", "</think>done"],
+        ["Hi <think>r</think>done"],
+        ["Hi <think>r<", "/think>done"],
+        ["<th", "ink>r</th", "ink>done"],
+    ],
+)
+def test_incremental_reasoning_parser_keeps_content_outside_think(split_answer, keep_original_content):
+    # Text that isn't inside <think>...</think> is content, the same as the one-shot ReasoningParser returns
+    expected = {"content": "".join(split_answer)}
+    ReasoningParser(expect_open_tag=True, keep_original_content=keep_original_content).parse(expected)
+
+    parser = ReasoningIncrementalParser(expect_open_tag=True, keep_original_content=keep_original_content)
+    content = ""
+    accumulated_message = {}
+    for subword in split_answer:
+        delta_message = {}
+        content += parser.parse(delta_message, subword)
+        concatenate_dicts(accumulated_message, delta_message)
+
+    assert content == expected["content"]
+    assert accumulated_message.get("reasoning_content", "") == expected["reasoning_content"]
+
+
+@pytest.mark.parametrize("keep_original_content", [True, False])
 @pytest.mark.parametrize("do_reset", [False])
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
