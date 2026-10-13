@@ -868,7 +868,6 @@ GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_re
             image_sequence,
             video_sequence,
             audio_sequence,
-            0,
             {}
         );
 
