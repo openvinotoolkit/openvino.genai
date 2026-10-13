@@ -268,7 +268,8 @@ void init_tokenizer(py::module_& m) {
                                         bool add_generation_prompt,
                                         const std::string& chat_template,
                                         const std::optional<std::vector<py::dict>>& tools,
-                                        const std::optional<py::dict>& extra_context) {
+                                        const std::optional<py::dict>& extra_context,
+                                        bool apply_polyfills) {
             ChatHistory chat_history;
             std::visit(pyutils::overloaded {
                 [&](ChatHistory chat_history_obj) {
@@ -289,13 +290,14 @@ void init_tokenizer(py::module_& m) {
                 extra_context_jc = pyutils::py_object_to_json_container(extra_context.value());
             }
 
-            return tok.apply_chat_template(chat_history, add_generation_prompt, chat_template, tools_jc, extra_context_jc);
+            return tok.apply_chat_template(chat_history, add_generation_prompt, chat_template, tools_jc, extra_context_jc, apply_polyfills);
         },
             py::arg("history"),
             py::arg("add_generation_prompt"),
             py::arg("chat_template") = "",
             py::arg("tools") = py::none(),
             py::arg("extra_context") = py::none(),
+            py::arg("apply_polyfills") = true,
             R"(Applies a chat template to format chat history into a prompt string.)")
 
         .def(

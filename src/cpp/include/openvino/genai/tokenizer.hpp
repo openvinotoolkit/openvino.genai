@@ -257,6 +257,7 @@ public:
      * @param chat_template An optional custom chat template string, if not specified will be taken from the tokenizer.
      * @param tools An optional JSON-like array of tool definitions to be used in the chat template. If provided, overrides tools from chat history.
      * @param extra_context An optional JSON-like object with additional variables to be used in the chat template. If provided, overrides extra_context from chat history.
+     * @param apply_polyfills Whether to emulate features unsupported by the chat template (system role, tools, tool calls, tool responses) by rewriting the messages before rendering.
      * @return A string with the formatted and concatenated prompts from the chat history.
      * @throws Exception if the chat template was unable to parse the input history.
      */
@@ -265,7 +266,8 @@ public:
         bool add_generation_prompt,
         const std::string& chat_template = {},
         const std::optional<JsonContainer>& tools = std::nullopt,
-        const std::optional<JsonContainer>& extra_context = std::nullopt
+        const std::optional<JsonContainer>& extra_context = std::nullopt,
+        bool apply_polyfills = true
     ) const;
 
     /// @brief Override a chat_template read from tokenizer_config.json.

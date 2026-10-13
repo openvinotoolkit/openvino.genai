@@ -814,7 +814,8 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
     bool add_generation_prompt,
     const std::string& chat_template,
     const std::optional<JsonContainer>& tools,
-    const std::optional<JsonContainer>& extra_context
+    const std::optional<JsonContainer>& extra_context,
+    bool apply_polyfills
 ) const {
     std::string chat_tpl;
     if (chat_template.empty()) {
@@ -848,9 +849,12 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
         minja_inputs.extra_context.update(resolved_extra_context);
     }
     
+    minja::chat_template_options minja_options;
+    minja_options.apply_polyfills = apply_polyfills;
+
     std::string result;
     try {
-        result = minja_template->apply(minja_inputs);
+        result = minja_template->apply(minja_inputs, minja_options);
     } catch (const std::exception& error) {
         OPENVINO_THROW("Minja failed to apply chat template. Possible solutions are\n"
                         "* Provide a simplified chat template with set_chat_template().\n"
