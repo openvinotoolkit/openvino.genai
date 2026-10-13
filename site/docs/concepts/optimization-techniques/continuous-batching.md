@@ -110,6 +110,18 @@ auto results = pipe.generate(
     {generation_config, generation_config});
 ```
 
+## Request Handle Failures
+
+`ContinuousBatchingPipeline.add_request()` returns a generation handle. Its status can
+be queried without raising an exception. A `FAILED` status means that the handle stored
+an exception while assembling or delivering request output. Output queued before the failure
+remains available in FIFO order; after that output is drained, `read()` and `read_all()`
+rethrow the original exception. In Python, `read()` and `read_all()` release the GIL while waiting.
+
+General `step()` or `generate()` failures are not yet propagated to request handles, and
+output is not suppressed for failures that occur before an output commit. Do not assume
+that a backend failure will set a handle's status to `FAILED`.
+
 ## Tools and samples:
 * [tools/continuous_batching/accuracy/continuous_batching_accuracy.cpp](../../../../tools/continuous_batching/accuracy/continuous_batching_accuracy.cpp) — batched generation with mixed sampling configs.
 * [tools/continuous_batching/benchmark/continuous_batching_benchmark.cpp](../../../../tools/continuous_batching/benchmark/continuous_batching_benchmark.cpp) — throughput benchmark for server-like workloads.
