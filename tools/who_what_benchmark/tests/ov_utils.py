@@ -60,7 +60,7 @@ def retry_request(func, retries=7):
             else:
                 raise
 
- 
+
 def _normalize_cache_path(path: str) -> str:
     normalized = str(path).strip()
     if len(normalized) >= 2 and normalized[0] == normalized[-1] and normalized[0] in {'"', "'"}:
