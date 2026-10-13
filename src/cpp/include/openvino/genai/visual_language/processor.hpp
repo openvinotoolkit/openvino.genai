@@ -62,12 +62,32 @@ public:
         const std::vector<VideoMetadata>& videos_metadata = {}
     );
 
+    ProcessedInputs process(const std::string& prompt, const ov::AnyMap& args_map);
+
+    template <typename... Properties>
+    util::EnableIfAllStringAny<ProcessedInputs, Properties...> process(
+        const std::string& prompt,
+        Properties&&... properties
+    ) {
+        return process(prompt, ov::AnyMap{std::forward<Properties>(properties)...});
+    }
+
     ProcessedInputs process(
         const ChatHistory& history,
         const std::vector<ov::Tensor>& images = {},
         const std::vector<ov::Tensor>& videos = {},
         const std::vector<VideoMetadata>& videos_metadata = {}
     );
+
+    ProcessedInputs process(const ChatHistory& history, const ov::AnyMap& args_map);
+
+    template <typename... Properties>
+    util::EnableIfAllStringAny<ProcessedInputs, Properties...> process(
+        const ChatHistory& history,
+        Properties&&... properties
+    ) {
+        return process(history, ov::AnyMap{std::forward<Properties>(properties)...});
+    }
 
     Tokenizer get_tokenizer() const;
 

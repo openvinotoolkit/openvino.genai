@@ -12,6 +12,7 @@
 #include "visual_language/vision_registry.hpp"
 #include "visual_language/vlm_chat_context.hpp"
 #include "visual_language/vlm_utils.hpp"
+#include "visual_language/multimodal_inputs.hpp"
 
 namespace ov::genai {
 
@@ -104,6 +105,16 @@ public:
         return result;
     }
 
+    ProcessedInputs process(const std::string& prompt, const ov::AnyMap& args_map) {
+        const auto multimodal_inputs = extract_multimodal_inputs(args_map);
+        return process(
+            prompt,
+            multimodal_inputs.images.value_or(std::vector<ov::Tensor>{}),
+            multimodal_inputs.videos.value_or(std::vector<ov::Tensor>{}),
+            multimodal_inputs.videos_metadata.value_or(std::vector<VideoMetadata>{})
+        );
+    }
+
     ProcessedInputs process(
         const ChatHistory& history,
         const std::vector<ov::Tensor>& images,
@@ -161,6 +172,16 @@ public:
         return result;
     }
 
+    ProcessedInputs process(const ChatHistory& history, const ov::AnyMap& args_map) {
+        const auto multimodal_inputs = extract_multimodal_inputs(args_map);
+        return process(
+            history,
+            multimodal_inputs.images.value_or(std::vector<ov::Tensor>{}),
+            multimodal_inputs.videos.value_or(std::vector<ov::Tensor>{}),
+            multimodal_inputs.videos_metadata.value_or(std::vector<VideoMetadata>{})
+        );
+    }
+
     Tokenizer get_tokenizer() const {
         return m_inputs_embedder->get_tokenizer();
     }
@@ -212,6 +233,10 @@ ProcessedInputs VLMProcessor::process(
     return m_pimpl->process(prompt, images, videos, videos_metadata);
 }
 
+ProcessedInputs VLMProcessor::process(const std::string& prompt, const ov::AnyMap& args_map) {
+    return m_pimpl->process(prompt, args_map);
+}
+
 ProcessedInputs VLMProcessor::process(
     const ChatHistory& history,
     const std::vector<ov::Tensor>& images,
@@ -219,6 +244,10 @@ ProcessedInputs VLMProcessor::process(
     const std::vector<VideoMetadata>& videos_metadata
 ) {
     return m_pimpl->process(history, images, videos, videos_metadata);
+}
+
+ProcessedInputs VLMProcessor::process(const ChatHistory& history, const ov::AnyMap& args_map) {
+    return m_pimpl->process(history, args_map);
 }
 
 Tokenizer VLMProcessor::get_tokenizer() const {
