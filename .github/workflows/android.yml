@@ -114,11 +114,7 @@ jobs:
         arch: ${{ matrix.arch }}
         ov_artifact_name: genai_ov_package_android_${{ matrix.arch }}
         commit_packages_to_provide: openvino_package.tar.gz
-        # Consuming Android artifacts from OpenVINO PR https://github.com/openvinotoolkit/openvino/pull/38294.
-        # Revert to `revision: latest_available_commit` (and drop branch_name/event_name) once it is merged.
-        revision: f0d0cdc8401a8104245c201785390d6cfeda3669
-        branch_name: master
-        event_name: pull_request
+        revision: latest_available_commit
 
   genai_build_android:
     name: Build Android - ${{ matrix.arch }}
