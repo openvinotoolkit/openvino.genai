@@ -41,6 +41,7 @@ the model-free tier instead of failing.
 
 from __future__ import annotations
 
+import gc
 import json
 import os
 import platform
@@ -576,6 +577,16 @@ class TestOmniPipelineDependencyInjection:
         assert injected_omni.pipeline.get_talker() is injected_omni.talker, (
             "get_talker() must return the exact injected instance"
         )
+
+    def test_children_outlive_their_python_references(self) -> None:
+        """Temporaries passed to the DI constructor must keep their Python overrides for later calls."""
+        pipeline = ov_genai.OmniPipeline(RecordingVLM(), RecordingTalker())
+        gc.collect()
+
+        pipeline.generate("describe this", talker_speech_config=_talker_speech_config(return_audio=True))
+
+        assert pipeline.get_vlm().generate_calls == 1, "the temporary VLM must still be driven through Python"
+        assert pipeline.get_talker().generate_calls == 1, "the temporary talker must still be driven through Python"
 
     def test_speech_path_invokes_both_stages(self, injected_omni: InjectedOmni) -> None:
         """With return_audio=True, generate() drives the VLM then the talker via virtual dispatch."""

@@ -500,6 +500,10 @@ void init_omni_pipeline(py::module_& m) {
              }),
              py::arg("vlm"),
              py::arg("talker"),
+             // The C++ shared_ptr alone does not keep a Python subclass alive; without its Python
+             // object, the overrides are lost and a call reaches the pure virtual.
+             py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(),
              R"(
                 OmniPipeline dependency-injection constructor.
                 Compose a pre-built VLM (thinker) and Talker (speech) so the two stages can use
