@@ -101,13 +101,13 @@ public:
         ov::genai::utils::print_compiled_model_properties(compiled_model, "whisper encoder model");
         m_encoder = init_model(compiled_model);
 
-        const bool decompose_cross_attention_spda_ops = m_generation_config.word_timestamps;
+        const bool decompose_cross_attention_sdpa_ops = m_generation_config.word_timestamps;
         m_decoder =
             WhisperDecoder::from_path(models_path,
                                       device,
                                       properties_copy,
                                       m_encoder.get_compiled_model().output("last_hidden_state").get_partial_shape(),
-                                      decompose_cross_attention_spda_ops);
+                                      decompose_cross_attention_sdpa_ops);
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1) {
