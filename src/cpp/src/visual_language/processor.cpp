@@ -135,9 +135,12 @@ public:
         vlm_utils::update_image_slice_counts(metrics, chat_data.encoded_images);
 
         constexpr bool add_generation_prompt = true;
+        const auto apply_chat_template_start = std::chrono::steady_clock::now();
         const std::string templated_prompt = m_inputs_embedder->get_tokenizer().apply_chat_template(
-            chat_data.normalized_history, add_generation_prompt);
-
+            chat_data.normalized_history,
+            add_generation_prompt
+        );
+        PerfMetrics::emplace_duration(metrics.raw_metrics.chat_template_durations, apply_chat_template_start);
         m_inputs_embedder->set_apply_chat_template_status(false);
 
         const bool recalculate_merged_embeddings =
