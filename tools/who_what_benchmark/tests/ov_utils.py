@@ -60,11 +60,19 @@ def retry_request(func, retries=7):
             else:
                 raise
 
+ 
+def _normalize_cache_path(path: str) -> str:
+    normalized = str(path).strip()
+    if len(normalized) >= 2 and normalized[0] == normalized[-1] and normalized[0] in {'"', "'"}:
+        normalized = normalized[1:-1]
+    return os.path.expanduser(normalized)
+
 
 def get_ov_cache_dir(temp_dir=TemporaryDirectory()):
     if "OV_CACHE" in os.environ:
         date_subfolder = datetime.now().strftime("%Y%m%d")
-        ov_cache = os.path.join(os.environ["OV_CACHE"], date_subfolder)
+        ov_cache = os.path.join(_normalize_cache_path(os.environ["OV_CACHE"]), date_subfolder)
+
         try:
             optimum_intel_version = metadata.version("optimum-intel")
             transformers_version = metadata.version("transformers")
@@ -73,7 +81,7 @@ def get_ov_cache_dir(temp_dir=TemporaryDirectory()):
             )
         except metadata.PackageNotFoundError:
             pass
-        ov_cache_path = Path(ov_cache)
+        ov_cache_path = Path(ov_cache).expanduser()
         ov_cache_path.mkdir(parents=True, exist_ok=True)
         return ov_cache_path
     else:
