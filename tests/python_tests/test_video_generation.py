@@ -24,7 +24,7 @@ LTX2_MODEL_ID = "tiny-random-ltx2"
 
 VIDEO_GEN_MODELS = {
     LTX_VIDEO_MODEL_ID: "optimum-intel-internal-testing/tiny-random-ltx-video",
-    LTX_VIDEO_095_MODEL_ID: "johnfeng0220/tiny-random-ltx-video-0.9.5",
+    LTX_VIDEO_095_MODEL_ID: "optimum-intel-internal-testing/tiny-random-ltx-video-0.9.5",
     LTX2_MODEL_ID: "optimum-intel-internal-testing/tiny-random-ltx2",
 }
 
