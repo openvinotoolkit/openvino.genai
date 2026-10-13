@@ -850,8 +850,8 @@ public:
         perf_metrics.num_input_tokens = prompt_ids.get_size();
 
         std::vector<SequenceGroup::Ptr> requests;
-        const size_t requies_id = 0;
-        requests.push_back(std::make_shared<SequenceGroup>(requies_id, prompt_ids, generation_config));
+        const size_t request_id = 0;
+        requests.push_back(std::make_shared<SequenceGroup>(request_id, prompt_ids, generation_config));
 
         std::shared_ptr<StreamerBase> streamer_ptr = utils::create_streamer(streamer, m_tokenizer);
         OPENVINO_ASSERT(streamer_ptr == nullptr || generation_config.num_return_sequences == 1 &&

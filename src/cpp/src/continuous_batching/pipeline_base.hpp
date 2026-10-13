@@ -258,7 +258,7 @@ public:
     );
 
     /**
-     * Performs monolitic generation based on pre-processed VLMProcessor inputs
+     * Performs monolithic generation based on pre-processed VLMProcessor inputs
      */
     std::vector<VLMDecodedResults> generate(
         const std::vector<ProcessedInputs>& inputs,

@@ -926,7 +926,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
 
         // position ids / rope delta are computed by the processor (as in prefill).
-        // Pass them through embedder to reads them back later in model runner.
+        // Pass them through embedder to read them back later in model runner.
         m_inputs_embedder->set_position_ids(inputs.position_ids);
         if (inputs.rope_delta.has_value()) {
             m_inputs_embedder->set_rope_delta(*inputs.rope_delta);

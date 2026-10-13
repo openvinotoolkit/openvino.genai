@@ -70,7 +70,7 @@ public:
 
         std::vector<ov::genai::EncodedAudio> encoded_audios;
 
-        // TODO Support audios encodeing
+        // TODO Support audios encoding
         auto [unified_prompt, image_sequence, video_sequence, audio_sequence] =
             m_inputs_embedder->normalize_prompt(prompt, 0, 0, 0, encoded_images, encoded_videos, encoded_audios);
 
