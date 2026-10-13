@@ -141,6 +141,14 @@ Fun-ASR models require the `funasr` package and trusted remote code during expor
 pip install funasr
 optimum-cli export openvino --trust-remote-code -m FunAudioLLM/Fun-ASR-Nano-2512 fun-asr-nano
 ```
+
+SenseVoiceSmall models require the `funasr` package and a version of Optimum Intel that includes SenseVoice export support. The support is currently available only from the upstream repository:
+
+```bash
+pip install funasr
+pip install git+https://github.com/huggingface/optimum-intel.git
+optimum-cli export openvino -m FunAudioLLM/SenseVoiceSmall sensevoice-small --trust-remote-code
+```
 :::
 
 ## Speech Generation Models
