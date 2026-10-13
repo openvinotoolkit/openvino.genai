@@ -852,7 +852,7 @@ GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_re
 
         // add_request() takes no audio. Normalizing with none still rejects an <ov_genai_audio_N> tag,
         // which would otherwise reach the model as plain text.
-        const auto [unified_prompt, image_sequence, video_sequence, unused_audio_sequence] =
+        const auto [unified_prompt, image_sequence, video_sequence, audio_sequence] =
             m_inputs_embedder->normalize_prompt(prompt, 0, 0, 0, encoded_images, encoded_videos, encoded_audios);
         const bool capture_prompt_ids = sampling_params.is_prompt_lookup() || sampling_params.is_assisting_generation();
         const size_t cache_size_before =
