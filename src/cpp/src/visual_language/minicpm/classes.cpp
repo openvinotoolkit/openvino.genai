@@ -422,7 +422,10 @@ std::pair<EncodedImage, ImageSliceResult> llava_image_embed_make_with_bytes_slic
 
 } // namespace
 
-EncodedImage VisionEncoderMiniCPM::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
+EncodedImage VisionEncoderMiniCPM::encode_features(const ov::Tensor& image,
+                                                   const ov::AnyMap& config_map,
+                                                   ov::Tensor& slices,
+                                                   ImageSize& slices_target_size) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
     ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
@@ -433,10 +436,27 @@ EncodedImage VisionEncoderMiniCPM::encode(const ov::Tensor& image, const ov::Any
     std::copy(config.norm_std.begin(), config.norm_std.end(), ctx_clip.image_std);
 
     auto [encoded_image, image_slice_result] = llava_image_embed_make_with_bytes_slice(ctx_clip, image, encoder, config.max_slice_nums, config.scale_resolution, config.patch_size, 0 == config.max_slice_nums);
-    encoded_image.resampled_image = resample_encoded_image(encoded_image, image_slice_result.slices, image_slice_result.target_size);
-    if (image_slice_result.slices) {
-        encoded_image.slices_shape = image_slice_result.slices.get_shape();
+    slices = std::move(image_slice_result.slices);
+    slices_target_size = image_slice_result.target_size;
+    return encoded_image;
+}
+
+EncodedImage VisionEncoderMiniCPM::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
+    ov::Tensor slices;
+    ImageSize slices_target_size;
+    EncodedImage encoded_image = encode_features(image, config_map, slices, slices_target_size);
+    encoded_image.resampled_image = resample_encoded_image(encoded_image, slices, slices_target_size);
+    if (slices) {
+        encoded_image.slices_shape = slices.get_shape();
     }
+    return encoded_image;
+}
+
+EncodedImage VisionEncoderMiniCPM::encode_video_frame(const ov::Tensor& image) {
+    ov::Tensor slices;
+    ImageSize slices_target_size;
+    EncodedImage encoded_image = encode_features(image, {{"max_slice_nums", 1}}, slices, slices_target_size);
+    OPENVINO_ASSERT(!slices, "MiniCPM video frame encoding must not produce image slices.");
     return encoded_image;
 }
 
@@ -981,7 +1001,7 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderMiniCPM::encode_videos(
             group_frames.reserve(group_end - group_start);
             group_temporal_ids.reserve(group_end - group_start);
             for (size_t frame_idx = group_start; frame_idx < group_end; ++frame_idx) {
-                group_frames.push_back(m_vision_encoder->encode(frames[frame_idx], {{"max_slice_nums", 1}}));
+                group_frames.push_back(vision_encoder->encode_video_frame(frames[frame_idx]));
                 group_temporal_ids.push_back(temporal_ids[frame_idx]);
             }
             if (group_start == 0) {

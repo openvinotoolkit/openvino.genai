@@ -26,6 +26,11 @@ class VisionEncoderMiniCPM : public VisionEncoder {
 
     ov::Tensor resample(const ov::Tensor& encoded_image, const ImageSize& target_size, size_t pad_to_max);
 
+    EncodedImage encode_features(const ov::Tensor& image,
+                                 const ov::AnyMap& config_map,
+                                 ov::Tensor& slices,
+                                 ImageSize& slices_target_size);
+
     ResampledImage resample_encoded_image(const EncodedImage& image, const ov::Tensor& slices, const ImageSize& target_sizes);
 public:
     VisionEncoderMiniCPM(
@@ -40,6 +45,8 @@ public:
         const std::string& device,
         const ov::AnyMap device_config);
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
+
+    EncodedImage encode_video_frame(const ov::Tensor& image);
 
     ov::Tensor resample_image(const EncodedImage& image, size_t pad_to_max);
 
