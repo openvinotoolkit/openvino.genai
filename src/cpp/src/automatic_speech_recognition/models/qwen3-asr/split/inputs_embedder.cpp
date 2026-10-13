@@ -35,21 +35,20 @@ void restore_audio_tags_after_chat_template(std::string& prompt, const size_t nu
     prompt.insert(user_content_offset + USER_TAG.size(), audio_tags);
 }
 
-const EncodedAudio& get_audio(const std::vector<EncodedAudio>& audios, size_t audio_id, size_t base_audio_id) {
-    OPENVINO_ASSERT(audio_id >= base_audio_id && audio_id - base_audio_id < audios.size(),
+const EncodedAudio& get_audio(const std::vector<EncodedAudio>& audios, size_t audio_id) {
+    OPENVINO_ASSERT(audio_id < audios.size(),
                     "Qwen3-ASR audio index ",
                     audio_id,
                     " is outside the supplied audio range");
-    return audios[audio_id - base_audio_id];
+    return audios[audio_id];
 }
 
 void expand_audio_tags_in_prompt(std::string& prompt,
                                  const std::vector<EncodedAudio>& audios,
-                                 const std::vector<size_t>& audios_sequence,
-                                 size_t base_audio_id) {
+                                 const std::vector<size_t>& audios_sequence) {
     size_t offset = 0;
     for (size_t audio_id : audios_sequence) {
-        const auto& audio = get_audio(audios, audio_id, base_audio_id);
+        const auto& audio = get_audio(audios, audio_id);
         const size_t tag_offset = prompt.find(AUDIO_TAG, offset);
         OPENVINO_ASSERT(tag_offset != std::string::npos, "Qwen3-ASR prompt is missing a native audio tag");
         std::string expanded = AUDIO_START;
@@ -158,7 +157,6 @@ ov::Tensor InputsEmbedderQwen3ASR::get_inputs_embeds(const std::string& prompt,
                              image_sequence,
                              {},
                              {},
-                             0,
                              {});
 }
 
@@ -172,7 +170,6 @@ ov::Tensor InputsEmbedderQwen3ASR::get_inputs_embeds(
     const std::vector<size_t>& image_sequence,
     const std::vector<size_t>& videos_sequence,
     const std::vector<size_t>& audios_sequence,
-    size_t base_audio_id,
     const std::vector<std::pair<size_t, size_t>>& history_vision_count) {
     OPENVINO_ASSERT(images.empty() && videos.empty() && image_sequence.empty() && videos_sequence.empty(),
                     "Qwen3-ASR does not support images or videos");
@@ -208,7 +205,7 @@ ov::Tensor InputsEmbedderQwen3ASR::get_inputs_embeds(
         restore_audio_tags_after_chat_template(formatted_prompt, audios_sequence.size());
     }
 
-    expand_audio_tags_in_prompt(formatted_prompt, audios, audios_sequence, base_audio_id);
+    expand_audio_tags_in_prompt(formatted_prompt, audios, audios_sequence);
 
     const auto tokenization_start = std::chrono::steady_clock::now();
     const auto input_ids = m_tokenizer.encode(formatted_prompt, ov::genai::add_special_tokens(false)).input_ids;
@@ -223,7 +220,7 @@ ov::Tensor InputsEmbedderQwen3ASR::get_inputs_embeds(
     ov::Tensor inputs_embeds(text_embeddings.get_element_type(), text_embeddings.get_shape());
     text_embeddings.copy_to(inputs_embeds);
 
-    merge_audio_embeddings(inputs_embeds, input_ids, audios, audios_sequence, base_audio_id);
+    merge_audio_embeddings(inputs_embeds, input_ids, audios, audios_sequence);
     m_prev_hist_length = m_cache_state.get_state().size();
     m_cache_state.add_inputs(input_ids);
 
@@ -233,12 +230,11 @@ ov::Tensor InputsEmbedderQwen3ASR::get_inputs_embeds(
 void InputsEmbedderQwen3ASR::merge_audio_embeddings(ov::Tensor& inputs_embeds,
                                                     const ov::Tensor& input_ids,
                                                     const std::vector<EncodedAudio>& audios,
-                                                    const std::vector<size_t>& audios_sequence,
-                                                    size_t base_audio_id) const {
+                                                    const std::vector<size_t>& audios_sequence) const {
     const int64_t* tokens = input_ids.data<const int64_t>();
     size_t token_offset = 0;
     for (size_t audio_id : audios_sequence) {
-        const auto& audio = get_audio(audios, audio_id, base_audio_id);
+        const auto& audio = get_audio(audios, audio_id);
         if (audio.num_audio_tokens == 0) {
             continue;
         }

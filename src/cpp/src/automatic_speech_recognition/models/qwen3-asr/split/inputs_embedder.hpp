@@ -50,7 +50,6 @@ public:
                                  const std::vector<size_t>& image_sequence,
                                  const std::vector<size_t>& videos_sequence,
                                  const std::vector<size_t>& audios_sequence,
-                                 size_t base_audio_id,
                                  const std::vector<std::pair<size_t, size_t>>& history_vision_count) override;
 
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(size_t inputs_embeds_size,
@@ -69,8 +68,7 @@ private:
     void merge_audio_embeddings(ov::Tensor& inputs_embeds,
                                 const ov::Tensor& input_ids,
                                 const std::vector<EncodedAudio>& audios,
-                                const std::vector<size_t>& audios_sequence,
-                                size_t base_audio_id) const;
+                                const std::vector<size_t>& audios_sequence) const;
 
     AudioEncoderQwen3ASR m_audio_encoder;
 };
