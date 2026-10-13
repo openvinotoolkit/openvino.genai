@@ -653,7 +653,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     // not force ChatHistory through the string path (which would misplace multimodal tokens).
     const bool capture_prompt_ids = std::any_of(sampling_params.begin(), sampling_params.end(),
                                                  [](const GenerationConfig& params) {
-                                                     return params.return_omni_outputs;
+                                                     return params.return_omni_outputs || params.is_assisting_generation();
                                                  });
 
     std::vector<VLMChatContext> chat_contexts;
@@ -830,7 +830,6 @@ GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_re
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
     ov::genai::VLMPerfMetrics metrics;
     ov::Tensor inputs;
-    // FIXME prompt_ids is not populated for VLM prompt lookup with add_request API
     std::optional<ov::Tensor> prompt_ids;
     GenerationHandle handle;
     {
@@ -851,8 +850,13 @@ GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_re
             PerfMetrics::emplace_duration(metrics.vlm_raw_metrics.audio_encoding_durations, audio_encoding_start);
         }
 
-        const auto [unified_prompt, image_sequence, video_sequence, audio_sequence] =
+        // add_request() takes no audio. Normalizing with none still rejects an <ov_genai_audio_N> tag,
+        // which would otherwise reach the model as plain text.
+        const auto [unified_prompt, image_sequence, video_sequence, unused_audio_sequence] =
             m_inputs_embedder->normalize_prompt(prompt, 0, 0, 0, encoded_images, encoded_videos, encoded_audios);
+        const bool capture_prompt_ids = sampling_params.is_prompt_lookup() || sampling_params.is_assisting_generation();
+        const size_t cache_size_before =
+            capture_prompt_ids ? m_inputs_embedder->get_cache_state().get_state().size() : 0;
 
         inputs = m_inputs_embedder->get_inputs_embeds(
             unified_prompt,
@@ -868,6 +872,16 @@ GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_re
             {}
         );
 
+        if (capture_prompt_ids) {
+            const auto& cache_ids = m_inputs_embedder->get_cache_state().get_state();
+            OPENVINO_ASSERT(cache_ids.size() >= cache_size_before,
+                            "VLM prompt preparation cannot shrink token history");
+            const size_t prompt_length = cache_ids.size() - cache_size_before;
+            OPENVINO_ASSERT(prompt_length == inputs.get_shape()[1],
+                            "VLM prompt preparation requires one token ID per embedding");
+            prompt_ids.emplace(ov::element::i64, ov::Shape{1, prompt_length});
+            std::copy(cache_ids.begin() + cache_size_before, cache_ids.end(), prompt_ids->data<int64_t>());
+        }
         PerfMetrics::emplace_duration(metrics.vlm_raw_metrics.prepare_embeddings_durations, start_get_inputs_embeds);
         handle = add_request(
             request_id,
