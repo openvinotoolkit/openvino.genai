@@ -34,7 +34,11 @@ public:
                 std::fprintf(stderr, "Streamer error suppressed in ThreadedStreamerWrapper destructor: %s\n", e.what());
             }
         } catch (...) {
-            GENAI_ERR("Unknown streamer error suppressed in ThreadedStreamerWrapper destructor");
+            try {
+                GENAI_ERR("Unknown streamer error suppressed in ThreadedStreamerWrapper destructor");
+            } catch (...) {
+                std::fprintf(stderr, "Unknown streamer error suppressed in ThreadedStreamerWrapper destructor\n");
+            }
         }
     }
 
