@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 from itertools import zip_longest
 
-from transformers import AutoTokenizer, AutoProcessor, AutoConfig
+from transformers import AutoTokenizer, AutoProcessor, AutoConfig, PretrainedConfig
 import openvino as ov
 
 import pandas as pd
@@ -661,6 +661,15 @@ def load_processor(args):
     if model_id is None:
         return None, None
 
+    config_path = Path(model_id) / "config.json"
+    if (
+        getattr(args, "genai", False)
+        and config_path.is_file()
+        and get_json_config(config_path).get("model_type") == "minicpmv4_7"
+    ):
+        # MiniCPM-V 4.7 preprocessing is performed inside GenAI's VLMPipeline.
+        return None, PretrainedConfig.from_json_file(config_path)
+
     try:
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
     except Exception:
@@ -698,8 +707,25 @@ def load_processor(args):
         else:
             preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=False)
     except Exception:
-        preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=True)
+        if config.model_type == "minicpmv4_7":
+            preprocessor = load_minicpmv4_7_processor(preprocessor_id)
+        else:
+            preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=True)
     return preprocessor, config
+
+
+def load_minicpmv4_7_processor(model_id):
+    # Original MiniCPM-V 4.7 checkpoints point to remote processor code written for an older transformers version.
+    # Assemble the processor from native classes instead (MiniCPM-V 4.7 reuses the 4.6 image and video processors).
+    from transformers import MiniCPMV4_6ImageProcessor, MiniCPMV4_6VideoProcessor, MiniCPMV4_7Processor
+
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    return MiniCPMV4_7Processor(
+        image_processor=MiniCPMV4_6ImageProcessor.from_pretrained(model_id),
+        video_processor=MiniCPMV4_6VideoProcessor.from_pretrained(model_id),
+        tokenizer=tokenizer,
+        chat_template=tokenizer.chat_template,
+    )
 
 
 def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
@@ -1105,7 +1131,8 @@ def genai_gen_reranking(model, tokenizer, query, documents):
 def is_model_with_automatic_crop(config):
     return (
         "internvl" in config.model_type
-        or "minicpmv" in config.model_type
+        # remote-code MiniCPM-V only: the native transformers ones (e.g. minicpmv4_7) return the prompt with the answer
+        or config.model_type == "minicpmv"
         or "minicpmo" in config.model_type
         or "videochat_flash_qwen" in config.model_type
     )
