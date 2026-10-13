@@ -1746,6 +1746,21 @@ def test_cb_streamer_exception_reaches_caller(model_facebook_opt_125m: OVConvert
     assert after_failure[0].m_generation_ids == fresh[0].m_generation_ids
 
 
+def test_cb_batch_failed_while_queuing_leaves_no_requests(model_facebook_opt_125m: OVConvertedModelSchema):
+    """A request rejected after earlier ones were queued must not leave them queued for the next call."""
+    prompt = "Tell me an interesting fact about space."
+    short_config = GenerationConfig(max_length=8, do_sample=False)
+    pipe = ContinuousBatchingPipeline(model_facebook_opt_125m.models_path, SchedulerConfig(), "CPU")
+    with pytest.raises(RuntimeError, match="'max_length' must be greater than the number of prompt tokens"):
+        pipe.generate(["Hi", prompt], [short_config, short_config])
+
+    after_failure = pipe.generate([prompt], [STREAMER_FAILURE_CONFIG])
+    fresh = ContinuousBatchingPipeline(model_facebook_opt_125m.models_path, SchedulerConfig(), "CPU").generate(
+        [prompt], [STREAMER_FAILURE_CONFIG]
+    )
+    assert after_failure[0].m_generation_ids == fresh[0].m_generation_ids
+
+
 def test_cb_chat_turn_failed_by_streamer_is_rolled_back(model_tinyllama_1_1b_chat: OVConvertedModelSchema):
     """A failed turn must not leave its user message in the chat history."""
 
