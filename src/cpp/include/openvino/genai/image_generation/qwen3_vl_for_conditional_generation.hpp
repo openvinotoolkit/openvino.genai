@@ -6,7 +6,6 @@
 #include <filesystem>
 #include <memory>
 #include <string>
-#include <vector>
 
 #include "openvino/genai/visibility.hpp"
 #include "openvino/genai/tokenizer.hpp"
@@ -97,7 +96,9 @@ public:
 
     /// @brief Embeds a prompt together with a condition image.
     /// @param condition_image Normalized image of shape (1, 3, height, width) resized to get_vision_image_size().
-    ov::Tensor infer(const std::string& prompt, const ov::Tensor condition_image, int max_sequence_length);
+    /// @param run_vision_tower Set to false only after infer() has encoded the same condition image.
+    ov::Tensor infer(const std::string& prompt, const ov::Tensor& condition_image, int max_sequence_length,
+                     bool run_vision_tower = true);
 
     /// @brief Marks the prompt positions the vision tower reserved for the condition image.
     /// @return Boolean tensor of shape (1, prompt_sequence_length). All false after a text-only infer().
@@ -114,9 +115,9 @@ private:
     static const std::string PROMPT_TEMPLATE;
     static const std::string PROMPT_TEMPLATE_WITH_IMAGE;
 
-    ov::Tensor infer_vision_tower(const ov::Tensor condition_image, std::vector<ov::Tensor>& deepstack_features);
+    ov::Tensor infer_vision_tower(const ov::Tensor& condition_image);
 
-    ov::Tensor drop_system_prefix(const ov::Tensor hidden_states, size_t prompt_length) const;
+    ov::Tensor drop_system_prefix(const ov::Tensor& hidden_states, size_t prompt_length) const;
 
     Config m_config;
     VisionConfig m_vision_config;
@@ -126,6 +127,7 @@ private:
     Tokenizer m_tokenizer;
     size_t m_system_prefix_length;
     ov::Tensor m_image_pad_mask;
+    bool m_vision_output_ready = false;
 };
 
 }  // namespace genai

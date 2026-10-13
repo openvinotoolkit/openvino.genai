@@ -1,8 +1,8 @@
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 openvino_genai~=2026.5.0.0.dev
 librosa==0.11.0  # Audio reading for Whisper, ASR and Omni samples
-soundfile==0.14.0  # Audio writing for the speech generation samples
+soundfile==0.14.0  # Audio writing for the speech generation and Omni samples
 pillow==12.3.0  # Image processing for VLMs
 json5==0.15.0  # For ReAct
 pydantic==2.13.4  # For Structured output json schema
-opencv-python==5.0.0.93 # For video-to-text VLM sample
+opencv-python==5.0.0.93 # For video input in VLM and Omni samples
