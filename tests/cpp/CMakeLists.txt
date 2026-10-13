@@ -25,6 +25,13 @@ if(NOT ENABLE_GGUF)
     file(GLOB gguf_tests_src "test_gguf_*.cpp")
     list(REMOVE_ITEM tests_src ${gguf_tests_src})
 endif()
+list(REMOVE_ITEM tests_src "${CMAKE_CURRENT_SOURCE_DIR}/test_asr_c_api.cpp"
+                           "${CMAKE_CURRENT_SOURCE_DIR}/test_asr_c_api_e2e.cpp")
+
+add_executable(tests_asr_c_api test_asr_c_api.cpp test_asr_c_api_e2e.cpp
+    "${OpenVINOGenAI_SOURCE_DIR}/samples/c/whisper_speech_recognition/whisper_utils.c")
+target_link_libraries(tests_asr_c_api PRIVATE openvino::genai::c openvino::genai gtest_main)
+target_include_directories(tests_asr_c_api PRIVATE "${OpenVINOGenAI_SOURCE_DIR}/src/c/src")
 
 set(TEST_TARGET_NAME "tests_continuous_batching")
 
@@ -60,7 +67,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
   target_link_options(tests_cache_allocation_failure PRIVATE /IGNORE:4207,4286)
 endif()
 
-install(TARGETS ${TEST_TARGET_NAME} tests_cache_allocation_failure
+install(TARGETS ${TEST_TARGET_NAME} tests_cache_allocation_failure tests_asr_c_api
         RUNTIME DESTINATION tests/
         COMPONENT tests
         EXCLUDE_FROM_ALL)
