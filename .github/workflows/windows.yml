@@ -861,10 +861,12 @@ jobs:
 
       - name: Test Samples (Python and C++)
         run: |
+          # Required for C++ samples. Extended here, not in 'env:', where '%PATH%' is not expanded and the
+          # system PATH (git included) would be lost.
+          $env:PATH = "${{ env.INSTALL_DIR }}/runtime/bin/intel64/${{ matrix.build-type }};${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/bin;$env:PATH"
           ${{ matrix.test.extra_cmd }}
           python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
         env:
-          PATH: "${{ env.INSTALL_DIR }}/runtime/bin/intel64/${{ matrix.build-type }};${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/bin;%PATH%" # Required for C++ samples
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
           SAMPLES_JS_DIR: "${{ env.SRC_DIR }}/samples/js"
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
