@@ -843,7 +843,7 @@ def test_apply_chat_template_polyfills(tmp_path):
         "{% if tc['function']['arguments'] is mapping %}"
         "<tool_call><name>{{ tc['function']['name'] }}</name>"
         "{% for arg_name, arg_value in tc['function']['arguments'].items() %}"
-        "<parameter name=\"{{ arg_name }}\">{{ arg_value }}</parameter>"
+        '<parameter name="{{ arg_name }}">{{ arg_value }}</parameter>'
         "{% endfor %}</tool_call>\n"
         "{% endif %}{% endfor %}{% endif %}"
         "{% endif %}{% endfor %}"
