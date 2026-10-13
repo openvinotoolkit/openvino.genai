@@ -661,7 +661,8 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     const std::vector<std::vector<ov::Tensor>>& audios,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer) {
-    return m_impl->generate(prompts, images, videos, {}, audios, sampling_params, streamer);
+    const std::vector<std::vector<VideoMetadata>> empty_videos_metadata_vector(prompts.size());
+    return m_impl->generate(prompts, images, videos, empty_videos_metadata_vector, audios, sampling_params, streamer);
 }
 
 std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
@@ -715,7 +716,8 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     const std::vector<std::vector<ov::Tensor>>& audios,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer) {
-    return m_impl->generate(histories, images, videos, {}, audios, sampling_params, streamer);
+    const std::vector<std::vector<VideoMetadata>> empty_videos_metadata_vector(histories.size());
+    return m_impl->generate(histories, images, videos, empty_videos_metadata_vector, audios, sampling_params, streamer);
 }
 
 std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
@@ -728,7 +730,7 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     OPENVINO_ASSERT(properties.generation_config_batches.has_value(),
         "\"generation_config_batches\" property is required in generate with properties map");
 
-     OPENVINO_ASSERT(properties.has_media_properties(),
+    OPENVINO_ASSERT(properties.has_media_properties(),
                     "Media properties are required for VLM generate with properties map. "
                     "Use the text-only generate overload for LLM requests.");
 
