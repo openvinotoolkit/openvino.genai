@@ -218,6 +218,10 @@ The path to the openvino install directory is referred as <INSTALL_DIR> througho
     ```sh
     python -m pip wheel . -w dist/ --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
     ```
+   Set `CMAKE_BUILD_PARALLEL_LEVEL` before running `pip wheel` to control the number of concurrent C++ build jobs.
+   For example, on Linux use `export CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)` to use the available processors,
+   or set a lower number to reduce peak memory usage. On macOS, use `$(sysctl -n hw.logicalcpu)`;
+   on Windows, use `$env:CMAKE_BUILD_PARALLEL_LEVEL = $env:NUMBER_OF_PROCESSORS` in PowerShell.
 
 > **NOTE**: You'd need to build ABI compatible OpenVINO and OpenVINO Tokenizers for Ubuntu instead of downloading them from PyPI. See [OpenVINO™ GenAI Dependencies](../README.md#openvino-genai-dependencies) for the explanation.
 

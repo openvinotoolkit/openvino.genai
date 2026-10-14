@@ -466,6 +466,7 @@ jobs:
 
       - name: Build genai wheel
         run: |
+          $env:CMAKE_BUILD_PARALLEL_LEVEL = $env:NUMBER_OF_PROCESSORS
           $pythonCommand = "py -${{ matrix.python-version }} -c `"import sys; print(f'{sys.executable}')`""
           $pythonExecutablePath = & cmd /c $pythonCommand
 
