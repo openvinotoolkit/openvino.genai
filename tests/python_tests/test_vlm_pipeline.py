@@ -873,18 +873,33 @@ class _MarkingParser(Parser):
         message["seen_content"] = message["content"]
 
 
-@parametrize_one_model_backends
+# tiny-random-phi3-vision (MODEL_IDS[0] under transformers 5.x) is xfail there (CVS-175110), so the test
+# would only ever report XFAIL. Use a VLM that the transformers 5.x CI job runs.
+if is_transformers_version("<", "5.0"):
+    PARSERS_MODEL_ID = MODEL_IDS[0]
+else:
+    PARSERS_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen2vl"
+
+
+@pytest.mark.parametrize(
+    "ov_pipe_model",
+    [(PARSERS_MODEL_ID, b) for b in ATTENTION_BACKEND],
+    ids=lambda p: f"{p[0]}/{p[1]}",
+    indirect=["ov_pipe_model"],
+)
 def test_vlm_pipeline_applies_parsers(ov_pipe_model: VlmModelInfo, cat_image_32x32):
     ov_pipe = ov_pipe_model.pipeline
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=5)
-    generation_config.parsers = [_MarkingParser()]
+    # Keep a Python reference: a temporary parser can be garbage-collected while the config still points at it.
+    marker = _MarkingParser()
+    generation_config.parsers = [marker]
 
     res = ov_pipe.generate(PROMPTS[0], images=[cat_image_32x32], generation_config=generation_config)
     assert len(res.parsed) == len(res.texts) == 1
     assert res.parsed[0]["content"] == res.texts[0]
     assert res.parsed[0]["seen_content"] == res.texts[0]
 
-    # Keyword arguments go through the AnyMap overload.
+    # Same check with parsers passed as a keyword argument instead of a GenerationConfig.
     res = ov_pipe.generate(PROMPTS[0], images=[cat_image_32x32], max_new_tokens=5, parsers=[_MarkingParser()])
     assert res.parsed[0]["seen_content"] == res.texts[0]
 
