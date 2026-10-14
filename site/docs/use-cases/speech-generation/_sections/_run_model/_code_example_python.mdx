@@ -5,13 +5,10 @@ import CodeBlock from '@theme/CodeBlock';
 import soundfile as sf
 
 pipeline = openvino_genai.Text2SpeechPipeline(model_path, "${props.device || 'CPU'}")
+generation_config = pipeline.get_generation_config()
 
 # Generate audio using the default speaker
-result = pipeline.generate("Hello OpenVINO GenAI")
-
-# Optional: use per-call generation config without changing pipeline defaults.
-# config = pipeline.get_generation_config()
-# result = pipeline.generate("Hello OpenVINO GenAI", generation_config=config)
+result = pipeline.generate("Hello OpenVINO GenAI", generation_config=generation_config)
 
 # speech tensor contains the waveform of the spoken phrase
 speech = result.speeches[0]
