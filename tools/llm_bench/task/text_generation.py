@@ -251,6 +251,8 @@ def run_text_generation(
     # ===== Prepare Backend Specific Args =====
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args["infer_count"] is None else args["infer_count"]
     additional_args = setup_additional_optimum_args(args, model, tokenizer, streaming, tokens_len)
+    if args.get("do_sample") is not None:
+        additional_args["do_sample"] = args["do_sample"]
 
     # === Generation ===
     mem_consumption.start(num)
@@ -261,7 +263,6 @@ def run_text_generation(
         max_new_tokens=int(max_gen_tokens),
         num_beams=args["num_beams"],
         use_cache=True,
-        do_sample=False,
         **additional_args,
     )
     end = time.perf_counter()
@@ -421,7 +422,8 @@ def genai_generation_config_setup(model: object, max_gen_tokens: int, args: dict
     gen_config.ignore_eos = True
     gen_config.rng_seed = args["seed"]
     gen_config.num_beams = args["num_beams"]
-    gen_config.do_sample = False
+    if args.get("do_sample") is not None:
+        gen_config.do_sample = args["do_sample"]
     if gen_config.num_beams > 1:
         gen_config.frequency_penalty = 0
         gen_config.presence_penalty = 0
