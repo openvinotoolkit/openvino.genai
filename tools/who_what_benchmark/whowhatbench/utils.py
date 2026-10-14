@@ -448,7 +448,7 @@ def load_audio_dataset(args):
     return {"prompts": ids, "audio": audios}
 
 
-def _read_model_json(model_id, filename):
+def read_model_json(model_id, filename):
     model_path = Path(model_id)
     if model_path.is_dir():
         json_path = model_path / filename
@@ -470,11 +470,11 @@ def _read_model_json(model_id, filename):
 
 
 def get_model_type(model_id):
-    config = _read_model_json(model_id, "config.json")
+    config = read_model_json(model_id, "config.json")
     if isinstance(config, dict) and config.get("model_type"):
         return config["model_type"]
 
-    metadata = _read_model_json(model_id, "configuration.json")
+    metadata = read_model_json(model_id, "configuration.json")
     if isinstance(metadata, dict):
         model = metadata.get("model")
         if isinstance(model, dict) and model.get("type"):
