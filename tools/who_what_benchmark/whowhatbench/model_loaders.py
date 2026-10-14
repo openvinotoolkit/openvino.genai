@@ -65,6 +65,77 @@ def _resolve_torch_dtype(dtype):
         raise ValueError(f"Unsupported PyTorch dtype '{dtype}'. Supported values: {', '.join(TORCH_DTYPES)}.") from exc
 
 
+def _nested_configs(config):
+    """Yield sub-configs that commonly hold language-model settings (text_config, llm_config, ...)."""
+    seen = set()
+    for attr in ("text_config", "llm_config", "language_config", "thinker_config"):
+        sub = getattr(config, attr, None)
+        if sub is not None and id(sub) not in seen:
+            seen.add(id(sub))
+            yield sub
+
+
+def ensure_tied_output_embeddings(model):
+    """Repair an untied/randomly-initialized output head.
+
+    Some checkpoints ship only the input embeddings (no lm_head.weight) and rely on
+    tied embeddings, yet declare tie_word_embeddings=True only on a nested text/LLM
+    sub-config while the top-level config resolves to False. In that case HF leaves
+    lm_head randomly initialized and generation produces garbage. This detects the
+    inconsistency generically (no model-name special-casing), forces tying, and
+    verifies it, so WWB ground truth reflects the real model.
+    """
+    try:
+        config = getattr(model, "config", None)
+        get_out = getattr(model, "get_output_embeddings", None)
+        get_in = getattr(model, "get_input_embeddings", None)
+        if config is None or get_out is None or get_in is None:
+            return model
+        out_emb = get_out()
+        in_emb = get_in()
+        if out_emb is None or in_emb is None:
+            return model
+
+        out_w = getattr(out_emb, "weight", None)
+        in_w = getattr(in_emb, "weight", None)
+        if out_w is None or in_w is None or out_w.shape != in_w.shape:
+            return model
+
+        already_tied = out_w.data_ptr() == in_w.data_ptr()
+        if already_tied:
+            return model
+
+        top_tie = bool(getattr(config, "tie_word_embeddings", False))
+        nested_tie = any(
+            bool(getattr(sub, "tie_word_embeddings", False)) for sub in _nested_configs(config)
+        )
+
+        # Only act when a nested config asks for tying but the top-level one disabled it.
+        if top_tie or not nested_tie:
+            return model
+
+        logger.warning(
+            "Output embeddings are untied while a nested config declares "
+            "tie_word_embeddings=True; forcing tie_weights() to avoid an invalid "
+            "(randomly initialized) lm_head."
+        )
+        config.tie_word_embeddings = True
+        for sub in _nested_configs(config):
+            if getattr(sub, "tie_word_embeddings", False):
+                sub.tie_word_embeddings = True
+        model.tie_weights()
+
+        out_w = model.get_output_embeddings().weight
+        in_w = model.get_input_embeddings().weight
+        if out_w.data_ptr() != in_w.data_ptr():
+            logger.warning("tie_weights() did not tie embeddings; copying input embeddings into lm_head.")
+            with torch.no_grad():
+                out_w.copy_(in_w)
+    except Exception as exc:  # pragma: no cover - defensive, never block loading
+        logger.warning("ensure_tied_output_embeddings skipped due to: %s", exc)
+    return model
+
+
 def _sanitize_load_kwargs(model_type, use_hf, use_genai, use_llamacpp, kwargs):
     sanitized_kwargs = dict(kwargs)
     n_ctx = sanitized_kwargs.get("llamacpp_n_ctx")
@@ -644,6 +715,10 @@ def load_visual_text_model(
         # Common LoRA support via PEFT
         if kwargs.get("adapters") is not None:
             model = apply_peft_adapters(model, kwargs["adapters"], kwargs.get("alphas", None))
+
+        # Repair randomly-initialized/untied output head (checkpoints that rely on tied
+        # embeddings but declare tie_word_embeddings only on a nested text config).
+        model = ensure_tied_output_embeddings(model)
 
         model.eval()
         try:
