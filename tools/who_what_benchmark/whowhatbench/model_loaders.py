@@ -34,6 +34,7 @@ from .utils import (
     disable_diffusers_model_progress_bar,
     get_json_config,
     normalize_lora_adapters_and_alphas,
+    patch_transformers_gguf_support,
 )
 
 # hide transformers progress bar
@@ -270,6 +271,8 @@ def load_text_llamacpp_pipeline(model_dir, **kwargs):
     model_kwargs = {}
     if n_ctx is not None:
         model_kwargs["n_ctx"] = int(n_ctx)
+    if kwargs.get("llamacpp_logits_all"):
+        model_kwargs["logits_all"] = True
     model_path = os.path.join(model_dir, kwargs["gguf_file"]) if kwargs.get("gguf_file") else model_dir
     model = Llama(model_path, **model_kwargs)
     return model
@@ -310,6 +313,7 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
     trust_remote_code = False
     config = None
     if kwargs.get('gguf_file'):
+        patch_transformers_gguf_support()
         model_kwargs['gguf_file'] = kwargs['gguf_file']
     else:
         try:
