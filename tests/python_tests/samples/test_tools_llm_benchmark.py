@@ -180,7 +180,10 @@ class TestBenchmarkLLM:
         # Run Python benchmark
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
         benchmark_py_command = [sys.executable, benchmark_script, "-m" , convert_model, "--draft_model", convert_draft_model, "-p", prompt] + sample_args
-        run_sample(benchmark_py_command)
+        result = run_sample(benchmark_py_command)
+        assert "Speculative decoding: draft tokens processed:" in result.stdout, (
+            "Expected log message `Speculative decoding: draft tokens processed:` not found in output"
+        )
 
     @pytest.mark.samples
     @pytest.mark.parametrize(
@@ -233,6 +236,9 @@ class TestBenchmarkLLM:
         assert "Speculative Decoding is activated" in result.stdout, (
             "Expected log message `Speculative Decoding is activated`not found in output"
         )
+        assert "Speculative decoding: draft tokens processed:" in result.stdout, (
+            "Expected log message `Speculative decoding: draft tokens processed:` not found in output"
+        )
 
     @pytest.mark.samples
     @pytest.mark.parametrize(
@@ -270,6 +276,9 @@ class TestBenchmarkLLM:
         result = run_sample(benchmark_py_command)
         assert "Speculative Decoding is activated" in result.stdout, (
             "Expected log message `Speculative Decoding is activated`not found in output"
+        )
+        assert "Speculative decoding: draft tokens processed:" in result.stdout, (
+            "Expected log message `Speculative decoding: draft tokens processed:` not found in output"
         )
 
     @pytest.mark.samples
