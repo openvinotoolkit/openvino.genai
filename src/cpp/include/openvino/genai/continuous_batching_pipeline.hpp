@@ -163,6 +163,11 @@ protected:
 
     std::shared_ptr<IContinuousBatchingPipeline> m_impl;
 
+    // Tracks if CB pipeline ctor with passed VLMProcessor was used.
+    // Required for add_request(ProcessedInputs) / generate(std::vector<ProcessedInputs>)
+    // to ensure the inputs are produced by the same processor which is used for generation.
+    bool m_uses_external_processor = false;
+
     ContinuousBatchingPipeline() = default;
 
 private:

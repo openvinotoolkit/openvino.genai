@@ -221,9 +221,11 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     const std::string& device,
     const std::filesystem::path& config_dir_path,
     const ov::AnyMap& properties,
-    const ov::genai::GenerationConfig& generation_config) {
+    const ov::genai::GenerationConfig& generation_config
+) {
     auto start_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(inputs_embedder, "Shared InputsEmbedder must not be null");
+    m_uses_external_processor = true;
 
     auto [properties_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties);
     if (!config_dir_path.empty()) {
@@ -623,7 +625,14 @@ GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, co
     return m_impl->add_request(request_id, prompt, images, videos, sampling_params);
 }
 
-GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const ProcessedInputs& inputs, const ov::genai::GenerationConfig& sampling_params) {
+GenerationHandle ContinuousBatchingPipeline::add_request(
+    uint64_t request_id,
+    const ProcessedInputs& inputs,
+    const ov::genai::GenerationConfig& sampling_params
+) {
+    OPENVINO_ASSERT(m_uses_external_processor,
+        "add_request(ProcessedInputs) requires using CB pipeline ctor with VLMProcessor - "
+        "inputs should be produced by the same processor which is used for generation.");
     return m_impl->add_request(request_id, inputs, sampling_params);
 }
 
@@ -787,7 +796,11 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
 std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     const std::vector<ProcessedInputs>& inputs,
     const std::vector<GenerationConfig>& sampling_params,
-    const StreamerVariant& streamer) {
+    const StreamerVariant& streamer
+) {
+    OPENVINO_ASSERT(m_uses_external_processor,
+        "generate(std::vector<ProcessedInputs>) requires using CB pipeline ctor with VLMProcessor - "
+        "inputs should be produced by the same processor which is used for generation.");
     return m_impl->generate(inputs, sampling_params, streamer);
 }
 
