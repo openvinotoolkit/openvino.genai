@@ -39,6 +39,10 @@ TEST_MODELS = {
         "model_id": "BAAI/bge-small-en-v1.5",
         "model_class": OVModelForFeatureExtraction,
     },
+    "MULTIMODAL_EMBEDDINGS_MODEL": {
+        "model_id": "optimum-intel-internal-testing/tiny-random-qwen3-vl-embedding",
+        "model_class": OVModelForFeatureExtraction,
+    },
     "RERANK_MODEL": {
         "model_id": "cross-encoder/ms-marco-TinyBERT-L2-v2",
         "model_class": OVModelForSequenceClassification,

@@ -93,6 +93,8 @@ module.exports = defineConfig([
             "num_inference_steps",
             "num_images_per_prompt",
             "guidance_scale",
+            "embedding_prompt",
+            "frames_indices",
           ],
         },
       ],

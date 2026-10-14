@@ -49,6 +49,21 @@ export type EmbeddingResults = Float32Array[] | Int8Array[] | Uint8Array[];
 export type TextRerankResult = [index: number, score: number];
 export type TextRerankResults = TextRerankResult[];
 /**
+ * Result of an embedding computation produced by {@link EmbeddingPipelineWrapper}.
+ */
+export type EmbedResult = {
+  embeddings: Tensor;
+};
+/**
+ * Metadata describing the original video source. Controls video frame sampling before encoding.
+ */
+export type VideoMetadata = {
+  /** Frame rate of the original video in frames per second. 0 means unknown. */
+  fps?: number;
+  /** Indices of frames to sample from the provided video tensor. */
+  frames_indices?: number[];
+};
+/**
  * Pooling strategy
  */
 export enum PoolingType {
@@ -56,6 +71,8 @@ export enum PoolingType {
   CLS,
   /** The average of all token embeddings */
   MEAN,
+  /** Last token embeddings */
+  LAST_TOKEN,
 }
 export type TextEmbeddingConfig = {
   /** Maximum length of tokens passed to the embedding model */
@@ -97,6 +114,30 @@ export interface TextEmbeddingPipelineWrapper {
   ): void;
   embedQuerySync(text: string): EmbeddingResult;
   embedDocumentsSync(documents: string[]): EmbeddingResults;
+}
+
+/**
+ * Plugin and configuration properties accepted by the {@link EmbeddingPipelineWrapper} constructor.
+ * Includes {@link TextEmbeddingConfig} fields (e.g. pooling_type, normalize) and plugin properties (e.g. CACHE_DIR).
+ */
+export type EmbeddingPipelineProperties = TextEmbeddingConfig & Record<string, unknown>;
+
+export interface EmbeddingPipelineWrapper {
+  new (): EmbeddingPipelineWrapper;
+  init(
+    modelPath: string,
+    device: string,
+    properties: EmbeddingPipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  embed(
+    text: string | string[],
+    images: Tensor[],
+    videos: Tensor[],
+    videosMetadata: VideoMetadata[],
+    properties: object,
+    callback: (err: Error | null, value: EmbedResult) => void,
+  ): void;
 }
 
 /**
@@ -342,6 +383,7 @@ export interface Text2SpeechPipeline {
 interface OpenVINOGenAIAddon {
   TextRerankPipeline: TextRerankPipeline;
   TextEmbeddingPipeline: TextEmbeddingPipelineWrapper;
+  EmbeddingPipeline: EmbeddingPipelineWrapper;
   LLMPipeline: LLMPipeline;
   VLMPipeline: VLMPipeline;
   WhisperPipeline: WhisperPipeline;
@@ -380,6 +422,7 @@ addon.setOpenvinoAddon(ovAddon);
 
 export const {
   TextEmbeddingPipeline,
+  EmbeddingPipeline,
   TextRerankPipeline,
   LLMPipeline,
   VLMPipeline,
