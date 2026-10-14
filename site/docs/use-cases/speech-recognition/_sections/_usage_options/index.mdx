@@ -257,6 +257,8 @@ SenseVoiceSmall supports inverse text normalization (ITN) during transcription. 
 
 :::note
 SenseVoiceSmall does not currently generate segment-level or word-level timestamps. `return_timestamps` and `word_timestamps` are accepted but ignored, and `chunks` and `words` remain unset. Normal transcription and streaming are unaffected.
+
+For supported languages, word-level timestamps can be generated separately using `ASRForcedAligner`: first transcribe the audio with SenseVoiceSmall, then pass the audio and transcription to the standalone aligner. See [Word-level Timestamps Prediction](#word-level-timestamps-prediction) for details.
 :::
 
 ### Whisper-specific Features

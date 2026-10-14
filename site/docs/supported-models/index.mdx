@@ -14,6 +14,14 @@ Other models with similar architectures may also work successfully even if not e
 Consider testing any unlisted models to verify compatibility with your specific use case.
 :::
 
+:::note Optimum Intel version
+Recently added models may require a newer `optimum-intel` version than the latest PyPI release. If an export fails for a newly supported model, install the latest version from GitHub:
+
+```bash
+pip install git+https://github.com/huggingface/optimum-intel.git
+```
+:::
+
 ## Large Language Models (LLMs)
 
 :::tip LoRA Support
@@ -142,11 +150,10 @@ pip install funasr
 optimum-cli export openvino --trust-remote-code -m FunAudioLLM/Fun-ASR-Nano-2512 fun-asr-nano
 ```
 
-SenseVoiceSmall models require the `funasr` package and a version of Optimum Intel that includes SenseVoice export support. The support is currently available only from the upstream repository:
+SenseVoiceSmall models require the `funasr` package and trusted remote code during export:
 
 ```bash
 pip install funasr
-pip install git+https://github.com/huggingface/optimum-intel.git
 optimum-cli export openvino -m FunAudioLLM/SenseVoiceSmall sensevoice-small --trust-remote-code
 ```
 :::

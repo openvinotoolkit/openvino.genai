@@ -10,7 +10,6 @@ patch_pyav_for_servercore.install_av_stub_module_for_windows()
 import openvino_genai as ov_genai
 import functools
 import pytest
-import openvino
 import datasets
 from transformers import AutoProcessor, AutoTokenizer
 from transformers.pipelines.automatic_speech_recognition import AutomaticSpeechRecognitionPipeline
@@ -40,6 +39,7 @@ from utils.asr_utils.qwen3_asr import (
 from utils.asr_utils.sensevoice import (
     SENSEVOICE_MODEL_IDS,
     SENSEVOICE_SMALL_TINY_MODEL_ID,
+    SenseVoiceOptimumPipeline,
     save_model as save_sensevoice_model,
     skip_if_sensevoice_package_is_unavailable,
 )
@@ -158,7 +158,13 @@ def read_asr_model(params, word_timestamps=False, pipeline_type=PipelineType.WHI
             ),
         )
     elif model_id in SENSEVOICE_MODEL_IDS:
-        hf_pipe = None
+        sensevoice_model = retry_request(
+            lambda: OVModelForSpeechSeq2Seq.from_pretrained(
+                path,
+                local_files_only=True,
+            )
+        )
+        hf_pipe = SenseVoiceOptimumPipeline(sensevoice_model)
     else:
         processor = retry_request(
             lambda: AutoProcessor.from_pretrained(
@@ -621,105 +627,18 @@ def test_forced_language(sample_from_multilingual_dataset, pipelines_fixture):
     indirect=True,
 )
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
-def test_sensevoice_auto_language(sample_from_dataset, pipelines_fixture):
-    _, genai_pipe, _, _ = pipelines_fixture
+def test_sensevoice_use_itn(sample_from_dataset, pipelines_fixture):
+    hf_pipe, genai_pipe, _, _ = pipelines_fixture
 
-    result = genai_pipe.generate(sample_from_dataset)
+    genai_texts = {}
+    for use_itn in (False, True):
+        genai_result = genai_pipe.generate(sample_from_dataset, use_itn=use_itn)
+        reference = hf_pipe(sample_from_dataset, use_itn=use_itn)
 
-    assert len(result.texts) == 1
-    assert not result.texts[0].startswith("<|")
-    assert len(result.languages) == len(result.texts)
-    assert all(isinstance(language, str) for language in result.languages)
+        assert genai_result.texts[0] == reference["text"]
+        genai_texts[use_itn] = genai_result.texts[0]
 
-
-@pytest.mark.parametrize(
-    "pipelines_fixture",
-    get_model_pipeline_pair_params([(SENSEVOICE_SMALL_TINY_MODEL_ID, PipelineType.ASR)]),
-    indirect=True,
-)
-@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
-@pytest.mark.parametrize("use_itn", [False, True])
-def test_sensevoice_use_itn(sample_from_dataset, pipelines_fixture, use_itn):
-    _, genai_pipe, _, _ = pipelines_fixture
-
-    result = genai_pipe.generate(sample_from_dataset, use_itn=use_itn)
-
-    assert len(result.texts) == 1
-
-
-def _build_textnorm_echo_model(source_dir: pathlib.Path, dest_dir: pathlib.Path) -> dict:
-    """Write a SenseVoice model dir whose IR echoes the ``textnorm`` input id back as the
-    single decoded token (reusing the real detokenizer/config/am.mvn), so the transcription
-    becomes a deterministic function of whichever ``textnorm`` id the pipeline supplies.
-    """
-    import shutil
-    import openvino.opset14 as opset
-
-    config = json.loads((source_dir / "config.json").read_text())
-
-    input_features = opset.parameter([-1, -1, config["num_mel_bins"]], openvino.Type.f32)
-    input_features.output(0).set_names({"input_features"})
-    speech_lengths = opset.parameter([-1], openvino.Type.i64)
-    speech_lengths.output(0).set_names({"speech_lengths"})
-    language = opset.parameter([-1], openvino.Type.i64)
-    language.output(0).set_names({"language"})
-    textnorm = opset.parameter([-1], openvino.Type.i64)
-    textnorm.output(0).set_names({"textnorm"})
-
-    one_hot = opset.one_hot(
-        textnorm,
-        opset.constant(np.int64(config["vocab_size"])),
-        opset.constant(np.float32(1.0)),
-        opset.constant(np.float32(0.0)),
-        axis=-1,
-    )
-    logits = opset.result(opset.unsqueeze(one_hot, opset.constant(np.int64(0))))
-    logits.output(0).set_names({"logits"})
-    encoder_out_lens = opset.result(opset.constant(np.array([1], dtype=np.int32)))
-    encoder_out_lens.output(0).set_names({"encoder_out_lens"})
-
-    model = openvino.Model(
-        [logits, encoder_out_lens],
-        [input_features, speech_lengths, language, textnorm],
-        "sensevoice_textnorm_echo",
-    )
-
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    for name in ("config.json", "am.mvn", "openvino_detokenizer.xml", "openvino_detokenizer.bin"):
-        shutil.copyfile(source_dir / name, dest_dir / name)
-    openvino.save_model(model, str(dest_dir / "openvino_model.xml"))
-    return config["textnorm_dict"]
-
-
-def _decode_single_token(model_dir: pathlib.Path, token_id: int) -> str:
-    import openvino_tokenizers  # noqa: F401 -- registers the detokenizer extension
-
-    detokenizer = openvino.Core().compile_model(str(model_dir / "openvino_detokenizer.xml"), "CPU")
-    output = detokenizer(np.array([[token_id]], dtype=np.int64))
-    return str(next(iter(output.values()))[0])
-
-
-@pytest.mark.sensevoice
-def test_sensevoice_use_itn_reaches_textnorm(tmp_path):
-    skip_if_sensevoice_package_is_unavailable()
-
-    export_dir = tmp_path / "sensevoice_export"
-    save_sensevoice_model(model_id=SENSEVOICE_SMALL_TINY_MODEL_ID, tmp_path=export_dir)
-
-    echo_dir = tmp_path / "sensevoice_textnorm_echo"
-    textnorm_dict = _build_textnorm_echo_model(export_dir, echo_dir)
-
-    expected_withitn = _decode_single_token(echo_dir, textnorm_dict["withitn"])
-    expected_woitn = _decode_single_token(echo_dir, textnorm_dict["woitn"])
-    assert expected_withitn and not expected_withitn.startswith("<|")
-    assert expected_woitn and not expected_woitn.startswith("<|")
-    assert expected_withitn != expected_woitn
-
-    pipeline = ov_genai.ASRPipeline(str(echo_dir), "CPU")
-    audio = np.zeros(16000, dtype=np.float32)
-
-    assert pipeline.generate(audio, use_itn=True).texts[0] == expected_withitn
-    assert pipeline.generate(audio, use_itn=False).texts[0] == expected_woitn
+    assert genai_texts[False] != genai_texts[True]
 
 
 @pytest.mark.transformers_lower_v5(reason="CVS-185784")

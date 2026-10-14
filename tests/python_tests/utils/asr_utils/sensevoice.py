@@ -9,9 +9,8 @@ from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 from utils.atomic_download import AtomicDownloadManager
 from utils.network import retry_request
 
-SENSEVOICE_SMALL_MODEL_ID = "FunAudioLLM/SenseVoiceSmall"
 SENSEVOICE_SMALL_TINY_MODEL_ID = "optimum-intel-internal-testing/tiny-random-sense-voice-small"
-SENSEVOICE_MODEL_IDS = (SENSEVOICE_SMALL_MODEL_ID, SENSEVOICE_SMALL_TINY_MODEL_ID)
+SENSEVOICE_MODEL_IDS = (SENSEVOICE_SMALL_TINY_MODEL_ID,)
 
 
 def check_sensevoice_support():
@@ -36,6 +35,22 @@ def skip_if_sensevoice_package_is_unavailable():
         if os.environ.get("GENAI_REQUIRE_SENSEVOICE") == "1":
             raise
         pytest.skip(str(exception))
+
+
+class SenseVoiceOptimumPipeline:
+    SAMPLE_RATE = 16000
+
+    def __init__(self, model):
+        self.model = model
+
+    def __call__(self, sample, language="auto", use_itn=False):
+        texts = self.model.generate(
+            waveforms=sample,
+            sampling_rate=self.SAMPLE_RATE,
+            language=language,
+            use_itn=use_itn,
+        )
+        return {"text": texts[0]}
 
 
 def save_model(model_id: str, tmp_path: pathlib.Path):
