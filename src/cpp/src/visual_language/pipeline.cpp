@@ -835,7 +835,7 @@ public:
         const StreamerVariant& streamer
     ) override {
         OPENVINO_ASSERT(m_uses_external_processor,
-            "generate(ProcessedInputs) requires using VLMPipeline ctor with VLMProcessor -"
+            "generate(ProcessedInputs) requires using VLMPipeline ctor with VLMProcessor - "
             "inputs should be produced by the same processor which is used for generation.");
 
         GenerationConfig generation_config = generation_config_in;
