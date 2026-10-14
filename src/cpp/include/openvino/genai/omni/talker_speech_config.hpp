@@ -55,18 +55,15 @@ struct OPENVINO_GENAI_EXPORTS OmniTalkerSpeechConfig {
     std::variant<std::string, ov::Tensor> speaker;
 
     /// @brief Number of codec frames accumulated before streaming each audio chunk.
-    /// Must be >= 1. At steady state each frame decodes to 1920 samples (80ms at 24 kHz),
-    /// but the code2wav vocoder trims its convolutional warmup from the first frame of every
-    /// decode call, so a chunk of N frames yields 1920*N - 555 samples, not 1920*N. This is a
-    /// property of the vocoder graph, not a miscount. Larger chunks amortize the fixed warmup
-    /// cost; very small chunks (e.g. 1) also risk audible seams between independently decoded
-    /// chunks in streaming mode.
+    /// Must be >= 1. Each frame decodes to 1920 samples (80ms at 24 kHz). The code2wav vocoder
+    /// trims its convolutional warmup once per utterance, so the first chunk of N frames yields
+    /// 1920*N - 555 samples and every later chunk yields 1920*N. Streamed audio has the same
+    /// length as non-streamed audio.
     ///
-    /// Default is 4: the per-frame talker+code_predictor decode cost is fixed (~77ms on GPU),
-    /// so a chunk must yield at least that much audio to keep up in real time. A single frame
-    /// yields only ~57ms of audio (warmup trim dominates), so `audio_chunk_frames = 1` runs at
-    /// ~1.36x real time (falls behind); 4 frames yield ~74ms/frame and reach ~1.04x (keeps up).
-    /// Smaller values lower time-to-first-audio at the cost of falling behind real time.
+    /// Every chunk after the first is decoded together with up to 25 earlier frames, so the
+    /// vocoder sees their history. That context is decoded again for each chunk, so smaller
+    /// chunks lower time-to-first-audio but spend more vocoder time per second of audio and can
+    /// fall behind real time.
     std::size_t audio_chunk_frames = 4;
 
     /// @brief Cap on talker AR steps. Independent of `text_config.max_new_tokens`

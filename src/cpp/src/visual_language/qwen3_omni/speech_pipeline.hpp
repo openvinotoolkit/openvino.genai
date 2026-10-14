@@ -39,6 +39,8 @@ struct Qwen3OmniSpeechConfig {
     int64_t image_token_id = -1;
     int64_t video_token_id = -1;
     size_t num_code_groups = 16;
+    /// Waveform samples one codec frame decodes to, once past the code2wav warmup.
+    size_t code2wav_samples_per_frame = 1920;
     size_t talker_hidden_size = 1024;
     std::map<std::string, int64_t> speaker_ids;
 
