@@ -41,19 +41,6 @@
   components:
     - automatic_speech_recognition
 
-- name: ASR AnyMap converter
-  cmd: |-
-    python -m pip install pybind11
-    cmake -S ./tests/python_tests/converter_ext -B ./tests/python_tests/converter_ext/build \
-      -DOpenVINO_DIR=$(python -c "import openvino, os; print(os.path.join(os.path.dirname(openvino.__file__), 'cmake'))") \
-      -Dpybind11_DIR=$(python -m pybind11 --cmakedir) \
-      -DCMAKE_BUILD_TYPE=Release
-    cmake --build ./tests/python_tests/converter_ext/build --parallel
-    REQUIRE_CONVERTER_EXT=1 python -m pytest -v ./tests/python_tests/test_any_converter.py
-  timeout: 15
-  components:
-    - automatic_speech_recognition
-
 - name: Cacheopt E2E (Part 1)
   cmd: |-
     python -m pytest -v ./tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_1.py

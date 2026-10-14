@@ -7,6 +7,7 @@
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
 
+#include "openvino/core/any.hpp"
 #include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
@@ -64,6 +65,20 @@ ov::AnyMap py_object_to_any_map(const py::object& py_obj);
 ov::genai::JsonContainer py_object_to_json_container(const py::object& obj);
 
 py::object json_container_to_py_object(const ov::genai::JsonContainer& container);
+
+/**
+ * @brief Convert a single ov::Any to a Python object.
+ *
+ * Supports strings, booleans, integer and floating-point scalars, nested ov::AnyMap,
+ * and selected vector types. An empty ov::Any maps to None. Throws for any
+ * other stored type so unmodeled metadata is never silently dropped.
+ */
+py::object any_to_py_object(const ov::Any& any);
+
+/**
+ * @brief Convert an ov::AnyMap to a Python dict, converting each value with any_to_py_object.
+ */
+py::dict any_map_to_py_object(const ov::AnyMap& any_map);
 
 /**
  * Executes callable with ChatHistory vector and automatically 
