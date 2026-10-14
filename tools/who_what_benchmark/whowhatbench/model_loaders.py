@@ -13,6 +13,7 @@ from transformers import (
     AutoModelForCausalLM,
     AutoModel,
     AutoTokenizer,
+    PretrainedConfig,
     __version__,
 )
 
@@ -162,10 +163,15 @@ class GenAIModelWrapper:
             "visual-text-only",
             "visual-text-agent",
         ):
-            try:
-                self.config = AutoConfig.from_pretrained(model_dir)
-            except Exception:
-                self.config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
+            config_path = Path(model_dir) / "config.json"
+            if config_path.is_file() and get_json_config(config_path).get("model_type") == "minicpmv4_7":
+                # MiniCPM-V 4.7 exports can retain auto_map entries without the referenced Python files.
+                self.config = PretrainedConfig.from_json_file(config_path)
+            else:
+                try:
+                    self.config = AutoConfig.from_pretrained(model_dir)
+                except Exception:
+                    self.config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
         elif model_type in ("text-to-image", "text-to-video", "image-to-video"):
             from diffusers import DiffusionPipeline
             try:

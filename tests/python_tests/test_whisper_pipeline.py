@@ -29,7 +29,7 @@ from utils.atomic_download import AtomicDownloadManager
 from typing import Any, Literal
 from difflib import SequenceMatcher
 
-from utils.dataset_utils import load_dataset_via_snapshot
+from utils.dataset_utils import load_dataset_via_snapshot, load_parquet_dataset_via_snapshot
 from utils.asr_utils.fun_asr import FUN_ASR_MODEL_ID, FunASROptimumPipeline, skip_if_fun_asr_package_is_unavailable
 from utils.asr_utils.qwen3_asr import (
     QWEN3_ASR_MODEL_ID,
@@ -252,14 +252,12 @@ def get_audio_dataset(long_form: bool) -> list:
 @functools.lru_cache(16)
 def get_multilingual_audio_dataset(language: Literal["de", "fr", "es"]) -> list:
     mls_config = {"de": "german", "fr": "french", "es": "spanish"}
-    # dataset is too big (450gb) for snapshot download
-    ds = retry_request(
-        lambda: datasets.load_dataset(
-            "facebook/multilingual_librispeech",
-            mls_config[language],
-            split="test",
-            streaming=True,
-        )
+    # the whole dataset is too big (450gb) for snapshot download, so only the test split of the language is fetched
+    ds = load_parquet_dataset_via_snapshot(
+        "facebook/multilingual_librispeech",
+        {"test": f"{mls_config[language]}/test-*"},
+        split="test",
+        streaming=True,
     )
     ds = typing.cast(datasets.IterableDataset, ds)
     ds = ds.cast_column("audio", datasets.Audio(sampling_rate=16000))
