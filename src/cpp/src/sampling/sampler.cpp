@@ -1476,7 +1476,8 @@ process_stop_strings(const std::set<std::string>& stop_strings, Tokenizer& token
 
 SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr sequence_group, ov::Tensor sequence_group_logits, 
                                                               RequestSamplerContext& ctx,
-                                                              bool is_validation_mode_enabled) {
+                                                              bool is_validation_mode_enabled,
+                                                              bool notify_handle) {
     SequenceGroupSamplingInfo sg_sampling_info;
     // Assistant pipeline info is relevant for speculative and prompt lookup decoding
     AssistingPipelineInfo& assisting_pipeline_info = sg_sampling_info.get_assisting_pipeline_info();
@@ -1485,6 +1486,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
     // get number of tokens to be validated
     size_t num_tokens_to_process = sequence_group->get_num_tokens_to_validate();
     size_t num_generated_tokens_to_validate = num_tokens_to_process;
+    std::optional<std::pair<uint64_t, size_t>> greedy_acceptance;
 
     LogitProcessor& logit_processor = ctx.logit_processor;
     const std::pair<size_t, std::set<std::string>>& stop_strings = ctx.stop_strings;
@@ -1585,6 +1587,9 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                     }
                 }
                 register_new_token(sampled_token, running_sequences[running_sequence_id], logit_processor, is_extend_sequence, is_validation_mode_enabled);
+                if (is_validation_mode_enabled && sampling_params.is_greedy_decoding()) {
+                    greedy_acceptance = std::make_pair(running_sequence->get_id(), i + 1);
+                }
                                
                 // to exit from sampling in case of failed token validation
                 if (!is_validation_passed) {
@@ -1701,12 +1706,33 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
         OPENVINO_THROW("Unsupported sampling method");
     }
     OPENVINO_ASSERT(num_generated_tokens_to_validate >= assisting_pipeline_info.max_removed_tokens_per_request);
+    if (is_validation_mode_enabled && num_generated_tokens_to_validate > 0) {
+        if (sampling_params.is_greedy_decoding()) {
+            OPENVINO_ASSERT(greedy_acceptance.has_value(),
+                            "Greedy speculative validation produced no acceptance decision");
+            sg_sampling_info.sampler_output.acceptance_by_sequence.emplace(
+                greedy_acceptance->first,
+                SamplerOutput::AcceptanceResult{
+                    greedy_acceptance->second,
+                    sequence_group->get_num_processed_tokens() + greedy_acceptance->second});
+        }
+    }
+    if (notify_handle) {
+        try {
+            sequence_group->notify_handle();
+        } catch (...) {
+            sequence_group->fail_generation(std::current_exception());
+            throw;
+        }
+    }
     return sg_sampling_info;
 }
 
 SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_groups,
                               ov::Tensor logits,
-                              bool is_validation_mode_enabled) {
+                              bool is_validation_mode_enabled,
+                              bool notify_handles,
+                              bool defer_sequence_group_updates) {
     const float * logits_data = logits.data<float>();
     ov::Shape logits_shape = logits.get_shape();
     OPENVINO_ASSERT(logits_shape.size() == 3);
@@ -1714,6 +1740,19 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
 
     SamplerOutput sampler_output;
     std::unordered_map<uint64_t, std::future<SequenceGroupSamplingInfo>> sg_sampling_future_map;
+    struct SamplingFuturesWaiter {
+        std::unordered_map<uint64_t, std::future<SequenceGroupSamplingInfo>>& futures;
+
+        ~SamplingFuturesWaiter() {
+            for (auto& future_entry : futures) {
+                auto& future = future_entry.second;
+                if (future.valid()) {
+                    future.wait();
+                }
+            }
+        }
+    } sampling_futures_waiter{sg_sampling_future_map};
+
     for (size_t sequence_group_id = 0, currently_processed_tokens = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
         SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
         if (!sequence_group->is_scheduled())
@@ -1749,8 +1788,17 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
         ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, output_seq_len, vocab_size}, (void *)sequence_group_logits_data);
         if (sequence_group->requires_sampling()) {
             // Call sample_from_sequence_group asynchronously
-            sg_sampling_future_map[request_id] = m_thread_pool.submit(&Sampler::sample_from_sequence_group, this, sequence_group, sequence_group_logits,
-                                                                      std::ref(ctx), is_validation_mode_enabled);
+            auto [future_it, inserted] = sg_sampling_future_map.emplace(
+                request_id,
+                std::future<SequenceGroupSamplingInfo>{});
+            OPENVINO_ASSERT(inserted, "A sampler task is already submitted for request ", request_id);
+            future_it->second = m_thread_pool.submit(&Sampler::sample_from_sequence_group,
+                                                     this,
+                                                     sequence_group,
+                                                     sequence_group_logits,
+                                                     std::ref(ctx),
+                                                     is_validation_mode_enabled,
+                                                     notify_handles);
         } else {
             // we are in prompt processing phase when prompt is split into chunks and processed step by step
         }
@@ -1770,6 +1818,9 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
             sampler_output.num_generated_tokens += sg_sampling_info.sampler_output.num_generated_tokens;
             sampler_output.num_generated_tokens_per_request[request_id] =
                 sg_sampling_info.sampler_output.num_generated_tokens;
+            sampler_output.acceptance_by_sequence.insert(
+                sg_sampling_info.sampler_output.acceptance_by_sequence.begin(),
+                sg_sampling_info.sampler_output.acceptance_by_sequence.end());
 
             // Merge sampler output from sequence group to the main one
             sampler_output.m_dropped_sequences.insert(
@@ -1793,11 +1844,18 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
         // NOTE: it should be before 'get_num_scheduled_tokens' is used
         // update internal state of sequence group to reset scheduler tokens and update currently processed ones
         const AssistingPipelineInfo& assisting_pipeline_info = std::as_const(sg_sampling_info.get_assisting_pipeline_info());
-        sequence_group->finish_iteration();
+        const bool defer_updates = defer_sequence_group_updates &&
+                                   sampler_output.acceptance_by_sequence.count(
+                                       sequence_group->get_sequences().front()->get_id()) > 0;
+        if (!defer_updates) {
+            sequence_group->finish_iteration();
+        }
         // decrease sequence_group context in case of candidates generated by draft_model were not accepted by main_model
         if (assisting_pipeline_info.max_removed_tokens_per_request) {
             auto min_processed_tokens = sequence_group->get_prompt_len() + assisting_pipeline_info.min_generated_len - 1;
-            sequence_group->update_processed_tokens_num(min_processed_tokens);
+            if (!defer_updates) {
+                sequence_group->update_processed_tokens_num(min_processed_tokens);
+            }
             auto& logit_processor = get_logit_processor(sequence_group->get_request_id());
             logit_processor.update_generated_len(min_processed_tokens);
         }
