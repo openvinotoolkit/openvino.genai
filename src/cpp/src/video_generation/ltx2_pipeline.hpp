@@ -128,6 +128,10 @@ class LTX2Pipeline : public VideoPipeline {
 
     void check_inputs(const VideoGenerationConfig& generation_config) const {
         utils::validate_generation_config(generation_config);
+        const float decode_noise_scale =
+            generation_config.decode_noise_scale.value_or(generation_config.decode_timestep);
+        OPENVINO_ASSERT(generation_config.decode_timestep == 0.0f && decode_noise_scale == 0.0f,
+                        "decode_timestep and decode_noise_scale are not supported for LTX2 pipelines");
         video_generation_utils::check_video_size(generation_config.height,
                                                  generation_config.width,
                                                  m_vae->get_config().spatial_compression_ratio);
@@ -624,11 +628,12 @@ public:
 
         const auto decode_start = std::chrono::steady_clock::now();
         ov::Tensor video = m_vae->decode(postprocessed);
-        m_perf_metrics.vae_decoder_inference_duration =
+        VideoGenerationPerfMetrics decode_metrics;
+        decode_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
 
-        return VideoGenerationResult{video, m_perf_metrics, ov::Tensor(ov::element::f32, ov::Shape{0})};
+        return VideoGenerationResult{video, std::move(decode_metrics), ov::Tensor(ov::element::f32, ov::Shape{0})};
     }
 
     void reshape(int64_t num_videos_per_prompt,

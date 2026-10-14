@@ -46,6 +46,8 @@ class Image2VideoEvaluator(Text2VideoEvaluator):
         metrics="similarity",
         num_inference_steps=None,
         num_frames=None,
+        decode_timestep=None,
+        decode_noise_scale=None,
         crop_prompts=True,
         num_samples=None,
         gen_video_fn=None,
@@ -63,6 +65,8 @@ class Image2VideoEvaluator(Text2VideoEvaluator):
             metrics=metrics,
             num_inference_steps=num_inference_steps,
             num_frames=num_frames,
+            decode_timestep=decode_timestep,
+            decode_noise_scale=decode_noise_scale,
             crop_prompts=crop_prompts,
             num_samples=num_samples,
             gen_video_fn=gen_video_fn,
@@ -140,10 +144,16 @@ class Image2VideoEvaluator(Text2VideoEvaluator):
             frame_rate=self.DEF_FRAME_RATE,
             guidance_scale=self.DEF_GUIDANCE_SCALE,
             guidance_rescale=self.DEF_GUIDANCE_RESCALE,
+            decode_timestep=None,
+            decode_noise_scale=None,
             generator=None,
             empty_adapters=False,
         ):
             kwargs = {"negative_prompt": negative_prompt} if guidance_scale > 1 else {}
+            if decode_timestep is not None:
+                kwargs["decode_timestep"] = decode_timestep
+            if decode_noise_scale is not None:
+                kwargs["decode_noise_scale"] = decode_noise_scale
             with torch.no_grad():
                 output = model(
                     image=image,
@@ -204,6 +214,8 @@ class Image2VideoEvaluator(Text2VideoEvaluator):
                 frame_rate=self.frame_rate,
                 guidance_scale=row.get("guidance_scale", self.DEF_GUIDANCE_SCALE),
                 guidance_rescale=row.get("guidance_rescale", self.DEF_GUIDANCE_RESCALE),
+                decode_timestep=self._get_optional_data_value(row, "decode_timestep", self.decode_timestep),
+                decode_noise_scale=self._get_optional_data_value(row, "decode_noise_scale", self.decode_noise_scale),
                 generator=openvino_genai.TorchGenerator(self.seed) if self.is_genai else rng,
                 empty_adapters=self.empty_adapters,
             )
