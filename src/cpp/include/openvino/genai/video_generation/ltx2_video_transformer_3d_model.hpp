@@ -67,6 +67,12 @@ public:
                                             const ov::Tensor& audio_latent,
                                             float timestep);
 
+    /// @brief Same with an explicit video 'timestep' tensor (e.g. per-token zeros on conditioned frames)
+    std::pair<ov::Tensor, ov::Tensor> infer(const ov::Tensor& video_latent,
+                                            const ov::Tensor& audio_latent,
+                                            const ov::Tensor& timestep,
+                                            float audio_timestep);
+
     LTX2VideoTransformer3DModel& reshape(int64_t batch_size,
                                          int64_t num_frames,
                                          int64_t height,

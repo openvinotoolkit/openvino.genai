@@ -113,9 +113,6 @@ std::pair<ov::Tensor, ov::Tensor> LTX2VideoTransformer3DModel::infer(const ov::T
                                                                      float timestep) {
     OPENVINO_ASSERT(m_request, "Transformer model must be compiled first. Cannot infer non-compiled model");
 
-    m_request.set_tensor("hidden_states", video_latent);
-    m_request.set_tensor("audio_hidden_states", audio_latent);
-
     const ov::Shape& latent_shape = video_latent.get_shape();
     OPENVINO_ASSERT(latent_shape.size() == 3, "Packed latents must be rank-3 [B, S, C], got rank ", latent_shape.size());
 
@@ -128,12 +125,27 @@ std::pair<ov::Tensor, ov::Tensor> LTX2VideoTransformer3DModel::infer(const ov::T
     }
     ov::Tensor timestep_tensor(ov::element::f32, timestep_shape);
     std::fill_n(timestep_tensor.data<float>(), timestep_tensor.get_size(), timestep);
-    m_request.set_tensor("timestep", timestep_tensor);
+
+    return infer(video_latent, audio_latent, timestep_tensor, timestep);
+}
+
+std::pair<ov::Tensor, ov::Tensor> LTX2VideoTransformer3DModel::infer(const ov::Tensor& video_latent,
+                                                                     const ov::Tensor& audio_latent,
+                                                                     const ov::Tensor& timestep,
+                                                                     float audio_timestep) {
+    OPENVINO_ASSERT(m_request, "Transformer model must be compiled first. Cannot infer non-compiled model");
+    OPENVINO_ASSERT(timestep.get_shape().size() == m_timestep_rank,
+                    "'timestep' must be rank-", m_timestep_rank, " to match the compiled model, got rank ",
+                    timestep.get_shape().size());
+
+    m_request.set_tensor("hidden_states", video_latent);
+    m_request.set_tensor("audio_hidden_states", audio_latent);
+    m_request.set_tensor("timestep", timestep);
 
     if (m_has_audio_timestep) {
-        ov::Tensor audio_timestep(ov::element::f32, {audio_latent.get_shape()[0]});
-        std::fill_n(audio_timestep.data<float>(), audio_timestep.get_size(), timestep);
-        m_request.set_tensor("audio_timestep", audio_timestep);
+        ov::Tensor audio_timestep_tensor(ov::element::f32, {audio_latent.get_shape()[0]});
+        std::fill_n(audio_timestep_tensor.data<float>(), audio_timestep_tensor.get_size(), audio_timestep);
+        m_request.set_tensor("audio_timestep", audio_timestep_tensor);
     }
 
     m_request.infer();

@@ -17,8 +17,11 @@
 #include "openvino/op/convert.hpp"
 #include "openvino/op/divide.hpp"
 #include "openvino/op/multiply.hpp"
+#include "openvino/op/subtract.hpp"
 
+#include "image_generation/image_processor.hpp"
 #include "image_generation/schedulers/ischeduler.hpp"
+#include "openvino/genai/image_generation/generation_config.hpp"
 
 namespace ov::genai::video_generation_utils {
 
@@ -215,6 +218,158 @@ inline ov::Tensor denormalize_latents(const ov::Tensor& latents,
     ov::op::v1::Add{}.evaluate(result, {tmp2[0], latents_mean});
 
     return result[0];  // [B, C, F, H, W]
+}
+
+// (latents - latents_mean) * scaling_factor / latents_std, the inverse of denormalize_latents
+inline ov::Tensor normalize_latents(const ov::Tensor& latents,
+                                    ov::Tensor latents_mean,
+                                    ov::Tensor latents_std,
+                                    float scaling_factor = 1.0f) {
+    const ov::Shape latents_shape = latents.get_shape();
+    OPENVINO_ASSERT(latents_shape.size() == 5, "normalize_latents expects [B, C, F, H, W]");
+    const size_t num_channels = latents_shape[1];
+
+    reshape_to_1C111(latents_mean, num_channels);
+    reshape_to_1C111(latents_std, num_channels);
+
+    const auto latents_type = latents.get_element_type();
+    ov::Tensor scale = make_scalar(latents_type, scaling_factor);
+
+    std::vector<ov::Tensor> tmp{ov::Tensor(latents_type, {})};
+    ov::op::v1::Subtract{}.evaluate(tmp, {latents, latents_mean});
+
+    std::vector<ov::Tensor> tmp2{ov::Tensor(latents_type, {})};
+    ov::op::v1::Multiply{}.evaluate(tmp2, {tmp[0], scale});
+
+    std::vector<ov::Tensor> result{ov::Tensor(latents_type, {})};
+    ov::op::v1::Divide{}.evaluate(result, {tmp2[0], latents_std});
+
+    return result[0];  // [B, C, F, H, W]
+}
+
+// Splits VAE encoder 'latent_parameters' [B, 2C, ...] into mean and logvar halves
+class DiagonalGaussianDistribution {
+public:
+    explicit DiagonalGaussianDistribution(ov::Tensor parameters) : m_params(std::move(parameters)) {
+        OPENVINO_ASSERT(m_params.get_element_type() == ov::element::f32,
+            "DiagonalGaussianDistribution requires f32 encoder output, got ",
+            m_params.get_element_type());
+        const ov::Shape& full_shape = m_params.get_shape();
+        OPENVINO_ASSERT(full_shape.size() >= 2, "Parameters tensor rank must be at least 2");
+        OPENVINO_ASSERT(full_shape[1] % 2 == 0, "Channel dimension must be even to split mean and logvar");
+        m_channels = full_shape[1] / 2;
+        m_spatial = 1;
+        for (size_t i = 2; i < full_shape.size(); ++i)
+            m_spatial *= full_shape[i];
+
+        ov::Shape std_shape = full_shape;
+        std_shape[1] = m_channels;
+        m_std = ov::Tensor(m_params.get_element_type(), std_shape);
+
+        const float* src = m_params.data<float>();
+        float* std_data = m_std.data<float>();
+        const size_t batch = full_shape[0];
+        for (size_t b = 0; b < batch; ++b) {
+            for (size_t c = 0; c < m_channels; ++c) {
+                const size_t lvar_off = (b * full_shape[1] + m_channels + c) * m_spatial;
+                const size_t dst_off  = (b * m_channels + c) * m_spatial;
+                for (size_t s = 0; s < m_spatial; ++s) {
+                    const float logvar = std::min(std::max(src[lvar_off + s], -30.0f), 20.0f);
+                    std_data[dst_off + s] = std::exp(0.5f * logvar);
+                }
+            }
+        }
+    }
+
+    ov::Tensor sample(std::shared_ptr<Generator> generator) const {
+        OPENVINO_ASSERT(generator, "Generator must not be nullptr");
+
+        ov::Shape sample_shape = m_params.get_shape();
+        sample_shape[1] = m_channels;
+        ov::Tensor result = generator->randn_tensor(sample_shape);
+        OPENVINO_ASSERT(result.get_element_type() == ov::element::f32,
+            "Generator::randn_tensor() must return an f32 tensor, got ",
+            result.get_element_type());
+
+        const float* params_data = m_params.data<float>();
+        const float* std_data = m_std.data<float>();
+        float* result_data = result.data<float>();
+        const size_t batch = m_params.get_shape()[0];
+        const size_t full_channels = m_params.get_shape()[1];
+
+        for (size_t b = 0; b < batch; ++b) {
+            for (size_t c = 0; c < m_channels; ++c) {
+                const size_t mean_off = (b * full_channels + c) * m_spatial;
+                const size_t dst_off  = (b * m_channels + c) * m_spatial;
+                for (size_t s = 0; s < m_spatial; ++s) {
+                    result_data[dst_off + s] = params_data[mean_off + s] + std_data[dst_off + s] * result_data[dst_off + s];
+                }
+            }
+        }
+
+        return result;
+    }
+
+    // The distribution mean (diffusers' sample_mode="argmax")
+    ov::Tensor mode() const {
+        ov::Shape mean_shape = m_params.get_shape();
+        const size_t full_channels = mean_shape[1];
+        mean_shape[1] = m_channels;
+        ov::Tensor result(m_params.get_element_type(), mean_shape);
+
+        const float* params_data = m_params.data<float>();
+        float* result_data = result.data<float>();
+        const size_t mean_elems = m_channels * m_spatial;
+        for (size_t b = 0; b < mean_shape[0]; ++b) {
+            std::memcpy(result_data + b * mean_elems, params_data + b * full_channels * m_spatial, mean_elems * sizeof(float));
+        }
+        return result;
+    }
+
+private:
+    ov::Tensor m_params, m_std;
+    size_t m_channels, m_spatial;
+};
+
+// Validates a u8 NHWC conditioning image, resizes it to height x width and returns the normalized
+// f32 [N, 3, 1, H, W] single-frame VAE encoder input
+inline ov::Tensor image_to_encoder_input(const ov::Tensor& image,
+                                         int64_t height,
+                                         int64_t width,
+                                         ImageResizer& resizer,
+                                         ImageProcessor& processor) {
+    // ov::Tensor copies share the underlying memory, so set_shape() here would promote the
+    // caller's rank-3 tensor in place. Wrap the same memory in a rank-4 view instead.
+    ov::Tensor img = image;
+    if (image.get_shape().size() == 3) {
+        const auto s = image.get_shape();
+        img = ov::Tensor(image.get_element_type(), ov::Shape{1, s[0], s[1], s[2]}, image.data());
+    }
+
+    const auto& img_shape = img.get_shape();
+    OPENVINO_ASSERT(img_shape.size() == 4,
+                    "Conditioning image must have shape [H, W, 3] or [1, H, W, 3] (NHWC), got rank ",
+                    img_shape.size());
+    OPENVINO_ASSERT(img.get_element_type() == ov::element::u8,
+                    "Conditioning image must have element type u8 (uint8), got ",
+                    img.get_element_type());
+    OPENVINO_ASSERT(img_shape[3] == 3,
+                    "Conditioning image must have 3 channels in the last dimension (NHWC), got ",
+                    img_shape[3]);
+
+    ov::Tensor resized = (img_shape[1] == static_cast<size_t>(height) && img_shape[2] == static_cast<size_t>(width))
+                             ? img
+                             : resizer.execute(img, height, width);
+    ov::Tensor processed = processor.execute(resized);
+
+    OPENVINO_ASSERT(processed.get_element_type() == ov::element::f32,
+                    "ImageProcessor must return f32, got ", processed.get_element_type());
+    OPENVINO_ASSERT(processed.get_shape().size() == 4,
+                    "ImageProcessor must return rank-4 [N,C,H,W], got rank ", processed.get_shape().size());
+    const auto& proc_shape = processed.get_shape();
+    ov::Tensor encoder_input(ov::element::f32, {proc_shape[0], proc_shape[1], 1, proc_shape[2], proc_shape[3]});
+    std::memcpy(encoder_input.data<float>(), processed.data<const float>(), processed.get_byte_size());
+    return encoder_input;
 }
 
 // Converts between the numeric element types the exported IRs use for masks (e.g. f32/i64/i32)

@@ -95,6 +95,11 @@ pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
 
 - **Main Feature:** Generate videos that continue naturally from an input image, guided by a text prompt.
 
+- **Output:** `genai_video.avi`; models that generate audio (LTX-2) also write `genai_audio.wav`. To combine both into one file:
+  ```bash
+  ffmpeg -i genai_video.avi -i genai_audio.wav genai_video.mp4
+  ```
+
 - **Run Command:**
   ```bash
   python image2video.py model_dir image_path prompt [num_frames]

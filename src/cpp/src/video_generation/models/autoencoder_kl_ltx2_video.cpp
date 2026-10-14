@@ -16,6 +16,7 @@
 
 #include "json_utils.hpp"
 #include "utils.hpp"
+#include "video_generation/video_generation_utils.hpp"
 
 using namespace ov::genai;
 
@@ -70,10 +71,24 @@ AutoencoderKLLTX2Video::AutoencoderKLLTX2Video(const std::filesystem::path& vae_
     merge_vae_video_post_processing();
 }
 
+AutoencoderKLLTX2Video::AutoencoderKLLTX2Video(const std::filesystem::path& vae_encoder_path,
+                                               const std::filesystem::path& vae_decoder_path)
+    : AutoencoderKLLTX2Video(vae_decoder_path) {
+    m_encoder_model = utils::singleton_core().read_model(vae_encoder_path / "openvino_model.xml");
+}
+
 AutoencoderKLLTX2Video::AutoencoderKLLTX2Video(const std::filesystem::path& vae_decoder_path,
                                                const std::string& device,
                                                const ov::AnyMap& properties)
     : AutoencoderKLLTX2Video(vae_decoder_path) {
+    compile(device, properties);
+}
+
+AutoencoderKLLTX2Video::AutoencoderKLLTX2Video(const std::filesystem::path& vae_encoder_path,
+                                               const std::filesystem::path& vae_decoder_path,
+                                               const std::string& device,
+                                               const ov::AnyMap& properties)
+    : AutoencoderKLLTX2Video(vae_encoder_path, vae_decoder_path) {
     compile(device, properties);
 }
 
@@ -91,6 +106,12 @@ AutoencoderKLLTX2Video AutoencoderKLLTX2Video::clone() {
         cloned.m_decoder_request = m_decoder_request.get_compiled_model().create_infer_request();
     }
 
+    if (m_encoder_model) {
+        cloned.m_encoder_model = m_encoder_model->clone();
+    } else if (m_encoder_request) {
+        cloned.m_encoder_request = m_encoder_request.get_compiled_model().create_infer_request();
+    }
+
     return cloned;
 }
 
@@ -100,6 +121,16 @@ const AutoencoderKLLTX2Video::Config& AutoencoderKLLTX2Video::get_config() const
 
 AutoencoderKLLTX2Video& AutoencoderKLLTX2Video::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_decoder_model, "Model has been already compiled. Cannot re-compile already compiled model");
+
+    if (m_encoder_model) {
+        ov::CompiledModel encoder_compiled_model = utils::singleton_core().compile_model(m_encoder_model, device, properties);
+        ov::genai::utils::print_compiled_model_properties(encoder_compiled_model, "Auto encoder KL LTX2 video encoder model");
+        OPENVINO_ASSERT(encoder_compiled_model.outputs().size() == 1,
+                        "AutoencoderKLLTX2Video encoder model is expected to have a single output");
+        m_encoder_request = encoder_compiled_model.create_infer_request();
+        m_encoder_model.reset();
+    }
+
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_decoder_model, device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Auto encoder KL LTX2 video decoder model");
     m_decoder_request = compiled_model.create_infer_request();
@@ -114,6 +145,17 @@ AutoencoderKLLTX2Video& AutoencoderKLLTX2Video::reshape(int64_t batch_size,
                                                         int64_t width) {
     OPENVINO_ASSERT(m_decoder_model, "Model has been already compiled. Cannot reshape already compiled model");
 
+    if (m_encoder_model) {
+        // The encoder receives a single conditioning image, so its batch dimension is left unchanged
+        ov::PartialShape encoder_shape = m_encoder_model->input(0).get_partial_shape();
+        OPENVINO_ASSERT(encoder_shape.rank().is_static() && encoder_shape.rank().get_length() == 5,
+                        "AutoencoderKLLTX2Video encoder input must be rank 5 [B, C, F, H, W], got rank ",
+                        encoder_shape.rank());
+        std::map<size_t, ov::PartialShape> encoder_idx_to_shape{
+            {0, {encoder_shape[0], encoder_shape[1], 1, height, width}}};
+        m_encoder_model->reshape(encoder_idx_to_shape);
+    }
+
     const int64_t latent_num_frames = (num_frames - 1) / m_config.temporal_compression_ratio + 1;
     const int64_t latent_height = height / m_config.spatial_compression_ratio;
     const int64_t latent_width = width / m_config.spatial_compression_ratio;
@@ -124,6 +166,28 @@ AutoencoderKLLTX2Video& AutoencoderKLLTX2Video::reshape(int64_t batch_size,
     m_decoder_model->reshape(idx_to_shape);
 
     return *this;
+}
+
+ov::Tensor AutoencoderKLLTX2Video::encode(const ov::Tensor& video) {
+    OPENVINO_ASSERT(m_encoder_request || m_encoder_model,
+                    "AutoencoderKLLTX2Video is created without 'VAE encoder' capability. "
+                    "Please, pass 'vae_encoder_path' argument to constructor.");
+    OPENVINO_ASSERT(m_encoder_request, "VAE encoder model must be compiled first. Cannot infer non-compiled model");
+
+    m_encoder_request.set_input_tensor(video);
+    m_encoder_request.infer();
+    const ov::Tensor output = m_encoder_request.get_output_tensor();
+    const std::string output_name = m_encoder_request.get_compiled_model().output(0).get_any_name();
+
+    if (output_name == "latent_parameters") {
+        // The reference conditions on the distribution mean (sample_mode="argmax")
+        return video_generation_utils::DiagonalGaussianDistribution(output).mode();
+    }
+    OPENVINO_ASSERT(output_name == "latent_sample",
+                    "Unexpected output name for AutoencoderKLLTX2Video encoder '", output_name, "'");
+    ov::Tensor latent(output.get_element_type(), output.get_shape());
+    output.copy_to(latent);
+    return latent;
 }
 
 ov::Tensor AutoencoderKLLTX2Video::decode(const ov::Tensor& latent) {

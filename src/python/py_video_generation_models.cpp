@@ -370,13 +370,25 @@ void init_ltx2_video_transformer_3d_model(py::module_& m) {
 void init_autoencoder_kl_ltx2_video(py::module_& m) {
     auto vae = py::class_<ov::genai::AutoencoderKLLTX2Video>(m,
                                                              "AutoencoderKLLTX2Video",
-                                                             "AutoencoderKLLTX2Video class for LTX2 VAE decoding.")
+                                                             "AutoencoderKLLTX2Video class for LTX2 VAE encoding and decoding.")
                    .def(py::init([](const std::filesystem::path& vae_decoder_path) {
                             return std::make_unique<ov::genai::AutoencoderKLLTX2Video>(vae_decoder_path);
                         }),
                         py::arg("vae_decoder_path"),
                         R"(
-            AutoencoderKLLTX2Video class constructor.
+            AutoencoderKLLTX2Video class constructor with decoder only.
+            vae_decoder_path (os.PathLike): VAE decoder directory.
+        )")
+                   .def(py::init([](const std::filesystem::path& vae_encoder_path,
+                                    const std::filesystem::path& vae_decoder_path) {
+                            return std::make_unique<ov::genai::AutoencoderKLLTX2Video>(vae_encoder_path,
+                                                                                       vae_decoder_path);
+                        }),
+                        py::arg("vae_encoder_path"),
+                        py::arg("vae_decoder_path"),
+                        R"(
+            AutoencoderKLLTX2Video class constructor with encoder and decoder.
+            vae_encoder_path (os.PathLike): VAE encoder directory.
             vae_decoder_path (os.PathLike): VAE decoder directory.
         )")
                    .def(py::init([](const std::filesystem::path& vae_decoder_path,
@@ -390,7 +402,27 @@ void init_autoencoder_kl_ltx2_video(py::module_& m) {
                         py::arg("vae_decoder_path"),
                         py::arg("device"),
                         R"(
-            AutoencoderKLLTX2Video class constructor.
+            AutoencoderKLLTX2Video class constructor with decoder only.
+            vae_decoder_path (os.PathLike): VAE decoder directory.
+            device (str): Device on which inference will be done.
+            kwargs: Device properties.
+        )")
+                   .def(py::init([](const std::filesystem::path& vae_encoder_path,
+                                    const std::filesystem::path& vae_decoder_path,
+                                    const std::string& device,
+                                    const py::kwargs& kwargs) {
+                            return std::make_unique<ov::genai::AutoencoderKLLTX2Video>(
+                                vae_encoder_path,
+                                vae_decoder_path,
+                                device,
+                                pyutils::kwargs_to_any_map(kwargs));
+                        }),
+                        py::arg("vae_encoder_path"),
+                        py::arg("vae_decoder_path"),
+                        py::arg("device"),
+                        R"(
+            AutoencoderKLLTX2Video class constructor with encoder and decoder.
+            vae_encoder_path (os.PathLike): VAE encoder directory.
             vae_decoder_path (os.PathLike): VAE decoder directory.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
@@ -434,6 +466,14 @@ void init_autoencoder_kl_ltx2_video(py::module_& m) {
                 num_frames (int): Number of video frames.
                 height (int): Video height.
                 width (int): Video width.
+            )")
+        .def("encode",
+             &ov::genai::AutoencoderKLLTX2Video::encode,
+             py::call_guard<py::gil_scoped_release>(),
+             py::arg("video"),
+             R"(
+                Encodes a [B, 3, F, H, W] video into the latent distribution mean.
+                video (openvino.Tensor): f32 video tensor in [-1, 1].
             )")
         .def("decode",
              &ov::genai::AutoencoderKLLTX2Video::decode,

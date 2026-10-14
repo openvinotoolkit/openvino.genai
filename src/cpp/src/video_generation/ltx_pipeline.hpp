@@ -123,39 +123,11 @@ class LTXPipeline : public VideoPipeline {
                         "Image2VideoPipeline requires a VAE encoder. "
                         "Ensure 'vae_encoder' exists in the model directory.");
 
-        // ov::Tensor copies share the underlying memory, so set_shape() here would promote the
-        // caller's rank-3 tensor in place. Wrap the same memory in a rank-4 view instead.
-        ov::Tensor img = image;
-        if (image.get_shape().size() == 3) {
-            const auto s = image.get_shape();
-            img = ov::Tensor(image.get_element_type(), ov::Shape{1, s[0], s[1], s[2]}, image.data());
-        }
-
-        const auto& img_shape = img.get_shape();
-        OPENVINO_ASSERT(img_shape.size() == 4,
-                        "Conditioning image must have shape [H, W, 3] or [1, H, W, 3] (NHWC), got rank ",
-                        img_shape.size());
-        OPENVINO_ASSERT(img.get_element_type() == ov::element::u8,
-                        "Conditioning image must have element type u8 (uint8), got ",
-                        img.get_element_type());
-        OPENVINO_ASSERT(img_shape[3] == 3,
-                        "Conditioning image must have 3 channels in the last dimension (NHWC), got ",
-                        img_shape[3]);
-
-        ov::Tensor resized = (img_shape[1] == static_cast<size_t>(config.height) &&
-                              img_shape[2] == static_cast<size_t>(config.width))
-                                 ? img
-                                 : m_image_resizer->execute(img, config.height, config.width);
-        ov::Tensor processed = m_image_processor->execute(resized);
-
-        OPENVINO_ASSERT(processed.get_element_type() == ov::element::f32,
-                        "ImageProcessor must return f32, got ", processed.get_element_type());
-        OPENVINO_ASSERT(processed.get_shape().size() == 4,
-                        "ImageProcessor must return rank-4 [N,C,H,W], got rank ", processed.get_shape().size());
-        const auto& proc_shape = processed.get_shape();
-        ov::Tensor encoder_input(ov::element::f32, {proc_shape[0], proc_shape[1], 1, proc_shape[2], proc_shape[3]});
-        std::memcpy(encoder_input.data<float>(), processed.data<const float>(),
-                    proc_shape[0] * proc_shape[1] * proc_shape[2] * proc_shape[3] * sizeof(float));
+        ov::Tensor encoder_input = video_generation_utils::image_to_encoder_input(image,
+                                                                                  config.height,
+                                                                                  config.width,
+                                                                                  *m_image_resizer,
+                                                                                  *m_image_processor);
 
         ov::Tensor latent = m_vae->encode(encoder_input, config.generator);
 
