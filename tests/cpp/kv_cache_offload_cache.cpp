@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "continuous_batching/cache/block_manager.hpp"
+#include "continuous_batching/cache/file_kv_cache_store.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
 #include "continuous_batching/cache/kv_cache_offload_cache.hpp"
 #include "continuous_batching/cache/kv_cache_offload_manager.hpp"
@@ -58,7 +59,8 @@ std::unique_ptr<KVCacheOffloadCache> make_offload_cache(CacheFixture& fixture, s
     auto backend = std::make_unique<KVCacheOffloadManager>(fixture.cache_manager->get_block_layout(),
                                                            make_offload_config(fixture, num_slots),
                                                            "CPU");
-    return std::make_unique<KVCacheOffloadCache>(*fixture.cache_manager, std::move(backend), /*max_queued_stores=*/8);
+    auto store = std::make_unique<FileKVCacheStore>(std::move(backend));
+    return std::make_unique<KVCacheOffloadCache>(*fixture.cache_manager, std::move(store), /*max_queued_stores=*/8);
 }
 
 BlocksPerLayer make_block_set(int physical_block_id) {

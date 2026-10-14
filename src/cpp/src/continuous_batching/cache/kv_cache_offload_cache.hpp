@@ -16,7 +16,7 @@
 
 #include "continuous_batching/cache/block_manager.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
-#include "continuous_batching/cache/kv_cache_offload_manager.hpp"
+#include "continuous_batching/cache/kv_cache_store.hpp"
 
 namespace ov::genai {
 
@@ -68,7 +68,7 @@ public:
     };
 
     KVCacheOffloadCache(KVCacheManager& cache_manager,
-                        std::unique_ptr<KVCacheOffloadManager> backend,
+                        std::unique_ptr<IKVCacheStore> store,
                         std::size_t max_queued_stores = 2);
     ~KVCacheOffloadCache();
 
@@ -90,36 +90,34 @@ public:
     std::size_t get_num_entries() const;
 
     std::size_t get_num_free_slots() const {
-        return m_backend->get_num_free_slots();
+        return m_store->get_num_free_blocks();
     }
 
     Statistics get_statistics() const;
 
 private:
     struct Entry {
-        std::size_t slot_id = 0;
         std::list<std::size_t>::iterator order_it;
     };
 
     /// A block whose contents are already copied out but not yet on disk.
     struct QueuedStore {
         std::size_t hash = 0;
-        std::size_t slot_id = 0;
         bool reclaimed = false;
         std::vector<uint8_t> data;
     };
 
-    /// @return A slot freed by dropping the oldest entry, or std::nullopt when there is nothing to drop.
-    std::optional<std::size_t> reclaim_oldest_slot();
+    /// @return Whether an existing entry was dropped to free up room for a new one.
+    bool reclaim_oldest_entry();
 
     const QueuedStore* find_queued(std::size_t hash) const;
 
-    void publish(std::size_t hash, std::size_t slot_id, bool reclaimed);
+    void publish(std::size_t hash, bool reclaimed);
 
     void run_writer();
 
     KVCacheManager& m_cache_manager;
-    std::unique_ptr<KVCacheOffloadManager> m_backend;
+    std::unique_ptr<IKVCacheStore> m_store;
     std::unordered_map<std::size_t, Entry> m_entries;
     // Front is the oldest entry and the first to be replaced when the file is full.
     std::list<std::size_t> m_insertion_order;

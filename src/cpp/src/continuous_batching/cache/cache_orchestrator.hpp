@@ -20,6 +20,7 @@
 #include "continuous_batching/cache/cache_type.hpp"
 #include "continuous_batching/cache/i_cache_manager.hpp"
 #include "continuous_batching/cache/block_manager.hpp"
+#include "continuous_batching/cache/file_kv_cache_store.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
 #include "continuous_batching/cache/kv_cache_offload_cache.hpp"
 #include "continuous_batching/cache/linear_attention_cache_manager.hpp"
@@ -128,9 +129,10 @@ public:
                    backend->get_file_path().string().c_str(),
                    backend->get_slot_size(),
                    backend->get_num_slots());
+        auto store = std::make_unique<FileKVCacheStore>(std::move(backend));
 
         m_kv_offload_cache = std::make_unique<KVCacheOffloadCache>(kv_manager,
-                                                                   std::move(backend),
+                                                                   std::move(store),
                                                                    offload_config.buffer_slots);
         m_block_managers.at(CacheType::KV_CACHE)->set_overwritten_block_observer(m_kv_offload_cache.get());
     }
@@ -157,9 +159,10 @@ public:
                    backend->get_file_path().string().c_str(),
                    backend->get_slot_size(),
                    backend->get_num_slots());
+        auto store = std::make_unique<FileKVCacheStore>(std::move(backend));
 
         m_la_offload_cache = std::make_unique<LinearAttentionOffloadCache>(la_manager,
-                                                                           std::move(backend),
+                                                                           std::move(store),
                                                                            offload_config.buffer_slots);
         m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->set_overwritten_block_observer(m_la_offload_cache.get());
     }
