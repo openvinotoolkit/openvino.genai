@@ -304,7 +304,8 @@ void init_tokenizer(py::module_& m) {
                 extra_context_jc = pyutils::py_object_to_json_container(extra_context.value());
             }
 
-            return tok.apply_chat_template(chat_history, add_generation_prompt, chat_template, tools_jc, extra_context_jc, apply_polyfills);
+            return tok.apply_chat_template(chat_history, add_generation_prompt, chat_template, tools_jc, extra_context_jc,
+                                           {ov::genai::apply_polyfills(apply_polyfills)});
         },
             py::arg("history"),
             py::arg("add_generation_prompt"),

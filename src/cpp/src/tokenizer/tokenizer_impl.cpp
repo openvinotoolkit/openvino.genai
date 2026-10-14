@@ -815,8 +815,15 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
     const std::string& chat_template,
     const std::optional<JsonContainer>& tools,
     const std::optional<JsonContainer>& extra_context,
-    bool apply_polyfills
+    const ov::AnyMap& properties
 ) const {
+    for (const auto& [name, value] : properties) {
+        OPENVINO_ASSERT(name == ov::genai::apply_polyfills.name(),
+                        "Unsupported apply_chat_template property: ", name);
+    }
+    minja::chat_template_options minja_options;
+    ov::genai::utils::read_anymap_param(properties, ov::genai::apply_polyfills.name(), minja_options.apply_polyfills);
+
     std::string chat_tpl;
     if (chat_template.empty()) {
         std::lock_guard<std::mutex> lock(m_chat_template_mutex);
@@ -848,9 +855,6 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
     if (!resolved_extra_context.empty()) {
         minja_inputs.extra_context.update(resolved_extra_context);
     }
-    
-    minja::chat_template_options minja_options;
-    minja_options.apply_polyfills = apply_polyfills;
 
     std::string result;
     try {
