@@ -161,7 +161,8 @@ export class ASRPipeline {
    * @param options.generationConfig - Generation config (e.g., language, task, return_timestamps).
    * @param options.streamer - Optional callback invoked for each decoded chunk.
    * - Return a `StreamingStatus` flag to indicate whether generation should be stopped or cancelled
-   * @returns Decoded texts, scores, detected languages, optional timestamps, and perf metrics.
+   * @returns Decoded texts, scores, detected languages, optional timestamps, optional
+   *   model-specific features, and perf metrics.
    */
   async generate(
     rawSpeech: RawSpeechInput,

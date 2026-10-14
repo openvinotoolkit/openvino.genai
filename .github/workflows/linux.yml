@@ -982,7 +982,8 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/src/js/tests/converter_ext
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_COMPILER_LAUNCHER= -DCMAKE_C_COMPILER_LAUNCHER=
           cmake --build build --parallel
 
       - name: Run npm package tests

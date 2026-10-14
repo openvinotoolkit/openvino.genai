@@ -883,6 +883,8 @@ def test_initial_prompt_hotwords(model_descr, sample_from_dataset, pipeline_type
     model_id, path, hf_pipe, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
 
     result = genai_pipe.generate(sample_from_dataset)
+    if pipeline_type == PipelineType.ASR:
+        assert result.features is None
     assert "Kwilter" not in result.texts[0]
     assert "Quilter" in result.texts[0]
 
