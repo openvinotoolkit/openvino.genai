@@ -97,7 +97,8 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
     std::shared_ptr<VisionRegistry> m_vision_registry;
 
     // Tracks if VLMPipeline ctor with passed VLMProcessor was used.
-    // Required for generate(ProcessedInputs) to ensure the inputs are produced by the same processor used for generation.
+    // Required for generate(ProcessedInputs) to ensure the inputs are produced
+    // by the same processor which is used for generation.
     bool m_is_external_processor = false;
 private:
     void finalize_initialization(
