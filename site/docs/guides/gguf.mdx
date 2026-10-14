@@ -12,7 +12,7 @@ The default `GGUF_READER="LEGACY"` supports the `llama`, `qwen2`, and `qwen3` ar
 The GGUF frontend is in preview. Architecture, quantization, tokenizer, and attention-backend support depend on the OpenVINO version. Generated output can differ from other runtimes. If the default legacy reader fails, GenAI includes a suggestion to try the frontend in the error message; retry by selecting it explicitly.
 :::
 
-Prefer models quantized in `Q4_0` format for better performance and accuracy.
+Prefer models quantized in `Q4_0` or `Q8_0` format for better performance and accuracy. Their quantization layouts are closest to those used by OpenVINO.
 
 ## Generate text
 

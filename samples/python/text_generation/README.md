@@ -52,7 +52,7 @@ hf download <model> --local-dir <output_folder>
 
 To run samples with a GGUF model, provide the path to the `.gguf` file via the `model_dir` parameter. The default legacy reader supports `llama`, `qwen2`, and `qwen3` architectures.
 
-Prefer models quantized in `Q4_0` format for better performance and accuracy.
+Prefer models quantized in `Q4_0` or `Q8_0` format for better performance and accuracy. Their quantization layouts are closest to those used by OpenVINO.
 
 To use the OpenVINO GGUF frontend, select it when constructing the pipeline:
 
