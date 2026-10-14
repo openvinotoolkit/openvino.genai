@@ -18,9 +18,13 @@ namespace ov::genai {
 
 namespace {
 
-// Saves the embedder's cache state on construction and restores it on destruction, so a stateless
-// process() call does not change state within shared InputsEmbedder.
-// Temporary solution until cache state is owned by pipeline.
+// VLMProcessor currently wraps stateful InputsEmbedder that is also shared with pipeline,
+// so stateless VLMProcessor.process() must not mutate this shared state.
+// This guard saves InputsEmbedder's cache state (that mirrors KV cache) on construction and restores on destruction,
+// keeping process() non-destructive to stateful chat running on the same engine
+// (e.g. multi-turn pipeline.generate(ChatHistory) interleaved with processor.process(...)).
+// Temporary solution - to be removed when InputsEmbedder is decomposed into stateless per-model VLMProcessorImpl
+// and cache state ownership moves to pipeline, so process() becomes truly stateless.
 class ScopedCacheState {
 public:
     explicit ScopedCacheState(utils::CacheState& cache_state)
