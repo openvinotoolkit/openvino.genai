@@ -882,32 +882,82 @@ def test_apply_chat_template_polyfills(tmp_path):
         ]
 
     string_args_history = make_history('{"city": "Paris", "unit": "celsius"}')
-    expected_tool_call = (
-        "<tool_call><name>get_weather</name>"
-        '<parameter name="city">Paris</parameter>'
-        '<parameter name="unit">celsius</parameter>'
-        "</tool_call>"
-    )
+    object_args_history = make_history({"city": "Paris", "unit": "celsius"})
+
+    expected_output_polyfills = """user: SYSTEM_PROMPT
+
+You can call any of the following tools to satisfy the user's requests: [
+  {
+    "type": "function",
+    "function": {
+      "name": "get_weather",
+      "description": "Get the current weather in a city",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "city"
+        ]
+      }
+    }
+  }
+]
+
+Example tool call syntax:
+
+assistant: {
+  "tool_calls": [
+    {
+      "name": "tool_name",
+      "arguments": {
+        "arg1": "some_value"
+      },
+      "id": "call_1___"
+    }
+  ]
+}
+
+
+What is the weather in Paris?assistant: {
+  "tool_calls": [
+    {
+      "name": "get_weather",
+      "arguments": {
+        "city": "Paris",
+        "unit": "celsius"
+      },
+      "id": "call_1"
+    }
+  ]
+}user: {
+  "tool_response": {
+    "tool": "get_weather",
+    "content": "TOOL_RESULT_22C",
+    "tool_call_id": "call_1"
+  }
+}"""
 
     with_polyfills = tokenizer.apply_chat_template(
         string_args_history, add_generation_prompt=False, chat_template=template, tools=tools
     )
-    assert "SYSTEM_PROMPT" in with_polyfills
-    assert "You can call any of the following tools" in with_polyfills
-    assert "<tool_call>" not in with_polyfills
-    assert '"tool_calls"' in with_polyfills
-    assert '"city": "Paris"' in with_polyfills
-    assert '"tool_response"' in with_polyfills
-    assert '"content": "TOOL_RESULT_22C"' in with_polyfills
-    assert "tool: TOOL_RESULT_22C" not in with_polyfills
+
+    assert expected_output_polyfills == with_polyfills
+
+    object_args_with_polyfills = tokenizer.apply_chat_template(
+        object_args_history, add_generation_prompt=False, chat_template=template, tools=tools
+    )
+
+    assert expected_output_polyfills == object_args_with_polyfills
 
     without_polyfills = tokenizer.apply_chat_template(
         string_args_history, add_generation_prompt=False, chat_template=template, tools=tools, apply_polyfills=False
     )
-    assert "SYSTEM_PROMPT" not in without_polyfills
-    assert "You can call any of the following tools" not in without_polyfills
-    assert "<tool_call>" not in without_polyfills
-    assert "tool: TOOL_RESULT_22C" in without_polyfills
+    print(without_polyfills)
+    assert "user: What is the weather in Paris?assistant:tool: TOOL_RESULT_22C" == without_polyfills
 
     object_args_without_polyfills = tokenizer.apply_chat_template(
         make_history({"city": "Paris", "unit": "celsius"}),
@@ -916,7 +966,10 @@ def test_apply_chat_template_polyfills(tmp_path):
         tools=tools,
         apply_polyfills=False,
     )
-    assert expected_tool_call in object_args_without_polyfills
+    assert (
+        'user: What is the weather in Paris?assistant:<tool_call><name>get_weather</name><parameter name="city">Paris</parameter>'
+        '<parameter name="unit">celsius</parameter></tool_call>\ntool: TOOL_RESULT_22C' == object_args_without_polyfills
+    )
 
 
 @pytest.mark.parametrize(

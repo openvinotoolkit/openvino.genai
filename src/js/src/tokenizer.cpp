@@ -110,7 +110,17 @@ Napi::Value TokenizerWrapper::apply_chat_template(const Napi::CallbackInfo& info
         if (info.Length() > 4 && !info[4].IsUndefined()) {
             extra_context = ov::genai::JsonContainer::from_json_string(json_stringify(info.Env(), info[4]));
         }
-        auto result = this->_tokenizer.apply_chat_template(history, add_generation_prompt, chat_template, tools, extra_context);
+        bool apply_polyfills = true;
+        if (info.Length() > 5 && !info[5].IsUndefined()) {
+            OPENVINO_ASSERT(info[5].IsBoolean(), "The argument 'applyPolyfills' must be a boolean");
+            apply_polyfills = info[5].ToBoolean();
+        }
+        auto result = this->_tokenizer.apply_chat_template(history,
+                                                           add_generation_prompt,
+                                                           chat_template,
+                                                           tools,
+                                                           extra_context,
+                                                           apply_polyfills);
         return Napi::String::New(info.Env(), result);
     } catch (std::exception& err) {
         Napi::Error::New(info.Env(), err.what()).ThrowAsJavaScriptException();
