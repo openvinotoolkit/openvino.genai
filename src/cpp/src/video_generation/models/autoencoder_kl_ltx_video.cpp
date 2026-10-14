@@ -249,9 +249,17 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
                                                       int64_t width) {
     OPENVINO_ASSERT(m_decoder_model, "Model has been already compiled. Cannot reshape already compiled model");
     OPENVINO_ASSERT(height > 0, "Height must be positive");
-    OPENVINO_ASSERT(height % 32 == 0, "Height must be divisible by 32 but got ", height);
+    OPENVINO_ASSERT(height % m_config.spatial_compression_ratio == 0,
+                    "Height must be divisible by ",
+                    m_config.spatial_compression_ratio,
+                    " but got ",
+                    height);
     OPENVINO_ASSERT(width > 0, "Width must be positive");
-    OPENVINO_ASSERT(width % 32 == 0, "Width must be divisible by 32 but got ", width);
+    OPENVINO_ASSERT(width % m_config.spatial_compression_ratio == 0,
+                    "Width must be divisible by ",
+                    m_config.spatial_compression_ratio,
+                    " but got ",
+                    width);
 
     if (m_encoder_model) {
         ov::PartialShape input_shape = m_encoder_model->input(0).get_partial_shape();

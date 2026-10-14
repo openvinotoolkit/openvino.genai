@@ -589,6 +589,19 @@ class TestVideoGenerationPipelines:
         result = pipe.generate("test prompt", negative_prompt="bad quality", num_inference_steps=2)
         assert result.video.shape == [1, 9, 32, 32, 3]
 
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID], indirect=True)
+    def test_reshape_uses_configured_spatial_compression_ratio(self, video_generation_model, tmp_path):
+        model_path = tmp_path / "ltx-spatial-compression-ratio"
+        shutil.copytree(video_generation_model, model_path)
+
+        config_path = model_path / "vae_decoder" / "config.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config["spatial_compression_ratio"] = 16
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+
+        pipe = ov_genai.Text2VideoPipeline(model_path)
+        pipe.reshape(1, 9, 16, 16, 3.0)
+
     @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
     def test_reshape_multiple_videos_with_cfg(self, video_generation_model):
         """Widest timestep shape: batch is num_videos_per_prompt * 2 when CFG is enabled."""

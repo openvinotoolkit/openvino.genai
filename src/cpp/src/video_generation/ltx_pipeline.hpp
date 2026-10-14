@@ -49,29 +49,6 @@ const VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
     std::nullopt             // decode_noise_scale
 };
 
-void check_inputs(const VideoGenerationConfig& generation_config,
-                  size_t vae_scale_factor,
-                  bool timestep_conditioning) {
-    utils::validate_generation_config(generation_config);
-    const float decode_noise_scale =
-        generation_config.decode_noise_scale.value_or(generation_config.decode_timestep);
-    OPENVINO_ASSERT(!timestep_conditioning || decode_noise_scale == 0.0f || generation_config.generator,
-                    "A generator is required when decode_noise_scale is non-zero");
-    OPENVINO_ASSERT(timestep_conditioning ||
-                        (generation_config.decode_timestep == 0.0f && decode_noise_scale == 0.0f),
-                    "decode_timestep and decode_noise_scale require a timestep-conditioned VAE decoder");
-    video_generation_utils::check_video_size(generation_config.height, generation_config.width, 32);
-
-    OPENVINO_ASSERT(generation_config.max_sequence_length <= 512,
-                    "T5's 'max_sequence_length' must be less or equal to 512");
-    OPENVINO_ASSERT((generation_config.height % vae_scale_factor == 0 || generation_config.height < 0) &&
-                        (generation_config.width % vae_scale_factor == 0 || generation_config.width < 0),
-                    "Both 'width' and 'height' must be divisible by ",
-                    vae_scale_factor);
-    OPENVINO_ASSERT(!generation_config.audio_guidance_scale.has_value(),
-                    "'audio_guidance_scale' is not supported for LTX-Video pipelines");
-}
-
 }  // anonymous namespace
 
 namespace ov::genai {
@@ -97,6 +74,32 @@ class LTXPipeline : public VideoPipeline {
     VideoPipelineType m_pipeline_type = VideoPipelineType::TEXT_2_VIDEO;
     std::shared_ptr<ImageResizer> m_image_resizer = nullptr;
     std::shared_ptr<ImageProcessor> m_image_processor = nullptr;
+
+    void check_inputs(const VideoGenerationConfig& generation_config) const {
+        utils::validate_generation_config(generation_config);
+        const float decode_noise_scale =
+            generation_config.decode_noise_scale.value_or(generation_config.decode_timestep);
+        const auto& vae_config = m_vae->get_config();
+        OPENVINO_ASSERT(!vae_config.timestep_conditioning || decode_noise_scale == 0.0f ||
+                            generation_config.generator,
+                        "A generator is required when decode_noise_scale is non-zero");
+        OPENVINO_ASSERT(vae_config.timestep_conditioning ||
+                            (generation_config.decode_timestep == 0.0f && decode_noise_scale == 0.0f),
+                        "decode_timestep and decode_noise_scale require a timestep-conditioned VAE decoder");
+        video_generation_utils::check_video_size(generation_config.height,
+                                                 generation_config.width,
+                                                 vae_config.spatial_compression_ratio);
+
+        OPENVINO_ASSERT(generation_config.max_sequence_length <= 512,
+                        "T5's 'max_sequence_length' must be less or equal to 512");
+        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
+        OPENVINO_ASSERT((generation_config.height % vae_scale_factor == 0 || generation_config.height < 0) &&
+                            (generation_config.width % vae_scale_factor == 0 || generation_config.width < 0),
+                        "Both 'width' and 'height' must be divisible by ",
+                        vae_scale_factor);
+        OPENVINO_ASSERT(!generation_config.audio_guidance_scale.has_value(),
+                        "'audio_guidance_scale' is not supported for LTX-Video pipelines");
+    }
 
     void prepare_generation_decode_noise(const ov::Shape& shape,
                                          const VideoGenerationConfig& generation_config) {
@@ -439,11 +442,8 @@ public:
             merged_generation_config, do_classifier_free_guidance(merged_generation_config.guidance_scale));
         const bool use_classifier_free_guidance = batch_size_multiplier > 1;
 
-        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const auto& transformer_config = m_transformer->get_config();
-        check_inputs(merged_generation_config,
-                     vae_scale_factor,
-                     m_vae->get_config().timestep_conditioning);
+        check_inputs(merged_generation_config);
 
         m_transformer->set_adapters(merged_generation_config.adapters);
 
@@ -654,11 +654,8 @@ public:
             merged_generation_config, do_classifier_free_guidance(merged_generation_config.guidance_scale));
         const bool use_classifier_free_guidance = batch_size_multiplier > 1;
 
-        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const auto& transformer_config = m_transformer->get_config();
-        check_inputs(merged_generation_config,
-                     vae_scale_factor,
-                     m_vae->get_config().timestep_conditioning);
+        check_inputs(merged_generation_config);
 
         m_transformer->set_adapters(merged_generation_config.adapters);
 
@@ -834,9 +831,7 @@ public:
 
     VideoGenerationResult decode(const ov::Tensor& latent) override {
         VideoGenerationConfig generation_config = m_custom_generation_config;
-        check_inputs(generation_config,
-                     m_vae->get_vae_scale_factor(),
-                     m_vae->get_config().timestep_conditioning);
+        check_inputs(generation_config);
         VAEDecodeInputs decode_inputs = prepare_vae_decode_inputs(latent, generation_config);
 
         const auto decode_start = std::chrono::steady_clock::now();
@@ -856,7 +851,9 @@ public:
                  int64_t height,
                  int64_t width,
                  float guidance_scale) override {
-        video_generation_utils::check_video_size(height, width, 32);
+        video_generation_utils::check_video_size(height,
+                             width,
+                             m_vae->get_config().spatial_compression_ratio);
 
         VideoGenerationConfig reshaped_config = m_generation_config;
         reshaped_config.num_videos_per_prompt = num_videos_per_prompt;
