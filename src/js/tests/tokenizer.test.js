@@ -62,11 +62,72 @@ const makePolyfillsHistory = (args) => [
   { role: "tool", name: "get_weather", tool_call_id: "call_1", content: "TOOL_RESULT_22C" },
 ];
 const polyfillsStringArgsHistory = makePolyfillsHistory('{"city": "Paris", "unit": "celsius"}');
-const polyfillsExpectedToolCall =
+const polyfillsObjectArgsHistory = makePolyfillsHistory({ city: "Paris", unit: "celsius" });
+const polyfillsExpectedWithPolyfills = `user: SYSTEM_PROMPT
+
+You can call any of the following tools to satisfy the user's requests: [
+  {
+    "type": "function",
+    "function": {
+      "name": "get_weather",
+      "description": "Get the current weather in a city",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "city"
+        ]
+      }
+    }
+  }
+]
+
+Example tool call syntax:
+
+assistant: {
+  "tool_calls": [
+    {
+      "name": "tool_name",
+      "arguments": {
+        "arg1": "some_value"
+      },
+      "id": "call_1___"
+    }
+  ]
+}
+
+
+What is the weather in Paris?assistant: {
+  "tool_calls": [
+    {
+      "name": "get_weather",
+      "arguments": {
+        "city": "Paris",
+        "unit": "celsius"
+      },
+      "id": "call_1"
+    }
+  ]
+}user: {
+  "tool_response": {
+    "tool": "get_weather",
+    "content": "TOOL_RESULT_22C",
+    "tool_call_id": "call_1"
+  }
+}`;
+const polyfillsExpectedStringArgsWithoutPolyfills =
+  "user: What is the weather in Paris?assistant:tool: TOOL_RESULT_22C";
+const polyfillsExpectedObjectArgsWithoutPolyfills =
+  "user: What is the weather in Paris?assistant:" +
   "<tool_call><name>get_weather</name>" +
   '<parameter name="city">Paris</parameter>' +
   '<parameter name="unit">celsius</parameter>' +
-  "</tool_call>";
+  "</tool_call>\n" +
+  "tool: TOOL_RESULT_22C";
 
 describe("tokenizer constructors", () => {
   it("tokenizer constructors with one argument", () => {
@@ -271,39 +332,27 @@ describe("tokenizer functions", async () => {
 
   it("applyChatTemplate applies polyfills by default", () => {
     const templatedHistory = tokenizer.applyChatTemplate(
-      polyfillsStringArgsHistory,
+      polyfillsObjectArgsHistory,
       false,
       polyfillsChatTemplate,
       polyfillsTools,
     );
-    assert.ok(templatedHistory.includes("SYSTEM_PROMPT"));
-    assert.ok(templatedHistory.includes("You can call any of the following tools"));
-    assert.ok(!templatedHistory.includes("<tool_call>"));
-    assert.ok(templatedHistory.includes('"tool_calls"'));
-    assert.ok(templatedHistory.includes('"city": "Paris"'));
-    assert.ok(templatedHistory.includes('"tool_response"'));
-    assert.ok(!templatedHistory.includes("tool: TOOL_RESULT_22C"));
+    assert.strictEqual(templatedHistory, polyfillsExpectedWithPolyfills);
   });
 
-  it("applyChatTemplate with true applyPolyfills matches the default", () => {
-    const byDefault = tokenizer.applyChatTemplate(
-      polyfillsStringArgsHistory,
-      false,
-      polyfillsChatTemplate,
-      polyfillsTools,
-    );
-    const explicit = tokenizer.applyChatTemplate(
-      polyfillsStringArgsHistory,
+  it("applyChatTemplate with true applyPolyfills applies polyfills", () => {
+    const templatedHistory = tokenizer.applyChatTemplate(
+      polyfillsObjectArgsHistory,
       false,
       polyfillsChatTemplate,
       polyfillsTools,
       undefined,
       true,
     );
-    assert.strictEqual(explicit, byDefault);
+    assert.strictEqual(templatedHistory, polyfillsExpectedWithPolyfills);
   });
 
-  it("applyChatTemplate with false applyPolyfills renders the template as written", () => {
+  it("applyChatTemplate with false applyPolyfills renders string tool call arguments", () => {
     const templatedHistory = tokenizer.applyChatTemplate(
       polyfillsStringArgsHistory,
       false,
@@ -312,22 +361,19 @@ describe("tokenizer functions", async () => {
       undefined,
       false,
     );
-    assert.ok(!templatedHistory.includes("SYSTEM_PROMPT"));
-    assert.ok(!templatedHistory.includes("You can call any of the following tools"));
-    assert.ok(!templatedHistory.includes("<tool_call>"));
-    assert.ok(templatedHistory.includes("tool: TOOL_RESULT_22C"));
+    assert.strictEqual(templatedHistory, polyfillsExpectedStringArgsWithoutPolyfills);
   });
 
   it("applyChatTemplate with false applyPolyfills renders object tool call arguments", () => {
     const templatedHistory = tokenizer.applyChatTemplate(
-      makePolyfillsHistory({ city: "Paris", unit: "celsius" }),
+      polyfillsObjectArgsHistory,
       false,
       polyfillsChatTemplate,
       polyfillsTools,
       undefined,
       false,
     );
-    assert.ok(templatedHistory.includes(polyfillsExpectedToolCall));
+    assert.strictEqual(templatedHistory, polyfillsExpectedObjectArgsWithoutPolyfills);
   });
 
   it("applyChatTemplate with incorrect type of applyPolyfills", () => {
