@@ -1460,6 +1460,7 @@ class EncodedGenerationResult:
             IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
             CANCEL = 3 - Status set when generation handle is cancelled. The last prompt and all generated tokens will be dropped from history, KV cache will include history but last step.
             STOP = 4 - Status set when generation handle is stopped. History will be kept, KV cache will include the last prompt and generated tokens.
+            FAILED = 5 - Status set after an unexpected request failure. Queued outputs remain readable before read() rethrows the original failure.
         perf_metrics: Performance metrics for each generation result.
         extended_perf_metrics: performance pipeline specifics metrics,
                                applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
@@ -2140,19 +2141,27 @@ class GenerationFinishReason:
         ...
 class GenerationHandle:
     def can_read(self) -> bool:
-        ...
+        """
+        Return whether output or a stored failure is ready to be read.
+        """
     def cancel(self) -> None:
         ...
     def get_perf_metrics(self) -> PerfMetrics:
         ...
     def get_status(self) -> GenerationStatus:
-        ...
+        """
+        Return the current status without raising a stored generation failure.
+        """
     def get_vlm_perf_metrics(self) -> VLMPerfMetrics:
         ...
     def read(self) -> dict[int, GenerationOutput]:
-        ...
+        """
+        Read one queued iteration, or raise the original failure after queued output is drained.
+        """
     def read_all(self) -> list[GenerationOutput]:
-        ...
+        """
+        Read through normal completion, or drain queued output and raise the original failure.
+        """
     def stop(self, finish_reason: GenerationFinishReason = ...) -> None:
         ...
 class GenerationOutput:
@@ -2191,6 +2200,7 @@ class GenerationResult:
             IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
             CANCEL = 3 - Status set when generation handle is cancelled. The last prompt and all generated tokens will be dropped from history, KV cache will include history but last step.
             STOP = 4 - Status set when generation handle is stopped. History will be kept, KV cache will include the last prompt and generated tokens.
+            FAILED = 5 - Status set after an unexpected request failure. Queued outputs remain readable before read() rethrows the original failure.
         perf_metrics: Performance metrics for each generation result.
         extended_perf_metrics: performance pipeline specifics metrics,
                                applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
@@ -2225,6 +2235,14 @@ class GenerationResult:
         ...
 class GenerationStatus:
     """
+    
+            Generation request state.
+    
+            FAILED preserves the original exception for read() and read_all(). Output queued before
+            failure is read first. Failure overrides a pending STOP or CANCEL, while FINISHED and
+            IGNORED are final and cannot be replaced by a later failure.
+        
+    
     Members:
     
       RUNNING
@@ -2236,13 +2254,16 @@ class GenerationStatus:
       CANCEL
     
       STOP
+    
+      FAILED
     """
     CANCEL: typing.ClassVar[GenerationStatus]  # value = <GenerationStatus.CANCEL: 3>
+    FAILED: typing.ClassVar[GenerationStatus]  # value = <GenerationStatus.FAILED: 5>
     FINISHED: typing.ClassVar[GenerationStatus]  # value = <GenerationStatus.FINISHED: 1>
     IGNORED: typing.ClassVar[GenerationStatus]  # value = <GenerationStatus.IGNORED: 2>
     RUNNING: typing.ClassVar[GenerationStatus]  # value = <GenerationStatus.RUNNING: 0>
     STOP: typing.ClassVar[GenerationStatus]  # value = <GenerationStatus.STOP: 4>
-    __members__: typing.ClassVar[dict[str, GenerationStatus]]  # value = {'RUNNING': <GenerationStatus.RUNNING: 0>, 'FINISHED': <GenerationStatus.FINISHED: 1>, 'IGNORED': <GenerationStatus.IGNORED: 2>, 'CANCEL': <GenerationStatus.CANCEL: 3>, 'STOP': <GenerationStatus.STOP: 4>}
+    __members__: typing.ClassVar[dict[str, GenerationStatus]]  # value = {'RUNNING': <GenerationStatus.RUNNING: 0>, 'FINISHED': <GenerationStatus.FINISHED: 1>, 'IGNORED': <GenerationStatus.IGNORED: 2>, 'CANCEL': <GenerationStatus.CANCEL: 3>, 'STOP': <GenerationStatus.STOP: 4>, 'FAILED': <GenerationStatus.FAILED: 5>}
     def __eq__(self, other: typing.Any) -> bool:
         ...
     def __getstate__(self) -> int:
@@ -4557,12 +4578,16 @@ class SpeechGenerationConfig(GenerationConfig):
         :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
         :type threshold: float
     
+        Shared parameters:
+        :param language: language selector used by speech backends.
+                         Empty string delegates to backend default handling:
+                         - Kokoro uses "en-us".
+                         - Qwen3-TTS resolves to "auto".
+        :type language: str
+    
         Kokoro-specific parameters:
         :param speed: speech speed multiplier.
         :type speed: float
-    
-        :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
-        :type language: str
     
         :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
         :type max_phoneme_length: int
@@ -4577,8 +4602,54 @@ class SpeechGenerationConfig(GenerationConfig):
                                              omit this key instead of passing None because kwargs-to-AnyMap
                                              conversion rejects None values.
         :type phonemize_fallback_model_dir: str | None
+    
+        Qwen3-TTS-specific parameters:
+        :param speaker: predefined speaker name for Qwen3 CustomVoice variants.
+        :type speaker: str
+    
+        :param instruct: optional instruction text that controls speaking style.
+        :type instruct: str
+    
+        :param non_streaming_mode: Qwen3 prompt assembly mode.
+                                   ``True`` means non-streaming prompt assembly.
+                                   ``False`` means streaming-style prompt assembly.
+        :type non_streaming_mode: bool
+    
+        :param subtalker_dosample: whether to sample residual code groups with Qwen3 subtalker.
+        :type subtalker_dosample: bool
+    
+        :param subtalker_top_k: top-k parameter for Qwen3 subtalker sampling.
+        :type subtalker_top_k: int
+    
+        :param subtalker_top_p: top-p parameter for Qwen3 subtalker sampling.
+        :type subtalker_top_p: float
+    
+        :param subtalker_temperature: temperature parameter for Qwen3 subtalker sampling.
+        :type subtalker_temperature: float
+    
+        Qwen3 Base voice-clone over ``generate``:
+        :param ref_text: reference transcript for ICL mode.
+        :type ref_text: str
+    
+        :param ref_audio: reference audio waveform tensor used to internally derive Qwen3 Base clone artifacts.
+                               Expected shape: [T], [1, T], or [1, 1, T].
+                               Expected dtype: float32.
+                               Expected sample rate: 24000 Hz.
+                               OV GenAI does not decode audio files or resample this tensor.
+        :type ref_audio: openvino.Tensor
+    
+        :param ref_codec_ids: reference codec ids tensor for ICL mode, shape [T, G] or [1, T, G].
+        :type ref_codec_ids: openvino.Tensor
+    
     """
+    instruct: str
     language: str
+    non_streaming_mode: bool
+    ref_audio: openvino._pyopenvino.Tensor
+    ref_codec_ids: openvino._pyopenvino.Tensor
+    ref_text: str
+    speaker: str
+    subtalker_dosample: bool
     @typing.overload
     def __init__(self, json_path: os.PathLike | str | bytes) -> None:
         """
@@ -4618,6 +4689,24 @@ class SpeechGenerationConfig(GenerationConfig):
         ...
     @speed.setter
     def speed(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def subtalker_temperature(self) -> float:
+        ...
+    @subtalker_temperature.setter
+    def subtalker_temperature(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def subtalker_top_k(self) -> int:
+        ...
+    @subtalker_top_k.setter
+    def subtalker_top_k(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def subtalker_top_p(self) -> float:
+        ...
+    @subtalker_top_p.setter
+    def subtalker_top_p(self, arg0: typing.SupportsFloat) -> None:
         ...
     @property
     def threshold(self) -> float:
@@ -5237,6 +5326,26 @@ class TalkerBase:
             generate(), get_speech_config(), set_speech_config(), list_speakers(), and
             get_speaker_embedding().
     """
+    def __init__(self) -> None:
+        ...
+    @typing.overload
+    def generate(self, vlm_result: VLMDecodedResults, talker_speech_config: OmniTalkerSpeechConfig, speech_streamer: collections.abc.Callable[[openvino._pyopenvino.Tensor], StreamingStatus] | openvino_genai.py_openvino_genai.OmniSpeechStreamerBase | None = None) -> TalkerResults:
+        """
+        Run speech generation against a VLM result. Override in a subclass. Returns TalkerResults.
+        """
+    @typing.overload
+    def generate(self, vlm_result: VLMDecodedResults, **kwargs) -> TalkerResults:
+        """
+                                Run speech generation against a VLM result, configured by keyword arguments.
+        
+                                Property-bag form of generate(). Recognized kwargs are the OmniTalkerSpeechConfig
+                                fields (return_audio, speaker, speaker_embedding, audio_chunk_frames,
+                                max_new_tokens, rng_seed, talker_temperature, talker_top_k,
+                                talker_repetition_penalty, cp_temperature, cp_top_k), plus speech_streamer.
+                                Unrecognized keys raise. Fields not given fall back to get_speech_config().
+        
+                                :return: TalkerResults
+        """
     def get_speaker_embedding(self, name: str) -> openvino._pyopenvino.Tensor:
         ...
     def get_speech_config(self) -> OmniTalkerSpeechConfig:
@@ -5447,6 +5556,16 @@ class Text2SpeechDecodedResults:
     
         :param perf_metrics: performance metrics
         :type perf_metrics: SpeechGenerationPerfMetrics
+    
+        :param speaker_embedding: Qwen3-TTS Base voice-clone speaker embedding used for generation.
+                                  Persist and pass it back as the ``speaker_embedding`` argument to reuse a
+                                  cloned voice without re-encoding reference audio. Empty for other backends.
+        :type speaker_embedding: openvino.Tensor
+    
+        :param ref_codec_ids: Qwen3-TTS Base reference codec ids used for ICL-mode cloning.
+                                          Persist and pass it back via the ``ref_codec_ids``
+                                          property to reuse the reference prompt. Empty otherwise.
+        :type ref_codec_ids: openvino.Tensor
     """
     def __init__(self) -> None:
         ...
@@ -5455,6 +5574,12 @@ class Text2SpeechDecodedResults:
         ...
     @property
     def perf_metrics(self) -> SpeechGenerationPerfMetrics:
+        ...
+    @property
+    def ref_codec_ids(self) -> openvino._pyopenvino.Tensor:
+        ...
+    @property
+    def speaker_embedding(self) -> openvino._pyopenvino.Tensor:
         ...
     @property
     def speeches(self) -> list[openvino._pyopenvino.Tensor]:
@@ -5477,10 +5602,14 @@ class Text2SpeechPipeline:
             :param text_or_texts: input text(s) for which to generate speech
             :type text_or_texts: str or list[str]
         
-            :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
-                                     voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
-                                     `Matthijs/cmu-arctic-xvectors` dataset is used by default. Kokoro backend requires callers
-                                     to prepare this tensor externally and pass it explicitly.
+            :param speaker_embedding: speaker embedding tensor representing the target voice characteristics.
+                                      Behavior depends on backend/model variant:
+                                        - SpeechT5: optional. If omitted, a default x-vector is used.
+                                        - Kokoro: required.
+                                        - Qwen3-TTS Base: optional. Can be provided directly, or derived internally
+                                            from ``ref_audio`` passed via properties.
+                                        - Qwen3-TTS CustomVoice: ignored and should not be provided.
+                                        - Qwen3-TTS VoiceDesign: ignored and should not be provided.
             :type speaker_embedding: openvino.Tensor or None
         
             :param properties: speech generation parameters specified as properties
@@ -5503,12 +5632,16 @@ class Text2SpeechPipeline:
             :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
             :type threshold: float
         
+            Shared parameters:
+            :param language: language selector used by speech backends.
+                             Empty string delegates to backend default handling:
+                             - Kokoro uses "en-us".
+                             - Qwen3-TTS resolves to "auto".
+            :type language: str
+        
             Kokoro-specific parameters:
             :param speed: speech speed multiplier.
             :type speed: float
-        
-            :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
-            :type language: str
         
             :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
             :type max_phoneme_length: int
@@ -5523,6 +5656,44 @@ class Text2SpeechPipeline:
                                                  omit this key instead of passing None because kwargs-to-AnyMap
                                                  conversion rejects None values.
             :type phonemize_fallback_model_dir: str | None
+        
+            Qwen3-TTS-specific parameters:
+            :param speaker: predefined speaker name for Qwen3 CustomVoice variants.
+            :type speaker: str
+        
+            :param instruct: optional instruction text that controls speaking style.
+            :type instruct: str
+        
+            :param non_streaming_mode: Qwen3 prompt assembly mode.
+                                       ``True`` means non-streaming prompt assembly.
+                                       ``False`` means streaming-style prompt assembly.
+            :type non_streaming_mode: bool
+        
+            :param subtalker_dosample: whether to sample residual code groups with Qwen3 subtalker.
+            :type subtalker_dosample: bool
+        
+            :param subtalker_top_k: top-k parameter for Qwen3 subtalker sampling.
+            :type subtalker_top_k: int
+        
+            :param subtalker_top_p: top-p parameter for Qwen3 subtalker sampling.
+            :type subtalker_top_p: float
+        
+            :param subtalker_temperature: temperature parameter for Qwen3 subtalker sampling.
+            :type subtalker_temperature: float
+        
+            Qwen3 Base voice-clone over ``generate``:
+            :param ref_text: reference transcript for ICL mode.
+            :type ref_text: str
+        
+            :param ref_audio: reference audio waveform tensor used to internally derive Qwen3 Base clone artifacts.
+                                   Expected shape: [T], [1, T], or [1, 1, T].
+                                   Expected dtype: float32.
+                                   Expected sample rate: 24000 Hz.
+                                   OV GenAI does not decode audio files or resample this tensor.
+            :type ref_audio: openvino.Tensor
+        
+            :param ref_codec_ids: reference codec ids tensor for ICL mode, shape [T, G] or [1, T, G].
+            :type ref_codec_ids: openvino.Tensor
         """
     @typing.overload
     def generate(self, texts: collections.abc.Sequence[str], speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
@@ -5532,10 +5703,14 @@ class Text2SpeechPipeline:
             :param text_or_texts: input text(s) for which to generate speech
             :type text_or_texts: str or list[str]
         
-            :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
-                                     voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
-                                     `Matthijs/cmu-arctic-xvectors` dataset is used by default. Kokoro backend requires callers
-                                     to prepare this tensor externally and pass it explicitly.
+            :param speaker_embedding: speaker embedding tensor representing the target voice characteristics.
+                                      Behavior depends on backend/model variant:
+                                        - SpeechT5: optional. If omitted, a default x-vector is used.
+                                        - Kokoro: required.
+                                        - Qwen3-TTS Base: optional. Can be provided directly, or derived internally
+                                            from ``ref_audio`` passed via properties.
+                                        - Qwen3-TTS CustomVoice: ignored and should not be provided.
+                                        - Qwen3-TTS VoiceDesign: ignored and should not be provided.
             :type speaker_embedding: openvino.Tensor or None
         
             :param properties: speech generation parameters specified as properties
@@ -5558,12 +5733,16 @@ class Text2SpeechPipeline:
             :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
             :type threshold: float
         
+            Shared parameters:
+            :param language: language selector used by speech backends.
+                             Empty string delegates to backend default handling:
+                             - Kokoro uses "en-us".
+                             - Qwen3-TTS resolves to "auto".
+            :type language: str
+        
             Kokoro-specific parameters:
             :param speed: speech speed multiplier.
             :type speed: float
-        
-            :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
-            :type language: str
         
             :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
             :type max_phoneme_length: int
@@ -5578,12 +5757,50 @@ class Text2SpeechPipeline:
                                                  omit this key instead of passing None because kwargs-to-AnyMap
                                                  conversion rejects None values.
             :type phonemize_fallback_model_dir: str | None
+        
+            Qwen3-TTS-specific parameters:
+            :param speaker: predefined speaker name for Qwen3 CustomVoice variants.
+            :type speaker: str
+        
+            :param instruct: optional instruction text that controls speaking style.
+            :type instruct: str
+        
+            :param non_streaming_mode: Qwen3 prompt assembly mode.
+                                       ``True`` means non-streaming prompt assembly.
+                                       ``False`` means streaming-style prompt assembly.
+            :type non_streaming_mode: bool
+        
+            :param subtalker_dosample: whether to sample residual code groups with Qwen3 subtalker.
+            :type subtalker_dosample: bool
+        
+            :param subtalker_top_k: top-k parameter for Qwen3 subtalker sampling.
+            :type subtalker_top_k: int
+        
+            :param subtalker_top_p: top-p parameter for Qwen3 subtalker sampling.
+            :type subtalker_top_p: float
+        
+            :param subtalker_temperature: temperature parameter for Qwen3 subtalker sampling.
+            :type subtalker_temperature: float
+        
+            Qwen3 Base voice-clone over ``generate``:
+            :param ref_text: reference transcript for ICL mode.
+            :type ref_text: str
+        
+            :param ref_audio: reference audio waveform tensor used to internally derive Qwen3 Base clone artifacts.
+                                   Expected shape: [T], [1, T], or [1, 1, T].
+                                   Expected dtype: float32.
+                                   Expected sample rate: 24000 Hz.
+                                   OV GenAI does not decode audio files or resample this tensor.
+            :type ref_audio: openvino.Tensor
+        
+            :param ref_codec_ids: reference codec ids tensor for ICL mode, shape [T, G] or [1, T, G].
+            :type ref_codec_ids: openvino.Tensor
         """
     def get_generation_config(self) -> SpeechGenerationConfig:
         ...
     def get_speaker_embedding_shape(self) -> openvino._pyopenvino.Shape:
         """
-        Get the expected speaker embedding shape for the loaded model. SpeechT5: Shape{1, 512}. Kokoro: Shape{510, 1, 256}
+        Get the expected speaker embedding shape for the loaded model. SpeechT5: Shape{1, 512}. Kokoro: Shape{510, 1, 256}. Qwen3 Base: Shape{1, 1, D}.
         """
     def set_generation_config(self, config: SpeechGenerationConfig) -> None:
         ...
@@ -6235,13 +6452,13 @@ class VLMPipeline(VLMPipelineBase):
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type streamer: Callable[[str], bool], ov.genai.StreamerBase
         
-            :param audio_streamer: callback or OmniSpeechStreamerBase to receive audio chunks during speech generation.
+            :param speech_streamer: callback or OmniSpeechStreamerBase to receive audio chunks during speech generation.
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
-            :type audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
+            :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
             :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
                 Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
-                Ignored when audio_streamer is not provided.
+                Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
@@ -6277,13 +6494,13 @@ class VLMPipeline(VLMPipelineBase):
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type streamer: Callable[[str], bool], ov.genai.StreamerBase
         
-            :param audio_streamer: callback or OmniSpeechStreamerBase to receive audio chunks during speech generation.
+            :param speech_streamer: callback or OmniSpeechStreamerBase to receive audio chunks during speech generation.
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
-            :type audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
+            :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
             :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
                 Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
-                Ignored when audio_streamer is not provided.
+                Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
@@ -6319,13 +6536,13 @@ class VLMPipeline(VLMPipelineBase):
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type streamer: Callable[[str], bool], ov.genai.StreamerBase
         
-            :param audio_streamer: callback or OmniSpeechStreamerBase to receive audio chunks during speech generation.
+            :param speech_streamer: callback or OmniSpeechStreamerBase to receive audio chunks during speech generation.
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
-            :type audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
+            :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
             :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
                 Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
-                Ignored when audio_streamer is not provided.
+                Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
@@ -6361,13 +6578,13 @@ class VLMPipeline(VLMPipelineBase):
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type streamer: Callable[[str], bool], ov.genai.StreamerBase
         
-            :param audio_streamer: callback or OmniSpeechStreamerBase to receive audio chunks during speech generation.
+            :param speech_streamer: callback or OmniSpeechStreamerBase to receive audio chunks during speech generation.
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
-            :type audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
+            :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
             :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
                 Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
-                Ignored when audio_streamer is not provided.
+                Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
@@ -6396,8 +6613,8 @@ class VLMPipeline(VLMPipelineBase):
             videos_metadata: list[VideoMetadata] - metadata for each video,
             generation_config: GenerationConfig,
             streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped,
-            audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None] or OmniSpeechStreamerBase - callback to receive audio chunks during speech generation,
-            audio_chunk_frames: int - number of codec frames per streaming chunk (default 4, must be >= 1). Ignored when audio_streamer is not provided.
+            speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None] or OmniSpeechStreamerBase - callback to receive audio chunks during speech generation,
+            audio_chunk_frames: int - number of codec frames per streaming chunk (default 4, must be >= 1). Ignored when speech_streamer is not provided.
         
             :return: return results in decoded form
             :rtype: VLMDecodedResults
@@ -6429,13 +6646,13 @@ class VLMPipeline(VLMPipelineBase):
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type streamer: Callable[[str], bool], ov.genai.StreamerBase
         
-            :param audio_streamer: callback or OmniSpeechStreamerBase to receive audio chunks during speech generation.
+            :param speech_streamer: callback or OmniSpeechStreamerBase to receive audio chunks during speech generation.
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
-            :type audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
+            :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
             :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
                 Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
-                Ignored when audio_streamer is not provided.
+                Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
@@ -6471,13 +6688,13 @@ class VLMPipeline(VLMPipelineBase):
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type streamer: Callable[[str], bool], ov.genai.StreamerBase
         
-            :param audio_streamer: callback or OmniSpeechStreamerBase to receive audio chunks during speech generation.
+            :param speech_streamer: callback or OmniSpeechStreamerBase to receive audio chunks during speech generation.
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
-            :type audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
+            :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
             :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
                 Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
-                Ignored when audio_streamer is not provided.
+                Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
@@ -6513,13 +6730,13 @@ class VLMPipeline(VLMPipelineBase):
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type streamer: Callable[[str], bool], ov.genai.StreamerBase
         
-            :param audio_streamer: callback or OmniSpeechStreamerBase to receive audio chunks during speech generation.
+            :param speech_streamer: callback or OmniSpeechStreamerBase to receive audio chunks during speech generation.
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
-            :type audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
+            :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
             :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
                 Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
-                Ignored when audio_streamer is not provided.
+                Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
@@ -6548,8 +6765,8 @@ class VLMPipeline(VLMPipelineBase):
             videos_metadata: list[VideoMetadata] - metadata for each video,
             generation_config: GenerationConfig,
             streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped,
-            audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None] or OmniSpeechStreamerBase - callback to receive audio chunks during speech generation,
-            audio_chunk_frames: int - number of codec frames per streaming chunk (default 4, must be >= 1). Ignored when audio_streamer is not provided.
+            speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None] or OmniSpeechStreamerBase - callback to receive audio chunks during speech generation,
+            audio_chunk_frames: int - number of codec frames per streaming chunk (default 4, must be >= 1). Ignored when speech_streamer is not provided.
         
             :return: return results in decoded form
             :rtype: VLMDecodedResults
@@ -6572,7 +6789,46 @@ class VLMPipeline(VLMPipelineBase):
 class VLMPipelineBase:
     """
     Abstract base of VLM-style pipelines.
+    
+            Subclass to plug a custom thinker into OmniPipeline via its dependency-injection
+            constructor. A subclass must override generate(), get_tokenizer(), get_generation_config(),
+            set_generation_config(), set_chat_template(), and the Qwen3-Omni capability queries
+            supports_hidden_states_collection() and is_audio_output_enabled().
     """
+    def __init__(self) -> None:
+        ...
+    @typing.overload
+    def generate(self, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], audios: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], generation_config: GenerationConfig = ..., streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> VLMDecodedResults:
+        """
+        Generate a VLM response from a prompt. Override in a subclass.
+        """
+    @typing.overload
+    def generate(self, history: ChatHistory, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], audios: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], generation_config: GenerationConfig = ..., streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> VLMDecodedResults:
+        """
+        Generate a VLM response from a chat history. Override in a subclass.
+        """
+    @typing.overload
+    def generate(self, prompt: str, **kwargs) -> VLMDecodedResults:
+        """
+        Generate a VLM response from a prompt plus a property bag: images, videos, audios, videos_metadata, generation_config, streamer, or any GenerationConfig field as a keyword argument. Reduces to the typed generate() the subclass overrides.
+        """
+    @typing.overload
+    def generate(self, history: ChatHistory, **kwargs) -> VLMDecodedResults:
+        """
+        Generate a VLM response from a chat history plus a property bag: images, videos, audios, videos_metadata, generation_config, streamer, or any GenerationConfig field as a keyword argument. Reduces to the typed generate() the subclass overrides.
+        """
+    def get_generation_config(self) -> GenerationConfig:
+        ...
+    def get_tokenizer(self) -> Tokenizer:
+        ...
+    def is_audio_output_enabled(self) -> bool:
+        ...
+    def set_chat_template(self, chat_template: str) -> None:
+        ...
+    def set_generation_config(self, config: GenerationConfig) -> None:
+        ...
+    def supports_hidden_states_collection(self) -> bool:
+        ...
 class VLMProcessor:
     """
     

@@ -229,3 +229,16 @@ def test_multiple_eos_are_read_as_stop_token_ids(tmp_path):
 
     assert generation_config.eos_token_id == 2
     assert generation_config.stop_token_ids == { 2, 32000, 32007 }
+
+
+# HF GenerationConfig documents stop_strings as `str or list[str]`
+@pytest.mark.parametrize("stop_strings", ["<|end|>", ["<|end|>"], ["<|end|>", "###"]])
+def test_stop_strings_are_read_from_json(tmp_path, stop_strings):
+    configs = [
+        ({"eos_token_id": 2, "stop_strings": stop_strings}, "generation_config.json"),
+    ]
+
+    generation_config = load_genai_generation_config_from_file(configs, tmp_path)
+
+    expected = {stop_strings} if isinstance(stop_strings, str) else set(stop_strings)
+    assert generation_config.stop_strings == expected

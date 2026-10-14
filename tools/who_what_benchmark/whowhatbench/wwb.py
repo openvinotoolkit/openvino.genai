@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 from itertools import zip_longest
 
-from transformers import AutoTokenizer, AutoProcessor, AutoConfig
+from transformers import AutoTokenizer, AutoProcessor, AutoConfig, PretrainedConfig
 import openvino as ov
 
 import pandas as pd
@@ -449,8 +449,8 @@ def parse_args():
         "--speech-language",
         type=str,
         default="",
-        help="For speech-generation: language code, currently used only for Kokoro. "
-        "If omitted, the default language used is 'en-us'. \n"
+        help="Speech-generation language. For Qwen3 this can be values such as English, Chinese, or Auto. "
+        "For Kokoro this can be values such as en-us, en-gb, es, fr-fr, hi, it, pt-br, ja, or zh."
         "For speech-recognition: the language forced during transcription, in the form the model expects. "
         "FunASR takes a code such as 'en', 'zh' or 'ja' and defaults to 'en'; audio VLMs take a name such as "
         "'English' or 'Japanese' and default to 'English'.",
@@ -462,6 +462,24 @@ def parse_args():
         help="Speech-generation voice name (for example, af_heart for Kokoro or Ethan for Qwen3-Omni). \n"
         "For SpeechT5, please use --speaker_embeddings parameter to specify the voice. "
         "If omitted, WWB uses the model-specific default speaker/voice.",
+    )
+    parser.add_argument(
+        "--speech-instruct",
+        type=str,
+        default="",
+        help="Optional natural-language style instruction for Qwen3 CustomVoice and VoiceDesign.",
+    )
+    parser.add_argument(
+        "--speech-ref-audio",
+        type=str,
+        default="",
+        help="Optional reference wav path for Qwen3 Base voice-clone generation.",
+    )
+    parser.add_argument(
+        "--speech-ref-text",
+        type=str,
+        default="",
+        help="Optional reference transcript text for Qwen3 Base voice-clone generation.",
     )
     parser.add_argument(
         "--tts-eval-whisper-model",
@@ -661,6 +679,15 @@ def load_processor(args):
     if model_id is None:
         return None, None
 
+    config_path = Path(model_id) / "config.json"
+    if (
+        getattr(args, "genai", False)
+        and config_path.is_file()
+        and get_json_config(config_path).get("model_type") == "minicpmv4_7"
+    ):
+        # MiniCPM-V 4.7 preprocessing is performed inside GenAI's VLMPipeline.
+        return None, PretrainedConfig.from_json_file(config_path)
+
     try:
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
     except Exception:
@@ -698,8 +725,25 @@ def load_processor(args):
         else:
             preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=False)
     except Exception:
-        preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=True)
+        if config.model_type == "minicpmv4_7":
+            preprocessor = load_minicpmv4_7_processor(preprocessor_id)
+        else:
+            preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=True)
     return preprocessor, config
+
+
+def load_minicpmv4_7_processor(model_id):
+    # Original MiniCPM-V 4.7 checkpoints point to remote processor code written for an older transformers version.
+    # Assemble the processor from native classes instead (MiniCPM-V 4.7 reuses the 4.6 image and video processors).
+    from transformers import MiniCPMV4_6ImageProcessor, MiniCPMV4_6VideoProcessor, MiniCPMV4_7Processor
+
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    return MiniCPMV4_7Processor(
+        image_processor=MiniCPMV4_6ImageProcessor.from_pretrained(model_id),
+        video_processor=MiniCPMV4_6VideoProcessor.from_pretrained(model_id),
+        tokenizer=tokenizer,
+        chat_template=tokenizer.chat_template,
+    )
 
 
 def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
@@ -941,7 +985,17 @@ def _is_voice_pack_enabled_model(model):
     return voices_dir.is_dir()
 
 
-def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice=""):
+def genai_gen_speech(
+    model,
+    prompt,
+    speaker_embedding=None,
+    language="",
+    voice="",
+    instruct="",
+    max_new_tokens=None,
+    ref_audio="",
+    ref_text="",
+):
     from whowhatbench.speech_generation_evaluator import GenAIOmniSpeechWrapper
 
     if isinstance(model, GenAIOmniSpeechWrapper):
@@ -953,7 +1007,24 @@ def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice="
 
         generation_properties = {}
         if isinstance(language, str) and language.strip():
-            generation_properties["language"] = language.strip().lower()
+            generation_properties["language"] = language.strip()
+
+        if isinstance(instruct, str) and instruct.strip():
+            generation_properties["instruct"] = instruct.strip()
+
+        if max_new_tokens is not None:
+            generation_properties["max_new_tokens"] = int(max_new_tokens)
+
+        selected_voice = voice.strip() if isinstance(voice, str) else ""
+        generation_properties["voice"] = selected_voice
+
+        selected_ref_text = ref_text.strip() if isinstance(ref_text, str) else ""
+        if selected_ref_text:
+            generation_properties["ref_text"] = selected_ref_text
+
+        selected_ref_audio = ref_audio.strip() if isinstance(ref_audio, str) else ""
+        if selected_ref_audio:
+            generation_properties["ref_audio"] = selected_ref_audio
 
         # Kokoro voice-pack exports select the voice by loading <model_dir>/voices/<voice>.bin
         # and forwarding it as the speaker embedding.
@@ -1105,7 +1176,8 @@ def genai_gen_reranking(model, tokenizer, query, documents):
 def is_model_with_automatic_crop(config):
     return (
         "internvl" in config.model_type
-        or "minicpmv" in config.model_type
+        # remote-code MiniCPM-V only: the native transformers ones (e.g. minicpmv4_7) return the prompt with the answer
+        or config.model_type == "minicpmv"
         or "minicpmo" in config.model_type
         or "videochat_flash_qwen" in config.model_type
     )
@@ -1240,6 +1312,10 @@ def create_evaluator(base_model, args):
                 vocoder_path=args.vocoder_path,
                 speech_language=args.speech_language,
                 speech_voice=args.speech_voice,
+                speech_instruct=args.speech_instruct,
+                speech_ref_audio=args.speech_ref_audio,
+                speech_ref_text=args.speech_ref_text,
+                max_new_tokens=args.max_new_tokens,
             )
         elif task == "visual-text" or task == "visual-video-text" or task == "visual-text-only":
             processor, config = load_processor(args)
