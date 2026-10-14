@@ -99,7 +99,7 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
     // Tracks if VLMPipeline ctor with passed VLMProcessor was used.
     // Required for generate(ProcessedInputs) to ensure the inputs are produced
     // by the same processor which is used for generation.
-    bool m_is_external_processor = false;
+    bool m_uses_external_processor = false;
 private:
     void finalize_initialization(
         const std::shared_ptr<ov::Model>& language_model,
@@ -255,7 +255,7 @@ private:
         auto& properties_copy = filtered_properties.fork();
 
         m_inputs_embedder = inputs_embedder;
-        m_is_external_processor = true;
+        m_uses_external_processor = true;
 
         const auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
 
@@ -834,7 +834,7 @@ public:
         const GenerationConfig& generation_config_in,
         const StreamerVariant& streamer
     ) override {
-        OPENVINO_ASSERT(m_is_external_processor,
+        OPENVINO_ASSERT(m_uses_external_processor,
             "generate(ProcessedInputs) requires using VLMPipeline ctor with VLMProcessor -"
             "inputs should be produced by the same processor which is used for generation.");
 
