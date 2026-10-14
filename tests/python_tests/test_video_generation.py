@@ -610,7 +610,7 @@ class TestVideoGenerationPipelines:
     @pytest.mark.parametrize("video_generation_model", [LTX2_3_MODEL_ID], indirect=True)
     def test_ltx2_3_extra_guidance_runs_after_static_reshape_with_cfg(self, video_generation_model):
         """CFG runs as two batch-N passes, so a transformer reshaped to a static batch still serves the
-        batch-N extra guidance passes. They used to be skipped once CFG pinned the batch at 2N."""
+        batch-N extra guidance passes."""
         pipe = ov_genai.Text2VideoPipeline(video_generation_model)
         pipe.reshape(1, 9, 32, 32, 3.0)
         pipe.compile("CPU")
