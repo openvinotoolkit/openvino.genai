@@ -1871,8 +1871,8 @@ def main():
         ]:
             print_text_results(evaluator)
         elif args.model_type in ["text"]:
-            for metrcis in args.metrics:
-                print_text_results_metrics_list(evaluator, metrcis)
+            for metrics in args.metrics:
+                print_text_results_metrics_list(evaluator, metrics)
         elif (
             "text-to-image" in args.model_type
             or "image-to-image" in args.model_type
