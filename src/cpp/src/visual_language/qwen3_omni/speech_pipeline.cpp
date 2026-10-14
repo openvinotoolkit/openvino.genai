@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <limits>
 #include <nlohmann/json.hpp>
 #include <numeric>
@@ -130,6 +131,10 @@ Qwen3OmniSpeechConfig Qwen3OmniSpeechConfig::from_vlm_config(const VLMConfig& co
     sc.image_token_id = config.image_token_id;
     sc.video_token_id = config.video_token_id;
     sc.num_code_groups = config.talker_num_code_groups;
+    const auto& rates = config.code2wav_config_upsample_rates;
+    const auto& ratios = config.code2wav_config_upsampling_ratios;
+    sc.code2wav_samples_per_frame = std::accumulate(rates.begin(), rates.end(), size_t{1}, std::multiplies<>()) *
+                                    std::accumulate(ratios.begin(), ratios.end(), size_t{1}, std::multiplies<>());
     sc.speaker_ids = config.speaker_ids;
 
     OPENVINO_ASSERT(sc.codec_bos_id >= 0 && sc.codec_eos_token_id >= 0 && sc.codec_pad_id >= 0 &&
@@ -824,6 +829,7 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
     SpeechStreamerGuard streamer_guard(speech_streamer, streaming);
 
     const size_t chunk_frames = talker_speech_config.audio_chunk_frames;
+    const size_t left_context_frames = talker_speech_config.audio_chunk_left_context_frames;
     OPENVINO_ASSERT(chunk_frames >= 1, "audio_chunk_frames must be >= 1 (got ", chunk_frames, ")");
 
     if (!m_talker_available) {
@@ -949,6 +955,31 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
         return m_stack_codes_buf;
     };
 
+    // A chunk decoded alone loses the code2wav warmup at every seam and its first samples see
+    // no history. Decode it after up to audio_chunk_left_context_frames earlier frames, then keep
+    // only the samples of [begin, end).
+    auto decode_chunk = [&](size_t begin, size_t end) -> ov::Tensor {
+        const auto context = std::min(begin, left_context_frames);
+        auto wav = codes_to_wav(stack_codes_range(begin - context, end));
+        if (context == 0) {
+            return wav;
+        }
+        const auto chunk_samples = (end - begin) * m_config.code2wav_samples_per_frame;
+        OPENVINO_ASSERT(wav.get_size() >= chunk_samples,
+                        "code2wav returned ",
+                        wav.get_size(),
+                        " samples for ",
+                        context + end - begin,
+                        " frames, fewer than the ",
+                        chunk_samples,
+                        " expected for the chunk");
+        ov::Tensor chunk(ov::element::f32, {1, 1, chunk_samples});
+        std::memcpy(chunk.data<float>(),
+                    wav.data<float>() + (wav.get_size() - chunk_samples),
+                    chunk_samples * sizeof(float));
+        return chunk;
+    };
+
     // talker_temp / talker_top_k_resolved / talker_rep_penalty resolved at function entry
     // from the OmniTalkerSpeechConfig overrides (or m_config defaults if unset).
     const auto& suppress_tokens = m_config.talker_suppress_tokens;
@@ -1009,8 +1040,7 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
 
         // F9: Streaming uses cursor into all_codes instead of separate chunk_codes
         if (streaming && all_codes.size() - chunk_cursor >= chunk_frames) {
-            auto chunk_tensor = stack_codes_range(chunk_cursor, all_codes.size());
-            auto chunk_wav = codes_to_wav(chunk_tensor);
+            auto chunk_wav = decode_chunk(chunk_cursor, all_codes.size());
             chunk_cursor = all_codes.size();
             streamed_chunks.push_back(chunk_wav);
 
@@ -1058,8 +1088,7 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
 
     // Flush remaining frames if streaming
     if (streaming && chunk_cursor < all_codes.size() && !early_stop) {
-        auto chunk_tensor = stack_codes_range(chunk_cursor, all_codes.size());
-        auto chunk_wav = codes_to_wav(chunk_tensor);
+        auto chunk_wav = decode_chunk(chunk_cursor, all_codes.size());
         streamed_chunks.push_back(chunk_wav);
         invoke_speech_streamer(speech_streamer, chunk_wav);
     }

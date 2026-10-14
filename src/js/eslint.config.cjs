@@ -96,6 +96,7 @@ module.exports = defineConfig([
             "guidance_scale",
             "return_audio",
             "audio_chunk_frames",
+            "audio_chunk_left_context_frames",
             "rng_seed",
             "talker_temperature",
             "talker_top_k",
