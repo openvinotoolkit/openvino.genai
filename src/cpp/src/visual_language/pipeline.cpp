@@ -891,14 +891,21 @@ public:
             max_kv_cache_size = ov::genai::utils::get_npu_kv_cache_capacity(m_language.get_compiled_model());
         }
 
+        // Prevent mutating attention_mask and position_ids in ProcessedInputs as
+        // get_lm_encoded_results() binds and updates these input tensors during decode
+        ov::Tensor attention_mask(inputs.attention_mask.get_element_type(), inputs.attention_mask.get_shape());
+        inputs.attention_mask.copy_to(attention_mask);
+        ov::Tensor position_ids(inputs.position_ids.get_element_type(), inputs.position_ids.get_shape());
+        inputs.position_ids.copy_to(position_ids);
+
         auto finish_info = ov::genai::get_lm_encoded_results(
             m_language,
             inputs.inputs_embeds,
-            inputs.attention_mask,
+            attention_mask,
             streamer_ptr,
             m_sampler,
             std::move(requests),
-            inputs.position_ids,
+            position_ids,
             cache_state,
             m_embedding,
             inputs.rope_delta,
