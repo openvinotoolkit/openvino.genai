@@ -2,7 +2,8 @@ import CodeBlock from '@theme/CodeBlock';
 
 <CodeBlock language="javascript" showLineNumbers>
 {`import { EmbeddingPipeline } from "openvino-genai-node";
-import { readImages, readVideo } from "./utils.js";
+import { readImages } from "./image_utils.js";
+import { readVideo } from "./video_utils.js";
 
 const pipeline = await EmbeddingPipeline(models_path, "${props.device || 'CPU'}");
 
@@ -14,7 +15,7 @@ const images = await readImages("path/to/images");
 const imageEmbedding = await pipeline.embed("", { images });
 
 // Embed a video (video is an ov.Tensor of shape [F, H, W, 3], uint8)
-const [video, videoMetadata] = await readVideo("path/to/video.mp4");
-const videoEmbedding = await pipeline.embed("", { videos: [video], videosMetadata: [videoMetadata] });
+const { videoTensor, videoMetadata } = readVideo("path/to/video.mp4", 8);
+const videoEmbedding = await pipeline.embed("", { videos: [videoTensor], videosMetadata: [videoMetadata] });
 `}
 </CodeBlock>

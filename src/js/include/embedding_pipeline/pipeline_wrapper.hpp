@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <napi.h>
 #include "openvino/genai/rag/embedding_pipeline.hpp"
 
@@ -14,4 +15,5 @@ class EmbeddingPipelineWrapper : public Napi::ObjectWrap<EmbeddingPipelineWrappe
         Napi::Value embed(const Napi::CallbackInfo& info);
     private:
         std::shared_ptr<ov::genai::EmbeddingPipeline> pipe = nullptr;
+        std::shared_ptr<std::atomic<bool>> is_embedding = std::make_shared<std::atomic<bool>>(false);
 };

@@ -30,6 +30,8 @@ Compile GenAI JavaScript bindings archive first using [the instructions](../../.
 
 Run `npm install` from the `samples/js` directory and the text samples (1 and 2) will be ready to run. The image and video sample (3) additionally requires building a native OpenCV addon — follow its [environment setup](#3-image-and-video-embedding-sample-image_video_embeddingjs) steps.
 
+OpenCV is an optional dependency: an OpenCV build failure does not prevent installation of the other samples. Use `npm install --omit=optional` to skip OpenCV installation entirely when running samples that do not use video decoding.
+
 ### 1. Text Embedding Sample (`text_embeddings.js`)
 - **Description:**
   Demonstrates inference of text embedding models using OpenVINO GenAI. Converts input text into vector embeddings for downstream tasks such as retrieval or semantic search.
@@ -83,7 +85,7 @@ export OPENCV_BIN_DIR="/usr/bin"
 From the `samples/js` directory, install the dependencies without running the addon's autobuild, then add a known-good `node-gyp` locally (the system `node-gyp` shipped by some distributions is broken):
 ```sh
 cd samples/js
-npm install --ignore-scripts
+npm install --include=optional --ignore-scripts
 npm install --no-save --ignore-scripts node-gyp@latest
 ```
 

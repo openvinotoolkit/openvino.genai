@@ -6,14 +6,16 @@
 
 EmbeddingPipelineEmbedWorker::EmbeddingPipelineEmbedWorker(
     Function& callback,
-    std::shared_ptr<ov::genai::EmbeddingPipeline>& pipe,
+    std::shared_ptr<ov::genai::EmbeddingPipeline> pipe,
+    std::shared_ptr<std::atomic<bool>> is_embedding,
     ov::genai::StringInputs text,
     std::vector<ov::Tensor> images,
     std::vector<ov::Tensor> videos,
     std::vector<ov::genai::VideoMetadata> videos_metadata,
     ov::AnyMap properties
 ) : AsyncWorker(callback),
-    pipe(pipe),
+    pipe(std::move(pipe)),
+    is_embedding(std::move(is_embedding)),
     text(std::move(text)),
     images(std::move(images)),
     videos(std::move(videos)),
@@ -25,8 +27,14 @@ void EmbeddingPipelineEmbedWorker::Execute() {
 };
 
 void EmbeddingPipelineEmbedWorker::OnOK() {
+    this->is_embedding->store(false);
     Callback().Call({
         Env().Null(),                                                              // Error result
         cpp_to_js<ov::genai::EmbedResult, Napi::Value>(Env(), this->embed_result)  // Ok result
     });
 };
+
+void EmbeddingPipelineEmbedWorker::OnError(const Napi::Error& error) {
+    this->is_embedding->store(false);
+    AsyncWorker::OnError(error);
+}

@@ -7,13 +7,50 @@ import { isFloat32Array } from "util/types";
 import assert from "node:assert/strict";
 import { createTestImageTensor, createTestVideoTensor } from "./utils.js";
 
-const { MULTIMODAL_EMBEDDINGS_MODEL_PATH } = process.env;
+const { EMBEDDING_MODEL_PATH, MULTIMODAL_EMBEDDINGS_MODEL_PATH } = process.env;
+
+if (!EMBEDDING_MODEL_PATH) {
+  throw new Error("Please set EMBEDDING_MODEL_PATH environment variable to run the tests.");
+}
 
 if (!MULTIMODAL_EMBEDDINGS_MODEL_PATH) {
   throw new Error(
     "Please set MULTIMODAL_EMBEDDINGS_MODEL_PATH environment variable to run the tests.",
   );
 }
+
+describe(
+  "EmbeddingPipeline text-only model",
+  { skip: ["darwin", "win32"].includes(process.platform) },
+  () => {
+    let pipeline = null;
+
+    before(async () => {
+      pipeline = await EmbeddingPipeline(EMBEDDING_MODEL_PATH, "CPU");
+    });
+
+    it("embeds a single text and a batch of texts", async () => {
+      for (const text of ["What is OpenVINO?", ["Hello", "World"]]) {
+        const { embeddings } = await pipeline.embed(text);
+        const shape = embeddings.getShape();
+        assert.strictEqual(shape.length, 2);
+        assert.strictEqual(shape[0], Array.isArray(text) ? text.length : 1);
+        assert.ok(shape[1] > 0);
+        assert.ok(isFloat32Array(embeddings.data));
+        assert.strictEqual(embeddings.data.length, shape[0] * shape[1]);
+      }
+    });
+
+    it("accepts subsequent calls after a worker error", async () => {
+      await assert.rejects(
+        pipeline.embed("test", { images: [createTestImageTensor()] }),
+        /This model does not support image\/video input/,
+      );
+      const { embeddings } = await pipeline.embed("test");
+      assert.strictEqual(embeddings.getShape()[0], 1);
+    });
+  },
+);
 
 // Skip due to CVS-179949 and CVS-179949
 describe(

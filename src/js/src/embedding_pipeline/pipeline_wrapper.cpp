@@ -34,21 +34,30 @@ Napi::Value EmbeddingPipelineWrapper::init(const Napi::CallbackInfo& info) {
 
 Napi::Value EmbeddingPipelineWrapper::embed(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
-    auto text = js_to_cpp<ov::genai::StringInputs>(env, info[0]);
-    auto images = js_to_cpp<std::vector<ov::Tensor>>(env, info[1]);
-    auto videos = js_to_cpp<std::vector<ov::Tensor>>(env, info[2]);
-    auto videos_metadata = js_to_cpp<std::vector<ov::genai::VideoMetadata>>(env, info[3]);
-    auto properties = js_to_cpp<ov::AnyMap>(env, info[4]);
-    auto callback = info[5].As<Napi::Function>();
+    try {
+        OPENVINO_ASSERT(this->pipe, "EmbeddingPipeline is not initialized");
+        OPENVINO_ASSERT(!this->is_embedding->load(), "Another embedding is already in progress");
+        auto text = js_to_cpp<ov::genai::StringInputs>(env, info[0]);
+        auto images = js_to_cpp<std::vector<ov::Tensor>>(env, info[1]);
+        auto videos = js_to_cpp<std::vector<ov::Tensor>>(env, info[2]);
+        auto videos_metadata = js_to_cpp<std::vector<ov::genai::VideoMetadata>>(env, info[3]);
+        auto properties = js_to_cpp<ov::AnyMap>(env, info[4]);
+        auto callback = info[5].As<Napi::Function>();
 
-    auto* asyncWorker = new EmbeddingPipelineEmbedWorker(callback,
-                                                         this->pipe,
-                                                         std::move(text),
-                                                         std::move(images),
-                                                         std::move(videos),
-                                                         std::move(videos_metadata),
-                                                         std::move(properties));
-    asyncWorker->Queue();
+        auto async_worker = std::make_unique<EmbeddingPipelineEmbedWorker>(callback,
+                                                                         this->pipe,
+                                                                         this->is_embedding,
+                                                                         std::move(text),
+                                                                         std::move(images),
+                                                                         std::move(videos),
+                                                                         std::move(videos_metadata),
+                                                                         std::move(properties));
+        async_worker->Queue();
+        async_worker.release();
+        this->is_embedding->store(true);
+    } catch (const std::exception& error) {
+        Napi::Error::New(env, error.what()).ThrowAsJavaScriptException();
+    }
 
     return info.Env().Undefined();
 }

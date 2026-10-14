@@ -29,6 +29,9 @@ function sampleFrameIndices(totalFrames, numFrames) {
  * @returns {{ videoTensor: ov.Tensor, videoMetadata: { fps: number, frames_indices: number[] } }}
  */
 export function readVideo(path, numFrames) {
+    if (!Number.isInteger(numFrames) || numFrames <= 0) {
+        throw new RangeError("numFrames must be a positive integer");
+    }
     const capture = new cv.VideoCapture(path);
     const fps = capture.get(cv.CAP_PROP_FPS);
 
