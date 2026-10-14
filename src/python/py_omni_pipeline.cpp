@@ -56,12 +56,13 @@ auto omni_talker_speech_config_docstring = R"(
     :type speaker: str | openvino.Tensor
 
     :param audio_chunk_frames: Number of codec frames accumulated before streaming each
-        audio chunk. Must be >= 1. At steady state each frame decodes to 1920 samples (80ms at
-        24 kHz), but the code2wav vocoder trims its convolutional warmup from the first frame of
-        every decode call, so a chunk of N frames yields 1920*N - 555 samples, not 1920*N. This
-        is a property of the vocoder graph, not a miscount. Larger chunks amortize the fixed
-        warmup cost; very small chunks (e.g. 1) also risk audible seams between independently
-        decoded chunks in streaming mode.
+        audio chunk. Must be >= 1. Each frame decodes to 1920 samples (80ms at 24 kHz). The
+        code2wav vocoder trims its convolutional warmup once per utterance, so the first chunk of
+        N frames yields 1920*N - 555 samples and every later chunk yields 1920*N. Streamed audio
+        has the same length as non-streamed audio. Every chunk after the first is decoded
+        together with up to 25 earlier frames, so the vocoder sees their history. That context is
+        decoded again for each chunk, so smaller chunks lower time-to-first-audio but spend more
+        vocoder time per second of audio and can fall behind real time.
     :type audio_chunk_frames: int
 
     :param max_new_tokens: Cap on talker AR steps. Independent of

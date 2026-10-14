@@ -43,6 +43,7 @@
 - 'src/cpp/src/lm_encoding.cpp'
 - 'src/python/py_vlm_pipeline.cpp'
 - 'tests/python_tests/test_vlm_pipeline.py'
+- 'tests/python_tests/test_omni_speech_streaming.py'
 
 'category: RAG':
 - 'src/cpp/include/openvino/genai/rag/**/*'
