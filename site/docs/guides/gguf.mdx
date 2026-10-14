@@ -66,3 +66,26 @@ print(pipe.generate(history, max_new_tokens=64))
 ```
 
 Chat requires a suitable template in the GGUF metadata. See [Tokenization](./tokenization.mdx) for configuring the tokenizer and [Streaming](./streaming.mdx) for streamer behavior.
+
+## Bonsai models
+
+Bonsai and Ternary-Bonsai use the existing Qwen3 and Qwen3.5 pipelines. With an OpenVINO
+GGUF frontend supporting these formats, select `GGUF_READER="FRONTEND"` for Q1_0,
+PQ2_0, PTQ1_0, and legacy Q2_0 weights. Bonsai-2 also uses this path for its Hadamard
+transforms. SDPA and PagedAttention are supported.
+
+For 27B multimodal checkpoints, supply the matching BF16 or Q8_0 projector file:
+
+```python
+pipe = genai.VLMPipeline(
+    "Ternary-Bonsai-2-27B-PQ2_0.gguf",
+    "CPU",
+    mmproj_path="Ternary-Bonsai-2-27B-mmproj-Q8_0.gguf",
+)
+print(pipe.generate("Describe the image.", images=[image], max_new_tokens=64))
+```
+
+`image` is an `openvino.Tensor` containing RGB pixels with shape `[1, H, W, 3]` and
+type `uint8`. The existing Qwen3.5 processor reads patch and merge sizes from the
+projector metadata. DSpark companion files require a dedicated draft-model consumer;
+they cannot be passed to GenAI's ordinary autoregressive draft-model API.

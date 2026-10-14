@@ -52,6 +52,8 @@ def main():
     parser.add_argument("language", type=Path)
     parser.add_argument("mmproj", type=Path)
     parser.add_argument("--oracle", type=Path, required=True)
+    parser.add_argument("--reference-revision", default=REFERENCE_REVISION,
+                        help="Exact expected oracle revision, including a pinned fork for additional GGUF formats")
     parser.add_argument("--reference-language", type=Path, help="Alternative language checkpoint for reference inference")
     parser.add_argument("--reference-mmproj", type=Path, help="Alternative projector checkpoint for reference inference")
     parser.add_argument("--reference-kind", choices=("quantized", "represented-f32", "publisher-high-precision"),
@@ -82,8 +84,8 @@ def main():
         if "Q4_0" not in language_tensor_types or set(language_tensor_types) - {"F32", "F16", "Q4_0"}:
             parser.error(f"Q4_0 accuracy acceptance requires F32/F16/Q4_0 tensors, got {language_tensor_types}")
     revision = subprocess.check_output([str(args.oracle.resolve()), "--revision"], text=True).strip()
-    if revision != REFERENCE_REVISION:
-        parser.error(f"Oracle revision {revision!r} does not match {REFERENCE_REVISION}")
+    if revision != args.reference_revision:
+        parser.error(f"Oracle revision {revision!r} does not match {args.reference_revision}")
     if args.video_frames < 0:
         parser.error("--video-frames must be nonnegative")
     if args.video_frames and args.family not in ("gemma4", "qwen35", "muse"):
@@ -96,7 +98,7 @@ def main():
         if args.family == "gemma4" and not (args.audio and args.audio_boundaries):
             parser.error("--full-coverage requires --audio and --audio-boundaries for Gemma4")
     report = {"language": str(args.language), "mmproj": str(args.mmproj),
-              "reference_revision": REFERENCE_REVISION, "family": args.family,
+              "reference_revision": args.reference_revision, "family": args.family,
               "reference_language": str(args.reference_language or args.language),
               "reference_mmproj": str(args.reference_mmproj or args.mmproj),
               "reference_kind": args.reference_kind,
