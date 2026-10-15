@@ -864,11 +864,12 @@ public:
 
         const size_t inputs_embeds_size = inputs.inputs_embeds.get_shape().at(1);
 
-        const bool use_intermediate_remote_tensor = !m_is_npu;
+
+        bool use_intermediate_remote_tensor = true;
         if (m_is_npu) {
-            OPENVINO_ASSERT(inputs_embeds_size <= m_max_prompt_len,
-                "VLM pipeline on NPU may only process input embeddings up to ", m_max_prompt_len,
-                " tokens. ", inputs_embeds_size, " is passed.");
+            validate_inputs_for_npu({}, {}, generation_config);
+            validate_inputs_embeds_seq_len_for_npu(inputs_embeds_size);
+            use_intermediate_remote_tensor = false;
         }
 
         if (m_adapter_controller) {
@@ -1065,6 +1066,14 @@ private:
             OPENVINO_ASSERT(videos.empty(), "Chat mode is currently not supported with video input for NPU device!");
     }
 
+    void validate_inputs_embeds_seq_len_for_npu(const size_t inputs_embeds_seq_len) {
+        // Prefill model in NPU is reshaped to NPUW_LLM_MAX_PROMPT_LEN x NPUW_LLM_MAX_PROMPT_LEN
+        OPENVINO_ASSERT(inputs_embeds_seq_len <= m_max_prompt_len,
+            "VLM pipeline on NPU may only process input embeddings up to ", m_max_prompt_len,
+            " tokens. ", inputs_embeds_seq_len, " is passed.\nSet the \"MAX_PROMPT_LEN\""
+            " config option to increase the limit.");
+    }
+
     ov::genai::utils::GenerationFinishInfo prepare_inputs_and_generate(
         const std::string& unified_prompt,
         const std::vector<ov::genai::EncodedImage>& encoded_images,
@@ -1098,11 +1107,7 @@ private:
         PerfMetrics::emplace_duration(perf_metrics.vlm_raw_metrics.prepare_embeddings_durations, embeddings_start_time);
 
         if (m_is_npu) {
-            // Prefill model in NPU is reshaped to NPUW_LLM_MAX_PROMPT_LEN x NPUW_LLM_MAX_PROMPT_LEN
-            OPENVINO_ASSERT(inputs_embeds.get_shape().at(1) <= m_max_prompt_len,
-                "VLM pipeline on NPU may only process input embeddings up to ", m_max_prompt_len,
-                " tokens. ", inputs_embeds.get_shape().at(1), " is passed.\nSet the \"MAX_PROMPT_LEN\""
-                " config option to increase the limit.");
+            validate_inputs_embeds_seq_len_for_npu(inputs_embeds.get_shape().at(1));
         }
 
         utils::CacheState& cache_state = m_inputs_embedder->get_cache_state();
