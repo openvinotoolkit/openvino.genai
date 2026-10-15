@@ -888,7 +888,6 @@ class TestBenchmarkLLM:
         run_sample(benchmark_py_command)
 
     @pytest.mark.samples
-    @pytest.mark.speech_generation
     @pytest.mark.llm_bench_qwen3_tts
     @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-tts"], indirect=True)
     @pytest.mark.parametrize(
@@ -917,7 +916,6 @@ class TestBenchmarkLLM:
         run_sample(benchmark_py_command)
 
     @pytest.mark.samples
-    @pytest.mark.speech_generation
     @pytest.mark.llm_bench_qwen3_tts
     @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-tts-customvoice"], indirect=True)
     @pytest.mark.parametrize(
@@ -946,7 +944,6 @@ class TestBenchmarkLLM:
         run_sample(benchmark_py_command)
 
     @pytest.mark.samples
-    @pytest.mark.speech_generation
     @pytest.mark.llm_bench_qwen3_tts
     @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-tts-voicedesign"], indirect=True)
     @pytest.mark.parametrize(
@@ -973,7 +970,6 @@ class TestBenchmarkLLM:
         run_sample(benchmark_py_command)
 
     @pytest.mark.samples
-    @pytest.mark.speech_generation
     @pytest.mark.llm_bench_qwen3_tts
     @pytest.mark.parametrize("download_model", ["tiny-random-qwen3-tts"], indirect=True)
     def test_python_tool_llm_benchmark_qwen3_tts_base_pt(self, download_model, qwen3_reference_audio_wav_path):
@@ -1005,7 +1001,6 @@ class TestBenchmarkLLM:
         run_sample(benchmark_py_command)
 
     @pytest.mark.samples
-    @pytest.mark.speech_generation
     @pytest.mark.llm_bench_qwen3_tts
     @pytest.mark.parametrize("download_model", ["tiny-random-qwen3-tts-customvoice"], indirect=True)
     def test_python_tool_llm_benchmark_qwen3_tts_customvoice_pt(self, download_model):
@@ -1037,7 +1032,6 @@ class TestBenchmarkLLM:
         run_sample(benchmark_py_command)
 
     @pytest.mark.samples
-    @pytest.mark.speech_generation
     @pytest.mark.llm_bench_qwen3_tts
     @pytest.mark.parametrize("download_model", ["tiny-random-qwen3-tts-voicedesign"], indirect=True)
     def test_python_tool_llm_benchmark_qwen3_tts_voicedesign_pt(self, download_model):
