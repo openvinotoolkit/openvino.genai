@@ -378,9 +378,7 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
             memory_data_collector.start()
 
         start = time.perf_counter()
-        device_map = device.lower()
-        if device.upper() == "GPU":
-            device_map = "cuda" if torch.cuda.is_available() else "cpu"
+        device_map = str(_select_torch_device(device))
 
         pipe = Qwen3TTSModel.from_pretrained(str(model_path), device_map=device_map)
         end = time.perf_counter()
