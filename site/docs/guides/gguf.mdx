@@ -144,3 +144,10 @@ The pinned LFM2.5 Q4_0 bundle is revision
 `7d525f883a077e20afb782f2ff618edcae0e39e4`; LFM2-VL-450M validation uses revision
 `7cf9679aa137039135e342aa77014f7b5f2bef73`. Other sizes and quantizations need their
 own accuracy qualification.
+
+Local validation on the pinned bundle passed 54 media/reference cases across SDPA
+and PagedAttention, plus speech API and preprocessing/ISTFT regression tests.
+Audio matched all 109 reference greedy choices per backend; vision passed the
+existing greedy-choice gate on square, JPEG and tiled images. This validates local
+choices on identical generated histories, rather than strict full-logit parity
+or free-running speech fidelity against a publisher recording.
