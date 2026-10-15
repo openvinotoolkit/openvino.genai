@@ -42,15 +42,13 @@ export_tokenizer(tokenizer, output_dir)
 ```
 [//]: # "tokenizer.save_pretrained(output_dir) is required above to mitigate runtime errors"
 
-If a converted model in OpenVINO IR format is already available on [OpenVINO on Hugging Face](https://huggingface.co/OpenVINO), it can be downloaded directly via hf.
+If a converted model in OpenVINO IR format is already available in the collection of [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) on Hugging Face, it can be downloaded directly via hf.
 ```sh
 pip install huggingface-hub
 hf download <model> --local-dir <output_folder>
 ```
 
 ### Using GGUF models
-
-For optimal performance and memory consumption, prefer prepared OpenVINO IRs from [OpenVINO on Hugging Face](https://huggingface.co/OpenVINO) whenever available. These models are exported and compressed with Optimum Intel, as shown above. Use GGUF when the model is available only in that format or you need to run an existing GGUF file directly.
 
 To run samples with a GGUF model, provide the path to the `.gguf` file via the `model_dir` parameter. The default legacy reader supports `llama`, `qwen2`, and `qwen3` architectures.
 
@@ -65,7 +63,7 @@ pipe = genai.LLMPipeline("model.gguf", "CPU", GGUF_READER="FRONTEND")
 print(pipe.generate("Explain why the sky is blue.", max_new_tokens=64))
 ```
 
-The frontend supports more architectures and is expected to provide better model quality, but is in preview and may have limitations. It requires a compatible OpenVINO build with the GGUF frontend. See [Run GGUF models](https://openvinotoolkit.github.io/openvino.genai/docs/guides/gguf) for tokenizer, chat, and streaming examples.
+The frontend supports more architectures and is expected to provide better model quality, but is in preview and may have limitations. It requires a compatible OpenVINO build with the GGUF frontend. See [Run GGUF models](https://openvinotoolkit.github.io/openvino.genai/docs/guides/gguf) for model format recommendations and tokenizer, chat, and streaming examples.
 
 ## Sample Descriptions
 ### Common information
