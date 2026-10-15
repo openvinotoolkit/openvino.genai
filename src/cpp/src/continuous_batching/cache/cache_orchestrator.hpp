@@ -20,11 +20,11 @@
 #include "continuous_batching/cache/cache_type.hpp"
 #include "continuous_batching/cache/i_cache_manager.hpp"
 #include "continuous_batching/cache/block_manager.hpp"
-#include "continuous_batching/cache/file_kv_cache_store.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
 #include "continuous_batching/cache/kv_cache_offload_cache.hpp"
 #include "continuous_batching/cache/linear_attention_cache_manager.hpp"
 #include "continuous_batching/cache/linear_attention_offload_cache.hpp"
+#include "continuous_batching/cache/store_registry.hpp"
 #include "logger.hpp"
 
 namespace ov::genai {
@@ -124,12 +124,10 @@ public:
                         "KV cache offload requires a model with KV cache inputs");
 
         auto& kv_manager = static_cast<KVCacheManager&>(*cache_mgr_it->second);
-        auto backend = std::make_unique<KVCacheOffloadManager>(kv_manager.get_block_layout(), offload_config, device);
-        GENAI_INFO("[KV_TRACE] kv_cache_offload file=%s slot_bytes=%zu slots=%zu",
-                   backend->get_file_path().string().c_str(),
-                   backend->get_slot_size(),
-                   backend->get_num_slots());
-        auto store = std::make_unique<FileKVCacheStore>(std::move(backend));
+        auto store = open_kv_cache_store(kv_manager.get_block_layout(), offload_config, device);
+        GENAI_INFO("[KV_TRACE] kv_cache_offload slot_bytes=%zu capacity_blocks=%zu",
+                   store->get_block_size(),
+                   store->get_capacity_blocks());
 
         m_kv_offload_cache = std::make_unique<KVCacheOffloadCache>(kv_manager,
                                                                    std::move(store),
@@ -154,12 +152,10 @@ public:
         auto& la_manager = static_cast<LinearAttentionCacheManager&>(*cache_mgr_it->second);
         CacheOffloadConfig la_backend_config = offload_config;
         la_backend_config.capacity_bytes = offload_config.linear_attention_capacity_bytes;
-        auto backend = std::make_unique<KVCacheOffloadManager>(la_manager.get_block_layout(), la_backend_config, device);
-        GENAI_INFO("[KV_TRACE] la_cache_offload file=%s slot_bytes=%zu slots=%zu",
-                   backend->get_file_path().string().c_str(),
-                   backend->get_slot_size(),
-                   backend->get_num_slots());
-        auto store = std::make_unique<FileKVCacheStore>(std::move(backend));
+        auto store = open_kv_cache_store(la_manager.get_block_layout(), la_backend_config, device);
+        GENAI_INFO("[KV_TRACE] la_cache_offload slot_bytes=%zu capacity_blocks=%zu",
+                   store->get_block_size(),
+                   store->get_capacity_blocks());
 
         m_la_offload_cache = std::make_unique<LinearAttentionOffloadCache>(la_manager,
                                                                            std::move(store),

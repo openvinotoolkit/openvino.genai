@@ -35,10 +35,28 @@ struct CacheOffloadConfig {
     /** Whether the offload file may go through the OS page cache. Direct I/O is not implemented yet. */
     bool use_page_cache = true;
 
+    /**
+     * Path to a third-party KV cache store plugin shared library implementing the ABI declared in
+     * openvino/genai/c/kv_cache_store_provider_abi.h. Empty (default) uses the in-tree file store
+     * directly, with no plugin ABI involved. Ignored unless `allow_untrusted_store_plugin` is true.
+     */
+    std::string store_library_path;
+
+    /** Provider name to select from the plugin module. Empty uses the module's first provider. */
+    std::string store_provider_name;
+
+    /**
+     * Must be explicitly set to load `store_library_path`. Defaults to false so that no third-party
+     * code is ever loaded without an explicit opt-in (see kv_cache_store_provider_abi.h, D39).
+     */
+    bool allow_untrusted_store_plugin = false;
+
     bool operator==(const CacheOffloadConfig& other) const {
         return path == other.path && capacity_bytes == other.capacity_bytes &&
                linear_attention_capacity_bytes == other.linear_attention_capacity_bytes &&
-               buffer_slots == other.buffer_slots && use_page_cache == other.use_page_cache;
+               buffer_slots == other.buffer_slots && use_page_cache == other.use_page_cache &&
+               store_library_path == other.store_library_path && store_provider_name == other.store_provider_name &&
+               allow_untrusted_store_plugin == other.allow_untrusted_store_plugin;
     }
 
     std::string to_string() const {
@@ -49,6 +67,11 @@ struct CacheOffloadConfig {
         oss << "    linear_attention_capacity_bytes: " << linear_attention_capacity_bytes << "\n";
         oss << "    buffer_slots: " << buffer_slots << "\n";
         oss << "    use_page_cache: " << std::boolalpha << use_page_cache << "\n";
+        oss << "    store_library_path: " << (store_library_path.empty() ? std::string("<none>") : store_library_path)
+            << "\n";
+        oss << "    store_provider_name: " << (store_provider_name.empty() ? std::string("<default>") : store_provider_name)
+            << "\n";
+        oss << "    allow_untrusted_store_plugin: " << std::boolalpha << allow_untrusted_store_plugin << "\n";
         oss << "  }";
         return oss.str();
     }

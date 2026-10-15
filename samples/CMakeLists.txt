@@ -13,6 +13,7 @@ if(ENABLE_SAMPLES)
     add_subdirectory(c/text_generation)
     add_subdirectory(c/whisper_speech_recognition)
     add_subdirectory(c/visual_language_chat)
+    add_subdirectory(c/kv_cache_store_plugin)
 endif()
 
 install(FILES
@@ -52,4 +53,5 @@ install(DIRECTORY
         c/text_generation
         c/whisper_speech_recognition
         c/visual_language_chat
+        c/kv_cache_store_plugin
         DESTINATION samples/c COMPONENT cpp_samples_genai)

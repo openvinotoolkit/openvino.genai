@@ -10,6 +10,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "continuous_batching/cache/abi_sdk_fingerprint.hpp"
 #include "continuous_batching/cache/file_kv_cache_store.hpp"
 #include "continuous_batching/cache/kv_cache_disk_layout.hpp"
 #include "continuous_batching/cache/kv_cache_offload_manager.hpp"
@@ -277,7 +278,7 @@ const OvKVCacheStoreProviderDescriptor* get_provider(uint32_t index) {
 const OvKVCacheStoreModuleInfo g_module_info = {
     OV_KVCACHE_STORE_ABI_MAJOR,
     OV_KVCACHE_STORE_ABI_MINOR,
-    "ov-genai-kvcache-store-abi-dev",
+    get_host_sdk_build_fingerprint(),
     "ov-genai-file-store",
     "1.0",
     1,
