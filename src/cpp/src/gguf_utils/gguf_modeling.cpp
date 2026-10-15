@@ -18,6 +18,7 @@
 #include "gguf_utils/building_blocks.hpp"
 #include "gguf_utils/gguf_modeling.hpp"
 #include "gguf_utils/gguf_utils.hpp"
+#include "utils.hpp"
 
 using namespace ov;
 using namespace ov::op::v13;
@@ -160,7 +161,7 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
     if (use_legacy_reader) {
         ss << "ov::genai::gguf_reader is '" << ov::genai::LEGACY_GGUF_READER
            << "': converting with the legacy GGUF reader instead of the OpenVINO GGUF frontend: " << model_path;
-        ov::genai::gguf_utils::print_gguf_debug_info(ss.str());
+        ov::genai::utils::print_gguf_debug_info(ss.str());
 
         auto [config, consts, qtypes] = load_gguf(model_path);
         const std::string model_arch = std::get<std::string>(config.at("architecture"));
@@ -173,21 +174,21 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
         model = create_language_model(config, consts, qtypes);
     } else {
         ss << "Loading and converting GGUF model via the OpenVINO GGUF frontend: " << model_path;
-        ov::genai::gguf_utils::print_gguf_debug_info(ss.str());
+        ov::genai::utils::print_gguf_debug_info(ss.str());
 
         model = convert_gguf_with_frontend(model_path);
     }
 
     if (enable_save_ov_model) {
         std::filesystem::path save_path = std::filesystem::path(model_path).parent_path() / "openvino_model.xml";
-        ov::genai::gguf_utils::save_openvino_model(model, save_path.string(), true);
+        ov::genai::utils::save_openvino_model(model, save_path.string(), true);
     }
 
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::high_resolution_clock::now() - start_time).count();
     ss.str("");
     ss << (use_legacy_reader ? "Legacy GGUF" : "GGUF model") << " conversion done. Time: " << duration << "ms";
-    ov::genai::gguf_utils::print_gguf_debug_info(ss.str());
+    ov::genai::utils::print_gguf_debug_info(ss.str());
 
     return model;
 }

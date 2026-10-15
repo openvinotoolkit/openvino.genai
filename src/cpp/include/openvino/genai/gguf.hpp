@@ -49,13 +49,6 @@ public:
 };
 
 /**
-* @brief enable enable_save_ov_model property serves to serialize ov model (xml/bin) generated from gguf model on disk for re-use.
-* Set `true` to activate this mode.
-* And create LLMPipeline instance with this config.
-*/
-static constexpr ov::Property<bool> enable_save_ov_model{"enable_save_ov_model"};
-
-/**
 * @brief Selects which reader converts a `.gguf` file.
 *
 * Accepted values:

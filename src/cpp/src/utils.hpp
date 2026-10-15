@@ -138,6 +138,8 @@ std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared
 
 ov::Core& singleton_core();
 
+std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties);
+
 /// @brief Key used in the main properties map to carry per-model property sub-maps.
 /// Value shape: ov::AnyMap keyed by model role (e.g. "vision_embeddings").
 extern const std::string PER_MODEL_PROPERTIES;
@@ -241,6 +243,8 @@ ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front
 bool env_setup_for_print_debug_info();
 
 void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title);
+
+void print_gguf_debug_info(const std::string& debug_info);
 
 void print_scheduler_config_info(const SchedulerConfig &scheduler_config);
 
@@ -404,6 +408,8 @@ void log_attention_backend(const std::string& attention_backend);
 // Print an INFO message about the Paged Attention initialization failure and the SDPA fallback,
 // followed by a DEBUG message with the original exception details.
 void log_paged_attention_fallback(const ov::Exception& exception);
+
+void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16);
 
 ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov::Tensor& text_embeds, const std::vector<ov::Tensor>& image_embeds, int64_t image_token_id);
 

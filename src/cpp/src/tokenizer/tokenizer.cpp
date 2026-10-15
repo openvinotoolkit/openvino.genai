@@ -11,8 +11,6 @@
 #include "openvino/pass/manager.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/genai/tokenizer.hpp"
-#include "openvino/genai/gguf.hpp"
-#include "gguf_utils/gguf_utils.hpp"
 
 #include "tokenizer/tokenizer_impl.hpp"
 
@@ -20,11 +18,7 @@ namespace ov {
 namespace genai {
 
 Tokenizer::Tokenizer(const std::filesystem::path& tokenizer_path, const ov::AnyMap& properties) {
-    if (is_gguf_model(tokenizer_path)) {
-        m_pimpl = GGUFTokenizer(tokenizer_path, properties).m_pimpl;
-    } else {
-        m_pimpl = std::make_shared<Tokenizer::TokenizerImpl>(tokenizer_path, properties);
-    }
+    m_pimpl = std::make_shared<Tokenizer::TokenizerImpl>(tokenizer_path, properties);
 }
 
 Tokenizer::Tokenizer(

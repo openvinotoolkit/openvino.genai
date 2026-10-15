@@ -11,7 +11,7 @@ import pytest
 from conftest import run_wwb
 from huggingface_hub import hf_hub_download
 from whowhatbench import model_loaders
-from whowhatbench.wwb import llamacpp_gen_text
+from whowhatbench.text_generation_strategies import LlamaCPPGeneration
 
 
 pytestmark = pytest.mark.skipif(sys.platform.startswith("win"), reason="llama.cpp tests run on Linux only")
@@ -24,7 +24,7 @@ def test_llamacpp_raw_completion_preserves_gguf_prompt_tokens():
     model.tokenize.return_value = prompt_tokens
     model.return_value = {"choices": [{"text": "answer"}]}
 
-    assert llamacpp_gen_text(model, None, "Who is Mark Twain?", 32, True) == "answer"
+    assert LlamaCPPGeneration().run_generation(model, None, "Who is Mark Twain?", None, 32, True).answer_text == "answer"
 
     model.tokenize.assert_called_once_with(b"Who is Mark Twain?", add_bos=True, special=True)
     model.assert_called_once_with(prompt_tokens, max_tokens=32, echo=False, temperature=0.0)
@@ -35,7 +35,10 @@ def test_llamacpp_chat_completion_uses_chat_template():
     model = Mock()
     model.create_chat_completion.return_value = {"choices": [{"message": {"content": "answer"}}]}
 
-    assert llamacpp_gen_text(model, None, "Who is Mark Twain?", 32, True, use_chat_template=True) == "answer"
+    result = LlamaCPPGeneration().run_generation(
+        model, None, "Who is Mark Twain?", None, 32, True, use_chat_template=True
+    )
+    assert result.answer_text == "answer"
 
     model.create_chat_completion.assert_called_once_with(
         messages=[{"role": "user", "content": "Who is Mark Twain?"}],

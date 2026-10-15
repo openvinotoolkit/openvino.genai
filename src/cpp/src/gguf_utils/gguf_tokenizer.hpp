@@ -18,6 +18,8 @@ using FactoryCreateType = ov::OutputVector (*)(const std::string& op_type,
 
 namespace ov {
 namespace genai {
+bool is_gguf_model(const std::filesystem::path& file_path);
+
 std::map<std::string, GGUFMetaData> tokenizer_config_from_meta(
     const std::unordered_map<std::string, GGUFMetaData>& metadata);
 

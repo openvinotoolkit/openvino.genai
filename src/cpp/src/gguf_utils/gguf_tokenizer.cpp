@@ -44,6 +44,10 @@ constexpr int32_t MIN_CACHE_CAPACITY = 20'000;
 
 namespace ov {
 namespace genai {
+bool is_gguf_model(const std::filesystem::path& file_path) {
+    return file_path.extension() == ".gguf";
+}
+
 std::map<std::string, GGUFMetaData> tokenizer_config_from_meta(
     const std::unordered_map<std::string, GGUFMetaData>& metadata) {
     std::map<std::string, GGUFMetaData> tokenizer_config;

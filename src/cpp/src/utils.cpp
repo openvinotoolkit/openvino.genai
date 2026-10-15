@@ -410,6 +410,13 @@ ov::Core& singleton_core() {
 }
 
 
+namespace {
+bool is_gguf_model(const std::filesystem::path& file_path) {
+    return file_path.extension() == ".gguf";
+}
+
+} // namespace
+
 const std::string PER_MODEL_PROPERTIES = "MODEL_PROPERTIES";
 
 ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device) {
@@ -457,6 +464,34 @@ ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string&
         result.insert_or_assign(property.first, property.second);
     }
     return result;
+}
+
+std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties) {
+    bool enable_save_ov_model = false;
+    ov::AnyMap properties = external_properties;
+
+    auto it = properties.find(ov::genai::enable_save_ov_model.name());
+    if (it != properties.end()) {
+        enable_save_ov_model = it->second.as<bool>();
+        properties.erase(it);
+    }
+
+    return {properties, enable_save_ov_model};
+}
+
+void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16) {
+    try {
+        auto serialize_start_time = std::chrono::high_resolution_clock::now();
+        ov::save_model(model, save_path, compress_to_fp16);
+        auto serialize_finish_time = std::chrono::high_resolution_clock::now();
+        auto serialize_duration = std::chrono::duration_cast<std::chrono::milliseconds>(serialize_finish_time - serialize_start_time).count();
+        std::stringstream ss;
+        ss << "Save generated OpenVINO model to: " << save_path << " done. Time: " << serialize_duration << " ms";
+        ov::genai::utils::print_gguf_debug_info(ss.str());
+    }
+    catch (const ov::Exception& e) {
+        OPENVINO_THROW("Exception during model serialization ", e.what(), ", user can disable it by setting 'ov::genai::enable_save_ov_model' property to false");
+    }
 }
 
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& properties) {
@@ -680,6 +715,13 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
         }
         std::cout << " " << device << ": " << full_name << std::endl;
     }
+}
+
+void print_gguf_debug_info(const std::string &debug_info) {
+    if (!env_setup_for_print_debug_info()) {
+        return;
+    }
+    std::cout << "[GGUF Reader]: " << debug_info << std::endl;
 }
 
 void print_scheduler_config_info(const SchedulerConfig &scheduler_config) {

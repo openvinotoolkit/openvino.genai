@@ -42,7 +42,7 @@ export_tokenizer(tokenizer, output_dir)
 ```
 [//]: # "tokenizer.save_pretrained(output_dir) is required above to mitigate runtime errors"
 
-If a converted model in OpenVINO IR format is already available in the collection of [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) on Hugging Face, it can be downloaded directly via hf.
+If a converted model in OpenVINO IR format is already available on [OpenVINO on Hugging Face](https://huggingface.co/OpenVINO), it can be downloaded directly via hf.
 ```sh
 pip install huggingface-hub
 hf download <model> --local-dir <output_folder>
@@ -50,7 +50,7 @@ hf download <model> --local-dir <output_folder>
 
 ### Using GGUF models
 
-For optimal performance and memory consumption, prefer prepared OpenVINO IRs from the [OpenVINO LLM collection on Hugging Face](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) whenever available. These models are exported and compressed with Optimum Intel, as shown above. Use GGUF when the model is available only in that format or you need to run an existing GGUF file directly.
+For optimal performance and memory consumption, prefer prepared OpenVINO IRs from [OpenVINO on Hugging Face](https://huggingface.co/OpenVINO) whenever available. These models are exported and compressed with Optimum Intel, as shown above. Use GGUF when the model is available only in that format or you need to run an existing GGUF file directly.
 
 To run samples with a GGUF model, provide the path to the `.gguf` file via the `model_dir` parameter. The default legacy reader supports `llama`, `qwen2`, and `qwen3` architectures.
 

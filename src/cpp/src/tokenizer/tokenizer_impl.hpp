@@ -14,6 +14,7 @@
 #include "openvino/pass/manager.hpp"
 #include "openvino/runtime/core.hpp"
 
+#include "gguf_utils/gguf_tokenizer.hpp"
 #include "tokenizer/chat_template_fallback_map.hpp"
 #include "tokenizer/make_tokenizer_stateful.hpp"
 #include "tokenizer/tokenizers_path.hpp"
@@ -26,7 +27,6 @@ namespace genai {
 void check_arguments(const ov::AnyMap& parameters, std::set<std::string> allowed_argnames);
 ov::Core core_with_extension();
 ov::Core get_core_singleton();
-std::filesystem::path resolve_ov_tokenizers_path();
 
 class StructuredOutputController;
 class Tokenizer::TokenizerImpl {
@@ -60,6 +60,7 @@ public:
     TokenizerImpl() = default;
     TokenizerImpl(const std::filesystem::path& models_path, const ov::AnyMap& properties);
     TokenizerImpl(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties);
+
     void setup_tokenizer(const std::filesystem::path& models_path, const ov::AnyMap& properties);
     void setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, ov::AnyMap properties);
 
