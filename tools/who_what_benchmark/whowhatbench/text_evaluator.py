@@ -12,7 +12,7 @@ from importlib.resources import files
 from .registry import register_evaluator, BaseEvaluator
 from .whowhat_metrics import TextDivergency, TextSimilarity, KLDivergency
 from .text_generation_strategies import GenerationStrategy
-from .artifacts_manager import Metrics, ArtifactsSchema, ArtifactsManager
+from .artifacts_manager import GenerationResults, Metrics, ArtifactsSchema, ArtifactsManager
 
 
 PROMPTS_FILE = 'text_prompts.yaml'
@@ -266,14 +266,16 @@ class TextEvaluator(BaseEvaluator):
                         len(batch) == self.seqs_per_request
                         or p_idx == len(prompt_data.values) - 1
                     ):
+                        batch_start_idx = p_idx - len(batch) + 1
                         ans_batch = model.generate(
                             batch, [generation_config] * len(batch)
                         )
-                        for ans in ans_batch:
+                        for batch_offset, ans in enumerate(ans_batch):
+                            sample_idx = batch_start_idx + batch_offset
                             artifacts_collector.collect(
-                                p_idx,
-                                p,
-                                ans.m_generation_ids[0],
+                                sample_idx,
+                                batch[batch_offset],
+                                GenerationResults(answer_text=ans.m_generation_ids[0]),
                             )
 
                         batch.clear()
