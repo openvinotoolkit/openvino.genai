@@ -80,8 +80,7 @@ public:
 
         const bool recalculate_merged_embeddings = !encoded_images.empty() || !encoded_videos.empty();
 
-        ProcessedInputs result;
-        result.inputs_embeds = m_inputs_embedder->get_inputs_embeds(
+        const auto inputs_embeds = m_inputs_embedder->get_inputs_embeds(
             unified_prompt,
             encoded_images,
             encoded_videos,
@@ -92,11 +91,15 @@ public:
             {}
         );
 
+        ProcessedInputs result;
+
+        result.inputs_embeds = ov::Tensor(inputs_embeds.get_element_type(), inputs_embeds.get_shape());
+        inputs_embeds.copy_to(result.inputs_embeds);
+
         const size_t sequence_length = result.inputs_embeds.get_shape().at(1);
 
         // VLMProcessor is stateless - stateless prefill for position_ids / attention_mask
-        std::tie(result.position_ids, result.rope_delta) =
-            m_inputs_embedder->get_position_ids(sequence_length, 0);
+        std::tie(result.position_ids, result.rope_delta) = m_inputs_embedder->get_position_ids(sequence_length, 0);
 
         result.attention_mask = ov::Tensor(ov::element::i64, {1, sequence_length});
         std::fill_n(result.attention_mask.data<int64_t>(), result.attention_mask.get_size(), int64_t{1});
@@ -150,8 +153,7 @@ public:
         const bool recalculate_merged_embeddings =
             !chat_data.encoded_images.empty() || !chat_data.encoded_videos.empty();
 
-        ProcessedInputs result;
-        result.inputs_embeds = m_inputs_embedder->get_inputs_embeds(
+        const auto inputs_embeds = m_inputs_embedder->get_inputs_embeds(
             templated_prompt,
             chat_data.encoded_images,
             chat_data.encoded_videos,
@@ -162,11 +164,15 @@ public:
             chat_data.vision_counts
         );
 
+        ProcessedInputs result;
+
+        result.inputs_embeds = ov::Tensor(inputs_embeds.get_element_type(), inputs_embeds.get_shape());
+        inputs_embeds.copy_to(result.inputs_embeds);
+
         const size_t sequence_length = result.inputs_embeds.get_shape().at(1);
 
         // VLMProcessor is stateless - stateless prefill for position_ids / attention_mask
-        std::tie(result.position_ids, result.rope_delta) =
-            m_inputs_embedder->get_position_ids(sequence_length, 0);
+        std::tie(result.position_ids, result.rope_delta) = m_inputs_embedder->get_position_ids(sequence_length, 0);
 
         result.attention_mask = ov::Tensor(ov::element::i64, {1, sequence_length});
         std::fill_n(result.attention_mask.data<int64_t>(), result.attention_mask.get_size(), int64_t{1});
