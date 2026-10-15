@@ -658,6 +658,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
         const ContinuousBatchingScheduler::Output& m_scheduler_output;
         bool m_armed = true;
 
+        BorrowedLinearAttentionRowsGuard(ContinuousBatchingImpl& impl,
+                                         const ContinuousBatchingScheduler::Output& scheduler_output)
+            : m_impl(impl), m_scheduler_output(scheduler_output) {
+        }
+
         ~BorrowedLinearAttentionRowsGuard() noexcept {
             if (m_armed) {
                 try {

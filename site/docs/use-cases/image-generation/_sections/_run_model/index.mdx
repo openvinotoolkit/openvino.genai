@@ -6,6 +6,9 @@ import Image2ImageCPP from './_image2image_cpp.mdx';
 import Image2ImagePython from './_image2image_python.mdx';
 import Image2ImageJS from './_image2image_js.mdx';
 
+import Image2ImageMultiCPP from './_image2image_multi_cpp.mdx';
+import Image2ImageMultiPython from './_image2image_multi_python.mdx';
+
 import InpaintingCPP from './_inpainting_cpp.mdx';
 import InpaintingPython from './_inpainting_python.mdx';
 import InpaintingJS from './_inpainting_js.mdx';
@@ -99,6 +102,42 @@ Use CPU or GPU as devices without any other code change.
         </Tabs>
     </TabItemJS>
 </LanguageTabs>
+
+#### Multiple Reference Images
+
+Models conditioned on a set of reference images, such as [Qwen-Image 2.1](https://huggingface.co/Qwen/Qwen-Image-2.1), accept several images.
+They are referred to as `Picture 1`, `Picture 2` and so on in the prompt.
+The images may differ in resolution.
+
+<LanguageTabs>
+    <TabItemPython>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <Image2ImageMultiPython device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <Image2ImageMultiPython device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemPython>
+    <TabItemCpp>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <Image2ImageMultiCPP device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <Image2ImageMultiCPP device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemCpp>
+</LanguageTabs>
+
+:::info
+
+Qwen-Image 2.1 decodes RGBA, so the generated tensor has `4` channels instead of `3`.
+Save such images in a format supporting transparency, for example PNG or 32-bit BMP.
+
+:::
 
 ### `InpaintingPipeline`
 

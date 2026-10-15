@@ -41,6 +41,7 @@ full_chat_types = [
     "llava-qwen2",
     "qwen3_omni",
     "qwen3_omni_moe",
+    "minicpmv4_7",
 ]
 
 

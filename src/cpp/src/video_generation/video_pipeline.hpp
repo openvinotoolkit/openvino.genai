@@ -81,6 +81,10 @@ protected:
         VideoGenerationConfig merged_generation_config = m_generation_config;
         utils::update_generation_config(merged_generation_config, properties);
         replace_defaults(merged_generation_config);
+        // After the defaults, which can keep CFG on through the audio guidance scale. Validate first: the
+        // warning about an ignored negative prompt needs it before 'resolve_negative_prompt' drops it.
+        utils::validate_generation_config(merged_generation_config);
+        utils::resolve_negative_prompt(merged_generation_config);
         return merged_generation_config;
     }
 

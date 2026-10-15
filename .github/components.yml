@@ -9,6 +9,7 @@ tests_dependencies:
     - automatic_speech_recognition
     - continuous_batching
     - visual_language
+    - omni
     - LLM
     - GGUF
     - tokenizers
@@ -82,8 +83,13 @@ LLM:
 visual_language:
   revalidate:
     - VLM_samples
+    - omni
     - llm_bench
     - WWB
+
+omni:
+  revalidate:
+    - llm_bench
 
 automatic_speech_recognition:
   revalidate:
@@ -110,11 +116,13 @@ RAG:
 speech_generation:
   revalidate:
     - Speech_generation_samples
+    - omni
 
 continuous_batching:
   revalidate:
     - LLM
     - visual_language
+    - omni
     - speculative_decoding
     - prompt_lookup
     - sampling

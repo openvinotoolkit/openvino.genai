@@ -30,12 +30,7 @@ using ov::genai::RawImageGenerationPerfMetrics;
 
 namespace {
 
-auto text2image_generate_docstring = R"(
-    Generates images for text-to-image models.
-
-    :param prompt: input prompt
-    :type prompt: str
-
+auto generate_kwargs_docstring = R"(
     :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
 
     Expected parameters list:
@@ -59,6 +54,34 @@ auto text2image_generate_docstring = R"(
     :return: ov.Tensor with resulting images
     :rtype: ov.Tensor
 )";
+
+auto text2image_generate_docstring = std::string(R"(
+    Generates images for text-to-image models.
+
+    :param prompt: input prompt
+    :type prompt: str
+)") + generate_kwargs_docstring;
+
+auto image2image_generate_docstring = std::string(R"(
+    Generates images for image-to-image models.
+
+    :param prompt: input prompt
+    :type prompt: str
+
+    :param image: initial image
+    :type image: ov.Tensor
+)") + generate_kwargs_docstring;
+
+auto image2image_generate_several_images_docstring = std::string(R"(
+    Generates images for image-to-image models conditioned on a set of reference images.
+    The images are referred to as 'Picture 1', 'Picture 2' and so on in the prompt.
+
+    :param prompt: input prompt
+    :type prompt: str
+
+    :param image: initial images. Only Qwen-Image 2.1 accepts more than one image
+    :type image: collections.abc.Sequence[ov.Tensor]
+)") + generate_kwargs_docstring;
 
 auto raw_image_generation_perf_metrics_docstring = R"(
     Structure with raw performance metrics for each generation before any statistics are calculated.
@@ -644,7 +667,25 @@ void init_image_generation_pipelines(py::module_& m) {
             },
             py::arg("prompt"), "Input string",
             py::arg("image"), "Initial image",
-            (text2image_generate_docstring + std::string(" \n ")).c_str())
+            (image2image_generate_docstring + std::string(" \n ")).c_str())
+        .def(
+            "generate",
+            [](ov::genai::Image2ImagePipeline& pipe,
+                const std::string& prompt,
+                const std::vector<ov::Tensor>& images,
+                const py::kwargs& kwargs
+            ) -> py::typing::Union<ov::Tensor> {
+                ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
+                ov::Tensor res;
+                {
+                    py::gil_scoped_release rel;
+                    res = pipe.generate(prompt, images, params);
+                }
+                return py::cast(res);
+            },
+            py::arg("prompt"), "Input string",
+            py::arg("image"), "Initial images. Only Qwen-Image 2.1 accepts more than one image",
+            (image2image_generate_several_images_docstring + std::string(" \n ")).c_str())
         .def("decode", &ov::genai::Image2ImagePipeline::decode, py::arg("latent"))
         .def("get_performance_metrics", &ov::genai::Image2ImagePipeline::get_performance_metrics)
         .def("export_model", &ov::genai::Image2ImagePipeline::export_model, py::arg("export_path"));
