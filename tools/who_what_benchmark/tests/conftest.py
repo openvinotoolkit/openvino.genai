@@ -79,6 +79,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
     "stable-diffusion-3-tiny-random": {"name": "yujiepan/stable-diffusion-3-tiny-random", "convert_args": []},
     "tiny-random-flux": {"name": "optimum-intel-internal-testing/tiny-random-flux", "convert_args": []},
     "tiny-random-flux-fill": {"name": "optimum-intel-internal-testing/tiny-random-flux-fill", "convert_args": []},
+    "tiny-random-qwen-image-2.1": {
+        "name": "optimum-intel-internal-testing/tiny-random-qwen-image-2.1",
+        "convert_args": ["--trust-remote-code", "--task", "image-to-image"],
+    },
     "tiny-random-ltx-video": {"name": "optimum-intel-internal-testing/tiny-random-ltx-video", "convert_args": []},
     "tiny-random-ltx2": {"name": "optimum-intel-internal-testing/tiny-random-ltx2", "convert_args": []},
     "tiny-videochat-flash-qwen": {

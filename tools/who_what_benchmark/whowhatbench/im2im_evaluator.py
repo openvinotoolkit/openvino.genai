@@ -6,6 +6,7 @@ from typing import Any, Union
 
 import datasets
 import pandas as pd
+from PIL import Image
 from tqdm import tqdm
 from transformers import set_seed
 import torch
@@ -38,6 +39,23 @@ def prepare_default_data(num_samples=None):
     )
 
 
+def prepare_default_data_multi_image(num_samples=None):
+    dataset_name = "OmniGen2/OmniContext"
+    num_samples = 10 if num_samples is None else num_samples
+    default_dataset = (
+        datasets.load_dataset(dataset_name, split="train", streaming=True)
+        .filter(lambda example: len(example["input_images"]) >= 2)
+        .take(num_samples)
+    )
+    return default_dataset.map(
+        lambda example: {
+            "prompts": example["instruction"],
+            "images": example["input_images"],
+        },
+        remove_columns=default_dataset.column_names,
+    )
+
+
 @register_evaluator("image-to-image")
 class Image2ImageEvaluator(Text2ImageEvaluator):
     def __init__(
@@ -53,6 +71,7 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
         gen_image_fn=None,
         seed=42,
         is_genai=False,
+        image_dir=None,
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -71,6 +90,7 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
         self.generation_fn = gen_image_fn
         self.is_genai = is_genai
         self.resolution = None
+        self.image_dir = image_dir
 
         if base_model:
             self.gt_data = self._generate_data(
@@ -109,8 +129,10 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
                 data = pd.DataFrame.from_dict(data)
         else:
             with patched_parquet(parquet_generate_tables):
-                data = pd.DataFrame.from_dict(prepare_default_data(self.num_samples))
+                data = pd.DataFrame.from_dict(self._prepare_default_data())
 
+        if self.num_samples is not None:
+            data = data.iloc[: self.num_samples]
         prompts = data["prompts"]
         images = data["images"]
         output_images = []
@@ -124,6 +146,7 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
         ):
             set_seed(self.seed)
             rng = rng.manual_seed(self.seed)
+            image = self._resolve_conditioning_images(image)
             output = generation_fn(
                 model,
                 prompt,
@@ -139,3 +162,26 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
         df = pd.DataFrame(res_data)
 
         return df
+
+    def _prepare_default_data(self):
+        return prepare_default_data(self.num_samples)
+
+    def _resolve_conditioning_images(self, image):
+        if isinstance(image, str):
+            if not os.path.isabs(image) and self.image_dir:
+                image = os.path.join(self.image_dir, image)
+            return Image.open(image).convert("RGB")
+        return image
+
+
+@register_evaluator("multi-image-to-image")
+class MultiImage2ImageEvaluator(Image2ImageEvaluator):
+    def _prepare_default_data(self):
+        return prepare_default_data_multi_image(self.num_samples)
+
+    def _resolve_conditioning_images(self, images):
+        if not isinstance(images, (list, tuple)):
+            images = [images]
+        if len(images) < 2:
+            raise ValueError(f"multi-image-to-image requires at least 2 conditioning images, got {len(images)}")
+        return [super()._resolve_conditioning_images(image) for image in images]
