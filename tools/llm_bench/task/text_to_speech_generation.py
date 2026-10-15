@@ -24,6 +24,7 @@ from llm_bench_utils.tts_utils import (
     resolve_omni_generation_settings,
     load_qwen3_reference_audio,
     validate_reference_audio_source,
+    QWEN3_CUSTOM_VOICE_DEFAULT_SPEAKER,
     QWEN3_BASE_DEFAULT_REF_AUDIO_URL,
     QWEN3_BASE_DEFAULT_REF_TEXT,
 )
@@ -82,6 +83,13 @@ def _get_qwen3_tts_generation_settings(args):
         if not settings["ref_text"]:
             settings["ref_text"] = QWEN3_BASE_DEFAULT_REF_TEXT
             log.info("Qwen3-TTS Base: speech_ref_text not provided, using default reference text.")
+
+    if settings["variant"] == "custom_voice" and not settings["voice"]:
+        settings["voice"] = QWEN3_CUSTOM_VOICE_DEFAULT_SPEAKER
+        log.info(
+            "Qwen3-TTS CustomVoice: speech_voice not provided, using default speaker '%s'.",
+            QWEN3_CUSTOM_VOICE_DEFAULT_SPEAKER,
+        )
     return settings
 
 
