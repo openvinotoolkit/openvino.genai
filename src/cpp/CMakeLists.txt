@@ -211,6 +211,7 @@ if(NOT ENABLE_GGUF)
                      ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_modeling.cpp
                      ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_multimodal.cpp
                      ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_audio.cpp
+                     ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_lfm2_audio.cpp
                      ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/building_blocks.cpp)
     list(REMOVE_ITEM SOURCE_FILES ${GGUF_SOURCES})
 endif()

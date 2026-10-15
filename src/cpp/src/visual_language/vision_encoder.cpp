@@ -14,6 +14,7 @@
 #include "visual_language/gemma3n/classes.hpp"
 #include "visual_language/gemma4/classes.hpp"
 #include "visual_language/internvl_chat/classes.hpp"
+#include "visual_language/lfm2/classes.hpp"
 #include "visual_language/llava/classes.hpp"
 #include "visual_language/llava_next/classes.hpp"
 #include "visual_language/llava_next_video/classes.hpp"
@@ -76,6 +77,8 @@ VisionEncoder::Ptr create_vision_encoder(VLMModelType type, Args&&... args) {
         return construct_model<VisionEncoderGemma3>(std::forward<Args>(args)...);
     case VLMModelType::GEMMA3N:
         return construct_model<VisionEncoderGemma3n>(std::forward<Args>(args)...);
+    case VLMModelType::LFM2_VL:
+        return construct_model<VisionEncoderLFM2>(std::forward<Args>(args)...);
     case VLMModelType::GEMMA4:
         return construct_model<VisionEncoderGemma4>(std::forward<Args>(args)...);
     case VLMModelType::GEMMA4_UNIFIED:

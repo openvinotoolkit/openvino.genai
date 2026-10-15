@@ -31,6 +31,8 @@ enum class VLMModelType {
     GEMMA3N,
     GEMMA4,
     GEMMA4_UNIFIED,
+    LFM2_AUDIO,
+    LFM2_VL,
     VIDEOCHAT_FLASH_QWEN,
     QWEN3_OMNI,
     DEEPSEEK_OCR2,

@@ -25,8 +25,15 @@
 
 namespace ov::genai {
 
+/// @brief LFM2.5 Audio GGUF depthformer/codec component for OmniPipeline.
+static constexpr ov::Property<std::string> vocoder_path{"vocoder_path"};
+/// @brief LFM2.5 Audio GGUF spectral detokenizer component for OmniPipeline.
+static constexpr ov::Property<std::string> audio_detokenizer_path{"audio_detokenizer_path"};
+/// @brief LFM2.5 Audio generation mode: interleaved (default) or sequential.
+static constexpr ov::Property<std::string> lfm2_audio_mode{"lfm2_audio_mode"};
+
 /**
- * @brief Public Qwen3-Omni pipeline supporting text + speech outputs.
+ * @brief Public multimodal pipeline supporting text and speech outputs.
  *
  * OmniPipeline composes a VLM pipeline (text generation with hidden-state collection)
  * with a Qwen3-Omni speech pipeline (Talker + CodePredictor + Code2Wav). Each call to
@@ -48,8 +55,9 @@ namespace ov::genai {
  *   - Pure-DI: takes pre-built VLM and talker components for independent device choices
  *              or a custom TalkerBase subclass.
  *
- * Both ctors enforce that the loaded model is Qwen3-Omni capable (model_type == QWEN3_OMNI
- * and enable_audio_output) — non-Omni models throw at construction time.
+ * GGUF paths load LFM2.5 Audio with mmproj_path, vocoder_path and audio_detokenizer_path.
+ * This backend uses CPU/SDPA and emits speech chunks after waveform decoding completes.
+ * The dependency-injection constructor requires Qwen3-Omni components.
  *
  * @note This is a preview API and is subject to change.
  */
@@ -59,6 +67,7 @@ public:
     /// `models_path`, both compiled to `device` with the same `properties`. Equivalent to
     /// constructing a `VLMPipeline(models_path, device, properties)` plus a
     /// `Talker(models_path, device, properties)` and passing them to the DI ctor.
+    /// A GGUF path loads the LFM2.5 Audio components selected by the GGUF properties.
     OmniPipeline(const std::filesystem::path& models_path,
                  const std::string& device,
                  const ov::AnyMap& properties = {});

@@ -31,6 +31,8 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"gemma3n", VLMModelType::GEMMA3N},
         {"gemma4", VLMModelType::GEMMA4},
         {"gemma4_unified", VLMModelType::GEMMA4_UNIFIED},
+        {"lfm2_audio", VLMModelType::LFM2_AUDIO},
+        {"lfm2_vl", VLMModelType::LFM2_VL},
         {"videochat_flash_qwen", VLMModelType::VIDEOCHAT_FLASH_QWEN},
         {"qwen3_omni", VLMModelType::QWEN3_OMNI},
         {"qwen3_omni_moe", VLMModelType::QWEN3_OMNI},

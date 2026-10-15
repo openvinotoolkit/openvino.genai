@@ -25,9 +25,16 @@ std::pair<std::string, Any> speech_streamer(OmniSpeechStreamerVariant func) {
 
 OmniPipeline::OmniPipeline(const std::filesystem::path& models_path,
                            const std::string& device,
-                           const ov::AnyMap& properties)
-    : OmniPipeline(std::make_shared<VLMPipeline>(models_path, device, properties),
-                   std::make_shared<Talker>(models_path, device, properties)) {}
+                           const ov::AnyMap& properties) {
+#ifdef ENABLE_GGUF
+    if (models_path.extension() == ".gguf") {
+        m_pimpl = std::make_unique<OmniPipelineImpl>(models_path, device, properties);
+        return;
+    }
+#endif
+    m_pimpl = std::make_unique<OmniPipelineImpl>(std::make_shared<VLMPipeline>(models_path, device, properties),
+                                                 std::make_shared<Talker>(models_path, device, properties));
+}
 
 OmniPipeline::OmniPipeline(const std::shared_ptr<VLMPipelineBase>& vlm,
                            const std::shared_ptr<TalkerBase>& talker)

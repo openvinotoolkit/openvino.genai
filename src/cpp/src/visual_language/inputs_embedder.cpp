@@ -16,6 +16,7 @@
 #include "visual_language/gemma3n/classes.hpp"
 #include "visual_language/gemma4/classes.hpp"
 #include "visual_language/internvl_chat/classes.hpp"
+#include "visual_language/lfm2/classes.hpp"
 #include "visual_language/llava/classes.hpp"
 #include "visual_language/llava_next/classes.hpp"
 #include "visual_language/llava_next_video/classes.hpp"
@@ -58,6 +59,8 @@ std::shared_ptr<Base> construct_model(Args&&... args) {
 template <typename Base, typename... Args>
 std::shared_ptr<Base> create_inputs_embedder(VLMModelType type, Args&&... args) {
     switch (type) {
+    case VLMModelType::LFM2_AUDIO:
+        return construct_model<Base, InputsEmbedderLFM2Audio>(std::forward<Args>(args)...);
     case VLMModelType::MINICPM:
         return construct_model<Base, InputsEmbedderMiniCPM>(std::forward<Args>(args)...);
     case VLMModelType::MINICPMV4_7:
@@ -90,6 +93,8 @@ std::shared_ptr<Base> create_inputs_embedder(VLMModelType type, Args&&... args) 
         return construct_model<Base, InputsEmbedderGemma3>(std::forward<Args>(args)...);
     case VLMModelType::GEMMA3N:
         return construct_model<Base, InputsEmbedderGemma3n>(std::forward<Args>(args)...);
+    case VLMModelType::LFM2_VL:
+        return construct_model<Base, InputsEmbedderLFM2Vision>(std::forward<Args>(args)...);
     case VLMModelType::GEMMA4:
         return construct_model<Base, InputsEmbedderGemma4>(std::forward<Args>(args)...);
     case VLMModelType::GEMMA4_UNIFIED:
@@ -154,11 +159,11 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(const VLMModels& models,
                                                  const std::string& device,
                                                  const ov::AnyMap& properties)
     : m_vlm_config(models.config),
-      m_vision_encoder(VisionEncoder::create(models, device, properties)),
-      m_embedding(std::make_shared<EmbeddingsModel>(models.at("text_embeddings"),
-                                                    models.config.scale_emb,
-                                                    device,
-                                                    properties)),
+      m_vision_encoder(models.config.model_type == VLMModelType::LFM2_AUDIO
+                           ? nullptr
+                           : VisionEncoder::create(models, device, properties)),
+      m_embedding(
+          std::make_shared<EmbeddingsModel>(models.at("text_embeddings"), models.config.scale_emb, device, properties)),
       m_tokenizer(tokenizer),
       m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) {}
 
@@ -169,17 +174,18 @@ InputsEmbedder::InputsEmbedder(const VLMModels& models,
     m_impl = create_inputs_embedder<IInputsEmbedder>(models.config.model_type, models, tokenizer, device, properties);
 }
 
-InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
-        const VLMConfig& vlm_config,
-        const std::filesystem::path& model_dir,
-        const Tokenizer& tokenizer,
-        const std::string& device,
-        const ov::AnyMap device_config) :
-    m_vlm_config{vlm_config},
-    m_vision_encoder(VisionEncoder::create(model_dir, m_vlm_config.model_type, device, device_config)),
-    m_embedding(EmbeddingsModel::create(model_dir, m_vlm_config.scale_emb, device, device_config)),
-    m_tokenizer{tokenizer},
-    m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) { }
+InputsEmbedder::IInputsEmbedder::IInputsEmbedder(const VLMConfig& vlm_config,
+                                                 const std::filesystem::path& model_dir,
+                                                 const Tokenizer& tokenizer,
+                                                 const std::string& device,
+                                                 const ov::AnyMap device_config)
+    : m_vlm_config{vlm_config},
+      m_vision_encoder(m_vlm_config.model_type == VLMModelType::LFM2_AUDIO
+                           ? nullptr
+                           : VisionEncoder::create(model_dir, m_vlm_config.model_type, device, device_config)),
+      m_embedding(EmbeddingsModel::create(model_dir, m_vlm_config.scale_emb, device, device_config)),
+      m_tokenizer{tokenizer},
+      m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) {}
 
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const VLMConfig& vlm_config,
@@ -364,6 +370,7 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_text_embedding(
 }
 
 std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
+    OPENVINO_ASSERT(images.empty() || m_vision_encoder, "This model has no image encoder");
     std::vector<EncodedImage> encoded_images;
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
     for (const ov::Tensor& image : single_images) {

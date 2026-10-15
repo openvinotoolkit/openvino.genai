@@ -68,3 +68,18 @@ def test_accuracy_uses_token_histories(tokens, choices, passed):
         )
         is passed
     )
+
+
+def test_lfm2_audio_requires_all_scenarios_and_api_checks():
+    args = SimpleNamespace(family="lfm2_audio", api_checks=True)
+    names = ["text", "audio", "multi_audio", "reversed_audio", "audio_chat", "audio_reset"]
+    checks = {name: {"passed": True} for name in ["beam_search", "cancel_and_reset", "invalid_audio"]}
+    report = {"cases": [{"modality": name} for name in names], "api_checks": checks}
+    validate_coverage(args, report)
+    report["cases"].append(report["cases"][0])
+    with pytest.raises(ValueError):
+        validate_coverage(args, report)
+    report["cases"].pop()
+    del checks["invalid_audio"]
+    with pytest.raises(ValueError):
+        validate_coverage(args, report)

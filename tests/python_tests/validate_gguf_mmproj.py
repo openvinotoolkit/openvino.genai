@@ -68,7 +68,7 @@ def main():
     parser.add_argument("--multi-media", action="store_true", help="Compare two images and, when available, two audio inputs")
     parser.add_argument("--audio-boundaries", action="store_true", help="Compare audio immediately before and after the 30-second chunk boundary")
     parser.add_argument("--chat", action="store_true", help="Also compare a cached image chat follow-up")
-    parser.add_argument("--family", choices=("gemma3", "gemma4", "qwen35", "muse"), default="gemma3")
+    parser.add_argument("--family", choices=("gemma3", "gemma4", "qwen35", "muse", "lfm2", "lfm2_audio"), default="gemma3")
     parser.add_argument("--attention-backend", choices=("SDPA", "PA"), default="SDPA")
     parser.add_argument("--kv-cache-precision", choices=("f16", "f32"), default="f16")
     parser.add_argument("--full-coverage", action="store_true",
@@ -93,7 +93,7 @@ def main():
     if args.full_coverage:
         if not (args.multi_media and args.chat and args.api_checks):
             parser.error("--full-coverage requires --multi-media, --chat and --api-checks")
-        if args.family != "gemma3" and not args.video_frames:
+        if args.family not in ("gemma3", "lfm2", "lfm2_audio") and not args.video_frames:
             parser.error("--full-coverage requires --video-frames for this family")
         if args.family == "gemma4" and not (args.audio and args.audio_boundaries):
             parser.error("--full-coverage requires --audio and --audio-boundaries for Gemma4")
@@ -120,7 +120,7 @@ def main():
         report["reference_sources"] = json.loads(args.reference_manifest.read_text())
     args.report.parent.mkdir(parents=True, exist_ok=True)
     try:
-        run(args, report)
+        (run_lfm2_audio if args.family == "lfm2_audio" else run)(args, report)
         validate_coverage(args, report)
         report["completed"] = True
         report["passed"] = (report["request_reset_matches"] and report["chat_reset_matches"] and
@@ -135,12 +135,25 @@ def main():
 
 
 def validate_coverage(args, report):
+    if getattr(args, "family", None) == "lfm2_audio":
+        expected = {"text", "audio", "multi_audio", "reversed_audio", "audio_chat", "audio_reset"}
+        modalities = [case["modality"] for case in report["cases"]]
+        if len(modalities) != len(set(modalities)) or set(modalities) != expected:
+            raise ValueError(f"Expected {expected}, got {modalities}")
+        api = {"beam_search", "cancel_and_reset", "invalid_audio"} if args.api_checks else set()
+        if set(report.get("api_checks", {})) != api:
+            raise ValueError(f"Expected API checks {api}")
+        report["required_modalities"] = sorted(expected)
+        report["required_api_checks"] = sorted(api)
+        return
     expected = {"text", "image"}
     api = set()
     if args.video_frames:
         expected.add("video")
     if args.multi_media:
         expected.add("multi_image")
+        if getattr(args, "family", None) == "lfm2":
+            expected.add("reversed_image")
     if args.chat:
         expected.add("image_chat")
     if args.audio:
@@ -179,8 +192,114 @@ def save_report(args, report):
     args.report.write_text(json.dumps(report, indent=2) + "\n")
 
 
+def run_lfm2_audio(args, report):
+    if not args.audio:
+        raise ValueError("LFM2 audio acceptance requires --audio")
+    pipe = genai.VLMPipeline(str(args.language), "CPU", mmproj_path=str(args.mmproj),
+                            ATTENTION_BACKEND=args.attention_backend,
+                            INFERENCE_PRECISION_HINT="f32", KV_CACHE_PRECISION=args.kv_cache_precision,
+                            DYNAMIC_QUANTIZATION_GROUP_SIZE=0, INFERENCE_NUM_THREADS=4)
+    tokenizer = pipe.get_tokenizer()
+    with wave.open(str(args.audio)) as source:
+        assert source.getframerate() == 16000 and source.getnchannels() == 1 and source.getsampwidth() == 2
+        waveform = np.frombuffer(source.readframes(source.getnframes()), dtype="<i2").astype(np.float32) / 32768
+    def generate(prompt, **kwargs):
+        stream = Tokens()
+        result = pipe.generate(prompt, max_new_tokens=20, do_sample=False, streamer=stream, **kwargs)
+        return stream.tokens, result.texts[0]
+    with tempfile.TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        def compare(name, messages, result, samples):
+            tokens, text = result
+            files = []
+            for i, samples_i in enumerate(samples):
+                path = directory / f"audio-{i}.wav"
+                with wave.open(str(path), "wb") as output:
+                    output.setnchannels(1)
+                    output.setsampwidth(2)
+                    output.setframerate(16000)
+                    output.writeframes((samples_i * 32768).astype("<i2").tobytes())
+                files.append(str(path))
+            prompt = directory / "prompt.txt"
+            prompt.write_text(tokenizer.apply_chat_template(messages, add_generation_prompt=True))
+            history = directory / "history.txt"
+            history.write_text(" ".join(map(str, tokens)))
+            command = [str(args.oracle.resolve()), str((args.reference_language or args.language).resolve()),
+                       str((args.reference_mmproj or args.mmproj).resolve()), ";".join(files) or "-",
+                       str(prompt), str(history)]
+            if args.kv_cache_precision == "f32":
+                command.append("--kv-cache-f32")
+            process = subprocess.run(command, capture_output=True, text=True, errors="replace")
+            (args.report.parent / f"{args.report.stem}-{name}.log").write_text(process.stderr)
+            process.check_returncode()
+            reference = list(map(int, next(line for line in process.stdout.splitlines() if line.startswith("CHOICES")).split()[1:]))
+            case = {"modality": name, "text": text, "tokens": tokens,
+                    "reference_choices_on_same_history": reference,
+                    "first_token_matches": bool(tokens) and reference[0] == tokens[0],
+                    "matching_choice_fraction": sum(a == b for a, b in zip(tokens, reference)) / max(len(tokens), 1)}
+            report["cases"].append(case)
+            save_report(args, report)
+            print(json.dumps(case), flush=True)
+        base = "<audio>\nTranscribe the audio."
+        reference_base = "<__media__>\nTranscribe the audio."
+        first = generate(base, audios=[ov.Tensor(waveform)])
+        text = generate("What is 2 plus 2?")
+        compare("text", [{"role": "user", "content": "What is 2 plus 2?"}], text, [])
+        compare("audio", [{"role": "user", "content": reference_base}], first, [waveform])
+        second = np.ascontiguousarray(waveform[::-1])
+        for reverse in (False, True):
+            samples = [second, waveform] if reverse else [waveform, second]
+            prompt = "<ov_genai_audio_1><ov_genai_audio_0> Compare the clips." if reverse else "<audio><audio> Compare the clips."
+            supplied = [waveform, second]
+            compare("reversed_audio" if reverse else "multi_audio",
+                    [{"role": "user", "content": "<__media__><__media__> Compare the clips."}],
+                    generate(prompt, audios=[ov.Tensor(x) for x in supplied]), samples)
+        chat = genai.ChatHistory([{"role": "user", "content": base}])
+        _, first_text = generate(chat, audios=[ov.Tensor(waveform)])
+        chat.append({"role": "assistant", "content": first_text})
+        chat.append({"role": "user", "content": "What did the speaker say?"})
+        compare("audio_chat", [{"role": "user", "content": reference_base},
+                               {"role": "assistant", "content": first_text},
+                               {"role": "user", "content": "What did the speaker say?"}], generate(chat), [waveform])
+        repeated = generate(base, audios=[ov.Tensor(waveform)])
+        compare("audio_reset", [{"role": "user", "content": reference_base}], repeated, [waveform])
+        report["request_reset_matches"] = repeated[0] == first[0]
+        report["chat_reset_matches"] = True
+        if args.api_checks:
+            checks = report["api_checks"] = {}
+            def check(name, function):
+                try:
+                    function()
+                    checks[name] = {"passed": True}
+                except Exception:
+                    checks[name] = {"passed": False, "error": traceback.format_exc()}
+                save_report(args, report)
+            def beams():
+                result = pipe.generate(base, audios=[ov.Tensor(waveform)], num_beams=3,
+                                       num_return_sequences=2, max_new_tokens=8, min_new_tokens=8, do_sample=False)
+                assert len(result.texts) == 2 and np.isfinite(result.scores).all()
+            def cancel():
+                class Cancel(Tokens):
+                    def write(self, tokens):
+                        super().write(tokens)
+                        return genai.StreamingStatus.CANCEL
+                pipe.generate(base, audios=[ov.Tensor(waveform)], max_new_tokens=20, streamer=Cancel())
+                assert generate("What is 2 plus 2?")[0] == text[0]
+            def invalid():
+                for value in (np.zeros(159, np.float32), np.zeros((2, 160), np.float32)):
+                    try:
+                        pipe.generate(base, audios=[ov.Tensor(value)], max_new_tokens=1)
+                    except RuntimeError:
+                        continue
+                    raise AssertionError("Invalid audio was accepted")
+                assert generate("What is 2 plus 2?")[0] == text[0]
+            check("beam_search", beams)
+            check("cancel_and_reset", cancel)
+            check("invalid_audio", invalid)
+
+
 def run(args, report):
-    image_marker = {"gemma3": "<start_of_image>", "gemma4": "<|image|>", "muse": "<|image|>",
+    image_marker = {"gemma3": "<start_of_image>", "gemma4": "<|image|>", "muse": "<|image|>", "lfm2": "<image>",
                     "qwen35": "<|vision_start|><|image_pad|><|vision_end|>"}[args.family]
     image_prompt = "<ov_genai_image_0>\nDescribe the image."
     pipe = genai.VLMPipeline(str(args.language), "CPU", mmproj_path=str(args.mmproj),
@@ -221,7 +340,7 @@ def run(args, report):
                 oracle_options.append("--kv-cache-f32")
             process = subprocess.run([str(args.oracle.resolve()), str((args.reference_language or args.language).resolve()),
                 str((args.reference_mmproj or args.mmproj).resolve()), ";".join(media) if media else "-",
-                str(directory / "prompt.txt"), str(directory / "history.txt")] + oracle_options, capture_output=True, text=True)
+                str(directory / "prompt.txt"), str(directory / "history.txt")] + oracle_options, capture_output=True, text=True, errors="replace")
             (args.report.parent / f"{args.report.stem}-{modality}.log").write_text(process.stderr)
             process.check_returncode()
             choices = next(line for line in process.stdout.splitlines() if line.startswith("CHOICES"))
@@ -282,6 +401,8 @@ def run(args, report):
                         "mixed" if mixed else "audio", (image if mixed else []) + audio)
         if args.multi_media:
             second_pixels = np.ascontiguousarray(pixels.transpose(1, 0, 2))
+            if args.family == "lfm2":
+                second_pixels = 255 - second_pixels
             second_file = directory / "image2.png"
             Image.fromarray(second_pixels).save(second_file)
             prompt = "<ov_genai_image_0>\n<ov_genai_image_1>\nCompare these images."
@@ -309,6 +430,11 @@ def run(args, report):
                 files = [audio_file(sample, f"{name}_{i}") for i, sample in enumerate(samples)]
                 compare([{"role": "user", "content": prompt.replace("<|audio|>", "<__media__>")}],
                         *generate(prompt, audios=[ov.Tensor(sample) for sample in samples]), name, files)
+        if args.multi_media and args.family == "lfm2":
+            compare([{"role": "user", "content": "<__media__>\n<__media__>\nCompare these images."}],
+                    *generate("<ov_genai_image_1>\n<ov_genai_image_0>\nCompare these images.",
+                              images=[ov.Tensor(pixels[None]), ov.Tensor(second_pixels[None])]),
+                    "reversed_image", [str(second_file)] + image)
         chat_reset_matches = True
         if args.chat:
             pipe.start_chat()

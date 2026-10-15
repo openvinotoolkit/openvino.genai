@@ -59,6 +59,16 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const std::string& p
                                                              const OmniTalkerSpeechConfig& talker_speech_config,
                                                              const StreamerVariant& streamer,
                                                              const OmniSpeechStreamerVariant& speech_streamer) {
+#ifdef ENABLE_GGUF
+    if (m_lfm2) {
+        OPENVINO_ASSERT(images.empty() && videos.empty() && videos_metadata.empty(),
+                        "LFM2 audio accepts audio and text");
+        ChatHistory history(
+            {{{"role", "system"}, {"content", m_lfm2->default_system_prompt(talker_speech_config.return_audio)}},
+             {{"role", "user"}, {"content", prompt}}});
+        return m_lfm2->generate(history, audios, text_config, talker_speech_config, streamer, speech_streamer);
+    }
+#endif
     validate_omni_talker_speech_config(talker_speech_config);
     enforce_text_config_compatible_with_audio(text_config, talker_speech_config);
 
@@ -95,6 +105,13 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const ChatHistory& h
                                                              const OmniTalkerSpeechConfig& talker_speech_config,
                                                              const StreamerVariant& streamer,
                                                              const OmniSpeechStreamerVariant& speech_streamer) {
+#ifdef ENABLE_GGUF
+    if (m_lfm2) {
+        OPENVINO_ASSERT(images.empty() && videos.empty() && videos_metadata.empty(),
+                        "LFM2 audio accepts audio and text");
+        return m_lfm2->generate(history, audios, text_config, talker_speech_config, streamer, speech_streamer);
+    }
+#endif
     validate_omni_talker_speech_config(talker_speech_config);
     enforce_text_config_compatible_with_audio(text_config, talker_speech_config);
 

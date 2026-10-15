@@ -1,0 +1,71 @@
+{
+  "source_revision": "19e65845923a7f136442c95137884ec61eb386aa",
+  "source_sha256": "a1538aeb7eaf90b95dce0c9dbfd6bdfc6e0d029615e72354440099b97d411edd",
+  "config": {
+    "sample_rate": 16000,
+    "normalize": "per_feature",
+    "window_size": 0.025,
+    "window_stride": 0.01,
+    "window": "hann",
+    "features": 128,
+    "n_fft": 512,
+    "log": true,
+    "frame_splicing": 1,
+    "dither": 1e-05,
+    "pad_to": 0,
+    "pad_value": 0.0
+  },
+  "scenarios": [
+    {
+      "samples": 160,
+      "shape": [
+        1,
+        128,
+        2
+      ],
+      "length": [
+        1
+      ],
+      "features_sha256": "5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+    },
+    {
+      "samples": 1281,
+      "shape": [
+        1,
+        128,
+        9
+      ],
+      "length": [
+        8
+      ],
+      "features_sha256": "1525ab0d2e491b7749a404ad55fb8951c610f8eead3f74847deb6f4a3934e21d"
+    },
+    {
+      "samples": 16000,
+      "shape": [
+        1,
+        128,
+        101
+      ],
+      "length": [
+        100
+      ],
+      "features_sha256": "ae0ab49a3203fd001b798e4fe05367976273eef9c6e7543346e7c537bff06317"
+    }
+  ],
+  "istft_source_sha256": "1076458d10e91f2c5b4c133298436dc46269ed05253de0af8158c9566f5d3c94",
+  "istft_scenarios": [
+    {
+      "frames": 1,
+      "samples": 320
+    },
+    {
+      "frames": 18,
+      "samples": 5760
+    },
+    {
+      "frames": 37,
+      "samples": 11840
+    }
+  ]
+}

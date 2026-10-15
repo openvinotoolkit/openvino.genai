@@ -4,17 +4,22 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 
+#include "gguf_utils/gguf_lfm2_audio.hpp"
+#include "gguf_utils/gguf_multimodal.hpp"
 #include "gtest/gtest.h"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/op/constant.hpp"
 #include "openvino/op/gather.hpp"
 #include "openvino/op/parameter.hpp"
 #include "openvino/op/reshape.hpp"
+#include "openvino/opsets/opset15.hpp"
 #include "visual_language/clip.hpp"
 #include "visual_language/embedding_model.hpp"
 #include "visual_language/gemma3/classes.hpp"
 #include "visual_language/gemma4/classes.hpp"
+#include "visual_language/lfm2/classes.hpp"
 #include "visual_language/muse_glimmer/classes.hpp"
 #include "visual_language/vlm_chat_context.hpp"
 #include "visual_language/vlm_utils.hpp"
@@ -33,7 +38,7 @@ ov::genai::GGUFTokenizerParameters sentencepiece_config() {
                                    "a",
                                    "b"};
     std::vector<int32_t> types{2, 3, 3, 3, 3, 3, 3, 3, 1, 1, 1};
-    for (const auto* token : {"<|audio|>", "<|audio>", "<audio|>", "<|image|>", "<|video|>"}) {
+    for (const auto* token : {"<|audio|>", "<|audio>", "<audio|>", "<|image|>", "<|video|>", "<|audio_start|>"}) {
         vocab.emplace_back(token);
         types.push_back(3);
     }
@@ -68,7 +73,7 @@ ov::genai::GGUFTokenizerParameters sentencepiece_config() {
          {"add_bos_token", add_bos},
          {"chat_template", std::string("{{ bos_token }}<start_of_turn>{{ messages[0]['content'] }}<end_of_turn>")}});
 }
-constexpr size_t vocab_size = 272;  // tokens in sentencepiece_config()
+constexpr size_t vocab_size = 273;  // tokens in sentencepiece_config()
 
 ov::genai::GGUFTokenizerParameters combining_marks_config(const std::string& pre) {
     ov::Tensor types(ov::element::i32, {9});
@@ -498,4 +503,244 @@ TEST(GGUFMultimodal, ImageOnlyProcessorConfigIsLoadedForBothModalities) {
     EXPECT_EQ(video.size_height, image.size_height);
     EXPECT_EQ(video.size_width, image.size_width);
     EXPECT_EQ(video.patch_size, image.patch_size);
+}
+
+TEST(GGUFMultimodal, LFM2AudioPlacementPreservesAdjacentAndReversedClips) {
+    using namespace ov::genai;
+    Tokenizer tokenizer(sentencepiece_config());
+    auto models = gemma4_models();
+    models.config.model_type = VLMModelType::LFM2_AUDIO;
+    models.models.erase("vision_embeddings");
+    InputsEmbedderLFM2Audio embedder(models, tokenizer, "CPU", {});
+    embedder.set_apply_chat_template_status(false);
+    embedder.set_audio_encoder(first_sample_audio_features);
+    const auto sample = [](float value) {
+        ov::Tensor audio(ov::element::f32, {1});
+        audio.data<float>()[0] = value;
+        return audio;
+    };
+    const auto encoded = embedder.encode_audios({sample(7.f), sample(9.f)});
+    const auto placed = [&](const NormalizedPrompt& prompt, size_t base) {
+        auto sequence = prompt.audios_sequence;
+        vlm_utils::rebase_media_sequence(sequence, base);
+        VLMPerfMetrics metrics;
+        const auto features =
+            embedder.get_inputs_embeds(prompt.unified_prompt, {}, {}, encoded, metrics, true, {}, {}, sequence, {});
+        std::vector<float> values;
+        for (size_t i = 0; i < features.get_size(); i += 4)
+            if (features.data<const float>()[i] != 0.25f)
+                values.push_back(features.data<const float>()[i]);
+        return values;
+    };
+    const auto native = embedder.normalize_prompt("a<audio><audio>b", 0, 0, 0, {}, {}, encoded);
+    EXPECT_EQ(native.audios_sequence, (std::vector<size_t>{0, 1}));
+    EXPECT_EQ(native.unified_prompt, "a<|audio_start|><|audio_start|><|audio_start|><|audio_start|>b");
+    EXPECT_EQ(placed(native, 0), (std::vector<float>{7.f, 7.f, 9.f, 9.f}));
+    const auto reversed = embedder.normalize_prompt("<ov_genai_audio_3><ov_genai_audio_2>", 0, 0, 2, {}, {}, encoded);
+    EXPECT_EQ(reversed.audios_sequence, (std::vector<size_t>{3, 2}));
+    EXPECT_EQ(placed(reversed, 2), (std::vector<float>{9.f, 9.f, 7.f, 7.f}));
+    EXPECT_EQ(embedder.normalize_prompt("ab", 0, 0, 0, {}, {}, {}).unified_prompt, "ab");
+    EXPECT_ANY_THROW(embedder.normalize_prompt("<ov_genai_audio_0>", 0, 0, 0, {}, {}, {}));
+    EXPECT_ANY_THROW(embedder.normalize_prompt("<|audio_start|><audio><audio>", 0, 0, 0, {}, {}, encoded));
+    EXPECT_ANY_THROW(embedder.encode_audios({ov::Tensor(ov::element::f32, {0})}));
+    EXPECT_ANY_THROW(embedder.encode_images({ov::Tensor(ov::element::u8, {1, 2, 2, 3})}));
+    EXPECT_TRUE(embedder.encode_audios({}).empty());
+}
+
+TEST(GGUFMultimodal, LFM2AudioPreprocessingMatchesLiquidReference) {
+    using namespace ov::opset15;
+    using namespace ov::genai;
+    const auto directory = std::filesystem::path(__FILE__).parent_path() / "data" / "lfm2_audio";
+    auto features = std::make_shared<Parameter>(ov::element::f32, ov::PartialShape{1, 1, 128, -1});
+    features->output(0).set_names({"features"});
+    auto positions = std::make_shared<Parameter>(ov::element::f32, ov::PartialShape{1, 1, -1, 512});
+    positions->output(0).set_names({"pos_emb"});
+    auto transposed = std::make_shared<Transpose>(features, Constant::create(ov::element::i64, {4}, {0, 1, 3, 2}));
+    auto output = std::make_shared<Reshape>(transposed, Constant::create(ov::element::i64, {3}, {1, -1, 128}), false);
+    auto dependency = std::make_shared<Multiply>(
+        std::make_shared<ReduceSum>(positions, Constant::create(ov::element::i64, {4}, {0, 1, 2, 3}), false),
+        Constant::create(ov::element::f32, {}, {0.f}));
+    auto result = std::make_shared<Add>(output, dependency);
+    result->output(0).set_names({"audio_features"});
+    GGUFMultimodalModels gguf;
+    gguf.audio = std::make_shared<ov::Model>(ov::OutputVector{result}, ov::ParameterVector{features, positions});
+    gguf.audio->set_rt_info(std::string("lfm2a"), {"gguf_mmproj", "audio.projector"});
+    gguf.audio->set_rt_info(std::string("128"), {"gguf_mmproj", "clip.audio.num_mel_bins"});
+    auto models = gemma4_models();
+    models.config.model_type = VLMModelType::LFM2_AUDIO;
+    models.config.hidden_size = 128;
+    models.models.erase("vision_embeddings");
+    auto ids = std::make_shared<Parameter>(ov::element::i64, ov::PartialShape{1, -1});
+    ids->output(0).set_names({"input_ids"});
+    auto text = std::make_shared<Gather>(Constant::create(ov::element::f32, {vocab_size, 128}, {0.25f}),
+                                         ids,
+                                         Constant::create(ov::element::i64, {}, {0}));
+    models.models["text_embeddings"] = std::make_shared<ov::Model>(ov::OutputVector{text}, ov::ParameterVector{ids});
+    InputsEmbedder embedder(models, Tokenizer(sentencepiece_config()), "CPU", {});
+    attach_gguf_audio_encoder(embedder, gguf, "CPU", {{ov::hint::inference_precision.name(), ov::element::f32}});
+    for (size_t count : {160, 1281, 16000}) {
+        const auto load = [&](const std::string& name, void* data, size_t bytes) {
+            std::ifstream stream(directory / name, std::ios::binary);
+            ASSERT_TRUE(stream.is_open()) << name;
+            ASSERT_TRUE(bool(stream.read(static_cast<char*>(data), bytes))) << name;
+            EXPECT_EQ(stream.peek(), std::char_traits<char>::eof());
+        };
+        ov::Tensor waveform(ov::element::f32, {count});
+        load("waveform-" + std::to_string(count) + ".bin", waveform.data(), waveform.get_byte_size());
+        const auto frames = count / 160 + 1;
+        std::vector<float> reference(128 * frames);
+        load("features-" + std::to_string(count) + ".bin", reference.data(), reference.size() * sizeof(float));
+        const auto encoded = embedder.encode_audios({waveform});
+        ASSERT_EQ(encoded.size(), 1);
+        ASSERT_EQ(encoded[0].audio_features.get_shape(), (ov::Shape{frames, 128}));
+        double error = 0., energy = 0.;
+        for (size_t t = 0; t < frames; ++t)
+            for (size_t m = 0; m < 128; ++m) {
+                const auto expected = reference[m * frames + t];
+                const auto actual = encoded[0].audio_features.data<const float>()[t * 128 + m];
+                error += (actual - expected) * (actual - expected);
+                energy += expected * expected;
+                EXPECT_NEAR(actual, expected, 3e-4f) << "samples=" << count << " frame=" << t << " mel=" << m;
+            }
+        EXPECT_LT(error / std::max(energy, 1.), 1e-8) << "samples=" << count;
+    }
+    EXPECT_ANY_THROW(embedder.encode_audios({ov::Tensor(ov::element::f32, {159})}));
+    EXPECT_ANY_THROW(embedder.encode_audios({ov::Tensor(ov::element::f32, {2, 160})}));
+}
+
+TEST(GGUFMultimodal, LFM2VisionTiledMarkersAndFeaturesFollowPromptOrder) {
+    using namespace ov::genai;
+    Tokenizer tokenizer(sentencepiece_config());
+    auto models = gemma4_models();
+    models.config.model_type = VLMModelType::LFM2_VL;
+    InputsEmbedderLFM2Vision embedder(models, tokenizer, "CPU", {});
+    embedder.set_apply_chat_template_status(false);
+    const auto image = [](float value, size_t tokens) {
+        EncodedImage result;
+        result.resized_source = ov::Tensor(ov::element::f32, {1, tokens, 4});
+        std::fill_n(result.resized_source.data<float>(), result.resized_source.get_size(), value);
+        result.num_image_tokens = tokens;
+        return result;
+    };
+    auto tiled = image(7.f, 6);
+    tiled.slices_grid = {1, 2};
+    tiled.crop_sizes = {{2, 1}, {2, 1}, {2, 1}};
+    auto overview = image(9.f, 1);
+    overview.crop_sizes = {{1, 1}};
+    const std::vector<EncodedImage> images{tiled, overview};
+    const auto normalized = embedder.normalize_prompt("<ov_genai_image_3>a<ov_genai_image_2>", 2, images);
+    EXPECT_EQ(normalized.images_sequence, (std::vector<size_t>{3, 2}));
+    EXPECT_EQ(normalized.unified_prompt,
+              "<|image_start|><|image|><|image_end|>a<|image_start|>"
+              "<|img_row_1_col_1|><|image|><|image|><|img_row_1_col_2|><|image|><|image|>"
+              "<|img_thumbnail|><|image|><|image|><|image_end|>");
+    VLMPerfMetrics metrics;
+    auto sequence = normalized.images_sequence;
+    vlm_utils::rebase_media_sequence(sequence, 2);
+    const auto embeds = embedder.get_inputs_embeds(normalized.unified_prompt, images, metrics, true, sequence);
+    std::vector<float> values;
+    for (size_t i = 0; i < embeds.get_size(); i += 4)
+        if (embeds.data<const float>()[i] != .25f)
+            values.push_back(embeds.data<const float>()[i]);
+    EXPECT_EQ(values, (std::vector<float>{9.f, 7.f, 7.f, 7.f, 7.f, 7.f, 7.f}));
+}
+
+TEST(GGUFTokenizerSpecialTokens, LFM2WaveformReconstructionMatchesLiquidReference) {
+    using namespace ov::opset15;
+    const auto directory = std::filesystem::path(__FILE__).parent_path() / "data" / "lfm2_audio";
+    const auto load = [&](const std::string& name, void* data, size_t bytes) {
+        std::ifstream stream(directory / name, std::ios::binary);
+        ASSERT_TRUE(stream.is_open()) << name;
+        ASSERT_TRUE(bool(stream.read(static_cast<char*>(data), bytes))) << name;
+        EXPECT_EQ(stream.peek(), std::char_traits<char>::eof());
+    };
+    std::vector<float> window(1280);
+    load("istft-window.bin", window.data(), window.size() * sizeof(float));
+    auto input = std::make_shared<Parameter>(ov::element::f32, ov::PartialShape{-1, 641, 2});
+    auto output = std::make_shared<IRDFT>(input,
+                                          Constant::create(ov::element::i64, {1}, {1}),
+                                          Constant::create(ov::element::i64, {1}, {1280}));
+    auto request = ov::Core{}
+                       .compile_model(std::make_shared<ov::Model>(ov::OutputVector{output}, ov::ParameterVector{input}),
+                                      "CPU",
+                                      ov::hint::inference_precision(ov::element::f32))
+                       .create_infer_request();
+    for (size_t frames : {1, 18, 37, 18}) {
+        SCOPED_TRACE(frames);
+        ov::Tensor spectral(ov::element::f32, {1, frames, 1282});
+        load("spectral-" + std::to_string(frames) + ".bin", spectral.data(), spectral.get_byte_size());
+        std::vector<float> reference(frames * 320);
+        load("istft-" + std::to_string(frames) + ".bin", reference.data(), reference.size() * sizeof(float));
+        auto actual = ov::genai::lfm2_spectrum_to_waveform(spectral, window, request);
+        ASSERT_EQ(actual.get_shape(), (ov::Shape{1, frames * 320}));
+        double error = 0., energy = 0.;
+        for (size_t i = 0; i < reference.size(); ++i) {
+            const auto delta = double(actual.data<const float>()[i]) - reference[i];
+            error += delta * delta;
+            energy += double(reference[i]) * reference[i];
+        }
+        EXPECT_LT(error / energy, 1e-8);
+    }
+}
+
+TEST(GGUFMultimodal, LFM2VisionNormalizesPixelsAndPadsTiledCanvas) {
+    using namespace ov::genai;
+    using namespace ov::opset15;
+    const auto models_for_pixels = [] {
+        auto models = gemma4_models();
+        models.config.model_type = VLMModelType::LFM2_VL;
+        models.processor_config.patch_size = 1;
+        models.processor_config.merge_size = 1;
+        models.processor_config.min_pixels = 1;
+        models.processor_config.max_pixels = 16;
+        models.processor_config.tile_size = 4;
+        models.processor_config.min_patches = 2;
+        models.processor_config.max_patches = 2;
+        models.processor_config.image_mean = {0.5f, 0.5f, 0.5f};
+        models.processor_config.image_std = {0.5f, 0.5f, 0.5f};
+        auto pixels = std::make_shared<Parameter>(ov::element::f32, ov::PartialShape{1, 3, -1, -1});
+        pixels->output(0).set_names({"pixel_values"});
+        auto indices = std::make_shared<Parameter>(ov::element::i32, ov::PartialShape{1, 1, 1, -1});
+        indices->output(0).set_names({"merge_indices"});
+        auto flat = std::make_shared<Reshape>(pixels, Constant::create(ov::element::i64, {3}, {1, 3, -1}), false);
+        auto output = std::make_shared<Transpose>(flat, Constant::create(ov::element::i64, {3}, {0, 2, 1}));
+        auto dependency = std::make_shared<Multiply>(
+            std::make_shared<Convert>(
+                std::make_shared<ReduceSum>(indices, Constant::create(ov::element::i64, {4}, {0, 1, 2, 3}), false),
+                ov::element::f32),
+            Constant::create(ov::element::f32, {}, {0.f}));
+        auto result = std::make_shared<Add>(output, dependency);
+        models.models["vision_embeddings"] =
+            std::make_shared<ov::Model>(ov::OutputVector{result}, ov::ParameterVector{pixels, indices});
+        return models;
+    };
+    VisionEncoderLFM2 encoder(models_for_pixels(), "CPU", {{ov::hint::inference_precision.name(), ov::element::f32}});
+    ov::Tensor image(ov::element::u8, {1, 2, 3, 3});
+    for (size_t i = 0; i < 6; ++i) {
+        image.data<uint8_t>()[i * 3] = 255;
+        image.data<uint8_t>()[i * 3 + 1] = 0;
+        image.data<uint8_t>()[i * 3 + 2] = 128;
+    }
+    const auto encoded = encoder.encode(image);
+    ASSERT_EQ(encoded.num_image_tokens, 6);
+    ASSERT_EQ(encoded.resized_source.get_shape(), (ov::Shape{1, 6, 3}));
+    for (size_t i = 0; i < 6; ++i) {
+        EXPECT_FLOAT_EQ(encoded.resized_source.data<const float>()[i * 3], 1.f);
+        EXPECT_FLOAT_EQ(encoded.resized_source.data<const float>()[i * 3 + 1], -1.f);
+        EXPECT_NEAR(encoded.resized_source.data<const float>()[i * 3 + 2], 1.f / 255.f, 1e-7f);
+    }
+    ov::Tensor tiled(ov::element::u8, {1, 4, 12, 3});
+    std::fill_n(tiled.data<uint8_t>(), tiled.get_size(), 255);
+    auto output = encoder.encode(tiled);
+    ASSERT_TRUE(output.slices_grid.has_slices());
+    ASSERT_EQ(output.crop_sizes.size(), 3);
+    ASSERT_EQ(output.crop_sizes[0].height, 16);
+    ASSERT_EQ(output.crop_sizes[1].height, 16);
+    // The 12x4 source is resized to 8x3 and padded to the 8x4 canvas.
+    for (size_t tile = 0; tile < 2; ++tile)
+        for (size_t y = 0; y < 4; ++y)
+            for (size_t x = 0; x < 4; ++x)
+                for (size_t c = 0; c < 3; ++c)
+                    EXPECT_FLOAT_EQ(output.resized_source.data<const float>()[((tile * 16 + y * 4 + x) * 3) + c],
+                                    y < 3 ? 1.f : -1.f);
 }

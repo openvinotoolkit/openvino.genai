@@ -52,12 +52,33 @@ Configs gguf_configs(const std::string& architecture,
                      const MmprojMetadata& meta,
                      const GGUFMultimodalModels& models) {
     Configs c;
+    if (projector == "lfm2a") {
+        c.config["hidden_size"] = models.language->input("inputs_embeds").get_partial_shape()[2].get_length();
+        c.config["model_type"] = "lfm2_audio";
+        c.config["position_ids_offset"] = 0;
+        c.image = json::object();
+        c.video = json::object();
+        return c;
+    }
     const auto patch = meta.integer("clip.vision.patch_size");
     c.config["hidden_size"] = models.language->input("inputs_embeds").get_partial_shape()[2].get_length();
     c.config["vision_config"]["patch_size"] = patch;
     c.image["patch_size"] = patch;
     c.image["image_mean"] = meta.floats("clip.vision.image_mean");
     c.image["image_std"] = meta.floats("clip.vision.image_std");
+    if (projector == "lfm2") {
+        c.config["model_type"] = "lfm2_vl";
+        c.config["position_ids_offset"] = 0;
+        c.image["merge_size"] = meta.integer("vision.merge");
+        const auto merged_patch = patch * c.image["merge_size"].get<size_t>();
+        c.image["min_pixels"] = 64 * merged_patch * merged_patch;
+        c.image["max_pixels"] = 256 * merged_patch * merged_patch;
+        c.image["tile_size"] = 512;
+        c.image["min_patches"] = 2;
+        c.image["max_patches"] = 10;
+        c.video = c.image;
+        return c;
+    }
     if (architecture == "gemma3") {
         const auto size = meta.integer("clip.vision.image_size");
         c.config["model_type"] = "gemma3";
@@ -135,26 +156,31 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     auto combined = projector_frontend.convert(projector_frontend.load(mmproj.string()));
     const MmprojMetadata meta(combined);
     const auto architecture = result.language->get_rt_info<std::string>("gguf_architecture");
-    const auto projector = meta.text("vision.projector");
+    const bool lfm_audio =
+        architecture == "lfm2" && meta.has("audio.projector") && meta.text("audio.projector") == "lfm2a";
+    const auto projector = lfm_audio ? meta.text("audio.projector") : meta.text("vision.projector");
     const bool gemma4 = architecture == "gemma4" && (projector == "gemma4v" || projector == "gemma4uv");
     OPENVINO_ASSERT((architecture == "gemma3" && projector == "gemma3") ||
                         ((architecture == "qwen35" || architecture == "qwen35moe") && projector == "qwen3vl_merger") ||
-                        (architecture == "muse-glimmer" && projector == "muse-glimmer") || gemma4,
+                        (architecture == "muse-glimmer" && projector == "muse-glimmer") || gemma4 || lfm_audio ||
+                        (architecture == "lfm2" && projector == "lfm2"),
                     "Unsupported GGUF language/projector pair: ",
                     architecture,
                     " / ",
                     projector);
 
-    if (gemma4 && meta.has("audio.projector")) {
+    if ((gemma4 || lfm_audio) && meta.has("audio.projector")) {
         result.audio = combined->clone();
         gguf::pass::AdaptMmprojToGenAI(gguf::pass::AdaptMmprojToGenAI::Modality::AUDIO).run_on_model(result.audio);
     }
     auto& vlm = result.vlm;
     using Adapter = gguf::pass::AdaptMmprojToGenAI;
     Adapter vision_adapter(Adapter::Modality::VISION, Adapter::Layout::VISION_ENCODERS);
-    auto vision = combined->clone();
-    vision_adapter.run_on_model(vision);
-    vlm.models = vision_adapter.get_vision_models();
+    if (!lfm_audio) {
+        auto vision = combined->clone();
+        vision_adapter.run_on_model(vision);
+        vlm.models = vision_adapter.get_vision_models();
+    }
     vlm.models["text_embeddings"] = genai->get_embedding_model();
     if (const auto& per_layer = genai->get_per_layer_embedding_model())
         vlm.models["text_embeddings_per_layer"] = per_layer;
