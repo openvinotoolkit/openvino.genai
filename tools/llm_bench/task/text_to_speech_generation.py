@@ -176,6 +176,7 @@ def run_qwen3_text_to_speech_generation_optimum(
 
     mem_consumption.start(num)
     start = time.perf_counter()
+
     inputs = model.preprocess_input(**preprocess_kwargs)
 
     # x_vector_only_mode is consumed by preprocess_input for Optimum.
@@ -210,7 +211,7 @@ def run_qwen3_text_to_speech_generation_optimum(
         md5_list,
         prompt_index,
         result_md5_list,
-        in_size=None,
+        in_size=len(input_text.split()),
         out_size=out_size,
         generation_time=generation_time,
         tokenization_kwargs={},
@@ -294,7 +295,7 @@ def run_qwen3_text_to_speech_generation_genai(
         md5_list,
         prompt_index,
         result_md5_list,
-        in_size=None,
+        in_size=len(input_text.split()),
         out_size=out_size,
         generation_time=generation_time,
         tokenization_kwargs=tokenization_kwargs,
@@ -377,7 +378,7 @@ def run_qwen3_text_to_speech_generation_pt(
         md5_list,
         prompt_index,
         result_md5_list,
-        in_size=None,
+        in_size=len(input_text.split()),
         out_size=out_size,
         generation_time=generation_time,
         tokenization_kwargs={},
