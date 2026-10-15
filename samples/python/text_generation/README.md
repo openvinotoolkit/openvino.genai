@@ -50,6 +50,8 @@ hf download <model> --local-dir <output_folder>
 
 ### Using GGUF models
 
+For optimal performance and memory consumption, prefer prepared OpenVINO IRs from the [OpenVINO LLM collection on Hugging Face](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) whenever available. These models are exported and compressed with Optimum Intel, as shown above. Use GGUF when the model is available only in that format or you need to run an existing GGUF file directly.
+
 To run samples with a GGUF model, provide the path to the `.gguf` file via the `model_dir` parameter. The default legacy reader supports `llama`, `qwen2`, and `qwen3` architectures.
 
 Prefer models quantized in `Q4_0` or `Q8_0` format for better performance and accuracy. Their quantization layouts are closest to those used by OpenVINO.

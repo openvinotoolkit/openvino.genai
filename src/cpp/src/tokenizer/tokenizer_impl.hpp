@@ -6,6 +6,7 @@
 #include <fstream>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 
 #include "minja/minja.hpp"
 #include "minja/chat-template.hpp"
@@ -13,7 +14,6 @@
 #include "openvino/pass/manager.hpp"
 #include "openvino/runtime/core.hpp"
 
-#include "gguf_utils/gguf_tokenizer.hpp"
 #include "tokenizer/chat_template_fallback_map.hpp"
 #include "tokenizer/make_tokenizer_stateful.hpp"
 #include "tokenizer/tokenizers_path.hpp"
@@ -26,6 +26,7 @@ namespace genai {
 void check_arguments(const ov::AnyMap& parameters, std::set<std::string> allowed_argnames);
 ov::Core core_with_extension();
 ov::Core get_core_singleton();
+std::filesystem::path resolve_ov_tokenizers_path();
 
 class StructuredOutputController;
 class Tokenizer::TokenizerImpl {
@@ -56,21 +57,11 @@ public:
 
     void set_state_if_necessary(CircularBufferQueueElementGuard<InferRequestWithState>& infer_request_guard, const ov::AnyMap& params);
 
+    TokenizerImpl() = default;
     TokenizerImpl(const std::filesystem::path& models_path, const ov::AnyMap& properties);
     TokenizerImpl(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties);
-    // Build the tokenizer from a .gguf file's tokenizer metadata (avoids re-opening the file when
-    // the language model was already read from it).
-    TokenizerImpl(const GGUFTokenizerParameters& gguf_tokenizer_parameters, const ov::AnyMap& properties);
-
     void setup_tokenizer(const std::filesystem::path& models_path, const ov::AnyMap& properties);
     void setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, ov::AnyMap properties);
-
-    void finalize_gguf_tokenizer(const std::shared_ptr<ov::Model>& ov_tokenizer,
-                                 const std::shared_ptr<ov::Model>& ov_detokenizer,
-                                 const std::map<std::string, GGUFMetaData>& tokenizer_config,
-                                 const ov::AnyMap& filtered_properties,
-                                 // Empty means "do not serialize the tokenizer/detokenizer IRs".
-                                 const std::filesystem::path& save_dir);
 
     void read_config(const std::filesystem::path& tokenizer_path);
     void read_special_tokens_map(const std::filesystem::path& tokenizer_path);

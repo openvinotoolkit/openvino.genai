@@ -25,6 +25,8 @@ hf download <model> --local-dir <output_folder>
 
 ### Using GGUF models
 
+For optimal performance and memory consumption, prefer prepared OpenVINO IRs from the [OpenVINO LLM collection on Hugging Face](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) whenever available. These models are exported and compressed with Optimum Intel, as shown above. Use GGUF when the model is available only in that format or you need to run an existing GGUF file directly.
+
 To run any samples with a GGUF model, simply provide the path to the .gguf file via the `<MODEL_DIR>` parameter.
 
 The default legacy reader handles `llama`, `qwen2`, and `qwen3`, and ignores some metadata,
@@ -37,6 +39,7 @@ Select the frontend when constructing the pipeline:
 
 ```cpp
 #include <iostream>
+#include <openvino/genai/gguf.hpp>
 #include <openvino/genai/llm_pipeline.hpp>
 
 int main() {

@@ -1,11 +1,9 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tiny GGUF frontend regressions against the regular Optimum export path.
+"""GenAI integration regressions: pinned GGUF -> Optimum reference IR -> pipeline comparisons.
 
-Only the selected GGUF and tokenizer/configuration files are downloaded to the Hub cache.
-Reference IRs and GGUF round-trip outputs are generated in pytest's temporary directories.
-Real-checkpoint quality comparisons remain in the opt-in WWB GGUF suite.
+See README.md, "GGUF Frontend Tests", for the steps, CI runtime and model-coverage checklist.
 """
 
 import gc
@@ -210,6 +208,16 @@ def test_tiny_gguf_detokenization(tiny_gguf_model, gguf_pipeline, text):
     tokenizer = tiny_gguf_model.reference.hf_tokenizer
     tokens = tokenizer.encode(text, add_special_tokens=False)
     assert gguf_pipeline.get_tokenizer().decode(tokens) == tokenizer.decode(tokens, skip_special_tokens=True)
+
+
+def test_tiny_gguf_standalone_tokenizer(tiny_gguf_model):
+    tokenizer = genai.GGUFTokenizer(tiny_gguf_model.gguf_path, GGUF_READER="FRONTEND")
+    assert isinstance(tokenizer, genai.Tokenizer)
+    reference = tiny_gguf_model.reference.hf_tokenizer
+    prompt = "Why is the Sun yellow?"
+    tokens = reference.encode(prompt)
+    assert tokenizer.encode(prompt).input_ids.data.tolist() == [tokens]
+    assert tokenizer.decode(tokens) == reference.decode(tokens, skip_special_tokens=True)
 
 
 @pytest.mark.parametrize(

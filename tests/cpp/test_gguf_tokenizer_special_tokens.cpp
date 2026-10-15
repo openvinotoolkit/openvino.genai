@@ -5,7 +5,7 @@
 #include <cstring>
 
 #include "gtest/gtest.h"
-#include "openvino/genai/tokenizer.hpp"
+#include "openvino/genai/gguf.hpp"
 
 namespace {
 ov::genai::GGUFTokenizerParameters sentencepiece_config() {
@@ -55,7 +55,7 @@ ov::genai::GGUFTokenizerParameters sentencepiece_config() {
 }  // namespace
 
 TEST(GGUFTokenizer, SentencePieceControlTokensUseTheirVocabularyIds) {
-    ov::genai::Tokenizer tokenizer(sentencepiece_config());
+    ov::genai::GGUFTokenizer tokenizer(sentencepiece_config());
     auto encoded = tokenizer.encode("<start_of_turn>a<end_of_turn><start_of_image><pad><end_of_image>",
                                     ov::genai::add_special_tokens(false));
     const std::vector<int64_t> expected{4, 9, 5, 6, 3, 7};
@@ -70,4 +70,8 @@ TEST(GGUFTokenizer, SentencePieceControlTokensUseTheirVocabularyIds) {
     EXPECT_EQ(tokenizer.get_eos_token(), "<eos>");
     EXPECT_EQ(tokenizer.apply_chat_template({{{"role", "user"}, {"content", "a"}}}, false),
               "<bos><start_of_turn>a<end_of_turn>");
+}
+
+TEST(GGUFTokenizer, MetadataRejectsModelsWithoutTokenizerInfo) {
+    EXPECT_THROW(ov::genai::GGUFTokenizerParameters::from_model(nullptr), ov::Exception);
 }

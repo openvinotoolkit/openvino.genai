@@ -314,7 +314,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const bool tokenizer_from_model = is_gguf_model(models_path) && !gguf_properties.enable_save_ov_model &&
                                       !gguf_properties.use_legacy_reader();
     const Tokenizer tokenizer =
-        tokenizer_from_model ? Tokenizer(GGUFTokenizerParameters(take_gguf_tokenizer_metadata(model)), properties)
+        tokenizer_from_model ? GGUFTokenizer(GGUFTokenizerParameters(take_gguf_tokenizer_metadata(model)), properties)
                              : Tokenizer(models_path, properties);
     // On the from-file path the frontend's metadata is still on the model and no longer read.
     erase_gguf_tokenizer_metadata(model);

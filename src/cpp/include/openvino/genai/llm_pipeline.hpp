@@ -12,6 +12,7 @@
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "openvino/genai/gguf.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/scheduler_config.hpp"
@@ -404,28 +405,6 @@ static constexpr ov::Property<SchedulerConfig> scheduler_config{"scheduler_confi
 */
 static constexpr ov::Property<bool> prompt_lookup{"prompt_lookup"};
 
-/**
-* @brief enable enable_save_ov_model property serves to serialize ov model (xml/bin) generated from gguf model on disk for re-use.
-* Set `true` to activate this mode.
-* And create LLMPipeline instance with this config.
-*/
-static constexpr ov::Property<bool> enable_save_ov_model{"enable_save_ov_model"};
-
-/**
-* @brief Selects which reader converts a `.gguf` file.
-*
-* Accepted values:
-*  - `"LEGACY"` (default) - the previous hand-written GGUF reader, supporting three architectures:
-*    `llama`, `qwen2`, and `qwen3`.
-*  - `"FRONTEND"` - the OpenVINO GGUF frontend, supporting a broader range of architectures.
-*    This is a preview feature that may have limitations.
-*
-* The legacy reader remains the default while the frontend is a preview feature.
-* The frontend is intended to replace the legacy reader in the future.
-*
-* Example: `LLMPipeline(model_path, "CPU", ov::genai::gguf_reader("FRONTEND"))`.
-*/
-static constexpr ov::Property<std::string> gguf_reader{"GGUF_READER"};
 
 
 }  // namespace genai

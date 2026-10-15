@@ -7,9 +7,7 @@
 #include <utility>
 
 #include "add_second_input_pass.hpp"
-#include "logger.hpp"
 #include "gguf_utils/gguf_utils.hpp"
-#include "openvino/genai/version.hpp"
 #include "sampling/structured_output/structured_output_controller.hpp"
 
 namespace ov {
@@ -260,80 +258,6 @@ Tokenizer::TokenizerImpl::TokenizerImpl(const std::pair<std::shared_ptr<ov::Mode
     setup_tokenizer(models, properties);
 }
 
-Tokenizer::TokenizerImpl::TokenizerImpl(const GGUFTokenizerParameters& gguf_tokenizer_parameters,
-                                        const ov::AnyMap& properties) {
-    ScopedVar env_manager(tokenizers_relative_to_genai());
-    m_shared_object_ov_tokenizers = load_shared_object(resolve_ov_tokenizers_path());
-
-    const auto gguf_props = gguf_utils::extract_gguf_properties(properties);
-    std::shared_ptr<ov::Model> ov_tokenizer, ov_detokenizer;
-    std::map<std::string, GGUFMetaData> tokenizer_config{};
-    std::tie(ov_tokenizer, ov_detokenizer, tokenizer_config) =
-        create_tokenizer_from_parameters(m_shared_object_ov_tokenizers, gguf_tokenizer_parameters.config);
-    // GGUF metadata alone carries no source directory, so there is nowhere to write the IRs to.
-    if (gguf_props.enable_save_ov_model) {
-        GENAI_WARN("enable_save_ov_model was requested but this Tokenizer was constructed from GGUF tokenizer "
-                   "parameters, which carry no source directory, so openvino_tokenizer.xml / "
-                   "openvino_detokenizer.xml are NOT written. Construct Tokenizer from the .gguf path instead.");
-    }
-    finalize_gguf_tokenizer(ov_tokenizer, ov_detokenizer, tokenizer_config, gguf_props.rest, {});
-}
-
-// Shared tail of the two GGUF tokenizer paths (from-file and from-model): pull token ids and
-// chat template from the config, optionally serialize, and hand off to setup_tokenizer(pair).
-void Tokenizer::TokenizerImpl::finalize_gguf_tokenizer(const std::shared_ptr<ov::Model>& ov_tokenizer,
-                                                       const std::shared_ptr<ov::Model>& ov_detokenizer,
-                                                       const std::map<std::string, GGUFMetaData>& tokenizer_config,
-                                                       const ov::AnyMap& filtered_properties,
-                                                       const std::filesystem::path& save_dir) {
-    if (auto val = get_if_exist<ov::Tensor>(tokenizer_config, "padding_token_id")) {
-        m_pad_token_id = static_cast<int64_t>((*val).data<uint32_t>()[0]);
-    }
-    if (auto val = get_if_exist<ov::Tensor>(tokenizer_config, "bos_token_id")) {
-        m_bos_token_id = static_cast<int64_t>((*val).data<uint32_t>()[0]);
-    }
-    if (auto val = get_if_exist<ov::Tensor>(tokenizer_config, "eos_token_id")) {
-        m_eos_token_id = static_cast<int64_t>((*val).data<uint32_t>()[0]);
-    }
-    // SentencePiece decoding omits CONTROL pieces even when special-token filtering is
-    // disabled. Read their spelling from the vocabulary so chat templates receive BOS/EOS.
-    if (auto vocabulary = get_if_exist<std::vector<std::string>>(tokenizer_config, "tokens")) {
-        const auto piece = [&](int64_t id) {
-            return id >= 0 && static_cast<size_t>(id) < vocabulary->size() ? vocabulary->at(id) : std::string{};
-        };
-        m_pad_token = piece(m_pad_token_id);
-        m_bos_token = piece(m_bos_token_id);
-        m_eos_token = piece(m_eos_token_id);
-    }
-    if (auto val = get_if_exist<std::string>(tokenizer_config, "chat_template")) {
-        m_chat_template = *val;
-    }
-    if (!m_chat_template.empty()) {
-        m_original_chat_template = m_chat_template;
-        m_chat_template = patch_gguf_chat_template(m_chat_template);
-    }
-    ov_tokenizer->set_rt_info(ov::genai::get_version().buildNumber, "openvino_genai_version");
-    ov_detokenizer->set_rt_info(ov::genai::get_version().buildNumber, "openvino_genai_version");
-
-    if (!save_dir.empty()) {
-        std::filesystem::path save_ov_tokenizer_path = save_dir / "openvino_tokenizer.xml";
-        std::filesystem::path save_ov_detokenizer_path = save_dir / "openvino_detokenizer.xml";
-        for (const auto& m : {ov_tokenizer, ov_detokenizer}) {
-            m->set_rt_info(m_pad_token_id, "pad_token_id");
-            m->set_rt_info(m_bos_token_id, "bos_token_id");
-            m->set_rt_info(m_eos_token_id, "eos_token_id");
-            m->set_rt_info(m_pad_token, "pad_token");
-            m->set_rt_info(m_bos_token, "bos_token");
-            m->set_rt_info(m_eos_token, "eos_token");
-            m->set_rt_info(m_chat_template, "chat_template");
-        }
-        ov::genai::gguf_utils::save_openvino_model(ov_tokenizer, save_ov_tokenizer_path.string(), false);
-        ov::genai::gguf_utils::save_openvino_model(ov_detokenizer, save_ov_detokenizer_path.string(), false);
-    }
-
-    setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), filtered_properties);
-}
-
 void filter_properties(ov::AnyMap& properties) {
     // Properties allowed for tokenizer/detokenizer on CPU
     std::set<std::string> allowed_argnames = {
@@ -372,15 +296,6 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
     const auto gguf_props = gguf_utils::extract_gguf_properties(properties);
     const ov::AnyMap& filtered_properties = gguf_props.rest;
 
-    if (ov::genai::is_gguf_model(models_path)) {
-        std::map<std::string, GGUFMetaData> tokenizer_config{};
-        std::tie(ov_tokenizer, ov_detokenizer, tokenizer_config) =
-            create_tokenizer_from_config(m_shared_object_ov_tokenizers, models_path);
-        finalize_gguf_tokenizer(ov_tokenizer, ov_detokenizer, tokenizer_config, filtered_properties,
-                                gguf_props.enable_save_ov_model ? models_path.parent_path()
-                                                                : std::filesystem::path{});
-        return;
-    }
     if (std::filesystem::exists(models_path / "openvino_tokenizer.xml")) {
         ov_tokenizer = core.read_model(models_path / "openvino_tokenizer.xml", {}, std::as_const(filtered_properties));
     }
