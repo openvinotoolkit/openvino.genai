@@ -2357,12 +2357,51 @@ class Image2ImagePipeline:
         ...
     def export_model(self, export_path: os.PathLike | str | bytes) -> None:
         ...
+    @typing.overload
     def generate(self, prompt: str, image: openvino._pyopenvino.Tensor, **kwargs) -> openvino._pyopenvino.Tensor:
         """
-            Generates images for text-to-image models.
+            Generates images for image-to-image models.
         
             :param prompt: input prompt
             :type prompt: str
+        
+            :param image: initial image
+            :type image: ov.Tensor
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
+        
+            Expected parameters list:
+            prompt_2: str - second prompt,
+            prompt_3: str - third prompt,
+            negative_prompt: str - negative prompt,
+            negative_prompt_2: str - second negative prompt,
+            negative_prompt_3: str - third negative prompt,
+            num_images_per_prompt: int - number of images, that should be generated per prompt,
+            guidance_scale: float - guidance scale,
+            generation_config: GenerationConfig,
+            height: int - height of resulting images,
+            width: int - width of resulting images,
+            num_inference_steps: int - number of inference steps,
+            rng_seed: int - a seed for random numbers generator,
+            generator: openvino_genai.TorchGenerator, openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator,
+            adapters: LoRA adapters,
+            strength: strength for image to image generation. 1.0f means initial image is fully noised,
+            max_sequence_length: int - length of t5_encoder_model input
+        
+            :return: ov.Tensor with resulting images
+            :rtype: ov.Tensor
+        """
+    @typing.overload
+    def generate(self, prompt: str, image: collections.abc.Sequence[openvino._pyopenvino.Tensor], **kwargs) -> openvino._pyopenvino.Tensor:
+        """
+            Generates images for image-to-image models conditioned on a set of reference images.
+            The images are referred to as 'Picture 1', 'Picture 2' and so on in the prompt.
+        
+            :param prompt: input prompt
+            :type prompt: str
+        
+            :param image: initial images. Only Qwen-Image 2.1 accepts more than one image
+            :type image: collections.abc.Sequence[ov.Tensor]
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
         
@@ -3032,10 +3071,16 @@ class LTX2VideoTransformer3DModel:
         def in_channels(self) -> int:
             ...
         @property
+        def num_layers(self) -> int:
+            ...
+        @property
         def patch_size(self) -> int:
             ...
         @property
         def patch_size_t(self) -> int:
+            ...
+        @property
+        def perturbed_attn(self) -> bool:
             ...
         @property
         def vae_scale_factors(self) -> list[int]:
@@ -3068,12 +3113,16 @@ class LTX2VideoTransformer3DModel:
         """
     def get_config(self) -> LTX2VideoTransformer3DModel.Config:
         ...
-    def infer(self, video_latent: openvino._pyopenvino.Tensor, audio_latent: openvino._pyopenvino.Tensor, timestep: typing.SupportsFloat) -> tuple[openvino._pyopenvino.Tensor, openvino._pyopenvino.Tensor]:
+    def infer(self, video_latent: openvino._pyopenvino.Tensor, audio_latent: openvino._pyopenvino.Tensor, timestep: typing.SupportsFloat, isolate_modalities: bool = False, spatio_temporal_guidance_blocks: collections.abc.Sequence[typing.SupportsInt] = []) -> tuple[openvino._pyopenvino.Tensor, openvino._pyopenvino.Tensor]:
         """
                         Performs joint video and audio inference.
                         video_latent (ov.Tensor): Packed video latent tensor.
                         audio_latent (ov.Tensor): Packed audio latent tensor.
                         timestep (float): Current timestep.
+                        isolate_modalities (bool): Turns off audio-to-video and video-to-audio cross attention
+                            (LTX-2.3 modality isolation guidance).
+                        spatio_temporal_guidance_blocks (list[int]): Transformer block indices to perturb
+                            (LTX-2.3 Spatio-Temporal Guidance). Out-of-range indices are ignored.
                         Returns: Tuple of video and audio velocity predictions.
         """
     def reshape(self, batch_size: typing.SupportsInt, num_frames: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, audio_num_frames: typing.SupportsInt) -> LTX2VideoTransformer3DModel:
@@ -3903,6 +3952,11 @@ class Qwen3VLForConditionalGeneration:
     def infer(self, prompt: str, condition_image: openvino._pyopenvino.Tensor, max_sequence_length: typing.SupportsInt, run_vision_tower: bool = True) -> openvino._pyopenvino.Tensor:
         """
         Set run_vision_tower=False only after infer() has encoded the same condition image.
+        """
+    @typing.overload
+    def infer(self, prompt: str, condition_image: collections.abc.Sequence[openvino._pyopenvino.Tensor], max_sequence_length: typing.SupportsInt, run_vision_tower: bool = True) -> openvino._pyopenvino.Tensor:
+        """
+        Set run_vision_tower=False only after infer() has encoded the same condition images.
         """
 class QwenImage21Transformer2DModel:
     """
@@ -6917,10 +6971,28 @@ class VideoGenerationConfig:
     def __init__(self) -> None:
         ...
     @property
+    def audio_guidance_rescale(self) -> float | None:
+        ...
+    @audio_guidance_rescale.setter
+    def audio_guidance_rescale(self, arg0: typing.SupportsFloat | None) -> None:
+        ...
+    @property
     def audio_guidance_scale(self) -> float | None:
         ...
     @audio_guidance_scale.setter
     def audio_guidance_scale(self, arg0: typing.SupportsFloat | None) -> None:
+        ...
+    @property
+    def audio_modality_scale(self) -> float | None:
+        ...
+    @audio_modality_scale.setter
+    def audio_modality_scale(self, arg0: typing.SupportsFloat | None) -> None:
+        ...
+    @property
+    def audio_stg_scale(self) -> float | None:
+        ...
+    @audio_stg_scale.setter
+    def audio_stg_scale(self, arg0: typing.SupportsFloat | None) -> None:
         ...
     @property
     def frame_rate(self) -> float | None:
@@ -6953,6 +7025,12 @@ class VideoGenerationConfig:
     def max_sequence_length(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
+    def modality_scale(self) -> float | None:
+        ...
+    @modality_scale.setter
+    def modality_scale(self, arg0: typing.SupportsFloat | None) -> None:
+        ...
+    @property
     def num_frames(self) -> int:
         ...
     @num_frames.setter
@@ -6969,6 +7047,18 @@ class VideoGenerationConfig:
         ...
     @num_videos_per_prompt.setter
     def num_videos_per_prompt(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def spatio_temporal_guidance_blocks(self) -> list[int] | None:
+        ...
+    @spatio_temporal_guidance_blocks.setter
+    def spatio_temporal_guidance_blocks(self, arg0: collections.abc.Sequence[typing.SupportsInt] | None) -> None:
+        ...
+    @property
+    def stg_scale(self) -> float | None:
+        ...
+    @stg_scale.setter
+    def stg_scale(self, arg0: typing.SupportsFloat | None) -> None:
         ...
     @property
     def width(self) -> int:
