@@ -181,12 +181,22 @@ public:
                                      SequenceGroup::Ptr seq_group,
                                      const std::map<CacheType, std::vector<std::vector<uint8_t>>>& blocks_per_type) {
         const size_t full_length = seq_group->get_prompt_len();
+        OPENVINO_ASSERT(full_length > 0, "Session snapshot token history must not be empty");
         // Bypasses the Scheduler, so dynamic cache allocation (num_kv_blocks == 0) would otherwise
         // never grow the pool before allocate_tokens() below requires it; mirrors what
         // Scheduler::_initialize_cache()/_try_increase_cache() do for normally-arriving requests.
         ensure_sequence_token_capacity({{full_length, 1}});
         ensure_sequence_capacity(seq_group);
-        allocate_tokens(sequence, seq_group, full_length, full_length);
+        // Allocate for full_length - 1, not full_length: the very last saved token was only ever
+        // sampled as an output, never fed through a forward pass as an input, so (same invariant as
+        // the update_processed_tokens_num(full_length - 1) call below) its own KV has never been
+        // computed/written and SessionSnapshot::save() never allocated/captured a block for it. At a
+        // block-size boundary (full_length - 1 exactly fills the last saved block), eagerly asking
+        // for `full_length` here would allocate one block more than was actually saved, tripping the
+        // block_table.size() == kv_blocks.size() check below. The next ordinary generation step
+        // grows the table by one more block the same way organic prefill does, once that token is
+        // actually re-threaded through the model.
+        allocate_tokens(sequence, seq_group, full_length - 1, full_length - 1);
         // Growing the logical block count above does not resize the physical cache tensors;
         // Scheduler::schedule() normally does this every step via the same call.
         allocate_cache_if_needed();
@@ -223,7 +233,6 @@ public:
         // would desynchronize get_context_len() from the sequence's actual m_generated_ids size on
         // the next step (see Sequence::_make_hash's bookkeeping), so instead leave the last cached
         // token to be (cheaply) re-threaded through one ordinary prompt-completion step.
-        OPENVINO_ASSERT(full_length > 0, "Session snapshot token history must not be empty");
         seq_group->update_processed_tokens_num(full_length - 1);
     }
 
