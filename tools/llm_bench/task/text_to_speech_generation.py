@@ -176,12 +176,7 @@ def run_qwen3_text_to_speech_generation_optimum(
 
     mem_consumption.start(num)
     start = time.perf_counter()
-    tok_encode_start = time.perf_counter()
     inputs = model.preprocess_input(**preprocess_kwargs)
-    tok_encode_end = time.perf_counter()
-    tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
-
-    input_token_size = len(input_text.split())
 
     # x_vector_only_mode is consumed by preprocess_input for Optimum.
     generation_kwargs.pop("x_vector_only_mode", None)
@@ -208,7 +203,6 @@ def run_qwen3_text_to_speech_generation_optimum(
 
     md5_list[num][prompt_index] = result_md5_list
 
-    tokenization_kwargs = {"tokenization_time": [tok_encode_time]}
     _record_tts_iter(
         num,
         args,
@@ -216,10 +210,10 @@ def run_qwen3_text_to_speech_generation_optimum(
         md5_list,
         prompt_index,
         result_md5_list,
-        in_size=input_token_size,
+        in_size=None,
         out_size=out_size,
         generation_time=generation_time,
-        tokenization_kwargs=tokenization_kwargs,
+        tokenization_kwargs={},
         memory_metrics=memory_metrics,
         sample_rate=sample_rate,
     )
@@ -300,7 +294,7 @@ def run_qwen3_text_to_speech_generation_genai(
         md5_list,
         prompt_index,
         result_md5_list,
-        in_size=len(input_text.split()),
+        in_size=None,
         out_size=out_size,
         generation_time=generation_time,
         tokenization_kwargs=tokenization_kwargs,
@@ -383,7 +377,7 @@ def run_qwen3_text_to_speech_generation_pt(
         md5_list,
         prompt_index,
         result_md5_list,
-        in_size=len(input_text.split()),
+        in_size=None,
         out_size=out_size,
         generation_time=generation_time,
         tokenization_kwargs={},
