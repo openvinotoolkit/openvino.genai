@@ -24,7 +24,9 @@ def test_llamacpp_raw_completion_preserves_gguf_prompt_tokens():
     model.tokenize.return_value = prompt_tokens
     model.return_value = {"choices": [{"text": "answer"}]}
 
-    assert LlamaCPPGeneration().run_generation(model, None, "Who is Mark Twain?", None, 32, True).answer_text == "answer"
+    assert (
+        LlamaCPPGeneration().run_generation(model, None, "Who is Mark Twain?", None, 32, True).answer_text == "answer"
+    )
 
     model.tokenize.assert_called_once_with(b"Who is Mark Twain?", add_bos=True, special=True)
     model.assert_called_once_with(prompt_tokens, max_tokens=32, echo=False, temperature=0.0)
