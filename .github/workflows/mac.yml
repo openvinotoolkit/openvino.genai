@@ -290,7 +290,8 @@ jobs:
 
       - name: Build GenAI Wheel
         run: |
-          export CMAKE_BUILD_PARALLEL_LEVEL=$(sysctl -n hw.logicalcpu)
+          parallel_jobs=$(sysctl -n hw.logicalcpu)
+          build_args_override="override=cmake.build_args={\"=\"=[\"--parallel\",\"${parallel_jobs}\",\"--target\",\"py_openvino_genai_stub\"]}"
           # Install build requirements read from pyproject so the list isn't duplicated here; --no-build-isolation skips pip's auto build-deps and a stable OpenVINO path keeps ccache warm.
           build_reqs=()
           while IFS= read -r req; do build_reqs+=("$req"); done < <(python -c "import sys, tomllib; print('\n'.join(tomllib.load(open(sys.argv[1], 'rb'))['build-system']['requires']))" "${{ env.SRC_DIR }}/pyproject.toml")
@@ -299,6 +300,7 @@ jobs:
           python -m pip wheel -v --no-deps --no-build-isolation --wheel-dir ${{ env.WHEELS_DIR }} \
               --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache" \
               --config-settings=override=cmake.generator="Ninja" \
+              --config-settings="$build_args_override" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}
         working-directory: ${{ env.OV_INSTALL_DIR }}
