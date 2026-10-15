@@ -1176,6 +1176,65 @@ def test_qwen35_mtp_matches_main_only(qwen35_mtp_model_path: Path):
     assert mtp_result[0].m_generation_ids == main_only_texts
 
 
+# After preemption, pending tokens must be replayed before MTP can enter its atomic verification window.
+# Currently step() raises instead, failing the batch rather than replaying and continuing generation.
+@pytest.mark.skip(reason="Hybrid MTP verification rejects preempted requests with pending tokens to replay")
+def test_qwen35_mtp_preemption_replays_before_verification(qwen35_mtp_model_path: Path):
+    scheduler = get_hybrid_prefix_caching_scheduler_config(64, 64)
+    draft_scheduler = SchedulerConfig()
+    draft_scheduler.num_kv_blocks = 128
+    draft_scheduler.enable_prefix_caching = True
+    pipe = ContinuousBatchingPipeline(
+        qwen35_mtp_model_path,
+        scheduler,
+        "CPU",
+        {"draft_model": draft_model(qwen35_mtp_model_path, "CPU", scheduler_config=draft_scheduler)},
+    )
+
+    prompt_pool = [
+        "Explain in detail the history of distributed systems and consensus algorithms, covering "
+        "Paxos, Raft, and Byzantine fault tolerance. " * count
+        for count in (2, 4, 6, 8, 10)
+    ]
+    rng = random.Random(1000)  # nosec B311 - reproducible test schedule, not security-sensitive
+    handles, prompts, configs, cancel_at = {}, {}, {}, {}
+    cancelled_ids = set()
+    for request_id in range(12):
+        prompts[request_id] = rng.choice(prompt_pool)
+        configs[request_id] = GenerationConfig(
+            min_new_tokens=100, max_new_tokens=rng.randint(200, 600), num_assistant_tokens=4
+        )
+        handles[request_id] = pipe.add_request(request_id, prompts[request_id], configs[request_id])
+        if rng.random() < 0.75:
+            cancel_at[request_id] = rng.randint(5, 60)
+
+    for step in range(1000):
+        if not pipe.has_non_finished_requests():
+            break
+        pipe.step()
+        for request_id, cancel_step in list(cancel_at.items()):
+            if step + 1 >= cancel_step:
+                handles[request_id].cancel()
+                cancelled_ids.add(request_id)
+                del cancel_at[request_id]
+    else:
+        pytest.fail("MTP requests did not finish within 1000 steps")
+
+    assert pipe.get_metrics().max_cache_usage >= 99.0, "Cache was not under pressure"
+    surviving_ids = [request_id for request_id in handles if request_id not in cancelled_ids]
+    assert surviving_ids
+    assert all(handles[request_id].get_status() == GenerationStatus.FINISHED for request_id in surviving_ids)
+    survivor_id = surviving_ids[0]
+    output_ids = handles[survivor_id].read_all()[0].generated_ids
+
+    reference_scheduler = get_hybrid_prefix_caching_scheduler_config(256, 64)
+    reference = ContinuousBatchingPipeline(qwen35_mtp_model_path, reference_scheduler, "CPU")
+    reference_handle = reference.add_request(survivor_id, prompts[survivor_id], configs[survivor_id])
+    while reference.has_non_finished_requests():
+        reference.step()
+    assert output_ids == reference_handle.read_all()[0].generated_ids
+
+
 def test_qwen35_mtp_extended_perf_metrics(qwen35_mtp_model_path: Path):
     mtp_pipe = create_ov_cb_pipeline(
         qwen35_mtp_model_path,
