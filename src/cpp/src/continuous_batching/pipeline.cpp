@@ -247,7 +247,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         inputs_embedder->get_tokenizer(),
         scheduler_config,
         device,
-        properties_without_gguf,
+        properties_spec_check,
         generation_config);
 
     m_impl->m_load_time_ms = get_load_time(start_time);
