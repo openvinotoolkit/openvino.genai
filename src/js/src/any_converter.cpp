@@ -29,7 +29,7 @@ Napi::Value cpp_to_js<ov::Any, Napi::Value>(const Napi::Env& env, const ov::Any&
         return ov::js::number_or_bigint(env, any.as<size_t>());
     }
     if (any.is<float>()) {
-        return ov::js::rounded_number(env, any.as<float>());
+        return Napi::Number::New(env, any.as<float>());
     }
     if (any.is<double>()) {
         return Napi::Number::New(env, any.as<double>());
@@ -86,7 +86,10 @@ template <>
 Napi::Value cpp_to_js<ov::AnyMap, Napi::Value>(const Napi::Env& env, const ov::AnyMap& any_map) {
     auto js_object = Napi::Object::New(env);
     for (const auto& [key, value] : any_map) {
-        js_object.Set(key, cpp_to_js<ov::Any, Napi::Value>(env, value));
+        js_object.DefineProperty(Napi::PropertyDescriptor::Value(
+            Napi::String::New(env, key),
+            cpp_to_js<ov::Any, Napi::Value>(env, value),
+            static_cast<napi_property_attributes>(napi_writable | napi_enumerable | napi_configurable)));
     }
     return js_object;
 }

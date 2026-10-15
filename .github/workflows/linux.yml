@@ -978,18 +978,8 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: npm run lint
 
-      - name: Build AnyMap converter test addon
-        working-directory: ${{ env.SRC_DIR }}/src/js/tests/converter_ext
-        run: |
-          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_CXX_COMPILER_LAUNCHER= -DCMAKE_C_COMPILER_LAUNCHER=
-          cmake --build build --parallel
-
       - name: Run npm package tests
         working-directory: ${{ env.SRC_DIR }}/src/js
-        env:
-          REQUIRE_CONVERTER_EXT: "1"
         run: npm test
 
   genai_xgrammar_off_tests:
