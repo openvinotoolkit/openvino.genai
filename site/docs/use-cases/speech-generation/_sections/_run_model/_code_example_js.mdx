@@ -9,7 +9,8 @@ const pipeline = await Text2SpeechPipeline(modelPath, "${props.device || 'CPU'}"
 
 const result = await pipeline.generate("Hello OpenVINO GenAI");
 
-const wavData = encode([result.speeches[0].data], { sampleRate: 16000 });
+const sampleRate = Number(result.outputSampleRate ?? result.output_sample_rate ?? 16000);
+const wavData = encode([result.speeches[0].data], { sampleRate });
 await writeFile("output_audio.wav", wavData);
 `}
 </CodeBlock>

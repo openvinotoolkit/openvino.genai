@@ -51,13 +51,26 @@
     - RAG_samples
 
 - name: Speech generation
-  marker: speech_generation
+  marker: speech_generation and not qwen3_tts
+  cmd: tests/python_tests/samples
+  runner: aks-linux-4-cores-16gb
+  components:
+    - Speech_generation_samples
+
+- name: Speech generation (Qwen3 TTS)
+  extra_cmd: |
+    python -m pip install transformers==4.57.3
+    python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu torch==2.11.0 torchaudio==2.11.0
+    python -m pip install qwen-tts
+  marker: speech_generation and qwen3_tts
   cmd: tests/python_tests/samples
   runner: aks-linux-4-cores-16gb
   components:
     - Speech_generation_samples
 
 - name: Video generation
+  # LTX-2.3 export support landed after the optimum-intel pin in samples/export-requirements.txt
+  extra_cmd: python -m pip install -U "optimum-intel @ https://github.com/huggingface/optimum-intel/archive/a741933e8f55cf90368c19ec4b7f0a4d98c26519.tar.gz"
   marker: video_generation
   cmd: tests/python_tests/samples
   runner: aks-linux-4-cores-16gb
