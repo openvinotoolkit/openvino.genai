@@ -708,25 +708,6 @@ public:
     // Preview API: subject to change.
     bool return_omni_outputs = false;
 
-    /**
-     * Caller-supplied identity mixed into the root of this request's prefix-cache block hash chain (at
-     * the very first block), so two different tenants sharing the same model, device and token content
-     * never compute the same hash and can never observe each other's cached KV blocks - neither in memory
-     * nor (once persisted) on disk. Left empty by default: two requests that both leave `tenant_id` and
-     * `cache_salt` empty are treated as the same (default) tenant and can reuse each other's cached
-     * prefixes, which is the same behavior as before tenant isolation existed. This is an explicit,
-     * documented default, not partial isolation.
-     */
-    std::string tenant_id;
-
-    /**
-     * Optional additional value mixed into the hash alongside `tenant_id`, for callers that want isolation
-     * between sessions of the same tenant (e.g. a per-user or per-session secret) without introducing a
-     * new tenant identity for every session. Non-empty always changes the hash namespace; empty (with an
-     * empty `tenant_id`) means no isolation.
-     */
-    std::string cache_salt;
-
     /** @brief sets eos_token_id to tokenizer_eos_token_id if eos_token_id is less than 0.
      * Otherwise verifies eos_token_id == tokenizer_eos_token_id.
      */
@@ -767,8 +748,6 @@ static constexpr ov::Property<size_t> min_new_tokens{"min_new_tokens"};
 static constexpr ov::Property<std::set<std::string>> stop_strings{"stop_strings"};
 static constexpr ov::Property<bool> include_stop_str_in_output{"include_stop_str_in_output"};
 static constexpr ov::Property<std::set<int64_t>> stop_token_ids{"stop_token_ids"};
-static constexpr ov::Property<std::string> tenant_id{"tenant_id"};
-static constexpr ov::Property<std::string> cache_salt{"cache_salt"};
 
 static constexpr ov::Property<size_t> num_beam_groups{"num_beam_groups"};
 static constexpr ov::Property<size_t> num_beams{"num_beams"};

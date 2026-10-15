@@ -130,8 +130,6 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "adapters", adapters);
     read_anymap_param(properties, "apply_chat_template", apply_chat_template);
     read_anymap_param(properties, "return_omni_outputs", return_omni_outputs);
-    read_anymap_param(properties, "tenant_id", tenant_id);
-    read_anymap_param(properties, "cache_salt", cache_salt);
 
     // penalties
     read_anymap_param(properties, "frequency_penalty", frequency_penalty);
