@@ -956,6 +956,7 @@ public:
             m_owner.m_block_table.merge(m_tables);
             m_owner.m_block_table_logical_start.merge(m_logical_starts);
             m_owner.m_linear_attention_live_states.merge(m_live_states);
+            m_owner.m_inexact_restored_checkpoint.merge(m_inexact_starts);
             m_owner.m_prefix_restore_releases.merge(m_releases);
             m_applied = true;
         }
@@ -971,6 +972,7 @@ public:
         std::map<uint64_t, std::vector<BlocksPerLayer>> m_tables;
         std::map<uint64_t, size_t> m_logical_starts;
         std::map<uint64_t, LinearAttentionLiveState> m_live_states;
+        std::set<uint64_t> m_inexact_starts;
         std::map<uint64_t, PrefixRestoreReleases> m_releases;
         bool m_applied = false;
     };
@@ -1020,6 +1022,10 @@ public:
             prepared.m_logical_starts.emplace(seq_id, plan.logical_block_start);
             prepared.m_live_states.emplace(seq_id,
                 LinearAttentionLiveState{plan.cache_token_position, prepared.m_blocks.back().second, 1, false});
+            const size_t first_boundary = (plan.logical_block_start + 1) * m_block_size;
+            if (plan.block_content_lengths.front() != first_boundary && plan.processed_tokens >= first_boundary) {
+                prepared.m_inexact_starts.insert(seq_id);
+            }
         }
         return prepared;
     }
@@ -1661,6 +1667,14 @@ public:
                 ++entry->second.first;
                 entry->second.second = std::min(entry->second.second, block_position);
             }
+            const auto live = m_linear_attention_live_states.find(seq_id);
+            if (live != m_linear_attention_live_states.end() && !live->second.rows.empty()) {
+                const auto entry = block_references_and_position.find(live->second.rows.front().get());
+                if (entry == block_references_and_position.end()) {
+                    return {};
+                }
+                ++entry->second.first;
+            }
         }
         std::vector<size_t> positions;
         for (const auto& [block, references_and_position] : block_references_and_position) {
@@ -1685,6 +1699,30 @@ public:
         const size_t num_stored_blocks = it->second[0].size();
         if (num_stored_blocks > keep_blocks) {
             free_sequence_partially(seq_id, num_stored_blocks - keep_blocks);
+        }
+    }
+
+    /// Rewinds the live LA state and its block table to an exact checkpoint boundary.
+    void rewind_linear_attention_to_checkpoint(uint64_t seq_id, size_t resume_position) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        OPENVINO_ASSERT(m_restore_latest_prefix_block_only && resume_position > 0 &&
+                            resume_position % m_block_size == 0,
+                        "Linear-attention rewind requires a complete checkpoint");
+        const auto it = m_block_table.find(seq_id);
+        OPENVINO_ASSERT(it != m_block_table.end(), "Cannot rewind sequence ", seq_id, " without a block table");
+        const size_t logical_start = get_block_table_logical_start_unlocked(seq_id);
+        const size_t keep_blocks = resume_position / m_block_size - logical_start;
+        OPENVINO_ASSERT(keep_blocks > 0 && keep_blocks <= it->second.front().size(),
+                        "No retained linear-attention checkpoint for sequence ", seq_id);
+
+        BlocksPerLayer rows;
+        rows.reserve(m_num_layers);
+        for (const auto& layer_table : it->second) {
+            rows.push_back(layer_table[keep_blocks - 1]);
+        }
+        set_linear_attention_live_state(seq_id, resume_position, rows);
+        if (it->second.front().size() > keep_blocks) {
+            free_sequence_partially(seq_id, it->second.front().size() - keep_blocks);
         }
     }
 
@@ -2219,6 +2257,7 @@ public:
                 m_prefix_restore_releases.erase(restored);
                 m_block_table.erase(seq_id);
                 m_block_table_logical_start.erase(seq_id);
+                m_inexact_restored_checkpoint.erase(seq_id);
                 return;
             }
             m_prefix_restore_releases.erase(restored);

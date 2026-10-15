@@ -75,7 +75,8 @@ std::shared_ptr<CacheOrchestrator> init_hybrid_cache_orchestrator(SchedulerConfi
                                                           get_test_cache_interval(scheduler_config, kv_block_size),
                                                           1,
                                                           0,
-                                                          true);
+                                                          true,
+                                                          cap_la_pool ? scheduler_config.num_linear_attention_blocks : 0);
     } else {
         const size_t num_la_blocks = scheduler_config.num_linear_attention_blocks > 0
                                          ? scheduler_config.num_linear_attention_blocks
@@ -2184,7 +2185,8 @@ struct HybridPreemptionStep {
 HybridPreemptionStep run_hybrid_prefix_caching_generate_step_under_kv_pressure(size_t victim_prompt_len,
                                                                                size_t num_kv_blocks,
                                                                                size_t num_linear_attention_blocks,
-                                                                               const GenerationConfig& victim_config) {
+                                                                               const GenerationConfig& victim_config,
+                                                                               bool advance_live_state = false) {
     SchedulerConfig scheduler_config;
     scheduler_config.max_num_batched_tokens = 32;
     scheduler_config.num_kv_blocks = num_kv_blocks;
@@ -2207,13 +2209,18 @@ HybridPreemptionStep run_hybrid_prefix_caching_generate_step_under_kv_pressure(s
         ov::Tensor(ov::element::i64, {victim_tokens.size()}, victim_tokens.data()),
         victim_config);
 
-    HybridPreemptionStep step{init_hybrid_cache_orchestrator(scheduler_config), {target, victim}, {}};
+    HybridPreemptionStep step{init_hybrid_cache_orchestrator(scheduler_config, TEST_BLOCK_SIZE, 1, 1, true), {target, victim}, {}};
     ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(step.orchestrator, scheduler_config);
 
     auto prompt_out = scheduler.schedule(step.requests);
     EXPECT_EQ(prompt_out.m_scheduled_sequence_groups_ids.size(), 2);
     for (auto& req : step.requests) {
         req->finish_iteration();
+        if (advance_live_state) {
+            const auto seq_id = req->get_running_sequences().front()->get_id();
+            step.orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE)
+                .advance_linear_attention_live_state(seq_id, req->get_num_processed_tokens());
+        }
         req->get_running_sequences()[0]->append_token(42, 0.9f);
     }
 
@@ -2231,7 +2238,7 @@ void free_all_sequences(CacheOrchestrator& orchestrator, const std::vector<Seque
 
 TEST(TestScheduler, hybrid_prefix_caching_partial_preemption_rewinds_victim_to_linear_attention_checkpoint) {
     // 20-token victim holds 5 KV blocks and 3 LA blocks (checkpoints at 8 and 16, live state at 20).
-    auto step = run_hybrid_prefix_caching_generate_step_under_kv_pressure(20, 6, 4, utils::get_greedy_config());
+    auto step = run_hybrid_prefix_caching_generate_step_under_kv_pressure(20, 6, 4, utils::get_greedy_config(), true);
     const auto& victim = step.requests[1];
     const auto victim_seq_id = victim->get_sequences()[0]->get_id();
 
@@ -2240,6 +2247,11 @@ TEST(TestScheduler, hybrid_prefix_caching_partial_preemption_rewinds_victim_to_l
     EXPECT_EQ(victim->get_num_processed_tokens(), 16);
     EXPECT_EQ(step.orchestrator->get_kv_block_tables(victim_seq_id)[0].size(), 4);
     EXPECT_EQ(step.orchestrator->get_linear_attention_block_table(victim_seq_id).size(), 2);
+    const auto& la_mgr = step.orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+    const auto& live_state = la_mgr.get_linear_attention_live_state(victim_seq_id);
+    EXPECT_EQ(live_state.endpoint, 16);
+    EXPECT_EQ(live_state.rows.front(), step.orchestrator->get_linear_attention_block_table(victim_seq_id).back());
+    EXPECT_EQ(la_mgr.num_free_blocks(), 1);
 
     free_all_sequences(*step.orchestrator, step.requests);
 }

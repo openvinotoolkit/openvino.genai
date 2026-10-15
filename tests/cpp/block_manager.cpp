@@ -1840,7 +1840,18 @@ TEST(TestBlockManager, PrefixRestorePlanningCapsFullRestoreToLatestStateRestore)
 
 TEST(TestBlockManager, PartialRestoredStateIsNotAnExactPreemptionCheckpoint) {
     constexpr size_t block_size = 4;
-    ov::genai::BlockManager block_manager(16, true, block_size, 1, 0, true);
+    ov::genai::BlockManager block_manager(5, true, block_size, 1, 0, true);
+
+    std::vector<int64_t> complete_tokens(16);
+    std::iota(complete_tokens.begin(), complete_tokens.end(), 0);
+    auto complete_producer = create_sequence_group(complete_tokens, 33);
+    complete_producer->schedule_tokens(complete_tokens.size());
+    block_manager.append_slots(complete_producer);
+    complete_producer->finish_iteration();
+    const auto old_eight_token_block = block_manager.get_block_table(
+        complete_producer->get_running_sequences().front()->get_id(), 0)[1];
+    block_manager.free_sequence(complete_producer->get_running_sequences().front()->get_id());
+    old_eight_token_block->set_timestamp(std::chrono::steady_clock::now() - std::chrono::hours(1));
 
     std::vector<int64_t> partial_tokens = {0, 1, 2, 3, 4, 5, 6};
     auto partial_producer = create_sequence_group(partial_tokens, 32);
@@ -1849,23 +1860,16 @@ TEST(TestBlockManager, PartialRestoredStateIsNotAnExactPreemptionCheckpoint) {
     partial_producer->finish_iteration();
     block_manager.free_sequence(partial_producer->get_running_sequences().front()->get_id());
 
-    std::vector<int64_t> complete_tokens(16);
-    std::iota(complete_tokens.begin(), complete_tokens.end(), 0);
-    auto complete_producer = create_sequence_group(complete_tokens, 33);
-    complete_producer->schedule_tokens(complete_tokens.size());
-    block_manager.append_slots(complete_producer);
-    complete_producer->finish_iteration();
-    block_manager.free_sequence(complete_producer->get_running_sequences().front()->get_id());
-
     std::vector<int64_t> consumer_tokens(20);
     std::iota(consumer_tokens.begin(), consumer_tokens.end(), 0);
     auto consumer = create_sequence_group(consumer_tokens, 34);
-    ov::genai::BlockManager::PrefixRestorePlan plan;
-    plan.block_content_lengths = {7, 12, 16};
-    plan.cache_token_position = 16;
-    plan.processed_tokens = 16;
-    plan.logical_block_start = 1;
-    ASSERT_TRUE(block_manager.restore_cached_blocks(consumer, plan));
+    const auto plan = block_manager.get_prefix_restore_plan(consumer);
+    ASSERT_EQ(plan.block_content_lengths, (std::vector<size_t>{7, 12, 16}));
+    auto prepared_restore = block_manager.prepare_prefix_restore(consumer, plan);
+    ASSERT_TRUE(prepared_restore.has_value());
+    prepared_restore->apply();
+    prepared_restore.reset();
+    consumer->update_processed_tokens_num(plan.processed_tokens);
 
     const auto parent = consumer->get_running_sequences().front();
     EXPECT_EQ(block_manager.get_block_table_logical_start(parent->get_id()), 1);

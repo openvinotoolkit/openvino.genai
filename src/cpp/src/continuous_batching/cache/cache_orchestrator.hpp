@@ -1075,10 +1075,9 @@ private:
     size_t apply_checkpointed_partial_preemption(SequenceGroup::Ptr victim, size_t resume_position) {
         auto& la_mgr = *m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE);
         const auto kv_it = m_block_managers.find(CacheType::KV_CACHE);
-        const size_t cache_interval = la_mgr.get_block_size();
         for (const auto& sequence : victim->get_not_finished_sequences()) {
             const uint64_t seq_id = sequence->get_id();
-            la_mgr.trim_sequence(seq_id, resume_position / cache_interval - la_mgr.get_block_table_logical_start(seq_id));
+            la_mgr.rewind_linear_attention_to_checkpoint(seq_id, resume_position);
             if (kv_it != m_block_managers.end()) {
                 auto& kv_mgr = *kv_it->second;
                 kv_mgr.trim_sequence(seq_id, resume_position / kv_mgr.get_block_size() - kv_mgr.get_block_table_logical_start(seq_id));
