@@ -4,6 +4,8 @@
 import os
 import pytest
 import sys
+import wave
+import numpy as np
 from pathlib import Path
 
 from test_utils import run_sample
@@ -102,6 +104,22 @@ def tiny_kokoro_speaker_embedding_file_path(tiny_kokoro_ov_path: Path) -> str:
     if not voice_bin_path.exists():
         raise FileNotFoundError(f"Missing tiny Kokoro speaker embedding file at {voice_bin_path}")
     return str(voice_bin_path)
+
+
+@pytest.fixture(scope="module")
+def qwen3_reference_audio_wav_path(tmp_path_factory) -> str:
+    samples = 24_000
+    timeline = np.arange(samples, dtype=np.float32) / np.float32(samples)
+    waveform = 0.12 * np.sin(2.0 * np.pi * 220.0 * timeline) + 0.05 * np.sin(2.0 * np.pi * 440.0 * timeline + 0.4)
+    output_dir = tmp_path_factory.mktemp("qwen3_tts_ref_audio")
+    wav_path = output_dir / "reference_24k.wav"
+    pcm = np.asarray(np.clip(waveform, -1.0, 1.0) * 32767.0, dtype=np.int16)
+    with wave.open(str(wav_path), "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(24_000)
+        wav_file.writeframes(pcm.tobytes())
+    return str(wav_path)
 
 
 def optimum_supports_ltx2() -> bool:
@@ -867,6 +885,187 @@ class TestBenchmarkLLM:
             "-pf",
             generate_llm_bench_input_generation_jsonl,
         ] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.speech_generation
+    @pytest.mark.qwen3_tts
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-tts"], indirect=True)
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--optimum"],
+            ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--genai"],
+        ],
+    )
+    def test_python_tool_llm_benchmark_qwen3_tts_base(
+        self, qwen3_reference_audio_wav_path, convert_model, sample_args
+    ):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "--prompt",
+            "Hello OpenVINO GenAI",
+            "--speech_language",
+            "English",
+            "--speech_ref_audio",
+            qwen3_reference_audio_wav_path,
+            "--speech_ref_text",
+            "This is a tiny random reference transcript for benchmark testing.",
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.speech_generation
+    @pytest.mark.qwen3_tts
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-tts-customvoice"], indirect=True)
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--optimum"],
+            ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--genai"],
+        ],
+    )
+    def test_python_tool_llm_benchmark_qwen3_tts_customvoice(self, convert_model, sample_args):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "--prompt",
+            "Hello OpenVINO GenAI",
+            "--speech_language",
+            "English",
+            "--speech_voice",
+            "serena",
+            "--speech_instruct",
+            "Speak with clear articulation and a friendly, professional tone.",
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.speech_generation
+    @pytest.mark.qwen3_tts
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-tts-voicedesign"], indirect=True)
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--optimum"],
+            ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--genai"],
+        ],
+    )
+    def test_python_tool_llm_benchmark_qwen3_tts_voicedesign(self, convert_model, sample_args):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "--prompt",
+            "Hello OpenVINO GenAI",
+            "--speech_language",
+            "English",
+            "--speech_instruct",
+            "Some voice design instruct prompt",
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.speech_generation
+    @pytest.mark.qwen3_tts
+    @pytest.mark.parametrize("download_model", ["tiny-random-qwen3-tts"], indirect=True)
+    def test_python_tool_llm_benchmark_qwen3_tts_base_pt(self, download_model, qwen3_reference_audio_wav_path):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            download_model,
+            "-d",
+            "cpu",
+            "-n",
+            "1",
+            "-f",
+            "pt",
+            "-ic",
+            "20",
+            "--task",
+            "text_to_speech",
+            "--prompt",
+            "Hello OpenVINO GenAI",
+            "--speech_language",
+            "English",
+            "--speech_ref_audio",
+            qwen3_reference_audio_wav_path,
+            "--speech_ref_text",
+            "This is a tiny random reference transcript for benchmark testing.",
+        ]
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.speech_generation
+    @pytest.mark.qwen3_tts
+    @pytest.mark.parametrize("download_model", ["tiny-random-qwen3-tts-customvoice"], indirect=True)
+    def test_python_tool_llm_benchmark_qwen3_tts_customvoice_pt(self, download_model):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            download_model,
+            "-d",
+            "cpu",
+            "-n",
+            "1",
+            "-f",
+            "pt",
+            "-ic",
+            "20",
+            "--task",
+            "text_to_speech",
+            "--prompt",
+            "Hello OpenVINO GenAI",
+            "--speech_language",
+            "English",
+            "--speech_voice",
+            "serena",
+            "--speech_instruct",
+            "Speak with clear articulation and a friendly, professional tone.",
+        ]
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.speech_generation
+    @pytest.mark.qwen3_tts
+    @pytest.mark.parametrize("download_model", ["tiny-random-qwen3-tts-voicedesign"], indirect=True)
+    def test_python_tool_llm_benchmark_qwen3_tts_voicedesign_pt(self, download_model):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            download_model,
+            "-d",
+            "cpu",
+            "-n",
+            "1",
+            "-f",
+            "pt",
+            "-ic",
+            "20",
+            "--task",
+            "text_to_speech",
+            "--prompt",
+            "Hello OpenVINO GenAI",
+            "--speech_language",
+            "English",
+            "--speech_instruct",
+            "Some voice design instruct prompt",
+        ]
         run_sample(benchmark_py_command)
 
     @pytest.mark.samples
