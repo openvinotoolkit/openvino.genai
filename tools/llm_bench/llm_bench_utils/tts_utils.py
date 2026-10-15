@@ -158,7 +158,7 @@ def validate_reference_audio_source(ref_audio_path):
             raise RuntimeError(f"Invalid Qwen3 reference audio URL: '{ref_audio}'")
         return
 
-    if parsed.scheme:
+    if parsed.scheme and not Path(ref_audio).drive:
         raise RuntimeError(
             f"Unsupported Qwen3 reference audio URL scheme: '{parsed.scheme}'. "
             "Only local paths and http/https URLs are supported."
