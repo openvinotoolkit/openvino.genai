@@ -8,7 +8,7 @@
 #include <filesystem>
 #include <set>
 
-#include "any_converter.hpp"
+#include "cpp_to_js.hpp"
 #include "openvino/core/type/element_type.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"

@@ -7,6 +7,7 @@
 #include <typeindex>
 
 #include "include/addon.hpp"
+#include "include/any_converter.hpp"
 #include "include/asr_pipeline/perf_metrics.hpp"
 #include "include/chat_history.hpp"
 #include "include/napi_number.hpp"
