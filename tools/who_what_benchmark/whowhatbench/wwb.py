@@ -19,9 +19,10 @@ from typing import Any, Optional
 
 from whowhatbench.model_loaders import TORCH_DTYPES, load_model
 from whowhatbench import EVALUATOR_REGISTRY
-from whowhatbench.utils import fix_phi3_v_eos_token_id
+from whowhatbench.utils import fix_phi3_v_eos_token_id, patch_transformers_gguf_support
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
 from whowhatbench.utils import get_json_config, load_audio_dataset, resolve_json_dataset_path, read_json_dataset
+from whowhatbench.artifacts_manager import Metrics
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -449,8 +450,8 @@ def parse_args():
         "--speech-language",
         type=str,
         default="",
-        help="For speech-generation: language code, currently used only for Kokoro. "
-        "If omitted, the default language used is 'en-us'. \n"
+        help="Speech-generation language. For Qwen3 this can be values such as English, Chinese, or Auto. "
+        "For Kokoro this can be values such as en-us, en-gb, es, fr-fr, hi, it, pt-br, ja, or zh."
         "For speech-recognition: the language forced during transcription, in the form the model expects. "
         "FunASR takes a code such as 'en', 'zh' or 'ja' and defaults to 'en'; audio VLMs take a name such as "
         "'English' or 'Japanese' and default to 'English'.",
@@ -462,6 +463,24 @@ def parse_args():
         help="Speech-generation voice name (for example, af_heart for Kokoro or Ethan for Qwen3-Omni). \n"
         "For SpeechT5, please use --speaker_embeddings parameter to specify the voice. "
         "If omitted, WWB uses the model-specific default speaker/voice.",
+    )
+    parser.add_argument(
+        "--speech-instruct",
+        type=str,
+        default="",
+        help="Optional natural-language style instruction for Qwen3 CustomVoice and VoiceDesign.",
+    )
+    parser.add_argument(
+        "--speech-ref-audio",
+        type=str,
+        default="",
+        help="Optional reference wav path for Qwen3 Base voice-clone generation.",
+    )
+    parser.add_argument(
+        "--speech-ref-text",
+        type=str,
+        default="",
+        help="Optional reference transcript text for Qwen3 Base voice-clone generation.",
     )
     parser.add_argument(
         "--tts-eval-whisper-model",
@@ -510,6 +529,40 @@ def parse_args():
         "  - tree_depth (int): EAGLE3 Top-K lookahead depth of the candidate tree.\n"
         "Any other keys will be ignored with a warning. "
         'Example: \'{"num_assistant_tokens": 10, "branching_factor": 4, "tree_depth": 3}\'',
+    )
+    parser.add_argument(
+        "--metrics",
+        nargs="+",
+        choices=[
+            Metrics.SIMILARITY.value,
+            Metrics.DIVERGENCY.value,
+            Metrics.KL_DIVERGENCY.value,
+            Metrics.TOKEN_SIMILARITY.value,
+        ],
+        required=False,
+        default=[Metrics.SIMILARITY.value],
+        help="List of metrics to compute. It applicable for text generation now.\n"
+        "similarity: Compute the similarity between generated and reference text. Default. \n"
+        "divergency: Compute the FDT, FDT norm, SDT, SDT norm between generated and reference encoded answer. \n"
+        "kl_divergency: Compute the KL divergence for the prompt tokens. Prompt is divided into two parts: prefix and scored tail. "
+        "Scored tail is used for the actual KL divergence computation. Context/scoring range may be adjasted with --kld-ctx, --kld-chunk. \n"
+        "token_similarity: Collect the tokenized prompt and generated results, no checks are performed at that moment.",
+    )
+    parser.add_argument(
+        "--kld-ctx",
+        dest="kld_ctx",
+        type=positive_integer,
+        default=None,
+        help="Applicable with `--metrics kl_divergency`. "
+        "KL divergence is calculated based on prompt tokens. This parameter specifies the number of tokens for KL divergence which "
+        "will be used for evaluation. Context will be split it into prefix and scored tail.",
+    )
+    parser.add_argument(
+        "--kld-chunk",
+        dest="kld_chunk",
+        type=positive_integer,
+        default=None,
+        help="Chunk size for KL divergence scoring loop. The selected context is still scored on its second half.",
     )
 
     return parser.parse_args()
@@ -561,6 +614,9 @@ def check_args(args):
 
     if args.dataset_field is None and args.model_type != "speech-recognition":
         args.dataset_field = "text"
+
+    if args.metrics != [Metrics.SIMILARITY.value] and args.model_type != "text":
+        raise ValueError(f"For --model-type {args.model_type}, only --metrics={Metrics.SIMILARITY.value} is supported.")
 
 
 def load_prompts(args):
@@ -614,6 +670,7 @@ def load_tokenizer(args):
     # Define kwargs based on args attributes
     kwargs = {}
     if args.gguf_file:
+        patch_transformers_gguf_support()
         kwargs['gguf_file'] = args.gguf_file
 
     tokenizer = None
@@ -672,6 +729,9 @@ def load_processor(args):
     model_id = args.base_model if args.base_model is not None else args.target_model
     if model_id is None:
         return None, None
+
+    if args.gguf_file:
+        patch_transformers_gguf_support()
 
     config_path = Path(model_id) / "config.json"
     if (
@@ -836,30 +896,6 @@ def genai_gen_chat_text(
     return answers
 
 
-def llamacpp_gen_text(
-    model,
-    tokenizer,
-    question,
-    max_new_tokens,
-    skip_question,
-    use_chat_template=False,
-    empty_adapters=False,
-    num_assistant_tokens=0,
-    assistant_confidence_threshold=0.0,
-    generation_config_extra=None,
-):
-    if use_chat_template:
-        output = model.create_chat_completion(messages=[{"role": "user", "content": question}], max_tokens=max_new_tokens, temperature=0.0)
-        return output["choices"][0]["message"]["content"]
-    else:
-        # Use the GGUF tokenizer's special-token policy. llama-cpp-python's string
-        # completion wrapper can append a separator even when add_eos_token is false
-        # (e.g. Hunyuan), changing the prompt compared with native GGUF generation.
-        prompt_tokens = model.tokenize(question.encode("utf-8"), add_bos=True, special=True)
-        output = model(prompt_tokens, max_tokens=max_new_tokens, echo=False, temperature=0.0)
-        return output["choices"][0]["text"]
-
-
 def genai_gen_image(model, prompt, num_inference_steps, generator=None, empty_adapters=False):
     kwargs = {}
     adapter_config = getattr(model, "adapter_config", None)
@@ -983,7 +1019,17 @@ def _is_voice_pack_enabled_model(model):
     return voices_dir.is_dir()
 
 
-def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice=""):
+def genai_gen_speech(
+    model,
+    prompt,
+    speaker_embedding=None,
+    language="",
+    voice="",
+    instruct="",
+    max_new_tokens=None,
+    ref_audio="",
+    ref_text="",
+):
     from whowhatbench.speech_generation_evaluator import GenAIOmniSpeechWrapper
 
     if isinstance(model, GenAIOmniSpeechWrapper):
@@ -995,7 +1041,24 @@ def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice="
 
         generation_properties = {}
         if isinstance(language, str) and language.strip():
-            generation_properties["language"] = language.strip().lower()
+            generation_properties["language"] = language.strip()
+
+        if isinstance(instruct, str) and instruct.strip():
+            generation_properties["instruct"] = instruct.strip()
+
+        if max_new_tokens is not None:
+            generation_properties["max_new_tokens"] = int(max_new_tokens)
+
+        selected_voice = voice.strip() if isinstance(voice, str) else ""
+        generation_properties["voice"] = selected_voice
+
+        selected_ref_text = ref_text.strip() if isinstance(ref_text, str) else ""
+        if selected_ref_text:
+            generation_properties["ref_text"] = selected_ref_text
+
+        selected_ref_audio = ref_audio.strip() if isinstance(ref_audio, str) else ""
+        if selected_ref_audio:
+            generation_properties["ref_audio"] = selected_ref_audio
 
         # Kokoro voice-pack exports select the voice by loading <model_dir>/voices/<voice>.bin
         # and forwarding it as the speaker embedding.
@@ -1173,19 +1236,13 @@ def create_evaluator(base_model, args):
         if task == "text":
             tokenizer = load_tokenizer(args) if not args.llamacpp else None
 
-            if args.genai:
-                gen_answer_fn = genai_gen_text
-            elif args.llamacpp:
-                gen_answer_fn = llamacpp_gen_text
-            else:
-                gen_answer_fn = None
-
             if args.llamacpp:
                 use_chat_template = args.llamacpp_chat and not args.omit_chat_template
             else:
                 use_chat_template = (
                     tokenizer is not None and tokenizer.chat_template is not None and not args.omit_chat_template
                 )
+
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -1195,7 +1252,6 @@ def create_evaluator(base_model, args):
                 max_new_tokens=args.max_new_tokens,
                 num_samples=args.num_samples,
                 language=args.language,
-                gen_answer_fn=gen_answer_fn,
                 use_chat_template=use_chat_template,
                 long_prompt=(not args.short_prompt),
                 num_assistant_tokens=(
@@ -1207,6 +1263,11 @@ def create_evaluator(base_model, args):
                     if args.assistant_confidence_threshold is not None else 0.0
                 ),
                 generation_config_extra=args.generation_config_extra,
+                kld_ctx=args.kld_ctx,
+                kld_chunk=args.kld_chunk,
+                metrics_list=args.metrics,
+                is_genai=args.genai,
+                is_llamacpp=args.llamacpp,
             )
         elif task == "text-agent" or task == "visual-text-agent":
             tokenizer = load_tokenizer(args)
@@ -1283,6 +1344,10 @@ def create_evaluator(base_model, args):
                 vocoder_path=args.vocoder_path,
                 speech_language=args.speech_language,
                 speech_voice=args.speech_voice,
+                speech_instruct=args.speech_instruct,
+                speech_ref_audio=args.speech_ref_audio,
+                speech_ref_text=args.speech_ref_text,
+                max_new_tokens=args.max_new_tokens,
             )
         elif task == "visual-text" or task == "visual-video-text" or task == "visual-text-only":
             processor, config = load_processor(args)
@@ -1482,6 +1547,31 @@ def print_text_results(evaluator):
         logger.info("## Diff:\n%s\n", diff)
 
 
+def print_text_results_metrics_list(evaluator, metric_of_interest=None):
+    worst_examples = evaluator.worst_examples(top_k=5, metric=metric_of_interest)
+    for i, e in enumerate(worst_examples):
+        logger.info(
+            "======================================================================================================="
+        )
+        logger.info("## Prompt %d:\n%s\n", i + 1, e["prompt"])
+        logger.info("## %s value:%.4f\n", metric_of_interest, e[metric_of_interest])
+
+        if metric_of_interest in [Metrics.DIVERGENCY.value, Metrics.SIMILARITY.value]:
+            ref_text = ""
+            actual_text = ""
+            diff = ""
+            for l1, l2 in zip_longest(e["source_model"].splitlines(), e["optimized_model"].splitlines(), fillvalue=""):
+                if l1 == "" and l2 == "":
+                    continue
+                ref_text += l1 + "\n"
+                actual_text += l2 + "\n"
+                diff += diff_strings(l1, l2) + "\n"
+
+            logger.info("## Reference text:\n%s\n", ref_text)
+            logger.info("## Actual text:\n%s\n", actual_text)
+            logger.info("## Diff:\n%s\n", diff)
+
+
 def print_image_results(evaluator):
     metric_of_interest = "similarity"
     pd.set_option('display.max_colwidth', None)
@@ -1551,6 +1641,10 @@ def _log_speech_metrics_summary(all_metrics: pd.DataFrame) -> None:
     present_component_cols = [column for column in component_cols if column in row.columns]
     component_df = row[present_component_cols]
     logger.info("%s\n%s", overall_df.to_string(index=True), component_df.to_string(index=True))
+
+
+def _format_metrics_summary(all_metrics: pd.DataFrame) -> str:
+    return all_metrics.to_string(index=True, float_format=lambda value: f"{value:.7f}")
 
 
 def print_speech_results(evaluator):
@@ -1694,6 +1788,8 @@ def main():
         kwargs["speech_language"] = args.speech_language
 
     kwargs["llamacpp_n_ctx"] = args.llamacpp_n_ctx
+    if args.llamacpp and args.metrics and Metrics.KL_DIVERGENCY.value in args.metrics:
+        kwargs["llamacpp_logits_all"] = True
 
     if args.base_model is not None:
         base_model = load_model(
@@ -1764,7 +1860,7 @@ def main():
         if args.model_type == "speech-generation":
             _log_speech_metrics_summary(all_metrics)
         else:
-            logger.info(all_metrics)
+            logger.info("%s", _format_metrics_summary(all_metrics))
 
         if args.output:
             os.makedirs(args.output, exist_ok=True)
@@ -1776,7 +1872,6 @@ def main():
 
     if args.verbose and (args.target_model or args.target_data):
         if args.model_type in [
-            "text",
             "text-agent",
             "text-chat",
             "visual-text",
@@ -1787,6 +1882,9 @@ def main():
             "visual-text-only",
         ]:
             print_text_results(evaluator)
+        elif args.model_type in ["text"]:
+            for metrcis in args.metrics:
+                print_text_results_metrics_list(evaluator, metrcis)
         elif (
             "text-to-image" in args.model_type
             or "image-to-image" in args.model_type
