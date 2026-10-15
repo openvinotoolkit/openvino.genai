@@ -25,6 +25,7 @@ from llm_bench_utils.tts_utils import (
     load_qwen3_reference_audio,
     validate_reference_audio_source,
     QWEN3_CUSTOM_VOICE_DEFAULT_SPEAKER,
+    QWEN3_VOICE_DESIGN_DEFAULT_INSTRUCT,
     QWEN3_BASE_DEFAULT_REF_AUDIO_URL,
     QWEN3_BASE_DEFAULT_REF_TEXT,
 )
@@ -90,6 +91,10 @@ def _get_qwen3_tts_generation_settings(args):
             "Qwen3-TTS CustomVoice: speech_voice not provided, using default speaker '%s'.",
             QWEN3_CUSTOM_VOICE_DEFAULT_SPEAKER,
         )
+
+    if settings["variant"] == "voice_design" and not settings["instruct"]:
+        settings["instruct"] = QWEN3_VOICE_DESIGN_DEFAULT_INSTRUCT
+        log.info("Qwen3-TTS VoiceDesign: speech_instruct not provided, using default instruction.")
     return settings
 
 
