@@ -174,6 +174,8 @@ def run_qwen3_text_to_speech_generation_optimum(
         if variant_context["instruct"]:
             preprocess_kwargs["instruct"] = variant_context["instruct"]
 
+    mem_consumption.start(num)
+    start = time.perf_counter()
     tok_encode_start = time.perf_counter()
     inputs = model.preprocess_input(**preprocess_kwargs)
     tok_encode_end = time.perf_counter()
@@ -184,8 +186,6 @@ def run_qwen3_text_to_speech_generation_optimum(
     # x_vector_only_mode is consumed by preprocess_input for Optimum.
     generation_kwargs.pop("x_vector_only_mode", None)
 
-    mem_consumption.start(num)
-    start = time.perf_counter()
     speeches = model.generate(**inputs, **generation_kwargs)
     end = time.perf_counter()
     generation_time = end - start
