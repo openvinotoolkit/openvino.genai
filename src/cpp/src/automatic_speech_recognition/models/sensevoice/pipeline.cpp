@@ -184,6 +184,9 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudioInputs& audio_inputs,
     results.perf_metrics.raw_metrics.detokenization_durations.emplace_back(
         MicroSeconds(PerfMetrics::get_microsec(detokenization_stop_time - detokenization_start_time)));
 
+    results.perf_metrics.raw_metrics.m_new_token_times.emplace_back(detokenization_stop_time);
+    results.perf_metrics.raw_metrics.m_batch_sizes.emplace_back(transcription_token_ids.size());
+
     results.scores.push_back(0.0f);
     const std::string result_language = (config.language.has_value() && config.language.value() != "auto")
                                             ? config.language.value()

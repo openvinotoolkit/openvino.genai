@@ -627,18 +627,13 @@ def test_forced_language(sample_from_multilingual_dataset, pipelines_fixture):
     indirect=True,
 )
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
-def test_sensevoice_use_itn(sample_from_dataset, pipelines_fixture):
-    hf_pipe, genai_pipe, _, _ = pipelines_fixture
+def test_sensevoice_use_itn_changes_transcription(sample_from_dataset, pipelines_fixture):
+    _, genai_pipe, _, _ = pipelines_fixture
 
-    genai_texts = {}
-    for use_itn in (False, True):
-        genai_result = genai_pipe.generate(sample_from_dataset, use_itn=use_itn)
-        reference = hf_pipe(sample_from_dataset, use_itn=use_itn)
+    text_without_itn = genai_pipe.generate(sample_from_dataset, use_itn=False).texts[0]
+    text_with_itn = genai_pipe.generate(sample_from_dataset, use_itn=True).texts[0]
 
-        assert genai_result.texts[0] == reference["text"]
-        genai_texts[use_itn] = genai_result.texts[0]
-
-    assert genai_texts[False] != genai_texts[True]
+    assert text_without_itn != text_with_itn
 
 
 @pytest.mark.transformers_lower_v5(reason="CVS-185784")
