@@ -253,9 +253,7 @@ def analyze_args(args):
     model_args["is_omni_model"] = isinstance(model_type, str) and model_type.startswith("qwen3-omni")
     model_args["qwen3_tts_variant"] = get_qwen3_tts_variant(model_path) if use_case.task == "text_to_speech" else None
     model_args["is_qwen3_tts_model"] = (
-        use_case.task == "text_to_speech"
-        and isinstance(model_type, str)
-        and model_type.startswith("qwen3-tts")
+        use_case.task == "text_to_speech" and isinstance(model_type, str) and model_type.startswith("qwen3-tts")
     )
     if use_case.task == "code_gen" and not model_args["prompt"] and not model_args["prompt_file"]:
         model_args["prompt"] = "def print_hello_world():"

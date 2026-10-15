@@ -373,7 +373,7 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
     if kwargs.get("is_qwen3_tts_model", False):
         from qwen_tts import Qwen3TTSModel
 
-        log.info(f'Load Qwen3-TTS PyTorch model from model path:{model_path}')
+        log.info(f"Load Qwen3-TTS PyTorch model from model path:{model_path}")
         if kwargs.get("mem_consumption"):
             memory_data_collector.start()
 
@@ -390,7 +390,7 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
             memory_data_collector.stop_and_collect_data("pretrained")
             memory_data_collector.log_data(compilation=True)
 
-        log.info(f'Model path:{model_path}, from pretrained time: {from_pretrain_time:.2f}s')
+        log.info(f"Model path:{model_path}, from pretrained time: {from_pretrain_time:.2f}s")
         return pipe, None, None, from_pretrain_time, False
     if kwargs.get("is_omni_model", False):
         pipe, processor, from_pretrain_time = _load_qwen3_omni_pt_pipeline(

@@ -837,9 +837,7 @@ def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, 
     model, processor, vocoder, pretrain_time, use_genai = FW_UTILS[framework].create_text_2_speech_model(model_path, device, mem_consumption, **args)
     args["model_path"] = model_path
     if (
-        args.get("is_kokoro_model", False)
-        or args.get("is_omni_model", False)
-        or args.get("is_qwen3_tts_model", False)
+        args.get("is_kokoro_model", False) or args.get("is_omni_model", False) or args.get("is_qwen3_tts_model", False)
     ) and args.get("batch_size", 1) != 1:
         log.warning("Only batch size 1 available for benchmarking with kokoro / qwen3-omni / qwen3-tts models")
         args["batch_size"] = 1
@@ -881,7 +879,9 @@ def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, 
         if framework == "pt":
             gen_fn = run_qwen3_text_to_speech_generation_pt
         else:
-            gen_fn = run_qwen3_text_to_speech_generation_genai if use_genai else run_qwen3_text_to_speech_generation_optimum
+            gen_fn = (
+                run_qwen3_text_to_speech_generation_genai if use_genai else run_qwen3_text_to_speech_generation_optimum
+            )
     elif is_omni_model:
         gen_fn = run_omni_text_to_speech_generation_genai if use_genai else run_omni_text_to_speech_generation_optimum
     elif use_genai:
@@ -899,8 +899,8 @@ def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, 
                 mem_consumption.update_marker(f"step-{num}-{p_idx}")
                 if num == 0:
                     metrics_print.print_unicode(
-                        f'[warm-up][P{p_idx}] Input text: {input_text}',
-                        f'[warm-up][P{p_idx}] Unable print input text',
+                        f"[warm-up][P{p_idx}] Input text: {input_text}",
+                        f"[warm-up][P{p_idx}] Unable print input text",
                         max_output=metrics_print.MAX_INPUT_TXT_IN_LOG,
                     )
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
@@ -930,8 +930,8 @@ def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, 
                 mem_consumption.update_marker(f"step-{num}-{p_idx}")
                 if num == 0:
                     metrics_print.print_unicode(
-                        f'[warm-up][P{p_idx}] Input text: {input_text}',
-                        f'[warm-up][P{p_idx}] Unable print input text',
+                        f"[warm-up][P{p_idx}] Input text: {input_text}",
+                        f"[warm-up][P{p_idx}] Unable print input text",
                         max_output=metrics_print.MAX_INPUT_TXT_IN_LOG,
                     )
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
