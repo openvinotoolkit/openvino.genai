@@ -382,19 +382,22 @@ def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_d
     return generated_tokens, perf_metrics, end - start
 
 
-def genai_session_snapshot_save(model, gen_config, input_data, steps, path, prefix):
+def genai_session_snapshot_save(model, gen_config, prompt_text, steps, path, prefix):
     """Drives the request for `steps` continuous-batching steps (expected to cover prefill plus a
     couple of decode steps) and saves it via save_state(), instead of running a full, measurable
     generation. save_state() requires the request to still be RUNNING (a finished request's cache
-    is freed immediately), so the request is deliberately left unfinished here."""
-    import openvino as ov
+    is freed immediately), so the request is deliberately left unfinished here.
+
+    Uses the string-prompt add_request() overload (not pre-tokenized ids) so the pipeline routes
+    natively-multimodal/hybrid models (e.g. Qwen3.5) through their embeddings path correctly;
+    add_request() with a raw token-id Tensor skips that routing and raises "Tensor was not
+    initialized" for such models."""
     import openvino_genai
 
     request_id = 1
-    input_tensor = ov.Tensor([input_data.input_ids.data[0]])
     log.info("%s Session snapshot save start: %s", prefix, datetime.datetime.now().isoformat())
     start = time.perf_counter()
-    handle = model.add_request(request_id, input_tensor, gen_config)
+    handle = model.add_request(request_id, prompt_text, gen_config)
     for _ in range(steps):
         if handle.get_status() != openvino_genai.GenerationStatus.RUNNING:
             break
@@ -522,7 +525,7 @@ def run_text_generation_genai(
             model, max_gen_tokens * args["session_snapshot_save_steps"] + max_gen_tokens, args
         )
         genai_session_snapshot_save(
-            model, save_gen_config, input_data, args["session_snapshot_save_steps"], args["session_snapshot_save"], prefix
+            model, save_gen_config, input_text_list[0], args["session_snapshot_save_steps"], args["session_snapshot_save"], prefix
         )
         return
 
