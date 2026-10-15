@@ -68,13 +68,13 @@ class VisualTextEvaluator(TextEvaluator):
             max_new_tokens=max_new_tokens,
             crop_question=crop_question,
             num_samples=num_samples,
-            gen_answer_fn=gen_answer_fn,
             generation_config=generation_config,
             seqs_per_request=seqs_per_request,
             generation_config_extra=self.generation_config_extra,
             language=language,
             long_prompt=long_prompt,
         )
+        self.generation_fn = gen_answer_fn
 
     def score(self, model_or_data, gen_answer_fn=None, **kwargs):
         if isinstance(model_or_data, str) and os.path.exists(model_or_data):

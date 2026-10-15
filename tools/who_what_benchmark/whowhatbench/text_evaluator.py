@@ -11,7 +11,7 @@ from importlib.resources import files
 
 from .registry import register_evaluator, BaseEvaluator
 from .whowhat_metrics import TextDivergency, TextSimilarity, KLDivergency
-from .text_generation_strategies import GenerationStrategy
+from .text_generation_strategies import GenerationStrategy, TextGenerationFn, TextGenerationContext
 from .artifacts_manager import GenerationResults, Metrics, ArtifactsSchema, ArtifactsManager
 
 
@@ -33,7 +33,7 @@ class TextEvaluator(BaseEvaluator):
         crop_question=True,
         num_samples=None,
         language="en",
-        gen_answer_fn=None,
+        gen_answer_fn: TextGenerationFn = None,
         generation_config=None,
         seqs_per_request=None,
         use_chat_template=None,
@@ -42,7 +42,6 @@ class TextEvaluator(BaseEvaluator):
         num_assistant_tokens=0,
         assistant_confidence_threshold=0.0,
         generation_config_extra=None,
-        kl_input_tokens=None,
         kld_ctx=None,
         kld_chunk=None,
         metrics_list: list = [],
@@ -237,7 +236,6 @@ class TextEvaluator(BaseEvaluator):
                     model,
                     self.tokenizer,
                     p,
-                    reference_tokens,
                     self.max_new_tokens,
                     self._crop_question,
                     self.use_chat_template,
@@ -245,6 +243,7 @@ class TextEvaluator(BaseEvaluator):
                     self.num_assistant_tokens,
                     self.assistant_confidence_threshold,
                     generation_config_extra=self.generation_config_extra,
+                    context=TextGenerationContext(reference_tokens=reference_tokens),
                 )
 
                 artifacts_collector.collect(
