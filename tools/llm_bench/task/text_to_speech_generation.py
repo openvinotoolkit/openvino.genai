@@ -24,10 +24,10 @@ from llm_bench_utils.tts_utils import (
     resolve_omni_generation_settings,
     load_qwen3_reference_audio,
     validate_reference_audio_source,
-    QWEN3_CUSTOM_VOICE_DEFAULT_SPEAKER,
-    QWEN3_VOICE_DESIGN_DEFAULT_INSTRUCT,
-    QWEN3_BASE_DEFAULT_REF_AUDIO_URL,
-    QWEN3_BASE_DEFAULT_REF_TEXT,
+    DEFAULT_QWEN3_CUSTOM_VOICE_SPEAKER,
+    DEFAULT_QWEN3_VOICE_DESIGN_INSTRUCT,
+    DEFAULT_QWEN3_BASE_REF_AUDIO_URL,
+    DEFAULT_QWEN3_BASE_REF_TEXT,
 )
 import llm_bench_utils.metrics_print as metrics_print
 from transformers import set_seed
@@ -79,21 +79,21 @@ def _get_qwen3_tts_generation_settings(args):
     }
 
     if settings["variant"] == "base" and not settings["ref_audio"]:
-        settings["ref_audio"] = QWEN3_BASE_DEFAULT_REF_AUDIO_URL
+        settings["ref_audio"] = DEFAULT_QWEN3_BASE_REF_AUDIO_URL
         log.info("Qwen3-TTS Base: speech_ref_audio not provided, using default reference audio.")
         if not settings["ref_text"]:
-            settings["ref_text"] = QWEN3_BASE_DEFAULT_REF_TEXT
+            settings["ref_text"] = DEFAULT_QWEN3_BASE_REF_TEXT
             log.info("Qwen3-TTS Base: speech_ref_text not provided, using default reference text.")
 
     if settings["variant"] == "custom_voice" and not settings["voice"]:
-        settings["voice"] = QWEN3_CUSTOM_VOICE_DEFAULT_SPEAKER
+        settings["voice"] = DEFAULT_QWEN3_CUSTOM_VOICE_SPEAKER
         log.info(
             "Qwen3-TTS CustomVoice: speech_voice not provided, using default speaker '%s'.",
-            QWEN3_CUSTOM_VOICE_DEFAULT_SPEAKER,
+            DEFAULT_QWEN3_CUSTOM_VOICE_SPEAKER,
         )
 
     if settings["variant"] == "voice_design" and not settings["instruct"]:
-        settings["instruct"] = QWEN3_VOICE_DESIGN_DEFAULT_INSTRUCT
+        settings["instruct"] = DEFAULT_QWEN3_VOICE_DESIGN_INSTRUCT
         log.info("Qwen3-TTS VoiceDesign: speech_instruct not provided, using default instruction.")
     return settings
 

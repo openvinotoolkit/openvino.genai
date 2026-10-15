@@ -19,13 +19,13 @@ OMNI_TTS_SAMPLE_RATE = 24000
 QWEN3_TTS_SAMPLE_RATE = 24000
 DEFAULT_TTS_SAMPLE_RATE = 16000
 DEFAULT_OMNI_SPEAKER = "Ethan"
-QWEN3_CUSTOM_VOICE_DEFAULT_SPEAKER = "Ryan"
-QWEN3_VOICE_DESIGN_DEFAULT_INSTRUCT = (
+DEFAULT_QWEN3_CUSTOM_VOICE_SPEAKER = "Ryan"
+DEFAULT_QWEN3_VOICE_DESIGN_INSTRUCT = (
     "Male, 17 years old, tenor range, gaining confidence - deeper breath support now, "
     "though vowels still tighten when nervous"
 )
-QWEN3_BASE_DEFAULT_REF_AUDIO_URL = "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-TTS-Repo/clone.wav"
-QWEN3_BASE_DEFAULT_REF_TEXT = (
+DEFAULT_QWEN3_BASE_REF_AUDIO_URL = "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-TTS-Repo/clone.wav"
+DEFAULT_QWEN3_BASE_REF_TEXT = (
     "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you."
 )
 QWEN3_TTS_VARIANTS = {"base", "custom_voice", "voice_design"}
