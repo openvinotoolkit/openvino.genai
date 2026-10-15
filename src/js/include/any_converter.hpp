@@ -7,11 +7,8 @@
 
 #include <vector>
 
+#include "cpp_to_js.hpp"
 #include "openvino/core/any.hpp"
-
-/** @brief Converts C++ values to JavaScript values. */
-template <typename SourceType, typename TargetType>
-TargetType cpp_to_js(const Napi::Env& env, const SourceType& value);
 
 /**
  * @brief Convert a single ov::Any to a JS value.
