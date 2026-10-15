@@ -6,6 +6,7 @@ import time
 import hashlib
 import datetime
 import logging as log
+from urllib.parse import urlparse
 import numpy as np
 import soundfile as sf
 from pathlib import Path
@@ -24,6 +25,8 @@ from llm_bench_utils.tts_utils import (
     resolve_kokoro_speaker_embedding,
     resolve_omni_generation_settings,
     load_qwen3_reference_audio,
+    QWEN3_BASE_DEFAULT_REF_AUDIO_URL,
+    QWEN3_BASE_DEFAULT_REF_TEXT,
 )
 import llm_bench_utils.metrics_print as metrics_print
 from transformers import set_seed
@@ -65,7 +68,7 @@ def _get_qwen3_tts_generation_settings(args):
         if model_source is not None:
             variant = get_qwen3_tts_variant(model_source)
 
-    return {
+    settings = {
         "variant": variant,
         "language": (args.get("speech_language") or "").strip() or "Auto",
         "voice": (args.get("speech_voice") or "").strip(),
@@ -74,17 +77,29 @@ def _get_qwen3_tts_generation_settings(args):
         "ref_text": (args.get("speech_ref_text") or "").strip(),
     }
 
+    if settings["variant"] == "base" and not settings["ref_audio"]:
+        settings["ref_audio"] = QWEN3_BASE_DEFAULT_REF_AUDIO_URL
+        log.info("Qwen3-TTS Base: speech_ref_audio not provided, using default reference audio.")
+        if not settings["ref_text"]:
+            settings["ref_text"] = QWEN3_BASE_DEFAULT_REF_TEXT
+            log.info("Qwen3-TTS Base: speech_ref_text not provided, using default reference text.")
+    return settings
+
 
 def _validate_qwen3_tts_generation_settings(settings):
     variant = settings["variant"]
     if variant not in {"base", "custom_voice", "voice_design"}:
         raise RuntimeError(f"Unsupported Qwen3-TTS variant: {variant}")
 
-    if settings["ref_audio"] and not Path(settings["ref_audio"]).exists():
-        raise RuntimeError(f"Incorrect speech reference audio path: {settings['ref_audio']}")
+    ref_audio = settings["ref_audio"]
+    if ref_audio:
+        parsed_ref_audio = urlparse(ref_audio)
+        is_http_url = parsed_ref_audio.scheme in {"http", "https"}
+        if is_http_url and not parsed_ref_audio.netloc:
+            raise RuntimeError(f"Invalid speech reference audio URL: {ref_audio}")
+        if not is_http_url and not Path(ref_audio).exists():
+            raise RuntimeError(f"Incorrect speech reference audio path: {ref_audio}")
 
-    if variant == "base" and not settings["ref_audio"]:
-        raise RuntimeError("Qwen3-TTS Base requires --speech_ref_audio")
     if variant == "custom_voice" and not settings["voice"]:
         raise RuntimeError("Qwen3-TTS CustomVoice requires --speech_voice")
     if variant == "voice_design" and settings["voice"]:

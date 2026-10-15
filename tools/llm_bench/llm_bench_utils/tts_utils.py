@@ -3,8 +3,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
+import io
 import logging as log
 from pathlib import Path
+from urllib.parse import urlparse
+from urllib.request import urlopen
 import numpy as np
 import soundfile as sf
 
@@ -16,7 +19,12 @@ OMNI_TTS_SAMPLE_RATE = 24000
 QWEN3_TTS_SAMPLE_RATE = 24000
 DEFAULT_TTS_SAMPLE_RATE = 16000
 DEFAULT_OMNI_SPEAKER = "Ethan"
+QWEN3_BASE_DEFAULT_REF_AUDIO_URL = "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-TTS-Repo/clone.wav"
+QWEN3_BASE_DEFAULT_REF_TEXT = (
+    "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you."
+)
 QWEN3_TTS_VARIANTS = {"base", "custom_voice", "voice_design"}
+_QWEN3_REF_AUDIO_CACHE = {}
 
 
 def is_kokoro_model_id(model_id_or_path):
@@ -137,17 +145,33 @@ def get_qwen3_tts_variant(model_id_or_path):
 
 
 def load_qwen3_reference_audio(ref_audio_path):
-    audio_data, sample_rate = sf.read(ref_audio_path, dtype="float32", always_2d=False)
+    ref_audio = str(ref_audio_path).strip()
+    if ref_audio in _QWEN3_REF_AUDIO_CACHE:
+        return _QWEN3_REF_AUDIO_CACHE[ref_audio]
+
+    parsed = urlparse(ref_audio)
+
+    if parsed.scheme in {"http", "https"}:
+        if not parsed.netloc:
+            raise RuntimeError(f"Invalid Qwen3 reference audio URL: '{ref_audio}'")
+        log.info("Downloading Qwen3 Base reference audio from URL: %s", ref_audio)
+        with urlopen(ref_audio, timeout=30) as response:  # nosec B310
+            audio_data, sample_rate = sf.read(io.BytesIO(response.read()), dtype="float32", always_2d=False)
+    else:
+        audio_data, sample_rate = sf.read(ref_audio, dtype="float32", always_2d=False)
+
     if int(sample_rate) != QWEN3_TTS_SAMPLE_RATE:
         raise RuntimeError(
             f"Qwen3 Base strict check failed: reference audio sample rate must be {QWEN3_TTS_SAMPLE_RATE} Hz, "
-            f"got {int(sample_rate)} Hz for '{ref_audio_path}'."
+            f"got {int(sample_rate)} Hz for '{ref_audio}'."
         )
 
     waveform = np.asarray(audio_data, dtype=np.float32)
     if waveform.ndim > 1:
         waveform = np.mean(waveform, axis=-1, dtype=np.float32)
-    return waveform.reshape(-1), int(sample_rate)
+    resolved = (waveform.reshape(-1), int(sample_rate))
+    _QWEN3_REF_AUDIO_CACHE[ref_audio] = resolved
+    return resolved
 
 
 def extract_audio_array(output):
