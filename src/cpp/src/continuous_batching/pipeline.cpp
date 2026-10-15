@@ -633,6 +633,7 @@ GenerationHandle ContinuousBatchingPipeline::add_request(
     OPENVINO_ASSERT(m_uses_external_processor,
         "add_request(ProcessedInputs) requires using CB pipeline ctor with VLMProcessor - "
         "inputs should be produced by the same processor which is used for generation.");
+    assert_supported_add_request_lora_modes(m_impl->get_pipeline_adapters(), sampling_params);
     return m_impl->add_request(request_id, inputs, sampling_params);
 }
 
