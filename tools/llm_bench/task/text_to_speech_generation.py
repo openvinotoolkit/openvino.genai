@@ -6,10 +6,8 @@ import time
 import hashlib
 import datetime
 import logging as log
-from urllib.parse import urlparse
 import numpy as np
 import soundfile as sf
-from pathlib import Path
 import llm_bench_utils.ov_utils
 import llm_bench_utils.pt_utils
 import llm_bench_utils.model_utils as model_utils
@@ -25,6 +23,7 @@ from llm_bench_utils.tts_utils import (
     resolve_kokoro_speaker_embedding,
     resolve_omni_generation_settings,
     load_qwen3_reference_audio,
+    validate_reference_audio_source,
     QWEN3_BASE_DEFAULT_REF_AUDIO_URL,
     QWEN3_BASE_DEFAULT_REF_TEXT,
 )
@@ -93,12 +92,7 @@ def _validate_qwen3_tts_generation_settings(settings):
 
     ref_audio = settings["ref_audio"]
     if ref_audio:
-        parsed_ref_audio = urlparse(ref_audio)
-        is_http_url = parsed_ref_audio.scheme in {"http", "https"}
-        if is_http_url and not parsed_ref_audio.netloc:
-            raise RuntimeError(f"Invalid speech reference audio URL: {ref_audio}")
-        if not is_http_url and not Path(ref_audio).exists():
-            raise RuntimeError(f"Incorrect speech reference audio path: {ref_audio}")
+        validate_reference_audio_source(ref_audio)
 
     if variant == "custom_voice" and not settings["voice"]:
         raise RuntimeError("Qwen3-TTS CustomVoice requires --speech_voice")

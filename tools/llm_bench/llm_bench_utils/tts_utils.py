@@ -24,7 +24,7 @@ QWEN3_BASE_DEFAULT_REF_TEXT = (
     "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you."
 )
 QWEN3_TTS_VARIANTS = {"base", "custom_voice", "voice_design"}
-_QWEN3_REF_AUDIO_CACHE = {}
+_REFERENCE_AUDIO_CACHE = {}
 
 
 def is_kokoro_model_id(model_id_or_path):
@@ -144,25 +144,49 @@ def get_qwen3_tts_variant(model_id_or_path):
     return None
 
 
-def load_qwen3_reference_audio(ref_audio_path):
+def validate_reference_audio_source(ref_audio_path):
     ref_audio = str(ref_audio_path).strip()
-    if ref_audio in _QWEN3_REF_AUDIO_CACHE:
-        return _QWEN3_REF_AUDIO_CACHE[ref_audio]
-
     parsed = urlparse(ref_audio)
 
     if parsed.scheme in {"http", "https"}:
         if not parsed.netloc:
             raise RuntimeError(f"Invalid Qwen3 reference audio URL: '{ref_audio}'")
-        log.info("Downloading Qwen3 Base reference audio from URL: %s", ref_audio)
+        return
+
+    if parsed.scheme:
+        raise RuntimeError(
+            f"Unsupported Qwen3 reference audio URL scheme: '{parsed.scheme}'. "
+            "Only local paths and http/https URLs are supported."
+        )
+
+    if not Path(ref_audio).exists():
+        raise RuntimeError(f"Incorrect speech reference audio path: {ref_audio}")
+
+
+def load_reference_audio(ref_audio_path, expected_sample_rate=None, audio_label="reference audio"):
+    ref_audio = str(ref_audio_path).strip()
+    if ref_audio in _REFERENCE_AUDIO_CACHE:
+        waveform, sample_rate = _REFERENCE_AUDIO_CACHE[ref_audio]
+        if expected_sample_rate is not None and int(sample_rate) != int(expected_sample_rate):
+            raise RuntimeError(
+                f"{audio_label} strict check failed: reference audio sample rate must be {int(expected_sample_rate)} Hz, "
+                f"got {int(sample_rate)} Hz for '{ref_audio}'."
+            )
+        return waveform, sample_rate
+
+    validate_reference_audio_source(ref_audio)
+    parsed = urlparse(ref_audio)
+
+    if parsed.scheme in {"http", "https"}:
+        log.info("Downloading %s from URL: %s", audio_label, ref_audio)
         with urlopen(ref_audio, timeout=30) as response:  # nosec B310
             audio_data, sample_rate = sf.read(io.BytesIO(response.read()), dtype="float32", always_2d=False)
     else:
         audio_data, sample_rate = sf.read(ref_audio, dtype="float32", always_2d=False)
 
-    if int(sample_rate) != QWEN3_TTS_SAMPLE_RATE:
+    if expected_sample_rate is not None and int(sample_rate) != int(expected_sample_rate):
         raise RuntimeError(
-            f"Qwen3 Base strict check failed: reference audio sample rate must be {QWEN3_TTS_SAMPLE_RATE} Hz, "
+            f"{audio_label} strict check failed: reference audio sample rate must be {int(expected_sample_rate)} Hz, "
             f"got {int(sample_rate)} Hz for '{ref_audio}'."
         )
 
@@ -170,8 +194,16 @@ def load_qwen3_reference_audio(ref_audio_path):
     if waveform.ndim > 1:
         waveform = np.mean(waveform, axis=-1, dtype=np.float32)
     resolved = (waveform.reshape(-1), int(sample_rate))
-    _QWEN3_REF_AUDIO_CACHE[ref_audio] = resolved
+    _REFERENCE_AUDIO_CACHE[ref_audio] = resolved
     return resolved
+
+
+def load_qwen3_reference_audio(ref_audio_path):
+    return load_reference_audio(
+        ref_audio_path,
+        expected_sample_rate=QWEN3_TTS_SAMPLE_RATE,
+        audio_label="Qwen3 Base reference audio",
+    )
 
 
 def extract_audio_array(output):
