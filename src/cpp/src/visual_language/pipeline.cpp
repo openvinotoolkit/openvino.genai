@@ -132,6 +132,10 @@ private:
 
         auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
         auto& properties_copy = filtered_properties.fork();
+        if (m_generation_config.adapters) {
+            // Forward the adapters to InputsEmbedder sub-models before the language model prefix is set below.
+            properties_copy[AdaptersProperty::name()] = *m_generation_config.adapters;
+        }
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
 
         // In case user provided properties per-device
@@ -153,6 +157,7 @@ private:
             m_generation_config.adapters->set_tensor_name_prefix(
                 m_generation_config.adapters->get_tensor_name_prefix().value_or("base_model.model.")
             );
+            m_generation_config.adapters->set_foreign_tensor_name_prefix(VISION_LORA_TENSOR_NAME_PREFIX);
             m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
         }
 
@@ -208,6 +213,10 @@ private:
 
         auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
         auto& properties_copy = filtered_properties.fork();
+        if (m_generation_config.adapters) {
+            // Forward the adapters to InputsEmbedder sub-models before the language model prefix is set below.
+            properties_copy[AdaptersProperty::name()] = *m_generation_config.adapters;
+        }
 
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties_copy);
 
@@ -220,6 +229,7 @@ private:
             m_generation_config.adapters->set_tensor_name_prefix(
                 m_generation_config.adapters->get_tensor_name_prefix().value_or("base_model.model.")
             );
+            m_generation_config.adapters->set_foreign_tensor_name_prefix(VISION_LORA_TENSOR_NAME_PREFIX);
             m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
         }
 
@@ -902,6 +912,11 @@ private:
         }
 
         if (m_adapter_controller) {
+            OPENVINO_ASSERT(!m_inputs_embedder->has_vision_adapters() || !generation_config.adapters ||
+                                have_same_adapters(generation_config.adapters, m_generation_config.adapters),
+                "LoRA adapters cannot be changed per generate() call when the vision part of the model is adapted: "
+                "the vision adapters are baked into the model at the pipeline construction time. "
+                "Construct a new VLMPipeline to use a different set of adapters.");
             m_adapter_controller->apply(m_language, generation_config.adapters);
         }
 

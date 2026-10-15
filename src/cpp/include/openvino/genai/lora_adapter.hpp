@@ -70,6 +70,12 @@ struct OPENVINO_GENAI_EXPORTS AdapterConfig {
     const std::optional<std::string>& get_tensor_name_prefix() const { return tensor_name_prefix; }
     void set_tensor_name_prefix(const std::optional<std::string>& _tensor_name_prefix) { tensor_name_prefix = _tensor_name_prefix; }
 
+    // Methods to get and set optional name prefix of the tensors that belong to another sub-model sharing the same
+    // adapter file. Such tensors are nested under tensor_name_prefix, so they cannot be excluded by it, and they are
+    // applied by another AdapterController. Setting the prefix keeps them out of the unused tensors diagnostics.
+    const std::optional<std::string>& get_foreign_tensor_name_prefix() const { return foreign_tensor_name_prefix; }
+    void set_foreign_tensor_name_prefix(const std::optional<std::string>& _foreign_tensor_name_prefix) { foreign_tensor_name_prefix = _foreign_tensor_name_prefix; }
+
     AdapterConfig (Mode mode = MODE_AUTO);
 
     AdapterConfig (const Adapter& adapter, float alpha, Mode mode = MODE_AUTO) : AdapterConfig(std::vector<std::pair<Adapter, float>>{{adapter, alpha}}, mode) {}
@@ -109,6 +115,7 @@ private:
     std::vector<Adapter> adapters;
     std::vector<float> alphas;
     std::optional<std::string> tensor_name_prefix;
+    std::optional<std::string> foreign_tensor_name_prefix;
 
 };
 

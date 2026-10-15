@@ -7,6 +7,7 @@
 #include "visual_language/clip.hpp"
 
 #include "utils.hpp"
+#include "lora/helper.hpp"
 #include "openvino/op/interpolate.hpp"
 #include "openvino/op/add.hpp"
 #include "openvino/op/clamp.hpp"
@@ -26,6 +27,29 @@
 namespace ov::genai {
 
 namespace {
+
+// The vision sub-model is served by a pool of infer requests, so only MODE_STATIC is supported: it turns the adapter
+// weights into graph constants and leaves no per-infer-request LoRA state to maintain. Must be called before the model
+// is compiled. Returns true if at least one layer was adapted.
+bool apply_vision_adapters(const std::shared_ptr<ov::Model>& model,
+                           const std::string& device,
+                           const ov::AnyMap& properties) {
+    std::optional<AdapterConfig> adapters;
+    if (!update_adapters_from_properties(properties, adapters) || !static_cast<bool>(*adapters)) {
+        return false;
+    }
+    const auto mode = adapters->get_mode();
+    OPENVINO_ASSERT(mode == AdapterConfig::MODE_AUTO || mode == AdapterConfig::MODE_STATIC,
+        "Only AdapterConfig::MODE_STATIC LoRA adapters are supported for the vision part of a VLM. "
+        "Set AdapterConfig::MODE_STATIC explicitly or leave AdapterConfig::MODE_AUTO.");
+    adapters->set_mode(AdapterConfig::MODE_STATIC);
+    adapters->set_tensor_name_prefix(adapters->get_tensor_name_prefix().value_or(VISION_LORA_TENSOR_NAME_PREFIX));
+
+    const size_t ops_count_before = model->get_ops().size();
+    // The controller patches the model in its constructor and has nothing to do at inference time in MODE_STATIC.
+    AdapterController(model, *adapters, device);
+    return model->get_ops().size() != ops_count_before;
+}
 
 std::shared_ptr<ov::Node> create_f32_nchw_input(std::shared_ptr<ov::Node> input) {
     auto raw_images_f32 = std::make_shared<ov::op::v0::Convert>(input, ov::element::f32);
@@ -948,6 +972,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     if (std::filesystem::exists(merger_path)) {
         auto model = utils::singleton_core().read_model(merger_path);
         utils::request_vl_sdpa_transformations(model);
+        m_has_vision_adapters = apply_vision_adapters(model, device, device_config);
 
         auto compiled_model = utils::singleton_core().compile_model(
             model, device, utils::get_model_properties(device_config, "vision_embeddings_merger", device));
@@ -982,6 +1007,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
             utils::get_model_weights_pair(models_map, "vision_embeddings_merger").first,
             utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second);
         utils::request_vl_sdpa_transformations(model);
+        m_has_vision_adapters = apply_vision_adapters(model, device, device_config);
 
         auto compiled_model = utils::singleton_core().compile_model(
             model, device, utils::get_model_properties(device_config, "vision_embeddings_merger", device));

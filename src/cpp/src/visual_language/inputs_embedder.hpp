@@ -21,6 +21,10 @@
 #include "visual_language/vision_token_pruning_processor.hpp"
 
 namespace ov::genai {
+
+// Vision sub-models are exported from the `model.visual` submodule, so the part of a PEFT adapter that belongs to
+// them is nested under this prefix.
+constexpr char VISION_LORA_TENSOR_NAME_PREFIX[] = "base_model.model.model.visual.";
 struct VLMPerfMetrics;
 
 const static std::regex UNIVERSAL_IMAGE_PATTERN{R"(<ov_genai_image_(\d+)>)"};
@@ -96,6 +100,9 @@ public:
 
     // returns embedding model which converts token_id(s) to embedding vectors
     EmbeddingsModel::Ptr get_embedding_model() const;
+
+    // returns true if LoRA adapters were baked into one of the vision sub-models
+    bool has_vision_adapters() const;
 
     // returns tokenizer
     Tokenizer get_tokenizer() const;
@@ -190,9 +197,14 @@ private:
         // position ids
         ov::Tensor m_position_ids;
         int64_t m_rope_delta = 0;
+        // True if LoRA adapters were baked into one of the vision sub-models and therefore cannot be changed per generate() call.
+        bool m_has_vision_adapters = false;
         virtual ~IInputsEmbedder() = default;
 
     public:
+        bool has_vision_adapters() const {
+            return m_has_vision_adapters;
+        }
         virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) = 0;
 
         virtual ov::Tensor get_inputs_embeds(const std::string& prompt,

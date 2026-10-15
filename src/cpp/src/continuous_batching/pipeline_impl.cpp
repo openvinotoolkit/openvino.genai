@@ -164,9 +164,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     const auto language_model_properties = utils::get_model_properties(properties, "language_model", device);
 
     // apply LoRA
-    auto filtered_properties = extract_adapters_from_properties(language_model_properties, &m_generation_config.adapters);
-    if (m_generation_config.adapters) {
+    auto filtered_properties = extract_adapters_from_properties(language_model_properties);
+    // Adapters are read from the original properties because get_model_properties() strips them as a non-plugin property.
+    if (update_adapters_from_properties(properties, m_generation_config.adapters)) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
+        m_generation_config.adapters->set_foreign_tensor_name_prefix(VISION_LORA_TENSOR_NAME_PREFIX);
         m_adapter_controller =
             AdapterController(model, *m_generation_config.adapters, device);  // TODO: Make the prefix name configurable
     }
@@ -651,6 +653,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::set_adapters(const std::optional<AdapterConfig>& adapters) {
     if (m_adapter_controller) {
+        OPENVINO_ASSERT(!m_inputs_embedder || !m_inputs_embedder->has_vision_adapters() || !adapters ||
+                            have_same_adapters(adapters, m_generation_config.adapters),
+            "LoRA adapters cannot be changed per request when the vision part of the model is adapted: "
+            "the vision adapters are baked into the model at the pipeline construction time. "
+            "Construct a new pipeline to use a different set of adapters.");
         m_adapter_controller->apply(m_model_runner->get_infer_request(), adapters);
     }
 }
