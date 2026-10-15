@@ -43,6 +43,8 @@ LTX2VideoTransformer3DModel::Config::Config(const std::filesystem::path& config_
     read_json_param(data, "causal_offset", causal_offset);
     read_json_param(data, "audio_sampling_rate", audio_sampling_rate);
     read_json_param(data, "audio_hop_length", audio_hop_length);
+    read_json_param(data, "num_layers", num_layers);
+    read_json_param(data, "perturbed_attn", perturbed_attn);
 }
 
 LTX2VideoTransformer3DModel::LTX2VideoTransformer3DModel(const std::filesystem::path& root_dir)
@@ -88,6 +90,16 @@ LTX2VideoTransformer3DModel& LTX2VideoTransformer3DModel::compile(const std::str
     m_expected_batch_size = input_shape[0].is_static() ? input_shape[0].get_length() : 0;
     m_timestep_rank = compiled_model.input("timestep").get_partial_shape().rank().get_length();
     m_has_audio_timestep = has_exact_input(compiled_model, "audio_timestep");
+    m_has_cross_modality_gate = has_exact_input(compiled_model, "cross_modality_gate");
+    m_has_stg_perturbation_mask = has_exact_input(compiled_model, "stg_perturbation_mask");
+    if (m_has_stg_perturbation_mask) {
+        // One mask entry per transformer block; fall back to the config if the export leaves it dynamic
+        const auto& mask_shape = compiled_model.input("stg_perturbation_mask").get_partial_shape();
+        m_num_stg_blocks = mask_shape[0].is_static() ? mask_shape[0].get_length() : m_config.num_layers;
+        OPENVINO_ASSERT(m_num_stg_blocks > 0,
+                        "'stg_perturbation_mask' has a dynamic length and 'num_layers' is missing from the "
+                        "transformer config, so the mask cannot be sized");
+    }
     m_model.reset();
 
     return *this;
@@ -108,9 +120,19 @@ size_t LTX2VideoTransformer3DModel::get_timestep_rank() {
     return m_timestep_rank;
 }
 
+bool LTX2VideoTransformer3DModel::has_cross_modality_gate() const {
+    return m_has_cross_modality_gate;
+}
+
+bool LTX2VideoTransformer3DModel::has_stg_perturbation_mask() const {
+    return m_has_stg_perturbation_mask;
+}
+
 std::pair<ov::Tensor, ov::Tensor> LTX2VideoTransformer3DModel::infer(const ov::Tensor& video_latent,
                                                                      const ov::Tensor& audio_latent,
-                                                                     float timestep) {
+                                                                     float timestep,
+                                                                     bool isolate_modalities,
+                                                                     const std::vector<int64_t>& stg_blocks) {
     OPENVINO_ASSERT(m_request, "Transformer model must be compiled first. Cannot infer non-compiled model");
 
     m_request.set_tensor("hidden_states", video_latent);
@@ -134,6 +156,35 @@ std::pair<ov::Tensor, ov::Tensor> LTX2VideoTransformer3DModel::infer(const ov::T
         ov::Tensor audio_timestep(ov::element::f32, {audio_latent.get_shape()[0]});
         std::fill_n(audio_timestep.data<float>(), audio_timestep.get_size(), timestep);
         m_request.set_tensor("audio_timestep", audio_timestep);
+    }
+
+    // Re-bound on every call, so one pass's perturbation cannot leak into the next
+    if (m_has_cross_modality_gate) {
+        // 1.0 lets audio and video attend to each other, as LTX-2.0 always does; 0.0 isolates them
+        ov::Tensor cross_modality_gate(ov::element::f32, ov::Shape{});
+        cross_modality_gate.data<float>()[0] = isolate_modalities ? 0.0f : 1.0f;
+        m_request.set_tensor("cross_modality_gate", cross_modality_gate);
+    } else {
+        OPENVINO_ASSERT(!isolate_modalities,
+                        "Modality isolation guidance was requested but the transformer has no "
+                        "'cross_modality_gate' input");
+    }
+
+    if (m_has_stg_perturbation_mask) {
+        // All-ones leaves every block unperturbed; a perturbed block is weighted by 0.0
+        ov::Tensor stg_mask(ov::element::f32, ov::Shape{m_num_stg_blocks});
+        std::fill_n(stg_mask.data<float>(), stg_mask.get_size(), 1.0f);
+        for (int64_t block_idx : stg_blocks) {
+            // Out-of-range indices are ignored rather than rejected, matching the reference implementation
+            if (block_idx >= 0 && static_cast<size_t>(block_idx) < m_num_stg_blocks) {
+                stg_mask.data<float>()[block_idx] = 0.0f;
+            }
+        }
+        m_request.set_tensor("stg_perturbation_mask", stg_mask);
+    } else {
+        OPENVINO_ASSERT(stg_blocks.empty(),
+                        "Spatio-Temporal Guidance was requested but the transformer has no "
+                        "'stg_perturbation_mask' input");
     }
 
     m_request.infer();

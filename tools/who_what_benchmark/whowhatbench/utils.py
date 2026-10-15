@@ -19,6 +19,7 @@ import transformers
 
 import numpy as np
 import pyarrow as pa
+import importlib.metadata
 import pyarrow.parquet as pq
 
 from pathlib import Path
@@ -526,3 +527,26 @@ def read_json_dataset(dataset_path: str):
 
     logger.info(f"Loaded {len(items)} records from JSON dataset")
     return items
+
+
+def patch_transformers_gguf_support():
+    try:
+        gguf_version = importlib.metadata.version("gguf")
+    except importlib.metadata.PackageNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "Failed to resolve the gguf package metadata required by transformers GGUF loading. "
+            "Install a valid gguf distribution or use --llamacpp for GGUF models."
+        ) from exc
+
+    from transformers.utils import import_utils as transformers_import_utils
+
+    distributions = transformers_import_utils.PACKAGE_DISTRIBUTION_MAPPING.setdefault("gguf", [])
+    normalized_distributions = [distribution.replace("_", "-") for distribution in distributions]
+    if "gguf" not in normalized_distributions:
+        distributions.insert(0, "gguf")
+
+    transformers_import_utils.is_gguf_available.cache_clear()
+    if not transformers_import_utils.is_gguf_available():
+        raise ModuleNotFoundError(
+            f"transformers requires gguf>={transformers_import_utils.GGUF_MIN_VERSION}, found {gguf_version}."
+        )
