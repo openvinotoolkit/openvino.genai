@@ -130,6 +130,18 @@ auto cache_offload_config_docstring = R"(
 
     :param use_page_cache: whether the offload file may go through the OS page cache. Direct I/O is not implemented yet.
     :type use_page_cache: bool
+
+    :param store_library_path: path to a third-party KV cache store plugin shared library implementing the ABI
+        declared in openvino/genai/c/kv_cache_store_provider_abi.h. Empty (default) uses the in-tree file store
+        directly, with no plugin ABI involved. Ignored unless allow_untrusted_store_plugin is true.
+    :type store_library_path: str
+
+    :param store_provider_name: provider name to select from the plugin module. Empty uses the module's first provider.
+    :type store_provider_name: str
+
+    :param allow_untrusted_store_plugin: must be explicitly set to load store_library_path. Defaults to false so
+        that no third-party code is ever loaded without an explicit opt-in.
+    :type allow_untrusted_store_plugin: bool
 )";
 auto scheduler_config_docstring = R"(
     SchedulerConfig to construct ContinuousBatchingPipeline
@@ -470,24 +482,34 @@ void init_continuous_batching_pipeline(py::module_& m) {
     py::class_<CacheOffloadConfig>(m, "CacheOffloadConfig", cache_offload_config_docstring)
             .def(py::init<>())
             .def(py::init([](const std::string& path, size_t capacity_bytes, size_t buffer_slots, bool use_page_cache,
-                             size_t linear_attention_capacity_bytes) {
+                             size_t linear_attention_capacity_bytes, const std::string& store_library_path,
+                             const std::string& store_provider_name, bool allow_untrusted_store_plugin) {
                 CacheOffloadConfig config;
                 config.path = path;
                 config.capacity_bytes = capacity_bytes;
                 config.linear_attention_capacity_bytes = linear_attention_capacity_bytes;
                 config.buffer_slots = buffer_slots;
                 config.use_page_cache = use_page_cache;
+                config.store_library_path = store_library_path;
+                config.store_provider_name = store_provider_name;
+                config.allow_untrusted_store_plugin = allow_untrusted_store_plugin;
                 return config; }),
                  py::arg("path") = std::string{},
                  py::arg("capacity_bytes") = 0,
                  py::arg("buffer_slots") = 2,
                  py::arg("use_page_cache") = true,
-                 py::arg("linear_attention_capacity_bytes") = 0)
+                 py::arg("linear_attention_capacity_bytes") = 0,
+                 py::arg("store_library_path") = std::string{},
+                 py::arg("store_provider_name") = std::string{},
+                 py::arg("allow_untrusted_store_plugin") = false)
             .def_readwrite("path", &CacheOffloadConfig::path)
             .def_readwrite("capacity_bytes", &CacheOffloadConfig::capacity_bytes)
             .def_readwrite("linear_attention_capacity_bytes", &CacheOffloadConfig::linear_attention_capacity_bytes)
             .def_readwrite("buffer_slots", &CacheOffloadConfig::buffer_slots)
             .def_readwrite("use_page_cache", &CacheOffloadConfig::use_page_cache)
+            .def_readwrite("store_library_path", &CacheOffloadConfig::store_library_path)
+            .def_readwrite("store_provider_name", &CacheOffloadConfig::store_provider_name)
+            .def_readwrite("allow_untrusted_store_plugin", &CacheOffloadConfig::allow_untrusted_store_plugin)
             .def("to_string", &CacheOffloadConfig::to_string);
 
     py::class_<SchedulerConfig>(m, "SchedulerConfig", scheduler_config_docstring)
