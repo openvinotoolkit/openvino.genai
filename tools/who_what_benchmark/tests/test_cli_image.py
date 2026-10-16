@@ -2,12 +2,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import itertools
+import json
 import os
 import sys
 import pytest
 import logging
 import tempfile
 import re
+from PIL import Image
 
 from conftest import convert_model, run_wwb
 
@@ -275,3 +277,57 @@ def test_image_custom_dataset(model_id, model_type, backend, tmp_path):
     run_wwb(wwb_args)
 
     assert os.path.exists(GT_FILE)
+
+
+def test_multi_image_to_image_genai_with_local_manifest(tmp_path):
+    import diffusers
+
+    if not hasattr(diffusers, "QwenImage21Pipeline"):
+        pytest.skip("Qwen-Image 2.1 requires diffusers.QwenImage21Pipeline")
+
+    first_image = tmp_path / "first.png"
+    second_image = tmp_path / "second.png"
+    Image.new("RGB", (64, 64), "red").save(first_image)
+    Image.new("RGB", (64, 64), "blue").save(second_image)
+
+    manifest = tmp_path / "multi_image.json"
+    manifest.write_text(
+        json.dumps(
+            [
+                {
+                    "prompts": "Place the object from Picture 1 into the scene from Picture 2.",
+                    "images": [first_image.name, second_image.name],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    model_id = "optimum-intel-internal-testing/tiny-random-qwen-image-2.1"
+    model_path = convert_model(model_id)
+    gt_file = tmp_path / "gt.csv"
+
+    run_wwb(
+        [
+            "--base-model",
+            model_path,
+            "--gt-data",
+            gt_file,
+            "--model-type",
+            "multi-image-to-image",
+            "--dataset",
+            manifest,
+            "--image-dir",
+            tmp_path,
+            "--num-samples",
+            "1",
+            "--num-inference-steps",
+            "2",
+            "--device",
+            "CPU",
+            "--genai",
+        ]
+    )
+
+    assert gt_file.exists()
+    assert (tmp_path / "reference" / "0.png").exists()
