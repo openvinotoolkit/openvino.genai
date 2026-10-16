@@ -620,6 +620,11 @@ def test_forced_language(sample_from_multilingual_dataset, pipelines_fixture):
     expected_language = "en" if model_id not in (QWEN3_ASR_MODEL_ID, FUN_ASR_MODEL_ID) else "English"
     assert detected_language == expected_language
 
+    if model_id == SENSEVOICE_SMALL_TINY_MODEL_ID:
+        assert genai_result.features is not None
+        assert len(genai_result.features) == len(genai_result.texts)
+        assert isinstance(genai_result.features[0], dict)
+
 
 @pytest.mark.parametrize(
     "pipelines_fixture",
