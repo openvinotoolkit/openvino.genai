@@ -29,7 +29,7 @@ env:
 jobs:
   test_matrices_scripts:
     name: Test build_test_matrices.py
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

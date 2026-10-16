@@ -11,7 +11,7 @@ permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b
 jobs:
   take-issue:
     name: Take issue
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       issues: write
     timeout-minutes: 10
