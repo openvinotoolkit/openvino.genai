@@ -230,7 +230,8 @@ class LTXPipeline : public VideoPipeline {
     }
 
     VAEDecodeInputs prepare_vae_decode_inputs(const ov::Tensor& latent,
-                                              const VideoGenerationConfig& generation_config) {
+                                              const VideoGenerationConfig& generation_config,
+                                              const std::optional<ov::Tensor>& decode_noise) {
         OPENVINO_ASSERT(m_latent_num_frames > 0 && m_latent_height > 0 && m_latent_width > 0,
                         "Latent sizes must be > 0 (got num_frames=",
                         m_latent_num_frames,
@@ -269,8 +270,8 @@ class LTXPipeline : public VideoPipeline {
                                          ? *generation_config.decode_noise_scale != 0.0f
                                          : utils::has_nonzero_decode_timestep(generation_config);
             if (needs_noise) {
-                const ov::Tensor noise = m_decode_noise.has_value()
-                                             ? *m_decode_noise
+                const ov::Tensor noise = decode_noise.has_value()
+                                             ? *decode_noise
                                              : generation_config.generator->randn_tensor(denormalized.get_shape());
                 OPENVINO_ASSERT(noise.get_shape() == denormalized.get_shape(),
                                 "Decode noise shape must match denormalized latent shape");
@@ -669,7 +670,7 @@ public:
             callback_ptr->end();
         }
 
-        VAEDecodeInputs decode_inputs = prepare_vae_decode_inputs(latent, merged_generation_config);
+        VAEDecodeInputs decode_inputs = prepare_vae_decode_inputs(latent, merged_generation_config, m_decode_noise);
         m_decode_noise.reset();
 
         const auto decode_start = std::chrono::steady_clock::now();
@@ -855,7 +856,7 @@ public:
             callback_ptr->end();
         }
 
-        VAEDecodeInputs decode_inputs = prepare_vae_decode_inputs(latent, merged_generation_config);
+        VAEDecodeInputs decode_inputs = prepare_vae_decode_inputs(latent, merged_generation_config, m_decode_noise);
         m_decode_noise.reset();
 
         const auto decode_start = std::chrono::steady_clock::now();
@@ -872,10 +873,15 @@ public:
         return VideoGenerationResult{video, m_perf_metrics, ov::Tensor(ov::element::f32, ov::Shape{0})};
     }
 
-    VideoGenerationResult decode(const ov::Tensor& latent) override {
-        VideoGenerationConfig generation_config = m_custom_generation_config;
+    VideoGenerationResult decode(const ov::Tensor& latent,
+                                 const std::optional<VideoGenerationConfig>& generation_config_override) override {
+        const VideoGenerationConfig& generation_config = generation_config_override
+                                                             ? *generation_config_override
+                                                             : m_custom_generation_config;
         check_inputs(generation_config);
-        VAEDecodeInputs decode_inputs = prepare_vae_decode_inputs(latent, generation_config);
+        VAEDecodeInputs decode_inputs = prepare_vae_decode_inputs(latent,
+                                                                   generation_config,
+                                                                   generation_config_override ? std::nullopt : m_decode_noise);
 
         const auto decode_start = std::chrono::steady_clock::now();
         ov::Tensor video = decode_inputs.timestep.has_value()

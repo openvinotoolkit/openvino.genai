@@ -800,8 +800,9 @@ public:
                                      static_cast<uint32_t>(m_vocoder->get_config().output_sampling_rate)};
     }
 
-    VideoGenerationResult decode(const ov::Tensor& latent) override {
-        check_decode_controls(m_generation_config);
+    VideoGenerationResult decode(const ov::Tensor& latent,
+                                 const std::optional<VideoGenerationConfig>& generation_config) override {
+        check_decode_controls(generation_config ? *generation_config : m_generation_config);
         ov::Tensor postprocessed = postprocess_latents(latent);
 
         const auto decode_start = std::chrono::steady_clock::now();

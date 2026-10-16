@@ -89,6 +89,41 @@ For LTX models with a timestep-conditioned VAE decoder, such as [LTX-Video 0.9.5
     </TabItemCpp>
 </LanguageTabs>
 
+To decode just one latent from a batch callback, supply a decode-only config with one timestep. This does not change the configuration used by the ongoing generation. If the decode noise scale is non-zero, provide a separate generator in the decode config.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        import numpy as np
+        import openvino as ov
+
+        decode_config = pipe.get_generation_config()
+        decode_config.decode_timestep = [0.05]
+        decode_config.decode_noise_scale = 0.0
+
+        def callback(step, num_steps, latent):
+            single_latent = ov.Tensor(np.array(latent.data[:1], copy=True))
+            preview = pipe.decode(single_latent, generation_config=decode_config).video
+            return False
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        ov::genai::VideoGenerationConfig decode_config = pipe.get_generation_config();
+        decode_config.decode_timestep = std::vector<float>{0.05f};
+        decode_config.decode_noise_scale = 0.0f;
+
+        auto callback = [&](size_t step, size_t num_steps, ov::Tensor& latent) {
+            ov::Shape single_shape = latent.get_shape();
+            single_shape[0] = 1;
+            ov::Tensor single_latent(latent.get_element_type(), single_shape, latent.data());
+            ov::Tensor preview = pipe.decode(single_latent, decode_config).video;
+            return false;
+        };
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
 #### LTX-2 and LTX-2.3 Guidance Configuration
 
 LTX-2 models generate video and audio jointly, so guidance can be tuned per modality with `audio_guidance_scale` and `audio_guidance_rescale`. Left unset, each takes the loaded model's own default: LTX-2.3 ships audio defaults that are independent of the video ones (`audio_guidance_scale=7.0` against `guidance_scale=3.0`), while LTX-2 has none and falls back to its video counterpart. One consequence worth knowing: on LTX-2.3, `guidance_scale=1.0` does **not** switch guidance off, because the audio scale still asks for it.
@@ -181,7 +216,7 @@ Refer to the [LoRA Adapters](/docs/guides/lora-adapters) for more details on wor
 - `generator`: Controls randomness for reproducible results. Same generator seed produces identical videos across runs.
 - `frame_rate`: Target video FPS used by the pipeline.
 - `decode_timestep`: Timestep conditioning value passed to a timestep-conditioned LTX VAE decoder. A scalar applies to all videos (default `0.0`); a list must contain exactly one value per video in the latent batch.
-- `decode_noise_scale`: Scalar interpolation factor between denoised latents and random noise before VAE decoding. When omitted, each video's noise scale defaults to that video's `decode_timestep`. This parameter requires a timestep-conditioned LTX VAE decoder. `decode(latent)` uses the pipeline's stored generation config and checks timestep list length against the latent batch.
+- `decode_noise_scale`: Scalar interpolation factor between denoised latents and random noise before VAE decoding. When omitted, each video's noise scale defaults to that video's `decode_timestep`. This parameter requires a timestep-conditioned LTX VAE decoder. `decode(latent)` uses the pipeline's saved generation config; `decode(latent, generation_config)` uses the provided config only for that call. In both cases, a timestep list must match the latent batch.
 
 LTX-2 family only:
 

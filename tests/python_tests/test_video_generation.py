@@ -477,6 +477,41 @@ class TestVideoGenerationPipelines:
         with pytest.raises(RuntimeError, match="decode_timestep list length"):
             pipe.decode(single_latent)
 
+        decode_config = pipe.get_generation_config()
+        decode_config.decode_timestep = [0.0]
+        decode_config.decode_noise_scale = 0.0
+        single_result = pipe.decode(single_latent, generation_config=decode_config)
+        assert single_result.video.shape == [1, 9, 32, 32, 3]
+
+        with pytest.raises(RuntimeError, match="decode_timestep list length"):
+            pipe.decode(single_latent)
+        assert pipe.decode(latents[0]).video.shape == [2, 9, 32, 32, 3]
+
+    def test_decode_override_in_batch_callback(self, conditioned_video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(conditioned_video_generation_model, "CPU")
+        decode_config = pipe.get_generation_config()
+        decode_config.decode_timestep = [0.25]
+        decode_config.decode_noise_scale = 1.0
+        decode_config.generator = ov_genai.CppStdGenerator(123)
+        previews = []
+        captured_latents = []
+
+        def callback(_step, _num_steps, latent):
+            single_latent = ov.Tensor(np.array(latent.data[:1], copy=True))
+            captured_latents.append(single_latent)
+            previews.append(np.array(pipe.decode(single_latent, generation_config=decode_config).video.data, copy=True))
+            return True
+
+        pipe.generate(
+            "test prompt", height=32, width=32, num_frames=9, num_inference_steps=1,
+            num_videos_per_prompt=2, decode_timestep=[0.25, 0.5],
+            generator=ov_genai.CppStdGenerator(42), callback=callback,
+        )
+        assert len(previews) == 1
+        assert previews[0].shape == (1, 9, 32, 32, 3)
+        with pytest.raises(RuntimeError, match="decode_timestep list length"):
+            pipe.decode(captured_latents[0])
+
     def test_decode_noise_is_mixed_after_denormalization(self, conditioned_video_generation_model, tmp_path):
         identity_model = tmp_path / "identity_normalization_model"
         shutil.copytree(conditioned_video_generation_model, identity_model)
@@ -857,8 +892,11 @@ class TestVideoGenerationPipelines:
         config = pipe.get_generation_config()
         config.decode_timestep = [0.0, 0.25]
         pipe.set_generation_config(config)
+        latent = ov.Tensor(np.zeros([2, 1, 1, 1, 1], dtype=np.float32))
         with pytest.raises(RuntimeError, match="not supported for LTX2"):
-            pipe.decode(ov.Tensor(np.zeros([2, 1, 1, 1, 1], dtype=np.float32)))
+            pipe.decode(latent)
+        with pytest.raises(RuntimeError, match="not supported for LTX2"):
+            pipe.decode(latent, generation_config=config)
 
     @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True)
     def test_image2video_rejected(self, video_generation_model):

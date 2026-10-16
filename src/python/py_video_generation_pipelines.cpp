@@ -113,11 +113,14 @@ void init_video_generation_pipelines(py::module_& m) {
             },
             py::arg("prompt"))
         .def("decode",
-             [](ov::genai::Text2VideoPipeline& pipe, const ov::Tensor& latent) {
+             [](ov::genai::Text2VideoPipeline& pipe,
+                const ov::Tensor& latent,
+                const std::optional<ov::genai::VideoGenerationConfig>& generation_config) {
                  py::gil_scoped_release rel;
-                 return pipe.decode(latent);
+                 return pipe.decode(latent, generation_config);
              },
              py::arg("latent"),
+             py::arg("generation_config") = py::none(),
              R"(
                 Decode a packed latent tensor into a video.
 
@@ -125,6 +128,8 @@ void init_video_generation_pipelines(py::module_& m) {
 
                 :param latent: Packed latent tensor produced during denoising.
                 :type latent: openvino.Tensor
+                :param generation_config: Optional configuration for this decode only; defaults to the saved generation config.
+                :type generation_config: VideoGenerationConfig | None
                 :return: Decoded video and performance metrics.
                 :rtype: VideoGenerationResult
              )");
@@ -194,10 +199,23 @@ void init_video_generation_pipelines(py::module_& m) {
             py::arg("image"),
             py::arg("prompt"))
         .def("decode",
-             [](ov::genai::Image2VideoPipeline& pipe, const ov::Tensor& latent) {
+             [](ov::genai::Image2VideoPipeline& pipe,
+                const ov::Tensor& latent,
+                const std::optional<ov::genai::VideoGenerationConfig>& generation_config) {
                  py::gil_scoped_release rel;
-                 return pipe.decode(latent);
+                 return pipe.decode(latent, generation_config);
              },
-             py::arg("latent"))
+             py::arg("latent"),
+             py::arg("generation_config") = py::none(),
+             R"(
+                Decode a packed latent tensor into a video.
+
+                :param latent: Packed latent tensor produced during denoising.
+                :type latent: openvino.Tensor
+                :param generation_config: Optional configuration for this decode only; defaults to the saved configuration.
+                :type generation_config: VideoGenerationConfig | None
+                :return: Decoded video and performance metrics.
+                :rtype: VideoGenerationResult
+             )")
         .def("get_performance_metrics", &ov::genai::Image2VideoPipeline::get_performance_metrics);
 }
