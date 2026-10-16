@@ -918,6 +918,7 @@ private:
     std::map<uint64_t, TemporaryBlockTable> m_linear_attention_headroom;
     std::map<uint64_t, size_t> m_temporary_window_sizes;
     std::map<uint64_t, size_t> m_block_table_logical_start;
+    std::set<uint64_t> m_inexact_restored_checkpoint;
 
     std::map<uint64_t, LinearAttentionLiveState> m_linear_attention_live_states;
 
@@ -955,6 +956,7 @@ public:
             m_owner.m_block_table.merge(m_tables);
             m_owner.m_block_table_logical_start.merge(m_logical_starts);
             m_owner.m_linear_attention_live_states.merge(m_live_states);
+            m_owner.m_inexact_restored_checkpoint.merge(m_inexact_starts);
             m_owner.m_prefix_restore_releases.merge(m_releases);
             m_applied = true;
         }
@@ -970,6 +972,7 @@ public:
         std::map<uint64_t, std::vector<BlocksPerLayer>> m_tables;
         std::map<uint64_t, size_t> m_logical_starts;
         std::map<uint64_t, LinearAttentionLiveState> m_live_states;
+        std::set<uint64_t> m_inexact_starts;
         std::map<uint64_t, PrefixRestoreReleases> m_releases;
         bool m_applied = false;
     };
@@ -1019,6 +1022,10 @@ public:
             prepared.m_logical_starts.emplace(seq_id, plan.logical_block_start);
             prepared.m_live_states.emplace(seq_id,
                 LinearAttentionLiveState{plan.cache_token_position, prepared.m_blocks.back().second, 1, false});
+            const size_t first_boundary = (plan.logical_block_start + 1) * m_block_size;
+            if (plan.block_content_lengths.front() != first_boundary && plan.processed_tokens >= first_boundary) {
+                prepared.m_inexact_starts.insert(seq_id);
+            }
         }
         return prepared;
     }
@@ -1381,6 +1388,12 @@ public:
         return get_latest_represented_block(seq_id, layer_idx)->copy_on_write();
     }
 
+    /// @return Earliest checkpoint known to contain state at its exact interval boundary.
+    size_t get_earliest_complete_checkpoint(uint64_t seq_id) const {
+        const size_t first_boundary = (get_block_table_logical_start(seq_id) + 1) * m_block_size;
+        return m_inexact_restored_checkpoint.count(seq_id) ? first_boundary + m_block_size : first_boundary;
+    }
+
     size_t get_num_layers() const {
         return m_num_layers;
     }
@@ -1466,6 +1479,7 @@ public:
         if (block_table[0].size() == 0) {
             m_prefix_restore_releases.erase(seq_id);
             m_block_table_logical_start.erase(seq_id);
+            m_inexact_restored_checkpoint.erase(seq_id);
             OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
          }
         return blocks_to_free[0]->is_free();
@@ -1626,6 +1640,90 @@ public:
     const bool has_block_table(uint64_t seq_id) {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         return m_block_table.count(seq_id) > 0;
+    }
+
+    /// @return Number of blocks stored for the sequence, or 0 if it has no block table.
+    size_t get_num_stored_blocks(uint64_t seq_id) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        const auto it = m_block_table.find(seq_id);
+        return (it == m_block_table.end() || it->second.empty()) ? 0 : it->second[0].size();
+    }
+
+    /// @return Sorted resume positions at or below which trimming this group makes a physical block available.
+    std::vector<size_t> get_releasable_block_positions(SequenceGroup::Ptr group) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        std::map<const CacheBlock*, std::pair<size_t, size_t>> block_references_and_position;
+        for (const auto& sequence : group->get_not_finished_sequences()) {
+            const uint64_t seq_id = sequence->get_id();
+            const auto it = m_block_table.find(seq_id);
+            if (it == m_block_table.end()) {
+                return {};
+            }
+            const size_t logical_start = get_block_table_logical_start_unlocked(seq_id);
+            const auto& blocks = it->second[0];
+            for (size_t idx = 0; idx < blocks.size(); ++idx) {
+                const size_t block_position = (logical_start + idx) * m_block_size;
+                auto entry = block_references_and_position.try_emplace(blocks[idx].get(), 0, block_position).first;
+                ++entry->second.first;
+                entry->second.second = std::min(entry->second.second, block_position);
+            }
+            const auto live = m_linear_attention_live_states.find(seq_id);
+            if (live != m_linear_attention_live_states.end() && !live->second.rows.empty()) {
+                const auto entry = block_references_and_position.find(live->second.rows.front().get());
+                if (entry == block_references_and_position.end()) {
+                    return {};
+                }
+                ++entry->second.first;
+            }
+        }
+        std::vector<size_t> positions;
+        for (const auto& [block, references_and_position] : block_references_and_position) {
+            if (static_cast<size_t>(block->get_references_count()) == references_and_position.first) {
+                positions.push_back(references_and_position.second);
+            }
+        }
+        std::sort(positions.begin(), positions.end());
+        return positions;
+    }
+
+    /**
+     * Frees the highest logical blocks of a sequence so that at most keep_blocks remain.
+     * @param seq_id Sequence identifier; must have a block table.
+     * @param keep_blocks Number of lowest stored blocks to retain.
+     */
+    void trim_sequence(uint64_t seq_id, size_t keep_blocks) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        const auto it = m_block_table.find(seq_id);
+        OPENVINO_ASSERT(it != m_block_table.end() && !it->second.empty(),
+                        "Cannot trim sequence ", seq_id, " without a block table");
+        const size_t num_stored_blocks = it->second[0].size();
+        if (num_stored_blocks > keep_blocks) {
+            free_sequence_partially(seq_id, num_stored_blocks - keep_blocks);
+        }
+    }
+
+    /// Rewinds the live LA state and its block table to an exact checkpoint boundary.
+    void rewind_linear_attention_to_checkpoint(uint64_t seq_id, size_t resume_position) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        OPENVINO_ASSERT(m_restore_latest_prefix_block_only && resume_position > 0 &&
+                            resume_position % m_block_size == 0,
+                        "Linear-attention rewind requires a complete checkpoint");
+        const auto it = m_block_table.find(seq_id);
+        OPENVINO_ASSERT(it != m_block_table.end(), "Cannot rewind sequence ", seq_id, " without a block table");
+        const size_t logical_start = get_block_table_logical_start_unlocked(seq_id);
+        const size_t keep_blocks = resume_position / m_block_size - logical_start;
+        OPENVINO_ASSERT(keep_blocks > 0 && keep_blocks <= it->second.front().size(),
+                        "No retained linear-attention checkpoint for sequence ", seq_id);
+
+        BlocksPerLayer rows;
+        rows.reserve(m_num_layers);
+        for (const auto& layer_table : it->second) {
+            rows.push_back(layer_table[keep_blocks - 1]);
+        }
+        set_linear_attention_live_state(seq_id, resume_position, rows);
+        if (it->second.front().size() > keep_blocks) {
+            free_sequence_partially(seq_id, it->second.front().size() - keep_blocks);
+        }
     }
 
     /**
@@ -2094,6 +2192,9 @@ public:
         OPENVINO_ASSERT(m_block_table.count(child_id) == 0);
         m_block_table[child_id].resize(m_num_layers);
         m_block_table_logical_start[child_id] = get_block_table_logical_start(parent_id);
+        if (m_inexact_restored_checkpoint.count(parent_id)) {
+            m_inexact_restored_checkpoint.insert(child_id);
+        }
         for (size_t layer_idx = 0; layer_idx < m_num_layers; layer_idx++) {
             m_block_table[child_id][layer_idx].reserve(m_block_table[parent_id][layer_idx].size());
             for (CacheBlock::Ptr &block: m_block_table[parent_id][layer_idx]) {
@@ -2156,6 +2257,7 @@ public:
                 m_prefix_restore_releases.erase(restored);
                 m_block_table.erase(seq_id);
                 m_block_table_logical_start.erase(seq_id);
+                m_inexact_restored_checkpoint.erase(seq_id);
                 return;
             }
             m_prefix_restore_releases.erase(restored);
@@ -2171,6 +2273,7 @@ public:
 
         OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
         m_block_table_logical_start.erase(seq_id);
+        m_inexact_restored_checkpoint.erase(seq_id);
     }
 
     /**
@@ -2213,6 +2316,7 @@ public:
             m_prefix_restore_releases.erase(seq_id);
             OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
             m_block_table_logical_start.erase(seq_id);
+            m_inexact_restored_checkpoint.erase(seq_id);
         }
     }
 
@@ -2384,6 +2488,7 @@ public:
                 if (num_logical_blocks == 0 && it != m_block_table.end()) {
                     m_prefix_restore_releases.erase(seq_id);
                     m_block_table_logical_start.erase(seq_id);
+                    m_inexact_restored_checkpoint.erase(seq_id);
                     OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
                 }
                 continue;
@@ -2667,6 +2772,7 @@ public:
 
         m_temporary_block_table.clear();
         m_allocator.clear();
+        m_inexact_restored_checkpoint.clear();
         m_prefix_hash_to_cached_blocks.clear();
         m_cached_content_length_ref_counts.clear();
         m_cached_hash_to_content_length.clear();
@@ -2734,6 +2840,12 @@ private:
                 live_rows.push_back(block_table[layer_idx].back());
             }
             set_linear_attention_live_state(seq_id, plan.cache_token_position, live_rows);
+            const size_t first_boundary = (plan.logical_block_start + 1) * m_block_size;
+            if (plan.block_content_lengths.front() != first_boundary && plan.processed_tokens >= first_boundary) {
+                m_inexact_restored_checkpoint.insert(seq_id);
+            } else {
+                m_inexact_restored_checkpoint.erase(seq_id);
+            }
         } else {
             m_block_table_logical_start.erase(seq_id);
         }
