@@ -374,6 +374,7 @@
 - name: VLM (MiniCPM-V-4.7)
   cmd: |-
     python -m pip install transformers==5.18.0
+    python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@main#egg=optimum-intel"
     python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py -k "minicpmv47" --override-ini cache_dir=/mount/caches/pytest/
   timeout: 15
   components:
