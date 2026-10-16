@@ -73,6 +73,6 @@ The script prints performance metrics (Includes TTFT, Embeddings preparation tim
 
 ## Current Limitations
 * Current implementation assumes a standard image encoder output; exotic hierarchical or sparse encoders might require adjusted scoring strategies.
-* Pruning is applied only after the initial image encoding; does not dynamically re-introduce pruned tokens later.
+* Pruning is applied after image encoding. Incremental-history models do not dynamically re-introduce pruned tokens; full-history models such as Qwen3.5 replay the original visual embeddings and rerun pruning on every turn, so the selected tokens may change.
 * Score computation details are internal; no per-token debug API is exposed yet.
-* Supported models: Qwen2-VL, Qwen2.5-VL (image inputs), and Qwen3-VL (image, video, and combined image+video inputs, including DeepStack visual embeddings). Support for additional models will be added in subsequent releases.
+* Supported models: Qwen2-VL and Qwen2.5-VL (image inputs); Qwen3-VL (image, video, and combined image+video inputs, including DeepStack visual embeddings); and Qwen3.5 (image, video, and combined image+video inputs). Support for additional models will be added in subsequent releases.
