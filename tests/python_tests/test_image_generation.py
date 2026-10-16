@@ -614,13 +614,14 @@ class TestImageGeneration:
 @pytest.mark.xfail(reason="CVS-178687 z-image is not implemented in optimum-intel yet")
 class TestZImageGeneration:
     @pytest.mark.parametrize("image_generation_model", [ZIMAGE_MODEL_ID], indirect=True)
-    def test_zimage_reshape(self, image_generation_model):
+    @pytest.mark.parametrize("height,width", [(1024, 1024), (536, 536)])
+    def test_zimage_reshape(self, image_generation_model, height, width):
         pipe = ov_genai.Text2ImagePipeline(image_generation_model)
 
         pipe.reshape(
             num_images_per_prompt=1,
-            height=1024,
-            width=1024,
+            height=height,
+            width=width,
             guidance_scale=0.0,
         )
 
