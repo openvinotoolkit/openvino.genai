@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 FUNASR_TOKENIZER_SUBFOLDER = (
     "Qwen3-0.6B"  # Source layout: https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512/tree/main/Qwen3-0.6B
 )
-ASR_MODEL_TYPES = {"funasr", "fun_asr"}
+ASR_MODEL_TYPES = {"funasr", "fun_asr", "sense_voice"}
 AUDIO_VLM_MODEL_TYPES = {"gemma4", "gemma4_unified"}
 
 DEFAULT_ASR_INSTRUCTION = "Transcribe this audio."
@@ -139,8 +139,12 @@ class FunASRSourceTranscriber:
             )
 
         if torch_dtype is not None:
-            # Cast only the decoder: casting the audio encoder breaks inference with its FP32 inputs.
-            self.model.model.llm.to(dtype=torch_dtype)
+            # Keep the audio encoder in FP32; cast only Fun-ASR's LLM decoder.
+            decoder = getattr(self.model.model, "llm", None)
+            if decoder is not None:
+                decoder.to(dtype=torch_dtype)
+            elif torch_dtype != torch.float32:
+                raise ValueError("SenseVoice source evaluation supports only FP32 (--torch-dtype fp32).")
 
     def transcribe(self, audio, max_new_tokens: int) -> str:
         import torch
@@ -167,12 +171,18 @@ class FunASROptimumTranscriber:
         import torch
 
         inputs = self.model.preprocess_input(audio, sampling_rate=AUDIO_SAMPLING_RATE, **self.preprocess_kwargs)
-        prompt_len = inputs["decoder_input_ids"].shape[-1]
+        prompt_len = inputs["decoder_input_ids"].shape[-1] if "decoder_input_ids" in inputs else None
+        if self.tokenizer is None:
+            inputs["language"] = self.preprocess_kwargs.get("language", "auto")
         with torch.inference_mode():
-            tokens = self.model.generate(**inputs, max_new_tokens=max_new_tokens)
-        tokens = getattr(tokens, "sequences", tokens)
-        # generate() returns the prompt followed by the generated ids, decode the generated part only.
-        return self.tokenizer.batch_decode(tokens[:, prompt_len:], skip_special_tokens=True)[0].strip()
+            output = self.model.generate(**inputs, max_new_tokens=max_new_tokens)
+        output = getattr(output, "sequences", output)
+
+        if prompt_len is not None:
+            return self.tokenizer.batch_decode(output[:, prompt_len:], skip_special_tokens=True)[0].strip()
+
+        # SenseVoice generate() returns decoded text.
+        return (output if isinstance(output, str) else str(output[0])).strip()
 
 
 class FunASRGenAITranscriber:
@@ -244,8 +254,11 @@ class ASROptimumTranscriber:
             from transformers import AutoTokenizer
 
             model = OVModelForSpeechSeq2Seq.from_pretrained(model_id, device=device, ov_config=ov_config)
-            subfolder = FUNASR_TOKENIZER_SUBFOLDER if model_type == "funasr" else ""
-            tokenizer = AutoTokenizer.from_pretrained(str(model_id), subfolder=subfolder)
+            if model_type == "sense_voice":
+                tokenizer = None
+            else:
+                subfolder = FUNASR_TOKENIZER_SUBFOLDER if model_type == "funasr" else ""
+                tokenizer = AutoTokenizer.from_pretrained(str(model_id), subfolder=subfolder)
             return FunASROptimumTranscriber(model, tokenizer, language or "en")
 
         model = _load_multimodal_model(model_id, device, ov_config, False, False, **kwargs)
