@@ -187,7 +187,9 @@ jobs:
           # Need to remove the default Python 3.11 in /venv from the Path so that CMake uses the correct one from newly created venv$py_version
           export PATH=${PATH/:\/venv\/bin/}
 
-          for py_version in "3.11" "3.12" "3.13" "3.14" "3.14t"
+          # No "3.14t": deadsnakes' python3.14-nogil package has no -dev headers, so CMake can't find
+          # Python3 Development.Module for it. The 3.14t wheel is still built in genai_build_genai_wheel.
+          for py_version in "3.11" "3.12" "3.13" "3.14"
           do
             rm -rf ${{ env.BUILD_DIR }}/CMakeCache.txt
 
