@@ -1928,7 +1928,6 @@ else:
         ("optimum-intel-internal-testing/tiny-random-gemma4-unified-it", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-gemma4-31B", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-qwen3.5", "SDPA"),
-        ("optimum-intel-internal-testing/tiny-random-minicpmv47", "PA"),
     ]
 
 
@@ -2617,6 +2616,9 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     "*tiny-videochat-flash-qwen/PA/CPP/text-only": "CVS-183813",
     # deepseek-ocr-2 text-only cases
     "*tiny-random-deepseek-ocr-2/*/text-only": "DeepSeek OCR-2 model requires image input.",
+    # MiniCPM-V-4.7 cases - different images with 32x32 and 176x132 videos (both SDPA and PA)
+    "*tiny-random-minicpmv47/*/CPP/image-*/video-32x32": "CVS-197356",
+    "*tiny-random-minicpmv47/*/CPP/image-*/video-176x132": "CVS-197356",
 }
 
 # For these models, we will add both CPP and GRAPH pre-processing tests.
