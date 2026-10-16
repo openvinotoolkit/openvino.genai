@@ -6907,10 +6907,10 @@ class VideoGenerationConfig:
     def decode_noise_scale(self, arg0: typing.SupportsFloat | None) -> None:
         ...
     @property
-    def decode_timestep(self) -> float:
+    def decode_timestep(self) -> float | list[float]:
         ...
     @decode_timestep.setter
-    def decode_timestep(self, arg0: typing.SupportsFloat) -> None:
+    def decode_timestep(self, arg0: typing.SupportsFloat | collections.abc.Sequence[typing.SupportsFloat]) -> None:
         ...
     @property
     def audio_modality_scale(self) -> float | None:

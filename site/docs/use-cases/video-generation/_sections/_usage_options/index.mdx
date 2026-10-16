@@ -180,8 +180,8 @@ Refer to the [LoRA Adapters](/docs/guides/lora-adapters) for more details on wor
 - `guidance_rescale`: Rescales the guided prediction towards the unguided one to counter overexposure. `0.0` disables rescaling.
 - `generator`: Controls randomness for reproducible results. Same generator seed produces identical videos across runs.
 - `frame_rate`: Target video FPS used by the pipeline.
-- `decode_timestep`: Timestep conditioning value passed to a timestep-conditioned LTX VAE decoder. The default is `0.0`.
-- `decode_noise_scale`: Interpolation factor between denoised latents and random noise before VAE decoding. When omitted, `decode_timestep` is used. This parameter requires a timestep-conditioned LTX VAE decoder.
+- `decode_timestep`: Timestep conditioning value passed to a timestep-conditioned LTX VAE decoder. A scalar applies to all videos (default `0.0`); a list must contain exactly one value per video in the latent batch.
+- `decode_noise_scale`: Scalar interpolation factor between denoised latents and random noise before VAE decoding. When omitted, each video's noise scale defaults to that video's `decode_timestep`. This parameter requires a timestep-conditioned LTX VAE decoder. `decode(latent)` uses the pipeline's stored generation config and checks timestep list length against the latent batch.
 
 LTX-2 family only:
 

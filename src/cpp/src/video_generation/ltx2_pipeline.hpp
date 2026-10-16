@@ -166,12 +166,15 @@ class LTX2Pipeline : public VideoPipeline {
     // Points at the defaults of the loaded model version; the single source of truth for 'replace_defaults'
     const VideoGenerationConfig* m_default_config = &LTX2_DEFAULT_CONFIG;
 
-    void check_inputs(const VideoGenerationConfig& generation_config) const {
+    void check_decode_controls(const VideoGenerationConfig& generation_config) const {
         utils::validate_generation_config(generation_config);
-        const float decode_noise_scale =
-            generation_config.decode_noise_scale.value_or(generation_config.decode_timestep);
-        OPENVINO_ASSERT(generation_config.decode_timestep == 0.0f && decode_noise_scale == 0.0f,
+        const bool has_nonzero_timestep = utils::has_nonzero_decode_timestep(generation_config);
+        OPENVINO_ASSERT(!has_nonzero_timestep && generation_config.decode_noise_scale.value_or(0.0f) == 0.0f,
                         "decode_timestep and decode_noise_scale are not supported for LTX2 pipelines");
+    }
+
+    void check_inputs(const VideoGenerationConfig& generation_config) const {
+        check_decode_controls(generation_config);
         video_generation_utils::check_video_size(generation_config.height,
                                                  generation_config.width,
                                                  m_vae->get_config().spatial_compression_ratio);
@@ -798,6 +801,7 @@ public:
     }
 
     VideoGenerationResult decode(const ov::Tensor& latent) override {
+        check_decode_controls(m_generation_config);
         ov::Tensor postprocessed = postprocess_latents(latent);
 
         const auto decode_start = std::chrono::steady_clock::now();

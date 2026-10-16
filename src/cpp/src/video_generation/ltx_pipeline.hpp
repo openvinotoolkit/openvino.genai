@@ -77,14 +77,16 @@ class LTXPipeline : public VideoPipeline {
 
     void check_inputs(const VideoGenerationConfig& generation_config) const {
         utils::validate_generation_config(generation_config);
-        const float decode_noise_scale =
-            generation_config.decode_noise_scale.value_or(generation_config.decode_timestep);
+        const bool has_nonzero_timestep = utils::has_nonzero_decode_timestep(generation_config);
+        const bool needs_noise = generation_config.decode_noise_scale.has_value()
+                                     ? *generation_config.decode_noise_scale != 0.0f
+                                     : has_nonzero_timestep;
         const auto& vae_config = m_vae->get_config();
-        OPENVINO_ASSERT(!vae_config.timestep_conditioning || decode_noise_scale == 0.0f ||
+        OPENVINO_ASSERT(!vae_config.timestep_conditioning || !needs_noise ||
                             generation_config.generator,
                         "A generator is required when decode_noise_scale is non-zero");
         OPENVINO_ASSERT(vae_config.timestep_conditioning ||
-                            (generation_config.decode_timestep == 0.0f && decode_noise_scale == 0.0f),
+                            (!has_nonzero_timestep && !needs_noise),
                         "decode_timestep and decode_noise_scale require a timestep-conditioned VAE decoder");
         video_generation_utils::check_video_size(generation_config.height,
                                                  generation_config.width,
@@ -113,12 +115,21 @@ class LTXPipeline : public VideoPipeline {
                 "'spatio_temporal_guidance_blocks' is not supported for LTX-Video pipelines");
     }
 
+    void check_generation_inputs(const VideoGenerationConfig& generation_config) const {
+        check_inputs(generation_config);
+        if (const auto* values = std::get_if<std::vector<float>>(&generation_config.decode_timestep)) {
+            OPENVINO_ASSERT(values->size() == generation_config.num_videos_per_prompt,
+                            "decode_timestep list length must match the video batch size");
+        }
+    }
+
     void prepare_generation_decode_noise(const ov::Shape& shape,
                                          const VideoGenerationConfig& generation_config) {
         m_decode_noise.reset();
-        const float decode_noise_scale =
-            generation_config.decode_noise_scale.value_or(generation_config.decode_timestep);
-        if (m_vae->get_config().timestep_conditioning && decode_noise_scale != 0.0f) {
+        const bool needs_noise = generation_config.decode_noise_scale.has_value()
+                                     ? *generation_config.decode_noise_scale != 0.0f
+                                     : utils::has_nonzero_decode_timestep(generation_config);
+        if (m_vae->get_config().timestep_conditioning && needs_noise) {
             m_decode_noise = generation_config.generator->randn_tensor(shape);
         }
     }
@@ -246,30 +257,50 @@ class LTXPipeline : public VideoPipeline {
             video_generation_utils::tensor_from_vector(m_vae->get_config().latents_std_data),
             m_vae->get_config().scaling_factor);
 
-        const float decode_noise_scale =
-            generation_config.decode_noise_scale.value_or(generation_config.decode_timestep);
+        const size_t batch_size = denormalized.get_shape()[0];
+        const auto* timestep_values = std::get_if<std::vector<float>>(&generation_config.decode_timestep);
+        OPENVINO_ASSERT(!timestep_values || timestep_values->size() == batch_size,
+                        "decode_timestep list length must match the latent batch size");
+        const float scalar_timestep = timestep_values ? 0.0f : std::get<float>(generation_config.decode_timestep);
+        const size_t elements_per_video = denormalized.get_size() / batch_size;
         std::optional<ov::Tensor> timestep;
         if (m_vae->get_config().timestep_conditioning) {
-            if (decode_noise_scale != 0.0f) {
+            const bool needs_noise = generation_config.decode_noise_scale.has_value()
+                                         ? *generation_config.decode_noise_scale != 0.0f
+                                         : utils::has_nonzero_decode_timestep(generation_config);
+            if (needs_noise) {
                 const ov::Tensor noise = m_decode_noise.has_value()
                                              ? *m_decode_noise
                                              : generation_config.generator->randn_tensor(denormalized.get_shape());
                 OPENVINO_ASSERT(noise.get_shape() == denormalized.get_shape(),
                                 "Decode noise shape must match denormalized latent shape");
-                if (decode_noise_scale == 1.0f) {
-                    denormalized = noise;
-                } else {
-                    float* denormalized_data = denormalized.data<float>();
-                    const float* noise_data = noise.data<const float>();
-                    for (size_t i = 0; i < denormalized.get_size(); ++i) {
+                float* denormalized_data = denormalized.data<float>();
+                const float* noise_data = noise.data<const float>();
+                for (size_t video = 0; video < batch_size; ++video) {
+                    const float video_timestep = timestep_values ? (*timestep_values)[video] : scalar_timestep;
+                    const float decode_noise_scale = generation_config.decode_noise_scale.value_or(video_timestep);
+                    if (decode_noise_scale == 0.0f) {
+                        continue;
+                    }
+                    if (decode_noise_scale == 1.0f) {
+                        std::copy_n(noise_data + video * elements_per_video,
+                                    elements_per_video,
+                                    denormalized_data + video * elements_per_video);
+                        continue;
+                    }
+                    for (size_t i = video * elements_per_video; i < (video + 1) * elements_per_video; ++i) {
                         denormalized_data[i] =
                             (1.0f - decode_noise_scale) * denormalized_data[i] + decode_noise_scale * noise_data[i];
                     }
                 }
             }
 
-            timestep.emplace(ov::element::f32, ov::Shape{denormalized.get_shape()[0]});
-            std::fill_n(timestep->data<float>(), timestep->get_size(), generation_config.decode_timestep);
+            timestep.emplace(ov::element::f32, ov::Shape{batch_size});
+            if (timestep_values) {
+                std::copy(timestep_values->begin(), timestep_values->end(), timestep->data<float>());
+            } else {
+                std::fill_n(timestep->data<float>(), batch_size, scalar_timestep);
+            }
         }
         return {std::move(denormalized), std::move(timestep)};
     }
@@ -455,7 +486,7 @@ public:
         const bool use_classifier_free_guidance = batch_size_multiplier > 1;
 
         const auto& transformer_config = m_transformer->get_config();
-        check_inputs(merged_generation_config);
+        check_generation_inputs(merged_generation_config);
 
         m_transformer->set_adapters(merged_generation_config.adapters);
 
@@ -667,7 +698,7 @@ public:
         const bool use_classifier_free_guidance = batch_size_multiplier > 1;
 
         const auto& transformer_config = m_transformer->get_config();
-        check_inputs(merged_generation_config);
+        check_generation_inputs(merged_generation_config);
 
         m_transformer->set_adapters(merged_generation_config.adapters);
 

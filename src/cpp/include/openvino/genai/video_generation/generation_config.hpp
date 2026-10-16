@@ -5,6 +5,7 @@
 
 #include <string>
 #include <optional>
+#include <variant>
 
 #include "openvino/genai/image_generation/generation_config.hpp"
 #include "openvino/genai/lora_adapter.hpp"
@@ -74,9 +75,9 @@ struct VideoGenerationConfig {
     /// `guidance_scale`. The same applies to every `audio_*` field below.
     std::optional<float> audio_guidance_scale = std::nullopt;
 
-    /// Timestep conditioning value passed to every video in a timestep-conditioned VAE decoder batch.
-    /// A non-zero value is rejected when the VAE decoder does not support timestep conditioning.
-    float decode_timestep = 0.0f;
+    /// Timestep conditioning for a VAE decoder: a scalar applies to every video, or provide one
+    /// value per video in the latent batch. Non-zero values require a timestep-conditioned decoder.
+    std::variant<float, std::vector<float>> decode_timestep = 0.0f;
 
     /// Decode-time interpolation factor between denoised latents and random noise.
     /// If unset, decode_timestep is used. A non-zero value is rejected when the VAE decoder does not support
@@ -132,7 +133,7 @@ static constexpr ov::Property<float> frame_rate{"frame_rate"};
 /// independent of `guidance_scale` - see 'VideoGenerationConfig::audio_guidance_scale'.
 static constexpr ov::Property<float> audio_guidance_scale{"audio_guidance_scale"};
 /// Timestep conditioning value passed to the VAE decoder.
-static constexpr ov::Property<float> decode_timestep{"decode_timestep"};
+static constexpr ov::Property<std::variant<float, std::vector<float>>> decode_timestep{"decode_timestep"};
 /// Decode-time interpolation factor between denoised latents and random noise.
 static constexpr ov::Property<float> decode_noise_scale{"decode_noise_scale"};
 /// Scale of the Spatio-Temporal Guidance term. 0.0 disables the extra transformer pass.
