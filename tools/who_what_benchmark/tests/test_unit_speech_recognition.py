@@ -13,6 +13,7 @@ from whowhatbench.whowhat_metrics import TranscriptSimilarity
 from whowhatbench.utils import to_mono_16k
 from whowhatbench.speech_recognition_evaluator import (
     FunASROptimumTranscriber,
+    Qwen3ASROptimumTranscriber,
     SpeechRecognitionEvaluator,
 )
 
@@ -156,6 +157,44 @@ def test_funasr_optimum_transcriber_decodes_generated_ids_only(generated):
     assert model.generate_call["max_new_tokens"] == 32
     # the 3 prompt ids are dropped, only the generated ids are decoded
     assert tokenizer.decoded.tolist() == [[7, 8]]
+
+
+def test_qwen3_asr_optimum_transcriber_adapts_legacy_inputs():
+    transcriber = Qwen3ASROptimumTranscriber.__new__(Qwen3ASROptimumTranscriber)
+    transcriber.model = types.SimpleNamespace(encoder=object(), config=types.SimpleNamespace(decoder_start_token_id=0))
+    transcriber.processor = types.SimpleNamespace(
+        tokenizer=types.SimpleNamespace(pad_token_id=151643, eos_token_id=151645)
+    )
+    inputs = {
+        "input_ids": torch.tensor([[1, 2]]),
+        "attention_mask": torch.tensor([[1, 1]]),
+        "input_features": torch.zeros(1, 128, 100),
+        "feature_attention_mask": torch.ones(1, 100),
+    }
+
+    generation_inputs = transcriber.prepare_generation_inputs(inputs)
+
+    assert set(generation_inputs) == {
+        "input_features",
+        "decoder_input_ids",
+        "attention_mask",
+        "decoder_start_token_id",
+        "eos_token_id",
+        "pad_token_id",
+    }
+    assert generation_inputs["decoder_input_ids"] is inputs["input_ids"]
+    assert generation_inputs["attention_mask"] is inputs["feature_attention_mask"]
+    assert generation_inputs["decoder_start_token_id"] == 0
+    assert generation_inputs["eos_token_id"] == [151643, 151645]
+    assert generation_inputs["pad_token_id"] == 151643
+
+
+def test_qwen3_asr_optimum_transcriber_preserves_split_inputs():
+    transcriber = Qwen3ASROptimumTranscriber.__new__(Qwen3ASROptimumTranscriber)
+    transcriber.model = types.SimpleNamespace(audio_encoder=object())
+    inputs = {"input_ids": torch.tensor([[1, 2]]), "feature_attention_mask": torch.ones(1, 100)}
+
+    assert transcriber.prepare_generation_inputs(inputs) is inputs
 
 
 @pytest.mark.parametrize(
