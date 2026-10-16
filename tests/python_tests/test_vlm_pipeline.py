@@ -1948,6 +1948,7 @@ if is_transformers_version("<", "5.0"):
 else:
     MODELS_TO_TAG += [
         ("optimum-intel-internal-testing/tiny-random-phi3-vision", "PA"),
+        ("optimum-intel-internal-testing/tiny-random-minicpmv47", "PA"),
     ]
 
 
