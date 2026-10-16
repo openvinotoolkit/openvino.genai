@@ -454,7 +454,11 @@ public:
         // transform, so m_vector is already initialised.  Otherwise (fast path / greedy)
         // m_vector is empty and we write directly to m_data.
         // Set -inf so the stop token gets exactly zero probability mass.
-        for (auto stop_token_id: m_stop_token_ids) {
+        const size_t vocab_size = logits.m_size;
+        for (const int64_t stop_token_id : m_stop_token_ids) {
+            OPENVINO_ASSERT(stop_token_id >= 0 && stop_token_id < vocab_size,
+                            "'stop_token_ids' value is out of vocabulary range: ",
+                            stop_token_id);
             if (logits.is_vector_initialized())
                 logits.m_vector[stop_token_id].m_log_prob = -std::numeric_limits<float>::infinity();
             else
