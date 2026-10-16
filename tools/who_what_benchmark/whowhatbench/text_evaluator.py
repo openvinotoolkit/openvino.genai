@@ -12,7 +12,7 @@ from importlib.resources import files
 from .registry import register_evaluator, BaseEvaluator
 from .whowhat_metrics import TextDivergency, TextSimilarity, KLDivergency
 from .text_generation_strategies import GenerationStrategy
-from .artifacts_manager import Metrics, ArtifactsSchema, ArtifactsManager
+from .artifacts_manager import GenerationResults, Metrics, ArtifactsSchema, ArtifactsManager
 
 
 PROMPTS_FILE = 'text_prompts.yaml'
@@ -273,7 +273,7 @@ class TextEvaluator(BaseEvaluator):
                             artifacts_collector.collect(
                                 p_idx,
                                 p,
-                                ans.m_generation_ids[0],
+                                GenerationResults(answer_text=ans.m_generation_ids[0]),
                             )
 
                         batch.clear()
