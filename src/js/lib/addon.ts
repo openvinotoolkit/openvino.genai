@@ -32,6 +32,9 @@ import {
   Image2ImagePipelineProperties,
   InpaintingPipelineProperties,
   Text2SpeechPipelineProperties,
+  OmniPipelineProperties,
+  OmniTalkerSpeechConfig,
+  VideoMetadata,
 } from "./utils.js";
 import {
   VLMPerfMetrics,
@@ -41,8 +44,12 @@ import {
   ImageGenerationPerfMetrics,
   Text2SpeechPerfMetrics,
 } from "./perfMetrics.js";
-import type { WhisperDecodedResultChunk, WhisperWordTiming } from "./decodedResults.js";
-import type { ASRDecodedResultChunk } from "./decodedResults.js";
+import type {
+  ASRDecodedResultChunk,
+  WhisperDecodedResultChunk,
+  WhisperWordTiming,
+  OmniSpeechResult,
+} from "./decodedResults.js";
 
 export type EmbeddingResult = Float32Array | Int8Array | Uint8Array;
 export type EmbeddingResults = Float32Array[] | Int8Array[] | Uint8Array[];
@@ -53,15 +60,6 @@ export type TextRerankResults = TextRerankResult[];
  */
 export type EmbedResult = {
   embeddings: Tensor;
-};
-/**
- * Metadata describing the original video source. Controls video frame sampling before encoding.
- */
-export type VideoMetadata = {
-  /** Frame rate of the original video in frames per second. 0 means unknown. */
-  fps?: number;
-  /** Indices of frames to sample from the provided video tensor. */
-  frames_indices?: number[];
 };
 /**
  * Pooling strategy
@@ -293,6 +291,41 @@ export interface VLMPipeline {
   getGenerationConfig(): GenerationConfig;
 }
 
+/**
+ * Native binding interface used by the high-level Omni pipeline wrapper.
+ */
+export interface OmniPipeline {
+  new (): OmniPipeline;
+  init(
+    modelPath: string,
+    device: string,
+    ovProperties: OmniPipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    inputs: string | IChatHistory,
+    images: Tensor[] | undefined,
+    videos: Tensor[] | undefined,
+    videosMetadata: VideoMetadata[] | undefined,
+    audios: Tensor[] | undefined,
+    streamer: ((chunk: string) => StreamingStatus) | undefined,
+    speechStreamer: ((audioChunk: Tensor) => StreamingStatus) | undefined,
+    textConfig: GenerationConfig | undefined,
+    talkerSpeechConfig: OmniTalkerSpeechConfig | undefined,
+    callback: (
+      err: Error | null,
+      result: {
+        texts: string[];
+        scores: number[];
+        perfMetrics: VLMPerfMetrics;
+        parsed: Record<string, unknown>[];
+        finishReasons: GenerationFinishReason[];
+        speechResult: OmniSpeechResult;
+      },
+    ) => void,
+  ): void;
+}
+
 export interface Text2ImagePipeline {
   new (): Text2ImagePipeline;
   init(
@@ -386,6 +419,7 @@ interface OpenVINOGenAIAddon {
   EmbeddingPipeline: EmbeddingPipelineWrapper;
   LLMPipeline: LLMPipeline;
   VLMPipeline: VLMPipeline;
+  OmniPipeline: OmniPipeline;
   WhisperPipeline: WhisperPipeline;
   ASRPipeline: ASRPipeline;
   Text2ImagePipeline: Text2ImagePipeline;
@@ -426,6 +460,7 @@ export const {
   TextRerankPipeline,
   LLMPipeline,
   VLMPipeline,
+  OmniPipeline,
   WhisperPipeline,
   ASRPipeline,
   Text2ImagePipeline,

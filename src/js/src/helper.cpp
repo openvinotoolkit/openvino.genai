@@ -787,6 +787,88 @@ ov::genai::SpeechGenerationConfig js_to_cpp<ov::genai::SpeechGenerationConfig>(c
 }
 
 template <>
+ov::genai::OmniTalkerSpeechConfig js_to_cpp<ov::genai::OmniTalkerSpeechConfig>(const Napi::Env& env,
+                                                                               const Napi::Value& value) {
+    ov::genai::OmniTalkerSpeechConfig config;
+    if (value.IsUndefined() || value.IsNull()) {
+        return config;
+    }
+    OPENVINO_ASSERT(value.IsObject(), "talkerSpeechConfig must be an object.");
+    const auto object = value.As<Napi::Object>();
+
+    if (const Napi::Value field = object.Get("return_audio"); !field.IsUndefined() && !field.IsNull()) {
+        OPENVINO_ASSERT(field.IsBoolean(), "talkerSpeechConfig.return_audio must be a boolean.");
+        config.return_audio = field.ToBoolean().Value();
+    }
+    if (const Napi::Value field = object.Get("speaker"); !field.IsUndefined() && !field.IsNull()) {
+        if (field.IsString()) {
+            config.speaker = js_to_cpp<std::string>(env, field);
+        } else {
+            config.speaker = js_to_cpp<ov::Tensor>(env, field);
+        }
+    }
+    if (const Napi::Value field = object.Get("audio_chunk_frames"); !field.IsUndefined() && !field.IsNull()) {
+        config.audio_chunk_frames = js_to_cpp<size_t>(env, field);
+    }
+    if (const Napi::Value field = object.Get("max_new_tokens"); !field.IsUndefined() && !field.IsNull()) {
+        config.max_new_tokens = js_to_cpp<size_t>(env, field);
+    }
+    if (const Napi::Value field = object.Get("rng_seed"); !field.IsUndefined() && !field.IsNull()) {
+        config.rng_seed = js_to_cpp<size_t>(env, field);
+    }
+    if (const Napi::Value field = object.Get("talker_temperature"); !field.IsUndefined() && !field.IsNull()) {
+        config.talker_temperature = js_to_cpp<float>(env, field);
+    }
+    if (const Napi::Value field = object.Get("talker_top_k"); !field.IsUndefined() && !field.IsNull()) {
+        config.talker_top_k = js_to_cpp<size_t>(env, field);
+    }
+    if (const Napi::Value field = object.Get("talker_repetition_penalty"); !field.IsUndefined() && !field.IsNull()) {
+        config.talker_repetition_penalty = js_to_cpp<float>(env, field);
+    }
+    if (const Napi::Value field = object.Get("cp_temperature"); !field.IsUndefined() && !field.IsNull()) {
+        config.cp_temperature = js_to_cpp<float>(env, field);
+    }
+    if (const Napi::Value field = object.Get("cp_top_k"); !field.IsUndefined() && !field.IsNull()) {
+        config.cp_top_k = js_to_cpp<size_t>(env, field);
+    }
+    return config;
+}
+
+template <>
+std::vector<ov::genai::VideoMetadata> js_to_cpp<std::vector<ov::genai::VideoMetadata>>(const Napi::Env& env,
+                                                                                       const Napi::Value& value) {
+    std::vector<ov::genai::VideoMetadata> videos_metadata;
+    if (value.IsUndefined() || value.IsNull()) {
+        return videos_metadata;
+    }
+    OPENVINO_ASSERT(value.IsArray(), "videosMetadata must be an array of VideoMetadata objects.");
+    const auto array = value.As<Napi::Array>();
+    const uint32_t length = array.Length();
+    videos_metadata.reserve(length);
+    for (uint32_t i = 0; i < length; ++i) {
+        const Napi::Value item = array.Get(i);
+        OPENVINO_ASSERT(item.IsObject() && !item.IsArray(), "Each videosMetadata entry must be an object.");
+        const auto object = item.As<Napi::Object>();
+        ov::genai::VideoMetadata metadata;
+        if (const Napi::Value field = object.Get("fps"); !field.IsUndefined() && !field.IsNull()) {
+            metadata.fps = js_to_cpp<float>(env, field);
+        }
+        if (const Napi::Value field = object.Get("frames_indices"); !field.IsUndefined() && !field.IsNull()) {
+            OPENVINO_ASSERT(field.IsArray(),
+                            "videosMetadata.frames_indices must be an array of non-negative integers.");
+            const auto indices = field.As<Napi::Array>();
+            const uint32_t indices_length = indices.Length();
+            metadata.frames_indices.reserve(indices_length);
+            for (uint32_t j = 0; j < indices_length; ++j) {
+                metadata.frames_indices.push_back(js_to_cpp<size_t>(env, indices.Get(j)));
+            }
+        }
+        videos_metadata.push_back(std::move(metadata));
+    }
+    return videos_metadata;
+}
+
+template <>
 ov::genai::ImageGenerationConfig js_to_cpp<ov::genai::ImageGenerationConfig>(const Napi::Env& env,
                                                                               const Napi::Value& value) {
     ov::genai::ImageGenerationConfig config;
@@ -816,46 +898,6 @@ std::vector<ov::Tensor> js_to_cpp<std::vector<ov::Tensor>>(const Napi::Env& env,
         OPENVINO_THROW("Passed argument must be an array of Tensors.");
     }
     return tensors;
-}
-
-template <>
-std::vector<ov::genai::VideoMetadata> js_to_cpp<std::vector<ov::genai::VideoMetadata>>(const Napi::Env& env,
-                                                                                       const Napi::Value& value) {
-    std::vector<ov::genai::VideoMetadata> videos_metadata;
-    if (value.IsUndefined() || value.IsNull()) {
-        return videos_metadata;
-    }
-    OPENVINO_ASSERT(value.IsArray(), "Passed argument must be an array of VideoMetadata objects.");
-    const auto array = value.As<Napi::Array>();
-    const uint32_t length = array.Length();
-    videos_metadata.reserve(length);
-    for (uint32_t i = 0; i < length; ++i) {
-        const Napi::Value item = array[i];
-        OPENVINO_ASSERT(item.IsObject(), "Each VideoMetadata entry must be an object.");
-        const auto object = item.As<Napi::Object>();
-        ov::genai::VideoMetadata metadata;
-        if (object.Has("fps")) {
-            metadata.fps = object.Get("fps").ToNumber().FloatValue();
-        }
-        if (object.Has("frames_indices")) {
-            const Napi::Value frames_indices_value = object.Get("frames_indices");
-            OPENVINO_ASSERT(frames_indices_value.IsArray(),
-                            "VideoMetadata 'frames_indices' must be an array of numbers.");
-            const auto frames_indices_array = frames_indices_value.As<Napi::Array>();
-            const uint32_t indices_length = frames_indices_array.Length();
-            std::vector<size_t> frames_indices;
-            frames_indices.reserve(indices_length);
-            for (uint32_t index = 0; index < indices_length; ++index) {
-                const int64_t frame_index = frames_indices_array.Get(index).ToNumber().Int64Value();
-                OPENVINO_ASSERT(frame_index >= 0,
-                                "VideoMetadata 'frames_indices' must contain non-negative values.");
-                frames_indices.push_back(static_cast<size_t>(frame_index));
-            }
-            metadata.frames_indices = std::move(frames_indices);
-        }
-        videos_metadata.push_back(std::move(metadata));
-    }
-    return videos_metadata;
 }
 
 template <>
@@ -1785,6 +1827,33 @@ Napi::Object to_vlm_decoded_result(const Napi::Env& env, const ov::genai::VLMDec
     obj.Set("parsed", cpp_to_js<std::vector<ov::genai::JsonContainer>, Napi::Value>(env, results.parsed));
     obj.Set("finishReasons",
             cpp_to_js<std::vector<ov::genai::GenerationFinishReason>, Napi::Value>(env, results.finish_reasons));
+    return obj;
+}
+
+Napi::Object to_omni_decoded_result(const Napi::Env& env, const ov::genai::OmniDecodedResults& results) {
+    Napi::Object obj = Napi::Object::New(env);
+    obj.Set("texts", cpp_to_js<std::vector<std::string>, Napi::Value>(env, results.texts));
+    obj.Set("scores", cpp_to_js<std::vector<float>, Napi::Value>(env, results.scores));
+    obj.Set("perfMetrics", VLMPerfMetricsWrapper::wrap(env, results.perf_metrics));
+    obj.Set("parsed", cpp_to_js<std::vector<ov::genai::JsonContainer>, Napi::Value>(env, results.parsed));
+    obj.Set("finishReasons",
+            cpp_to_js<std::vector<ov::genai::GenerationFinishReason>, Napi::Value>(env, results.finish_reasons));
+
+    const ov::genai::TalkerResults& speech_result = results.speech_result;
+    Napi::Array waveforms = Napi::Array::New(env, speech_result.waveforms.size());
+    for (size_t i = 0; i < speech_result.waveforms.size(); ++i) {
+        waveforms[i] = cpp_to_js<ov::Tensor, Napi::Value>(env, speech_result.waveforms[i]);
+    }
+    Napi::Object speech_perf_metrics = Napi::Object::New(env);
+    speech_perf_metrics.Set(
+        "numGeneratedSamples",
+        cpp_to_js<size_t, Napi::Value>(env, speech_result.perf_metrics.num_generated_samples));
+    speech_perf_metrics.Set("generationTimeMs",
+                            cpp_to_js<float, Napi::Value>(env, speech_result.perf_metrics.generation_time_ms));
+    Napi::Object speech = Napi::Object::New(env);
+    speech.Set("waveforms", waveforms);
+    speech.Set("perfMetrics", speech_perf_metrics);
+    obj.Set("speechResult", speech);
     return obj;
 }
 

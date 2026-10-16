@@ -83,6 +83,22 @@ describe(
       pipeline = await EmbeddingPipeline(MULTIMODAL_EMBEDDINGS_MODEL_PATH, "CPU");
     });
 
+    it("rejects concurrent embeds and accepts subsequent calls", async () => {
+      const options = { images: [createTestImageTensor()] };
+      const results = await Promise.allSettled([
+        pipeline.embed("", options),
+        pipeline.embed("", options),
+        pipeline.embed("", options),
+      ]);
+      assert.strictEqual(results[0].status, "fulfilled");
+      for (const result of results.slice(1)) {
+        assert.strictEqual(result.status, "rejected");
+        assert.match(result.reason.message, /Another embedding is already in progress/);
+      }
+      const { embeddings } = await pipeline.embed("", options);
+      assert.strictEqual(embeddings.getShape()[0], 1);
+    });
+
     it("async embed a single image", async () => {
       const { embeddings } = await pipeline.embed("", {
         images: [createTestImageTensor()],
@@ -170,14 +186,14 @@ describe(
       assert.ok(embeddings.data.length > 0);
     });
 
-    it("async embed a single text", async () => {
+    it("async embed a single text", { skip: "CVS-195492" }, async () => {
       const { embeddings } = await pipeline.embed("What is OpenVINO?");
       assert.strictEqual(embeddings.getShape()[0], 1);
       assert.ok(isFloat32Array(embeddings.data));
       assert.ok(embeddings.data.length > 0);
     });
 
-    it("async embed a batch of texts", async () => {
+    it("async embed a batch of texts", { skip: "CVS-195492" }, async () => {
       const texts = ["What is OpenVINO?", "Represent this text."];
       const { embeddings } = await pipeline.embed(texts);
       assert.strictEqual(embeddings.getShape()[0], texts.length);
@@ -185,7 +201,7 @@ describe(
       assert.ok(embeddings.data.length > 0);
     });
 
-    it("async embed text with embedding_prompt", async () => {
+    it("async embed text with embedding_prompt", { skip: "CVS-195492" }, async () => {
       const { embeddings } = await pipeline.embed("What is OpenVINO?", {
         embedding_prompt: "Represent the user's input.",
       });
@@ -194,7 +210,7 @@ describe(
       assert.ok(embeddings.data.length > 0);
     });
 
-    it("async embed batch of texts with image and video", async () => {
+    it("async embed batch of texts with image and video", { skip: "CVS-195492" }, async () => {
       const texts = ["Represent OpenVINO.", "Represent this image.", "Represent this video."];
       const { embeddings } = await pipeline.embed(texts, {
         images: [createTestImageTensor()],

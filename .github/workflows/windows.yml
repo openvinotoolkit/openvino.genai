@@ -861,10 +861,11 @@ jobs:
 
       - name: Test Samples (Python and C++)
         run: |
+          # Required for C++ samples. `env.PATH: "%PATH%"` is not expanded by GHA, produces `PATH: "%PATH%"` literally. Expansion required for `pip install git+https`. If `PATH` not expanded correctly `git` is not found and installation fails.
+          $env:PATH = "${{ env.INSTALL_DIR }}/runtime/bin/intel64/${{ matrix.build-type }};${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/bin;$env:PATH"
           ${{ matrix.test.extra_cmd }}
           python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
         env:
-          PATH: "${{ env.INSTALL_DIR }}/runtime/bin/intel64/${{ matrix.build-type }};${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/bin;%PATH%" # Required for C++ samples
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
           SAMPLES_JS_DIR: "${{ env.SRC_DIR }}/samples/js"
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
@@ -935,6 +936,9 @@ jobs:
         run: |
           . "${{ env.INSTALL_DIR }}/setupvars.ps1"
           & "${{ env.INSTALL_DIR }}/tests/tests_continuous_batching.exe" --gtest_filter="-AddSecondInputTest.*"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "${{ env.INSTALL_DIR }}/tests/tests_cache_allocation_failure.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         env:
           TEST_MODELS_BASE_DIR: "${{ env.HF_HOME }}/ov_test_models"
           CACHE_TYPES_CSV: "${{ env.INSTALL_DIR }}/tests/data/cache_types_models.csv"
@@ -1021,7 +1025,6 @@ jobs:
       - name: Install Transformers compatibility version
         run: |
           python -m pip install transformers==5.0.0
-          python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@f48d93fddff8c91e198389c47a6d5974789b67f4#egg=optimum-intel"
 
       - name: Run npm package tests
         working-directory: ${{ env.SRC_DIR }}/src/js

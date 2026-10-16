@@ -7,9 +7,9 @@ import {
   EmbeddingPipelineWrapper,
   EmbeddingPipelineProperties,
   EmbedResult,
-  VideoMetadata,
   EmbeddingPipeline as EmbeddingPipelineWrap,
 } from "../addon.js";
+import type { VideoMetadata } from "../utils.js";
 
 /**
  * Options for {@link EmbeddingPipeline} embedding methods.
