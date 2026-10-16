@@ -949,6 +949,16 @@ class TestVideoGenerationPipelines:
         result = pipe.generate("test prompt", num_videos_per_prompt=2, **GEN_KWARGS)
         assert result.video.shape == [2, 9, 32, 32, 3]
 
+    def test_decode_rejects_fixed_vae_batch_before_unpack(self, conditioned_video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(conditioned_video_generation_model)
+        pipe.reshape(2, 9, 32, 32, 3.0)
+        pipe.compile("CPU")
+        pipe.generate("test prompt", num_videos_per_prompt=2, **GEN_KWARGS)
+
+        malformed_single_latent = ov.Tensor(np.zeros([1, 1, 1], dtype=np.float32))
+        with pytest.raises(RuntimeError, match="expected 2, got 1"):
+            pipe.decode(malformed_single_latent)
+
     @pytest.mark.parametrize(
         "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True
     )

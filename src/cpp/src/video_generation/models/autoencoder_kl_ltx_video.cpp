@@ -297,6 +297,11 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
     return *this;
 }
 
+void AutoencoderKLLTXVideo::validate_decoder_batch(size_t batch_size) {
+    OPENVINO_ASSERT(m_decoder_request, "VAE decoder model must be compiled first. Cannot infer non-compiled model");
+    assert_decoder_batch_compatible(m_decoder_request.get_compiled_model(), batch_size);
+}
+
 ov::Tensor AutoencoderKLLTXVideo::decode(const ov::Tensor& latent) {
     OPENVINO_ASSERT(m_decoder_request, "VAE decoder model must be compiled first. Cannot infer non-compiled model");
 
@@ -308,7 +313,7 @@ ov::Tensor AutoencoderKLLTXVideo::decode(const ov::Tensor& latent) {
         return decode(latent, timestep);
     }
 
-    assert_decoder_batch_compatible(m_decoder_request.get_compiled_model(), latent.get_shape()[0]);
+    validate_decoder_batch(latent.get_shape()[0]);
     m_decoder_request.set_tensor("latent_sample", latent);
     m_decoder_request.infer();
     return m_decoder_request.get_output_tensor();
@@ -328,7 +333,7 @@ ov::Tensor AutoencoderKLLTXVideo::decode(const ov::Tensor& latent, const ov::Ten
     OPENVINO_ASSERT(timestep.get_shape()[0] == latent.get_shape()[0],
                     "VAE decoder timestep batch size must match latent batch size");
 
-    assert_decoder_batch_compatible(m_decoder_request.get_compiled_model(), latent.get_shape()[0]);
+    validate_decoder_batch(latent.get_shape()[0]);
     m_decoder_request.set_tensor("latent_sample", latent);
     m_decoder_request.set_tensor("timestep", timestep);
     m_decoder_request.infer();

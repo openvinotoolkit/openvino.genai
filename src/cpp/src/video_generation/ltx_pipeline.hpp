@@ -245,6 +245,8 @@ class LTXPipeline : public VideoPipeline {
                             latent.get_element_type() == ov::element::f32,
                         "Decode-time noise interpolation requires f32 latents, got ",
                         latent.get_element_type());
+        OPENVINO_ASSERT(latent.get_shape().size() == 3, "unpack_latents expects [B, S, D] input shape");
+        m_vae->validate_decoder_batch(latent.get_shape()[0]);
 
         ov::Tensor unpacked = video_generation_utils::unpack_latents(latent,
                                                                      m_latent_num_frames,
