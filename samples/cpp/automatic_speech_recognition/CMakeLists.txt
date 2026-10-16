@@ -38,3 +38,17 @@ install(TARGETS automatic_speech_recognition
     RUNTIME DESTINATION samples_bin/
     COMPONENT samples_bin
     EXCLUDE_FROM_ALL)
+
+add_executable(forced_aligner_timestamps_generation forced_aligner_timestamps_generation.cpp ../speech_generation/audio_utils.cpp)
+target_link_libraries(forced_aligner_timestamps_generation PRIVATE openvino::genai)
+target_include_directories(forced_aligner_timestamps_generation PRIVATE "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
+set_target_properties(forced_aligner_timestamps_generation PROPERTIES
+
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+target_compile_features(forced_aligner_timestamps_generation PRIVATE cxx_std_17)
+
+install(TARGETS forced_aligner_timestamps_generation
+    RUNTIME DESTINATION samples_bin/
+    COMPONENT samples_bin
+    EXCLUDE_FROM_ALL)
