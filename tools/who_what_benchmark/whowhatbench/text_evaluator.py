@@ -61,7 +61,8 @@ class TextEvaluator(BaseEvaluator):
         self.num_samples = num_samples
         self.generation_config = generation_config
         self.seqs_per_request = seqs_per_request
-        self.generation_fn = gen_answer_fn
+        if gen_answer_fn is not None:
+            self.generation_fn = gen_answer_fn
         self.use_chat_template = use_chat_template
         self.num_assistant_tokens = num_assistant_tokens
         self.assistant_confidence_threshold = assistant_confidence_threshold
@@ -128,7 +129,7 @@ class TextEvaluator(BaseEvaluator):
         self.last_cmp = None
 
     def get_generation_fn(self):
-        return self.generation_fn
+        return getattr(self, "generation_fn", None)
 
     def score(self, model_or_data, gen_answer_fn=None, output_dir="wwb_target", **kwargs):
         if isinstance(model_or_data, str) and os.path.exists(model_or_data):

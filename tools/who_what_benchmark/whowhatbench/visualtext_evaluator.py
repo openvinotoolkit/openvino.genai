@@ -58,6 +58,8 @@ class VisualTextEvaluator(TextEvaluator):
         self.pruning_ratio = pruning_ratio
         self.relevance_weight = relevance_weight
         self.generation_config_extra = generation_config_extra or {}
+        self.generation_fn = gen_answer_fn
+
         super().__init__(
             base_model=base_model,
             tokenizer=tokenizer,
@@ -74,7 +76,6 @@ class VisualTextEvaluator(TextEvaluator):
             language=language,
             long_prompt=long_prompt,
         )
-        self.generation_fn = gen_answer_fn
 
     def score(self, model_or_data, gen_answer_fn=None, **kwargs):
         if isinstance(model_or_data, str) and os.path.exists(model_or_data):
