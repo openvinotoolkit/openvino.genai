@@ -63,6 +63,8 @@ std::vector<int64_t> ctc_greedy_decode(const ov::Tensor& logits,
 struct SenseVoiceRichPrefix {
     size_t rich_token_count = 0;
     std::string language;
+    std::optional<std::string> emotion;
+    std::optional<std::string> event;
 };
 
 std::optional<std::string> parse_rich_tag(const std::string& decoded) {
@@ -83,8 +85,8 @@ SenseVoiceRichPrefix parse_rich_prefix(ov::genai::Tokenizer& tokenizer,
                                        const std::vector<int64_t>& token_ids,
                                        const std::map<std::string, int64_t>& lid_dict) {
     SenseVoiceRichPrefix prefix;
-    // SenseVoice prefix order: language, emotion, event, textnorm. Only the
-    // language is reported; the remaining tags are consumed solely to strip them.
+    // SenseVoice prefix order: language, emotion, event, textnorm.
+    // Textnorm is consumed but not exposed as a result feature.
     std::array<std::optional<std::string>, 4> tags;
     const size_t max_rich = std::min<size_t>(tags.size(), token_ids.size());
     for (size_t i = 0; i < max_rich; ++i) {
@@ -101,6 +103,8 @@ SenseVoiceRichPrefix parse_rich_prefix(ov::genai::Tokenizer& tokenizer,
             prefix.language = language;
         }
     }
+    prefix.emotion = tags[1];
+    prefix.event = tags[2];
     return prefix;
 }
 
@@ -192,6 +196,15 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudioInputs& audio_inputs,
                                             ? config.language.value()
                                             : rich_prefix.language;
     results.languages.push_back(result_language);
+
+    ov::AnyMap feature_entry;
+    if (rich_prefix.emotion.has_value()) {
+        feature_entry.emplace("emotion", rich_prefix.emotion.value());
+    }
+    if (rich_prefix.event.has_value()) {
+        feature_entry.emplace("event", rich_prefix.event.value());
+    }
+    results.features = std::vector<ov::AnyMap>{std::move(feature_entry)};
 
     if (streamer) {
         streamer->write(transcription_token_ids);
