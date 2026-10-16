@@ -174,6 +174,27 @@ def mean_pooling(last_hidden_states: Tensor, attention_mask: Tensor) -> Tensor:
     return sum_embeddings / sum_mask
 
 
+# Guard models (e.g. Qwen3Guard-Stream) replace the LM head with several token-level
+# classification heads instead of producing a `last_hidden_state`, so they need their own
+# "pooling": there is nothing to pool an embedding out of, but the concatenated last-token
+# logits of every head are still a comparable numeric fingerprint of the model's verdict.
+GUARD_LOGITS_FIELDS = (
+    "risk_level_logits",
+    "category_logits",
+    "query_risk_level_logits",
+    "query_category_logits",
+)
+
+
+def is_guard_model_output(outputs) -> bool:
+    return not hasattr(outputs, "last_hidden_state") and hasattr(outputs, GUARD_LOGITS_FIELDS[0])
+
+
+def guard_logits_pool(outputs, attention_mask: Tensor) -> Tensor:
+    per_head_logits = [last_token_pool(getattr(outputs, name), attention_mask) for name in GUARD_LOGITS_FIELDS]
+    return torch.cat(per_head_logits, dim=-1)
+
+
 @register_evaluator("text-embedding", "image-embedding", "video-embedding")
 class EmbeddingsEvaluator(BaseEvaluator):
     def __init__(
@@ -284,7 +305,9 @@ class EmbeddingsEvaluator(BaseEvaluator):
             with torch.no_grad():
                 outputs = model(**inputs)
 
-            if kwargs.get("pooling_type") == "last_token" and "attention_mask" in inputs:
+            if is_guard_model_output(outputs):
+                embeddings = guard_logits_pool(outputs, inputs["attention_mask"])
+            elif kwargs.get("pooling_type") == "last_token" and "attention_mask" in inputs:
                 embeddings = last_token_pool(outputs.last_hidden_state, inputs["attention_mask"])
             elif kwargs.get("pooling_type") == "mean" and "attention_mask" in inputs:
                 embeddings = mean_pooling(outputs.last_hidden_state, inputs["attention_mask"])

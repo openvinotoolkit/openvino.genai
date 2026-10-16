@@ -21,7 +21,11 @@ public:
                       const std::vector<VideoMetadata>& videos_metadata,
                       const ov::AnyMap& properties) override;
 
+    void reset_state() override;
+
 private:
+    std::map<std::string, ov::Tensor> score(const StringInputs& text, const ov::AnyMap& properties);
+
     std::unique_ptr<TextEmbeddingPipeline> m_text_embedding_pipeline;
 };
 

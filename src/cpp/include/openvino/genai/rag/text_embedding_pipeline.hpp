@@ -4,10 +4,13 @@
 #pragma once
 
 #include <filesystem>
+#include <map>
 #include <optional>
+#include <string>
 #include <variant>
 
 #include "openvino/genai/tokenizer.hpp"
+#include "openvino/runtime/tensor.hpp"
 
 namespace ov {
 namespace genai {
@@ -190,6 +193,47 @@ public:
      * @brief Waits for computed embeddings for a query
      */
     EmbeddingResult wait_embed_query();
+
+    /**
+     * @brief True when the model scores every token through several outputs instead of pooling
+     * them into a single embedding, i.e. score() has to be used instead of the embed* family.
+     * Such models replace the language modeling head with classification heads, e.g. Qwen3Guard.
+     */
+    bool scores_tokens() const;
+
+    /**
+     * @brief True when the model carries its own KV cache, i.e. score_next() is usable. Produced
+     * by the `feature-extraction-with-past` export task.
+     */
+    bool is_stateful() const;
+
+    /**
+     * @brief Scores a batch of texts, returning every model output by name, each shaped
+     * [batch, seq_len, num_classes]. Only supported when scores_tokens() is true.
+     */
+    std::map<std::string, ov::Tensor> score(const std::vector<std::string>& texts);
+
+    /**
+     * @brief Scores an already tokenized batch, see score(const std::vector<std::string>&).
+     *
+     * @param input_ids i64 tensor shaped [batch, seq_len]
+     * @param attention_mask optional i64 tensor of the same shape, all ones when omitted
+     */
+    std::map<std::string, ov::Tensor> score(const ov::Tensor& input_ids,
+                                            const ov::Tensor& attention_mask = ov::Tensor());
+
+    /**
+     * @brief Appends tokens to the running sequence and scores them against the cache built by the
+     * previous calls, instead of scoring them on their own. Needs is_stateful() and a batch of 1.
+     *
+     * @param input_ids i64 tensor shaped [1, chunk_len]
+     */
+    std::map<std::string, ov::Tensor> score_next(const ov::Tensor& input_ids);
+
+    /**
+     * @brief Drops the cached sequence, so the next score_next() starts a new one.
+     */
+    void reset_state();
 
     ~TextEmbeddingPipeline();
 
