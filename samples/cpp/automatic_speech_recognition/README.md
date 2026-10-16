@@ -33,6 +33,62 @@ timestamps: [0, 2] text:  How are you doing today?
 
 Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#speech-recognition-models-whisper-based) for more details.
 
+# Forced aligner word timestamps (Qwen3-ASR)
+
+The `forced_aligner_timestamps_generation` sample demonstrates word timestamp generation with Qwen3-ASR and `ASRForcedAligner`:
+
+```text
+audio
+  -> Qwen3-ASR transcription + automatic language detection
+  -> ASRForcedAligner
+  -> word-level timestamps
+```
+
+Qwen3-ASR and its forced aligner are distributed separately and must be exported to separate directories. Install `qwen-asr` before export.
+
+```sh
+pip install qwen-asr
+
+# Export the Qwen3-ASR model.
+optimum-cli export openvino \
+    --model Qwen/Qwen3-ASR-0.6B \
+    --task automatic-speech-recognition-with-past \
+    --trust-remote-code \
+    qwen3-asr-ov
+
+# Export the Qwen3 forced-aligner model.
+optimum-cli export openvino \
+    --model Qwen/Qwen3-ForcedAligner-0.6B \
+    --task automatic-speech-recognition-with-past \
+    --trust-remote-code \
+    qwen3-forced-aligner-ov
+```
+
+Prepare a 16 kHz wav file as described above, for example [how_are_you_doing_today.wav](https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav).
+
+The optional device argument defaults to `CPU` and is used for both models:
+
+`forced_aligner_timestamps_generation <ASR_MODEL_DIR> <FORCED_ALIGNER_MODEL_DIR> "<WAV_FILE_PATH>" [DEVICE]`
+
+`forced_aligner_timestamps_generation qwen3-asr-ov qwen3-forced-aligner-ov how_are_you_doing_today.wav`
+
+The language is not specified, so Qwen3-ASR detects it from the audio.
+
+Output:
+```
+Detected language: English
+Transcription: How are you doing today?
+
+Word timestamps:
+[0.48, 0.56]: How
+[0.56, 0.72]: are
+[0.72, 0.80]: you
+[0.80, 1.12]: doing
+[1.12, 1.60]: today
+```
+
+`ASRForcedAligner` can also be used standalone via `align()` with audio, a transcript, and the transcript language. The transcript may come from another ASR model. Qwen3-ASR detects the language automatically, while FunASR does not perform language detection, so when aligning a FunASR transcript the language must be provided explicitly, for example with `ov::genai::language("English")`.
+
 # ASR pipeline usage
 
 ```c++
