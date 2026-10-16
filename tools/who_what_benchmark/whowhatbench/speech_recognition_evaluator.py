@@ -172,6 +172,8 @@ class FunASROptimumTranscriber:
 
         inputs = self.model.preprocess_input(audio, sampling_rate=AUDIO_SAMPLING_RATE, **self.preprocess_kwargs)
         prompt_len = inputs["decoder_input_ids"].shape[-1] if "decoder_input_ids" in inputs else None
+        if self.tokenizer is None:
+            inputs["language"] = self.preprocess_kwargs.get("language", "auto")
         with torch.inference_mode():
             output = self.model.generate(**inputs, max_new_tokens=max_new_tokens)
         output = getattr(output, "sequences", output)
