@@ -69,6 +69,20 @@ Args:
 + std::string(common_encode_docstring)
 );
 
+constexpr char apply_chat_template_docstring[] = R"(Applies a chat template to format chat history into a prompt string.
+Args:
+ 'history' - chat history as a ChatHistory object or a list of message dicts.
+ 'add_generation_prompt' - whether to append the prompt that starts the assistant reply.
+ 'chat_template' - custom chat template. If empty (default), the tokenizer chat template is used.
+ 'tools' - list of tool definitions. If provided, overrides tools from the chat history. Default is None.
+ 'extra_context' - dict with additional template variables. If provided, overrides extra_context from the chat history. Default is None.
+ 'apply_polyfills' - whether to emulate features that the chat template doesn't support by rewriting the messages before rendering. Default is True.
+    When True, depending on the detected template capabilities minja will apply necessary polyfills to the chat history before rendering the template.
+    When False, the messages are passed to the template unchanged, so content the template doesn't handle may be dropped from the prompt.
+Returns:
+ A string with the formatted chat history.
+)";
+
 }  // namespace
 
 namespace py = pybind11;
@@ -268,7 +282,8 @@ void init_tokenizer(py::module_& m) {
                                         bool add_generation_prompt,
                                         const std::string& chat_template,
                                         const std::optional<std::vector<py::dict>>& tools,
-                                        const std::optional<py::dict>& extra_context) {
+                                        const std::optional<py::dict>& extra_context,
+                                        bool apply_polyfills) {
             ChatHistory chat_history;
             std::visit(pyutils::overloaded {
                 [&](ChatHistory chat_history_obj) {
@@ -289,14 +304,16 @@ void init_tokenizer(py::module_& m) {
                 extra_context_jc = pyutils::py_object_to_json_container(extra_context.value());
             }
 
-            return tok.apply_chat_template(chat_history, add_generation_prompt, chat_template, tools_jc, extra_context_jc);
+            return tok.apply_chat_template(chat_history, add_generation_prompt, chat_template, tools_jc, extra_context_jc,
+                                           {ov::genai::apply_polyfills(apply_polyfills)});
         },
             py::arg("history"),
             py::arg("add_generation_prompt"),
             py::arg("chat_template") = "",
             py::arg("tools") = py::none(),
             py::arg("extra_context") = py::none(),
-            R"(Applies a chat template to format chat history into a prompt string.)")
+            py::arg("apply_polyfills") = true,
+            apply_chat_template_docstring)
 
         .def(
             "set_chat_template", &Tokenizer::set_chat_template,

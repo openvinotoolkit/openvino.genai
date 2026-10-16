@@ -15,6 +15,120 @@ if (!LLM_PATH) {
   throw new Error("Please set LLM_PATH environment variable to run the tests.");
 }
 
+// The template supports neither the system role nor tool definitions.
+// Tool calls are rendered only for object arguments, in a <parameter name="..."> format that minja
+// doesn't recognize as native tool call support, so polyfills replace tool calls and tool responses with JSON.
+const polyfillsChatTemplate =
+  "{% for m in messages %}{% if m['role'] != 'system' %}" +
+  "{{ m['role'] }}:{% if m['content'] %} {{ m['content'] }}{% endif %}\n" +
+  "{% if m['tool_calls'] %}{% for tc in m['tool_calls'] %}" +
+  "{% if tc['function']['arguments'] is mapping %}" +
+  "<tool_call><name>{{ tc['function']['name'] }}</name>" +
+  "{% for arg_name, arg_value in tc['function']['arguments'].items() %}" +
+  '<parameter name="{{ arg_name }}">{{ arg_value }}</parameter>' +
+  "{% endfor %}</tool_call>\n" +
+  "{% endif %}{% endfor %}{% endif %}" +
+  "{% endif %}{% endfor %}";
+const polyfillsTools = [
+  {
+    type: "function",
+    function: {
+      name: "get_weather",
+      description: "Get the current weather in a city",
+      parameters: {
+        type: "object",
+        properties: { city: { type: "string" } },
+        required: ["city"],
+      },
+    },
+  },
+];
+const makePolyfillsHistory = (args) => [
+  { role: "system", content: "SYSTEM_PROMPT" },
+  { role: "user", content: "What is the weather in Paris?" },
+  {
+    role: "assistant",
+    content: null,
+    // eslint-disable-next-line camelcase
+    tool_calls: [
+      {
+        id: "call_1",
+        type: "function",
+        function: { name: "get_weather", arguments: args },
+      },
+    ],
+  },
+  // eslint-disable-next-line camelcase
+  { role: "tool", name: "get_weather", tool_call_id: "call_1", content: "TOOL_RESULT_22C" },
+];
+const polyfillsStringArgsHistory = makePolyfillsHistory('{"city": "Paris", "unit": "celsius"}');
+const polyfillsObjectArgsHistory = makePolyfillsHistory({ city: "Paris", unit: "celsius" });
+const polyfillsExpectedWithPolyfills = `user: SYSTEM_PROMPT
+
+You can call any of the following tools to satisfy the user's requests: [
+  {
+    "type": "function",
+    "function": {
+      "name": "get_weather",
+      "description": "Get the current weather in a city",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "city"
+        ]
+      }
+    }
+  }
+]
+
+Example tool call syntax:
+
+assistant: {
+  "tool_calls": [
+    {
+      "name": "tool_name",
+      "arguments": {
+        "arg1": "some_value"
+      },
+      "id": "call_1___"
+    }
+  ]
+}
+
+
+What is the weather in Paris?assistant: {
+  "tool_calls": [
+    {
+      "name": "get_weather",
+      "arguments": {
+        "city": "Paris",
+        "unit": "celsius"
+      },
+      "id": "call_1"
+    }
+  ]
+}user: {
+  "tool_response": {
+    "tool": "get_weather",
+    "content": "TOOL_RESULT_22C",
+    "tool_call_id": "call_1"
+  }
+}`;
+const polyfillsExpectedStringArgsWithoutPolyfills =
+  "user: What is the weather in Paris?assistant:tool: TOOL_RESULT_22C";
+const polyfillsExpectedObjectArgsWithoutPolyfills =
+  "user: What is the weather in Paris?assistant:" +
+  "<tool_call><name>get_weather</name>" +
+  '<parameter name="city">Paris</parameter>' +
+  '<parameter name="unit">celsius</parameter>' +
+  "</tool_call>\n" +
+  "tool: TOOL_RESULT_22C";
+
 describe("tokenizer constructors", () => {
   it("tokenizer constructors with one argument", () => {
     const tokenizer = new Tokenizer(LLM_PATH);
@@ -216,6 +330,66 @@ describe("tokenizer functions", async () => {
     assert.strictEqual(templatedHistory, expected);
   });
 
+  it("applyChatTemplate applies polyfills by default", () => {
+    const templatedHistory = tokenizer.applyChatTemplate(
+      polyfillsObjectArgsHistory,
+      false,
+      polyfillsChatTemplate,
+      polyfillsTools,
+    );
+    assert.strictEqual(templatedHistory, polyfillsExpectedWithPolyfills);
+  });
+
+  it("applyChatTemplate with true applyPolyfills applies polyfills", () => {
+    const templatedHistory = tokenizer.applyChatTemplate(
+      polyfillsObjectArgsHistory,
+      false,
+      polyfillsChatTemplate,
+      polyfillsTools,
+      undefined,
+      true,
+    );
+    assert.strictEqual(templatedHistory, polyfillsExpectedWithPolyfills);
+  });
+
+  it("applyChatTemplate with false applyPolyfills renders string tool call arguments", () => {
+    const templatedHistory = tokenizer.applyChatTemplate(
+      polyfillsStringArgsHistory,
+      false,
+      polyfillsChatTemplate,
+      polyfillsTools,
+      undefined,
+      false,
+    );
+    assert.strictEqual(templatedHistory, polyfillsExpectedStringArgsWithoutPolyfills);
+  });
+
+  it("applyChatTemplate with false applyPolyfills renders object tool call arguments", () => {
+    const templatedHistory = tokenizer.applyChatTemplate(
+      polyfillsObjectArgsHistory,
+      false,
+      polyfillsChatTemplate,
+      polyfillsTools,
+      undefined,
+      false,
+    );
+    assert.strictEqual(templatedHistory, polyfillsExpectedObjectArgsWithoutPolyfills);
+  });
+
+  it("applyChatTemplate with incorrect type of applyPolyfills", () => {
+    assert.throws(
+      () =>
+        tokenizer.applyChatTemplate(
+          polyfillsStringArgsHistory,
+          false,
+          polyfillsChatTemplate,
+          polyfillsTools,
+          undefined,
+          "false",
+        ),
+      /The argument 'applyPolyfills' must be a boolean/,
+    );
+  });
   it("getBosToken return string", () => {
     const token = tokenizer.getBosToken();
     assert.strictEqual(typeof token, "string");

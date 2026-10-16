@@ -831,6 +831,147 @@ def test_chat_template_with_empty_output(tmp_path):
         )
 
 
+def test_apply_chat_template_polyfills(tmp_path):
+    tokenizer = generate_tokenizer(tmp_path, ChatTemplates(None, None, None, None, None))
+    # The template supports neither the system role nor tool definitions.
+    # Tool calls are rendered only for object arguments, in a <parameter name="..."> format that minja
+    # doesn't recognize as native tool call support, so polyfills replace tool calls and tool responses with JSON.
+    template = (
+        "{% for m in messages %}{% if m['role'] != 'system' %}"
+        "{{ m['role'] }}:{% if m['content'] %} {{ m['content'] }}{% endif %}\n"
+        "{% if m['tool_calls'] %}{% for tc in m['tool_calls'] %}"
+        "{% if tc['function']['arguments'] is mapping %}"
+        "<tool_call><name>{{ tc['function']['name'] }}</name>"
+        "{% for arg_name, arg_value in tc['function']['arguments'].items() %}"
+        '<parameter name="{{ arg_name }}">{{ arg_value }}</parameter>'
+        "{% endfor %}</tool_call>\n"
+        "{% endif %}{% endfor %}{% endif %}"
+        "{% endif %}{% endfor %}"
+    )
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Get the current weather in a city",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"city": {"type": "string"}},
+                    "required": ["city"],
+                },
+            },
+        }
+    ]
+
+    def make_history(arguments):
+        return [
+            {"role": "system", "content": "SYSTEM_PROMPT"},
+            {"role": "user", "content": "What is the weather in Paris?"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "get_weather", "arguments": arguments},
+                    }
+                ],
+            },
+            {"role": "tool", "name": "get_weather", "tool_call_id": "call_1", "content": "TOOL_RESULT_22C"},
+        ]
+
+    string_args_history = make_history('{"city": "Paris", "unit": "celsius"}')
+    object_args_history = make_history({"city": "Paris", "unit": "celsius"})
+
+    expected_output_polyfills = """user: SYSTEM_PROMPT
+
+You can call any of the following tools to satisfy the user's requests: [
+  {
+    "type": "function",
+    "function": {
+      "name": "get_weather",
+      "description": "Get the current weather in a city",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "city"
+        ]
+      }
+    }
+  }
+]
+
+Example tool call syntax:
+
+assistant: {
+  "tool_calls": [
+    {
+      "name": "tool_name",
+      "arguments": {
+        "arg1": "some_value"
+      },
+      "id": "call_1___"
+    }
+  ]
+}
+
+
+What is the weather in Paris?assistant: {
+  "tool_calls": [
+    {
+      "name": "get_weather",
+      "arguments": {
+        "city": "Paris",
+        "unit": "celsius"
+      },
+      "id": "call_1"
+    }
+  ]
+}user: {
+  "tool_response": {
+    "tool": "get_weather",
+    "content": "TOOL_RESULT_22C",
+    "tool_call_id": "call_1"
+  }
+}"""
+
+    with_polyfills = tokenizer.apply_chat_template(
+        string_args_history, add_generation_prompt=False, chat_template=template, tools=tools
+    )
+
+    assert expected_output_polyfills == with_polyfills
+
+    object_args_with_polyfills = tokenizer.apply_chat_template(
+        object_args_history, add_generation_prompt=False, chat_template=template, tools=tools
+    )
+
+    assert expected_output_polyfills == object_args_with_polyfills
+
+    without_polyfills = tokenizer.apply_chat_template(
+        string_args_history, add_generation_prompt=False, chat_template=template, tools=tools, apply_polyfills=False
+    )
+    print(without_polyfills)
+    assert "user: What is the weather in Paris?assistant:tool: TOOL_RESULT_22C" == without_polyfills
+
+    object_args_without_polyfills = tokenizer.apply_chat_template(
+        make_history({"city": "Paris", "unit": "celsius"}),
+        add_generation_prompt=False,
+        chat_template=template,
+        tools=tools,
+        apply_polyfills=False,
+    )
+    assert (
+        'user: What is the weather in Paris?assistant:<tool_call><name>get_weather</name><parameter name="city">Paris</parameter>'
+        '<parameter name="unit">celsius</parameter></tool_call>\ntool: TOOL_RESULT_22C' == object_args_without_polyfills
+    )
+
+
 @pytest.mark.parametrize(
     "property_dict",
     [
