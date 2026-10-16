@@ -33,6 +33,93 @@ TEST(ParserTest, test_llama3_parser_1) {
     ASSERT_TRUE(expected == input);
 }
 
+namespace {
+
+JsonContainer parse_qwen3_coder(const std::string& content, const JsonContainer& tools = JsonContainer::array()) {
+    JsonContainer message;
+    message["content"] = content;
+    Qwen3CoderToolParser(tools).parse(message);
+    return message;
+}
+
+JsonContainer weather_tools() {
+    return JsonContainer::from_json_string(
+        R"([{"type": "function", "function": {"name": "get_weather", "parameters": {"type": "object", "properties": {
+        "location": {"type": "string"}, "days": {"type": "integer"}, "detailed": {"type": "boolean"},
+        "units": {"type": ["string", "null"]}, "options": {"type": "object"}}}}}])");
+}
+
+}  // namespace
+
+TEST(ParserTest, test_qwen3_coder_tool_parser_single_call) {
+    const std::string content =
+        "I'll check.\n<tool_call>\n<function=get_weather>\n<parameter=location>\nNew York, NY\n</parameter>\n"
+        "<parameter=unit>\ncelsius\n</parameter>\n</function>\n</tool_call>";
+    JsonContainer message = parse_qwen3_coder(content);
+
+    JsonContainer expected;
+    expected["content"] = content;  // content is kept as is
+    expected["tool_calls"] = JsonContainer::array();
+    expected["tool_calls"].push_back(JsonContainer(
+        {{"name", "get_weather"}, {"arguments", JsonContainer{{"location", "New York, NY"}, {"unit", "celsius"}}}}));
+    ASSERT_EQ(message, expected);
+}
+
+TEST(ParserTest, test_qwen3_coder_tool_parser_several_calls_and_multiline_value) {
+    const std::string content =
+        "<tool_call>\n<function=write>\n<parameter=text>\nline 1\nline 2\n</parameter>\n</function>\n</tool_call>\n"
+        "<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>";
+    JsonContainer calls = parse_qwen3_coder(content)["tool_calls"];
+    ASSERT_EQ(calls.size(), 2);
+    ASSERT_EQ(calls[0]["name"].get_string(), "write");
+    ASSERT_EQ(calls[0]["arguments"]["text"].get_string(), "line 1\nline 2");
+    ASSERT_EQ(calls[1]["name"].get_string(), "get_weather");
+    ASSERT_EQ(calls[1]["arguments"]["location"].get_string(), "Paris");
+}
+
+TEST(ParserTest, test_qwen3_coder_tool_parser_types_from_tools) {
+    const std::string content =
+        "<tool_call>\n<function=get_weather>\n<parameter=location>\n007\n</parameter>\n<parameter=days>\n3\n</"
+        "parameter>\n"
+        "<parameter=detailed>\ntrue\n</parameter>\n<parameter=units>\n42\n</parameter>\n"
+        "<parameter=options>\n{\"lang\": "
+        "\"en\"}\n</parameter>\n<parameter=unknown>\n5\n</parameter>\n</function>\n</tool_call>";
+    JsonContainer args = parse_qwen3_coder(content, weather_tools())["tool_calls"][0]["arguments"];
+    ASSERT_EQ(args["location"], JsonContainer("007"));  // declared string: never coerced
+    ASSERT_EQ(args["days"], JsonContainer(int64_t{3}));
+    ASSERT_EQ(args["detailed"], JsonContainer(true));
+    ASSERT_EQ(args["units"], JsonContainer("42"));  // ["string", "null"] counts as string
+    ASSERT_EQ(args["options"], JsonContainer::from_json_string(R"({"lang": "en"})"));
+    ASSERT_EQ(args["unknown"], JsonContainer("5"));  // not in the schema: string
+
+    // Without tools every value is a string; a value that is not valid JSON stays a string.
+    ASSERT_EQ(parse_qwen3_coder(content)["tool_calls"][0]["arguments"]["days"], JsonContainer("3"));
+    const std::string bad = "<tool_call><function=get_weather><parameter=days>three</parameter></function></tool_call>";
+    ASSERT_EQ(parse_qwen3_coder(bad, weather_tools())["tool_calls"][0]["arguments"]["days"], JsonContainer("three"));
+}
+
+TEST(ParserTest, test_qwen3_coder_tool_parser_truncated_and_malformed) {
+    // Cut off by max_new_tokens inside a value: what arrived is kept.
+    JsonContainer cut = parse_qwen3_coder("<tool_call>\n<function=get_weather>\n<parameter=location>\nNew Yo");
+    ASSERT_EQ(cut["tool_calls"][0]["arguments"]["location"].get_string(), "New Yo");
+    // A missing </parameter> ends the value at the next parameter.
+    JsonContainer skipped =
+        parse_qwen3_coder("<tool_call><function=f><parameter=a>1<parameter=b>2</parameter></function></tool_call>");
+    ASSERT_EQ(skipped["tool_calls"][0]["arguments"], JsonContainer({{"a", "1"}, {"b", "2"}}));
+    // No function, empty name, no parameters, no markup at all.
+    ASSERT_FALSE(parse_qwen3_coder("<tool_call>{\"name\": \"f\"}</tool_call>").contains("tool_calls"));
+    ASSERT_FALSE(parse_qwen3_coder("<tool_call><function=></function></tool_call>").contains("tool_calls"));
+    ASSERT_EQ(parse_qwen3_coder("<tool_call><function=ping></function></tool_call>")["tool_calls"][0]["arguments"],
+              JsonContainer::object());
+    ASSERT_FALSE(parse_qwen3_coder("Just an answer, mentioning <tool_call> in prose").contains("tool_calls"));
+    // Garbage tool definitions are ignored rather than thrown on.
+    JsonContainer junk = JsonContainer::from_json_string(
+        R"([null, "x", {"type": "function"}, {"function": {"name": "f", "parameters": null}}])");
+    ASSERT_EQ(parse_qwen3_coder("<tool_call><function=f><parameter=a>1</parameter></function></tool_call>",
+                                junk)["tool_calls"][0]["arguments"]["a"],
+              JsonContainer("1"));
+}
+
 TEST(ParserTest, test_reasoning_parser_1) {
     std::string prompt = R"("<｜begin▁of▁sentence｜><｜begin▁of▁sentence｜><｜User｜>What is 2 + 1?<｜Assistant｜><think>\nI need to determine the sum of 2 and 1.\n\nFirst, I'll identify the two numbers involved in the addition: 2 and 1.\n\nNext, I'll perform the addition by combining these two numbers.\n\nFinally, I'll state the result of the addition, which is 3.\n</think>\n\n**Solution:**\n\nTo find the sum of 2 and 1, )";
     

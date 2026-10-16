@@ -2,12 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/parsers.hpp"
+
+#include <algorithm>
+#include <cctype>
+#include <optional>
 #include <regex>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <cctype>
-#include <stdexcept>
 
 namespace ov::genai {
 
@@ -288,6 +291,144 @@ void Llama3JsonToolParser::parse(JsonContainer& message) {
 }
 
 Llama3JsonToolParser::~Llama3JsonToolParser() = default;
+
+class Qwen3CoderToolParser::Qwen3CoderToolParserImpl {
+public:
+    explicit Qwen3CoderToolParserImpl(const JsonContainer& tools) : m_tools(tools.copy()) {}
+
+    void parse(JsonContainer& message) {
+        const std::string content = message["content"].get_string();
+        auto tool_calls = JsonContainer::array();
+        size_t pos = content.find(TOOL_CALL_OPEN);
+        while (pos != std::string::npos) {
+            const size_t body_start = pos + TOOL_CALL_OPEN.size();
+            const size_t body_end = content.find(TOOL_CALL_CLOSE, body_start);
+            // A missing close tag means the call was cut off: parse what arrived.
+            const std::string body =
+                content.substr(body_start, body_end == std::string::npos ? std::string::npos : body_end - body_start);
+            if (auto call = parse_function(body)) {
+                tool_calls.push_back(*call);
+            }
+            pos = body_end == std::string::npos ? std::string::npos
+                                                : content.find(TOOL_CALL_OPEN, body_end + TOOL_CALL_CLOSE.size());
+        }
+        if (!tool_calls.empty()) {
+            message["tool_calls"] = tool_calls;
+        }
+    }
+
+private:
+    inline static const std::string TOOL_CALL_OPEN = "<tool_call>";
+    inline static const std::string TOOL_CALL_CLOSE = "</tool_call>";
+    inline static const std::string FUNCTION_OPEN = "<function=";
+    inline static const std::string FUNCTION_CLOSE = "</function>";
+    inline static const std::string PARAMETER_OPEN = "<parameter=";
+    inline static const std::string PARAMETER_CLOSE = "</parameter>";
+
+    JsonContainer m_tools;
+
+    std::optional<JsonContainer> parse_function(const std::string& body) const {
+        const size_t fn_start = body.find(FUNCTION_OPEN);
+        if (fn_start == std::string::npos) {
+            return std::nullopt;
+        }
+        const size_t name_start = fn_start + FUNCTION_OPEN.size();
+        const size_t name_end = body.find('>', name_start);
+        if (name_end == std::string::npos || name_end == name_start) {
+            return std::nullopt;
+        }
+        const std::string name = body.substr(name_start, name_end - name_start);
+        const size_t fn_end = body.find(FUNCTION_CLOSE, name_end);
+        const std::string params =
+            body.substr(name_end + 1, fn_end == std::string::npos ? std::string::npos : fn_end - name_end - 1);
+        const JsonContainer schema = parameter_schemas(name);
+
+        auto arguments = JsonContainer::object();
+        size_t pos = params.find(PARAMETER_OPEN);
+        while (pos != std::string::npos) {
+            const size_t key_start = pos + PARAMETER_OPEN.size();
+            const size_t key_end = params.find('>', key_start);
+            if (key_end == std::string::npos) {
+                break;
+            }
+            const std::string key = params.substr(key_start, key_end - key_start);
+            // The value ends at its close tag, or where the next parameter starts if the model skipped it.
+            size_t value_end = std::min(params.find(PARAMETER_CLOSE, key_end), params.find(PARAMETER_OPEN, key_end));
+            std::string value =
+                params.substr(key_end + 1,
+                              value_end == std::string::npos ? std::string::npos : value_end - key_end - 1);
+            // The template wraps each value in newlines; the value's own newlines stay.
+            if (!value.empty() && value.front() == '\n') {
+                value.erase(0, 1);
+            }
+            if (!value.empty() && value.back() == '\n') {
+                value.pop_back();
+            }
+            arguments[key] = typed_value(value, schema.contains(key) ? schema[key] : JsonContainer());
+            pos = value_end == std::string::npos ? std::string::npos : params.find(PARAMETER_OPEN, value_end);
+        }
+        return JsonContainer({{"name", name}, {"arguments", arguments}});
+    }
+
+    // The "properties" of the named tool's parameters, or an empty object when it is not known.
+    JsonContainer parameter_schemas(const std::string& name) const {
+        if (!m_tools.is_array()) {
+            return JsonContainer::object();
+        }
+        for (size_t i = 0; i < m_tools.size(); ++i) {
+            JsonContainer tool = m_tools[i];
+            if (!tool.is_object()) {
+                continue;
+            }
+            JsonContainer function = tool.contains("function") ? tool["function"] : tool;
+            if (!function.is_object() || !function.contains("name") || function["name"].as_string() != name) {
+                continue;
+            }
+            if (function.contains("parameters") && function["parameters"].is_object() &&
+                function["parameters"].contains("properties") && function["parameters"]["properties"].is_object()) {
+                return function["parameters"]["properties"];
+            }
+            break;
+        }
+        return JsonContainer::object();
+    }
+
+    static JsonContainer typed_value(const std::string& value, const JsonContainer& schema) {
+        if (!schema.is_object() || !schema.contains("type") || declares_string(schema["type"])) {
+            return JsonContainer(value);
+        }
+        try {
+            return JsonContainer::from_json_string(value);
+        } catch (const std::exception&) {
+            return JsonContainer(value);
+        }
+    }
+
+    // "type" is a name or a list of names (e.g. ["string", "null"]).
+    static bool declares_string(const JsonContainer& type) {
+        if (type.is_string()) {
+            return type.get_string() == "string";
+        }
+        if (type.is_array()) {
+            for (size_t i = 0; i < type.size(); ++i) {
+                if (type[i].as_string() == "string") {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+};
+
+Qwen3CoderToolParser::Qwen3CoderToolParser(const JsonContainer& tools) {
+    m_impl = std::make_unique<Qwen3CoderToolParserImpl>(tools);
+}
+
+void Qwen3CoderToolParser::parse(JsonContainer& message) {
+    m_impl->parse(message);
+}
+
+Qwen3CoderToolParser::~Qwen3CoderToolParser() = default;
 
 class ReasoningParser::ReasoningParserImpl {
 public:
