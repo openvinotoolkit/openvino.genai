@@ -39,10 +39,10 @@ def main():
 
     config = pipe.get_generation_config()
 
-    # If language is known in advance it can be passed to the pipeline
-    # In the form of "<|en|>" for Whisper models. Supported by multilingual models only
-    # In the form of "English" for Qwen3-ASR models.
-    config.language = "<|en|>"
+    # If the language is known in advance, it can be passed to the pipeline:
+    # - Whisper: use a language code such as "en". Other languages require a multilingual model.
+    # - Qwen3-ASR: use a language name such as "English".
+    config.language = "en"
 
     # Whisper models parameters. Ignored for Qwen3-ASR models
     config.task = "transcribe"
