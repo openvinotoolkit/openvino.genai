@@ -139,8 +139,12 @@ class FunASRSourceTranscriber:
             )
 
         if torch_dtype is not None:
-            # Cast only the decoder: casting the audio encoder breaks inference with its FP32 inputs.
-            self.model.model.llm.to(dtype=torch_dtype)
+            # Keep the audio encoder in FP32; cast only Fun-ASR's LLM decoder.
+            decoder = getattr(self.model.model, "llm", None)
+            if decoder is not None:
+                decoder.to(dtype=torch_dtype)
+            elif torch_dtype != torch.float32:
+                raise ValueError("SenseVoice source evaluation supports only FP32 (--torch-dtype fp32).")
 
     def transcribe(self, audio, max_new_tokens: int) -> str:
         import torch
@@ -167,17 +171,16 @@ class FunASROptimumTranscriber:
         import torch
 
         inputs = self.model.preprocess_input(audio, sampling_rate=AUDIO_SAMPLING_RATE, **self.preprocess_kwargs)
-        prompt_len = -1
-        if "decoder_input_ids" in inputs:
-            prompt_len = inputs["decoder_input_ids"].shape[-1]
+        prompt_len = inputs["decoder_input_ids"].shape[-1] if "decoder_input_ids" in inputs else None
         with torch.inference_mode():
-            tokens = self.model.generate(**inputs, max_new_tokens=max_new_tokens)
-        tokens = getattr(tokens, "sequences", tokens)
+            output = self.model.generate(**inputs, max_new_tokens=max_new_tokens)
+        output = getattr(output, "sequences", output)
 
-        if "decoder_input_ids" in inputs:
-            return self.tokenizer.batch_decode(tokens[:, prompt_len:], skip_special_tokens=True)[0].strip()
-        else:
-            return tokens
+        if prompt_len is not None:
+            return self.tokenizer.batch_decode(output[:, prompt_len:], skip_special_tokens=True)[0].strip()
+
+        # SenseVoice generate() returns decoded text.
+        return (output if isinstance(output, str) else str(output[0])).strip()
 
 
 class FunASRGenAITranscriber:
@@ -250,7 +253,7 @@ class ASROptimumTranscriber:
 
             model = OVModelForSpeechSeq2Seq.from_pretrained(model_id, device=device, ov_config=ov_config)
             if model_type == "sense_voice":
-                tokenizer = None # SenseVoice generate returns decoded text
+                tokenizer = None
             else:
                 subfolder = FUNASR_TOKENIZER_SUBFOLDER if model_type == "funasr" else ""
                 tokenizer = AutoTokenizer.from_pretrained(str(model_id), subfolder=subfolder)
