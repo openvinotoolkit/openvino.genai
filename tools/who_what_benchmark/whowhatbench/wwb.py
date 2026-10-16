@@ -619,6 +619,68 @@ def check_args(args):
         raise ValueError(f"For --model-type {args.model_type}, only --metrics={Metrics.SIMILARITY.value} is supported.")
 
 
+def _load_visual_text_csv(args, csv_path):
+    """Load a local CSV dataset for visual-text model types.
+
+    The CSV must contain a ``prompts`` column and may contain ``images`` and
+    ``videos`` columns. Image/video paths are resolved deterministically relative
+    to the CSV's own directory (absolute paths are kept as-is). Images are loaded
+    into RGB ``PIL.Image`` objects so the visual-text evaluator can consume them
+    directly. This keeps the behavior generic (no model-name special-casing) and
+    gives a deterministic offline alternative to the remote default dataset.
+    """
+    import pandas as pd
+    from PIL import Image
+
+    frame = pd.read_csv(csv_path, keep_default_na=False)
+    if "prompts" not in frame.columns:
+        raise ValueError(
+            f"--dataset CSV '{csv_path}' must contain a 'prompts' column "
+            "for visual-text model types."
+        )
+
+    base_dir = Path(csv_path).expanduser().resolve().parent
+
+    def _resolve(cell):
+        if cell is None:
+            return None
+        text = str(cell).strip()
+        if text == "" or text.lower() == "nan":
+            return None
+        candidate = Path(text).expanduser()
+        if not candidate.is_absolute():
+            candidate = (base_dir / candidate)
+        return candidate
+
+    prompts = [str(p) for p in frame["prompts"].tolist()]
+    n = len(prompts)
+
+    if "images" in frame.columns:
+        images = []
+        for cell in frame["images"].tolist():
+            resolved = _resolve(cell)
+            if resolved is None:
+                images.append(None)
+            else:
+                images.append(Image.open(resolved).convert("RGB"))
+    else:
+        images = [None] * n
+
+    if "videos" in frame.columns:
+        videos = [(_resolve(cell).as_posix() if _resolve(cell) is not None else None)
+                  for cell in frame["videos"].tolist()]
+    else:
+        videos = [None] * n
+
+    if args.num_samples is not None:
+        prompts = prompts[: args.num_samples]
+        images = images[: args.num_samples]
+        videos = videos[: args.num_samples]
+
+    logger.info("Visual-text prompts loaded from local CSV %s: count=%d", csv_path, len(prompts))
+    return {"prompts": prompts, "images": images, "videos": videos}
+
+
 def load_prompts(args):
     if args.dataset is None:
         return None
@@ -630,9 +692,18 @@ def load_prompts(args):
     path, separator, name = args.dataset.partition(",")
     candidate_path = Path(path).expanduser()
     is_json_dataset_file = path.lower().endswith((".json", ".jsonl"))
+    is_csv_dataset_file = path.lower().endswith(".csv")
     looks_like_local_path = (
         candidate_path.is_absolute() or path.startswith(("./", "../", "~/")) or candidate_path.exists()
     )
+    if is_csv_dataset_file and looks_like_local_path:
+        if args.model_type in ("visual-text", "visual-video-text", "visual-text-only"):
+            return _load_visual_text_csv(args, candidate_path)
+        raise ValueError(
+            "--dataset points to a local .csv file, which is supported only for "
+            "visual-text model types. For other model types, pass a Hugging Face "
+            "dataset id/path[,name] instead."
+        )
     if is_json_dataset_file and looks_like_local_path:
         raise ValueError(
             "--dataset points to a local .json/.jsonl file, which is supported only for "
