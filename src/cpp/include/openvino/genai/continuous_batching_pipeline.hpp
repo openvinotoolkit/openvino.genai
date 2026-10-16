@@ -25,6 +25,7 @@
 namespace ov::genai {
 
 class ContinuousBatchingAdapter;
+class InputsEmbedder;
 
 /**
  * @brief Contains general pipeline metrics, either aggregated throughout the lifetime of the generation pipeline
@@ -162,6 +163,11 @@ protected:
 
     std::shared_ptr<IContinuousBatchingPipeline> m_impl;
 
+    // Tracks if CB pipeline ctor with passed VLMProcessor was used.
+    // Required for add_request(ProcessedInputs) / generate(std::vector<ProcessedInputs>)
+    // to ensure the inputs are produced by the same processor which is used for generation.
+    bool m_uses_external_processor = false;
+
     ContinuousBatchingPipeline() = default;
 
 private:
@@ -193,6 +199,16 @@ private:
                                const ov::AnyMap& properties,
                                const ov::genai::GenerationConfig& generation_config,
                                const std::filesystem::path& model_config_dir = {});
+
+    // Shares an externally-owned InputsEmbedder (e.g. from a VLMProcessor) instead of creating own.
+    // Vision/text-embeddings engine is loaded once and reused.
+    ContinuousBatchingPipeline(const std::shared_ptr<ov::Model>& language_model,
+                               const std::shared_ptr<InputsEmbedder>& inputs_embedder,
+                               const SchedulerConfig& scheduler_config,
+                               const std::string& device,
+                               const std::filesystem::path& config_dir_path,
+                               const ov::AnyMap& properties,
+                               const ov::genai::GenerationConfig& generation_config);
 
 public:
     ContinuousBatchingPipeline(const std::filesystem::path& models_path,
@@ -267,6 +283,26 @@ public:
         const ov::genai::GenerationConfig& generation_config = {}
     );
 
+    // TODO Consider adding extra ctor with models_map + processor if needed
+    /**
+    * @brief Constructs a ContinuousBatchingPipeline from models path and VLMProcessor.
+    *
+    * VLMProcessor owns the vision/text-embeddings engine and shares it with the pipeline.
+    *
+    * @param models_path Path to the dir with the language model IR and generation_config.json.
+    * @param scheduler_config Configuration for the scheduler.
+    * @param processor A VLMProcessor whose vision/text-embeddings engine (InputsEmbedder) is reused.
+    * @param device The device to run the language model on.
+    * @param properties Optional properties for the pipeline.
+    */
+    ContinuousBatchingPipeline(
+        const std::filesystem::path& models_path,
+        const SchedulerConfig& scheduler_config,
+        const VLMProcessor& processor,
+        const std::string& device,
+        const ov::AnyMap& properties = {}
+    );
+
     ov::genai::Tokenizer get_tokenizer() const;
 
     ov::genai::GenerationConfig get_config() const;
@@ -285,6 +321,9 @@ public:
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const ov::genai::GenerationConfig& sampling_params);
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const std::vector<ov::Tensor>& images, const ov::genai::GenerationConfig& sampling_params);
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const std::vector<ov::Tensor>& images, const std::vector<ov::Tensor>& videos, const ov::genai::GenerationConfig& sampling_params);
+
+    /// @brief Add a request with processed inputs from VLMProcessor.
+    GenerationHandle add_request(uint64_t request_id, const ProcessedInputs& inputs, const ov::genai::GenerationConfig& sampling_params);
 
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const ov::AnyMap& properties_map);
 
@@ -362,6 +401,11 @@ public:
     ) {
         return generate(histories, AnyMap{std::forward<Properties>(properties)...});
     }
+
+    std::vector<VLMDecodedResults> generate(
+        const std::vector<ProcessedInputs>& inputs,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer=std::monostate{});
 
     /**
     * @brief start chat with keeping history in kv cache.

@@ -38,6 +38,19 @@ inline void update_image_slice_counts(VLMPerfMetrics& metrics, const std::vector
     }
 }
 
+inline std::unordered_map<std::string, ov::Tensor> deep_copy_tensors_map(
+    const std::unordered_map<std::string, ov::Tensor>& src
+) {
+    std::unordered_map<std::string, ov::Tensor> dst;
+    dst.reserve(src.size());
+    for (const auto& [name, tensor] : src) {
+        ov::Tensor tensor_copy(tensor.get_element_type(), tensor.get_shape());
+        tensor.copy_to(tensor_copy);
+        dst.emplace(name, std::move(tensor_copy));
+    }
+    return dst;
+}
+
 /// @brief Rebase conversation-absolute media indices onto one turn's encoded list. Asserts rather
 /// than wrapping: a size_t underflow here would index far out of bounds instead of failing.
 inline void rebase_media_sequence(std::vector<size_t>& sequence, size_t base_id) {

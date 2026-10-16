@@ -45,6 +45,8 @@ from .py_openvino_genai import (
     VLMPipeline,
     VLMPipelineBase,
     VLMDecodedResults,
+    VLMProcessor,
+    ProcessedInputs,
     VideoMetadata,
 )
 
