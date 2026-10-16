@@ -7,23 +7,38 @@ import inspect
 
 import numpy as np
 from abc import ABC, abstractmethod
+from enum import Enum
 
-from .utils import patch_awq_for_inference, get_ignore_parameters_flag
-from .artifacts_manager import GenerationResults, Metrics
+from whowhatbench.utils import patch_awq_for_inference, get_ignore_parameters_flag
 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+class GenerationResults:
+    def __init__(self, answer_text, prompt_input_ids=None, logits=None, generated_token_ids=None):
+        self.answer_text = answer_text
+        self.prompt_input_ids = prompt_input_ids
+        self.logits = logits
+        self.generated_token_ids = generated_token_ids
+
+
+class Metrics(Enum):
+    SIMILARITY = "similarity"
+    DIVERGENCY = "divergency"
+    KL_DIVERGENCY = "kl_divergency"
+    TOKEN_SIMILARITY = "token_similarity"
+
+
 class BaseGenerationStrategy(ABC):
-    def __init__(self, metrcis_list: list = None):
-        self.metrcis_list = metrcis_list
+    def __init__(self, metrics_list: list = None, **kwargs):
+        self.metrics_list = metrics_list
 
     @property
     def produced_fields(self) -> frozenset:
         fields = {"answer_text"}
-        if self.metrcis_list and Metrics.TOKEN_SIMILARITY.value in self.metrcis_list:
+        if self.metrics_list and Metrics.TOKEN_SIMILARITY.value in self.metrics_list:
             fields.update({"prompt_input_ids", "generated_token_ids"})
         return frozenset(fields)
 
@@ -46,8 +61,8 @@ class BaseGenerationStrategy(ABC):
 
 
 class LlamaCPPGeneration(BaseGenerationStrategy):
-    def __init__(self, metrcis_list: list = None):
-        super().__init__(metrcis_list)
+    def __init__(self, metrics_list: list = None, **kwargs):
+        super().__init__(metrics_list, **kwargs)
 
     def run_generation(
         self,
@@ -77,8 +92,8 @@ class LlamaCPPGeneration(BaseGenerationStrategy):
 
 
 class GenAIGeneration(BaseGenerationStrategy):
-    def __init__(self, metrcis_list: list = None):
-        super().__init__(metrcis_list)
+    def __init__(self, metrics_list: list = None, **kwargs):
+        super().__init__(metrics_list, **kwargs)
 
     def run_generation(
         self,
@@ -94,7 +109,7 @@ class GenAIGeneration(BaseGenerationStrategy):
         assistant_confidence_threshold=0.0,
         generation_config_extra=None,
     ):
-        if Metrics.TOKEN_SIMILARITY.value in self.metrcis_list:
+        if Metrics.TOKEN_SIMILARITY.value in self.metrics_list:
             gen_fn = self.genai_generation_encoded
         else:
             gen_fn = self.genai_generation
@@ -198,8 +213,8 @@ class GenAIGeneration(BaseGenerationStrategy):
 
 
 class OptimumHFGeneration(BaseGenerationStrategy):
-    def __init__(self, metrcis_list: list = None):
-        super().__init__(metrcis_list)
+    def __init__(self, metrics_list: list = None, **kwargs):
+        super().__init__(metrics_list, **kwargs)
 
     def run_generation(
         self,
@@ -253,8 +268,8 @@ class OptimumHFGeneration(BaseGenerationStrategy):
 
 
 class KLDivergencyGeneration(BaseGenerationStrategy):
-    def __init__(self, metrcis_list: list = None, kld_ctx: int = None, kld_chunk: int = None):
-        super().__init__(metrcis_list)
+    def __init__(self, metrics_list: list = None, kld_ctx: int = None, kld_chunk: int = None, **kwargs):
+        super().__init__(metrics_list, **kwargs)
         self.kld_ctx = kld_ctx
         self.kld_chunk = kld_chunk
 
@@ -438,8 +453,8 @@ class LlamaCPPKLDivergencyGeneration(KLDivergencyGeneration):
 class CompositeGenerationStrategy(BaseGenerationStrategy):
     """Runs several strategies one after another and merges the fields each of them is responsible for."""
 
-    def __init__(self, strategies: list, metrcis_list: list = None):
-        super().__init__(metrcis_list)
+    def __init__(self, strategies: list, metrics_list: list = None, **kwargs):
+        super().__init__(metrics_list, **kwargs)
         field_owners = {}
         for strategy in strategies:
             for field in strategy.produced_fields:
@@ -486,37 +501,20 @@ class CompositeGenerationStrategy(BaseGenerationStrategy):
 
 
 class GenerationStrategy:
-    TEXT_ANSWER_METRICS = (Metrics.SIMILARITY.value, Metrics.DIVERGENCY.value, Metrics.TOKEN_SIMILARITY.value)
-
     @staticmethod
-    def create(metrics_list, is_genai, is_llamacpp, kld_ctx=None, kld_chunk=None) -> BaseGenerationStrategy:
-        is_kl_requested = Metrics.KL_DIVERGENCY.value in metrics_list
-        is_answer_requested = any(metric in metrics_list for metric in GenerationStrategy.TEXT_ANSWER_METRICS)
+    def create(
+        metric_strategy, is_genai: bool, is_llamacpp: bool, kld_ctx=None, kld_chunk=None
+    ) -> BaseGenerationStrategy:
+        strategies = {}
+        metrics_list_name = {metric.name for metric in metric_strategy.metrics}
+        for metric in metric_strategy.metrics:
+            # TODO: one class
+            cls_generator = metric.get_generator_cls(is_genai, is_llamacpp)
+            if cls_generator.__name__ not in strategies:
+                strategies[cls_generator.__name__] = cls_generator(
+                    metrics_list_name, kld_ctx=kld_ctx, kld_chunk=kld_chunk
+                )
 
-        strategies = []
-        if is_answer_requested:
-            strategies.append(GenerationStrategy._create_self_sufficient(metrics_list, is_genai, is_llamacpp))
-        if is_kl_requested:
-            strategies.append(
-                GenerationStrategy._create_reference(metrics_list, is_genai, is_llamacpp, kld_ctx, kld_chunk)
-            )
-
-        if len(strategies) == 1:
-            return strategies[0]
-        return CompositeGenerationStrategy(strategies, metrics_list)
-
-    @staticmethod
-    def _create_self_sufficient(metrics_list, is_genai, is_llamacpp) -> BaseGenerationStrategy:
-        if is_genai:
-            return GenAIGeneration(metrics_list)
-        if is_llamacpp:
-            return LlamaCPPGeneration(metrics_list)
-        return OptimumHFGeneration(metrics_list)
-
-    @staticmethod
-    def _create_reference(metrics_list, is_genai, is_llamacpp, kld_ctx, kld_chunk) -> BaseGenerationStrategy:
-        if is_genai:
-            raise ValueError("KL divergency is not supported for GenAI models.")
-        if is_llamacpp:
-            return LlamaCPPKLDivergencyGeneration(metrics_list, kld_ctx, kld_chunk)
-        return KLDivergencyGeneration(metrics_list, kld_ctx, kld_chunk)
+        if len(strategies.values()) == 1:
+            return list(strategies.values())[0]
+        return CompositeGenerationStrategy(list(strategies.values()), metrics_list_name)

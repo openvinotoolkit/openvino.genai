@@ -1,6 +1,10 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+from abc import abstractmethod, ABC
+from dataclasses import dataclass
+from typing import Any
+
 import torch
 import logging
 
@@ -9,25 +13,20 @@ import pandas as pd
 from enum import Enum
 from pathlib import Path
 from collections import OrderedDict
+from whowhatbench.text_generation_strategies import (
+    GenAIGeneration,
+    OptimumHFGeneration,
+    LlamaCPPGeneration,
+    KLDivergencyGeneration,
+    LlamaCPPKLDivergencyGeneration,
+    GenerationResults,
+    Metrics,
+)
+from whowhatbench.whowhat_metrics import TextSimilarity, TextDivergency, KLDivergency
 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-
-class GenerationResults:
-    def __init__(self, answer_text, prompt_input_ids=None, logits=None, generated_token_ids=None):
-        self.answer_text = answer_text
-        self.prompt_input_ids = prompt_input_ids
-        self.logits = logits
-        self.generated_token_ids = generated_token_ids
-
-
-class Metrics(Enum):
-    SIMILARITY = "similarity"
-    DIVERGENCY = "divergency"
-    KL_DIVERGENCY = "kl_divergency"
-    TOKEN_SIMILARITY = "token_similarity"
 
 
 class MetricStorageKind(Enum):
@@ -36,37 +35,139 @@ class MetricStorageKind(Enum):
     TEXT_FILE = "text_file"
 
 
-class ArtifactsSchema:
-    def __init__(self, metrics_list, long_prompts=True):
-        self.artifacts_schema = OrderedDict([("prompts", MetricStorageKind.CSV)])
+class Artifact(Enum):
+    PROMPTS = "prompts"
+    ANSWER = "answers"
+    PROMPT_INPUT_IDS = "prompt_input_ids"
+    GENERATED_TOKEN_IDS = "generated_token_ids"
+    LOGITS = "logits"
+
+
+@dataclass(frozen=True)
+class MetricContext:
+    tokenizer: Any = None
+    similarity_model_id: str = "sentence-transformers/all-mpnet-base-v2"
+    kld_ctx: int | None = None
+    kld_chunk: int | None = None
+
+
+class MetricSpec(ABC):
+    name: str = None
+
+    def __init__(self, long_prompts=False, **kwargs):
+        self.required_artifacts: dict[Artifact, MetricStorageKind] = OrderedDict(
+            [(Artifact.PROMPTS, MetricStorageKind.CSV)]
+        )
         self.output_dir_required = False
 
         if long_prompts:
-            self.artifacts_schema["prompts"] = MetricStorageKind.TEXT_FILE
+            self.required_artifacts[Artifact.PROMPTS] = MetricStorageKind.TEXT_FILE
             self.output_dir_required = True
 
-        if Metrics.SIMILARITY.value in metrics_list or Metrics.DIVERGENCY.value in metrics_list:
-            self.artifacts_schema["answers"] = MetricStorageKind.CSV
+    @abstractmethod
+    def create_score_evaluator(self, context):
+        """Returns an object with evaluate(gt, prediction) -> (metrics, metrics_per_prompt)."""
 
-        if Metrics.TOKEN_SIMILARITY.value in metrics_list:
-            self.artifacts_schema["prompt_input_ids"] = MetricStorageKind.NPY
-            self.artifacts_schema["generated_token_ids"] = MetricStorageKind.NPY
-            self.output_dir_required = True
+    @staticmethod
+    def get_generator_cls(is_genai, is_llamacpp):
+        if is_genai:
+            return GenAIGeneration
+        if is_llamacpp:
+            return LlamaCPPGeneration
+        return OptimumHFGeneration
 
-        if Metrics.KL_DIVERGENCY.value in metrics_list:
-            self.artifacts_schema["prompt_input_ids"] = MetricStorageKind.NPY
-            self.artifacts_schema["generated_token_ids"] = MetricStorageKind.NPY
-            self.artifacts_schema["logits"] = MetricStorageKind.NPY
-            self.output_dir_required = True
+
+class SimilaritySpec(MetricSpec):
+    name = Metrics.SIMILARITY.value
+
+    def __init__(self, long_prompts=False, **kwargs):
+        super().__init__(long_prompts, **kwargs)
+        self.required_artifacts.update({Artifact.ANSWER: MetricStorageKind.CSV})
+
+    def create_score_evaluator(self, context):
+        return TextSimilarity(context.similarity_model_id)
+
+
+class DivergencySpec(MetricSpec):
+    name = Metrics.DIVERGENCY.value
+
+    def __init__(self, long_prompts=False, **kwargs):
+        super().__init__(long_prompts, **kwargs)
+        self.required_artifacts.update({Artifact.ANSWER: MetricStorageKind.CSV})
+
+    def create_score_evaluator(self, context):
+        if context.tokenizer is None:
+            raise ValueError("Tokenizer must be provided in the context for 'divergency' metric.")
+        return TextDivergency(context.tokenizer)
+
+
+class TokenSimilaritySpec(MetricSpec):
+    name = Metrics.TOKEN_SIMILARITY.value
+
+    def __init__(self, long_prompts=False, **kwargs):
+        super().__init__(long_prompts, **kwargs)
+        self.required_artifacts.update(
+            {Artifact.GENERATED_TOKEN_IDS: MetricStorageKind.NPY, Artifact.PROMPT_INPUT_IDS: MetricStorageKind.NPY}
+        )
+        self.output_dir_required = True
+
+    def create_score_evaluator(self, context):
+        return None
+
+
+class KLDivergencySpec(MetricSpec):
+    name = Metrics.KL_DIVERGENCY.value
+
+    def __init__(self, long_prompts=False, **kwargs):
+        super().__init__(long_prompts, **kwargs)
+        self.required_artifacts.update(
+            {Artifact.LOGITS: MetricStorageKind.NPY, Artifact.PROMPT_INPUT_IDS: MetricStorageKind.NPY}
+        )
+        self.output_dir_required = True
+
+    def create_score_evaluator(self, context):
+        return KLDivergency()
+
+    @staticmethod
+    def get_generator_cls(is_genai, is_llamacpp, **kwargs):
+        if is_genai:
+            raise ValueError("KL divergency is not supported for GenAI models.")
+        if is_llamacpp:
+            return LlamaCPPKLDivergencyGeneration
+        return KLDivergencyGeneration
+
+
+class MetricsStrategy:
+    metric_types = {
+        Metrics.SIMILARITY.value: SimilaritySpec,
+        Metrics.DIVERGENCY.value: DivergencySpec,
+        Metrics.TOKEN_SIMILARITY.value: TokenSimilaritySpec,
+        Metrics.KL_DIVERGENCY.value: KLDivergencySpec,
+    }
+
+    def __init__(self, metrics_list, long_prompt=False):
+        self.output_dir_required = False
+        self.artifacts_schema = OrderedDict()
+
+        self.metrics = []
+        for metric in metrics_list:
+            new_metric = MetricsStrategy.metric_types[metric](long_prompts=long_prompt)
+            self.metrics.append(new_metric)
+            if self.metrics[-1].output_dir_required:
+                self.output_dir_required = True
+
+            for artifact_name, storage_kind in new_metric.required_artifacts.items():
+                self.artifacts_schema[artifact_name.value] = storage_kind
 
 
 class ArtifactsManager:
     DEFAULT_ARTIFACT_ROOT = "wwb_output"
 
-    def __init__(self, artifacts_schema: ArtifactsSchema, artifact_root: Path | None):
-        self.artifacts_schema = artifacts_schema.artifacts_schema
+    def __init__(self, metrics: MetricsStrategy, artifact_root: Path | None):
+        self.artifacts_schema = metrics.artifacts_schema
         self.artifact_root = None
-        if artifacts_schema.output_dir_required:
+        self.metrics_list = {metric.name for metric in metrics.metrics}
+        if metrics.output_dir_required:
             self.artifact_root = artifact_root or self.DEFAULT_ARTIFACT_ROOT
             self.artifact_root = Path(self.artifact_root)
             if self.artifact_root.exists():
@@ -118,7 +219,7 @@ class ArtifactsManager:
             return str(artifact_path)
         raise ValueError(f"Unsupported storage kind: {storage_kind}")
 
-    def build_csv(self, language: str, long_prompt: bool, metrcis_list: list = None):
+    def build_csv(self, language: str, long_prompt: bool):
         res_data = {"prompts": list(self.artifacts["prompts"])}
         for key in [
             "logits",
@@ -133,5 +234,5 @@ class ArtifactsManager:
         df = pd.DataFrame(res_data)
         df["language"] = language
         df["prompt_length_type"] = "long" if long_prompt else "short"
-        df["metrics"] = ";".join(metrcis_list) if metrcis_list else ""
+        df["metrics"] = ";".join(self.metrics_list) if self.metrics_list else ""
         return df
