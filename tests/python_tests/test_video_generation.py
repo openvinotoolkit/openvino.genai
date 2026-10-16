@@ -1185,6 +1185,21 @@ class TestAutoEncoderKLLTXVideoTimestepConditioning:
         decoded = vae.decode(latent, timestep)
         np.testing.assert_array_equal(decoded.data, np.full([2, 1, 1, 1, 3], 255, dtype=np.uint8))
 
+    def test_decode_rejects_batch_mismatched_with_compiled_vae(self, conditioned_vae_path):
+        vae = ov_genai.AutoencoderKLLTXVideo(str(conditioned_vae_path))
+        vae.reshape(2, 1, 1, 1)
+        vae.compile("CPU")
+
+        batch_latent = ov.Tensor(np.zeros([2, 3, 1, 1, 1], dtype=np.float32))
+        assert vae.decode(batch_latent).shape[0] == 2
+        assert vae.decode(batch_latent, ov.Tensor(np.zeros([2], dtype=np.float32))).shape[0] == 2
+
+        single_latent = ov.Tensor(np.zeros([1, 3, 1, 1, 1], dtype=np.float32))
+        with pytest.raises(RuntimeError, match="expected 2, got 1"):
+            vae.decode(single_latent)
+        with pytest.raises(RuntimeError, match="expected 2, got 1"):
+            vae.decode(single_latent, ov.Tensor(np.zeros([1], dtype=np.float32)))
+
     def test_decode_rejects_non_fp32_timestep(self, conditioned_vae_path):
         vae = ov_genai.AutoencoderKLLTXVideo(str(conditioned_vae_path))
         vae.compile("CPU")

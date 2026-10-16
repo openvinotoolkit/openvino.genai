@@ -128,6 +128,13 @@ std::pair<int64_t, int64_t> get_transformer_patch_size(const std::filesystem::pa
     return {patch_size, patch_size_t};
 }
 
+void assert_decoder_batch_compatible(const ov::CompiledModel& decoder, size_t latent_batch) {
+    const auto compiled_batch = decoder.input("latent_sample").get_partial_shape()[0];
+    OPENVINO_ASSERT(compiled_batch.compatible(latent_batch),
+                    "VAE decoder latent batch size must match the compiled decoder batch size (expected ",
+                    compiled_batch, ", got ", latent_batch, ")");
+}
+
 } // namespace
 
 AutoencoderKLLTXVideo::Config::Config(const std::filesystem::path& config_path) {
@@ -301,6 +308,7 @@ ov::Tensor AutoencoderKLLTXVideo::decode(const ov::Tensor& latent) {
         return decode(latent, timestep);
     }
 
+    assert_decoder_batch_compatible(m_decoder_request.get_compiled_model(), latent.get_shape()[0]);
     m_decoder_request.set_tensor("latent_sample", latent);
     m_decoder_request.infer();
     return m_decoder_request.get_output_tensor();
@@ -320,6 +328,7 @@ ov::Tensor AutoencoderKLLTXVideo::decode(const ov::Tensor& latent, const ov::Ten
     OPENVINO_ASSERT(timestep.get_shape()[0] == latent.get_shape()[0],
                     "VAE decoder timestep batch size must match latent batch size");
 
+    assert_decoder_batch_compatible(m_decoder_request.get_compiled_model(), latent.get_shape()[0]);
     m_decoder_request.set_tensor("latent_sample", latent);
     m_decoder_request.set_tensor("timestep", timestep);
     m_decoder_request.infer();
