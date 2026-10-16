@@ -1,0 +1,31 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+cmake_minimum_required(VERSION 3.26)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    project(automatic_speech_recognition_c LANGUAGES C)
+endif()
+
+find_package(OpenVINOGenAI REQUIRED
+    PATHS
+        "${CMAKE_BINARY_DIR}"  # Reuse the package from the build.
+        ${OpenVINO_DIR}  # GenAI may be installed alogside OpenVINO.
+    NO_CMAKE_FIND_ROOT_PATH
+)
+
+# Automatic Speech Recognition Sample
+add_executable(automatic_speech_recognition_c automatic_speech_recognition.c ../whisper_speech_recognition/whisper_utils.c)
+
+# Specifies that the source file should be compiled as a C source file
+set_source_files_properties(automatic_speech_recognition.c ../whisper_speech_recognition/whisper_utils.c PROPERTIES LANGUAGE C)
+target_link_libraries(automatic_speech_recognition_c PRIVATE openvino::genai::c)
+
+set_target_properties(automatic_speech_recognition_c PROPERTIES
+    # Ensure out-of-box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+# Install
+install(TARGETS automatic_speech_recognition_c
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
