@@ -2011,10 +2011,11 @@ def test_model_tags_representation(
         messages = [{"role": "user", "content": f"{ov_pipe_model.get_media_tag(modality_type)(0)}{prompt}"}]
         templated_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     else:
+        trust_remote_code = get_auto_processor_trust_remote_code(model_id)
         processor = retry_request(
             lambda: transformers.AutoProcessor.from_pretrained(
                 model_cached,
-                trust_remote_code=True,
+                trust_remote_code=trust_remote_code,
                 **align_with_optimum_cli,
             )
         )
