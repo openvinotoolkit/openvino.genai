@@ -973,6 +973,7 @@ def create_genai_text_2_speech_model(model_path, device, ov_config, memory_data_
     import openvino_genai
 
     is_omni = kwargs.get("is_omni_model", False)
+    is_qwen3_tts = kwargs.get("is_qwen3_tts_model", False)
     processor = None
     if is_kokoro_model_id(model_path):
         # Kokoro uses a custom model type unrecognised by Transformers; skip the tokenizer
@@ -984,7 +985,7 @@ def create_genai_text_2_speech_model(model_path, device, ov_config, memory_data_
             or not (model_path / "openvino_detokenizer.xml").exists()
         ):
             convert_ov_tokenizer(model_path)
-        if not is_omni:
+        if not is_omni and not is_qwen3_tts:
             # OmniPipeline tokenizes internally and reports input tokens via perf_metrics.
             tokenizer_class = kwargs["use_case"].tokenizer_cls
             processor = tokenizer_class.from_pretrained(model_path)
@@ -1047,9 +1048,10 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
         # is not registered in Transformers, so AutoConfig.from_pretrained would raise.
         is_kokoro_model = is_kokoro_model_id(model_path)
         is_omni_model = kwargs.get("is_omni_model", False)
+        is_qwen3_tts_model = kwargs.get("is_qwen3_tts_model", False)
         remote_code = False
         model_config = None
-        if not is_kokoro_model:
+        if not is_kokoro_model and not is_qwen3_tts_model:
             try:
                 model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
             except Exception:
@@ -1073,7 +1075,7 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
         if kwargs.get("mem_consumption"):
             memory_data_collector.start()
         start = time.perf_counter()
-        if is_kokoro_model:
+        if is_kokoro_model or is_qwen3_tts_model:
             ov_model = model_class.from_pretrained(
                 model_path,
                 device=device,
@@ -1134,6 +1136,8 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
                 return self.generate_from_preprocessed(preprocessed)
 
         ov_model = KokoroOVModelWrapper(ov_model)
+        processor = None
+    elif is_qwen3_tts_model:
         processor = None
     else:
         processor = tokenizer_class.from_pretrained(model_path)

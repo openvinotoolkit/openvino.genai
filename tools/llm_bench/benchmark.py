@@ -533,6 +533,28 @@ def get_argparser():
         ),
     )
     parser.add_argument(
+        "--speech_instruct",
+        type=str,
+        default="",
+        help="Instruction text for Qwen3-TTS VoiceDesign/CustomVoice models.",
+    )
+    parser.add_argument(
+        "--speech_ref_audio",
+        "--speech-ref-audio",
+        dest="speech_ref_audio",
+        type=str,
+        default="",
+        help="Reference WAV file path for Qwen3-TTS Base voice cloning (required for Base models).",
+    )
+    parser.add_argument(
+        "--speech_ref_text",
+        "--speech-ref-text",
+        dest="speech_ref_text",
+        type=str,
+        default="",
+        help="Optional reference transcript for Qwen3-TTS Base ICL mode.",
+    )
+    parser.add_argument(
         "-vf",
         "--video_frames",
         type=int,
