@@ -1,6 +1,9 @@
 GHA:
   revalidate: 'all'
 
+build:
+  revalidate: 'all'
+
 tokenizers:
   revalidate: 'all'
 
@@ -18,7 +21,12 @@ tests_dependencies:
     - RAG
     - WWB
     - llm_bench
+    - image_generation
     - video_generation
+    - speech_generation
+    - speculative_decoding
+    - prompt_lookup
+    - JS_API
 
 samples_dependencies:
   revalidate:
@@ -62,6 +70,9 @@ sampling:
     - llm_bench
     - WWB
 
+structured_output_generation:
+  revalidate: []
+
 LoRA:
   revalidate:
     - LLM
@@ -90,6 +101,8 @@ visual_language:
 omni:
   revalidate:
     - llm_bench
+    - WWB
+    - VLM_samples
 
 automatic_speech_recognition:
   revalidate:
@@ -117,6 +130,8 @@ speech_generation:
   revalidate:
     - Speech_generation_samples
     - omni
+    - llm_bench
+    - WWB
 
 continuous_batching:
   revalidate:
@@ -148,6 +163,9 @@ prompt_lookup:
 LLM_samples:
   revalidate: []
 
+Structured_Output_samples:
+  revalidate: []
+
 automatic_speech_recognition_samples:
   revalidate: []
 
@@ -172,10 +190,18 @@ GGUF:
 C_API:
   revalidate:
     - LLM_samples
+    - automatic_speech_recognition_samples
+    - VLM_samples
+    - Speech_generation_samples
 
 JS_API:
   revalidate:
     - LLM_samples
+    - automatic_speech_recognition_samples
+    - Image_generation_samples
+    - VLM_samples
+    - RAG_samples
+    - Speech_generation_samples
 
 llm_bench:
   revalidate: []
