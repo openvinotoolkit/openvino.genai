@@ -324,6 +324,68 @@ void reshape_draft_hidden_states_input_for_cb(std::shared_ptr<ov::Model>& model)
     model->validate_nodes_and_infer_types();
 }
 
+void move_fc_from_draft_to_main(const std::shared_ptr<ov::Model>& draft_model,
+                                const std::shared_ptr<ov::Model>& main_model) {
+    OPENVINO_ASSERT(draft_model && main_model, "DFlash FC move requires both target and draft models.");
+
+    auto hidden_param = find_hidden_states_parameter(draft_model);
+    OPENVINO_ASSERT(hidden_param, "DFlash draft model must have 'hidden_states' input.");
+
+    std::shared_ptr<ov::op::v0::MatMul> fc_matmul;
+    for (auto consumer : hidden_param->output(0).get_target_inputs()) {
+        if (auto matmul = ov::as_type_ptr<ov::op::v0::MatMul>(consumer.get_node()->shared_from_this())) {
+            fc_matmul = matmul;
+            break;
+        }
+    }
+    if (!fc_matmul) {
+        return;
+    }
+
+    const auto fc_out_shape = fc_matmul->output(0).get_partial_shape();
+    OPENVINO_ASSERT(fc_out_shape.rank().is_static(), "DFlash draft FC output must have static rank.");
+    const auto reduced_hidden = fc_out_shape[fc_out_shape.rank().get_length() - 1];
+    OPENVINO_ASSERT(reduced_hidden.is_static(), "DFlash draft FC output hidden width must be static.");
+
+    // Clone the FC weight subgraph so the target owns it; the recursive clone carries any
+    // decompression chain (f16/INT4) intact.
+    auto weight_source = fc_matmul->input_value(1);
+    std::unordered_map<ov::Node*, std::shared_ptr<ov::Node>> cloned_nodes;
+    auto cloned_weight = eagle3::clone_node_recursive(weight_source.get_node_shared_ptr(), cloned_nodes);
+    OPENVINO_ASSERT(cloned_weight, "DFlash: failed to clone the draft FC weight subgraph.");
+    auto cloned_weight_out = cloned_weight->output(weight_source.get_index());
+    const bool transpose_a = fc_matmul->get_transpose_a();
+    const bool transpose_b = fc_matmul->get_transpose_b();
+
+    // Drop the FC from the draft: its consumers now read the reduced-width hidden_states directly.
+    for (auto consumer : fc_matmul->output(0).get_target_inputs()) {
+        consumer.replace_source_output(hidden_param->output(0));
+    }
+    auto param_shape = hidden_param->get_partial_shape();
+    param_shape[param_shape.rank().get_length() - 1] = reduced_hidden;
+    hidden_param->set_partial_shape(param_shape);
+    draft_model->validate_nodes_and_infer_types();
+
+    // Apply the FC on the target's exposed hidden state so the published buffer is already reduced.
+    std::shared_ptr<ov::op::v0::Result> hidden_result;
+    for (const auto& result : main_model->get_results()) {
+        if (result->output(0).get_names().count(LAST_HIDDEN_STATE_OUTPUT_NAME) != 0 ||
+            result->get_friendly_name() == LAST_HIDDEN_STATE_OUTPUT_NAME) {
+            hidden_result = result;
+            break;
+        }
+    }
+    OPENVINO_ASSERT(hidden_result,
+                    "DFlash target model must expose 'last_hidden_state' before moving the FC.");
+    auto fc = std::make_shared<ov::op::v0::MatMul>(hidden_result->input_value(0),
+                                                   cloned_weight_out,
+                                                   transpose_a,
+                                                   transpose_b);
+    fc->set_friendly_name("dflash_hidden_state_fc");
+    hidden_result->input(0).replace_source_output(fc->output(0));
+    main_model->validate_nodes_and_infer_types();
+}
+
 void attach_target_lm_head_to_draft(const std::shared_ptr<ov::Model>& main_model,
                                     const std::shared_ptr<ov::Model>& draft_model) {
     OPENVINO_ASSERT(main_model && draft_model, "DFlash lm_head graft requires both target and draft models.");
