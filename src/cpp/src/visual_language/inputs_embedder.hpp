@@ -70,9 +70,20 @@ public:
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
+    std::vector<ov::genai::EncodedImage> encode_images(
+        const std::vector<ov::Tensor>& images,
+        bool has_video_inputs
+    );
+
     std::vector<ov::genai::EncodedVideo> encode_videos(
         const std::vector<ov::Tensor>& videos,
         const std::vector<VideoMetadata>& videos_metadata = {}
+    );
+
+    std::vector<ov::genai::EncodedVideo> encode_videos(
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata,
+        const std::vector<ov::genai::EncodedImage>& images
     );
 
     std::vector<EncodedAudio> encode_audios(const std::vector<ov::Tensor>& audios);
@@ -212,9 +223,20 @@ private:
 
         virtual std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
+        virtual std::vector<ov::genai::EncodedImage> encode_images(
+            const std::vector<ov::Tensor>& images,
+            bool has_video_inputs
+        );
+
         virtual std::vector<ov::genai::EncodedVideo> encode_videos(
             const std::vector<ov::Tensor>& videos,
             const std::vector<VideoMetadata>& videos_metadata = {}
+        );
+
+        virtual std::vector<ov::genai::EncodedVideo> encode_videos(
+            const std::vector<ov::Tensor>& videos,
+            const std::vector<VideoMetadata>& videos_metadata,
+            const std::vector<ov::genai::EncodedImage>& images
         );
 
         /// @brief Encode each audio independently, holding no state. The default guards the input
