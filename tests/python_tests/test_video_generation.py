@@ -485,6 +485,10 @@ class TestVideoGenerationPipelines:
         single_result = pipe.decode(single_latent, generation_config=decode_config)
         assert single_result.video.shape == [1, 9, 32, 32, 3]
 
+        malformed_batch_latent = ov.Tensor(np.zeros([2, 1, 1], dtype=np.float32))
+        with pytest.raises(RuntimeError, match="decode_timestep list length"):
+            pipe.decode(malformed_batch_latent, generation_config=decode_config)
+
         with pytest.raises(RuntimeError, match="decode_timestep list length"):
             pipe.decode(single_latent)
         assert pipe.decode(latents[0]).video.shape == [2, 9, 32, 32, 3]

@@ -246,7 +246,11 @@ class LTXPipeline : public VideoPipeline {
                         "Decode-time noise interpolation requires f32 latents, got ",
                         latent.get_element_type());
         OPENVINO_ASSERT(latent.get_shape().size() == 3, "unpack_latents expects [B, S, D] input shape");
-        m_vae->validate_decoder_batch(latent.get_shape()[0]);
+        const size_t batch_size = latent.get_shape()[0];
+        m_vae->validate_decoder_batch(batch_size);
+        const auto* timestep_values = std::get_if<std::vector<float>>(&generation_config.decode_timestep);
+        OPENVINO_ASSERT(!timestep_values || timestep_values->size() == batch_size,
+                "decode_timestep list length must match the latent batch size");
 
         ov::Tensor unpacked = video_generation_utils::unpack_latents(latent,
                                                                      m_latent_num_frames,
@@ -261,10 +265,6 @@ class LTXPipeline : public VideoPipeline {
             video_generation_utils::tensor_from_vector(m_vae->get_config().latents_std_data),
             m_vae->get_config().scaling_factor);
 
-        const size_t batch_size = denormalized.get_shape()[0];
-        const auto* timestep_values = std::get_if<std::vector<float>>(&generation_config.decode_timestep);
-        OPENVINO_ASSERT(!timestep_values || timestep_values->size() == batch_size,
-                        "decode_timestep list length must match the latent batch size");
         const float scalar_timestep = timestep_values ? 0.0f : std::get<float>(generation_config.decode_timestep);
         const size_t elements_per_video = denormalized.get_size() / batch_size;
         std::optional<ov::Tensor> timestep;
