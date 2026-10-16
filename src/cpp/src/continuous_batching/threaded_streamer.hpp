@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstdio>
 #include <exception>
 #include <thread>
 #include <utility>
@@ -27,9 +28,17 @@ public:
         try {
             end();
         } catch (const std::exception& e) {
-            GENAI_ERR("Streamer error suppressed in ThreadedStreamerWrapper destructor: %s", e.what());
+            try {
+                GENAI_ERR("Streamer error suppressed in ThreadedStreamerWrapper destructor: %s", e.what());
+            } catch (...) {
+                std::fprintf(stderr, "Streamer error suppressed in ThreadedStreamerWrapper destructor: %s\n", e.what());
+            }
         } catch (...) {
-            GENAI_ERR("Unknown streamer error suppressed in ThreadedStreamerWrapper destructor");
+            try {
+                GENAI_ERR("Unknown streamer error suppressed in ThreadedStreamerWrapper destructor");
+            } catch (...) {
+                std::fprintf(stderr, "Unknown streamer error suppressed in ThreadedStreamerWrapper destructor\n");
+            }
         }
     }
 
