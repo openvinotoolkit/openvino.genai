@@ -443,6 +443,8 @@ class TestVideoGenerationPipelines:
         assert not np.array_equal(per_video[1], no_noise[1])
         np.testing.assert_array_equal(generate(0.0, 0.0), generate([0.0, 0.0], 0.0))
         np.testing.assert_array_equal(generate(1.0, 0.0), generate([1.0, 1.0], 0.0))
+        np.testing.assert_array_equal(generate(1.0), generate([1.0, 1.0]))
+        np.testing.assert_array_equal(generate([1.0, 1.0]), generate([0.0, 0.0], 1.0))
 
     def test_batch_decode_timestep_length_rejected(self, conditioned_video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(conditioned_video_generation_model, "CPU")
