@@ -12,6 +12,7 @@ from openvino_genai import (
     GenerationFinishReason,
     StreamingStatus,
     Llama3JsonToolParser,
+    Llama3PythonicToolParser,
     Phi4ReasoningParser,
     Phi4ReasoningIncrementalParser,
     DeepSeekR1ReasoningIncrementalParser,
@@ -699,6 +700,24 @@ def test_final_parser_llama_32_json(hf_ov_genai_models):
     parser = Llama3JsonToolParser()
     parser.parse(content_json)
     assert content_json["tool_calls"][0] == json.loads(json_str)
+
+
+@pytest.mark.parametrize(
+    "tool_call",
+    [
+        '[get_weather(location="New York, NY", unit="celsius")]',
+        "[get_weather(location='New York, NY', unit='celsius')]",
+        "[get_weather(location='New York, NY', unit=\"celsius\")]",
+    ],
+    ids=["double_quotes", "single_quotes", "mixed_quotes"],
+)
+def test_final_parser_llama_32_pythonic(tool_call):
+    # Pythonic tool calls are Python call syntax, so both quote styles are valid
+    message = {"content": f"Calling weather API: {tool_call}"}
+    Llama3PythonicToolParser().parse(message)
+    assert message["tool_calls"] == [
+        {"name": "get_weather", "arguments": {"location": "New York, NY", "unit": "celsius"}}
+    ]
 
 
 @pytest.mark.parametrize("model_id", ["microsoft/Phi-4-mini-reasoning"])
