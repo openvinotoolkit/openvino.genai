@@ -345,3 +345,83 @@ Beam search and multinomial sampling are not supported.
 
 `assistant_confidence_threshold` must be 0 for EAGLE3 — dynamic-length drafting is a Fast Draft feature.
 :::
+
+## DSpark(DFlash) (Preview)
+
+:::warning Preview
+DSpark(DFlash) support is an experimental preview. Its exported model layout and runtime API may change in future releases.
+:::
+
+A DSpark(DFlash) draft proposes a whole block of candidates in one forward pass of a small backbone that reads the target's hidden states.
+DSpark also corrects every drafted token with a lightweight Markov head that depends on the previous token.
+
+### Model Preparation
+
+Export the target and the DSpark(DFlash) draft with `optimum-cli`. The draft runs with the target's tokenizer, and its Markov head is exported next to the draft backbone:
+
+```sh
+optimum-cli export openvino --model <target> --weight-format int8 target-ov
+optimum-cli export openvino --model <dspark-draft> --task text-generation-with-past --trust-remote-code dspark-draft-ov
+```
+
+The Markov head is exported as `openvino_markov_head_model.xml` and keeps the checkpoint precision: `--weight-format` compresses only the draft backbone.
+
+### Configuration and Usage
+
+`draft_model` reads the Markov head next to the draft backbone and runs it on the draft device, in one of two modes selected by the `markov_head_top_k` draft property:
+
+- Top-K candidate scorer (default, `K = 64`): keeps the `K` best backbone candidates at every drafted position and scores every pair of neighboring candidates with the Markov head in one inference. The pipeline then walks these candidates greedily, position by position. Set `markov_head_top_k` to another `K` between 1 and the vocabulary size to change it.
+- Dense Markov walk (`markov_head_top_k = 0`): corrects every drafted position with the Markov head, one inference per position.
+
+The Top-K candidate scorer is usually much faster. It drafts the same tokens as the dense walk, except where the walk would pick a token outside the `K` candidates; the target model verifies every drafted token either way, so the generated text does not depend on the mode.
+On GPU, the candidate scorer is fast only with an OpenVINO build that includes [openvinotoolkit/openvino#38845](https://github.com/openvinotoolkit/openvino/pull/38845). With earlier versions, its TopK over the vocabulary falls back to a generic GPU kernel, and the default Top-64 draft can be slower than the target alone.
+
+DSpark(DFlash) currently supports only greedy decoding with one sequence per request (no sampling, beam search or adapters) and one request at a time.
+It does not support prefix caching either, so pass a `SchedulerConfig` with `enable_prefix_caching` disabled.
+For a target with linear attention, such as MiniCPM-V 4.7, also set `num_linear_attention_blocks` to at least `num_assistant_tokens + 2`.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python showLineNumbers
+        import openvino_genai
+
+        scheduler_config = openvino_genai.SchedulerConfig()
+        scheduler_config.enable_prefix_caching = False
+        # For a target with linear attention:
+        # scheduler_config.num_linear_attention_blocks = 17
+
+        # Top-64 candidate scorer; pass markov_head_top_k=16 for another K or markov_head_top_k=0 for the dense Markov walk.
+        draft_model = openvino_genai.draft_model("dspark-draft-ov", "GPU")
+        pipe = openvino_genai.LLMPipeline("target-ov", "GPU", draft_model=draft_model, scheduler_config=scheduler_config)
+
+        config = openvino_genai.GenerationConfig()
+        config.max_new_tokens = 100
+        config.num_assistant_tokens = 15
+
+        pipe.generate("What is OpenVINO?", config)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp showLineNumbers
+        #include "openvino/genai/llm_pipeline.hpp"
+
+        ov::genai::SchedulerConfig scheduler_config;
+        scheduler_config.enable_prefix_caching = false;
+        // For a target with linear attention:
+        // scheduler_config.num_linear_attention_blocks = 17;
+
+        // Top-64 candidate scorer; pass ov::AnyMap{{"markov_head_top_k", 16}} for another K or
+        // ov::AnyMap{{"markov_head_top_k", 0}} for the dense Markov walk.
+        ov::genai::LLMPipeline pipe(
+            "target-ov", "GPU",
+            ov::genai::draft_model("dspark-draft-ov", "GPU"),
+            ov::genai::scheduler_config(scheduler_config));
+
+        ov::genai::GenerationConfig config;
+        config.max_new_tokens = 100;
+        config.num_assistant_tokens = 15;
+
+        pipe.generate("What is OpenVINO?", config);
+        ```
+    </TabItemCpp>
+</LanguageTabs>
