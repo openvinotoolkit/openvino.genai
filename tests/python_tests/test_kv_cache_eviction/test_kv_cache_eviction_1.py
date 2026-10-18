@@ -127,7 +127,6 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, apply
 
     evaluator = whowhatbench.Evaluator(base_model=model_cb_noopt, tokenizer=tokenizer, test_data=data_dict,
                                        generation_config=generation_config,
-                                       generation_config_base=generation_config,
                                        max_new_tokens=test_struct.max_new_tokens, seqs_per_request=seqs_per_request)
 
     _, all_metrics = evaluator.score(model_cb_opt)
