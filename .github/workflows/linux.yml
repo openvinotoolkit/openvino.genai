@@ -828,7 +828,10 @@ jobs:
         if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).image_generation }}
         run: |
           model_id="optimum-intel-internal-testing/tiny-random-qwen-image-2.1"
-          cache_identity="model_id=${model_id};revision=default-unpinned;export=optimum-cli export openvino -m ${model_id} --trust-remote-code --weight-format fp16"
+          transformers_version="5.0.0"
+          optimum_intel_ref="main"
+          optimum_intel_package="git+https://github.com/huggingface/optimum-intel.git@${optimum_intel_ref}#egg=optimum-intel"
+          cache_identity="model_id=${model_id};revision=default-unpinned;transformers=${transformers_version};optimum_intel_ref=${optimum_intel_ref};export=optimum-cli export openvino -m ${model_id} --trust-remote-code --weight-format fp16"
           model_base_dir="${{ env.HF_HOME }}/ov_test_models"
           model_dir="${model_base_dir}/tiny-random-qwen-image-2.1"
 
@@ -873,11 +876,15 @@ jobs:
           }
 
           if ! fixture_is_complete "${model_dir}"; then
-            rm -f "${model_dir}/.openvino_export_identity"
             mkdir -p "${model_base_dir}"
+            rm -f "${model_dir}/.openvino_export_identity"
             temp_model_dir="$(mktemp -d "${model_base_dir}/.tiny-random-qwen-image-2.1.XXXXXX")"
             trap 'rm -rf "${temp_model_dir}"' EXIT
-            optimum-cli export openvino -m "${model_id}" --trust-remote-code --weight-format fp16 "${temp_model_dir}"
+            export_venv="${RUNNER_TEMP}/qwen-image21-export-venv"
+            python -m venv --system-site-packages "${export_venv}"
+            "${export_venv}/bin/python" -m pip install "transformers==${transformers_version}"
+            "${export_venv}/bin/python" -m pip install --no-deps "${optimum_intel_package}"
+            "${export_venv}/bin/optimum-cli" export openvino -m "${model_id}" --trust-remote-code --weight-format fp16 "${temp_model_dir}"
             fixture_files_are_complete "${temp_model_dir}"
             rm -rf "${model_dir}"
             mv "${temp_model_dir}" "${model_dir}"
