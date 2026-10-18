@@ -302,8 +302,8 @@ public:
         properties = std::move(gguf_properties.rest);
         utils::clear_false_prompt_lookup_from_config(properties);
         utils::validate_vlm_model_properties(properties);
-        utils::extract_extensions_to_core(properties);
-        auto models = read_gguf_multimodal(models_dir, projector, properties);
+        const auto extensions = utils::extract_extensions_to_core(properties);
+        auto models = read_gguf_multimodal(models_dir, projector, properties, extensions);
         if (gguf_properties.enable_save_ov_model) {
             utils::save_openvino_model(models.language, models_dir.string() + ".language.xml", false);
             for (const auto& [name, model] : models.vlm.models)

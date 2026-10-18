@@ -505,13 +505,18 @@ void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::str
     }
 }
 
-std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& properties) {
+std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,
+                                     const ov::AnyMap& properties,
+                                     const ExtensionList& extensions) {
     const auto gguf_props = extract_gguf_properties(properties);
     const ov::AnyMap& filtered_properties = gguf_props.rest;
     if (is_gguf_model(model_dir)) {
 #ifdef ENABLE_GGUF
         try {
-            return create_from_gguf(model_dir.string(), gguf_props.enable_save_ov_model, gguf_props.use_legacy_reader());
+            return create_from_gguf(model_dir.string(),
+                                    gguf_props.enable_save_ov_model,
+                                    gguf_props.use_legacy_reader(),
+                                    extensions);
         } catch (const std::exception& error) {
             if (!gguf_props.legacy_reader.has_value()) {
                 OPENVINO_THROW(error.what(),
@@ -1124,7 +1129,7 @@ ExtensionList extract_extensions(ov::AnyMap& properties) {
     return extensions;
 }
 
-void extract_extensions_to_core(ov::AnyMap& properties) {
+ExtensionList extract_extensions_to_core(ov::AnyMap& properties) {
     ExtensionList extensions = extract_extensions(properties);
     for (const auto& extension : extensions) {
         if (std::holds_alternative<std::filesystem::path>(extension)) {
@@ -1133,6 +1138,7 @@ void extract_extensions_to_core(ov::AnyMap& properties) {
             singleton_core().add_extension(std::get<std::shared_ptr<ov::Extension>>(extension));
         }
     }
+    return extensions;
 }
 
 void log_attention_backend(const std::string& attention_backend) {

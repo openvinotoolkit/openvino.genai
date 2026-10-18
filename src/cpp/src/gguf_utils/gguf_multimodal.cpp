@@ -8,6 +8,7 @@
 #include <sstream>
 
 #include "gguf_tokenizer.hpp"
+#include "gguf_frontend_extensions.hpp"
 #include "openvino/frontend/gguf/adapt_mmproj_to_genai.hpp"
 #include "openvino/frontend/gguf/extension/genai.hpp"
 #include "openvino/frontend/gguf/frontend.hpp"
@@ -141,18 +142,21 @@ Configs gguf_configs(const std::string& architecture,
 
 GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
                                           const std::filesystem::path& mmproj,
-                                          const ov::AnyMap& properties) {
+                                          const ov::AnyMap& properties,
+                                          const ExtensionList& extensions) {
     namespace gguf = ov::frontend::gguf;
     GGUFMultimodalModels result;
     gguf::FrontEnd frontend;
-    auto genai = std::make_shared<gguf::GenAIExtension>(gguf::GenAIExtension::InputMode::EMBEDS_TO_LOGITS);
-    frontend.add_extension(genai);
+    auto genai = register_gguf_extensions(frontend,
+                                          extensions,
+                                          gguf::GenAIExtension::InputMode::EMBEDS_TO_LOGITS);
     result.language = frontend.convert(frontend.load(language.string()));
     result.language->set_rt_info(ov::element::f16, {"runtime_options", ov::hint::kv_cache_precision.name()});
     auto tokenizer_metadata = take_gguf_tokenizer_metadata(result.language);
     result.stop_token_ids = gguf_stop_token_ids(tokenizer_metadata);
     result.tokenizer = Tokenizer(GGUFTokenizerParameters(std::move(tokenizer_metadata)), properties);
     gguf::FrontEnd projector_frontend;
+    register_gguf_extensions(projector_frontend, extensions);
     auto combined = projector_frontend.convert(projector_frontend.load(mmproj.string()));
     const MmprojMetadata meta(combined);
     const auto architecture = result.language->get_rt_info<std::string>("gguf_architecture");

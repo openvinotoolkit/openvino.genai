@@ -11,6 +11,7 @@
 #    include <unordered_set>
 
 #    include "gguf.hpp"
+#    include "gguf_frontend_extensions.hpp"
 #    include "omni/talker_speech_config_utils.hpp"
 #    include "openvino/frontend/gguf/extension/genai.hpp"
 #    include "openvino/frontend/gguf/frontend.hpp"
@@ -49,6 +50,7 @@ GGUFLFM2Speech::GGUFLFM2Speech(const std::filesystem::path& language,
                                const std::string& device,
                                ov::AnyMap properties) {
     OPENVINO_ASSERT(device == "CPU", "LFM2 GGUF speech generation currently requires CPU");
+    const auto extensions = utils::extract_extensions_to_core(properties);
     const auto path = [&](const std::string& name) {
         auto it = properties.find(name);
         OPENVINO_ASSERT(it != properties.end(), "LFM2 speech requires ", name);
@@ -81,7 +83,7 @@ GGUFLFM2Speech::GGUFLFM2Speech(const std::filesystem::path& language,
     };
     m_text_cadence = cadence("interleaved_n_text", 6);
     m_audio_cadence = cadence("interleaved_n_audio", 12);
-    m_models = read_gguf_multimodal(language, projector, properties);
+    m_models = read_gguf_multimodal(language, projector, properties, extensions);
     OPENVINO_ASSERT(m_models.vlm.config.model_type == VLMModelType::LFM2_AUDIO, "LFM2 speech requires an audio model");
     const auto head = ov::as_type_ptr<ov::op::v0::MatMul>(
         m_models.language->output("logits").get_node()->input_value(0).get_node_shared_ptr());
@@ -100,6 +102,7 @@ GGUFLFM2Speech::GGUFLFM2Speech(const std::filesystem::path& language,
     m_embedder = std::make_shared<InputsEmbedder>(m_models.vlm, m_models.tokenizer, device, properties);
     attach_gguf_audio_encoder(*m_embedder, m_models, device, properties);
     ov::frontend::gguf::FrontEnd frontend;
+    register_gguf_extensions(frontend, extensions);
     auto speech = frontend.convert(frontend.load(vocoder));
     m_depth = compile(submodel(speech, "audio.depth_logits"), "audio_depthformer");
     m_feedback = compile(submodel(speech, "audio.feedback"), "audio_feedback");
@@ -110,9 +113,7 @@ GGUFLFM2Speech::GGUFLFM2Speech(const std::filesystem::path& language,
                     "LFM2 speech requires a 1280-sample ISTFT window");
     m_window = window->cast_vector<float>();
     ov::frontend::gguf::FrontEnd detok;
-    auto adapter = std::make_shared<ov::frontend::gguf::GenAIExtension>(
-        ov::frontend::gguf::GenAIExtension::InputMode::EMBEDS_TO_LOGITS);
-    detok.add_extension(adapter);
+    register_gguf_extensions(detok, extensions, ov::frontend::gguf::GenAIExtension::InputMode::EMBEDS_TO_LOGITS);
     m_detokenizer = compile(detok.convert(detok.load(detokenizer)), "audio_detokenizer");
     using namespace ov::opset15;
     auto spectrum = std::make_shared<Parameter>(ov::element::f32, ov::PartialShape{-1, 641, 2});

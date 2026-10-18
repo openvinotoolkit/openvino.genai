@@ -429,7 +429,8 @@ static constexpr ov::Property<bool> enable_save_ov_model{"enable_save_ov_model"}
 * for accuracy and does not change the quantized weights stored in the GGUF file.
 * Matching these settings does not guarantee identical output across readers or runtimes.
 *
-* Example: `LLMPipeline(model_path, "CPU", ov::genai::gguf_reader("FRONTEND"))`.
+* Add `ov::genai::extensions(std::vector<std::filesystem::path>{"/path/to/ext.so"})` to the pipeline properties.
+* Those extensions are registered on the GGUF frontend before loading and conversion.
 */
 static constexpr ov::Property<std::string> gguf_reader{"GGUF_READER"};
 
