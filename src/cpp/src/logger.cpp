@@ -19,6 +19,15 @@
 
 namespace ov::genai {
 
+namespace {
+
+// Last resort for a log call that failed. Logging runs in destructors and catch blocks, so it must not throw.
+void write_fallback(std::string_view msg, const char* reason) noexcept {
+    std::fprintf(stderr, "[ERROR] GenAI logger failed (%s): %.*s\n", reason, static_cast<int>(msg.size()), msg.data());
+}
+
+}  // namespace
+
 ov::log::Level get_openvino_env_log_level() {
     const char* env = std::getenv("OPENVINO_LOG_LEVEL");
     if (!env) {
@@ -46,23 +55,33 @@ Logger::Logger() {
     log_level.store(get_cur_log_level(), std::memory_order_relaxed);
 }
 
-void Logger::do_log(ov::log::Level level, const char* file, int line, const std::string& msg) {
-    write_message(level, file, line, msg);
+void Logger::do_log(ov::log::Level level, const char* file, int line, std::string_view msg) noexcept {
+    try {
+        write_message(level, file, line, msg);
+    } catch (const std::exception& ex) {
+        write_fallback(msg, ex.what());
+    } catch (...) {
+        write_fallback(msg, "unknown exception");
+    }
 }
 
-void Logger::log_format(ov::log::Level level, const char* file, int line, const char* format, ...) {
+void Logger::log_format(ov::log::Level level, const char* file, int line, const char* format, ...) noexcept {
     va_list args;
     va_start(args, format);
+    std::string formatted;
     try {
-        log_format_impl(level, file, line, format, args);
+        formatted = format_from_variadic(format, args);
     } catch (const std::exception& ex) {
+        write_fallback(format ? format : "", ex.what());
         va_end(args);
-        throw std::runtime_error(std::string{"Logger format error: "} + ex.what());
+        return;
     } catch (...) {
+        write_fallback(format ? format : "", "unknown exception");
         va_end(args);
-        throw std::runtime_error("Logger format error: unknown exception");
+        return;
     }
     va_end(args);
+    do_log(level, file, line, formatted);
 }
 
 void Logger::set_log_level(ov::log::Level level) {
@@ -74,7 +93,7 @@ bool Logger::should_log(ov::log::Level level) const {
     return current_level != ov::log::Level::NO && level != ov::log::Level::NO && level <= current_level;
 }
 
-void Logger::write_message(ov::log::Level level, const char* file, int line, const std::string& msg) {
+void Logger::write_message(ov::log::Level level, const char* file, int line, std::string_view msg) {
     std::lock_guard<std::mutex> lock(log_mutex);
     std::ostream& out = (level == ov::log::Level::ERR) ? std::cerr : std::cout;
     format_prefix(out, level, file, line);
@@ -86,11 +105,6 @@ void Logger::write_message(ov::log::Level level, const char* file, int line, con
             out << '\n';
         }
     }
-}
-
-void Logger::log_format_impl(ov::log::Level level, const char* file, int line, const char* format, va_list args) {
-    std::string formatted = format_from_variadic(format, args);
-    write_message(level, file, line, formatted);
 }
 
 std::string Logger::format_from_variadic(const char* format, va_list args) const {
