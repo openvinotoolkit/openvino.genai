@@ -395,11 +395,14 @@ class TestVideoGenerationPipelines:
 
         assert callback_called is False
 
-    @pytest.mark.parametrize("decode_config", [
-        {"decode_timestep": 0.0},
-        {"decode_timestep": [0.0]},
-        {"decode_noise_scale": 0.0},
-    ])
+    @pytest.mark.parametrize(
+        "decode_config",
+        [
+            {"decode_timestep": 0.0},
+            {"decode_timestep": [0.0]},
+            {"decode_noise_scale": 0.0},
+        ],
+    )
     def test_unconditioned_vae_rejects_explicit_decode_controls(self, video_generation_model, decode_config):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
         with pytest.raises(RuntimeError, match="require a timestep-conditioned VAE decoder"):
@@ -449,11 +452,20 @@ class TestVideoGenerationPipelines:
     def test_batch_decode_timesteps_match_individual_scales(self, conditioned_video_generation_model):
         def generate(decode_timestep, **decode_options):
             pipe = ov_genai.Text2VideoPipeline(conditioned_video_generation_model, "CPU")
-            return np.array(pipe.generate(
-                "test prompt", height=32, width=32, num_frames=9, num_inference_steps=1,
-                num_videos_per_prompt=2, decode_timestep=decode_timestep,
-                generator=ov_genai.CppStdGenerator(42), **decode_options,
-            ).video.data, copy=True)
+            return np.array(
+                pipe.generate(
+                    "test prompt",
+                    height=32,
+                    width=32,
+                    num_frames=9,
+                    num_inference_steps=1,
+                    num_videos_per_prompt=2,
+                    decode_timestep=decode_timestep,
+                    generator=ov_genai.CppStdGenerator(42),
+                    **decode_options,
+                ).video.data,
+                copy=True,
+            )
 
         per_video = generate([0.0, 1.0])
         no_noise = generate([0.0, 1.0], decode_noise_scale=0.0)
@@ -462,8 +474,12 @@ class TestVideoGenerationPipelines:
         np.testing.assert_array_equal(per_video[0], no_noise[0])
         np.testing.assert_array_equal(per_video[1], all_noise[1])
         assert not np.array_equal(per_video[1], no_noise[1])
-        np.testing.assert_array_equal(generate(0.0, decode_noise_scale=0.0), generate([0.0, 0.0], decode_noise_scale=0.0))
-        np.testing.assert_array_equal(generate(1.0, decode_noise_scale=0.0), generate([1.0, 1.0], decode_noise_scale=0.0))
+        np.testing.assert_array_equal(
+            generate(0.0, decode_noise_scale=0.0), generate([0.0, 0.0], decode_noise_scale=0.0)
+        )
+        np.testing.assert_array_equal(
+            generate(1.0, decode_noise_scale=0.0), generate([1.0, 1.0], decode_noise_scale=0.0)
+        )
         np.testing.assert_array_equal(generate(1.0), generate([1.0, 1.0]))
         np.testing.assert_array_equal(generate([1.0, 1.0]), generate([1.0, 1.0], decode_noise_scale=1.0))
 
@@ -471,8 +487,13 @@ class TestVideoGenerationPipelines:
         pipe = ov_genai.Text2VideoPipeline(conditioned_video_generation_model, "CPU")
         with pytest.raises(RuntimeError, match="decode_timestep list length"):
             pipe.generate(
-                "test prompt", height=32, width=32, num_frames=9, num_inference_steps=1,
-                num_videos_per_prompt=2, decode_timestep=[0.25],
+                "test prompt",
+                height=32,
+                width=32,
+                num_frames=9,
+                num_inference_steps=1,
+                num_videos_per_prompt=2,
+                decode_timestep=[0.25],
             )
 
     def test_decode_uses_latent_batch_for_stored_timesteps(self, conditioned_video_generation_model):
@@ -484,8 +505,14 @@ class TestVideoGenerationPipelines:
             return True
 
         pipe.generate(
-            "test prompt", height=32, width=32, num_frames=9, num_inference_steps=1,
-            num_videos_per_prompt=2, decode_timestep=[0.0, 0.0], decode_noise_scale=0.0,
+            "test prompt",
+            height=32,
+            width=32,
+            num_frames=9,
+            num_inference_steps=1,
+            num_videos_per_prompt=2,
+            decode_timestep=[0.0, 0.0],
+            decode_noise_scale=0.0,
             callback=capture_latent,
         )
         assert len(latents) == 1
@@ -530,9 +557,15 @@ class TestVideoGenerationPipelines:
             return True
 
         pipe.generate(
-            "test prompt", height=32, width=32, num_frames=9, num_inference_steps=1,
-            num_videos_per_prompt=2, decode_timestep=[0.25, 0.5],
-            generator=ov_genai.CppStdGenerator(42), callback=callback,
+            "test prompt",
+            height=32,
+            width=32,
+            num_frames=9,
+            num_inference_steps=1,
+            num_videos_per_prompt=2,
+            decode_timestep=[0.25, 0.5],
+            generator=ov_genai.CppStdGenerator(42),
+            callback=callback,
         )
         assert len(previews) == 1
         assert previews[0].shape == tuple(captured_latents[0].shape[i] for i in (0, 2, 3, 4, 1))
@@ -563,9 +596,7 @@ class TestVideoGenerationPipelines:
         conditioned_result = conditioned_pipe.generate(
             "test prompt", **common_kwargs, generator=ov_genai.CppStdGenerator(42)
         )
-        identity_result = identity_pipe.generate(
-            "test prompt", **common_kwargs, generator=ov_genai.CppStdGenerator(42)
-        )
+        identity_result = identity_pipe.generate("test prompt", **common_kwargs, generator=ov_genai.CppStdGenerator(42))
 
         np.testing.assert_array_equal(conditioned_result.video.data, identity_result.video.data)
 
@@ -609,9 +640,7 @@ class TestVideoGenerationPipelines:
         }
 
         baseline_pipe = ov_genai.Text2VideoPipeline(conditioned_video_generation_model, "CPU")
-        baseline = baseline_pipe.generate(
-            "test prompt", **common_kwargs, generator=ov_genai.CppStdGenerator(42)
-        )
+        baseline = baseline_pipe.generate("test prompt", **common_kwargs, generator=ov_genai.CppStdGenerator(42))
 
         callback_pipe = ov_genai.Text2VideoPipeline(conditioned_video_generation_model, "CPU")
 
@@ -649,12 +678,8 @@ class TestVideoGenerationPipelines:
             generator=conditioned_generator,
         )
 
-        baseline_followup = baseline_pipe.generate(
-            "test prompt", **common_kwargs, generator=baseline_generator
-        )
-        conditioned_followup = baseline_pipe.generate(
-            "test prompt", **common_kwargs, generator=conditioned_generator
-        )
+        baseline_followup = baseline_pipe.generate("test prompt", **common_kwargs, generator=baseline_generator)
+        conditioned_followup = baseline_pipe.generate("test prompt", **common_kwargs, generator=conditioned_generator)
 
         np.testing.assert_array_equal(baseline_followup.video.data, conditioned_followup.video.data)
 
@@ -924,11 +949,14 @@ class TestVideoGenerationPipelines:
             pipe.decode(latent, generation_config=config)
 
     @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID], indirect=True)
-    @pytest.mark.parametrize("decode_config", [
-        {"decode_timestep": 0.0},
-        {"decode_timestep": [0.0]},
-        {"decode_noise_scale": 0.0},
-    ])
+    @pytest.mark.parametrize(
+        "decode_config",
+        [
+            {"decode_timestep": 0.0},
+            {"decode_timestep": [0.0]},
+            {"decode_noise_scale": 0.0},
+        ],
+    )
     def test_ltx2_decode_rejects_zero_controls(self, video_generation_model, decode_config):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
         config = pipe.get_generation_config()
