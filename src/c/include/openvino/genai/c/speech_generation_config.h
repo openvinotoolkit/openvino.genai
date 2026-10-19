@@ -336,6 +336,7 @@ ov_genai_speech_generation_config_get_ref_text(const ov_genai_speech_generation_
  * @brief Set optional Qwen3 Base reference audio waveform tensor used for internal prompt extraction.
  * @param[in,out] config Configuration to update.
  * @param[in] ref_audio Tensor with element type F32 and shape [T], [1, T], or [1, 1, T].
+ *                      Samples must be at 24000 Hz; no resampling is performed.
  * @return OK on success, INVALID_C_PARAM for NULL arguments or wrong element type, or UNKNOW_EXCEPTION on failure.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e

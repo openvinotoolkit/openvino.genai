@@ -38,6 +38,11 @@ int load_wav_file(const char* filename, float** audio_data, size_t* audio_length
     }
 
     *sample_rate = (float)wav.sampleRate;
+    if (wav.totalPCMFrameCount > SIZE_MAX / sizeof(float)) {
+        fprintf(stderr, "Error: WAV frame count exceeds the supported allocation size\n");
+        drwav_uninit(&wav);
+        return -1;
+    }
     *audio_length = (size_t)wav.totalPCMFrameCount;
     *audio_data = (float*)malloc(*audio_length * sizeof(float));
     if (!*audio_data) {

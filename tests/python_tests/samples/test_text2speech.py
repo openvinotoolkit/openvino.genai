@@ -681,6 +681,18 @@ class TestTextToSpeechSample:
         compare_speech_audio(cpp_xvector_reuse_wav, py_xvector_reuse_wav, c_xvector_reuse_wav, 24000, True)
         compare_speech_audio(cpp_icl_wav, py_icl_wav, c_icl_wav, 24000, True)
         compare_speech_audio(cpp_icl_reuse_wav, py_icl_reuse_wav, c_icl_reuse_wav, 24000, True)
+        for original, reused in (
+            (cpp_xvector_wav, cpp_xvector_reuse_wav),
+            (py_xvector_wav, py_xvector_reuse_wav),
+            (c_xvector_wav, c_xvector_reuse_wav),
+            (cpp_icl_wav, cpp_icl_reuse_wav),
+            (py_icl_wav, py_icl_reuse_wav),
+            (c_icl_wav, c_icl_reuse_wav),
+        ):
+            original_audio, _ = sf.read(original, dtype="float32")
+            reused_audio, _ = sf.read(reused, dtype="float32")
+            assert original_audio.shape == reused_audio.shape, f"{original} and {reused} audio lengths differ"
+            np.testing.assert_allclose(original_audio, reused_audio, rtol=1e-4, atol=1e-5)
 
     @pytest.mark.speech_generation
     @pytest.mark.qwen3_tts
