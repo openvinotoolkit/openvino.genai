@@ -167,3 +167,30 @@ OPENVINO_GENAI_C_EXPORTS void ov_genai_text2speech_decoded_results_perf_metrics_
 OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_text2speech_decoded_results_get_num_generated_samples(const ov_genai_text2speech_decoded_results* results,
                                                                size_t* count);
+
+/**
+ * @brief Copy generated speaker embedding to a new float32 tensor.
+ *
+ * Qwen3-TTS Base may produce speaker embedding when reference audio is provided.
+ * @param[in] results Decoded result to query.
+ * @param[out] speaker_embedding Receives a new tensor owned by the caller. Release it with ov_tensor_free.
+ * @return OK on success, NOT_FOUND when absent, INVALID_C_PARAM for NULL arguments,
+ *         or UNKNOW_EXCEPTION on copying failure.
+ */
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_text2speech_decoded_results_get_speaker_embedding(
+    const ov_genai_text2speech_decoded_results* results,
+    ov_tensor_t** speaker_embedding);
+
+/**
+ * @brief Copy generated reference codec IDs to a new int64 tensor.
+ *
+ * Qwen3-TTS Base in ICL mode may produce reference codec IDs.
+ * @param[in] results Decoded result to query.
+ * @param[out] ref_codec_ids Receives a new tensor owned by the caller. Release it with ov_tensor_free.
+ * @return OK on success, NOT_FOUND when absent, INVALID_C_PARAM for NULL arguments,
+ *         or UNKNOW_EXCEPTION on copying failure.
+ */
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_text2speech_decoded_results_get_ref_codec_ids(const ov_genai_text2speech_decoded_results* results,
+                                                       ov_tensor_t** ref_codec_ids);

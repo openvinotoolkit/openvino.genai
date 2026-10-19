@@ -268,3 +268,104 @@ ov_status_e ov_genai_text2speech_decoded_results_get_num_generated_samples(
     *count = results->object->perf_metrics.num_generated_samples;
     return ov_status_e::OK;
 }
+
+ov_status_e ov_genai_text2speech_decoded_results_get_speaker_embedding(
+    const ov_genai_text2speech_decoded_results* results,
+    ov_tensor_t** speaker_embedding) {
+    if (!results || !results->object || !speaker_embedding)
+        return ov_status_e::INVALID_C_PARAM;
+    if (!results->object->speaker_embedding)
+        return ov_status_e::NOT_FOUND;
+
+    struct tensor_guard {
+        ov_tensor_t* tensor = nullptr;
+        ~tensor_guard() {
+            if (tensor)
+                ov_tensor_free(tensor);
+        }
+    };
+
+    try {
+        const auto& source = results->object->speaker_embedding;
+        if (source.get_element_type() != ov::element::f32)
+            return ov_status_e::UNKNOW_EXCEPTION;
+
+        const auto dims = source.get_shape();
+        std::vector<int64_t> c_dims(dims.begin(), dims.end());
+
+        shape_guard guard;
+        auto status = ov_shape_create(c_dims.size(), c_dims.data(), &guard.shape);
+        if (status != ov_status_e::OK)
+            return status;
+
+        tensor_guard output;
+        status = ov_tensor_create(ov_element_type_e::F32, guard.shape, &output.tensor);
+        if (status != ov_status_e::OK)
+            return status;
+
+        ov::Tensor snapshot(ov::element::f32, source.get_shape());
+        source.copy_to(snapshot);
+
+        void* data = nullptr;
+        status = ov_tensor_data(output.tensor, &data);
+        if (status != ov_status_e::OK)
+            return status;
+
+        std::memcpy(data, snapshot.data(), snapshot.get_byte_size());
+        *speaker_embedding = output.tensor;
+        output.tensor = nullptr;
+        return ov_status_e::OK;
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+}
+
+ov_status_e ov_genai_text2speech_decoded_results_get_ref_codec_ids(const ov_genai_text2speech_decoded_results* results,
+                                                                   ov_tensor_t** ref_codec_ids) {
+    if (!results || !results->object || !ref_codec_ids)
+        return ov_status_e::INVALID_C_PARAM;
+    if (!results->object->ref_codec_ids)
+        return ov_status_e::NOT_FOUND;
+
+    struct tensor_guard {
+        ov_tensor_t* tensor = nullptr;
+        ~tensor_guard() {
+            if (tensor)
+                ov_tensor_free(tensor);
+        }
+    };
+
+    try {
+        const auto& source = results->object->ref_codec_ids;
+        if (source.get_element_type() != ov::element::i64)
+            return ov_status_e::UNKNOW_EXCEPTION;
+
+        const auto dims = source.get_shape();
+        std::vector<int64_t> c_dims(dims.begin(), dims.end());
+
+        shape_guard guard;
+        auto status = ov_shape_create(c_dims.size(), c_dims.data(), &guard.shape);
+        if (status != ov_status_e::OK)
+            return status;
+
+        tensor_guard output;
+        status = ov_tensor_create(ov_element_type_e::I64, guard.shape, &output.tensor);
+        if (status != ov_status_e::OK)
+            return status;
+
+        ov::Tensor snapshot(ov::element::i64, source.get_shape());
+        source.copy_to(snapshot);
+
+        void* data = nullptr;
+        status = ov_tensor_data(output.tensor, &data);
+        if (status != ov_status_e::OK)
+            return status;
+
+        std::memcpy(data, snapshot.data(), snapshot.get_byte_size());
+        *ref_codec_ids = output.tensor;
+        output.tensor = nullptr;
+        return ov_status_e::OK;
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+}
