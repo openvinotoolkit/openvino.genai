@@ -36,9 +36,8 @@ def compare_speech_audio(cpp_output: Path, python_output: Path, c_output: Path, 
         first_audio, second_audio = waveforms[first], waveforms[second]
         if deterministic:
             assert first_audio.shape == second_audio.shape, f"{first} and {second} audio lengths differ"
-            # The C++ sample writes float WAV data; the C and Python samples clip to PCM16.
             np.testing.assert_allclose(
-                np.clip(first_audio, -1, 1), np.clip(second_audio, -1, 1), rtol=0, atol=2 / 32768
+                first_audio, second_audio, rtol=1e-4, atol=1e-5
             )
         else:
             # SpeechT5 waveforms and lengths vary between independent runs.
@@ -355,6 +354,7 @@ class TestTextToSpeechSample:
     ):
         prompt = "Hello from OpenVINO GenAI Qwen3 Base sample."
         ref_text = "This is a tiny random reference transcript for ICL reuse testing."
+        seed = "42"
 
         run_dir = tmp_path / "qwen3_tts_base_sample"
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -363,24 +363,33 @@ class TestTextToSpeechSample:
 
         cpp_xvector_wav = run_dir / "cpp_xvector.wav"
         py_xvector_wav = run_dir / "py_xvector.wav"
+        c_xvector_wav = run_dir / "c_xvector.wav"
         cpp_xvector_reuse_wav = run_dir / "cpp_xvector_reuse.wav"
         py_xvector_reuse_wav = run_dir / "py_xvector_reuse.wav"
+        c_xvector_reuse_wav = run_dir / "c_xvector_reuse.wav"
         cpp_icl_wav = run_dir / "cpp_icl.wav"
         py_icl_wav = run_dir / "py_icl.wav"
+        c_icl_wav = run_dir / "c_icl.wav"
         cpp_icl_reuse_wav = run_dir / "cpp_icl_reuse.wav"
         py_icl_reuse_wav = run_dir / "py_icl_reuse.wav"
+        c_icl_reuse_wav = run_dir / "c_icl_reuse.wav"
         generated_wav_paths = [
             cpp_xvector_wav,
             py_xvector_wav,
+            c_xvector_wav,
             cpp_xvector_reuse_wav,
             py_xvector_reuse_wav,
+            c_xvector_reuse_wav,
             cpp_icl_wav,
             py_icl_wav,
+            c_icl_wav,
             cpp_icl_reuse_wav,
             py_icl_reuse_wav,
+            c_icl_reuse_wav,
         ]
 
         cpp_sample = SAMPLES_CPP_DIR / "qwen3_tts"
+        c_sample = SAMPLES_C_DIR / "qwen3_tts_c"
         py_script = SAMPLES_PY_DIR / "speech_generation/qwen3_tts.py"
 
         cpp_xvector_first = run_sample(
@@ -395,6 +404,8 @@ class TestTextToSpeechSample:
                 "english",
                 "--max_new_tokens",
                 "32",
+                "--seed",
+                seed,
                 "--output_wav_path",
                 str(cpp_xvector_wav),
                 "--save_speaker_embedding_file_path",
@@ -414,8 +425,30 @@ class TestTextToSpeechSample:
                 "english",
                 "--max_new_tokens",
                 "32",
+                "--seed",
+                seed,
                 "--output_wav_path",
                 str(py_xvector_wav),
+                "--save_speaker_embedding_file_path",
+                str(speaker_embedding_path),
+            ]
+        )
+        c_xvector_first = run_sample(
+            [
+                c_sample,
+                "base",
+                convert_model,
+                prompt,
+                "--ref_audio_wav_path",
+                qwen3_reference_audio_wav_path,
+                "--language",
+                "english",
+                "--max_new_tokens",
+                "32",
+                "--seed",
+                seed,
+                "--output_wav_path",
+                str(c_xvector_wav),
                 "--save_speaker_embedding_file_path",
                 str(speaker_embedding_path),
             ]
@@ -433,6 +466,8 @@ class TestTextToSpeechSample:
                 "english",
                 "--max_new_tokens",
                 "32",
+                "--seed",
+                seed,
                 "--output_wav_path",
                 str(cpp_xvector_reuse_wav),
             ]
@@ -450,8 +485,28 @@ class TestTextToSpeechSample:
                 "english",
                 "--max_new_tokens",
                 "32",
+                "--seed",
+                seed,
                 "--output_wav_path",
                 str(py_xvector_reuse_wav),
+            ]
+        )
+        c_xvector_reuse = run_sample(
+            [
+                c_sample,
+                "base",
+                convert_model,
+                prompt,
+                "--speaker_embedding_file_path",
+                str(speaker_embedding_path),
+                "--language",
+                "english",
+                "--max_new_tokens",
+                "32",
+                "--seed",
+                seed,
+                "--output_wav_path",
+                str(c_xvector_reuse_wav),
             ]
         )
 
@@ -469,6 +524,8 @@ class TestTextToSpeechSample:
                 "english",
                 "--max_new_tokens",
                 "32",
+                "--seed",
+                seed,
                 "--output_wav_path",
                 str(cpp_icl_wav),
                 "--save_speaker_embedding_file_path",
@@ -492,8 +549,34 @@ class TestTextToSpeechSample:
                 "english",
                 "--max_new_tokens",
                 "32",
+                "--seed",
+                seed,
                 "--output_wav_path",
                 str(py_icl_wav),
+                "--save_speaker_embedding_file_path",
+                str(speaker_embedding_path),
+                "--save_ref_codec_ids_file_path",
+                str(ref_codes_path),
+            ]
+        )
+        c_icl_first = run_sample(
+            [
+                c_sample,
+                "base",
+                convert_model,
+                prompt,
+                "--ref_audio_wav_path",
+                qwen3_reference_audio_wav_path,
+                "--ref_text",
+                ref_text,
+                "--language",
+                "english",
+                "--max_new_tokens",
+                "32",
+                "--seed",
+                seed,
+                "--output_wav_path",
+                str(c_icl_wav),
                 "--save_speaker_embedding_file_path",
                 str(speaker_embedding_path),
                 "--save_ref_codec_ids_file_path",
@@ -517,6 +600,8 @@ class TestTextToSpeechSample:
                 "english",
                 "--max_new_tokens",
                 "32",
+                "--seed",
+                seed,
                 "--output_wav_path",
                 str(cpp_icl_reuse_wav),
             ]
@@ -538,33 +623,66 @@ class TestTextToSpeechSample:
                 "english",
                 "--max_new_tokens",
                 "32",
+                "--seed",
+                seed,
                 "--output_wav_path",
                 str(py_icl_reuse_wav),
+            ]
+        )
+        c_icl_reuse = run_sample(
+            [
+                c_sample,
+                "base",
+                convert_model,
+                prompt,
+                "--speaker_embedding_file_path",
+                str(speaker_embedding_path),
+                "--ref_text",
+                ref_text,
+                "--ref_codec_ids_file_path",
+                str(ref_codes_path),
+                "--language",
+                "english",
+                "--max_new_tokens",
+                "32",
+                "--seed",
+                seed,
+                "--output_wav_path",
+                str(c_icl_reuse_wav),
             ]
         )
 
         for result in [
             cpp_xvector_first,
             py_xvector_first,
+            c_xvector_first,
             cpp_xvector_reuse,
             py_xvector_reuse,
+            c_xvector_reuse,
             cpp_icl_first,
             py_icl_first,
+            c_icl_first,
             cpp_icl_reuse,
             py_icl_reuse,
+            c_icl_reuse,
         ]:
             assert "Text successfully converted to audio file" in result.stdout
 
-        for result in [cpp_xvector_first, py_xvector_first, cpp_icl_first, py_icl_first]:
+        for result in [cpp_xvector_first, py_xvector_first, c_xvector_first, cpp_icl_first, py_icl_first, c_icl_first]:
             assert "Saved speaker embedding" in result.stdout
 
-        for result in [cpp_icl_first, py_icl_first]:
+        for result in [cpp_icl_first, py_icl_first, c_icl_first]:
             assert "Saved reference codes" in result.stdout
 
         assert os.path.exists(speaker_embedding_path), "Speaker embedding artifact should exist"
         assert os.path.exists(ref_codes_path), "Reference codes artifact should exist"
         for wav_path in generated_wav_paths:
             assert os.path.exists(wav_path), f"Generated WAV output should exist: {wav_path}"
+
+        compare_speech_audio(cpp_xvector_wav, py_xvector_wav, c_xvector_wav, 24000, True)
+        compare_speech_audio(cpp_xvector_reuse_wav, py_xvector_reuse_wav, c_xvector_reuse_wav, 24000, True)
+        compare_speech_audio(cpp_icl_wav, py_icl_wav, c_icl_wav, 24000, True)
+        compare_speech_audio(cpp_icl_reuse_wav, py_icl_reuse_wav, c_icl_reuse_wav, 24000, True)
 
     @pytest.mark.speech_generation
     @pytest.mark.qwen3_tts
@@ -574,11 +692,19 @@ class TestTextToSpeechSample:
         ["tiny-random-qwen3-tts-customvoice"],
         indirect=True,
     )
-    def test_sample_qwen3_tts_customvoice(self, convert_model):
+    def test_sample_qwen3_tts_customvoice(self, convert_model, tmp_path: Path):
         prompt = "Hello from Qwen3 custom voice sample test."
         instruct = "Speak with clear articulation and a friendly, professional tone."
+        seed = "42"
+
+        run_dir = tmp_path / "qwen3_tts_customvoice_sample"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        cpp_output_wav = run_dir / "cpp_customvoice.wav"
+        py_output_wav = run_dir / "py_customvoice.wav"
+        c_output_wav = run_dir / "c_customvoice.wav"
 
         cpp_sample = SAMPLES_CPP_DIR / "qwen3_tts"
+        c_sample = SAMPLES_C_DIR / "qwen3_tts_c"
         cpp_command = [
             cpp_sample,
             "customvoice",
@@ -592,6 +718,10 @@ class TestTextToSpeechSample:
             instruct,
             "--max_new_tokens",
             "32",
+            "--seed",
+            seed,
+            "--output_wav_path",
+            str(cpp_output_wav),
         ]
         cpp_result = run_sample(cpp_command)
 
@@ -610,11 +740,38 @@ class TestTextToSpeechSample:
             instruct,
             "--max_new_tokens",
             "32",
+            "--seed",
+            seed,
+            "--output_wav_path",
+            str(py_output_wav),
         ]
         py_result = run_sample(py_command)
 
+        c_command = [
+            c_sample,
+            "customvoice",
+            convert_model,
+            prompt,
+            "--speaker",
+            "serena",
+            "--language",
+            "english",
+            "--instruct",
+            instruct,
+            "--max_new_tokens",
+            "32",
+            "--seed",
+            seed,
+            "--output_wav_path",
+            str(c_output_wav),
+        ]
+        c_result = run_sample(c_command)
+
         assert "Text successfully converted to audio file" in cpp_result.stdout
         assert "Text successfully converted to audio file" in py_result.stdout
+        assert "Text successfully converted to audio file" in c_result.stdout
+
+        compare_speech_audio(cpp_output_wav, py_output_wav, c_output_wav, 24000, True)
 
     @pytest.mark.speech_generation
     @pytest.mark.qwen3_tts
@@ -624,11 +781,19 @@ class TestTextToSpeechSample:
         ["tiny-random-qwen3-tts-voicedesign"],
         indirect=True,
     )
-    def test_sample_qwen3_tts_voice_design(self, convert_model):
+    def test_sample_qwen3_tts_voice_design(self, convert_model, tmp_path: Path):
         prompt = "Hello from Qwen3 voice design sample test."
         instruct = "Some voice design instruct prompt"
+        seed = "42"
+
+        run_dir = tmp_path / "qwen3_tts_voice_design_sample"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        cpp_output_wav = run_dir / "cpp_voice_design.wav"
+        py_output_wav = run_dir / "py_voice_design.wav"
+        c_output_wav = run_dir / "c_voice_design.wav"
 
         cpp_sample = SAMPLES_CPP_DIR / "qwen3_tts"
+        c_sample = SAMPLES_C_DIR / "qwen3_tts_c"
         cpp_command = [
             cpp_sample,
             "voice-design",
@@ -640,6 +805,10 @@ class TestTextToSpeechSample:
             instruct,
             "--max_new_tokens",
             "32",
+            "--seed",
+            seed,
+            "--output_wav_path",
+            str(cpp_output_wav),
         ]
         cpp_result = run_sample(cpp_command)
 
@@ -656,8 +825,33 @@ class TestTextToSpeechSample:
             instruct,
             "--max_new_tokens",
             "32",
+            "--seed",
+            seed,
+            "--output_wav_path",
+            str(py_output_wav),
         ]
         py_result = run_sample(py_command)
 
+        c_command = [
+            c_sample,
+            "voice-design",
+            convert_model,
+            prompt,
+            "--language",
+            "english",
+            "--instruct",
+            instruct,
+            "--max_new_tokens",
+            "32",
+            "--seed",
+            seed,
+            "--output_wav_path",
+            str(c_output_wav),
+        ]
+        c_result = run_sample(c_command)
+
         assert "Text successfully converted to audio file" in cpp_result.stdout
         assert "Text successfully converted to audio file" in py_result.stdout
+        assert "Text successfully converted to audio file" in c_result.stdout
+
+        compare_speech_audio(cpp_output_wav, py_output_wav, c_output_wav, 24000, True)
