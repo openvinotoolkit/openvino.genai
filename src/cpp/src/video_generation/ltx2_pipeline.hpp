@@ -169,7 +169,9 @@ class LTX2Pipeline : public VideoPipeline {
     void check_decode_controls(const VideoGenerationConfig& generation_config) const {
         utils::validate_generation_config(generation_config);
         const bool has_nonzero_timestep = utils::has_nonzero_decode_timestep(generation_config);
-        OPENVINO_ASSERT(!has_nonzero_timestep && generation_config.decode_noise_scale.value_or(0.0f) == 0.0f,
+        OPENVINO_ASSERT(!has_nonzero_timestep &&
+                            !std::holds_alternative<std::vector<float>>(generation_config.decode_timestep) &&
+                            !generation_config.decode_noise_scale.has_value(),
                         "decode_timestep and decode_noise_scale are not supported for LTX2 pipelines");
     }
 

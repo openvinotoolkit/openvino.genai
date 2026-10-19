@@ -390,6 +390,21 @@ class TestVideoGenerationPipelines:
 
         assert callback_called is False
 
+    @pytest.mark.parametrize("decode_config", [
+        {"decode_timestep": [0.0]},
+        {"decode_noise_scale": 0.0},
+    ])
+    def test_unconditioned_vae_rejects_explicit_decode_controls(self, video_generation_model, decode_config):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        with pytest.raises(RuntimeError, match="require a timestep-conditioned VAE decoder"):
+            pipe.generate("test prompt", **GEN_KWARGS, **decode_config)
+
+        config = pipe.get_generation_config()
+        for key, value in decode_config.items():
+            setattr(config, key, value)
+        with pytest.raises(RuntimeError, match="require a timestep-conditioned VAE decoder"):
+            pipe.decode(ov.Tensor(np.zeros([1, 1, 1], dtype=np.float32)), generation_config=config)
+
     def test_decode_noise_scale_defaults_to_decode_timestep(self, conditioned_video_generation_model):
         common_kwargs = {
             "height": 32,
@@ -873,8 +888,10 @@ class TestVideoGenerationPipelines:
         [
             {"decode_timestep": 0.25, "decode_noise_scale": 0.0},
             {"decode_timestep": 0.0, "decode_noise_scale": 0.25},
+            {"decode_timestep": [0.0]},
+            {"decode_noise_scale": 0.0},
         ],
-        ids=["decode-timestep", "decode-noise-scale"],
+        ids=["decode-timestep", "decode-noise-scale", "zero-timestep-list", "zero-noise-scale"],
     )
     def test_ltx2_decode_controls_rejected(self, video_generation_model, decode_config):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
@@ -882,14 +899,9 @@ class TestVideoGenerationPipelines:
             pipe.generate("test prompt", **GEN_KWARGS, **decode_config)
 
     @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID], indirect=True)
-    def test_ltx2_zero_decode_controls_accepted(self, video_generation_model):
+    def test_ltx2_default_decode_controls_accepted(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
-        result = pipe.generate(
-            "test prompt",
-            **GEN_KWARGS,
-            decode_timestep=0.0,
-            decode_noise_scale=0.0,
-        )
+        result = pipe.generate("test prompt", **GEN_KWARGS)
         assert result.video.shape == [1, 9, 32, 32, 3]
 
     @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID], indirect=True)
@@ -903,6 +915,19 @@ class TestVideoGenerationPipelines:
             pipe.decode(latent)
         with pytest.raises(RuntimeError, match="not supported for LTX2"):
             pipe.decode(latent, generation_config=config)
+
+    @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID], indirect=True)
+    @pytest.mark.parametrize("decode_config", [
+        {"decode_timestep": [0.0]},
+        {"decode_noise_scale": 0.0},
+    ])
+    def test_ltx2_decode_rejects_zero_controls(self, video_generation_model, decode_config):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        config = pipe.get_generation_config()
+        for key, value in decode_config.items():
+            setattr(config, key, value)
+        with pytest.raises(RuntimeError, match="not supported for LTX2"):
+            pipe.decode(ov.Tensor(np.zeros([1, 1, 1], dtype=np.float32)), generation_config=config)
 
     @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True)
     def test_image2video_rejected(self, video_generation_model):

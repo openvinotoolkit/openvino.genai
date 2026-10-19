@@ -90,7 +90,9 @@ class LTXPipeline : public VideoPipeline {
                             generation_config.generator,
                         "A generator is required when decode_noise_scale is non-zero");
         OPENVINO_ASSERT(vae_config.timestep_conditioning ||
-                            (!has_nonzero_timestep && !needs_noise),
+                            (!has_nonzero_timestep &&
+                             !std::holds_alternative<std::vector<float>>(generation_config.decode_timestep) &&
+                             !generation_config.decode_noise_scale.has_value()),
                         "decode_timestep and decode_noise_scale require a timestep-conditioned VAE decoder");
         video_generation_utils::check_video_size(generation_config.height,
                                                  generation_config.width,
@@ -121,9 +123,11 @@ class LTXPipeline : public VideoPipeline {
 
     void check_generation_inputs(const VideoGenerationConfig& generation_config) const {
         check_inputs(generation_config);
-        if (const auto* values = std::get_if<std::vector<float>>(&generation_config.decode_timestep)) {
-            OPENVINO_ASSERT(values->size() == generation_config.num_videos_per_prompt,
-                            "decode_timestep list length must match the video batch size");
+        if (m_vae->get_config().timestep_conditioning) {
+            if (const auto* values = std::get_if<std::vector<float>>(&generation_config.decode_timestep)) {
+                OPENVINO_ASSERT(values->size() == generation_config.num_videos_per_prompt,
+                                "decode_timestep list length must match the video batch size");
+            }
         }
     }
 
@@ -249,8 +253,9 @@ class LTXPipeline : public VideoPipeline {
         const size_t batch_size = latent.get_shape()[0];
         m_vae->validate_decoder_batch(batch_size);
         const auto* timestep_values = std::get_if<std::vector<float>>(&generation_config.decode_timestep);
-        OPENVINO_ASSERT(!timestep_values || timestep_values->size() == batch_size,
-                "decode_timestep list length must match the latent batch size");
+        OPENVINO_ASSERT(!m_vae->get_config().timestep_conditioning || !timestep_values ||
+                            timestep_values->size() == batch_size,
+                        "decode_timestep list length must match the latent batch size");
 
         ov::Tensor unpacked = video_generation_utils::unpack_latents(latent,
                                                                      m_latent_num_frames,
