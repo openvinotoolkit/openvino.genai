@@ -21,7 +21,7 @@ float* resample_audio(const float* input,
 // rate does not match expected_sample_rate.
 int load_wav_as_tensor(const char* filename, float expected_sample_rate, ov_tensor_t** tensor);
 
-// Saves float32 mono samples into a 16-bit PCM WAV file.
+// Saves float32 mono samples into a 32-bit IEEE-float WAV file.
 int save_wav_file(const char* path, const float* samples, size_t count, uint32_t sample_rate);
 
 #endif  // AUDIO_UTILS_H
