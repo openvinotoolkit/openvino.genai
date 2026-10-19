@@ -36,5 +36,5 @@ void EmbeddingPipelineEmbedWorker::OnOK() {
 
 void EmbeddingPipelineEmbedWorker::OnError(const Napi::Error& error) {
     this->is_embedding->store(false);
-    AsyncWorker::OnError(error);
+    Callback().Call({Napi::Error::New(Env(), error.Message()).Value()});
 }

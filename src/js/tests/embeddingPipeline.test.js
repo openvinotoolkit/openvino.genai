@@ -52,7 +52,7 @@ describe(
   },
 );
 
-// Skip due to CVS-179949 and CVS-179949
+// Skip due to CVS-179949 and CVS-197156
 describe(
   "EmbeddingPipeline multimodal initialization",
   { skip: ["darwin", "win32"].includes(process.platform) },
@@ -72,7 +72,7 @@ describe(
   },
 );
 
-// Skip due to CVS-179949 and CVS-179949
+// Skip due to CVS-179949 and CVS-197156
 describe(
   "EmbeddingPipeline multimodal functions",
   { skip: ["darwin", "win32"].includes(process.platform) },
@@ -223,7 +223,7 @@ describe(
   },
 );
 
-// Skip due to CVS-179949 and CVS-179949
+// Skip due to CVS-179949 and CVS-197156
 describe(
   "EmbeddingPipeline multimodal normalization",
   { skip: ["darwin", "win32"].includes(process.platform) },
