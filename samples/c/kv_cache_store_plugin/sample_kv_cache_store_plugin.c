@@ -47,11 +47,14 @@ static void sample_mutex_unlock(sample_mutex_t* m) {
 #endif
 
 /* --------------------------------------------------------------------------
- * A single stored block: payload + the witness the host asked us to keep verbatim. The host's
- * `group` string is intentionally not inspected - this sample only ever serves one group.
+ * A single stored block: payload + the witness the host asked us to keep verbatim, plus a copy of
+ * the key's group so unrelated callers sharing one store instance (e.g. KV cache offload vs.
+ * linear-attention offload vs. session snapshot) never collide on a bare hash match.
  * ----------------------------------------------------------------------- */
 typedef struct SampleEntry {
     OvKVCacheContentHash hash;
+    char* group;
+    uint32_t group_len;
     void* data;
     uint64_t bytes;
     void* witness;
@@ -68,11 +71,16 @@ static int hash_equal(const OvKVCacheContentHash* a, const OvKVCacheContentHash*
     return a->lo == b->lo && a->hi == b->hi;
 }
 
+static int key_matches_entry(const SampleEntry* entry, const OvKVCacheBlockKey* key) {
+    return hash_equal(&entry->hash, &key->hash) && entry->group_len == key->group_len &&
+           (key->group_len == 0 || memcmp(entry->group, key->group, key->group_len) == 0);
+}
+
 /* Caller must hold store->mutex. */
-static SampleEntry* find_locked(SampleStore* store, const OvKVCacheContentHash* hash) {
+static SampleEntry* find_locked(SampleStore* store, const OvKVCacheBlockKey* key) {
     SampleEntry* entry;
     for (entry = store->head; entry != NULL; entry = entry->next) {
-        if (hash_equal(&entry->hash, hash)) {
+        if (key_matches_entry(entry, key)) {
             return entry;
         }
     }
@@ -80,12 +88,13 @@ static SampleEntry* find_locked(SampleStore* store, const OvKVCacheContentHash* 
 }
 
 /* Caller must hold store->mutex. Not an error if the key is not present. */
-static void remove_locked(SampleStore* store, const OvKVCacheContentHash* hash) {
+static void remove_locked(SampleStore* store, const OvKVCacheBlockKey* key) {
     SampleEntry** link = &store->head;
     while (*link != NULL) {
-        if (hash_equal(&(*link)->hash, hash)) {
+        if (key_matches_entry(*link, key)) {
             SampleEntry* dead = *link;
             *link = dead->next;
+            free(dead->group);
             free(dead->data);
             free(dead->witness);
             free(dead);
@@ -100,15 +109,11 @@ static void remove_locked(SampleStore* store, const OvKVCacheContentHash* hash) 
  * ----------------------------------------------------------------------- */
 
 static void store_destroy(void* self) {
-    SampleStore* store = (SampleStore*)self;
-    while (store->head != NULL) {
-        SampleEntry* dead = store->head;
-        store->head = dead->next;
-        free(dead->data);
-        free(dead->witness);
-        free(dead);
-    }
-    free(store);
+    /* Store instances are shared across open() calls for the same directory (see provider_open),
+     * so destroying one handle must not free data a sibling handle might still read - this sample
+     * simply leaks the shared instance for the lifetime of the process, same as a real plugin
+     * would leave its on-disk files alone when a caller merely closes its handle. */
+    (void)self;
 }
 
 static OvKVCacheStatus store_has_blocks(void* self,
@@ -119,7 +124,7 @@ static OvKVCacheStatus store_has_blocks(void* self,
     size_t i;
     sample_mutex_lock(&store->mutex);
     for (i = 0; i < count; ++i) {
-        out_present[i] = find_locked(store, &keys[i].hash) != NULL ? 1 : 0;
+        out_present[i] = find_locked(store, &keys[i]) != NULL ? 1 : 0;
     }
     sample_mutex_unlock(&store->mutex);
     return OV_KVCACHE_OK;
@@ -144,7 +149,7 @@ static OvKVCacheStatus store_read_blocks(void* self,
             any_failed = 1;
             continue;
         }
-        entry = find_locked(store, &req->key.hash);
+        entry = find_locked(store, &req->key);
         if (entry == NULL) {
             result->status = OV_KVCACHE_ERR_NOT_FOUND;
             any_failed = 1;
@@ -187,14 +192,18 @@ static OvKVCacheStatus store_write_blocks(void* self,
         OvKVCacheStoreWriteResult* result = &out[i];
         void* data_copy;
         void* witness_copy;
+        char* group_copy;
         SampleEntry* entry;
         memset(result, 0, sizeof(*result));
 
         data_copy = malloc((size_t)req->bytes);
         witness_copy = req->witness.len > 0 ? malloc((size_t)req->witness.len) : NULL;
-        if (data_copy == NULL || (req->witness.len > 0 && witness_copy == NULL)) {
+        group_copy = req->key.group_len > 0 ? malloc(req->key.group_len) : NULL;
+        if (data_copy == NULL || (req->witness.len > 0 && witness_copy == NULL) ||
+            (req->key.group_len > 0 && group_copy == NULL)) {
             free(data_copy);
             free(witness_copy);
+            free(group_copy);
             result->status = OV_KVCACHE_ERR_CAPACITY;
             any_failed = 1;
             continue;
@@ -203,20 +212,26 @@ static OvKVCacheStatus store_write_blocks(void* self,
         if (witness_copy != NULL) {
             memcpy(witness_copy, req->witness.data, (size_t)req->witness.len);
         }
+        if (group_copy != NULL) {
+            memcpy(group_copy, req->key.group, req->key.group_len);
+        }
 
         entry = (SampleEntry*)malloc(sizeof(SampleEntry));
         if (entry == NULL) {
             free(data_copy);
             free(witness_copy);
+            free(group_copy);
             result->status = OV_KVCACHE_ERR_CAPACITY;
             any_failed = 1;
             continue;
         }
 
         /* Idempotent overwrite: drop any existing entry for this key first. */
-        remove_locked(store, &req->key.hash);
+        remove_locked(store, &req->key);
 
         entry->hash = req->key.hash;
+        entry->group = group_copy;
+        entry->group_len = req->key.group_len;
         entry->data = data_copy;
         entry->bytes = req->bytes;
         entry->witness = witness_copy;
@@ -236,7 +251,7 @@ static OvKVCacheStatus store_drop_blocks(void* self, const OvKVCacheBlockKey* ke
     size_t i;
     sample_mutex_lock(&store->mutex);
     for (i = 0; i < count; ++i) {
-        remove_locked(store, &keys[i].hash);
+        remove_locked(store, &keys[i]);
     }
     sample_mutex_unlock(&store->mutex);
     return OV_KVCACHE_OK;
@@ -293,26 +308,79 @@ static const char* provider_name(void* self) {
     return "sample-in-memory";
 }
 
+/* --------------------------------------------------------------------------
+ * Directory registry: shares one SampleStore per `directory` across open() calls, so a caller
+ * that closes its handle and later reopens the same directory still finds what was written -
+ * what any real on-disk backend would do. A NULL/empty directory shares one process-wide default
+ * instance. Entries are never removed (same "nothing is ever deleted behind the host's back"
+ * spirit as store_destroy being a no-op); this is a reference sample, not a long-running service.
+ * ----------------------------------------------------------------------- */
+typedef struct DirectoryStore {
+    char* directory;
+    SampleStore* store;
+    struct DirectoryStore* next;
+} DirectoryStore;
+
+static DirectoryStore* g_directories = NULL;
+static sample_mutex_t g_registry_mutex;
+static int g_registry_mutex_ready = 0;
+
+/* Illustrative sample: this check is not safe against two threads racing on the very first
+ * open() call (same simplification as the rest of this file). A real plugin would use a portable
+ * static initializer or an explicit one-time init hook instead. */
+static void ensure_registry_mutex(void) {
+    if (!g_registry_mutex_ready) {
+        sample_mutex_init(&g_registry_mutex);
+        g_registry_mutex_ready = 1;
+    }
+}
+
 static OvKVCacheStatus provider_open(void* self,
                                      const OvKVCacheNamespace* ns,
                                      const OvKVCacheStoreOpenOptions* opts,
                                      OvKVCacheStoreOpenResult* out) {
-    SampleStore* store;
+    const char* directory;
+    SampleStore* store = NULL;
+    DirectoryStore* it;
     (void)self;
-    (void)ns;
-    (void)opts; /* A real plugin would honor capacity_bytes/properties; this sample ignores them. */
+    (void)ns; /* A real plugin would honor capacity_bytes/properties too; this sample ignores them. */
     if (out == NULL) {
         return OV_KVCACHE_ERR_INVALID_ARG;
     }
     memset(out, 0, sizeof(*out));
 
-    store = (SampleStore*)malloc(sizeof(SampleStore));
-    if (store == NULL) {
-        out->status = OV_KVCACHE_ERR_CAPACITY;
-        return out->status;
+    directory = (opts != NULL && opts->directory != NULL) ? opts->directory : "";
+
+    ensure_registry_mutex();
+    sample_mutex_lock(&g_registry_mutex);
+    for (it = g_directories; it != NULL; it = it->next) {
+        if (strcmp(it->directory, directory) == 0) {
+            store = it->store;
+            break;
+        }
     }
-    store->head = NULL;
-    sample_mutex_init(&store->mutex);
+    if (store == NULL) {
+        DirectoryStore* created = (DirectoryStore*)malloc(sizeof(DirectoryStore));
+        SampleStore* fresh = created != NULL ? (SampleStore*)malloc(sizeof(SampleStore)) : NULL;
+        char* directory_copy = fresh != NULL ? (char*)malloc(strlen(directory) + 1) : NULL;
+        if (created == NULL || fresh == NULL || directory_copy == NULL) {
+            free(created);
+            free(fresh);
+            free(directory_copy);
+            sample_mutex_unlock(&g_registry_mutex);
+            out->status = OV_KVCACHE_ERR_CAPACITY;
+            return out->status;
+        }
+        fresh->head = NULL;
+        sample_mutex_init(&fresh->mutex);
+        strcpy(directory_copy, directory);
+        created->directory = directory_copy;
+        created->store = fresh;
+        created->next = g_directories;
+        g_directories = created;
+        store = fresh;
+    }
+    sample_mutex_unlock(&g_registry_mutex);
 
     out->store = store;
     out->vtable = &g_store_vtable;
