@@ -491,7 +491,6 @@ def test_readonly_input_tensor(npu_model: LLMPipeline):
     npu_model.generate(readonly_tensor, max_new_tokens=5)
 
 
-
 # The NPU PA front-end on CPU: NPUW_PA routes LLMPipeline on NPU to the
 # continuous batching pipeline, whose PA model the front-end runs.
 NPUW_PA_CONFIG: dict = {"NPU_USE_NPUW": "YES", "NPUW_PA": "YES", "NPUW_DEVICES": "CPU", "NPUW_F16IC": "NO"}
