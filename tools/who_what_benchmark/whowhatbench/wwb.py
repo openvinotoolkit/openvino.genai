@@ -619,20 +619,95 @@ def check_args(args):
         raise ValueError(f"For --model-type {args.model_type}, only --metrics={Metrics.SIMILARITY.value} is supported.")
 
 
+def _load_visual_text_csv(csv_path: Path):
+    """Load a local CSV dataset for visual-text model types.
+
+    The CSV must contain a ``prompts`` column and may contain ``images`` and
+    ``videos`` columns. Image/video entries are treated as file paths resolved
+    deterministically relative to the CSV's own directory (absolute paths are
+    used as-is). Empty cells become ``None``. Images are loaded as RGB PIL
+    images so they can be fed directly into the visual-text evaluator.
+    """
+    df = pd.read_csv(csv_path)
+    if "prompts" not in df.columns:
+        raise ValueError(
+            f"--dataset CSV '{csv_path}' must contain a 'prompts' column for visual-text model types."
+        )
+    base_dir = csv_path.resolve().parent
+
+    def _resolve(value):
+        if value is None:
+            return None
+        if isinstance(value, float) and pd.isna(value):
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        candidate = Path(text).expanduser()
+        if not candidate.is_absolute():
+            candidate = (base_dir / candidate)
+        return candidate
+
+    prompts = [str(p) for p in df["prompts"].tolist()]
+    n = len(prompts)
+
+    images = [None] * n
+    if "images" in df.columns:
+        images = []
+        for value in df["images"].tolist():
+            resolved = _resolve(value)
+            if resolved is None:
+                images.append(None)
+                continue
+            if not resolved.is_file():
+                raise FileNotFoundError(
+                    f"--dataset CSV references image '{resolved}' which does not exist."
+                )
+            images.append(Image.open(resolved).convert("RGB"))
+
+    videos = [None] * n
+    if "videos" in df.columns:
+        videos = []
+        for value in df["videos"].tolist():
+            resolved = _resolve(value)
+            if resolved is None:
+                videos.append(None)
+                continue
+            if not resolved.is_file():
+                raise FileNotFoundError(
+                    f"--dataset CSV references video '{resolved}' which does not exist."
+                )
+            videos.append(str(resolved))
+
+    logger.info("Visual-text prompts loaded from local CSV %s: count=%d", csv_path, n)
+    return {"prompts": prompts, "images": images, "videos": videos}
+
+
 def load_prompts(args):
     if args.dataset is None:
         return None
+
+    path, separator, name = args.dataset.partition(",")
+    candidate_path = Path(path).expanduser()
+    looks_like_local_path = (
+        candidate_path.is_absolute() or path.startswith(("./", "../", "~/")) or candidate_path.exists()
+    )
+
+    # Local CSV datasets are supported for visual-text model types and must
+    # carry the prompts/images/videos columns expected by the evaluator.
+    if path.lower().endswith(".csv") and looks_like_local_path:
+        if args.model_type not in ("visual-text", "visual-video-text", "visual-text-only"):
+            raise ValueError(
+                "--dataset points to a local .csv file, which is supported only for "
+                "visual-text model types (visual-text, visual-video-text, visual-text-only)."
+            )
+        return _load_visual_text_csv(candidate_path)
 
     dataset_split = "validation"
     if args.split is not None:
         dataset_split = args.split
 
-    path, separator, name = args.dataset.partition(",")
-    candidate_path = Path(path).expanduser()
     is_json_dataset_file = path.lower().endswith((".json", ".jsonl"))
-    looks_like_local_path = (
-        candidate_path.is_absolute() or path.startswith(("./", "../", "~/")) or candidate_path.exists()
-    )
     if is_json_dataset_file and looks_like_local_path:
         raise ValueError(
             "--dataset points to a local .json/.jsonl file, which is supported only for "

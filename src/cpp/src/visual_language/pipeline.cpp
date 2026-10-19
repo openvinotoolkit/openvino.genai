@@ -979,10 +979,13 @@ private:
 };
 
 bool requires_sdpa(const std::filesystem::path& models_dir) {
-    // Force models to use SDPA backend by default until PA is supported. Example:
-    // auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    // vlm_config.model_type == VLMModelType::GEMMA3;
-    return false;
+    // The LFM2-VL language model is a hybrid short-convolution / attention (LFM2) backbone.
+    // Its convolutional cache is not handled by the PagedAttention / continuous-batching
+    // backend, which makes decoding diverge from the reference (e.g. it keeps generating past
+    // the EOS token). Force the stateful SDPA backend for this model type so that generation
+    // matches the optimum-intel / HF reference.
+    auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
+    return vlm_config.model_type == VLMModelType::LFM2_VL;
 }
 
 VLMPipeline::VLMPipeline(
