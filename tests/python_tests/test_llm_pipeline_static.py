@@ -489,3 +489,45 @@ def test_readonly_input_tensor(npu_model: LLMPipeline):
 
     readonly_tensor = ov.Tensor(input_ids)
     npu_model.generate(readonly_tensor, max_new_tokens=5)
+
+
+
+# The NPU PA front-end on CPU: NPUW_PA routes LLMPipeline on NPU to the
+# continuous batching pipeline, whose PA model the front-end runs.
+NPUW_PA_CONFIG: dict = {"NPU_USE_NPUW": "YES", "NPUW_PA": "YES", "NPUW_DEVICES": "CPU", "NPUW_F16IC": "NO"}
+
+# A batch of two prompts, which only the continuous batching route accepts on NPU.
+NPUW_PA_PROMPTS: list[str] = ["What is OpenVINO?", "Why do LLM servers batch requests?"]
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize(
+    "npuw_pa_config",
+    [
+        pytest.param(NPUW_PA_CONFIG, id="top_level"),
+        pytest.param({"NPU_USE_NPUW": "YES", "DEVICE_PROPERTIES": {"NPU": NPUW_PA_CONFIG}}, id="device_properties"),
+    ],
+)
+def test_npuw_pa_runs_through_continuous_batching(
+    llm_model: OVConvertedModelSchema, ov_model: LLMPipeline, npuw_pa_config: dict
+):
+    npu_pipe = LLMPipeline(llm_model.models_path, "NPU", **(npuw_pa_config | get_default_llm_properties()))
+
+    ref_out = ov_model.generate(NPUW_PA_PROMPTS, get_greedy())
+    actual_out = npu_pipe.generate(NPUW_PA_PROMPTS, get_greedy())
+
+    assert ref_out.texts == actual_out.texts
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+def test_npuw_pa_off_keeps_the_stateful_pipeline(llm_model: OVConvertedModelSchema):
+    npu_pipe = LLMPipeline(llm_model.models_path, "NPU", **(DEFAULT_CONFIG | {"NPUW_PA": "NO"}))
+
+    with pytest.raises(RuntimeError, match="batch size"):
+        npu_pipe.generate(NPUW_PA_PROMPTS, get_greedy())
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+def test_npuw_pa_rejects_the_sdpa_backend(llm_model: OVConvertedModelSchema):
+    with pytest.raises(RuntimeError, match="NPUW_PA runs on the PA attention backend"):
+        LLMPipeline(llm_model.models_path, "NPU", **(NPUW_PA_CONFIG | {"ATTENTION_BACKEND": "SDPA"}))
