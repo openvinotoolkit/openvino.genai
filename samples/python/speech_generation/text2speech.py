@@ -57,7 +57,7 @@ def main():
     speech = result.speeches[0]
     speech_data = np.array(speech.data).reshape(-1)
     output_file_name = "output_audio.wav"
-    sf.write(output_file_name, speech_data, samplerate=result.output_sample_rate)
+    sf.write(output_file_name, speech_data, samplerate=result.output_sample_rate, subtype="FLOAT")
 
     print("[Info] Text successfully converted to audio file \"", output_file_name, "\".")
 
