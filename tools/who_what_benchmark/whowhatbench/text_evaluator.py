@@ -266,13 +266,15 @@ class TextEvaluator(BaseEvaluator):
                         len(batch) == self.seqs_per_request
                         or p_idx == len(prompt_data.values) - 1
                     ):
+                        batch_start_idx = p_idx - len(batch) + 1
                         ans_batch = model.generate(
                             batch, [generation_config] * len(batch)
                         )
-                        for ans in ans_batch:
+                        for batch_offset, ans in enumerate(ans_batch):
+                            sample_idx = batch_start_idx + batch_offset
                             artifacts_collector.collect(
-                                p_idx,
-                                p,
+                                sample_idx,
+                                batch[batch_offset],
                                 GenerationResults(answer_text=ans.m_generation_ids[0]),
                             )
 
