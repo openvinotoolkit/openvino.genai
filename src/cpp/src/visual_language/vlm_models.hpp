@@ -5,9 +5,11 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "openvino/core/model.hpp"
+#include "visual_language/audio_encoder.hpp"
 #include "visual_language/processor_config.hpp"
 #include "visual_language/video_processor_config.hpp"
 #include "visual_language/vlm_config.hpp"
@@ -20,6 +22,8 @@ struct VLMModels {
     VLMConfig config;
     ProcessorConfig processor_config;
     VideoProcessorConfig video_processor_config;
+    /// Required when `models` has "audio_embeddings".
+    std::optional<AudioEncoderConfig> audio_encoder;
 
     std::shared_ptr<ov::Model> find(const std::string& name) const {
         const auto it = models.find(name);

@@ -22,7 +22,6 @@
 
 namespace ov::genai {
 struct VLMPerfMetrics;
-using AudioEncode = std::function<std::vector<ov::Tensor>(const ov::Tensor&)>;
 
 const static std::regex UNIVERSAL_IMAGE_PATTERN{R"(<ov_genai_image_(\d+)>)"};
 const static std::regex UNIVERSAL_VIDEO_PATTERN{R"(<ov_genai_video_(\d+)>)"};

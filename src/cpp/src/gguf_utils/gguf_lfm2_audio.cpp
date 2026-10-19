@@ -99,7 +99,7 @@ GGUFLFM2Speech::GGUFLFM2Speech(const std::filesystem::path& language,
     };
     m_language = compile(m_models.language, "language_model");
     m_embedding = compile(m_models.vlm.at("text_embeddings"), "text_embeddings");
-    m_embedder = create_gguf_inputs_embedder(m_models, device, properties);
+    m_embedder = std::make_shared<InputsEmbedder>(m_models.vlm, m_models.tokenizer, device, properties);
     ov::frontend::gguf::FrontEnd frontend;
     register_gguf_extensions(frontend, extensions);
     auto speech = frontend.convert(frontend.load(vocoder));

@@ -563,11 +563,10 @@ TEST(GGUFMultimodal, LFM2AudioPreprocessingMatchesLiquidReference) {
         Constant::create(ov::element::f32, {}, {0.f}));
     auto result = std::make_shared<Add>(output, dependency);
     result->output(0).set_names({"audio_features"});
-    GGUFMultimodalModels gguf;
-    gguf.audio = std::make_shared<ov::Model>(ov::OutputVector{result}, ov::ParameterVector{features, positions});
-    gguf.audio->set_rt_info(std::string("lfm2a"), {"gguf_mmproj", "audio.projector"});
-    gguf.audio->set_rt_info(std::string("128"), {"gguf_mmproj", "clip.audio.num_mel_bins"});
     auto models = gemma4_models();
+    models.models["audio_embeddings"] =
+        std::make_shared<ov::Model>(ov::OutputVector{result}, ov::ParameterVector{features, positions});
+    models.audio_encoder = AudioEncoderConfig{AudioEncoderType::LFM2, 128};
     models.config.model_type = VLMModelType::LFM2_AUDIO;
     models.config.hidden_size = 128;
     models.models.erase("vision_embeddings");
@@ -577,8 +576,10 @@ TEST(GGUFMultimodal, LFM2AudioPreprocessingMatchesLiquidReference) {
                                          ids,
                                          Constant::create(ov::element::i64, {}, {0}));
     models.models["text_embeddings"] = std::make_shared<ov::Model>(ov::OutputVector{text}, ov::ParameterVector{ids});
-    InputsEmbedder embedder(models, GGUFTokenizer(sentencepiece_config()), "CPU", {});
-    attach_gguf_audio_encoder(embedder, gguf, "CPU", {{ov::hint::inference_precision.name(), ov::element::f32}});
+    InputsEmbedder embedder(models,
+                            GGUFTokenizer(sentencepiece_config()),
+                            "CPU",
+                            {{ov::hint::inference_precision.name(), ov::element::f32}});
     for (size_t count : {160, 1281, 16000}) {
         const auto load = [&](const std::string& name, void* data, size_t bytes) {
             std::ifstream stream(directory / name, std::ios::binary);

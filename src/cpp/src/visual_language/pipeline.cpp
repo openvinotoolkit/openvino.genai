@@ -292,14 +292,12 @@ public:
             utils::save_openvino_model(models.language, models_dir.string() + ".language.xml", false);
             for (const auto& [name, model] : models.vlm.models)
                 utils::save_openvino_model(model, projector + "." + name + ".xml", false);
-            if (models.audio)
-                utils::save_openvino_model(models.audio, projector + ".audio.xml", false);
         }
         const auto scheduled =
             utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         const auto& plugin_properties = scheduled.first;
         const auto generation_config = models.generation_config();
-        auto embedder = create_gguf_inputs_embedder(models, device, plugin_properties);
+        auto embedder = std::make_shared<InputsEmbedder>(models.vlm, models.tokenizer, device, plugin_properties);
         const auto paged = [&](const std::shared_ptr<ov::Model>& language) {
             return std::make_shared<VLMContinuousBatchingAdapter>(language,
                                                                   embedder,

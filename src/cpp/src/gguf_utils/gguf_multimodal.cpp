@@ -45,6 +45,22 @@ private:
     std::shared_ptr<ov::Model> m_mmproj;
 };
 
+AudioEncoderConfig audio_encoder_config(const MmprojMetadata& meta) {
+    const auto projector = meta.text("audio.projector");
+    AudioEncoderConfig config;
+    if (projector == "lfm2a") {
+        config.type = AudioEncoderType::LFM2;
+    } else if (projector == "gemma4ua") {
+        config.type = AudioEncoderType::GEMMA4_UNIFIED;
+    } else {
+        OPENVINO_ASSERT(projector == "gemma4a", "Unsupported GGUF audio projector: ", projector);
+        config.type = AudioEncoderType::GEMMA4;
+    }
+    if (config.type != AudioEncoderType::GEMMA4_UNIFIED)
+        config.num_mel_bins = meta.integer("clip.audio.num_mel_bins");
+    return config;
+}
+
 struct Configs {
     json config, image, video;
 
@@ -174,10 +190,6 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
                     " / ",
                     projector);
 
-    if ((gemma4 || lfm_audio) && meta.has("audio.projector")) {
-        result.audio = combined->clone();
-        gguf::pass::AdaptMmprojToGenAI(gguf::pass::AdaptMmprojToGenAI::Modality::AUDIO).run_on_model(result.audio);
-    }
     auto& vlm = result.vlm;
     using Adapter = gguf::pass::AdaptMmprojToGenAI;
     Adapter vision_adapter(Adapter::Modality::VISION, Adapter::Layout::VISION_ENCODERS);
@@ -185,6 +197,12 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
         auto vision = combined->clone();
         vision_adapter.run_on_model(vision);
         vlm.models = vision_adapter.get_vision_models();
+    }
+    if ((gemma4 || lfm_audio) && meta.has("audio.projector")) {
+        auto audio = combined->clone();
+        Adapter(Adapter::Modality::AUDIO).run_on_model(audio);
+        vlm.models["audio_embeddings"] = audio;
+        vlm.audio_encoder = audio_encoder_config(meta);
     }
     vlm.models["text_embeddings"] = genai->get_embedding_model();
     if (const auto& per_layer = genai->get_per_layer_embedding_model())

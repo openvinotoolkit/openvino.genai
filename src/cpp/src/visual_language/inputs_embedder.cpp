@@ -90,7 +90,12 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(const VLMModels& models,
       m_embedding(
           std::make_shared<EmbeddingsModel>(models.at("text_embeddings"), models.config.scale_emb, device, properties)),
       m_tokenizer(tokenizer),
-      m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) {}
+      m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) {
+    if (const auto audio = models.find("audio_embeddings")) {
+        OPENVINO_ASSERT(models.audio_encoder, "audio_embeddings requires an audio encoder config");
+        m_audio_encoder = create_audio_encoder(audio, *models.audio_encoder, device, properties);
+    }
+}
 
 InputsEmbedder::InputsEmbedder(const VLMModels& models,
                                const Tokenizer& tokenizer,

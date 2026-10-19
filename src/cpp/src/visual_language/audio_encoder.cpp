@@ -1,14 +1,14 @@
 // Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include "visual_language/audio_encoder.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <mutex>
 
-#include "gguf_multimodal.hpp"
 #include "openvino/opsets/opset15.hpp"
 #include "utils.hpp"
-#include "visual_language/inputs_embedder.hpp"
 
 namespace ov::genai {
 namespace {
@@ -144,11 +144,14 @@ private:
     std::mutex m_mutex;
 };
 
-class GGUFLFM2Audio : public AudioEncoderBase {
+class LFM2AudioEncoder : public AudioEncoderBase {
 public:
-    GGUFLFM2Audio(const std::shared_ptr<ov::Model>& model, const std::string& device, const ov::AnyMap& properties)
+    LFM2AudioEncoder(const std::shared_ptr<ov::Model>& model,
+                     size_t mel_bins,
+                     const std::string& device,
+                     const ov::AnyMap& properties)
         : AudioEncoderBase(model, device, properties),
-          m_bins(std::stoull(model->get_rt_info<std::string>({"gguf_mmproj", "clip.audio.num_mel_bins"}))),
+          m_bins(mel_bins),
           m_position_width(model->input("pos_emb").get_partial_shape()[3].get_length()) {
         m_features = compile_features(lfm2_spectrogram(m_bins));
     }
@@ -199,16 +202,16 @@ private:
     size_t m_bins, m_position_width;
 };
 
-class GGUFGemmaAudio : public AudioEncoderBase {
+class Gemma4AudioEncoder : public AudioEncoderBase {
 public:
-    GGUFGemmaAudio(const std::shared_ptr<ov::Model>& model, const std::string& device, const ov::AnyMap& properties)
-        : AudioEncoderBase(model, device, properties) {
-        const auto projector = model->get_rt_info<std::string>({"gguf_mmproj", "audio.projector"});
-        m_unified = projector == "gemma4ua";
-        OPENVINO_ASSERT(m_unified || projector == "gemma4a", "Unsupported GGUF audio projector: ", projector);
+    Gemma4AudioEncoder(const std::shared_ptr<ov::Model>& model,
+                       const AudioEncoderConfig& config,
+                       const std::string& device,
+                       const ov::AnyMap& properties)
+        : AudioEncoderBase(model, device, properties),
+          m_unified(config.type == AudioEncoderType::GEMMA4_UNIFIED) {
         if (!m_unified)
-            m_features = compile_features(gemma4_spectrogram(
-                std::stoull(model->get_rt_info<std::string>({"gguf_mmproj", "clip.audio.num_mel_bins"}))));
+            m_features = compile_features(gemma4_spectrogram(config.num_mel_bins));
     }
 
 private:
@@ -249,30 +252,26 @@ private:
         return infer();
     }
 
-    bool m_unified = false;
+    bool m_unified;
 };
 }  // namespace
 
-void attach_gguf_audio_encoder(InputsEmbedder& embedder,
-                               const GGUFMultimodalModels& models,
-                               const std::string& device,
-                               const ov::AnyMap& properties) {
-    if (!models.audio)
-        return;
-    const bool lfm2 = models.audio->get_rt_info<std::string>({"gguf_mmproj", "audio.projector"}) == "lfm2a";
-    std::shared_ptr<AudioEncoderBase> encoder =
-        lfm2 ? std::shared_ptr<AudioEncoderBase>(std::make_shared<GGUFLFM2Audio>(models.audio, device, properties))
-             : std::make_shared<GGUFGemmaAudio>(models.audio, device, properties);
-    embedder.set_audio_encoder([encoder](const ov::Tensor& audio) {
+AudioEncode create_audio_encoder(const std::shared_ptr<ov::Model>& model,
+                                 const AudioEncoderConfig& config,
+                                 const std::string& device,
+                                 const ov::AnyMap& properties) {
+    std::shared_ptr<AudioEncoderBase> encoder;
+    switch (config.type) {
+    case AudioEncoderType::LFM2:
+        encoder = std::make_shared<LFM2AudioEncoder>(model, config.num_mel_bins, device, properties);
+        break;
+    case AudioEncoderType::GEMMA4:
+    case AudioEncoderType::GEMMA4_UNIFIED:
+        encoder = std::make_shared<Gemma4AudioEncoder>(model, config, device, properties);
+        break;
+    }
+    return [encoder](const ov::Tensor& audio) {
         return encoder->encode(audio);
-    });
-}
-
-std::shared_ptr<InputsEmbedder> create_gguf_inputs_embedder(const GGUFMultimodalModels& models,
-                                                            const std::string& device,
-                                                            const ov::AnyMap& properties) {
-    auto embedder = std::make_shared<InputsEmbedder>(models.vlm, models.tokenizer, device, properties);
-    attach_gguf_audio_encoder(*embedder, models, device, properties);
-    return embedder;
+    };
 }
 }  // namespace ov::genai
