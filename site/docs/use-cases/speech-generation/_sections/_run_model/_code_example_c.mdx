@@ -10,13 +10,15 @@ int main(int argc, char** argv) {
     if (argc != 2) return 1;
 
     ov_genai_text2speech_pipeline* pipeline = NULL;
+    ov_genai_speech_generation_config* config = NULL;
     ov_genai_text2speech_decoded_results* results = NULL;
     ov_tensor_t* speech = NULL;
     FILE* output = NULL;
     int status = 1;
 
     if (ov_genai_text2speech_pipeline_create(argv[1], "${props.device || 'CPU'}", 0, &pipeline) != OK ||
-        ov_genai_text2speech_pipeline_generate(pipeline, "Hello OpenVINO GenAI", NULL, NULL, &results) != OK ||
+        ov_genai_text2speech_pipeline_get_generation_config(pipeline, &config) != OK ||
+        ov_genai_text2speech_pipeline_generate(pipeline, "Hello OpenVINO GenAI", NULL, config, &results) != OK ||
         ov_genai_text2speech_decoded_results_get_speech_at(results, 0, &speech) != OK)
         goto cleanup;
 
@@ -38,6 +40,7 @@ cleanup:
     if (output) fclose(output);
     ov_tensor_free(speech);
     ov_genai_text2speech_decoded_results_free(results);
+    ov_genai_speech_generation_config_free(config);
     ov_genai_text2speech_pipeline_free(pipeline);
     return status;
 }
