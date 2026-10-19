@@ -1,14 +1,13 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import datasets
 import pytest
 
 from tqdm import tqdm
 
 from openvino_genai import ContinuousBatchingPipeline, GenerationConfig, CacheEvictionConfig, AggregationMode, KVCrushAnchorPointMode, KVCrushConfig
 
-from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
+from utils.longbench import dataset2maxlen, evaluate, load_longbench_subset, preprocess_prompt, post_process_pred
 from utils.constants import get_default_llm_properties
 from utils.hugging_face import download_and_convert_model
 from kv_cache_eviction_utils import get_scheduler_config
@@ -72,7 +71,7 @@ def test_kvcrush_vs_snapkv_baseline_longbench(subset):
     generation_config.max_new_tokens = max_new_tokens
     generation_config.apply_chat_template = False
 
-    data = datasets.load_dataset("zai-org/LongBench", subset, split="test[:16]", revision="8cbd1")
+    data = load_longbench_subset(subset, split="test[:16]")
     with tqdm(total=len(data)) as progress_bar:
         batch = []
         baseline_answers = []

@@ -19,6 +19,7 @@ import transformers
 
 import numpy as np
 import pyarrow as pa
+import importlib.metadata
 import pyarrow.parquet as pq
 
 from pathlib import Path
@@ -448,7 +449,7 @@ def load_audio_dataset(args):
     return {"prompts": ids, "audio": audios}
 
 
-def _read_model_json(model_id, filename):
+def read_model_json(model_id, filename):
     model_path = Path(model_id)
     if model_path.is_dir():
         json_path = model_path / filename
@@ -470,11 +471,11 @@ def _read_model_json(model_id, filename):
 
 
 def get_model_type(model_id):
-    config = _read_model_json(model_id, "config.json")
+    config = read_model_json(model_id, "config.json")
     if isinstance(config, dict) and config.get("model_type"):
         return config["model_type"]
 
-    metadata = _read_model_json(model_id, "configuration.json")
+    metadata = read_model_json(model_id, "configuration.json")
     if isinstance(metadata, dict):
         model = metadata.get("model")
         if isinstance(model, dict) and model.get("type"):
@@ -526,3 +527,26 @@ def read_json_dataset(dataset_path: str):
 
     logger.info(f"Loaded {len(items)} records from JSON dataset")
     return items
+
+
+def patch_transformers_gguf_support():
+    try:
+        gguf_version = importlib.metadata.version("gguf")
+    except importlib.metadata.PackageNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "Failed to resolve the gguf package metadata required by transformers GGUF loading. "
+            "Install a valid gguf distribution or use --llamacpp for GGUF models."
+        ) from exc
+
+    from transformers.utils import import_utils as transformers_import_utils
+
+    distributions = transformers_import_utils.PACKAGE_DISTRIBUTION_MAPPING.setdefault("gguf", [])
+    normalized_distributions = [distribution.replace("_", "-") for distribution in distributions]
+    if "gguf" not in normalized_distributions:
+        distributions.insert(0, "gguf")
+
+    transformers_import_utils.is_gguf_available.cache_clear()
+    if not transformers_import_utils.is_gguf_available():
+        raise ModuleNotFoundError(
+            f"transformers requires gguf>={transformers_import_utils.GGUF_MIN_VERSION}, found {gguf_version}."
+        )
