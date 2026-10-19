@@ -158,7 +158,11 @@ public:
      * {"type": "function", "function": {"name": ..., "parameters": {...}}} or bare {"name": ..., "parameters": {...}}).
      * Parameter values are plain text in this format; with the definitions they are converted to the
      * JSON type their schema declares (integer, number, boolean, object, array). Without them, or for
-     * string parameters and values that are not valid JSON, they stay strings.
+     * string parameters and values that are not valid JSON, they stay strings. Python-style True / False / None
+     * (any case) are read as JSON true / false / null for non-string parameters.
+     *
+     * A call whose last parameter value was cut off (no close tag and no following parameter, e.g. when
+     * generation stopped at max_new_tokens) is dropped, not returned with a partial value.
      */
     explicit Qwen3CoderToolParser(const JsonContainer& tools = JsonContainer::array());
     ~Qwen3CoderToolParser();

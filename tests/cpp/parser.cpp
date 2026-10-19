@@ -92,6 +92,18 @@ TEST(ParserTest, test_qwen3_coder_tool_parser_types_from_tools) {
     ASSERT_EQ(args["options"], JsonContainer::from_json_string(R"({"lang": "en"})"));
     ASSERT_EQ(args["unknown"], JsonContainer("5"));  // not in the schema: string
 
+    // Python-style literals written by the model are typed like their JSON counterparts.
+    const std::string py_literals =
+        "<tool_call><function=get_weather><parameter=detailed>\nFalse\n</parameter><parameter=days>\nNone\n"
+        "</parameter><parameter=options>\nNULL\n</parameter><parameter=location>\nNone\n</parameter>"
+        "</function></tool_call>";
+    JsonContainer py_args = parse_qwen3_coder(py_literals, weather_tools())["tool_calls"][0]["arguments"];
+    ASSERT_EQ(py_args["detailed"], JsonContainer(false));
+    ASSERT_TRUE(py_args["days"].is_null());
+    ASSERT_TRUE(py_args["options"].is_null());
+    ASSERT_EQ(py_args["location"], JsonContainer("None"));  // declared string: never coerced
+    ASSERT_EQ(parse_qwen3_coder(py_literals)["tool_calls"][0]["arguments"]["detailed"], JsonContainer("False"));
+
     // Without tools every value is a string; a value that is not valid JSON stays a string.
     ASSERT_EQ(parse_qwen3_coder(content)["tool_calls"][0]["arguments"]["days"], JsonContainer("3"));
     const std::string bad = "<tool_call><function=get_weather><parameter=days>three</parameter></function></tool_call>";
@@ -99,9 +111,13 @@ TEST(ParserTest, test_qwen3_coder_tool_parser_types_from_tools) {
 }
 
 TEST(ParserTest, test_qwen3_coder_tool_parser_truncated_and_malformed) {
-    // Cut off by max_new_tokens inside a value: what arrived is kept.
-    JsonContainer cut = parse_qwen3_coder("<tool_call>\n<function=get_weather>\n<parameter=location>\nNew Yo");
-    ASSERT_EQ(cut["tool_calls"][0]["arguments"]["location"].get_string(), "New Yo");
+    // Cut off by max_new_tokens inside a value: the half-written call is dropped, not returned as a normal one.
+    ASSERT_FALSE(parse_qwen3_coder("<tool_call>\n<function=get_weather>\n<parameter=location>\nNew Yo")
+                     .contains("tool_calls"));
+    // Every value arrived but the closing tags did not: the call is complete.
+    JsonContainer unclosed = parse_qwen3_coder(
+        "<tool_call>\n<function=get_weather>\n<parameter=location>\nNew York\n</parameter>\n");
+    ASSERT_EQ(unclosed["tool_calls"][0]["arguments"]["location"].get_string(), "New York");
     // A missing </parameter> ends the value at the next parameter.
     JsonContainer skipped =
         parse_qwen3_coder("<tool_call><function=f><parameter=a>1<parameter=b>2</parameter></function></tool_call>");

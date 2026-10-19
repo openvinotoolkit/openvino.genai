@@ -303,7 +303,7 @@ public:
         while (pos != std::string::npos) {
             const size_t body_start = pos + TOOL_CALL_OPEN.size();
             const size_t body_end = content.find(TOOL_CALL_CLOSE, body_start);
-            // A missing close tag means the call was cut off: parse what arrived.
+            // A missing close tag is tolerated: parse_function decides whether the call itself arrived whole.
             const std::string body =
                 content.substr(body_start, body_end == std::string::npos ? std::string::npos : body_end - body_start);
             if (auto call = parse_function(body)) {
@@ -354,9 +354,13 @@ private:
             const std::string key = params.substr(key_start, key_end - key_start);
             // The value ends at its close tag, or where the next parameter starts if the model skipped it.
             size_t value_end = std::min(params.find(PARAMETER_CLOSE, key_end), params.find(PARAMETER_OPEN, key_end));
+            if (value_end == std::string::npos) {
+                // Neither a close tag nor a next parameter: the value was cut off (e.g. by max_new_tokens), and a
+                // half-written path or command must not reach a tool. Missing </function> or </tool_call> is fine.
+                return std::nullopt;
+            }
             std::string value =
-                params.substr(key_end + 1,
-                              value_end == std::string::npos ? std::string::npos : value_end - key_end - 1);
+                params.substr(key_end + 1, value_end - key_end - 1);
             // The template wraps each value in newlines; the value's own newlines stay.
             if (!value.empty() && value.front() == '\n') {
                 value.erase(0, 1);
@@ -365,7 +369,7 @@ private:
                 value.pop_back();
             }
             arguments[key] = typed_value(value, schema.contains(key) ? schema[key] : JsonContainer());
-            pos = value_end == std::string::npos ? std::string::npos : params.find(PARAMETER_OPEN, value_end);
+            pos = params.find(PARAMETER_OPEN, value_end);
         }
         return JsonContainer({{"name", name}, {"arguments", arguments}});
     }
@@ -398,10 +402,24 @@ private:
             return JsonContainer(value);
         }
         try {
-            return JsonContainer::from_json_string(value);
+            return JsonContainer::from_json_string(json_literal(value));
         } catch (const std::exception&) {
             return JsonContainer(value);
         }
+    }
+
+    // The chat template renders non-string values with Python's str(), so models also write True / False / None.
+    static std::string json_literal(const std::string& value) {
+        const size_t first = value.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos) {
+            return value;
+        }
+        std::string word = value.substr(first, value.find_last_not_of(" \t\r\n") - first + 1);
+        std::transform(word.begin(), word.end(), word.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (word == "true" || word == "false" || word == "null") {
+            return word;
+        }
+        return word == "none" ? "null" : value;
     }
 
     // "type" is a name or a list of names (e.g. ["string", "null"]).
