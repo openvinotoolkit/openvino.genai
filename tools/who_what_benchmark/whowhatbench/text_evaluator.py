@@ -10,9 +10,8 @@ from typing import Any, Union
 from importlib.resources import files
 
 from .registry import register_evaluator, BaseEvaluator
-from .whowhat_metrics import TextDivergency, TextSimilarity, KLDivergency
 from .text_generation_strategies import GenerationStrategy
-from .artifacts_manager import GenerationResults, Metrics, ArtifactsSchema, ArtifactsManager
+from .artifacts_manager import GenerationResults, Metrics, ArtifactsManager, MetricsStrategy, MetricContext
 
 
 PROMPTS_FILE = 'text_prompts.yaml'
@@ -42,7 +41,6 @@ class TextEvaluator(BaseEvaluator):
         num_assistant_tokens=0,
         assistant_confidence_threshold=0.0,
         generation_config_extra=None,
-        kl_input_tokens=None,
         kld_ctx=None,
         kld_chunk=None,
         metrics_list: list = [],
@@ -55,7 +53,6 @@ class TextEvaluator(BaseEvaluator):
         ), "Text generation pipeline for evaluation or ground trush data must be defined"
 
         self.test_data = test_data
-        self.metrics = metrics
         self.max_new_tokens = max_new_tokens
         self.tokenizer = tokenizer
         self._crop_question = crop_question
@@ -81,23 +78,23 @@ class TextEvaluator(BaseEvaluator):
         self.output_dir = output_dir
         self._generation_pass_idx = 0
 
+        self.is_genai = is_genai
+        self.is_llamacpp = is_llamacpp
         self.metrics_list = metrics_list
 
         # to support previous version of the code, where metrics was passed as a single string
-        if self.metrics and (not self.metrics_list or self.metrics not in self.metrics_list):
+        if metrics and (not self.metrics_list or metrics not in self.metrics_list):
             if not self.metrics_list:
                 self.metrics_list = []
-            self.metrics_list.append(self.metrics)
+            self.metrics_list.append(metrics)
 
         if not self.metrics_list:
             self.metrics_list = [Metrics.SIMILARITY.value]
 
-        self.is_genai = is_genai
-        self.is_llamacpp = is_llamacpp
+        self.metrics = MetricsStrategy(self.metrics_list, self.long_prompt)
         self.generation_strategy = GenerationStrategy.create(
-            self.metrics_list, self.is_genai, self.is_llamacpp, self.kld_ctx, self.kld_chunk
+            self.metrics, self.is_genai, self.is_llamacpp, self.kld_ctx, self.kld_chunk
         )
-        self.requisted_artifacts = ArtifactsSchema(self.metrics_list, self.long_prompt)
 
         if base_model:
             self.gt_data = self._generate_data(
@@ -116,15 +113,17 @@ class TextEvaluator(BaseEvaluator):
         if "prompt_length_type" in self.gt_data.columns:
             self.long_prompt = self.gt_data["prompt_length_type"].values[0] == 'long'
 
-        self.similarity = None
-        self.divergency = None
-        if "similarity" in self.metrics_list:
-            self.similarity = TextSimilarity(similarity_model_id)
-        if "divergency" in self.metrics_list:
-            assert tokenizer is not None
-            self.divergency = TextDivergency(tokenizer)
-        if Metrics.KL_DIVERGENCY.value in self.metrics_list:
-            self.kl_divergency = KLDivergency()
+        metric_context = MetricContext(
+            tokenizer=tokenizer,
+            similarity_model_id=similarity_model_id,
+            kld_ctx=kld_ctx,
+            kld_chunk=kld_chunk,
+        )
+        self.score_evaluators_list = []
+        for metric in self.metrics.metrics:
+            score_evaluator = metric.create_score_evaluator(metric_context)
+            if score_evaluator is not None:
+                self.score_evaluators_list.append(score_evaluator)
 
         self.last_cmp = None
 
@@ -154,20 +153,10 @@ class TextEvaluator(BaseEvaluator):
         all_metrics_per_prompt = {}
         all_metrics = {}
 
-        if self.similarity:
-            metric_dict, metric_per_question = self.similarity.evaluate(self.gt_data, predictions)
+        for metric in self.score_evaluators_list:
+            metric_dict, metric_per_question = metric.evaluate(self.gt_data, predictions)
             all_metrics.update(metric_dict)
             all_metrics_per_prompt.update(metric_per_question)
-
-        if self.divergency:
-            metric_dict, metric_per_question = self.divergency.evaluate(self.gt_data, predictions)
-            all_metrics.update(metric_dict)
-            all_metrics_per_prompt.update(metric_per_question)
-
-        if Metrics.KL_DIVERGENCY.value in self.metrics_list:
-            kl_metric_dict, kl_metric_per_question = self.kl_divergency.evaluate(self.gt_data, predictions)
-            all_metrics.update(kl_metric_dict)
-            all_metrics_per_prompt.update(kl_metric_per_question)
 
         compared_rows = min(len(self.gt_data), len(predictions))
         self.last_cmp = all_metrics_per_prompt
@@ -224,7 +213,7 @@ class TextEvaluator(BaseEvaluator):
         prompt_data = data["prompts"]
         prompts = prompt_data.values if self.num_samples is None else prompt_data.values[: self.num_samples]
 
-        artifacts_collector = ArtifactsManager(self.requisted_artifacts, output_dir)
+        artifacts_collector = ArtifactsManager(self.metrics, output_dir)
         generated_token_ids = artifacts_collector.collect_metadata_for_generation(reference_token_ids_path)
 
         if generation_config is None:
@@ -278,4 +267,4 @@ class TextEvaluator(BaseEvaluator):
 
                         batch.clear()
 
-        return artifacts_collector.build_csv(self.language, self.long_prompt, self.metrics_list)
+        return artifacts_collector.build_csv(self.language, self.long_prompt)
