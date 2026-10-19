@@ -576,36 +576,39 @@ void StatefulLLMPipeline::negotiate_npu_history_reuse(size_t full_history_len) {
 
     auto& state = m_cache_state.get_state();
     const size_t k_common = state.size();
-    if (k_common == 0) {
-        // Nothing to keep. The plugin takes a full prompt whether it is idle or has a reset
-        // pending, while a proposal on top of a pending reset would be rejected.
-        return;
-    }
-
-    // Propose the common prefix and read the grant back. The write is not idempotent,
-    // the plugin clamps by capacity, chunk alignment and its prefill watermark, so
-    // slicing must happen at the granted value, never at the proposed one.
-    std::optional<ov::VariableState> channel;
-    for (auto& st : m_model_runner.query_state()) {
-        if (st.get_name() == utils::NPUW_STORED_TOKENS_STATE) {
-            channel = st;
-            break;
+    int64_t granted = 0;
+    if (k_common > 0) {
+        // Propose the common prefix and read the grant back. The write is not idempotent,
+        // the plugin clamps by capacity, chunk alignment and its prefill watermark, so
+        // slicing must happen at the granted value, never at the proposed one.
+        std::optional<ov::VariableState> channel;
+        for (auto& st : m_model_runner.query_state()) {
+            if (st.get_name() == utils::NPUW_STORED_TOKENS_STATE) {
+                channel = st;
+                break;
+            }
         }
-    }
-    OPENVINO_ASSERT(channel.has_value(),
-                    utils::NPUW_STORED_TOKENS_STATE,
-                    " is missing while continuous prefill is enabled.");
+        OPENVINO_ASSERT(channel.has_value(),
+                        utils::NPUW_STORED_TOKENS_STATE,
+                        " is missing while continuous prefill is enabled.");
 
-    ov::Tensor proposal(ov::element::i64, {1});
-    proposal.data<int64_t>()[0] = static_cast<int64_t>(k_common);
-    channel->set_state(proposal);
-    const int64_t granted = channel->get_state().data<int64_t>()[0];
-    OPENVINO_ASSERT(granted >= 0 && static_cast<size_t>(granted) <= k_common,
-                    "NPU continuous prefill granted an invalid keep of ",
-                    granted,
-                    " for a proposal of ",
-                    k_common,
-                    ".");
+        ov::Tensor proposal(ov::element::i64, {1});
+        proposal.data<int64_t>()[0] = static_cast<int64_t>(k_common);
+        channel->set_state(proposal);
+        granted = channel->get_state().data<int64_t>()[0];
+        OPENVINO_ASSERT(granted >= 0 && static_cast<size_t>(granted) <= k_common,
+                        "NPU continuous prefill granted an invalid keep of ",
+                        granted,
+                        " for a proposal of ",
+                        k_common,
+                        ".");
+    }
+    if (granted == 0) {
+        // Nothing is kept, so the plugin must run a full prefill. Without a pending reset
+        // it would route a one-token prompt to generate on whatever its cache still holds,
+        // such as a cancelled turn. The reset is idempotent after a zero grant.
+        reset_state();
+    }
 
     // The tokens in [granted, k_common) become part of the delta, since the full
     // tokenized history is still available to the caller.
