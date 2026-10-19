@@ -31,13 +31,20 @@ std::shared_ptr<ov::Model> peek_draft_model(const ov::AnyMap& properties) {
     return it->second.as<ov::genai::ModelDesc>().model;
 }
 
+// NPUW_PA selects the NPU PA front-end. It runs under the continuous batching
+// pipeline, which builds the PA model and owns the paged KV cache.
+bool requests_npuw_pa(const ov::AnyMap& properties) {
+    const auto it = properties.find("NPUW_PA");
+    return it != properties.end() && it->second.as<bool>();
+}
+
 bool should_use_stateful_pipeline(bool is_npu_requested,
                                   bool has_draft_model,
                                   const std::string& attention_backend,
                                   const std::shared_ptr<ov::Model>& main_model,
                                   const ov::AnyMap& properties) {
     if (is_npu_requested) {
-        return true;
+        return !requests_npuw_pa(properties);
     }
     if (has_draft_model && attention_backend == ov::genai::SDPA_BACKEND) {
         OPENVINO_ASSERT(ov::genai::is_gemma4_mtp_model_pair(main_model, peek_draft_model(properties)),
@@ -256,7 +263,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const auto generation_config = utils::from_config_json_if_exists(models_path);
     if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
-    } else if (utils::explicitly_requires_paged_attention(user_properties)) {
+    } else if (utils::explicitly_requires_paged_attention(user_properties) || requests_npuw_pa(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, scheduler_config, device, device_properties, generation_config, models_path);
@@ -302,7 +309,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const auto generation_config = utils::from_config_json_if_exists(models_path);
     if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
-    } else if (utils::explicitly_requires_paged_attention(user_properties)) {
+    } else if (utils::explicitly_requires_paged_attention(user_properties) || requests_npuw_pa(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, scheduler_config, device, device_properties, generation_config, models_path);
@@ -354,7 +361,7 @@ ov::genai::LLMPipeline::LLMPipeline(
             device,
             properties,
             generation_config);
-    } else if (utils::explicitly_requires_paged_attention(user_properties)) {
+    } else if (utils::explicitly_requires_paged_attention(user_properties) || requests_npuw_pa(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, scheduler_config, device, device_properties, generation_config);
