@@ -63,7 +63,7 @@ const VideoGenerationConfig LTX2_3_DEFAULT_CONFIG = VideoGenerationConfig{
     std::nullopt,            // taylorseer_config
     std::nullopt,            // adapters
     7.0f,                    // audio_guidance_scale
-    0.0f,                    // decode_timestep
+    std::nullopt,            // decode_timestep
     std::nullopt,            // decode_noise_scale
     1.0f,                    // stg_scale
     1.0f,                    // audio_stg_scale
@@ -168,9 +168,7 @@ class LTX2Pipeline : public VideoPipeline {
 
     void check_decode_controls(const VideoGenerationConfig& generation_config) const {
         utils::validate_generation_config(generation_config);
-        const bool has_nonzero_timestep = utils::has_nonzero_decode_timestep(generation_config);
-        OPENVINO_ASSERT(!has_nonzero_timestep &&
-                            !std::holds_alternative<std::vector<float>>(generation_config.decode_timestep) &&
+        OPENVINO_ASSERT(!generation_config.decode_timestep.has_value() &&
                             !generation_config.decode_noise_scale.has_value(),
                         "decode_timestep and decode_noise_scale are not supported for LTX2 pipelines");
     }

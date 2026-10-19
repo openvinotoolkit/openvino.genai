@@ -143,7 +143,7 @@ class TestVideoGenerationConfig:
         assert hasattr(config, "frame_rate")
         assert hasattr(config, "num_videos_per_prompt")
         assert hasattr(config, "guidance_rescale")
-        assert config.decode_timestep == pytest.approx(0.0)
+        assert config.decode_timestep is None
         assert config.decode_noise_scale is None
 
     def test_config_inherited_fields(self):
@@ -171,6 +171,11 @@ class TestVideoGenerationConfig:
         config = ov_genai.VideoGenerationConfig()
         config.decode_timestep = [0.0, 0.5]
         assert config.decode_timestep == pytest.approx([0.0, 0.5])
+
+        config.decode_timestep = 0.0
+        assert config.decode_timestep == pytest.approx(0.0)
+        config.decode_timestep = None
+        assert config.decode_timestep is None
 
     def test_config_validate_guidance_scale_with_negative_prompt(self, video_generation_model):
         """guidance_scale <= 1 with negative_prompt is accepted (warning only)."""
@@ -391,6 +396,7 @@ class TestVideoGenerationPipelines:
         assert callback_called is False
 
     @pytest.mark.parametrize("decode_config", [
+        {"decode_timestep": 0.0},
         {"decode_timestep": [0.0]},
         {"decode_noise_scale": 0.0},
     ])
@@ -888,10 +894,11 @@ class TestVideoGenerationPipelines:
         [
             {"decode_timestep": 0.25, "decode_noise_scale": 0.0},
             {"decode_timestep": 0.0, "decode_noise_scale": 0.25},
+            {"decode_timestep": 0.0},
             {"decode_timestep": [0.0]},
             {"decode_noise_scale": 0.0},
         ],
-        ids=["decode-timestep", "decode-noise-scale", "zero-timestep-list", "zero-noise-scale"],
+        ids=["decode-timestep", "decode-noise-scale", "zero-timestep", "zero-timestep-list", "zero-noise-scale"],
     )
     def test_ltx2_decode_controls_rejected(self, video_generation_model, decode_config):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
@@ -918,6 +925,7 @@ class TestVideoGenerationPipelines:
 
     @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID], indirect=True)
     @pytest.mark.parametrize("decode_config", [
+        {"decode_timestep": 0.0},
         {"decode_timestep": [0.0]},
         {"decode_noise_scale": 0.0},
     ])

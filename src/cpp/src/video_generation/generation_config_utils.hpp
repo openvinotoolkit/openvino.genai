@@ -14,8 +14,6 @@ bool requests_classifier_free_guidance(const VideoGenerationConfig& config);
 
 void validate_generation_config(const VideoGenerationConfig& config);
 
-bool has_nonzero_decode_timestep(const VideoGenerationConfig& config);
-
 void update_generation_config(VideoGenerationConfig& config, const ov::AnyMap& properties);
 
 /// Drops the negative prompt when no modality requests guidance. Call after 'replace_defaults'.

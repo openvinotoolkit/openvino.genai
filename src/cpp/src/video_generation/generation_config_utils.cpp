@@ -12,32 +12,23 @@ bool requests_classifier_free_guidance(const VideoGenerationConfig& config) {
     return config.guidance_scale > 1.0f || config.audio_guidance_scale.value_or(config.guidance_scale) > 1.0f;
 }
 
-bool has_nonzero_decode_timestep(const VideoGenerationConfig& config) {
-    return std::visit([](const auto& values) {
-        using Value = std::decay_t<decltype(values)>;
-        if constexpr (std::is_same_v<Value, float>) {
-            return values != 0.0f;
-        } else {
-            return std::any_of(values.begin(), values.end(), [](float value) { return value != 0.0f; });
-        }
-    }, config.decode_timestep);
-}
-
 void validate_generation_config(const VideoGenerationConfig& config) {
     if (!requests_classifier_free_guidance(config) && config.negative_prompt != std::nullopt) {
         GENAI_WARN("Guidance scale <= 1.0 ignores negative prompt");
     }
-    std::visit([](const auto& values) {
-        using Value = std::decay_t<decltype(values)>;
-        if constexpr (std::is_same_v<Value, float>) {
-            OPENVINO_ASSERT(std::isfinite(values), "decode_timestep must be finite");
-        } else {
-            OPENVINO_ASSERT(!values.empty(), "decode_timestep list must not be empty");
-            for (const float value : values) {
-                OPENVINO_ASSERT(std::isfinite(value), "decode_timestep must be finite");
+    if (config.decode_timestep.has_value()) {
+        std::visit([](const auto& values) {
+            using Value = std::decay_t<decltype(values)>;
+            if constexpr (std::is_same_v<Value, float>) {
+                OPENVINO_ASSERT(std::isfinite(values), "decode_timestep must be finite");
+            } else {
+                OPENVINO_ASSERT(!values.empty(), "decode_timestep list must not be empty");
+                for (const float value : values) {
+                    OPENVINO_ASSERT(std::isfinite(value), "decode_timestep must be finite");
+                }
             }
-        }
-    }, config.decode_timestep);
+        }, *config.decode_timestep);
+    }
     OPENVINO_ASSERT(!config.decode_noise_scale.has_value() || std::isfinite(*config.decode_noise_scale),
                     "decode_noise_scale must be finite");
 }

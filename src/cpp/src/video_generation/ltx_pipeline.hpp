@@ -45,7 +45,7 @@ const VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
     std::nullopt,            // taylorseer_config
     std::nullopt,            // adapters
     std::nullopt,            // audio_guidance_scale
-    0.0f,                    // decode_timestep
+    std::nullopt,            // decode_timestep
     std::nullopt             // decode_noise_scale
 };
 
@@ -76,22 +76,27 @@ class LTXPipeline : public VideoPipeline {
     std::shared_ptr<ImageProcessor> m_image_processor = nullptr;
 
     static bool needs_decode_noise(const VideoGenerationConfig& config) {
-        return config.decode_noise_scale.has_value()
-                   ? *config.decode_noise_scale != 0.0f
-                   : utils::has_nonzero_decode_timestep(config);
+        if (config.decode_noise_scale.has_value()) {
+            return *config.decode_noise_scale != 0.0f;
+        }
+        if (!config.decode_timestep.has_value()) {
+            return false;
+        }
+        if (const auto* values = std::get_if<std::vector<float>>(&*config.decode_timestep)) {
+            return std::any_of(values->begin(), values->end(), [](float value) { return value != 0.0f; });
+        }
+        return std::get<float>(*config.decode_timestep) != 0.0f;
     }
 
     void check_inputs(const VideoGenerationConfig& generation_config) const {
         utils::validate_generation_config(generation_config);
-        const bool has_nonzero_timestep = utils::has_nonzero_decode_timestep(generation_config);
         const bool needs_noise = needs_decode_noise(generation_config);
         const auto& vae_config = m_vae->get_config();
         OPENVINO_ASSERT(!vae_config.timestep_conditioning || !needs_noise ||
                             generation_config.generator,
                         "A generator is required when decode_noise_scale is non-zero");
         OPENVINO_ASSERT(vae_config.timestep_conditioning ||
-                            (!has_nonzero_timestep &&
-                             !std::holds_alternative<std::vector<float>>(generation_config.decode_timestep) &&
+                            (!generation_config.decode_timestep.has_value() &&
                              !generation_config.decode_noise_scale.has_value()),
                         "decode_timestep and decode_noise_scale require a timestep-conditioned VAE decoder");
         video_generation_utils::check_video_size(generation_config.height,
@@ -124,7 +129,9 @@ class LTXPipeline : public VideoPipeline {
     void check_generation_inputs(const VideoGenerationConfig& generation_config) const {
         check_inputs(generation_config);
         if (m_vae->get_config().timestep_conditioning) {
-            if (const auto* values = std::get_if<std::vector<float>>(&generation_config.decode_timestep)) {
+            if (const auto* values = generation_config.decode_timestep
+                                         ? std::get_if<std::vector<float>>(&*generation_config.decode_timestep)
+                                         : nullptr) {
                 OPENVINO_ASSERT(values->size() == generation_config.num_videos_per_prompt,
                                 "decode_timestep list length must match the video batch size");
             }
@@ -252,7 +259,9 @@ class LTXPipeline : public VideoPipeline {
         OPENVINO_ASSERT(latent.get_shape().size() == 3, "unpack_latents expects [B, S, D] input shape");
         const size_t batch_size = latent.get_shape()[0];
         m_vae->validate_decoder_batch(batch_size);
-        const auto* timestep_values = std::get_if<std::vector<float>>(&generation_config.decode_timestep);
+        const auto* timestep_values = generation_config.decode_timestep
+                                          ? std::get_if<std::vector<float>>(&*generation_config.decode_timestep)
+                                          : nullptr;
         OPENVINO_ASSERT(!m_vae->get_config().timestep_conditioning || !timestep_values ||
                             timestep_values->size() == batch_size,
                         "decode_timestep list length must match the latent batch size");
@@ -270,7 +279,9 @@ class LTXPipeline : public VideoPipeline {
             video_generation_utils::tensor_from_vector(m_vae->get_config().latents_std_data),
             m_vae->get_config().scaling_factor);
 
-        const float scalar_timestep = timestep_values ? 0.0f : std::get<float>(generation_config.decode_timestep);
+        const float scalar_timestep = timestep_values || !generation_config.decode_timestep
+                                          ? 0.0f
+                                          : std::get<float>(*generation_config.decode_timestep);
         const size_t elements_per_video = denormalized.get_size() / batch_size;
         std::optional<ov::Tensor> timestep;
         if (m_vae->get_config().timestep_conditioning) {

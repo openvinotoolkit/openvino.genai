@@ -76,12 +76,13 @@ struct VideoGenerationConfig {
     std::optional<float> audio_guidance_scale = std::nullopt;
 
     /// Timestep conditioning for a VAE decoder: a scalar applies to every video, or provide one
-    /// value per video in the latent batch. Non-zero values require a timestep-conditioned decoder.
-    std::variant<float, std::vector<float>> decode_timestep = 0.0f;
+    /// value per video in the latent batch. If unset, the decoder uses 0.0.
+    /// Setting any value requires a timestep-conditioned decoder.
+    std::optional<std::variant<float, std::vector<float>>> decode_timestep = std::nullopt;
 
     /// Decode-time interpolation factor between denoised latents and random noise.
-    /// If unset, decode_timestep is used. A non-zero value is rejected when the VAE decoder does not support
-    /// timestep conditioning. Applied to every video in the batch.
+    /// If unset, decode_timestep is used. Setting any value requires a timestep-conditioned decoder.
+    /// Applied to every video in the batch.
     std::optional<float> decode_noise_scale = std::nullopt;
     // NOTE: new fields must be appended here rather than inserted above. Pipeline default configs
     // (e.g. LTX2_DEFAULT_CONFIG) are positional aggregate initializers, so inserting mid-struct
