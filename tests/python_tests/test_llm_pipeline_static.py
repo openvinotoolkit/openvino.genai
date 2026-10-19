@@ -531,3 +531,9 @@ def test_npuw_pa_off_keeps_the_stateful_pipeline(llm_model: OVConvertedModelSche
 def test_npuw_pa_rejects_the_sdpa_backend(llm_model: OVConvertedModelSchema):
     with pytest.raises(RuntimeError, match="NPUW_PA runs on the PA attention backend"):
         LLMPipeline(llm_model.models_path, "NPU", **(NPUW_PA_CONFIG | {"ATTENTION_BACKEND": "SDPA"}))
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+def test_npu_pa_backend_needs_npuw_pa(llm_model: OVConvertedModelSchema):
+    with pytest.raises(RuntimeError, match="needs NPUW_PA=YES"):
+        LLMPipeline(llm_model.models_path, "NPU", **(DEFAULT_CONFIG | {"ATTENTION_BACKEND": "PA"}))
