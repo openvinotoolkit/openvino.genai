@@ -506,6 +506,38 @@ def test_chat_generation(
         )
 
 
+# A cancelled first turn leaves nothing to keep while the plugin's cache still holds the
+# cancelled tokens. The next turn must be a full prefill even when it is a single token,
+# which the plugin would otherwise run as a generate step on that cache.
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize(
+    "npu_config", [pytest.param(CONTINUOUS_PREFILL_CONFIG, id="continuous_prefill")], indirect=True
+)
+def test_chat_one_token_prompt_after_cancelled_turn(
+    ov_model: LLMPipeline,
+    npu_model: LLMPipeline,
+    tokenizer: Tokenizer,
+):
+    prompt = tokenizer.encode("Why is the Sun yellow?", add_special_tokens=True).input_ids
+    one_token = ov.Tensor(np.array([[prompt.data[0][-1]]], dtype=np.int64))
+
+    def generate_after_cancel(pipe: LLMPipeline) -> list[int]:
+        num_tokens = 0
+
+        def cancel_on_third_token(subword: str) -> StreamingStatus:
+            nonlocal num_tokens
+            num_tokens += 1
+            return StreamingStatus.CANCEL if num_tokens == 3 else StreamingStatus.RUNNING
+
+        pipe.start_chat()
+        pipe.generate(prompt, max_new_tokens=20, do_sample=False, streamer=cancel_on_third_token)
+        result = pipe.generate(one_token, max_new_tokens=10, do_sample=False)
+        pipe.finish_chat()
+        return list(result.tokens[0])
+
+    assert generate_after_cancel(npu_model) == generate_after_cancel(ov_model)
+
+
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("npu_config", PIPELINE_CONFIGS, indirect=True)
 def test_readonly_input_tensor(npu_model: LLMPipeline):
