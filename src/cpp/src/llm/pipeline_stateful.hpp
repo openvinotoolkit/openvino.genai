@@ -42,6 +42,7 @@ class StatefulLLMPipeline final : public LLMPipelineImplBase {
     void init_npu_chat_mode(const ov::CompiledModel& compiled_model);
     // Proposes the post-alignment common prefix to the plugin, reads the grant back
     // and resizes the cache state to it, so slicing happens at the granted value.
+    // When nothing is kept it resets the request, so the turn is a full prefill.
     void negotiate_npu_history_reuse(size_t full_history_len);
 
 public:
