@@ -26,6 +26,8 @@ FUNASR_TOKENIZER_SUBFOLDER = (
 )
 ASR_MODEL_TYPES = {"funasr", "fun_asr", "sense_voice"}
 QWEN_ASR_MODEL_TYPES = {"qwen3_asr"}
+AUDIO_VLM_MODEL_TYPES = {"gemma4", "gemma4_unified"}
+WHISPER_MODEL_TYPES = {"whisper"}
 
 DEFAULT_ASR_INSTRUCTION = "Transcribe this audio."
 # Language specific prompt https://huggingface.co/google/gemma-4-12B#6-audio
@@ -262,6 +264,71 @@ class ASRGenAIPipelineTranscriber:
         return f"<|{language}|><|{emotion}|><|{event}|><|woitn|>{text}"
 
 
+def _transcribe_whisper(model, processor, audio, language, max_new_tokens, device=None, dtype=None) -> str:
+    import torch
+
+    inputs = processor(np.asarray(audio, dtype=np.float32), sampling_rate=AUDIO_SAMPLING_RATE, return_tensors="pt")
+    input_features = inputs.input_features
+    if device is not None:
+        input_features = input_features.to(device=device, dtype=dtype)
+    with torch.inference_mode():
+        tokens = model.generate(
+            input_features=input_features,
+            language=language,
+            task="transcribe",
+            max_new_tokens=max_new_tokens,
+            do_sample=False,
+        )
+    return processor.batch_decode(tokens, skip_special_tokens=True)[0].strip()
+
+
+class WhisperHFTranscriber:
+    def __init__(self, model_id: str, language: str = "", torch_dtype=None) -> None:
+        from transformers import WhisperForConditionalGeneration, WhisperProcessor
+
+        self.processor = WhisperProcessor.from_pretrained(str(model_id))
+        model_kwargs = {"torch_dtype": torch_dtype} if torch_dtype is not None else {}
+        self.model = WhisperForConditionalGeneration.from_pretrained(str(model_id), **model_kwargs).eval()
+        # None lets Whisper detect the language from the audio
+        self.language = language or None
+
+    def transcribe(self, audio, max_new_tokens: int) -> str:
+        return _transcribe_whisper(
+            self.model,
+            self.processor,
+            audio,
+            self.language,
+            max_new_tokens,
+            device=self.model.device,
+            dtype=self.model.dtype,
+        )
+
+
+class WhisperOptimumTranscriber:
+    def __init__(self, model: Any, processor: Any, language: str = "") -> None:
+        self.model = model
+        self.processor = processor
+        # None lets Whisper detect the language from the audio
+        self.language = language or None
+
+    def transcribe(self, audio, max_new_tokens: int) -> str:
+        return _transcribe_whisper(self.model, self.processor, audio, self.language, max_new_tokens)
+
+
+class WhisperGenAITranscriber:
+    def __init__(self, pipeline: Any, language: str = "") -> None:
+        self.pipeline = pipeline
+        # None lets Whisper detect the language from the audio
+        self.language = language or None
+
+    def transcribe(self, audio, max_new_tokens: int) -> str:
+        generation_kwargs = {"max_new_tokens": max_new_tokens}
+        if self.language:
+            generation_kwargs["language"] = self.language
+        result = self.pipeline.generate(np.asarray(audio, dtype=np.float32).tolist(), **generation_kwargs)
+        return result.texts[0].strip()
+
+
 def _get_asr_model_type(model_id: str) -> str:
     model_type = get_model_type(model_id)
     if model_type is None:
@@ -304,6 +371,9 @@ class ASRHFTranscriber:
                 language or "en",
                 torch_dtype=kwargs.get("torch_dtype"),
             )
+        if model_type in WHISPER_MODEL_TYPES:
+            logger.info("Using Transformers Whisper API")
+            return WhisperHFTranscriber(model_id, language, torch_dtype=kwargs.get("torch_dtype"))
 
         _register_model_backend(model_type)
         model = _load_multimodal_model(model_id, device, ov_config, True, False, **kwargs)
@@ -323,6 +393,14 @@ class ASRGenAITranscriber:
             pipeline = openvino_genai.ASRPipeline(str(model_id), device.upper(), **(ov_config or {}))
             default_language = "en" if model_type in ASR_MODEL_TYPES else ""
             return ASRGenAIPipelineTranscriber(pipeline, language or default_language, model_type=model_type)
+        if model_type in WHISPER_MODEL_TYPES:
+            logger.info("Using OpenVINO GenAI WhisperPipeline API")
+            import openvino_genai
+
+            pipeline = openvino_genai.WhisperPipeline(str(model_id), device.upper(), **(ov_config or {}))
+            return WhisperGenAITranscriber(pipeline, language)
+        if model_type in AUDIO_VLM_MODEL_TYPES:
+            raise ValueError("Gemma4 audio input is not yet supported by the OpenVINO GenAI backend")
         _register_model_backend(model_type)
         model = _load_multimodal_model(model_id, device, ov_config, False, True, **kwargs)
         return GenAIMultimodalTranscriber(model, language or "English")
@@ -343,6 +421,14 @@ class ASROptimumTranscriber:
                 subfolder = FUNASR_TOKENIZER_SUBFOLDER if model_type == "funasr" else ""
                 tokenizer = AutoTokenizer.from_pretrained(str(model_id), subfolder=subfolder)
             return FunASROptimumTranscriber(model, tokenizer, language or "en")
+        if model_type in WHISPER_MODEL_TYPES:
+            logger.info("Using Optimum Whisper API")
+            from optimum.intel.openvino import OVModelForSpeechSeq2Seq
+            from transformers import WhisperProcessor
+
+            model = OVModelForSpeechSeq2Seq.from_pretrained(model_id, device=device, ov_config=ov_config)
+            processor = WhisperProcessor.from_pretrained(str(model_id))
+            return WhisperOptimumTranscriber(model, processor, language)
 
         _register_model_backend(model_type)
         if model_type in QWEN_ASR_MODEL_TYPES:
