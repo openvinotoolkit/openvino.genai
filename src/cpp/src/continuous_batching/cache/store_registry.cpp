@@ -94,43 +94,37 @@ std::unique_ptr<IKVCacheStore> make_default_store(const KVCacheDiskLayout& layou
     return std::make_unique<FileKVCacheStore>(std::move(backend));
 }
 
-}  // namespace
-
-std::unique_ptr<IKVCacheStore> open_kv_cache_store(const KVCacheDiskLayout& layout,
-                                                   const CacheOffloadConfig& config,
-                                                   const std::string& device) {
-    if (!config.allow_untrusted_store_plugin || config.store_library_path.empty()) {
-        return make_default_store(layout, config, device);
-    }
-
+/// Returns nullptr (after logging why) on any failure - never throws, never falls back itself.
+std::unique_ptr<IKVCacheStore> try_open_plugin_store(const KVCacheDiskLayout& layout,
+                                                     const CacheOffloadConfig& config,
+                                                     const std::string& device,
+                                                     const std::string& group) {
     void* handle = load_library(config.store_library_path);
     if (handle == nullptr) {
-        GENAI_WARN("Failed to load KV cache store plugin '%s', falling back to the default file store",
-                   config.store_library_path.c_str());
-        return make_default_store(layout, config, device);
+        GENAI_WARN("Failed to load KV cache store plugin '%s'", config.store_library_path.c_str());
+        return nullptr;
     }
 
     void* symbol = resolve_symbol(handle, OV_KVCACHE_STORE_ENTRY_SYMBOL);
     if (symbol == nullptr) {
-        GENAI_WARN("KV cache store plugin '%s' does not export '%s', falling back to the default file store",
+        GENAI_WARN("KV cache store plugin '%s' does not export '%s'",
                    config.store_library_path.c_str(),
                    OV_KVCACHE_STORE_ENTRY_SYMBOL);
-        return make_default_store(layout, config, device);
+        return nullptr;
     }
 
     const OvKVCacheStoreModuleInfo* module_info = reinterpret_cast<QueryProvidersFn>(symbol)();
     if (module_info == nullptr || !handshake_ok(config.store_library_path, *module_info)) {
-        GENAI_WARN("KV cache store plugin '%s' failed the ABI handshake, falling back to the default file store",
-                   config.store_library_path.c_str());
-        return make_default_store(layout, config, device);
+        GENAI_WARN("KV cache store plugin '%s' failed the ABI handshake", config.store_library_path.c_str());
+        return nullptr;
     }
 
     const OvKVCacheStoreProviderDescriptor* provider = find_provider(*module_info, config.store_provider_name);
     if (provider == nullptr || provider->vtable == nullptr || provider->vtable->open == nullptr) {
-        GENAI_WARN("KV cache store plugin '%s' has no usable provider named '%s', falling back to the default file store",
+        GENAI_WARN("KV cache store plugin '%s' has no usable provider named '%s'",
                    config.store_library_path.c_str(),
                    config.store_provider_name.c_str());
-        return make_default_store(layout, config, device);
+        return nullptr;
     }
 
     const std::string block_size_str = std::to_string(layout.get_slot_size());
@@ -145,20 +139,48 @@ std::unique_ptr<IKVCacheStore> open_kv_cache_store(const KVCacheDiskLayout& layo
     OvKVCacheStoreOpenResult result{};
     const OvKVCacheStatus status = provider->vtable->open(provider->self, nullptr, &options, &result);
     if (status != OV_KVCACHE_OK || result.status != OV_KVCACHE_OK || result.vtable == nullptr || result.store == nullptr) {
-        GENAI_WARN(
-            "KV cache store plugin '%s' failed to open a store instance (status %d), falling back to the default "
-            "file store",
-            config.store_library_path.c_str(),
-            static_cast<int>(result.status));
-        return make_default_store(layout, config, device);
+        GENAI_WARN("KV cache store plugin '%s' failed to open a store instance (status %d)",
+                   config.store_library_path.c_str(),
+                   static_cast<int>(result.status));
+        return nullptr;
     }
 
     const size_t capacity_blocks = layout.get_slot_size() > 0 ? config.capacity_bytes / layout.get_slot_size() : 0;
-    GENAI_INFO("[KV_TRACE] kv_cache_store plugin='%s' provider='%s' capacity_blocks=%zu",
+    GENAI_INFO("[KV_TRACE] kv_cache_store plugin='%s' provider='%s' group='%s' capacity_blocks=%zu",
                config.store_library_path.c_str(),
                provider->name != nullptr ? provider->name : "",
+               group.c_str(),
                capacity_blocks);
-    return std::make_unique<AbiKVCacheStore>(result.vtable, result.store, "kv", layout.get_slot_size(), capacity_blocks);
+    return std::make_unique<AbiKVCacheStore>(result.vtable, result.store, group, layout.get_slot_size(), capacity_blocks);
+}
+
+}  // namespace
+
+std::unique_ptr<IKVCacheStore> open_kv_cache_store(const KVCacheDiskLayout& layout,
+                                                   const CacheOffloadConfig& config,
+                                                   const std::string& device,
+                                                   const std::string& group) {
+    if (config.allow_untrusted_store_plugin && !config.store_library_path.empty()) {
+        if (auto store = try_open_plugin_store(layout, config, device, group)) {
+            return store;
+        }
+        GENAI_WARN("Falling back to the default file store for group '%s'", group.c_str());
+    }
+    return make_default_store(layout, config, device);
+}
+
+std::unique_ptr<IKVCacheStore> open_required_kv_cache_store_plugin(const KVCacheDiskLayout& layout,
+                                                                    const CacheOffloadConfig& config,
+                                                                    const std::string& device,
+                                                                    const std::string& group) {
+    OPENVINO_ASSERT(config.allow_untrusted_store_plugin && !config.store_library_path.empty(),
+                    "A KV cache store plugin is required here (group '", group,
+                    "') but none is configured: set both allow_untrusted_store_plugin and store_library_path");
+    auto store = try_open_plugin_store(layout, config, device, group);
+    OPENVINO_ASSERT(store != nullptr,
+                    "Failed to open the required KV cache store plugin '", config.store_library_path,
+                    "' for group '", group, "'");
+    return store;
 }
 
 }  // namespace ov::genai

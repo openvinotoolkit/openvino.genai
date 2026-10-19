@@ -101,7 +101,7 @@ std::optional<std::string> find_sample_plugin_library() {
 }  // namespace
 
 TEST(TestStoreRegistry, DefaultConfigUsesTheInTreeFileStoreDirectly) {
-    auto store = open_kv_cache_store(make_layout(), make_config(), "CPU");
+    auto store = open_kv_cache_store(make_layout(), make_config(), "CPU", "kv");
     ASSERT_NE(store, nullptr);
     expect_store_is_usable(*store);
 }
@@ -111,7 +111,7 @@ TEST(TestStoreRegistry, DisallowedPluginIsIgnoredEvenWhenAPathIsSet) {
     config.store_library_path = "does_not_matter_because_disallowed.dll";
     config.allow_untrusted_store_plugin = false;
 
-    auto store = open_kv_cache_store(make_layout(), config, "CPU");
+    auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv");
     ASSERT_NE(store, nullptr);
     expect_store_is_usable(*store);
 }
@@ -121,7 +121,7 @@ TEST(TestStoreRegistry, NonexistentPluginLibraryFallsBackGracefully) {
     config.store_library_path = "this_library_does_not_exist_anywhere.dll";
     config.allow_untrusted_store_plugin = true;
 
-    auto store = open_kv_cache_store(make_layout(), config, "CPU");
+    auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv");
     ASSERT_NE(store, nullptr);
     expect_store_is_usable(*store);
 }
@@ -133,7 +133,7 @@ TEST(TestStoreRegistry, LibraryMissingTheEntrySymbolFallsBackGracefully) {
     config.store_library_path = "kernel32.dll";
     config.allow_untrusted_store_plugin = true;
 
-    auto store = open_kv_cache_store(make_layout(), config, "CPU");
+    auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv");
     ASSERT_NE(store, nullptr);
     expect_store_is_usable(*store);
 }
@@ -150,7 +150,7 @@ TEST(TestStoreRegistry, LoadsAndUsesAGenuinelySeparateDynamicallyLoadedPlugin) {
     config.store_provider_name = "file";
     config.allow_untrusted_store_plugin = true;
 
-    auto store = open_kv_cache_store(make_layout(), config, "CPU");
+    auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv");
     ASSERT_NE(store, nullptr);
     expect_store_is_usable(*store);
 }
@@ -166,7 +166,7 @@ TEST(TestStoreRegistry, LoadsAndUsesTheStandaloneSampleThirdPartyPlugin) {
     config.store_provider_name = "sample-in-memory";
     config.allow_untrusted_store_plugin = true;
 
-    auto store = open_kv_cache_store(make_layout(), config, "CPU");
+    auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv");
     ASSERT_NE(store, nullptr);
     expect_store_is_usable(*store);
 }

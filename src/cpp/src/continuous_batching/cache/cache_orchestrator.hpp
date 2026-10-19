@@ -124,7 +124,7 @@ public:
                         "KV cache offload requires a model with KV cache inputs");
 
         auto& kv_manager = static_cast<KVCacheManager&>(*cache_mgr_it->second);
-        auto store = open_kv_cache_store(kv_manager.get_block_layout(), offload_config, device);
+        auto store = open_kv_cache_store(kv_manager.get_block_layout(), offload_config, device, "kv");
         GENAI_INFO("[KV_TRACE] kv_cache_offload slot_bytes=%zu capacity_blocks=%zu",
                    store->get_block_size(),
                    store->get_capacity_blocks());
@@ -152,7 +152,7 @@ public:
         auto& la_manager = static_cast<LinearAttentionCacheManager&>(*cache_mgr_it->second);
         CacheOffloadConfig la_backend_config = offload_config;
         la_backend_config.capacity_bytes = offload_config.linear_attention_capacity_bytes;
-        auto store = open_kv_cache_store(la_manager.get_block_layout(), la_backend_config, device);
+        auto store = open_kv_cache_store(la_manager.get_block_layout(), la_backend_config, device, "la");
         GENAI_INFO("[KV_TRACE] la_cache_offload slot_bytes=%zu capacity_blocks=%zu",
                    store->get_block_size(),
                    store->get_capacity_blocks());
