@@ -1,6 +1,6 @@
 # KV Cache Store Plugin Sample (`sample_kv_cache_store_plugin`)
 
-[中文](README_zh.md)
+[中文](README_zh.md) | [E2E validation guide for your own plugin](E2E_VALIDATION.md)
 
 A minimal, standalone, third-party-style implementation of the KV cache store plugin ABI
 declared in
