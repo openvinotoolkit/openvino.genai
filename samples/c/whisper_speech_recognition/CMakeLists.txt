@@ -9,10 +9,11 @@ find_package(OpenVINOGenAI REQUIRED
 )
 
 # Whisper Speech Recognition Sample
-add_executable(whisper_speech_recognition_c whisper_speech_recognition.c whisper_utils.c)
+add_executable(whisper_speech_recognition_c whisper_speech_recognition.c ../common/audio_utils.c)
 
 # Specifies that the source file should be compiled as a C source file
-set_source_files_properties(whisper_speech_recognition.c whisper_utils.c PROPERTIES LANGUAGE C)
+set_source_files_properties(whisper_speech_recognition.c ../common/audio_utils.c PROPERTIES LANGUAGE C)
+target_include_directories(whisper_speech_recognition_c PRIVATE ../common "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
 target_link_libraries(whisper_speech_recognition_c PRIVATE openvino::genai::c)
 
 set_target_properties(whisper_speech_recognition_c PROPERTIES

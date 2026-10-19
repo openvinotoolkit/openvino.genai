@@ -8,7 +8,35 @@
 #include <math.h>
 
 #include "openvino/genai/c/whisper_pipeline.h"
-#include "whisper_utils.h"
+#include "audio_utils.h"
+
+#define CHECK_STATUS(return_status)                                                                       \
+    if (return_status != OK) {                                                                            \
+        const char* error_msg = "Unknown error";                                                          \
+        switch (return_status) {                                                                          \
+        case INVALID_C_PARAM:                                                                             \
+            error_msg = "Invalid parameter";                                                              \
+            break;                                                                                        \
+        case NOT_FOUND:                                                                                   \
+            error_msg = "Not found";                                                                      \
+            break;                                                                                        \
+        case OUT_OF_BOUNDS:                                                                               \
+            error_msg = "Out of bounds";                                                                  \
+            break;                                                                                        \
+        case UNEXPECTED:                                                                                  \
+            error_msg = "Unexpected error";                                                               \
+            break;                                                                                        \
+        case NOT_IMPLEMENTED:                                                                             \
+            error_msg = "Not implemented";                                                                \
+            break;                                                                                        \
+        case UNKNOW_EXCEPTION:                                                                            \
+            error_msg = "Unknown exception";                                                              \
+            break;                                                                                        \
+        }                                                                                                 \
+        fprintf(stderr, "[ERROR] %s (status code: %d) at line %d\n", error_msg, return_status, __LINE__); \
+        exit_code = EXIT_FAILURE;                                                                         \
+        goto err;                                                                                         \
+    }
 
 #define SAMPLE_RATE_TOLERANCE 0.5f
 
