@@ -344,6 +344,16 @@ int utf8_char_length(unsigned char lead_byte) {
         return -1;  // Invalid
 }
 
+// Byte tokens are spelled "<0xNN>".
+uint8_t byte_token_value(const std::string& token) {
+    return static_cast<uint8_t>(std::stoul(token.substr(3, 2), nullptr, 16));
+}
+
+// A merge is "left right"; the left piece may itself start with a space.
+size_t merge_separator(const std::string& merge) {
+    return merge.find(' ', 1);
+}
+
 std::vector<std::string> split_utf8_chars(const std::string& input) {
     std::vector<std::string> result;
     size_t i = 0;
@@ -426,12 +436,12 @@ ov::OutputVector parse_bbpe_config(const std::map<std::string, GGUFMetaData>& to
                 ordinary_bytes.insert(static_cast<uint8_t>(token[0]));
         }
         for (const auto& merge : merges) {
-            const auto space = merge.find(' ', 1);
+            const auto space = merge_separator(merge);
             merged_tokens.insert(merge.substr(0, space) + merge.substr(space + 1));
         }
         for (size_t i = 0; i < vocab.size(); ++i) {
             if (types.data<const int32_t>()[i] == 6) {
-                const auto byte = static_cast<uint8_t>(std::stoul(vocab_from_config[i].substr(3, 2), nullptr, 16));
+                const auto byte = byte_token_value(vocab_from_config[i]);
                 vocab[i] = {byte};
                 if (ordinary_bytes.count(byte))
                     vocab[i].clear();
@@ -453,7 +463,7 @@ ov::OutputVector parse_bbpe_config(const std::map<std::string, GGUFMetaData>& to
         return byte_encode ? apply_unicode_to_bytes(piece) : std::vector<uint8_t>(piece.begin(), piece.end());
     };
     for (const auto& merge : merges) {
-        size_t space = merge.find(' ', 1);
+        size_t space = merge_separator(merge);
         std::string left = merge.substr(0, space);
         std::string right = merge.substr(space + 1);
 
@@ -1046,7 +1056,7 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
         if (!byte_encode) {
             for (size_t i = 0; i < tokens.size(); ++i) {
                 if (token_types.data<const int32_t>()[i] == 6)
-                    vocab[i] = {static_cast<uint8_t>(std::stoul(tokens[i].substr(3, 2), nullptr, 16))};
+                    vocab[i] = {byte_token_value(tokens[i])};
             }
         }
         ov::OutputVector const_vocab = create_string_constant(vocab);

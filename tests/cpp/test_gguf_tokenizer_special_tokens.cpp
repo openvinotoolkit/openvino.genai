@@ -157,7 +157,7 @@ TEST(GGUFTokenizer, GPT4OSplitsCombiningMarksLikeLlamaCPU) {
     // Pinned llama.cpp 03fa73cb: "a\u0301" splits into "a" and the acute accent.
     const std::vector<int64_t> expected{0, 3};
     for (const auto& pre : {"gpt-4o", "llama4"}) {
-        ov::genai::Tokenizer tokenizer(combining_marks_config(pre));
+        ov::genai::GGUFTokenizer tokenizer(combining_marks_config(pre));
         const auto ids = tokenizer.encode("a\u0301", ov::genai::add_special_tokens(false)).input_ids;
         ASSERT_EQ(ids.get_size(), expected.size()) << pre;
         EXPECT_EQ(std::vector<int64_t>(ids.data<int64_t>(), ids.data<int64_t>() + ids.get_size()), expected) << pre;
@@ -226,7 +226,7 @@ TEST(GGUFTokenizer, Gemma4ByteTokenSpellingUsesOrdinaryCharacters) {
 
 TEST(GGUFMultimodal, PreformattedChatDoesNotDuplicateSpecialTokens) {
     using namespace ov::genai;
-    Tokenizer tokenizer(sentencepiece_config());
+    GGUFTokenizer tokenizer(sentencepiece_config());
     struct TestEmbedder : InputsEmbedderGemma4 {
         using InputsEmbedderGemma4::InputsEmbedderGemma4;
         using IInputsEmbedder::get_encoded_input_ids;
@@ -252,7 +252,7 @@ TEST(GGUFMultimodal, PreformattedChatDoesNotDuplicateSpecialTokens) {
 
 TEST(GGUFMultimodal, GemmaAudioPlacementFollowsTheAudioSequence) {
     using namespace ov::genai;
-    Tokenizer tokenizer(sentencepiece_config());
+    GGUFTokenizer tokenizer(sentencepiece_config());
     InputsEmbedderGemma4 embedder(gemma4_models(), tokenizer, "CPU", {});
     embedder.set_apply_chat_template_status(false);
     embedder.set_audio_encoder(first_sample_audio_features);
@@ -296,7 +296,7 @@ TEST(GGUFMultimodal, GemmaAudioPlacementFollowsTheAudioSequence) {
 
 TEST(GGUFMultimodal, GemmaPerLayerInputsUseTheirLookupModel) {
     using namespace ov::genai;
-    Tokenizer tokenizer(sentencepiece_config());
+    GGUFTokenizer tokenizer(sentencepiece_config());
     constexpr size_t layers = 2, width = 3;
     auto axis = ov::op::v0::Constant::create(ov::element::i64, {}, {0});
     // Row i of the per-layer table holds i, so each value identifies the looked-up token.
@@ -345,7 +345,7 @@ TEST(GGUFMultimodal, GemmaPerLayerInputsUseTheirLookupModel) {
 
 TEST(GGUFMultimodal, ModernAudioHistorySwitchEditAndRollback) {
     using namespace ov::genai;
-    Tokenizer tokenizer(sentencepiece_config());
+    GGUFTokenizer tokenizer(sentencepiece_config());
     InputsEmbedder embedder(gemma4_models(), tokenizer, "CPU", {});
     embedder.set_apply_chat_template_status(false);
     embedder.set_audio_encoder(first_sample_audio_features);
@@ -416,7 +416,7 @@ TEST(GGUFMultimodal, ReusingTextEmbeddingsDoesNotAccumulateScaling) {
 
 TEST(GGUFMultimodal, Gemma3PositionOffsetAppliesDuringPrefillAndDecode) {
     using namespace ov::genai;
-    Tokenizer tokenizer(sentencepiece_config());
+    GGUFTokenizer tokenizer(sentencepiece_config());
     auto models = gemma4_models();
     models.config.model_type = VLMModelType::GEMMA3;
     models.config.image_soft_token = "<pad>";
@@ -443,7 +443,7 @@ TEST(GGUFMultimodal, BoundedResizeKeepsNativeAreaBetweenTokenLimits) {
 
 TEST(GGUFMultimodal, Gemma3ImageSeparatorFollowsModelConfig) {
     using namespace ov::genai;
-    Tokenizer tokenizer(sentencepiece_config());
+    GGUFTokenizer tokenizer(sentencepiece_config());
     auto models = gemma4_models();
     models.config.model_type = VLMModelType::GEMMA3;
     models.config.image_soft_token = "<pad>";
@@ -473,7 +473,7 @@ TEST(GGUFMultimodal, MuseVideoKeepsFramesWhenSamplingIsDisabled) {
     grid->output(0).set_names({"image_grid_thw"});
     models.models["vision_embeddings"] =
         std::make_shared<ov::Model>(ov::OutputVector{pixels}, ov::ParameterVector{pixels, grid});
-    InputsEmbedderMuseGlimmer embedder(models, Tokenizer(sentencepiece_config()), "CPU", {});
+    InputsEmbedderMuseGlimmer embedder(models, GGUFTokenizer(sentencepiece_config()), "CPU", {});
     ov::Tensor video(ov::element::u8, {3, 4, 4, 3});
     std::memset(video.data(), 0, video.get_byte_size());
     VideoMetadata metadata;
@@ -508,7 +508,7 @@ TEST(GGUFMultimodal, ImageOnlyProcessorConfigIsLoadedForBothModalities) {
 
 TEST(GGUFMultimodal, LFM2AudioPlacementPreservesAdjacentAndReversedClips) {
     using namespace ov::genai;
-    Tokenizer tokenizer(sentencepiece_config());
+    GGUFTokenizer tokenizer(sentencepiece_config());
     auto models = gemma4_models();
     models.config.model_type = VLMModelType::LFM2_AUDIO;
     models.models.erase("vision_embeddings");
@@ -577,7 +577,7 @@ TEST(GGUFMultimodal, LFM2AudioPreprocessingMatchesLiquidReference) {
                                          ids,
                                          Constant::create(ov::element::i64, {}, {0}));
     models.models["text_embeddings"] = std::make_shared<ov::Model>(ov::OutputVector{text}, ov::ParameterVector{ids});
-    InputsEmbedder embedder(models, Tokenizer(sentencepiece_config()), "CPU", {});
+    InputsEmbedder embedder(models, GGUFTokenizer(sentencepiece_config()), "CPU", {});
     attach_gguf_audio_encoder(embedder, gguf, "CPU", {{ov::hint::inference_precision.name(), ov::element::f32}});
     for (size_t count : {160, 1281, 16000}) {
         const auto load = [&](const std::string& name, void* data, size_t bytes) {
@@ -611,7 +611,7 @@ TEST(GGUFMultimodal, LFM2AudioPreprocessingMatchesLiquidReference) {
 
 TEST(GGUFMultimodal, LFM2VisionTiledMarkersAndFeaturesFollowPromptOrder) {
     using namespace ov::genai;
-    Tokenizer tokenizer(sentencepiece_config());
+    GGUFTokenizer tokenizer(sentencepiece_config());
     auto models = gemma4_models();
     models.config.model_type = VLMModelType::LFM2_VL;
     InputsEmbedderLFM2Vision embedder(models, tokenizer, "CPU", {});

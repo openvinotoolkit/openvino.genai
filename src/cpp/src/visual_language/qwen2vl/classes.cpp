@@ -626,6 +626,16 @@ ov::Tensor merge_text_and_video_image_embeddings(
     
 } // namespace qwen2vl_utils
 
+namespace {
+ImageSize resize_target(const ProcessorConfig& config, size_t height, size_t width) {
+    const size_t factor = config.patch_size * config.merge_size;
+    if (!config.preserve_native_resolution)
+        return qwen2_vl_utils::smart_resize(height, width, factor, config.min_pixels, config.max_pixels);
+    const auto [h, w] = bounded_image_size(height, width, factor, config.min_pixels, config.max_pixels);
+    return ImageSize{h, w};
+}
+}  // namespace
+
 std::unique_ptr<CircularBufferQueue<ov::InferRequest>> create_vision_encoder_ireq(
     const std::shared_ptr<ov::Model>& model_org,
     const ProcessorConfig& processor_config,
@@ -723,17 +733,7 @@ void VisionEncoderQwen2VL::encode_with_imagepreprocess_cpp(const std::vector<ov:
         OPENVINO_ASSERT(config.temporal_patch_size == images.size(), "temporal_patch_size != images.size()");
 
     ov::Shape orig_shape = images[0].get_shape();
-    const auto resize = config.preserve_native_resolution
-        ? [](size_t h, size_t w, size_t f, size_t min, size_t max) {
-              const auto size = bounded_image_size(h, w, f, min, max);
-              return ImageSize{size.first, size.second};
-          }
-        : qwen2_vl_utils::smart_resize;
-    ImageSize target_image_size = resize(orig_shape.at(1),
-                                         orig_shape.at(2),
-                                         config.patch_size * config.merge_size,
-                                         config.min_pixels,
-                                         config.max_pixels);
+    ImageSize target_image_size = resize_target(config, orig_shape.at(1), orig_shape.at(2));
 
     ov::Tensor tiled_patches(ov::element::f32,
                              {config.temporal_patch_size, 3, target_image_size.height, target_image_size.width});
@@ -819,17 +819,7 @@ void VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vector<ov::
     auto original_height = image_shape.at(1);
     auto original_width = image_shape.at(2);
 
-    const auto resize = config.preserve_native_resolution
-        ? [](size_t h, size_t w, size_t f, size_t min, size_t max) {
-              const auto size = bounded_image_size(h, w, f, min, max);
-              return ImageSize{size.first, size.second};
-          }
-        : qwen2_vl_utils::smart_resize;
-    ImageSize target_image_size = resize(original_height,
-                                         original_width,
-                                         config.patch_size * config.merge_size,
-                                         config.min_pixels,
-                                         config.max_pixels);
+    ImageSize target_image_size = resize_target(config, original_height, original_width);
 
     // The default value of temporal_patch_size for original QWen2-VL and QWen2.5-VL is 2.
     // In this model, Only 2 frames are processed at a time, so the following check is required.

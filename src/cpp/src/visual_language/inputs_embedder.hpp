@@ -361,6 +361,13 @@ private:
 
         virtual ov::Tensor apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);
 
+        /// @brief Runs `m_audio_encoder` on each audio and joins its chunks into one [tokens, hidden_size] tensor.
+        /// An empty audio keeps its slot with zero tokens when `allow_empty` is set.
+        std::vector<ov::genai::EncodedAudio> encode_audios_with_encoder(const std::vector<ov::Tensor>& audios,
+                                                                        bool allow_empty);
+
+        AudioEncode m_audio_encoder;
+
         ov::Tensor update_history(const ov::Tensor& new_chat_tokens);
 
         ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);

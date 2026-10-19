@@ -1,15 +1,14 @@
 // Copyright (C) 2024-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "lm_encoding.hpp"
-
 #include <algorithm>
 #include <numeric>
 #include <vector>
 
+#include "utils.hpp"
+#include "lm_encoding.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/streamer_base.hpp"
-#include "utils.hpp"
 
 namespace {
 

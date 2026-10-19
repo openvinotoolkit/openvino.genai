@@ -1,38 +1,16 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "visual_language/inputs_embedder.hpp"
 
-#include <type_traits>
-#include <utility>
+#include "visual_language/clip.hpp"
+#include "visual_language/vision_encoder.hpp"
+#include "visual_language/embedding_model.hpp"
+#include "visual_language/vlm_family.hpp"
 
 #include "continuous_batching/timer.hpp"
-#include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "utils.hpp"
-#include "visual_language/clip.hpp"
-#include "visual_language/deepseek_ocr2/classes.hpp"
-#include "visual_language/embedding_model.hpp"
-#include "visual_language/gemma3/classes.hpp"
-#include "visual_language/gemma3n/classes.hpp"
-#include "visual_language/gemma4/classes.hpp"
-#include "visual_language/internvl_chat/classes.hpp"
-#include "visual_language/lfm2/classes.hpp"
-#include "visual_language/llava/classes.hpp"
-#include "visual_language/llava_next/classes.hpp"
-#include "visual_language/llava_next_video/classes.hpp"
-#include "visual_language/minicpm/classes.hpp"
-#include "visual_language/minicpmv4_7/classes.hpp"
-#include "visual_language/muse_glimmer/classes.hpp"
-#include "visual_language/nanollava/classes.hpp"
-#include "visual_language/phi3_vision/classes.hpp"
-#include "visual_language/phi4mm/classes.hpp"
-#include "visual_language/qwen2_5_vl/classes.hpp"
-#include "visual_language/qwen2vl/classes.hpp"
-#include "visual_language/qwen3_5/classes.hpp"
-#include "visual_language/qwen3_omni/classes.hpp"
-#include "visual_language/qwen3_vl/classes.hpp"
-#include "visual_language/videochat_flash/classes.hpp"
-#include "visual_language/vision_encoder.hpp"
 
 namespace {
 template <typename VideoType>
@@ -48,68 +26,15 @@ void throw_if_video_not_implemented(const std::vector<VideoType>& videos) {
 namespace ov::genai {
 
 namespace {
-template <typename Base, typename Model, typename... Args>
-std::shared_ptr<Base> construct_model(Args&&... args) {
-    if constexpr (std::is_constructible_v<Model, Args...>)
-        return std::make_shared<Model>(std::forward<Args>(args)...);
-    else
-        OPENVINO_THROW("This VLM model type does not support the supplied model source");
-}
-
 template <typename Base, typename... Args>
 std::shared_ptr<Base> create_inputs_embedder(VLMModelType type, Args&&... args) {
-    switch (type) {
-    case VLMModelType::LFM2_AUDIO:
-        return construct_model<Base, InputsEmbedderLFM2Audio>(std::forward<Args>(args)...);
-    case VLMModelType::MINICPM:
-        return construct_model<Base, InputsEmbedderMiniCPM>(std::forward<Args>(args)...);
-    case VLMModelType::MINICPMV4_7:
-        return construct_model<Base, InputsEmbedderMiniCPMv4_7>(std::forward<Args>(args)...);
-    case VLMModelType::LLAVA:
-        return construct_model<Base, InputsEmbedderLLaVA>(std::forward<Args>(args)...);
-    case VLMModelType::NANOLLAVA:
-        return construct_model<Base, InputsEmbedderNanoLLaVA>(std::forward<Args>(args)...);
-    case VLMModelType::LLAVA_NEXT:
-        return construct_model<Base, InputsEmbedderLLaVANext>(std::forward<Args>(args)...);
-    case VLMModelType::LLAVA_NEXT_VIDEO:
-        return construct_model<Base, InputsEmbedderLLaVANextVideo>(std::forward<Args>(args)...);
-    case VLMModelType::INTERNVL_CHAT:
-        return construct_model<Base, InputsEmbedderInternVLChat>(std::forward<Args>(args)...);
-    case VLMModelType::PHI3_V:
-        return construct_model<Base, InputsEmbedderPhi3V>(std::forward<Args>(args)...);
-    case VLMModelType::PHI4MM:
-        return construct_model<Base, InputsEmbedderPhi4MM>(std::forward<Args>(args)...);
-    case VLMModelType::QWEN2_VL:
-        return construct_model<Base, InputsEmbedderQwen2VL>(std::forward<Args>(args)...);
-    case VLMModelType::QWEN2_5_VL:
-        return construct_model<Base, InputsEmbedderQwen2_5_VL>(std::forward<Args>(args)...);
-    case VLMModelType::QWEN3_VL:
-        return construct_model<Base, InputsEmbedderQwen3VL>(std::forward<Args>(args)...);
-    case VLMModelType::QWEN3_5_MOE:
-        return construct_model<Base, InputsEmbedderQwen3_5>(std::forward<Args>(args)...);
-    case VLMModelType::QWEN3_OMNI:
-        return construct_model<Base, InputsEmbedderQwen3Omni>(std::forward<Args>(args)...);
-    case VLMModelType::GEMMA3:
-        return construct_model<Base, InputsEmbedderGemma3>(std::forward<Args>(args)...);
-    case VLMModelType::GEMMA3N:
-        return construct_model<Base, InputsEmbedderGemma3n>(std::forward<Args>(args)...);
-    case VLMModelType::LFM2_VL:
-        return construct_model<Base, InputsEmbedderLFM2Vision>(std::forward<Args>(args)...);
-    case VLMModelType::GEMMA4:
-        return construct_model<Base, InputsEmbedderGemma4>(std::forward<Args>(args)...);
-    case VLMModelType::GEMMA4_UNIFIED:
-        return construct_model<Base, InputsEmbedderGemma4>(std::forward<Args>(args)...);
-    case VLMModelType::VIDEOCHAT_FLASH_QWEN:
-        return construct_model<Base, InputsEmbedderVideoChatFlashQwen>(std::forward<Args>(args)...);
-    case VLMModelType::DEEPSEEK_OCR2:
-        return construct_model<Base, InputsEmbedderDeepseekOCR2>(std::forward<Args>(args)...);
-    case VLMModelType::MUSE_GLIMMER:
-        return construct_model<Base, InputsEmbedderMuseGlimmer>(std::forward<Args>(args)...);
-    case VLMModelType::QWEN3_5:
-        return construct_model<Base, InputsEmbedderQwen3_5>(std::forward<Args>(args)...);
-    default:
-        OPENVINO_THROW("Unsupported VLM model type");
-    }
+    return visit_vlm_family(type, [&](auto family) -> std::shared_ptr<Base> {
+        using Model = typename decltype(family)::InputsEmbedderType;
+        if constexpr (std::is_constructible_v<Model, Args...>)
+            return std::make_shared<Model>(std::forward<Args>(args)...);
+        else
+            OPENVINO_THROW("This VLM model type does not support the supplied model source");
+    });
 }
 }  // namespace
 
@@ -211,6 +136,40 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
     )),
     m_tokenizer(tokenizer),
     m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) { }
+
+std::vector<EncodedAudio> InputsEmbedder::IInputsEmbedder::encode_audios_with_encoder(
+    const std::vector<ov::Tensor>& audios,
+    bool allow_empty) {
+    OPENVINO_ASSERT(audios.empty() || m_audio_encoder, "Audio input isn't supported by this model.");
+    std::vector<EncodedAudio> encoded;
+    encoded.reserve(audios.size());
+    for (const auto& audio : audios) {
+        OPENVINO_ASSERT(allow_empty || audio.get_size() > 0, "Audio input must be nonempty");
+        // An empty input keeps its slot so later <ov_genai_audio_N> indices stay aligned.
+        if (audio.get_size() == 0) {
+            encoded.push_back({ov::Tensor(), 0});
+            continue;
+        }
+        const auto chunks = m_audio_encoder(audio);
+        size_t count = 0;
+        for (const auto& chunk : chunks) {
+            const auto& shape = chunk.get_shape();
+            OPENVINO_ASSERT(chunk.get_element_type() == ov::element::f32 && shape.size() == 3 && shape[0] == 1 &&
+                                shape[2] == m_vlm_config.hidden_size,
+                            "Audio encoder must return [1, tokens, hidden_size] f32 features");
+            count += shape[1];
+        }
+        OPENVINO_ASSERT(count > 0, "Audio did not produce any encoder tokens");
+        ov::Tensor features(ov::element::f32, {count, m_vlm_config.hidden_size});
+        auto* dst = features.data<float>();
+        for (const auto& chunk : chunks) {
+            std::copy_n(chunk.data<const float>(), chunk.get_size(), dst);
+            dst += chunk.get_size();
+        }
+        encoded.push_back({std::move(features), count});
+    }
+    return encoded;
+}
 
 ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
     const bool add_special_tokens =

@@ -1,99 +1,27 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "vision_encoder.hpp"
-
 #include <fstream>
 #include <type_traits>
-#include <utility>
 
-#include "logger.hpp"
+#include "vision_encoder.hpp"
+
 #include "utils.hpp"
-#include "visual_language/deepseek_ocr2/classes.hpp"
-#include "visual_language/gemma3/classes.hpp"
-#include "visual_language/gemma3n/classes.hpp"
-#include "visual_language/gemma4/classes.hpp"
-#include "visual_language/internvl_chat/classes.hpp"
-#include "visual_language/lfm2/classes.hpp"
-#include "visual_language/llava/classes.hpp"
-#include "visual_language/llava_next/classes.hpp"
-#include "visual_language/llava_next_video/classes.hpp"
-#include "visual_language/minicpm/classes.hpp"
-#include "visual_language/minicpmv4_7/classes.hpp"
-#include "visual_language/muse_glimmer/classes.hpp"
-#include "visual_language/nanollava/classes.hpp"
-#include "visual_language/phi3_vision/classes.hpp"
-#include "visual_language/phi4mm/classes.hpp"
-#include "visual_language/qwen2_5_vl/classes.hpp"
-#include "visual_language/qwen2vl/classes.hpp"
-#include "visual_language/qwen3_5/classes.hpp"
-#include "visual_language/qwen3_omni/classes.hpp"
-#include "visual_language/qwen3_vl/classes.hpp"
-#include "visual_language/videochat_flash/classes.hpp"
+#include "logger.hpp"
+#include "visual_language/vlm_family.hpp"
 
 namespace ov::genai {
 
 namespace {
-template <typename Model, typename... Args>
-VisionEncoder::Ptr construct_model(Args&&... args) {
-    if constexpr (std::is_constructible_v<Model, Args...>)
-        return std::make_shared<Model>(std::forward<Args>(args)...);
-    else
-        OPENVINO_THROW("This VLM model type does not support the supplied model source");
-}
-
 template <typename... Args>
 VisionEncoder::Ptr create_vision_encoder(VLMModelType type, Args&&... args) {
-    switch (type) {
-    case VLMModelType::MINICPM:
-        return construct_model<VisionEncoderMiniCPM>(std::forward<Args>(args)...);
-    case VLMModelType::MINICPMV4_7:
-        return construct_model<VisionEncoderMiniCPMv4_7>(std::forward<Args>(args)...);
-    case VLMModelType::LLAVA:
-        return construct_model<VisionEncoderLLaVA>(std::forward<Args>(args)...);
-    case VLMModelType::NANOLLAVA:
-        return construct_model<VisionEncoderNanoLLaVA>(std::forward<Args>(args)...);
-    case VLMModelType::LLAVA_NEXT:
-        return construct_model<VisionEncoderLLaVANext>(std::forward<Args>(args)...);
-    case VLMModelType::LLAVA_NEXT_VIDEO:
-        return construct_model<VisionEncoderLLaVANextVideo>(std::forward<Args>(args)...);
-    case VLMModelType::INTERNVL_CHAT:
-        return construct_model<VisionEncoderInternVLChat>(std::forward<Args>(args)...);
-    case VLMModelType::PHI3_V:
-        return construct_model<VisionEncoderPhi3V>(std::forward<Args>(args)...);
-    case VLMModelType::PHI4MM:
-        return construct_model<VisionEncoderPhi4MM>(std::forward<Args>(args)...);
-    case VLMModelType::QWEN2_VL:
-        return construct_model<VisionEncoderQwen2VL>(std::forward<Args>(args)...);
-    case VLMModelType::QWEN2_5_VL:
-        return construct_model<VisionEncoderQwen2_5_VL>(std::forward<Args>(args)...);
-    case VLMModelType::QWEN3_VL:
-        return construct_model<VisionEncoderQwen3VL>(std::forward<Args>(args)...);
-    case VLMModelType::QWEN3_5_MOE:
-        return construct_model<VisionEncoderQwen3_5>(std::forward<Args>(args)...);
-    case VLMModelType::QWEN3_OMNI:
-        return construct_model<VisionEncoderQwen3Omni>(std::forward<Args>(args)...);
-    case VLMModelType::GEMMA3:
-        return construct_model<VisionEncoderGemma3>(std::forward<Args>(args)...);
-    case VLMModelType::GEMMA3N:
-        return construct_model<VisionEncoderGemma3n>(std::forward<Args>(args)...);
-    case VLMModelType::LFM2_VL:
-        return construct_model<VisionEncoderLFM2>(std::forward<Args>(args)...);
-    case VLMModelType::GEMMA4:
-        return construct_model<VisionEncoderGemma4>(std::forward<Args>(args)...);
-    case VLMModelType::GEMMA4_UNIFIED:
-        return construct_model<VisionEncoderGemma4>(std::forward<Args>(args)...);
-    case VLMModelType::VIDEOCHAT_FLASH_QWEN:
-        return construct_model<VisionEncoderVideoChatFlashQwen>(std::forward<Args>(args)...);
-    case VLMModelType::DEEPSEEK_OCR2:
-        return construct_model<VisionEncoderDeepseekOCR2>(std::forward<Args>(args)...);
-    case VLMModelType::MUSE_GLIMMER:
-        return construct_model<VisionEncoderMuseGlimmer>(std::forward<Args>(args)...);
-    case VLMModelType::QWEN3_5:
-        return construct_model<VisionEncoderQwen3_5>(std::forward<Args>(args)...);
-    default:
-        OPENVINO_THROW("Unsupported VLM model type");
-    }
+    return visit_vlm_family(type, [&](auto family) -> VisionEncoder::Ptr {
+        using Model = typename decltype(family)::VisionEncoderType;
+        if constexpr (std::is_constructible_v<Model, Args...>)
+            return std::make_shared<Model>(std::forward<Args>(args)...);
+        else
+            OPENVINO_THROW("This VLM model type does not support the supplied model source");
+    });
 }
 }  // namespace
 

@@ -116,7 +116,6 @@ public:
     }
 
 private:
-    AudioEncode m_audio_encoder;
     int64_t m_audio_token_id = -1;
     // Per-layer text embeddings model (Gemma4-specific)
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_per_layer_embeddings_requests = nullptr;
@@ -145,7 +144,6 @@ private:
     std::once_flag m_vision_token_ids_once_flag;
 
     void encode_vision_token_ids();
-
 };
 
 }  // namespace ov::genai

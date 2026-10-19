@@ -99,8 +99,7 @@ GGUFLFM2Speech::GGUFLFM2Speech(const std::filesystem::path& language,
     };
     m_language = compile(m_models.language, "language_model");
     m_embedding = compile(m_models.vlm.at("text_embeddings"), "text_embeddings");
-    m_embedder = std::make_shared<InputsEmbedder>(m_models.vlm, m_models.tokenizer, device, properties);
-    attach_gguf_audio_encoder(*m_embedder, m_models, device, properties);
+    m_embedder = create_gguf_inputs_embedder(m_models, device, properties);
     ov::frontend::gguf::FrontEnd frontend;
     register_gguf_extensions(frontend, extensions);
     auto speech = frontend.convert(frontend.load(vocoder));
@@ -125,10 +124,7 @@ GGUFLFM2Speech::GGUFLFM2Speech(const std::filesystem::path& language,
 }
 
 GenerationConfig GGUFLFM2Speech::get_generation_config() const {
-    GenerationConfig config;
-    config.set_eos_token_id(m_models.tokenizer.get_eos_token_id());
-    config.stop_token_ids = m_models.stop_token_ids;
-    return config;
+    return m_models.generation_config();
 }
 
 std::string GGUFLFM2Speech::default_system_prompt(bool return_audio) const {

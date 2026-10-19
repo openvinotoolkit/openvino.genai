@@ -7,12 +7,12 @@
 #include <nlohmann/json.hpp>
 #include <sstream>
 
-#include "gguf_tokenizer.hpp"
-#include "openvino/genai/gguf.hpp"
 #include "gguf_frontend_extensions.hpp"
+#include "gguf_tokenizer.hpp"
 #include "openvino/frontend/gguf/adapt_mmproj_to_genai.hpp"
 #include "openvino/frontend/gguf/extension/genai.hpp"
 #include "openvino/frontend/gguf/frontend.hpp"
+#include "openvino/genai/gguf.hpp"
 
 namespace ov::genai {
 namespace {
@@ -47,6 +47,12 @@ private:
 
 struct Configs {
     json config, image, video;
+
+    // Videos use the image settings, with the frames passed through unsampled.
+    void unsampled_video_from_image() {
+        video = image;
+        video["do_sample_frames"] = false;
+    }
 };
 
 Configs gguf_configs(const std::string& architecture,
@@ -54,8 +60,8 @@ Configs gguf_configs(const std::string& architecture,
                      const MmprojMetadata& meta,
                      const GGUFMultimodalModels& models) {
     Configs c;
+    c.config["hidden_size"] = models.language->input("inputs_embeds").get_partial_shape()[2].get_length();
     if (projector == "lfm2a") {
-        c.config["hidden_size"] = models.language->input("inputs_embeds").get_partial_shape()[2].get_length();
         c.config["model_type"] = "lfm2_audio";
         c.config["position_ids_offset"] = 0;
         c.image = json::object();
@@ -63,7 +69,6 @@ Configs gguf_configs(const std::string& architecture,
         return c;
     }
     const auto patch = meta.integer("clip.vision.patch_size");
-    c.config["hidden_size"] = models.language->input("inputs_embeds").get_partial_shape()[2].get_length();
     c.config["vision_config"]["patch_size"] = patch;
     c.image["patch_size"] = patch;
     c.image["image_mean"] = meta.floats("clip.vision.image_mean");
@@ -109,8 +114,7 @@ Configs gguf_configs(const std::string& architecture,
         c.image["min_pixels"] = 70 * merged_patch * merged_patch;
         c.image["max_pixels"] = 1120 * merged_patch * merged_patch;
         c.image["max_soft_tokens"] = 1120;
-        c.video = c.image;
-        c.video["do_sample_frames"] = false;
+        c.unsampled_video_from_image();
         return c;
     }
     const auto merge = meta.integer("vision.merge");
@@ -121,9 +125,8 @@ Configs gguf_configs(const std::string& architecture,
         // GGUF collapses HF's two-frame patch kernel.
         c.image["temporal_patch_size"] = 1;
         c.image["max_image_tokens"] = 4096;
-        c.video = c.image;
+        c.unsampled_video_from_image();
         c.video["max_video_frame_tokens"] = 4096;
-        c.video["do_sample_frames"] = false;
         return c;
     }
     c.config["model_type"] = architecture == "qwen35moe" ? "qwen3_5_moe" : "qwen3_5";
@@ -135,8 +138,7 @@ Configs gguf_configs(const std::string& architecture,
     c.image["pad_to_target"] = true;
     c.image["min_pixels"] = 8 * merged_patch * merged_patch;
     c.image["max_pixels"] = 4096 * merged_patch * merged_patch;
-    c.video = c.image;
-    c.video["do_sample_frames"] = false;
+    c.unsampled_video_from_image();
     return c;
 }
 }  // namespace
@@ -148,9 +150,7 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     namespace gguf = ov::frontend::gguf;
     GGUFMultimodalModels result;
     gguf::FrontEnd frontend;
-    auto genai = register_gguf_extensions(frontend,
-                                          extensions,
-                                          gguf::GenAIExtension::InputMode::EMBEDS_TO_LOGITS);
+    auto genai = register_gguf_extensions(frontend, extensions, gguf::GenAIExtension::InputMode::EMBEDS_TO_LOGITS);
     result.language = frontend.convert(frontend.load(language.string()));
     result.language->set_rt_info(ov::element::f16, {"runtime_options", ov::hint::kv_cache_precision.name()});
     auto tokenizer_metadata = take_gguf_tokenizer_metadata(result.language);

@@ -15,23 +15,11 @@ from pathlib import Path
 import numpy as np
 import openvino as ov
 import openvino_genai as genai
+from validate_gguf_mmproj import Tokens
 
 TEXTS = ["The weather today is.\nNext line.", "I'm sure they'll say it's DONE'S", "Numbers 1234567 and 3.14159",
          "Ünïcödé café — Привет мир! 你好，世界。", "  leading   spaces\t\ttabs\r\n\r\nwindows",
          "def f(x):\n    return x**2  # comment", "emoji 😀👍🏽"]
-
-
-class Tokens(genai.StreamerBase):
-    def __init__(self):
-        super().__init__()
-        self.tokens = []
-
-    def write(self, tokens):
-        self.tokens.extend(tokens if isinstance(tokens, list) else [tokens])
-        return genai.StreamingStatus.RUNNING
-
-    def end(self):
-        pass
 
 
 def generate(pipe, prompt, **media):

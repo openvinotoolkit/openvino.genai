@@ -73,7 +73,6 @@ public:
                                  const std::vector<std::pair<size_t, size_t>>& history_vision_count) override;
 
 private:
-    AudioEncode m_audio_encoder;
     int64_t m_audio_token_id;
 };
 

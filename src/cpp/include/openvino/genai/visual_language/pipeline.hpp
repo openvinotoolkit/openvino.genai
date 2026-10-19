@@ -19,7 +19,6 @@ namespace ov::genai {
 /// This loading route uses the OpenVINO GGUF frontend.
 static constexpr ov::Property<std::string> mmproj_path{"mmproj_path"};
 
-
 class OPENVINO_GENAI_EXPORTS VLMDecodedResults : public DecodedResults{
 public:
     VLMPerfMetrics perf_metrics;

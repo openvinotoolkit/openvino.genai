@@ -353,7 +353,6 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
                                            const std::string& device,
                                            const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {
-
     // per-layer embeddings model is optional, large MOE models don't have it
     if (!has_per_layer_embeddings()) {
         return;
@@ -374,7 +373,6 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
                                            const std::string& device,
                                            const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
-
     // per-layer embeddings model is optional, large MOE models don't have it
     if (!has_per_layer_embeddings()) {
         return;
@@ -395,39 +393,12 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
 std::vector<ov::genai::EncodedAudio> InputsEmbedderGemma4::encode_audios(const std::vector<ov::Tensor>& audios) {
     if (audios.empty())
         return {};
-    OPENVINO_ASSERT(m_audio_encoder, "Audio input isn't supported by this model.");
     if (m_audio_token_id < 0) {
         const auto encoded = m_tokenizer.encode(AUDIO_TOKEN, add_special_tokens(false)).input_ids;
         OPENVINO_ASSERT(encoded.get_size() == 1, "Gemma4 requires a single audio placeholder token");
         m_audio_token_id = encoded.data<const int64_t>()[0];
     }
-    std::vector<ov::genai::EncodedAudio> encoded;
-    encoded.reserve(audios.size());
-    for (const auto& audio : audios) {
-        // An empty input keeps its slot so later <ov_genai_audio_N> indices stay aligned.
-        if (audio.get_size() == 0) {
-            encoded.push_back({ov::Tensor(), 0});
-            continue;
-        }
-        auto chunks = m_audio_encoder(audio);
-        size_t count = 0;
-        for (const auto& chunk : chunks) {
-            const auto& shape = chunk.get_shape();
-            OPENVINO_ASSERT(chunk.get_element_type() == ov::element::f32 && shape.size() == 3 && shape[0] == 1 &&
-                                shape[2] == m_vlm_config.hidden_size,
-                            "Audio encoder must return [1, tokens, hidden_size] f32 features");
-            count += shape[1];
-        }
-        OPENVINO_ASSERT(count > 0, "Audio did not produce any encoder tokens");
-        ov::Tensor features(ov::element::f32, {count, m_vlm_config.hidden_size});
-        auto* dst = features.data<float>();
-        for (const auto& chunk : chunks) {
-            std::memcpy(dst, chunk.data(), chunk.get_byte_size());
-            dst += chunk.get_size();
-        }
-        encoded.push_back({std::move(features), count});
-    }
-    return encoded;
+    return encode_audios_with_encoder(audios, true);
 }
 
 std::vector<ov::genai::EncodedImage> InputsEmbedderGemma4::encode_images(const std::vector<ov::Tensor>& images) {

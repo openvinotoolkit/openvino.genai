@@ -7,6 +7,7 @@
 #include <random>
 
 #include "gguf_utils/gguf_tokenizer.hpp"
+#include "gguf_utils/gguf_utils.hpp"
 #include "lm_encoding.hpp"
 #include "lora/helper.hpp"
 #include "openvino/genai/text_streamer.hpp"
@@ -31,23 +32,6 @@
 using namespace ov::genai;
 
 namespace {
-#ifdef ENABLE_GGUF
-std::shared_ptr<InputsEmbedder> create_gguf_inputs_embedder(const GGUFMultimodalModels& models,
-                                                            const std::string& device,
-                                                            const ov::AnyMap& properties) {
-    auto embedder = std::make_shared<InputsEmbedder>(models.vlm, models.tokenizer, device, properties);
-    attach_gguf_audio_encoder(*embedder, models, device, properties);
-    return embedder;
-}
-
-GenerationConfig gguf_generation_config(const GGUFMultimodalModels& models) {
-    GenerationConfig config;
-    config.set_eos_token_id(models.tokenizer.get_eos_token_id());
-    config.stop_token_ids.insert(models.stop_token_ids.begin(), models.stop_token_ids.end());
-    return config;
-}
-#endif
-
 void update_npu_properties(const std::filesystem::path& models_dir, ov::AnyMap& properties) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
     switch (vlm_config.model_type) {
@@ -314,7 +298,7 @@ public:
         const auto scheduled =
             utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         const auto& plugin_properties = scheduled.first;
-        const auto generation_config = gguf_generation_config(models);
+        const auto generation_config = models.generation_config();
         auto embedder = create_gguf_inputs_embedder(models, device, plugin_properties);
         const auto paged = [&](const std::shared_ptr<ov::Model>& language) {
             return std::make_shared<VLMContinuousBatchingAdapter>(language,
@@ -888,9 +872,7 @@ public:
     }
 
     void set_chat_template(const std::string& new_template) override {
-        OPENVINO_ASSERT(!m_is_chat_conversation,
-                        "Chat template cannot be changed once start_chat() is called. Please, finish current chat via "
-                        "finish_chat()");
+        OPENVINO_ASSERT(!m_is_chat_conversation, "Chat template cannot be changed once start_chat() is called. Please, finish current chat via finish_chat()");
         m_tokenizer.set_chat_template(new_template);
     }
 

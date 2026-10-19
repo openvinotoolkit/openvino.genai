@@ -8,6 +8,7 @@
 #include <cstring>
 #include <limits>
 
+#include "utils.hpp"
 #include "visual_language/clip.hpp"
 
 namespace ov::genai {
@@ -163,30 +164,24 @@ ov::Tensor InputsEmbedderLFM2Vision::get_inputs_embeds(const std::string& prompt
                                                        const std::vector<size_t>& sequence) {
     const auto ids = get_encoded_input_ids(prompt, metrics);
     CircularBufferQueueElementGuard<EmbeddingsRequest> guard(m_embedding->get_request_queue().get());
-    const auto text = get_text_embedding(guard.get(), ids, metrics);
-    ov::Tensor result(text.get_element_type(), text.get_shape());
-    text.copy_to(result);
+    auto text = get_text_embedding(guard.get(), ids, metrics);
+    // Each crop owns its own placeholder run, so its features are merged as a separate chunk.
+    std::vector<ov::Tensor> crops;
+    for (const auto id : sequence) {
+        const auto& image = images.at(id);
+        auto* source = const_cast<float*>(image.resized_source.data<const float>());
+        for (const auto& crop : image.crop_sizes) {
+            crops.emplace_back(ov::element::f32, ov::Shape{1, crop.height, m_vlm_config.hidden_size}, source);
+            source += crop.height * m_vlm_config.hidden_size;
+        }
+    }
     size_t expected = 0;
-    for (const auto id : sequence)
-        expected += images.at(id).num_image_tokens;
-    if (!expected)
-        return result;
+    for (const auto& crop : crops)
+        expected += crop.get_shape()[1];
     const auto* tokens = ids.data<const int64_t>();
     OPENVINO_ASSERT(std::count(tokens, tokens + ids.get_size(), m_image_token_id) == expected,
                     "LFM2 image placeholder count differs from encoded features");
-    size_t offset = 0;
-    for (const auto id : sequence) {
-        const auto& features = images.at(id).resized_source;
-        for (size_t t = 0; t < features.get_shape()[1]; ++t) {
-            while (offset < ids.get_size() && tokens[offset] != m_image_token_id)
-                ++offset;
-            std::copy_n(features.data<const float>() + t * m_vlm_config.hidden_size,
-                        m_vlm_config.hidden_size,
-                        result.data<float>() + offset * m_vlm_config.hidden_size);
-            ++offset;
-        }
-    }
-    return result;
+    return utils::merge_text_and_image_embeddings_llava(ids, text, crops, m_image_token_id);
 }
 
 InputsEmbedderLFM2Audio::InputsEmbedderLFM2Audio(const VLMModels& models,
@@ -200,28 +195,7 @@ InputsEmbedderLFM2Audio::InputsEmbedderLFM2Audio(const VLMModels& models,
 }
 
 std::vector<EncodedAudio> InputsEmbedderLFM2Audio::encode_audios(const std::vector<ov::Tensor>& audios) {
-    OPENVINO_ASSERT(audios.empty() || m_audio_encoder, "LFM2 audio encoder is missing");
-    std::vector<EncodedAudio> result;
-    for (const auto& waveform : audios) {
-        OPENVINO_ASSERT(waveform.get_size() > 0, "LFM2 audio input must be nonempty");
-        auto chunks = m_audio_encoder(waveform);
-        size_t tokens = 0;
-        for (const auto& chunk : chunks) {
-            OPENVINO_ASSERT(chunk.get_element_type() == ov::element::f32 && chunk.get_shape().size() == 3 &&
-                                chunk.get_shape()[0] == 1 && chunk.get_shape()[2] == m_vlm_config.hidden_size,
-                            "Unexpected LFM2 audio embedding shape");
-            tokens += chunk.get_shape()[1];
-        }
-        OPENVINO_ASSERT(tokens > 0, "LFM2 audio encoder returned no tokens");
-        ov::Tensor features(ov::element::f32, {tokens, m_vlm_config.hidden_size});
-        auto* target = static_cast<uint8_t*>(features.data());
-        for (const auto& chunk : chunks) {
-            std::memcpy(target, chunk.data(), chunk.get_byte_size());
-            target += chunk.get_byte_size();
-        }
-        result.push_back({features, tokens});
-    }
-    return result;
+    return encode_audios_with_encoder(audios, false);
 }
 
 NormalizedPrompt InputsEmbedderLFM2Audio::normalize_prompt(const std::string& prompt,
@@ -288,6 +262,7 @@ ov::Tensor InputsEmbedderLFM2Audio::get_inputs_embeds(const std::string& prompt,
         expected += audios.at(id).num_audio_tokens;
     OPENVINO_ASSERT(std::count(tokens, tokens + ids.get_size(), m_audio_token_id) == expected,
                     "LFM2 audio placeholder count differs from the encoded audio length");
+    // Adjacent clips share one placeholder run, so each is written at its own offset.
     size_t offset = 0;
     for (const auto id : audio_sequence) {
         const auto& audio = audios.at(id);
