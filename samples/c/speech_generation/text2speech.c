@@ -7,55 +7,13 @@
 #include <string.h>
 
 #include "openvino/genai/c/text2speech_pipeline.h"
+#include "../common/audio_utils.h"
 
 #define CHECK_STATUS(return_status)                                                              \
     if (return_status != OK) {                                                                   \
         fprintf(stderr, "[ERROR] return status %d, line %d\n", (int)(return_status), __LINE__);  \
         goto done;                                                                             \
     }
-
-static void write_u16(FILE* file, uint16_t value) {
-    fputc(value & 0xff, file);
-    fputc((value >> 8) & 0xff, file);
-}
-
-static void write_u32(FILE* file, uint32_t value) {
-    write_u16(file, value & 0xffff);
-    write_u16(file, value >> 16);
-}
-
-static int save_wav(const char* path, const float* samples, size_t count, uint32_t rate) {
-    if (count > (UINT32_MAX - 36) / 2 || rate > UINT32_MAX / 2)
-        return 0;
-    FILE* file = fopen(path, "wb");
-    if (!file)
-        return 0;
-    const uint32_t data_size = (uint32_t)count * 2;
-    fwrite("RIFF", 1, 4, file);
-    write_u32(file, 36 + data_size);
-    fwrite("WAVEfmt ", 1, 8, file);
-    write_u32(file, 16);
-    write_u16(file, 1);  // PCM
-    write_u16(file, 1);  // mono
-    write_u32(file, rate);
-    write_u32(file, rate * 2);
-    write_u16(file, 2);
-    write_u16(file, 16);
-    fwrite("data", 1, 4, file);
-    write_u32(file, data_size);
-    for (size_t i = 0; i < count; ++i) {
-        float sample = samples[i];
-        if (sample > 1.0f)
-            sample = 1.0f;
-        if (sample < -1.0f)
-            sample = -1.0f;
-        write_u16(file, (uint16_t)(int16_t)(sample * 32767.0f));
-    }
-    int success = !ferror(file);
-    if (fclose(file) != 0)
-        success = 0;
-    return success;
-}
 
 static ov_tensor_t* load_embedding(const char* path, ov_genai_text2speech_pipeline* pipeline) {
     ov_shape_t shape = {0};
@@ -234,7 +192,7 @@ int main(int argc, char** argv) {
         CHECK_STATUS(ov_genai_text2speech_decoded_results_get_speech_at(results, i, &speech));
         CHECK_STATUS(ov_tensor_get_size(speech, &sample_count));
         CHECK_STATUS(ov_tensor_data(speech, &data));
-        if (sample_count == 0 || !save_wav(output_path, (const float*)data, sample_count, rate))
+        if (sample_count == 0 || !save_wav_file(output_path, (const float*)data, sample_count, rate))
             goto done;
         total_samples += sample_count;
         ov_tensor_free(speech);
