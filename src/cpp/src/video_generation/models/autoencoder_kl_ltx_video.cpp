@@ -304,10 +304,10 @@ void AutoencoderKLLTXVideo::validate_decoder_batch(size_t batch_size) {
 
 ov::Tensor AutoencoderKLLTXVideo::decode(const ov::Tensor& latent) {
     OPENVINO_ASSERT(m_decoder_request, "VAE decoder model must be compiled first. Cannot infer non-compiled model");
+    OPENVINO_ASSERT(latent.get_shape().size() == 5,
+                    "VAE decoder latent input must be rank 5 [B, C, F, H, W]");
 
     if (m_config.timestep_conditioning) {
-        OPENVINO_ASSERT(latent.get_shape().size() == 5,
-                        "VAE decoder latent input must be rank 5 [B, C, F, H, W]");
         ov::Tensor timestep(ov::element::f32, {latent.get_shape()[0]});
         std::fill_n(timestep.data<float>(), timestep.get_size(), 0.0f);
         return decode(latent, timestep);

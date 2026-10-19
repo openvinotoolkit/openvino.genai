@@ -203,8 +203,12 @@ def test_video_decode_cli_options_reach_evaluator(monkeypatch, model_type, cli_o
 
     monkeypatch.setattr(sys, "argv", ["wwb", "--model-type", model_type, *cli_options])
     monkeypatch.setitem(wwb.EVALUATOR_REGISTRY, model_type, CapturingEvaluator)
-    monkeypatch.setattr(wwb, "load_prompts", lambda _args: {"prompt": ["test prompt"]})
+    dataset_rows = {"prompt": ["test prompt"], "decode_timestep": [0.4], "decode_noise_scale": [0.5]}
+    if model_type == "image-to-video":
+        dataset_rows["images"] = ["frame.png"]
+    monkeypatch.setattr(wwb, "load_prompts", lambda _args: dataset_rows)
 
     evaluator = wwb.create_evaluator(None, wwb.parse_args())
 
     assert (evaluator.kwargs["decode_timestep"], evaluator.kwargs["decode_noise_scale"]) == expected_values
+    assert evaluator.kwargs["test_data"] == dataset_rows
