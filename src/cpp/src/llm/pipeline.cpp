@@ -31,21 +31,27 @@ std::shared_ptr<ov::Model> peek_draft_model(const ov::AnyMap& properties) {
     return it->second.as<ov::genai::ModelDesc>().model;
 }
 
-// NPUW_PA selects the NPU PA front-end. It runs under the continuous batching
-// pipeline, which builds the PA model and owns the paged KV cache. The flag is
-// read from the properties the language model is compiled with, so device and
-// per-model overrides count.
-bool requests_npuw_pa(const ov::AnyMap& properties, const std::string& device, const std::string& attention_backend) {
+// On NPU, the PA attention backend is the NPU PA front-end, selected by NPUW_PA.
+// It runs under the continuous batching pipeline, which builds the PA model and
+// owns the paged KV cache. NPUW_PA is read from the properties the language
+// model is compiled with, so device and per-model overrides count. The two must
+// agree: NPUW_PA needs the PA backend, and an explicit PA backend needs NPUW_PA.
+bool requests_npuw_pa(const ov::AnyMap& user_properties,
+                      const ov::AnyMap& properties,
+                      const std::string& device,
+                      const std::string& attention_backend) {
     const auto model_properties = ov::genai::utils::get_model_properties(properties, "language_model", device);
     const auto it = model_properties.find("NPUW_PA");
-    if (it == model_properties.end() || !it->second.as<bool>()) {
-        return false;
-    }
-    OPENVINO_ASSERT(attention_backend == ov::genai::PA_BACKEND,
+    const bool npuw_pa = it != model_properties.end() && it->second.as<bool>();
+    OPENVINO_ASSERT(!npuw_pa || attention_backend == ov::genai::PA_BACKEND,
                     "NPUW_PA runs on the PA attention backend, but ATTENTION_BACKEND is set to '",
                     attention_backend,
                     "'");
-    return true;
+    const bool pa_backend_requested =
+        user_properties.count("ATTENTION_BACKEND") > 0 && attention_backend == ov::genai::PA_BACKEND;
+    OPENVINO_ASSERT(npuw_pa || !pa_backend_requested,
+                    "ATTENTION_BACKEND=PA on NPU runs through the NPU PA front-end and needs NPUW_PA=YES");
+    return npuw_pa;
 }
 
 bool should_use_stateful_pipeline(bool is_npu_requested,
@@ -271,7 +277,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
-    const bool npuw_pa = is_npu_requested && requests_npuw_pa(properties, device, attention_backend);
+    const bool npuw_pa = is_npu_requested && requests_npuw_pa(user_properties, properties, device, attention_backend);
     if (!npuw_pa &&
         should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
@@ -319,7 +325,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const Tokenizer tokenizer(models_path, properties);
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
-    const bool npuw_pa = is_npu_requested && requests_npuw_pa(properties, device, attention_backend);
+    const bool npuw_pa = is_npu_requested && requests_npuw_pa(user_properties, properties, device, attention_backend);
     if (!npuw_pa &&
         should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
@@ -368,7 +374,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     std::shared_ptr<ov::Model> model = utils::singleton_core().read_model(model_str, weights_tensor);
 
-    const bool npuw_pa = is_npu_requested && requests_npuw_pa(properties, device, attention_backend);
+    const bool npuw_pa = is_npu_requested && requests_npuw_pa(user_properties, properties, device, attention_backend);
     if (!npuw_pa &&
         should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(
