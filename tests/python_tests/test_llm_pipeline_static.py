@@ -10,6 +10,7 @@ from openvino_genai import (
     ChatHistory,
     TokenizedInputs,
     StreamingStatus,
+    draft_model,
 )
 from pathlib import Path
 
@@ -31,6 +32,7 @@ from utils.generation_config import (
     get_beam_search,
 )
 from data.models import get_models_list
+from test_stateful_speculative_decoding import get_npu_llm_properties_for_test
 
 
 if sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"]:
@@ -505,6 +507,9 @@ NPUW_PA_PROMPTS: list[str] = ["What is OpenVINO?", "Why do LLM servers batch req
     [
         pytest.param(NPUW_PA_CONFIG, id="top_level"),
         pytest.param({"NPU_USE_NPUW": "YES", "DEVICE_PROPERTIES": {"NPU": NPUW_PA_CONFIG}}, id="device_properties"),
+        pytest.param(
+            {"NPU_USE_NPUW": "YES", "MODEL_PROPERTIES": {"language_model": NPUW_PA_CONFIG}}, id="model_properties"
+        ),
     ],
 )
 def test_npuw_pa_runs_through_continuous_batching(
@@ -536,3 +541,25 @@ def test_npuw_pa_rejects_the_sdpa_backend(llm_model: OVConvertedModelSchema):
 def test_npu_pa_backend_needs_npuw_pa(llm_model: OVConvertedModelSchema):
     with pytest.raises(RuntimeError, match="needs NPUW_PA=YES"):
         LLMPipeline(llm_model.models_path, "NPU", **(DEFAULT_CONFIG | {"ATTENTION_BACKEND": "PA"}))
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+def test_npuw_pa_rejects_a_draft_model(llm_model: OVConvertedModelSchema):
+    draft = draft_model(llm_model.models_path, "CPU", **get_default_llm_properties())
+    with pytest.raises(RuntimeError, match="NPUW_PA does not support speculative decoding"):
+        LLMPipeline(llm_model.models_path, "NPU", **NPUW_PA_CONFIG, draft_model=draft)
+
+
+# A CPU main model with an NPU draft model is stateful speculative decoding, whatever the attention backend.
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+def test_cpu_main_with_npu_draft_keeps_the_stateful_pipeline(llm_model: OVConvertedModelSchema, ov_model: LLMPipeline):
+    draft = draft_model(llm_model.models_path, "NPU", **get_npu_llm_properties_for_test())
+    pipe = LLMPipeline(
+        llm_model.models_path,
+        "CPU",
+        **(get_default_llm_properties() | {"ATTENTION_BACKEND": "PA"}),
+        draft_model=draft,
+    )
+
+    prompt = NPUW_PA_PROMPTS[:1]
+    assert pipe.generate(prompt, get_greedy()).texts == ov_model.generate(prompt, get_greedy()).texts

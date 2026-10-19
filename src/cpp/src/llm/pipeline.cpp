@@ -31,18 +31,18 @@ std::shared_ptr<ov::Model> peek_draft_model(const ov::AnyMap& properties) {
     return it->second.as<ov::genai::ModelDesc>().model;
 }
 
-// On NPU, the PA attention backend is the NPU PA front-end, selected by NPUW_PA.
-// It runs under the continuous batching pipeline, which builds the PA model and
-// owns the paged KV cache. NPUW_PA is read from the properties the language
-// model is compiled with, so device and per-model overrides count. The two must
-// agree: NPUW_PA needs the PA backend, and an explicit PA backend needs NPUW_PA.
+// With the main model on NPU, NPUW_PA selects the NPU PA front-end, which runs under continuous batching.
+// It is read from the language model's compile properties and must agree with ATTENTION_BACKEND.
 bool requests_npuw_pa(const ov::AnyMap& user_properties,
                       const ov::AnyMap& properties,
                       const std::string& device,
-                      const std::string& attention_backend) {
+                      const std::string& attention_backend,
+                      bool has_draft_model) {
     const auto model_properties = ov::genai::utils::get_model_properties(properties, "language_model", device);
     const auto it = model_properties.find("NPUW_PA");
     const bool npuw_pa = it != model_properties.end() && it->second.as<bool>();
+    OPENVINO_ASSERT(!npuw_pa || !has_draft_model,
+                    "NPUW_PA does not support speculative decoding: remove the draft model or NPUW_PA");
     OPENVINO_ASSERT(!npuw_pa || attention_backend == ov::genai::PA_BACKEND,
                     "NPUW_PA runs on the PA attention backend, but ATTENTION_BACKEND is set to '",
                     attention_backend,
@@ -277,7 +277,8 @@ ov::genai::LLMPipeline::LLMPipeline(
     std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
-    const bool npuw_pa = is_npu_requested && requests_npuw_pa(user_properties, properties, device, attention_backend);
+    const bool npuw_pa =
+        device == "NPU" && requests_npuw_pa(user_properties, properties, device, attention_backend, has_draft_model);
     if (!npuw_pa &&
         should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
@@ -325,7 +326,8 @@ ov::genai::LLMPipeline::LLMPipeline(
     const Tokenizer tokenizer(models_path, properties);
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
-    const bool npuw_pa = is_npu_requested && requests_npuw_pa(user_properties, properties, device, attention_backend);
+    const bool npuw_pa =
+        device == "NPU" && requests_npuw_pa(user_properties, properties, device, attention_backend, has_draft_model);
     if (!npuw_pa &&
         should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
@@ -374,7 +376,8 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     std::shared_ptr<ov::Model> model = utils::singleton_core().read_model(model_str, weights_tensor);
 
-    const bool npuw_pa = is_npu_requested && requests_npuw_pa(user_properties, properties, device, attention_backend);
+    const bool npuw_pa =
+        device == "NPU" && requests_npuw_pa(user_properties, properties, device, attention_backend, has_draft_model);
     if (!npuw_pa &&
         should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(
