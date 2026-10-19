@@ -568,9 +568,11 @@ void StatefulLLMPipeline::negotiate_npu_history_reuse(size_t full_history_len) {
     // The prompt limit applies to the full history, not just the delta sent below. It is
     // checked before the proposal so that a rejected turn leaves no pending plugin command.
     OPENVINO_ASSERT(full_history_len <= m_max_prompt_len,
-        "Stateful LLM pipeline on NPU may only process prompts or hold chat history up to ",
-        m_max_prompt_len, " tokens. ", full_history_len,
-        " is passed.\n Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
+                    "Stateful LLM pipeline on NPU may only process prompts or hold chat history up to ",
+                    m_max_prompt_len,
+                    " tokens. ",
+                    full_history_len,
+                    " is passed.\n Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
 
     auto& state = m_cache_state.get_state();
     const size_t k_common = state.size();
@@ -590,15 +592,20 @@ void StatefulLLMPipeline::negotiate_npu_history_reuse(size_t full_history_len) {
             break;
         }
     }
-    OPENVINO_ASSERT(channel.has_value(), utils::NPUW_STORED_TOKENS_STATE, " is missing while continuous prefill is enabled.");
+    OPENVINO_ASSERT(channel.has_value(),
+                    utils::NPUW_STORED_TOKENS_STATE,
+                    " is missing while continuous prefill is enabled.");
 
     ov::Tensor proposal(ov::element::i64, {1});
     proposal.data<int64_t>()[0] = static_cast<int64_t>(k_common);
     channel->set_state(proposal);
     const int64_t granted = channel->get_state().data<int64_t>()[0];
     OPENVINO_ASSERT(granted >= 0 && static_cast<size_t>(granted) <= k_common,
-        "NPU continuous prefill granted an invalid keep of ", granted,
-        " for a proposal of ", k_common, ".");
+                    "NPU continuous prefill granted an invalid keep of ",
+                    granted,
+                    " for a proposal of ",
+                    k_common,
+                    ".");
 
     // The tokens in [granted, k_common) become part of the delta, since the full
     // tokenized history is still available to the caller.

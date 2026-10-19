@@ -434,9 +434,9 @@ def test_terminate_finish_reason_by_sampler(
 
 
 # Continuous prefill keeps the plugin's KV cache across chat turns and prefills only the
-# new tokens. The plugin applies it whenever chunked prefill is on, which needs a chunk
-# smaller than MAX_PROMPT_LEN. The keep is granted in whole chunks, so a small chunk lets
-# it engage on short chats.
+# new tokens. The plugin turns it on when the compiled model can serve it, and for this
+# model that only needs chunked prefill, i.e. a chunk smaller than MAX_PROMPT_LEN. The
+# keep is granted in whole chunks, so a small chunk lets it engage on short chats.
 CONTINUOUS_PREFILL_CONFIG: dict = {**DEFAULT_CONFIG, "NPUW_LLM_PREFILL_CHUNK_SIZE": 64}
 
 CHAT_PIPELINE_CONFIGS: list = [
@@ -501,9 +501,9 @@ def test_chat_generation(
         assert num_input_tokens_static == num_full_history_tokens
     elif npu_config is CONTINUOUS_PREFILL_CONFIG:
         assert num_input_tokens_static[0] == num_full_history_tokens[0]
-        assert any(
-            sent < full for sent, full in zip(num_input_tokens_static[1:], num_full_history_tokens[1:])
-        ), f"sent per turn: {num_input_tokens_static}, full history per turn: {num_full_history_tokens}"
+        assert any(sent < full for sent, full in zip(num_input_tokens_static[1:], num_full_history_tokens[1:])), (
+            f"sent per turn: {num_input_tokens_static}, full history per turn: {num_full_history_tokens}"
+        )
 
 
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
