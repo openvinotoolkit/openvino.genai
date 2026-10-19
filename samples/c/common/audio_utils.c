@@ -124,13 +124,11 @@ int load_wav_as_tensor(const char* filename, float expected_sample_rate, ov_tens
         return 0;
     }
 
-    shape.rank = 1;
-    shape.dims = (int64_t*)malloc(sizeof(int64_t));
-    if (!shape.dims) {
+    const int64_t dims[] = {(int64_t)audio_length};
+    if (ov_shape_create(1, dims, &shape) != OK) {
         free(audio_data);
         return 0;
     }
-    shape.dims[0] = (int64_t)audio_length;
 
     if (ov_tensor_create(F32, shape, &out) != OK) {
         ov_shape_free(&shape);

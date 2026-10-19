@@ -12,8 +12,9 @@
 
 #define CHECK_STATUS(return_status)                                                                  \
     do {                                                                                             \
-        if ((return_status) != OK) {                                                                 \
-            fprintf(stderr, "[ERROR] return status %d, line %d\n", (int)(return_status), __LINE__); \
+        const ov_status_e _status = (return_status);                                                 \
+        if (_status != OK) {                                                                         \
+            fprintf(stderr, "[ERROR] return status %d, line %d\n", (int)_status, __LINE__);       \
             goto done;                                                                               \
         }                                                                                            \
     } while (0)
@@ -82,10 +83,12 @@ static int write_f32_bin(const char* path, const ov_tensor_t* tensor) {
 static int read_ref_codec_ids(const char* path, ov_tensor_t** tensor) {
     FILE* file = fopen(path, "rb");
     int64_t rank = 0;
+    int64_t dims_local[8] = {0};
     ov_shape_t shape = {0};
     ov_tensor_t* out = NULL;
     void* data = NULL;
     size_t elem_count = 1;
+    ov_status_e status = OK;
 
     if (!file)
         return 0;
@@ -95,20 +98,19 @@ static int read_ref_codec_ids(const char* path, ov_tensor_t** tensor) {
     if (rank <= 0 || rank > 8)
         goto fail;
 
-    shape.rank = rank;
-    shape.dims = (int64_t*)malloc((size_t)rank * sizeof(int64_t));
-    if (!shape.dims)
-        goto fail;
-
     for (int64_t i = 0; i < rank; ++i) {
         int64_t dim = 0;
         if (fread(&dim, sizeof(dim), 1, file) != 1)
             goto fail;
         if (dim <= 0)
             goto fail;
-        shape.dims[i] = dim;
+        dims_local[i] = dim;
         elem_count *= (size_t)dim;
     }
+
+    status = ov_shape_create((size_t)rank, dims_local, &shape);
+    if (status != OK)
+        goto fail;
 
     if (ov_tensor_create(I64, shape, &out) != OK)
         goto fail;
