@@ -6,6 +6,7 @@
 #include <string>
 #include <iostream>
 #include <chrono>
+#include <sstream>
 #include <stdexcept>
 
 #include <openvino/openvino.hpp>
@@ -17,6 +18,7 @@
 #include "gguf_utils/building_blocks.hpp"
 #include "gguf_utils/gguf_frontend_extensions.hpp"
 #include "gguf_utils/gguf_modeling.hpp"
+#include "gguf_utils/gguf_utils.hpp"
 #include "utils.hpp"
 
 using namespace ov;

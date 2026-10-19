@@ -5,8 +5,13 @@
 
 #include <filesystem>
 #include <set>
+#include <map>
+#include <tuple>
+#include <unordered_map>
 
-#include "gguf.hpp"
+#include "gguf_metadata.hpp"
+#include "openvino/core/any.hpp"
+#include "openvino/core/model.hpp"
 
 using FactoryCreateType = ov::OutputVector (*)(const std::string& op_type,
                                                const ov::OutputVector& inputs,

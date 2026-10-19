@@ -52,6 +52,8 @@ hf download <model> --local-dir <output_folder>
 
 To run samples with a GGUF model, provide the path to the `.gguf` file via the `model_dir` parameter. The default legacy reader supports `llama`, `qwen2`, and `qwen3` architectures.
 
+Prefer models quantized in `Q4_0` or `Q8_0` format for better performance and accuracy. Their quantization layouts are closest to those used by OpenVINO.
+
 To use the OpenVINO GGUF frontend, select it when constructing the pipeline:
 
 ```python
@@ -61,7 +63,7 @@ pipe = genai.LLMPipeline("model.gguf", "CPU", GGUF_READER="FRONTEND")
 print(pipe.generate("Explain why the sky is blue.", max_new_tokens=64))
 ```
 
-The frontend supports more architectures and is expected to provide better model quality, but is in preview and may have limitations. It requires a compatible OpenVINO build with the GGUF frontend. See [Run GGUF models](https://openvinotoolkit.github.io/openvino.genai/docs/guides/gguf) for tokenizer, chat, streaming, and saved-IR examples.
+The frontend supports more architectures and is expected to provide better model quality, but is in preview and may have limitations. It requires a compatible OpenVINO build with the GGUF frontend. See [Run GGUF models](https://openvinotoolkit.github.io/openvino.genai/docs/guides/gguf) for model format recommendations and tokenizer, chat, and streaming examples.
 
 #### Registering GGUF frontend extensions
 

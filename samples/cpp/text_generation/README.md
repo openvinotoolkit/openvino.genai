@@ -31,10 +31,13 @@ The default legacy reader handles `llama`, `qwen2`, and `qwen3`, and ignores som
 such as `rope_freqs.weight`. The OpenVINO GGUF frontend supports more architectures and is
 expected to provide better model quality, but is in preview and may have limitations.
 
+Prefer models quantized in `Q4_0` or `Q8_0` format for better performance and accuracy. Their quantization layouts are closest to those used by OpenVINO.
+
 Select the frontend when constructing the pipeline:
 
 ```cpp
 #include <iostream>
+#include <openvino/genai/gguf.hpp>
 #include <openvino/genai/llm_pipeline.hpp>
 
 int main() {
@@ -49,7 +52,7 @@ int main() {
 With a compatible OpenVINO build, GenAI attempts paged attention by default and falls back to
 SDPA if conversion fails. An explicit `scheduler_config` requests continuous batching and
 reports conversion errors. Mamba2 and dense Nemotron-H GGUFs currently require SDPA.
-See [Run GGUF models](https://openvinotoolkit.github.io/openvino.genai/docs/guides/gguf) for more examples and limitations.
+See [Run GGUF models](https://openvinotoolkit.github.io/openvino.genai/docs/guides/gguf) for model format recommendations, examples, and limitations.
 
 > [!NOTE]
 > The `GGUF_READER` property selects which reader converts the file. It defaults to

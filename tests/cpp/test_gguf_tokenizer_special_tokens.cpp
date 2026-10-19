@@ -23,6 +23,7 @@
 #include "visual_language/muse_glimmer/classes.hpp"
 #include "visual_language/vlm_chat_context.hpp"
 #include "visual_language/vlm_utils.hpp"
+#include "openvino/genai/gguf.hpp"
 
 namespace {
 ov::genai::GGUFTokenizerParameters sentencepiece_config() {
@@ -126,7 +127,7 @@ std::vector<ov::Tensor> first_sample_audio_features(const ov::Tensor& audio) {
 }  // namespace
 
 TEST(GGUFTokenizer, SentencePieceControlTokensUseTheirVocabularyIds) {
-    ov::genai::Tokenizer tokenizer(sentencepiece_config());
+    ov::genai::GGUFTokenizer tokenizer(sentencepiece_config());
     auto encoded = tokenizer.encode("<start_of_turn>a<end_of_turn><start_of_image><pad><end_of_image>",
                                     ov::genai::add_special_tokens(false));
     const std::vector<int64_t> expected{4, 9, 5, 6, 3, 7};
@@ -148,7 +149,7 @@ TEST(GGUFTokenizer, ChatTemplateSupportsUndefinedAndAdjacentStringLiterals) {
     config.config["chat_template"] =
         std::string("{% if enable_thinking is undefined %}{{ \"first\"\n  \"second\" }}{% endif %}"
                     "{{ messages[0]['content'] }}");
-    ov::genai::Tokenizer tokenizer(config);
+    ov::genai::GGUFTokenizer tokenizer(config);
     EXPECT_EQ(tokenizer.apply_chat_template({{{"role", "user"}, {"content", "a"}}}, false), "firstseconda");
 }
 
@@ -181,7 +182,7 @@ TEST(GGUFTokenizer, Gemma4UsesMergesForOrdinaryVocabularyEntries) {
         value.data<uint32_t>()[0] = id;
         config.config[key] = value;
     }
-    ov::genai::Tokenizer tokenizer(config);
+    ov::genai::GGUFTokenizer tokenizer(config);
     const auto ids = tokenizer.encode("abc\n\n", ov::genai::add_special_tokens(false)).input_ids;
     // Pinned llama.cpp 03fa73cb: "abc" needs a merge; repeated newlines use their vocabulary entry.
     const std::vector<int64_t> expected{5, 6, 9};
@@ -209,7 +210,7 @@ TEST(GGUFTokenizer, Gemma4ByteTokenSpellingUsesOrdinaryCharacters) {
         value.data<uint32_t>()[0] = id;
         config.config[key] = value;
     }
-    ov::genai::Tokenizer tokenizer(config);
+    ov::genai::GGUFTokenizer tokenizer(config);
     const auto ids = tokenizer.encode("<0x85>", ov::genai::add_special_tokens(false)).input_ids;
     const std::vector<int64_t> expected{3, 4, 5, 6, 7, 8};
     ASSERT_EQ(ids.get_size(), expected.size());
@@ -743,4 +744,8 @@ TEST(GGUFMultimodal, LFM2VisionNormalizesPixelsAndPadsTiledCanvas) {
                 for (size_t c = 0; c < 3; ++c)
                     EXPECT_FLOAT_EQ(output.resized_source.data<const float>()[((tile * 16 + y * 4 + x) * 3) + c],
                                     y < 3 ? 1.f : -1.f);
+}
+
+TEST(GGUFTokenizer, MetadataRejectsModelsWithoutTokenizerInfo) {
+    EXPECT_THROW(ov::genai::GGUFTokenizerParameters::from_model(nullptr), ov::Exception);
 }

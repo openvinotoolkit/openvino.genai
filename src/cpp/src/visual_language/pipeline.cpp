@@ -296,7 +296,7 @@ public:
         OPENVINO_ASSERT(it != properties.end(), "A language GGUF requires mmproj_path for VLMPipeline");
         const auto projector = it->second.as<std::string>();
         properties.erase(it);
-        auto gguf_properties = utils::extract_gguf_properties(properties);
+        auto gguf_properties = gguf_utils::extract_gguf_properties(properties);
         OPENVINO_ASSERT(!gguf_properties.legacy_reader.value_or(false),
                         "GGUF multimodal generation requires gguf_reader=FRONTEND");
         properties = std::move(gguf_properties.rest);

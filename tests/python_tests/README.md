@@ -61,6 +61,26 @@ use PA/default; native SDPA attention masks currently support batch one. The Opt
 Gemma-3 reference requires Transformers 5.0, matching the regular LLM job. The existing reader
 suite separately retains its model/quantization and native-tokenizer coverage.
 
+This suite validates GenAI integration rather than standalone frontend translation.
+OpenVINO frontend tests should check graph conversion, operators and metadata handling
+in the OpenVINO repository. These tests additionally exercise GenAI's reader selection,
+metadata-to-tokenizer construction, attention backend selection, generation APIs,
+streaming and serialization/reload behavior.
+
+For each pinned model, the suite:
+
+1. Downloads the selected GGUF and the matching source tokenizer/configuration files.
+2. Reconstructs a Hugging Face model from those GGUF weights and checks that no weights
+   are missing, unexpected or mismatched.
+3. Exports that reconstructed model and tokenizer to reference IRs with Optimum Intel.
+4. Loads the original GGUF through GenAI with `GGUF_READER="FRONTEND"` for SDPA, PA and
+   automatic pipeline selection, using the same reference inference settings.
+5. Compares tokenizer IDs and decoded text, greedy generation, batches, beam tokens and
+   scores, encoded inputs and streamed output against the reference path. It also checks
+   the standalone GGUF tokenizer.
+6. Saves model/tokenizer IRs beside a temporary copy of the GGUF, reloads them through
+   the regular IR path, and checks that generation is unchanged.
+
 The same precommit jobs also run generated-model architecture tests:
 
 ```sh
@@ -90,6 +110,13 @@ not committed or downloaded as model binaries. For repeated local runs,
 A local run took 87 seconds including the clean four-job CPU build (about 79 seconds),
 and about 10 seconds with that build cached. The combined Optimum/generated suite took
 117 seconds with build/download caches warm; CI timings depend on the runner.
+On the Linux precommit runner for [PR #4318 at `af609b39`](https://github.com/openvinotoolkit/openvino.genai/actions/runs/38698456185/job/116311682631),
+the combined suites took 295 seconds in pytest (189 passed, 36 skipped and 10 xfailed).
+The full job took about 9 minutes including setup, dependency installation and cleanup;
+the preceding run took about 10 minutes. The job has a 30-minute timeout. These timings
+precede the standalone-tokenizer case added here and can vary with download caches and
+runner load.
+
 The 21 model variants cover 18 architecture IDs: BailingMoE2, ERNIE4.5-MoE, EXAONE4,
 Gemma, Gemma2, GPT-OSS, Hunyuan-Dense, Llama, Maincoder, MiniCPM, Mistral3, OLMoE,
 Phi3, Qwen2, Qwen3, Qwen3.5, Qwen3MoE and SmolLM3. Llama, MiniCPM and Mistral3 have
@@ -104,8 +131,7 @@ Known limitations are isolated from the passing cases:
 | --- | --- |
 | Qwen3.5 PA/default/continuous batching | Skipped: recurrent state needs SDPA |
 | Gemma2 explicit PA/continuous batching | Strict xfail: soft-capped attention has no SDPA node for PA conversion; automatic fallback passes |
-| MoE PA/default/continuous batching | Strict xfail: token-axis shape errors or incorrect prefill output after PA conversion |
-| GPT-OSS SDPA | Strict xfail: first-token mismatch against llama.cpp CPU |
+| GPT-OSS SDPA/PA/default/continuous batching | Strict xfail: first-token mismatch against llama.cpp CPU |
 
 Expected failures still execute and become failures on unexpected passes, so fixes
 require removing the corresponding markers. Generator/build/reference failures are
@@ -119,6 +145,31 @@ WWB_GGUF_TESTS=1 python -m pytest tools/who_what_benchmark/tests/test_cli_text_g
 
 Omit `-m gguf_small` to include the larger checkpoints. Tiny-model coverage is not a
 claim that all frontend architectures or production quantization formats are tested.
+
+### Adding GGUF model coverage
+
+When adding a new architecture or fixing its integration:
+
+1. Add conversion/operator/metadata regressions in the OpenVINO frontend tests for the
+   frontend change itself.
+2. Add an explicit case to `test_gguf_generated.py:ARCHITECTURES` / `MODEL_CASES` when the
+   pinned llama.cpp factory supports it. For a newly supported factory, update its pinned
+   revision and source hash together and verify the generator and reference runner.
+   Run every applicable SDPA, PA, automatic and continuous-batching case against the
+   independent llama.cpp reference; include dense/MoE variants where applicable.
+3. For tokenizer or end-to-end integration coverage, add a small GGUF to
+   `test_gguf_frontend.py:TINY_GGUF_MODELS`, pin both the GGUF repository and the matching
+   source tokenizer/configuration revision, and confirm the reference model is rebuilt
+   from the same GGUF weights. This runs the tokenizer, generation, streaming and saved-IR
+   checks above. Prefer small fixtures that keep precommit downloads and runtime bounded.
+4. For production weights or quantization coverage, add a real-checkpoint case to
+   `tools/who_what_benchmark/tests/test_cli_text_gguf.py:GGUF_MODELS` and run the opt-in
+   llama.cpp comparison. Mark it `gguf_small` only when the download is under about 1 GB.
+5. Document any unsupported case with a specific skip reason or strict xfail, and remove
+   the marker once fixed. Keep setup, generator and reference failures visible.
+
+Run both precommit suites after updating coverage and record pytest counts and elapsed
+runtime. A new architecture is not fully covered by a tokenizer-only or single-backend run.
 
 ## Test Samples
 To test samples, set the `SAMPLES_PY_DIR` and `SAMPLES_CPP_DIR` environment variables to the directories containing your Python samples and built C++ samples respectively. The `SAMPLES_CPP_DIR` should point to the folder with built C++ samples, which can be installed using `cmake --component samples_bin`. For example:

@@ -19,7 +19,7 @@
 #include "speculative_decoding/stateful/fast_draft_strategy.hpp"
 #include "speculative_decoding/stateful/gemma4_mtp_strategy.hpp"
 #include "utils.hpp"
-#include "gguf_utils/gguf_modeling.hpp"
+#include "gguf_utils/gguf_utils.hpp"
 #include "gguf_utils/gguf_tokenizer.hpp"
 #include "model_desc.hpp"
 
@@ -192,7 +192,7 @@ static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Mod
     // GGUF-specific properties configure conversion, which already happened by the time we get a
     // model, so drop them: the plugin rejects unknown properties, and this descriptor outlives
     // the function so strip once, here (StatefulLLMPipeline strips them itself elsewhere).
-    properties_without_draft_model = utils::extract_gguf_properties(properties_without_draft_model).rest;
+    properties_without_draft_model = gguf_utils::extract_gguf_properties(properties_without_draft_model).rest;
 
     auto main_model_descr =
         ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, {}, generation_config);
@@ -303,7 +303,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
 
     // The reader choice determines whether tokenizer metadata is available on the model.
-    const auto gguf_properties = utils::extract_gguf_properties(properties);
+    const auto gguf_properties = gguf_utils::extract_gguf_properties(properties);
 
     // Read model and create tokenizer once to avoid double I/O during pipeline construction.
     std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties, extensions);
@@ -316,7 +316,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const auto gguf_stop_tokens =
         gguf_frontend ? gguf_stop_token_ids(gguf_tokenizer_metadata_from_model(model)) : std::set<int64_t>{};
     const Tokenizer tokenizer =
-        tokenizer_from_model ? Tokenizer(GGUFTokenizerParameters(take_gguf_tokenizer_metadata(model)), properties)
+        tokenizer_from_model ? GGUFTokenizer(GGUFTokenizerParameters(take_gguf_tokenizer_metadata(model)), properties)
                              : Tokenizer(models_path, properties);
     // On the from-file path the frontend's metadata is still on the model and no longer read.
     erase_gguf_tokenizer_metadata(model);

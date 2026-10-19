@@ -9,7 +9,10 @@
 #include <limits>
 #include <set>
 
+#ifdef ENABLE_GGUF
+#include "gguf.hpp"
 #include "openvino/frontend/gguf/tokenizer_metadata.hpp"
+#endif
 #include "openvino/op/add.hpp"
 #include "openvino/op/constant.hpp"
 #include "openvino/op/convert.hpp"
@@ -1113,9 +1116,13 @@ std::map<std::string, GGUFMetaData> tokenizer_config_from_rt_info(const ov::AnyM
 std::tuple<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>, std::map<std::string, GGUFMetaData>>
 create_tokenizer_from_config(const std::shared_ptr<void>& shared_object_ov_tokenizers,
                              const std::filesystem::path& gguf_model_path) {
+#ifdef ENABLE_GGUF
     auto gguf_metadata = get_gguf_metadata(gguf_model_path.string());
     auto tokenizer_config = tokenizer_config_from_meta(gguf_metadata);
     return build_tokenizer_models(shared_object_ov_tokenizers, std::move(tokenizer_config));
+#else
+    OPENVINO_THROW("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
+#endif
 }
 
 std::tuple<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>, std::map<std::string, GGUFMetaData>>
@@ -1163,6 +1170,7 @@ std::set<int64_t> gguf_stop_token_ids(const ov::AnyMap& tokenizer_metadata) {
     return ids;
 }
 
+#ifdef ENABLE_GGUF
 namespace {
 std::shared_ptr<ov::frontend::gguf::GGUFTokenizerMetadata> find_tokenizer_metadata(
     const std::shared_ptr<ov::Model>& model) {
@@ -1198,6 +1206,17 @@ void erase_gguf_tokenizer_metadata(const std::shared_ptr<ov::Model>& model) {
         model->get_rt_info().erase(ov::frontend::gguf::gguf_tokenizer_metadata_key());
     }
 }
+#else
+const ov::AnyMap& gguf_tokenizer_metadata_from_model(const std::shared_ptr<ov::Model>& model) {
+    OPENVINO_THROW("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
+}
+
+ov::AnyMap take_gguf_tokenizer_metadata(const std::shared_ptr<ov::Model>& model) {
+    OPENVINO_THROW("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
+}
+
+void erase_gguf_tokenizer_metadata(const std::shared_ptr<ov::Model>& model) {}
+#endif
 
 std::string patch_gguf_chat_template(const std::string& chat_template) {
     std::string patched_chat_template = chat_template;

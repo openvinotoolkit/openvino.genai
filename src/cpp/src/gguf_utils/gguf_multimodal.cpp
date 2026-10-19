@@ -8,6 +8,7 @@
 #include <sstream>
 
 #include "gguf_tokenizer.hpp"
+#include "openvino/genai/gguf.hpp"
 #include "gguf_frontend_extensions.hpp"
 #include "openvino/frontend/gguf/adapt_mmproj_to_genai.hpp"
 #include "openvino/frontend/gguf/extension/genai.hpp"
@@ -154,7 +155,7 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     result.language->set_rt_info(ov::element::f16, {"runtime_options", ov::hint::kv_cache_precision.name()});
     auto tokenizer_metadata = take_gguf_tokenizer_metadata(result.language);
     result.stop_token_ids = gguf_stop_token_ids(tokenizer_metadata);
-    result.tokenizer = Tokenizer(GGUFTokenizerParameters(std::move(tokenizer_metadata)), properties);
+    result.tokenizer = GGUFTokenizer(GGUFTokenizerParameters(std::move(tokenizer_metadata)), properties);
     gguf::FrontEnd projector_frontend;
     register_gguf_extensions(projector_frontend, extensions);
     auto combined = projector_frontend.convert(projector_frontend.load(mmproj.string()));

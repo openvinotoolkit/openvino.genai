@@ -4,13 +4,19 @@ sidebar_position: 7
 
 # Run GGUF models
 
-OpenVINO GenAI can load a local `.gguf` file directly, including its tokenizer metadata. No Optimum export is required. Use a GenAI build with `ENABLE_GGUF=ON` and a compatible OpenVINO build that includes the GGUF frontend.
+For optimal performance and memory consumption, use prepared OpenVINO IR models from [OpenVINO on Hugging Face](https://huggingface.co/OpenVINO) whenever a suitable model is available. These models are created by exporting and compressing Hugging Face models with [Optimum Intel](https://huggingface.co/docs/optimum-intel/openvino/export). If no prepared IR is available, you can use the same export path to create one from the source model.
+
+Use the GGUF frontend when your model is available only in GGUF format or you need to run an existing GGUF file directly.
+
+OpenVINO GenAI can load a local `.gguf` file directly, including its tokenizer metadata. No Optimum export is required. `ENABLE_GGUF` is enabled by default in GenAI CMake. Use a compatible OpenVINO build that includes the GGUF frontend.
 
 The default `GGUF_READER="LEGACY"` supports the `llama`, `qwen2`, and `qwen3` architectures. Select `GGUF_READER="FRONTEND"` explicitly to use the OpenVINO GGUF frontend, which supports more architectures and is expected to provide better model quality through more complete handling of GGUF metadata.
 
 :::warning Preview feature
 The GGUF frontend is in preview. Architecture, quantization, tokenizer, and attention-backend support depend on the OpenVINO version. Generated output can differ from other runtimes. If the default legacy reader fails, GenAI includes a suggestion to try the frontend in the error message; retry by selecting it explicitly.
 :::
+
+Prefer models quantized in `Q4_0` or `Q8_0` format for better performance and accuracy. Their quantization layouts are closest to those used by OpenVINO.
 
 ## Generate text
 
@@ -28,6 +34,7 @@ Replace `model.gguf` with the path to your downloaded model. For a base model wi
     <TabItemCpp>
         ```cpp
         #include <iostream>
+        #include <openvino/genai/gguf.hpp>
         #include <openvino/genai/llm_pipeline.hpp>
 
         int main() {
@@ -43,7 +50,7 @@ Replace `model.gguf` with the path to your downloaded model. For a base model wi
 
 ## Use the tokenizer and stream a chat
 
-The pipeline constructs its tokenizer from the frontend's model metadata. You can also construct `genai.Tokenizer("model.gguf")` independently, without exporting tokenizer IR files.
+The pipeline constructs its tokenizer from the frontend's model metadata. You can also construct `genai.GGUFTokenizer("model.gguf")` independently, without exporting tokenizer IR files. In C++, include `<openvino/genai/gguf.hpp>` and use `ov::genai::GGUFTokenizer`. The existing `Tokenizer("model.gguf")` path also remains supported.
 
 ```python
 import openvino_genai as genai
