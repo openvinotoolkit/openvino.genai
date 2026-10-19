@@ -367,4 +367,3 @@ ov_genai_speech_generation_config_set_ref_codec_ids(ov_genai_speech_generation_c
 OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_speech_generation_config_get_ref_codec_ids(const ov_genai_speech_generation_config* config,
                                                     ov_tensor_t** ref_codec_ids);
-
