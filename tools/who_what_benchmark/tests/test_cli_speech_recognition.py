@@ -12,6 +12,7 @@ from test_cli_image import get_similarity
 VLM_MODEL = "optimum-intel-internal-testing/tiny-random-gemma4"
 FUNASR_MODEL = "optimum-intel-internal-testing/tiny-random-fun-asr"
 FUNASR_LANGUAGE = "en"
+WHISPER_MODEL = "openai/whisper-tiny"
 
 
 def _common_args(gt_file):
@@ -73,4 +74,43 @@ def test_asr_funasr_genai(tmp_path, funasr_ground_truth):
     genai_similarity = get_similarity(run_wwb(["--target-model", model_path, *common, "--genai", "--output", tmp_path]))
     reproduced = get_similarity(run_wwb(["--target-data", tmp_path / "target.csv", *common]))
 
+    assert reproduced == genai_similarity
+
+
+@pytest.fixture(scope="module")
+def whisper_ground_truth(tmp_path_factory):
+    gt_file = tmp_path_factory.mktemp("whisper_ground_truth") / "gt.csv"
+    run_wwb(["--base-model", WHISPER_MODEL, *_common_args(gt_file), "--hf"])
+    return gt_file
+
+
+def test_asr_whisper_hf(tmp_path, whisper_ground_truth):
+    common = _common_args(whisper_ground_truth)
+
+    hf_similarity = get_similarity(run_wwb(["--target-model", WHISPER_MODEL, *common, "--hf", "--output", tmp_path]))
+    reproduced = get_similarity(run_wwb(["--target-data", tmp_path / "target.csv", *common]))
+
+    assert hf_similarity >= 0.90
+    assert reproduced == hf_similarity
+
+
+def test_asr_whisper_optimum(tmp_path, whisper_ground_truth):
+    common = _common_args(whisper_ground_truth)
+
+    model_path = convert_model(WHISPER_MODEL)
+    optimum_similarity = get_similarity(run_wwb(["--target-model", model_path, *common, "--output", tmp_path]))
+    reproduced = get_similarity(run_wwb(["--target-data", tmp_path / "target.csv", *common]))
+
+    assert optimum_similarity >= 0.90
+    assert reproduced == optimum_similarity
+
+
+def test_asr_whisper_genai(tmp_path, whisper_ground_truth):
+    common = _common_args(whisper_ground_truth)
+
+    model_path = convert_model(WHISPER_MODEL)
+    genai_similarity = get_similarity(run_wwb(["--target-model", model_path, *common, "--genai", "--output", tmp_path]))
+    reproduced = get_similarity(run_wwb(["--target-data", tmp_path / "target.csv", *common]))
+
+    assert genai_similarity >= 0.90
     assert reproduced == genai_similarity

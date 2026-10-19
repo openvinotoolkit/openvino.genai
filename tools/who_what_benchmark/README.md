@@ -365,7 +365,8 @@ The speech-generation evaluator reports these metrics:
 ### Compare Speech-recognition models (ASR)
 
 `speech-recognition` works with native ASR models, for example
-[FunAudioLLM/Fun-ASR-Nano-2512](https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512).
+[FunAudioLLM/Fun-ASR-Nano-2512](https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512) and
+[openai/whisper-tiny](https://huggingface.co/openai/whisper-tiny).
 
 The metric is `similarity = max(0, 1 - error rate)` between the normalized target and `--base-model`
 transcripts, where 1 is a perfect match and 0 is completely different. WWB uses character error rate
@@ -393,6 +394,25 @@ wwb --target-model fun-asr-openvino --gt-data gt.csv --model-type speech-recogni
 and `ja`). WWB defaults to `en`.
 
 > **NOTE**: when overriding the default, pass the same `--speech-language` to the baseline and to the targets.
+
+#### Whisper
+
+```sh
+# Collect ground truth from the baseline Whisper model
+wwb --base-model openai/whisper-tiny --gt-data gt.csv --model-type speech-recognition --hf
+
+# Convert model to Optimum-Intel
+optimum-cli export openvino -m openai/whisper-tiny --task automatic-speech-recognition-with-past whisper-tiny-ov
+
+# Measure similarity with the Optimum-OpenVINO inference backend
+wwb --target-model whisper-tiny-ov --gt-data gt.csv --model-type speech-recognition
+
+# Measure similarity with the OpenVINO GenAI inference backend (WhisperPipeline)
+wwb --target-model whisper-tiny-ov --gt-data gt.csv --model-type speech-recognition --genai
+```
+
+Whisper detects the language from the audio by default. Pass `--speech-language` (for example `en`) to force
+the transcription language; it must match between the baseline and the targets.
 
 ### API
 The API provides a way to access to investigate the worst generated text examples.
