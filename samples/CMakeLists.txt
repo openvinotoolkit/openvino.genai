@@ -1,15 +1,6 @@
 # Copyright (C) 2018-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
-include(FetchContent)
-
-if(NOT TARGET dr_libs)
-    FetchContent_Declare(dr_libs
-        URL https://github.com/mackron/dr_libs/archive/da35f9d6c7374a95353fd1df1d394d44ab66cf01.tar.gz
-        URL_HASH SHA256=2704d347f480ca1bc92233fb01747e4550cc8031735b6ea62ca9990ebb8851ae)
-    FetchContent_MakeAvailable(dr_libs)
-endif()
-
 if(ENABLE_SAMPLES)
     add_subdirectory(cpp/text_generation)
     add_subdirectory(cpp/image_generation)
