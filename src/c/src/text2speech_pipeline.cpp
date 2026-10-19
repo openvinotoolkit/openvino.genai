@@ -43,7 +43,12 @@ ov_status_e convert_embedding(const ov_tensor_t* input, ov::Tensor& output) {
         return status;
     if (!data)
         return ov_status_e::INVALID_C_PARAM;
-    output = ov::Tensor(ov::element::f32, dims, data);
+
+    // Own the embedding buffer in C++ so the result cannot outlive caller-owned C memory.
+    output = ov::Tensor(ov::element::f32, dims);
+    const size_t byte_size = output.get_byte_size();
+    if (byte_size > 0)
+        std::memcpy(output.data(), data, byte_size);
     return ov_status_e::OK;
 }
 }  // namespace
