@@ -518,12 +518,12 @@ bool ContinuousBatchingPipeline::has_non_finished_requests() {
     return m_impl->has_non_finished_requests();
 }
 
-void ContinuousBatchingPipeline::save_state(uint64_t request_id, const std::string& path) {
-    m_impl->save_state(request_id, path);
+void ContinuousBatchingPipeline::save_state(uint64_t request_id, const std::string& path, const CacheOffloadConfig& store_config) {
+    m_impl->save_state(request_id, path, store_config);
 }
 
-GenerationHandle ContinuousBatchingPipeline::restore_state(uint64_t request_id, const std::string& path, const ov::genai::GenerationConfig& sampling_params) {
-    return m_impl->restore_state(request_id, path, sampling_params);
+GenerationHandle ContinuousBatchingPipeline::restore_state(uint64_t request_id, const std::string& path, const ov::genai::GenerationConfig& sampling_params, const CacheOffloadConfig& store_config) {
+    return m_impl->restore_state(request_id, path, sampling_params, store_config);
 }
 
 std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::generate(const std::vector<ov::Tensor>& input_ids, const std::vector<ov::genai::GenerationConfig>& sampling_params, const StreamerVariant& streamer) {

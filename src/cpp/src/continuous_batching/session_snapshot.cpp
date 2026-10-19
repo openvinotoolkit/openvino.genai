@@ -8,8 +8,11 @@
 
 #include "continuous_batching/cache/block_manager.hpp"
 #include "continuous_batching/cache/cache_orchestrator.hpp"
+#include "continuous_batching/cache/kv_cache_disk_layout.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
+#include "continuous_batching/cache/kv_cache_store.hpp"
 #include "continuous_batching/cache/linear_attention_cache_manager.hpp"
+#include "continuous_batching/cache/store_registry.hpp"
 #include "openvino/core/except.hpp"
 
 namespace ov::genai {
@@ -17,7 +20,7 @@ namespace ov::genai {
 namespace {
 
 constexpr char MAGIC[8] = {'O', 'V', 'G', 'S', 'E', 'S', 'S', '1'};
-constexpr uint32_t FORMAT_VERSION = 2;
+constexpr uint32_t FORMAT_VERSION = 3;
 
 #pragma pack(push, 1)
 struct FileHeader {
@@ -27,6 +30,11 @@ struct FileHeader {
     uint8_t kv_present;
     uint8_t la_present;
     uint8_t is_embeddings;
+    // When set, KV/linear-attention block payloads were delegated to a third-party store plugin
+    // at save() time (SessionSnapshot::save's store_config) instead of being embedded below -
+    // load() then requires a matching store_config to read them back. Never derived from file
+    // contents: which plugin library to load is always caller-supplied, never data-driven.
+    uint8_t store_backed;
     uint32_t kv_num_layers;
     uint64_t kv_block_size_in_bytes;
     uint64_t la_block_size_in_bytes;
@@ -117,15 +125,67 @@ std::vector<uint8_t> flatten_position_ids(const std::vector<ov::Tensor>& positio
     return buffer;
 }
 
+bool store_plugin_requested(const CacheOffloadConfig& store_config) {
+    return store_config.allow_untrusted_store_plugin && !store_config.store_library_path.empty();
+}
+
+/// Writes `blocks` (each exactly `slot_bytes`) through a required store plugin, keyed by their
+/// plain position in `blocks` - session snapshot addresses blocks by sequence order, not content
+/// hash, so this never shares a key namespace with the opportunistic offload cache's content-hash
+/// keys even when both point at the same plugin/directory (see the distinct `group`).
+void write_blocks_through_plugin(const std::vector<std::vector<uint8_t>>& blocks,
+                                 size_t slot_bytes,
+                                 const CacheOffloadConfig& store_config,
+                                 const std::string& device,
+                                 const std::string& group) {
+    if (blocks.empty()) {
+        return;
+    }
+    CacheOffloadConfig scoped_config = store_config;
+    scoped_config.capacity_bytes = blocks.size() * slot_bytes;
+    const KVCacheDiskLayout layout(std::vector<size_t>{slot_bytes}, std::vector<size_t>{0});
+    auto store = open_required_kv_cache_store_plugin(layout, scoped_config, device, group);
+    for (size_t i = 0; i < blocks.size(); ++i) {
+        OPENVINO_ASSERT(store->write_block(i, blocks[i]),
+                        "Session snapshot KV cache store plugin ran out of capacity while saving block ", i,
+                        " of ", blocks.size(), " (group '", group, "')");
+    }
+}
+
+/// Reads back `num_blocks` blocks (each `slot_bytes`) previously written by write_blocks_through_plugin.
+void read_blocks_through_plugin(std::vector<std::vector<uint8_t>>& blocks,
+                                size_t num_blocks,
+                                size_t slot_bytes,
+                                const CacheOffloadConfig& store_config,
+                                const std::string& device,
+                                const std::string& group) {
+    blocks.assign(num_blocks, {});
+    if (num_blocks == 0) {
+        return;
+    }
+    CacheOffloadConfig scoped_config = store_config;
+    scoped_config.capacity_bytes = num_blocks * slot_bytes;
+    const KVCacheDiskLayout layout(std::vector<size_t>{slot_bytes}, std::vector<size_t>{0});
+    auto store = open_required_kv_cache_store_plugin(layout, scoped_config, device, group);
+    for (size_t i = 0; i < num_blocks; ++i) {
+        OPENVINO_ASSERT(store->read_block(i, blocks[i]),
+                        "Session snapshot KV cache store plugin reports block ", i, " of ", num_blocks,
+                        " missing (group '", group, "') - the snapshot may be corrupted, or was saved with a "
+                        "different store plugin configuration");
+    }
+}
+
 }  // namespace
 
 void SessionSnapshot::save(CacheOrchestrator& orchestrator,
                            const SequenceGroup::CPtr& seq_group,
                            const Sequence::CPtr& sequence,
-                           const std::filesystem::path& path) {
+                           const std::filesystem::path& path,
+                           const CacheOffloadConfig& store_config) {
     const bool has_kv = orchestrator.has_kv_cache();
     const bool has_la = orchestrator.has_linear_attention_cache();
     OPENVINO_ASSERT(has_kv, "Session snapshot requires a model with KV cache inputs");
+    const bool store_backed = store_plugin_requested(store_config);
 
     const uint64_t seq_id = sequence->get_id();
     const bool is_embeddings = seq_group->get_sequence_group_type() == SequenceGroupType::EMBEDDINGS;
@@ -210,6 +270,7 @@ void SessionSnapshot::save(CacheOrchestrator& orchestrator,
     header.kv_present = has_kv ? 1 : 0;
     header.la_present = has_la ? 1 : 0;
     header.is_embeddings = is_embeddings ? 1 : 0;
+    header.store_backed = store_backed ? 1 : 0;
     header.kv_num_layers = kv_num_layers;
     header.kv_block_size_in_bytes = kv_block_size_in_bytes;
     header.la_block_size_in_bytes = la_block_size_in_bytes;
@@ -235,15 +296,27 @@ void SessionSnapshot::save(CacheOrchestrator& orchestrator,
     } else {
         write_exact(out, token_ids.data(), token_ids.size() * sizeof(int64_t));
     }
-    for (const auto& block : kv_blocks) {
-        write_exact(out, block.data(), block.size());
-    }
-    for (const auto& block : la_blocks) {
-        write_exact(out, block.data(), block.size());
+    if (store_backed) {
+        const std::string device_for_store = orchestrator.get_device();
+        write_blocks_through_plugin(kv_blocks, kv_slot_bytes, store_config, device_for_store,
+                                    "session_snapshot_kv:" + path.string());
+        if (has_la) {
+            write_blocks_through_plugin(la_blocks, la_slot_bytes, store_config, device_for_store,
+                                        "session_snapshot_la:" + path.string());
+        }
+    } else {
+        for (const auto& block : kv_blocks) {
+            write_exact(out, block.data(), block.size());
+        }
+        for (const auto& block : la_blocks) {
+            write_exact(out, block.data(), block.size());
+        }
     }
 }
 
-SessionSnapshot::Loaded SessionSnapshot::load(const CacheOrchestrator& orchestrator, const std::filesystem::path& path) {
+SessionSnapshot::Loaded SessionSnapshot::load(const CacheOrchestrator& orchestrator,
+                                              const std::filesystem::path& path,
+                                              const CacheOffloadConfig& store_config) {
     std::ifstream in(path, std::ios::binary);
     OPENVINO_ASSERT(in.is_open(), "Session snapshot file not found at '", path.string(), "'");
 
@@ -311,19 +384,31 @@ SessionSnapshot::Loaded SessionSnapshot::load(const CacheOrchestrator& orchestra
         read_exact(in, result.token_ids.data(), header.num_tokens * sizeof(int64_t));
     }
 
-    std::vector<std::vector<uint8_t>> kv_blocks(header.num_kv_blocks);
-    for (auto& block : kv_blocks) {
-        block.resize(header.kv_slot_bytes);
-        read_exact(in, block.data(), block.size());
+    std::vector<std::vector<uint8_t>> kv_blocks;
+    if (header.store_backed) {
+        read_blocks_through_plugin(kv_blocks, header.num_kv_blocks, header.kv_slot_bytes, store_config,
+                                   orchestrator.get_device(), "session_snapshot_kv:" + path.string());
+    } else {
+        kv_blocks.resize(header.num_kv_blocks);
+        for (auto& block : kv_blocks) {
+            block.resize(header.kv_slot_bytes);
+            read_exact(in, block.data(), block.size());
+        }
     }
     OPENVINO_ASSERT(checksum_blocks(kv_blocks) == header.kv_payload_checksum,
                     "Session snapshot KV cache payload failed its integrity check (file may be corrupted)");
     result.blocks_per_type[CacheType::KV_CACHE] = std::move(kv_blocks);
 
     if (header.la_present) {
-        std::vector<std::vector<uint8_t>> la_blocks(1);
-        la_blocks[0].resize(header.la_slot_bytes);
-        read_exact(in, la_blocks[0].data(), la_blocks[0].size());
+        std::vector<std::vector<uint8_t>> la_blocks;
+        if (header.store_backed) {
+            read_blocks_through_plugin(la_blocks, 1, header.la_slot_bytes, store_config,
+                                       orchestrator.get_device(), "session_snapshot_la:" + path.string());
+        } else {
+            la_blocks.assign(1, {});
+            la_blocks[0].resize(header.la_slot_bytes);
+            read_exact(in, la_blocks[0].data(), la_blocks[0].size());
+        }
         OPENVINO_ASSERT(checksum_blocks(la_blocks) == header.la_payload_checksum,
                         "Session snapshot linear-attention cache payload failed its integrity check (file may be "
                         "corrupted)");

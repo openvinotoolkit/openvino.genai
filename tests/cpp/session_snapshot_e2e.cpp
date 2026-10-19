@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -61,12 +62,34 @@ std::string repeat(const std::string& phrase, size_t times) {
     return result;
 }
 
+/// Candidates for samples/c/kv_cache_store_plugin's build output (same search pattern as
+/// tests/cpp/store_registry.cpp). Only built when the superbuild has ENABLE_SAMPLES on.
+std::optional<std::string> find_sample_plugin_library() {
+#ifdef _WIN32
+    const char* candidates[] = {
+        "../../samples/c/kv_cache_store_plugin/RelWithDebInfo/sample_kv_cache_store_plugin.dll",
+        "../../samples/c/kv_cache_store_plugin/sample_kv_cache_store_plugin.dll",
+    };
+#else
+    const char* candidates[] = {
+        "../../samples/c/kv_cache_store_plugin/libsample_kv_cache_store_plugin.so",
+        "../../samples/c/kv_cache_store_plugin/libsample_kv_cache_store_plugin.dylib",
+    };
+#endif
+    for (const char* candidate : candidates) {
+        if (std::filesystem::exists(candidate)) {
+            return std::filesystem::absolute(candidate).string();
+        }
+    }
+    return std::nullopt;
+}
+
 // Save mid-generation (while the request is still RUNNING - a finished request's cache is freed
 // immediately, so there is no window to save it afterwards), destroy the pipeline (simulating a
 // process restart), restore into a fresh pipeline instance, and finish generation. The stitched
 // (already-generated + resumed) token stream must match an uninterrupted baseline run, proving the
 // restored request resumes decoding instead of silently re-running prefill.
-void run_round_trip_test(const std::string& model_path) {
+void run_round_trip_test(const std::string& model_path, const CacheOffloadConfig& store_config = {}) {
     const std::string prompt = repeat("The quick brown fox jumps over the lazy dog. ", 10) + " Continue the story:";
     constexpr size_t TOTAL_NEW_TOKENS = 20;
     // Large enough that manually driving a handful of steps below cannot reach it naturally.
@@ -108,7 +131,7 @@ void run_round_trip_test(const std::string& model_path) {
         ASSERT_LT(already_generated_ids.size(), TOTAL_NEW_TOKENS)
             << "manual stepping already produced as many tokens as the baseline, nothing left to resume";
 
-        pipeline.save_state(REQUEST_ID, snapshot_path.string());
+        pipeline.save_state(REQUEST_ID, snapshot_path.string(), store_config);
     }
 
     std::vector<int64_t> resumed_ids;
@@ -117,7 +140,7 @@ void run_round_trip_test(const std::string& model_path) {
         constexpr uint64_t RESTORED_REQUEST_ID = 43;
         const size_t remaining_tokens = TOTAL_NEW_TOKENS - already_generated_ids.size();
         auto handle =
-            pipeline.restore_state(RESTORED_REQUEST_ID, snapshot_path.string(), make_greedy_config(remaining_tokens));
+            pipeline.restore_state(RESTORED_REQUEST_ID, snapshot_path.string(), make_greedy_config(remaining_tokens), store_config);
         while (pipeline.has_non_finished_requests()) {
             pipeline.step();
         }
@@ -153,6 +176,27 @@ TEST(TestSessionSnapshotEndToEnd, HybridModelRestoredRequestContinuesIdentically
         GTEST_SKIP() << VLM_MODEL_PATH_ENV << " is not set, skipping hybrid session snapshot end-to-end test.";
     }
     run_round_trip_test(model_path);
+}
+
+// Routes the snapshot's KV (and, for hybrid models, linear-attention) block payload through the
+// standalone sample third-party plugin (see samples/c/kv_cache_store_plugin) instead of embedding
+// it inline in the snapshot file, proving save_state()/restore_state() can delegate to the same
+// kind of vendor plugin used by the opportunistic offload cache.
+TEST(TestSessionSnapshotEndToEnd, RestoredRequestViaStorePluginContinuesIdenticallyToUninterruptedRun) {
+    const char* model_path = std::getenv(MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0') {
+        GTEST_SKIP() << MODEL_PATH_ENV << " is not set, skipping session snapshot end-to-end test.";
+    }
+    const std::optional<std::string> library_path = find_sample_plugin_library();
+    if (!library_path.has_value()) {
+        GTEST_SKIP() << "samples/c/kv_cache_store_plugin was not built (requires -DENABLE_SAMPLES=ON)";
+    }
+
+    CacheOffloadConfig store_config;
+    store_config.store_library_path = *library_path;
+    store_config.store_provider_name = "sample-in-memory";
+    store_config.allow_untrusted_store_plugin = true;
+    run_round_trip_test(model_path, store_config);
 }
 
 TEST(TestSessionSnapshotEndToEnd, RestoreRejectsAMissingFile) {

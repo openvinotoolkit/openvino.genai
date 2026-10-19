@@ -377,7 +377,7 @@ bool ContinuousBatchingPipeline::ContinuousBatchingImpl::has_non_finished_reques
     return !m_awaiting_requests.empty() || !m_requests.empty();
 }
 
-void ContinuousBatchingPipeline::ContinuousBatchingImpl::save_state(uint64_t request_id, const std::string& path) {
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::save_state(uint64_t request_id, const std::string& path, const CacheOffloadConfig& store_config) {
     OPENVINO_ASSERT(!m_scheduler->get_config().use_cache_eviction,
                     "Session snapshot save/restore is not supported together with use_cache_eviction");
 
@@ -407,17 +407,18 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::save_state(uint64_t req
                     "got ", running_sequences.size());
     const auto& sequence = running_sequences[0];
 
-    SessionSnapshot::save(m_scheduler->get_cache_orchestrator(), sequence_group, sequence, path);
+    SessionSnapshot::save(m_scheduler->get_cache_orchestrator(), sequence_group, sequence, path, store_config);
 }
 
 GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::restore_state(
         uint64_t request_id,
         const std::string& path,
-        const ov::genai::GenerationConfig& sampling_params) {
+        const ov::genai::GenerationConfig& sampling_params,
+        const CacheOffloadConfig& store_config) {
     OPENVINO_ASSERT(!m_scheduler->get_config().use_cache_eviction,
                     "Session snapshot save/restore is not supported together with use_cache_eviction");
 
-    auto loaded = SessionSnapshot::load(m_scheduler->get_cache_orchestrator(), path);
+    auto loaded = SessionSnapshot::load(m_scheduler->get_cache_orchestrator(), path, store_config);
     OPENVINO_ASSERT(loaded.is_embeddings == (m_model_input_type == ModelInputType::EMBEDDINGS),
                     "Session snapshot/model mismatch: the snapshot was captured for a ",
                     loaded.is_embeddings ? "embeddings-routed" : "plain token-id", " model, but the currently "

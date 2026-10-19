@@ -156,7 +156,7 @@ public:
      * `use_cache_eviction` disabled. Default implementation throws: override in pipeline
      * variants that support it.
      */
-    virtual void save_state(uint64_t request_id, const std::string& path) {
+    virtual void save_state(uint64_t request_id, const std::string& path, const CacheOffloadConfig& store_config = {}) {
         OPENVINO_THROW("Session state save/restore is not supported by this pipeline implementation");
     }
 
@@ -168,7 +168,8 @@ public:
      */
     virtual GenerationHandle restore_state(uint64_t request_id,
                                           const std::string& path,
-                                          const GenerationConfig& sampling_params) {
+                                          const GenerationConfig& sampling_params,
+                                          const CacheOffloadConfig& store_config = {}) {
         OPENVINO_THROW("Session state save/restore is not supported by this pipeline implementation");
     }
 

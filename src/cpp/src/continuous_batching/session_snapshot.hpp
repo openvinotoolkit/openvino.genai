@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "continuous_batching/cache/cache_type.hpp"
+#include "openvino/genai/cache_offload.hpp"
 #include "sequence_group.hpp"
 
 namespace ov::genai {
@@ -49,11 +50,21 @@ public:
      * @param seq_group    The (single-sequence) group `sequence` belongs to.
      * @param sequence     The sequence to snapshot.
      * @param path         Destination file path. Overwritten if it already exists.
+     * @param store_config When `allow_untrusted_store_plugin` is set and `store_library_path` is
+     * non-empty, KV/linear-attention block payloads are written through that third-party plugin
+     * (the SAME plugin configuration as `SchedulerConfig::cache_offload_config`, reused here)
+     * instead of being embedded inline in `path`; `load()` must then be given a matching config.
+     * Left default-constructed (the default), the payload is embedded inline as before - no ABI
+     * involved. Only `store_library_path`/`store_provider_name`/`allow_untrusted_store_plugin`/
+     * `path` are meaningful here; `capacity_bytes` is derived from the snapshot's own block
+     * count and the rest (`buffer_slots`, `use_page_cache`, `linear_attention_capacity_bytes`)
+     * are ignored, since this is a single synchronous save, not a queued eviction cache.
      */
     static void save(CacheOrchestrator& orchestrator,
                       const SequenceGroup::CPtr& seq_group,
                       const Sequence::CPtr& sequence,
-                      const std::filesystem::path& path);
+                      const std::filesystem::path& path,
+                      const CacheOffloadConfig& store_config = {});
 
     /// Cache payload loaded from a snapshot, keyed by cache type, each a list of blocks in the
     /// order they must be written back (KV: full logical order; linear-attention: single entry).
@@ -74,9 +85,15 @@ public:
 
     /**
      * @brief Reads and validates `path` against the orchestrator's currently loaded model/device.
+     * @param store_config Must match what `save()` was called with - if the snapshot was saved
+     * with block payloads delegated to a store plugin, the same plugin configuration is required
+     * to read them back; it is never recorded inside the snapshot file itself (a data file must
+     * never be able to steer which shared library gets loaded).
      * @throws ov::Exception on format, checksum, or model/device compatibility mismatch.
      */
-    static Loaded load(const CacheOrchestrator& orchestrator, const std::filesystem::path& path);
+    static Loaded load(const CacheOrchestrator& orchestrator,
+                        const std::filesystem::path& path,
+                        const CacheOffloadConfig& store_config = {});
 };
 
 

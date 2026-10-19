@@ -226,7 +226,7 @@ public:
      * ContinuousBatchingImpl::save_state() unchanged - same single-sequence/no-cache-eviction
      * requirements apply to both pipelines.
      */
-    void save_state(uint64_t request_id, const std::string& path) override;
+    void save_state(uint64_t request_id, const std::string& path, const CacheOffloadConfig& store_config = {}) override;
 
     /**
      * @brief Restores a request previously saved via save_state() into both the main and draft
@@ -235,7 +235,8 @@ public:
      */
     GenerationHandle restore_state(uint64_t request_id,
                                    const std::string& path,
-                                   const ov::genai::GenerationConfig& sampling_params) override;
+                                   const ov::genai::GenerationConfig& sampling_params,
+                                   const CacheOffloadConfig& store_config = {}) override;
 
     std::vector<EncodedGenerationResult>
     generate(const std::vector<ov::Tensor>& input_ids,
