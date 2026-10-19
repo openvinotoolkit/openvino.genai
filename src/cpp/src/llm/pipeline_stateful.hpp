@@ -43,6 +43,7 @@ class StatefulLLMPipeline final : public LLMPipelineImplBase {
     // Proposes the post-alignment common prefix to the plugin, reads the grant back
     // and resizes the cache state to it, so slicing happens at the granted value.
     void negotiate_npu_history_reuse(size_t full_history_len);
+
 public:
 
     StatefulLLMPipeline(
