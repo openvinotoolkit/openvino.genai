@@ -81,6 +81,45 @@ python benchmark.py -m <model_dir> -d CPU \
   suspiciously fast or `max KV cache usage` never climbs - that means your plugin was never
   actually loaded).
 
+### Performance: does offload through your plugin actually pay off?
+
+Correctness alone does not prove your plugin is worth using - a short prompt's recompute cost can
+be cheaper than the disk round-trip, making offload a net loss (this is prefix-length-dependent,
+not a bug). [`perf_prompts.jsonl`](perf_prompts.jsonl) + [`perf_baseline_cb_config.json`](perf_baseline_cb_config.json)/
+[`perf_offload_cb_config.json`](perf_offload_cb_config.json) run the same three requests - a prompt
+`P0`, a differently-worded filler `P1` sized to evict `P0`'s blocks, then `P0` again as `P2` - once
+without offload (always a full recompute) and once with it (restored from your plugin), and compare
+`P2`'s first token latency between the two logs:
+
+```sh
+cd tools/llm_bench
+# Baseline: no offload, P2 always recomputed from scratch.
+python benchmark.py -m <model_dir> -d CPU \
+    -pf ../../samples/c/kv_cache_store_plugin/perf_prompts.jsonl -pi 0 1 2 -n 0 -ic 1 \
+    --task text_gen --disable_prompt_permutation \
+    --cb_config ../../samples/c/kv_cache_store_plugin/perf_baseline_cb_config.json
+
+# Offload: P2 should be restored from your plugin instead of recomputed.
+python benchmark.py -m <model_dir> -d CPU \
+    -pf ../../samples/c/kv_cache_store_plugin/perf_prompts.jsonl -pi 0 1 2 -n 0 -ic 1 \
+    --task text_gen --disable_prompt_permutation \
+    --cb_config ../../samples/c/kv_cache_store_plugin/perf_offload_cb_config.json  # edit store_library_path first
+```
+
+**Real numbers from this exact pair of commands against the sample plugin** (Qwen3-8B, CPU,
+~1600-token `P0`/`P2`, ~2100-token `P1`):
+
+| | `P2` first token latency | Result MD5 |
+|---|---|---|
+| Baseline (no offload, full recompute) | 16902.28 ms | `ff7af40e...` |
+| Offload (restored through the plugin) | 264.05 ms | `ff7af40e...` (identical) |
+
+**~64x speedup**, with identical output - confirms the restored blocks are byte-correct, not just
+fast. If your plugin shows a much smaller gap (or offload is *slower*), check that `capacity_bytes`
+in your `cache_offload_config` is large enough for your plugin's actual per-block storage overhead
+(an undersized value can make the host's own capacity bookkeeping disagree with what your plugin
+reports via `stats`, which throws rather than silently degrading).
+
 ## Scenario 2: Session snapshot save/restore
 
 Session snapshot addresses blocks by sequence order, not content hash, so this is a *separate*
@@ -113,6 +152,22 @@ is safe to use directly in CI. `[ERROR] BlockManager leaked sequence block table
 only valid while a request is still RUNNING, so the save pipeline's request is deliberately never
 allowed to finish before that pipeline instance is destroyed; this is a destructor-time sanity log,
 not a failure (the script's own PASS/FAIL assertion, not these log lines, is the actual verdict).
+
+### Performance: TTFT with vs. without session restore
+
+Unless skipped with `--skip-perf`, the script also measures time-to-first-token (TTFT) for a much
+longer conversation (~3700 tokens) restored through your plugin, against a full re-prefill
+baseline - the correctness check above deliberately uses a short prompt to run fast, which is not
+representative of the real performance win (same prefix-length caveat as Scenario 1).
+
+**Real numbers from this exact script** (Qwen3-8B, CPU, sample plugin):
+
+```
+PASS: the restored continuation matches the uninterrupted baseline token-for-token.
+PERF: TTFT without session restore (full re-prefill): 51760.38 ms
+PERF: TTFT with session restore (via your plugin):    5171.33 ms
+PERF: Speedup: 10.01x
+```
 
 ## Known limitations of the sample plugin (do not assume your plugin needs to share these)
 

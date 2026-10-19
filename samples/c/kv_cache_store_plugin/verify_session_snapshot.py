@@ -107,12 +107,56 @@ def run_save_then_restore(model: str, device: str, store_config: ov_genai.CacheO
     return already_generated_ids + resumed_ids
 
 
+def measure_speedup(model: str, device: str, store_config: ov_genai.CacheOffloadConfig,
+                     snapshot_path: str) -> None:
+    """Compares TTFT of a full re-prefill against restoring from a snapshot whose KV/linear-
+    attention payload was written through the plugin. Uses a much longer prompt than the
+    correctness check above - a short prompt's prefill is cheap enough that the gap barely shows;
+    this is the same lesson that applies to opportunistic offload (see E2E_VALIDATION.md)."""
+    long_prompt = "The quick brown fox jumps over the lazy dog. " * 400
+    scheduler_config = make_scheduler_config()
+    scheduler_config.max_num_batched_tokens = 8192
+
+    pipeline = ov_genai.ContinuousBatchingPipeline(model, scheduler_config, device)
+    handle = pipeline.add_request(11, long_prompt, make_greedy_config(1))
+    while pipeline.has_non_finished_requests():
+        pipeline.step()
+    baseline_ttft_ms = handle.get_perf_metrics().get_ttft().mean
+    del pipeline, handle
+
+    pipeline = ov_genai.ContinuousBatchingPipeline(model, scheduler_config, device)
+    handle = pipeline.add_request(12, long_prompt, make_greedy_config(50))
+    for _ in range(5):
+        if handle.get_status() != ov_genai.GenerationStatus.RUNNING:
+            break
+        pipeline.step()
+    assert handle.get_status() == ov_genai.GenerationStatus.RUNNING, (
+        "the request finished naturally before it could be interrupted - test setup is invalid")
+    pipeline.save_state(12, snapshot_path, store_config)
+    del pipeline, handle
+
+    pipeline = ov_genai.ContinuousBatchingPipeline(model, scheduler_config, device)
+    handle = pipeline.restore_state(13, snapshot_path, make_greedy_config(1), store_config)
+    while pipeline.has_non_finished_requests():
+        pipeline.step()
+    restore_ttft_ms = handle.get_perf_metrics().get_ttft().mean
+    del pipeline, handle
+    if os.path.exists(snapshot_path):
+        os.remove(snapshot_path)
+
+    print(f"PERF: TTFT without session restore (full re-prefill): {baseline_ttft_ms:.2f} ms")
+    print(f"PERF: TTFT with session restore (via your plugin):    {restore_ttft_ms:.2f} ms")
+    print(f"PERF: Speedup: {baseline_ttft_ms / restore_ttft_ms:.2f}x")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("-m", "--model", required=True, help="Path to an OpenVINO IR model directory")
     parser.add_argument("-d", "--device", default="CPU", help="Inference device (default: CPU)")
     parser.add_argument("--plugin", required=True, help="Path to your compiled store plugin (.dll/.so)")
     parser.add_argument("--provider", default="", help="Provider name to select (empty = module's first provider)")
+    parser.add_argument("--skip-perf", action="store_true",
+                        help="Skip the TTFT speedup measurement (which uses a much longer prompt and takes longer)")
     args = parser.parse_args()
 
     baseline_ids = run_baseline(args.model, args.device)
@@ -125,13 +169,16 @@ def main() -> int:
         if os.path.exists(snapshot_path):
             os.remove(snapshot_path)
 
-    if stitched_ids == baseline_ids:
-        print("PASS: the restored continuation matches the uninterrupted baseline token-for-token.")
-        return 0
-    print("FAIL: the restored continuation diverged from the uninterrupted baseline.")
-    print(f"  baseline: {baseline_ids}")
-    print(f"  stitched: {stitched_ids}")
-    return 1
+    if stitched_ids != baseline_ids:
+        print("FAIL: the restored continuation diverged from the uninterrupted baseline.")
+        print(f"  baseline: {baseline_ids}")
+        print(f"  stitched: {stitched_ids}")
+        return 1
+    print("PASS: the restored continuation matches the uninterrupted baseline token-for-token.")
+
+    if not args.skip_perf:
+        measure_speedup(args.model, args.device, store_config, snapshot_path)
+    return 0
 
 
 if __name__ == "__main__":
