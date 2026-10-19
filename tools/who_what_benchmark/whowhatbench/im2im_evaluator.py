@@ -2,9 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+from pathlib import Path
 from typing import Any, Union
 
 import datasets
+from huggingface_hub import snapshot_download
 import pandas as pd
 from PIL import Image
 from tqdm import tqdm
@@ -41,9 +43,23 @@ def prepare_default_data(num_samples=None):
 
 def prepare_default_data_multi_image(num_samples=None):
     dataset_name = "OmniGen2/OmniContext"
+    dataset_revision = "0f6aabbe8d3448d51184093372e980205d9980d3"
     num_samples = 10 if num_samples is None else num_samples
+    dataset_path = Path(
+        snapshot_download(
+            dataset_name,
+            repo_type="dataset",
+            revision=dataset_revision,
+            allow_patterns=["data-*.arrow"],
+        )
+    )
     default_dataset = (
-        datasets.load_dataset(dataset_name, split="train", streaming=True)
+        datasets.load_dataset(
+            "arrow",
+            data_files=sorted(str(path) for path in dataset_path.glob("data-*.arrow")),
+            split="train",
+            streaming=True,
+        )
         .filter(lambda example: len(example["input_images"]) >= 2)
         .take(num_samples)
     )
@@ -98,6 +114,8 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
             )
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
+            if self.num_samples is not None:
+                self.gt_data = self.gt_data.iloc[: self.num_samples]
 
     def _generate_data(self, model, gen_image_fn=None, image_dir="reference"):
         def default_gen_image_fn(model, prompt, image, num_inference_steps, generator=None):
@@ -184,4 +202,5 @@ class MultiImage2ImageEvaluator(Image2ImageEvaluator):
             images = [images]
         if len(images) < 2:
             raise ValueError(f"multi-image-to-image requires at least 2 conditioning images, got {len(images)}")
-        return [super()._resolve_conditioning_images(image) for image in images]
+        resolve_image = super()._resolve_conditioning_images
+        return [resolve_image(image) for image in images]

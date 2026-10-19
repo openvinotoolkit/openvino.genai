@@ -662,6 +662,8 @@ def load_prompts(args):
             raise ValueError(
                 "Image-to-image datasets must contain a prompt column and one of 'input_images', 'images', or 'image'"
             )
+        if args.num_samples is not None:
+            data = data.select(range(min(args.num_samples, len(data))))
         prompts = {"prompts": list(data[prompt_field]), "images": list(data[image_field])}
         logger.info(
             "Prompts source path %s split %s: prompt field %s, image field %s, count=%d",
