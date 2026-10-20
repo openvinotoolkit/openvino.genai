@@ -499,7 +499,10 @@ TEST(TestBlockManager, PrefixCachingLatestOnlyRestoreKeepsLatestBlockWithLogical
     const auto latest_checkpoint = block_manager.get_block_table(producer_seq_id, 0).at(1);
     block_manager.free_sequence(producer_seq_id);
 
-    auto consumer_group = create_sequence_group(tokens, 27);
+    // Extends the producer prompt: a checkpoint covering the whole prompt can't be resumed (see restore plan).
+    std::vector<int64_t> consumer_tokens = tokens;
+    consumer_tokens.push_back(8);
+    auto consumer_group = create_sequence_group(consumer_tokens, 27);
     block_manager.restore_cached_blocks(consumer_group);
 
     const auto consumer_seq = consumer_group->get_running_sequences().at(0);
@@ -509,10 +512,8 @@ TEST(TestBlockManager, PrefixCachingLatestOnlyRestoreKeepsLatestBlockWithLogical
     EXPECT_EQ(block_manager.get_block_table_logical_start(consumer_seq_id), 0);
     EXPECT_EQ(older_checkpoint->get_references_count(), 1);
     EXPECT_EQ(latest_checkpoint->get_references_count(), 1);
-    EXPECT_EQ(consumer_group->get_num_processed_tokens(), tokens.size() - 1);
+    EXPECT_EQ(consumer_group->get_num_processed_tokens(), tokens.size());
 
-    consumer_seq->append_token(8, 0.9f);
-    consumer_group->update_processed_tokens_num(tokens.size());
     consumer_group->schedule_tokens(1);
     block_manager.append_slots(consumer_group);
     EXPECT_EQ(block_manager.get_block_table(consumer_seq_id, 0).size(), 3);
@@ -552,7 +553,9 @@ TEST(TestBlockManager, PrefixCachingLatestOnlyRestoreKeepsLogicalOffsetWhenOlder
     const auto pressure_seq_id = pressure_group->get_running_sequences().at(0)->get_id();
     ASSERT_EQ(block_manager.get_block_table(pressure_seq_id, 0).at(0)->get_index(), older_checkpoint_idx);
 
-    auto consumer_group = create_sequence_group(tokens, 30);
+    std::vector<int64_t> consumer_tokens = tokens;
+    consumer_tokens.push_back(8);
+    auto consumer_group = create_sequence_group(consumer_tokens, 30);
     block_manager.restore_cached_blocks(consumer_group);
 
     const auto consumer_seq_id = consumer_group->get_running_sequences().at(0)->get_id();
@@ -561,7 +564,7 @@ TEST(TestBlockManager, PrefixCachingLatestOnlyRestoreKeepsLogicalOffsetWhenOlder
     EXPECT_EQ(block_manager.get_block_table_logical_start(consumer_seq_id), 1);
     EXPECT_EQ(older_checkpoint->get_references_count(), 1);
     EXPECT_EQ(latest_checkpoint->get_references_count(), 1);
-    EXPECT_EQ(consumer_group->get_num_processed_tokens(), tokens.size() - 1);
+    EXPECT_EQ(consumer_group->get_num_processed_tokens(), tokens.size());
 
     block_manager.free_sequence(pressure_seq_id);
     block_manager.free_sequence(consumer_seq_id);

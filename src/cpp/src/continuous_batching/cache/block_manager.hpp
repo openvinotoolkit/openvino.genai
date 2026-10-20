@@ -1683,7 +1683,15 @@ private:
         }
 
         const size_t prompt_len = group->get_prompt_len();
-        const size_t capped_token_position = std::min(prompt_len, max_cache_token_position);
+        size_t capped_token_position = std::min(prompt_len, max_cache_token_position);
+        if (m_restore_latest_prefix_block_only) {
+            // A recurrent-state checkpoint covering the whole prompt can't be resumed at prompt_len - 1
+            // (the last token is re-run for logits, and re-applying it to the state is not idempotent).
+            capped_token_position = std::min(capped_token_position, prompt_len - 1);
+            if (capped_token_position == 0) {
+                return plan;
+            }
+        }
         auto sequences = group->get_not_finished_sequences();
         OPENVINO_ASSERT(sequences.size() == 1);
         auto sequence = sequences[0];

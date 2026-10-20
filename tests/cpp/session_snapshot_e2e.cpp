@@ -157,6 +157,76 @@ void run_round_trip_test(const std::string& model_path, const CacheOffloadConfig
         << "resuming from a session snapshot diverged from the uninterrupted baseline";
 }
 
+// DIAGNOSTIC (not a session-snapshot test): runs the same prompt twice, sequentially, in the same
+// pipeline instance with plain opportunistic prefix caching (no snapshot, no offload). The second
+// run should hit the in-memory prefix cache for (almost) the whole prompt and produce the exact
+// same first generated token as the first (cold) run. Used to isolate whether a cache-hit can
+// silently diverge from a cold run for hybrid (KV + linear-attention) models.
+// Takes an explicit cache_interval_multiplier to test whether the LA checkpoint granularity
+// (as opposed to the cache-hit/restore mechanism itself) is implicated in any divergence.
+void run_repeated_prompt_prefix_cache_hit_diagnostic(const std::string& model_path,
+                                                      std::optional<size_t> cache_interval_multiplier = std::nullopt) {
+    const std::string prompt = repeat("The quick brown fox jumps over the lazy dog. ", 40);
+
+    SchedulerConfig config = make_scheduler_config();
+    if (cache_interval_multiplier.has_value()) {
+        config.cache_interval_multiplier = *cache_interval_multiplier;
+    }
+    ContinuousBatchingPipeline pipeline(model_path, config, session_snapshot_device());
+
+    constexpr uint64_t FIRST_REQUEST_ID = 51;
+    auto first_handle = pipeline.add_request(FIRST_REQUEST_ID, prompt, make_greedy_config(1));
+    while (pipeline.has_non_finished_requests()) {
+        pipeline.step();
+    }
+    auto first_outputs = first_handle->read_all();
+    ASSERT_FALSE(first_outputs.empty());
+    const auto first_ids = first_outputs.front().generated_ids;
+    ASSERT_EQ(first_ids.size(), 1u);
+
+    constexpr uint64_t SECOND_REQUEST_ID = 52;
+    auto second_handle = pipeline.add_request(SECOND_REQUEST_ID, prompt, make_greedy_config(1));
+    while (pipeline.has_non_finished_requests()) {
+        pipeline.step();
+    }
+    auto second_outputs = second_handle->read_all();
+    ASSERT_FALSE(second_outputs.empty());
+    const auto second_ids = second_outputs.front().generated_ids;
+    ASSERT_EQ(second_ids.size(), 1u);
+
+    EXPECT_EQ(first_ids, second_ids)
+        << "repeating the identical prompt (opportunistic prefix-cache hit) produced a different "
+        << "first generated token than the cold run";
+}
+
+TEST(TestSessionSnapshotEndToEnd, DiagnosticRepeatedPromptPrefixCacheHitMatchesColdRun) {
+    const char* model_path = std::getenv(MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0') {
+        GTEST_SKIP() << MODEL_PATH_ENV << " is not set, skipping prefix-cache diagnostic test.";
+    }
+    run_repeated_prompt_prefix_cache_hit_diagnostic(model_path);
+}
+
+// Forces the smallest possible LA checkpoint interval (multiplier 1, same granularity as the KV
+// block size) so the 409-token prompt crosses MANY checkpoint boundaries instead of staying inside
+// a single "incomplete" one. If this still diverges, the checkpoint interval SIZE is not the cause.
+TEST(TestSessionSnapshotEndToEnd, DiagnosticHybridRepeatedPromptPrefixCacheHitSmallIntervalMatchesColdRun) {
+    const char* model_path = std::getenv(VLM_MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0') {
+        GTEST_SKIP() << VLM_MODEL_PATH_ENV << " is not set, skipping hybrid prefix-cache diagnostic test.";
+    }
+    run_repeated_prompt_prefix_cache_hit_diagnostic(model_path, /*cache_interval_multiplier=*/1);
+}
+
+
+TEST(TestSessionSnapshotEndToEnd, DiagnosticHybridRepeatedPromptPrefixCacheHitMatchesColdRun) {
+    const char* model_path = std::getenv(VLM_MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0') {
+        GTEST_SKIP() << VLM_MODEL_PATH_ENV << " is not set, skipping hybrid prefix-cache diagnostic test.";
+    }
+    run_repeated_prompt_prefix_cache_hit_diagnostic(model_path);
+}
+
 }  // namespace
 
 TEST(TestSessionSnapshotEndToEnd, RestoredRequestContinuesIdenticallyToUninterruptedRun) {

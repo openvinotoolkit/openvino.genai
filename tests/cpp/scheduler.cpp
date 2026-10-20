@@ -857,9 +857,12 @@ TEST(TestScheduler, hybrid_prefix_caching_reuses_active_incomplete_linear_attent
     const auto complete_checkpoint_idx = orchestrator->get_linear_attention_block_table(producer_seq_id).at(0)->get_index();
     const auto incomplete_checkpoint_idx = orchestrator->get_linear_attention_block_table(producer_seq_id).at(1)->get_index();
 
+    // Extends the producer prompt, so the incomplete checkpoint (state after token 6) ends before the consumer's last token.
+    std::vector<uint64_t> consumer_tokens = tokens;
+    consumer_tokens.push_back(6);
     SequenceGroup::Ptr consumer_group = std::make_shared<SequenceGroup>(
         1,
-        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        ov::Tensor(ov::element::i64, {consumer_tokens.size()}, consumer_tokens.data()),
         utils::get_greedy_config());
     const auto consumer_seq_id = consumer_group->get_running_sequences()[0]->get_id();
 
@@ -867,7 +870,7 @@ TEST(TestScheduler, hybrid_prefix_caching_reuses_active_incomplete_linear_attent
     ASSERT_EQ(orchestrator->get_linear_attention_block_table(consumer_seq_id).size(), 1);
     EXPECT_EQ(orchestrator->get_linear_attention_block_table(consumer_seq_id).at(0)->get_index(), incomplete_checkpoint_idx);
     EXPECT_EQ(orchestrator->get_linear_attention_block_table_logical_start(consumer_seq_id), 1);
-    EXPECT_EQ(consumer_group->get_num_processed_tokens(), tokens.size() - 1);
+    EXPECT_EQ(consumer_group->get_num_processed_tokens(), tokens.size());
 
     std::vector<SequenceGroup::Ptr> consumer_requests = {consumer_group};
     auto out = scheduler.schedule(consumer_requests);
@@ -876,7 +879,7 @@ TEST(TestScheduler, hybrid_prefix_caching_reuses_active_incomplete_linear_attent
     ASSERT_TRUE(out.has_linear_attention_paging_data(consumer_seq_id));
     const auto& paging_data = out.get_linear_attention_paging_data(consumer_seq_id);
     ASSERT_EQ(paging_data.block_indices.size(), 2);
-    EXPECT_EQ(paging_data.past_length, tokens.size() - 1);
+    EXPECT_EQ(paging_data.past_length, tokens.size());
     EXPECT_EQ(paging_data.cache_interval, TEST_BLOCK_SIZE);
     EXPECT_NE(paging_data.block_indices[0], incomplete_checkpoint_idx);
     EXPECT_EQ(paging_data.block_indices[0], paging_data.block_indices[1]);
@@ -888,6 +891,101 @@ TEST(TestScheduler, hybrid_prefix_caching_reuses_active_incomplete_linear_attent
 
     scheduler.free_sequence(producer_seq_id);
     scheduler.free_sequence(consumer_seq_id);
+}
+
+// The producer's last checkpoint already includes the final prompt token. Resuming from it at
+// prompt_len - 1 would apply that token to the recurrent state twice, so the restore must fall back
+// to the last checkpoint strictly before the final token.
+TEST(TestScheduler, hybrid_prefix_caching_identical_prompt_does_not_resume_from_checkpoint_covering_last_token) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 16;
+    scheduler_config.num_kv_blocks = 16;
+    scheduler_config.num_linear_attention_blocks = 16;
+    scheduler_config.cache_interval_multiplier = 1;
+    scheduler_config.enable_prefix_caching = true;
+    scheduler_config.dynamic_split_fuse = false;
+    scheduler_config.max_num_seqs = 4;
+
+    std::vector<uint64_t> tokens = {0, 1, 2, 3, 4, 5};
+    SequenceGroup::Ptr producer_group = std::make_shared<SequenceGroup>(
+        0,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    const auto producer_seq_id = producer_group->get_running_sequences()[0]->get_id();
+
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
+    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    std::vector<SequenceGroup::Ptr> producer_requests = {producer_group};
+    std::ignore = scheduler.schedule(producer_requests);
+    producer_group->finish_iteration();
+
+    ASSERT_EQ(orchestrator->get_linear_attention_block_table(producer_seq_id).size(), 2);
+    const auto complete_checkpoint_idx = orchestrator->get_linear_attention_block_table(producer_seq_id).at(0)->get_index();
+    const auto incomplete_checkpoint_idx = orchestrator->get_linear_attention_block_table(producer_seq_id).at(1)->get_index();
+
+    SequenceGroup::Ptr consumer_group = std::make_shared<SequenceGroup>(
+        1,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    const auto consumer_seq_id = consumer_group->get_running_sequences()[0]->get_id();
+
+    scheduler.restore_cached_blocks(consumer_group);
+    ASSERT_EQ(orchestrator->get_linear_attention_block_table(consumer_seq_id).size(), 1);
+    EXPECT_EQ(orchestrator->get_linear_attention_block_table(consumer_seq_id).at(0)->get_index(), complete_checkpoint_idx);
+    EXPECT_EQ(orchestrator->get_linear_attention_block_table_logical_start(consumer_seq_id), 0);
+    EXPECT_EQ(consumer_group->get_num_processed_tokens(), TEST_BLOCK_SIZE);
+
+    std::vector<SequenceGroup::Ptr> consumer_requests = {consumer_group};
+    auto out = scheduler.schedule(consumer_requests);
+
+    EXPECT_EQ(out.m_total_num_scheduled_tokens, tokens.size() - TEST_BLOCK_SIZE);
+    ASSERT_TRUE(out.has_linear_attention_paging_data(consumer_seq_id));
+    const auto& paging_data = out.get_linear_attention_paging_data(consumer_seq_id);
+    ASSERT_EQ(paging_data.block_indices.size(), 2);
+    EXPECT_EQ(paging_data.past_length, TEST_BLOCK_SIZE);
+    EXPECT_EQ(paging_data.block_indices[0], complete_checkpoint_idx);
+    EXPECT_NE(paging_data.block_indices[1], complete_checkpoint_idx);
+    EXPECT_NE(paging_data.block_indices[1], incomplete_checkpoint_idx);
+
+    scheduler.free_sequence(producer_seq_id);
+    scheduler.free_sequence(consumer_seq_id);
+}
+
+// Without any checkpoint strictly before the final prompt token, an identical prompt must be fully recomputed.
+TEST(TestScheduler, hybrid_prefix_caching_identical_prompt_inside_first_interval_is_not_restored) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 16;
+    scheduler_config.num_kv_blocks = 16;
+    scheduler_config.num_linear_attention_blocks = 16;
+    scheduler_config.cache_interval_multiplier = 1;
+    scheduler_config.enable_prefix_caching = true;
+    scheduler_config.dynamic_split_fuse = false;
+    scheduler_config.max_num_seqs = 4;
+
+    std::vector<uint64_t> tokens = {0, 1, 2};
+    SequenceGroup::Ptr producer_group = std::make_shared<SequenceGroup>(
+        0,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    const auto producer_seq_id = producer_group->get_running_sequences()[0]->get_id();
+
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
+    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    std::vector<SequenceGroup::Ptr> producer_requests = {producer_group};
+    std::ignore = scheduler.schedule(producer_requests);
+    producer_group->finish_iteration();
+
+    SequenceGroup::Ptr consumer_group = std::make_shared<SequenceGroup>(
+        1,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    const auto consumer_seq_id = consumer_group->get_running_sequences()[0]->get_id();
+
+    scheduler.restore_cached_blocks(consumer_group);
+    EXPECT_EQ(consumer_group->get_num_processed_tokens(), 0);
+    EXPECT_FALSE(scheduler.has_block_table(consumer_seq_id));
+
+    scheduler.free_sequence(producer_seq_id);
 }
 
 TEST(TestScheduler, hybrid_prefix_caching_restore_uses_minimum_common_prefix_across_cache_types) {
