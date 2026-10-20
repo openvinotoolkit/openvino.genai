@@ -44,9 +44,7 @@ const VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
     25.0f,                   // frame_rate
     std::nullopt,            // taylorseer_config
     std::nullopt,            // adapters
-    std::nullopt,            // audio_guidance_scale
-    std::nullopt,            // decode_timestep
-    std::nullopt             // decode_noise_scale
+    std::nullopt             // audio_guidance_scale
 };
 
 }  // anonymous namespace

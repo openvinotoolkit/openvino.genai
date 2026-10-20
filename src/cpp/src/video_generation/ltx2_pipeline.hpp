@@ -63,8 +63,6 @@ const VideoGenerationConfig LTX2_3_DEFAULT_CONFIG = VideoGenerationConfig{
     std::nullopt,            // taylorseer_config
     std::nullopt,            // adapters
     7.0f,                    // audio_guidance_scale
-    std::nullopt,            // decode_timestep
-    std::nullopt,            // decode_noise_scale
     1.0f,                    // stg_scale
     1.0f,                    // audio_stg_scale
     3.0f,                    // modality_scale
