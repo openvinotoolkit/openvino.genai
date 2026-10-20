@@ -58,6 +58,8 @@ class VisualTextEvaluator(TextEvaluator):
         self.pruning_ratio = pruning_ratio
         self.relevance_weight = relevance_weight
         self.generation_config_extra = generation_config_extra or {}
+        self.generation_fn = gen_answer_fn
+
         super().__init__(
             base_model=base_model,
             tokenizer=tokenizer,
@@ -68,7 +70,6 @@ class VisualTextEvaluator(TextEvaluator):
             max_new_tokens=max_new_tokens,
             crop_question=crop_question,
             num_samples=num_samples,
-            gen_answer_fn=gen_answer_fn,
             generation_config=generation_config,
             seqs_per_request=seqs_per_request,
             generation_config_extra=self.generation_config_extra,
