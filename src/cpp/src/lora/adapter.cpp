@@ -1383,12 +1383,15 @@ struct AdapterControllerImpl {
         } else if(mode == AdapterConfig::MODE_STATIC) {
             // Separate constant mode
             pm.register_pass<LoRASeparateTransform>(weight_as_constant, tensor_name_prefix);
-            pm.register_pass<LoRAReplaceConstantTransformStatic>(const_replacement_getter, tensor_name_prefix);
-            
+            if (const_getter) {
+                pm.register_pass<LoRAReplaceConstantTransformStatic>(const_replacement_getter, tensor_name_prefix);
+            }
         } else if(mode == AdapterConfig::MODE_FUSE) {
             // Fuse mode
             pm.register_pass<LoRAFuseTransform>(weight_as_constant, tensor_name_prefix);
-            pm.register_pass<LoRAReplaceConstantTransformStatic>(const_replacement_getter, tensor_name_prefix);
+            if (const_getter) {
+                pm.register_pass<LoRAReplaceConstantTransformStatic>(const_replacement_getter, tensor_name_prefix);
+            }
         } else {
             OPENVINO_THROW("Unrecognized AdapterConfig::Mode was used: ", mode);
         }
