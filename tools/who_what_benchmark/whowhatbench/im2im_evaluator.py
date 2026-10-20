@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
-from pathlib import Path
 from typing import Any, Union
 
 import datasets
@@ -38,37 +37,6 @@ def prepare_default_data(num_samples=None):
     ).filter(lambda example: example["Instruction_VLM-LLM"] != "").take(NUM_SAMPLES)
     return default_dataset.map(
         lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
-    )
-
-
-def prepare_default_data_multi_image(num_samples=None):
-    dataset_name = "OmniGen2/OmniContext"
-    dataset_revision = "0f6aabbe8d3448d51184093372e980205d9980d3"
-    num_samples = 10 if num_samples is None else num_samples
-    dataset_path = Path(
-        snapshot_download(
-            dataset_name,
-            repo_type="dataset",
-            revision=dataset_revision,
-            allow_patterns=["data-*.arrow"],
-        )
-    )
-    default_dataset = (
-        datasets.load_dataset(
-            "arrow",
-            data_files=sorted(str(path) for path in dataset_path.glob("data-*.arrow")),
-            split="train",
-            streaming=True,
-        )
-        .filter(lambda example: len(example["input_images"]) >= 2)
-        .take(num_samples)
-    )
-    return default_dataset.map(
-        lambda example: {
-            "prompts": example["instruction"],
-            "images": example["input_images"],
-        },
-        remove_columns=default_dataset.column_names,
     )
 
 
@@ -114,8 +82,6 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
             )
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
-            if self.num_samples is not None:
-                self.gt_data = self.gt_data.iloc[: self.num_samples]
 
     def _generate_data(self, model, gen_image_fn=None, image_dir="reference"):
         def default_gen_image_fn(model, prompt, image, num_inference_steps, generator=None):
@@ -195,7 +161,29 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
 @register_evaluator("multi-image-to-image")
 class MultiImage2ImageEvaluator(Image2ImageEvaluator):
     def _prepare_default_data(self):
-        return prepare_default_data_multi_image(self.num_samples)
+        dataset_path = snapshot_download(
+            "OmniGen2/OmniContext",
+            repo_type="dataset",
+            revision="0f6aabbe8d3448d51184093372e980205d9980d3",
+            allow_patterns=["data-*.arrow"],
+        )
+        default_dataset = (
+            datasets.load_dataset(
+                "arrow",
+                data_files=os.path.join(dataset_path, "data-*.arrow"),
+                split="train",
+                streaming=True,
+            )
+            .filter(lambda example: len(example["input_images"]) >= 2)
+            .take(10 if self.num_samples is None else self.num_samples)
+        )
+        return default_dataset.map(
+            lambda example: {
+                "prompts": example["instruction"],
+                "images": example["input_images"],
+            },
+            remove_columns=default_dataset.column_names,
+        )
 
     def _resolve_conditioning_images(self, images):
         if not isinstance(images, (list, tuple)):

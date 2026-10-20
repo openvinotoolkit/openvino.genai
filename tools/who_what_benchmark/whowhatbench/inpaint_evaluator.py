@@ -91,8 +91,6 @@ class InpaintingEvaluator(Text2ImageEvaluator):
             )
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
-            if self.num_samples is not None:
-                self.gt_data = self.gt_data.iloc[: self.num_samples]
 
     def _generate_data(self, model, gen_image_fn=None, image_dir="reference"):
         def default_gen_image_fn(model, prompt, image, mask, num_inference_steps, generator=None):

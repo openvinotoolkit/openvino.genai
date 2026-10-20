@@ -652,8 +652,7 @@ def load_prompts(args):
 
     if is_image_to_image:
         column_names = set(data.column_names)
-        prompt_fields = [args.dataset_field, "prompts"]
-        prompt_field = next((field for field in prompt_fields if field in column_names), None)
+        prompt_field = next((field for field in (args.dataset_field, "prompts") if field in column_names), None)
         image_field = next(
             (field for field in ("input_images", "images", "image") if field in column_names),
             None,

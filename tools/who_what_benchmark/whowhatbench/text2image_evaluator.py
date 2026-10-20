@@ -76,8 +76,6 @@ class Text2ImageEvaluator(BaseEvaluator):
             )
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
-            if self.num_samples is not None:
-                self.gt_data = self.gt_data.iloc[: self.num_samples]
 
     def get_generation_fn(self):
         return self.generation_fn
@@ -96,6 +94,7 @@ class Text2ImageEvaluator(BaseEvaluator):
                 model_or_data, gen_image_fn, image_folder
             )
         if self.num_samples is not None:
+            self.gt_data = self.gt_data.iloc[: self.num_samples]
             predictions = predictions.iloc[: self.num_samples]
         self.predictions = predictions
 
