@@ -5621,7 +5621,7 @@ class Text2SpeechPipeline:
                     device (str): Device to run the model on (e.g., CPU, GPU).
         """
     @typing.overload
-    def generate(self, text: str, speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
+    def generate(self, text: str, speaker_embedding: typing.Any = None, generation_config: openvino_genai.py_openvino_genai.SpeechGenerationConfig | None = None, **kwargs) -> Text2SpeechDecodedResults:
         """
             Generates speeches based on input texts
         
@@ -5638,8 +5638,11 @@ class Text2SpeechPipeline:
                                         - Qwen3-TTS VoiceDesign: ignored and should not be provided.
             :type speaker_embedding: openvino.Tensor or None
         
-            :param properties: speech generation parameters specified as properties
-            :type properties: dict
+            :param generation_config: speech generation configuration override
+            :type generation_config: SpeechGenerationConfig or None
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to SpeechGenerationConfig fields.
+            :type kwargs: dict
         
             :returns: raw audios of the input texts spoken in the specified speaker's voice;
                       sample rate is provided via Text2SpeechDecodedResults.output_sample_rate
@@ -5722,7 +5725,7 @@ class Text2SpeechPipeline:
             :type ref_codec_ids: openvino.Tensor
         """
     @typing.overload
-    def generate(self, texts: collections.abc.Sequence[str], speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
+    def generate(self, texts: collections.abc.Sequence[str], speaker_embedding: typing.Any = None, generation_config: openvino_genai.py_openvino_genai.SpeechGenerationConfig | None = None, **kwargs) -> Text2SpeechDecodedResults:
         """
             Generates speeches based on input texts
         
@@ -5739,8 +5742,11 @@ class Text2SpeechPipeline:
                                         - Qwen3-TTS VoiceDesign: ignored and should not be provided.
             :type speaker_embedding: openvino.Tensor or None
         
-            :param properties: speech generation parameters specified as properties
-            :type properties: dict
+            :param generation_config: speech generation configuration override
+            :type generation_config: SpeechGenerationConfig or None
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to SpeechGenerationConfig fields.
+            :type kwargs: dict
         
             :returns: raw audios of the input texts spoken in the specified speaker's voice;
                       sample rate is provided via Text2SpeechDecodedResults.output_sample_rate

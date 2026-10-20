@@ -1,12 +1,14 @@
-# Copyright (C) 2023-2026 Intel Corporation
+# Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import sys
 import logging
-from pathlib import Path
+import pytest
 
 import pandas as pd
-import pytest
+
+from pathlib import Path
+from whowhatbench import GenerationResults, TextEvaluator, TextGenerationContext, TextGenerationFn
 
 WWB_ROOT = Path(__file__).resolve().parents[1]
 if str(WWB_ROOT) not in sys.path:
@@ -22,7 +24,7 @@ from whowhatbench.text_generation_strategies import (  # noqa: E402
     OptimumHFGeneration,
 )
 
-from tools.who_what_benchmark.whowhatbench.artifacts_manager import Metrics  # noqa: E402
+from whowhatbench.artifacts_manager import Metrics  # noqa: E402
 
 from conftest import run_wwb  # noqa: E402
 from test_cli_text import base_model_path, target_model_path  # noqa: E402
@@ -251,3 +253,74 @@ def test_cli_composite_strategy_similarity_and_kl_divergency(chdir_tmp):
     assert "kl_divergency_p10" in metrics.columns
     assert "kl_divergency_min" in metrics.columns
     assert "kl_divergency_max" in metrics.columns
+
+
+def ov_gen_fn(
+    model,
+    tokenizer,
+    prompt: str,
+    max_new_tokens: int,
+    crop_question: bool,
+    use_chat_template: bool = False,
+    empty_adapters: bool = False,
+    num_assistant_tokens: int = 0,
+    assistant_confidence_threshold: float = 0.0,
+    generation_config_extra: dict | None = None,
+    context: TextGenerationContext | None = None,
+) -> GenerationResults:
+    inputs = tokenizer(prompt, return_tensors="pt").to("cpu")
+    output = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens)
+    output = output[:, inputs["input_ids"].shape[-1] :]
+
+    return GenerationResults(
+        answer_text=tokenizer.batch_decode(output, skip_special_tokens=True)[0],
+    )
+
+
+def genai_gen_fn(
+    model,
+    tokenizer,
+    prompt: str,
+    max_new_tokens: int,
+    crop_question: bool,
+    use_chat_template: bool = False,
+    empty_adapters: bool = False,
+    num_assistant_tokens: int = 0,
+    assistant_confidence_threshold: float = 0.0,
+    generation_config_extra: dict | None = None,
+    context: TextGenerationContext | None = None,
+) -> GenerationResults:
+    output = model.generate(
+        prompt,
+        do_sample=False,
+        max_new_tokens=max_new_tokens,
+        apply_chat_template=False,
+    )
+
+    return GenerationResults(answer_text=output)
+
+
+def test_custom_gen_answer_fn_generates_reference_and_target_answers():
+    from transformers import AutoTokenizer
+    from optimum.intel.openvino import OVModelForCausalLM
+    from openvino_genai import LLMPipeline
+
+    tokenizer = AutoTokenizer.from_pretrained(target_model_path)
+    ov_model = OVModelForCausalLM.from_pretrained(target_model_path)
+
+    genai_model = LLMPipeline(models_path=target_model_path, device="CPU")
+
+    ov_custom_fn: TextGenerationFn = ov_gen_fn
+    genai_custom_fn: TextGenerationFn = genai_gen_fn
+
+    evaluator = TextEvaluator(
+        base_model=ov_model,
+        tokenizer=tokenizer,
+        test_data=["What is OpenVINO?"],
+        long_prompt=False,
+        max_new_tokens=16,
+        gen_answer_fn=ov_custom_fn,
+    )
+    per_prompt, aggregate = evaluator.score(genai_model, gen_answer_fn=genai_custom_fn)
+
+    assert aggregate["similarity"].iloc[0] >= 0.9
