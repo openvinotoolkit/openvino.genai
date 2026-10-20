@@ -9,6 +9,7 @@
 #include "openvino/genai/c/text2speech_pipeline.h"
 #include "openvino/genai/c/generation_config.h"
 #include "audio_utils.h"
+#include "cli_utf8.h"
 
 #define CHECK_STATUS(return_status)                                                                  \
     do {                                                                                             \
@@ -673,19 +674,39 @@ done:
 }
 
 int main(int argc, char** argv) {
-    if (argc < 2) {
-        print_usage(argv[0]);
+    int normalized_argc = 0;
+    char** normalized_argv = NULL;
+    int result = 1;
+
+    if (!normalize_cli_argv(argc, argv, &normalized_argc, &normalized_argv)) {
+        fprintf(stderr, "Failed to normalize command-line arguments to UTF-8.\n");
         return 1;
     }
 
-    if (str_eq(argv[1], "base"))
-        return run_base(argc, argv);
-    if (str_eq(argv[1], "customvoice"))
-        return run_customvoice(argc, argv);
-    if (str_eq(argv[1], "voice-design"))
-        return run_voice_design(argc, argv);
+    if (normalized_argc < 2) {
+        print_usage(normalized_argv[0]);
+        goto done;
+    }
 
-    fprintf(stderr, "Unknown Qwen3-TTS variant '%s'. Expected: base, customvoice, voice-design.\n", argv[1]);
-    print_usage(argv[0]);
-    return 1;
+    if (str_eq(normalized_argv[1], "base")) {
+        result = run_base(normalized_argc, normalized_argv);
+        goto done;
+    }
+    if (str_eq(normalized_argv[1], "customvoice")) {
+        result = run_customvoice(normalized_argc, normalized_argv);
+        goto done;
+    }
+    if (str_eq(normalized_argv[1], "voice-design")) {
+        result = run_voice_design(normalized_argc, normalized_argv);
+        goto done;
+    }
+
+    fprintf(stderr,
+            "Unknown Qwen3-TTS variant '%s'. Expected: base, customvoice, voice-design.\n",
+            normalized_argv[1]);
+    print_usage(normalized_argv[0]);
+
+done:
+    free_normalized_cli_argv(normalized_argc, normalized_argv);
+    return result;
 }
