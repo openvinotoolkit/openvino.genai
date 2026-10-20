@@ -57,7 +57,9 @@ Logger::Logger() {
 
 void Logger::do_log(ov::log::Level level, const char* file, int line, std::string_view msg) noexcept {
     try {
-        write_message(level, file, line, msg);
+        if (!write_message(level, file, line, msg)) {
+            write_fallback(msg, "stream write failed");
+        }
     } catch (const std::exception& ex) {
         write_fallback(msg, ex.what());
     } catch (...) {
@@ -93,7 +95,7 @@ bool Logger::should_log(ov::log::Level level) const {
     return current_level != ov::log::Level::NO && level != ov::log::Level::NO && level <= current_level;
 }
 
-void Logger::write_message(ov::log::Level level, const char* file, int line, std::string_view msg) {
+bool Logger::write_message(ov::log::Level level, const char* file, int line, std::string_view msg) {
     std::lock_guard<std::mutex> lock(log_mutex);
     std::ostream& out = (level == ov::log::Level::ERR) ? std::cerr : std::cout;
     format_prefix(out, level, file, line);
@@ -105,6 +107,7 @@ void Logger::write_message(ov::log::Level level, const char* file, int line, std
             out << '\n';
         }
     }
+    return static_cast<bool>(out);
 }
 
 std::string Logger::format_from_variadic(const char* format, va_list args) const {

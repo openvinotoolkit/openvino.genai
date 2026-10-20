@@ -24,17 +24,18 @@ protected:
     }
 };
 
-// Makes every write to the stream throw std::ios_base::failure until destroyed.
-class ThrowingStream {
+// Makes every write to the stream fail until destroyed. With badbit in the exception mask the write throws
+// std::ios_base::failure, otherwise it only sets badbit.
+class RejectingStream {
 public:
-    explicit ThrowingStream(std::ostream& stream)
+    RejectingStream(std::ostream& stream, std::ios::iostate exceptions)
         : m_stream{stream},
           m_old_buf{stream.rdbuf(&m_buf)},
           m_old_exceptions{stream.exceptions()} {
-        m_stream.exceptions(std::ios::badbit);
+        m_stream.exceptions(exceptions);
     }
 
-    ~ThrowingStream() {
+    ~RejectingStream() {
         m_stream.exceptions(std::ios::goodbit);
         m_stream.rdbuf(m_old_buf);
         m_stream.clear();
@@ -58,6 +59,8 @@ protected:
         ov::genai::Logger::get_instance().set_log_level(ov::log::Level::NO);
     }
 };
+
+class LoggerFailedWriteTests : public LoggerTests, public ::testing::WithParamInterface<std::ios::iostate> {};
 
 }  // namespace
 
@@ -90,11 +93,11 @@ TEST_F(LoggerTests, ValidFormatDoesNotThrow) {
     EXPECT_NO_THROW(GENAI_INFO("Pointer %p", static_cast<const void*>(this)));
 }
 
-TEST_F(LoggerTests, FailedWriteDoesNotThrow) {
+TEST_P(LoggerFailedWriteTests, FailedWriteFallsBackToStderr) {
     testing::internal::CaptureStderr();
     {
-        ThrowingStream throwing_cout{std::cout};
-        ThrowingStream throwing_cerr{std::cerr};
+        RejectingStream rejecting_cout{std::cout, GetParam()};
+        RejectingStream rejecting_cerr{std::cerr, GetParam()};
         EXPECT_NO_THROW(GENAI_ERR("plain error"));
         EXPECT_NO_THROW(GENAI_ERR("formatted error %d", 7));
         EXPECT_NO_THROW(GENAI_INFO(std::string{"string info"}));
@@ -105,6 +108,13 @@ TEST_F(LoggerTests, FailedWriteDoesNotThrow) {
     expect_contains(error_output, "formatted error 7");
     expect_contains(error_output, "string info");
 }
+
+INSTANTIATE_TEST_SUITE_P(ExceptionMasks,
+                         LoggerFailedWriteTests,
+                         ::testing::Values(std::ios::goodbit, std::ios::badbit),
+                         [](const ::testing::TestParamInfo<std::ios::iostate>& info) {
+                             return info.param == std::ios::badbit ? "Throwing" : "Silent";
+                         });
 
 TEST_F(LoggerTests, NoOutputWhenLevelIsNo) {
     ov::genai::Logger::get_instance().set_log_level(ov::log::Level::NO);

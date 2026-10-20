@@ -45,7 +45,8 @@ private:
     Logger();
     std::atomic<ov::log::Level> log_level{ov::log::Level::NO};
     std::mutex log_mutex;
-    void write_message(ov::log::Level level, const char* file, int line, std::string_view msg);
+    // Returns false if the stream rejected the write.
+    bool write_message(ov::log::Level level, const char* file, int line, std::string_view msg);
     std::string format_from_variadic(const char* format, va_list args) const;
     std::string_view get_filename(std::string_view file_path) const;
     std::ostream& format_prefix(std::ostream& out, ov::log::Level level, const char* file, int line) const;
