@@ -67,7 +67,7 @@ def test_llamacpp_generation_preserves_special_tokens(use_chat_template):
     model.create_chat_completion.return_value = {"choices": [{"message": {"content": "chat"}}]}
 
     strategy = GenerationStrategy.create([SIMILARITY], False, True)
-    result = strategy.run_generation(model, None, prompt, None, 8, True, use_chat_template=use_chat_template)
+    result = strategy.run_generation(model, None, prompt, 8, True, use_chat_template=use_chat_template)
 
     if use_chat_template:
         assert result.answer_text == "chat"
