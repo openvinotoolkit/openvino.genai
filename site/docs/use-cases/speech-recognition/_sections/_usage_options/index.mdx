@@ -261,6 +261,39 @@ SenseVoiceSmall does not currently generate segment-level or word-level timestam
 For supported languages, word-level timestamps can be generated separately using `ASRForcedAligner`: first transcribe the audio with SenseVoiceSmall, then pass the audio and transcription to the standalone aligner. See [Word-level Timestamps Prediction](#word-level-timestamps-prediction) for details.
 :::
 
+
+#### Batched Transcription
+
+SenseVoiceSmall supports transcribing multiple audio inputs in a single inference. Pass a list of utterances instead of a single audio input.
+
+Results preserve input order: `texts[i]` and `languages[i]` correspond to the i-th input. Generation settings, including `language` and `use_itn`, apply to the entire batch.
+
+Inputs are padded to the longest utterance, so grouping audio of similar duration reduces padding overhead. Streaming is supported only for a single utterance.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        pipe = ov_genai.ASRPipeline(model_path, "CPU")
+
+        result = pipe.generate([raw_speech_1, raw_speech_2], language="en")
+        for text in result.texts:
+            print(text)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        ov::genai::ASRPipeline pipe(model_path, "CPU");
+
+        std::vector<std::vector<float>> audio_batch{raw_speech_1, raw_speech_2};
+        auto result = pipe.generate(audio_batch, ov::genai::language("en"));
+        for (const auto& text : result.texts) {
+            std::cout << text << '\n';
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+
 ### Whisper-specific Features
 
 :::info
