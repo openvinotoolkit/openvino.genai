@@ -69,6 +69,19 @@ def _assert_timestep_conditioned_decode(
     assert not np.array_equal(no_noise, with_noise)
 
 
+def _conditioned_decoder_video_shape(model_path, batch_size):
+    model_path = Path(model_path)
+    vae_config = ov_genai.AutoencoderKLLTXVideo(str(model_path / "vae_decoder")).get_config()
+    transformer_config = ov_genai.LTXVideoTransformer3DModel(str(model_path / "transformer")).get_config()
+    return (
+        batch_size,
+        ((9 - 1) // vae_config.temporal_compression_ratio + 1) * transformer_config.patch_size_t,
+        (32 // vae_config.spatial_compression_ratio) * transformer_config.patch_size,
+        (32 // vae_config.spatial_compression_ratio) * transformer_config.patch_size,
+        vae_config.latent_channels,
+    )
+
+
 @pytest.fixture(scope="module")
 def video_generation_model(request) -> str:
     model_id = getattr(request, "param", DEFAULT_VIDEO_GEN_MODEL_ID)
@@ -483,6 +496,32 @@ class TestVideoGenerationPipelines:
         np.testing.assert_array_equal(generate(1.0), generate([1.0, 1.0]))
         np.testing.assert_array_equal(generate([1.0, 1.0]), generate([1.0, 1.0], decode_noise_scale=1.0))
 
+    def test_batched_cfg_uses_distinct_conditioning(self, video_generation_model):
+        def generate_latents(guidance_scale):
+            latents = []
+
+            def callback(step, num_steps, latent):
+                latents.append(np.array(latent.data, copy=True))
+                return False
+
+            pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+            pipe.generate(
+                "test prompt",
+                negative_prompt="different prompt",
+                guidance_scale=guidance_scale,
+                num_videos_per_prompt=2,
+                generator=ov_genai.CppStdGenerator(42),
+                callback=callback,
+                **{**GEN_KWARGS, "num_inference_steps": 1},
+            )
+            return latents[0]
+
+        low_guidance = generate_latents(2.0)
+        high_guidance = generate_latents(5.0)
+        assert low_guidance.shape[0] == 2
+        assert not np.array_equal(low_guidance[0], high_guidance[0])
+        assert not np.array_equal(low_guidance[1], high_guidance[1])
+
     def test_batch_decode_timestep_length_rejected(self, conditioned_video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(conditioned_video_generation_model, "CPU")
         with pytest.raises(RuntimeError, match="decode_timestep list length"):
@@ -521,7 +560,7 @@ class TestVideoGenerationPipelines:
         config.num_videos_per_prompt = 1
         pipe.set_generation_config(config)
         result = pipe.decode(latents[0])
-        assert result.video.shape == [latents[0].shape[i] for i in (0, 2, 3, 4, 1)]
+        assert result.video.shape == _conditioned_decoder_video_shape(conditioned_video_generation_model, 2)
 
         single_latent = ov.Tensor(np.array(latents[0].data[:1], copy=True))
         with pytest.raises(RuntimeError, match="decode_timestep list length"):
@@ -531,7 +570,7 @@ class TestVideoGenerationPipelines:
         decode_config.decode_timestep = [0.0]
         decode_config.decode_noise_scale = 0.0
         single_result = pipe.decode(single_latent, generation_config=decode_config)
-        assert single_result.video.shape == [single_latent.shape[i] for i in (0, 2, 3, 4, 1)]
+        assert single_result.video.shape == _conditioned_decoder_video_shape(conditioned_video_generation_model, 1)
 
         malformed_batch_latent = ov.Tensor(np.zeros([2, 1, 1], dtype=np.float32))
         with pytest.raises(RuntimeError, match="decode_timestep list length"):
@@ -539,7 +578,7 @@ class TestVideoGenerationPipelines:
 
         with pytest.raises(RuntimeError, match="decode_timestep list length"):
             pipe.decode(single_latent)
-        assert pipe.decode(latents[0]).video.shape == [latents[0].shape[i] for i in (0, 2, 3, 4, 1)]
+        assert pipe.decode(latents[0]).video.shape == result.video.shape
 
     def test_decode_override_in_batch_callback(self, conditioned_video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(conditioned_video_generation_model, "CPU")
@@ -568,7 +607,7 @@ class TestVideoGenerationPipelines:
             callback=callback,
         )
         assert len(previews) == 1
-        assert previews[0].shape == tuple(captured_latents[0].shape[i] for i in (0, 2, 3, 4, 1))
+        assert previews[0].shape == _conditioned_decoder_video_shape(conditioned_video_generation_model, 1)
         with pytest.raises(RuntimeError, match="decode_timestep list length"):
             pipe.decode(captured_latents[0])
 
@@ -1251,13 +1290,14 @@ class TestAutoEncoderKLLTXVideoTimestepConditioning:
         config_path.write_text(json.dumps(config), encoding="utf-8")
 
         latent = ov.opset13.parameter([-1, 3, -1, -1, -1], np.float32, name="latent_sample")
-        latent.output(0).tensor.set_names({"sample"})
-        ov.save_model(ov.Model([latent], [latent]), conditioned_vae_path / "openvino_model.xml")
+        sample = ov.opset13.add(latent, ov.opset13.constant(np.float32(0)))
+        sample.output(0).tensor.set_names({"sample"})
+        ov.save_model(ov.Model([sample], [latent]), conditioned_vae_path / "openvino_model.xml")
 
         vae = ov_genai.AutoencoderKLLTXVideo(str(conditioned_vae_path))
         vae.compile("CPU")
         with pytest.raises(RuntimeError, match="latent input must be rank 5"):
-            vae.decode(ov.Tensor(np.array(0.0, dtype=np.float32)))
+            vae.decode(ov.Tensor(ov.Type.f32, ov.Shape([])))
 
     def test_decode_batch_uses_distinct_timesteps(self, conditioned_vae_path):
         vae = ov_genai.AutoencoderKLLTXVideo(str(conditioned_vae_path))

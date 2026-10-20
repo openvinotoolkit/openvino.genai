@@ -363,8 +363,8 @@ class LTXPipeline : public VideoPipeline {
 
         ov::Tensor prompt_attention_mask = m_t5_text_encoder->get_prompt_attention_mask();
 
-        prompt_embeds = numpy_utils::repeat(prompt_embeds, generation_config.num_videos_per_prompt);
-        prompt_attention_mask = numpy_utils::repeat(prompt_attention_mask, generation_config.num_videos_per_prompt);
+        prompt_embeds = video_generation_utils::repeat_per_video(prompt_embeds, generation_config.num_videos_per_prompt);
+        prompt_attention_mask = video_generation_utils::repeat_per_video(prompt_attention_mask, generation_config.num_videos_per_prompt);
 
         m_transformer->set_hidden_states("encoder_hidden_states", prompt_embeds);
         m_transformer->set_hidden_states("encoder_attention_mask", prompt_attention_mask);

@@ -18,9 +18,26 @@
 #include "openvino/op/divide.hpp"
 #include "openvino/op/multiply.hpp"
 
+#include "image_generation/numpy_utils.hpp"
 #include "image_generation/schedulers/ischeduler.hpp"
 
 namespace ov::genai::video_generation_utils {
+
+inline ov::Tensor repeat_per_video(const ov::Tensor& input, size_t num_videos_per_prompt) {
+    if (num_videos_per_prompt == 1) {
+        return input;
+    }
+    ov::Shape repeated_shape = input.get_shape();
+    const size_t batch_size = repeated_shape[0];
+    repeated_shape[0] *= num_videos_per_prompt;
+    ov::Tensor repeated(input.get_element_type(), repeated_shape);
+    for (size_t batch = 0; batch < batch_size; ++batch) {
+        for (size_t video = 0; video < num_videos_per_prompt; ++video) {
+            numpy_utils::batch_copy(input, repeated, batch, batch * num_videos_per_prompt + video);
+        }
+    }
+    return repeated;
+}
 
 inline std::shared_ptr<IScheduler> cast_scheduler(std::shared_ptr<Scheduler>&& scheduler) {
     auto casted = std::dynamic_pointer_cast<IScheduler>(std::move(scheduler));
