@@ -131,7 +131,9 @@ def print_metrics(
         sd_str += f"accepted by main model: {sd_metric['num_accepted']}, "
         if sd_metric["rejected_tokens"] is not None:
             sd_str += f"rejected by main model: {sd_metric['rejected_tokens']}, "
-        sd_str += f"acceptance rate: {sd_metric['acceptance_rate']:.2f}%, miss rate: {sd_metric['miss_rate']:.2f}%"
+        acceptance = "NA" if sd_metric["acceptance_rate"] is None else f"{sd_metric['acceptance_rate']:.2f}%"
+        miss = "NA" if sd_metric["miss_rate"] is None else f"{sd_metric['miss_rate']:.2f}%"
+        sd_str += f"acceptance rate: {acceptance}, miss rate: {miss}"
         if sd_metric["draft_to_main_inference_duration_ratio"] is not None:
             sd_str += (
                 f", draft to main inference duration ratio: {sd_metric['draft_to_main_inference_duration_ratio']:.2f}"

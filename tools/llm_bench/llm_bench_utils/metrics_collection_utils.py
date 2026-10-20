@@ -2,6 +2,8 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+from math import isfinite
+
 # the raw metrics durations are reported in microseconds, while the metrics below are reported in milliseconds
 US_IN_MS = 1000
 
@@ -17,17 +19,11 @@ def get_sd_per_model_metrics(model_metrics):
     batch_sizes = raw_metrics.m_batch_sizes
 
     infer_durations = [duration / US_IN_MS for duration in raw_metrics.token_infer_durations] or durations
-    token_durations = [
-        duration / batch_sizes[idx] if idx < len(batch_sizes) and batch_sizes[idx] > 0 else duration
-        for idx, duration in enumerate(durations)
-    ]
-
-    # the first two iterations include the prompt processing, so they are reported apart from TPOT
-    tpot = get_average(token_durations[2:])
+    tpot = model_metrics.get_tpot().mean
     return {
         "generate_duration": sum(durations),
-        "ttft": durations[0] if len(durations) > 0 else -1,
-        "ttst": durations[1] if len(durations) > 1 else -1,
+        "ttft": model_metrics.get_ttft().mean,
+        "ttst": model_metrics.get_ttst().mean,
         "tpot": tpot,
         "throughput": US_IN_MS / tpot if tpot > 0 else -1,
         "num_generated_tokens": sum(batch_sizes) if len(batch_sizes) > 0 else len(durations),
@@ -41,27 +37,31 @@ def get_sd_value(extended_perf_metrics, getter):
     if not hasattr(extended_perf_metrics, getter):
         return None
     value = getattr(extended_perf_metrics, getter)()
-    return value if value == value else None
+    return value if isfinite(value) else None
 
 
 def get_sd_candidate_tokens(extended_perf_metrics):
-    if not hasattr(extended_perf_metrics, "get_num_draft_tokens"):
+    if not all(
+        hasattr(extended_perf_metrics, getter) for getter in ("get_num_draft_tokens", "get_num_rejected_tokens")
+    ):
         return None
     candidates = extended_perf_metrics.get_num_draft_tokens()
     try:
         rejected = extended_perf_metrics.get_num_rejected_tokens()
     except RuntimeError:
-        # get_num_rejected_tokens() asserts that the accepted tokens do not exceed the candidate ones
+        # Older producers can report accepted tokens exceeding recorded candidates.
+        return None
+    if candidates < 0 or rejected < 0 or rejected > candidates:
         return None
     candidate_tokens = {"draft_candidate_tokens": candidates, "rejected_tokens": rejected}
-    # without any candidate token the rates calculated from the processed tokens are kept
-    if candidates == 0:
-        return candidate_tokens
-    acceptance_rate = get_sd_value(extended_perf_metrics, "get_draft_acceptance_rate")
-    if acceptance_rate is None:
-        acceptance_rate = (candidates - rejected) / candidates
+    # No recorded candidates means both rates are reported as zero in both tools.
+    acceptance_rate = 0.0
+    if candidates > 0:
+        acceptance_rate = get_sd_value(extended_perf_metrics, "get_draft_acceptance_rate")
+        if acceptance_rate is None:
+            acceptance_rate = (candidates - rejected) / candidates
     candidate_tokens["acceptance_rate"] = acceptance_rate * 100
-    candidate_tokens["miss_rate"] = rejected / candidates * 100
+    candidate_tokens["miss_rate"] = rejected / candidates * 100 if candidates > 0 else 0.0
     return candidate_tokens
 
 
@@ -75,8 +75,8 @@ def get_sd_metrics(extended_perf_metrics):
     sd_metric = {
         "draft_processed_tokens": processed,
         "num_accepted": num_accepted,
-        "acceptance_rate": num_accepted / processed * 100 if processed > 0 else 0.0,
-        "miss_rate": (processed - num_accepted) / processed * 100 if processed > 0 else 0.0,
+        "acceptance_rate": None,
+        "miss_rate": None,
         "draft_candidate_tokens": None,
         "rejected_tokens": None,
         "draft_to_main_inference_duration_ratio": get_sd_value(

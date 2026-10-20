@@ -1,6 +1,7 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+from math import isfinite
 from typing import Union, Optional
 from packaging.version import Version
 
@@ -432,24 +433,28 @@ class SDMetricsCollector:
             "num_accepted": extended_perf_metrics.get_num_accepted_tokens(),
         }
 
-        if hasattr(extended_perf_metrics, "get_num_draft_tokens"):
-            try:
-                rejected = extended_perf_metrics.get_num_rejected_tokens()
-            except RuntimeError:
-                return token_numbers
-
-            candidates = extended_perf_metrics.get_num_draft_tokens()
-            token_numbers["draft_candidate_tokens"] = candidates
-            token_numbers["rejected_tokens"] = rejected
-            # without any candidate token the miss rate is undefined, just like the acceptance rate below
-            if candidates > 0:
-                token_numbers["miss_rate"] = rejected / candidates * 100
-
-        if hasattr(extended_perf_metrics, "get_draft_acceptance_rate"):
-            acceptance_rate = extended_perf_metrics.get_draft_acceptance_rate()
-
-            if acceptance_rate == acceptance_rate:
-                token_numbers["acceptance_rate"] = acceptance_rate * 100
+        if not all(
+            hasattr(extended_perf_metrics, getter) for getter in ("get_num_draft_tokens", "get_num_rejected_tokens")
+        ):
+            return token_numbers
+        candidates = extended_perf_metrics.get_num_draft_tokens()
+        try:
+            rejected = extended_perf_metrics.get_num_rejected_tokens()
+        except RuntimeError:
+            return token_numbers
+        if candidates < 0 or rejected < 0 or rejected > candidates:
+            return token_numbers
+        token_numbers["draft_candidate_tokens"] = candidates
+        token_numbers["rejected_tokens"] = rejected
+        token_numbers["miss_rate"] = rejected / candidates * 100 if candidates > 0 else 0.0
+        acceptance_rate = 0.0
+        if candidates > 0:
+            acceptance_rate = float("nan")
+            if hasattr(extended_perf_metrics, "get_draft_acceptance_rate"):
+                acceptance_rate = extended_perf_metrics.get_draft_acceptance_rate()
+            if not isfinite(acceptance_rate):
+                acceptance_rate = (candidates - rejected) / candidates
+        token_numbers["acceptance_rate"] = acceptance_rate * 100
         return token_numbers
 
 
