@@ -190,6 +190,11 @@ class TestBenchmarkLLM:
             r"rejected by main model: (\d+), acceptance rate: ([\d.]+)%, miss rate: ([\d.]+)%",
             result.stdout,
         )
+        control_command = [sys.executable, benchmark_script, "-m", convert_model, "-p", prompt] + sample_args
+        control = run_sample(control_command)
+        assert "Speculative decoding:" not in control.stdout
+        assert "Speculative decoding main model:" not in control.stdout
+        assert "Speculative decoding draft model:" not in control.stdout
         assert len(rates) >= 2, "Expected numerical SD metrics for warm-up and measured generation"
         for candidates, accepted, rejected, acceptance, miss in rates:
             candidates, accepted, rejected = int(candidates), int(accepted), int(rejected)
