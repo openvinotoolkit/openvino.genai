@@ -722,6 +722,68 @@ def test_sensevoice_use_itn_changes_transcription(sample_from_dataset, pipelines
     assert text_without_itn != text_with_itn
 
 
+@pytest.mark.sensevoice
+@pytest.mark.parametrize("generate_kwargs", [{}, {"language": "en", "use_itn": True}], ids=["default", "en_itn"])
+def test_sensevoice_batch_matches_single(generate_kwargs):
+    model_id = SENSEVOICE_SMALL_TINY_MODEL_ID
+    path = get_ov_cache_converted_models_dir() / model_id.split("/")[-1]
+    read_asr_model((model_id, path), pipeline_type=PipelineType.ASR)
+    genai_pipe = ov_genai.ASRPipeline(path, "CPU", INFERENCE_PRECISION_HINT="f32", ENABLE_MMAP=False)
+
+    samples = get_audio_dataset(long_form=False)
+    audios = [samples[0], samples[2], samples[1]]
+
+    singles = [genai_pipe.generate(audio, **generate_kwargs) for audio in audios]
+    single_texts = [result.texts[0] for result in singles]
+    assert len(set(single_texts)) == len(audios)
+
+    batch = genai_pipe.generate(audios, **generate_kwargs)
+
+    assert batch.texts == single_texts
+    assert batch.languages == [result.languages[0] for result in singles]
+    assert batch.metadata == [result.metadata[0] for result in singles]
+    assert len(batch.scores) == len(audios)
+    assert batch.perf_metrics.get_num_generated_tokens() == sum(
+        result.perf_metrics.get_num_generated_tokens() for result in singles
+    )
+    batch_of_one = genai_pipe.generate([audios[0]], **generate_kwargs)
+    assert batch_of_one.texts == [single_texts[0]]
+    assert batch_of_one.metadata == singles[0].metadata
+
+
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params([(SENSEVOICE_SMALL_TINY_MODEL_ID, PipelineType.ASR)]),
+    indirect=True,
+)
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+@pytest.mark.parametrize("streamer_for_test", ["streamer_callback"], indirect=True)
+def test_sensevoice_batch_streamer(sample_from_dataset, pipelines_fixture, streamer_for_test):
+    _, genai_pipe, _, _ = pipelines_fixture
+    streamer, result_handler = streamer_for_test
+
+    result = genai_pipe.generate([sample_from_dataset], streamer=streamer)
+    assert result_handler.decode(genai_pipe.get_tokenizer()) == result.texts[0]
+
+    with pytest.raises(RuntimeError, match="streamers only for a single audio input"):
+        genai_pipe.generate([sample_from_dataset, sample_from_dataset], streamer=streamer)
+
+
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params([("openai/whisper-tiny", PipelineType.ASR)]),
+    indirect=True,
+)
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+def test_asr_batch_requires_batch_capable_model(sample_from_dataset, pipelines_fixture):
+    _, genai_pipe, _, _ = pipelines_fixture
+
+    assert genai_pipe.generate([sample_from_dataset]).texts == genai_pipe.generate(sample_from_dataset).texts
+
+    with pytest.raises(RuntimeError, match="only one utterance per call"):
+        genai_pipe.generate([sample_from_dataset, sample_from_dataset])
+
+
 @pytest.mark.transformers_lower_v5(reason="CVS-185784")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=1)], indirect=True)

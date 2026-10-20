@@ -55,6 +55,25 @@ auto asr_generate_docstring = R"(
     :rtype: ASRDecodedResults
 )";
 
+auto asr_generate_batch_docstring = R"(
+    Transcribes a batch of audio inputs.
+
+    :param audio_inputs: Batch of 16 kHz audio inputs normalized to near [-1, 1].
+    :type audio_inputs: list[list[float]]
+
+    :param generation_config: Generation config shared by all inputs.
+    :type generation_config: ASRGenerationConfig
+
+    :param streamer: Streamer supported only for a single input.
+    :type streamer: Callable[[str], bool], ov.genai.StreamerBase
+
+    :param kwargs: ASRGenerationConfig properties.
+    :type kwargs: dict
+
+    :return: Decoded results in input order.
+    :rtype: ASRDecodedResults
+)";
+
 auto asr_decoded_results_docstring = R"(
     Structure to store resulting text outputs and scores.
 
@@ -235,8 +254,9 @@ std::optional<ASRGenerationConfig> update_asr_config_from_kwargs(const std::opti
     return res_config;
 }
 
+template <typename Inputs>
 py::object call_asr_common_generate(ASRPipeline& pipe,
-                                    const AudioInputs& audio_inputs,
+                                    const Inputs& audio_inputs,
                                     const std::optional<ASRGenerationConfig>& config,
                                     const pyutils::PyBindStreamerVariant& py_streamer,
                                     const py::kwargs& kwargs) {
@@ -401,6 +421,23 @@ void init_asr_pipeline(py::module_& m) {
             py::arg("streamer") = std::monostate(),
             "streamer",
             (asr_generate_docstring + std::string(" \n ") + asr_generation_config_docstring).c_str())
+
+        .def(
+            "generate",
+            [](ASRPipeline& pipe,
+               const std::vector<std::vector<float>>& audio_inputs,
+               const std::optional<ASRGenerationConfig>& generation_config,
+               const pyutils::PyBindStreamerVariant& streamer,
+               const py::kwargs& kwargs) -> py::typing::Union<ASRDecodedResults> {
+                return call_asr_common_generate(pipe, audio_inputs, generation_config, streamer, kwargs);
+            },
+            py::arg("audio_inputs"),
+            "List of utterances, each a list of floats representing raw speech audio.",
+            py::arg("generation_config") = std::nullopt,
+            "generation_config",
+            py::arg("streamer") = std::monostate(),
+            "streamer",
+            asr_generate_batch_docstring)
 
         .def("get_tokenizer", &ASRPipeline::get_tokenizer)
         .def("get_generation_config", &ASRPipeline::get_generation_config, py::return_value_policy::copy)

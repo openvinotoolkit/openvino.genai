@@ -27,6 +27,16 @@ public:
                                        const std::optional<ASRGenerationConfig>& generation_config,
                                        const std::shared_ptr<StreamerBase> streamer) = 0;
 
+    virtual ASRDecodedResults generate_batch(const std::vector<std::vector<float>>& audio_batch,
+                                             const std::optional<ASRGenerationConfig>& generation_config,
+                                             const std::shared_ptr<StreamerBase> streamer) {
+        OPENVINO_ASSERT(audio_batch.size() == 1,
+                        "This ASR model supports only one utterance per call, but received ",
+                        audio_batch.size(),
+                        ".");
+        return generate(AudioInputs{audio_batch.front()}, generation_config, streamer);
+    }
+
     virtual void set_generation_config(const ASRGenerationConfig& config) {
         m_generation_config = config;
         m_generation_config.validate();

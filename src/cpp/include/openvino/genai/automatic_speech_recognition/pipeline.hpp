@@ -110,6 +110,27 @@ public:
 
     ASRDecodedResults generate(const AudioInputs& audio_inputs, const ov::AnyMap& config_map);
 
+
+    /**
+     * @brief Transcribes a batch of audio inputs.
+     *
+     * Results are returned in input order. The generation configuration
+     * applies to all inputs. Models without batching support accept only
+     * a single input. Streaming is not supported for batches larger than one.
+     */
+    ASRDecodedResults generate(const std::vector<std::vector<float>>& audio_batch,
+                               const std::optional<ASRGenerationConfig>& generation_config = std::nullopt,
+                               StreamerVariant streamer = std::monostate());
+
+    template <typename... Properties>
+    ov::util::EnableIfAllStringAny<ASRDecodedResults, Properties...> generate(
+        const std::vector<std::vector<float>>& audio_batch,
+        Properties&&... properties) {
+        return generate(audio_batch, AnyMap{std::forward<Properties>(properties)...});
+    }
+
+    ASRDecodedResults generate(const std::vector<std::vector<float>>& audio_batch, const ov::AnyMap& config_map);
+
     Tokenizer get_tokenizer();
     ASRGenerationConfig get_generation_config() const;
     void set_generation_config(const ASRGenerationConfig& config);

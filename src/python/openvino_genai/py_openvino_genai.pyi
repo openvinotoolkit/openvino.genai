@@ -326,6 +326,7 @@ class ASRPipeline:
                         Only supported for Qwen3-ASR. Required when requesting
                         generate(..., word_timestamps=True).
         """
+    @typing.overload
     def generate(self, audio_inputs: collections.abc.Sequence[typing.SupportsFloat], generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> ASRDecodedResults:
         """
             High level generate that receives raw speech as a vector of floats and returns decoded output.
@@ -446,6 +447,26 @@ class ASRPipeline:
         
             For generic generation parameters (max_length, max_new_tokens, num_beams, temperature, etc.)
             see GenerationConfig documentation.
+        """
+    @typing.overload
+    def generate(self, audio_inputs: collections.abc.Sequence[collections.abc.Sequence[typing.SupportsFloat]], generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> ASRDecodedResults:
+        """
+            Transcribes a batch of audio inputs.
+        
+            :param audio_inputs: Batch of 16 kHz audio inputs normalized to near [-1, 1].
+            :type audio_inputs: list[list[float]]
+        
+            :param generation_config: Generation config shared by all inputs.
+            :type generation_config: ASRGenerationConfig
+        
+            :param streamer: Streamer supported only for a single input.
+            :type streamer: Callable[[str], bool], ov.genai.StreamerBase
+        
+            :param kwargs: ASRGenerationConfig properties.
+            :type kwargs: dict
+        
+            :return: Decoded results in input order.
+            :rtype: ASRDecodedResults
         """
     def get_generation_config(self) -> ASRGenerationConfig:
         ...
