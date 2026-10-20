@@ -255,10 +255,8 @@ class TextRerankerGenAI(CommonPipeline):
 
         self._is_qwen3 = UseCaseTextReranker.is_qwen3(model_config)
 
-        if self._is_qwen3:
-            self.text_processed = build_qwen3_documents(self.texts)
-        else:
-            self.text_processed = self.texts
+        # TextRerankPipeline applies the Qwen3 prompt template itself, so pass the documents unchanged.
+        self.text_processed = self.texts
 
     def tokenize_qwen(self, input_text: str):
         pairs = build_qwen3_pairs(input_text, self.texts)
@@ -361,12 +359,12 @@ class TextRerankerGenAI(CommonPipeline):
         return iter_data, []
 
     def run(self, input_text: str, iter_num: int, prompt_index: int, proc_id: int, bench_hook: object | None) -> tuple[dict, list]:
+        # Tokenized only to report input size, the pipeline does its own tokenization.
         if self._is_qwen3:
             tokenized_input = self.tokenize_qwen(input_text)
-            query = build_qwen3_query(input_text)
         else:
             tokenized_input = self.tokenize(input_text)
-            query = input_text
+        query = input_text
         input_token_size = tokenized_input[0].numel() * len(self.texts)
         self.print_batch_size_info(iter_num, input_token_size)
 
