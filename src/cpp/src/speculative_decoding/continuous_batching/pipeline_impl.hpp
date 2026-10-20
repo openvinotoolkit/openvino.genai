@@ -71,6 +71,47 @@ public:
     // physical block tables with the updated logical context.
     bool rewind_awaiting_request_prefix(uint64_t request_id, size_t processed_tokens);
 
+    bool is_prefix_caching_enabled() const {
+        return m_scheduler->get_config().enable_prefix_caching;
+    }
+
+    bool has_linear_attention_cache() const {
+        return m_scheduler->has_linear_attention_cache();
+    }
+
+    void discard_awaiting_request(uint64_t request_id) {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        for (auto request = m_awaiting_requests.begin(); request != m_awaiting_requests.end(); ++request) {
+            if ((*request)->get_request_id() != request_id) {
+                continue;
+            }
+            for (const auto& sequence : (*request)->get_sequences()) {
+                m_scheduler->free_sequence(sequence->get_id());
+            }
+            m_awaiting_requests.erase(request);
+            return;
+        }
+    }
+
+    size_t restore_awaiting_prefix(uint64_t request_id, size_t ceiling) {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        for (const auto& group : m_awaiting_requests) {
+            if (group->get_request_id() != request_id) {
+                continue;
+            }
+            for (const auto& sequence : group->get_sequences()) {
+                m_scheduler->free_sequence(sequence->get_id());
+            }
+            group->update_processed_tokens_num(0);
+            if (m_scheduler->get_config().enable_prefix_caching) {
+                m_scheduler->restore_cached_blocks(group, ceiling);
+            }
+            group->set_num_prefix_cache_hit_tokens(group->get_num_processed_tokens());
+            return group->get_num_processed_tokens();
+        }
+        OPENVINO_THROW("Prefix restore requires an awaiting request: ", request_id);
+    }
+
     UpdateRequestResult init_request_by_candidate(uint64_t request_id, const GeneratedSequences& candidates);
 
     RawPerfMetrics raw_perf_metrics;
@@ -262,47 +303,6 @@ class ContinuousBatchingPipeline::ContinuousBatchingForMtpDecodingImpl
     : public ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl {
 public:
     ContinuousBatchingForMtpDecodingImpl() = default;
-
-    bool is_prefix_caching_enabled() const {
-        return m_scheduler->get_config().enable_prefix_caching;
-    }
-
-    bool has_linear_attention_cache() const {
-        return m_scheduler->has_linear_attention_cache();
-    }
-
-    void discard_awaiting_request(uint64_t request_id) {
-        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
-        for (auto request = m_awaiting_requests.begin(); request != m_awaiting_requests.end(); ++request) {
-            if ((*request)->get_request_id() != request_id) {
-                continue;
-            }
-            for (const auto& sequence : (*request)->get_sequences()) {
-                m_scheduler->free_sequence(sequence->get_id());
-            }
-            m_awaiting_requests.erase(request);
-            return;
-        }
-    }
-
-    size_t restore_awaiting_prefix(uint64_t request_id, size_t ceiling) {
-        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
-        for (const auto& group : m_awaiting_requests) {
-            if (group->get_request_id() != request_id) {
-                continue;
-            }
-            for (const auto& sequence : group->get_sequences()) {
-                m_scheduler->free_sequence(sequence->get_id());
-            }
-            group->update_processed_tokens_num(0);
-            if (m_scheduler->get_config().enable_prefix_caching) {
-                m_scheduler->restore_cached_blocks(group, ceiling);
-            }
-            group->set_num_prefix_cache_hit_tokens(group->get_num_processed_tokens());
-            return group->get_num_processed_tokens();
-        }
-        OPENVINO_THROW("MTP prefix restore requires an awaiting request: ", request_id);
-    }
 
     bool supports_embedding_prefix_verification() const override {
         return true;
