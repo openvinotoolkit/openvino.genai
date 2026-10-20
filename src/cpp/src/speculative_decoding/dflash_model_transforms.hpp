@@ -25,6 +25,7 @@ struct DFlashRTInfo {
     bool dflash_mode = false;
     int64_t mask_token_id = -1;
     std::vector<int32_t> target_layer_ids;
+    size_t candidate_position_offset = 1;
 };
 
 /**

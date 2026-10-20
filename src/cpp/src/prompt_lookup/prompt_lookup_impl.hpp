@@ -61,6 +61,10 @@ public:
                                  const std::string& prompt,
                                  const ov::genai::GenerationConfig& sampling_params) override;
 
+    std::optional<AdapterConfig> get_pipeline_adapters() const override {
+        return m_pipeline->get_pipeline_adapters();
+    }
+
     bool has_non_finished_requests() override;
 
     void step() override;

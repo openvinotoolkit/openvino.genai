@@ -13,6 +13,7 @@
 #include "image_generation/flux_pipeline.hpp"
 #include "image_generation/flux2_klein_pipeline.hpp"
 #include "image_generation/qwen_image_pipeline.hpp"
+#include "image_generation/qwen_image21_pipeline.hpp"
 #include "image_generation/zimage_pipeline.hpp"
 
 #include "utils.hpp"
@@ -36,6 +37,8 @@ Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir) 
         m_impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
     } else if (class_name == "QwenImagePipeline") {
         m_impl = std::make_shared<QwenImagePipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
+    } else if (class_name == "QwenImage21Pipeline") {
+        m_impl = std::make_shared<QwenImage21Pipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
     } else if (class_name == "ZImagePipeline") {
         m_impl = std::make_shared<ZImagePipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
     } else {
@@ -60,6 +63,8 @@ Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir, 
         m_impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
     } else if (class_name == "QwenImagePipeline") {
         m_impl = std::make_shared<QwenImagePipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
+    } else if (class_name == "QwenImage21Pipeline") {
+        m_impl = std::make_shared<QwenImage21Pipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
     } else if (class_name == "ZImagePipeline") {
         m_impl = std::make_shared<ZImagePipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
     } else {
@@ -212,6 +217,14 @@ void Image2ImagePipeline::compile(const std::string& text_encode_device,
 ov::Tensor Image2ImagePipeline::generate(const std::string& positive_prompt, ov::Tensor initial_image, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(initial_image, "Initial image cannot be empty when passed to Image2ImagePipeline::generate");
     return m_impl->generate(positive_prompt, initial_image, {}, properties);
+}
+
+ov::Tensor Image2ImagePipeline::generate(const std::string& positive_prompt, const std::vector<ov::Tensor>& initial_images, const ov::AnyMap& properties) {
+    OPENVINO_ASSERT(!initial_images.empty(), "Initial images cannot be empty when passed to Image2ImagePipeline::generate");
+    for (const ov::Tensor& initial_image : initial_images) {
+        OPENVINO_ASSERT(initial_image, "Initial image cannot be empty when passed to Image2ImagePipeline::generate");
+    }
+    return m_impl->generate(positive_prompt, initial_images, properties);
 }
 
 ov::Tensor Image2ImagePipeline::decode(const ov::Tensor latent) {

@@ -145,7 +145,12 @@ def create_image_gen_model(model_path, device, memory_data_collector, **kwargs):
             if kwargs.get("mem_consumption"):
                 memory_data_collector.start()
             start = time.perf_counter()
-            pipe = model_class.from_pretrained(model_path)
+            if kwargs.get("model_type") == "QwenImage21":
+                # Qwen-Image-2.1's checkpoint loads the text encoder in bf16 while leaving the
+                # transformer and VAE in fp32. Normalize it before applying the configured bf16.
+                pipe = model_class.from_pretrained(model_path, dtype=torch.float32)
+            else:
+                pipe = model_class.from_pretrained(model_path)
             pipe = set_bf16(pipe, device, **kwargs)
             end = time.perf_counter()
             if kwargs.get("mem_consumption"):

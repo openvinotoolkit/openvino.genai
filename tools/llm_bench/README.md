@@ -152,14 +152,14 @@ python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_b
 
 ## 5. Running on 2-Socket Platforms
 
-The benchmarking script sets `openvino.properties.streams.num(1)` by default. For multi-socket platforms, use `numactl` on Linux or the `--load_config` option to modify behavior.
+The benchmarking script sets `openvino.properties.streams.num(1)` by default. For multi-socket platforms, use `numactl` on Linux or the `--ov_config` option to modify behavior.
 
 | OpenVINO Version    | Behaviors                                       |
 |:--------------------|:------------------------------------------------|
 | Before 2024.0.0     | streams.num(1) <br>execute on 2 sockets.        |
 | 2024.0.0            | streams.num(1) <br>execute on the same socket as the APP is running on. |
 
-For example, `--load_config config.json` as following will result in streams.num(1) and execute on 2 sockets.
+For example, `--ov_config config.json` as following will result in streams.num(1) and execute on 2 sockets.
 ```json
 {
   "INFERENCE_NUM_THREADS": <NUMBER>
@@ -225,7 +225,7 @@ python benchmark.py -m ./models/gemma-3n-E2B-it/ -n 2 --task visual_text_gen_cha
 python benchmark.py -m ./models/gemma-3n-E2B-it/ -n 2 --task visual_text_gen_chat -pf ./prompts/vlm_chat.jsonl
 ```
 
-> **Supported VLM model types:** llava, llava-next, qwen2-vl, llava-qwen2, internvl-chat, minicpmv, phi3-v, minicpm-v, minicpmo, maira2, qwen2-5-vl
+> **Supported VLM model types:** llava, llava-next, qwen2-vl, llava-qwen2, internvl-chat, minicpmv, minicpmv4-7, phi3-v, minicpm-v, minicpmo, maira2, qwen2-5-vl
 
 ### Image Generation Models
 ```sh
