@@ -14,8 +14,11 @@ against the two scenarios this ABI is used for in OpenVINO GenAI:
    in a fresh process without re-running prefill.
 
 Both scenarios below were run against the standalone sample plugin in this directory
-([`sample_kv_cache_store_plugin.c`](sample_kv_cache_store_plugin.c)) on Qwen3-8B/CPU to confirm
-this guide's exact commands work as written; substitute your own plugin's path and provider name.
+([`sample_kv_cache_store_plugin.c`](sample_kv_cache_store_plugin.c)) on Qwen3-8B/CPU **and** GPU to
+confirm this guide's exact commands work as written on both; substitute your own plugin's path and
+provider name. Swap `-d CPU` for `-d GPU` in any command below to validate on GPU - just mind the
+`num_kv_blocks`/capacity caveat in the performance section (GPU's paged-attention block size
+differs from CPU's, so the same `num_kv_blocks` value lands differently).
 
 ## Prerequisites
 
@@ -106,16 +109,27 @@ python benchmark.py -m <model_dir> -d CPU \
     --cb_config ../../samples/c/kv_cache_store_plugin/perf_offload_cb_config.json  # edit store_library_path first
 ```
 
-**Real numbers from this exact pair of commands against the sample plugin** (Qwen3-8B, CPU,
+**Real numbers from this exact pair of commands against the sample plugin** (Qwen3-8B,
 ~1600-token `P0`/`P2`, ~2100-token `P1`):
 
-| | `P2` first token latency | Result MD5 |
-|---|---|---|
-| Baseline (no offload, full recompute) | 16902.28 ms | `ff7af40e...` |
-| Offload (restored through the plugin) | 264.05 ms | `ff7af40e...` (identical) |
+| Device | `num_kv_blocks` | Baseline (no offload) `P2` TTFT | Offload (via plugin) `P2` TTFT | Speedup | MD5 |
+|---|---|---|---|---|---|
+| CPU | 80 | 16902.28 ms | 264.05 ms | **~64x** | identical (`ff7af40e...`) |
+| GPU | 200 | 1326.84 ms | 410.97 ms | **~3.2x** | identical (`ff7af40e...`) |
 
-**~64x speedup**, with identical output - confirms the restored blocks are byte-correct, not just
-fast. If your plugin shows a much smaller gap (or offload is *slower*), check that `capacity_bytes`
+Both confirm the restored blocks are byte-correct, not just fast - but note the speedup is far
+from a fixed number: GPU prefill is so much faster than CPU's that the *absolute* recompute cost
+avoided is smaller, so the relative win is smaller too (still a genuine win, just less dramatic).
+Longer prompts widen the gap on either device; very short prompts can erase it entirely (see
+above) - always benchmark with a prompt length representative of your real workload, not this
+guide's numbers directly.
+
+GPU's paged-attention block granularity differs from CPU's, so the same `num_kv_blocks` value can
+land in a different place relative to your prompt length - if you see `Request 0 was dropped by
+the scheduler because it did not fit in the available cache budget`, raise `num_kv_blocks` (this
+guide's GPU numbers used 200, not the CPU config's 80) rather than assuming something is broken.
+
+If your plugin shows a much smaller gap (or offload is *slower*), check that `capacity_bytes`
 in your `cache_offload_config` is large enough for your plugin's actual per-block storage overhead
 (an undersized value can make the host's own capacity bookkeeping disagree with what your plugin
 reports via `stats`, which throws rather than silently degrading).
@@ -160,7 +174,12 @@ longer conversation (~3700 tokens) restored through your plugin, against a full 
 baseline - the correctness check above deliberately uses a short prompt to run fast, which is not
 representative of the real performance win (same prefix-length caveat as Scenario 1).
 
-**Real numbers from this exact script** (Qwen3-8B, CPU, sample plugin):
+**Real numbers from this exact script** (Qwen3-8B, sample plugin):
+
+| Device | TTFT without restore (full re-prefill) | TTFT with restore (via your plugin) | Speedup |
+|---|---|---|---|
+| CPU | 51760.38 ms | 5171.33 ms | **~10.0x** |
+| GPU | 4154.84 ms | 606.66 ms | **~6.9x** |
 
 ```
 PASS: the restored continuation matches the uninterrupted baseline token-for-token.
