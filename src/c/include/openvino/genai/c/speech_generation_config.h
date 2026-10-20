@@ -354,7 +354,8 @@ ov_genai_speech_generation_config_get_ref_audio(const ov_genai_speech_generation
  * @brief Set optional Qwen3 Base ICL reference codec ids tensor.
  * @param[in,out] config Configuration to update.
  * @param[in] ref_codec_ids Tensor with element type I64 and shape [T, G] or [1, T, G].
- * @return OK on success, INVALID_C_PARAM for NULL arguments or wrong element type, or UNKNOW_EXCEPTION on failure.
+ *                          Pass NULL to clear this field.
+ * @return OK on success, INVALID_C_PARAM for NULL config or wrong element type, or UNKNOW_EXCEPTION on failure.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_speech_generation_config_set_ref_codec_ids(ov_genai_speech_generation_config* config,

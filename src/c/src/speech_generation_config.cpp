@@ -332,9 +332,13 @@ ov_status_e ov_genai_speech_generation_config_get_ref_audio(const ov_genai_speec
 
 ov_status_e ov_genai_speech_generation_config_set_ref_codec_ids(ov_genai_speech_generation_config* config,
                                                                 const ov_tensor_t* ref_codec_ids) {
-    if (!config || !config->object || !ref_codec_ids)
+    if (!config || !config->object)
         return ov_status_e::INVALID_C_PARAM;
     try {
+        if (!ref_codec_ids) {
+            config->object->ref_codec_ids = ov::Tensor();
+            return ov_status_e::OK;
+        }
         ov::Tensor converted;
         const auto status = copy_c_tensor_to_cpp(ref_codec_ids,
                                                  ov_element_type_e::I64,
