@@ -10,6 +10,7 @@
 #include <nlohmann/json.hpp>
 
 #include "omni/talker_speech_config_utils.hpp"
+#include "openvino/genai/omni/pipeline.hpp"
 #include "utils.hpp"
 
 namespace ov {
@@ -139,6 +140,49 @@ void validate_omni_talker_speech_config(const OmniTalkerSpeechConfig& config) {
                     config.audio_chunk_frames,
                     ". Max allowed: ",
                     kAudioChunkFramesUpperBound);
+}
+
+namespace {
+
+std::string join_recognized_keys() {
+    std::string joined = utils::SPEECH_STREAMER_ARG_NAME + ", " + std::string{ov::genai::talker_speech_config.name()};
+    for (const auto& key : omni_talker_speech_config_keys()) {
+        joined += ", ";
+        joined += key;
+    }
+    return joined;
+}
+
+}  // namespace
+
+ResolvedTalkerProperties resolve_talker_properties(const OmniTalkerSpeechConfig& base, const ov::AnyMap& properties) {
+    // speech_streamer is stored as the concrete variant alternative, so the shared reader
+    // type-tests it the same way the text streamer is read.
+    ResolvedTalkerProperties out{base, utils::get_speech_streamer_from_map(properties)};
+    ov::AnyMap leftover;
+    for (const auto& [key, value] : properties) {
+        if (key == utils::SPEECH_STREAMER_ARG_NAME) {
+            continue;
+        }
+        if (key == ov::genai::talker_speech_config.name()) {
+            out.config = value.as<OmniTalkerSpeechConfig>();
+        } else {
+            OPENVINO_ASSERT(is_omni_talker_speech_config_key(key),
+                            "TalkerBase::generate: unrecognized property '",
+                            key,
+                            "'. Recognized keys: ",
+                            join_recognized_keys(),
+                            ".");
+            leftover.emplace(key, value);
+        }
+    }
+    if (!leftover.empty()) {
+        update_omni_talker_speech_config(out.config, leftover);
+    }
+    // Values supplied via properties bypass set_speech_config(), so this is the only guard
+    // on the AnyMap path.
+    validate_omni_talker_speech_config(out.config);
+    return out;
 }
 
 }  // namespace genai

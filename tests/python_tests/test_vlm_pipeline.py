@@ -168,7 +168,13 @@ else:
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
+MODEL_QWEN35_MTP = "optimum-intel-internal-testing/tiny-random-qwen3.5-mtp"
 MODEL_DEEPSEEK_OCR2 = "optimum-intel-internal-testing/tiny-random-deepseek-ocr-2"
+
+AUDIO_INPUT_SUPPORTED_MODELS = [
+    "optimum-intel-internal-testing/tiny-random-gemma4",
+    "optimum-intel-internal-testing/tiny-random-gemma4-unified-it",
+]
 
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
@@ -328,7 +334,10 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of Qwen3-Omni. Minimum required is 4.57.0."
         )
-    if "optimum-intel-internal-testing/tiny-random-qwen3.5" == model_id and is_transformers_version("<", "5.2.0"):
+    if model_id in {
+        "optimum-intel-internal-testing/tiny-random-qwen3.5",
+        MODEL_QWEN35_MTP,
+    } and is_transformers_version("<", "5.2.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.2.0."
         )
@@ -480,17 +489,17 @@ def _get_ov_model(model_id: str) -> str:
             # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
             processor.chat_template = tokenizer.chat_template
 
-        if (
-            isinstance(processor, getattr(transformers, "Gemma4Processor", type(None)))
-            or model.config.model_type == "qwen3_5"
-            or is_transformers_version(">=", "5.0")
-        ):
-            # Remove audio_tokenizer to avoid serialization issues (audio inputs are not supported).
-            # Setting to None is insufficient because Gemma4Processor.to_dict() still detects
-            # the key and calls .name_or_path on a None object.
-            processor.__dict__.pop("audio_tokenizer", None)
-        else:
-            processor.audio_tokenizer = None
+        if model_id not in AUDIO_INPUT_SUPPORTED_MODELS:
+            if (
+                isinstance(processor, getattr(transformers, "Gemma4Processor", type(None)))
+                or model.config.model_type == "qwen3_5"
+                or is_transformers_version(">=", "5.0")
+            ):
+                # Setting to None is insufficient because some processors still serialize
+                # audio_tokenizer and access its name_or_path attribute.
+                processor.__dict__.pop("audio_tokenizer", None)
+            else:
+                processor.audio_tokenizer = None
 
         # DeepSeek-OCR-2 tiny-random currently may miss preprocessor_config.json
         # So override processor with AutoImageProcessor in this case.
@@ -574,6 +583,7 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
         ov_prompt_lookup,
     )
 
+
 parametrize_all_models = pytest.mark.parametrize(
     "ov_pipe_model",
     [(m, b, pl) for m in MODEL_IDS for b in ATTENTION_BACKEND for pl in PROMPT_LOOKUP if b == "PA" or pl is False],
@@ -615,6 +625,14 @@ parametrize_one_model_pa = pytest.mark.parametrize(
 parametrize_one_model_backends = pytest.mark.parametrize(
     "ov_pipe_model",
     [(MODEL_IDS[0], b) for b in ATTENTION_BACKEND],
+    ids=lambda p: f"{p[0]}/{p[1]}",
+    indirect=["ov_pipe_model"],
+)
+
+
+parametrize_audio_models = pytest.mark.parametrize(
+    "ov_pipe_model",
+    [(model_id, backend) for model_id in AUDIO_INPUT_SUPPORTED_MODELS for backend in ATTENTION_BACKEND],
     ids=lambda p: f"{p[0]}/{p[1]}",
     indirect=["ov_pipe_model"],
 )
@@ -806,6 +824,14 @@ def inverted_video_32x32_tensor(synthetic_video_32x32):
     of however a model samples frames, unlike reordering the same frames.
     """
     return openvino.Tensor(255 - np.asarray(synthetic_video_32x32))
+
+
+@pytest.fixture(scope="module")
+def synthetic_audio_tensor() -> openvino.Tensor:
+    sampling_rate = 16000
+    timestamps = np.arange(sampling_rate, dtype=np.float32) / sampling_rate
+    audio = 0.5 * np.sin(2 * np.pi * 440 * timestamps) + 0.25 * np.sin(2 * np.pi * 880 * timestamps)
+    return openvino.Tensor(audio.astype(np.float32))
 
 
 @pytest.fixture(scope="module")
@@ -1313,6 +1339,73 @@ def test_vlm_pipeline_chat_history_multipart_content(
             f"answers_chat_history: {answer_1}\n"
             f"answers_chat_history_multipart_content: {answer_2}"
         )
+
+
+def finish_chat(ov_pipe_model: VlmModelInfo):
+    # Clear chat state left by ChatHistory on the shared pipeline.
+    ov_pipe_model.pipeline.finish_chat()
+
+
+@parametrize_audio_models
+def test_vlm_pipeline_audio_chat_history(
+    ov_pipe_model: VlmModelInfo,
+    synthetic_audio_tensor: openvino.Tensor,
+):
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, do_sample=False)
+    prompt = "Describe this audio."
+
+    history = ChatHistory([{"role": "user", "content": prompt}])
+    messages_before = history.get_messages()
+    ov_pipe.generate(
+        history,
+        audios=[synthetic_audio_tensor],
+        generation_config=generation_config,
+    )
+    assert history.get_messages() == messages_before
+    finish_chat(ov_pipe_model)
+
+
+@parametrize_audio_models
+def test_vlm_pipeline_implicit_audio_placement(
+    ov_pipe_model: VlmModelInfo,
+    synthetic_audio_tensor: openvino.Tensor,
+):
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, do_sample=False)
+    prompt = "Describe this audio."
+    audios = [synthetic_audio_tensor]
+
+    implicit_result = ov_pipe.generate(prompt, audios=audios, generation_config=generation_config)
+    explicit_result = ov_pipe.generate(prompt + "<|audio|>", audios=audios, generation_config=generation_config)
+
+    assert implicit_result.texts == explicit_result.texts
+    finish_chat(ov_pipe_model)
+
+
+@parametrize_audio_models
+@pytest.mark.parametrize(
+    "prompt,audio_count",
+    [
+        pytest.param("<|audio|><|audio|>Describe.", 1, id="more-placeholders-than-audios"),
+        pytest.param("<|audio|>Describe.", 2, id="fewer-placeholders-than-audios"),
+        pytest.param("<|audio|>Describe.", 0, id="placeholder-without-audio"),
+    ],
+)
+def test_vlm_pipeline_audio_placeholder_count(
+    ov_pipe_model: VlmModelInfo,
+    synthetic_audio_tensor: openvino.Tensor,
+    prompt: str,
+    audio_count: int,
+):
+    history = ChatHistory([{"role": "user", "content": prompt}])
+    with pytest.raises(RuntimeError):
+        ov_pipe_model.pipeline.generate(
+            history,
+            audios=[synthetic_audio_tensor] * audio_count,
+            do_sample=False,
+        )
+    finish_chat(ov_pipe_model)
 
 
 @pytest.fixture(scope="module", params=[
@@ -2402,7 +2495,7 @@ def test_audio_rejected_by_non_audio_model():
         pipe.generate("Describe", audios=[audio], generation_config=GenerationConfig(max_new_tokens=20))
 
 
-def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
+def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video, audio=None):
     class NanollavaProcessorWrapper:
         def __init__(self, processor, config, model_dtype):
             self.processor = processor
@@ -2436,7 +2529,8 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
     ov_pipe = ov_pipe_model.pipeline
 
     model_id = ov_pipe_model.model_id
-    model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+    model_path = Path(model_id)
+    model_cached = str(model_path) if model_path.is_dir() else snapshot_download(model_id)
     model_path = _get_ov_model(model_id)
     optimum_model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)
 
@@ -2446,6 +2540,9 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
 
     if video is not None:
         prompt_parts.append("video")
+
+    if audio is not None:
+        prompt_parts.append("audio")
 
     if len(prompt_parts) == 1:
         prompt = f"Describe this {prompt_parts[0]}."
@@ -2480,6 +2577,8 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
             processor.tokenizer.add_bos_token = False
         if optimum_model.config.model_type == "muse_glimmer":
             processor.tokenizer.add_bos_token = False
+        if optimum_model.config.model_type == "gemma4_unified":
+            tokenizer = processor.tokenizer
         if optimum_model.config.model_type in ["internvl_chat", "minicpmv"]:
             tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
         if optimum_model.config.model_type == "minicpmv":
@@ -2492,7 +2591,13 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
                 processor.chat_template = tokenizer.chat_template
 
         inputs = optimum_model.preprocess_inputs(
-            text=prompt, image=image, video=video, processor=processor, tokenizer=tokenizer, config=optimum_model.config
+            text=prompt,
+            image=image,
+            video=video,
+            audio=audio,
+            processor=processor,
+            tokenizer=tokenizer,
+            config=optimum_model.config,
         )
 
     max_new_tokens = 100
@@ -2517,6 +2622,8 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
         params["images"] = [openvino.Tensor(image)]
     if video is not None:
         params["videos"] = [openvino.Tensor(video)]
+    if audio is not None:
+        params["audios"] = [openvino.Tensor(audio)]
 
     genai_output = ov_pipe.generate(prompt, **params, max_new_tokens=max_new_tokens, do_sample=False)
     genai_text = genai_output.texts[0]
@@ -2778,6 +2885,15 @@ def test_vlm_pipeline_match_optimum_with_resolutions(
         resized_video = resize_video(resized_video, video_input_resolution)
 
     run_compare_genai_optimum(ov_pipe_model, resized_image, resized_video)
+
+
+@parametrize_audio_models
+def test_vlm_pipeline_audio_match_optimum(
+    ov_pipe_model: VlmModelInfo,
+    synthetic_audio_tensor: openvino.Tensor,
+):
+    run_compare_genai_optimum(ov_pipe_model, None, None, np.array(synthetic_audio_tensor.data, copy=True))
+    finish_chat(ov_pipe_model)
 
 
 # CDPruner Tests
@@ -3161,16 +3277,261 @@ def test_cdpruner_continuous_batching_chat_history(
     )
 
 
-def test_vlm_prompt_lookup_functionality(cat_tensor):
-    """Test prompt_lookup functionality for Qwen2VL model."""
-    model_id = "optimum-intel-internal-testing/tiny-random-qwen2vl"
+@pytest.fixture(scope="module")
+def qwen35_mtp_model_path() -> Path:
+    model_path = Path(_get_ov_model(MODEL_QWEN35_MTP))
+    assert (model_path / "openvino_mtp_model.xml").is_file(), "Qwen3.5 export must include the MTP draft model"
+    return model_path
+
+
+@pytest.mark.parametrize("main_prefix", [False, True])
+def test_qwen35_mtp_rejects_prefix_mismatch(qwen35_mtp_model_path, main_prefix):
+    model_path = qwen35_mtp_model_path
+    scheduler = SchedulerConfig()
+    scheduler.cache_size = 1
+    scheduler.enable_prefix_caching = main_prefix
+    draft_scheduler = SchedulerConfig()
+    draft_scheduler.num_kv_blocks = 128
+    draft_scheduler.enable_prefix_caching = not main_prefix
+    with pytest.raises(RuntimeError, match="MTP main and draft pipelines must use the same enable_prefix_caching"):
+        ContinuousBatchingPipeline(
+            model_path,
+            scheduler,
+            "CPU",
+            {"draft_model": draft_model(model_path, "CPU", scheduler_config=draft_scheduler)},
+        )
+
+
+def test_qwen35_mtp_text_add_request(qwen35_mtp_model_path, monkeypatch, capfd):
+    model_path = qwen35_mtp_model_path
+    monkeypatch.setenv("OPENVINO_LOG_LEVEL", "5")
+    scheduler = SchedulerConfig()
+    scheduler.cache_size = 1
+    scheduler.cache_interval_multiplier = 1
+    scheduler.max_num_seqs = 1
+    scheduler.num_linear_attention_blocks = 32
+    scheduler.enable_prefix_caching = False
+    reference = ContinuousBatchingPipeline(model_path, scheduler, "CPU")
+    scheduler.enable_prefix_caching = True
+    draft_scheduler = SchedulerConfig()
+    draft_scheduler.enable_prefix_caching = True
+    draft_scheduler.num_kv_blocks = 128
+    pipeline = ContinuousBatchingPipeline(
+        model_path,
+        scheduler,
+        "CPU",
+        {"draft_model": draft_model(model_path, "CPU", scheduler_config=draft_scheduler)},
+    )
+    config = GenerationConfig(max_new_tokens=24, do_sample=False, ignore_eos=True)
+    prompt = "Repeat the following sequence exactly: " + "one two three four. " * 32
+    reference_handle = reference.add_request(0, prompt, config)
+    while reference.has_non_finished_requests():
+        reference.step()
+    expected = reference_handle.read_all()[0].generated_ids
+    config.num_assistant_tokens = 4
+    for iteration in range(2):
+        capfd.readouterr()
+        handle = pipeline.add_request(0, prompt, config)
+        while pipeline.has_non_finished_requests():
+            pipeline.step()
+        assert handle.get_status() == GenerationStatus.FINISHED
+        assert handle.read_all()[0].generated_ids == expected
+        captured = capfd.readouterr()
+        if iteration == 1:
+            assert "Hybrid prefix restore:" in captured.out + captured.err
+            assert "MTP paired prefix replay:" in captured.out + captured.err
+
+
+def test_qwen35_mtp_image_add_request(qwen35_mtp_model_path, monkeypatch, capfd):
+    model_path = qwen35_mtp_model_path
+    monkeypatch.setenv("OPENVINO_LOG_LEVEL", "5")
+    scheduler = SchedulerConfig()
+    scheduler.cache_size = 1
+    scheduler.cache_interval_multiplier = 1
+    scheduler.max_num_seqs = 1
+    scheduler.num_linear_attention_blocks = 32
+    scheduler.enable_prefix_caching = False
+    reference = ContinuousBatchingPipeline(model_path, scheduler, "CPU")
+    scheduler.enable_prefix_caching = True
+    draft_scheduler = SchedulerConfig()
+    draft_scheduler.enable_prefix_caching = True
+    draft_scheduler.num_kv_blocks = 128
+    pipeline = ContinuousBatchingPipeline(
+        model_path,
+        scheduler,
+        "CPU",
+        {"draft_model": draft_model(model_path, "CPU", scheduler_config=draft_scheduler)},
+    )
+    pixels = np.zeros((224, 224, 3), dtype=np.uint8)
+    pixels[:, :112, 0] = 255
+    pixels[:, 112:, 1] = 255
+    image = openvino.Tensor(pixels[np.newaxis])
+    prompt = "Repeat the following sequence exactly: " + "one two three four. " * 32
+    config = GenerationConfig(max_new_tokens=24, do_sample=False, ignore_eos=True)
+    reference_handle = reference.add_request(0, prompt, images=[image], generation_config=config)
+    while reference.has_non_finished_requests():
+        reference.step()
+    expected = reference_handle.read_all()[0].generated_ids
+    config.num_assistant_tokens = 4
+    for iteration in range(2):
+        capfd.readouterr()
+        handle = pipeline.add_request(0, prompt, images=[image], generation_config=config)
+        while pipeline.has_non_finished_requests():
+            pipeline.step()
+        assert handle.get_status() == GenerationStatus.FINISHED
+        assert handle.read_all()[0].generated_ids == expected
+        captured = capfd.readouterr()
+        if iteration == 1:
+            assert "Hybrid prefix restore:" in captured.out + captured.err
+            assert "MTP paired prefix replay:" in captured.out + captured.err
+
+
+@pytest.mark.parametrize("media", ["text", "image", "video", "video_metadata"])
+@pytest.mark.parametrize("enable_prefix_caching", [False, True])
+@pytest.mark.parametrize("num_assistant_tokens", [1, 4])
+@pytest.mark.parametrize("strategy", ["prompt_lookup", "mtp"])
+def test_qwen35_vlm_verifier_cache_contract(
+    qwen35_mtp_model_path, media, enable_prefix_caching, num_assistant_tokens, strategy, monkeypatch, capfd
+):
+    model_path = qwen35_mtp_model_path
+    monkeypatch.setenv("OPENVINO_LOG_LEVEL", "5")
+    scheduler = SchedulerConfig()
+    scheduler.enable_prefix_caching = False
+    scheduler.cache_size = 1
+    scheduler.cache_interval_multiplier = 1
+    scheduler.max_num_seqs = 1
+    scheduler.num_linear_attention_blocks = 32
+    reference = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND="PA", scheduler_config=scheduler)
+    scheduler.enable_prefix_caching = enable_prefix_caching
+    if strategy == "prompt_lookup":
+        strategy_properties = {"prompt_lookup": True}
+    else:
+        draft_scheduler = SchedulerConfig()
+        draft_scheduler.enable_prefix_caching = enable_prefix_caching
+        draft_scheduler.num_kv_blocks = 128
+        strategy_properties = {"draft_model": draft_model(model_path, "CPU", scheduler_config=draft_scheduler)}
+    lookup = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND="PA", scheduler_config=scheduler, **strategy_properties)
+    pixels = np.zeros((224, 224, 3), dtype=np.uint8)
+    pixels[:, :112, 0] = 255
+    pixels[:, 112:, 1] = 255
+    media_inputs = {}
+    if media == "image":
+        media_inputs = {"images": [openvino.Tensor(pixels[np.newaxis])]}
+    elif media == "video":
+        media_inputs = {"videos": [openvino.Tensor(np.stack([pixels, np.flip(pixels, axis=1)] * 2))]}
+    elif media == "video_metadata":
+        metadata = VideoMetadata()
+        metadata.frames_indices = [0, 2, 4, 6]
+        media_inputs = {
+            "videos": [openvino.Tensor(np.stack([pixels, np.flip(pixels, axis=1)] * 4))],
+            "videos_metadata": [metadata],
+        }
+    prompt = "Repeat the following sequence exactly: " + "one two three four. " * 32
+    config = GenerationConfig(max_new_tokens=24, do_sample=False, ignore_eos=True)
+    expected = reference.generate(prompt, generation_config=config, **media_inputs)
+    config.num_assistant_tokens = num_assistant_tokens
+    config.max_ngram_size = 3 if strategy == "prompt_lookup" else 0
+    for iteration in range(2):
+        capfd.readouterr()
+        actual = lookup.generate(prompt, generation_config=config, **media_inputs)
+        captured = capfd.readouterr()
+        assert actual.texts == expected.texts
+        if enable_prefix_caching and iteration == 1:
+            assert "Hybrid prefix restore:" in captured.out + captured.err
+            if strategy == "mtp":
+                assert "MTP paired prefix replay:" in captured.out + captured.err
+        if strategy == "mtp":
+            assert actual.extended_perf_metrics.get_num_draft_tokens() > 0
+
+    if media != "text":
+        changed_media = dict(media_inputs)
+        media_key = "images" if media == "image" else "videos"
+        changed_media[media_key] = [openvino.Tensor(255 - media_inputs[media_key][0].data)]
+        config.num_assistant_tokens = 0
+        config.max_ngram_size = 0
+        changed_reference = reference.generate(prompt, generation_config=config, **changed_media)
+        config.num_assistant_tokens = num_assistant_tokens
+        config.max_ngram_size = 3 if strategy == "prompt_lookup" else 0
+        changed_actual = lookup.generate(prompt, generation_config=config, **changed_media)
+        assert changed_actual.texts == changed_reference.texts
+
+    if strategy == "mtp" and enable_prefix_caching and num_assistant_tokens == 4:
+        config.max_new_tokens = 80
+        config.num_assistant_tokens = 0
+        long_reference = reference.generate(prompt, generation_config=config, **media_inputs)
+        config.num_assistant_tokens = num_assistant_tokens
+        long_actual = lookup.generate(prompt, generation_config=config, **media_inputs)
+        assert long_actual.texts == long_reference.texts
+
+        streamed_chunks = []
+
+        def cancel_streamer(chunk):
+            streamed_chunks.append(chunk)
+            return StreamingStatus.CANCEL
+
+        lookup.generate(prompt, generation_config=config, streamer=cancel_streamer, **media_inputs)
+        assert streamed_chunks
+        after_cancel = lookup.generate(prompt, generation_config=config, **media_inputs)
+        assert after_cancel.texts == long_reference.texts
+
+        extended_prompt = prompt + " Continue with five six seven eight."
+        config.num_assistant_tokens = 0
+        extended_reference = reference.generate(extended_prompt, generation_config=config, **media_inputs)
+        config.num_assistant_tokens = num_assistant_tokens
+        extended_actual = lookup.generate(extended_prompt, generation_config=config, **media_inputs)
+        assert extended_actual.texts == extended_reference.texts
+
+        config.max_new_tokens = 24
+        reference_history = ChatHistory()
+        reference_history.append({"role": "user", "content": prompt})
+        config.num_assistant_tokens = 0
+        history_reference = reference.generate(reference_history, generation_config=config, **media_inputs)
+        history = ChatHistory()
+        history.append({"role": "user", "content": prompt})
+        config.num_assistant_tokens = num_assistant_tokens
+        assert not config.return_omni_outputs
+        history_logs = []
+        for iteration in range(2):
+            capfd.readouterr()
+            history_actual = lookup.generate(
+                history, generation_config=config, **(media_inputs if iteration == 0 else {})
+            )
+            captured = capfd.readouterr()
+            history_logs.append(captured.out + captured.err)
+            assert history_actual.texts == history_reference.texts
+            assert history_actual.extended_perf_metrics.get_num_draft_tokens() > 0
+            if iteration == 1:
+                assert "Hybrid prefix restore:" in captured.out + captured.err, "\n".join(history_logs)
+                assert "MTP paired prefix replay:" in captured.out + captured.err
+
+        for chat in (reference_history, history):
+            chat.append({"role": "assistant", "content": history_reference.texts[0]})
+            chat.append({"role": "user", "content": "Continue with five six seven eight."})
+        config.num_assistant_tokens = 0
+        next_reference = reference.generate(reference_history, generation_config=config)
+        config.num_assistant_tokens = num_assistant_tokens
+        next_actual = lookup.generate(history, generation_config=config)
+        assert next_actual.texts == next_reference.texts
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "optimum-intel-internal-testing/tiny-random-qwen2vl",
+        "optimum-intel-internal-testing/tiny-random-qwen3.5",
+    ],
+)
+def test_vlm_prompt_lookup_functionality(cat_tensor, model_id):
     model_path = _get_ov_model(model_id)
 
     ov_pipe = VLMPipeline(model_path, "CPU")
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
     results = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
 
-    ov_pipe_pld = VLMPipeline(model_path, "CPU", prompt_lookup=True)
+    scheduler = SchedulerConfig()
+    scheduler.enable_prefix_caching = True
+    scheduler.max_num_seqs = 1
+    ov_pipe_pld = VLMPipeline(model_path, "CPU", prompt_lookup=True, scheduler_config=scheduler)
     generation_config_pld = _setup_generation_config(
         ov_pipe_pld, max_new_tokens=20, do_sample=False, prompt_lookup=True
     )
