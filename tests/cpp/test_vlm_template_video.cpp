@@ -226,3 +226,33 @@ TEST(VLMChatTemplate, InvalidTemplateStillReportsAnError) {
     EXPECT_THROW(tokenizer->apply_chat_template(chat_history(), false, "", std::nullopt, std::nullopt), ov::Exception);
 }
 
+TEST_F(MuseGlimmerVideo, EditedHistoryRollbackRetainsOnlyMatchingPrefix) {
+    auto configured = embedder(false);
+    ov::genai::InputsEmbedder inputs(models, ov::genai::Tokenizer{}, config_dir, "CPU", {});
+    auto registry = std::make_shared<ov::genai::VisionRegistry>();
+    ov::genai::ChatHistory history{{{"role", "system"}, {"content", "unchanged"}},
+                                   {{"role", "user"}, {"content", "<|video|> original"}}};
+    {
+        ov::genai::VLMChatContext initial(history, registry, inputs);
+        initial.process({}, {video()});
+    }
+    auto state = ov::genai::ChatHistoryInternalState::get_or_create(history, registry);
+    ASSERT_EQ(state->get_messages_metadata().size(), 2);
+    ASSERT_EQ(state->get_base_video_index(), 1);
+    ASSERT_EQ(registry->size(), 1);
+    const auto original_id = state->get_video_vision_id(0);
+    history.get_messages()[1]["content"] = "<|video|> edited";
+    auto replacement = video();
+    std::fill_n(replacement.data<uint8_t>(), replacement.get_size(), 100);
+    ov::genai::VLMChatContext edited(history, registry, inputs);
+    const auto processed = edited.process({}, {replacement});
+    EXPECT_TRUE(processed.needs_kv_cache_reset);
+    const auto replacement_id = state->get_video_vision_id(0);
+    EXPECT_FALSE(registry->contains(original_id));
+    edited.rollback();
+    ASSERT_EQ(state->get_messages_metadata().size(), 1);
+    EXPECT_EQ(state->get_messages_metadata().front().original_message, history.first());
+    EXPECT_EQ(state->get_base_video_index(), 0);
+    EXPECT_EQ(registry->size(), 0);
+    EXPECT_FALSE(registry->contains(replacement_id));
+}
