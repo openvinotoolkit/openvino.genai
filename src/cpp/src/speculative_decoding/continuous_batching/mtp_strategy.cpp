@@ -385,8 +385,16 @@ ContinuousBatchingPipeline::Gemma4MtpDecodingImpl::Gemma4MtpDecodingImpl(
     }
     OPENVINO_ASSERT(shared_kv_widths[0] != shared_kv_widths[2],
                     "Gemma4 MTP full and sliding shared KV must have distinct widths.");
-    ov::pass::SDPAToPagedAttention(false, false, true, false, false, false, false, true)
-        .run_on_model(draft_desc.model);
+
+    ov::pass::SDPAToPagedAttention(false, // use_per_layer_block_indices_inputs
+                                   false, // use_score_outputs
+                                   true,  // allow_score_aggregation
+                                   false, // allow_cache_rotation
+                                   false, // allow_xattention
+                                   false, // allow_adaptive_rkv
+                                   false, // allow_qq_bias
+                                   true  // draft_model
+                                ).run_on_model(draft_desc.model);
     for (const auto& node : draft_desc.model->get_ordered_ops()) {
         OPENVINO_ASSERT(!ov::as_type_ptr<ov::op::v13::ScaledDotProductAttention>(node),
                         "Gemma4 MTP draft still contains SDPA after the PA transformation.");
@@ -453,8 +461,9 @@ GenerationHandle ContinuousBatchingPipeline::Gemma4MtpDecodingImpl::add_request(
     m_inputs_embedder->set_apply_chat_template_status(config.apply_chat_template);
     const size_t previous_tokens = m_inputs_embedder->get_cache_state().get_state().size();
     const std::vector<ov::genai::EncodedImage> images;
-    const auto [normalized, image_sequence, video_sequence] =
+    [[maybe_unused]] const auto [normalized, image_sequence, video_sequence, audio_sequence] =
         m_inputs_embedder->normalize_prompt(prompt, 0, images);
+    (void)audio_sequence;
     ov::Tensor embeds = m_inputs_embedder->get_inputs_embeds(normalized, images, metrics, true, image_sequence);
     const auto& cached_ids = m_inputs_embedder->get_cache_state().get_state();
     OPENVINO_ASSERT(cached_ids.size() >= previous_tokens, "Gemma4 MTP token history shrank unexpectedly.");
