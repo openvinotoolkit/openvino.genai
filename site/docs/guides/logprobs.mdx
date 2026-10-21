@@ -4,9 +4,9 @@ sidebar_position: 10
 
 # Log-Probabilities for Requested Tokens
 
-`GenerationConfig.logprob_token_ids` reports the log-probability of a fixed set of token IDs at every generated position. It complements the existing `logprobs` option, which only returns the top-k tokens: `logprob_token_ids` reads the values from the **full vocabulary** log-probability distribution (before any sampling transform), so you can score tokens that are not among the most likely ones.
+`GenerationConfig.logprob_token_ids` reports the log-probability of a fixed set of token IDs at every generated position. It complements `logprobs`, which reports only the log-probability of each generated token (`generated_log_probs`): `logprob_token_ids` reads raw values for arbitrary token IDs from the **full vocabulary** distribution before any sampling transform (the equivalent of vLLM's `logprob_token_ids` with `--logprobs-mode raw_logprobs`), so you can score tokens that are not among the most likely ones.
 
-Typical use case is single-token classification: generate one token greedily (`max_new_tokens=1`), then softmax over the reported log-probabilities of the candidate token IDs to obtain per-class probabilities.
+Typical use case is single-token classification: generate one token greedily (`max_new_tokens=1`), then softmax over the reported log-probabilities of the candidate token IDs to obtain per-class probabilities. The sum of `exp(log_prob)` over the candidate IDs is the probability mass of the candidate set (vLLM's `label_mass`); multiplying the softmax over the candidates by this mass rescales the answer probabilities to the full vocabulary (vLLM's `confidence`).
 
 :::info
 `logprob_token_ids` is supported with **greedy or multinomial sampling only**, and only for a single sequence (`num_return_sequences == 1`). Beam search, tree search, and speculative decoding are rejected by `GenerationConfig.validate()`.

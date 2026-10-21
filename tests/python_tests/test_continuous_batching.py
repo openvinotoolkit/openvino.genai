@@ -3,11 +3,14 @@
 
 import os
 import gc
+import json
 import pytest
 import math
 import sys
+import tempfile
 import threading
 import numpy as np
+import torch
 
 from pathlib import Path
 from shutil import rmtree
@@ -189,10 +192,16 @@ def test_generation_handle_echo_only_publishes_output_and_finished_status(
     assert outputs[0].generated_ids
 
 
-def test_logprob_token_ids(model_facebook_opt_125m: OVConvertedModelSchema):
-    import json
-    import tempfile
+def _raw_full_vocab_log_softmax(opt_model, full_ids):
+    # Independent reference: the full-vocabulary log-softmax of the raw model logits, computed outside
+    # the genai sampler. Comparing against the pipeline's own generated_log_probs would share the
+    # sampler's log-partition math and let a common normalization bug pass. The stateful model resets
+    # its KV state on every call without past_key_values, so each call is independent.
+    logits = opt_model(input_ids=torch.as_tensor([full_ids], dtype=torch.long)).logits[0].float()
+    return torch.log_softmax(logits, dim=-1)
 
+
+def test_logprob_token_ids_shape_and_echo(model_facebook_opt_125m: OVConvertedModelSchema):
     model_path = model_facebook_opt_125m.models_path
     id_a, id_b = 100, 200  # valid token ids for opt-125m (vocab 50257)
 
@@ -235,32 +244,23 @@ def test_logprob_token_ids(model_facebook_opt_125m: OVConvertedModelSchema):
         assert [tid for tid, _ in row] == [id_a, id_b]
 
     # Echo: rows index generated positions only, not the echoed prompt tokens (which are prepended to
-    # generated_log_probs).
+    # generated_log_probs). The pipeline encodes plain (non-chat) prompts with special tokens, so the
+    # echoed prefix must equal the tokenizer output.
+    prompt_ids = model_facebook_opt_125m.hf_tokenizer("The Sun is", add_special_tokens=True)["input_ids"]
+    assert out_echo.generated_ids[: len(prompt_ids)] == prompt_ids
     assert len(out_echo.requested_token_logprobs) < len(out_echo.generated_log_probs)
 
-    # Numerical checks against an INDEPENDENT reference: the full-vocabulary log-softmax of the raw
-    # HuggingFace model, computed outside the genai pipeline. Comparing against the pipeline's own
-    # generated_log_probs would share the sampler's log-partition math and let a common
-    # normalization bug pass.
-    import torch
-    from transformers import AutoModelForCausalLM
 
+def test_logprob_token_ids_match_reference(model_facebook_opt_125m: OVConvertedModelSchema):
+    model_path = model_facebook_opt_125m.models_path
+    opt_model = model_facebook_opt_125m.opt_model
+    id_a, id_b = 100, 200  # valid token ids for opt-125m (vocab 50257)
     prompt = "The Sun is"
-    hf_model = AutoModelForCausalLM.from_pretrained("facebook/opt-125m")
-    hf_tokenizer = model_facebook_opt_125m.hf_tokenizer
-    # The pipeline encodes plain (non-chat) prompts with special tokens; the echo output confirms
-    # that the reference prefix matches what the pipeline actually ran.
-    prompt_ids = hf_tokenizer(prompt, add_special_tokens=True)["input_ids"]
-    assert out_echo.generated_ids[: len(prompt_ids)] == prompt_ids
+    prompt_ids = model_facebook_opt_125m.hf_tokenizer(prompt, add_special_tokens=True)["input_ids"]
     prefix = len(prompt_ids)
 
-    def raw_log_softmax(full_ids):
-        with torch.no_grad():
-            logits = hf_model(torch.as_tensor([full_ids], dtype=torch.long)).logits[0].float()
-        return torch.log_softmax(logits, dim=-1)
-
     def compare_requested(rows, full_ids, tol=1e-3):
-        ref = raw_log_softmax(full_ids)
+        ref = _raw_full_vocab_log_softmax(opt_model, full_ids)
         assert len(rows) == len(full_ids) - prefix
         for pos, row in enumerate(rows):
             dist = ref[prefix + pos - 1]
@@ -269,17 +269,25 @@ def test_logprob_token_ids(model_facebook_opt_125m: OVConvertedModelSchema):
                     f"position {pos}, token {token_id}: requested {logprob} != raw {dist[token_id].item()}"
                 )
 
+    cb_pipe = create_ov_cb_pipeline(model_path, pipeline_type=PipelineType.CONTINUOUS_BATCHING)
+
     # Greedy: every requested score at every generated position equals the raw full-vocab log-softmax.
-    compare_requested(out_standalone.requested_token_logprobs,
-                      prompt_ids + list(out_standalone.generated_ids))
+    h_greedy = cb_pipe.add_request(
+        0, prompt,
+        generation_config=GenerationConfig(max_new_tokens=4, logprob_token_ids=[id_a, id_b]),
+    )
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+    out_greedy = h_greedy.read_all()[0]
+    compare_requested(out_greedy.requested_token_logprobs, prompt_ids + list(out_greedy.generated_ids))
 
     # Beyond top-k, numerically: an id ranked 3rd at position 0 is outside the top_k=2 filter, yet its
     # raw logprob must still be reported at every position.
-    ref_pos0 = raw_log_softmax(prompt_ids + list(out_standalone.generated_ids))[prefix - 1]
+    ref_pos0 = _raw_full_vocab_log_softmax(opt_model, prompt_ids + list(out_greedy.generated_ids))[prefix - 1]
     id_out = ref_pos0.topk(3).indices[2].item()
     assert id_out not in (id_a, id_b)
     h_topk_full = cb_pipe.add_request(
-        5, prompt,
+        1, prompt,
         generation_config=GenerationConfig(max_new_tokens=4, do_sample=True, temperature=1.0, top_k=2,
                                            logprob_token_ids=[id_a, id_b, id_out]),
     )
@@ -287,15 +295,14 @@ def test_logprob_token_ids(model_facebook_opt_125m: OVConvertedModelSchema):
         cb_pipe.step()
     out_topk_full = h_topk_full.read_all()[0]
     # Position-0 logits depend only on the prompt, so id_out is verifiably outside top-2 there.
-    top2 = raw_log_softmax(prompt_ids + list(out_topk_full.generated_ids))[prefix - 1].topk(2).indices
+    top2 = _raw_full_vocab_log_softmax(opt_model, prompt_ids + list(out_topk_full.generated_ids))[prefix - 1].topk(2).indices
     assert id_out not in set(top2.tolist())
-    compare_requested(out_topk_full.requested_token_logprobs,
-                      prompt_ids + list(out_topk_full.generated_ids))
+    compare_requested(out_topk_full.requested_token_logprobs, prompt_ids + list(out_topk_full.generated_ids))
 
     # Multinomial with non-unit temperature: requested logprobs are raw, pre-sampling values, so they
     # match the same reference along the sampled sequence at every position.
     h_temp = cb_pipe.add_request(
-        6, prompt,
+        2, prompt,
         generation_config=GenerationConfig(max_new_tokens=4, do_sample=True, temperature=0.7,
                                            logprob_token_ids=[id_a, id_b]),
     )
@@ -306,9 +313,9 @@ def test_logprob_token_ids(model_facebook_opt_125m: OVConvertedModelSchema):
 
     # Internal consistency: the requested logprob of the generated token equals the pipeline's own
     # top-1 generated_log_probs at the same position (both read the same raw distribution).
-    t0 = out_standalone.generated_ids[0]
+    t0 = out_greedy.generated_ids[0]
     h_num = cb_pipe.add_request(
-        7, prompt,
+        3, prompt,
         generation_config=GenerationConfig(max_new_tokens=1, logprobs=1, logprob_token_ids=[t0]),
     )
     while cb_pipe.has_non_finished_requests():
@@ -318,7 +325,11 @@ def test_logprob_token_ids(model_facebook_opt_125m: OVConvertedModelSchema):
     assert abs(lp_num - out_num.generated_log_probs[0]) < 1e-4
     assert lp_num < -1e-4  # a real (strictly negative) logprob, not a 0.0 placeholder
 
-    # Config loading: both the JSON config file and the AnyMap update populate the field.
+
+def test_logprob_token_ids_config_loading():
+    id_a, id_b = 100, 200
+
+    # Both the JSON config file and the AnyMap update populate the field.
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
         json.dump({"max_new_tokens": 4, "logprob_token_ids": [id_a, id_b]}, f)
         json_path = f.name
@@ -326,6 +337,11 @@ def test_logprob_token_ids(model_facebook_opt_125m: OVConvertedModelSchema):
     cfg = GenerationConfig()
     cfg.update_generation_config(logprob_token_ids=[id_a, id_b])
     assert cfg.logprob_token_ids == [id_a, id_b]
+
+
+def test_logprob_token_ids_rejected(model_facebook_opt_125m: OVConvertedModelSchema):
+    model_path = model_facebook_opt_125m.models_path
+    id_a, id_b = 100, 200
 
     # Unsupported mode: beam search + logprob_token_ids must be rejected by validate().
     with pytest.raises(Exception, match="logprob_token_ids"):
@@ -336,9 +352,20 @@ def test_logprob_token_ids(model_facebook_opt_125m: OVConvertedModelSchema):
         GenerationConfig(max_new_tokens=1, num_assistant_tokens=5, logprob_token_ids=[id_a, id_b]).validate()
 
     # Out-of-range ids are rejected at enqueue time, before they can fail in step() and poison the pipeline.
+    cb_pipe = create_ov_cb_pipeline(model_path, pipeline_type=PipelineType.CONTINUOUS_BATCHING)
     with pytest.raises(Exception, match="out of vocabulary range"):
-        cb_pipe.add_request(99, "The Sun is",
+        cb_pipe.add_request(0, "The Sun is",
                             generation_config=GenerationConfig(max_new_tokens=1, logprob_token_ids=[10**9]))
+
+    # A speculative pipeline rejects logprob_token_ids at add_request: a per-request config does not
+    # carry the pipeline's assistant settings, so validate() passes and the rejection must happen at
+    # the enqueue point, not in step() where it would fail every running request.
+    sd_pipe = ContinuousBatchingPipeline(
+        model_path, SchedulerConfig(), "CPU", properties={"draft_model": draft_model(model_path)}
+    )
+    with pytest.raises(Exception, match="not supported with speculative decoding"):
+        sd_pipe.add_request(1, "The Sun is",
+                            generation_config=GenerationConfig(max_new_tokens=1, logprob_token_ids=[id_a, id_b]))
 
 
 @pytest.mark.transformers_dependent(

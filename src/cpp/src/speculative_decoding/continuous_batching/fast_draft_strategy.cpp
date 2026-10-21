@@ -150,11 +150,6 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
                                                                  std::optional<ov::Tensor> prompt_ids,
                                                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
-    // A per-request config does not carry the pipeline's assistant settings, so validate() cannot
-    // catch this: reject before enqueueing, where candidate sync would hit the init_request() assert
-    // and the step() error handler would fail both pipelines for every running request.
-    OPENVINO_ASSERT(sampling_params.logprob_token_ids.empty(),
-                    "logprob_token_ids is not supported with speculative decoding");
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
@@ -173,8 +168,6 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
                                                                  const std::string& prompt,
                                                                  const ov::genai::GenerationConfig& sampling_params) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
-    OPENVINO_ASSERT(sampling_params.logprob_token_ids.empty(),
-                    "logprob_token_ids is not supported with speculative decoding");
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};

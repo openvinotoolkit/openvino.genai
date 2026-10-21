@@ -18,8 +18,6 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::Contin
     bool is_validation_mode_enabled) {
     m_tokenizer = tokenizer;
     m_generation_config = generation_config;
-    OPENVINO_ASSERT(m_generation_config.logprob_token_ids.empty(),
-        "logprob_token_ids is not supported with speculative decoding");
     if (m_generation_config.assistant_confidence_threshold == 0.f) {
         if (!m_generation_config.num_assistant_tokens.has_value()) {
             m_generation_config.num_assistant_tokens = default_num_assistant_tokens;

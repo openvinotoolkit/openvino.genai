@@ -1,9 +1,7 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <cmath>
 #include <future>
-#include <utility>
 
 #include "sampling/sampler.hpp"
 #include "tokenizer/tokenizer_impl.hpp"
@@ -1534,11 +1532,8 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                 }
 
                 auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id, logit_token_offset);
-                // Capture the full vocabulary extent before apply(): TopK/TopP/MinP shrink m_size to the
-                // post-filter candidate count, but m_data (and requested-token lookups) span the whole vocab.
-                const size_t vocab_size = logit_vector.m_size;
                 logit_processor.apply(logit_vector);
-
+                
                 Token sampled_token;
                 bool is_generate_n_tokens = false;
                 if (sampling_params.is_greedy_decoding()) {
@@ -1593,15 +1588,12 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                 }
                 register_new_token(sampled_token, running_sequences[running_sequence_id], logit_processor, is_extend_sequence, is_validation_mode_enabled);
                 if (is_extend_sequence && !sampling_params.logprob_token_ids.empty()) {
-                    OPENVINO_ASSERT(!std::isnan(logit_vector.m_full_vocab_log_sum_exp),
-                                    "logprob_token_ids requires greedy or multinomial sampling so that the full-vocabulary log-partition function is computed");
+                    // m_data is kept pristine by CopyLogitsToVectorTransform (installed when logprobs > 0 or
+                    // logprob_token_ids is set), so this is the raw model logit normalized over the full
+                    // vocabulary; token ids are range-checked at enqueue time.
                     std::vector<std::pair<int64_t, float>> requested_token_logprobs;
                     requested_token_logprobs.reserve(sampling_params.logprob_token_ids.size());
                     for (const auto requested_token_id : sampling_params.logprob_token_ids) {
-                        OPENVINO_ASSERT(requested_token_id >= 0 && static_cast<size_t>(requested_token_id) < vocab_size,
-                                        "logprob_token_id is out of vocabulary range: ", requested_token_id);
-                        // m_data is kept pristine by CopyLogitsToVectorTransform (installed when logprobs > 0 or
-                        // logprob_token_ids is set), so this is the raw model logit normalized over the full vocabulary.
                         requested_token_logprobs.emplace_back(requested_token_id,
                                                               logit_vector.m_data[requested_token_id] - logit_vector.m_full_vocab_log_sum_exp);
                     }

@@ -476,6 +476,8 @@ GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(
     OPENVINO_ASSERT(sampling_params.num_return_sequences == 1, "DFlash CB/PA supports one sequence per request.");
     OPENVINO_ASSERT(!sampling_params.adapters.has_value(),
                     "DFlash CB/PA does not support adapters until target and draft adapter parity is validated.");
+    // Checked here because the DFlash draft is initialized before the main add_request() that would
+    // otherwise reject the request.
     OPENVINO_ASSERT(sampling_params.logprob_token_ids.empty(),
                     "logprob_token_ids is not supported with speculative decoding.");
     if (is_vlm_dflash) {

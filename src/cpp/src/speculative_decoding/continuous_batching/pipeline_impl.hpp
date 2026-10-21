@@ -51,6 +51,12 @@ public:
 
     void multistep();
 
+    // Requested-token logprobs are collected by the sampler of a plain autoregressive pipeline; the
+    // speculative candidate-verification path never fills GenerationOutput::requested_token_logprobs.
+    bool supports_requested_token_logprobs(const GenerationConfig&) const override {
+        return false;
+    }
+
     void fail_pipeline(std::exception_ptr error) noexcept {
         _fail_pipeline(std::move(error));
     }
@@ -176,6 +182,12 @@ public:
                                                        is_validation_mode_enabled) {
         eagle_mode_enabled = true;
     };
+
+    // A main-only request (explicit num_assistant_tokens == 0) runs only the main model, so
+    // requested-token logprobs remain valid on it.
+    bool supports_requested_token_logprobs(const GenerationConfig& sampling_params) const override {
+        return sampling_params.num_assistant_tokens.has_value() && sampling_params.num_assistant_tokens.value() == 0;
+    }
 
     bool is_requests_empty();
 

@@ -170,6 +170,12 @@ public:
         return false;
     }
 
+    // Speculative/validation-mode pipelines publish through a path that cannot return requested-token
+    // logprobs; checked in add_request before enqueueing.
+    virtual bool supports_requested_token_logprobs(const GenerationConfig& sampling_params) const {
+        return true;
+    }
+
     virtual void initialize_prefix_cache(const SequenceGroup::Ptr& group) {
         if (m_scheduler->get_config().enable_prefix_caching) {
             m_scheduler->restore_cached_blocks(group);

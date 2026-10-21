@@ -584,9 +584,7 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  *                 Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
  * @param logprob_token_ids token IDs whose log-probability (normalized over the full vocabulary) is reported for each
  *                 generated position in GenerationOutput::requested_token_logprobs. Empty (default) disables the feature.
- *                 Can be set from a generation config file, via update_generation_config(), or the Python binding.
- *                 Requires greedy or multinomial sampling (no beam/tree search) without speculative decoding or parallel
- *                 sampling (num_return_sequences > 1); otherwise GenerationConfig::validate() rejects the configuration.
+ *                 Requires greedy or multinomial sampling without speculative decoding or parallel sampling; validate() rejects other combinations.
  *
  * @param repetition_penalty the parameter for repetition penalty. 1.0 means no penalty.
  * @param presence_penalty reduces absolute log prob if the token was generated at least once.

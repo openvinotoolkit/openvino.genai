@@ -324,9 +324,16 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     if (sampling_params_copy.eos_token_id == -1)
         sampling_params_copy.set_eos_token_id(m_generation_config.eos_token_id);
     sampling_params_copy.validate();
-    // Reject out-of-range requested logprob token ids before enqueueing: an id that fails only in the
-    // sampler during step() would be treated as a pipeline failure and poison every running request.
-    if (m_vocab_size > 0 && !sampling_params_copy.logprob_token_ids.empty()) {
+    if (!sampling_params_copy.logprob_token_ids.empty()) {
+        // A per-request config does not carry the pipeline's assistant settings, so validate() cannot
+        // reject speculative decoding here; enqueueing would fail in the step() error handler for every
+        // running request.
+        OPENVINO_ASSERT(supports_requested_token_logprobs(sampling_params_copy),
+                        "logprob_token_ids is not supported with speculative decoding");
+        // Reject out-of-range requested logprob token ids before enqueueing: an id that fails only in the
+        // sampler during step() would be treated as a pipeline failure and poison every running request.
+        OPENVINO_ASSERT(m_vocab_size > 0,
+                        "logprob_token_ids requires a model with a static vocabulary dimension");
         for (const auto token_id : sampling_params_copy.logprob_token_ids) {
             OPENVINO_ASSERT(token_id >= 0 && static_cast<size_t>(token_id) < m_vocab_size,
                             "logprob_token_id is out of vocabulary range: ", token_id);

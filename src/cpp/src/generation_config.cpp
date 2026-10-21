@@ -332,12 +332,10 @@ void GenerationConfig::validate() const {
 
     // Sampling strategies
 
-    OPENVINO_ASSERT(num_return_sequences == 1 || (is_multinomial() || is_beam_search()),
+    OPENVINO_ASSERT(num_return_sequences == 1 || (is_multinomial() || is_beam_search()), 
         "'num_return_sequences' can be more than 1 only in case of beam search or multinomial sampling, but got ", num_return_sequences);
 
-    // logprob_token_ids is collected on the greedy/multinomial single-sequence path only; beam/tree search and
-    // parallel sampling publish via a different route that never fills GenerationOutput::requested_token_logprobs,
-    // so reject the combination here rather than silently returning empty results.
+    // logprob_token_ids is collected only on the greedy/multinomial single-sequence path.
     if (!logprob_token_ids.empty()) {
         OPENVINO_ASSERT(!is_assisting_generation(),
             "logprob_token_ids is not supported with speculative decoding or prompt lookup decoding");
