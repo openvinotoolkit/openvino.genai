@@ -415,7 +415,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
         PerfMetrics::emplace_duration(vlm_perf_metrics[0].raw_metrics.chat_template_durations, template_start);
 
-        m_inputs_embedder->set_apply_chat_template_status(false);
+        m_inputs_embedder->set_apply_chat_template_status(false, true);
 
         size_t cache_size_before = prepare_prompt_ids(prompt, sampling_params[0]);
 
@@ -697,7 +697,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         );
         PerfMetrics::emplace_duration(vlm_perf_metrics[i].raw_metrics.chat_template_durations, template_start);
 
-        m_inputs_embedder->set_apply_chat_template_status(false);
+        m_inputs_embedder->set_apply_chat_template_status(false, true);
 
         // Snapshot the embedder's token cache so the newly added prompt slice can be recovered
         // after tokenization (used by the Omni Talker via original_prompt_ids_list).
