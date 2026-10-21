@@ -162,7 +162,9 @@ ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string&
 
 std::pair<ov::AnyMap, bool> extract_paired_input_props(const ov::AnyMap& external_properties);
 
-std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config);
+std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,
+                                      const ov::AnyMap& config,
+                                      const ExtensionList& extensions = {});
 
 void release_core_plugin(const std::string& device);
 
@@ -399,7 +401,7 @@ ExtensionList extract_extensions(ov::AnyMap& properties);
  *
  * @param properties Properties map that may contain the "extensions" key.
  */
-void extract_extensions_to_core(ov::AnyMap& properties);
+ExtensionList extract_extensions_to_core(ov::AnyMap& properties);
 
 void clear_false_prompt_lookup_from_config(ov::AnyMap& properties);
 
@@ -468,10 +470,16 @@ ov::genai::GenerationConfig get_greedy_config();
 ov::genai::GenerationConfig get_multinomial_config();
 
 /**
- * @brief Patches the chat template in the provided Tokenizer and
- * removes any implicit concatenation of adjacent multiline string literals.
+ * @brief Removes implicit concatenation of adjacent multiline string literals, which minja rejects.
  */
 void patch_chat_template_multiline_strings(Tokenizer& tokenizer);
+
+std::string join_multiline_string_literals(const std::string& chat_template);
+
+/**
+ * @brief Rewrites "x is undefined" as "not x is defined", since minja has no "undefined" test.
+ */
+std::string replace_is_undefined_tests(const std::string& chat_template);
 
 }  // namespace utils
 }  // namespace genai

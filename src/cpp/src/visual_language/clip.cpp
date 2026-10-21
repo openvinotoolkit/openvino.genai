@@ -282,7 +282,10 @@ void lanczos_resize(const clip_image_u8& img, clip_image_u8& dst, int target_wid
 }
 
 // llava-1.6 type of resize_and_pad (black by default)
-clip_image_u8 resize_and_pad_image(const clip_image_u8& image, const std::pair<int, int>& target_resolution, uint8_t pad_value) {
+clip_image_u8 resize_and_pad_image(const clip_image_u8& image,
+                                   const std::pair<int, int>& target_resolution,
+                                   uint8_t pad_value,
+                                   bool bilinear) {
     int target_width = target_resolution.first;
     int target_height = target_resolution.second;
 
@@ -300,7 +303,10 @@ clip_image_u8 resize_and_pad_image(const clip_image_u8& image, const std::pair<i
     }
 
     clip_image_u8 resized_image;
-    bicubic_resize(image, resized_image, new_width, new_height);
+    if (bilinear)
+        bilinear_resize(image, resized_image, new_width, new_height);
+    else
+        bicubic_resize(image, resized_image, new_width, new_height);
 
     clip_image_u8 padded_image;
     padded_image.nx = target_width;
@@ -529,4 +535,27 @@ std::vector<clip_image_u8> get_image_patches(
     }
 
     return patches;
+}
+
+std::pair<size_t, size_t> bounded_image_size(size_t height,
+                                             size_t width,
+                                             size_t factor,
+                                             size_t min_pixels,
+                                             size_t max_pixels) {
+    OPENVINO_ASSERT(height > 0 && width > 0 && factor > 0 && max_pixels > 0 && max_pixels >= min_pixels,
+                    "Invalid image resize dimensions or pixel limits");
+    const auto round = [factor](float value) {
+        return std::max(factor, size_t(std::round(value / float(factor))) * factor);
+    };
+    size_t h = round(float(height)), w = round(float(width));
+    if (h * w > max_pixels) {
+        const float beta = std::sqrt(float(height) * float(width) / float(max_pixels));
+        h = std::max(factor, size_t(std::floor(float(height) / beta / float(factor))) * factor);
+        w = std::max(factor, size_t(std::floor(float(width) / beta / float(factor))) * factor);
+    } else if (h * w < min_pixels) {
+        const float beta = std::sqrt(float(min_pixels) / (float(height) * float(width)));
+        h = size_t(std::ceil(float(height) * beta / float(factor))) * factor;
+        w = size_t(std::ceil(float(width) * beta / float(factor))) * factor;
+    }
+    return {h, w};
 }

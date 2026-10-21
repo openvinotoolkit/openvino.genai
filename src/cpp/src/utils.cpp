@@ -494,11 +494,11 @@ void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::str
     }
 }
 
-std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& properties) {
+std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& properties, const ExtensionList& extensions) {
     const auto gguf_props = gguf_utils::extract_gguf_properties(properties);
     const ov::AnyMap& filtered_properties = gguf_props.rest;
     if (is_gguf_model(model_dir)) {
-        return gguf_utils::read_gguf_model(model_dir, gguf_props);
+        return gguf_utils::read_gguf_model(model_dir, gguf_props, extensions);
     } else {
         std::filesystem::path model_path = model_dir;
 
@@ -1095,7 +1095,7 @@ ExtensionList extract_extensions(ov::AnyMap& properties) {
     return extensions;
 }
 
-void extract_extensions_to_core(ov::AnyMap& properties) {
+ExtensionList extract_extensions_to_core(ov::AnyMap& properties) {
     ExtensionList extensions = extract_extensions(properties);
     for (const auto& extension : extensions) {
         if (std::holds_alternative<std::filesystem::path>(extension)) {
@@ -1104,6 +1104,7 @@ void extract_extensions_to_core(ov::AnyMap& properties) {
             singleton_core().add_extension(std::get<std::shared_ptr<ov::Extension>>(extension));
         }
     }
+    return extensions;
 }
 
 void log_attention_backend(const std::string& attention_backend) {
@@ -1307,10 +1308,17 @@ ov::genai::GenerationConfig get_multinomial_config() {
 }
 
 void patch_chat_template_multiline_strings(Tokenizer& tokenizer) {
-    std::string chat_template = tokenizer.get_chat_template();
+    tokenizer.set_chat_template(join_multiline_string_literals(tokenizer.get_chat_template()));
+}
+
+std::string join_multiline_string_literals(const std::string& chat_template) {
     const std::regex multiline_string_concatenation{R"("[ \t]*\r?\n[ \t]*")"};
-    chat_template = std::regex_replace(chat_template, multiline_string_concatenation, "");
-    tokenizer.set_chat_template(chat_template);
+    return std::regex_replace(chat_template, multiline_string_concatenation, "");
+}
+
+std::string replace_is_undefined_tests(const std::string& chat_template) {
+    const std::regex var_is_undefined_pattern{R"((\b[\w\.]+)\s+is\s+undefined)"};
+    return std::regex_replace(chat_template, var_is_undefined_pattern, "not $1 is defined");
 }
 
 }  // namespace utils

@@ -6,6 +6,8 @@
 #include <optional>
 #include <random>
 
+#include "gguf_utils/gguf_tokenizer.hpp"
+#include "gguf_utils/gguf_utils.hpp"
 #include "lm_encoding.hpp"
 #include "lora/helper.hpp"
 #include "openvino/genai/text_streamer.hpp"
@@ -23,6 +25,9 @@
 #include "visual_language/vlm_chat_context.hpp"
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/vlm_utils.hpp"
+#ifdef ENABLE_GGUF
+#    include "gguf_utils/gguf_multimodal.hpp"
+#endif
 
 using namespace ov::genai;
 
@@ -46,7 +51,7 @@ void npu_auto_default_properties(ov::AnyMap& device_properties) {
     device_properties["AUTO"] = auto_properties;
 }
 
-}
+}  // namespace
 
 class VLMPipeline::VLMPipelineImpl : public VLMBackend{
     // A config to follow for text generation.
@@ -84,6 +89,7 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
 
     // if True, full history will be used as prompt on each chat generation
     bool m_use_full_chat_history = false;
+    std::weak_ptr<ChatHistoryInternalState> m_active_history;
     // It stores encoded images, videos and vision count in case when m_use_full_chat_history is true
     std::vector<ov::genai::EncodedImage> m_encoded_images;
     std::vector<ov::genai::EncodedVideo> m_encoded_videos;
@@ -95,6 +101,24 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
     std::string m_system_message;
     std::shared_ptr<VisionRegistry> m_vision_registry;
 private:
+    // Slice-before-matmul rewrites LM logits to be produced only for the last token.
+    // After this transformation, default path returns logits with seq_len == 1,
+    // i.e. [N, 1, vocab_size], not [N, conversation length, vocab_size].
+    void compile_language_model(const std::shared_ptr<ov::Model>& language_model,
+                                const std::string& device,
+                                const ov::AnyMap& properties) {
+        utils::apply_slice_before_matmul_transformation(language_model);
+        auto compiled =
+            utils::singleton_core().compile_model(language_model,
+                                                  device,
+                                                  utils::get_model_properties(properties, "language_model", device));
+        utils::print_compiled_model_properties(compiled, "VLM language model");
+        m_language = compiled.create_infer_request();
+        m_language.get_tensor("attention_mask").set_shape({1, 0});
+        if (m_adapter_controller)
+            m_adapter_controller->apply(m_language);
+    }
+
     void finalize_initialization(
         const std::shared_ptr<ov::Model>& language_model,
         const utils::KVAxesPosition& kv_pos
@@ -228,22 +252,78 @@ private:
             m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
         }
 
-        // Slice-before-matmul rewrites LM logits to be produced only for the last token.
-        // After this transformation, default path returns logits with seq_len == 1,
-        // i.e. [N, 1, vocab_size], not [N, conversation length, vocab_size].
-        utils::apply_slice_before_matmul_transformation(language_model);
-        const auto lm_properties = utils::get_model_properties(properties_copy, "language_model", device);
-        m_language = utils::singleton_core().compile_model(
-            language_model, device, lm_properties).create_infer_request();
-        m_language.get_tensor("attention_mask").set_shape({1, 0});
-        if (m_adapter_controller) {
-            // Initialize LoRA state before the first generation and reuse constructor-prepared tensors.
-            // Subsequent unchanged applies on this request can then skip state uploads.
-            m_adapter_controller->apply(m_language);
-        }
+        compile_language_model(language_model, device, properties_copy);
         finalize_initialization(language_model, kv_pos);
     }
 public:
+#ifdef ENABLE_GGUF
+    VLMPipelineImpl(const GGUFMultimodalModels& models,
+                    std::shared_ptr<InputsEmbedder> embedder,
+                    const GenerationConfig& generation_config,
+                    const std::string& device,
+                    const ov::AnyMap& properties)
+        : m_generation_config(generation_config),
+          m_vlm_config(models.vlm.config) {
+        m_inputs_embedder = std::move(embedder);
+        const auto kv_pos = utils::get_kv_axes_pos(models.language);
+        compile_language_model(models.language, device, properties);
+        finalize_initialization(models.language, kv_pos);
+    }
+
+    static std::shared_ptr<VLMBackend> create_gguf(const std::filesystem::path& models_dir,
+                                                   const std::string& device,
+                                                   ov::AnyMap properties,
+                                                   const ov::AnyMap& user_properties,
+                                                   const std::string& attention_backend) {
+        OPENVINO_ASSERT(device == "CPU", "GGUF multimodal generation is currently qualified on CPU only");
+        const auto it = properties.find(mmproj_path.name());
+        OPENVINO_ASSERT(it != properties.end(), "A language GGUF requires mmproj_path for VLMPipeline");
+        const auto projector = it->second.as<std::string>();
+        properties.erase(it);
+        auto gguf_properties = gguf_utils::extract_gguf_properties(properties);
+        OPENVINO_ASSERT(!gguf_properties.legacy_reader.value_or(false),
+                        "GGUF multimodal generation requires gguf_reader=FRONTEND");
+        properties = std::move(gguf_properties.rest);
+        utils::clear_false_prompt_lookup_from_config(properties);
+        utils::validate_vlm_model_properties(properties);
+        const auto extensions = utils::extract_extensions_to_core(properties);
+        auto models = read_gguf_multimodal(models_dir, projector, properties, extensions);
+        if (gguf_properties.enable_save_ov_model) {
+            utils::save_openvino_model(models.language, models_dir.string() + ".language.xml", false);
+            for (const auto& [name, model] : models.vlm.models)
+                utils::save_openvino_model(model, projector + "." + name + ".xml", false);
+        }
+        const auto scheduled =
+            utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+        const auto& plugin_properties = scheduled.first;
+        const auto generation_config = models.generation_config();
+        auto embedder = std::make_shared<InputsEmbedder>(models.vlm, models.tokenizer, device, plugin_properties);
+        const auto paged = [&](const std::shared_ptr<ov::Model>& language) {
+            return std::make_shared<VLMContinuousBatchingAdapter>(language,
+                                                                  embedder,
+                                                                  models.tokenizer,
+                                                                  models.vlm.config,
+                                                                  scheduled.second,
+                                                                  device,
+                                                                  plugin_properties,
+                                                                  generation_config);
+        };
+        if (utils::explicitly_requires_paged_attention(user_properties))
+            return paged(models.language);
+#if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
+        if (attention_backend == PA_BACKEND) {
+            // The paged attention conversion rewrites its model.
+            try {
+                return paged(models.language->clone());
+            } catch (const ov::Exception& exception) {
+                utils::log_paged_attention_fallback(exception);
+            }
+        }
+#endif
+        return std::make_shared<VLMPipelineImpl>(models, embedder, generation_config, device, plugin_properties);
+    }
+#endif
+
     VLMPipelineImpl(
         const std::filesystem::path& models_dir,
         const std::string& device,
@@ -621,7 +701,10 @@ public:
                                processed_chat_data.audio_encoding_durations.begin(),
                                processed_chat_data.audio_encoding_durations.end());
 
-        bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history;
+        const auto history_state = ChatHistoryInternalState::get_or_create(history, m_vision_registry);
+        bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history ||
+                                m_active_history.lock() != history_state;
+        m_active_history = history_state;
 
         if (use_full_history) {
             reset_language_state();
@@ -764,6 +847,7 @@ public:
     }
 
     void finish_chat() override {
+        m_active_history.reset();
         m_is_chat_conversation = false;
         m_image_id = 0;
         m_video_id = 0;
@@ -993,6 +1077,19 @@ VLMPipeline::VLMPipeline(
     auto start_time = std::chrono::steady_clock::now();
 
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
+    if (is_gguf_model(models_dir)) {
+#ifdef ENABLE_GGUF
+        m_pimpl =
+            VLMPipelineImpl::create_gguf(models_dir, device, std::move(properties), user_properties, attention_backend);
+        utils::log_attention_backend(m_pimpl->get_attention_backend());
+        m_pimpl->set_load_time(
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time)
+                .count());
+        return;
+#else
+        OPENVINO_THROW("GGUF support is disabled; rebuild GenAI with ENABLE_GGUF=ON");
+#endif
+    }
     utils::clear_false_prompt_lookup_from_config(properties);
     utils::validate_vlm_model_properties(properties);
     if (device == "NPU") {

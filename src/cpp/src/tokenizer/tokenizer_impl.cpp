@@ -851,8 +851,6 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
     OPENVINO_ASSERT(resolved_extra_context.is_object(),
                     "Extra context should be an object-like JsonContainer, got: ", resolved_extra_context.type_name());
 
-    auto minja_template = get_cached_minja_chat_template(chat_tpl);
-    
     minja::chat_template_inputs minja_inputs;
     minja_inputs.messages = history.get_messages();
     if (!resolved_tools.empty()) {
@@ -867,10 +865,23 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
         minja_inputs.extra_context.update(resolved_extra_context);
     }
     
+    const auto render = [&](const std::string& tpl) {
+        return get_cached_minja_chat_template(tpl)->apply(minja_inputs);
+    };
     std::string result;
     try {
-        result = minja_template->apply(minja_inputs);
+        result = render(chat_tpl);
     } catch (const std::exception& error) {
+        // minja lacks some Jinja constructs.
+        const auto rewritten = utils::join_multiline_string_literals(utils::replace_is_undefined_tests(chat_tpl));
+        if (rewritten != chat_tpl) {
+            try {
+                result = render(rewritten);
+            } catch (const std::exception&) {
+            }
+        }
+        if (!result.empty())
+            return result;
         OPENVINO_THROW("Minja failed to apply chat template. Possible solutions are\n"
                         "* Provide a simplified chat template with set_chat_template().\n"
                         "* Set apply_chat_template to false in GenerationConfig. "

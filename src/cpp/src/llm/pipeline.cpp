@@ -256,9 +256,9 @@ ov::genai::LLMPipeline::LLMPipeline(
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
     bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
-    utils::extract_extensions_to_core(properties);
+    const auto extensions = utils::extract_extensions_to_core(properties);
 
-    std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
+    std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties, extensions);
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
     if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
@@ -276,7 +276,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 #endif
         } catch (const ov::Exception& exception) {
             utils::log_paged_attention_fallback(exception);
-            model = utils::read_model(models_path, properties);
+            model = utils::read_model(models_path, properties, extensions);
         }
     }
 
@@ -299,14 +299,14 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
-    utils::extract_extensions_to_core(properties);
+    const auto extensions = utils::extract_extensions_to_core(properties);
     bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
 
     // The reader choice determines whether tokenizer metadata is available on the model.
     const auto gguf_properties = gguf_utils::extract_gguf_properties(properties);
 
     // Read model and create tokenizer once to avoid double I/O during pipeline construction.
-    std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
+    std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties, extensions);
     // For GGUF the frontend attaches tokenizer metadata to the model's rt_info, so build the
     // tokenizer from what was already read instead of re-opening the .gguf. Exceptions: the
     // legacy reader's model has no such rt_info, and enable_save_ov_model needs the source
@@ -336,7 +336,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 #endif
         } catch (const ov::Exception& exception) {
             utils::log_paged_attention_fallback(exception);
-            model = utils::read_model(models_path, properties);
+            model = utils::read_model(models_path, properties, extensions);
         }
     }
 

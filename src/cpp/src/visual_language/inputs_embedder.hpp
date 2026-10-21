@@ -36,6 +36,11 @@ struct NormalizedPrompt {
 
 class InputsEmbedder {
 public:
+    InputsEmbedder(const VLMModels& models,
+                   const Tokenizer& tokenizer,
+                   const std::string& device,
+                   const ov::AnyMap& properties);
+
     InputsEmbedder(const std::filesystem::path& model_dir,
                    const Tokenizer& tokenizer,
                    const std::string& device,
@@ -112,8 +117,8 @@ public:
     // gets last pruned prompt after vision token pruning
     std::string get_last_pruned_prompt(const std::string& original_prompt) const;
 
-    // set the apply_chat_template flag, which determines whether chat template should be applied for non-chat scenarios
-    void set_apply_chat_template_status(bool apply_chat_template);
+    // Configure template application, including prompts already formatted by the caller.
+    void set_apply_chat_template_status(bool apply_chat_template, bool prompt_is_templated = false);
 
     // finishes chat and clears a chat history
     void finish_chat();
@@ -177,6 +182,8 @@ private:
         // Chat history
         // True if chat template should be applied for non-chat scenario
         bool m_apply_chat_template = true;
+        // The caller may already have formatted the prompt with the chat template.
+        bool m_prompt_is_templated = false;
         // Finish reason of last generation for chat scenario
         ov::genai::GenerationStatus m_chat_generation_finish_status = ov::genai::GenerationStatus::RUNNING;
         // reflection of tokens contained in the kv cache
@@ -282,8 +289,9 @@ private:
             return m_cache_state;
         }
 
-        void set_apply_chat_template_status(bool apply_chat_template) {
+        void set_apply_chat_template_status(bool apply_chat_template, bool prompt_is_templated = false) {
             m_apply_chat_template = apply_chat_template;
+            m_prompt_is_templated = prompt_is_templated;
         }
 
         /**
@@ -324,6 +332,11 @@ private:
             const std::vector<EncodedVideo>& videos) const;
 
     protected:
+        IInputsEmbedder(const VLMModels& models,
+                        const Tokenizer& tokenizer,
+                        const std::string& device,
+                        const ov::AnyMap& properties);
+
         IInputsEmbedder(
             const VLMConfig& vlm_config,
             const std::filesystem::path& model_dir,

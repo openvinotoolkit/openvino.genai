@@ -82,9 +82,10 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
 
     utils::validate_vlm_model_properties(properties_without_draft_model);
 
-    utils::extract_extensions_to_core(properties_without_draft_model);
+    const auto extensions = utils::extract_extensions_to_core(properties_without_draft_model);
     auto model = utils::read_model(models_path,
-        utils::get_model_properties(properties_without_draft_model, "language_model"));
+        utils::get_model_properties(properties_without_draft_model, "language_model"),
+        extensions);
     auto properties_without_draft_model_without_gguf = gguf_utils::extract_gguf_properties(properties_without_draft_model).rest;
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
     auto tokenizer = ov::genai::Tokenizer(models_path, tokenizer_properties);
@@ -218,9 +219,10 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
 
     utils::validate_vlm_model_properties(properties_without_draft_model);
 
-    utils::extract_extensions_to_core(properties_without_draft_model);
+    const auto extensions = utils::extract_extensions_to_core(properties_without_draft_model);
     auto model = utils::read_model(models_path,
-        utils::get_model_properties(properties_without_draft_model, "language_model"));
+        utils::get_model_properties(properties_without_draft_model, "language_model"),
+        extensions);
     auto properties_without_draft_model_without_gguf = gguf_utils::extract_gguf_properties(properties_without_draft_model).rest;
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
 
@@ -520,6 +522,24 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     }
 
     m_impl->m_load_time_ms = get_load_time(start_time);
+}
+
+ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov::Model>& language_model,
+                                                       const std::shared_ptr<InputsEmbedder>& embedder,
+                                                       const Tokenizer& tokenizer,
+                                                       const SchedulerConfig& scheduler_config,
+                                                       const std::string& device,
+                                                       const ov::AnyMap& properties,
+                                                       const GenerationConfig& generation_config) {
+    const auto start = std::chrono::steady_clock::now();
+    m_impl = std::make_shared<ContinuousBatchingImpl>(language_model,
+                                                      embedder,
+                                                      tokenizer,
+                                                      scheduler_config,
+                                                      device,
+                                                      properties,
+                                                      generation_config);
+    m_impl->m_load_time_ms = get_load_time(start);
 }
 
 ov::genai::Tokenizer ContinuousBatchingPipeline::get_tokenizer() const{

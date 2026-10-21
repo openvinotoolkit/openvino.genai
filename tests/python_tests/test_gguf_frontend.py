@@ -22,6 +22,8 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 import openvino as ov
 import openvino_genai as genai
 
+from test_gguf_generated import llama_reference_tools
+
 from utils.comparation import compare_generation_results
 from utils.constants import extra_generate_kwargs, get_default_llm_properties
 from utils.hugging_face import (
@@ -304,3 +306,51 @@ def test_tiny_gguf_saved_ir(tiny_gguf_model, pipeline_type, tmp_path):
     del pipeline
     reloaded = create_ov_pipeline(tmp_path, pipeline_type=pipeline_type, ov_config=reference_properties())
     assert reloaded.generate(prompt, config) == expected
+
+
+@pytest.fixture(scope="module")
+def tiny_gguf_vlm_model(llama_reference_tools, tmp_path_factory):
+    from test_vlm_pipeline import _get_ov_model
+    from test_gguf_generated import run_reference_command
+
+    repo = "optimum-intel-internal-testing/tiny-random-gemma3"
+    revision = "0cc4c5a822bbc68aeb312fd789046463ca301d14"
+    source = Path(retry_request(lambda: snapshot_download(repo, revision=revision)))
+    build = llama_reference_tools[0].parent.parent
+    converter = build / "_deps" / "llama_cpp-src" / "convert_hf_to_gguf.py"
+    directory = tmp_path_factory.mktemp("gguf_vlm")
+    language, projector = directory / "model.gguf", directory / "mmproj.gguf"
+    for output, options in [(language, []), (projector, ["--mmproj"])]:
+        run_reference_command(
+            [sys.executable, str(converter), str(source), "--outfile", str(output), "--outtype", "f32", *options],
+            timeout=300,
+        )
+    return language, projector, _get_ov_model(repo)
+
+
+def test_gguf_vlm_reuses_optimum_pipeline(tiny_gguf_vlm_model):
+    language, projector, reference_dir = tiny_gguf_vlm_model
+    properties = reference_properties()
+    pipelines = [
+        genai.VLMPipeline(
+            language, "CPU", mmproj_path=str(projector), GGUF_READER="FRONTEND", ATTENTION_BACKEND=backend, **properties
+        )
+        for backend in ["SDPA", "PA"]
+    ]
+    reference = genai.VLMPipeline(reference_dir, "CPU", ATTENTION_BACKEND="SDPA", **properties)
+    image = ov.Tensor(np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8))
+    config = {"max_new_tokens": 8, "do_sample": False, "ignore_eos": True}
+    for images in [[image], [image, image]]:
+        results = [pipe.generate("Describe the image.", images=images, **config) for pipe in pipelines]
+        assert results[0].texts == results[1].texts
+        for pipe, result in zip(pipelines, results):
+            assert pipe.generate("Describe the image.", images=images, **config).texts == result.texts
+        assert reference.generate("Describe the image.", images=images, **config).texts
+
+
+def test_gguf_vlm_requires_frontend_and_projector(tiny_gguf_vlm_model):
+    language, projector, _ = tiny_gguf_vlm_model
+    with pytest.raises(RuntimeError, match="mmproj_path"):
+        genai.VLMPipeline(language, "CPU", GGUF_READER="FRONTEND")
+    with pytest.raises(RuntimeError, match="FRONTEND"):
+        genai.VLMPipeline(language, "CPU", mmproj_path=str(projector), GGUF_READER="LEGACY")

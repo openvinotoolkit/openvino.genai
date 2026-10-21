@@ -345,18 +345,9 @@ InputsEmbedderQwen3VL::InputsEmbedderQwen3VL(
     const ov::AnyMap device_config
 ) : InputsEmbedderQwen2VL(vlm_config, model_dir, tokenizer, device, device_config),
     m_use_patched_pos_model(!is_cpp_pos_embeds_fallback_requested()) {
-    auto pos_model = utils::singleton_core().read_model(
-        model_dir / "openvino_vision_embeddings_pos_model.xml");
-    if (m_use_patched_pos_model) {
-        pos_model = patch_weighted_sum_into_pos_model(pos_model);
-    }
-    auto pos_compiled = utils::singleton_core().compile_model(
-        pos_model, device, utils::get_model_properties(device_config, "vision_embeddings_pos", device));
-    m_ireq_queue_vision_embeddings_pos = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-        pos_compiled.get_property(ov::optimal_number_of_infer_requests),
-        [&pos_compiled]() -> ov::InferRequest {
-            return pos_compiled.create_infer_request();
-        });
+    compile_pos_model(utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_pos_model.xml"),
+                      device,
+                      device_config);
 }
 
 InputsEmbedderQwen3VL::InputsEmbedderQwen3VL(
@@ -370,16 +361,30 @@ InputsEmbedderQwen3VL::InputsEmbedderQwen3VL(
     m_use_patched_pos_model(!is_cpp_pos_embeds_fallback_requested()) {
     const auto& [pos_model_str, pos_weights] =
         utils::get_model_weights_pair(models_map, "vision_embeddings_pos");
-    auto pos_model = utils::singleton_core().read_model(pos_model_str, pos_weights);
+    compile_pos_model(utils::singleton_core().read_model(pos_model_str, pos_weights), device, device_config);
+}
+
+InputsEmbedderQwen3VL::InputsEmbedderQwen3VL(const VLMModels& models,
+                                             const Tokenizer& tokenizer,
+                                             const std::string& device,
+                                             const ov::AnyMap& properties)
+    : InputsEmbedderQwen2VL(models, tokenizer, device, properties),
+      m_use_patched_pos_model(!is_cpp_pos_embeds_fallback_requested()) {
+    compile_pos_model(models.at("vision_embeddings_pos"), device, properties);
+}
+
+void InputsEmbedderQwen3VL::compile_pos_model(std::shared_ptr<ov::Model> model,
+                                              const std::string& device,
+                                              const ov::AnyMap& properties) {
     if (m_use_patched_pos_model) {
-        pos_model = patch_weighted_sum_into_pos_model(pos_model);
+        model = patch_weighted_sum_into_pos_model(model);
     }
-    auto pos_compiled = utils::singleton_core().compile_model(
-        pos_model, device, utils::get_model_properties(device_config, "vision_embeddings_pos", device));
+    auto compiled = utils::singleton_core().compile_model(
+        model, device, utils::get_model_properties(properties, "vision_embeddings_pos", device));
     m_ireq_queue_vision_embeddings_pos = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-        pos_compiled.get_property(ov::optimal_number_of_infer_requests),
-        [&pos_compiled]() -> ov::InferRequest {
-            return pos_compiled.create_infer_request();
+        compiled.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled]() -> ov::InferRequest {
+            return compiled.create_infer_request();
         });
 }
 

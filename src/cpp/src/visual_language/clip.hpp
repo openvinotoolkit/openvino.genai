@@ -54,6 +54,12 @@ struct clip_image_f32 {
  */
 ov::Tensor clip_image_f32_to_tensor(const clip_image_f32& image);
 
+std::pair<size_t, size_t> bounded_image_size(size_t height,
+                                             size_t width,
+                                             size_t factor,
+                                             size_t min_pixels,
+                                             size_t max_pixels);
+
 void bicubic_resize(const clip_image_u8& img, clip_image_u8& dst, int target_width, int target_height);
 void bilinear_resize(const clip_image_u8& src, clip_image_u8& dst, int target_width, int target_height);
 void lanczos_resize(const clip_image_u8& src, clip_image_u8& dst, int target_width, int target_height);
@@ -70,7 +76,10 @@ std::vector<clip_image_u8> get_image_patches(
 
 std::pair<int, int> select_best_resolution(const std::pair<int, int> & original_size, const std::vector<std::pair<int, int>> & possible_resolutions);
 
-clip_image_u8 resize_and_pad_image(const clip_image_u8& image, const std::pair<int, int>& target_resolution, uint8_t pad_value = 0);
+clip_image_u8 resize_and_pad_image(const clip_image_u8& image,
+                                   const std::pair<int, int>& target_resolution,
+                                   uint8_t pad_value = 0,
+                                   bool bilinear = false);
 
 clip_image_u8 center_crop(const clip_image_u8& image, size_t crop_height, size_t crop_width);
 
