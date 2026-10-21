@@ -317,7 +317,9 @@ struct LoRAWeightGetterDefault {
             return;
         }
 
-        std::cerr << "[ WARNING ] There unused LoRA tensors. The result of generation can be not accurate. Check if a given adapter file is compatible with the base model.\n";
+        std::cerr << "[ WARNING ] There unused LoRA tensors for tensor name prefix \"" << prefix
+                  << "\" (foreign prefix \"" << foreign_prefix
+                  << "\"). The result of generation can be not accurate. Check if a given adapter file is compatible with the base model.\n";
 
         for(const auto& unused_name: unused) {
             std::cerr << "    Unused LoRA tensor: " << unused_name << "\n";
@@ -1783,7 +1785,8 @@ struct AdapterControllerImpl {
             auto adapter_impl = get_adapter_impl(adapter);
             weight_getters.emplace_back(
                 LoRAWeightGetterDefault<LoRAWeight, LoRANode>(&adapter_impl->get_tensors(),
-                                                              config.get_tensor_name_prefix().value_or(std::string())));
+                                                              config.get_tensor_name_prefix().value_or(std::string()),
+                                                              config.get_foreign_tensor_name_prefix().value_or(std::string())));
         }
         return weight_getters;
     }
