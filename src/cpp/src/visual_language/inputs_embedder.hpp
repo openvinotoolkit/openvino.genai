@@ -117,7 +117,7 @@ public:
     // gets last pruned prompt after vision token pruning
     std::string get_last_pruned_prompt(const std::string& original_prompt) const;
 
-    // Configure template application, including prompts already formatted by the caller.
+    // true: apply template; false: raw prompt; false,true: already templated, skip default special tokens.
     void set_apply_chat_template_status(bool apply_chat_template, bool prompt_is_templated = false);
 
     // finishes chat and clears a chat history
@@ -182,7 +182,7 @@ private:
         // Chat history
         // True if chat template should be applied for non-chat scenario
         bool m_apply_chat_template = true;
-        // The caller may already have formatted the prompt with the chat template.
+        // Already-templated input disables automatic special-token insertion by default.
         bool m_prompt_is_templated = false;
         // Finish reason of last generation for chat scenario
         ov::genai::GenerationStatus m_chat_generation_finish_status = ov::genai::GenerationStatus::RUNNING;
