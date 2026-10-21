@@ -136,8 +136,11 @@ std::unique_ptr<IKVCacheStore> try_open_plugin_store(const KVCacheDiskLayout& la
     options.properties = properties;
     options.property_count = 2;
 
+    // The ABI opens one store instance per namespace; the group (kv / la / snapshot path) is the namespace.
+    const OvKVCacheNamespace ns{reinterpret_cast<const uint8_t*>(group.data()), static_cast<uint64_t>(group.size())};
+
     OvKVCacheStoreOpenResult result{};
-    const OvKVCacheStatus status = provider->vtable->open(provider->self, nullptr, &options, &result);
+    const OvKVCacheStatus status = provider->vtable->open(provider->self, &ns, &options, &result);
     if (status != OV_KVCACHE_OK || result.status != OV_KVCACHE_OK || result.vtable == nullptr || result.store == nullptr) {
         GENAI_WARN("KV cache store plugin '%s' failed to open a store instance (status %d)",
                    config.store_library_path.c_str(),

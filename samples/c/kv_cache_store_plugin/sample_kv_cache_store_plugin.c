@@ -309,14 +309,19 @@ static const char* provider_name(void* self) {
 }
 
 /* --------------------------------------------------------------------------
- * Directory registry: shares one SampleStore per `directory` across open() calls, so a caller
- * that closes its handle and later reopens the same directory still finds what was written -
- * what any real on-disk backend would do. A NULL/empty directory shares one process-wide default
- * instance. Entries are never removed (same "nothing is ever deleted behind the host's back"
- * spirit as store_destroy being a no-op); this is a reference sample, not a long-running service.
+ * Directory registry: shares one SampleStore per (`directory`, namespace) across open() calls, so
+ * a caller that closes its handle and later reopens the same directory still finds what was
+ * written - what any real on-disk backend would do. A NULL/empty directory shares one
+ * process-wide default instance. The namespace is part of the key because the host sizes each
+ * store against its own capacity and checks stats() against it: KV blocks and linear-attention
+ * blocks (different namespaces) must not be counted in one store. Entries are never removed (same
+ * "nothing is ever deleted behind the host's back" spirit as store_destroy being a no-op); this is
+ * a reference sample, not a long-running service.
  * ----------------------------------------------------------------------- */
 typedef struct DirectoryStore {
     char* directory;
+    uint8_t* ns_bytes;
+    uint64_t ns_len;
     SampleStore* store;
     struct DirectoryStore* next;
 } DirectoryStore;
@@ -342,19 +347,23 @@ static OvKVCacheStatus provider_open(void* self,
     const char* directory;
     SampleStore* store = NULL;
     DirectoryStore* it;
-    (void)self;
-    (void)ns; /* A real plugin would honor capacity_bytes/properties too; this sample ignores them. */
+    uint64_t ns_len;
+    const uint8_t* ns_bytes;
+    (void)self; /* A real plugin would honor capacity_bytes/properties too; this sample ignores them. */
     if (out == NULL) {
         return OV_KVCACHE_ERR_INVALID_ARG;
     }
     memset(out, 0, sizeof(*out));
 
     directory = (opts != NULL && opts->directory != NULL) ? opts->directory : "";
+    ns_len = (ns != NULL && ns->bytes != NULL) ? ns->len : 0;
+    ns_bytes = ns_len > 0 ? ns->bytes : NULL;
 
     ensure_registry_mutex();
     sample_mutex_lock(&g_registry_mutex);
     for (it = g_directories; it != NULL; it = it->next) {
-        if (strcmp(it->directory, directory) == 0) {
+        if (strcmp(it->directory, directory) == 0 && it->ns_len == ns_len &&
+            (ns_len == 0 || memcmp(it->ns_bytes, ns_bytes, (size_t)ns_len) == 0)) {
             store = it->store;
             break;
         }
@@ -363,10 +372,12 @@ static OvKVCacheStatus provider_open(void* self,
         DirectoryStore* created = (DirectoryStore*)malloc(sizeof(DirectoryStore));
         SampleStore* fresh = created != NULL ? (SampleStore*)malloc(sizeof(SampleStore)) : NULL;
         char* directory_copy = fresh != NULL ? (char*)malloc(strlen(directory) + 1) : NULL;
-        if (created == NULL || fresh == NULL || directory_copy == NULL) {
+        uint8_t* ns_copy = (directory_copy != NULL && ns_len > 0) ? (uint8_t*)malloc((size_t)ns_len) : NULL;
+        if (created == NULL || fresh == NULL || directory_copy == NULL || (ns_len > 0 && ns_copy == NULL)) {
             free(created);
             free(fresh);
             free(directory_copy);
+            free(ns_copy);
             sample_mutex_unlock(&g_registry_mutex);
             out->status = OV_KVCACHE_ERR_CAPACITY;
             return out->status;
@@ -374,7 +385,12 @@ static OvKVCacheStatus provider_open(void* self,
         fresh->head = NULL;
         sample_mutex_init(&fresh->mutex);
         strcpy(directory_copy, directory);
+        if (ns_len > 0) {
+            memcpy(ns_copy, ns_bytes, (size_t)ns_len);
+        }
         created->directory = directory_copy;
+        created->ns_bytes = ns_copy;
+        created->ns_len = ns_len;
         created->store = fresh;
         created->next = g_directories;
         g_directories = created;

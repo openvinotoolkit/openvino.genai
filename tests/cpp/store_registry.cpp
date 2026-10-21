@@ -170,3 +170,25 @@ TEST(TestStoreRegistry, LoadsAndUsesTheStandaloneSampleThirdPartyPlugin) {
     ASSERT_NE(store, nullptr);
     expect_store_is_usable(*store);
 }
+
+// The ABI opens one store per namespace, so blocks of different groups must not be counted together.
+TEST(TestStoreRegistry, SampleThirdPartyPluginKeepsGroupsInSeparateStores) {
+    const std::optional<std::string> library_path = find_sample_plugin_library();
+    if (!library_path.has_value()) {
+        GTEST_SKIP() << "samples/c/kv_cache_store_plugin was not built (requires -DENABLE_SAMPLES=ON)";
+    }
+
+    CacheOffloadConfig config = make_config();
+    config.store_library_path = *library_path;
+    config.store_provider_name = "sample-in-memory";
+    config.allow_untrusted_store_plugin = true;
+
+    auto first = open_kv_cache_store(make_layout(), config, "CPU", "namespace_test_first");
+    auto second = open_kv_cache_store(make_layout(), config, "CPU", "namespace_test_second");
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+
+    ASSERT_TRUE(first->write_block(7, make_block(/*seed=*/1)));
+    EXPECT_EQ(first->get_num_free_blocks(), NUM_BLOCKS - 1);
+    EXPECT_EQ(second->get_num_free_blocks(), NUM_BLOCKS);
+}
