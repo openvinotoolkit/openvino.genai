@@ -38,6 +38,12 @@ ov::genai::ProcessorConfig::ProcessorConfig(const nlohmann::json& parsed) {
     read_json_param(parsed, "temporal_patch_size", temporal_patch_size);
     read_json_param(parsed, "merge_size", merge_size);
 
+    // Setting DeepSeek-OCR-2 config params
+    read_json_param(parsed, "tile_size", tile_size);
+    read_json_param(parsed, "min_patches", min_patches);
+    read_json_param(parsed, "max_patches", max_patches);
+    read_json_param(parsed, "background_color", background_color);
+
     // Setting qwen3_vl config params
     // qwen3_vl uses size.shortest_edge and size.longest_edge instead of min_pixels and max_pixels
     if (!parsed.contains("min_pixels") && !parsed.contains("max_pixels") ||
@@ -80,5 +86,8 @@ ov::genai::ProcessorConfig ov::genai::ProcessorConfig::from_any_map(
     read_anymap_param(config_map, "max_image_tokens", extracted_config.max_image_tokens);
     read_anymap_param(config_map, "pooling_kernel_size", extracted_config.pooling_kernel_size);
     read_anymap_param(config_map, "max_soft_tokens", extracted_config.max_soft_tokens);
+    read_anymap_param(config_map, "image_size", extracted_config.image_size);
+    read_anymap_param(config_map, "window_kernel_size", extracted_config.window_kernel_size);
+    read_anymap_param(config_map, "merge_kernel_size", extracted_config.merge_kernel_size);
     return extracted_config;
 }

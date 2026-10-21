@@ -22,22 +22,22 @@ class ASRHook:
     def get_time_list(self):
         first_token_latency = 0
         for data in self.time_data:
-            if 'enc_token_time' in data:
-                first_token_latency += data['enc_token_time']
-            if 'dec_token_time' in data:
-                first_token_latency += data['dec_token_time'][0]
-                self.tm_list.extend(copy.deepcopy(data['dec_token_time'][1:]))
+            if "enc_token_time" in data:
+                first_token_latency += data["enc_token_time"]
+            if "dec_token_time" in data:
+                first_token_latency += data["dec_token_time"][0]
+                self.tm_list.extend(copy.deepcopy(data["dec_token_time"][1:]))
         self.tm_list.insert(0, first_token_latency)
         return self.tm_list
 
     def get_time_infer_list(self):
         first_infer_latency = 0
         for data in self.time_data:
-            if 'enc_infer_time' in data:
-                first_infer_latency += data['enc_infer_time']
-            if 'dec_infer_time' in data:
-                first_infer_latency += data['dec_infer_time'][0]
-                self.tm_infer_list.extend(copy.deepcopy(data['dec_infer_time'][1:]))
+            if "enc_infer_time" in data:
+                first_infer_latency += data["enc_infer_time"]
+            if "dec_infer_time" in data:
+                first_infer_latency += data["dec_infer_time"][0]
+                self.tm_infer_list.extend(copy.deepcopy(data["dec_infer_time"][1:]))
         self.tm_infer_list.insert(0, first_infer_latency)
         return self.tm_infer_list
 
@@ -132,8 +132,9 @@ class ASRHook:
             text_encoder_token_time = t2 - t1
             if self.enc_infer_count > 0:
                 prev_loop_data = self.time_data[self.enc_infer_count - 1]
-                prev_loop_data['enc_token_time'] = text_encoder_token_time
+                prev_loop_data["enc_token_time"] = text_encoder_token_time
             return r
+
         pipe.model.encoder.forward = my_text_encoder
 
     def new_text_encoder_request(self, pipe):
@@ -145,10 +146,11 @@ class ASRHook:
             r = old_text_encoder_request(*args, **kwargs)
             t2 = time.time()
             text_encoder_infer_time = t2 - t1
-            loop_data['enc_infer_time'] = text_encoder_infer_time
+            loop_data["enc_infer_time"] = text_encoder_infer_time
             self.time_data.append(loop_data)
             self.enc_infer_count += 1
             return r
+
         pipe.model.encoder.request = my_text_encoder_request
 
     def new_text_sample(self, pipe):
@@ -162,6 +164,7 @@ class ASRHook:
             r = old_generate(**kwargs)
             self.set_decoder_time_data()
             return r
+
         pipe.model.generate = my_generate
 
     def set_decoder_time_data(self):

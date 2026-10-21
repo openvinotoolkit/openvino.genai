@@ -178,6 +178,26 @@ def test_whisper_language_validate_rejects_unknown():
         config.validate()
 
 
+def test_num_assistant_tokens_zero_and_tree_search_validation():
+    # Explicitly disabling assistant tokens should still be a valid non-assisting setup.
+    disabled_assistant_cfg = GenerationConfig(max_new_tokens=1, num_assistant_tokens=0)
+    disabled_assistant_cfg.validate()
+
+    # Tree search now requires explicit, positive num_assistant_tokens.
+    missing_assistant_cfg = GenerationConfig(max_new_tokens=10, branching_factor=2, tree_depth=1)
+    with pytest.raises(RuntimeError):
+        missing_assistant_cfg.validate()
+
+    zero_assistant_tree_cfg = GenerationConfig(
+        max_new_tokens=10, branching_factor=2, tree_depth=1, num_assistant_tokens=0
+    )
+    with pytest.raises(RuntimeError):
+        zero_assistant_tree_cfg.validate()
+
+    valid_tree_cfg = GenerationConfig(max_new_tokens=10, branching_factor=2, tree_depth=1, num_assistant_tokens=2)
+    valid_tree_cfg.validate()
+
+
 def load_genai_generation_config_from_file(configs: list[tuple], temp_path):
     for json_file in temp_path.glob("*.json"):
         json_file.unlink()
@@ -209,3 +229,16 @@ def test_multiple_eos_are_read_as_stop_token_ids(tmp_path):
 
     assert generation_config.eos_token_id == 2
     assert generation_config.stop_token_ids == { 2, 32000, 32007 }
+
+
+# HF GenerationConfig documents stop_strings as `str or list[str]`
+@pytest.mark.parametrize("stop_strings", ["<|end|>", ["<|end|>"], ["<|end|>", "###"]])
+def test_stop_strings_are_read_from_json(tmp_path, stop_strings):
+    configs = [
+        ({"eos_token_id": 2, "stop_strings": stop_strings}, "generation_config.json"),
+    ]
+
+    generation_config = load_genai_generation_config_from_file(configs, tmp_path)
+
+    expected = {stop_strings} if isinstance(stop_strings, str) else set(stop_strings)
+    assert generation_config.stop_strings == expected

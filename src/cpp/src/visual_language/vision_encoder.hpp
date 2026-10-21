@@ -15,9 +15,10 @@
 
 namespace ov::genai {
 
-enum class VisionType {
+enum class ModalityType {
     IMAGE,
-    VIDEO
+    VIDEO,
+    AUDIO
 };
 
 /// @brief A pair describing image size.
@@ -26,6 +27,18 @@ struct ImageSize {
     size_t height = 0;
     /// @brief Width of a corresponding image.
     size_t width = 0;
+};
+
+/// @brief Slices grid layout: how a source image is adaptively split into slices (rows x cols).
+struct SlicesGrid {
+    /// @brief Number of slice rows.
+    size_t rows = 0;
+    /// @brief Number of slice columns.
+    size_t cols = 0;
+
+    bool has_slices() const {
+        return rows != 0 && cols != 0;
+    }
 };
 
 
@@ -65,6 +78,14 @@ struct EncodedImage {
     /// @brief Resampled image, used only by MiniCPM.
     ResampledImage resampled_image;
 
+    /// @brief Per-crop sizes in patches (thumbnail first, then detail slices by rows).
+    /// Used only by MiniCPM-V 4.7.
+    std::vector<ImageSize> crop_sizes;
+
+    /// @brief Slices grid layout (rows, cols), zeroed if image is not sliced.
+    /// Used only by MiniCPM-V 4.7.
+    SlicesGrid slices_grid;
+
     /// @brief Number of image tokens required to append to a normalized prompt
     size_t num_image_tokens = 0;
 };
@@ -75,17 +96,35 @@ struct EncodedVideo {
     ov::Tensor video_features;
 
     /// @brief Number of video tokens required to append to a normalized prompt
-    size_t num_video_tokens;
+    size_t num_video_tokens = 0;
 
     /// @brief A size of an image used to compute embeddings for
     /// divided by ProcessorConfig's patch_size.
     ImageSize resized_source_size;
 
     /// @brief A number of encoded frames.
-    size_t frame_num;
+    size_t frame_num = 0;
+
+    /// @brief Per-crop sizes in patches of a single frame (thumbnail first, then detail slices by rows).
+    /// Each video frame has the same crop sizes layout. Used only by MiniCPM-V 4.7.
+    std::vector<ImageSize> crop_sizes;
+
+    /// @brief Slices grid layout of a single frame (rows, cols), zeroed if frame is not sliced.
+    /// Used only by MiniCPM-V 4.7.
+    SlicesGrid slices_grid;
 
     /// @brief Video metadata, used for video input processing and prompt normalization.
     VideoMetadata metadata;
+};
+
+/// @brief Encoder output for one audio. Empty inputs stay in the list as zero-token entries,
+/// otherwise every later `<ov_genai_audio_N>` index would shift.
+struct EncodedAudio {
+    /// @brief Audio encoder output. Shape [num_audio_tokens, hidden_size], element type f32.
+    ov::Tensor audio_features;
+
+    /// @brief Placeholder count this audio expands to. Equals audio_features.get_shape()[0].
+    size_t num_audio_tokens = 0;
 };
 
 /// @brief A class used to infer embeddings of an image using
@@ -158,8 +197,7 @@ protected:
     void resolve_processor_configs(const std::filesystem::path& config_dir_path);
     
     VisionEncoder() = default;
-    // Config-only constructor tag for subclasses where vision encoder is merged
-    // into a single model (loads only config files, skips model compilation)
+    // Loads processor configuration while deferring model compilation to derived encoders.
     struct ConfigOnlyTag {};
     VisionEncoder(const std::filesystem::path& config_dir, ConfigOnlyTag);
     VisionEncoder(const ModelsMap& models_map, const std::filesystem::path& config_dir, ConfigOnlyTag);

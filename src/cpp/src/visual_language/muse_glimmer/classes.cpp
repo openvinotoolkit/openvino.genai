@@ -356,7 +356,7 @@ NormalizedPrompt InputsEmbedderMuseGlimmer::normalize_prompt(const std::string& 
 
     std::vector<size_t> videos_sequence;
     std::tie(unified_prompt, videos_sequence) =
-        normalize(unified_prompt, VIDEO_SENTINEL, VIDEO_SENTINEL, base_video_id, videos.size(), VisionType::VIDEO);
+        normalize(unified_prompt, VIDEO_SENTINEL, VIDEO_SENTINEL, base_video_id, videos.size(), ModalityType::VIDEO);
     searched_pos = 0;
     const size_t temporal_patch_size = m_vision_encoder->get_video_processor_config().temporal_patch_size;
     for (const size_t new_video_id : videos_sequence) {
@@ -416,7 +416,7 @@ ov::Tensor InputsEmbedderMuseGlimmer::get_inputs_embeds(
     ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
-    ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
+    ov::Tensor text_embeds = get_text_embedding(req, input_ids, metrics);
 
     if (image_embeds.empty() && videos_sequence.empty()) {
         ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());

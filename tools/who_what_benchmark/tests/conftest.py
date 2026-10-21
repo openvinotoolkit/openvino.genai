@@ -34,6 +34,15 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "Qwen/Qwen3-Reranker-0.6B",
         "convert_args": ["--trust-remote-code", "--task", "text-generation"],
     },
+    "tiny-random-Phi3ForCausalLM": {
+        "name": "optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM",
+        "convert_args": ["--trust-remote-code", "--task", "text-generation"],
+    },
+    "Qwen2.5-0.5B-Instruct": {
+        "name": "Qwen/Qwen2.5-0.5B-Instruct",
+        "cache_name": "Qwen2.5-0.5B-Instruct-v2",
+        "convert_args": ["--trust-remote-code"],
+    },
     "tiny-random-qwen2vl": {
         "name": "optimum-intel-internal-testing/tiny-random-qwen2vl",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
@@ -41,6 +50,14 @@ MODELS: Dict[str, Dict[str, Any]] = {
     "tiny-random-qwen3-omni": {
         "name": "optimum-intel-internal-testing/tiny-random-qwen3-omni",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
+    },
+    "tiny-random-gemma4": {
+        "name": "optimum-intel-internal-testing/tiny-random-gemma4",
+        "convert_args": ["--task", "image-text-to-text"],
+    },
+    "tiny-random-fun-asr": {
+        "name": "optimum-intel-internal-testing/tiny-random-fun-asr",
+        "convert_args": ["--weight-format", "fp32"],
     },
     "tiny-random-llava-next-video": {
         "name": "optimum-intel-internal-testing/tiny-random-llava-next-video",
@@ -63,6 +80,7 @@ MODELS: Dict[str, Dict[str, Any]] = {
     "tiny-random-flux": {"name": "optimum-intel-internal-testing/tiny-random-flux", "convert_args": []},
     "tiny-random-flux-fill": {"name": "optimum-intel-internal-testing/tiny-random-flux-fill", "convert_args": []},
     "tiny-random-ltx-video": {"name": "optimum-intel-internal-testing/tiny-random-ltx-video", "convert_args": []},
+    "tiny-random-ltx2": {"name": "optimum-intel-internal-testing/tiny-random-ltx2", "convert_args": []},
     "tiny-videochat-flash-qwen": {
         "name": "optimum-intel-internal-testing/tiny-videochat-flash-qwen",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
@@ -74,6 +92,18 @@ MODELS: Dict[str, Dict[str, Any]] = {
     "Kokoro-82M": {
         "name": "hexgrad/Kokoro-82M",
         "convert_args": ["--trust-remote-code"],
+    },
+    "Qwen3-TTS-12Hz-1.7B-VoiceDesign": {
+        "name": "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+        "convert_args": ["--trust-remote-code", "--weight-format", "fp32"],
+    },
+    "Qwen3-TTS-12Hz-1.7B-CustomVoice": {
+        "name": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+        "convert_args": ["--trust-remote-code", "--weight-format", "fp32"],
+    },
+    "Qwen3-TTS-12Hz-0.6B-Base": {
+        "name": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+        "convert_args": ["--trust-remote-code", "--weight-format", "fp32"],
     },
     "tiny-random-qwen3-vl-embedding": {
         "name": "optimum-intel-internal-testing/tiny-random-qwen3-vl-embedding",
@@ -119,7 +149,8 @@ def convert_model(model_name: str) -> str:
     model_id = parts[1]
 
     convert_args = MODELS[model_id]["convert_args"]
-    model_path = Path(models_dir) / f"wwb_{model_id}"
+    cache_name = MODELS[model_id].get("cache_name", model_id)
+    model_path = Path(models_dir) / f"wwb_{cache_name}"
 
     manager = AtomicDownloadManager(model_path)
 

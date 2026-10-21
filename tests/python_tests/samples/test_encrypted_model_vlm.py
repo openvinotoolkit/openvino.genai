@@ -11,7 +11,8 @@ from test_utils import run_sample
 
 
 class TestEncryptedVLM:
-    @pytest.mark.llm
+    @pytest.mark.vlm
+    @pytest.mark.qwen3_vl
     @pytest.mark.samples
     @pytest.mark.skipif(
         sys.platform == "darwin" and platform.machine() == "arm64",

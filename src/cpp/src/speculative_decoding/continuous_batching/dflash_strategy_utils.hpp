@@ -18,6 +18,17 @@ namespace ov::genai::dflash_cb {
 
 inline constexpr size_t DEFAULT_NUM_ASSISTANT_TOKENS = 5;
 
+inline void add_draft_assistant_token_headroom(GenerationConfig& draft_config, const GenerationConfig& config) {
+    const size_t assistant_tokens = config.num_assistant_tokens.value();
+    if (config.max_new_tokens != SIZE_MAX) {
+        if (config.max_new_tokens < SIZE_MAX - assistant_tokens) {
+            draft_config.max_new_tokens = config.max_new_tokens + assistant_tokens;
+        }
+    } else if (config.max_length != SIZE_MAX && config.max_length < SIZE_MAX - assistant_tokens) {
+        draft_config.max_length = config.max_length + assistant_tokens;
+    }
+}
+
 inline void copy_tensor_bytes(const ov::Tensor& src, ov::Tensor& dst) {
     OPENVINO_ASSERT(src.get_element_type() == dst.get_element_type(),
                     "DFlash hidden state copy requires matching tensor element types.");
@@ -131,9 +142,27 @@ inline void ensure_num_assistant_tokens_is_set(GenerationConfig& config) {
                     "DFlash CB/PA only supports num_assistant_tokens; assistant_confidence_threshold must be 0.f.");
     OPENVINO_ASSERT(config.max_ngram_size == 0,
                     "DFlash CB/PA does not support prompt lookup decoding; max_ngram_size must be 0.");
-    if (config.num_assistant_tokens == 0) {
+    if (!config.num_assistant_tokens.has_value() || config.num_assistant_tokens.value() == 0) {
         config.num_assistant_tokens = DEFAULT_NUM_ASSISTANT_TOKENS;
     }
+}
+
+inline void ensure_vlm_generation_config(const GenerationConfig& config) {
+    // Keep generic DFlash decoding behavior unchanged. These checks cover only
+    // VLM representation/output modes that cannot be expressed faithfully with
+    // row-aligned multimodal prompt IDs.
+    OPENVINO_ASSERT(config.pruning_ratio == 0,
+                    "DFlash VLM does not support visual token pruning.");
+    OPENVINO_ASSERT(!config.echo && config.logprobs == 0,
+                    "DFlash VLM does not support echo or prompt logprobs for row-aligned multimodal prompt IDs.");
+    OPENVINO_ASSERT(!config.return_omni_outputs,
+                    "DFlash VLM does not support Omni intermediate outputs.");
+}
+
+inline std::vector<int64_t> build_placeholder_prompt_ids(size_t prompt_length, int64_t placeholder_id) {
+    OPENVINO_ASSERT(prompt_length > 0, "DFlash VLM logical prompt length must be greater than 0.");
+    OPENVINO_ASSERT(placeholder_id >= 0, "DFlash VLM requires a valid placeholder token ID.");
+    return std::vector<int64_t>(prompt_length, placeholder_id);
 }
 
 inline size_t linear_attention_checkpoint_block_count(size_t num_assistant_tokens) {
@@ -151,9 +180,12 @@ inline size_t adjusted_linear_attention_block_count(size_t current_block_count,
     return std::max(current_block_count, linear_attention_checkpoint_block_count(num_assistant_tokens));
 }
 
-inline ov::Tensor build_draft_input_ids(int64_t seed_token, int64_t mask_token_id, size_t candidate_count) {
+inline ov::Tensor build_draft_input_ids(int64_t seed_token,
+                                        int64_t mask_token_id,
+                                        size_t candidate_count,
+                                        size_t candidate_position_offset = 1) {
     OPENVINO_ASSERT(candidate_count > 0, "DFlash candidate_count must be greater than 0.");
-    const size_t draft_input_length = candidate_count + 1;
+    const size_t draft_input_length = candidate_count + candidate_position_offset;
     ov::Tensor input_ids(ov::element::i64, {1, draft_input_length});
     auto* data = input_ids.data<int64_t>();
     data[0] = seed_token;
@@ -163,9 +195,11 @@ inline ov::Tensor build_draft_input_ids(int64_t seed_token, int64_t mask_token_i
 
 inline ov::Tensor build_draft_position_ids(size_t committed_context_length,
                                            size_t hidden_delta_length,
-                                           size_t candidate_count) {
+                                           size_t candidate_count,
+                                           size_t candidate_position_offset = 1) {
     OPENVINO_ASSERT(candidate_count > 0, "DFlash candidate_count must be greater than 0.");
-    ov::Tensor position_ids(ov::element::i64, {1, hidden_delta_length + candidate_count + 1});
+    ov::Tensor position_ids(ov::element::i64,
+                            {1, hidden_delta_length + candidate_count + candidate_position_offset});
     auto* data = position_ids.data<int64_t>();
     std::iota(data, data + position_ids.get_size(), static_cast<int64_t>(committed_context_length));
     return position_ids;
@@ -173,9 +207,11 @@ inline ov::Tensor build_draft_position_ids(size_t committed_context_length,
 
 inline ov::Tensor build_draft_attention_mask(size_t committed_context_length,
                                              size_t hidden_delta_length,
-                                             size_t candidate_count) {
+                                             size_t candidate_count,
+                                             size_t candidate_position_offset = 1) {
     OPENVINO_ASSERT(candidate_count > 0, "DFlash candidate_count must be greater than 0.");
-    const size_t attention_mask_length = committed_context_length + hidden_delta_length + candidate_count + 1;
+    const size_t attention_mask_length =
+        committed_context_length + hidden_delta_length + candidate_count + candidate_position_offset;
     ov::Tensor attention_mask(ov::element::i64, {1, attention_mask_length});
     std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), 1);
     return attention_mask;
@@ -216,13 +252,6 @@ inline ValidationAccounting validation_accounting(size_t draft_generated,
     const size_t produced_by_target = target_generated_len - generated_before_draft;
     const size_t accepted = produced_by_target > 0 ? std::min(draft_generated, produced_by_target - 1) : 0;
     return {accepted, draft_generated - accepted, true};
-}
-
-inline size_t linear_attention_checkpoint_slot_for_validation(const ValidationAccounting& accounting,
-                                                              bool validation_input_includes_seed_token) {
-    OPENVINO_ASSERT(accounting.target_extended,
-                    "Cannot select a linear attention checkpoint when target did not extend the sequence.");
-    return accounting.accepted + (validation_input_includes_seed_token ? 1 : 0);
 }
 
 }  // namespace ov::genai::dflash_cb

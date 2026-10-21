@@ -94,7 +94,7 @@ void process_whisper_timestamp_logits(ov::Tensor& logits,
         }
     }
 
-    auto tokens = ov::genai::log_softmax(logits, 0);
+    auto tokens = ov::genai::log_softmax(logits, batch_idx);
     float timestamp_exp_prov_sum = 0;
 
     for (size_t i = timestamp_begin; i < vocab_size; i++) {
@@ -102,7 +102,7 @@ void process_whisper_timestamp_logits(ov::Tensor& logits,
     }
     float timestamp_logprob = std::log(timestamp_exp_prov_sum);
 
-    auto max_logprob_token = std::max_element(tokens.begin(), tokens.end(), [](const Token& left, const Token& right) {
+    auto max_logprob_token = std::max_element(tokens.begin(), tokens.begin() + timestamp_begin, [](const Token& left, const Token& right) {
         return left.m_log_prob < right.m_log_prob;
     });
 

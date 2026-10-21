@@ -106,7 +106,7 @@ wwb --target-model qwen2-vl-7b-Instruct --gt-data qwen_video_test/gt.csv --model
 optimum-cli export openvino -m SimianLuo/LCM_Dreamshaper_v7 --weight-format int8 sd-lcm-int8
 # Collect the references and save the mapping in the .csv file.
 # Reference images will be stored in the "reference" subfolder under the same path with .csv.
-wwb --base-model SimianLuo/LCM_Dreamshaper_v7--gt-data lcm_test/gt.csv --model-type text-to-image --hf
+wwb --base-model SimianLuo/LCM_Dreamshaper_v7 --gt-data lcm_test/gt.csv --model-type text-to-image --hf
 # Compute the metric
 # Target images will be stored in the "target" subfolder under the same path with .csv.
 wwb --target-model sd-lcm-int8 --gt-data lcm_test/gt.csv --model-type text-to-image --genai
@@ -207,6 +207,32 @@ wwb --target-model ltx-video-model --gt-data ltx_lora_test/gt.csv --model-type t
 wwb --target-model ltx-video-model --gt-data ltx_lora_test/gt.csv --model-type text-to-video --adapters path/to/lora.safetensors --alphas 0.9 --genai --empty_adapters
 ```
 
+### Compare Image-to-video models
+
+Every sample is conditioned on an input image in addition to the prompt. By default the conditioning images come from the [paint-by-inpaint/PIPE](https://huggingface.co/datasets/paint-by-inpaint/PIPE) dataset, so no extra setup is needed.
+
+```sh
+# Export model to OpenVINO, you can specify weight format with --weight-format option, for example --weight-format fp32/fp16/int8
+optimum-cli export openvino -m Lightricks/LTX-Video --weight-format fp32 ltx-video-model
+# Collect the references and save the mapping in the .csv file.
+# Reference videos will be stored in the "reference" subfolder under the same path with .csv.
+wwb --base-model Lightricks/LTX-Video --gt-data i2v_test/gt.csv --model-type image-to-video --hf
+# Compute the metric
+# Target video will be stored in the "target" subfolder under the same path with .csv.
+# compute metrics with optimum-intel
+wwb --target-model ltx-video-model --gt-data i2v_test/gt.csv --model-type image-to-video --output ltx_i2v_optimum
+# compute metrics with GenAI
+wwb --target-model ltx-video-model --gt-data i2v_test/gt.csv --model-type image-to-video --genai --output ltx_i2v_genai
+```
+
+To condition on your own images, point `--image-dir` at the directory holding them. Relative filenames in the test data's `images`/`image` column are resolved against it; if the column is missing, the images are looked up as `0.png`, `1.png`, ... matching the prompt order.
+
+```sh
+wwb --base-model Lightricks/LTX-Video --gt-data i2v_test/gt.csv --model-type image-to-video --image-dir path/to/images --hf
+```
+
+LoRA adapters work the same way as for text-to-video, via `--adapters`/`--alphas` (and `--empty_adapters` to compare against a plain baseline).
+
 ### Compare Speech-generation models
 
 #### SpeechT5
@@ -259,14 +285,114 @@ wwb --target-model ov_Kokoro-82M --gt-data kokoro_test/gt.csv --model-type speec
 
 For Kokoro, `--speech-voice` is optional. If not specified, it will default to `"af_heart"`. For *optimum* and *genai* modes, you can alternatively use `--speaker_embeddings <model>/voices/<voice>.bin`.
 
+#### Qwen3 TTS
 
+Before exporting models, install extra dependencies:
+```sh
+pip install .[qwen3_tts]
+```
+
+**Note**: The below commands demonstrate export & run commands that maximize similarity scores with `--hf` (native `qwen-tts` pipeline) results.
+* OpenVINO models exported using `--weight-format fp32`
+* For Optimum & GenAI, `--ov-config` points to `kvcache_f32.json`, which contains: `{"KV_CACHE_PRECISION": "f32"}`
+
+##### Qwen3 TTS Voice Design
+```sh
+# Export
+optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign --weight-format fp32 --trust-remote-code qwen3_tts_voicedesign_ov
+
+# Collect HF reference
+wwb --model-type speech-generation --base-model Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign --gt-data voice_design/gt.csv --hf
+
+# Compute metrics with Optimum
+wwb --model-type speech-generation --target-model qwen3_tts_voicedesign_ov --gt-data voice_design/gt.csv --ov-config kvcache_f32.json
+
+# Compute metrics with GenAI
+wwb --model-type speech-generation --target-model qwen3_tts_voicedesign_ov --gt-data voice_design/gt.csv --ov-config kvcache_f32.json --genai
+```
+
+**Note**: `--speech-instruct` can be optionally specified. Otherwise, it will default to `"Male, 17 years old, tenor range, gaining confidence - deeper breath support now, though vowels still tighten when nervous"`
+
+##### Qwen3 TTS CustomVoice
+```sh
+# Export
+optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice --weight-format fp32 --trust-remote-code qwen3_tts_customvoice_ov
+
+# Collect HF reference
+wwb --model-type speech-generation --base-model Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice --gt-data custom_voice/gt.csv --hf
+
+# Compute metrics with Optimum
+wwb --model-type speech-generation --target-model qwen3_tts_customvoice_ov --gt-data custom_voice/gt.csv --ov-config kvcache_f32.json
+
+# Compute metrics with GenAI
+wwb --model-type speech-generation --target-model qwen3_tts_customvoice_ov --gt-data custom_voice/gt.csv --ov-config kvcache_f32.json --genai
+```
+**Note**: `--speech-voice` will default to "Ryan" if not specified. Other valid speakers are: "Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric", "Aiden", "Ono_Anna", and "Sohee".
+
+**Note**: For the 1.7B CustomVoice variant (`Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`), you can also pass `--speech-instruct`, for example: `--speech-instruct "Speak in a calm, professional tone."`
+
+##### Qwen3 TTS Base
+
+```sh
+# Export
+optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-0.6B-Base --weight-format fp32 --trust-remote-code qwen3_tts_base_ov
+
+# Collect HF reference
+wwb --model-type speech-generation --base-model Qwen/Qwen3-TTS-12Hz-0.6B-Base --gt-data base/gt.csv --hf
+
+# Compute metrics with Optimum
+wwb --model-type speech-generation --target-model qwen3_tts_base_ov --gt-data base/gt.csv --ov-config kvcache_f32.json
+
+# Compute metrics with GenAI
+wwb --model-type speech-generation --target-model qwen3_tts_base_ov --gt-data base/gt.csv --ov-config kvcache_f32.json --genai
+```
+
+**Note** The Base model requires a 24 kHz reference audio file; reference text is optional.
+* If `--speech-ref-audio` is not specified, WWB uses "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-TTS-Repo/clone.wav".
+* If `--speech-ref-audio` is not specified and `--speech-ref-text` is also not specified, WWB uses "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you.".
+* When `--speech-ref-audio` is not specified, the default audio and default text are both used, which enables ICL (in-context learning) mode.
+* To use x-vector mode, specify `--speech-ref-audio` explicitly and do not provide `--speech-ref-text`.
+
+#### Speech Generation Scoring Overview
 The speech-generation evaluator reports these metrics:
 
 * `speaker score` - speaker similarity based on SpeechBrain speaker verification.
 * `content score` - transcript similarity between base model and target model output, based on whisper transcription and normalized text comparison.
 * `acoustic score` - overall sound-character similarity based on spectral features (RMS, log-mel DTW, spectral rolloff)
-* `duration score` - relative utterance length similarity between target and reference.
+* `duration score` - relative audio length similarity between target and reference.
 * `overall similarity` - aggregate score used for sorting worst examples.
+
+### Compare Speech-recognition models (ASR)
+
+`speech-recognition` works with native ASR models, for example
+[FunAudioLLM/Fun-ASR-Nano-2512](https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512).
+
+The metric is `similarity = max(0, 1 - error rate)` between the normalized target and `--base-model`
+transcripts, where 1 is a perfect match and 0 is completely different. WWB uses character error rate
+(CER) when `--speech-language` is `zh`, `ja`, `Chinese`, or `Japanese`, and word error rate (WER) otherwise.
+
+#### FunASR
+
+```sh
+pip install .[funasr]
+
+# Collect ground truth from the baseline funasr model
+wwb --base-model FunAudioLLM/Fun-ASR-Nano-2512 --gt-data gt.csv --model-type speech-recognition --hf
+
+# Convert model to Optimum-Intel
+optimum-cli export openvino -m FunAudioLLM/Fun-ASR-Nano-2512 fun-asr-openvino
+
+# Measure similarity with the Optimum-OpenVINO inference backend
+wwb --target-model fun-asr-openvino --gt-data gt.csv --model-type speech-recognition
+
+# Measure similarity with the OpenVINO GenAI inference backend
+wwb --target-model fun-asr-openvino --gt-data gt.csv --model-type speech-recognition --genai
+```
+
+`--speech-language` forces the transcription language as a code (Fun-ASR-Nano-2512 supports `en`, `zh`,
+and `ja`). WWB defaults to `en`.
+
+> **NOTE**: when overriding the default, pass the same `--speech-language` to the baseline and to the targets.
 
 ### API
 The API provides a way to access to investigate the worst generated text examples.
@@ -335,8 +461,8 @@ wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv -
 # Use -v for verbose mode to see the difference in the results
 wwb --target-model /home/user/models/Llama_2_7b_chat_hf_int8 --gt-data llama_2_7b_wwb_gt.csv  --num-samples 10 -v
 
-# Use --hf AutoModelForCausalLM to instantiate the model from model_id/folder
-wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv --hf
+# Load Hugging Face model weights in FP32
+wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv --hf --torch-dtype float32
 
 # Use --language parameter to control the language of prompts
 # Autodetection works for basic Chinese models

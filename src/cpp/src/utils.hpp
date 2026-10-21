@@ -14,6 +14,7 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
+#include "openvino/genai/rag/text_rerank_pipeline.hpp"
 #include "openvino/runtime/core.hpp"
 
 #include "openvino/genai/generation_handle.hpp"
@@ -21,6 +22,7 @@
 #include "openvino/genai/generation_config.hpp"
 
 #include "openvino/genai/streamer_base.hpp"
+#include "openvino/genai/visibility.hpp"
 
 namespace ov {
 namespace genai {
@@ -98,7 +100,7 @@ void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T&
 }
 
 const std::string STREAMER_ARG_NAME = "streamer";
-const std::string AUDIO_STREAMER_ARG_NAME = "audio_streamer";
+const std::string SPEECH_STREAMER_ARG_NAME = "speech_streamer";
 const std::string CONFIG_ARG_NAME = "generation_config";
 const std::string DRAFT_MODEL_ARG_NAME = "draft_model";
 const std::string EXTENSIONS_ARG_NAME = "extensions";
@@ -113,10 +115,10 @@ Config from_config_json_if_exists(const std::filesystem::path& models_path, cons
     return std::filesystem::exists(config_file_path) ? Config{config_file_path} : Config{};
 }
 
-ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map);
-ov::genai::OmniSpeechStreamerVariant get_audio_streamer_from_map(const ov::AnyMap& config_map);
+OPENVINO_GENAI_EXPORTS ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map);
+ov::genai::OmniSpeechStreamerVariant get_speech_streamer_from_map(const ov::AnyMap& config_map);
 
-ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map);
+OPENVINO_GENAI_EXPORTS ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map);
 
 bool is_npu_requested(const std::string& device, const ov::AnyMap& properties);
 
@@ -261,6 +263,15 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_embedding(cons
                                                                             const KVAxesPosition& kv_pos,
                                                                             const ov::genai::TextEmbeddingPipeline::Config& text_embed_config);
 
+std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_rerank(const std::shared_ptr<ov::Model>& model,
+                                                                         const ov::AnyMap& config,
+                                                                         const KVAxesPosition& kv_pos,
+                                                                         const ov::genai::TextRerankPipeline::Config& text_rerank_config);
+
+ov::CompiledModel compile_kokoro_for_npu_speech_generation(const std::filesystem::path& model_path,
+                                                           const ov::AnyMap& properties,
+                                                           size_t static_input_ids_length);
+
 size_t get_npu_kv_cache_capacity(const ov::CompiledModel& compiled_model);
 
 /// @brief Reads the runtime KV cache element type from a compiled model's key_cache.* / value_cache.* inputs.
@@ -392,6 +403,12 @@ void extract_extensions_to_core(ov::AnyMap& properties);
 
 void clear_false_prompt_lookup_from_config(ov::AnyMap& properties);
 
+void log_attention_backend(const std::string& attention_backend);
+
+// Print an INFO message about the Paged Attention initialization failure and the SDPA fallback,
+// followed by a DEBUG message with the original exception details.
+void log_paged_attention_fallback(const ov::Exception& exception);
+
 void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16);
 
 ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov::Tensor& text_embeds, const std::vector<ov::Tensor>& image_embeds, int64_t image_token_id);
@@ -449,6 +466,13 @@ ov::Tensor make_tensor_slice(const ov::Tensor& tensor, size_t dim, size_t start_
 ov::genai::GenerationConfig get_beam_search_config();
 ov::genai::GenerationConfig get_greedy_config();
 ov::genai::GenerationConfig get_multinomial_config();
+
+/**
+ * @brief Patches the chat template in the provided Tokenizer and
+ * removes any implicit concatenation of adjacent multiline string literals.
+ */
+void patch_chat_template_multiline_strings(Tokenizer& tokenizer);
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

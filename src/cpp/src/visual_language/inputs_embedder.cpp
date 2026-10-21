@@ -24,8 +24,10 @@
 #include "visual_language/gemma3/classes.hpp"
 #include "visual_language/gemma3n/classes.hpp"
 #include "visual_language/gemma4/classes.hpp"
+#include "visual_language/deepseek_ocr2/classes.hpp"
 #include "visual_language/videochat_flash/classes.hpp"
 #include "visual_language/muse_glimmer/classes.hpp"
+#include "visual_language/minicpmv4_7/classes.hpp"
 
 #include "continuous_batching/timer.hpp"
 #include "utils.hpp"
@@ -265,6 +267,17 @@ std::vector<ov::Tensor> InputsEmbedder::IInputsEmbedder::to_single_image_tensors
     return single_image_tensors;
 }
 
+ov::Tensor InputsEmbedder::IInputsEmbedder::get_text_embedding(
+    EmbeddingsRequest& req,
+    const ov::Tensor& input_ids,
+    ov::genai::VLMPerfMetrics& metrics
+) {
+    const auto text_embedding_start = std::chrono::steady_clock::now();
+    ov::Tensor result = m_embedding->infer(req, input_ids);
+    PerfMetrics::emplace_duration(metrics.vlm_raw_metrics.text_embedding_durations, text_embedding_start);
+    return result;
+}
+
 std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
     std::vector<EncodedImage> encoded_images;
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
@@ -307,31 +320,6 @@ NormalizedPrompt InputsEmbedder::IInputsEmbedder::normalize_prompt(
     throw_if_video_not_implemented(videos);
     return normalize_prompt(prompt, base_image_id, images);
 }
-
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_embeds_with_token_type_ids(
-    const std::string& prompt,
-    const std::vector<EncodedImage>& images,
-    VLMPerfMetrics& metrics,
-    bool recalculate_merged_embeddings,
-    const std::vector<size_t>& image_sequence) {
-    OPENVINO_THROW("This model does not support token_type_ids.");
-}
-
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_embeds_with_token_type_ids(
-    const std::string& prompt,
-    const std::vector<EncodedImage>& images,
-    const std::vector<EncodedVideo>& videos,
-    VLMPerfMetrics& metrics,
-    bool recalculate_merged_embeddings,
-    const std::vector<size_t>& image_sequence,
-    const std::vector<size_t>& videos_sequence,
-    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
-) {
-    throw_if_video_not_implemented(videos);
-    return get_inputs_embeds_with_token_type_ids(prompt, images, metrics, recalculate_merged_embeddings, image_sequence);
-}
-
-bool InputsEmbedder::IInputsEmbedder::has_token_type_ids() const { return false; }
 
 const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::IInputsEmbedder::get_lm_extra_inputs() const {
     static const std::unordered_map<std::string, ov::Tensor> empty_map;
@@ -385,8 +373,12 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderGemma4>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
         m_impl = std::make_shared<InputsEmbedderVideoChatFlashQwen>(vlm_config, model_dir, tokenizer, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::DEEPSEEK_OCR2) {
+        m_impl = std::make_shared<InputsEmbedderDeepseekOCR2>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::MUSE_GLIMMER) {
         m_impl = std::make_shared<InputsEmbedderMuseGlimmer>(vlm_config, model_dir, tokenizer, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::MINICPMV4_7) {
+        m_impl = std::make_shared<InputsEmbedderMiniCPMv4_7>(vlm_config, model_dir, tokenizer, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
@@ -435,8 +427,12 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
         m_impl = std::make_shared<InputsEmbedderGemma4>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
         m_impl = std::make_shared<InputsEmbedderVideoChatFlashQwen>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::DEEPSEEK_OCR2) {
+        m_impl = std::make_shared<InputsEmbedderDeepseekOCR2>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::MUSE_GLIMMER) {
         m_impl = std::make_shared<InputsEmbedderMuseGlimmer>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::MINICPMV4_7) {
+        m_impl = std::make_shared<InputsEmbedderMiniCPMv4_7>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
@@ -464,39 +460,6 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt,
                                      history_vision_count);
 }
 
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::get_inputs_embeds_with_token_type_ids(
-    const std::string& prompt,
-    const std::vector<EncodedImage>& images,
-    VLMPerfMetrics& metrics,
-    bool recalculate_merged_embeddings,
-    const std::vector<size_t>& image_sequence) {
-    return m_impl->get_inputs_embeds_with_token_type_ids(
-        prompt, images, metrics, recalculate_merged_embeddings, image_sequence);
-}
-
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::get_inputs_embeds_with_token_type_ids(
-    const std::string& prompt,
-    const std::vector<EncodedImage>& images,
-    const std::vector<EncodedVideo>& videos,
-    VLMPerfMetrics& metrics,
-    bool recalculate_merged_embeddings,
-    const std::vector<size_t>& image_sequence,
-    const std::vector<size_t>& videos_sequence,
-    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
-    return m_impl->get_inputs_embeds_with_token_type_ids(prompt,
-                                                         images,
-                                                         videos,
-                                                         metrics,
-                                                         recalculate_merged_embeddings,
-                                                         image_sequence,
-                                                         videos_sequence,
-                                                         history_vision_count);
-}
-
-bool InputsEmbedder::has_token_type_ids() const {
-    return m_impl->has_token_type_ids();
-}
-
 const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::get_lm_extra_inputs() const {
     return m_impl->get_lm_extra_inputs();
 }
@@ -516,8 +479,31 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedder::encode_videos(
     return m_impl->encode_videos(videos, videos_metadata);
 }
 
-void InputsEmbedder::encode_audios(const std::vector<ov::Tensor>& audios) {
-    m_impl->encode_audios(audios);
+std::vector<EncodedAudio> InputsEmbedder::encode_audios(const std::vector<ov::Tensor>& audios) {
+    return m_impl->encode_audios(audios);
+}
+
+ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(
+    const std::string& prompt,
+    const std::vector<ov::genai::EncodedImage>& images,
+    const std::vector<ov::genai::EncodedVideo>& videos,
+    const std::vector<ov::genai::EncodedAudio>& audios,
+    ov::genai::VLMPerfMetrics& metrics,
+    bool recalculate_merged_embeddings,
+    const std::vector<size_t>& image_sequence,
+    const std::vector<size_t>& videos_sequence,
+    const std::vector<size_t>& audios_sequence,
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
+) {
+    OPENVINO_ASSERT(audios.empty(), "Audio input isn't supported by this model.");
+    return get_inputs_embeds(prompt,
+                             images,
+                             videos,
+                             metrics,
+                             recalculate_merged_embeddings,
+                             image_sequence,
+                             videos_sequence,
+                             history_vision_count);
 }
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
@@ -594,32 +580,80 @@ NormalizedPrompt InputsEmbedder::normalize_prompt(const std::string& prompt,
     return m_impl->normalize_prompt(prompt, base_image_id, base_video_id, images, videos);
 }
 
+NormalizedPrompt InputsEmbedder::normalize_prompt(const std::string& prompt,
+    size_t base_image_id,
+    size_t base_video_id,
+    size_t base_audio_id,
+    const std::vector<EncodedImage>& images,
+    const std::vector<EncodedVideo>& videos,
+    const std::vector<EncodedAudio>& audios
+) const {
+    return m_impl->normalize_prompt(prompt, base_image_id, base_video_id, base_audio_id, images, videos, audios);
+}
+
+NormalizedPrompt InputsEmbedder::IInputsEmbedder::normalize_prompt(
+    const std::string& prompt,
+    size_t image_base_id,
+    size_t video_base_id,
+    size_t audio_base_id,
+    const std::vector<EncodedImage>& images,
+    const std::vector<EncodedVideo>& videos,
+    const std::vector<EncodedAudio>& audios
+) const {
+    OPENVINO_ASSERT(audios.empty(), "Audio input isn't supported by this model.");
+    return normalize_prompt(prompt, image_base_id, video_base_id, images, videos);
+}
+
+ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt,
+                                             const std::vector<ov::genai::EncodedImage>& images,
+                                             const std::vector<ov::genai::EncodedVideo>& videos,
+                                             const std::vector<ov::genai::EncodedAudio>& audios,
+                                             ov::genai::VLMPerfMetrics& metrics,
+                                             bool recalculate_merged_embeddings,
+                                             const std::vector<size_t>& image_sequence,
+                                             const std::vector<size_t>& videos_sequence,
+                                             const std::vector<size_t>& audios_sequence,
+                                             const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
+    return m_impl->get_inputs_embeds(prompt,
+                                     images,
+                                     videos,
+                                     audios,
+                                     metrics,
+                                     recalculate_merged_embeddings,
+                                     image_sequence,
+                                     videos_sequence,
+                                     audios_sequence,
+                                     history_vision_count);
+}
+
 void verify_ids(const std::vector<size_t>& vision_indices, size_t base_idx, size_t n_visions) {
     for (size_t idx : vision_indices) {
-        OPENVINO_ASSERT(base_idx <= idx, "Referring to older images/videos is not supported.");
-        OPENVINO_ASSERT(idx < base_idx + n_visions, "Missing image/video with index ", idx);
+        OPENVINO_ASSERT(base_idx <= idx, "Referring to older images/videos/audios is not supported.");
+        OPENVINO_ASSERT(idx < base_idx + n_visions,
+                        "Missing image/video/audio with index ", idx, " (", n_visions, " provided)");
     }
 }
 
-std::pair<std::string, std::vector<size_t>> InputsEmbedder::IInputsEmbedder::normalize(
+std::pair<std::string, std::vector<size_t>> normalize_media_tags(
     const std::string& prompt,
     const std::string& native_tag,
     const std::string& automatic_tag,
     size_t base_idx,
     size_t n_visions,
-    VisionType vision_type
-) const {
+    ModalityType modality_type
+) {
     size_t pos = prompt.find(native_tag);
     auto [vision_prompt, vision_sequence] = universal_to_native(
         prompt,
         [&](std::ostream& os, size_t) {
             os << automatic_tag;
         },
-        vision_type
+        modality_type
     );
     if (!vision_sequence.empty()) {
         OPENVINO_ASSERT(pos == std::string::npos,
-            "Prompt cannot mix universal tags (<ov_genai_image_i>/<ov_genai_video_i>) with native vision tags.");
+            "Prompt cannot mix universal tags (<ov_genai_image_i>/<ov_genai_video_i>/<ov_genai_audio_i>)"
+            " with native media tags.");
         verify_ids(vision_sequence, base_idx, n_visions);
         return {std::move(vision_prompt), std::move(vision_sequence)};
     }
@@ -630,7 +664,7 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedder::IInputsEmbedder::nor
     }
     if (!vision_sequence.empty()) {
         OPENVINO_ASSERT(vision_sequence.size() == n_visions,
-            "The number of native vision tags must match the number of provided images/videos"
+            "The number of native media tags must match the number of provided images/videos/audios"
             " because it's ambiguous which input should be ignored.");
         return {std::move(vision_prompt), std::move(vision_sequence)};
     }
@@ -642,6 +676,17 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedder::IInputsEmbedder::nor
     }
     stream << prompt;
     return {stream.str(), std::move(vision_sequence)};
+}
+
+std::pair<std::string, std::vector<size_t>> InputsEmbedder::IInputsEmbedder::normalize(
+    const std::string& prompt,
+    const std::string& native_tag,
+    const std::string& automatic_tag,
+    size_t base_idx,
+    size_t n_visions,
+    ModalityType modality_type
+) const {
+    return normalize_media_tags(prompt, native_tag, automatic_tag, base_idx, n_visions, modality_type);
 }
 
 } // namespace ov::genai

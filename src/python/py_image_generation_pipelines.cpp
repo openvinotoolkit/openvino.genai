@@ -30,12 +30,7 @@ using ov::genai::RawImageGenerationPerfMetrics;
 
 namespace {
 
-auto text2image_generate_docstring = R"(
-    Generates images for text-to-image models.
-
-    :param prompt: input prompt
-    :type prompt: str
-
+auto generate_kwargs_docstring = R"(
     :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
 
     Expected parameters list:
@@ -59,6 +54,34 @@ auto text2image_generate_docstring = R"(
     :return: ov.Tensor with resulting images
     :rtype: ov.Tensor
 )";
+
+auto text2image_generate_docstring = std::string(R"(
+    Generates images for text-to-image models.
+
+    :param prompt: input prompt
+    :type prompt: str
+)") + generate_kwargs_docstring;
+
+auto image2image_generate_docstring = std::string(R"(
+    Generates images for image-to-image models.
+
+    :param prompt: input prompt
+    :type prompt: str
+
+    :param image: initial image
+    :type image: ov.Tensor
+)") + generate_kwargs_docstring;
+
+auto image2image_generate_several_images_docstring = std::string(R"(
+    Generates images for image-to-image models conditioned on a set of reference images.
+    The images are referred to as 'Picture 1', 'Picture 2' and so on in the prompt.
+
+    :param prompt: input prompt
+    :type prompt: str
+
+    :param image: initial images. Only Qwen-Image 2.1 accepts more than one image
+    :type image: collections.abc.Sequence[ov.Tensor]
+)") + generate_kwargs_docstring;
 
 auto raw_image_generation_perf_metrics_docstring = R"(
     Structure with raw performance metrics for each generation before any statistics are calculated.
@@ -284,7 +307,13 @@ void init_unet2d_condition_model(py::module_& m);
 void init_sd3_transformer_2d_model(py::module_& m);
 void init_flux_transformer_2d_model(py::module_& m);
 void init_flux2_transformer_2d_model(py::module_& m);
+void init_zimage_transformer_2d_model(py::module_& m);
 void init_qwen3_text_encoder(py::module_& m);
+void init_gemma3_text_encoder(py::module_& m);
+void init_qwen2_5_vl(py::module_& m);
+void init_qwen3_vl(py::module_& m);
+void init_qwen_image_transformer_2d_model(py::module_& m);
+void init_qwen_image21_transformer_2d_model(py::module_& m);
 void init_autoencoder_kl(py::module_& m);
 
 void init_image_generation_pipelines(py::module_& m) {
@@ -315,7 +344,13 @@ void init_image_generation_pipelines(py::module_& m) {
     init_sd3_transformer_2d_model(m);
     init_flux_transformer_2d_model(m);
     init_flux2_transformer_2d_model(m);
+    init_zimage_transformer_2d_model(m);
     init_qwen3_text_encoder(m);
+    init_gemma3_text_encoder(m);
+    init_qwen2_5_vl(m);
+    init_qwen3_vl(m);
+    init_qwen_image_transformer_2d_model(m);
+    init_qwen_image21_transformer_2d_model(m);
     init_autoencoder_kl(m);
 
     auto image_generation_scheduler = py::class_<ov::genai::Scheduler, std::shared_ptr<ov::genai::Scheduler>>(m, "Scheduler", "Scheduler for image generation pipelines.");
@@ -632,9 +667,28 @@ void init_image_generation_pipelines(py::module_& m) {
             },
             py::arg("prompt"), "Input string",
             py::arg("image"), "Initial image",
-            (text2image_generate_docstring + std::string(" \n ")).c_str())
+            (image2image_generate_docstring + std::string(" \n ")).c_str())
+        .def(
+            "generate",
+            [](ov::genai::Image2ImagePipeline& pipe,
+                const std::string& prompt,
+                const std::vector<ov::Tensor>& images,
+                const py::kwargs& kwargs
+            ) -> py::typing::Union<ov::Tensor> {
+                ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
+                ov::Tensor res;
+                {
+                    py::gil_scoped_release rel;
+                    res = pipe.generate(prompt, images, params);
+                }
+                return py::cast(res);
+            },
+            py::arg("prompt"), "Input string",
+            py::arg("image"), "Initial images. Only Qwen-Image 2.1 accepts more than one image",
+            (image2image_generate_several_images_docstring + std::string(" \n ")).c_str())
         .def("decode", &ov::genai::Image2ImagePipeline::decode, py::arg("latent"))
-        .def("get_performance_metrics", &ov::genai::Image2ImagePipeline::get_performance_metrics);
+        .def("get_performance_metrics", &ov::genai::Image2ImagePipeline::get_performance_metrics)
+        .def("export_model", &ov::genai::Image2ImagePipeline::export_model, py::arg("export_path"));
 
 
     auto inpainting_pipeline = py::class_<ov::genai::InpaintingPipeline>(m, "InpaintingPipeline", "This class is used for generation with inpainting models.")
@@ -741,7 +795,8 @@ void init_image_generation_pipelines(py::module_& m) {
             py::arg("mask_image"), "Mask image",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
         .def("decode", &ov::genai::InpaintingPipeline::decode, py::arg("latent"))
-        .def("get_performance_metrics", &ov::genai::InpaintingPipeline::get_performance_metrics);
+        .def("get_performance_metrics", &ov::genai::InpaintingPipeline::get_performance_metrics)
+        .def("export_model", &ov::genai::InpaintingPipeline::export_model, py::arg("export_path"));
 
     // define constructors to create one pipeline from another
     // NOTE: needs to be defined once all pipelines are created

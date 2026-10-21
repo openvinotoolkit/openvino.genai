@@ -123,6 +123,7 @@ import traceback
 import llm_bench_utils.output_csv
 import llm_bench_utils.output_json
 import task.visual_language_generation as bench_vlm
+import task.visual_language_generation_chat as bench_vlm_chat
 import task.text_generation as bench_text
 import task.text_generation_chat as bench_text_chat
 import task.image_generation as bench_image
@@ -240,6 +241,14 @@ def get_argparser():
     parser.add_argument(
         "-lc",
         "--load_config",
+        default=None,
+        required=False,
+        help="""[DEPRECATED] please, use --ov-config \n
+        Path to JSON file or string in JSON format to load customized OpenVINO Runtime configurations.\n """,
+    )
+    parser.add_argument(
+        "-ov-c",
+        "--ov-config",
         default=None,
         required=False,
         help="""Path to JSON file or string in JSON format to load customized OpenVINO Runtime configurations.\n
@@ -396,7 +405,7 @@ def get_argparser():
         "--use_cb",
         action="store_true",
         help="Deprecated, will be removed soon! Continues batching mode is used by default. "
-        'To switch to SPDA mode, please, set up {"ATTENTION_BACKEND": "SDPA"} in --load_config.',
+        'To switch to SPDA mode, please, set up {"ATTENTION_BACKEND": "SDPA"} in --ov-config.',
     )
     parser.add_argument(
         "--cb_config",
@@ -446,6 +455,12 @@ def get_argparser():
         help="Path to file with Continuous Batching Scheduler settings or dict for Speculative decoding of draft model",
     )
     parser.add_argument(
+        "--draft-ov-config",
+        default=None,
+        required=False,
+        help="""Path to JSON file or string in JSON format to load customized OpenVINO Runtime configurations for draft model """,
+    )
+    parser.add_argument(
         "--num_assistant_tokens",
         required=False,
         default=None,
@@ -492,16 +507,21 @@ def get_argparser():
     parser.add_argument(
         "--streaming", action="store_true", help="Set whether to use streaming mode, only applicable to LLM."
     )
-    parser.add_argument("--num_steps", type=int, required=False, help="Number of inference steps for image generation")
+    parser.add_argument(
+        "--num_steps",
+        type=greater_than_zero,
+        required=False,
+        help="Number of inference steps for Image and Video Generation.",
+    )
     parser.add_argument(
         "--height",
-        type=int,
+        type=greater_than_zero,
         required=False,
         help="Generated image height. Applicable only for Image and Video Generation.",
     )
     parser.add_argument(
         "--width",
-        type=int,
+        type=greater_than_zero,
         required=False,
         help="Generated image width. Applicable only for Image and Video Generation.",
     )
@@ -518,7 +538,7 @@ def get_argparser():
     )
     parser.add_argument(
         "--num_frames",
-        type=int,
+        type=greater_than_zero,
         required=False,
         help="Number of frames in generated video. Applicable only for Video Generation.",
     )
@@ -538,6 +558,7 @@ def get_argparser():
             "text_gen_chat",
             "image_gen",
             "visual_text_gen",
+            "visual_text_gen_chat",
             "speech_to_text",
             "image_cls",
             "code_gen",
@@ -549,6 +570,7 @@ def get_argparser():
             "text-to-image",
             "image-to-image",
             "text-to-video",
+            "image-to-video",
             "inpainting",
         ],
         help="The task to setup the pipeline type",
@@ -669,6 +691,16 @@ def get_argparser():
         help="Use with --task text_gen_chat and optimum-intel/PyTorch backends. "
         "Benchmark will send the full chat history as input for generation on each turn. By default, only the new prompt is used.",
     )
+    parser.add_argument(
+        "-np",
+        "--num_prefill_tokens",
+        type=greater_than_zero,
+        default=None,
+        help="Use with --task text_gen/visual_text_gen. "
+        "Specifies the number of prefill tokens to use for generation. \n"
+        "If this number is not specified or is greater than the tokens in the prompt, the entire prompt is used for generation.\n"
+        "If this number is less than the tokens in the prompt, llm_bench trims prompt and takes only the first prefill tokens.\n",
+    )
 
     return parser.parse_args()
 
@@ -682,6 +714,7 @@ CASE_TO_BENCH = {
     "ldm_super_resolution": bench_ldm_sr.run_ldm_super_resolution_benchmark,
     "speech_to_text": bench_speech.run_speech_2_txt_benchmark,
     "visual_text_gen": bench_vlm.run_visual_language_generation_benchmark,
+    "visual_text_gen_chat": bench_vlm_chat.run_visual_language_generation_benchmark,
     "text_embed": bench_text_embed.run_text_embddings_benchmark,
     "text_to_speech": bench_text_to_speech.run_text_2_speech_benchmark,
     "text_rerank": bench_text_rerank.run_text_reranker_benchmark,

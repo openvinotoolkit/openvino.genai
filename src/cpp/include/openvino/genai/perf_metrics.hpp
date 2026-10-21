@@ -90,6 +90,7 @@ struct OPENVINO_GENAI_EXPORTS SummaryStats {
  * @param get_load_time Returns the load time in milliseconds.
  * @param get_num_generated_tokens Returns the number of generated tokens.
  * @param get_num_input_tokens Returns the number of tokens in the input prompt.
+ * @param get_num_prefix_cache_hit_tokens Returns the number of input tokens reused from the prefix cache.
  * @param get_ttft Returns the mean and standard deviation of TTFT.
  * @param get_tpot Returns the mean and standard deviation of TPOT.
  * @param get_ipot Returns the mean and standard deviation of IPOT.
@@ -123,6 +124,7 @@ struct OPENVINO_GENAI_EXPORTS SummaryStats {
  * @param chat_template_duration Mean and standard deviation of the chat template application duration in milliseconds.
  * @param num_generated_tokens Number of generated tokens.
  * @param num_input_tokens Number of tokens in the input prompt.
+ * @param num_prefix_cache_hit_tokens Number of input tokens reused from the prefix cache.
  */
 struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     float load_time = 0;   // Load time in ms.
@@ -144,10 +146,12 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
 
     size_t num_generated_tokens = 0;
     size_t num_input_tokens = 0;
+    size_t num_prefix_cache_hit_tokens = 0;
 
     float get_load_time();         // Load time in ms.
     size_t get_num_generated_tokens();
     size_t get_num_input_tokens();
+    size_t get_num_prefix_cache_hit_tokens();
     MeanStdPair get_ttft();         // Time to the first token (in ms) (TTFT).
     MeanStdPair get_tpot();         // Time (in ms) per output token (TPOT).
     MeanStdPair get_ipot();         // Inference time (in ms) per output token.
@@ -183,6 +187,20 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
      * @param duration steady clock duration
      */
     static float get_microsec(std::chrono::steady_clock::duration duration);
+
+    /**
+     * @brief Emplace duration into the vector of microseconds.
+     *
+     * @param target_durations Vector of microseconds to store the duration.
+     * @param start_time Start time of the duration.
+     * @param end_time End time of the duration (default: now).
+     */
+    static void emplace_duration(
+        std::vector<MicroSeconds>& target_durations,
+        const TimePoint& start_time,
+        const TimePoint& end_time = std::chrono::steady_clock::now()
+    );
+
     PerfMetrics operator+(const PerfMetrics& metrics) const;
     PerfMetrics& operator+=(const PerfMetrics& right);
 
