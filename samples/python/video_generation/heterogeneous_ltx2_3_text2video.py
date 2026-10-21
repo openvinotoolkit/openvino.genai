@@ -16,19 +16,14 @@ import argparse
 import openvino_genai
 from video_utils import save_audio, save_video
 
-# Generation settings mirrored from optimum-intel's inf.py so the GenAI output can be compared
-# against it on the same prompt, size, step count and guidance path.
-DEFAULT_PROMPT = "A brunette girl is singing in a concert hall."
-DEFAULT_NEGATIVE_PROMPT = (
-    "blurry, distorted face"
-)
+DEFAULT_PROMPT = "A medium shot of a young girl in a bright yellow summer dress jumping into a water puddle on a wet asphalt street. Heavy rain falls continuously, creating ripples on the water surface and splash effects as her feet land. Cinematic lighting, ultra-realistic textures, natural movement, high detail, 4k resolution. Sound of heavy raindrops falling on asphalt, clear splash sound of water when she jumps, quiet wind rustling, crisp natural ambient noise. Absolute silence for background music, no music, no soundtrack."
+DEFAULT_NEGATIVE_PROMPT = "blurry, distorted face, low quality"
 
-# Video dimensions and sampling (same as inf.py).
-WIDTH = 640
-HEIGHT = 480
-NUM_FRAMES = 17
+WIDTH = 1280
+HEIGHT = 704
+NUM_FRAMES = 49
 FRAME_RATE = 24.0
-NUM_INFERENCE_STEPS = 30
+NUM_INFERENCE_STEPS = 40
 GUIDANCE_SCALE = 3.0
 SEED = 42
 
@@ -72,8 +67,6 @@ def main():
     pipe = openvino_genai.Text2VideoPipeline(args.model_dir)
 
     gen_config = pipe.get_generation_config()
-
-    # Match optimum-intel's inf.py generation settings.
     gen_config.negative_prompt = DEFAULT_NEGATIVE_PROMPT
     gen_config.width = WIDTH
     gen_config.height = HEIGHT
@@ -81,14 +74,11 @@ def main():
     gen_config.frame_rate = FRAME_RATE
     gen_config.num_inference_steps = NUM_INFERENCE_STEPS
     gen_config.guidance_scale = GUIDANCE_SCALE
-    # Keep only classifier-free guidance: disable Spatio-Temporal Guidance and modality isolation
-    # guidance (both on by default) so this matches inf.py's single-guidance path.
-    gen_config.stg_scale = 0.0
-    gen_config.audio_stg_scale = 0.0
-    gen_config.modality_scale = 1.0
-    gen_config.audio_modality_scale = 1.0
-    gen_config.spatio_temporal_guidance_blocks = None
-    # TorchGenerator wraps torch.Generator, matching inf.py's torch CPU generator for the same seed.
+    gen_config.stg_scale = 1.0
+    gen_config.audio_stg_scale = 1.0
+    gen_config.modality_scale = 3.0
+    gen_config.audio_modality_scale = 3.0
+    gen_config.spatio_temporal_guidance_blocks = [28]
     gen_config.generator = openvino_genai.TorchGenerator(SEED)
 
     if args.reshape:
@@ -102,10 +92,6 @@ def main():
             gen_config.guidance_scale,
         )
 
-    # The precision applies to the denoise device only: forcing f16 on a CPU that also runs the text
-    # encoder / VAE / vocoder corrupts the video. f16 is also the GPU default
-    # (EXECUTION_MODE_HINT=PERFORMANCE); f32 doubles the activation memory, so at larger resolutions it
-    # no longer fits in VRAM and spills to host RAM over PCIe.
     properties = {
         "CACHE_DIR": args.cache_dir,
         "DEVICE_PROPERTIES": {args.denoise_device: {"INFERENCE_PRECISION_HINT": args.inference_precision}},
