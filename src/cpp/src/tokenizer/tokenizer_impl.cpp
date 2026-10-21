@@ -872,11 +872,13 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
     try {
         result = render(chat_tpl);
     } catch (const std::exception& error) {
+        std::string retry_error;
         const auto rewritten = utils::join_multiline_string_literals(utils::replace_is_undefined_tests(chat_tpl));
         if (rewritten != chat_tpl) {
             try {
                 result = render(rewritten);
-            } catch (const std::exception&) {
+            } catch (const std::exception& retry) {
+                retry_error = std::string("\nMinja's retry error: ") + retry.what();
             }
         }
         if (!result.empty())
@@ -886,7 +888,7 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
                         "* Set apply_chat_template to false in GenerationConfig. "
                         "It's possible to apply the template manually to your prompt before calling generate. "
                         "For example: <|user|>\\n{prompt}</s>\\n<|assistant|>\\n\n"
-                        "Minja's error: ", error.what());
+                        "Minja's error: ", error.what(), retry_error);
     }
     OPENVINO_ASSERT(!result.empty(), "Applied chat template resulted in an empty string. "
                                      "Please check the chat template or apply template manually to your prompt before calling generate."

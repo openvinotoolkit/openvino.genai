@@ -8,6 +8,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <sstream>
 
 #include "openvino/opsets/opset13.hpp"
@@ -226,6 +227,24 @@ TEST(VLMChatTemplate, InvalidTemplateStillReportsAnError) {
     EXPECT_THROW(tokenizer->apply_chat_template(chat_history(), false, "", std::nullopt, std::nullopt), ov::Exception);
 }
 
+TEST(VLMChatTemplate, UndefinedFallbackPreservesNestedDictionaries) {
+    auto tokenizer = template_tokenizer("{{ {'outer': {}} is undefined }}");
+    EXPECT_EQ(tokenizer->apply_chat_template(chat_history(), false, "", std::nullopt, std::nullopt), "False");
+}
+
+TEST(VLMChatTemplate, FallbackReportsBothRenderingErrors) {
+    auto tokenizer = template_tokenizer("{% if missing is undefined %}{{ unknown_function() }}{% endif %}");
+    try {
+        tokenizer->apply_chat_template(chat_history(), false, "", std::nullopt, std::nullopt);
+        FAIL() << "Expected rendering to fail";
+    } catch (const ov::Exception& error) {
+        const std::string message = error.what();
+        EXPECT_NE(message.find("Minja's error:"), std::string::npos);
+        EXPECT_NE(message.find("Minja's retry error:"), std::string::npos);
+        EXPECT_NE(message.find("unknown_function"), std::string::npos);
+    }
+}
+
 TEST_F(MuseGlimmerVideo, SamplingEnabledKeepsExistingSelection) {
     auto encoder = embedder(true);
     ov::genai::VideoMetadata metadata;
@@ -257,26 +276,26 @@ TEST_F(MuseGlimmerVideo, SamplingDisabledPreservesPreselectedFrames) {
     EXPECT_FLOAT_EQ(encoded.front().metadata.fps, 6.0f);
 }
 
-TEST_F(MuseGlimmerVideo, SamplingDisabledUsesProcessorFpsFallback) {
+TEST_F(MuseGlimmerVideo, SamplingDisabledRejectsMissingSourceFps) {
     auto encoder = embedder(false);
-    const auto encoded = encoder->encode_videos({video()});
-    ASSERT_EQ(encoded.size(), 1);
-    expect_encoded_frames(encoded.front(), {0, 1, 2, 3, 4, 5, 6, 7});
-    EXPECT_FLOAT_EQ(encoded.front().metadata.fps, 2.0f);
+    EXPECT_THROW(encoder->encode_videos({video()}), ov::Exception);
 }
 
-TEST_F(MuseGlimmerVideo, SamplingDisabledUsesDefaultFpsFallback) {
+TEST_F(MuseGlimmerVideo, SamplingDisabledRejectsInvalidSourceFps) {
     auto encoder = embedder(false, 0.0f, 0);
-    const auto encoded = encoder->encode_videos({video()});
-    ASSERT_EQ(encoded.size(), 1);
-    expect_encoded_frames(encoded.front(), {0, 1, 2, 3, 4, 5, 6, 7});
-    EXPECT_FLOAT_EQ(encoded.front().metadata.fps, 24.0f);
+    for (float fps : {0.0f, -1.0f, std::numeric_limits<float>::infinity(),
+                      std::numeric_limits<float>::quiet_NaN()}) {
+        ov::genai::VideoMetadata metadata;
+        metadata.fps = fps;
+        EXPECT_THROW(encoder->encode_videos({video()}, {metadata}), ov::Exception);
+    }
 }
 
 TEST_F(MuseGlimmerVideo, SamplingDisabledRejectsIncompleteTemporalGroups) {
     auto encoder = embedder(false);
-    EXPECT_THROW(encoder->encode_videos({video(3)}), ov::Exception);
     ov::genai::VideoMetadata metadata;
+    metadata.fps = 8.0f;
+    EXPECT_THROW(encoder->encode_videos({video(3)}, {metadata}), ov::Exception);
     metadata.frames_indices = {0, 1, 2};
     EXPECT_THROW(encoder->encode_videos({video()}, {metadata}), ov::Exception);
 }
@@ -289,7 +308,9 @@ TEST_F(MuseGlimmerVideo, EditedHistoryRollbackRetainsOnlyMatchingPrefix) {
                                    {{"role", "user"}, {"content", "<|video|> original"}}};
     {
         ov::genai::VLMChatContext initial(history, registry, inputs);
-        initial.process({}, {video()});
+        ov::genai::VideoMetadata metadata;
+        metadata.fps = 8.0f;
+        initial.process({}, {video()}, {metadata});
     }
     auto state = ov::genai::ChatHistoryInternalState::get_or_create(history, registry);
     ASSERT_EQ(state->get_messages_metadata().size(), 2);
@@ -300,7 +321,9 @@ TEST_F(MuseGlimmerVideo, EditedHistoryRollbackRetainsOnlyMatchingPrefix) {
     auto replacement = video();
     std::fill_n(replacement.data<uint8_t>(), replacement.get_size(), 100);
     ov::genai::VLMChatContext edited(history, registry, inputs);
-    const auto processed = edited.process({}, {replacement});
+    ov::genai::VideoMetadata metadata;
+    metadata.fps = 8.0f;
+    const auto processed = edited.process({}, {replacement}, {metadata});
     EXPECT_TRUE(processed.needs_kv_cache_reset);
     const auto replacement_id = state->get_video_vision_id(0);
     EXPECT_FALSE(registry->contains(original_id));

@@ -3961,7 +3961,8 @@ def test_qwen3_omni_audio_rejected_on_audio_token_id_mismatch(tmp_path: Path) ->
 def gemma3_chat_model(tmp_path):
     source = Path(_get_ov_model("optimum-intel-internal-testing/tiny-random-gemma3"))
     for path in source.iterdir():
-        (tmp_path / path.name).symlink_to(path)
+        if path.name != "preprocessor_config.json":
+            (tmp_path / path.name).symlink_to(path)
     processor = json.loads((source / "processor_config.json").read_text())["image_processor"]
     (tmp_path / "preprocessor_config.json").write_text(json.dumps(processor))
     return tmp_path
@@ -3978,6 +3979,30 @@ def test_vlm_sdpa_switching_chat_histories_replays_media(gemma3_chat_model):
     history.append({"role": "user", "content": "What else can you see?"})
     expected = pipeline.generate(history, generation_config=config)
     pipeline.generate(ChatHistory([{"role": "user", "content": "Hello"}]), generation_config=config)
+    actual = pipeline.generate(history, generation_config=config)
+    assert actual.texts == expected.texts
+    assert actual.perf_metrics.get_num_input_tokens() == expected.perf_metrics.get_num_input_tokens()
+
+
+def test_vlm_sdpa_switch_cancel_retry_replays_media(gemma3_chat_model):
+    pipeline = VLMPipeline(gemma3_chat_model, "CPU", ATTENTION_BACKEND="SDPA")
+    image = openvino.Tensor(np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8))
+    config = GenerationConfig(max_new_tokens=16, do_sample=False, ignore_eos=True)
+    history = ChatHistory([{"role": "user", "content": "Describe the image."}])
+    first = pipeline.generate(history, images=[image], generation_config=config)
+    history.append({"role": "assistant", "content": first.texts[0]})
+    history.append({"role": "user", "content": "What else can you see?"})
+    expected = pipeline.generate(history, generation_config=config)
+    pipeline.generate(ChatHistory([{"role": "user", "content": "Hello"}]), generation_config=config)
+    chunks = []
+
+    def cancel(chunk):
+        chunks.append(chunk)
+        return StreamingStatus.CANCEL
+
+    cancelled = pipeline.generate(history, generation_config=config, streamer=cancel)
+    assert chunks
+    assert cancelled.perf_metrics.get_num_generated_tokens() < config.max_new_tokens
     actual = pipeline.generate(history, generation_config=config)
     assert actual.texts == expected.texts
     assert actual.perf_metrics.get_num_input_tokens() == expected.perf_metrics.get_num_input_tokens()

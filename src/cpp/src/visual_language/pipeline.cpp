@@ -624,12 +624,14 @@ public:
 
         const auto history_state = ChatHistoryInternalState::get_or_create(history, m_vision_registry);
         bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history ||
-                                m_active_history.lock() != history_state;
+                                m_active_history.lock() != history_state ||
+                                m_inputs_embedder->get_cache_state().get_state().empty();
         m_active_history = history_state;
 
         if (use_full_history) {
             reset_language_state();
             m_language.get_tensor("attention_mask").set_shape({1, 0});
+            m_inputs_embedder->get_cache_state().reset_state();
             m_inputs_embedder->start_chat("");
         }
 

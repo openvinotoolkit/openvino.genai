@@ -164,9 +164,8 @@ void fill_video_metadata(ov::genai::VideoMetadata& metadata,
                     " frames, got ",
                     total_num_frames);
     if (!config.do_sample_frames) {
-        if (metadata.fps == 0.0f)
-            metadata.fps = config.fps > 0.0f ? config.fps : 24.0f;
-        OPENVINO_ASSERT(metadata.fps > 0.0f, "Muse Glimmer video metadata fps must be positive");
+        OPENVINO_ASSERT(std::isfinite(metadata.fps) && metadata.fps > 0.0f,
+                        "Muse Glimmer unsampled video requires a finite positive VideoMetadata::fps");
         if (metadata.frames_indices.empty()) {
             metadata.frames_indices.resize(total_num_frames);
             std::iota(metadata.frames_indices.begin(), metadata.frames_indices.end(), 0);
