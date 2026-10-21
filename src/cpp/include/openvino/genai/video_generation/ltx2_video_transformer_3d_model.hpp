@@ -32,6 +32,22 @@ public:
         /// True on LTX-2.3, absent on LTX-2.0. Selects the LTX-2.3 generation defaults.
         bool perturbed_attn = false;
 
+        // Rotary positional embedding (RoPE) parameters, used when the export takes RoPE as
+        // precomputed (cos, sin) inputs. Defaults follow diffusers' LTX2VideoTransformer3DModel.
+        size_t num_attention_heads = 32;
+        size_t attention_head_dim = 128;
+        size_t audio_num_attention_heads = 32;
+        size_t audio_attention_head_dim = 64;
+        size_t audio_cross_attention_dim = 2048;
+        int64_t pos_embed_max_pos = 20;
+        int64_t audio_pos_embed_max_pos = 20;
+        int64_t base_height = 2048;
+        int64_t base_width = 2048;
+        double rope_theta = 10000.0;
+        bool rope_double_precision = true;
+        /// "split" (LTX-2.3) or "interleaved"
+        std::string rope_type = "interleaved";
+
         explicit Config(const std::filesystem::path& config_path);
     };
 
@@ -64,8 +80,15 @@ public:
 
     void set_hidden_states(const std::string& tensor_name, const ov::Tensor& tensor);
 
+    /// @brief Computes the RoPE (cos, sin) transformer inputs on the host from the positions and binds them. The
+    /// rotary angles (up to ~1.6e4 rad) cannot be resolved in f16, so they are never computed in the graph.
+    /// @param video_coords [B, 3, video_sequence_length, 2] patch boundaries (see prepare_video_coords)
+    /// @param audio_coords [B, 1, audio_num_frames, 2] patch boundaries (see prepare_audio_coords)
+    void set_rope_coords(const ov::Tensor& video_coords, const ov::Tensor& audio_coords);
+
     /// @brief Builds the 'timestep' input matching the compiled model and runs joint video + audio denoising.
-    /// Legacy exports take a rank-1 [B] timestep, current ones a rank-2 [B, S] per-token timestep.
+    /// Legacy exports take a rank-1 [B] timestep, current ones a rank-2 per-token [B, S] timestep, which is fed as
+    /// [B, 1] since every token shares the same timestep here.
     /// @param isolate_modalities Turns off audio-to-video and video-to-audio cross attention for this pass
     /// (LTX-2.3 modality isolation guidance). Requires a 'cross_modality_gate' input.
     /// @param stg_blocks Transformer block indices to perturb for this pass (LTX-2.3 Spatio-Temporal
