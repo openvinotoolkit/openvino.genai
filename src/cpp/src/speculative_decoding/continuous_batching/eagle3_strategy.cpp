@@ -264,6 +264,11 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
                                             prompt_ids,
                                             lm_extra_inputs);
     }
+    // A per-request config does not carry the pipeline's assistant settings, so validate() cannot
+    // catch this: reject before enqueueing, where candidate sync would hit the init_request() assert
+    // and the step() error handler would fail both pipelines for every running request.
+    OPENVINO_ASSERT(sampling_params.logprob_token_ids.empty(),
+                    "logprob_token_ids is not supported with speculative decoding");
 
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
@@ -315,6 +320,11 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     if (sampling_params.num_assistant_tokens.has_value() && sampling_params.num_assistant_tokens.value() == 0) {
         return m_main_pipeline->add_request(request_id, prompt, sampling_params);
     }
+    // A per-request config does not carry the pipeline's assistant settings, so validate() cannot
+    // catch this: reject before enqueueing, where candidate sync would hit the init_request() assert
+    // and the step() error handler would fail both pipelines for every running request.
+    OPENVINO_ASSERT(sampling_params.logprob_token_ids.empty(),
+                    "logprob_token_ids is not supported with speculative decoding");
 
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;

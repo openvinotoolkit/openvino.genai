@@ -15,6 +15,11 @@ namespace ov::genai {
 namespace {
 
 void validate_mtp_generation_config(const GenerationConfig& config) {
+    // A per-request config does not carry the pipeline's assistant settings, so validate() cannot
+    // catch this: reject before enqueueing, where candidate sync would hit the init_request() assert
+    // and the step() error handler would fail both pipelines for every running request.
+    OPENVINO_ASSERT(config.logprob_token_ids.empty(),
+                    "MTP speculative decoding does not support logprob_token_ids.");
     OPENVINO_ASSERT(config.assistant_confidence_threshold == 0.f,
                     "MTP speculative decoding supports static candidate counts only; "
                     "assistant_confidence_threshold must be 0.f.");
