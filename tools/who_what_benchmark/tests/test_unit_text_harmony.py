@@ -169,18 +169,25 @@ def test_non_chat_strategy_preserves_tokenizer_default(monkeypatch, strategy_typ
 @pytest.mark.parametrize(
     ("prompt", "expected"),
     [
-        ("<|user|>Question<|end|><|assistant|>", "Question"),
-        ("<|system|>Rules<|end|><|user|>Question<|end|><|assistant|>", "Rules\r\n\r\nQuestion"),
+        ("<|user|>Question<|end|><|assistant|>", [{"role": "user", "content": "Question"}]),
+        (
+            "<|system|>Rules<|end|><|user|>Question<|end|><|assistant|>",
+            [{"role": "system", "content": "Rules"}, {"role": "user", "content": "Question"}],
+        ),
+        (
+            "<|system|><|end|><|user|>Question<|end|><|assistant|>",
+            [{"role": "system", "content": ""}, {"role": "user", "content": "Question"}],
+        ),
         (
             "<|im_start|>system<|im_sep|>Rules<|im_end|>"
             "<|im_start|>user<|im_sep|>Question<|im_end|>"
             "<|im_start|>assistant<|im_sep|>",
-            "Rules\r\n\r\nQuestion",
+            [{"role": "system", "content": "Rules"}, {"role": "user", "content": "Question"}],
         ),
     ],
 )
 def test_normalizes_legacy_harmony_prompt(prompt, expected):
-    assert normalize_chat_history(prompt, HarmonyTokenizer()) == [{"role": "user", "content": expected}]
+    assert normalize_chat_history(prompt, HarmonyTokenizer()) == expected
 
 
 @pytest.mark.parametrize("separator", ["<|im_sep|>", "\n", "\r\n"])
@@ -188,8 +195,9 @@ def test_normalizes_legacy_harmony_prompt(prompt, expected):
 def test_normalizes_chatml_separators(separator, include_system):
     system = f"<|im_start|>system{separator}Rules<|im_end|>" if include_system else ""
     prompt = f"{system}<|im_start|>user{separator}Question<|im_end|><|im_start|>assistant{separator}"
-    content = "Rules\r\n\r\nQuestion" if include_system else "Question"
-    assert normalize_chat_history(prompt, HarmonyTokenizer()) == [{"role": "user", "content": content}]
+    expected = [{"role": "system", "content": "Rules"}] if include_system else []
+    expected.append({"role": "user", "content": "Question"})
+    assert normalize_chat_history(prompt, HarmonyTokenizer()) == expected
 
 
 def test_preserves_non_harmony_prompt():
@@ -202,6 +210,18 @@ def test_preserves_non_harmony_prompt():
     [
         ("Question", [{"role": "user", "content": "Question"}], None, None),
         ("<|user|>Question<|end|><|assistant|>", [{"role": "user", "content": "Question"}], None, None),
+        (
+            "<|system|>Rules<|end|><|user|>Question<|end|><|assistant|>",
+            [{"role": "system", "content": "Rules"}, {"role": "user", "content": "Question"}],
+            None,
+            None,
+        ),
+        (
+            "<|im_start|>system\nRules<|im_end|><|im_start|>user\nQuestion<|im_end|><|im_start|>assistant\n",
+            [{"role": "system", "content": "Rules"}, {"role": "user", "content": "Question"}],
+            None,
+            None,
+        ),
         (
             "<|start|>user<|message|>Question<|end|><|start|>assistant",
             None,
@@ -240,6 +260,18 @@ def test_hf_text_generation_handles_harmony_prompt(
     [
         ("Question", [{"role": "user", "content": "Question"}], True, True),
         ("<|user|>Question<|end|><|assistant|>", [{"role": "user", "content": "Question"}], True, True),
+        (
+            "<|system|>Rules<|end|><|user|>Question<|end|><|assistant|>",
+            [{"role": "system", "content": "Rules"}, {"role": "user", "content": "Question"}],
+            True,
+            True,
+        ),
+        (
+            "<|im_start|>system\nRules<|im_end|><|im_start|>user\nQuestion<|im_end|><|im_start|>assistant\n",
+            [{"role": "system", "content": "Rules"}, {"role": "user", "content": "Question"}],
+            True,
+            True,
+        ),
         (
             "<|start|>user<|message|>Question<|end|><|start|>assistant",
             None,
@@ -282,6 +314,16 @@ def test_genai_text_generation_handles_harmony_prompt(
     [
         ("Question", [{"role": "user", "content": "Question"}], False),
         ("<|user|>Question<|end|><|assistant|>", [{"role": "user", "content": "Question"}], False),
+        (
+            "<|system|>Rules<|end|><|user|>Question<|end|><|assistant|>",
+            [{"role": "system", "content": "Rules"}, {"role": "user", "content": "Question"}],
+            False,
+        ),
+        (
+            "<|im_start|>system\nRules<|im_end|><|im_start|>user\nQuestion<|im_end|><|im_start|>assistant\n",
+            [{"role": "system", "content": "Rules"}, {"role": "user", "content": "Question"}],
+            False,
+        ),
         ("<|start|>user<|message|>Question<|end|><|start|>assistant", None, False),
     ],
 )

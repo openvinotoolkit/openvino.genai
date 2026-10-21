@@ -62,15 +62,24 @@ def test_harmony_template_converts_legacy_user_prompt():
     ]
 
 
+@pytest.mark.parametrize("system_message", ["Rules", ""])
+def test_harmony_template_preserves_legacy_system_role(system_message):
+    args = {"apply_chat_template": False, "batch_size": 1, "disable_prompt_permutation": True}
+    prompt = f"<|system|>{system_message}<|end|><|user|>Question<|end|><|assistant|>"
+    assert apply_chat_template_genai(args, prompt, HarmonyTokenizer()) == [
+        f"<|start|>system:{system_message}|user:Question<|start|>assistant"
+    ]
+
+
 @pytest.mark.parametrize("separator", ["<|im_sep|>", "\n", "\r\n"])
 @pytest.mark.parametrize("include_system", [False, True])
 def test_harmony_template_converts_legacy_chatml_prompt(separator, include_system):
     args = {"apply_chat_template": False, "batch_size": 1, "disable_prompt_permutation": True}
     system = f"<|im_start|>system{separator}Summarize precisely.<|im_end|>" if include_system else ""
     prompt = f"{system}<|im_start|>user{separator}Article text.<|im_end|><|im_start|>assistant{separator}"
-    content = "Summarize precisely.\r\n\r\nArticle text." if include_system else "Article text."
+    messages = "system:Summarize precisely.|user:Article text." if include_system else "user:Article text."
 
-    assert apply_chat_template_genai(args, prompt, HarmonyTokenizer()) == [f"<|start|>user:{content}<|start|>assistant"]
+    assert apply_chat_template_genai(args, prompt, HarmonyTokenizer()) == [f"<|start|>{messages}<|start|>assistant"]
 
 
 @pytest.mark.parametrize("explicit_template", [False, True])
@@ -88,13 +97,14 @@ def test_plain_template_keeps_existing_default_behavior():
     assert not _should_apply_chat_template(args, "Article text.", PlainTokenizer())
 
 
-def test_plain_template_preserves_legacy_prompt_with_explicit_flag():
+@pytest.mark.parametrize(
+    "prompt",
+    ["<|user|>Article text.<|end|><|assistant|>", "<|system|>Rules<|end|><|user|>Article text.<|end|><|assistant|>"],
+)
+def test_plain_template_preserves_legacy_prompt_with_explicit_flag(prompt):
     args = {"apply_chat_template": True, "batch_size": 1, "disable_prompt_permutation": True}
-    prompt = "<|user|>Article text.<|end|><|assistant|>"
 
-    assert apply_chat_template_genai(args, prompt, PlainTokenizer()) == [
-        "<|start|>user:<|user|>Article text.<|end|><|assistant|><|start|>assistant"
-    ]
+    assert apply_chat_template_genai(args, prompt, PlainTokenizer()) == [f"<|start|>user:{prompt}<|start|>assistant"]
 
 
 @pytest.mark.parametrize("tokenizer", [SimpleNamespace(), SimpleNamespace(get_original_chat_template=lambda: None)])
@@ -112,6 +122,20 @@ def test_missing_chat_template_is_not_harmony(tokenizer):
             "Question",
             False,
             "<|start|>user:Question<|start|>assistant",
+            {"add_special_tokens": False},
+        ),
+        (
+            HARMONY_TEMPLATE,
+            "<|system|>Rules<|end|><|user|>Question<|end|><|assistant|>",
+            False,
+            "<|start|>system:Rules|user:Question<|start|>assistant",
+            {"add_special_tokens": False},
+        ),
+        (
+            HARMONY_TEMPLATE,
+            "<|im_start|>system\nRules<|im_end|><|im_start|>user\nQuestion<|im_end|><|im_start|>assistant\n",
+            False,
+            "<|start|>system:Rules|user:Question<|start|>assistant",
             {"add_special_tokens": False},
         ),
         (

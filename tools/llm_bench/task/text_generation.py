@@ -103,9 +103,11 @@ def _get_legacy_chat_history(input_text: str):
 
         system_message = match.groupdict().get("system")
         user_message = match.group("user")
+        history = []
         if system_message is not None:
-            user_message = f"{system_message}\r\n\r\n{user_message}"
-        return [{"role": "user", "content": user_message}]
+            history.append({"role": "system", "content": system_message})
+        history.append({"role": "user", "content": user_message})
+        return history
 
     return None
 
