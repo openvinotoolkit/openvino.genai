@@ -316,11 +316,13 @@ TEST(GGUFMultimodal, Gemma4HonorsImagePadding) {
 TEST(GGUFMultimodal, PipelineControlsGenAIExtensionMode) {
     using namespace ov::genai;
     using Extension = ov::frontend::gguf::GenAIExtension;
-    ov::frontend::gguf::FrontEnd frontend;
-    auto supplied = std::make_shared<Extension>(Extension::InputMode::IDS_TO_LOGITS);
-    const auto selected = register_gguf_extensions(frontend, {supplied}, Extension::InputMode::EMBEDS_TO_LOGITS);
-    EXPECT_NE(selected, supplied);
-    EXPECT_NE(selected, nullptr);
+    for (const auto mode : {Extension::InputMode::IDS_TO_LOGITS, Extension::InputMode::EMBEDS_TO_LOGITS}) {
+        ov::frontend::gguf::FrontEnd frontend;
+        auto supplied = std::make_shared<Extension>(Extension::InputMode::IDS_TO_LOGITS);
+        const auto selected = register_gguf_extensions(frontend, {supplied}, mode);
+        EXPECT_NE(selected, supplied);
+        EXPECT_NE(selected, nullptr);
+    }
 }
 
 TEST(GGUFMultimodal, ProjectorWidthsMustMatchLanguage) {

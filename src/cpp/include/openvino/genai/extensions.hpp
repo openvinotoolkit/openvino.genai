@@ -21,7 +21,7 @@ using ExtensionList = std::vector<std::variant<std::filesystem::path, std::share
 /**
  * @brief Wrap paths and Extensions into an ov::AnyMap-compatible pair that can be passed to pipeline constructors
  * like LLMPipeline or VLMPipeline. Extensions are registered with the OpenVINO Core before model loading.
- * For GGUF `VLMPipeline`, extensions are registered on the language and projector frontends.
+ * When a pipeline uses the GGUF frontend, extensions are also registered on each frontend used for conversion.
  * C++ callers may pass library paths or created `ov::Extension` objects; Python callers may pass library paths
  * in an `extensions` list.
  */
