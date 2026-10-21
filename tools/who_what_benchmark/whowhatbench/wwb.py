@@ -21,13 +21,9 @@ from whowhatbench.model_loaders import TORCH_DTYPES, load_model
 from whowhatbench import EVALUATOR_REGISTRY
 from whowhatbench.utils import fix_phi3_v_eos_token_id, patch_transformers_gguf_support
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
-from whowhatbench.chat_utils import (
-    is_harmony_template,
-    is_native_harmony_prompt,
-    normalize_chat_history,
-)
 from whowhatbench.utils import get_json_config, load_audio_dataset, resolve_json_dataset_path, read_json_dataset
 from whowhatbench.artifacts_manager import Metrics
+from whowhatbench.text_generation_strategies import GenAIGeneration
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -832,39 +828,18 @@ def genai_gen_text(
     assistant_confidence_threshold=0.0,
     generation_config_extra=None,
 ):
-    kwargs = {}
-    if empty_adapters:
-        import openvino_genai
-
-        kwargs["adapters"] = openvino_genai.AdapterConfig()
-    if generation_config_extra:
-        kwargs.update(generation_config_extra)
-
-    generation_input = question
-    apply_chat_template = use_chat_template
-    uses_chat_history = False
-    model_tokenizer = model.get_tokenizer() if hasattr(model, "get_tokenizer") else tokenizer
-    if use_chat_template and is_harmony_template(model_tokenizer):
-        if is_native_harmony_prompt(question, model_tokenizer):
-            apply_chat_template = False
-        else:
-            import openvino_genai
-
-            generation_input = openvino_genai.ChatHistory()
-            for message in normalize_chat_history(question, model_tokenizer):
-                generation_input.append(message)
-            uses_chat_history = True
-
-    generation_result = model.generate(
-        generation_input,
-        do_sample=False,
-        max_new_tokens=max_new_tokens,
-        apply_chat_template=apply_chat_template,
+    return GenAIGeneration(metrics_list=[]).run_generation(
+        model,
+        tokenizer,
+        question,
+        max_new_tokens,
+        skip_question,
+        use_chat_template=use_chat_template,
+        empty_adapters=empty_adapters,
         num_assistant_tokens=num_assistant_tokens,
         assistant_confidence_threshold=assistant_confidence_threshold,
-        **kwargs,
-    )
-    return generation_result.texts[0] if uses_chat_history else generation_result
+        generation_config_extra=generation_config_extra,
+    ).answer_text
 
 
 def genai_gen_chat_text(

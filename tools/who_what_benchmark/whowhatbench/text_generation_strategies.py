@@ -179,6 +179,24 @@ class GenAIGeneration(BaseGenerationStrategy):
         generation_config_extra=None,
         context: TextGenerationContext | None = None,
     ) -> GenerationResults:
+        model_tokenizer = model.get_tokenizer() if hasattr(model, "get_tokenizer") else tokenizer
+        if is_native_harmony_prompt(question, model_tokenizer) or (
+            use_chat_template and is_harmony_template(model_tokenizer)
+        ):
+            return self.genai_generation_encoded(
+                model,
+                model_tokenizer,
+                question,
+                max_new_tokens,
+                skip_question,
+                use_chat_template=use_chat_template,
+                empty_adapters=empty_adapters,
+                num_assistant_tokens=num_assistant_tokens,
+                assistant_confidence_threshold=assistant_confidence_threshold,
+                generation_config_extra=generation_config_extra,
+                context=context,
+            )
+
         kwargs = {}
         if empty_adapters:
             import openvino_genai
@@ -187,32 +205,17 @@ class GenAIGeneration(BaseGenerationStrategy):
         if generation_config_extra:
             kwargs.update(generation_config_extra)
 
-        generation_input = question
-        apply_chat_template = use_chat_template
-        uses_chat_history = False
-        model_tokenizer = model.get_tokenizer() if hasattr(model, "get_tokenizer") else tokenizer
-        if use_chat_template and is_harmony_template(model_tokenizer):
-            if is_native_harmony_prompt(question, model_tokenizer):
-                apply_chat_template = False
-            else:
-                import openvino_genai
-
-                generation_input = openvino_genai.ChatHistory()
-                for message in normalize_chat_history(question, model_tokenizer):
-                    generation_input.append(message)
-                uses_chat_history = True
-
         output = model.generate(
-            generation_input,
+            question,
             do_sample=False,
             max_new_tokens=max_new_tokens,
-            apply_chat_template=apply_chat_template,
+            apply_chat_template=use_chat_template,
             num_assistant_tokens=num_assistant_tokens,
             assistant_confidence_threshold=assistant_confidence_threshold,
             **kwargs,
         )
 
-        return GenerationResults(answer_text=output.texts[0] if uses_chat_history else output)
+        return GenerationResults(answer_text=output)
 
     def genai_generation_encoded(
         self,
@@ -236,7 +239,7 @@ class GenAIGeneration(BaseGenerationStrategy):
         if generation_config_extra:
             kwargs.update(generation_config_extra)
 
-        tokenizer = model.get_tokenizer()
+        tokenizer = model.get_tokenizer() if hasattr(model, "get_tokenizer") else tokenizer
 
         prompt = question
         native_harmony = is_native_harmony_prompt(prompt, tokenizer)
@@ -248,8 +251,9 @@ class GenAIGeneration(BaseGenerationStrategy):
                 chat_history.append(message)
             prompt = tokenizer.apply_chat_template(chat_history, add_generation_prompt=True)
 
+        preserve_formatting = native_harmony or (use_chat_template and is_harmony_template(tokenizer))
         tokenized_input = (
-            tokenizer.encode(prompt, add_special_tokens=False) if native_harmony else tokenizer.encode(prompt)
+            tokenizer.encode(prompt, add_special_tokens=False) if preserve_formatting else tokenizer.encode(prompt)
         )
         output = model.generate(
             tokenized_input,

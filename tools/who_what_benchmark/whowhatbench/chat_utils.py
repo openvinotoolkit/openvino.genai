@@ -19,9 +19,15 @@ _HARMONY_PROMPT_PREFIX = "<|start|>"
 
 def is_harmony_template(tokenizer: Any) -> bool:
     template_getter = getattr(tokenizer, "get_original_chat_template", None)
-    if not callable(template_getter):
+    if callable(template_getter):
+        template = template_getter()
+    else:
+        template = getattr(tokenizer, "chat_template", None)
+        if not template:
+            return False
         template_getter = getattr(tokenizer, "get_chat_template", None)
-    template = template_getter() if callable(template_getter) else getattr(tokenizer, "chat_template", None)
+        if callable(template_getter):
+            template = template_getter()
     return isinstance(template, str) and _HARMONY_TEMPLATE_MARKER in template
 
 
@@ -42,9 +48,9 @@ def normalize_chat_history(input_text: str, tokenizer: Any) -> list[dict[str, st
                 re.DOTALL,
             ),
             re.compile(
-                r"^<\|im_start\|>system<\|im_sep\|>(?P<system>.*?)<\|im_end\|>\s*"
-                r"<\|im_start\|>user<\|im_sep\|>(?P<user>.*?)<\|im_end\|>\s*"
-                r"<\|im_start\|>assistant<\|im_sep\|>\s*$",
+                r"^(?:<\|im_start\|>system(?:<\|im_sep\|>|\r?\n)(?P<system>.*?)<\|im_end\|>\s*)?"
+                r"<\|im_start\|>user(?:<\|im_sep\|>|\r?\n)(?P<user>.*?)<\|im_end\|>\s*"
+                r"<\|im_start\|>assistant(?:<\|im_sep\|>|\r?\n)\s*$",
                 re.DOTALL,
             ),
         )
