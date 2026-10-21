@@ -87,6 +87,7 @@ ov::genai::ProcessorConfig::ProcessorConfig(const nlohmann::json& parsed) {
 
     // Setting mistral3 (pixtral) config params
     read_json_param(parsed, "size.longest_edge", longest_edge);
+    OPENVINO_ASSERT(longest_edge > 0, "longest_edge must be positive, got ", longest_edge);
 }
 
 ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_path)

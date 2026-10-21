@@ -134,7 +134,7 @@ ov::Tensor merge_image_embeddings(const ov::Tensor& input_ids,
     const size_t hidden_size = text_embeds_shape[2];
 
     ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
-    std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
+    text_embeds.copy_to(inputs_embeds);
 
     const int64_t* ids = input_ids.data<const int64_t>();
     float* dst = inputs_embeds.data<float>();
@@ -339,7 +339,7 @@ ov::Tensor InputsEmbedderMistral3::get_inputs_embeds(
 
     if (images.empty() || images_sequence.empty()) {
         ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
-        std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
+        text_embeds.copy_to(inputs_embeds);
         return inputs_embeds;
     }
 
