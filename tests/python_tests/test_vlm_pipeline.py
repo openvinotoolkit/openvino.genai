@@ -3691,6 +3691,35 @@ def _get_vlm_dflash_model_paths() -> tuple[Path, Path]:
     return Path(_get_ov_model(VLM_DFLASH_MAIN_MODEL_ID)), draft_model_path
 
 
+def test_vlm_dflash_prefix_caching(cat_tensor):
+    model_path, draft_model_path = _get_vlm_dflash_model_paths()
+    properties = {"INFERENCE_PRECISION_HINT": openvino.Type.f32, "KV_CACHE_PRECISION": openvino.Type.f32}
+    no_prefix_config = SchedulerConfig()
+    no_prefix_config.enable_prefix_caching = False
+    ov_pipe = VLMPipeline(model_path, "CPU", scheduler_config=no_prefix_config, **properties)
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+    reference = ov_pipe.generate(PROMPTS[2], images=[cat_tensor], generation_config=generation_config).texts[0]
+
+    prefix_config = SchedulerConfig()
+    prefix_config.enable_prefix_caching = True
+    ov_pipe_with_draft = VLMPipeline(
+        model_path,
+        "CPU",
+        draft_model=draft_model(draft_model_path, "CPU", **properties),
+        scheduler_config=prefix_config,
+        **properties,
+    )
+    generation_config.num_assistant_tokens = 3
+    results = [
+        ov_pipe_with_draft.generate(PROMPTS[2], images=[cat_tensor], generation_config=generation_config)
+        for _ in range(2)
+    ]
+
+    assert [result.texts[0] for result in results] == [reference, reference]
+    assert results[0].perf_metrics.get_num_prefix_cache_hit_tokens() == 0
+    assert results[1].perf_metrics.get_num_prefix_cache_hit_tokens() > 0
+
+
 @pytest.mark.parametrize(
     "options",
     [{}, {"pruning_ratio": 50}, {"echo": True}, {"logprobs": 2}],

@@ -89,6 +89,16 @@ public:
         return m_scheduler->get_config().enable_prefix_caching;
     }
 
+    // Returns the awaiting request with the given id, or nullptr if there is none.
+    SequenceGroup::Ptr find_awaiting_request(uint64_t request_id) {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        const auto found = std::find_if(m_awaiting_requests.begin(), m_awaiting_requests.end(),
+                                        [request_id](const SequenceGroup::Ptr& request) {
+                                            return request->get_request_id() == request_id;
+                                        });
+        return found == m_awaiting_requests.end() ? nullptr : *found;
+    }
+
     void discard_awaiting_request(uint64_t request_id) {
         std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
         for (auto request = m_awaiting_requests.begin(); request != m_awaiting_requests.end(); ++request) {
@@ -377,7 +387,23 @@ public:
         }
     }
 
+    bool supports_embedding_prefix_verification() const override {
+        return true;
+    }
+
+    // Only prompt blocks are published: the draft KV past the prompt holds mask and rewound block rows.
+    // DFlashDecodingImpl restores main and draft to a common prefix after both requests are added.
+    void initialize_prefix_cache(const SequenceGroup::Ptr& group) override {
+        for (const auto& sequence : group->get_sequences()) {
+            sequence->set_prefix_cache_policy(group->get_prompt_len());
+        }
+    }
+
 protected:
+    bool _can_publish_kv_only_completed_blocks() const override {
+        return true;
+    }
+
     void enable_dflash_draft(int64_t mask_token_id, size_t candidate_position_offset) {
         m_dflash_mask_token_id = mask_token_id;
         m_dflash_candidate_position_offset = candidate_position_offset;

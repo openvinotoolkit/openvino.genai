@@ -1256,6 +1256,39 @@ def test_dflash_staggered_requests_with_mixed_assistant_tokens(dflash_model_path
     assert run_staggered(_dflash_pipeline(dflash_model_paths, scheduler_config)) == reference
 
 
+DFLASH_SHARED_PREFIX = " ".join(
+    ["Speculative decoding drafts several tokens and the target model validates them in a single step."] * 12
+)
+
+
+def test_dflash_prefix_caching_matches_main_only(dflash_model_paths):
+    config = _dflash_config()
+    # a cold prompt, the same prompt again, and a prompt that extends it
+    prompts = [DFLASH_SHARED_PREFIX, DFLASH_SHARED_PREFIX, DFLASH_SHARED_PREFIX + " Why is the Sun yellow?"]
+    reference = _main_only_ids(dflash_model_paths[0], prompts, config)
+    pipe = _dflash_pipeline(dflash_model_paths, dict_to_scheduler_config({"enable_prefix_caching": True}))
+
+    results = [pipe.generate([prompt], [config])[0] for prompt in prompts]
+
+    assert [result.m_generation_ids for result in results] == reference
+    hits = [result.perf_metrics.get_num_prefix_cache_hit_tokens() for result in results]
+    assert hits[0] == 0
+    assert hits[1] > 0 and hits[2] > 0
+    assert all(result.extended_perf_metrics.get_num_draft_tokens() > 0 for result in results)
+
+
+def test_dflash_rejects_prefix_caching_mismatch(dflash_model_paths):
+    target_path, draft_path = dflash_model_paths
+    draft_scheduler_config = dict_to_scheduler_config({"enable_prefix_caching": True, "num_kv_blocks": 64})
+    with pytest.raises(RuntimeError, match="must use the same enable_prefix_caching"):
+        ContinuousBatchingPipeline(
+            target_path,
+            dict_to_scheduler_config({"enable_prefix_caching": False}),
+            "CPU",
+            {"draft_model": draft_model(draft_path, "CPU", scheduler_config=draft_scheduler_config)},
+        )
+
+
 def test_dflash_preemption_completes_all_requests(dflash_model_paths):
     # Both models preempt requests; the draft waits for a recomputing target and leaves a request whose
     # window was preempted to the target.

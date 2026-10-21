@@ -151,17 +151,8 @@ ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_id
 }
 
 void ContinuousBatchingPipeline::Eagle3DecodingImpl::align_request_pair_processed_prefix(uint64_t request_id) {
-    auto find_request_by_id = [request_id](const std::vector<SequenceGroup::Ptr>& requests) -> SequenceGroup::Ptr {
-        for (const auto& request : requests) {
-            if (request && request->get_request_id() == request_id) {
-                return request;
-            }
-        }
-        return nullptr;
-    };
-
-    auto main_request = find_request_by_id(m_main_pipeline->get_awaiting_requests());
-    auto draft_request = find_request_by_id(m_draft_pipeline->get_awaiting_requests());
+    auto main_request = m_main_pipeline->find_awaiting_request(request_id);
+    auto draft_request = m_draft_pipeline->find_awaiting_request(request_id);
 
     OPENVINO_ASSERT(main_request && draft_request,
                     "Failed to find awaiting requests for Eagle3 alignment, request_id=",
