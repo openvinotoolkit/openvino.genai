@@ -212,13 +212,11 @@ class LTX2Pipeline : public VideoPipeline {
         return connected;
     }
 
-    // Text conditioning and positional coords for one transformer pass, all at batch N
+    // Text conditioning for one transformer pass, all at batch N
     struct PassConditioning {
         ov::Tensor video_text_embedding;
         ov::Tensor audio_text_embedding;
         ov::Tensor connector_attention_mask;
-        ov::Tensor video_coords;
-        ov::Tensor audio_coords;
     };
 
     void bind_conditioning(const PassConditioning& conditioning) {
@@ -226,20 +224,6 @@ class LTX2Pipeline : public VideoPipeline {
         m_transformer->set_hidden_states("audio_encoder_hidden_states", conditioning.audio_text_embedding);
         m_transformer->set_hidden_states("encoder_attention_mask", conditioning.connector_attention_mask);
         m_transformer->set_hidden_states("audio_encoder_attention_mask", conditioning.connector_attention_mask);
-        m_transformer->set_hidden_states("video_coords", conditioning.video_coords);
-        m_transformer->set_hidden_states("audio_coords", conditioning.audio_coords);
-    }
-
-    void set_micro_conditions(size_t audio_num_frames, float frame_rate) {
-        using video_generation_utils::make_i64_scalar;
-        m_transformer->set_hidden_states("num_frames", make_i64_scalar(m_latent_num_frames));
-        m_transformer->set_hidden_states("height", make_i64_scalar(m_latent_height));
-        m_transformer->set_hidden_states("width", make_i64_scalar(m_latent_width));
-        m_transformer->set_hidden_states("audio_num_frames", make_i64_scalar(audio_num_frames));
-
-        ov::Tensor fps(ov::element::f32, {});
-        fps.data<float>()[0] = frame_rate;
-        m_transformer->set_hidden_states("fps", fps);
     }
 
     // Per-dimension [start, end) patch boundaries in pixel space; temporal axis in seconds (see
@@ -548,17 +532,15 @@ public:
                                                                      merged_generation_config.negative_prompt.value_or(""),
                                                                      merged_generation_config,
                                                                      use_classifier_free_guidance);
-        set_micro_conditions(audio_num_frames, frame_rate);
 
-        // Every pass runs at batch N, CFG included, so the transformer keeps a static batch
-        const ov::Tensor video_coords = prepare_video_coords(num_videos_per_prompt, frame_rate);
-        const ov::Tensor audio_coords = prepare_audio_coords(num_videos_per_prompt, audio_num_frames);
+        // Every pass runs at batch N, CFG included, so the transformer keeps a static batch. The positions
+        // are the same for every pass, so RoPE is bound once for the whole generation.
+        m_transformer->set_rope_coords(prepare_video_coords(num_videos_per_prompt, frame_rate),
+                                       prepare_audio_coords(num_videos_per_prompt, audio_num_frames));
         auto conditioning_half = [&](size_t half_index) {
             return PassConditioning{cfg_half(connected.video_text_embedding, num_videos_per_prompt, half_index),
                                     cfg_half(connected.audio_text_embedding, num_videos_per_prompt, half_index),
-                                    cfg_half(connected.connector_attention_mask, num_videos_per_prompt, half_index),
-                                    video_coords,
-                                    audio_coords};
+                                    cfg_half(connected.connector_attention_mask, num_videos_per_prompt, half_index)};
         };
         PassConditioning unconditional_conditioning;
         PassConditioning conditional_conditioning;
@@ -568,9 +550,7 @@ public:
         } else {
             conditional_conditioning = {connected.video_text_embedding,
                                         connected.audio_text_embedding,
-                                        connected.connector_attention_mask,
-                                        video_coords,
-                                        audio_coords};
+                                        connected.connector_attention_mask};
         }
         bind_conditioning(conditional_conditioning);
 
