@@ -828,18 +828,22 @@ def genai_gen_text(
     assistant_confidence_threshold=0.0,
     generation_config_extra=None,
 ):
-    return GenAIGeneration(metrics_list=[]).run_generation(
-        model,
-        tokenizer,
-        question,
-        max_new_tokens,
-        skip_question,
-        use_chat_template=use_chat_template,
-        empty_adapters=empty_adapters,
-        num_assistant_tokens=num_assistant_tokens,
-        assistant_confidence_threshold=assistant_confidence_threshold,
-        generation_config_extra=generation_config_extra,
-    ).answer_text
+    return (
+        GenAIGeneration(metrics_list=[])
+        .run_generation(
+            model,
+            tokenizer,
+            question,
+            max_new_tokens,
+            skip_question,
+            use_chat_template=use_chat_template,
+            empty_adapters=empty_adapters,
+            num_assistant_tokens=num_assistant_tokens,
+            assistant_confidence_threshold=assistant_confidence_threshold,
+            generation_config_extra=generation_config_extra,
+        )
+        .answer_text
+    )
 
 
 def genai_gen_chat_text(

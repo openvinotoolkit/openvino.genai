@@ -67,15 +67,10 @@ def test_harmony_template_converts_legacy_user_prompt():
 def test_harmony_template_converts_legacy_chatml_prompt(separator, include_system):
     args = {"apply_chat_template": False, "batch_size": 1, "disable_prompt_permutation": True}
     system = f"<|im_start|>system{separator}Summarize precisely.<|im_end|>" if include_system else ""
-    prompt = (
-        f"{system}<|im_start|>user{separator}Article text.<|im_end|>"
-        f"<|im_start|>assistant{separator}"
-    )
+    prompt = f"{system}<|im_start|>user{separator}Article text.<|im_end|><|im_start|>assistant{separator}"
     content = "Summarize precisely.\r\n\r\nArticle text." if include_system else "Article text."
 
-    assert apply_chat_template_genai(args, prompt, HarmonyTokenizer()) == [
-        f"<|start|>user:{content}<|start|>assistant"
-    ]
+    assert apply_chat_template_genai(args, prompt, HarmonyTokenizer()) == [f"<|start|>user:{content}<|start|>assistant"]
 
 
 @pytest.mark.parametrize("explicit_template", [False, True])
@@ -112,18 +107,33 @@ def test_missing_chat_template_is_not_harmony(tokenizer):
 @pytest.mark.parametrize(
     ("template", "prompt", "explicit_template", "expected_prompt", "expected_kwargs"),
     [
-        (HARMONY_TEMPLATE, "Question", False, "<|start|>user:Question<|start|>assistant", {"add_special_tokens": False}),
         (
-            HARMONY_TEMPLATE, "<|user|>Question<|end|><|assistant|>", False,
-            "<|start|>user:Question<|start|>assistant", {"add_special_tokens": False},
+            HARMONY_TEMPLATE,
+            "Question",
+            False,
+            "<|start|>user:Question<|start|>assistant",
+            {"add_special_tokens": False},
         ),
         (
-            HARMONY_TEMPLATE, "<|start|>user<|message|>Question<|end|><|start|>assistant", True,
-            "<|start|>user<|message|>Question<|end|><|start|>assistant", {"add_special_tokens": False},
+            HARMONY_TEMPLATE,
+            "<|user|>Question<|end|><|assistant|>",
+            False,
+            "<|start|>user:Question<|start|>assistant",
+            {"add_special_tokens": False},
         ),
         (
-            HARMONY_TEMPLATE, "<|start|>user<|message|>Question<|end|><|start|>assistant", False,
-            "<|start|>user<|message|>Question<|end|><|start|>assistant", {"add_special_tokens": False},
+            HARMONY_TEMPLATE,
+            "<|start|>user<|message|>Question<|end|><|start|>assistant",
+            True,
+            "<|start|>user<|message|>Question<|end|><|start|>assistant",
+            {"add_special_tokens": False},
+        ),
+        (
+            HARMONY_TEMPLATE,
+            "<|start|>user<|message|>Question<|end|><|start|>assistant",
+            False,
+            "<|start|>user<|message|>Question<|end|><|start|>assistant",
+            {"add_special_tokens": False},
         ),
         ("{{ messages }}", "Question", False, "Question", {}),
         ("{{ messages }}", "Question", True, "<|start|>user:Question<|start|>assistant", {}),
@@ -147,14 +157,28 @@ def test_genai_runners_share_prompt_preparation(
 
     tokenizer = RecordingTokenizer()
     args = {
-        "apply_chat_template": explicit_template, "batch_size": 1,
-        "disable_prompt_permutation": True, "output_dir": None,
+        "apply_chat_template": explicit_template,
+        "batch_size": 1,
+        "disable_prompt_permutation": True,
+        "output_dir": None,
     }
     with pytest.raises(TokenizationComplete):
         runner(
-            input_text=prompt, num=0, model=SimpleNamespace(get_tokenizer=lambda: tokenizer), tokenizer=tokenizer,
-            args=args, iter_data_list=[], md5_list=[{}], prompt_index=0, streamer=None, tokens_len=None,
-            streaming=False, model_precision="FP32", proc_id=0, mem_consumption=None, prefix="test",
+            input_text=prompt,
+            num=0,
+            model=SimpleNamespace(get_tokenizer=lambda: tokenizer),
+            tokenizer=tokenizer,
+            args=args,
+            iter_data_list=[],
+            md5_list=[{}],
+            prompt_index=0,
+            streamer=None,
+            tokens_len=None,
+            streaming=False,
+            model_precision="FP32",
+            proc_id=0,
+            mem_consumption=None,
+            prefix="test",
         )
 
     assert tokenizer.encoded_prompts == [expected_prompt]
