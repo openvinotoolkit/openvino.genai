@@ -73,7 +73,7 @@ def apply_sd_generation_config(args, gen_config):
 
 DEFAULT_OUTPUT_TOKEN_SIZE = 512
 
-_HARMONY_TEMPLATE_MARKER = "<|channel|>"
+_HARMONY_TEMPLATE_MARKERS = ("<|meta_sep|>", "<|channel|>")
 _HARMONY_PROMPT_PREFIX = "<|start|>"
 
 
@@ -113,7 +113,7 @@ def _get_legacy_chat_history(input_text: str):
 def _is_harmony_template(tokenizer: object) -> bool:
     template_getter = getattr(tokenizer, "get_original_chat_template", None)
     template = template_getter() if callable(template_getter) else getattr(tokenizer, "chat_template", None)
-    return isinstance(template, str) and _HARMONY_TEMPLATE_MARKER in template
+    return isinstance(template, str) and any(marker in template for marker in _HARMONY_TEMPLATE_MARKERS)
 
 
 def _should_apply_chat_template(args: dict, input_text: str, tokenizer: object) -> bool:

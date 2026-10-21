@@ -15,13 +15,20 @@ from whowhatbench.text_evaluator import TextEvaluator
 from whowhatbench.text_generation_strategies import GenAIGeneration, KLDivergencyGeneration, OptimumHFGeneration
 
 
+HARMONY_TEMPLATE = (
+    "{{- '<|start|>' + message['role'] -}}"
+    "{% if message['channel'] is defined %}{{- '<|meta_sep|>' + message['channel'] -}}{% endif %}"
+    "{{- '<|message|>' + message['content'] + '<|end|>' -}}"
+)
+
+
 class FakeInputs(dict):
     def to(self, _device):
         return self
 
 
 class HarmonyTokenizer:
-    chat_template = "<|start|>assistant<|channel|>final<|message|>"
+    chat_template = HARMONY_TEMPLATE
 
     def __init__(self):
         self.applied_history = None
@@ -64,7 +71,7 @@ class GenAIHarmonyTokenizer:
         self.add_special_tokens = None
 
     def get_original_chat_template(self):
-        return "<|start|>assistant<|channel|>final<|message|>"
+        return HARMONY_TEMPLATE
 
     def apply_chat_template(self, history, add_generation_prompt):
         assert add_generation_prompt
@@ -108,11 +115,24 @@ class FakeModel:
 @pytest.mark.parametrize("tokenizer", [HarmonyTokenizer(), GenAIHarmonyTokenizer()])
 def test_detects_harmony_template(tokenizer):
     assert is_harmony_template(tokenizer)
+    assert "<|meta_sep|>" in HARMONY_TEMPLATE
+    assert "<|channel|>" not in HARMONY_TEMPLATE
+
+
+@pytest.mark.parametrize("channel_marker", ["<|meta_sep|>", "<|channel|>"])
+@pytest.mark.parametrize("tokenizer_api", ["hf", "genai"])
+def test_detects_harmony_template_variants(channel_marker, tokenizer_api):
+    template = HARMONY_TEMPLATE.replace("<|meta_sep|>", channel_marker)
+    if tokenizer_api == "genai":
+        tokenizer = SimpleNamespace(get_original_chat_template=lambda: template)
+    else:
+        tokenizer = SimpleNamespace(chat_template=template)
+    assert is_harmony_template(tokenizer)
 
 
 @pytest.mark.parametrize(
     "template",
-    [None, "", {}, {"tool_use": "{{ messages }}"}, {"tool_use": "<|channel|>", "chat": "{{ messages }}"}],
+    [None, "", {}, {"tool_use": "{{ messages }}"}, {"tool_use": HARMONY_TEMPLATE, "chat": "{{ messages }}"}],
 )
 def test_missing_hf_template_is_not_harmony(template):
     tokenizer = NoTemplateTokenizer()
@@ -122,14 +142,14 @@ def test_missing_hf_template_is_not_harmony(template):
     assert normalize_chat_history("Question", tokenizer) == [{"role": "user", "content": "Question"}]
 
 
-@pytest.mark.parametrize("template,expected", [("{{ messages }}", False), ("<|channel|>", True)])
+@pytest.mark.parametrize("template,expected", [("{{ messages }}", False), (HARMONY_TEMPLATE, True)])
 def test_named_hf_templates_resolve_default(template, expected):
     class NamedTemplateTokenizer(PlainTokenizer):
         def get_chat_template(self):
             return self.chat_template["default"]
 
     tokenizer = NamedTemplateTokenizer()
-    tokenizer.chat_template = {"default": template, "tool_use": "<|channel|>"}
+    tokenizer.chat_template = {"default": template, "tool_use": HARMONY_TEMPLATE}
     assert is_harmony_template(tokenizer) is expected
 
 

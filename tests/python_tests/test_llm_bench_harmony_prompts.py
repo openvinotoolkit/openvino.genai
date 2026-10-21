@@ -19,9 +19,16 @@ from task.text_generation import (
 )
 
 
+HARMONY_TEMPLATE = (
+    "{{- '<|start|>' + message['role'] -}}"
+    "{% if message['channel'] is defined %}{{- '<|meta_sep|>' + message['channel'] -}}{% endif %}"
+    "{{- '<|message|>' + message['content'] + '<|end|>' -}}"
+)
+
+
 class HarmonyTokenizer:
     def get_original_chat_template(self):
-        return "<|start|>assistant<|channel|>final<|message|>"
+        return HARMONY_TEMPLATE
 
     def apply_chat_template(self, history, add_generation_prompt):
         messages = "|".join(f"{message['role']}:{message['content']}" for message in history)
@@ -35,6 +42,14 @@ class PlainTokenizer:
     def apply_chat_template(self, history, add_generation_prompt):
         messages = "|".join(f"{message['role']}:{message['content']}" for message in history)
         return f"<|start|>{messages}<|start|>assistant"
+
+
+@pytest.mark.parametrize("channel_marker", ["<|meta_sep|>", "<|channel|>"])
+def test_detects_representative_harmony_template(channel_marker):
+    template = HARMONY_TEMPLATE.replace("<|meta_sep|>", channel_marker)
+    assert _is_harmony_template(SimpleNamespace(get_original_chat_template=lambda: template))
+    assert "<|meta_sep|>" in HARMONY_TEMPLATE
+    assert "<|channel|>" not in HARMONY_TEMPLATE
 
 
 def test_harmony_template_converts_legacy_user_prompt():
@@ -97,17 +112,17 @@ def test_missing_chat_template_is_not_harmony(tokenizer):
 @pytest.mark.parametrize(
     ("template", "prompt", "explicit_template", "expected_prompt", "expected_kwargs"),
     [
-        ("<|channel|>", "Question", False, "<|start|>user:Question<|start|>assistant", {"add_special_tokens": False}),
+        (HARMONY_TEMPLATE, "Question", False, "<|start|>user:Question<|start|>assistant", {"add_special_tokens": False}),
         (
-            "<|channel|>", "<|user|>Question<|end|><|assistant|>", False,
+            HARMONY_TEMPLATE, "<|user|>Question<|end|><|assistant|>", False,
             "<|start|>user:Question<|start|>assistant", {"add_special_tokens": False},
         ),
         (
-            "<|channel|>", "<|start|>user<|message|>Question<|end|><|start|>assistant", True,
+            HARMONY_TEMPLATE, "<|start|>user<|message|>Question<|end|><|start|>assistant", True,
             "<|start|>user<|message|>Question<|end|><|start|>assistant", {"add_special_tokens": False},
         ),
         (
-            "<|channel|>", "<|start|>user<|message|>Question<|end|><|start|>assistant", False,
+            HARMONY_TEMPLATE, "<|start|>user<|message|>Question<|end|><|start|>assistant", False,
             "<|start|>user<|message|>Question<|end|><|start|>assistant", {"add_special_tokens": False},
         ),
         ("{{ messages }}", "Question", False, "Question", {}),

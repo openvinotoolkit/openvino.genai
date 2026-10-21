@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from transformers import Cache
 
 
-_HARMONY_TEMPLATE_MARKER = "<|channel|>"
+_HARMONY_TEMPLATE_MARKERS = ("<|meta_sep|>", "<|channel|>")
 _HARMONY_PROMPT_PREFIX = "<|start|>"
 
 
@@ -30,7 +30,7 @@ def is_harmony_template(tokenizer: Any) -> bool:
         template_getter = getattr(tokenizer, "get_chat_template", None)
         if callable(template_getter):
             template = template_getter()
-    return isinstance(template, str) and _HARMONY_TEMPLATE_MARKER in template
+    return isinstance(template, str) and any(marker in template for marker in _HARMONY_TEMPLATE_MARKERS)
 
 
 def is_native_harmony_prompt(input_text: str, tokenizer: Any) -> bool:
