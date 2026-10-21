@@ -94,14 +94,9 @@ void VisionEncoder::resolve_processor_configs(const std::filesystem::path& confi
             "Failed to open '", processor_config_path, "' in '", config_dir_path.string(), "'");
         const auto parsed_processor_config = nlohmann::json::parse(stream);
 
-        if (parsed_processor_config.contains("image_processor")) {
+        if (parsed_processor_config.contains("image_processor") && parsed_processor_config.contains("video_processor")) {
             m_processor_config = ProcessorConfig(parsed_processor_config.at("image_processor"));
-            if (parsed_processor_config.contains("video_processor"))
-                m_video_processor_config = VideoProcessorConfig(parsed_processor_config.at("video_processor"));
-            else if (std::filesystem::exists(config_dir_path / video_preprocessor_config_filename))
-                m_video_processor_config = VideoProcessorConfig(config_dir_path / video_preprocessor_config_filename);
-            else
-                m_video_processor_config = VideoProcessorConfig(parsed_processor_config.at("image_processor"));
+            m_video_processor_config = VideoProcessorConfig(parsed_processor_config.at("video_processor"));
             return;
         }
     }

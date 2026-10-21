@@ -557,5 +557,7 @@ std::pair<size_t, size_t> bounded_image_size(size_t height,
         h = size_t(std::ceil(float(height) * beta / float(factor))) * factor;
         w = size_t(std::ceil(float(width) * beta / float(factor))) * factor;
     }
+    OPENVINO_ASSERT(w > 0 && h <= max_pixels / w,
+                    "Image resize exceeds the maximum pixel budget");
     return {h, w};
 }

@@ -126,6 +126,58 @@ Configs gguf_configs(const std::string& architecture,
 }
 }  // namespace
 
+void validate_gguf_multimodal_dimensions(const std::shared_ptr<ov::Model>& language, const VLMModels& models) {
+    const auto& inputs_shape = language->input("inputs_embeds").get_partial_shape();
+    OPENVINO_ASSERT(inputs_shape.rank().is_static() && inputs_shape.rank().get_length() == 3 &&
+                        inputs_shape[2].is_static() && inputs_shape[2].get_length() > 0,
+                    "GGUF language inputs_embeds requires a static positive hidden size");
+    const auto hidden_size = inputs_shape[2].get_length();
+    const auto check_width = [&](const ov::Output<const ov::Node>& output, const std::string& role) {
+        const auto& shape = output.get_partial_shape();
+        OPENVINO_ASSERT(shape.rank().is_static() && shape.rank().get_length() >= 2,
+                        "GGUF ",
+                        role,
+                        " requires an embedding output with static rank");
+        const auto& width = shape[shape.rank().get_length() - 1];
+        OPENVINO_ASSERT(width.is_static() && width.get_length() == hidden_size,
+                        "GGUF ",
+                        role,
+                        " embedding width ",
+                        width,
+                        " does not match language inputs_embeds hidden size ",
+                        hidden_size);
+    };
+    check_width(models.at("text_embeddings")->output(0), "text_embeddings");
+    const auto merger = models.find("vision_embeddings_merger");
+    const auto vision = merger ? merger : models.at("vision_embeddings");
+    for (const auto& output : vision->outputs())
+        check_width(output, merger ? "vision_embeddings_merger" : "vision_embeddings");
+    if (const auto audio = models.find("audio_embeddings"))
+        check_width(audio->output(0), "audio_embeddings");
+
+    const auto& inputs = language->inputs();
+    const auto per_layer_input = std::find_if(inputs.begin(), inputs.end(), [](const ov::Output<ov::Node>& input) {
+        return input.get_names().count("per_layer_inputs") > 0;
+    });
+    const auto per_layer = models.find("text_embeddings_per_layer");
+    OPENVINO_ASSERT(bool(per_layer) == (per_layer_input != inputs.end()),
+                    "GGUF per-layer embeddings must match language per_layer_inputs presence");
+    if (per_layer) {
+        const auto& expected = per_layer_input->get_partial_shape();
+        const auto& actual = per_layer->output(0).get_partial_shape();
+        OPENVINO_ASSERT(expected.rank().is_static() && expected.rank().get_length() == 4 && actual.rank().is_static() &&
+                            actual.rank().get_length() == 4,
+                        "GGUF per-layer embeddings require rank 4 [batch, tokens, layers, width]");
+        for (size_t axis : {2, 3})
+            OPENVINO_ASSERT(expected[axis].is_static() && expected[axis].get_length() > 0 && actual[axis].is_static() &&
+                                actual[axis] == expected[axis],
+                            "GGUF text_embeddings_per_layer shape ",
+                            actual,
+                            " does not match language per_layer_inputs shape ",
+                            expected);
+    }
+}
+
 void adapt_gguf_audio_encoder(const std::shared_ptr<ov::Model>& model, bool unified) {
     using namespace ov::opset15;
     const auto axes = [](std::initializer_list<int64_t> values) {
@@ -164,8 +216,8 @@ void adapt_gguf_audio_encoder(const std::shared_ptr<ov::Model>& model, bool unif
 }
 
 GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
-                                         const std::string& device,
-                                         ov::AnyMap& properties) {
+                                          const std::string& device,
+                                          ov::AnyMap& properties) {
     OPENVINO_ASSERT(device == "CPU", "GGUF multimodal generation is currently qualified on CPU only");
     const auto it = properties.find(mmproj_path.name());
     OPENVINO_ASSERT(it != properties.end(), "A language GGUF requires mmproj_path for VLMPipeline");
@@ -223,6 +275,7 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     if (const auto& per_layer = genai->get_per_layer_embedding_model())
         vlm.models["text_embeddings_per_layer"] = per_layer;
 
+    validate_gguf_multimodal_dimensions(result.language, vlm);
     const auto configs = gguf_configs(architecture, projector, meta, result);
     vlm.config = VLMConfig(configs.config);
     if (vlm.find("audio_embeddings")) {

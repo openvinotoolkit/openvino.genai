@@ -310,7 +310,6 @@ def test_tiny_gguf_saved_ir(tiny_gguf_model, pipeline_type, tmp_path):
 
 @pytest.fixture(scope="module")
 def tiny_gguf_vlm_model(llama_reference_tools, tmp_path_factory):
-    from test_vlm_pipeline import _get_ov_model
     from test_gguf_generated import run_reference_command
 
     repo = "optimum-intel-internal-testing/tiny-random-gemma3"
@@ -325,11 +324,11 @@ def tiny_gguf_vlm_model(llama_reference_tools, tmp_path_factory):
             [sys.executable, str(converter), str(source), "--outfile", str(output), "--outtype", "f32", *options],
             timeout=300,
         )
-    return language, projector, _get_ov_model(repo)
+    return language, projector
 
 
-def test_gguf_vlm_reuses_optimum_pipeline(tiny_gguf_vlm_model):
-    language, projector, reference_dir = tiny_gguf_vlm_model
+def test_gguf_vlm_attention_backends_and_chat(tiny_gguf_vlm_model):
+    language, projector = tiny_gguf_vlm_model
     properties = reference_properties()
     pipelines = [
         genai.VLMPipeline(
@@ -337,7 +336,6 @@ def test_gguf_vlm_reuses_optimum_pipeline(tiny_gguf_vlm_model):
         )
         for backend in ["SDPA", "PA"]
     ]
-    reference = genai.VLMPipeline(reference_dir, "CPU", ATTENTION_BACKEND="SDPA", **properties)
     image = ov.Tensor(np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8))
     config = {"max_new_tokens": 8, "do_sample": False, "ignore_eos": True}
     for images in [[image], [image, image]]:
@@ -345,11 +343,31 @@ def test_gguf_vlm_reuses_optimum_pipeline(tiny_gguf_vlm_model):
         assert results[0].texts == results[1].texts
         for pipe, result in zip(pipelines, results):
             assert pipe.generate("Describe the image.", images=images, **config).texts == result.texts
-        assert reference.generate("Describe the image.", images=images, **config).texts
+
+    for pipe in pipelines:
+        pipe.start_chat()
+    try:
+        for prompt in ["Describe the image.", "What else can you see?"]:
+            results = [pipe.generate(prompt, images=[image], **config) for pipe in pipelines]
+            assert results[0].texts == results[1].texts
+            assert results[0].perf_metrics.get_num_input_tokens() == results[1].perf_metrics.get_num_input_tokens()
+    finally:
+        for pipe in pipelines:
+            pipe.finish_chat()
+
+    histories = [genai.ChatHistory(), genai.ChatHistory()]
+    for prompt in ["Describe the image.", "What else can you see?"]:
+        for history in histories:
+            history.append({"role": "user", "content": prompt})
+        results = [pipe.generate(history, images=[image], **config) for pipe, history in zip(pipelines, histories)]
+        assert results[0].texts == results[1].texts
+        assert results[0].perf_metrics.get_num_input_tokens() == results[1].perf_metrics.get_num_input_tokens()
+        for history, result in zip(histories, results):
+            history.append({"role": "assistant", "content": result.texts[0]})
 
 
 def test_gguf_vlm_requires_projector_and_cpu(tiny_gguf_vlm_model):
-    language, projector, _ = tiny_gguf_vlm_model
+    language, projector = tiny_gguf_vlm_model
     with pytest.raises(RuntimeError, match="mmproj_path"):
         genai.VLMPipeline(language, "CPU")
     with pytest.raises(RuntimeError, match="CPU"):

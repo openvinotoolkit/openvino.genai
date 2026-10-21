@@ -11,6 +11,8 @@
 #include "visual_language/gemma4/audio_encoder.hpp"
 #include "visual_language/gemma4/audio_feature_extractor.hpp"
 #include "gguf_utils/gguf_multimodal.hpp"
+#include "gguf_utils/gguf_frontend_extensions.hpp"
+#include "visual_language/clip.hpp"
 
 namespace {
 ov::genai::GGUFTokenizerParameters sentencepiece_config() {
@@ -264,4 +266,83 @@ TEST(GGUFMultimodal, AudioAdapterReusesGemma4Encoders) {
             }
         }
     }
+}
+
+TEST(GGUFMultimodal, ExtremeAspectRatiosRespectPixelBudget) {
+    EXPECT_THROW(bounded_image_size(48, 96000, 48, 0, 1120 * 48 * 48), ov::Exception);
+    EXPECT_THROW(bounded_image_size(42, 188160, 42, 0, 1120 * 42 * 42), ov::Exception);
+    EXPECT_THROW(bounded_image_size(48, 60000, 48, 0, 1120 * 48 * 48), ov::Exception);
+    const auto [height, width] = bounded_image_size(512, 768, 48, 0, 1120 * 48 * 48);
+    EXPECT_LE(height, (1120 * 48 * 48) / width);
+}
+
+TEST(GGUFMultimodal, Gemma4HonorsImagePadding) {
+    using namespace ov::genai;
+    auto models = gemma4_models();
+    auto pixels = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{1, 8, 48});
+    pixels->output(0).set_names({"pixel_values"});
+    auto positions = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{1, 8, 2});
+    positions->output(0).set_names({"image_position_ids"});
+    auto position_sum = std::make_shared<ov::op::v1::ReduceSum>(
+        std::make_shared<ov::op::v0::Convert>(positions, ov::element::f32),
+        ov::op::v0::Constant::create(ov::element::i64, {3}, {0, 1, 2}), false);
+    auto features = std::make_shared<ov::op::v1::Add>(pixels, position_sum);
+    models.models["vision_embeddings"] =
+        std::make_shared<ov::Model>(ov::OutputVector{features}, ov::ParameterVector{pixels, positions});
+    auto& config = models.processor_config;
+    config.patch_size = 4;
+    config.pooling_kernel_size = 1;
+    config.max_soft_tokens = 8;
+    config.min_pixels = 0;
+    config.max_pixels = 128;
+    config.preserve_native_resolution = true;
+    config.pad_to_target = true;
+    config.image_mean = {0, 0, 0};
+    config.image_std = {1, 1, 1};
+    VisionEncoderGemma4 encoder(models, "CPU", {});
+    ov::Tensor image(ov::element::u8, {1, 5, 10, 3});
+    std::fill_n(image.data<uint8_t>(), image.get_size(), 255);
+    const auto padded = encoder.encode(image, {}).resized_source;
+    config.pad_to_target = false;
+    VisionEncoderGemma4 stretched_encoder(models, "CPU", {});
+    const auto stretched = stretched_encoder.encode(image, {}).resized_source;
+    EXPECT_EQ(padded.get_shape(), stretched.get_shape());
+    EXPECT_FALSE(std::equal(padded.data<float>(), padded.data<float>() + padded.get_size(), stretched.data<float>()));
+}
+
+TEST(GGUFMultimodal, PipelineControlsGenAIExtensionMode) {
+    using namespace ov::genai;
+    using Extension = ov::frontend::gguf::GenAIExtension;
+    ov::frontend::gguf::FrontEnd frontend;
+    auto supplied = std::make_shared<Extension>(Extension::InputMode::IDS_TO_LOGITS);
+    const auto selected = register_gguf_extensions(frontend, {supplied}, Extension::InputMode::EMBEDS_TO_LOGITS);
+    EXPECT_NE(selected, supplied);
+    EXPECT_NE(selected, nullptr);
+}
+
+TEST(GGUFMultimodal, ProjectorWidthsMustMatchLanguage) {
+    using namespace ov::genai;
+    const auto embedding = [](int64_t width) {
+        auto input = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{1, -1, width});
+        return std::make_shared<ov::Model>(ov::OutputVector{input}, ov::ParameterVector{input});
+    };
+    auto language = embedding(4);
+    language->get_parameters()[0]->output(0).set_names({"inputs_embeds"});
+    VLMModels models;
+    models.models["text_embeddings"] = embedding(4);
+    models.models["vision_embeddings"] = embedding(4);
+    EXPECT_NO_THROW(validate_gguf_multimodal_dimensions(language, models));
+    for (int64_t width : {2, 8, -1}) {
+        models.models["vision_embeddings"] = embedding(width);
+        EXPECT_THROW(validate_gguf_multimodal_dimensions(language, models), ov::Exception);
+    }
+    models.models["vision_embeddings_merger"] = embedding(4);
+    EXPECT_NO_THROW(validate_gguf_multimodal_dimensions(language, models));
+    models.models["vision_embeddings_merger"] = embedding(2);
+    EXPECT_THROW(validate_gguf_multimodal_dimensions(language, models), ov::Exception);
+    models.models["vision_embeddings_merger"] = embedding(4);
+    models.models["audio_embeddings"] = embedding(2);
+    EXPECT_THROW(validate_gguf_multimodal_dimensions(language, models), ov::Exception);
+    models.models["audio_embeddings"] = embedding(4);
+    EXPECT_NO_THROW(validate_gguf_multimodal_dimensions(language, models));
 }

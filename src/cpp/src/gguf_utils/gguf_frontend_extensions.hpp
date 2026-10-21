@@ -18,10 +18,7 @@ inline std::shared_ptr<ov::frontend::gguf::GenAIExtension> register_gguf_extensi
     std::optional<ov::frontend::gguf::GenAIExtension::InputMode> genai_mode = std::nullopt) {
     std::shared_ptr<ov::frontend::gguf::GenAIExtension> genai_extension;
     const auto add_extension = [&](const std::shared_ptr<ov::Extension>& object) {
-        auto candidate = std::dynamic_pointer_cast<ov::frontend::gguf::GenAIExtension>(object);
-        if (candidate && genai_mode)
-            genai_extension = candidate;
-        if (!candidate || genai_mode)
+        if (!std::dynamic_pointer_cast<ov::frontend::gguf::GenAIExtension>(object))
             frontend.add_extension(object);
     };
 
@@ -42,7 +39,7 @@ inline std::shared_ptr<ov::frontend::gguf::GenAIExtension> register_gguf_extensi
         }
     }
 
-    if (genai_mode && !genai_extension) {
+    if (genai_mode) {
         genai_extension = std::make_shared<ov::frontend::gguf::GenAIExtension>(*genai_mode);
         frontend.add_extension(genai_extension);
     }
