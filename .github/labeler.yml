@@ -110,6 +110,7 @@
 'category: VLM samples':
 - 'samples/cpp/visual_language_chat/**/*'
 - 'samples/python/visual_language_chat/**/*'
+- 'tests/python_tests/samples/test_audio_to_text_chat.py'
 - 'samples/cpp/omni/**/*'
 - 'samples/python/omni/**/*'
 - 'samples/cpp/speech_generation/audio_utils.*'

@@ -82,7 +82,7 @@ from .py_openvino_genai import (
 from .py_openvino_genai import ChatHistory
 
 # Tokenizers
-from .py_openvino_genai import TokenizedInputs, Tokenizer
+from .py_openvino_genai import GGUFTokenizer, TokenizedInputs, Tokenizer
 
 # ASR pipeline
 from .py_openvino_genai import (
