@@ -116,8 +116,7 @@ You can pass extensions to pipeline constructors in both Python and C++.
 ## Use extensions with the GGUF frontend
 
 Pass the `extensions` property when constructing `LLMPipeline`, `ContinuousBatchingPipeline`, or
-`VLMPipeline`. For language-only pipelines, select `GGUF_READER="FRONTEND"`; `VLMPipeline` uses
-the frontend when loading a language GGUF with `mmproj_path`.
+`VLMPipeline`.
 
 GenAI registers the supplied extensions with OpenVINO `Core` and on every GGUF frontend used to
 load and convert the models. For `VLMPipeline`, the same list is registered on both the language
