@@ -63,9 +63,7 @@ class MultimodalTranscriber:
     def prepare_generation_inputs(self, inputs):
         return inputs
 
-    def transcribe(self, audio, max_new_tokens: int) -> str:
-        import torch
-
+    def prepare_inputs(self, audio):
         messages = [
             {
                 "role": "user",
@@ -83,6 +81,15 @@ class MultimodalTranscriber:
                 return_dict=True,
                 return_tensors="pt",
             )
+        return inputs
+
+    def decode_transcription(self, tokens) -> str:
+        return self.processor.batch_decode(tokens, skip_special_tokens=True)[0]
+
+    def transcribe(self, audio, max_new_tokens: int) -> str:
+        import torch
+
+        inputs = self.prepare_inputs(audio)
         device = getattr(self.model, "device", None)
         if isinstance(device, torch.device):
             inputs = inputs.to(device)
@@ -92,22 +99,48 @@ class MultimodalTranscriber:
         with torch.inference_mode():
             tokens = self.model.generate(**generation_inputs, max_new_tokens=max_new_tokens, do_sample=False)
         tokens = getattr(tokens, "sequences", tokens)
-        return self.processor.batch_decode(tokens[:, prompt_len:], skip_special_tokens=True)[0]
+        return self.decode_transcription(tokens[:, prompt_len:])
 
 
-class Qwen3ASROptimumTranscriber(MultimodalTranscriber):
+class Qwen3ASRTranscriber(MultimodalTranscriber):
+    def __init__(self, model: Any, model_id: str, language: str = "") -> None:
+        super().__init__(model, model_id)
+        self.language = language
+
+    def prepare_inputs(self, audio):
+        messages = [
+            {"role": "system", "content": ""},
+            {"role": "user", "content": [{"type": "audio", "audio": ""}]},
+        ]
+        prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+        if self.language:
+            prompt += f"language {self.language}<asr_text>"
+        return self.processor(text=prompt, audio=audio, sampling_rate=AUDIO_SAMPLING_RATE, return_tensors="pt")
+
+    def decode_transcription(self, tokens) -> str:
+        decoded = super().decode_transcription(tokens)
+        return decoded.partition("<asr_text>")[2].strip() if "<asr_text>" in decoded else decoded.strip()
+
+
+class Qwen3ASROptimumTranscriber(Qwen3ASRTranscriber):
+    """Handle current split and legacy encoder/decoder Optimum exports."""
+
     def prepare_generation_inputs(self, inputs):
         if hasattr(self.model, "audio_encoder"):
             return inputs
-        tokenizer = self.processor.tokenizer
-        return {
+        generation_inputs = {
             "input_features": inputs["input_features"],
             "decoder_input_ids": inputs["input_ids"],
-            "attention_mask": inputs.get("feature_attention_mask"),
+            "attention_mask": inputs["feature_attention_mask"],
             "decoder_start_token_id": self.model.config.decoder_start_token_id,
-            "eos_token_id": [tokenizer.pad_token_id, tokenizer.eos_token_id],
-            "pad_token_id": tokenizer.pad_token_id,
         }
+        # Legacy exports can lack generation_config.json; split exports read their own EOS and pad IDs.
+        if self.model.generation_config.eos_token_id is None:
+            tokenizer = self.processor.tokenizer
+            generation_inputs["eos_token_id"] = [tokenizer.pad_token_id, tokenizer.eos_token_id]
+        if self.model.generation_config.pad_token_id is None:
+            generation_inputs["pad_token_id"] = self.processor.tokenizer.pad_token_id
+        return generation_inputs
 
 
 class GenAIMultimodalTranscriber:
@@ -253,6 +286,8 @@ class ASRHFTranscriber:
 
         _register_model_backend(model_type)
         model = _load_multimodal_model(model_id, device, ov_config, True, False, **kwargs)
+        if model_type in QWEN_ASR_MODEL_TYPES:
+            return Qwen3ASRTranscriber(model, model_id, language)
         return MultimodalTranscriber(model, model_id, language or "English")
 
 
@@ -286,7 +321,7 @@ class ASROptimumTranscriber:
         _register_model_backend(model_type)
         if model_type in QWEN_ASR_MODEL_TYPES:
             model = _load_optimum_speech_model(model_id, device, ov_config)
-            return Qwen3ASROptimumTranscriber(model, model_id, language or "English")
+            return Qwen3ASROptimumTranscriber(model, model_id, language)
 
         model = _load_multimodal_model(model_id, device, ov_config, False, False, **kwargs)
         return MultimodalTranscriber(model, model_id, language or "English")

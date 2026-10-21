@@ -3,6 +3,7 @@
 
 import math
 import types
+from unittest.mock import Mock
 
 import numpy as np
 import pandas as pd
@@ -159,42 +160,60 @@ def test_funasr_optimum_transcriber_decodes_generated_ids_only(generated):
     assert tokenizer.decoded.tolist() == [[7, 8]]
 
 
-def test_qwen3_asr_optimum_transcriber_adapts_legacy_inputs():
-    transcriber = Qwen3ASROptimumTranscriber.__new__(Qwen3ASROptimumTranscriber)
-    transcriber.model = types.SimpleNamespace(encoder=object(), config=types.SimpleNamespace(decoder_start_token_id=0))
-    transcriber.processor = types.SimpleNamespace(
-        tokenizer=types.SimpleNamespace(pad_token_id=151643, eos_token_id=151645)
-    )
-    inputs = {
-        "input_ids": torch.tensor([[1, 2]]),
-        "attention_mask": torch.tensor([[1, 1]]),
+@pytest.mark.parametrize(
+    "export, eos_token_id, pad_token_id, language, decoded",
+    [
+        ("split", [151643, 151645], 151643, "", "language English<asr_text>decoded"),
+        ("legacy", None, None, "", "language English<asr_text>decoded"),
+        ("legacy", [151643, 151645], 151643, "English", "decoded"),
+    ],
+)
+def test_qwen3_asr_optimum_transcribes_with_export_settings(export, eos_token_id, pad_token_id, language, decoded):
+    model = _FakeSpeechSeq2Seq(torch.tensor([[1, 2, 3, 7, 8]]))
+    model.generation_config = types.SimpleNamespace(eos_token_id=eos_token_id, pad_token_id=pad_token_id)
+    if export == "split":
+        model.audio_encoder = object()
+    else:
+        model.config = types.SimpleNamespace(decoder_start_token_id=0)
+    processor = Mock()
+    processor.apply_chat_template.return_value = "audio prompt"
+    processor.return_value = {
+        "input_ids": torch.tensor([[1, 2, 3]]),
         "input_features": torch.zeros(1, 128, 100),
         "feature_attention_mask": torch.ones(1, 100),
     }
-
-    generation_inputs = transcriber.prepare_generation_inputs(inputs)
-
-    assert set(generation_inputs) == {
-        "input_features",
-        "decoder_input_ids",
-        "attention_mask",
-        "decoder_start_token_id",
-        "eos_token_id",
-        "pad_token_id",
-    }
-    assert generation_inputs["decoder_input_ids"] is inputs["input_ids"]
-    assert generation_inputs["attention_mask"] is inputs["feature_attention_mask"]
-    assert generation_inputs["decoder_start_token_id"] == 0
-    assert generation_inputs["eos_token_id"] == [151643, 151645]
-    assert generation_inputs["pad_token_id"] == 151643
-
-
-def test_qwen3_asr_optimum_transcriber_preserves_split_inputs():
+    processor.tokenizer.pad_token_id = 151643
+    processor.tokenizer.eos_token_id = 151645
+    processor.batch_decode.return_value = [decoded]
     transcriber = Qwen3ASROptimumTranscriber.__new__(Qwen3ASROptimumTranscriber)
-    transcriber.model = types.SimpleNamespace(audio_encoder=object())
-    inputs = {"input_ids": torch.tensor([[1, 2]]), "feature_attention_mask": torch.ones(1, 100)}
+    transcriber.model, transcriber.processor, transcriber.language = model, processor, language
+    audio = np.zeros(160, dtype=np.float32)
 
-    assert transcriber.prepare_generation_inputs(inputs) is inputs
+    assert transcriber.transcribe(audio, 32) == "decoded"
+    assert processor.call_args.kwargs == {
+        "text": "audio prompt" + (f"language {language}<asr_text>" if language else ""),
+        "audio": audio,
+        "sampling_rate": 16000,
+        "return_tensors": "pt",
+    }
+    assert model.generate_call["max_new_tokens"] == 32
+    assert model.generate_call["do_sample"] is False
+    if export == "split":
+        assert model.generate_call["input_ids"] is processor.return_value["input_ids"]
+        assert "eos_token_id" not in model.generate_call
+        assert "pad_token_id" not in model.generate_call
+    else:
+        assert model.generate_call["decoder_input_ids"] is processor.return_value["input_ids"]
+        assert model.generate_call["attention_mask"] is processor.return_value["feature_attention_mask"]
+        assert model.generate_call["decoder_start_token_id"] == 0
+        if eos_token_id is None:
+            assert model.generate_call["eos_token_id"] == [151643, 151645]
+            assert model.generate_call["pad_token_id"] == 151643
+        else:
+            assert "eos_token_id" not in model.generate_call
+            assert "pad_token_id" not in model.generate_call
+    assert processor.batch_decode.call_args.args[0].tolist() == [[7, 8]]
+    assert processor.batch_decode.call_args.kwargs == {"skip_special_tokens": True}
 
 
 @pytest.mark.parametrize(
