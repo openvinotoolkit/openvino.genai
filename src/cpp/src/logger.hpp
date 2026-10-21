@@ -35,7 +35,8 @@ public:
 #if defined(__GNUC__) || defined(__clang__)
     __attribute__((format(printf, 5, 6)))
 #endif
-    void log_format(ov::log::Level level, const char* file, int line, const char* format, ...) noexcept;
+    void
+    log_format(ov::log::Level level, const char* file, int line, const char* format, ...) noexcept;
 
     void set_log_level(ov::log::Level level);
 
