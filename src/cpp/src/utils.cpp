@@ -494,11 +494,11 @@ void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::str
     }
 }
 
-std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& properties, const ExtensionList& extensions) {
+std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& properties) {
     const auto gguf_props = gguf_utils::extract_gguf_properties(properties);
     const ov::AnyMap& filtered_properties = gguf_props.rest;
     if (is_gguf_model(model_dir)) {
-        return gguf_utils::read_gguf_model(model_dir, gguf_props, extensions);
+        return gguf_utils::read_gguf_model(model_dir, gguf_props);
     } else {
         std::filesystem::path model_path = model_dir;
 
@@ -1095,7 +1095,7 @@ ExtensionList extract_extensions(ov::AnyMap& properties) {
     return extensions;
 }
 
-ExtensionList extract_extensions_to_core(ov::AnyMap& properties) {
+void extract_extensions_to_core(ov::AnyMap& properties) {
     ExtensionList extensions = extract_extensions(properties);
     for (const auto& extension : extensions) {
         if (std::holds_alternative<std::filesystem::path>(extension)) {
@@ -1104,7 +1104,6 @@ ExtensionList extract_extensions_to_core(ov::AnyMap& properties) {
             singleton_core().add_extension(std::get<std::shared_ptr<ov::Extension>>(extension));
         }
     }
-    return extensions;
 }
 
 void log_attention_backend(const std::string& attention_backend) {

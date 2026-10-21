@@ -16,7 +16,6 @@
 #include "openvino/frontend/gguf/frontend.hpp"
 
 #include "gguf_utils/building_blocks.hpp"
-#include "gguf_utils/gguf_frontend_extensions.hpp"
 #include "gguf_utils/gguf_modeling.hpp"
 #include "gguf_utils/gguf_utils.hpp"
 #include "utils.hpp"
@@ -143,19 +142,15 @@ std::shared_ptr<ov::Model> create_language_model(
 
 } // namespace
 
-std::shared_ptr<ov::Model> convert_gguf_with_frontend(const std::string& model_path,
-                                                      const ov::genai::ExtensionList& extensions) {
+std::shared_ptr<ov::Model> convert_gguf_with_frontend(const std::string& model_path) {
     ov::frontend::gguf::FrontEnd frontend;
-    ov::genai::register_gguf_extensions(frontend,
-                                        extensions,
-                                        ov::frontend::gguf::GenAIExtension::InputMode::IDS_TO_LOGITS);
+    frontend.add_extension(std::make_shared<ov::frontend::gguf::GenAIExtension>());
     return frontend.convert(frontend.load(model_path));
 }
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
                                             bool enable_save_ov_model,
-                                            bool use_legacy_reader,
-                                            const ov::genai::ExtensionList& extensions) {
+                                            bool use_legacy_reader) {
     auto start_time = std::chrono::high_resolution_clock::now();
     std::stringstream ss;
     std::shared_ptr<ov::Model> model;
@@ -181,7 +176,7 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
         ss << "Loading and converting GGUF model via the OpenVINO GGUF frontend: " << model_path;
         ov::genai::utils::print_gguf_debug_info(ss.str());
 
-        model = convert_gguf_with_frontend(model_path, extensions);
+        model = convert_gguf_with_frontend(model_path);
     }
 
     if (enable_save_ov_model) {

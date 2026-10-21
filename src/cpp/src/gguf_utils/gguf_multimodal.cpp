@@ -227,11 +227,14 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     properties = std::move(filtered_properties);
     utils::clear_false_prompt_lookup_from_config(properties);
     utils::validate_vlm_model_properties(properties);
-    const auto extensions = utils::extract_extensions_to_core(properties);
 
     namespace gguf = ov::frontend::gguf;
     GGUFMultimodalModels result;
     gguf::FrontEnd frontend;
+    const auto extensions = utils::extract_extensions(properties);
+    for (const auto& extension : extensions) {
+        std::visit([](const auto& value) { utils::singleton_core().add_extension(value); }, extension);
+    }
     auto genai = register_gguf_extensions(frontend, extensions, gguf::GenAIExtension::InputMode::EMBEDS_TO_LOGITS);
     result.language = frontend.convert(frontend.load(language.string()));
     result.language->set_rt_info(ov::element::f16, {"runtime_options", ov::hint::kv_cache_precision.name()});
