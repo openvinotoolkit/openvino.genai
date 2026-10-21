@@ -331,9 +331,7 @@ def test_gguf_vlm_attention_backends_and_chat(tiny_gguf_vlm_model):
     language, projector = tiny_gguf_vlm_model
     properties = reference_properties()
     pipelines = [
-        genai.VLMPipeline(
-            language, "CPU", mmproj_path=str(projector), ATTENTION_BACKEND=backend, **properties
-        )
+        genai.VLMPipeline(language, "CPU", mmproj_path=str(projector), ATTENTION_BACKEND=backend, **properties)
         for backend in ["SDPA", "PA"]
     ]
     image = ov.Tensor(np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8))
