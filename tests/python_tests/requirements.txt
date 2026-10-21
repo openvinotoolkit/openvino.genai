@@ -18,6 +18,7 @@ langchain-core==1.6.5
 einops==0.8.2
 # - openbmb/MiniCPM-V-2
 torchvision==0.26.0
+pillow==12.3.0
 # - openbmb/MiniCPM-V-2
 timm==1.0.30
 # - openai/whisper-base
