@@ -261,7 +261,17 @@ def test_logprob_token_ids(model_facebook_opt_125m: OVConvertedModelSchema):
     assert lp_num[t0] < -1e-4  # a real (strictly negative) logprob, not a 0.0 placeholder
     # Top-k filtering must not leak in: position-0 logits are identical across requests, so the
     # top_k=2 multinomial run reports the same raw logprob as the greedy one.
-    assert abs(dict(out_topk.requested_token_logprobs[0])[t0] - lp_num[t0]) < 1e-4
+    h_topk_num = cb_pipe.add_request(
+        5, "The Sun is",
+        generation_config=GenerationConfig(
+            max_new_tokens=1, do_sample=True, temperature=1.0, top_k=2,
+            logprob_token_ids=[t0],
+        ),
+    )
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+    out_topk_num = h_topk_num.read_all()[0]
+    assert abs(dict(out_topk_num.requested_token_logprobs[0])[t0] - lp_num[t0]) < 1e-4
     # Temperature must not leak in either: requested logprobs are raw, pre-sampling values.
     assert abs(dict(out_temp.requested_token_logprobs[0])[t0] - lp_num[t0]) < 1e-4
 
