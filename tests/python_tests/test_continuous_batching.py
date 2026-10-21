@@ -1157,6 +1157,150 @@ def test_dynamic_split_fuse_for_eagle3(prompts, max_num_batched_tokens):
     )
 
 
+DFLASH_TARGET_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3"
+DFLASH_DRAFT_MODEL_IDS = {
+    "dflash": "optimum-intel-internal-testing/tiny-random-qwen3-dflash",
+    "deepspec": "optimum-intel-internal-testing/tiny-random-qwen3-deepspec-dflash",
+}
+DFLASH_PROMPTS = ["Why is the Sun yellow?", "What's OpenVINO?", "Tell me something about Canada.", "Why is the grass green?"]
+# A compressed KV cache lets speculative and autoregressive decoding diverge: a validation window attends to
+# its own rows at full precision, while autoregressive decoding reads them back from the cache.
+DFLASH_PARITY_PROPERTIES = {hints.inference_precision: ov.Type.f32, hints.kv_cache_precision: ov.Type.f32}
+
+
+@pytest.fixture(scope="module", params=list(DFLASH_DRAFT_MODEL_IDS), ids=list(DFLASH_DRAFT_MODEL_IDS))
+def dflash_model_paths(request) -> tuple[Path, Path]:
+    draft_model_id = DFLASH_DRAFT_MODEL_IDS[request.param]
+    draft_model_path = get_ov_cache_converted_models_dir() / sanitize_model_id(draft_model_id)
+    AtomicDownloadManager(draft_model_path).execute(
+        lambda temp_path: export_with_optimum_cli(
+            draft_model_id, "text-generation-with-past", temp_path, trust_remote_code=True
+        )
+    )
+    return download_and_convert_model(DFLASH_TARGET_MODEL_ID).models_path, draft_model_path
+
+
+def _dflash_config(num_assistant_tokens: int = 3, max_new_tokens: int = 20) -> GenerationConfig:
+    return GenerationConfig(
+        do_sample=False, max_new_tokens=max_new_tokens, ignore_eos=True, num_assistant_tokens=num_assistant_tokens
+    )
+
+
+def _dflash_pipeline(model_paths: tuple[Path, Path], scheduler_config: SchedulerConfig | None = None):
+    target_path, draft_path = model_paths
+    return ContinuousBatchingPipeline(
+        target_path,
+        scheduler_config or SchedulerConfig(),
+        "CPU",
+        {**DFLASH_PARITY_PROPERTIES, "draft_model": draft_model(draft_path, "CPU", **DFLASH_PARITY_PROPERTIES)},
+    )
+
+
+def _main_only_pipeline(target_path: Path, scheduler_config: SchedulerConfig | None = None):
+    return ContinuousBatchingPipeline(target_path, scheduler_config or SchedulerConfig(), "CPU", DFLASH_PARITY_PROPERTIES)
+
+
+def _main_only_ids(target_path: Path, prompts: list[str], config: GenerationConfig) -> list:
+    pipe = _main_only_pipeline(target_path)
+    return [result.m_generation_ids for result in pipe.generate(prompts, [config] * len(prompts))]
+
+
+@pytest.mark.parametrize("num_assistant_tokens", [1, 7])
+def test_dflash_matches_main_only(dflash_model_paths, num_assistant_tokens):
+    config = _dflash_config(num_assistant_tokens)
+    reference = _main_only_ids(dflash_model_paths[0], DFLASH_PROMPTS[:1], config)
+
+    result = _dflash_pipeline(dflash_model_paths).generate(DFLASH_PROMPTS[:1], [config])[0]
+
+    assert [result.m_generation_ids] == reference
+    metrics = result.extended_perf_metrics
+    assert metrics.get_num_draft_tokens() > 0
+    assert metrics.get_num_accepted_tokens() <= metrics.get_num_draft_tokens()
+    assert 0 < metrics.draft_model_metrics.get_num_generated_tokens() <= config.max_new_tokens * num_assistant_tokens
+
+
+def test_dflash_batched_prompts_with_chunked_prefill_match_main_only(dflash_model_paths):
+    config = _dflash_config()
+    reference = _main_only_ids(dflash_model_paths[0], DFLASH_PROMPTS, config)
+    # prefill chunks shorter than the prompts and than a draft block
+    scheduler_config = dict_to_scheduler_config({"dynamic_split_fuse": True, "max_num_batched_tokens": 4})
+
+    results = _dflash_pipeline(dflash_model_paths, scheduler_config).generate(
+        DFLASH_PROMPTS, [config] * len(DFLASH_PROMPTS)
+    )
+
+    assert [result.m_generation_ids for result in results] == reference
+
+
+@pytest.mark.parametrize("dynamic_split_fuse", [True, False])
+def test_dflash_staggered_requests_with_mixed_assistant_tokens(dflash_model_paths, dynamic_split_fuse):
+    # num_assistant_tokens=0 runs the request on the target alone
+    configs = [_dflash_config(num_assistant_tokens) for num_assistant_tokens in (3, 0, 5, 1)]
+    scheduler_config = dict_to_scheduler_config(
+        {"dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": sys.maxsize}
+    )
+
+    def run_staggered(pipe):
+        handles = [pipe.add_request(request_id, DFLASH_PROMPTS[request_id], configs[request_id]) for request_id in (0, 1)]
+        for _ in range(2):
+            pipe.step()
+        handles += [pipe.add_request(request_id, DFLASH_PROMPTS[request_id], configs[request_id]) for request_id in (2, 3)]
+        while pipe.has_non_finished_requests():
+            pipe.step()
+        outputs = [handle.read_all() for handle in handles]
+        assert all(len(output) == 1 and output[0].finish_reason == GenerationFinishReason.LENGTH for output in outputs)
+        return [list(output[0].generated_ids) for output in outputs]
+
+    reference = run_staggered(_main_only_pipeline(dflash_model_paths[0], scheduler_config))
+
+    assert run_staggered(_dflash_pipeline(dflash_model_paths, scheduler_config)) == reference
+
+
+def test_dflash_preemption_completes_all_requests(dflash_model_paths):
+    # Both models preempt requests; the draft waits for a recomputing target and leaves a request whose
+    # window was preempted to the target.
+    config = _dflash_config(max_new_tokens=64)
+    reference = _main_only_ids(dflash_model_paths[0], DFLASH_PROMPTS, config)
+    scheduler_config = dict_to_scheduler_config({"num_kv_blocks": 6, "dynamic_split_fuse": True, "max_num_batched_tokens": 256})
+
+    results = _dflash_pipeline(dflash_model_paths, scheduler_config).generate(
+        DFLASH_PROMPTS, [config] * len(DFLASH_PROMPTS)
+    )
+
+    assert [result.m_status for result in results] == [GenerationStatus.FINISHED] * len(DFLASH_PROMPTS)
+    assert all(result.m_generation_ids[0] for result in results)
+    # When the target is preempted with candidates waiting for validation, the replay is scheduled one token short
+    # of the validation window, so the candidates are validated against shifted logits. FastDraft fails the same
+    # way. Related: CVS-198275. Whether the shifted validation changes the output depends on the draft.
+    if [result.m_generation_ids for result in results] != reference:
+        pytest.xfail("Target preemption with pending candidates corrupts speculative decoding output")
+
+
+@pytest.mark.parametrize("dynamic_split_fuse", [True, False])
+def test_dflash_small_draft_cache_leaves_requests_to_the_target(dflash_model_paths, dynamic_split_fuse):
+    target_path, draft_path = dflash_model_paths
+    config = _dflash_config(max_new_tokens=64)
+    reference = _main_only_ids(target_path, DFLASH_PROMPTS, config)
+    pipe = ContinuousBatchingPipeline(
+        target_path,
+        dict_to_scheduler_config({"dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": sys.maxsize}),
+        "CPU",
+        {
+            **DFLASH_PARITY_PROPERTIES,
+            "draft_model": draft_model(
+                draft_path,
+                "CPU",
+                scheduler_config=dict_to_scheduler_config({"num_kv_blocks": 2}),
+                **DFLASH_PARITY_PROPERTIES,
+            ),
+        },
+    )
+
+    results = pipe.generate(DFLASH_PROMPTS, [config] * len(DFLASH_PROMPTS))
+
+    assert [result.m_generation_ids for result in results] == reference
+
+
 EAGLE3_FIXED_PROMPT_BASE = (
     "During speculative decoding, the draft path proposes several tokens and the main path validates them in order. "
     "Prefix caching reduces recomputation by reusing KV blocks that correspond to the unchanged prompt prefix. "

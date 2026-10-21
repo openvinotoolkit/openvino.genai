@@ -252,9 +252,11 @@ std::shared_ptr<ov::Model> create_dummy_dflash_draft_model() {
 }
 
 // A draft group with seed 7 and 3 masks whose first `window_rows` positions are scheduled as one window.
-SequenceGroup::Ptr make_dflash_window_group(const std::vector<int64_t>& prompt_tokens, size_t window_rows) {
+SequenceGroup::Ptr make_dflash_window_group(const std::vector<int64_t>& prompt_tokens,
+                                            size_t window_rows,
+                                            uint64_t request_id = 0) {
     auto group = std::make_shared<SequenceGroup>(
-        0,
+        request_id,
         ov::Tensor(ov::element::i64, {prompt_tokens.size()}, const_cast<int64_t*>(prompt_tokens.data())),
         utils::get_greedy_config());
     for (int64_t token : {7, 99, 99, 99}) {
@@ -337,4 +339,36 @@ TEST(TestModelRunnerDFlashDraft, context_only_window_gathers_nothing) {
     EXPECT_EQ(tensor_values<int64_t>(runner.get_infer_request().get_tensor("token_type_ids")), (std::vector<int64_t>{0, 0, 0, 0}));
     EXPECT_EQ(runner.get_infer_request().get_tensor("sampled_tokens_indices").get_size(), 0);
     EXPECT_EQ(group->get_output_seq_len(), 0);
+}
+
+TEST(TestModelRunnerDFlashDraft, batched_windows_use_their_own_rows) {
+    ov::Core core;
+    ov::InferRequest request = core.compile_model(create_dummy_dflash_draft_model(), "CPU").create_infer_request();
+    ModelRunner runner(request, /*block_size=*/4, /*num_decoder_layers=*/1);
+    runner.enable_dflash_draft(/*candidate_position_offset=*/1);
+
+    // request 0: 8 target rows + block; request 1: 2 target rows + block, starting at batch row 12
+    const std::vector<int64_t> first_prompt = {0, 1, 2, 3, 4, 5, 6, 7};
+    const std::vector<int64_t> second_prompt = {0, 1};
+    auto first = make_dflash_window_group(first_prompt, 12, /*request_id=*/0);
+    auto second = make_dflash_window_group(second_prompt, 6, /*request_id=*/1);
+    runner.set_initial_hidden_state(0, make_dflash_hidden_rows(8));
+    runner.set_initial_hidden_state(1, make_dflash_hidden_rows(2));
+    const ContinuousBatchingScheduler::Output::LinearAttentionPagingData no_linear_attention;
+    std::ignore = runner.forward({first, second},
+                                 make_output_for_sequences({{first->get_running_sequences()[0]->get_id(), no_linear_attention},
+                                                            {second->get_running_sequences()[0]->get_id(), no_linear_attention}},
+                                                           18));
+
+    auto ireq = runner.get_infer_request();
+    EXPECT_EQ(tensor_values<int64_t>(ireq.get_tensor("token_type_ids")),
+              (std::vector<int64_t>{0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1}));
+    std::vector<float> expected_hidden(18 * DFLASH_HIDDEN_SIZE, 0.0f);
+    std::iota(expected_hidden.begin(), expected_hidden.begin() + 8 * DFLASH_HIDDEN_SIZE, 1.0f);
+    std::iota(expected_hidden.begin() + 12 * DFLASH_HIDDEN_SIZE, expected_hidden.begin() + 14 * DFLASH_HIDDEN_SIZE, 1.0f);
+    EXPECT_EQ(tensor_values<float>(ireq.get_tensor("hidden_states")), expected_hidden);
+    EXPECT_EQ(tensor_values<int64_t>(ireq.get_tensor("sampled_tokens_indices")),
+              (std::vector<int64_t>{9, 10, 11, 15, 16, 17}));
+    EXPECT_EQ(first->get_output_seq_len(), 3);
+    EXPECT_EQ(second->get_output_seq_len(), 3);
 }

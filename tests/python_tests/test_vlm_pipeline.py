@@ -73,7 +73,7 @@ from utils.constants import get_ov_cache_converted_models_dir
 from utils.atomic_download import AtomicDownloadManager
 from utils.media_tags import ModalityType, get_media_inputs_kwargs, get_universal_tag
 from utils.custom_op import assert_ir_contains_op_type, get_extension_model, get_extension_lib_path, CustomAdd
-from utils.hugging_face import download_and_convert_model
+from utils.hugging_face import download_and_convert_model, export_with_optimum_cli, sanitize_model_id
 from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 import logging
@@ -3674,6 +3674,97 @@ def test_vlm_eagle3(cat_tensor):
     assert result_without_draft.texts[0].strip() == result_with_draft_tree.texts[0].strip(), (
         "Result should be the same when Eagle3 draft model and tree search are enabled and disabled."
     )
+
+
+VLM_DFLASH_MAIN_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3.5"
+VLM_DFLASH_DRAFT_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3.5-dflash"
+
+
+def _get_vlm_dflash_model_paths() -> tuple[Path, Path]:
+    _maybe_skip_unsupported_model_export(VLM_DFLASH_MAIN_MODEL_ID)
+    draft_model_path = get_ov_cache_converted_models_dir() / sanitize_model_id(VLM_DFLASH_DRAFT_MODEL_ID)
+    AtomicDownloadManager(draft_model_path).execute(
+        lambda temp_path: export_with_optimum_cli(
+            VLM_DFLASH_DRAFT_MODEL_ID, "text-generation-with-past", temp_path, trust_remote_code=True
+        )
+    )
+    return Path(_get_ov_model(VLM_DFLASH_MAIN_MODEL_ID)), draft_model_path
+
+
+@pytest.mark.parametrize(
+    "options",
+    [{}, {"pruning_ratio": 50}, {"echo": True}, {"logprobs": 2}],
+    ids=["default", "pruning", "echo", "logprobs"],
+)
+def test_vlm_dflash_matches_main_only(cat_tensor, options):
+    model_path, draft_model_path = _get_vlm_dflash_model_paths()
+    # An uncompressed KV cache keeps speculative and autoregressive decoding numerically identical.
+    properties = {"INFERENCE_PRECISION_HINT": openvino.Type.f32, "KV_CACHE_PRECISION": openvino.Type.f32}
+    scheduler_config = SchedulerConfig()
+    scheduler_config.enable_prefix_caching = False
+
+    def generate(pipe, options, num_assistant_tokens=None):
+        generation_config = _setup_generation_config(pipe, max_new_tokens=20, do_sample=False)
+        for name, value in options.items():
+            setattr(generation_config, name, value)
+        if num_assistant_tokens is not None:
+            generation_config.num_assistant_tokens = num_assistant_tokens
+        return pipe.generate(PROMPTS[2], images=[cat_tensor], generation_config=generation_config)
+
+    ov_pipe = VLMPipeline(model_path, "CPU", scheduler_config=scheduler_config, **properties)
+    ov_pipe_with_draft = VLMPipeline(
+        model_path,
+        "CPU",
+        draft_model=draft_model(draft_model_path, "CPU", **properties),
+        scheduler_config=scheduler_config,
+        **properties,
+    )
+    try:
+        reference = generate(ov_pipe, options)
+    except RuntimeError as error:
+        # An option the target rejects must fail the same way with the draft, not return a different result.
+        reference_error = str(error).splitlines()[0]
+        with pytest.raises(RuntimeError) as draft_error:
+            generate(ov_pipe_with_draft, options, num_assistant_tokens=3)
+        assert str(draft_error.value).splitlines()[0] == reference_error
+        return
+    result = generate(ov_pipe_with_draft, options, num_assistant_tokens=3)
+
+    assert result.texts == reference.texts
+    assert result.scores == pytest.approx(reference.scores, abs=1e-4)
+    assert result.perf_metrics.get_num_input_tokens() == reference.perf_metrics.get_num_input_tokens()
+    assert result.extended_perf_metrics.get_num_draft_tokens() > 0
+    if "pruning_ratio" in options:
+        unpruned = generate(ov_pipe, {})
+        assert result.perf_metrics.get_num_input_tokens() < unpruned.perf_metrics.get_num_input_tokens()
+
+
+def test_vlm_dflash_batched_requests_on_linear_attention_target_match_main_only(cat_tensor):
+    # Qwen3.5 is a hybrid target: every validation window also rolls back its linear-attention state.
+    model_path, draft_model_path = _get_vlm_dflash_model_paths()
+    properties = {"INFERENCE_PRECISION_HINT": openvino.Type.f32, "KV_CACHE_PRECISION": openvino.Type.f32}
+    scheduler_config = SchedulerConfig()
+    scheduler_config.enable_prefix_caching = False
+    config = GenerationConfig(max_new_tokens=20, do_sample=False, ignore_eos=True, num_assistant_tokens=3)
+    prompts = [PROMPTS[2], "Why is the Sun yellow?", PROMPTS[2], "What is OpenVINO?"]
+    images = [[cat_tensor], [], [cat_tensor], []]
+
+    def generate(pipe):
+        results = pipe.generate(prompts, images=images, generation_config=[config] * len(prompts))
+        return [result.texts[0] for result in results], results
+
+    reference, _ = generate(ContinuousBatchingPipeline(model_path, scheduler_config, "CPU", properties))
+    texts, results = generate(
+        ContinuousBatchingPipeline(
+            model_path,
+            scheduler_config,
+            "CPU",
+            {**properties, "draft_model": draft_model(draft_model_path, "CPU", **properties)},
+        )
+    )
+
+    assert texts == reference
+    assert results[0].extended_perf_metrics.get_num_draft_tokens() > 0
 
 
 def test_vlm_eagle3_chat_with_videos(
