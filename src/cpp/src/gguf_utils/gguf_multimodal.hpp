@@ -6,7 +6,6 @@
 #include <set>
 
 #include "openvino/core/model.hpp"
-#include "openvino/genai/extensions.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "visual_language/vlm_models.hpp"
@@ -30,7 +29,6 @@ struct GGUFMultimodalModels {
 void adapt_gguf_audio_encoder(const std::shared_ptr<ov::Model>& model, bool unified);
 
 GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
-                                          const std::filesystem::path& mmproj,
-                                          const ov::AnyMap& properties,
-                                          const ExtensionList& extensions = {});
+                                         const std::string& device,
+                                         ov::AnyMap& properties);
 }  // namespace ov::genai

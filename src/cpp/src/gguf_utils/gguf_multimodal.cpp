@@ -15,6 +15,7 @@
 #include "openvino/frontend/gguf/frontend.hpp"
 #include "openvino/genai/gguf.hpp"
 #include "openvino/opsets/opset15.hpp"
+#include "utils.hpp"
 
 namespace ov::genai {
 namespace {
@@ -163,9 +164,19 @@ void adapt_gguf_audio_encoder(const std::shared_ptr<ov::Model>& model, bool unif
 }
 
 GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
-                                          const std::filesystem::path& mmproj,
-                                          const ov::AnyMap& properties,
-                                          const ExtensionList& extensions) {
+                                         const std::string& device,
+                                         ov::AnyMap& properties) {
+    OPENVINO_ASSERT(device == "CPU", "GGUF multimodal generation is currently qualified on CPU only");
+    const auto it = properties.find(mmproj_path.name());
+    OPENVINO_ASSERT(it != properties.end(), "A language GGUF requires mmproj_path for VLMPipeline");
+    const auto mmproj = it->second.as<std::string>();
+    properties.erase(it);
+    auto [filtered_properties, enable_save_ov_model] = utils::extract_gguf_properties(properties);
+    properties = std::move(filtered_properties);
+    utils::clear_false_prompt_lookup_from_config(properties);
+    utils::validate_vlm_model_properties(properties);
+    const auto extensions = utils::extract_extensions_to_core(properties);
+
     namespace gguf = ov::frontend::gguf;
     GGUFMultimodalModels result;
     gguf::FrontEnd frontend;
@@ -177,7 +188,7 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     result.tokenizer = GGUFTokenizer(GGUFTokenizerParameters(std::move(tokenizer_metadata)), properties);
     gguf::FrontEnd projector_frontend;
     register_gguf_extensions(projector_frontend, extensions);
-    auto combined = projector_frontend.convert(projector_frontend.load(mmproj.string()));
+    auto combined = projector_frontend.convert(projector_frontend.load(mmproj));
     const MmprojMetadata meta(combined);
     const auto architecture = result.language->get_rt_info<std::string>("gguf_architecture");
     const auto projector = meta.text("vision.projector");
@@ -227,6 +238,11 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
         const auto placeholder = result.tokenizer.encode(vlm.config.image_soft_token, add_special_tokens(false));
         OPENVINO_ASSERT(placeholder.input_ids.get_size() == 1,
                         "GGUF Gemma3 requires a single-token padding placeholder for image assembly");
+    }
+    if (enable_save_ov_model) {
+        utils::save_openvino_model(result.language, language.string() + ".language.xml", false);
+        for (const auto& [name, model] : vlm.models)
+            utils::save_openvino_model(model, mmproj + "." + name + ".xml", false);
     }
     return result;
 }
