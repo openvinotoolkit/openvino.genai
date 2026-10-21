@@ -10,22 +10,6 @@
 #include "visual_language/vlm_chat_context.hpp"
 #include "visual_language/vlm_utils.hpp"
 
-namespace {
-
-std::unordered_map<std::string, ov::Tensor> deep_copy_tensors_map(
-    const std::unordered_map<std::string, ov::Tensor>& src) {
-    std::unordered_map<std::string, ov::Tensor> dst;
-    dst.reserve(src.size());
-    for (const auto& [name, tensor] : src) {
-        ov::Tensor tensor_copy(tensor.get_element_type(), tensor.get_shape());
-        tensor.copy_to(tensor_copy);
-        dst.emplace(name, std::move(tensor_copy));
-    }
-    return dst;
-}
-
-}  // namespace
-
 namespace ov::genai {
 
 GenerationConfig ContinuousBatchingPipeline::IContinuousBatchingPipeline::get_config() const {
@@ -488,7 +472,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
             position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[i].get_shape()[1], 0));
 
-            lm_extra_inputs_list.push_back(deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs()));
+            lm_extra_inputs_list.push_back(vlm_utils::deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs()));
 
             PerfMetrics::emplace_duration(vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations, start_get_inputs_embeds);
         }
@@ -729,7 +713,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[i].get_shape()[1], 0));
 
-        lm_extra_inputs_list.push_back(deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs()));
+        lm_extra_inputs_list.push_back(vlm_utils::deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs()));
 
         PerfMetrics::emplace_duration(vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations, start_get_inputs_embeds);
     }
@@ -784,6 +768,72 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         }
     }
 
+    return results;
+}
+
+std::vector<VLMDecodedResults>
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+    const std::vector<ProcessedInputs>& inputs,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer
+) {
+    OPENVINO_ASSERT(!inputs.empty(), "ProcessedInputs batch must not be empty");
+    OPENVINO_ASSERT(inputs.size() == sampling_params.size(),
+        "Number of ProcessedInputs (", inputs.size(), ") must match sampling_params (", sampling_params.size(), ")");
+    auto generate_start_time = std::chrono::steady_clock::now();
+
+    std::vector<ov::Tensor> input_embeds_list;
+    std::vector<std::pair<ov::Tensor, std::optional<int64_t>>> position_ids_list;
+    std::vector<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs_list;
+    input_embeds_list.reserve(inputs.size());
+    position_ids_list.reserve(inputs.size());
+    lm_extra_inputs_list.reserve(inputs.size());
+    for (const auto& input : inputs) {
+        input_embeds_list.push_back(input.inputs_embeds);
+        position_ids_list.emplace_back(input.position_ids, input.rope_delta);
+        lm_extra_inputs_list.push_back(input.lm_extra_inputs);
+    }
+
+    // FIXME Replace nullopt with populated prompt_ids with audios input/omni pipeline support
+    std::vector<EncodedGenerationResult> encoded_results = generate(
+        input_embeds_list, sampling_params, streamer, position_ids_list, std::nullopt, lm_extra_inputs_list);
+
+    std::vector<VLMDecodedResults> results;
+    results.reserve(encoded_results.size());
+    for (size_t i = 0; i < encoded_results.size(); ++i) {
+        utils::assert_request_was_scheduled(encoded_results[i].m_status, encoded_results[i].m_request_id);
+        auto& result = encoded_results[i];
+        VLMDecodedResults gen_result;
+        gen_result.perf_metrics = VLMPerfMetrics(result.perf_metrics);
+        gen_result.extended_perf_metrics = result.extended_perf_metrics;
+        
+        // Merge common raw perf metrics from ProcessedInputs
+        auto& dst_raw_metrics = gen_result.perf_metrics.raw_metrics;
+        const auto& src_raw_metrics = inputs[i].vlm_perf_metrics.raw_metrics;
+        dst_raw_metrics.tokenization_durations.insert(dst_raw_metrics.tokenization_durations.end(),
+            src_raw_metrics.tokenization_durations.begin(), src_raw_metrics.tokenization_durations.end());
+        dst_raw_metrics.chat_template_durations.insert(dst_raw_metrics.chat_template_durations.end(),
+            src_raw_metrics.chat_template_durations.begin(), src_raw_metrics.chat_template_durations.end());
+
+        // Merge VLM raw perf metrics from ProcessedInputs
+        gen_result.perf_metrics.vlm_raw_metrics = inputs[i].vlm_perf_metrics.vlm_raw_metrics;
+
+        auto decode_start_time = std::chrono::steady_clock::now();
+        for (size_t idx = 0; idx < result.m_generation_ids.size(); ++idx) {
+            gen_result.texts.push_back(m_tokenizer.decode(result.m_generation_ids.at(idx)));
+            gen_result.scores.push_back(result.m_scores.at(idx));
+        }
+        gen_result.finish_reasons = result.m_finish_reasons;
+        PerfMetrics::emplace_duration(gen_result.perf_metrics.raw_metrics.detokenization_durations, decode_start_time);
+        gen_result.perf_metrics.m_evaluated = false;
+        gen_result.perf_metrics.evaluate_statistics(generate_start_time);
+
+        if (sampling_params[i].return_omni_outputs) {
+            gen_result.intermediate_hidden_states = std::move(result.m_intermediate_hidden_states);
+            gen_result.full_token_ids = std::move(result.m_full_token_ids);
+        }
+        results.emplace_back(std::move(gen_result));
+    }
     return results;
 }
 
@@ -867,6 +917,39 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
             sampling_params,
             prompt_ids,
             m_inputs_embedder->get_lm_extra_inputs()
+        );
+        handle->m_generation_stream->set_vlm_perf_metrics(std::move(metrics));
+    }
+    return handle;
+}
+
+GenerationHandle
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
+    uint64_t request_id,
+    const ProcessedInputs& inputs,
+    const GenerationConfig& sampling_params
+) {
+    OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
+    ov::genai::VLMPerfMetrics metrics = ov::genai::VLMPerfMetrics(inputs.vlm_perf_metrics);
+    // FIXME prompt_ids is not populated for VLM prompt lookup with add_request API
+    std::optional<ov::Tensor> prompt_ids;
+    GenerationHandle handle;
+    {
+        std::lock_guard<std::mutex> lock(m_embeddings_mutex);
+
+        // position ids / rope delta are computed by the processor (as in prefill).
+        // Pass them through embedder to read them back later in model runner.
+        m_inputs_embedder->set_position_ids(inputs.position_ids);
+        if (inputs.rope_delta.has_value()) {
+            m_inputs_embedder->set_rope_delta(*inputs.rope_delta);
+        }
+
+        handle = add_request(
+            request_id,
+            inputs.inputs_embeds,
+            sampling_params,
+            prompt_ids,
+            inputs.lm_extra_inputs
         );
         handle->m_generation_stream->set_vlm_perf_metrics(std::move(metrics));
     }

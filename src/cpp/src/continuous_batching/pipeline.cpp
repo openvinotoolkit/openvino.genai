@@ -24,6 +24,7 @@
 #include "model_desc.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/multimodal_inputs.hpp"
+#include "visual_language/processor_bridge.hpp"
 #include "json_utils.hpp"
 #include "lora/helper.hpp"
 
@@ -61,6 +62,18 @@ void assert_supported_add_request_lora_modes(const std::optional<AdapterConfig>&
                                              const GenerationConfig& sampling_params) {
     assert_supported_add_request_lora_mode(pipeline_adapters);
     assert_supported_add_request_lora_mode(sampling_params.adapters);
+}
+
+// Registers any genai extensions to the singleton core, then reads the language model.
+std::shared_ptr<ov::Model> read_shared_cb_language_model(const std::filesystem::path& models_path, ov::AnyMap properties) {
+    utils::extract_extensions_to_core(properties);
+    return utils::read_model(models_path, utils::get_model_properties(properties, "language_model"));
+}
+
+// Drops the genai-only "extensions" entry so it doesn't reach plugin compile properties.
+ov::AnyMap without_extensions(ov::AnyMap properties) {
+    properties.erase(utils::EXTENSIONS_ARG_NAME);
+    return properties;
 }
 
 } // namespace
@@ -200,6 +213,61 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
 
     m_impl->m_load_time_ms = get_load_time(start_time);
 }
+
+ContinuousBatchingPipeline::ContinuousBatchingPipeline(
+    const std::shared_ptr<ov::Model>& language_model,
+    const std::shared_ptr<InputsEmbedder>& inputs_embedder,
+    const SchedulerConfig& scheduler_config,
+    const std::string& device,
+    const std::filesystem::path& config_dir_path,
+    const ov::AnyMap& properties,
+    const ov::genai::GenerationConfig& generation_config
+) {
+    auto start_time = std::chrono::steady_clock::now();
+    OPENVINO_ASSERT(inputs_embedder, "Shared InputsEmbedder must not be null");
+    m_uses_external_processor = true;
+
+    auto [properties_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties);
+    if (!config_dir_path.empty()) {
+        properties_without_gguf[ov::cache_model_path.name()] = config_dir_path;
+    }
+
+    utils::print_scheduler_config_info(scheduler_config);
+
+    // TODO Implement SD, prompt lookup, eagle3, mtp etc. branches
+    auto properties_spec_check = properties_without_gguf;
+    auto draft_model_descr = ov::genai::extract_draft_model_from_config(properties_spec_check);
+    const bool is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_spec_check);
+    OPENVINO_ASSERT(draft_model_descr.model == nullptr && !is_prompt_lookup_enabled,
+        "Speculative decoding / prompt lookup aren't supported yet for CB pipeline with VLMProcessor.");
+
+    m_impl = std::make_shared<ContinuousBatchingImpl>(
+        language_model,
+        inputs_embedder,
+        inputs_embedder->get_tokenizer(),
+        scheduler_config,
+        device,
+        properties_spec_check,
+        generation_config);
+
+    m_impl->m_load_time_ms = get_load_time(start_time);
+}
+
+// Shares the processor's InputsEmbedder: delegates to the shared-embedder ctor with the LLM read here.
+ContinuousBatchingPipeline::ContinuousBatchingPipeline(
+    const std::filesystem::path& models_path,
+    const SchedulerConfig& scheduler_config,
+    const VLMProcessor& processor,
+    const std::string& device,
+    const ov::AnyMap& properties)
+    : ContinuousBatchingPipeline(
+          read_shared_cb_language_model(models_path, properties),
+          get_shared_inputs_embedder(processor),
+          scheduler_config,
+          device,
+          models_path,
+          without_extensions(properties),
+          utils::from_config_json_if_exists(models_path)) {}
 
 ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     const std::filesystem::path& models_path,
@@ -559,6 +627,18 @@ GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, co
 
 GenerationHandle ContinuousBatchingPipeline::add_request(
     uint64_t request_id,
+    const ProcessedInputs& inputs,
+    const ov::genai::GenerationConfig& sampling_params
+) {
+    OPENVINO_ASSERT(m_uses_external_processor,
+        "add_request(ProcessedInputs) requires using CB pipeline ctor with VLMProcessor - "
+        "inputs should be produced by the same processor which is used for generation.");
+    assert_supported_add_request_lora_modes(m_impl->get_pipeline_adapters(), sampling_params);
+    return m_impl->add_request(request_id, inputs, sampling_params);
+}
+
+GenerationHandle ContinuousBatchingPipeline::add_request(
+    uint64_t request_id,
     const std::string& prompt,
     const ov::AnyMap& properties_map
 ) {
@@ -712,6 +792,17 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
         properties.generation_config_batches.value(),
         properties.streamer
     );
+}
+
+std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
+    const std::vector<ProcessedInputs>& inputs,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer
+) {
+    OPENVINO_ASSERT(m_uses_external_processor,
+        "generate(std::vector<ProcessedInputs>) requires using CB pipeline ctor with VLMProcessor - "
+        "inputs should be produced by the same processor which is used for generation.");
+    return m_impl->generate(inputs, sampling_params, streamer);
 }
 
 void ContinuousBatchingPipeline::start_chat(const std::string& system_message) {
