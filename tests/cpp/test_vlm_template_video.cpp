@@ -226,6 +226,61 @@ TEST(VLMChatTemplate, InvalidTemplateStillReportsAnError) {
     EXPECT_THROW(tokenizer->apply_chat_template(chat_history(), false, "", std::nullopt, std::nullopt), ov::Exception);
 }
 
+TEST_F(MuseGlimmerVideo, SamplingEnabledKeepsExistingSelection) {
+    auto encoder = embedder(true);
+    ov::genai::VideoMetadata metadata;
+    metadata.fps = 8.0f;
+    const auto encoded = encoder->encode_videos({video()}, {metadata});
+    ASSERT_EQ(encoded.size(), 1);
+    expect_encoded_frames(encoded.front(), {0, 7});
+    EXPECT_FLOAT_EQ(encoded.front().metadata.fps, 8.0f);
+}
+
+TEST_F(MuseGlimmerVideo, SamplingDisabledPreservesAllFrames) {
+    auto encoder = embedder(false);
+    ov::genai::VideoMetadata metadata;
+    metadata.fps = 8.0f;
+    const auto encoded = encoder->encode_videos({video()}, {metadata});
+    ASSERT_EQ(encoded.size(), 1);
+    expect_encoded_frames(encoded.front(), {0, 1, 2, 3, 4, 5, 6, 7});
+    EXPECT_FLOAT_EQ(encoded.front().metadata.fps, 8.0f);
+}
+
+TEST_F(MuseGlimmerVideo, SamplingDisabledPreservesPreselectedFrames) {
+    auto encoder = embedder(false, 0.0f, 0);
+    ov::genai::VideoMetadata metadata;
+    metadata.fps = 6.0f;
+    metadata.frames_indices = {1, 2, 4, 6};
+    const auto encoded = encoder->encode_videos({video()}, {metadata});
+    ASSERT_EQ(encoded.size(), 1);
+    expect_encoded_frames(encoded.front(), metadata.frames_indices);
+    EXPECT_FLOAT_EQ(encoded.front().metadata.fps, 6.0f);
+}
+
+TEST_F(MuseGlimmerVideo, SamplingDisabledUsesProcessorFpsFallback) {
+    auto encoder = embedder(false);
+    const auto encoded = encoder->encode_videos({video()});
+    ASSERT_EQ(encoded.size(), 1);
+    expect_encoded_frames(encoded.front(), {0, 1, 2, 3, 4, 5, 6, 7});
+    EXPECT_FLOAT_EQ(encoded.front().metadata.fps, 2.0f);
+}
+
+TEST_F(MuseGlimmerVideo, SamplingDisabledUsesDefaultFpsFallback) {
+    auto encoder = embedder(false, 0.0f, 0);
+    const auto encoded = encoder->encode_videos({video()});
+    ASSERT_EQ(encoded.size(), 1);
+    expect_encoded_frames(encoded.front(), {0, 1, 2, 3, 4, 5, 6, 7});
+    EXPECT_FLOAT_EQ(encoded.front().metadata.fps, 24.0f);
+}
+
+TEST_F(MuseGlimmerVideo, SamplingDisabledRejectsIncompleteTemporalGroups) {
+    auto encoder = embedder(false);
+    EXPECT_THROW(encoder->encode_videos({video(3)}), ov::Exception);
+    ov::genai::VideoMetadata metadata;
+    metadata.frames_indices = {0, 1, 2};
+    EXPECT_THROW(encoder->encode_videos({video()}, {metadata}), ov::Exception);
+}
+
 TEST_F(MuseGlimmerVideo, EditedHistoryRollbackRetainsOnlyMatchingPrefix) {
     auto configured = embedder(false);
     ov::genai::InputsEmbedder inputs(models, ov::genai::Tokenizer{}, config_dir, "CPU", {});
