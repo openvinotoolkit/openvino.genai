@@ -127,10 +127,6 @@ protected:
     void _throw_if_failed() const;
     void _step();
 
-    void _fail_pipeline(std::exception_ptr error) noexcept;
-    void _throw_if_failed() const;
-    void _step();
-
     virtual void drop_requests();
 
 public:
