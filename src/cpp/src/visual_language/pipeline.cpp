@@ -6,8 +6,6 @@
 #include <optional>
 #include <random>
 
-#include "gguf_utils/gguf_tokenizer.hpp"
-#include "gguf_utils/gguf_utils.hpp"
 #include "lm_encoding.hpp"
 #include "lora/helper.hpp"
 #include "openvino/genai/text_streamer.hpp"
@@ -280,15 +278,13 @@ public:
         OPENVINO_ASSERT(it != properties.end(), "A language GGUF requires mmproj_path for VLMPipeline");
         const auto projector = it->second.as<std::string>();
         properties.erase(it);
-        auto gguf_properties = gguf_utils::extract_gguf_properties(properties);
-        OPENVINO_ASSERT(!gguf_properties.legacy_reader.value_or(false),
-                        "GGUF multimodal generation requires gguf_reader=FRONTEND");
-        properties = std::move(gguf_properties.rest);
+        auto [filtered_properties, enable_save_ov_model] = utils::extract_gguf_properties(properties);
+        properties = std::move(filtered_properties);
         utils::clear_false_prompt_lookup_from_config(properties);
         utils::validate_vlm_model_properties(properties);
         const auto extensions = utils::extract_extensions_to_core(properties);
         auto models = read_gguf_multimodal(models_dir, projector, properties, extensions);
-        if (gguf_properties.enable_save_ov_model) {
+        if (enable_save_ov_model) {
             utils::save_openvino_model(models.language, models_dir.string() + ".language.xml", false);
             for (const auto& [name, model] : models.vlm.models)
                 utils::save_openvino_model(model, projector + "." + name + ".xml", false);

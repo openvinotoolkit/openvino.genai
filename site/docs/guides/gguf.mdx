@@ -76,8 +76,8 @@ Chat requires a suitable template in the GGUF metadata. See [Tokenization](./tok
 
 ## Generate with images, video, or audio
 
-Pass a matching language GGUF and projector GGUF to `VLMPipeline` on CPU. This route requires
-`GGUF_READER="FRONTEND"` and reuses the image processing, embedding assembly, and generation code
+Pass a matching language GGUF and projector GGUF to `VLMPipeline` on CPU. This route uses the
+OpenVINO GGUF frontend and reuses the image processing, embedding assembly, and generation code
 used for Optimum Intel exports.
 
 ```python
@@ -87,14 +87,14 @@ import openvino as ov
 import openvino_genai as genai
 
 pipe = genai.VLMPipeline(
-    "model.gguf", "CPU", mmproj_path="mmproj.gguf", GGUF_READER="FRONTEND"
+    "model.gguf", "CPU", mmproj_path="mmproj.gguf"
 )
 image = ov.Tensor(np.asarray(Image.open("image.jpg").convert("RGB"))[None])
 print(pipe.generate("Describe the image.", images=[image], max_new_tokens=64))
 ```
 
-In C++, pass `ov::genai::mmproj_path("mmproj.gguf")` and `ov::genai::gguf_reader("FRONTEND")`
-to the `VLMPipeline` constructor. The existing image, video, audio, and chat APIs apply.
+In C++, pass `ov::genai::mmproj_path("mmproj.gguf")` to the `VLMPipeline` constructor.
+The existing image, video, audio, and chat APIs apply.
 
 | Language architecture | Matching projector | Media |
 | --- | --- | --- |

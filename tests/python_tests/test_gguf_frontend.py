@@ -333,7 +333,7 @@ def test_gguf_vlm_reuses_optimum_pipeline(tiny_gguf_vlm_model):
     properties = reference_properties()
     pipelines = [
         genai.VLMPipeline(
-            language, "CPU", mmproj_path=str(projector), GGUF_READER="FRONTEND", ATTENTION_BACKEND=backend, **properties
+            language, "CPU", mmproj_path=str(projector), ATTENTION_BACKEND=backend, **properties
         )
         for backend in ["SDPA", "PA"]
     ]
@@ -348,9 +348,9 @@ def test_gguf_vlm_reuses_optimum_pipeline(tiny_gguf_vlm_model):
         assert reference.generate("Describe the image.", images=images, **config).texts
 
 
-def test_gguf_vlm_requires_frontend_and_projector(tiny_gguf_vlm_model):
+def test_gguf_vlm_requires_projector_and_cpu(tiny_gguf_vlm_model):
     language, projector, _ = tiny_gguf_vlm_model
     with pytest.raises(RuntimeError, match="mmproj_path"):
-        genai.VLMPipeline(language, "CPU", GGUF_READER="FRONTEND")
-    with pytest.raises(RuntimeError, match="FRONTEND"):
-        genai.VLMPipeline(language, "CPU", mmproj_path=str(projector), GGUF_READER="LEGACY")
+        genai.VLMPipeline(language, "CPU")
+    with pytest.raises(RuntimeError, match="CPU"):
+        genai.VLMPipeline(language, "GPU", mmproj_path=str(projector))
