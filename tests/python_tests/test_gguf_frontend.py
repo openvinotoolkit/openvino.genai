@@ -327,7 +327,7 @@ def tiny_gguf_vlm_model(llama_reference_tools, tmp_path_factory):
     return language, projector
 
 
-def test_gguf_vlm_attention_backends_and_chat(tiny_gguf_vlm_model):
+def test_gguf_vlm_attention_backends_and_images(tiny_gguf_vlm_model):
     language, projector = tiny_gguf_vlm_model
     properties = reference_properties()
     pipelines = [
@@ -342,26 +342,46 @@ def test_gguf_vlm_attention_backends_and_chat(tiny_gguf_vlm_model):
         for pipe, result in zip(pipelines, results):
             assert pipe.generate("Describe the image.", images=images, **config).texts == result.texts
 
-    for pipe in pipelines:
-        pipe.start_chat()
+
+@pytest.mark.parametrize("chat_api", ["start_chat", "ChatHistory"])
+@pytest.mark.xfail(
+    reason="Requires https://github.com/openvinotoolkit/openvino.genai/pull/4687",
+    raises=AssertionError,
+    strict=True,
+)
+def test_gguf_vlm_attention_backends_and_chat(tiny_gguf_vlm_model, chat_api):
+    language, projector = tiny_gguf_vlm_model
+    pipelines = [
+        genai.VLMPipeline(
+            language, "CPU", mmproj_path=str(projector), ATTENTION_BACKEND=backend, **reference_properties()
+        )
+        for backend in ["SDPA", "PA"]
+    ]
+    image = ov.Tensor(np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8))
+    config = {"max_new_tokens": 8, "do_sample": False, "ignore_eos": True}
+    histories = [genai.ChatHistory(), genai.ChatHistory()]
+    if chat_api == "start_chat":
+        for pipe in pipelines:
+            pipe.start_chat()
     try:
         for prompt in ["Describe the image.", "What else can you see?"]:
-            results = [pipe.generate(prompt, images=[image], **config) for pipe in pipelines]
-            assert results[0].texts == results[1].texts
+            if chat_api == "start_chat":
+                results = [pipe.generate(prompt, images=[image], **config) for pipe in pipelines]
+            else:
+                for history in histories:
+                    history.append({"role": "user", "content": prompt})
+                results = [
+                    pipe.generate(history, images=[image], **config) for pipe, history in zip(pipelines, histories)
+                ]
             assert results[0].perf_metrics.get_num_input_tokens() == results[1].perf_metrics.get_num_input_tokens()
+            assert results[0].texts == results[1].texts
+            if chat_api == "ChatHistory":
+                for history, result in zip(histories, results):
+                    history.append({"role": "assistant", "content": result.texts[0]})
     finally:
-        for pipe in pipelines:
-            pipe.finish_chat()
-
-    histories = [genai.ChatHistory(), genai.ChatHistory()]
-    for prompt in ["Describe the image.", "What else can you see?"]:
-        for history in histories:
-            history.append({"role": "user", "content": prompt})
-        results = [pipe.generate(history, images=[image], **config) for pipe, history in zip(pipelines, histories)]
-        assert results[0].texts == results[1].texts
-        assert results[0].perf_metrics.get_num_input_tokens() == results[1].perf_metrics.get_num_input_tokens()
-        for history, result in zip(histories, results):
-            history.append({"role": "assistant", "content": result.texts[0]})
+        if chat_api == "start_chat":
+            for pipe in pipelines:
+                pipe.finish_chat()
 
 
 def test_gguf_vlm_requires_projector_and_cpu(tiny_gguf_vlm_model):

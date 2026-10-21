@@ -161,9 +161,7 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
     m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) { }
 
 ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
-    const bool add_special_tokens =
-        m_add_special_tokens_is_set ? m_add_special_tokens
-                                   : !(m_is_chat_conversation || m_apply_chat_template || m_prompt_is_templated);
+    bool add_special_tokens = m_add_special_tokens_is_set ? m_add_special_tokens : !(m_is_chat_conversation || m_apply_chat_template);
     ManualTimer encode_timer("Encode");
     encode_timer.start();
 
@@ -585,8 +583,8 @@ void InputsEmbedder::update_chat_history(const std::string& decoded_results, con
     m_impl->update_chat_history(decoded_results, generation_finish_status);
 }
 
-void InputsEmbedder::set_apply_chat_template_status(bool apply_chat_template, bool prompt_is_templated) {
-    m_impl->set_apply_chat_template_status(apply_chat_template, prompt_is_templated);
+void InputsEmbedder::set_apply_chat_template_status(bool apply_chat_template) {
+    m_impl->set_apply_chat_template_status(apply_chat_template);
 }
 
 void InputsEmbedder::finish_chat() {

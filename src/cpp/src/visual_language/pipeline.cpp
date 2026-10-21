@@ -87,7 +87,6 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
 
     // if True, full history will be used as prompt on each chat generation
     bool m_use_full_chat_history = false;
-    std::weak_ptr<ChatHistoryInternalState> m_active_history;
     // It stores encoded images, videos and vision count in case when m_use_full_chat_history is true
     std::vector<ov::genai::EncodedImage> m_encoded_images;
     std::vector<ov::genai::EncodedVideo> m_encoded_videos;
@@ -687,10 +686,7 @@ public:
                                processed_chat_data.audio_encoding_durations.begin(),
                                processed_chat_data.audio_encoding_durations.end());
 
-        const auto history_state = ChatHistoryInternalState::get_or_create(history, m_vision_registry);
-        bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history ||
-                                m_active_history.lock() != history_state;
-        m_active_history = history_state;
+        bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history;
 
         if (use_full_history) {
             reset_language_state();
@@ -833,7 +829,6 @@ public:
     }
 
     void finish_chat() override {
-        m_active_history.reset();
         m_is_chat_conversation = false;
         m_image_id = 0;
         m_video_id = 0;

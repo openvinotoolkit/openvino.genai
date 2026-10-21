@@ -27,7 +27,6 @@
 #include "openvino/op/slice.hpp"
 #include "openvino/op/subtract.hpp"
 #include "openvino/op/unsqueeze.hpp"
-#include "utils.hpp"
 
 #ifdef _WIN32
 #    define NOMINMAX
