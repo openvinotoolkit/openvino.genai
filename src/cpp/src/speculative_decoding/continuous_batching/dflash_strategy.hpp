@@ -32,6 +32,7 @@ public:
 
 protected:
     DFlashDecodingImpl() = default;
+    void align_request_pair_processed_prefix(uint64_t request_id) override;
     void validate_awaiting_requests(const std::vector<SequenceGroup::Ptr>& main_awaiting_requests,
                                     const std::vector<SequenceGroup::Ptr>& draft_awaiting_requests) const override;
     void validate_request_config(const GenerationConfig& config) const;

@@ -177,15 +177,9 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
 }
 
 void ContinuousBatchingPipeline::MtpDecodingImpl::align_request_pair_processed_prefix(uint64_t request_id) {
-    auto find_request = [request_id](const std::vector<SequenceGroup::Ptr>& requests) {
-        const auto found = std::find_if(requests.begin(), requests.end(), [request_id](const auto& group) {
-            return group->get_request_id() == request_id;
-        });
-        OPENVINO_ASSERT(found != requests.end(), "MTP alignment requires both awaiting requests: ", request_id);
-        return *found;
-    };
-    const auto main_group = find_request(m_main_pipeline->get_awaiting_requests());
-    const auto draft_group = find_request(m_draft_pipeline->get_awaiting_requests());
+    const auto main_group = m_main_pipeline->find_awaiting_request(request_id);
+    const auto draft_group = m_draft_pipeline->find_awaiting_request(request_id);
+    OPENVINO_ASSERT(main_group && draft_group, "MTP alignment requires both awaiting requests: ", request_id);
     draft_group->get_sequences().front()->set_prefix_cache_policy(draft_group->get_prompt_len(),
         [main_group](size_t length, size_t block_size) {
             return main_group->get_sequences().front()->get_hash(length + 1, block_size);
