@@ -22,7 +22,7 @@ import numpy as np
 import pathlib
 import importlib.metadata as metadata
 from packaging.version import parse
-from utils.constants import get_ov_cache_converted_models_dir, extra_generate_kwargs
+from utils.constants import get_ov_cache_converted_models_dir, extra_generate_kwargs, get_default_llm_properties
 
 from utils.network import retry_request
 from utils.atomic_download import AtomicDownloadManager
@@ -164,7 +164,9 @@ def read_asr_model(params, word_timestamps=False, pipeline_type=PipelineType.WHI
         properties["word_timestamps"] = True
     if pipeline_type == PipelineType.CONTINUOUS_BATCHING:
         assert (path / "openvino_audio_encoder_model.xml").is_file(), "Continuous batching requires a split ASR export"
-        genai_pipe = ov_genai.ContinuousBatchingPipeline(path, ov_genai.SchedulerConfig(), "CPU")
+        genai_pipe = ov_genai.ContinuousBatchingPipeline(
+            path, ov_genai.SchedulerConfig(), "CPU", get_default_llm_properties()
+        )
     else:
         pipeline_cls = get_pipeline_cls(pipeline_type)
         genai_pipe = pipeline_cls(path, "CPU", **properties, ENABLE_MMAP=False)
