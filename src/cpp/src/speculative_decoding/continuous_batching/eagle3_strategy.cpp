@@ -196,7 +196,22 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::align_request_pair_processe
     // These values represent the processed-prefix lengths after each pipeline
     // independently restores cached prompt prefix blocks.
     const size_t main_processed = main_request->get_num_processed_tokens();
-    const size_t draft_processed = draft_request->get_num_processed_tokens();
+    size_t draft_processed = draft_request->get_num_processed_tokens();
+
+    if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        // The draft (embeddings) restore was deferred so its cache identity can be bound to the main
+        // model's image-aware hash here. The draft input is the main sequence shifted by one token, so a
+        // draft prefix of length L maps to the main prefix of length L + 1. This prevents reusing draft
+        // blocks cached for a prompt with identical text but a different image.
+        auto draft_pipeline = std::static_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_draft_pipeline);
+        draft_processed = draft_pipeline->restore_draft_prefix_with_identity(
+            request_id,
+            main_processed,
+            [main_request](size_t length, size_t block_size) {
+                return main_request->get_sequences().front()->get_hash(length + 1, block_size);
+            });
+    }
+
     const size_t common_restored_prefix = std::min(main_processed, draft_processed);
 
     // Enforce a shared processed prefix to keep main/draft cache states coherent.

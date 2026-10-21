@@ -3767,6 +3767,43 @@ def test_vlm_eagle3_chat_with_videos(
     )
 
 
+def test_vlm_eagle3_prefix_cache_image_identity(cat_tensor: openvino.Tensor):
+    # Two same-sized images with different content share one text prompt. With prefix caching the Eagle3
+    # draft cache identity is bound to the main model's image-aware prefix hash, so the repeated second-image
+    # request must restore the second image's draft blocks rather than the first image's. Draft quality only
+    # affects acceptance, so the main model's validated greedy output must match the no-draft reference here.
+    model_path, draft_model_path = _get_vlm_eagle3_model_paths()
+
+    image_a = cat_tensor
+    image_b = openvino.Tensor(255 - cat_tensor.data)
+    prompt = PROMPTS[2]
+
+    reference = VLMPipeline(model_path, "CPU")
+    reference_config = _setup_generation_config(reference, max_new_tokens=20, do_sample=False)
+    expected_a = reference.generate(prompt, images=[image_a], generation_config=reference_config).texts[0].strip()
+    expected_b = reference.generate(prompt, images=[image_b], generation_config=reference_config).texts[0].strip()
+
+    scheduler = SchedulerConfig()
+    scheduler.enable_prefix_caching = True
+    scheduler.max_num_seqs = 1
+    draft_scheduler = SchedulerConfig()
+    draft_scheduler.enable_prefix_caching = True
+    draft_scheduler.num_kv_blocks = 128
+    ov_draft = draft_model(draft_model_path, "CPU", scheduler_config=draft_scheduler)
+    pipe = VLMPipeline(model_path, "CPU", scheduler_config=scheduler, draft_model=ov_draft)
+    config = _setup_generation_config(pipe, max_new_tokens=20, do_sample=False)
+
+    # Prime both image caches, then repeat the second image to trigger the potential cross-image draft reuse.
+    for image, expected in [(image_a, expected_a), (image_b, expected_b), (image_b, expected_b)]:
+        result = pipe.generate(prompt, images=[image], generation_config=config)
+        assert result.texts[0].strip() == expected, (
+            "Eagle3 speculative output with prefix caching must match the no-draft reference across images."
+        )
+        assert result.extended_perf_metrics.draft_model_metrics.get_num_generated_tokens() > 0, (
+            "Draft model must stay active across the cross-image prefix-cache sequence."
+        )
+
+
 @pytest.fixture(scope="module")
 def video_sampling_inputs(synthetic_video_32x32) -> list[tuple[openvino.Tensor, VideoMetadata | None]]:
     video_tensor = openvino.Tensor(synthetic_video_32x32)
