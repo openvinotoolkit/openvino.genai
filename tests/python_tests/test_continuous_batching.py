@@ -238,42 +238,85 @@ def test_logprob_token_ids(model_facebook_opt_125m: OVConvertedModelSchema):
     # generated_log_probs).
     assert len(out_echo.requested_token_logprobs) < len(out_echo.generated_log_probs)
 
-    # Numerical checks: the requested values must be the full-vocabulary log-softmax of the RAW model
-    # logits, invariant to sampling settings — not a 0.0 placeholder or a top-k-renormalized value.
+    # Numerical checks against an INDEPENDENT reference: the full-vocabulary log-softmax of the raw
+    # HuggingFace model, computed outside the genai pipeline. Comparing against the pipeline's own
+    # generated_log_probs would share the sampler's log-partition math and let a common
+    # normalization bug pass.
+    import torch
+    from transformers import AutoModelForCausalLM
+
+    prompt = "The Sun is"
+    hf_model = AutoModelForCausalLM.from_pretrained("facebook/opt-125m")
+    hf_tokenizer = model_facebook_opt_125m.hf_tokenizer
+    # The pipeline encodes plain (non-chat) prompts with special tokens; the echo output confirms
+    # that the reference prefix matches what the pipeline actually ran.
+    prompt_ids = hf_tokenizer(prompt, add_special_tokens=True)["input_ids"]
+    assert out_echo.generated_ids[: len(prompt_ids)] == prompt_ids
+    prefix = len(prompt_ids)
+
+    def raw_log_softmax(full_ids):
+        with torch.no_grad():
+            logits = hf_model(torch.as_tensor([full_ids], dtype=torch.long)).logits[0].float()
+        return torch.log_softmax(logits, dim=-1)
+
+    def compare_requested(rows, full_ids, tol=1e-3):
+        ref = raw_log_softmax(full_ids)
+        assert len(rows) == len(full_ids) - prefix
+        for pos, row in enumerate(rows):
+            dist = ref[prefix + pos - 1]
+            for token_id, logprob in row:
+                assert abs(logprob - dist[token_id].item()) < tol, (
+                    f"position {pos}, token {token_id}: requested {logprob} != raw {dist[token_id].item()}"
+                )
+
+    # Greedy: every requested score at every generated position equals the raw full-vocab log-softmax.
+    compare_requested(out_standalone.requested_token_logprobs,
+                      prompt_ids + list(out_standalone.generated_ids))
+
+    # Beyond top-k, numerically: an id ranked 3rd at position 0 is outside the top_k=2 filter, yet its
+    # raw logprob must still be reported at every position.
+    ref_pos0 = raw_log_softmax(prompt_ids + list(out_standalone.generated_ids))[prefix - 1]
+    id_out = ref_pos0.topk(3).indices[2].item()
+    assert id_out not in (id_a, id_b)
+    h_topk_full = cb_pipe.add_request(
+        5, prompt,
+        generation_config=GenerationConfig(max_new_tokens=4, do_sample=True, temperature=1.0, top_k=2,
+                                           logprob_token_ids=[id_a, id_b, id_out]),
+    )
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+    out_topk_full = h_topk_full.read_all()[0]
+    # Position-0 logits depend only on the prompt, so id_out is verifiably outside top-2 there.
+    top2 = raw_log_softmax(prompt_ids + list(out_topk_full.generated_ids))[prefix - 1].topk(2).indices
+    assert id_out not in set(top2.tolist())
+    compare_requested(out_topk_full.requested_token_logprobs,
+                      prompt_ids + list(out_topk_full.generated_ids))
+
+    # Multinomial with non-unit temperature: requested logprobs are raw, pre-sampling values, so they
+    # match the same reference along the sampled sequence at every position.
+    h_temp = cb_pipe.add_request(
+        6, prompt,
+        generation_config=GenerationConfig(max_new_tokens=4, do_sample=True, temperature=0.7,
+                                           logprob_token_ids=[id_a, id_b]),
+    )
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+    out_temp = h_temp.read_all()[0]
+    compare_requested(out_temp.requested_token_logprobs, prompt_ids + list(out_temp.generated_ids))
+
+    # Internal consistency: the requested logprob of the generated token equals the pipeline's own
+    # top-1 generated_log_probs at the same position (both read the same raw distribution).
     t0 = out_standalone.generated_ids[0]
     h_num = cb_pipe.add_request(
-        3, "The Sun is",
+        7, prompt,
         generation_config=GenerationConfig(max_new_tokens=1, logprobs=1, logprob_token_ids=[t0]),
-    )
-    h_temp = cb_pipe.add_request(
-        4, "The Sun is",
-        generation_config=GenerationConfig(max_new_tokens=1, do_sample=True, temperature=2.0, logprob_token_ids=[t0]),
     )
     while cb_pipe.has_non_finished_requests():
         cb_pipe.step()
     out_num = h_num.read_all()[0]
-    out_temp = h_temp.read_all()[0]
-
-    lp_num = dict(out_num.requested_token_logprobs[0])
-    # Greedy: the requested logprob of the generated token equals the pipeline's own top-1
-    # generated_log_probs at the same position (both are the raw full-vocab log-softmax).
-    assert abs(lp_num[t0] - out_num.generated_log_probs[0]) < 1e-4
-    assert lp_num[t0] < -1e-4  # a real (strictly negative) logprob, not a 0.0 placeholder
-    # Top-k filtering must not leak in: position-0 logits are identical across requests, so the
-    # top_k=2 multinomial run reports the same raw logprob as the greedy one.
-    h_topk_num = cb_pipe.add_request(
-        5, "The Sun is",
-        generation_config=GenerationConfig(
-            max_new_tokens=1, do_sample=True, temperature=1.0, top_k=2,
-            logprob_token_ids=[t0],
-        ),
-    )
-    while cb_pipe.has_non_finished_requests():
-        cb_pipe.step()
-    out_topk_num = h_topk_num.read_all()[0]
-    assert abs(dict(out_topk_num.requested_token_logprobs[0])[t0] - lp_num[t0]) < 1e-4
-    # Temperature must not leak in either: requested logprobs are raw, pre-sampling values.
-    assert abs(dict(out_temp.requested_token_logprobs[0])[t0] - lp_num[t0]) < 1e-4
+    lp_num = dict(out_num.requested_token_logprobs[0])[t0]
+    assert abs(lp_num - out_num.generated_log_probs[0]) < 1e-4
+    assert lp_num < -1e-4  # a real (strictly negative) logprob, not a 0.0 placeholder
 
     # Config loading: both the JSON config file and the AnyMap update populate the field.
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
