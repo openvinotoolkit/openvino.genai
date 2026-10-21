@@ -24,6 +24,21 @@ struct MtpDraftUpdatePlan {
 // one base token followed by all draft candidates; removed_draft_tokens is the rejected suffix.
 MtpDraftUpdatePlan make_mtp_draft_update_plan(size_t main_hidden_state_len, size_t removed_draft_tokens);
 
+// One DFlash draft window, [target hidden-state rows ; seed + mask block], planned by the draft update and read
+// back by the draft multistep after the forward.
+struct DFlashDraftWindow {
+    size_t committed_rows = 0;  // draft KV rows already built; the window starts here
+    size_t context_rows = 0;    // new target hidden-state rows to forward
+    size_t block_rows = 0;      // seed + mask rows; 0 when there is no block
+    size_t candidate_rows = 0;  // block rows sampled as candidates
+};
+
+// Plans the DFlash draft window of a request whose tokens match the target's. The draft request's processed
+// length is its committed rows, and the target has hidden states up to target_processed_tokens.
+DFlashDraftWindow make_dflash_draft_window(const SequenceGroup& request,
+                                           size_t target_processed_tokens,
+                                           size_t candidate_position_offset);
+
 }  // namespace detail
 
 class ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
@@ -171,6 +186,11 @@ protected:
     }
     bool eagle_mode_enabled = false;
     bool mtp_mode_enabled = false;
+    bool dflash_mode_enabled = false;
+    int64_t m_dflash_mask_token_id = -1;
+    size_t m_dflash_candidate_position_offset = 1;
+    // Windows planned by the DFlash draft update for the next draft forward, by sequence id.
+    std::map<uint64_t, detail::DFlashDraftWindow> m_dflash_draft_windows;
 };
 
 class ContinuousBatchingPipeline::ContinuousBatchingForEagle3DecodingImpl
@@ -297,6 +317,71 @@ protected:
         OPENVINO_ASSERT(!scheduler_config.enable_prefix_caching || is_validation_mode_enabled ||
                     !m_scheduler->has_linear_attention_cache(),
                 "Prefix-enabled MTP draft pipelines with linear-attention state are not supported");
+    }
+};
+
+// Continuous-batching pipeline for both DFlash models. The validating main pipeline publishes its
+// processed length with the exported hidden states. The draft pipeline forwards each request's window
+// once per step; its logic is in ContinuousBatchingForSpeculativeDecodingImpl::update_request and multistep
+// behind dflash_mode_enabled.
+class ContinuousBatchingPipeline::ContinuousBatchingForDFlashDecodingImpl
+    : public ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl {
+public:
+    ContinuousBatchingForDFlashDecodingImpl() = default;
+
+    ContinuousBatchingForDFlashDecodingImpl(const std::shared_ptr<ov::Model>& model,
+                                            const Tokenizer& tokenizer,
+                                            const GenerationConfig& generation_config,
+                                            const SchedulerConfig& scheduler_config,
+                                            const std::string& device,
+                                            const ov::AnyMap& plugin_config,
+                                            bool is_validation_mode_enabled,
+                                            int64_t mask_token_id = -1,
+                                            size_t candidate_position_offset = 1)
+        : ContinuousBatchingForSpeculativeDecodingImpl(model,
+                                                       tokenizer,
+                                                       generation_config,
+                                                       scheduler_config,
+                                                       device,
+                                                       plugin_config,
+                                                       is_validation_mode_enabled) {
+        dflash_mode_enabled = true;
+        if (!is_validation_mode_enabled) {
+            enable_dflash_draft(mask_token_id, candidate_position_offset);
+        }
+    }
+
+    ContinuousBatchingForDFlashDecodingImpl(const std::shared_ptr<ov::Model>& model,
+                                            std::shared_ptr<InputsEmbedder> inputs_embedder,
+                                            const Tokenizer& tokenizer,
+                                            const GenerationConfig& generation_config,
+                                            const SchedulerConfig& scheduler_config,
+                                            const std::string& device,
+                                            const ov::AnyMap& plugin_config,
+                                            bool is_validation_mode_enabled,
+                                            int64_t mask_token_id = -1,
+                                            size_t candidate_position_offset = 1)
+        : ContinuousBatchingForSpeculativeDecodingImpl(model,
+                                                       std::move(inputs_embedder),
+                                                       tokenizer,
+                                                       generation_config,
+                                                       scheduler_config,
+                                                       device,
+                                                       plugin_config,
+                                                       is_validation_mode_enabled) {
+        dflash_mode_enabled = true;
+        if (!is_validation_mode_enabled) {
+            // The draft is a text model: sequential positions instead of the target's M-RoPE positions.
+            m_model_runner->enable_mtp_draft_positions(true);
+            enable_dflash_draft(mask_token_id, candidate_position_offset);
+        }
+    }
+
+protected:
+    void enable_dflash_draft(int64_t mask_token_id, size_t candidate_position_offset) {
+        m_dflash_mask_token_id = mask_token_id;
+        m_dflash_candidate_position_offset = candidate_position_offset;
+        m_model_runner->enable_dflash_draft(candidate_position_offset);
     }
 };
 }

@@ -66,16 +66,6 @@ void expose_target_hidden_states(std::shared_ptr<ov::Model>& model,
                                  const std::vector<int32_t>& target_layer_ids);
 
 /**
- * @brief Makes DFlash draft accept CB-native hidden states externally.
- *
- * DFlash draft graphs are exported with hidden_states shaped [1, seq_len, hidden],
- * while continuous batching produces hidden states as [seq_len, 1, hidden].
- * This transform changes the public input shape and inserts a reshape back to
- * the exported graph layout for existing consumers.
- */
-void reshape_draft_hidden_states_input_for_cb(std::shared_ptr<ov::Model>& model);
-
-/**
  * @brief Grafts the target lm_head onto the draft model.
  *
  * Clones only the weight side (input(1)) of the target's final lm_head MatMul - including any INT4
