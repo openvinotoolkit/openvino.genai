@@ -42,6 +42,7 @@ from utils.asr_utils.qwen3_asr import (
 class PipelineType(enum.Enum):
     WHISPER = "whisper"
     ASR = "asr"
+    CONTINUOUS_BATCHING = "continuous_batching"
 
 
 def get_pipeline_cls(pipeline_type: PipelineType):
@@ -161,13 +162,18 @@ def read_asr_model(params, word_timestamps=False, pipeline_type=PipelineType.WHI
     properties = {}
     if word_timestamps:
         properties["word_timestamps"] = True
-    pipeline_cls = get_pipeline_cls(pipeline_type)
+    if pipeline_type == PipelineType.CONTINUOUS_BATCHING:
+        assert (path / "openvino_audio_encoder_model.xml").is_file(), "Continuous batching requires a split ASR export"
+        genai_pipe = ov_genai.ContinuousBatchingPipeline(path, ov_genai.SchedulerConfig(), "CPU")
+    else:
+        pipeline_cls = get_pipeline_cls(pipeline_type)
+        genai_pipe = pipeline_cls(path, "CPU", **properties, ENABLE_MMAP=False)
 
     return (
         model_id,
         path,
         hf_pipe,
-        pipeline_cls(path, "CPU", **properties, ENABLE_MMAP=False),
+        genai_pipe,
     )
 
 
@@ -365,9 +371,47 @@ def pipelines_fixture(request):
     model_id, pipeline_type = request.param[:2]
     options = request.param[2] if len(request.param) > 2 else {}
     model_name = model_id.split("/")[-1]
+    if request.node.get_closest_marker("qwen3_asr_split_export"):
+        # Keep split and legacy exports in separate converted-model caches.
+        model_name += "-split"
     model_path = get_ov_cache_converted_models_dir() / model_name
     model_id, _, hf_pipe, genai_pipe = read_asr_model((model_id, model_path), pipeline_type=pipeline_type, **options)
     return hf_pipe, genai_pipe, model_id, pipeline_type
+
+
+@pytest.mark.qwen3_asr_split_export
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params([(QWEN3_ASR_MODEL_ID, PipelineType.CONTINUOUS_BATCHING)]),
+    indirect=True,
+)
+@pytest.mark.parametrize(
+    "audios",
+    [
+        pytest.param([np.zeros(seconds * 16000, dtype=np.float32) for seconds in (1, 2)], id="short-first"),
+        pytest.param([np.zeros(seconds * 16000, dtype=np.float32) for seconds in (2, 1)], id="long-first"),
+    ],
+)
+def test_qwen3_asr_cb_add_request_matches_optimum(pipelines_fixture, audios):
+    optimum_pipe, pipe, _, _ = pipelines_fixture
+    config = ov_genai.GenerationConfig(max_new_tokens=16, do_sample=False)
+    expected_ids = [
+        optimum_pipe.generate_ids(audio, max_new_tokens=16, do_sample=False)[0].tolist() for audio in audios
+    ]
+    handles = [
+        pipe.add_request(request_id, "", [], [], [openvino.Tensor(audio)], config)
+        for request_id, audio in enumerate(audios)
+    ]
+
+    while pipe.has_non_finished_requests():
+        pipe.step()
+
+    for handle, expected in zip(handles, expected_ids, strict=True):
+        results = handle.read_all()
+        assert len(results) == 1
+        assert expected
+        assert results[0].generated_ids == expected
+    assert not pipe.has_non_finished_requests()
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
