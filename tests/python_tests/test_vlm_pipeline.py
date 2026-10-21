@@ -3818,7 +3818,6 @@ def test_video_metadata_sampling_continuous_batching(
     for video, video_metadata in video_sampling_inputs:
         results = ov_pipe.generate(
             [prompt],
-            images=[[]],
             videos=[[video]],
             videos_metadata_batches=[[video_metadata]] if video_metadata else [],
             generation_config=[generation_config],

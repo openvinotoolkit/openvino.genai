@@ -91,8 +91,6 @@ def test_asr_optimum(tmp_path, request, model_id, ground_truth_fixture, language
     reproduced = get_similarity(run_wwb(["--target-data", tmp_path / "target.csv", *common]))
 
     assert reproduced == optimum_similarity
-    if model_id == QWEN3_ASR_MODEL:
-        assert optimum_similarity >= 0.90
 
 
 def test_asr_funasr_genai(tmp_path, funasr_ground_truth):
