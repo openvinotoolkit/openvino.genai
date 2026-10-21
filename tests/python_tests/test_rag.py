@@ -1216,7 +1216,9 @@ def test_rerank_documents(rerank_model, dataset_documents, query, config):
 )
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
 def test_qwen3_seq_cls_rerank_documents(rerank_model: OVConvertedModelSchema, query, task, documents, config):
-    # The reference needs the prompt template applied by hand, TextRerankPipeline applies it internally.
+    # The reference applies the prompt template by hand; TextRerankPipeline applies it internally
+    # using config.instruction, so both sides build the same prompt.
+    config.instruction = task
     formatted_query = qwen3_reranker_format_queries(query, task)
     formatted_documents = [qwen3_reranker_format_document(doc) for doc in documents]
 
@@ -1255,9 +1257,7 @@ def test_qwen3_rerank_npu(llm_model: OVConvertedModelSchema, query, documents):
     config = TextRerankPipeline.Config(top_n=4, padding_side="left")
 
     cpu_result = run_text_rerank_genai(llm_model.models_path, query, documents, config)
-    npu_result = run_text_rerank_genai(
-        llm_model.models_path, query, documents, config, "NPU", NPUW_CPU_PROPERTIES
-    )
+    npu_result = run_text_rerank_genai(llm_model.models_path, query, documents, config, "NPU", NPUW_CPU_PROPERTIES)
 
     assert_rerank_results(cpu_result, npu_result, score_diff_max=1e-3)
 
@@ -1294,8 +1294,9 @@ def test_qwen3_rerank_npu(llm_model: OVConvertedModelSchema, query, documents):
 )
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
 def test_qwen3_rerank_documents(llm_model: OVConvertedModelSchema, query, task, documents, config):
-    # The reference needs the prompt template applied by hand, TextRerankPipeline applies it internally.
-    # `task` is the instruction the pipeline uses, so both sides build the same prompt.
+    # The reference applies the prompt template by hand; TextRerankPipeline applies it internally
+    # using config.instruction, so both sides build the same prompt.
+    config.instruction = task
     formatted_query = qwen3_reranker_format_queries(query, task)
     formatted_documents = [qwen3_reranker_format_document(doc) for doc in documents]
 
