@@ -65,18 +65,19 @@ void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate
 
             size_t min_num_assistant_tokens = 0;
             const auto sampling_params = request->get_sampling_parameters();
+            const size_t configured_assistant_tokens = sampling_params.num_assistant_tokens.value_or(0);
             {
                 const auto generated_len = running_sequence->get_generated_len();
                 const auto left_generated_len = request->get_max_new_tokens() - generated_len - 1;
-                min_num_assistant_tokens = std::min(sampling_params.num_assistant_tokens, left_generated_len);
+                min_num_assistant_tokens = std::min(configured_assistant_tokens, left_generated_len);
             }
             TokenIds candidates = generate_candidates(full_input_ids, min_num_assistant_tokens, sampling_params.max_ngram_size);
 
             // Padding candidate tokens to maintain consistent shape.
             // Avoid shape checking and increasing the amount of computation when the shape changes.
-            if (candidates.size() < sampling_params.num_assistant_tokens) {
+            if (candidates.size() < configured_assistant_tokens) {
                 int token_sz = static_cast<int>(candidates.size());
-                for (int ci = 0; ci < static_cast<int>(sampling_params.num_assistant_tokens) - token_sz; ci++) {
+                for (int ci = 0; ci < static_cast<int>(configured_assistant_tokens) - token_sz; ci++) {
                     candidates.push_back(PADDING_TOKEN_ID);
                 }
             }

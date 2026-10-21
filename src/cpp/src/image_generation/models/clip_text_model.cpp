@@ -76,6 +76,15 @@ CLIPTextModel::CLIPTextModel(const std::string& model,
     compile(device, properties);
 }
 
+CLIPTextModel::CLIPTextModel(const Tensor& blob_tensor,
+                             const Config& config,
+                             const Tokenizer& clip_tokenizer,
+                             const std::string& device,
+                             const ov::AnyMap& properties) :
+    m_clip_tokenizer(clip_tokenizer), m_config(config) {
+    import_model(blob_tensor, device, properties);
+}
+
 CLIPTextModel::CLIPTextModel(const CLIPTextModel&) = default;
 
 std::shared_ptr<CLIPTextModel> CLIPTextModel::clone() {
@@ -216,6 +225,15 @@ void CLIPTextModel::import_model(const std::filesystem::path& blob_path,
                                  const ov::AnyMap& properties) {
     OPENVINO_ASSERT(!m_request, "Model has been already compiled. Cannot re-compile already compiled model");
     auto compiled_model = utils::import_model(blob_path / "openvino_model.blob", device, properties);
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "Clip Text model");
+    m_request = compiled_model.create_infer_request();
+}
+
+void CLIPTextModel::import_model(const ov::Tensor& blob_tensor,
+                                 const std::string& device,
+                                 const ov::AnyMap& properties) {
+    OPENVINO_ASSERT(!m_request, "Model has been already compiled. Cannot re-compile already compiled model");
+    auto compiled_model = utils::import_model(blob_tensor, device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Clip Text model");
     m_request = compiled_model.create_infer_request();
 }

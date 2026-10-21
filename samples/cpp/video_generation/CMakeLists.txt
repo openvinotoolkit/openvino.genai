@@ -11,6 +11,9 @@ find_package(OpenVINOGenAI REQUIRED
 file(DOWNLOAD https://raw.githubusercontent.com/nothings/stb/f75e8d1cad7d90d72ef7a4661f1b994ef78b4e31/stb_image_write.h ${CMAKE_BINARY_DIR}/stb_image_write.h
      EXPECTED_HASH MD5=845b8b43d7d941890a57a477455558ad)
 
+file(DOWNLOAD https://raw.githubusercontent.com/nothings/stb/f75e8d1cad7d90d72ef7a4661f1b994ef78b4e31/stb_image.h ${CMAKE_BINARY_DIR}/stb_image.h
+     EXPECTED_HASH MD5=27932e6fb3a2f26aee2fc33f2cb4e696)
+
 include(FetchContent)
 include(${CMAKE_CURRENT_SOURCE_DIR}/../fetch_opencv.cmake)
 
@@ -23,10 +26,17 @@ FetchContent_Declare(indicators
     URL_HASH SHA256=70da7a693ff7a6a283850ab6d62acf628eea17d386488af8918576d0760aef7b)
 FetchContent_MakeAvailable(indicators)
 
-# create main sample executable
-add_executable(text2video text2video.cpp imwrite_video.cpp)
+if(NOT TARGET dr_libs)
+    FetchContent_Declare(dr_libs
+        URL https://github.com/mackron/dr_libs/archive/da35f9d6c7374a95353fd1df1d394d44ab66cf01.tar.gz
+        URL_HASH SHA256=2704d347f480ca1bc92233fb01747e4550cc8031735b6ea62ca9990ebb8851ae)
+    FetchContent_MakeAvailable(dr_libs)
+endif()
 
-target_include_directories(text2video PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/" "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/cpp/src/")
+# create main sample executable
+add_executable(text2video text2video.cpp imwrite_video.cpp save_audio.cpp)
+
+target_include_directories(text2video PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/" "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/cpp/src/" "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
 ov_genai_link_opencv(text2video core imgproc videoio imgcodecs)
 target_link_libraries(text2video PRIVATE openvino::genai indicators::indicators)
 
@@ -71,6 +81,31 @@ set_target_properties(taylorseer_text2video PROPERTIES
     INSTALL_RPATH_USE_LINK_PATH ON)
 
 install(TARGETS taylorseer_text2video
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
+
+# create image to video sample executable
+add_executable(image2video image2video.cpp imwrite_video.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/load_image.cpp)
+
+target_include_directories(image2video PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/" "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/cpp/src/")
+ov_genai_link_opencv(image2video core imgproc videoio imgcodecs)
+target_link_libraries(image2video PRIVATE openvino::genai indicators::indicators)
+
+if(UNIX AND NOT APPLE)
+    set_target_properties(image2video PROPERTIES
+        INSTALL_RPATH "$ORIGIN/../lib"
+    )
+elseif(APPLE)
+    set_target_properties(image2video PROPERTIES
+        INSTALL_RPATH "@loader_path/../lib"
+    )
+endif()
+
+set_target_properties(image2video PROPERTIES
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS image2video
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)

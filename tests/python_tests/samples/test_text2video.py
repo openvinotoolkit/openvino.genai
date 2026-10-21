@@ -5,8 +5,10 @@ import os
 import pytest
 import sys
 
+import numpy as np
+
 from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
-from test_utils import run_sample
+from test_utils import run_sample, compare_videos
 
 
 class TestText2Video:
@@ -15,17 +17,43 @@ class TestText2Video:
     @pytest.mark.samples
     @pytest.mark.video_generation
     @pytest.mark.parametrize(
-        "convert_model, sample_args",
+        "convert_model, sample_args, has_audio",
         [
-            pytest.param("tiny-random-ltx-video", PROMPT),
+            pytest.param("tiny-random-ltx-video", PROMPT, False),
+            pytest.param("tiny-random-ltx2", PROMPT, True),
+            pytest.param("tiny-random-ltx2.3", PROMPT, True),
         ],
         indirect=["convert_model"],
     )
-    def test_sample_text2video(self, convert_model, sample_args):
+    def test_sample_text2video(self, convert_model, sample_args, has_audio, tmp_path):
+        py_dir = tmp_path / "python_output"
+        cpp_dir = tmp_path / "cpp_output"
+        py_dir.mkdir()
+        cpp_dir.mkdir()
+
         py_script = SAMPLES_PY_DIR / "video_generation/text2video.py"
-        py_command = [sys.executable, py_script, convert_model, sample_args]
-        run_sample(py_command)
+        py_command = [sys.executable, py_script, convert_model, sample_args, "5"]
+        run_sample(py_command, cwd=str(py_dir))
 
         cpp_sample = SAMPLES_CPP_DIR / "text2video"
-        cpp_command = [cpp_sample, convert_model, sample_args]
-        run_sample(cpp_command)
+        cpp_command = [cpp_sample, convert_model, sample_args, "5"]
+        run_sample(cpp_command, cwd=str(cpp_dir))
+
+        py_video = py_dir / "genai_video.avi"
+        cpp_video = cpp_dir / "genai_video.avi"
+
+        assert py_video.exists(), f"Python video not found: {py_video}"
+        assert cpp_video.exists(), f"C++ video not found: {cpp_video}"
+        assert compare_videos(py_video, cpp_video), "Videos from Python and C++ samples are not identical"
+
+        py_audio = py_dir / "genai_audio.wav"
+        cpp_audio = cpp_dir / "genai_audio.wav"
+        assert py_audio.exists() == has_audio, f"Unexpected audio output presence: {py_audio}"
+        assert cpp_audio.exists() == has_audio, f"Unexpected audio output presence: {cpp_audio}"
+        if has_audio:
+            import soundfile as sf
+
+            py_data, py_rate = sf.read(py_audio, dtype="float32")
+            cpp_data, cpp_rate = sf.read(cpp_audio, dtype="float32")
+            assert py_rate == cpp_rate, "Audio sample rates from Python and C++ samples differ"
+            assert np.array_equal(py_data, cpp_data), "Audio from Python and C++ samples is not identical"

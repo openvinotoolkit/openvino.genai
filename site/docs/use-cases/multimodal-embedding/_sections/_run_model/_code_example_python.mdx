@@ -1,0 +1,20 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="python" showLineNumbers>
+{`import openvino as ov
+import openvino_genai as ov_genai
+
+pipeline = ov_genai.EmbeddingPipeline(models_path, "${props.device || 'CPU'}")
+
+# Embed a text query
+query_embedding = pipeline.embed("a photo of a cat").embeddings
+
+# Embed images  (image is an ov.Tensor of shape [1, H, W, 3], uint8)
+images: list[ov.Tensor] = read_images("path/to/images")
+image_embedding = pipeline.embed(images=images).embeddings
+
+# Embed a video  (video is an ov.Tensor of shape [F, H, W, 3], uint8)
+video, video_metadata = read_video("path/to/video.mp4")
+video_embedding = pipeline.embed(videos=[video], videos_metadata=[video_metadata]).embeddings
+`}
+</CodeBlock>

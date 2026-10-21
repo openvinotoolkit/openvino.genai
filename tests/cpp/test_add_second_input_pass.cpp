@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "tokenizer/add_second_input_pass.hpp"
+#include "tokenizer/make_tokenizer_stateful.hpp"
 #include "tokenizer/tokenizers_path.hpp"
 #include "gguf_utils/gguf_tokenizer.hpp"
 #include <gtest/gtest.h>
@@ -16,8 +17,14 @@
 #include <openvino/op/maximum.hpp>
 #include <openvino/op/broadcast.hpp>
 #include <openvino/op/multiply.hpp>
+#include <openvino/op/subtract.hpp>
+#include <openvino/op/read_value.hpp>
+#include <openvino/op/assign.hpp>
+#include <cstring>
 #include <filesystem>
+#include <limits>
 #include <memory>
+#include <optional>
 
 
 using namespace ov::genai;
@@ -164,7 +171,8 @@ static bool run_add_second_input_pass(std::shared_ptr<ov::Model> model, std::ost
 static std::shared_ptr<ov::Model> make_minimal_model(
     bool with_combine_segments = true,
     bool with_string_unpack = true,
-    std::vector<ov::Output<ov::Node>>* combine_inputs_out = nullptr)
+    std::vector<ov::Output<ov::Node>>* combine_inputs_out = nullptr,
+    std::optional<bool> truncation_default = std::nullopt)
 {
     using namespace ov::op;
     auto parameter_1 = std::make_shared<v0::Parameter>(element::string, Shape{2});
@@ -191,7 +199,22 @@ static std::shared_ptr<ov::Model> make_minimal_model(
     auto BPETokenizer = get_factory_create_func()("BPETokenizer", bpe_inputs, {});
     auto max_length = std::make_shared<v0::Constant>(element::i32, Shape{}, std::vector<int32_t>({10}));
     auto trunc_side = std::make_shared<v0::Constant>(element::u8, Shape{5}, std::vector<uint8_t>{'r', 'i', 'g', 'h', 't'});
-    auto truncate = get_factory_create_func()("Truncate", {BPETokenizer[0], BPETokenizer[1], BPETokenizer[2], max_length, trunc_side}, {});
+    ov::Output<ov::Node> truncate_max_length = max_length;
+    std::shared_ptr<ov::op::util::Variable> truncation_variable;
+    std::shared_ptr<v6::ReadValue> truncation_read_value;
+    if (truncation_default.has_value()) {
+        truncation_variable = std::make_shared<ov::op::util::Variable>(
+            ov::op::util::VariableInfo{Shape{}, element::boolean, "truncation"});
+        auto default_value = std::make_shared<v0::Constant>(
+            element::boolean, Shape{}, std::vector<bool>{truncation_default.value()});
+        truncation_read_value = std::make_shared<v6::ReadValue>(default_value, truncation_variable);
+        auto disabled_truncation_limit = std::make_shared<v0::Constant>(
+            element::i32, Shape{}, std::vector<int32_t>{std::numeric_limits<int32_t>::max() - 64});
+        truncate_max_length = std::make_shared<v1::Select>(
+            truncation_read_value, max_length, disabled_truncation_limit);
+    }
+    auto truncate = get_factory_create_func()(
+        "Truncate", {BPETokenizer[0], BPETokenizer[1], BPETokenizer[2], truncate_max_length, trunc_side}, {});
     int32_t eos_token_id = 42;
     auto eos_begins = std::make_shared<v0::Constant>(element::i32, Shape{1}, std::vector<int32_t>{0});
     auto eos_ends = std::make_shared<v0::Constant>(element::i32, Shape{1}, std::vector<int32_t>{1});
@@ -209,8 +232,90 @@ static std::shared_ptr<ov::Model> make_minimal_model(
     else
         combine_node = truncate[0].get_node_shared_ptr();
     auto model = std::make_shared<ov::Model>(OutputVector{combine_node}, ParameterVector{parameter_1});
+
+    if (truncation_read_value) {
+        model->add_sinks({std::make_shared<v6::Assign>(truncation_read_value, truncation_variable)});
+        model->add_variables({truncation_variable});
+    }
     return model;
 }
+
+class AddSecondInputStatefulTruncationTest : public testing::TestWithParam<bool> {};
+
+TEST_P(AddSecondInputStatefulTruncationTest, adjusts_enabled_max_length_branch) {
+    auto model = make_minimal_model(true, true, nullptr, GetParam());
+    nlohmann::json post_processor = {
+        {"single", {{"ids", std::vector<int>{-1, 42}}}},
+        {"pair", {
+            {"ids", std::vector<int>{-1, 42, -1, 42}},
+            {"type_ids", std::vector<int>{0, 0, 1, 1}}
+        }}
+    };
+    model->get_rt_info()["processed_post_processor_template"] = post_processor.dump();
+
+    std::ostringstream pass_errors;
+    ASSERT_TRUE(run_add_second_input_pass(model, pass_errors)) << pass_errors.str();
+
+    std::shared_ptr<ov::Node> truncate;
+    for (const auto& node : model->get_ops()) {
+        if (!std::strcmp(node->get_type_name(), "Truncate")) {
+            truncate = node;
+            break;
+        }
+    }
+    ASSERT_NE(truncate, nullptr);
+
+    // The paired Truncate has six sequence inputs followed by max_length and truncation settings.
+    auto max_length_select = ov::as_type_ptr<v1::Select>(truncate->get_input_node_shared_ptr(6));
+    ASSERT_NE(max_length_select, nullptr);
+    auto truncation_read_value = ov::as_type_ptr<v6::ReadValue>(max_length_select->get_input_node_shared_ptr(0));
+    ASSERT_NE(truncation_read_value, nullptr);
+    EXPECT_EQ(truncation_read_value->get_variable()->get_info().variable_id, "truncation");
+
+    auto default_value = ov::as_type_ptr<v0::Constant>(truncation_read_value->get_input_node_shared_ptr(0));
+    ASSERT_NE(default_value, nullptr);
+    EXPECT_EQ(default_value->cast_vector<bool>(), std::vector<bool>{GetParam()});
+
+    auto adjusted_max_length = ov::as_type_ptr<v0::Constant>(max_length_select->get_input_node_shared_ptr(1));
+    ASSERT_NE(adjusted_max_length, nullptr);
+    EXPECT_EQ(adjusted_max_length->cast_vector<int32_t>(), std::vector<int32_t>{9});
+
+    auto disabled_truncation_limit = ov::as_type_ptr<v0::Constant>(max_length_select->get_input_node_shared_ptr(2));
+    ASSERT_NE(disabled_truncation_limit, nullptr);
+    EXPECT_EQ(disabled_truncation_limit->cast_vector<int32_t>(),
+              std::vector<int32_t>{std::numeric_limits<int32_t>::max() - 64});
+
+    // This is the production pass order after AddSecondInputPass. It must reuse the existing
+    // truncation state instead of assuming that Truncate still receives a Constant.
+    ov::pass::Manager stateful_manager;
+    stateful_manager.register_pass<MakeAddSpecialTokensSatateful>();
+    stateful_manager.register_pass<MakePaddingSatateful>();
+    ASSERT_NO_THROW(stateful_manager.run_passes(model));
+
+    size_t truncation_read_values = 0;
+    size_t max_length_read_values = 0;
+    for (const auto& node : model->get_ops()) {
+        if (auto read_value = ov::as_type_ptr<v6::ReadValue>(node)) {
+            const auto& variable_id = read_value->get_variable()->get_info().variable_id;
+            truncation_read_values += variable_id == TRUNCATION_VAR_ID;
+            max_length_read_values += variable_id == MAX_LENGTH_VAR_ID;
+        }
+    }
+    EXPECT_EQ(truncation_read_values, 1);
+    EXPECT_EQ(max_length_read_values, 1);
+
+    EXPECT_EQ(max_length_select->get_input_node_shared_ptr(0), truncation_read_value);
+    auto runtime_max_length = ov::as_type_ptr<v1::Subtract>(max_length_select->get_input_node_shared_ptr(1));
+    ASSERT_NE(runtime_max_length, nullptr);
+    auto max_length_read_value = ov::as_type_ptr<v6::ReadValue>(runtime_max_length->get_input_node_shared_ptr(0));
+    ASSERT_NE(max_length_read_value, nullptr);
+    EXPECT_EQ(max_length_read_value->get_variable()->get_info().variable_id, MAX_LENGTH_VAR_ID);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    TruncationDefault,
+    AddSecondInputStatefulTruncationTest,
+    testing::Values(false, true));
 
 // 1. Model with more than one input
 TEST(AddSecondInputTest, error_multiple_inputs) {

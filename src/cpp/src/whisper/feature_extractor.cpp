@@ -450,6 +450,21 @@ WhisperFeatureExtractor::WhisperFeatureExtractor(const std::filesystem::path& pr
     init_mel_filter();
 }
 
+WhisperFeatureExtractor::WhisperFeatureExtractor(size_t feature_size,
+                                                 size_t sampling_rate,
+                                                 size_t n_fft,
+                                                 size_t hop_length)
+    : feature_size(feature_size),
+      sampling_rate(sampling_rate),
+      hop_length(hop_length),
+      n_fft(n_fft),
+      chunk_length(0),
+      n_samples(0),
+      nb_max_frames(0) {
+    fill_sin_cos_table(sin_vals, cos_vals, n_fft);
+    init_mel_filter();
+}
+
 void WhisperFeatureExtractor::init_parameters(const std::filesystem::path& preprocessor_json_path) {
     // preprocessor_config.json not found. Skip parameters initialization from file, use defaults.
     if (!std::filesystem::exists(preprocessor_json_path)) {
@@ -484,6 +499,11 @@ void WhisperFeatureExtractor::init_mel_filter() {
 }
 
 WhisperFeatures WhisperFeatureExtractor::extract(const std::vector<float>& raw_speech, bool pad_to_max_duration) {
+    OPENVINO_ASSERT(raw_speech.size() > n_fft / 2,
+                    "raw_speech too short for reflect padding: size=",
+                    raw_speech.size(),
+                    ", required > ",
+                    n_fft / 2);
     size_t n_threads = std::min(4, (int32_t)std::thread::hardware_concurrency());
     return mel_spectrogram_convert_audio(raw_speech,
                                          sampling_rate,

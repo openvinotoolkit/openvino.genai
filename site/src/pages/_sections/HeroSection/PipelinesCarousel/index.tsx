@@ -31,7 +31,7 @@ print(ov_pipe.generate("The Sun is yellow because"))`,
 image = ov_pipe.generate("Create beautiful Sun")`,
   },
   {
-    title: 'Image Processing API',
+    title: 'Visual Processing API',
     Icon: ImageIcon,
     code: `ov_pipe = ov_genai.VLMPipeline("LLaVA")
 print(ov_pipe.generate("Describe images", images))`,
@@ -39,7 +39,7 @@ print(ov_pipe.generate("Describe images", images))`,
   {
     title: 'Speech Recognition API',
     Icon: SoundIcon,
-    code: `ov_pipe = ov_genai.WhisperPipeline("whisper-base")
+    code: `ov_pipe = ov_genai.ASRPipeline("whisper-base")
 print(ov_pipe.generate(read_wav("sample.wav")))`,
   },
   {

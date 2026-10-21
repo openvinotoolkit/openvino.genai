@@ -4,12 +4,28 @@
 #pragma once
 
 #include <algorithm>
-
 #include "continuous_batching/pipeline_impl.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "update_request_structs.hpp"
+#include "utils.hpp"
 
 namespace ov::genai {
+
+namespace detail {
+
+struct MtpDraftUpdatePlan {
+    size_t hidden_state_start = 0;
+    size_t hidden_state_count = 0;
+    size_t processed_tokens_to_rewind = 0;
+    size_t num_tokens_to_validate = 0;
+};
+
+// Plans the first draft forward after target validation. The target hidden-state window contains
+// one base token followed by all draft candidates; removed_draft_tokens is the rejected suffix.
+MtpDraftUpdatePlan make_mtp_draft_update_plan(size_t main_hidden_state_len, size_t removed_draft_tokens);
+
+}  // namespace detail
+
 class ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
 public:
     const std::size_t default_num_assistant_tokens = 5;
@@ -35,10 +51,16 @@ public:
 
     void multistep();
 
+    void fail_pipeline(std::exception_ptr error) noexcept {
+        _fail_pipeline(std::move(error));
+    }
+
     void finish_request(int64_t request_id = -1);
     void pull_awaiting_requests(bool is_pause_request = false);
     GeneratedRequests get_generated_requests();
-    UpdateRequestResult update_request(uint64_t request_id, const GeneratedSequences& candidates, bool is_update_logit_processor);
+    UpdateRequestResult update_request(uint64_t request_id,
+                                       const GeneratedSequences& candidates,
+                                       bool is_update_logit_processor);
     void sync_generated_embeddings();
     bool is_requests_empty();
 
@@ -63,10 +85,55 @@ public:
         return compiled_model.get_property(name);
     }
 
+
+    // Returns the actual runtime element type of the compiled model's KV cache inputs.
+    // Plugins may select a KV cache precision that differs from the ov::hint::kv_cache_precision
+    // property value (for example, CPU promotes the cache to bf16 based on the resolved inference
+    // precision regardless of the configured hint), so the precision must be read from the
+    // compiled model's key_cache input port to match the tensors actually bound by the scheduler.
+    ov::element::Type get_kv_cache_element_type() {
+        OPENVINO_ASSERT(m_model_runner, "get_kv_cache_element_type() called before model runner is initialized");
+        return utils::get_compiled_kv_cache_precision(m_model_runner->get_infer_request().get_compiled_model());
+    }
+
+    /**
+     * @brief Enables/disables export of the model's `last_hidden_state`, delegating to the model runner.
+     *        Shared by EAGLE3 and MTP hidden-state pairing.
+     */
+    void set_hidden_state_export_needed(bool is_needed) {
+        if (m_model_runner) {
+            m_model_runner->enable_hidden_state_export(is_needed);
+        }
+    }
+
+    /**
+     * @brief Enables/disables import of the main model's hidden state into this (draft) model runner,
+     *        used for the first draft forward in each speculative-decode step.
+     */
+    void set_hidden_state_import_needed(bool is_needed) {
+        if (m_model_runner) {
+            m_model_runner->enable_hidden_state_import(is_needed);
+        }
+    }
+
+    /**
+     * @brief Enables/disables use of the internally stored hidden state for the draft model runner,
+     *        used for the 2nd..num_assistant draft forwards in each speculative-decode step.
+     */
+    void set_hidden_state_internal_needed(bool is_needed) {
+        if (m_model_runner) {
+            m_model_runner->enable_hidden_state_internal(is_needed);
+        }
+    }
+
 protected:
     void finish_request(SequenceGroup::Ptr request);
     void _pull_awaiting_requests() override {};
+    bool _can_publish_kv_only_completed_blocks() const override {
+        return false;
+    }
     bool eagle_mode_enabled = false;
+    bool mtp_mode_enabled = false;
 };
 
 class ContinuousBatchingPipeline::ContinuousBatchingForEagle3DecodingImpl
@@ -100,7 +167,7 @@ public:
                                             const ov::AnyMap& plugin_config,
                                             bool is_validation_mode_enabled)
         : ContinuousBatchingForSpeculativeDecodingImpl(model,
-                                                       inputs_embedder,
+                                                       std::move(inputs_embedder),
                                                        tokenizer,
                                                        generation_config,
                                                        scheduler_config,
@@ -127,48 +194,6 @@ public:
         }
     }
 
-    /**
-     * @brief Sets whether the export of hidden states is needed during model execution.
-     *
-     * This function enables or disables the export of hidden states by delegating
-     * the request to the underlying model runner, if it exists.
-     *
-     * @param is_needed Boolean flag indicating whether hidden state export is required.
-     */
-    void set_hidden_state_export_needed(bool is_needed) {
-        if (m_model_runner) {
-            m_model_runner->enable_hidden_state_export(is_needed);
-        }
-    }
-
-    /**
-     * @brief Sets whether the import of hidden state is needed for the model runner.
-     *
-     * This function enables or disables the import of hidden state in the underlying
-     * model runner, which is for the first draft model inference in each speculative decode step.
-     *
-     * @param is_needed Boolean flag indicating whether hidden state import is required.
-     */
-    void set_hidden_state_import_needed(bool is_needed) {
-        if (m_model_runner) {
-            m_model_runner->enable_hidden_state_import(is_needed);
-        }
-    }
-
-    /**
-     * @brief Sets whether the internal hidden state is required for the model runner.
-     *
-     * This function enables or disables the use of the internal hidden state in the model runner,
-     * which is for the draft model 2...num_assistant forwards in each speculative decode step.
-     *
-     * @param is_needed Boolean flag indicating whether the internal hidden state should be enabled (true) or disabled (false).
-     */
-    void set_hidden_state_internal_needed(bool is_needed) {
-        if (m_model_runner) {
-            m_model_runner->enable_hidden_state_internal(is_needed);
-        }
-    }
-
     void collect_block_update_info(const GeneratedRequests& main_generated_requests,
                                    std::vector<int32_t>& block_update_indices,
                                    std::vector<int32_t>& block_update_begins) const;
@@ -178,6 +203,100 @@ public:
             return m_model_runner->get_infer_request().get_tensor(name);
         }
         return {};
+    }
+};
+
+// EMBEDDINGS pipeline used by MTP main and draft models.
+class ContinuousBatchingPipeline::ContinuousBatchingForMtpDecodingImpl
+    : public ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl {
+public:
+    ContinuousBatchingForMtpDecodingImpl() = default;
+
+    bool is_prefix_caching_enabled() const {
+        return m_scheduler->get_config().enable_prefix_caching;
+    }
+
+    void discard_awaiting_request(uint64_t request_id) {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        for (auto request = m_awaiting_requests.begin(); request != m_awaiting_requests.end(); ++request) {
+            if ((*request)->get_request_id() != request_id) {
+                continue;
+            }
+            for (const auto& sequence : (*request)->get_sequences()) {
+                m_scheduler->free_sequence(sequence->get_id());
+            }
+            m_awaiting_requests.erase(request);
+            return;
+        }
+    }
+
+    size_t restore_awaiting_prefix(uint64_t request_id, size_t ceiling) {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        for (const auto& group : m_awaiting_requests) {
+            if (group->get_request_id() != request_id) {
+                continue;
+            }
+            for (const auto& sequence : group->get_sequences()) {
+                m_scheduler->free_sequence(sequence->get_id());
+            }
+            group->update_processed_tokens_num(0);
+            if (m_scheduler->get_config().enable_prefix_caching) {
+                m_scheduler->restore_cached_blocks(group, ceiling);
+            }
+            group->set_num_prefix_cache_hit_tokens(group->get_num_processed_tokens());
+            return group->get_num_processed_tokens();
+        }
+        OPENVINO_THROW("MTP prefix restore requires an awaiting request: ", request_id);
+    }
+
+    bool supports_embedding_prefix_verification() const override {
+        return true;
+    }
+
+    void initialize_prefix_cache(const SequenceGroup::Ptr& group) override {
+        for (const auto& sequence : group->get_sequences()) {
+            sequence->set_prefix_cache_policy(group->get_prompt_len());
+        }
+    }
+
+    bool _can_publish_kv_only_completed_blocks() const override {
+        return true;
+    }
+
+    ContinuousBatchingForMtpDecodingImpl(const std::shared_ptr<ov::Model>& model,
+                                         const std::shared_ptr<InputsEmbedder>& inputs_embedder,
+                                         const Tokenizer& tokenizer,
+                                         const GenerationConfig& generation_config,
+                                         const SchedulerConfig& scheduler_config,
+                                         const std::string& device,
+                                         const ov::AnyMap& plugin_config,
+                                         bool is_validation_mode_enabled)
+        : ContinuousBatchingForSpeculativeDecodingImpl(model,
+                                                       tokenizer,
+                                                       generation_config,
+                                                       scheduler_config,
+                                                       device,
+                                                       plugin_config,
+                                                       is_validation_mode_enabled) {
+        mtp_mode_enabled = true;
+        validate_prefix_cache_support(scheduler_config, is_validation_mode_enabled);
+        m_inputs_embedder = inputs_embedder;
+        m_model_runner->set_inputs_embedder(inputs_embedder);
+        m_model_input_type = ModelInputType::EMBEDDINGS;
+    }
+
+    void set_mtp_draft_positions_needed(bool is_needed) {
+        if (m_model_runner) {
+            m_model_runner->enable_mtp_draft_positions(is_needed);
+        }
+    }
+
+protected:
+    void validate_prefix_cache_support(const SchedulerConfig& scheduler_config,
+                                       bool is_validation_mode_enabled) const {
+        OPENVINO_ASSERT(!scheduler_config.enable_prefix_caching || is_validation_mode_enabled ||
+                    !m_scheduler->has_linear_attention_cache(),
+                "Prefix-enabled MTP draft pipelines with linear-attention state are not supported");
     }
 };
 }

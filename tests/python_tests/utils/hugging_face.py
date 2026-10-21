@@ -4,12 +4,15 @@
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Type
+import logging
 import subprocess  # nosec B404
 import tempfile
 
 from optimum.modeling_base import OptimizedModel
 from transformers import (
     AutoConfig,
+    AutoImageProcessor,
+    AutoProcessor,
     AutoTokenizer,
     AutoModelForCausalLM,
 )
@@ -34,6 +37,8 @@ from utils.network import retry_request
 from utils.atomic_download import AtomicDownloadManager
 
 from utils.constants import OV_MODEL_FILENAME, OV_MODEL_INDEX
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -268,11 +273,14 @@ def convert_models(
     opt_model: OVModelForCausalLM,
     hf_tokenizer: AutoTokenizer,
     models_path: Path,
+    model_id: str | None = None,
+    trust_remote_code: bool = False,
 ) -> None:
     opt_model.save_pretrained(str(models_path))
     # save generation config
     if opt_model.generation_config:
         opt_model.generation_config.save_pretrained(str(models_path))
+
     opt_model.config.save_pretrained(str(models_path))
 
     # to store tokenizer config jsons with special tokens
@@ -281,6 +289,17 @@ def convert_models(
         # convert tokenizers as well
         convert_and_save_tokenizer(hf_tokenizer, models_path)
 
+    if not model_id:
+        return
+
+    # to store preprocessor_config.json, processor_config.json etc. if they exist
+    for auto_cls in (AutoProcessor, AutoImageProcessor):
+        try:
+            processor = auto_cls.from_pretrained(model_id, trust_remote_code=trust_remote_code)
+            processor.save_pretrained(str(models_path))
+        except (OSError, ValueError):
+            # ignore if processor is not available for the model
+            pass
 
 def download_and_convert_model(model_id: str, **tokenizer_kwargs) -> OVConvertedModelSchema:
     return download_and_convert_model_class(model_id, OVModelForCausalLM, **tokenizer_kwargs)
@@ -351,7 +370,11 @@ def export_with_optimum_cli(model_id: str, model_task: str, output_dir: Path, tr
     if trust_remote_code:
         command.append("--trust-remote-code")
 
-    retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, encoding="utf-8"))
+    try:
+        retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, encoding="utf-8"))
+    except subprocess.CalledProcessError as error:
+        logger.exception(f"optimum-cli returned {error.returncode}. Stdout:\n{error.stdout}\nStderr:\n{error.stderr}")
+        raise
 
 
 def download_and_convert_model_class(
@@ -400,7 +423,7 @@ def download_and_convert_model_class(
                 hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
 
             def convert_to_temp(temp_path: Path) -> None:
-                convert_models(opt_model, hf_tokenizer, temp_path)
+                convert_models(opt_model, hf_tokenizer, temp_path, model_id, trust_remote_code)
 
             manager.execute(convert_to_temp)
 

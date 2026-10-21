@@ -1,313 +1,225 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-from pathlib import Path
-from zipfile import ZipFile
-import tempfile
+"""Pre-download failed CI logs and pre-locate error hints for the CI Doctor agent.
 
-import requests
-from github.WorkflowRun import WorkflowRun
-from urllib3.util.retry import Retry
-import argparse
-from requests.adapters import HTTPAdapter
-from github import Github, Auth
+The mode is auto-detected from the environment (no arguments required):
+  - run mode (RUN_ID set):   analyse a single workflow run (CI Doctor - Merge Queue).
+  - pr mode  (PR_NUMBER set): analyse every failed run on a pull request head commit.
 
+Output layout (identical in both modes):
+  - /tmp/gh-aw/agent/ci-doctor/logs/job-<job-id>.log
+  - /tmp/gh-aw/agent/ci-doctor/filtered/job-<job-id>-hints.txt
+  - /tmp/gh-aw/agent/ci-doctor/summary.txt
+Run mode additionally writes logs/failed-jobs.json; PR mode additionally writes
+logs/failed-runs.json and logs/run-<run-id>-failed-jobs.json.
+"""
+
+import glob
+import json
 import os
 import re
-import logging
 
+import requests
+from github import Auth, Github
+from github.WorkflowRun import WorkflowRun
 
-def init_logger():
-    LOGLEVEL = os.environ.get("LOGLEVEL", "INFO").upper()
-    logging.basicConfig(
-        level=LOGLEVEL, format="%(asctime)s %(name)-12s %(levelname)-8s %(message)s", datefmt="%m-%d-%Y %H:%M:%S"
-    )
+LOG_DIR = "/tmp/gh-aw/agent/ci-doctor/logs"
+FILTERED_DIR = "/tmp/gh-aw/agent/ci-doctor/filtered"
+SUMMARY_FILE = "/tmp/gh-aw/agent/ci-doctor/summary.txt"
 
-
-init_logger()
-
-LOGGER = logging.getLogger("ci-doctor-preanalysis")
-
-CI_DOCTOR_DIR = Path("/tmp/ci-doctor/")
-
-
-def get_arguments() -> argparse.Namespace:
-    def repository_name(value: str) -> str:
-        if not re.match(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$", value):
-            raise argparse.ArgumentTypeError(f"Invalid format (expected 'owner/name'): {value}")
-        return value
-
-    def run_id(value: str) -> int:
-        if not re.match(r"^[0-9]+$", value):
-            raise argparse.ArgumentTypeError(f"Run ID must be a positive integer: {value}")
-        return int(value)
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-r",
-        "--repository-name",
-        type=repository_name,
-        required=True,
-        help="Repository name in the OWNER/REPOSITORY format",
-    )
-    parser.add_argument("--run-id", type=run_id, required=True, help="Workflow Run ID")
-    return parser.parse_args()
-
-
-def _safe_extract(archive_path: Path, dest_dir: Path) -> None:
-    """Extract a zip archive, rejecting entries that would escape dest_dir."""
-    dest_dir = dest_dir.resolve()
-    with ZipFile(file=archive_path, mode="r") as zip_file:
-        for member in zip_file.namelist():
-            member_path = (dest_dir / member).resolve()
-            if not str(member_path).startswith(str(dest_dir) + os.sep):
-                raise ValueError(f"Zip entry escapes target directory: {member}")
-        zip_file.extractall(dest_dir)
-
-
-def collect_logs_for_run(run: WorkflowRun, logs_dir: Path, GITHUB_TOKEN: str, session: requests.Session):
-    """
-    Downloads logs of a given Workflow Run,
-    saves them to a specified path, and returns that path.
-
-    We don't need successful job logs, so we remove them.
-    We could've just downloaded logs for failed jobs only,
-    but when you download all logs from a workflow run,
-    GitHub includes "system.txt" files for each job, which can also
-    contain errors on which we might want to trigger rerun.
-
-    Example log archive structure:
-    .
-    ├── 10_Pytorch Layer Tests _ PyTorch Layer Tests.txt
-    ├── 11_CPU functional tests _ CPU functional tests.txt
-    ├── 12_C++ unit tests _ C++ unit tests.txt
-    ├── 13_OpenVINO tokenizers extension _ OpenVINO tokenizers extension.txt
-    ├── C++ unit tests _ C++ unit tests
-    │   └── system.txt
-    ├── CPU functional tests _ CPU functional tests
-    │   └── system.txt
-    ├── OpenVINO tokenizers extension _ OpenVINO tokenizers extension
-    │   └── system.txt
-    ├── Pytorch Layer Tests _ PyTorch Layer Tests
-        └── system.txt
-
-    Sometimes though, directories contain log files for each individual step,
-    IN ADDITION to the full log in root of the directory:
-    .
-    ├── 1_Build.txt
-    └── Build
-        ├── 13_Upload build logs.txt
-        ├── 1_Set up job.txt
-        ├── 24_Post Clone vcpkg.txt
-        ├── 25_Post Clone OpenVINO.txt
-        ├── 26_Stop containers.txt
-        ├── 27_Complete job.txt
-        ├── 2_Initialize containers.txt
-        ├── 3_Clone OpenVINO.txt
-        ├── 4_Get VCPKG version and put it into GitHub ENV.txt
-        ├── 5_Init submodules for non vcpkg dependencies.txt
-        ├── 6_Clone vcpkg.txt
-        ├── 7_System info.txt
-        ├── 8_Build vcpkg.txt
-        ├── 9_CMake - configure.txt
-        └── system.txt
-
-    In that case, we need only 'system.txt' file from each directory
-    """
-    # Get failed jobs
-    failed_jobs = [job for job in run.jobs() if job.conclusion in ("failure", "cancelled")]
-    LOGGER.info(f"FAILED JOBS: {[job.name for job in failed_jobs]}")
-
-    with tempfile.NamedTemporaryFile(suffix=".zip") as temp_file:
-        log_archive_path = Path(temp_file.name)
-
-        # Download logs archive
-        with open(file=log_archive_path, mode="wb") as log_archive:
-            LOGGER.info(f"DOWNLOADING LOGS FOR RUN ID {run.id}")
-            # PyGitHub does not expose the "/repos/{owner}/{repo}/actions/runs/{run_id}/logs" endpoint so we have to use requests
-            LOGGER.debug(f"Downloading logs from {run.logs_url}")
-            response = session.get(url=run.logs_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
-            response.raise_for_status()
-            log_archive.write(response.content)
-
-        # Unpack it
-        with tempfile.TemporaryDirectory() as temp_dir:
-            logs_temp_dir = Path(temp_dir).resolve()
-            _safe_extract(log_archive_path, logs_temp_dir)
-
-            # Traverse the unpacked logs to find the ones of failed jobs
-            for job in failed_jobs:
-                job_filename = job.name.replace("/", "_")
-                LOGGER.debug(f"Looking for failed job logs with filename: {job_filename}")
-
-                for p in logs_temp_dir.iterdir():
-                    # Move failed jobs' logs to the final destination
-                    if p.is_dir() and p.name == job_filename:
-                        system_log_path = p / "system.txt"
-                        if system_log_path.is_file():
-                            LOGGER.debug(f"Keeping system.txt from directory {p} for failed job {job.name}")
-                            system_log_path.rename(logs_dir / f"{job_filename}__system.txt")
-                    elif p.is_file() and p.name.endswith(f"{job_filename}.txt"):
-                        LOGGER.debug(f"Keeping file {p} for failed job {job.name}")
-                        p.rename(logs_dir / p.name)
-
-    LOGGER.info(f"COLLECTED LOGS FOR {run.id} IN {logs_dir}")
-
-
-# Lines that match ERROR_PATTERN but are known false positives.
-NOISE_PATTERN = re.compile(
-    r"(-o pipefail|xfail|XFAIL|Defaulting to unsafe serialization|SCCACHE_IGNORE_SERVER_IO_ERROR)",
-)
-
-# Case-insensitive pattern matching common CI error indicators.
-ERROR_PATTERN = re.compile(
-    r"("
-    r"\berror[\s:\[)]"
-    r"|\bfail(?:ed|ure|ing|s)?\b"
-    r"|panic:"
-    r"|\bfatal[\s:]"
-    r"|\bundefined[\s:]"
-    r"|\bexception\b"
-    r"|exit status [^0]"
-    r")",
-    re.IGNORECASE,
-)
+HINT_RE = re.compile(r"(error[: ]|ERROR|FAIL|panic:|fatal[: ]|undefined[: ]|exception|exit status [^0])")
 
 MAX_HINT_LINES = 30
 
 
-def extract_hints(logs_dir: Path, hints_dir: Path) -> None:
-    """Extracts lines matching ERROR_PATTERN from log files, writes them to separate hint files."""
+def line_count(text: str) -> int:
+    return text.count("\n")
 
-    for log_file in logs_dir.iterdir():
-        if not log_file.is_file() or not log_file.name.endswith(".txt"):
+
+def download_job_log(job) -> None:
+    """Download the log for a single failed job and pre-locate error hints."""
+    log_file = os.path.join(LOG_DIR, f"job-{job.id}.log")
+    print(f"Downloading log for job {job.id}...")
+    try:
+        response = requests.get(job.logs_url(), timeout=30)
+        response.raise_for_status()
+        content = response.content.decode("utf-8", "replace")
+    except Exception:
+        content = "(log download failed)\n"
+    with open(log_file, "w", encoding="utf-8") as handle:
+        handle.write(content)
+    print(f"  -> Saved {line_count(content)} lines to {log_file}")
+
+    hints_file = os.path.join(FILTERED_DIR, f"job-{job.id}-hints.txt")
+    matches = []
+    for number, line in enumerate(content.splitlines(), start=1):
+        if HINT_RE.search(line):
+            matches.append(f"{number}:{line}")
+            if len(matches) >= MAX_HINT_LINES:
+                break
+    if matches:
+        with open(hints_file, "w", encoding="utf-8") as handle:
+            handle.write("\n".join(matches) + "\n")
+        print(f"  -> Pre-located {len(matches)} hint line(s) in {hints_file}")
+
+
+def failed_jobs_for_run(workflow_run: WorkflowRun) -> list[dict]:
+    """Return the failed/cancelled jobs of a run as serialisable dicts."""
+    result = []
+    for job in workflow_run.jobs():
+        if job.conclusion in ("failure", "cancelled"):
+            failed_steps = [step.name for step in (job.steps or []) if step.conclusion == "failure"]
+            result.append({"id": job.id, "name": job.name, "failed_steps": failed_steps})
+    return result
+
+
+def write_summary_footer(handle) -> None:
+    """Append the shared 'downloaded files' + 'hint files' footer to the summary."""
+    handle.write("\n")
+    handle.write(f"Downloaded job log files ({LOG_DIR}):\n")
+    for log_file in sorted(glob.glob(os.path.join(LOG_DIR, "job-*.log"))):
+        with open(log_file, encoding="utf-8") as fh:
+            count = line_count(fh.read())
+        handle.write(f"  {log_file} ({count} lines)\n")
+    handle.write("\n")
+    handle.write(f"Filtered hint files ({FILTERED_DIR}):\n")
+    for hints_file in sorted(glob.glob(os.path.join(FILTERED_DIR, "*-hints.txt"))):
+        with open(hints_file, encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+        if not lines:
             continue
-        hints: list[str] = []
-        with log_file.open() as f:
-            for lineno, line in enumerate(f, start=1):
-                if NOISE_PATTERN.search(line) or not ERROR_PATTERN.search(line):
-                    continue
-                hints.append(f"{lineno}:{line.strip()}")
-                if len(hints) >= MAX_HINT_LINES:
-                    break
-
-        hints_file_path = hints_dir / f"{log_file.name}-hints.txt"
-        if hints:
-            hints_file_path.write_text("\n".join(hints))
+        handle.write(f"  {hints_file} ({len(lines)} matches)\n")
+        for line in lines[:3]:
+            handle.write(f"    {line}\n")
 
 
-def count_lines(file_path: Path) -> int:
-    with file_path.open() as f:
-        return sum(1 for _ in f)
+def process_run(repo, run_id: str) -> None:
+    """run mode: a single workflow run (CI Doctor - Merge Queue)."""
+    print(f"=== CI Doctor: Pre-downloading logs for run {run_id} ===")
+
+    workflow_run = repo.get_workflow_run(int(run_id))
+    failed_jobs = failed_jobs_for_run(workflow_run)
+    with open(os.path.join(LOG_DIR, "failed-jobs.json"), "w", encoding="utf-8") as handle:
+        json.dump(failed_jobs, handle, indent=2)
+
+    failed_count = len(failed_jobs)
+    print(f"Found {failed_count} failed job(s)")
+
+    with open(SUMMARY_FILE, "w", encoding="utf-8") as handle:
+        handle.write("=== CI Doctor Pre-Analysis ===\n")
+        handle.write(f"Run ID: {run_id}\n")
+        handle.write("\n")
+        handle.write(f"Failed jobs (details in {LOG_DIR}/failed-jobs.json):\n")
+        for job in failed_jobs:
+            handle.write(f"  Job {job['id']}: {job['name']}\n")
+            handle.write(f"    Failed steps: {', '.join(job['failed_steps'])}\n")
+
+    if failed_count == 0:
+        print("No failed jobs found, skipping log download")
+    else:
+        print(json.dumps(failed_jobs, indent=2))
+        for job in workflow_run.jobs():
+            if job.conclusion in ("failure", "cancelled"):
+                download_job_log(job)
+
+    with open(SUMMARY_FILE, "a", encoding="utf-8") as handle:
+        write_summary_footer(handle)
 
 
-def write_summary(run: WorkflowRun, logs_dir: Path, hints_dir: Path) -> None:
-    """Write a consolidated summary file for the CI Doctor agent."""
-    lines: list[str] = [
-        "=== Failed Jobs Summary ===",
-        f"Run ID: {run.id}",
-        f"Head SHA: {run.head_sha}",
-        f"Head Branch: {run.head_branch}",
-        f"Event: {run.event}",
-        f"Run URL: {run.html_url}",
-    ]
-    lines.append("")
+def process_pull_request(repo, pr_number: str) -> None:
+    """pr mode: every failed run on a pull request head commit."""
+    print(f"=== CI Doctor: Pre-downloading logs for PR #{pr_number} ===")
 
-    failed_jobs = [job for job in run.jobs() if job.conclusion in ("failure", "cancelled")]
-    for job in failed_jobs:
-        failed_steps = ", ".join([step.name for step in job.steps if step.conclusion in ("failure", "cancelled")])
-        lines.append(f"  Job {job.id} {job.name} {job.url}:")
-        lines.append(f"    Failed steps: {failed_steps if failed_steps else '(none)'}")
-
-    lines.append("")
-    lines.append(f"Downloaded log files ({logs_dir}):")
-    for log_file in sorted(logs_dir.glob("*.txt")):
-        lines.append(f"  {log_file}")
-
-    lines.append("")
-    lines.append(f"Hint files ({hints_dir}):")
-    for hints_file in sorted(hints_dir.glob("*-hints.txt")):
-        if not hints_file.stat().st_size:
-            continue
-        hint_count = count_lines(hints_file)
-        lines.append(f"  {hints_file} ({hint_count} matches)")
-        # Show first 3 hint lines as preview.
-        try:
-            with hints_file.open() as f:
-                for i, line in enumerate(f):
-                    if i >= 3:
-                        break
-                    lines.append(f"    {line.rstrip()}")
-        except OSError:
-            pass
-
-    summary_text = "\n".join(lines) + "\n"
-
-    SUMMARY_FILE = logs_dir.parent / "summary.txt"
-    SUMMARY_FILE.write_text(summary_text)
-    print(summary_text)
-    print(f"Pre-analysis complete. Agent should start with {SUMMARY_FILE}")
-
-
-PATTERNS_TO_FILTER_OUT = [
-    # 2026-03-13T13:42:55.9786288Z Received 35870 data chunks (chunk size: 16384 bytes), time passed: 30784ms
-    re.compile(r"Received \d+ data chunks \(chunk size: \d+ bytes\), time passed: \d+ms"),
-]
-
-
-def filter_logs(job_logs_dir: Path):
-    """Remove lines matching patterns in PATTERNS_TO_FILTER_OUT from log files in LOG_DIR."""
-    for log_file in job_logs_dir.glob("*.txt"):
-        filtered_lines: list[str] = []
-        with log_file.open() as f:
-            for line in f:
-                if any(pattern.search(line) for pattern in PATTERNS_TO_FILTER_OUT):
-                    continue
-                filtered_lines.append(line.rstrip())
-
-        log_file.write_text("\n".join(filtered_lines) + "\n")
-
-
-def main():
-    args = get_arguments()
-    run_id = args.run_id
-    repository_name = args.repository_name
-
-    GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
-
-    session = requests.Session()
-    retry_strategy = Retry(total=5, backoff_factor=3, backoff_jitter=1, status_forcelist=[429, 500, 502, 503, 504])
-    session.mount("https://api.github.com", HTTPAdapter(max_retries=retry_strategy))
-    session.mount("https://results-receiver.actions.githubusercontent.com", HTTPAdapter(max_retries=retry_strategy))
-
-    github = Github(auth=Auth.Token(token=GITHUB_TOKEN))
-    gh_repo = github.get_repo(full_name_or_id=repository_name)
-    run = gh_repo.get_workflow_run(id_=run_id)
-
-    if run.conclusion not in ("failure", "cancelled"):
-        LOGGER.warning(
-            f"Run {run_id} in {repository_name} has conclusion '{run.conclusion}'. Expected conclusion is 'failure' or 'cancelled'. No logs will be collected."
-        )
+    try:
+        head_sha = repo.get_pull(int(pr_number)).head.sha
+    except Exception:
+        head_sha = ""
+    if not head_sha:
+        print("Could not resolve a pull request head SHA (is this a PR comment?), skipping log download")
+        with open(SUMMARY_FILE, "w", encoding="utf-8") as handle:
+            handle.write("No pull request context available.\n")
         return
+    print(f"PR head SHA: {head_sha}")
 
-    RUN_DIR = CI_DOCTOR_DIR / f"run_{run_id}"
+    # Find all workflow runs for the PR head SHA that failed or were cancelled.
+    failed_runs = []
+    try:
+        for workflow_run in repo.get_workflow_runs(head_sha=head_sha):
+            if workflow_run.conclusion in ("failure", "cancelled"):
+                failed_runs.append(
+                    {
+                        "id": workflow_run.id,
+                        "name": workflow_run.name,
+                        "url": workflow_run.html_url,
+                        "conclusion": workflow_run.conclusion,
+                    }
+                )
+    except Exception:
+        failed_runs = []
 
-    # check if run_dir is empty
-    if RUN_DIR.exists() and any(RUN_DIR.iterdir()):
-        raise RuntimeError(f"Run directory {RUN_DIR} is not empty. Clean it up before running the script.")
+    # De-duplicate by workflow name, keeping the most recent (highest id) run per workflow.
+    latest_by_name = {}
+    for entry in failed_runs:
+        current = latest_by_name.get(entry["name"])
+        if current is None or entry["id"] > current["id"]:
+            latest_by_name[entry["name"]] = entry
+    failed_runs = list(latest_by_name.values())
 
-    LOGS_DIR = RUN_DIR / "logs"
-    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    with open(os.path.join(LOG_DIR, "failed-runs.json"), "w", encoding="utf-8") as handle:
+        json.dump(failed_runs, handle, indent=2)
 
-    collect_logs_for_run(run=run, logs_dir=LOGS_DIR, GITHUB_TOKEN=GITHUB_TOKEN, session=session)
-    filter_logs(job_logs_dir=LOGS_DIR)
+    failed_count = len(failed_runs)
+    print(f"Found {failed_count} failed pipeline(s) on PR #{pr_number}")
 
-    HINTS_DIR = RUN_DIR / "hints"
-    HINTS_DIR.mkdir(exist_ok=True, parents=True)
+    with open(SUMMARY_FILE, "w", encoding="utf-8") as handle:
+        handle.write(f"=== CI Doctor Pre-Analysis (PR #{pr_number}, head {head_sha}) ===\n")
+        handle.write("\n")
+        handle.write(f"Failed pipelines (details in {LOG_DIR}/failed-runs.json):\n")
+        for entry in failed_runs:
+            handle.write(f"  Run {entry['id']}: {entry['name']} [{entry['conclusion']}] {entry['url']}\n")
 
-    extract_hints(logs_dir=LOGS_DIR, hints_dir=HINTS_DIR)
+    if failed_count == 0:
+        print("No failed pipelines found, skipping log download")
+    else:
+        print(json.dumps(failed_runs, indent=2))
+        for entry in failed_runs:
+            workflow_run = repo.get_workflow_run(int(entry["id"]))
+            run_failed_jobs = failed_jobs_for_run(workflow_run)
+            run_jobs_path = os.path.join(LOG_DIR, f"run-{entry['id']}-failed-jobs.json")
+            with open(run_jobs_path, "w", encoding="utf-8") as handle:
+                json.dump(run_failed_jobs, handle, indent=2)
+            for job in workflow_run.jobs():
+                if job.conclusion in ("failure", "cancelled"):
+                    download_job_log(job)
 
-    write_summary(run=run, logs_dir=LOGS_DIR, hints_dir=HINTS_DIR)
+    with open(SUMMARY_FILE, "a", encoding="utf-8") as handle:
+        write_summary_footer(handle)
+
+
+def main() -> None:
+    os.makedirs(LOG_DIR, exist_ok=True)
+    os.makedirs(FILTERED_DIR, exist_ok=True)
+
+    repo_name = os.environ.get("REPO", "")
+    run_id = (os.environ.get("RUN_ID") or "").strip()
+    pr_number = (os.environ.get("PR_NUMBER") or "").strip()
+    token = os.environ.get("GH_TOKEN", "")
+
+    github = Github(auth=Auth.Token(token))
+    repo = github.get_repo(repo_name)
+
+    if run_id:
+        process_run(repo, run_id)
+    elif pr_number:
+        process_pull_request(repo, pr_number)
+    else:
+        print("Neither RUN_ID nor PR_NUMBER is set; nothing to pre-download.")
+        with open(SUMMARY_FILE, "w", encoding="utf-8") as handle:
+            handle.write("No CI Doctor context (no RUN_ID or PR_NUMBER).\n")
+
+    print("")
+    print(f"Pre-analysis complete. Agent should start with {SUMMARY_FILE}")
 
 
 if __name__ == "__main__":

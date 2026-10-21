@@ -19,11 +19,13 @@ struct CBGenerateProperties {
     std::optional<std::vector<std::vector<ov::Tensor>>> images_batches;
     std::optional<std::vector<std::vector<ov::Tensor>>> videos_batches;
     std::optional<std::vector<std::vector<VideoMetadata>>> videos_metadata_batches;
+    std::optional<std::vector<std::vector<ov::Tensor>>> audios_batches;
     std::optional<std::vector<GenerationConfig>> generation_config_batches;
     StreamerVariant streamer = std::monostate();
 
-    bool has_vision_properties() const {
-        return images_batches.has_value() || videos_batches.has_value() || videos_metadata_batches.has_value();
+    bool has_media_properties() const {
+        return images_batches.has_value() || videos_batches.has_value() || videos_metadata_batches.has_value() ||
+               audios_batches.has_value();
     }
 
     template <typename T>

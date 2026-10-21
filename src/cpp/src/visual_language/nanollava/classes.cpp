@@ -114,9 +114,10 @@ EncodedImage VisionEncoderNanoLLaVA::encode(const ov::Tensor& image, const ov::A
 InputsEmbedderNanoLLaVA::InputsEmbedderNanoLLaVA(
     const VLMConfig& vlm_config,
     const std::filesystem::path& model_dir,
+    const Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, model_dir, device, device_config) { }
+    IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) { }
 
 InputsEmbedderNanoLLaVA::InputsEmbedderNanoLLaVA(
     const VLMConfig& vlm_config,
@@ -161,7 +162,7 @@ ov::Tensor InputsEmbedderNanoLLaVA::get_inputs_embeds(const std::string& unified
 
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
-    ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
+    ov::Tensor text_embeds = get_text_embedding(req, input_ids, metrics);
 
     if (images.empty()) {
         ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());

@@ -23,7 +23,7 @@ Napi::Function Text2ImagePerfMetricsWrapper::get_class(Napi::Env env) {
                            InstanceMethod("getVaeDecoderInferDuration", &Text2ImagePerfMetricsWrapper::get_vae_decoder_infer_duration),
                            InstanceMethod("getTextEncoderInferDuration", &Text2ImagePerfMetricsWrapper::get_text_encoder_infer_duration),
                            InstanceMethod("getInferenceDuration", &Text2ImagePerfMetricsWrapper::get_inference_duration),
-                           InstanceAccessor<&Text2ImagePerfMetricsWrapper::get_raw_metrics>("rawMetrics"),
+                           InstanceAccessor("rawMetrics", &Text2ImagePerfMetricsWrapper::get_raw_metrics, nullptr),
                        });
 }
 

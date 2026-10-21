@@ -4,8 +4,11 @@
 #pragma once
 
 #include <filesystem>
+#include <memory>
+#include <unordered_map>
 #include <vector>
 
+#include "openvino/core/model.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/op/constant.hpp"
 #include "openvino/runtime/core.hpp"
@@ -51,6 +54,21 @@ Eagle3RTInfo extract_eagle3_info_from_config(ov::AnyMap& config, const std::file
 void apply_eagle3_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& properties);
 
 /**
+ * @brief Finds the token-embedding Gather node in a model.
+ * @return Gather whose data input is the [vocab, hidden] embedding table, or nullptr.
+ */
+std::shared_ptr<ov::Node> find_embedding_gather(const std::shared_ptr<ov::Model>& model);
+
+/**
+ * @brief Recursively deep-clones a node and its input subgraph (Constants copied by value).
+ *
+ * Carries weight-decompression chains (e.g. Constant(int4) -> Convert -> Multiply) intact, so an
+ * INT4 weight subgraph can be reused in another model with no cross-model references.
+ */
+std::shared_ptr<ov::Node> clone_node_recursive(const std::shared_ptr<ov::Node>& node,
+                                               std::unordered_map<ov::Node*, std::shared_ptr<ov::Node>>& cloned_nodes);
+
+/**
  * @brief Shares embedding weights between main and draft models.
  * @param main_model Main (target) model.
  * @param draft_model Draft model for speculative decoding.
@@ -74,6 +92,16 @@ void move_fc_from_draft_to_main(std::shared_ptr<ov::Model>& draft_model, std::sh
  * @return Constant node containing the mapping table, or nullptr if not found.
  */
 std::shared_ptr<ov::op::v0::Constant> extract_d2t_mapping_table(const std::shared_ptr<ov::Model>& model);
+
+/**
+ * @brief Finds decoder-layer hidden-state residual outputs by Eagle3 layer-name patterns.
+ *
+ * Matches residual Add nodes whose friendly names contain `layers.{idx}/` for each requested
+ * decoder layer id. The returned outputs follow the order of the requested layer ids.
+ */
+std::vector<ov::Output<ov::Node>> find_decoder_layer_hidden_state_outputs(
+    const std::shared_ptr<ov::Model>& model,
+    const std::vector<int32_t>& decoder_layer_ids);
 
 /**
  * @brief Extracts hidden states from specified decoder layers.

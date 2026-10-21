@@ -26,6 +26,8 @@ Qwen3ASRConfig::Qwen3ASRConfig(const std::filesystem::path& json_path) {
     nlohmann::json data = nlohmann::json::parse(f);
 
     read_json_param(data, "thinker_config.audio_config.n_window", n_window);
+
+    OPENVINO_ASSERT(n_window > 0, "Qwen3-ASR n_window must be positive. Got: ", n_window, ".");
 }
 
 }  // namespace genai

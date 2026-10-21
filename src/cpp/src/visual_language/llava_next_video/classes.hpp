@@ -56,6 +56,7 @@ public:
     InputsEmbedderLLaVANextVideo(
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,
+        const Tokenizer& tokenizer,
         const std::string& device,
         const ov::AnyMap device_config);
 

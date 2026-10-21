@@ -55,10 +55,13 @@ protected:
     std::vector<ov::genai::EncodedImage> m_history_images;
     std::vector<size_t> m_history_image_ids;
     std::vector<ov::genai::EncodedVideo> m_history_videos;
+    std::vector<ov::genai::EncodedAudio> m_history_audios;
+    std::vector<size_t> m_history_audio_ids;
     std::vector<size_t> m_history_video_ids;
     std::vector<std::pair<std::size_t, std::size_t>> m_history_vision_count;  // pair<video count, image count>
     size_t m_image_id = 0;
     size_t m_video_id = 0;
+    size_t m_audio_id = 0;
 
     float m_load_time_ms = 0.0f;
     // to access m_load_time_ms
@@ -78,18 +81,27 @@ public:
     Tokenizer get_tokenizer();
 
     /**
-     * Adds requests to awaiting queue using encoded inputs
+     * Returns LoRA adapters the pipeline itself was constructed with.
+     * Wrapper pipelines forward the call to the pipeline actually holding the adapters.
+     */
+    virtual std::optional<AdapterConfig> get_pipeline_adapters() const;
+
+    /**
+     * Adds requests to awaiting queue using encoded inputs.
+     * @note LoRA adapters are only supported in MODE_STATIC or MODE_FUSE modes.
+     *       MODE_DYNAMIC, MODE_AUTO and MODE_STATIC_RANK are not supported in the add_request() + step() flow.
      */
     virtual GenerationHandle add_request(uint64_t request_id,
                                          const ov::Tensor& input_ids,
                                          const GenerationConfig& sampling_params,
-                                         std::optional<ov::Tensor> token_type_ids = std::nullopt,
                                          std::optional<ov::Tensor> prompt_ids = std::nullopt,
                                          std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs = std::nullopt) = 0;
 
     /**
-     * Adds request to running queue based on string input
-     * This step also performs tokenization's encode
+     * Adds request to running queue based on string input.
+     * This step also tokenizes the prompt (Tokenizer::encode).
+     * @note LoRA adapters are only supported in MODE_STATIC or MODE_FUSE modes.
+     *       MODE_DYNAMIC, MODE_AUTO and MODE_STATIC_RANK are not supported in the add_request() + step() flow.
      */
     virtual GenerationHandle add_request(uint64_t request_id,
                                          const std::string& prompt,
@@ -98,6 +110,8 @@ public:
     /**
      * Adds request to running queue based on string input and vector of images
      * This step also performs tokenization's encode
+     * @note LoRA adapters are only supported in MODE_STATIC or MODE_FUSE modes.
+     *       MODE_DYNAMIC, MODE_AUTO and MODE_STATIC_RANK are not supported in the add_request() + step() flow.
      */
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
@@ -107,6 +121,8 @@ public:
     /**
      * Adds request to running queue based on string input and vector of images and videos
      * This step also performs tokenization's encode
+     * @note LoRA adapters are only supported in MODE_STATIC or MODE_FUSE modes.
+     * MODE_DYNAMIC, MODE_AUTO and MODE_STATIC_RANK are not supported in the add_request() + step() flow.
      */
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
@@ -142,7 +158,6 @@ public:
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer,
-             const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt,
              const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt,
              const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
              const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) = 0;
@@ -180,7 +195,17 @@ public:
         const StreamerVariant& streamer
     );
 
-    
+    virtual std::vector<VLMDecodedResults> generate(
+        const std::vector<std::string>& prompts,
+        const std::vector<std::vector<ov::Tensor>>& images,
+        const std::vector<std::vector<ov::Tensor>>& videos,
+        const std::vector<std::vector<VideoMetadata>>& videos_metadata,
+        const std::vector<std::vector<ov::Tensor>>& audios,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer
+    );
+
+
     /**
      * Performs monolitic generation based on ChatHistory objects
      */
@@ -210,6 +235,16 @@ public:
         const std::vector<std::vector<ov::Tensor>>& images,
         const std::vector<std::vector<ov::Tensor>>& videos,
         const std::vector<std::vector<VideoMetadata>>& videos_metadata,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer
+    );
+
+    virtual std::vector<VLMDecodedResults> generate(
+        const std::vector<ChatHistory>& histories,
+        const std::vector<std::vector<ov::Tensor>>& images,
+        const std::vector<std::vector<ov::Tensor>>& videos,
+        const std::vector<std::vector<VideoMetadata>>& videos_metadata,
+        const std::vector<std::vector<ov::Tensor>>& audios,
         const std::vector<GenerationConfig>& sampling_params,
         const StreamerVariant& streamer
     );

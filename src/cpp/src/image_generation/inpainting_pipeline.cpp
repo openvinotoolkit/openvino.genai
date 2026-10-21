@@ -72,7 +72,7 @@ InpaintingPipeline::InpaintingPipeline(const Image2ImagePipeline& pipe) {
     } else if (auto stable_diffusion_3 = std::dynamic_pointer_cast<StableDiffusion3Pipeline>(pipe.m_impl); stable_diffusion_3 != nullptr) {
         m_impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::INPAINTING, *stable_diffusion_3);
     } else {
-        OPENVINO_ASSERT("Cannot convert specified Image2ImagePipeline to InpaintingPipeline");
+        OPENVINO_THROW("Cannot convert specified Image2ImagePipeline to InpaintingPipeline");
     }
     m_impl->save_load_time(start_time);
 }
@@ -224,6 +224,12 @@ ov::Tensor InpaintingPipeline::decode(const ov::Tensor latent) {
 
 ImageGenerationPerfMetrics InpaintingPipeline::get_performance_metrics() {
     return m_impl->get_performance_metrics();
+}
+
+void InpaintingPipeline::export_model(const std::filesystem::path& export_path) {
+    OPENVINO_ASSERT(std::dynamic_pointer_cast<StableDiffusionXLPipeline>(m_impl),
+                     "Blob export is supported only for Stable Diffusion XL pipelines");
+    m_impl->export_model(export_path);
 }
 
 }  // namespace genai

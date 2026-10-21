@@ -20,22 +20,6 @@ namespace {
 using namespace ov::genai;
 using namespace ov;
 
-ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
-    auto properties_copy = properties;
-
-    properties_copy.erase(max_length.name());
-    properties_copy.erase(pad_to_max_length.name());
-    properties_copy.erase(truncation.name());
-    properties_copy.erase(batch_size.name());
-    properties_copy.erase(pooling_type.name());
-    properties_copy.erase(normalize.name());
-    properties_copy.erase(embed_instruction.name());
-    properties_copy.erase(query_instruction.name());
-    properties_copy.erase(padding_side.name());
-
-    return properties_copy;
-}
-
 std::optional<size_t> read_max_position_embeddings(const std::filesystem::path& models_path) {
     // config.json not found. Skip parameters initialization from file, use defaults.
     const std::filesystem::path& json_path = models_path / "config.json";
@@ -137,6 +121,12 @@ public:
 
     EmbeddingResults embed_documents(const std::vector<std::string>& texts) {
         start_embed_documents_async(texts);
+        return wait_embed_documents();
+    };
+
+    EmbeddingResults embed(const std::vector<std::string>& texts, const std::string& prompt) {
+        auto formatted_texts = format_texts(texts, prompt);
+        start_embed_async(formatted_texts);
         return wait_embed_documents();
     };
 
@@ -268,6 +258,16 @@ private:
         return formatted;
     }
 
+    std::vector<std::string> format_texts(const std::vector<std::string>& texts, const std::string& prompt) {
+        std::vector<std::string> formatted;
+        formatted.reserve(texts.size());
+
+        for (const std::string& text : texts) {
+            formatted.emplace_back(prompt + text);
+        }
+        return formatted;
+    }
+
     std::string format_query(const std::string& text) {
         if (!m_config.query_instruction) {
             return text;
@@ -306,13 +306,17 @@ TextEmbeddingPipeline::TextEmbeddingPipeline(const std::filesystem::path& models
 TextEmbeddingPipeline::TextEmbeddingPipeline(const std::filesystem::path& models_path,
                                              const std::string& device,
                                              const ov::AnyMap& properties) {
-    const auto& plugin_properties = remove_config_properties(properties);
+    const auto plugin_properties = utils::remove_config_properties(properties);
 
     m_impl = std::make_unique<TextEmbeddingPipelineImpl>(models_path, device, Config(properties), plugin_properties);
 };
 
 EmbeddingResults TextEmbeddingPipeline::embed_documents(const std::vector<std::string>& texts) {
     return m_impl->embed_documents(texts);
+}
+
+EmbeddingResults TextEmbeddingPipeline::embed(const std::vector<std::string>& texts, const std::string& prompt) {
+    return m_impl->embed(texts, prompt);
 }
 
 void TextEmbeddingPipeline::start_embed_documents_async(const std::vector<std::string>& texts) {

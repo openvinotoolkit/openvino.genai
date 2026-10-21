@@ -17,8 +17,6 @@ from openvino_genai import (
     StreamerBase, 
     DecodedResults,
 )
-from optimum.intel.utils.import_utils import is_transformers_version
-
 from utils.constants import get_default_llm_properties
 from utils.comparation import compare_generation_results, compare_generation_results_vs_ref
 from utils.hugging_face import OVConvertedModelSchema, download_and_convert_model, run_hugging_face
@@ -65,14 +63,12 @@ MAIN_PIPELINE_TYPES = (
     PipelineType.PROMPT_LOOKUP_DECODING,
 )
 
+LINEAR_ATTENTION_PIPELINE_TYPES = (
+    PipelineType.STATEFUL,
+    PipelineType.PAGED_ATTENTION,
+)
 
-if is_transformers_version("<", "4.57") or is_transformers_version(">=", "5.0"):
-    LINEAR_ATTENTION_PIPELINE_TYPES = (PipelineType.STATEFUL,)
-else:  # transformers==4.57.*
-    LINEAR_ATTENTION_PIPELINE_TYPES = (
-        PipelineType.STATEFUL,
-        PipelineType.PAGED_ATTENTION,
-    )
+LINEAR_ATTENTION_SPECULATIVE_PIPELINE_TYPES = (PipelineType.PROMPT_LOOKUP_DECODING,)
 
 ALL_PIPELINE_TYPES = (
     *MAIN_PIPELINE_TYPES,
@@ -111,6 +107,7 @@ def create_ov_pipeline(
     draft_model_path: Path | None = None,
     enable_save_ov_model: bool | None = None,
     dynamic_quantization_group_size: str | None = None,
+    gguf_reader: str | None = None,
 ) -> LLMPipeline:
     if ov_config is None:
         ov_config = get_default_llm_properties()
@@ -118,19 +115,19 @@ def create_ov_pipeline(
     if scheduler_config is None:
         scheduler_config = SchedulerConfig()
 
+    if pipeline_type in (PipelineType.AUTO, PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION):
+        if enable_save_ov_model is not None: 
+            ov_config["enable_save_ov_model"] = enable_save_ov_model
+        if dynamic_quantization_group_size is not None: 
+            ov_config["DYNAMIC_QUANTIZATION_GROUP_SIZE"] = dynamic_quantization_group_size
+        if gguf_reader is not None:
+            ov_config["GGUF_READER"] = gguf_reader
+
     if pipeline_type == PipelineType.AUTO:
         return LLMPipeline(models_path, device, ov_config)
     elif pipeline_type == PipelineType.STATEFUL:
-        if enable_save_ov_model is not None: 
-            ov_config["enable_save_ov_model"] = enable_save_ov_model
-        if dynamic_quantization_group_size is not None: 
-            ov_config["DYNAMIC_QUANTIZATION_GROUP_SIZE"] = dynamic_quantization_group_size
         return LLMPipeline(models_path, device, ov_config, ATTENTION_BACKEND="SDPA")
     elif pipeline_type == PipelineType.PAGED_ATTENTION:
-        if enable_save_ov_model is not None: 
-            ov_config["enable_save_ov_model"] = enable_save_ov_model
-        if dynamic_quantization_group_size is not None: 
-            ov_config["DYNAMIC_QUANTIZATION_GROUP_SIZE"] = dynamic_quantization_group_size
         return LLMPipeline(models_path, device, ov_config, scheduler_config=scheduler_config, ATTENTION_BACKEND="PA")
     elif pipeline_type == PipelineType.CONTINUOUS_BATCHING:
         return ContinuousBatchingPipeline(models_path, scheduler_config, device, ov_config)

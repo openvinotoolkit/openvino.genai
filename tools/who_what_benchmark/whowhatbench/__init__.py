@@ -4,6 +4,7 @@
 from .registry import register_evaluator, EVALUATOR_REGISTRY
 from .text_evaluator import TextEvaluator
 from .text_evaluator import TextEvaluator as Evaluator
+from .text_generation_strategies import GenerationResults, TextGenerationContext, TextGenerationFn
 from .text2image_evaluator import Text2ImageEvaluator
 from .visualtext_evaluator import VisualTextEvaluator
 from .im2im_evaluator import Image2ImageEvaluator
@@ -11,15 +12,21 @@ from .inpaint_evaluator import InpaintingEvaluator
 from .embeddings_evaluator import EmbeddingsEvaluator
 from .reranking_evaluator import RerankingEvaluator
 from .text2video_evaluator import Text2VideoEvaluator
+from .image2video_evaluator import Image2VideoEvaluator
 from .chat_text_evaluator import ChatTextEvaluator
 from .speech_generation_evaluator import SpeechGenerationEvaluator
+from .speech_recognition_evaluator import SpeechRecognitionEvaluator
 from .chat_visualtext_evaluator import ChatVisualTextEvaluator
+from .text_agent_evaluator import TextAgentEvaluator
 
 
 __all__ = [
     "Evaluator",
     "register_evaluator",
     "TextEvaluator",
+    "GenerationResults",
+    "TextGenerationContext",
+    "TextGenerationFn",
     "Text2ImageEvaluator",
     "VisualTextEvaluator",
     "Image2ImageEvaluator",
@@ -27,8 +34,11 @@ __all__ = [
     "EmbeddingsEvaluator",
     "RerankingEvaluator",
     "Text2VideoEvaluator",
+    "Image2VideoEvaluator",
     "ChatTextEvaluator",
     "SpeechGenerationEvaluator",
+    "SpeechRecognitionEvaluator",
     "ChatVisualTextEvaluator",
+    "TextAgentEvaluator",
     "EVALUATOR_REGISTRY",
 ]

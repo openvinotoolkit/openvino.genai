@@ -22,6 +22,7 @@ public:
     InputsEmbedderQwen3_5(
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,
+        const Tokenizer& tokenizer,
         const std::string& device,
         const ov::AnyMap device_config);
 
@@ -53,6 +54,8 @@ protected:
         const int64_t vision_start_token_id,
         const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
     ) override;
+
+    void patch_chat_template();
 };
 
 } // namespace ov::genai

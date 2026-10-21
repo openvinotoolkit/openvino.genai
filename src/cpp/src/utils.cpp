@@ -7,7 +7,9 @@
 #include <algorithm>
 #include <variant>
 #include <fstream>
+#include <map>
 #include <memory>
+#include <regex>
 
 #include "openvino/runtime/properties.hpp"
 #include "openvino/op/add.hpp"
@@ -19,7 +21,7 @@
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
 #include "openvino/genai/text_streamer.hpp"
-#include "gguf_utils/gguf_modeling.hpp"
+#include "gguf_utils/gguf_utils.hpp"
 
 
 #include "sampling/sampler.hpp"
@@ -35,9 +37,7 @@ const std::string SDPA_BACKEND = "SDPA";
 namespace {
 
 void update_config(ov::AnyMap& config, const std::pair<std::string, ov::Any>& pair) {
-    if (config.count(pair.first) == 0) {
-        config.insert(pair);
-    }
+    ov::genai::utils::set_config_default(config, pair.first, pair.second);
 }
 
 void rename_key(ov::AnyMap& config, const std::string& old_key, const std::string& new_key) {
@@ -92,8 +92,8 @@ void update_npu_config(ov::AnyMap& config,
     rename_key(config, "PREFILL_HINT", "NPUW_LLM_PREFILL_HINT");
     rename_key(config, "GENERATE_CONFIG", "NPUW_LLM_GENERATE_CONFIG");
     rename_key(config, "GENERATE_HINT", "NPUW_LLM_GENERATE_HINT");
-    rename_key(config, "SHARED_HEAD_CONFIG", "NPUW_LLM_SHARED_HEAD_CONFIG"); 
-    
+    rename_key(config, "SHARED_HEAD_CONFIG", "NPUW_LLM_SHARED_HEAD_CONFIG");
+
     rename_key(config, "++PREFILL_CONFIG", "++NPUW_LLM_PREFILL_CONFIG");
     rename_key(config, "++GENERATE_CONFIG", "++NPUW_LLM_GENERATE_CONFIG");
     rename_key(config, "++SHARED_HEAD_CONFIG", "++NPUW_LLM_SHARED_HEAD_CONFIG");
@@ -150,7 +150,7 @@ namespace ov {
 namespace genai {
 namespace utils {
 
-enum class ModelType { Default, Whisper, TextEmbedding };
+enum class ModelType { Default, Whisper, TextEmbedding, TextRerank };
 
 Tensor init_attention_mask(const Tensor& input_ids) {
     auto shape = input_ids.get_shape();
@@ -204,6 +204,20 @@ ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
     return streamer;
 }
 
+ov::genai::OmniSpeechStreamerVariant get_speech_streamer_from_map(const ov::AnyMap& config_map) {
+    ov::genai::OmniSpeechStreamerVariant streamer = std::monostate();
+
+    if (config_map.count(SPEECH_STREAMER_ARG_NAME)) {
+        auto any_val = config_map.at(SPEECH_STREAMER_ARG_NAME);
+        if (any_val.is<std::shared_ptr<ov::genai::OmniSpeechStreamerBase>>()) {
+            streamer = any_val.as<std::shared_ptr<ov::genai::OmniSpeechStreamerBase>>();
+        } else if (any_val.is<std::function<StreamingStatus(const ov::Tensor&)>>()) {
+            streamer = any_val.as<std::function<StreamingStatus(const ov::Tensor&)>>();
+        }
+    }
+    return streamer;
+}
+
 std::shared_ptr<StreamerBase> create_streamer(StreamerVariant streamer, Tokenizer tokenizer) {
     return std::visit(overloaded{
         [](std::monostate) -> std::shared_ptr<StreamerBase> {
@@ -241,6 +255,42 @@ bool is_npu_requested(const std::string& device, const ov::AnyMap& properties) {
     return false;
 }
 
+void set_config_default(ov::AnyMap& config, const std::string& key, ov::Any value) {
+    if (config.count(key) == 0) {
+        config.emplace(key, std::move(value));
+    }
+}
+
+bool is_npuw_enabled(const ov::AnyMap& config) {
+    constexpr const char* npu_use_npuw = "NPU_USE_NPUW";
+    constexpr const char* yes = "YES";
+    constexpr const char* no = "NO";
+
+    auto it = config.find(npu_use_npuw);
+    if (it == config.end()) {
+        return false;
+    }
+
+    const ov::Any& value = it->second;
+    if (value.is<bool>()) {
+        return value.as<bool>();
+    }
+
+    if (value.is<std::string>()) {
+        const std::string str_value = value.as<std::string>();
+        if (str_value == yes) {
+            return true;
+        }
+        if (str_value == no) {
+            return false;
+        }
+
+        OPENVINO_THROW("'", npu_use_npuw, "' must be '", yes, "' or '", no, "', got '", str_value, "'");
+    }
+
+    OPENVINO_THROW("'", npu_use_npuw, "' must be bool or string, got type: ", value.type_info().name());
+}
+
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend) {
     auto minuend_size = minuend.input_ids.get_size();
     auto subtrahend_size = subtrahend.input_ids.get_size();
@@ -267,8 +317,21 @@ bool has_op_with_type(const std::shared_ptr<const ov::Model>& function, const st
     return false;
 }
 
+}  // namespace
+
 std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared_ptr<ov::Model>& model) {
-    auto last_node = model->output(0).get_node()->input_value(0).get_node_shared_ptr();
+    // Prefer the output explicitly named "logits". Most models expose it as output(0), but some
+    // (e.g. the MTP draft, whose lm_head is grafted on after export) keep "last_hidden_state" at
+    // output(0) and append "logits" as a later result. Falling back to output(0) preserves the
+    // original behavior for models that do not name their logits output.
+    ov::Output<ov::Node> logits_output = model->output(0);
+    for (const auto& output : model->outputs()) {
+        if (output.get_names().count("logits") > 0) {
+            logits_output = output;
+            break;
+        }
+    }
+    auto last_node = logits_output.get_node()->input_value(0).get_node_shared_ptr();
     std::shared_ptr<ov::Node> matmul = ov::as_type_ptr<ov::op::v0::MatMul>(last_node);
 
     // in case of PA all tokens are moved to batch dimension and we have to slice / gather accordingly
@@ -280,25 +343,35 @@ std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared
     // Matmul -> Add -> Result
     // Matmul -> Transpose -> Result
     // MatMul -> Divide -> Tanh -> Multiply -> Result
+    // MatMul -> Multiply -> Divide -> Tanh -> Multiply -> Result
     if (!matmul) {
         if (auto add = ov::as_type_ptr<ov::op::v1::Add>(last_node)) {
             matmul = ov::as_type_ptr<ov::op::v0::MatMul>(add->input_value(0).get_node_shared_ptr());
         } else if (auto transpose = ov::as_type_ptr<ov::op::v1::Transpose>(last_node)) {
+            auto order = ov::as_type_ptr<ov::op::v0::Constant>(transpose->input_value(1).get_node_shared_ptr());
+            OPENVINO_ASSERT(order, "Transpose after the LLM head must have a constant order.");
+            const auto order_values = order->get_axis_vector_val();
+            OPENVINO_ASSERT(static_cast<size_t>(slice_gather_dim) < order_values.size(),
+                            "Transpose after the LLM head permutes ", order_values.size(),
+                            " axes, which does not cover axis ", slice_gather_dim, ".");
             matmul = ov::as_type_ptr<ov::op::v0::MatMul>(transpose->input_value(0).get_node_shared_ptr());
-            auto order = ov::as_type_ptr<ov::op::v0::Constant>(transpose->input_value(1).get_node_shared_ptr())->get_axis_vector_val();
-            slice_gather_dim = order[slice_gather_dim];
+            slice_gather_dim = order_values[slice_gather_dim];
         } else if (auto multiply = ov::as_type_ptr<ov::op::v1::Multiply>(last_node)) {
             if (auto tanh = ov::as_type_ptr<ov::op::v0::Tanh>(multiply->input_value(0).get_node_shared_ptr())) {
                 if (auto divide = ov::as_type_ptr<ov::op::v1::Divide>(tanh->input_value(0).get_node_shared_ptr())) {
-                    matmul = as_type_ptr<ov::op::v0::MatMul>(divide->input_value(0).get_node_shared_ptr());
+                    auto divide_input = divide->input_value(0).get_node_shared_ptr();
+                    matmul = as_type_ptr<ov::op::v0::MatMul>(divide_input);
+                    if (!matmul) {
+                        if (auto scale_multiply = ov::as_type_ptr<ov::op::v1::Multiply>(divide_input)) {
+                            matmul = as_type_ptr<ov::op::v0::MatMul>(scale_multiply->input_value(0).get_node_shared_ptr());
+                        }
+                    }
                 }
             }
         }
     }
     return std::make_tuple(matmul, slice_gather_dim);
 }
-
-} // namespace
 
 void apply_slice_before_matmul_transformation(std::shared_ptr<ov::Model> model) {
     std::shared_ptr<ov::Node> matmul = nullptr;
@@ -422,13 +495,10 @@ void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::str
 }
 
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& properties) {
-    auto [filtered_properties, enable_save_ov_model] = extract_gguf_properties(properties);
+    const auto gguf_props = gguf_utils::extract_gguf_properties(properties);
+    const ov::AnyMap& filtered_properties = gguf_props.rest;
     if (is_gguf_model(model_dir)) {
-#ifdef ENABLE_GGUF
-        return create_from_gguf(model_dir.string(), enable_save_ov_model);
-#else
-        OPENVINO_ASSERT("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
-#endif
+        return gguf_utils::read_gguf_model(model_dir, gguf_props);
     } else {
         std::filesystem::path model_path = model_dir;
 
@@ -465,6 +535,9 @@ CacheTypes get_cache_types(const ov::Model& model) {
     // "ReadValue" node is cache representation in stateful model
     const std::string state_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
     CacheTypes cache_types;
+    if (gguf_utils::has_gguf_recurrent_states(model)) {
+        cache_types.add_linear();
+    }
 
     for (const auto& op : model.get_ops()) {
         // check input size, as in LoRA adapters case it could be 0
@@ -489,7 +562,7 @@ CacheTypes get_cache_types(const ov::Model& model) {
         } else if (
             (rank == 3 && dynamic_axis_count == 1)  // conv state
             || (rank == 4 && dynamic_axis_count == 1 && zero_axis_count == 0)  // ssm state
-        ) {  
+        ) {
             cache_types.add_linear();
         }
     }
@@ -720,11 +793,23 @@ void get_npu_text_embedding_config(ov::AnyMap& properties,
     update_npu_config_text_embedding(properties, kv_pos, kv_desc);
 }
 
+void get_npu_text_rerank_config(ov::AnyMap& properties,
+                                const KVAxesPosition& kv_pos,
+                                KVDesc& kv_desc,
+                                const TextRerankPipeline::Config& text_rerank_config) {
+    const auto max_length = static_cast<uint32_t>(text_rerank_config.max_length.value_or(1024u));
+    kv_desc.max_prompt_len = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(max_length);
+    kv_desc.min_response_len = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u);
+    update_npu_config(properties, kv_pos, kv_desc);
+    update_config(properties, {"NPUW_TEXT_RERANK", "YES"});
+}
+
 std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_impl(const std::shared_ptr<ov::Model>& model,
                                                                   const ov::AnyMap& config,
                                                                   const KVAxesPosition& kv_pos,
                                                                   ModelType model_type,
-                                                                  const TextEmbeddingPipeline::Config& text_embed_config = {}) {
+                                                                  const TextEmbeddingPipeline::Config& text_embed_config = {},
+                                                                  const TextRerankPipeline::Config& text_rerank_config = {}) {
     ov::CompiledModel compiled;
     ov::AnyMap properties = config;
     KVDesc kv_desc;
@@ -739,6 +824,9 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_impl(const std::sha
         switch (model_type) {
         case ModelType::TextEmbedding:
             get_npu_text_embedding_config(properties, kv_pos, kv_desc, text_embed_config);
+            break;
+        case ModelType::TextRerank:
+            get_npu_text_rerank_config(properties, kv_pos, kv_desc, text_rerank_config);
             break;
         case ModelType::Whisper:
             get_npu_model_config(properties, kv_pos, kv_desc, true);
@@ -776,6 +864,96 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_embedding(cons
     return compile_decoder_for_npu_impl(model, config, kv_pos, ModelType::TextEmbedding, text_embed_config);
 }
 
+std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_rerank(const std::shared_ptr<ov::Model>& model,
+                                                                         const ov::AnyMap& config,
+                                                                         const KVAxesPosition& kv_pos,
+                                                                         const TextRerankPipeline::Config& text_rerank_config) {
+    return compile_decoder_for_npu_impl(model, config, kv_pos, ModelType::TextRerank, {}, text_rerank_config);
+}
+
+ov::CompiledModel compile_kokoro_for_npu_speech_generation(const std::filesystem::path& model_path,
+                                                           const ov::AnyMap& properties,
+                                                           size_t static_input_ids_length) {
+    auto& core = singleton_core();
+    auto model = core.read_model(model_path, {}, properties);
+
+    std::map<std::string, ov::PartialShape> static_shapes;
+    if (model->inputs().size() >= 1) {
+        static_shapes.emplace(model->input(0).get_any_name(),
+                              ov::PartialShape{1, static_cast<int64_t>(static_input_ids_length)});
+    }
+    if (model->inputs().size() >= 2) {
+        static_shapes.emplace(model->input(1).get_any_name(), ov::PartialShape{1, 256});
+    }
+    if (model->inputs().size() >= 3) {
+        static_shapes.emplace(model->input(2).get_any_name(), ov::PartialShape{1});
+    }
+
+    if (!static_shapes.empty()) {
+        model->reshape(static_shapes);
+    }
+
+    ov::AnyMap compile_properties = properties;
+
+    set_config_default(compile_properties, "NPU_USE_NPUW", std::string{"YES"});
+    if (is_npuw_enabled(compile_properties)) {
+        set_config_default(compile_properties, "NPUW_DEVICES", std::string{"NPU,CPU"});
+        set_config_default(compile_properties, "NPUW_KOKORO", std::string{"YES"});
+
+        OPENVINO_ASSERT(!(compile_properties.count("CACHE_DIR") > 0 && compile_properties.count("NPUW_CACHE_DIR") > 0),
+                        "Both CACHE_DIR and NPUW_CACHE_DIR are set for Kokoro on NPU. "
+                        "Please specify only one cache directory key.");
+
+        auto it = compile_properties.find("CACHE_DIR");
+        if (it != compile_properties.end()) {
+            auto cache_dir_val = it->second;
+            compile_properties.erase(it);
+            set_config_default(compile_properties, "NPUW_CACHE_DIR", cache_dir_val);
+            GENAI_INFO("Kokoro NPU: remapped CACHE_DIR to NPUW_CACHE_DIR");
+        }
+    }
+
+    return core.compile_model(model, "NPU", compile_properties);
+}
+
+size_t get_npu_kv_cache_capacity(const ov::CompiledModel& compiled_model) {
+    const size_t max_prompt_len = compiled_model.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
+    const size_t min_response_len = compiled_model.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>();
+    // for proper support need to expose NPUW_LLM_MAX_GENERATION_TOKEN_LEN property in NPU model
+    const size_t max_generation_token_len = 1u;
+
+    OPENVINO_ASSERT(max_prompt_len + min_response_len >= max_generation_token_len,
+                     "Invalid NPU KV-cache capacity: MAX_PROMPT_LEN + MIN_RESPONSE_LEN must be >= ",
+                     max_generation_token_len, ", got ", max_prompt_len, " + ", min_response_len);
+
+    return max_prompt_len + min_response_len - max_generation_token_len;
+}
+
+ov::element::Type get_compiled_kv_cache_precision(const ov::CompiledModel& compiled_model) {
+    std::optional<ov::element::Type> kv_cache_precision;
+    for (const auto& input : compiled_model.inputs()) {
+        for (const auto& name : input.get_names()) {
+            if (name.find("key_cache.") == 0 || name.find("value_cache.") == 0) {
+                const ov::element::Type precision = input.get_element_type();
+                OPENVINO_ASSERT(!kv_cache_precision || *kv_cache_precision == precision,
+                                "Non-uniform KV cache precision across cache inputs is not supported: got ",
+                                *kv_cache_precision,
+                                " and ",
+                                precision,
+                                " for input '",
+                                name,
+                                "'");
+                kv_cache_precision = precision;
+                break;
+            }
+        }
+    }
+    OPENVINO_ASSERT(
+        kv_cache_precision,
+        "Compiled model does not expose key_cache/value_cache inputs required to determine KV cache precision");
+    return *kv_cache_precision;
+}
+
 std::optional<ov::Any> pop_option(ov::AnyMap& config, const std::string& option_name) {
     if (auto it = config.find(option_name); it != config.end()) {
         std::optional<ov::Any> found = std::make_optional(it->second);
@@ -803,6 +981,7 @@ void validate_vlm_model_properties(const ov::AnyMap& properties) {
         "vision_embeddings_pos",
         "vision_projection",
         "multi_modal_projector",
+        "audio_encoder",
         "language_model",
     };
     const auto it = properties.find(PER_MODEL_PROPERTIES);
@@ -927,6 +1106,16 @@ void extract_extensions_to_core(ov::AnyMap& properties) {
     }
 }
 
+void log_attention_backend(const std::string& attention_backend) {
+    GENAI_INFO("%s backend is enabled.", attention_backend.c_str());
+}
+
+void log_paged_attention_fallback(const ov::Exception& exception) {
+    GENAI_INFO("Paged Attention backend initialization failed. Falling back to SDPA backend. "
+                "Set ATTENTION_BACKEND=\"SDPA\" to skip Paged Attention initialization.");
+    GENAI_DEBUG("Paged Attention backend initialization error: %s", exception.what());
+}
+
 void release_core_plugin(const std::string& device) {
     try {
         singleton_core().unload_plugin(device);
@@ -1035,6 +1224,14 @@ ov::CompiledModel import_model(const std::filesystem::path& blob_path,
                                const ov::AnyMap& properties) {
     OPENVINO_ASSERT(!blob_path.empty(), "blob path is empty");
     ov::Tensor blob_tensor = ov::read_tensor_data(blob_path);
+    return import_model(blob_tensor, device, properties);
+}
+
+ov::CompiledModel import_model(const ov::Tensor& blob_tensor,
+                               const std::string& device,
+                               const ov::AnyMap& properties) {
+    OPENVINO_ASSERT(blob_tensor.get_element_type() == ov::element::u8, "Blob tensor should have uint8 element type");
+    OPENVINO_ASSERT(blob_tensor.get_size() > 0, "Blob tensor is empty");
     return ov::genai::utils::singleton_core().import_model(blob_tensor, device, properties);
 }
 
@@ -1107,6 +1304,13 @@ ov::genai::GenerationConfig get_multinomial_config() {
     multinomial_config.min_new_tokens = 15;
     multinomial_config.max_new_tokens = 30;
     return multinomial_config;
+}
+
+void patch_chat_template_multiline_strings(Tokenizer& tokenizer) {
+    std::string chat_template = tokenizer.get_chat_template();
+    const std::regex multiline_string_concatenation{R"("[ \t]*\r?\n[ \t]*")"};
+    chat_template = std::regex_replace(chat_template, multiline_string_concatenation, "");
+    tokenizer.set_chat_template(chat_template);
 }
 
 }  // namespace utils

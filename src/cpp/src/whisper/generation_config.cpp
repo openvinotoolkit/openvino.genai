@@ -9,6 +9,7 @@
 #include "json_utils.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "utils.hpp"
+#include "whisper/whisper_utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -83,8 +84,7 @@ void WhisperGenerationConfig::validate() const {
     }
 
     if (is_multilingual && language.has_value()) {
-        OPENVINO_ASSERT(lang_to_id.count(*language),
-                        "'language' " + *language + " must be provided in 'lang_to_id' map.");
+        utils::get_or_throw_token_id_by_language(lang_to_id, *language);
     }
 
     if (is_multilingual && task.has_value()) {

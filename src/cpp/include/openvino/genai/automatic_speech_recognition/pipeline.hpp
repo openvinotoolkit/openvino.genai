@@ -33,6 +33,13 @@ struct ASRDecodedResultChunk {
 struct OPENVINO_GENAI_EXPORTS ASRDecodedResults {
     std::vector<std::string> texts;
     std::vector<float> scores;
+    /**
+     * @brief Language associated with each transcription.
+     *
+     * Each entry contains the detected language when the model supports language identification, or the requested
+     * language when generation forces one. An entry is empty when no language was requested and the model does not
+     * support language identification, as with Fun-ASR.
+     */
     std::vector<std::string> languages;
     ASRPerfMetrics perf_metrics;
 
@@ -66,6 +73,7 @@ struct OPENVINO_GENAI_EXPORTS ASRDecodedResults {
 };
 
 class ASRPipelineImplBase;
+class ASRForcedAligner;
 
 class OPENVINO_GENAI_EXPORTS ASRPipeline {
     std::unique_ptr<ASRPipelineImplBase> m_impl;
@@ -81,7 +89,7 @@ public:
     ~ASRPipeline();
 
     ASRDecodedResults generate(const AudioInputs& audio_inputs,
-                               std::optional<ASRGenerationConfig> generation_config = std::nullopt,
+                               const std::optional<ASRGenerationConfig>& generation_config = std::nullopt,
                                StreamerVariant streamer = std::monostate());
 
     template <typename... Properties>
@@ -96,5 +104,13 @@ public:
     ASRGenerationConfig get_generation_config() const;
     void set_generation_config(const ASRGenerationConfig& config);
 };
+
+/**
+ * @brief Pre-constructed forced aligner used for word-level timestamps.
+ *
+ * Constructor-only property carrying an already-built ASRForcedAligner instance, used when word-level
+ * timestamps are requested. Currently supported only for Qwen3-ASR.
+ */
+static constexpr ov::Property<std::shared_ptr<ASRForcedAligner>> forced_aligner{"forced_aligner"};
 
 }  // namespace ov::genai

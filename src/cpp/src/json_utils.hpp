@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <filesystem>
+#include <fstream>
 #include <vector>
 #include <set>
 #include <optional>
@@ -152,7 +154,39 @@ inline nlohmann::ordered_json any_map_to_json(const ov::AnyMap& any_map) {
     return object_json;
 }
 
+/**
+ * @brief Reads mean and std parameters from json. If the parameter is a single number, it fills the array with that number.
+ * If the parameter is an array, it reads the values into the array.
+ * @param parsed The json object to read from.
+ * @param name The name of the parameter to read.
+ * @param values The array to fill with the read values.
+ 
+ * Supported formats:
+ * "image_mean": 0.5,
+ * "image_mean": [
+ *     0.0,
+ *     0.0,
+ *     0.0
+ *   ],
+ */
+// Reads the diffusers pipeline class name from a model directory's model_index.json
+inline std::string get_class_name(const std::filesystem::path& root_dir) {
+    const std::filesystem::path model_index_path = root_dir / "model_index.json";
+    std::ifstream file(model_index_path);
+    OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
+    return nlohmann::json::parse(file)["_class_name"].get<std::string>();
+}
 
+inline void read_mean_std_params(const nlohmann::json& parsed, const std::string& name, std::array<float, 3>& values) {
+    if (!parsed.contains(name) || parsed.at(name).is_null()) {
+        return;
+    }
+    if (parsed.at(name).is_number()) {
+        values.fill(parsed.at(name).get<float>());
+        return;
+    }
+    ov::genai::utils::read_json_param(parsed, name, values);
+}
 
 }  // namespace utils
 }  // namespace genai

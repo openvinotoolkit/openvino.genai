@@ -1,12 +1,11 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <filesystem>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include <pybind11/stl_bind.h>
 #include <pybind11/functional.h>
 
+#include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "openvino/genai/parsers.hpp"
@@ -77,16 +76,45 @@ public:
         // this function is a wrapper to call Python implementation of 'write' with py::dict
         py::gil_scoped_acquire acquire;
 
+        // A subclass that does not implement 'write': fail with an error instead of calling a null override.
+        py::function override = py::get_override(this, "write");
+        if (!override) {
+            throw py::type_error("TextParserStreamer subclasses must implement write(message: dict) -> StreamingStatus");
+        }
+
         py::dict message_py = pyutils::json_container_to_py_object(message);
-        
+
         // Call python implementation which accepts py::dict instead of JsonContainer
         // And convert back the resulting message back to JsonContainer
-        auto res = py::get_override(this, "write")(message_py);
+        auto res = override(message_py);
         message = pyutils::py_object_to_json_container(message_py);
         
         return res.cast<StreamingStatus>();
     }
 };
+
+class ConstructableOmniSpeechStreamer : public ov::genai::OmniSpeechStreamerBase {
+    ov::genai::StreamingStatus write(const ov::Tensor& audio_chunk) override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(ov::genai::StreamingStatus, ov::genai::OmniSpeechStreamerBase, write, audio_chunk);
+    }
+    void end() override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(void, ov::genai::OmniSpeechStreamerBase, end);
+    }
+};
+
+auto omni_speech_streamer_base_docstring = R"(
+    Base class for audio streamers. Inherit and implement write() and end()
+    to receive audio chunks during speech generation.
+
+    write(audio_chunk: ov.Tensor) -> StreamingStatus:
+        Called with each audio chunk [1, 1, N_samples] float32 PCM at 24kHz.
+        Return StreamingStatus.RUNNING to continue or STOP/CANCEL to halt.
+
+    end():
+        Called when speech generation completes (always, even on early stop).
+)";
 
 } // namespace
 
@@ -127,10 +155,15 @@ void init_streamers(py::module_& m) {
             .def("end", &TextStreamer::end);
         
     py::class_<TextParserStreamer, ConstructableTextParserStreamer, std::shared_ptr<TextParserStreamer>, TextStreamer>(m, "TextParserStreamer", text_parser_streamer_docstring)
-        .def(py::init([](const Tokenizer& tokenizer,
-                         std::vector<std::shared_ptr<IncrementalParser>> parsers) {
-                return std::make_shared<ConstructableTextParserStreamer>(tokenizer, parsers);
-            }),
+        .def(py::init(
+                 // TextParserStreamer itself: write() is pure virtual, so it has to be subclassed.
+                 [](const Tokenizer&, std::vector<std::shared_ptr<IncrementalParser>>) -> std::shared_ptr<TextParserStreamer> {
+                     throw py::type_error("TextParserStreamer is abstract: subclass it and implement write(message: dict)");
+                 },
+                 // A Python subclass.
+                 [](const Tokenizer& tokenizer, std::vector<std::shared_ptr<IncrementalParser>> parsers) {
+                     return std::make_shared<ConstructableTextParserStreamer>(tokenizer, parsers);
+                 }),
             py::arg("tokenizer"),
             py::arg("parsers") = std::vector<std::shared_ptr<IncrementalParser>>(),
             py::keep_alive<1, 3>())
@@ -158,4 +191,13 @@ void init_streamers(py::module_& m) {
             }, "Returns the accumulated message.")
         
         .def("reset", &TextParserStreamer::reset, "Resets the internal state of the parser streamer.");
+
+    py::class_<ov::genai::OmniSpeechStreamerBase, ConstructableOmniSpeechStreamer,
+               std::shared_ptr<ov::genai::OmniSpeechStreamerBase>>(m, "OmniSpeechStreamerBase", omni_speech_streamer_base_docstring)
+        .def(py::init<>())
+        .def("write", &ov::genai::OmniSpeechStreamerBase::write,
+             "Called with each audio chunk tensor [1, 1, N_samples]. Return StreamingStatus.",
+             py::arg("audio_chunk"))
+        .def("end", &ov::genai::OmniSpeechStreamerBase::end,
+             "Called when speech generation completes.");
 }

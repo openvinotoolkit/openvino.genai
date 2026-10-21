@@ -8,9 +8,11 @@ if(ENABLE_SAMPLES)
     add_subdirectory(cpp/speech_generation)
     add_subdirectory(cpp/visual_language_chat)
     add_subdirectory(cpp/automatic_speech_recognition)
+    add_subdirectory(cpp/omni)
     add_subdirectory(cpp/rag)
     add_subdirectory(c/text_generation)
     add_subdirectory(c/whisper_speech_recognition)
+    add_subdirectory(c/speech_generation)
     add_subdirectory(c/visual_language_chat)
 endif()
 
@@ -31,6 +33,7 @@ install(DIRECTORY
             cpp/speech_generation
             cpp/visual_language_chat
             cpp/automatic_speech_recognition
+            cpp/omni
             cpp/rag
         DESTINATION samples/cpp COMPONENT cpp_samples_genai)
 
@@ -41,6 +44,7 @@ install(DIRECTORY
             python/speech_generation
             python/visual_language_chat
             python/automatic_speech_recognition
+            python/omni
             python/rag
         DESTINATION samples/python COMPONENT cpp_samples_genai
         USE_SOURCE_PERMISSIONS)
@@ -49,5 +53,6 @@ install(DIRECTORY
         c/common
         c/text_generation
         c/whisper_speech_recognition
+        c/speech_generation
         c/visual_language_chat
         DESTINATION samples/c COMPONENT cpp_samples_genai)

@@ -3,6 +3,8 @@
 
 #include "whisper.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <openvino/openvino.hpp>
 #include <thread>
@@ -27,6 +29,30 @@ using ov::genai::MicroSeconds;
 
 namespace {
 
+// Convert one logits row (batch_idx) to log-probabilities in place, over the full vocabulary.
+void logits_row_to_logprobs(ov::Tensor& logits, size_t batch_idx) {
+    const ov::Shape shape = logits.get_shape();
+    OPENVINO_ASSERT(shape.size() == 3);
+    OPENVINO_ASSERT(batch_idx < shape[0], "Logits batch size doesn't match the number of beams");
+    OPENVINO_ASSERT(shape[1] > 0);
+    OPENVINO_ASSERT(shape[2] > 0);
+
+    const size_t vocab_size = shape[2];
+    const size_t batch_offset = batch_idx * shape[1] * vocab_size;
+    const size_t sequence_offset = (shape[1] - 1) * vocab_size;
+    float* const row = logits.data<float>() + batch_offset + sequence_offset;
+
+    float max_logit = *std::max_element(row, row + vocab_size);
+    double sum = 0.0;
+    for (size_t i = 0; i < vocab_size; ++i) {
+        sum += std::exp(static_cast<double>(row[i]) - max_logit);
+    }
+    float log_sum = static_cast<float>(std::log(sum)) + max_logit;
+    for (size_t i = 0; i < vocab_size; ++i) {
+        row[i] -= log_sum;
+    }
+}
+
 void process_whisper_logits(ov::Tensor logits,
                             const ov::genai::WhisperGenerationConfig& config,
                             const bool return_timestamps,
@@ -34,7 +60,14 @@ void process_whisper_logits(ov::Tensor logits,
     const bool initial_step = batch_to_generated_ids.empty();
     const size_t batch_size = logits.get_shape().at(0);
 
+    // Normalize before masking so beam scores remain comparable across rows, matching HF beam search.
+    const bool is_beam_search = config.is_beam_search();
+
     for (size_t batch = 0; batch < batch_size; batch++) {
+        if (is_beam_search) {
+            logits_row_to_logprobs(logits, batch);
+        }
+
         if (initial_step) {
             ov::genai::do_suppress_tokens(logits, batch, config.begin_suppress_tokens);
         }
@@ -42,8 +75,15 @@ void process_whisper_logits(ov::Tensor logits,
         ov::genai::do_suppress_tokens(logits, batch, config.suppress_tokens);
 
         if (return_timestamps) {
-            const auto& generated_ids = initial_step ? std::vector<int64_t>{} : batch_to_generated_ids.at(batch);
-            ov::genai::process_whisper_timestamp_logits(logits, batch, config, generated_ids, initial_step);
+            if (initial_step) {
+                ov::genai::process_whisper_timestamp_logits(logits, batch, config, {}, initial_step);
+            } else {
+                ov::genai::process_whisper_timestamp_logits(logits,
+                                                            batch,
+                                                            config,
+                                                            batch_to_generated_ids.at(batch),
+                                                            initial_step);
+            }
         }
     }
 }
@@ -53,11 +93,18 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
                                                   const ov::Tensor& encoder_hidden_state,
                                                   const std::shared_ptr<ov::genai::StreamerBase> streamer_ptr,
                                                   ov::genai::Sampler& sampler,
-                                                  ov::genai::SequenceGroup::Ptr sequence_group,
                                                   const bool return_timestamps,
                                                   const ov::genai::WhisperGenerationConfig& config,
                                                   ov::genai::RawPerfMetrics& raw_metrics,
                                                   ov::genai::WhisperRawPerfMetrics& whisper_raw_metrics) {
+    ov::genai::SequenceGroup::Ptr sequence_group =
+        std::make_shared<ov::genai::SequenceGroup>(0, input_ids, config);
+
+    // Keep the sampler's score representation consistent with process_whisper_logits().
+    if (config.is_beam_search()) {
+        sequence_group->set_logits_type(ov::genai::LogitsType::LOG_PROBS);
+    }
+
     const auto handle = std::make_shared<ov::genai::GenerationHandleImpl>(sequence_group->get_generation_stream(),
                                                                           sequence_group->get_sampling_parameters());
 
@@ -67,6 +114,10 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
         }
 
         std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
+        if (token.empty()) {
+            // Empty terminator pushed by notify_handle_final()/notify_handle_oom() to unblock readers.
+            return;
+        }
 
         auto streaming_status = streamer_ptr->write(token.begin()->second.generated_ids);
         if (streaming_status == ov::genai::StreamingStatus::CANCEL) {
@@ -111,6 +162,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
         raw_metrics.m_sampling_durations.emplace_back(
             ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
     }
+    sequence_group->notify_handle();
     stream_generated_tokens();
 
     // "Generation" phase
@@ -184,6 +236,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
             raw_metrics.m_sampling_durations.emplace_back(
                 ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
         }
+        sequence_group->notify_handle();
     }
 
     stream_generated_tokens();
@@ -202,7 +255,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
 
     results.tokens.push_back(sequence->get_generated_ids());
     results.scores.push_back(score);
-    
+
     ov::genai::GenerationFinishReason finish_reason = sequence->get_finish_reason();
     if (sequence_group->handle_stopped() && finish_reason == ov::genai::GenerationFinishReason::NONE) {
         finish_reason = sequence_group->get_generation_stream()->get_finish_reason();
@@ -241,7 +294,7 @@ ov::Tensor encode(ov::InferRequest& request,
     // reset input tensor
     auto devices = request.get_compiled_model().get_property(ov::execution_devices);
     OPENVINO_ASSERT(devices.size() > 0, "No execution devices found!");
-    size_t batch_size = (devices[0] == "NPU") ? 1 : 0;
+    size_t batch_size = (devices[0].rfind("NPU", 0) == 0) ? 1 : 0;
     request.set_tensor("input_features", ov::Tensor(ov::element::f32, {batch_size, feature_size, nb_max_frames}));
 
     return request.get_tensor("last_hidden_state");
@@ -260,9 +313,7 @@ ov::genai::SotTokensResult prepare_sot_tokens(ov::Tensor& encoder_hidden_state,
     std::string language;
     if (config.language.has_value()) {
         language = *config.language;
-        if (config.lang_to_id.count(language)) {
-            language_token_id = config.lang_to_id.at(language);
-        }
+        language_token_id = ov::genai::utils::get_or_throw_token_id_by_language(config.lang_to_id, language);
     } else {
         auto [language_token, infer_ms] = decoder->detect_language(encoder_hidden_state, config);
         language_token_id = language_token;
@@ -315,7 +366,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
     // long-form audio processing requires timestamps to be enabled
     const bool return_timestamps = config.return_timestamps || !is_shortform;
 
-    std::vector<int64_t> sot_tokens;
+    SotTokensResult sot_result;
     std::vector<int64_t>& output_tokens = result.output_tokens;
     std::vector<Segment> segments;
 
@@ -340,28 +391,24 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                                 result.perf_metrics.whisper_raw_metrics);
 
         // prepare sot_tokens just once for whole input
-        if (sot_tokens.empty()) {
-            auto sot_result = prepare_sot_tokens(hidden_state_tensor, decoder, config, raw_metrics);
-            sot_tokens = std::move(sot_result.tokens);
-            result.language = std::move(sot_result.language);
+        if (sot_result.tokens.empty()) {
+            sot_result = prepare_sot_tokens(hidden_state_tensor, decoder, config, raw_metrics);
+            result.language = sot_result.language;
         }
 
         std::vector<int64_t> chunk_sot_tokens = ov::genai::get_prompt_tokens(context_tokens, config, chunk_offset);
 
-        chunk_sot_tokens.insert(chunk_sot_tokens.end(), sot_tokens.begin(), sot_tokens.end());
+        chunk_sot_tokens.insert(chunk_sot_tokens.end(), sot_result.tokens.begin(), sot_result.tokens.end());
 
         if (!return_timestamps) {
             chunk_sot_tokens.push_back(config.no_timestamps_token_id);
         }
-
-        SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, chunk_sot_tokens, config);
 
         auto [chunk_result, cancelled] = decode(decoder,
                                                 chunk_sot_tokens,
                                                 hidden_state_tensor,
                                                 streamer,
                                                 sampler,
-                                                sequence_group,
                                                 return_timestamps,
                                                 config,
                                                 raw_metrics,
@@ -408,7 +455,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                 std::min(feature_extractor.nb_max_frames, input_features.n_active_frames - chunk_offset);
 
             const auto word_timestamps_processing_start = std::chrono::steady_clock::now();
-            const auto word_timestamps = add_word_level_timestamps(sot_tokens,
+            const auto word_timestamps = add_word_level_timestamps(sot_result,
                                                                    chunk_output_tokens,
                                                                    tokenizer,
                                                                    decoder,

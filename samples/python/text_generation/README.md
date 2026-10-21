@@ -50,10 +50,20 @@ hf download <model> --local-dir <output_folder>
 
 ### Using GGUF models
 
-To run any samples with a GGUF model, simply provide the path to the .gguf file via the `model_dir` parameter.
+To run samples with a GGUF model, provide the path to the `.gguf` file via the `model_dir` parameter. The default legacy reader supports `llama`, `qwen2`, and `qwen3` architectures.
 
-This capability is currently available in preview mode and supports a limited set of topologies, including SmolLM and Qwen2.5. For other models
-and architectures, we still recommend converting the model to the IR format using the `optimum-intel` tool.
+Prefer models quantized in `Q4_0` or `Q8_0` format for better performance and accuracy. Their quantization layouts are closest to those used by OpenVINO.
+
+To use the OpenVINO GGUF frontend, select it when constructing the pipeline:
+
+```python
+import openvino_genai as genai
+
+pipe = genai.LLMPipeline("model.gguf", "CPU", GGUF_READER="FRONTEND")
+print(pipe.generate("Explain why the sky is blue.", max_new_tokens=64))
+```
+
+The frontend supports more architectures and is expected to provide better model quality, but is in preview and may have limitations. It requires a compatible OpenVINO build with the GGUF frontend. See [Run GGUF models](https://openvinotoolkit.github.io/openvino.genai/docs/guides/gguf) for model format recommendations and tokenizer, chat, and streaming examples.
 
 ## Sample Descriptions
 ### Common information
@@ -163,6 +173,8 @@ Recommended models: meta-llama/Llama-2-13b-hf as main model and TinyLlama/TinyLl
   | `branching_factor` | `1` | ContinuousBatching (EAGLE only) | Number of candidate tokens to consider at each tree level when running tree-based speculative decoding. |
   | `tree_depth` | `0` | ContinuousBatching (EAGLE only) | Depth of the candidate token tree. Tree drafting requires `num_assistant_tokens >= tree_depth`. |
 
+  The sample prints accepted, rejected, and total draft candidate tokens. Draft candidate tokens are the tokens offered to the main model for validation and are the denominator for acceptance rate. Draft model processed tokens come from the draft model performance metrics and can include extra draft-side work such as cache or state alignment.
+
   Example:
   ```python
   config = openvino_genai.GenerationConfig()
@@ -209,14 +221,14 @@ For more information on how performance metrics are calculated, please follow th
 - **Main Feature:** Benchmark model via GenAI
 - **Run Command:**
   ```bash
-  python benchmark_genai.py [-m MODEL] [-p PROMPT] [-nw NUM_WARMUP] [-n NUM_ITER] [-mt MAX_NEW_TOKENS] [-d DEVICE]
+  python benchmark_genai.py [-m MODEL] [-p PROMPT] [-N NUM_WARMUP] [-n NUM_ITER] [-M MAX_NEW_TOKENS] [-d DEVICE]
   ```
   #### Options
 - `-m, --model`: Path to the model and tokenizers base directory.
-- `-p, --prompt` (default: `None`): The prompt to generate text. If without `-p` and `-pf`, the default prompt is `"The Sky is blue because"`
-- `-pf, --prompt_file` Read prompt from file.
-- `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
-- `-mt, --max_new_tokens` (default: `20`): Maximal number of new tokens.
+- `-p, --prompt` (default: `None`): The prompt to generate text. If without `-p` and `-F`, the default prompt is `"The Sky is blue because"`
+- `-F, --prompt_file` Read prompt from file.
+- `-N, --num_warmup` (default: `1`): Number of warmup iterations.
+- `-M, --max_new_tokens` (default: `20`): Maximal number of new tokens.
 - `-n, --num_iter` (default: `3`): Number of iterations.
 - `-d, --device` (default: `"CPU"`): Device to run the model on.
 
