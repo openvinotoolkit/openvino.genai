@@ -614,9 +614,12 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const std::vector<std::vector<ov::Tensor>>& videos,
                const std::vector<std::vector<ov::Tensor>>& audios,
                const std::vector<ov::genai::GenerationConfig>& generation_config,
-               const pyutils::PyBindStreamerVariant& py_streamer
+               const pyutils::PyBindStreamerVariant& py_streamer,
+               const py::kwargs& kwargs
             ) -> py::typing::List<ov::genai::VLMDecodedResults> {
-                return _call_cb_vlm_generate(pipe, prompts, CBMediaInputs{images, videos, audios, {}},
+                const CBMediaInputs media{images, videos, audios,
+                                          pyutils::get_videos_metadata_batches_from_kwargs(kwargs)};
+                return _call_cb_vlm_generate(pipe, prompts, media,
                                              generation_config, py_streamer);
             },
             py::arg("prompts"),
@@ -648,12 +651,15 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const std::vector<std::vector<ov::Tensor>>& videos,
                const std::vector<std::vector<ov::Tensor>>& audios,
                const std::vector<ov::genai::GenerationConfig>& generation_config,
-               const pyutils::PyBindStreamerVariant& py_streamer
+               const pyutils::PyBindStreamerVariant& py_streamer,
+               const py::kwargs& kwargs
             ) -> py::typing::List<ov::genai::VLMDecodedResults> {
+                const CBMediaInputs media{images, videos, audios,
+                                          pyutils::get_videos_metadata_batches_from_kwargs(kwargs)};
                 return pyutils::call_and_sync_py_chat_histories(
                     py_histories,
                     [&](std::vector<ov::genai::ChatHistory>& histories) {
-                        return _call_cb_vlm_generate(pipe, histories, CBMediaInputs{images, videos, audios, {}},
+                        return _call_cb_vlm_generate(pipe, histories, media,
                                                      generation_config, py_streamer);
                     });
             },
