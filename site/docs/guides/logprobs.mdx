@@ -65,11 +65,15 @@ Notes:
     <TabItemCpp>
         ```cpp showLineNumbers
         #include <cmath>
+        #include <filesystem>
         #include <iostream>
 
         #include "openvino/genai/continuous_batching_pipeline.hpp"
 
         int main() {
+            // Path to the exported model directory (model .xml/.bin and tokenizer files)
+            const std::filesystem::path models_path = "path/to/exported_model";
+
             ov::genai::SchedulerConfig scheduler_config;
             scheduler_config.max_num_batched_tokens = 2048;
             scheduler_config.max_num_seqs = 128;
@@ -89,7 +93,7 @@ Notes:
                 pipe.step();
             }
 
-            for (const auto& output : handle.read_all()) {
+            for (const auto& output : handle->read_all()) {
                 for (size_t position = 0; position < output.requested_token_logprobs.size(); ++position) {
                     for (const auto& [token_id, log_prob] : output.requested_token_logprobs[position]) {
                         std::cout << "position " << position << ": token " << token_id
