@@ -41,6 +41,8 @@ class FunASROptimumPipeline:
 
 
 class Qwen3ASROptimumPipeline:
+    """Benchmark current split and legacy encoder/decoder Qwen3-ASR exports."""
+
     SAMPLE_RATE = 16000
 
     def __init__(self, model, processor):
@@ -48,17 +50,22 @@ class Qwen3ASROptimumPipeline:
         self.processor = processor
 
     def prepare_generation_inputs(self, inputs):
+        # The split model reads EOS and pad IDs from its exported generation_config.json.
         if hasattr(self.model, "audio_encoder"):
             return inputs
-        tokenizer = self.processor.tokenizer
-        return {
+        generation_inputs = {
             "input_features": inputs["input_features"],
             "decoder_input_ids": inputs["input_ids"],
-            "attention_mask": inputs.get("feature_attention_mask"),
+            "attention_mask": inputs["feature_attention_mask"],
             "decoder_start_token_id": self.model.config.decoder_start_token_id,
-            "eos_token_id": [tokenizer.pad_token_id, tokenizer.eos_token_id],
-            "pad_token_id": tokenizer.pad_token_id,
         }
+        # Legacy encoder/decoder exports may lack generation_config.json.
+        if self.model.generation_config.eos_token_id is None:
+            tokenizer = self.processor.tokenizer
+            generation_inputs["eos_token_id"] = [tokenizer.pad_token_id, tokenizer.eos_token_id]
+        if self.model.generation_config.pad_token_id is None:
+            generation_inputs["pad_token_id"] = self.processor.tokenizer.pad_token_id
+        return generation_inputs
 
     def preprocess(self, sample, **kwargs):
         start = time.perf_counter()
@@ -110,12 +117,15 @@ class Qwen3ASROptimumPipeline:
         }
 
     def parse_asr_output(self, raw_text):
+        # Automatic: "language English<asr_text>Hello<|im_end|>"
+        # Forced language: "Hello<|im_end|>" (no <asr_text> in the generated suffix).
         language_match = re.search(r"<\|([a-z]{2,3})\|>", raw_text)
         text_match = re.search(r"<asr_text>(.*?)(?:<\||$)", raw_text.replace("<|asr_text|>", "<asr_text>"))
 
+        text = text_match.group(1) if text_match else re.split(r"<\|(?:im_end|endoftext)\|>", raw_text, maxsplit=1)[0]
         return {
             "language": language_match.group(1) if language_match else None,
-            "text": text_match.group(1).strip() if text_match else raw_text.strip(),
+            "text": text.strip(),
         }
 
     def __call__(self, sample, **kwargs):
