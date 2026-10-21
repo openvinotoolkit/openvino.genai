@@ -104,6 +104,17 @@ def tiny_kokoro_speaker_embedding_file_path(tiny_kokoro_ov_path: Path) -> str:
     return str(voice_bin_path)
 
 
+def optimum_supports_ltx2() -> bool:
+    try:
+        from optimum.intel.openvino.modeling_diffusion import OV_TEXT2VIDEO_PIPELINES_MAPPING
+    except ImportError:
+        return False
+    return "ltx2" in OV_TEXT2VIDEO_PIPELINES_MAPPING
+
+
+LTX2_OPTIMUM = pytest.mark.skipif(not optimum_supports_ltx2(), reason="optimum-intel without LTX-2 support")
+
+
 class TestBenchmarkLLM:
 
     @pytest.mark.samples
@@ -753,6 +764,66 @@ class TestBenchmarkLLM:
                     "256",
                 ],
             ),
+            pytest.param(
+                "tiny-random-ltx2",
+                [
+                    "-d",
+                    "cpu",
+                    "-n",
+                    "1",
+                    "--optimum",
+                    "--num_steps",
+                    "5",
+                    "--num_frames",
+                    "9",
+                    "--frame_rate",
+                    "25",
+                    "--width",
+                    "256",
+                    "--height",
+                    "256",
+                ],
+                marks=LTX2_OPTIMUM,
+            ),
+            pytest.param(
+                "tiny-random-ltx2",
+                [
+                    "-d",
+                    "cpu",
+                    "-n",
+                    "1",
+                    "--genai",
+                    "--num_steps",
+                    "5",
+                    "--num_frames",
+                    "9",
+                    "--width",
+                    "256",
+                    "--height",
+                    "256",
+                ],
+                marks=LTX2_OPTIMUM,
+            ),
+            pytest.param(
+                "tiny-random-ltx2",
+                [
+                    "-d",
+                    "cpu",
+                    "-n",
+                    "1",
+                    "--genai",
+                    "--static_reshape",
+                    "--num_steps",
+                    "4",
+                    "--num_frames",
+                    "9",
+                    "--width",
+                    "256",
+                    "--height",
+                    "256",
+                ],
+                marks=LTX2_OPTIMUM,
+            ),
         ],
         indirect=["convert_model"],
     )
@@ -833,17 +904,7 @@ class TestBenchmarkLLM:
         "sample_args",
         [
             ["-d", "cpu", "-n", "1", "-ic", "4", "--task", "speech_to_text", "--optimum"],
-            pytest.param(
-                ["-d", "cpu", "-n", "1", "-ic", "4", "--task", "speech_to_text", "--genai"],
-                marks=pytest.mark.xfail(
-                    reason=(
-                        "tiny-random-qwen3-omni + GenAI: OmniPipeline aborts with "
-                        "'Audio token count mismatch: placed 0 embeddings but encoder "
-                        "produced N tokens' because the prompt has no <|AUDIO|> "
-                        "placeholders after the fixture's chat_template."
-                    ),
-                ),
-            ),
+            ["-d", "cpu", "-n", "1", "-ic", "4", "--task", "speech_to_text", "--genai"],
         ],
     )
     def test_python_tool_llm_benchmark_qwen3_omni_speech_to_text(
@@ -864,13 +925,6 @@ class TestBenchmarkLLM:
 
     @pytest.mark.samples
     @pytest.mark.transformers_higher_v5_1
-    @pytest.mark.xfail(
-        reason=(
-            "tiny-random-qwen3-omni text_to_speech: the fixture's talker/code2wav "
-            "stack returns no waveform on this checkpoint, so both benchmark paths "
-            "abort with 'Qwen3-Omni text_to_speech: ... did not produce a waveform'."
-        ),
-    )
     @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-omni"], indirect=True)
     @pytest.mark.parametrize(
         "sample_args",
@@ -893,13 +947,6 @@ class TestBenchmarkLLM:
 
     @pytest.mark.samples
     @pytest.mark.transformers_higher_v5_1
-    @pytest.mark.xfail(
-        reason=(
-            "tiny-random-qwen3-omni: chat_template emits <|image_pad|>, but "
-            "tokenizer_config.image_token and thinker_config.image_token_id are "
-            "<|IMAGE|>, so the processor never expands the image placeholder."
-        ),
-    )
     @pytest.mark.parametrize("download_test_content", ["cat.png"], indirect=True)
     @pytest.mark.parametrize("download_model", ["tiny-random-qwen3-omni"], indirect=True)
     @pytest.mark.parametrize(

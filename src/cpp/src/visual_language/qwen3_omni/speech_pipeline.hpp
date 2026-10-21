@@ -4,7 +4,6 @@
 #pragma once
 
 #include <filesystem>
-#include <list>
 #include <map>
 #include <random>
 #include <string>
@@ -93,7 +92,7 @@ public:
     /// @brief Generate speech from thinker generation results.
     /// @param full_token_ids All token IDs from the full sequence (prompt + generated).
     /// @param all_intermediate_hidden_states Accumulated layer-14 hidden states [one tensor per step].
-    /// @param audio_streamer Callback or OmniSpeechStreamerBase for streaming (monostate = batch mode).
+    /// @param speech_streamer Callback or OmniSpeechStreamerBase for streaming (monostate = batch mode).
     /// @param talker_speech_config Speech generation knobs. Reads `audio_chunk_frames`, `speaker`
     ///                              (variant: name or embedding tensor), `max_new_tokens`, `rng_seed`,
     ///                              and the `talker_*` / `cp_*` optional sampling overrides. Unset
@@ -104,7 +103,7 @@ public:
     ///       ov::InferRequests across talker and CodePredictor sampling.
     TalkerResults generate_speech(const std::vector<int64_t>& full_token_ids,
                                  const std::vector<ov::Tensor>& all_intermediate_hidden_states,
-                                 const OmniSpeechStreamerVariant& audio_streamer,
+                                 const OmniSpeechStreamerVariant& speech_streamer,
                                  const OmniTalkerSpeechConfig& talker_speech_config);
 
     /// @brief Return precomputed speaker embedding for the named speaker. Throws if the model
@@ -129,12 +128,6 @@ private:
     ov::InferRequest m_talker_projections;  // dual-output: text_projection + hidden_projection
     ov::InferRequest m_code_predictor;
     ov::InferRequest m_code2wav;
-
-    // LRU cache for talker token embeddings to avoid redundant inference.
-    // Bounded to kMaxEmbeddingCacheSize entries; evicts least recently used on overflow.
-    static constexpr size_t kMaxEmbeddingCacheSize = 256;
-    std::list<std::pair<int64_t, ov::Tensor>> m_embedding_lru_list;
-    std::unordered_map<int64_t, std::list<std::pair<int64_t, ov::Tensor>>::iterator> m_embedding_lru_map;
 
     // Pre-allocated scratch buffers reused across generate_speech() calls
     std::vector<float> m_talker_buf;

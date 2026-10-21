@@ -6,10 +6,13 @@ from types import SimpleNamespace
 
 import pytest
 import torch
+import numpy as np
 
 from whowhatbench import wwb
+from whowhatbench.artifacts_manager import Metrics
 from whowhatbench.chat_utils import is_harmony_template, is_native_harmony_prompt, normalize_chat_history
 from whowhatbench.text_evaluator import TextEvaluator
+from whowhatbench.text_generation_strategies import GenAIGeneration, KLDivergencyGeneration
 
 
 class FakeInputs(dict):
@@ -45,8 +48,27 @@ class PlainTokenizer(HarmonyTokenizer):
 
 
 class GenAIHarmonyTokenizer:
+    def __init__(self):
+        self.applied_history = None
+        self.encoded_prompt = None
+        self.add_special_tokens = None
+
     def get_original_chat_template(self):
         return "<|start|>assistant<|channel|>final<|message|>"
+
+    def apply_chat_template(self, history, add_generation_prompt):
+        assert add_generation_prompt
+        self.applied_history = list(history)
+        return "formatted prompt"
+
+    def encode(self, prompt, add_special_tokens=True):
+        self.encoded_prompt = prompt
+        self.add_special_tokens = add_special_tokens
+        return SimpleNamespace(input_ids=SimpleNamespace(data=np.array([[1, 2]], dtype=np.int64)))
+
+    def decode(self, tokens):
+        assert tokens == [3]
+        return "answer"
 
 
 class FakeModel:
@@ -68,6 +90,8 @@ class FakeModel:
         self.generate_kwargs = kwargs
         if isinstance(generation_input, list):
             return SimpleNamespace(texts=["answer"])
+        if generation_input is not None and not isinstance(generation_input, str):
+            return SimpleNamespace(tokens=[[3]])
         return torch.tensor([[1, 2, 3]]) if generation_input is None else "answer"
 
 
@@ -111,17 +135,25 @@ def test_preserves_non_harmony_prompt():
         ),
     ],
 )
+@pytest.mark.parametrize("backend", ["generation", "kl"])
 def test_hf_text_generation_handles_harmony_prompt(
-    prompt, expected_history, expected_raw_prompt, expected_add_special_tokens
+    monkeypatch, prompt, expected_history, expected_raw_prompt, expected_add_special_tokens, backend
 ):
+    monkeypatch.setattr("whowhatbench.text_evaluator.TextSimilarity", lambda *_args: None)
     tokenizer = HarmonyTokenizer()
-    TextEvaluator(
-        base_model=FakeModel(),
-        tokenizer=tokenizer,
-        test_data=[prompt],
-        metrics=(),
-        use_chat_template=True,
-    )
+    if backend == "generation":
+        TextEvaluator(
+            base_model=FakeModel(),
+            tokenizer=tokenizer,
+            test_data=[prompt],
+            metrics=(),
+            use_chat_template=True,
+        )
+    else:
+        strategy = KLDivergencyGeneration(metrics_list=[])
+        monkeypatch.setattr(strategy, "_score_kl_prompt_tokens_chunked", lambda *_args: torch.zeros((1, 3)))
+        result = strategy.run_generation(FakeModel(), tokenizer, prompt, 4, True, use_chat_template=True)
+        assert result.prompt_input_ids.tolist() == [[1, 2]]
 
     assert tokenizer.applied_history == expected_history
     assert tokenizer.raw_prompt == expected_raw_prompt
@@ -140,13 +172,45 @@ def test_hf_text_generation_handles_harmony_prompt(
         ),
     ],
 )
-def test_genai_text_generation_handles_harmony_prompt(monkeypatch, prompt, expected_input, apply_chat_template):
+@pytest.mark.parametrize("backend", ["helper", "strategy"])
+def test_genai_text_generation_handles_harmony_prompt(monkeypatch, prompt, expected_input, apply_chat_template, backend):
     monkeypatch.setitem(sys.modules, "openvino_genai", SimpleNamespace(ChatHistory=list))
     model = FakeModel(GenAIHarmonyTokenizer())
 
-    assert wwb.genai_gen_text(model, None, prompt, 4, True, use_chat_template=True) == "answer"
+    if backend == "helper":
+        answer = wwb.genai_gen_text(model, None, prompt, 4, True, use_chat_template=True)
+    else:
+        answer = GenAIGeneration(metrics_list=[]).run_generation(
+            model, None, prompt, 4, True, use_chat_template=True
+        ).answer_text
+    assert answer == "answer"
     assert model.generation_input == expected_input
     assert model.generate_kwargs["apply_chat_template"] is apply_chat_template
+
+
+@pytest.mark.parametrize(
+    ("prompt", "expected_history", "expected_special_tokens"),
+    [
+        ("Question", [{"role": "user", "content": "Question"}], True),
+        ("<|user|>Question<|end|><|assistant|>", [{"role": "user", "content": "Question"}], True),
+        ("<|start|>user<|message|>Question<|end|><|start|>assistant", None, False),
+    ],
+)
+def test_genai_token_strategy_handles_harmony_prompt(monkeypatch, prompt, expected_history, expected_special_tokens):
+    monkeypatch.setitem(sys.modules, "openvino_genai", SimpleNamespace(ChatHistory=list))
+    tokenizer = GenAIHarmonyTokenizer()
+    model = FakeModel(tokenizer)
+    result = GenAIGeneration(metrics_list=[Metrics.TOKEN_SIMILARITY.value]).run_generation(
+        model, None, prompt, 4, True, use_chat_template=True
+    )
+
+    assert result.answer_text == "answer"
+    assert result.prompt_input_ids.tolist() == [[1, 2]]
+    assert result.generated_token_ids.tolist() == [3]
+    assert tokenizer.applied_history == expected_history
+    assert tokenizer.encoded_prompt == ("formatted prompt" if expected_history else prompt)
+    assert tokenizer.add_special_tokens is expected_special_tokens
+    assert model.generate_kwargs["apply_chat_template"] is False
 
 
 def test_identifies_native_harmony_prompt():

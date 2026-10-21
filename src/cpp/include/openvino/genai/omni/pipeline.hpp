@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "openvino/core/any.hpp"
@@ -74,9 +75,12 @@ public:
 
     /// @brief Generate text + (optionally) speech from a flat prompt.
     /// @param prompt The user prompt.
-    /// @param images Image tensors to be prepended to the prompt.
-    /// @param videos Video tensors to be prepended to the prompt.
-    /// @param audios Audio tensors to be prepended to the prompt.
+    /// @param images Image tensors. Place them with `<ov_genai_image_N>`; prepended if untagged.
+    /// @param videos Video tensors. Place them with `<ov_genai_video_N>`; prepended if untagged.
+    /// @param audios Audio tensors. Place them with `<ov_genai_audio_N>`; prepended if untagged,
+    ///        which is the recommended form since the model is trained with media before text.
+    ///        In a chat, N is conversation-absolute: a second turn that adds one audio uses
+    ///        `<ov_genai_audio_1>`, not `<ov_genai_audio_0>`.
     /// @param text_generation_config Thinker text-decode config.
     /// @param talker_speech_config Talker + speech-output config.
     /// @param streamer Optional streamer for text tokens.
@@ -202,6 +206,10 @@ private:
 /// `images`, `videos`, `audios` are reused from `openvino/genai/visual_language/pipeline.hpp`.
 static constexpr ov::Property<GenerationConfig> text_config{"text_config"};
 static constexpr ov::Property<OmniTalkerSpeechConfig> talker_speech_config{"talker_speech_config"};
-static constexpr ov::Property<OmniSpeechStreamerVariant> speech_streamer{"speech_streamer"};
+
+/// @brief `speech_streamer` key for the property bags above. A free function rather than an
+/// ov::Property because, like ov::genai::streamer, it stores the concrete variant alternative
+/// instead of the variant itself — that is what lets readers type-test the ov::Any.
+OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> speech_streamer(OmniSpeechStreamerVariant func);
 
 }  // namespace ov::genai
