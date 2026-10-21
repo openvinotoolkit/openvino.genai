@@ -228,7 +228,7 @@ class FunASROptimumTranscriber:
         return self.tokenizer.batch_decode(tokens[:, prompt_len:], skip_special_tokens=True)[0].strip()
 
 
-class FunASRGenAITranscriber:
+class ASRGenAIPipelineTranscriber:
     def __init__(self, pipeline: Any, language: str = "") -> None:
         self.pipeline = pipeline
         self.language = language
@@ -295,12 +295,14 @@ class ASRGenAITranscriber:
     @staticmethod
     def create(model_id, device="CPU", ov_config=None, language="", **kwargs):
         model_type = _get_asr_model_type(model_id)
-        if model_type in ASR_MODEL_TYPES:
+        if model_type in ASR_MODEL_TYPES | QWEN_ASR_MODEL_TYPES:
             logger.info("Using OpenVINO GenAI ASRPipeline API")
             import openvino_genai
 
             pipeline = openvino_genai.ASRPipeline(str(model_id), device.upper(), **(ov_config or {}))
-            return FunASRGenAITranscriber(pipeline, language or "en")
+            default_language = "en" if model_type in ASR_MODEL_TYPES else ""
+            return ASRGenAIPipelineTranscriber(pipeline, language or default_language)
+        _register_model_backend(model_type)
         model = _load_multimodal_model(model_id, device, ov_config, False, True, **kwargs)
         return GenAIMultimodalTranscriber(model, language or "English")
 

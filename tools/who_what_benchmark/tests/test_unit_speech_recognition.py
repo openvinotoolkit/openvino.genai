@@ -13,6 +13,8 @@ import torch
 from whowhatbench.whowhat_metrics import TranscriptSimilarity
 from whowhatbench.utils import to_mono_16k
 from whowhatbench.speech_recognition_evaluator import (
+    ASRGenAITranscriber,
+    ASRGenAIPipelineTranscriber,
     FunASROptimumTranscriber,
     Qwen3ASROptimumTranscriber,
     SpeechRecognitionEvaluator,
@@ -214,6 +216,37 @@ def test_qwen3_asr_optimum_transcribes_with_export_settings(export, eos_token_id
             assert "pad_token_id" not in model.generate_call
     assert processor.batch_decode.call_args.args[0].tolist() == [[7, 8]]
     assert processor.batch_decode.call_args.kwargs == {"skip_special_tokens": True}
+
+
+@pytest.mark.parametrize(
+    "model_type, language, expected_language",
+    [
+        ("qwen3_asr", "", None),
+        ("qwen3_asr", "Chinese", "Chinese"),
+        ("funasr", "", "en"),
+    ],
+)
+def test_asr_genai_uses_asr_pipeline(monkeypatch, model_type, language, expected_language):
+    import openvino_genai
+    from whowhatbench import speech_recognition_evaluator
+
+    pipeline = Mock()
+    pipeline.generate.return_value = types.SimpleNamespace(texts=[" decoded "])
+    pipeline_factory = Mock(return_value=pipeline)
+    monkeypatch.setattr(openvino_genai, "ASRPipeline", pipeline_factory)
+    monkeypatch.setattr(speech_recognition_evaluator, "_get_asr_model_type", lambda _: model_type)
+
+    transcriber = ASRGenAITranscriber.create("model_dir", "CPU", language=language)
+    assert isinstance(transcriber, ASRGenAIPipelineTranscriber)
+    assert pipeline_factory.call_args.args == ("model_dir", "CPU")
+
+    audio = np.zeros(160, dtype=np.float32)
+    assert transcriber.transcribe(audio, 32) == "decoded"
+    assert pipeline.generate.call_args.args == (audio.tolist(),)
+    expected_kwargs = {"max_new_tokens": 32}
+    if expected_language:
+        expected_kwargs["language"] = expected_language
+    assert pipeline.generate.call_args.kwargs == expected_kwargs
 
 
 @pytest.mark.parametrize(
