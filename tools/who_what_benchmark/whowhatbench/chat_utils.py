@@ -23,6 +23,8 @@ def is_harmony_template(tokenizer: Any) -> bool:
         template = template_getter()
     else:
         template = getattr(tokenizer, "chat_template", None)
+        if isinstance(template, dict):
+            template = template.get("default")
         if not template:
             return False
         template_getter = getattr(tokenizer, "get_chat_template", None)

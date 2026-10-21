@@ -110,7 +110,10 @@ def test_detects_harmony_template(tokenizer):
     assert is_harmony_template(tokenizer)
 
 
-@pytest.mark.parametrize("template", [None, ""])
+@pytest.mark.parametrize(
+    "template",
+    [None, "", {}, {"tool_use": "{{ messages }}"}, {"tool_use": "<|channel|>", "chat": "{{ messages }}"}],
+)
 def test_missing_hf_template_is_not_harmony(template):
     tokenizer = NoTemplateTokenizer()
     tokenizer.chat_template = template
@@ -119,9 +122,22 @@ def test_missing_hf_template_is_not_harmony(template):
     assert normalize_chat_history("Question", tokenizer) == [{"role": "user", "content": "Question"}]
 
 
+@pytest.mark.parametrize("template,expected", [("{{ messages }}", False), ("<|channel|>", True)])
+def test_named_hf_templates_resolve_default(template, expected):
+    class NamedTemplateTokenizer(PlainTokenizer):
+        def get_chat_template(self):
+            return self.chat_template["default"]
+
+    tokenizer = NamedTemplateTokenizer()
+    tokenizer.chat_template = {"default": template, "tool_use": "<|channel|>"}
+    assert is_harmony_template(tokenizer) is expected
+
+
 @pytest.mark.parametrize("strategy_type", [OptimumHFGeneration, KLDivergencyGeneration])
-def test_non_chat_strategy_preserves_tokenizer_default(monkeypatch, strategy_type):
+@pytest.mark.parametrize("template", [None, {"tool_use": "{{ messages }}"}])
+def test_non_chat_strategy_preserves_tokenizer_default(monkeypatch, strategy_type, template):
     tokenizer = NoTemplateTokenizer()
+    tokenizer.chat_template = template
     strategy = strategy_type(metrics_list=[])
     if strategy_type is KLDivergencyGeneration:
         monkeypatch.setattr(strategy, "_score_kl_prompt_tokens_chunked", lambda *_args: torch.zeros((1, 3)))
