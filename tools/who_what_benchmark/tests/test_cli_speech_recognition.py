@@ -1,13 +1,10 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import json
 import platform
 import sys
 
-import numpy as np
 import pytest
-import soundfile as sf
 
 from conftest import convert_model, run_wwb
 from test_cli_image import get_similarity
@@ -62,11 +59,7 @@ def funasr_ground_truth(tmp_path_factory):
 
 @pytest.fixture(scope="module")
 def qwen3_asr_ground_truth(tmp_path_factory):
-    data_dir = tmp_path_factory.mktemp("qwen3_asr_audio")
-    audio_file = data_dir / "sample.wav"
-    sf.write(audio_file, np.sin(np.arange(16000) * 2 * np.pi * 440 / 16000), 16000)
-    (data_dir / "validation.jsonl").write_text(json.dumps({"audio": str(audio_file)}) + "\n", encoding="utf-8")
-    gt_file = data_dir / "gt.csv"
+    gt_file = tmp_path_factory.mktemp("qwen3_asr_ground_truth") / "gt.csv"
     run_wwb(
         [
             "--base-model",
@@ -75,8 +68,6 @@ def qwen3_asr_ground_truth(tmp_path_factory):
             "--hf",
             "--max_new_tokens",
             "16",
-            "--dataset",
-            str(data_dir),
         ]
     )
     return gt_file
@@ -94,8 +85,6 @@ def test_asr_optimum(tmp_path, request, model_id, ground_truth_fixture, language
     common = [*_common_args(gt_file), "--max_new_tokens", "16"]
     if language:
         common += ["--speech-language", language]
-    if model_id == QWEN3_ASR_MODEL:
-        common += ["--dataset", str(gt_file.parent)]
 
     model_path = convert_model(model_id)
     optimum_similarity = get_similarity(run_wwb(["--target-model", model_path, *common, "--output", tmp_path]))
