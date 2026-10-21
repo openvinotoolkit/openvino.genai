@@ -35,7 +35,14 @@ from utils.ov_genai_pipelines import (
     PipelineType,
     GenerationChatInputsType,
 )
-from data.models import get_models_list, CHAT_MODELS_LIST, LINEAR_ATTENTION_MODELS_LIST
+from data.models import (
+    get_models_list,
+    CHAT_MODELS_LIST,
+    LINEAR_ATTENTION_MODELS_LIST,
+    TINY_GGUF_MODELS,
+    GGUFModelDescription,
+)
+from utils.gguf import load_tiny_gguf_model
 from utils.custom_op import assert_ir_contains_op_type, get_extension_model, get_extension_lib_path, CustomAdd
 
 
@@ -81,7 +88,7 @@ PERF_METRICS_TEST_CASES = [
 ]
 
 PERF_METRICS_STRUCTURED_OUTPUT_TEST_CASES = [
-    ({"max_new_tokens": 20}, "Generate json of a person"),
+    ({"max_new_tokens": 20, "apply_chat_template": False}, "Generate json of a person"),
 ]
 
 CUSTOM_EXTENSIONS_TEST_CASES = [
@@ -134,7 +141,9 @@ else:
         ({"max_new_tokens": 20}, "Pretend that 1+1=1"),
     ]
 
-MODELS_LIST = get_models_list()
+GGUF_MODELS_LIST = TINY_GGUF_MODELS if pytest.include_gguf else ()
+MODELS_LIST = (*get_models_list(), *GGUF_MODELS_LIST)
+CHAT_MODELS_LIST = (*CHAT_MODELS_LIST, *GGUF_MODELS_LIST[2:3])
 
 
 QUESTIONS = ["1+1=", "What is the previous answer?", "Why is the Sun yellow?", "What was my first question?"]
@@ -171,7 +180,11 @@ CALLBACK_FUNCTIONS = [
 
 
 @pytest.fixture(scope="module")
-def llm_model(request: pytest.FixtureRequest) -> OVConvertedModelSchema:
+def llm_model(request: pytest.FixtureRequest, tmp_path_factory) -> OVConvertedModelSchema:
+    if isinstance(request.param, GGUFModelDescription):
+        model = load_tiny_gguf_model(request.param, tmp_path_factory)
+        reference = model.reference
+        return OVConvertedModelSchema(reference.model_id, reference.opt_model, reference.hf_tokenizer, model.gguf_path)
     return download_and_convert_model(request.param)
 
 
@@ -254,7 +267,9 @@ def test_encoded_inputs(
     assert np.all(ov_res == hf_res)
 
 
-@pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True)
+@pytest.mark.parametrize(
+    "llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM", *GGUF_MODELS_LIST], indirect=True
+)
 def test_readonly_input_tensor(ov_pipe: ov_genai.LLMPipeline) -> None:
     input_ids = np.array([[1, 4, 42]], dtype=np.int64)
     input_ids.flags.writeable = False
@@ -319,14 +334,18 @@ def test_linear_attention_batch_string_inputs(
     )
 
 
-@pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True)
+@pytest.mark.parametrize(
+    "llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM", *GGUF_MODELS_LIST], indirect=True
+)
 def test_batch_size_switch(ov_pipe: ov_genai.LLMPipeline) -> None:
     ov_pipe.generate(["a"], max_new_tokens=2)
     ov_pipe.generate(["1", "2"], max_new_tokens=2)
     ov_pipe.generate(["a"], max_new_tokens=2)
 
 
-@pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True)
+@pytest.mark.parametrize(
+    "llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM", *GGUF_MODELS_LIST], indirect=True
+)
 def test_empty_encoded_inputs_throw(ov_pipe: ov_genai.LLMPipeline) -> None:
     with pytest.raises(RuntimeError):
         ov_pipe.generate(ov.Tensor(np.array([[]], dtype=np.int64)), max_new_tokens=2)
@@ -1061,7 +1080,9 @@ def test_unicode_pybind_decoding_one_string_streamer(
 #
 
 
-@pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-gemma2"], indirect=True)
+@pytest.mark.parametrize(
+    "llm_model", ["optimum-intel-internal-testing/tiny-random-gemma2", *GGUF_MODELS_LIST], indirect=True
+)
 @pytest.mark.parametrize("generation_config,prompt", PERF_METRICS_TEST_CASES)
 @pytest.mark.parametrize("pipeline_type", [PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION])
 def test_perf_metrics(
@@ -1168,26 +1189,27 @@ def test_perf_metrics(
     assert np.allclose(mean_sampling_duration, np.mean(smp_raw_dur))
 
 
-@pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-gemma2"], indirect=True)
+@pytest.mark.parametrize(
+    "llm_model", ["optimum-intel-internal-testing/tiny-random-gemma2", *GGUF_MODELS_LIST], indirect=True
+)
 @pytest.mark.parametrize("generation_config,prompt", PERF_METRICS_STRUCTURED_OUTPUT_TEST_CASES)
 def test_perf_metrics_with_structured_output(
-    ov_pipe: ov_genai.LLMPipeline,
+    llm_model: OVConvertedModelSchema,
     generation_config: dict,
     prompt: str,
 ) -> None:
+    ov_pipe = create_ov_pipeline(llm_model.models_path)
+
     class Person(BaseModel):
         name: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
         surname: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
         age: int
         city: Literal["Dublin", "Dubai", "Munich"]
 
-    generation_config.update(
-        {
-            "structured_output_config": ov_genai.StructuredOutputConfig(
-                json_schema=json.dumps(Person.model_json_schema())
-            )
-        }
-    )
+    generation_config = {
+        **generation_config,
+        "structured_output_config": ov_genai.StructuredOutputConfig(json_schema=json.dumps(Person.model_json_schema())),
+    }
     perf_metrics = ov_pipe.generate([prompt], **generation_config).perf_metrics
     raw_metrics = perf_metrics.raw_metrics
 
@@ -1334,7 +1356,9 @@ def _extract_texts(result) -> list[str]:
     return list(result.texts)
 
 
-@pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True)
+@pytest.mark.parametrize(
+    "llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM", *GGUF_MODELS_LIST], indirect=True
+)
 @pytest.mark.parametrize("pipeline_type", _NON_ASSISTANT_PIPELINE_TYPES)
 def test_same_rng_seed_produces_identical_output(
     llm_model: OVConvertedModelSchema, pipeline_type: PipelineType
@@ -1352,7 +1376,9 @@ def test_same_rng_seed_produces_identical_output(
     )
 
 
-@pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True)
+@pytest.mark.parametrize(
+    "llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM", *GGUF_MODELS_LIST], indirect=True
+)
 @pytest.mark.parametrize("pipeline_type", _NON_ASSISTANT_PIPELINE_TYPES)
 def test_different_rng_seed_produces_different_output(
     llm_model: OVConvertedModelSchema, pipeline_type: PipelineType
