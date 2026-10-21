@@ -236,6 +236,11 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::align_request_pair_processe
                         ", target_processed_tokens=",
                         aligned_draft_processed);
     }
+
+    // Report the aligned prefix both pipelines actually restart from, overriding each pipeline's
+    // independent pre-alignment restore count.
+    main_request->set_num_prefix_cache_hit_tokens(common_restored_prefix);
+    draft_request->set_num_prefix_cache_hit_tokens(common_restored_prefix);
 }
 
 void ContinuousBatchingPipeline::Eagle3DecodingImpl::validate_awaiting_requests(

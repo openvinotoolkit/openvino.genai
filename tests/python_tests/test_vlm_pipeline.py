@@ -3772,6 +3772,8 @@ def test_vlm_eagle3_prefix_cache_image_identity(cat_tensor: openvino.Tensor):
     # draft cache identity is bound to the main model's image-aware prefix hash, so the repeated second-image
     # request must restore the second image's draft blocks rather than the first image's. Draft quality only
     # affects acceptance, so the main model's validated greedy output must match the no-draft reference here.
+    # The repeated request must also reuse a nonzero aligned prefix, which fails if the draft pipeline never
+    # publishes its completed prompt blocks (alignment would then rewind the main prefix to zero).
     model_path, draft_model_path = _get_vlm_eagle3_model_paths()
 
     image_a = cat_tensor
@@ -3786,6 +3788,7 @@ def test_vlm_eagle3_prefix_cache_image_identity(cat_tensor: openvino.Tensor):
     scheduler = SchedulerConfig()
     scheduler.enable_prefix_caching = True
     scheduler.max_num_seqs = 1
+    scheduler.num_kv_blocks = 128
     draft_scheduler = SchedulerConfig()
     draft_scheduler.enable_prefix_caching = True
     draft_scheduler.num_kv_blocks = 128
@@ -3794,6 +3797,7 @@ def test_vlm_eagle3_prefix_cache_image_identity(cat_tensor: openvino.Tensor):
     config = _setup_generation_config(pipe, max_new_tokens=20, do_sample=False)
 
     # Prime both image caches, then repeat the second image to trigger the potential cross-image draft reuse.
+    prefix_hits = []
     for image, expected in [(image_a, expected_a), (image_b, expected_b), (image_b, expected_b)]:
         result = pipe.generate(prompt, images=[image], generation_config=config)
         assert result.texts[0].strip() == expected, (
@@ -3802,6 +3806,13 @@ def test_vlm_eagle3_prefix_cache_image_identity(cat_tensor: openvino.Tensor):
         assert result.extended_perf_metrics.draft_model_metrics.get_num_generated_tokens() > 0, (
             "Draft model must stay active across the cross-image prefix-cache sequence."
         )
+        prefix_hits.append(result.perf_metrics.get_num_prefix_cache_hit_tokens())
+
+    assert prefix_hits[0] == 0, f"First request must not reuse any prefix on a cold cache, got {prefix_hits[0]}."
+    assert prefix_hits[2] > 0, (
+        f"Repeated request must restore a nonzero aligned prefix, got {prefix_hits[2]}; "
+        "the draft pipeline likely did not publish its completed prompt blocks."
+    )
 
 
 @pytest.fixture(scope="module")

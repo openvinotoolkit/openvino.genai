@@ -248,6 +248,13 @@ protected:
         }
         ContinuousBatchingImpl::initialize_prefix_cache(group);
     }
+
+    // The embeddings draft gets a finite publication limit in restore_draft_prefix_with_identity(), so its
+    // prompt blocks are allocated unpublished and must be published here to be reusable; the limit keeps
+    // speculative tails unpublished. The main model keeps the speculative default and publishes inline.
+    bool _can_publish_kv_only_completed_blocks() const override {
+        return !m_is_validation_mode_enabled && m_model_input_type == ModelInputType::EMBEDDINGS;
+    }
 };
 
 // EMBEDDINGS pipeline used by MTP main and draft models.
