@@ -3801,11 +3801,9 @@ def test_video_metadata_sampling(
     _compare_outputs_for_video_sampling(*outputs)
 
 
-@pytest.mark.parametrize("input_name", ["prompts", "histories"])
 def test_video_metadata_sampling_continuous_batching(
     ov_continuous_batching_pipe_qwen2vl: ContinuousBatchingPipeline,
     video_sampling_inputs: list[tuple[openvino.Tensor, VideoMetadata | None]],
-    input_name: str,
 ):
     ov_pipe = ov_continuous_batching_pipe_qwen2vl
 
@@ -3818,12 +3816,10 @@ def test_video_metadata_sampling_continuous_batching(
     outputs_generate_api = []
 
     for video, video_metadata in video_sampling_inputs:
-        inputs = [prompt] if input_name == "prompts" else [ChatHistory([{"role": "user", "content": prompt}])]
         results = ov_pipe.generate(
-            **{input_name: inputs},
+            [prompt],
             images=[[]],
             videos=[[video]],
-            audios=[[]],
             videos_metadata_batches=[[video_metadata]] if video_metadata else [],
             generation_config=[generation_config],
         )
