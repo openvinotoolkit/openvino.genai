@@ -106,3 +106,10 @@ The existing image, video, audio, and chat APIs apply.
 Other language/projector pairs are rejected.
 The supported pairs still depend on the OpenVINO frontend version. Paged attention is selected
 using the existing backend rules; request `ATTENTION_BACKEND="SDPA"` explicitly when needed.
+
+## Load models with extensions
+
+Pass `extensions` to the pipeline constructor to load GGUF frontend extensions. `LLMPipeline`
+and `ContinuousBatchingPipeline` require `GGUF_READER="FRONTEND"`; `VLMPipeline` registers the
+same extensions on its language and projector frontends. See [Extensions](./extensions.mdx#use-extensions-with-the-gguf-frontend)
+for Python and C++ examples and the supported extension types.
