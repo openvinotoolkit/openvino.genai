@@ -502,9 +502,19 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const std::vector<ov::Tensor>& images,
                const std::vector<ov::Tensor>& videos,
                const std::vector<ov::Tensor>& audios,
-               const ov::genai::GenerationConfig& generation_config
+               const ov::genai::GenerationConfig& generation_config,
+               const py::kwargs& kwargs
             ) -> std::shared_ptr<GenerationHandleImpl> {
-                return pipe.add_request(request_id, prompt, images, videos, audios, generation_config);
+                const auto videos_metadata = pyutils::get_videos_metadata_from_kwargs(kwargs);
+                return pipe.add_request(
+                    request_id,
+                    prompt,
+                    ov::genai::images(images),
+                    ov::genai::videos(videos),
+                    ov::genai::videos_metadata(videos_metadata),
+                    ov::genai::audios(audios),
+                    ov::genai::generation_config(generation_config)
+                );
             },
             py::arg("request_id"),
             py::arg("prompt"),
@@ -547,7 +557,6 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const std::vector<ov::Tensor>& images,
                const std::vector<ov::Tensor>& videos,
                const ov::genai::GenerationConfig& generation_config,
-               const std::vector<ov::Tensor>& audios,
                const py::kwargs& kwargs
             ) -> std::shared_ptr<GenerationHandleImpl> {
                 // kwargs are not forwarded, so audios would otherwise be dropped without an error.
@@ -560,7 +569,6 @@ void init_continuous_batching_pipeline(py::module_& m) {
                     ov::genai::images(images),
                     ov::genai::videos(videos),
                     ov::genai::videos_metadata(videos_metadata),
-                    ov::genai::audios(audios),
                     ov::genai::generation_config(generation_config)
                 );
             },
@@ -568,9 +576,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
             py::arg("prompt"),
             py::arg("images"),
             py::arg("videos"),
-            py::arg("generation_config"),
-            py::kw_only(),
-            py::arg("audios") = std::vector<ov::Tensor>{}
+            py::arg("generation_config")
         )
         .def(
             "add_request",
