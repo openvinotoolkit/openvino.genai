@@ -432,6 +432,7 @@ private:
     friend class InputsEmbedderDeepseekOCR2;
     friend class InputsEmbedderVideoChatFlashQwen;
     friend class InputsEmbedderMuseGlimmer;
+    friend class InputsEmbedderMiniCPMv4_7;
     friend class InputsEmbedderMistral3;
 };
 

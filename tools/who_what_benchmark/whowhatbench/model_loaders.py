@@ -5,6 +5,7 @@ from pathlib import Path
 import logging
 import torch
 import os
+from .utils import read_model_json
 
 from packaging.version import Version
 
@@ -13,6 +14,7 @@ from transformers import (
     AutoModelForCausalLM,
     AutoModel,
     AutoTokenizer,
+    PretrainedConfig,
     __version__,
 )
 
@@ -32,6 +34,7 @@ from .utils import (
     disable_diffusers_model_progress_bar,
     get_json_config,
     normalize_lora_adapters_and_alphas,
+    patch_transformers_gguf_support,
 )
 
 # hide transformers progress bar
@@ -158,11 +161,19 @@ class GenAIModelWrapper:
             "text-reranking",
             "visual-text-chat",
             "visual-text-only",
+            "visual-text-agent",
+            "visual-text-only",
+            "visual-text-agent",
         ):
-            try:
-                self.config = AutoConfig.from_pretrained(model_dir)
-            except Exception:
-                self.config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
+            config_path = Path(model_dir) / "config.json"
+            if config_path.is_file() and get_json_config(config_path).get("model_type") == "minicpmv4_7":
+                # MiniCPM-V 4.7 exports can retain auto_map entries without the referenced Python files.
+                self.config = PretrainedConfig.from_json_file(config_path)
+            else:
+                try:
+                    self.config = AutoConfig.from_pretrained(model_dir)
+                except Exception:
+                    self.config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
         elif model_type in ("text-to-image", "text-to-video", "image-to-video"):
             from diffusers import DiffusionPipeline
             try:
@@ -260,6 +271,8 @@ def load_text_llamacpp_pipeline(model_dir, **kwargs):
     model_kwargs = {}
     if n_ctx is not None:
         model_kwargs["n_ctx"] = int(n_ctx)
+    if kwargs.get("llamacpp_logits_all"):
+        model_kwargs["logits_all"] = True
     model_path = os.path.join(model_dir, kwargs["gguf_file"]) if kwargs.get("gguf_file") else model_dir
     model = Llama(model_path, **model_kwargs)
     return model
@@ -300,6 +313,7 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
     trust_remote_code = False
     config = None
     if kwargs.get('gguf_file'):
+        patch_transformers_gguf_support()
         model_kwargs['gguf_file'] = kwargs['gguf_file']
     else:
         try:
@@ -314,6 +328,7 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
         if not kwargs.get("gguf_file") and config and getattr(config, "quantization_config", None):
             is_gptq = config.quantization_config["quant_method"] == "gptq"
             is_awq = config.quantization_config["quant_method"] == "awq"
+
         with mock_AwqQuantizer_validate_environment(is_awq), mock_torch_cuda_is_available(is_gptq or is_awq):
             model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map="cpu", **model_kwargs)
         if is_awq:
@@ -1083,6 +1098,90 @@ def load_speech_generation_genai_pipeline(model_dir, device="CPU", ov_config=Non
     )
 
 
+def _load_qwen3_tts_hf_pipeline(model_id, device, wrapper_cls, **kwargs):
+    from qwen_tts import Qwen3TTSModel
+
+    device_map = device.lower()
+    if device_map == "gpu":
+        device_map = "cuda"
+    if device_map.startswith("cuda") and not torch.cuda.is_available():
+        device_map = "cpu"
+    torch_dtype = _resolve_torch_dtype(kwargs.get("torch_dtype"))
+
+    from_pretrained_kwargs = {"device_map": device_map}
+    if torch_dtype is not None:
+        from_pretrained_kwargs["dtype"] = torch_dtype
+
+    model = Qwen3TTSModel.from_pretrained(model_id, **from_pretrained_kwargs)
+    return wrapper_cls(model)
+
+
+def _load_qwen3_tts_optimum_pipeline(model_id, device, ov_config, wrapper_cls):
+    from optimum.intel.openvino import OVModelForTextToSpeechSeq2Seq
+
+    model = OVModelForTextToSpeechSeq2Seq.from_pretrained(
+        model_id,
+        device=device,
+        ov_config=ov_config,
+        trust_remote_code=True,
+    )
+    return wrapper_cls(model)
+
+
+def _load_qwen3_tts_genai_pipeline(model_dir, device, ov_config, wrapper_cls):
+    import openvino_genai
+
+    model = openvino_genai.Text2SpeechPipeline(model_dir, device=device, **(ov_config or {}))
+    return wrapper_cls(model)
+
+
+def _get_qwen3_tts_wrappers():
+    from .speech_generation_evaluator import Qwen3CustomVoiceWrapper
+    from .speech_generation_evaluator import Qwen3VoiceDesignWrapper
+    from .speech_generation_evaluator import Qwen3BaseWrapper
+
+    return {
+        "custom_voice": ("CustomVoice", Qwen3CustomVoiceWrapper),
+        "voice_design": ("VoiceDesign", Qwen3VoiceDesignWrapper),
+        "base": ("Base", Qwen3BaseWrapper),
+    }
+
+
+def _get_qwen3_tts_model_type(model_id):
+    config = read_model_json(model_id, "config.json")
+    if not isinstance(config, dict):
+        return None
+    if config.get("model_type") != "qwen3_tts":
+        return None
+    return str(config.get("tts_model_type", "")).strip().lower() or None
+
+
+def _load_qwen3_speech_generation_model(
+    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs
+):
+    qwen3_tts_model_type = _get_qwen3_tts_model_type(model_id)
+    if qwen3_tts_model_type is None:
+        return None
+
+    qwen3_tts_wrappers = _get_qwen3_tts_wrappers()
+    qwen3_tts_wrapper = qwen3_tts_wrappers.get(qwen3_tts_model_type)
+    if qwen3_tts_wrapper is None:
+        raise ValueError(f"Unsupported Qwen3 TTS Model type: {qwen3_tts_model_type}")
+
+    qwen3_variant_name, qwen3_wrapper_cls = qwen3_tts_wrapper
+
+    if use_hf:
+        logger.info("Using Qwen3 TTS %s HF API", qwen3_variant_name)
+        return _load_qwen3_tts_hf_pipeline(model_id, device, qwen3_wrapper_cls, **kwargs)
+
+    if use_genai:
+        logger.info("Using Qwen3 TTS %s GenAI API", qwen3_variant_name)
+        return _load_qwen3_tts_genai_pipeline(model_id, device, ov_config, qwen3_wrapper_cls)
+
+    logger.info("Using Qwen3 TTS %s Optimum API", qwen3_variant_name)
+    return _load_qwen3_tts_optimum_pipeline(model_id, device, ov_config, qwen3_wrapper_cls)
+
+
 def _resolve_remote_code_and_config(model_id):
     remote_code = False
     try:
@@ -1131,6 +1230,10 @@ def _wrap_qwen3_omni(model, model_id, remote_code):
 
 def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
     from .speech_generation_evaluator import KokoroModelWrapper, SpeechT5Wrapper
+
+    qwen3_tts_model = _load_qwen3_speech_generation_model(model_id, device, ov_config, use_hf, use_genai, **kwargs)
+    if qwen3_tts_model is not None:
+        return qwen3_tts_model
 
     vocoder_path = kwargs.get("vocoder_path")
 
@@ -1241,11 +1344,17 @@ def load_model(
 
     sanitized_kwargs = _sanitize_load_kwargs(model_type, use_hf, use_genai, use_llamacpp, kwargs)
 
-    if model_type == "text" or model_type == "text-chat":
+    if model_type in ("text", "text-agent", "text-chat"):
         return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp, **sanitized_kwargs)
     elif model_type == "text-to-image":
         return load_text2image_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
-    elif model_type in ["visual-text", "visual-video-text", "visual-text-chat", "visual-text-only"]:
+    elif model_type in (
+        "visual-text",
+        "visual-video-text",
+        "visual-text-chat",
+        "visual-text-agent",
+        "visual-text-only",
+    ):
         sanitized_kwargs["model_type"] = model_type
         return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "image-to-image":

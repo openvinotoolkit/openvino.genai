@@ -27,6 +27,7 @@
 #include "visual_language/deepseek_ocr2/classes.hpp"
 #include "visual_language/videochat_flash/classes.hpp"
 #include "visual_language/muse_glimmer/classes.hpp"
+#include "visual_language/minicpmv4_7/classes.hpp"
 #include "visual_language/mistral3/classes.hpp"
 
 namespace ov::genai {
@@ -153,6 +154,8 @@ VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir,
         return std::make_shared<VisionEncoderDeepseekOCR2>(model_dir, device, properties);
     } else if (model_type == VLMModelType::MUSE_GLIMMER) {
         return std::make_shared<VisionEncoderMuseGlimmer>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::MINICPMV4_7) {
+        return std::make_shared<VisionEncoderMiniCPMv4_7>(model_dir, device, properties);
     } else if (model_type == VLMModelType::MISTRAL3) {
         return std::make_shared<VisionEncoderMistral3>(model_dir, device, properties);
     } else {
@@ -206,6 +209,8 @@ VisionEncoder::Ptr VisionEncoder::create(
         return std::make_shared<VisionEncoderDeepseekOCR2>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::MUSE_GLIMMER) {
         return std::make_shared<VisionEncoderMuseGlimmer>(models_map, config_dir_path, device, device_config);
+    } else if (model_type == VLMModelType::MINICPMV4_7) {
+        return std::make_shared<VisionEncoderMiniCPMv4_7>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::MISTRAL3) {
         return std::make_shared<VisionEncoderMistral3>(models_map, config_dir_path, device, device_config);
     } else {

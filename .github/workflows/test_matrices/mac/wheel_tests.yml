@@ -11,6 +11,7 @@
   cmd: |-
     python -m pip install transformers==4.57.6 qwen-asr==0.0.6
     python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "qwen3-asr"
+    python -m pytest -v ./tests/python_tests/test_asr_forced_aligner.py
   timeout: 60
   components:
     - automatic_speech_recognition
@@ -35,6 +36,14 @@
 #   timeout: 240
 #   components:
 #     - continuous_batching
+
+- name: Omni (API)
+  cmd: |-
+    python -m pip install transformers==5.1.0
+    python -m pytest -v ./tests/python_tests/test_omni_pipeline.py
+  timeout: 40
+  components:
+    - omni
 
 - name: GGUF Reader tests
   cmd: |-
@@ -75,7 +84,7 @@
     # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
     python -m pip install transformers==5.0.0
     python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
-    python -m pytest -v ./tools/who_what_benchmark/tests --ignore=./tools/who_what_benchmark/tests/test_cli_image.py --ignore=./tools/who_what_benchmark/tests/test_cli_vlm.py --ignore=./tools/who_what_benchmark/tests/test_cli_videos.py --ignore=./tools/who_what_benchmark/tests/test_cli_speech_recognition.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
+    python -m pytest -v ./tools/who_what_benchmark/tests --ignore=./tools/who_what_benchmark/tests/test_cli_image.py --ignore=./tools/who_what_benchmark/tests/test_cli_vlm.py --ignore=./tools/who_what_benchmark/tests/test_cli_videos.py --ignore=./tools/who_what_benchmark/tests/test_cli_speech_recognition.py --ignore=./tools/who_what_benchmark/tests/test_cli_speechgen_qwen3.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
   timeout: 120
   components:
     - WWB

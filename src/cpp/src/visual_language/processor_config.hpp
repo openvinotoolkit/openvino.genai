@@ -78,6 +78,12 @@ public:
     size_t max_patches = 6;
     std::array<uint8_t, 3> background_color{127, 127, 127};
 
+    // MiniCPM-V 4.7 specific params
+    /// @brief Window kernel size for ViT window attention merge (config.json vision_config.window_kernel_size)
+    size_t window_kernel_size = 2;
+    /// @brief Merge kernel size for downsample MLP merge (config.json merge_kernel_size)
+    size_t merge_kernel_size = 2;
+
     /// @brief Default constructor
     ProcessorConfig() = default;
 
