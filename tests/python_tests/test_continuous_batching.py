@@ -188,6 +188,106 @@ def test_generation_handle_echo_only_publishes_output_and_finished_status(
     assert len(outputs) == 1
     assert outputs[0].generated_ids
 
+
+def test_logprob_token_ids(model_facebook_opt_125m: OVConvertedModelSchema):
+    import json
+    import tempfile
+
+    model_path = model_facebook_opt_125m.models_path
+    id_a, id_b = 100, 200  # valid token ids for opt-125m (vocab 50257)
+
+    cb_pipe = create_ov_cb_pipeline(model_path, pipeline_type=PipelineType.CONTINUOUS_BATCHING)
+    h_standalone = cb_pipe.add_request(
+        0, "The Sun is",
+        generation_config=GenerationConfig(max_new_tokens=4, logprob_token_ids=[id_a, id_b]),
+    )
+    h_topk = cb_pipe.add_request(
+        1, "The Sun is",
+        generation_config=GenerationConfig(max_new_tokens=2, do_sample=True, temperature=1.0, top_k=2,
+                                           logprob_token_ids=[id_a, id_b]),
+    )
+    h_echo = cb_pipe.add_request(
+        2, "The Sun is",
+        generation_config=GenerationConfig(max_new_tokens=2, echo=True, logprob_token_ids=[id_a, id_b]),
+    )
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+    out_standalone = h_standalone.read_all()[0]
+    out_topk = h_topk.read_all()[0]
+    out_echo = h_echo.read_all()[0]
+
+    # Standalone: logprobs defaults to 0, the feature must work on its own. One row per generated position,
+    # each row holding (token_id, full-vocab log-probability) for every requested id.
+    assert out_standalone.generated_ids
+    requested = out_standalone.requested_token_logprobs
+    assert requested
+    assert len(requested) == len(out_standalone.generated_log_probs)
+    for row in requested:
+        assert [tid for tid, _ in row] == [id_a, id_b]
+        for _, lp in row:
+            assert math.isfinite(lp) and lp <= 1e-6  # log-probabilities are <= 0
+
+    # Beyond top-k: requested ids outside the top-k filter must still be returned (bounds are checked against
+    # the vocabulary size, not the post-filter candidate count).
+    requested = out_topk.requested_token_logprobs
+    assert requested
+    for row in requested:
+        assert [tid for tid, _ in row] == [id_a, id_b]
+
+    # Echo: rows index generated positions only, not the echoed prompt tokens (which are prepended to
+    # generated_log_probs).
+    assert len(out_echo.requested_token_logprobs) < len(out_echo.generated_log_probs)
+
+    # Numerical checks: the requested values must be the full-vocabulary log-softmax of the RAW model
+    # logits, invariant to sampling settings — not a 0.0 placeholder or a top-k-renormalized value.
+    t0 = out_standalone.generated_ids[0]
+    h_num = cb_pipe.add_request(
+        3, "The Sun is",
+        generation_config=GenerationConfig(max_new_tokens=1, logprobs=1, logprob_token_ids=[t0]),
+    )
+    h_temp = cb_pipe.add_request(
+        4, "The Sun is",
+        generation_config=GenerationConfig(max_new_tokens=1, do_sample=True, temperature=2.0, logprob_token_ids=[t0]),
+    )
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+    out_num = h_num.read_all()[0]
+    out_temp = h_temp.read_all()[0]
+
+    lp_num = dict(out_num.requested_token_logprobs[0])
+    # Greedy: the requested logprob of the generated token equals the pipeline's own top-1
+    # generated_log_probs at the same position (both are the raw full-vocab log-softmax).
+    assert abs(lp_num[t0] - out_num.generated_log_probs[0]) < 1e-4
+    assert lp_num[t0] < -1e-4  # a real (strictly negative) logprob, not a 0.0 placeholder
+    # Top-k filtering must not leak in: position-0 logits are identical across requests, so the
+    # top_k=2 multinomial run reports the same raw logprob as the greedy one.
+    assert abs(dict(out_topk.requested_token_logprobs[0])[t0] - lp_num[t0]) < 1e-4
+    # Temperature must not leak in either: requested logprobs are raw, pre-sampling values.
+    assert abs(dict(out_temp.requested_token_logprobs[0])[t0] - lp_num[t0]) < 1e-4
+
+    # Config loading: both the JSON config file and the AnyMap update populate the field.
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+        json.dump({"max_new_tokens": 4, "logprob_token_ids": [id_a, id_b]}, f)
+        json_path = f.name
+    assert GenerationConfig(json_path).logprob_token_ids == [id_a, id_b]
+    cfg = GenerationConfig()
+    cfg.update_generation_config(logprob_token_ids=[id_a, id_b])
+    assert cfg.logprob_token_ids == [id_a, id_b]
+
+    # Unsupported mode: beam search + logprob_token_ids must be rejected by validate().
+    with pytest.raises(Exception, match="logprob_token_ids"):
+        GenerationConfig(max_new_tokens=1, num_beams=2, logprob_token_ids=[id_a, id_b]).validate()
+
+    # Assisted generation (speculative decoding / prompt lookup) is rejected by validate().
+    with pytest.raises(Exception, match="logprob_token_ids"):
+        GenerationConfig(max_new_tokens=1, num_assistant_tokens=5, logprob_token_ids=[id_a, id_b]).validate()
+
+    # Out-of-range ids are rejected at enqueue time, before they can fail in step() and poison the pipeline.
+    with pytest.raises(Exception, match="out of vocabulary range"):
+        cb_pipe.add_request(99, "The Sun is",
+                            generation_config=GenerationConfig(max_new_tokens=1, logprob_token_ids=[10**9]))
+
+
 @pytest.mark.transformers_dependent(
     reason="Cases with group beam search fails with optimum-intel 423b423 and transformers>=5.0, CVS-185790"
 )

@@ -1,0 +1,104 @@
+---
+sidebar_position: 10
+---
+
+# Log-Probabilities for Requested Tokens
+
+`GenerationConfig.logprob_token_ids` reports the log-probability of a fixed set of token IDs at every generated position. It complements the existing `logprobs` option, which only returns the top-k tokens: `logprob_token_ids` reads the values from the **full vocabulary** log-probability distribution (before any sampling transform), so you can score tokens that are not among the most likely ones.
+
+Typical use case is single-token classification: generate one token greedily (`max_new_tokens=1`), then softmax over the reported log-probabilities of the candidate token IDs to obtain per-class probabilities.
+
+:::info
+`logprob_token_ids` is supported with **greedy or multinomial sampling only**, and only for a single sequence (`num_return_sequences == 1`). Beam search, tree search, and speculative decoding are rejected by `GenerationConfig.validate()`.
+:::
+
+## How the results are exposed
+
+The values are not a separate accessor: they are a field of the generation output, returned by `GenerationHandle::read()` / `read_all()`.
+
+```
+GenerationOutput.requested_token_logprobs:
+    row per generated position (indexed by generated position only)
+      -> one (token_id, log_prob) pair per requested token ID
+```
+
+Notes:
+
+- `log_prob` is normalized over the full vocabulary, so `exp(log_prob)` is the probability of that token at that position. Only the requested IDs are reported; the full distribution sums to 1.
+- With `echo=True` the rows align with the **generated** tokens, not the echoed prompt tokens (the prompt is prepended to `generated_log_probs` but has no rows here).
+- The field is empty when `logprob_token_ids` is empty.
+
+## Examples
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python showLineNumbers
+        import math
+
+        import openvino_genai as ov_genai
+
+        scheduler_config = ov_genai.SchedulerConfig()
+        scheduler_config.max_num_batched_tokens = 2048
+        scheduler_config.max_num_seqs = 128
+        scheduler_config.cache_size = 8
+
+        pipe = ov_genai.ContinuousBatchingPipeline(models_path, scheduler_config, "CPU")
+
+        generation_config = ov_genai.GenerationConfig()
+        generation_config.max_new_tokens = 1
+        generation_config.temperature = 0.0
+        generation_config.do_sample = False
+        # Candidate token IDs to score (from the model's tokenizer)
+        generation_config.logprob_token_ids = [128, 1494, 374]
+
+        handle = pipe.add_request(request_id=0, prompt="The Sun is", generation_config=generation_config)
+        while pipe.has_non_finished_requests():
+            pipe.step()
+
+        for output in handle.read_all():
+            for position, logprobs in enumerate(output.requested_token_logprobs):
+                print(f"position {position}:")
+                for token_id, log_prob in logprobs:
+                    print(f"    token {token_id}: logprob={log_prob:.4f}  prob={math.exp(log_prob):.4f}")
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp showLineNumbers
+        #include <cmath>
+        #include <iostream>
+
+        #include "openvino/genai/continuous_batching_pipeline.hpp"
+
+        int main() {
+            ov::genai::SchedulerConfig scheduler_config;
+            scheduler_config.max_num_batched_tokens = 2048;
+            scheduler_config.max_num_seqs = 128;
+            scheduler_config.cache_size = 8;
+
+            ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, "CPU");
+
+            ov::genai::GenerationConfig generation_config;
+            generation_config.max_new_tokens = 1;
+            generation_config.temperature = 0.0f;
+            generation_config.do_sample = false;
+            // Candidate token IDs to score (from the model's tokenizer)
+            generation_config.logprob_token_ids = {128, 1494, 374};
+
+            auto handle = pipe.add_request(0, "The Sun is", generation_config);
+            while (pipe.has_non_finished_requests()) {
+                pipe.step();
+            }
+
+            for (const auto& output : handle.read_all()) {
+                for (size_t position = 0; position < output.requested_token_logprobs.size(); ++position) {
+                    for (const auto& [token_id, log_prob] : output.requested_token_logprobs[position]) {
+                        std::cout << "position " << position << ": token " << token_id
+                                  << " logprob=" << log_prob
+                                  << " prob=" << std::exp(log_prob) << "\n";
+                    }
+                }
+            }
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>

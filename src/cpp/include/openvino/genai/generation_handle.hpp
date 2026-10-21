@@ -97,6 +97,11 @@ struct GenerationOutput {
     GenerationFinishReason finish_reason = GenerationFinishReason::NONE;
     // Per-token hidden states collected for Qwen3-Omni speech generation. Preview API: subject to change.
     std::vector<ov::Tensor> intermediate_hidden_states;
+    // Log-probabilities (normalized over the full vocabulary) of GenerationConfig::logprob_token_ids, collected per
+    // generated position. Each row is one generated position, indexed by generated position only; with echo=true these
+    // rows align with the generated tokens, not the echoed prompt tokens (which are prepended to generated_log_probs).
+    // Empty when logprob_token_ids is empty.
+    std::vector<std::vector<std::pair<int64_t, float>>> requested_token_logprobs;
 };
 
 using GenerationOutputs = std::unordered_map<uint64_t, GenerationOutput>;
