@@ -27,6 +27,7 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     properties_copy.erase(pad_to_max_length.name());
     properties_copy.erase(truncation.name());
     properties_copy.erase(padding_side.name());
+    properties_copy.erase(instruction.name());
 
     return properties_copy;
 }
@@ -69,9 +70,9 @@ constexpr std::string_view QWEN3_RERANK_SUFFIX = "<|im_end|>\n<|im_start|>assist
 constexpr std::string_view QWEN3_RERANK_INSTRUCTION =
     "Given a web search query, retrieve relevant passages that answer the query";
 
-std::string format_qwen3_query(const std::string& query) {
+std::string format_qwen3_query(const std::string& query, std::string_view instruction) {
     std::string formatted{QWEN3_RERANK_PREFIX};
-    formatted.append("<Instruct>: ").append(QWEN3_RERANK_INSTRUCTION).append("\n<Query>: ").append(query).append("\n");
+    formatted.append("<Instruct>: ").append(instruction).append("\n<Query>: ").append(query).append("\n");
     return formatted;
 }
 
@@ -166,6 +167,7 @@ TextRerankPipeline::Config::Config(const ov::AnyMap& properties) {
     read_anymap_param(properties, ov::genai::max_length.name(), max_length);
     read_anymap_param(properties, ov::genai::padding_side.name(), padding_side);
     read_anymap_param(properties, ov::genai::pad_to_max_length.name(), pad_to_max_length);
+    read_anymap_param(properties, ov::genai::instruction.name(), instruction);
 };
 
 class TextRerankPipeline::TextRerankPipelineImpl {
@@ -315,7 +317,9 @@ private:
         concatenated.reserve(texts.size());
 
         if (m_is_qwen3) {
-            const std::string formatted_query = format_qwen3_query(query);
+            const std::string_view instruction =
+                m_config.instruction ? std::string_view{*m_config.instruction} : QWEN3_RERANK_INSTRUCTION;
+            const std::string formatted_query = format_qwen3_query(query, instruction);
             for (const auto& text : texts) {
                 concatenated.push_back(formatted_query + format_qwen3_document(text));
             }
