@@ -3,8 +3,10 @@
 
 #include "visual_language/minicpmv4_6/classes.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <numeric>
 #include <nlohmann/json.hpp>
 
 #include "visual_language/clip.hpp"
@@ -25,7 +27,13 @@ int ensure_divide(int length, int divisor) {
 
 // Mirrors transformers MiniCPMV4_6ImageProcessor.find_best_resize.
 // image_size = {height, width}. Returns {best_height, best_width}.
-std::pair<int, int> find_best_resize(std::pair<int, int> image_size, int scale_resolution, int patch_size, bool allow_upscale) {
+std::pair<int, int> find_best_resize(
+    std::pair<int, int> image_size,
+    int scale_resolution,
+    int patch_size,
+    int merge_factor,
+    bool allow_upscale
+) {
     int height = image_size.first;
     int width = image_size.second;
     if ((static_cast<int64_t>(height) * width > static_cast<int64_t>(scale_resolution) * scale_resolution) || allow_upscale) {
@@ -33,14 +41,20 @@ std::pair<int, int> find_best_resize(std::pair<int, int> image_size, int scale_r
         height = static_cast<int>(scale_resolution / std::sqrt(aspect_ratio));
         width = static_cast<int>(height * aspect_ratio);
     }
-    // factor 4 = two successive 2x2 spatial merges (ViT insert merger + downsample MLP)
-    int best_width = ensure_divide(width, patch_size * 4);
-    int best_height = ensure_divide(height, patch_size * 4);
+    int best_width = ensure_divide(width, patch_size * merge_factor);
+    int best_height = ensure_divide(height, patch_size * merge_factor);
     return {best_height, best_width};
 }
 
 // Mirrors MiniCPMV4_6ImageProcessor.get_refine_size. grid = {grid_y, grid_x}.
-std::pair<int, int> get_refine_size(std::pair<int, int> image_size, std::pair<int, int> grid, int scale_resolution, int patch_size, bool allow_upscale) {
+std::pair<int, int> get_refine_size(
+    std::pair<int, int> image_size,
+    std::pair<int, int> grid,
+    int scale_resolution,
+    int patch_size,
+    int merge_factor,
+    bool allow_upscale
+) {
     int height = image_size.first;
     int width = image_size.second;
     int grid_y = grid.first;
@@ -49,7 +63,13 @@ std::pair<int, int> get_refine_size(std::pair<int, int> image_size, std::pair<in
     int refine_width = ensure_divide(width, grid_x);
     int refine_height = ensure_divide(height, grid_y);
 
-    auto best = find_best_resize({refine_height / grid_y, refine_width / grid_x}, scale_resolution, patch_size, allow_upscale);
+    auto best = find_best_resize(
+        {refine_height / grid_y, refine_width / grid_x},
+        scale_resolution,
+        patch_size,
+        merge_factor,
+        allow_upscale
+    );
     return {best.first * grid_y, best.second * grid_x};
 }
 
@@ -142,21 +162,16 @@ ov::Tensor reshape_by_patch(const clip_image_f32& img, int patch_size) {
 
 // Mirrors _OVMiniCPMV4_6ForCausalLM._position_ids (bucketized interpolated positions).
 std::vector<int64_t> compute_position_ids(int grid_h, int grid_w, int num_patches_per_side) {
-    std::vector<double> boundaries;
+    std::vector<float> boundaries;
     for (int i = 1; i < num_patches_per_side; ++i) {
-        boundaries.push_back(static_cast<double>(i) / num_patches_per_side);
+        boundaries.push_back(static_cast<float>(i) / num_patches_per_side);
     }
     auto bucketize = [&](int n) {
-        // torch.arange(0, 1 - 1e-6, 1/n)
         std::vector<int64_t> buckets;
-        const double step = 1.0 / n;
-        for (double frac = 0.0; frac < 1.0 - 1e-6; frac += step) {
-            // bucketize with right=True -> number of boundaries <= frac
-            int b = 0;
-            while (b < static_cast<int>(boundaries.size()) && boundaries[b] <= frac) {
-                ++b;
-            }
-            buckets.push_back(b);
+        buckets.reserve(n);
+        for (int i = 0; i < n; ++i) {
+            const float fraction = static_cast<float>(i) / n;
+            buckets.push_back(std::upper_bound(boundaries.begin(), boundaries.end(), fraction) - boundaries.begin());
         }
         return buckets;
     };
@@ -243,6 +258,7 @@ void VisionEncoderMiniCPMV4_6::load_vision_params(const std::filesystem::path& c
             }
             std::string downsample_mode = cfg.value("downsample_mode", std::string("16x"));
             m_token_divisor = (downsample_mode == "4x") ? 4 : 16;
+            m_downsample_merge_factor = (downsample_mode == "4x") ? 2 : 4;
         }
     }
 }
@@ -268,7 +284,13 @@ EncodedImage VisionEncoderMiniCPMV4_6::encode(const ov::Tensor& image, const ov:
     std::vector<std::pair<int, int>> patch_grids;  // {grid_h, grid_w} in patches
 
     // Source image (always present).
-    auto src_size = find_best_resize(image_size, scale_resolution, patch_size, /*allow_upscale=*/!has_slices);
+    auto src_size = find_best_resize(
+        image_size,
+        scale_resolution,
+        patch_size,
+        static_cast<int>(m_downsample_merge_factor),
+        /*allow_upscale=*/!has_slices
+    );
     clip_image_u8 source_resized;
     bicubic_resize(source, source_resized, src_size.second, src_size.first);  // (target_width, target_height)
     patches_u8.push_back(std::move(source_resized));
@@ -277,7 +299,14 @@ EncodedImage VisionEncoderMiniCPMV4_6::encode(const ov::Tensor& image, const ov:
     int slice_grid_h = 0;
     int slice_grid_w = 0;
     if (has_slices) {
-        auto refine = get_refine_size(image_size, best_grid, scale_resolution, patch_size, /*allow_upscale=*/true);
+        auto refine = get_refine_size(
+            image_size,
+            best_grid,
+            scale_resolution,
+            patch_size,
+            static_cast<int>(m_downsample_merge_factor),
+            /*allow_upscale=*/true
+        );
         clip_image_u8 refine_img;
         bicubic_resize(source, refine_img, refine.second, refine.first);  // (target_width, target_height)
         int grid_y = best_grid.first;   // num rows of the slice grid
@@ -303,6 +332,10 @@ EncodedImage VisionEncoderMiniCPMV4_6::encode(const ov::Tensor& image, const ov:
 
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
+    const auto encoder_inputs = encoder.get_compiled_model().inputs();
+    const bool has_window_index = std::any_of(encoder_inputs.begin(), encoder_inputs.end(), [](const auto& input) {
+        return input.get_names().count("window_index") > 0;
+    });
 
     std::vector<ov::Tensor> patch_features;
     size_t total_tokens = 0;
@@ -315,9 +348,11 @@ EncodedImage VisionEncoderMiniCPMV4_6::encode(const ov::Tensor& image, const ov:
 
         std::vector<int64_t> position_ids = compute_position_ids(grid_h, grid_w, static_cast<int>(m_num_patches_per_side));
         std::vector<int64_t> window_index = grouping_index(grid_h, grid_w, static_cast<int>(m_window_kh), static_cast<int>(m_window_kw));
-        std::vector<int64_t> merge_index = grouping_index(grid_h / static_cast<int>(m_window_kh), grid_w / static_cast<int>(m_window_kw), static_cast<int>(m_merge_kh), static_cast<int>(m_merge_kw));
+        const int merge_grid_h = has_window_index ? grid_h / static_cast<int>(m_window_kh) : grid_h;
+        const int merge_grid_w = has_window_index ? grid_w / static_cast<int>(m_window_kw) : grid_w;
+        std::vector<int64_t> merge_index = grouping_index(merge_grid_h, merge_grid_w, static_cast<int>(m_merge_kh), static_cast<int>(m_merge_kw));
 
-        ov::Tensor position_ids_t(ov::element::i64, ov::Shape{1, position_ids.size()});
+        ov::Tensor position_ids_t(ov::element::i64, ov::Shape{position_ids.size()});
         std::copy(position_ids.begin(), position_ids.end(), position_ids_t.data<int64_t>());
         ov::Tensor window_index_t(ov::element::i64, ov::Shape{window_index.size()});
         std::copy(window_index.begin(), window_index.end(), window_index_t.data<int64_t>());
@@ -326,7 +361,9 @@ EncodedImage VisionEncoderMiniCPMV4_6::encode(const ov::Tensor& image, const ov:
 
         encoder.set_tensor("pixel_values", pixel_values);
         encoder.set_tensor("position_ids", position_ids_t);
-        encoder.set_tensor("window_index", window_index_t);
+        if (has_window_index) {
+            encoder.set_tensor("window_index", window_index_t);
+        }
         encoder.set_tensor("merge_index", merge_index_t);
         encoder.infer();
 
@@ -376,6 +413,18 @@ InputsEmbedderMiniCPMV4_6::InputsEmbedderMiniCPMV4_6(
     const std::string& device,
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) { }
+
+std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderMiniCPMV4_6::get_position_ids(
+    const size_t inputs_embeds_size,
+    const size_t history_size
+) {
+    ov::Tensor position_ids{ov::element::i64, {3, 1, inputs_embeds_size}};
+    for (size_t axis = 0; axis < 3; ++axis) {
+        int64_t* axis_position_ids = position_ids.data<int64_t>() + axis * inputs_embeds_size;
+        std::iota(axis_position_ids, axis_position_ids + inputs_embeds_size, static_cast<int64_t>(history_size));
+    }
+    return {std::move(position_ids), std::nullopt};
+}
 
 std::string InputsEmbedderMiniCPMV4_6::build_image_placeholder(const EncodedImage& image, size_t image_id) const {
     const std::string& image_pad = m_vlm_config.image_pad_token;
@@ -451,6 +500,20 @@ ov::Tensor merge_text_and_image_embeddings(
     const float* text_data = text_embeds.data<float>();
     const int64_t* ids = input_ids.data<int64_t>();
     float* out = merged.data<float>();
+
+    size_t expected_image_tokens = 0;
+    for (const EncodedImage* image : image_embeds) {
+        expected_image_tokens += image->resized_source.get_shape().at(0);
+    }
+    const size_t actual_image_tokens = static_cast<size_t>(std::count(ids, ids + seq_len, image_pad_token_id));
+    OPENVINO_ASSERT(
+        actual_image_tokens == expected_image_tokens,
+        "The number of image placeholders (",
+        actual_image_tokens,
+        ") does not match the number of image embeddings (",
+        expected_image_tokens,
+        ")."
+    );
 
     size_t image_idx = 0;
     size_t token_in_image = 0;

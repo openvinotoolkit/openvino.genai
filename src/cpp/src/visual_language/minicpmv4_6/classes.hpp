@@ -48,6 +48,7 @@ private:
     size_t m_window_kw = 2;
     size_t m_merge_kh = 2;
     size_t m_merge_kw = 2;
+    size_t m_downsample_merge_factor = 4;
     size_t m_token_divisor = 16;  // 16x downsample -> grid_h*grid_w/16 tokens
     bool m_slice_mode = true;
     std::array<float, 3> m_image_mean{0.5f, 0.5f, 0.5f};
@@ -76,6 +77,11 @@ public:
                                  ov::genai::VLMPerfMetrics& metrics,
                                  bool recalculate_merged_embeddings = true,
                                  const std::vector<size_t>& image_sequence = {}) override;
+
+    std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(
+        const size_t inputs_embeds_size,
+        const size_t history_size
+    ) override;
 
     NormalizedPrompt normalize_prompt(
         const std::string& prompt,

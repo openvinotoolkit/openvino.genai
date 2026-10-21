@@ -635,8 +635,7 @@ def load_prompts(args):
         df = pd.read_csv(dataset_path)
         if "prompts" not in df.columns:
             raise ValueError(
-                f"Local dataset CSV '{dataset_path}' must contain a 'prompts' column, "
-                f"got columns: {list(df.columns)}."
+                f"Local dataset CSV '{dataset_path}' must contain a 'prompts' column, got columns: {list(df.columns)}."
             )
 
         def _resolve_media(value):
@@ -650,14 +649,13 @@ def load_prompts(args):
                 return None
             path = Path(text)
             if not path.is_absolute():
-                path = (base_dir / path)
+                path = base_dir / path
             return str(path)
 
         prompts = list(df["prompts"])
         if "images" in df.columns:
             images = [
-                load_image(resolved) if (resolved := _resolve_media(v)) is not None else None
-                for v in df["images"]
+                load_image(resolved) if (resolved := _resolve_media(v)) is not None else None for v in df["images"]
             ]
         else:
             images = [None] * len(prompts)
@@ -668,7 +666,6 @@ def load_prompts(args):
 
         return {"prompts": prompts, "images": images, "videos": videos}
 
-    split = "validation"
     if args.split is not None:
         dataset_split = args.split
 

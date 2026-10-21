@@ -16,6 +16,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"minicpmv", VLMModelType::MINICPM},
         {"minicpmo", VLMModelType::MINICPM},
         {"minicpmv4_6", VLMModelType::MINICPMV4_6},
+        {"minicpm_ocr", VLMModelType::MINICPMV4_6},
         {"llava", VLMModelType::LLAVA},
         {"llava-qwen2", VLMModelType::NANOLLAVA},
         {"llava_next", VLMModelType::LLAVA_NEXT},
