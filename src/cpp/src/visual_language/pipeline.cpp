@@ -263,7 +263,13 @@ public:
           m_vlm_config(vlm_config) {
         m_inputs_embedder = std::move(embedder);
         const auto kv_pos = utils::get_kv_axes_pos(language_model);
-        compile_language_model(language_model, device, properties);
+        auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
+        if (m_generation_config.adapters) {
+            m_generation_config.adapters->set_tensor_name_prefix(
+                m_generation_config.adapters->get_tensor_name_prefix().value_or("base_model.model."));
+            m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
+        }
+        compile_language_model(language_model, device, *filtered_properties);
         finalize_initialization(language_model, kv_pos);
     }
 
@@ -278,7 +284,9 @@ public:
         const auto scheduled =
             utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         const auto& plugin_properties = scheduled.first;
-        auto embedder = std::make_shared<InputsEmbedder>(models, tokenizer, device, plugin_properties);
+        auto embedder_properties = extract_adapters_from_properties(plugin_properties).fork();
+        embedder_properties.erase(ov::genai::prompt_lookup.name());
+        auto embedder = std::make_shared<InputsEmbedder>(models, tokenizer, device, embedder_properties);
         const auto paged = [&](const std::shared_ptr<ov::Model>& language) {
             return std::make_shared<VLMContinuousBatchingAdapter>(language,
                                                                   embedder,

@@ -532,13 +532,29 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
                                                        const ov::AnyMap& properties,
                                                        const GenerationConfig& generation_config) {
     const auto start = std::chrono::steady_clock::now();
-    m_impl = std::make_shared<ContinuousBatchingImpl>(language_model,
+    auto backend_properties = properties;
+    if (extract_prompt_lookup_from_config(backend_properties)) {
+        auto effective_config = generation_config;
+        extract_adapters_from_properties(backend_properties, &effective_config.adapters);
+        if (effective_config.adapters)
+            effective_config.adapters->set_tensor_name_prefix("base_model.model.");
+        m_impl = std::make_shared<PromptLookupImpl>(language_model,
+                                                   embedder,
+                                                   tokenizer,
+                                                   scheduler_config,
+                                                   device,
+                                                   backend_properties,
+                                                   generation_config);
+        m_impl->set_config(effective_config);
+    } else {
+        m_impl = std::make_shared<ContinuousBatchingImpl>(language_model,
                                                       embedder,
                                                       tokenizer,
                                                       scheduler_config,
                                                       device,
-                                                      properties,
+                                                      backend_properties,
                                                       generation_config);
+    }
     m_impl->m_load_time_ms = get_load_time(start);
 }
 

@@ -390,3 +390,28 @@ def test_gguf_vlm_requires_projector_and_cpu(tiny_gguf_vlm_model):
         genai.VLMPipeline(language, "CPU")
     with pytest.raises(RuntimeError, match="CPU"):
         genai.VLMPipeline(language, "GPU", mmproj_path=str(projector))
+
+
+@pytest.mark.parametrize("option", ["prompt_lookup", "adapters_sdpa", "adapters_pa"])
+def test_gguf_vlm_language_properties(tiny_gguf_vlm_model, option):
+    language, projector = tiny_gguf_vlm_model
+    properties = reference_properties()
+    properties["ATTENTION_BACKEND"] = "SDPA" if option == "adapters_sdpa" else "PA"
+    baseline = genai.VLMPipeline(language, "CPU", mmproj_path=str(projector), **properties)
+    properties["adapters"] = genai.AdapterConfig()
+    if option == "prompt_lookup":
+        properties["prompt_lookup"] = True
+    pipe = genai.VLMPipeline(language, "CPU", mmproj_path=str(projector), **properties)
+    defaults = pipe.get_generation_config()
+    assert defaults.eos_token_id == baseline.get_generation_config().eos_token_id
+    assert defaults.stop_token_ids == baseline.get_generation_config().stop_token_ids
+    assert defaults.adapters is not None
+    image = ov.Tensor(np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8))
+    config = {"max_new_tokens": 8, "do_sample": False, "ignore_eos": True}
+    if option == "prompt_lookup":
+        config["num_assistant_tokens"] = 3
+        config["max_ngram_size"] = 3
+    assert (
+        pipe.generate("Describe the image.", images=[image], **config).texts
+        == baseline.generate("Describe the image.", images=[image], **config).texts
+    )
