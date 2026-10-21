@@ -21,6 +21,10 @@ if(NOT TARGET gtest)
 endif()
 
 file(GLOB tests_src "*.cpp")
+if(NOT ENABLE_GGUF)
+    file(GLOB gguf_tests_src "test_gguf_*.cpp")
+    list(REMOVE_ITEM tests_src ${gguf_tests_src})
+endif()
 
 set(TEST_TARGET_NAME "tests_continuous_batching")
 
