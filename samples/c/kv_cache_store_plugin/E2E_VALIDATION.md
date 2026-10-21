@@ -14,37 +14,44 @@ against the two scenarios this ABI is used for in OpenVINO GenAI:
    in a fresh process without re-running prefill.
 
 Both scenarios below were run against the standalone sample plugin in this directory
-([`sample_kv_cache_store_plugin.c`](sample_kv_cache_store_plugin.c)) on Qwen3-8B/CPU **and** GPU to
-confirm this guide's exact commands work as written on both; substitute your own plugin's path and
-provider name. Swap `-d CPU` for `-d GPU` in any command below to validate on GPU - just mind the
-`num_kv_blocks`/capacity caveat in the performance section (GPU's paged-attention block size
-differs from CPU's, so the same `num_kv_blocks` value lands differently).
+([`sample_kv_cache_store_plugin.c`](sample_kv_cache_store_plugin.c)) with **Qwen3.5-9B** (a hybrid
+KV + linear-attention model): Scenario 1 on CPU **and** GPU, Scenario 2 on GPU. Substitute your own
+plugin's path and provider name. GPU's paged-attention blocks hold fewer tokens than CPU's, so the
+same `num_kv_blocks` lands differently - the GPU value used here is called out in Scenario 1.
 
 ## Prerequisites
 
 - An OpenVINO GenAI build or package with Python bindings (`openvino_genai`).
 - Your compiled plugin library (`.dll`/`.so`), built against `kv_cache_store_provider_abi.h`.
-- Any text-generation model in OpenVINO IR format (a plain causal LM is enough for both scenarios;
-  a hybrid KV+linear-attention model additionally exercises the linear-attention payload).
+- A text-generation model in OpenVINO IR format. This guide uses Qwen3.5-9B, a hybrid model, so
+  both the KV and the linear-attention payloads go through your plugin. For a model without linear
+  attention, `linear_attention_capacity_bytes` is simply ignored.
 
 ## Scenario 1: Opportunistic KV cache offload
 
-Point `CacheOffloadConfig` at your plugin and force real eviction by giving the pipeline far less
-KV cache capacity than the conversation needs. [`example_offload_cb_config.json`](example_offload_cb_config.json)
-in this directory is a ready-to-edit starting point - replace `store_library_path` with your
-plugin's path:
+Point `CacheOffloadConfig` at your plugin and make the device cache too small to keep an earlier
+prompt around, so a repeated prompt can only be served by reading its blocks back from your plugin.
+[`perf_prompts.jsonl`](perf_prompts.jsonl) holds three requests: a long prompt `P0` (3110 tokens
+with Qwen3.5's tokenizer), a differently-worded filler `P1` (3231 tokens) that pushes `P0`'s blocks
+out of the device cache, then `P0` again as `P2`. It is run twice and the two runs are compared:
+
+- [`perf_baseline_cb_config.json`](perf_baseline_cb_config.json): no offload, so `P2` is always a
+  full recompute.
+- [`perf_offload_cb_config.json`](perf_offload_cb_config.json): offload through your plugin, so `P2`
+  should be restored from it. Replace `store_library_path` with your plugin's path first:
 
 ```json
 {
-  "num_kv_blocks": 4,
-  "max_num_batched_tokens": 2048,
+  "num_kv_blocks": 120,
+  "max_num_batched_tokens": 4096,
   "max_num_seqs": 1,
   "dynamic_split_fuse": true,
   "enable_prefix_caching": true,
   "use_cache_offload": true,
   "cache_offload_config": {
-    "capacity_bytes": 16777216,
-    "buffer_slots": 64,
+    "capacity_bytes": 1073741824,
+    "linear_attention_capacity_bytes": 4294967296,
+    "buffer_slots": 256,
     "store_library_path": "/path/to/your_plugin.dll",
     "store_provider_name": "your-provider-name",
     "allow_untrusted_store_plugin": true
@@ -52,87 +59,78 @@ plugin's path:
 }
 ```
 
-`num_kv_blocks: 4` is deliberately tiny so a single ~130-token generation already exceeds it,
-forcing real writes/reads through your plugin instead of only validating the no-eviction-needed
-path. Run it with `tools/llm_bench/benchmark.py`:
+- `num_kv_blocks: 120` holds one of these prompts but not two, which is what forces `P0` out.
+  **On GPU use `220`** in both configs: GPU blocks hold fewer tokens, and 120 cannot even hold one
+  prompt (the request fails with `Request 0 was dropped by the scheduler because it did not fit in
+  the available cache budget`).
+- `capacity_bytes` sizes the KV store and `linear_attention_capacity_bytes` sizes the
+  linear-attention store. **Both must be set for a hybrid model**: without the second one only KV
+  blocks are offloaded, a linear-attention state is never found again, and the repeated prompt is
+  recomputed (still correct, just no speedup). For Qwen3.5-9B a linear-attention block is about
+  51 MB, so `4294967296` gives 80 of them.
 
-```sh
-cd tools/llm_bench
-python benchmark.py -m <model_dir> -d CPU \
-    -p "Tell me a long story about a robot learning to paint." \
-    -n 1 -ic 150 --disable_prompt_permutation \
-    --cb_config ../../samples/c/kv_cache_store_plugin/example_offload_cb_config.json
-```
-
-**What a pass looks like** (actual output from this exact command against the sample plugin):
-
-```
-[ INFO ] Running average of the KV cache usage 66.31%, max KV cache usage: 100.00%
-[ INFO ] [warm-up][P0] Result MD5:['05a053881ab169c397058f5071d5552b']
-...
-[ INFO ] [1][P0] Result MD5:['05a053881ab169c397058f5071d5552b']
-```
-
-- `max KV cache usage: 100.00%` with only 4 blocks configured confirms blocks were actually
-  evicted and had to be restored - not just an idle plugin that was never exercised.
-- The two MD5 lines (warm-up iteration vs. the measured iteration) must match each other - that
-  confirms deterministic, correct round-tripping through your plugin (greedy decoding + no
-  eviction-order bugs would otherwise make the second run diverge).
-- No `[ERROR]` lines about your plugin failing to load/handshake/open (those are logged as
-  warnings and silently fall back to the in-tree default store - check the log for
-  `KV cache store plugin ... falling back to the default file store` if the run otherwise looks
-  suspiciously fast or `max KV cache usage` never climbs - that means your plugin was never
-  actually loaded).
-
-### Performance: does offload through your plugin actually pay off?
-
-Correctness alone does not prove your plugin is worth using - a short prompt's recompute cost can
-be cheaper than the disk round-trip, making offload a net loss (this is prefix-length-dependent,
-not a bug). [`perf_prompts.jsonl`](perf_prompts.jsonl) + [`perf_baseline_cb_config.json`](perf_baseline_cb_config.json)/
-[`perf_offload_cb_config.json`](perf_offload_cb_config.json) run the same three requests - a prompt
-`P0`, a differently-worded filler `P1` sized to evict `P0`'s blocks, then `P0` again as `P2` - once
-without offload (always a full recompute) and once with it (restored from your plugin), and compare
-`P2`'s first token latency between the two logs:
+Run both with `tools/llm_bench/benchmark.py`. Qwen3.5 is natively multimodal, so use
+`--task visual_text_gen`; `--task text_gen` feeds pre-tokenized input and fails on this model with
+`Tensor was not initialized`:
 
 ```sh
 cd tools/llm_bench
 # Baseline: no offload, P2 always recomputed from scratch.
-python benchmark.py -m <model_dir> -d CPU \
+python benchmark.py -m <model_dir> -d CPU --task visual_text_gen \
     -pf ../../samples/c/kv_cache_store_plugin/perf_prompts.jsonl -pi 0 1 2 -n 0 -ic 1 \
-    --task text_gen --disable_prompt_permutation \
+    --disable_prompt_permutation \
     --cb_config ../../samples/c/kv_cache_store_plugin/perf_baseline_cb_config.json
 
 # Offload: P2 should be restored from your plugin instead of recomputed.
-python benchmark.py -m <model_dir> -d CPU \
+python benchmark.py -m <model_dir> -d CPU --task visual_text_gen \
     -pf ../../samples/c/kv_cache_store_plugin/perf_prompts.jsonl -pi 0 1 2 -n 0 -ic 1 \
-    --task text_gen --disable_prompt_permutation \
+    --disable_prompt_permutation \
     --cb_config ../../samples/c/kv_cache_store_plugin/perf_offload_cb_config.json  # edit store_library_path first
 ```
 
-**Real numbers from this exact pair of commands against the sample plugin** (Qwen3-8B,
-~1600-token `P0`/`P2`, ~2100-token `P1`):
+**What a pass looks like:**
 
-| Device | `num_kv_blocks` | Baseline (no offload) `P2` TTFT | Offload (via plugin) `P2` TTFT | Speedup | MD5 |
+- `P2`'s `Result MD5` equals `P0`'s in **both** runs. `P2` is the same prompt as `P0`, so this shows
+  the blocks read back from your plugin reproduce the original result.
+- In the offload run `P2`'s first token latency is far below `P0`'s and below the baseline's `P2`.
+- No `[ERROR]` lines about your plugin. A plugin that fails to load, handshake or open is logged
+  as a warning and the run silently falls back to the in-tree default store, so if the offload run
+  shows no speedup, check the log for `Falling back to the default file store` first.
+
+### Results
+
+**Real numbers from this exact pair of commands against the sample plugin** (Qwen3.5-9B,
+`-ic 1`, so the time shown is first token latency):
+
+| Device | `num_kv_blocks` | Baseline `P2` TTFT | Offload (via plugin) `P2` TTFT | Speedup | `P0` / `P2` MD5 |
 |---|---|---|---|---|---|
-| CPU | 80 | 16902.28 ms | 264.05 ms | **~64x** | identical (`ff7af40e...`) |
-| GPU | 200 | 1326.84 ms | 410.97 ms | **~3.2x** | identical (`ff7af40e...`) |
+| CPU | 120 | 95992.54 ms | 7384.30 ms | **~13x** | identical (`e067b6f4...`) |
+| GPU | 220 | 2860.82 ms | 812.96 ms | **~3.5x** | identical (`e067b6f4...`) |
 
-Both confirm the restored blocks are byte-correct, not just fast - but note the speedup is far
-from a fixed number: GPU prefill is so much faster than CPU's that the *absolute* recompute cost
-avoided is smaller, so the relative win is smaller too (still a genuine win, just less dramatic).
-Longer prompts widen the gap on either device; very short prompts can erase it entirely (see
-above) - always benchmark with a prompt length representative of your real workload, not this
-guide's numbers directly.
+The absolute gain is far larger on CPU because CPU prefill is slower, so there is more recompute to
+avoid. Writing the evicted blocks is not free: on CPU `P1` took 122.9 s with offload against 100.4 s
+without, and on GPU the difference was within noise (each figure is a single run). Longer prompts
+widen the gap and very short ones can erase it, so benchmark with prompt lengths representative of
+your workload rather than relying on these numbers.
 
-GPU's paged-attention block granularity differs from CPU's, so the same `num_kv_blocks` value can
-land in a different place relative to your prompt length - if you see `Request 0 was dropped by
-the scheduler because it did not fit in the available cache budget`, raise `num_kv_blocks` (this
-guide's GPU numbers used 200, not the CPU config's 80) rather than assuming something is broken.
+**A hybrid model only reuses a prefix up to its last linear-attention checkpoint.** The recurrent
+state is checkpointed every `cache_interval` tokens (about 2880 on CPU and 2592 on GPU with the
+default sizing, printed as `cache_interval=` in the `[KV_TRACE]` log at `OPENVINO_LOG_LEVEL=3`),
+and a repeated prompt cannot resume from a checkpoint that already includes its final token. A
+prompt shorter than one interval therefore gets no reuse at all - it is recomputed, and the result
+is still correct. That is why this guide's prompts are over 3000 tokens; with short prompts offload
+through your plugin will show no speedup on a hybrid model.
 
-If your plugin shows a much smaller gap (or offload is *slower*), check that `capacity_bytes`
-in your `cache_offload_config` is large enough for your plugin's actual per-block storage overhead
-(an undersized value can make the host's own capacity bookkeeping disagree with what your plugin
-reports via `stats`, which throws rather than silently degrading).
+### What the host expects from your plugin's stores
+
+The host opens **one store instance per group** and passes the group as the `OvKVCacheNamespace`
+(`kv`, `la`, and `session_snapshot_*` for Scenario 2). It sizes each store against its own
+capacity and checks that the store's `stats()` stays within it. Your plugin must therefore keep
+the namespaces apart: if it puts KV and linear-attention blocks in one store, `stats()` reports
+more blocks than the smaller store's capacity and the run fails with `Check 'stats.blocks <=
+m_capacity_blocks' failed ... ABI store reported more used blocks than its capacity`. Also make
+sure `capacity_bytes` is large enough for your plugin's real per-block storage overhead, for the
+same reason.
 
 ## Scenario 2: Session snapshot save/restore
 
@@ -150,11 +148,11 @@ this directory, which:
 
 ```sh
 cd samples/c/kv_cache_store_plugin
-python verify_session_snapshot.py -m <model_dir> -d CPU \
+python verify_session_snapshot.py -m <model_dir> -d GPU \
     --plugin /path/to/your_plugin.dll --provider your-provider-name
 ```
 
-**What a pass looks like** (actual output from this exact command against the sample plugin):
+**What a pass looks like** (actual output from this exact command against the sample plugin, Qwen3.5-9B on GPU):
 
 ```
 PASS: the restored continuation matches the uninterrupted baseline token-for-token.
@@ -170,23 +168,27 @@ not a failure (the script's own PASS/FAIL assertion, not these log lines, is the
 ### Performance: TTFT with vs. without session restore
 
 Unless skipped with `--skip-perf`, the script also measures time-to-first-token (TTFT) for a much
-longer conversation (~3700 tokens) restored through your plugin, against a full re-prefill
-baseline - the correctness check above deliberately uses a short prompt to run fast, which is not
-representative of the real performance win (same prefix-length caveat as Scenario 1).
+longer conversation (the sample sentence repeated 400 times) restored through your plugin, against
+a full re-prefill baseline - the correctness check above deliberately uses a short prompt to run
+fast, which is not representative of the real performance win (same prefix-length caveat as
+Scenario 1).
 
-**Real numbers from this exact script** (Qwen3-8B, sample plugin):
+**Real numbers from this exact script** (Qwen3.5-9B, GPU, sample plugin):
 
 | Device | TTFT without restore (full re-prefill) | TTFT with restore (via your plugin) | Speedup |
 |---|---|---|---|
-| CPU | 51760.38 ms | 5171.33 ms | **~10.0x** |
-| GPU | 4154.84 ms | 606.66 ms | **~6.9x** |
+| GPU | 3803.60 ms | 554.11 ms | **~6.9x** |
 
 ```
 PASS: the restored continuation matches the uninterrupted baseline token-for-token.
-PERF: TTFT without session restore (full re-prefill): 51760.38 ms
-PERF: TTFT with session restore (via your plugin):    5171.33 ms
-PERF: Speedup: 10.01x
+PERF: TTFT without session restore (full re-prefill): 3803.60 ms
+PERF: TTFT with session restore (via your plugin):    554.11 ms
+PERF: Speedup: 6.86x
 ```
+
+Unlike Scenario 1, this does not depend on prefix-cache hits, so the linear-attention checkpoint
+interval caveat does not apply: the correctness check uses a short prompt far below that interval
+and still resumes token-for-token.
 
 ## Known limitations of the sample plugin (do not assume your plugin needs to share these)
 
