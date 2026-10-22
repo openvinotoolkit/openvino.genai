@@ -40,6 +40,10 @@ For example:
 pip install .[minicpm-o-2_6]
 ```
 
+The `llm-test-openvino` extra pins Transformers 5.10.4 and Sentence Transformers 5.6.1
+and uses Optimum Intel from its `main` branch. These versions avoid the vulnerable
+older LLM test pins; Optimum Intel 2.2.0 does not support the patched Transformers version.
+
 ### OpenVINO Runtime configuration
 
 OpenVINO Runtime configuration can be customized using `--ov-config` option.<br>

@@ -57,11 +57,10 @@ setup(
         ],
         "llm-test-openvino": [
             "torchaudio==2.11.0",
-            "transformers[sentencepiece]==5.0.0",
-            "sentence_transformers==5.3.0",
-            "huggingface-hub==1.22.0",
+            "transformers[sentencepiece]==5.10.4",
+            "sentence_transformers==5.6.1",
             "tqdm==4.70.0",
-            "optimum-intel[nncf,tests]==2.0.0",
+            "optimum-intel[nncf] @ git+https://github.com/huggingface/optimum-intel.git@main",
         ],
         "kokoro": [
             "spacy==3.8.16",
