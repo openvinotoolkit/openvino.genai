@@ -86,6 +86,9 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
     // Set when a failed chat turn dropped the KV cache while earlier turns had media. Their embeddings
     // are already released, so the history cannot be prefilled again.
     bool m_chat_state_lost = false;
+    // Set once a chat turn starts to change the KV cache. A turn that fails before that keeps the whole
+    // history in the KV cache.
+    bool m_kv_cache_changed = false;
 
     // if True, full history will be used as prompt on each chat generation
     bool m_use_full_chat_history = false;
@@ -415,7 +418,9 @@ public:
                                                 : utils::CacheState{};
             bool active = true;
 
-            explicit ChatTurnRollback(VLMPipelineImpl& pipe) : pipe(pipe) {}
+            explicit ChatTurnRollback(VLMPipelineImpl& pipe) : pipe(pipe) {
+                pipe.m_kv_cache_changed = false;
+            }
             ~ChatTurnRollback() {
                 if (active) {
                     restore();
@@ -893,14 +898,20 @@ private:
 
     // Runs while a failed turn unwinds, so it must not throw.
     void recover_cache_after_failed_turn(utils::CacheState& snapshot) noexcept {
-        // align_cache_and_history() may have trimmed inside the old history, and the turn then wrote
-        // its own tokens there. Only the prefix still shared with the live token cache holds the old
-        // tokens. Measured before update_chat_history() resizes the live cache.
+        // A turn that failed before it changed the KV cache leaves the whole history there. Keeping only a
+        // prefix would make the next turn prefill earlier media, whose features are already released.
         auto& history_tokens = snapshot.get_state();
-        const auto& live_tokens = m_inputs_embedder->get_cache_state().get_state();
-        const size_t kept_length =
-            std::mismatch(history_tokens.begin(), history_tokens.end(), live_tokens.begin(), live_tokens.end()).first -
-            history_tokens.begin();
+        size_t kept_length = history_tokens.size();
+        if (m_kv_cache_changed) {
+            // align_cache_and_history() may have trimmed inside the old history, and the turn then wrote
+            // its own tokens there. Only the prefix still shared with the live token cache holds the old
+            // tokens. Measured before update_chat_history() resizes the live cache.
+            const auto& live_tokens = m_inputs_embedder->get_cache_state().get_state();
+            kept_length =
+                std::mismatch(history_tokens.begin(), history_tokens.end(), live_tokens.begin(), live_tokens.end())
+                    .first -
+                history_tokens.begin();
+        }
         try {
             // Undoes model-specific embedder state the same way as a cancelled turn. Its token cache
             // changes do not matter: every path below overwrites the cache state.
@@ -1026,6 +1037,7 @@ private:
                 m_language.get_tensor("attention_mask").set_shape({1, 0});
             } else {
                 bool needs_full_reset = cache_state.needs_reset();
+                m_kv_cache_changed = true;
                 utils::trim_kv_cache(m_language, cache_state, m_adapter_controller);
                 if (needs_full_reset) {
                     m_language.get_tensor("attention_mask").set_shape({1, 0});

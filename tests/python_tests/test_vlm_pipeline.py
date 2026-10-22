@@ -4101,6 +4101,36 @@ def test_vlm_failed_chat_turn_with_rewritten_history_is_rolled_back(
     assert second_turn(fail_first=True) == second_turn(fail_first=False)
 
 
+def test_vlm_chat_turn_failed_before_kv_cache_change_keeps_history(
+    rollback_pipe_factory: Callable[[], VLMPipeline], rollback_image: openvino.Tensor
+):
+    """A turn that fails before it changes the KV cache must keep all of the old history, media included."""
+    template = (
+        "{% for message in messages %}{{ message['role'] }}: "
+        "{% if message['role'] == 'user' and not loop.last %}EARLIER_PROMPT_PREFIX{% endif %}"
+        "{{ message['content'] }}\n{% endfor %}"
+        "{% if add_generation_prompt %}assistant: {% endif %}"
+    )
+    plain = template.replace("EARLIER_PROMPT_PREFIX", "")
+    # Renders text before the first image, so the turn must embed that image again. Its features are released.
+    rewritten = template.replace("EARLIER_PROMPT_PREFIX", "Note. ")
+
+    def second_turn(fail_first: bool) -> tuple[str, int]:
+        pipe = rollback_pipe_factory()
+        tokenizer = pipe.get_tokenizer()
+        tokenizer.chat_template = plain
+        pipe.start_chat()
+        pipe.generate("Hi", images=[rollback_image], generation_config=ROLLBACK_CONFIG)
+        if fail_first:
+            tokenizer.chat_template = rewritten
+            with pytest.raises(RuntimeError, match="does not match image pad tokens"):
+                pipe.generate("Again", images=[rollback_image], generation_config=ROLLBACK_CONFIG)
+            tokenizer.chat_template = plain
+        return _text_and_tokens(pipe.generate("Again", images=[rollback_image], generation_config=ROLLBACK_CONFIG))
+
+    assert second_turn(fail_first=True) == second_turn(fail_first=False)
+
+
 def test_vlm_failed_chat_turn_rolls_back_videochat_embedder_state():
     """Embedders that count visual tokens per turn, like VideoChat-Flash, must drop the failed turn's count.
 
