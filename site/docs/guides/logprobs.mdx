@@ -9,7 +9,7 @@ sidebar_position: 10
 Typical use case is single-token classification: generate one token greedily (`max_new_tokens=1`), then softmax over the reported log-probabilities of the candidate token IDs to obtain per-class probabilities. The sum of `exp(log_prob)` over the candidate IDs is the probability mass of the candidate set (vLLM's `label_mass`); multiplying the softmax over the candidates by this mass rescales the answer probabilities to the full vocabulary (vLLM's `confidence`).
 
 :::info
-`logprob_token_ids` is supported with **greedy or multinomial sampling only**, and only for a single sequence (`num_return_sequences == 1`). Beam search, tree search, and speculative decoding are rejected by `GenerationConfig.validate()`.
+`logprob_token_ids` is supported with **greedy or multinomial sampling only**, and only for a single sequence (`num_return_sequences == 1`). Beam search, tree search and `num_return_sequences > 1` are rejected by `GenerationConfig.validate()`; speculative-decoding and prompt-lookup pipelines reject the request in `add_request()`.
 
 The values are exposed only by `ContinuousBatchingPipeline` (through `add_request` / `read` / `read_all`). The one-shot `LLMPipeline::generate()` / `VLMPipeline::generate()` return types (`DecodedResults` / `EncodedResults`) do not carry the field, so it is not available through those pipelines.
 :::
