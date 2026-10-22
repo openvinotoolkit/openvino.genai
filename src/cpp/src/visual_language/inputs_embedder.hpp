@@ -112,7 +112,7 @@ public:
     // gets last pruned prompt after vision token pruning
     std::string get_last_pruned_prompt(const std::string& original_prompt) const;
 
-    // true: apply template; false: raw prompt; false,true: already templated, skip default special tokens.
+    // Controls template application; prompt_is_templated suppresses default special tokens for externally templated input.
     void set_apply_chat_template_status(bool apply_chat_template, bool prompt_is_templated = false);
 
     // finishes chat and clears a chat history
