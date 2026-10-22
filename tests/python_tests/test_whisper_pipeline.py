@@ -1,6 +1,7 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import enum
+import platform
 import sys
 import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
 
@@ -382,6 +383,10 @@ def pipelines_fixture(request):
 
 
 @pytest.mark.qwen3_asr_split_export
+@pytest.mark.skipif(
+    sys.platform == "darwin" and platform.machine() == "arm64",
+    reason="PagedAttention requires SVE on ARM and is unavailable on macOS arm64.",
+)
 @pytest.mark.parametrize(
     "pipelines_fixture",
     get_model_pipeline_pair_params([(QWEN3_ASR_MODEL_ID, PipelineType.CONTINUOUS_BATCHING)]),
