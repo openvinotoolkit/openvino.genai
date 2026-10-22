@@ -18,6 +18,7 @@ namespace {
 
 constexpr size_t TEKKEN_BASE64_BITS = 6;
 constexpr size_t AUDIO_FRAMES_PER_TEXT_TOKEN = 8;
+constexpr size_t MAX_QUEUED_AUDIO_FRAMES = 64;
 
 struct VoxtralConfig {
     size_t audio_hidden_size;
@@ -220,7 +221,8 @@ class VoxtralASRStream final : public ASRStreamImplBase {
 public:
     VoxtralASRStream(const std::shared_ptr<VoxtralRealtimeRuntime>& runtime,
                      const std::optional<ASRGenerationConfig>& generation_config)
-        : m_runtime{runtime},
+        : ASRStreamImplBase{MAX_QUEUED_AUDIO_FRAMES},
+          m_runtime{runtime},
           m_audio_request{runtime->audio_encoder.create_infer_request()},
           m_text_request{runtime->text_decoder.create_infer_request()} {
         (void)generation_config;
@@ -241,9 +243,9 @@ public:
         }
     }
 
-    std::string push_audio(const std::vector<float>& audio_chunk) override {
-        OPENVINO_ASSERT(!m_finished, "Cannot push audio after ASRStream::finish().");
-        m_audio_buffer.insert(m_audio_buffer.end(), audio_chunk.begin(), audio_chunk.end());
+private:
+    std::string process_audio(const std::vector<float>& audio_frame) override {
+        m_audio_buffer.insert(m_audio_buffer.end(), audio_frame.begin(), audio_frame.end());
         std::string emitted;
         if (!m_prefill_done && m_audio_buffer.size() >= m_runtime->config.first_chunk_samples) {
             std::vector<float> first_chunk(m_audio_buffer.begin(),
@@ -260,30 +262,23 @@ public:
         return emitted;
     }
 
-    ASRDecodedResults finish() override {
-        OPENVINO_ASSERT(!m_finished, "ASRStream::finish() may only be called once.");
+    std::string flush() override {
+        std::string emitted;
         if (!m_prefill_done && !m_audio_buffer.empty()) {
             m_audio_buffer.resize(m_runtime->config.first_chunk_samples, 0.0f);
-            process_chunk(m_audio_buffer, true);
+            emitted += process_chunk(m_audio_buffer, true);
             m_audio_buffer.clear();
         }
         if (m_prefill_done && !m_audio_buffer.empty()) {
             m_audio_buffer.resize(m_runtime->config.subsequent_chunk_samples, 0.0f);
-            process_chunk(m_audio_buffer, false);
+            emitted += process_chunk(m_audio_buffer, false);
             m_audio_buffer.clear();
         }
-        m_transcript += m_pending_utf8;
+        emitted += m_pending_utf8;
         m_pending_utf8.clear();
-        m_finished = true;
-
-        ASRDecodedResults results;
-        results.texts.push_back(m_transcript);
-        results.scores.push_back(0.0f);
-        results.languages.emplace_back();
-        return results;
+        return emitted;
     }
 
-private:
     ov::Tensor run_audio_encoder(const std::vector<float>& samples, const bool is_first_chunk) {
         std::vector<float> waveform;
         if (is_first_chunk)
@@ -373,7 +368,6 @@ private:
         const size_t complete = complete_utf8_prefix(m_pending_utf8);
         std::string emitted = m_pending_utf8.substr(0, complete);
         m_pending_utf8.erase(0, complete);
-        m_transcript += emitted;
         return emitted;
     }
 
@@ -386,10 +380,8 @@ private:
     std::vector<std::pair<ov::Tensor, ov::Tensor>> m_text_key_values;
     std::vector<float> m_audio_buffer;
     std::string m_pending_utf8;
-    std::string m_transcript;
     int64_t m_last_token = -1;
     bool m_prefill_done = false;
-    bool m_finished = false;
 };
 
 }  // namespace
@@ -404,10 +396,11 @@ ASRDecodedResults VoxtralASR::generate(const AudioInputs& audio_inputs,
                                        const std::optional<ASRGenerationConfig>& generation_config,
                                        const std::shared_ptr<StreamerBase> streamer) {
     OPENVINO_ASSERT(!streamer,
-                    "Voxtral uses input streaming; call create_stream() and collect text from push_audio().");
+                    "Voxtral uses input streaming; call create_stream() and pass a text callback to ASRStream::generate().");
     auto stream = create_stream(generation_config);
     stream->push_audio(std::get<std::vector<float>>(audio_inputs));
-    return stream->finish();
+    stream->end_audio();
+    return stream->generate(nullptr);
 }
 
 std::unique_ptr<ASRStreamImplBase> VoxtralASR::create_stream(

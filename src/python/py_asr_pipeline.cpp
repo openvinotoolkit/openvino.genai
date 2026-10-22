@@ -77,6 +77,14 @@ auto asr_decoded_result_chunk_docstring = R"(
     :param token_ids token ids corresponding to the chunk text
 )";
 
+auto asr_stream_docstring = R"(
+    Streaming audio transcription session.
+
+    generate() runs inference once for the whole stream and consumes audio frames submitted by push_audio()
+    until end_audio() is called. Another thread may call push_audio() and end_audio() while generate() runs.
+    Frames are processed in the order push_audio() calls complete.
+)";
+
 auto asr_generation_config_docstring = R"(
     ASRGenerationConfig
 
@@ -336,14 +344,33 @@ void init_asr_pipeline(py::module_& m) {
             return res;
         });
 
-    py::class_<ASRStream>(m, "ASRStream", "Stateful streaming audio transcription session")
+    py::class_<ASRStream>(m, "ASRStream", asr_stream_docstring)
+        .def("push_audio",
+             &ASRStream::push_audio,
+             py::arg("audio_frame"),
+             py::call_guard<py::gil_scoped_release>(),
+             "Enqueue normalized mono 16 kHz audio samples for generate() without running inference. "
+             "Blocks while the bounded input queue is full. Raises after end_audio() or once generate() has stopped.")
+        .def("end_audio",
+             &ASRStream::end_audio,
+             py::call_guard<py::gil_scoped_release>(),
+             "Signal the end of audio input. May be called once.")
         .def(
-            "push_audio",
-            &ASRStream::push_audio,
-            py::arg("audio_chunk"),
-            "Append normalized mono 16 kHz audio samples and return newly decoded text."
-        )
-        .def("finish", &ASRStream::finish, "Flush the final audio chunk and return the complete transcription.");
+            "generate",
+            [](ASRStream& stream,
+               const std::optional<std::function<std::optional<uint16_t>(py::str)>>& py_text_callback) {
+                ov::genai::ASRTextCallback text_callback;
+                if (py_text_callback) {
+                    text_callback = std::get<ov::genai::ASRTextCallback>(
+                        pyutils::pystreamer_to_streamer(pyutils::PyBindStreamerVariant{*py_text_callback}));
+                }
+                py::gil_scoped_release release;
+                return stream.generate(text_callback);
+            },
+            py::arg("text_callback") = std::nullopt,
+            "Run inference once over all audio pushed to the stream and return the complete transcription. "
+            "Blocks until end_audio() is called and the queue is drained, or text_callback returns "
+            "StreamingStatus.STOP or StreamingStatus.CANCEL. text_callback receives transcript deltas.");
 
     py::class_<ASRPipeline>(m, "ASRPipeline", "Automatic speech recognition pipeline")
         .def(

@@ -279,13 +279,26 @@ class ASRPerfMetrics(PerfMetrics):
         ...
 
 class ASRStream:
-    """Stateful streaming audio transcription session."""
-    def push_audio(self, audio_chunk: collections.abc.Sequence[typing.SupportsFloat]) -> str:
-        """Append normalized mono 16 kHz audio samples and return newly decoded text."""
-        ...
-    def finish(self) -> ASRDecodedResults:
-        """Flush the final audio chunk and return the complete transcription."""
-        ...
+    """
+    
+        Streaming audio transcription session.
+    
+        generate() runs inference once for the whole stream and consumes audio frames submitted by push_audio()
+        until end_audio() is called. Another thread may call push_audio() and end_audio() while generate() runs.
+        Frames are processed in the order push_audio() calls complete.
+    """
+    def end_audio(self) -> None:
+        """
+        Signal the end of audio input. May be called once.
+        """
+    def generate(self, text_callback: collections.abc.Callable[[str], int | None] | None = None) -> ASRDecodedResults:
+        """
+        Run inference once over all audio pushed to the stream and return the complete transcription. Blocks until end_audio() is called and the queue is drained, or text_callback returns StreamingStatus.STOP or StreamingStatus.CANCEL. text_callback receives transcript deltas.
+        """
+    def push_audio(self, audio_frame: collections.abc.Sequence[typing.SupportsFloat]) -> None:
+        """
+        Enqueue normalized mono 16 kHz audio samples for generate() without running inference. Blocks while the bounded input queue is full. Raises after end_audio() or once generate() has stopped.
+        """
 
 class ASRPipeline:
     """

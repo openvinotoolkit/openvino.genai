@@ -107,14 +107,19 @@ ASRStream& ASRStream::operator=(ASRStream&&) noexcept = default;
 
 ASRStream::~ASRStream() = default;
 
-std::string ASRStream::push_audio(const std::vector<float>& audio_chunk) {
+void ASRStream::push_audio(const std::vector<float>& audio_frame) {
     OPENVINO_ASSERT(m_impl, "ASR stream has been moved from.");
-    return m_impl->push_audio(audio_chunk);
+    m_impl->push_audio(audio_frame);
 }
 
-ASRDecodedResults ASRStream::finish() {
+void ASRStream::end_audio() {
     OPENVINO_ASSERT(m_impl, "ASR stream has been moved from.");
-    return m_impl->finish();
+    m_impl->end_audio();
+}
+
+ASRDecodedResults ASRStream::generate(const ASRTextCallback& text_callback) {
+    OPENVINO_ASSERT(m_impl, "ASR stream has been moved from.");
+    return m_impl->generate(text_callback);
 }
 
 ASRStream ASRPipeline::create_stream(const std::optional<ASRGenerationConfig>& generation_config) {

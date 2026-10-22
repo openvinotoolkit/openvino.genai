@@ -424,21 +424,26 @@ For the ASR API, refer to the [ASR Generation Config API](https://docs.openvino.
 
 ### Streaming Audio Input
 
-`ASRPipeline.create_stream()` is available for Voxtral Realtime models. Each `push_audio()` call accepts the next normalized, mono 16 kHz PCM samples and returns any newly decoded text. Call `finish()` to process a final partial chunk and retrieve the complete transcription. Other ASR models continue to use `generate()` with a complete audio input.
+`ASRPipeline.create_stream()` is available for Voxtral Realtime models. `generate()` runs inference once for the whole stream and delivers transcript deltas to a callback. While it runs, another thread submits normalized, mono 16 kHz PCM frames with `push_audio()`, which only enqueues them, and calls `end_audio()` after the last frame. Frames are processed in submission order. `push_audio()` blocks while the bounded input queue is full and raises after `end_audio()` or once `generate()` has stopped. A callback returning `StreamingStatus.STOP` stops generation; inference errors are raised from `generate()`. Other ASR models continue to use `ASRPipeline.generate()` with a complete audio input.
 
 <LanguageTabs>
     <TabItemPython>
         ```python showLineNumbers
+        import threading
         import openvino_genai as ov_genai
 
         pipe = ov_genai.ASRPipeline(model_path, "CPU")
         stream = pipe.create_stream()
 
-        for audio_chunk in audio_chunks:
-            partial_text = stream.push_audio(audio_chunk)
-            print(partial_text, end="", flush=True)
+        def produce_audio():
+            for audio_frame in audio_frames:
+                stream.push_audio(audio_frame)
+            stream.end_audio()
 
-        result = stream.finish()
+        producer = threading.Thread(target=produce_audio)
+        producer.start()
+        result = stream.generate(lambda delta: print(delta, end="", flush=True))
+        producer.join()
         print("\nFinal:", result.texts[0])
         ```
     </TabItemPython>
@@ -446,15 +451,22 @@ For the ASR API, refer to the [ASR Generation Config API](https://docs.openvino.
         ```cpp showLineNumbers
         #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
         #include <iostream>
+        #include <thread>
 
         ov::genai::ASRPipeline pipe(model_path, "CPU");
         auto stream = pipe.create_stream();
 
-        for (const std::vector<float>& audio_chunk : audio_chunks) {
-            std::cout << stream.push_audio(audio_chunk) << std::flush;
-        }
-
-        const auto result = stream.finish();
+        std::thread producer([&stream, &audio_frames] {
+            for (const std::vector<float>& audio_frame : audio_frames) {
+                stream.push_audio(audio_frame);
+            }
+            stream.end_audio();
+        });
+        const auto result = stream.generate([](std::string delta) {
+            std::cout << delta << std::flush;
+            return ov::genai::StreamingStatus::RUNNING;
+        });
+        producer.join();
         std::cout << "\nFinal: " << result.texts[0] << std::endl;
         ```
     </TabItemCpp>
