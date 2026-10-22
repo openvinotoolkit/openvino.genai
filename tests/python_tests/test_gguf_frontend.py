@@ -7,6 +7,8 @@ See README.md, "GGUF Frontend Tests", for the steps, CI runtime and model-covera
 """
 
 import gc
+import json
+import os
 import shutil
 import sys
 from dataclasses import dataclass
@@ -309,22 +311,92 @@ def test_tiny_gguf_saved_ir(tiny_gguf_model, pipeline_type, tmp_path):
 
 
 @pytest.fixture(scope="module")
-def tiny_gguf_vlm_model(llama_reference_tools, tmp_path_factory):
+def tiny_gguf_vlm_model(request, llama_reference_tools, tmp_path_factory):
     from test_gguf_generated import run_reference_command
 
-    repo = "optimum-intel-internal-testing/tiny-random-gemma3"
-    revision = "0cc4c5a822bbc68aeb312fd789046463ca301d14"
+    models = {
+        "gemma3": ("gemma3", "0cc4c5a822bbc68aeb312fd789046463ca301d14"),
+        "gemma4": ("gemma4", "422d12880b72b92b1547ac7ce2e1a4865f6bec6c"),
+        "gemma4-unified": ("gemma4-unified-it", "becd0eb532fcbccb96576e32eab0dd304e4e4c47"),
+        "qwen35": ("qwen3.5", "aa8ac4a953c6081e0afaa34bd95cefd9c852ddbf"),
+        "qwen35moe": ("qwen3.5-moe", "3061bafacf5a42fc57e620dc54ab19fae19ad594"),
+        "muse-glimmer": ("muse-glimmer", "cb70af191bbbf704a47b7d24dd5287d97dd60103"),
+    }
+    family = getattr(request, "param", "gemma3")
+    name, revision = models[family]
+    repo = "optimum-intel-internal-testing/tiny-random-" + name
     source = Path(retry_request(lambda: snapshot_download(repo, revision=revision)))
     build = llama_reference_tools[0].parent.parent
     converter = build / "_deps" / "llama_cpp-src" / "convert_hf_to_gguf.py"
-    directory = tmp_path_factory.mktemp("gguf_vlm")
+    directory = Path.home() / "gguf_models" / "genai_vlm_tests" / family
+    directory.mkdir(parents=True, exist_ok=True)
+    if family.startswith("qwen35") or family == "gemma4-unified":
+        fixture_source = tmp_path_factory.mktemp(family)
+        config = json.loads((source / "config.json").read_text(encoding="utf-8"))
+        if family.startswith("qwen35"):
+            # The production mRoPE default exceeds the tiny model's rotary width.
+            config["text_config"]["rope_parameters"]["mrope_section"] = [1, 1, 0]
+        else:
+            config["text_config"]["expert_intermediate_size"] = None
+        for path in source.iterdir():
+            if path.name != "config.json":
+                shutil.copy2(path, fixture_source / path.name)
+        (fixture_source / "config.json").write_text(json.dumps(config), encoding="utf-8")
+        source = fixture_source
     language, projector = directory / "model.gguf", directory / "mmproj.gguf"
-    for output, options in [(language, []), (projector, ["--mmproj"])]:
+    language_options = ["--no-mtp"] if family.startswith("qwen35") else []
+    converter_env = os.environ.copy()
+    converter_env["PYTHONPATH"] = str(converter.parent)
+    for output, options in [(language, language_options), (projector, ["--mmproj"])]:
         run_reference_command(
             [sys.executable, str(converter), str(source), "--outfile", str(output), "--outtype", "f32", *options],
             timeout=300,
+            env=converter_env,
         )
     return language, projector
+
+
+@pytest.mark.parametrize(
+    "tiny_gguf_vlm_model,media",
+    [
+        pytest.param(family, media, id=f"{family}-{media}")
+        for family in ["gemma4", "gemma4-unified", "qwen35", "qwen35moe", "muse-glimmer"]
+        for media in (["image", "video", "audio"] if family.startswith("gemma4") else ["image", "video"])
+        if (family, media) != ("muse-glimmer", "video")
+    ]
+    + [
+        pytest.param(
+            "muse-glimmer",
+            "video",
+            id="muse-glimmer-video",
+            marks=pytest.mark.xfail(
+                reason="Requires https://github.com/openvinotoolkit/openvino.genai/pull/4689",
+                raises=RuntimeError,
+                strict=True,
+            ),
+        )
+    ],
+    indirect=["tiny_gguf_vlm_model"],
+)
+@pytest.mark.parametrize("backend", ["SDPA", "PA"])
+def test_gguf_vlm_projector_layouts(tiny_gguf_vlm_model, backend, media):
+    language, projector = tiny_gguf_vlm_model
+    pipeline = genai.VLMPipeline(
+        language, "CPU", mmproj_path=str(projector), ATTENTION_BACKEND=backend, **reference_properties()
+    )
+    image = np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8)
+    inputs = {"images": [ov.Tensor(image)]}
+    if media == "video":
+        metadata = genai.VideoMetadata()
+        metadata.fps = 2.0
+        inputs = {"videos": [ov.Tensor(np.repeat(image, 4, axis=0))], "videos_metadata": [metadata]}
+    elif media == "audio":
+        inputs = {"audios": [ov.Tensor(np.zeros(16000, dtype=np.float32))]}
+    options = {"max_new_tokens": 2, "do_sample": False, "ignore_eos": True}
+    result = pipeline.generate("Describe.", **inputs, **options)
+    assert result.perf_metrics.get_num_generated_tokens() == 2
+    assert result.perf_metrics.get_num_input_tokens() > 0
+    assert pipeline.generate("Describe.", **inputs, **options).texts == result.texts
 
 
 def test_gguf_vlm_attention_backends_and_images(tiny_gguf_vlm_model):
