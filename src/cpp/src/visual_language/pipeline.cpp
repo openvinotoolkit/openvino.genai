@@ -3,6 +3,7 @@
 
 #include "openvino/genai/visual_language/pipeline.hpp"
 
+#include <algorithm>
 #include <optional>
 #include <random>
 
@@ -645,10 +646,9 @@ public:
         const auto embeddings_start_time = std::chrono::steady_clock::now();
         VLMChatContext chat_context(history, m_vision_registry, *m_inputs_embedder);
 
-        auto processed_chat_data = chat_context.process(images, videos, videos_metadata, audios);
-
         // A failed call drops the KV cache. An empty token cache then makes the next call prefill
-        // the whole history, since the KV cache no longer holds any of it.
+        // the whole history, since the KV cache no longer holds any of it. Armed before process(),
+        // which truncates an edited history before it can throw.
         struct ChatHistoryCallRollback {
             VLMPipelineImpl& pipe;
             VLMChatContext& chat_context;
@@ -660,6 +660,8 @@ public:
                 }
             }
         } chat_history_call_rollback{*this, chat_context};
+
+        auto processed_chat_data = chat_context.process(images, videos, videos_metadata, audios);
 
         perf_metrics.vlm_raw_metrics.vision_encoding_durations.emplace_back(processed_chat_data.vision_encoding_duration);
         auto& audio_durations = perf_metrics.vlm_raw_metrics.audio_encoding_durations;
@@ -891,6 +893,14 @@ private:
 
     // Runs while a failed turn unwinds, so it must not throw.
     void recover_cache_after_failed_turn(utils::CacheState& snapshot) noexcept {
+        // align_cache_and_history() may have trimmed inside the old history, and the turn then wrote
+        // its own tokens there. Only the prefix still shared with the live token cache holds the old
+        // tokens. Measured before update_chat_history() resizes the live cache.
+        auto& history_tokens = snapshot.get_state();
+        const auto& live_tokens = m_inputs_embedder->get_cache_state().get_state();
+        const size_t kept_length =
+            std::mismatch(history_tokens.begin(), history_tokens.end(), live_tokens.begin(), live_tokens.end()).first -
+            history_tokens.begin();
         try {
             // Undoes model-specific embedder state the same way as a cancelled turn. Its token cache
             // changes do not matter: every path below overwrites the cache state.
@@ -911,19 +921,18 @@ private:
             return;
         }
         try {
-            // The turn may have trimmed the KV cache and written its prompt and some answer tokens.
-            // Whatever lies past the old history is trimmed by the next turn, like a cancelled answer.
+            // Whatever lies past the kept prefix is trimmed by the next turn, like a cancelled answer.
             const size_t kv_length = get_kv_cache_length(snapshot.seq_length_axis);
-            const size_t history_length = snapshot.get_state().size();
-            if (kv_length >= history_length) {
+            if (kept_length > 0 && kv_length >= kept_length) {
+                history_tokens.resize(kept_length);
                 cache_state = snapshot;
-                cache_state.num_tokens_to_trim = kv_length - history_length;
+                cache_state.num_tokens_to_trim = kv_length - kept_length;
                 m_language.get_tensor("attention_mask").set_shape({1, kv_length});
                 return;
             }
-            GENAI_ERR("KV cache holds %zu tokens after a failed chat turn, fewer than the %zu of the chat history.",
+            GENAI_ERR("KV cache holds %zu tokens after a failed chat turn, %zu of them match the chat history.",
                       kv_length,
-                      history_length);
+                      kept_length);
         } catch (const std::exception& error) {
             GENAI_ERR("Failed to restore the KV cache after a failed chat turn: %s", error.what());
         }

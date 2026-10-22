@@ -4068,6 +4068,39 @@ def test_vlm_failed_first_chat_turn_is_rolled_back(
     assert first_turn(fail_first=True) == first_turn(fail_first=False)
 
 
+def test_vlm_failed_chat_turn_with_rewritten_history_is_rolled_back(
+    rollback_pipe_factory: Callable[[], VLMPipeline], rollback_image: openvino.Tensor
+):
+    """A failed turn that rewrote KV entries of the old history must not leave them labelled as that history."""
+    template = (
+        "{% for message in messages %}{{ message['role'] }}: {{ message['content'] }}"
+        "{% if message['role'] == 'user' and not loop.last %}EARLIER_PROMPT_SUFFIX{% endif %}\n{% endfor %}"
+        "{% if add_generation_prompt %}assistant: {% endif %}"
+    )
+    plain = template.replace("EARLIER_PROMPT_SUFFIX", "")
+    # Renders the first prompt differently, so the failed turn trims the KV cache inside the old history.
+    rewritten = template.replace("EARLIER_PROMPT_SUFFIX", " Note.")
+
+    def second_turn(fail_first: bool) -> tuple[str, int]:
+        pipe = rollback_pipe_factory()
+        # Shares its state with the pipeline, so the template changes in the middle of the chat.
+        tokenizer = pipe.get_tokenizer()
+        tokenizer.chat_template = plain
+        pipe.start_chat()
+        # Every turn has an image: text-only turns of this model fail on SDPA.
+        pipe.generate("Hi", images=[rollback_image], generation_config=ROLLBACK_CONFIG)
+        if fail_first:
+            tokenizer.chat_template = rewritten
+            with pytest.raises(RuntimeError, match="streamer failure"):
+                pipe.generate(
+                    "Again", images=[rollback_image], generation_config=ROLLBACK_CONFIG, streamer=RaisingStreamer()
+                )
+            tokenizer.chat_template = plain
+        return _text_and_tokens(pipe.generate("Again", images=[rollback_image], generation_config=ROLLBACK_CONFIG))
+
+    assert second_turn(fail_first=True) == second_turn(fail_first=False)
+
+
 def test_vlm_failed_chat_turn_rolls_back_videochat_embedder_state():
     """Embedders that count visual tokens per turn, like VideoChat-Flash, must drop the failed turn's count.
 
@@ -4143,12 +4176,15 @@ def test_vlm_failed_chat_history_call_is_rolled_back(
     assert _text_and_tokens(retried) == _text_and_tokens(fresh)
 
 
+@pytest.mark.parametrize("failure", ["streamer", "missing_media"])
 def test_vlm_failed_edited_chat_history_call_is_rolled_back(
-    rollback_pipe_factory: Callable[[], VLMPipeline], rollback_image: openvino.Tensor
+    rollback_pipe_factory: Callable[[], VLMPipeline], rollback_image: openvino.Tensor, failure: str
 ):
     """A failure right after the caller edits an earlier message must not keep metadata of the edit."""
     # A different size than the retry's image, so a registration left by the failed call shows up in the token count.
     failed_call_image = openvino.Tensor(np.zeros((256, 256, 3), dtype=np.uint8))
+    # Same size as the retry's image but other pixels, so a KV cache kept from the replaced message changes the answer.
+    replaced_image = openvino.Tensor(np.full((32, 32, 3), 255, dtype=np.uint8))
 
     def edited_turn(fail_first: bool) -> tuple[str, int]:
         pipe = rollback_pipe_factory()
@@ -4156,10 +4192,16 @@ def test_vlm_failed_edited_chat_history_call_is_rolled_back(
         answer = pipe.generate(history, images=[rollback_image], generation_config=ROLLBACK_CONFIG).texts[0]
         history.append({"role": "assistant", "content": answer})
         history.append({"role": "user", "content": "Again"})
-        pipe.generate(history, images=[rollback_image], generation_config=ROLLBACK_CONFIG)
+        pipe.generate(history, images=[replaced_image], generation_config=ROLLBACK_CONFIG)
         history.pop()
+        if fail_first and failure == "missing_media":
+            # Fails in normalization, after the edited message was already dropped from the history state.
+            history.append({"role": "user", "content": "Edited " + get_universal_tag(ModalityType.IMAGE, 5)})
+            with pytest.raises(RuntimeError, match="Missing image/video/audio with index 5"):
+                pipe.generate(history, images=[failed_call_image], generation_config=ROLLBACK_CONFIG)
+            history.pop()
         history.append({"role": "user", "content": "Edited"})
-        if fail_first:
+        if fail_first and failure == "streamer":
             with pytest.raises(RuntimeError, match="streamer failure"):
                 pipe.generate(
                     history, images=[failed_call_image], generation_config=ROLLBACK_CONFIG, streamer=RaisingStreamer()
