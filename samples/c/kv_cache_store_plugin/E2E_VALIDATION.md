@@ -104,14 +104,15 @@ python benchmark.py -m <model_dir> -d CPU --task visual_text_gen \
 
 | Device | `num_kv_blocks` | Baseline `P2` TTFT | Offload (via plugin) `P2` TTFT | Speedup | `P0` / `P2` MD5 |
 |---|---|---|---|---|---|
-| CPU | 120 | 95992.54 ms | 7384.30 ms | **~13x** | identical (`e067b6f4...`) |
-| GPU | 220 | 2860.82 ms | 812.96 ms | **~3.5x** | identical (`e067b6f4...`) |
+| CPU | 120 | 104668.61 ms | 7852.92 ms | **~13x** | identical (`e067b6f4...`) |
+| GPU | 220 | 3091.46 ms | 1529.72 ms | **~2.0x** | identical (`e067b6f4...`) |
 
 The absolute gain is far larger on CPU because CPU prefill is slower, so there is more recompute to
-avoid. Writing the evicted blocks is not free: on CPU `P1` took 122.9 s with offload against 100.4 s
-without, and on GPU the difference was within noise (each figure is a single run). Longer prompts
-widen the gap and very short ones can erase it, so benchmark with prompt lengths representative of
-your workload rather than relying on these numbers.
+avoid. Writing the evicted blocks is not free: on GPU `P1` took 4266 ms with offload against 3275 ms
+without (and `P0` 3637 ms against 3239 ms), while on CPU the difference was within noise (`P1`
+113.9 s against 118.0 s). Each figure is a single run. Longer prompts widen the gap and very short
+ones can erase it, so benchmark with prompt lengths representative of your workload rather than
+relying on these numbers.
 
 **A hybrid model only reuses a prefix up to its last linear-attention checkpoint.** The recurrent
 state is checkpointed every `cache_interval` tokens (about 2880 on CPU and 2592 on GPU with the
@@ -177,13 +178,13 @@ Scenario 1).
 
 | Device | TTFT without restore (full re-prefill) | TTFT with restore (via your plugin) | Speedup |
 |---|---|---|---|
-| GPU | 3803.60 ms | 554.11 ms | **~6.9x** |
+| GPU | 3794.20 ms | 598.76 ms | **~6.3x** |
 
 ```
 PASS: the restored continuation matches the uninterrupted baseline token-for-token.
-PERF: TTFT without session restore (full re-prefill): 3803.60 ms
-PERF: TTFT with session restore (via your plugin):    554.11 ms
-PERF: Speedup: 6.86x
+PERF: TTFT without session restore (full re-prefill): 3794.20 ms
+PERF: TTFT with session restore (via your plugin):    598.76 ms
+PERF: Speedup: 6.34x
 ```
 
 Unlike Scenario 1, this does not depend on prefix-cache hits, so the linear-attention checkpoint
