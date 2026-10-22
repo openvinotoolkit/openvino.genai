@@ -447,6 +447,20 @@ def test_logprob_token_ids_rejected(model_facebook_opt_125m: OVConvertedModelSch
     assert follow_up_outputs
     assert follow_up_outputs[0].generated_ids
 
+    # A prompt-lookup pipeline also cannot fill requested-token logprobs. The rejection takes a
+    # different path than speculative decoding: PromptLookupImpl::add_request requires a
+    # prompt-lookup config (is_prompt_lookup()), and the base add_request's validate() then
+    # rejects logprob_token_ids combined with the assisting-generation fields it carries.
+    pl_pipe = ContinuousBatchingPipeline(
+        model_path, SchedulerConfig(), "CPU", properties={"prompt_lookup": True}
+    )
+    with pytest.raises(Exception, match="logprob_token_ids"):
+        pl_pipe.add_request(3, "The Sun is",
+                            generation_config=GenerationConfig(
+                                max_new_tokens=1, num_assistant_tokens=5, max_ngram_size=3,
+                                logprob_token_ids=[id_a, id_b]))
+    assert not pl_pipe.has_non_finished_requests()
+
 
 @pytest.mark.transformers_dependent(
     reason="Cases with group beam search fails with optimum-intel 423b423 and transformers>=5.0, CVS-185790"
