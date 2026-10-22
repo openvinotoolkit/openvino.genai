@@ -1,95 +1,98 @@
-# Automatic speech recognition sample
+# Automatic speech recognition samples
 
-This example showcases inference of speech recognition models. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `ov::genai::ASRPipeline` and uses audio file in wav format as an input source.
+These samples demonstrate speech recognition using `ov::genai::ASRPipeline`, with WAV audio files as input. They keep configuration options minimal to encourage users to explore and customize the source code, for example, by experimenting with GPU inference.
 
-## Download and convert the model and tokenizers
+## Download and convert the models and tokenizers
 
-The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
-
-It's not required to install [../../export-requirements.txt](../../export-requirements.txt) for deployment if the model has already been exported.
+Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model.
 
 ```sh
-pip install --upgrade-strategy eager -r ../../requirements.txt
+pip install -U --upgrade-strategy eager -r ../../export-requirements.txt
+```
+These dependencies are needed only for model export, not for running already-exported OpenVINO models.
+
+### Whisper
+
+```sh
 optimum-cli export openvino --trust-remote-code --model openai/whisper-base whisper-base
 ```
 
-## Prepare audio file
+### Qwen3-ASR and Forced Aligner
 
-Prepare audio file in wav format with sampling rate 16k Hz.
-
-You can download example audio file: https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
-
-## Run
-
-Follow [Get Started with Samples](https://docs.openvino.ai/2026/get-started/learn-openvino/openvino-samples/get-started-demos.html) to run the sample.
-
-`automatic_speech_recognition whisper-base how_are_you_doing_today.wav`
-
-Output:
-```
- How are you doing today?
-timestamps: [0, 2] text:  How are you doing today?
-```
-
-Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#speech-recognition-models-whisper-based) for more details.
-
-# Forced aligner word timestamps (Qwen3-ASR)
-
-The `forced_aligner_timestamps_generation` sample demonstrates word timestamp generation with Qwen3-ASR and `ASRForcedAligner`:
-
-```text
-audio
-  -> Qwen3-ASR transcription + automatic language detection
-  -> ASRForcedAligner
-  -> word-level timestamps
-```
-
-Qwen3-ASR and its forced aligner are distributed separately and must be exported to separate directories. Install `qwen-asr` before export.
+Qwen3-ASR performs speech transcription. The Qwen3 Forced Aligner generates word-level timestamps for an existing transcript, which can be produced by Qwen3-ASR or by another ASR model. Export the models into separate directories.
 
 ```sh
 pip install qwen-asr
 
-# Export the Qwen3-ASR model.
-optimum-cli export openvino \
-    --model Qwen/Qwen3-ASR-0.6B \
-    --task automatic-speech-recognition-with-past \
-    --trust-remote-code \
-    qwen3-asr-ov
+optimum-cli export openvino --trust-remote-code --model Qwen/Qwen3-ASR-0.6B \
+    --task automatic-speech-recognition-with-past qwen3-asr-ov
 
-# Export the Qwen3 forced-aligner model.
-optimum-cli export openvino \
-    --model Qwen/Qwen3-ForcedAligner-0.6B \
-    --task automatic-speech-recognition-with-past \
-    --trust-remote-code \
-    qwen3-forced-aligner-ov
+optimum-cli export openvino --trust-remote-code --model Qwen/Qwen3-ForcedAligner-0.6B \
+    --task automatic-speech-recognition-with-past qwen3-forced-aligner-ov
 ```
 
-Prepare a 16 kHz wav file as described above, for example [how_are_you_doing_today.wav](https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav).
+### Fun-ASR-Nano
 
-The optional device argument defaults to `CPU` and is used for both models:
+```sh
+pip install funasr "transformers==4.57.6"
 
-`forced_aligner_timestamps_generation <ASR_MODEL_DIR> <FORCED_ALIGNER_MODEL_DIR> "<WAV_FILE_PATH>" [DEVICE]`
+optimum-cli export openvino --trust-remote-code \
+    --model FunAudioLLM/Fun-ASR-Nano-2512 fun-asr-nano-ov
+```
 
-`forced_aligner_timestamps_generation qwen3-asr-ov qwen3-forced-aligner-ov how_are_you_doing_today.wav`
+## Prepare audio
 
-The language is not specified, so Qwen3-ASR detects it from the audio.
+Prepare audio file in wav format with sampling rate 16k Hz.
+
+Download the example audio file: https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
+
+## Run the samples
+
+Follow [Get Started with Samples](https://docs.openvino.ai/2026/get-started/learn-openvino/openvino-samples/get-started-demos.html) to run the samples.
+
+### Automatic speech recognition
+
+```sh
+automatic_speech_recognition whisper-base how_are_you_doing_today.wav
+```
 
 Output:
+
+```text
+ How are you doing today?
+timestamps: [0.00, 2.00] text:  How are you doing today?
 ```
-Detected language: English
-Transcription: How are you doing today?
+
+### Standalone Forced-aligner word timestamps
+
+```sh
+forced_aligner_timestamps_generation fun-asr-nano-ov qwen3-forced-aligner-ov zh_sample.wav --language Chinese
+```
+
+Output:
+
+```text
+Transcription: 甚至出现交易几乎停滞的情况。
 
 Word timestamps:
-[0.48, 0.56]: How
-[0.56, 0.72]: are
-[0.72, 0.80]: you
-[0.80, 1.12]: doing
-[1.12, 1.60]: today
+[0.40, 0.72]: 甚
+[0.72, 0.96]: 至
+[0.96, 1.12]: 出
+[1.12, 1.52]: 现
+[1.52, 1.76]: 交
+[1.76, 2.00]: 易
+[2.00, 2.24]: 几
+[2.24, 2.48]: 乎
+[2.48, 2.72]: 停
+[2.72, 2.88]: 滞
+[2.88, 3.04]: 的
+[3.04, 3.36]: 情
+[3.36, 3.68]: 况
 ```
 
-`ASRForcedAligner` can also be used standalone via `align()` with audio, a transcript, and the transcript language. The transcript may come from another ASR model. Qwen3-ASR detects the language automatically, while FunASR does not perform language detection, so when aligning a FunASR transcript the language must be provided explicitly, for example with `ov::genai::language("English")`.
+Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#speech-recognition-models) for more details.
 
-# ASR pipeline usage
+## ASR pipeline usage
 
 ```c++
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
@@ -103,7 +106,7 @@ auto result = pipeline.generate(raw_speech);
 
 ### Transcription
 
-ASR pipeline predicts the language of the source audio automatically.
+All supported ASR models can transcribe audio without specifying a language. Multilingual Whisper and Qwen3-ASR also detect and report the input language, whereas Fun-ASR-Nano does not. Therefore, in the standalone forced-aligner sample, `--language` is optional with Qwen3-ASR but required with Fun-ASR-Nano.
 
 ```c++
 ov::genai::RawSpeechInput raw_speech = read_wav("how_are_you_doing_today.wav");
@@ -115,38 +118,82 @@ result = pipeline.generate(raw_speech);
 //  Il s'agit d'une entité très complexe qui consiste...
 ```
 
-If the source audio language is known in advance, it can be specified as an argument to `generate` method:
+If the language is known, pass it to `generate()`:
 
 ```c++
 ov::genai::RawSpeechInput raw_speech = read_wav("how_are_you_doing_today.wav");
-auto result = pipeline.generate(raw_speech, ov::genai::language("<|en|>"));
+auto result = pipeline.generate(raw_speech, ov::genai::language("en"));
 //  How are you doing today?
 
 raw_speech = read_wav("fr_sample.wav");
-result = pipeline.generate(raw_speech, ov::genai::language("<|fr|>"));
+result = pipeline.generate(raw_speech, ov::genai::language("fr"));
 //  Il s'agit d'une entité très complexe qui consiste...
 ```
 
+Whisper uses language codes such as `"en"` and `"zh"`, while Qwen3-ASR uses language names such as `"English"` and `"Chinese"`. The documented language hints for Fun-ASR-Nano are `"中文"`, `"英文"`, and `"日文"`.
+
 ### Timestamps prediction
 
-The model can predict timestamps. For sentence-level timestamps, pass the `return_timestamps` argument:
+Whisper can predict timestamps for recognized speech segments using `return_timestamps`. To generate word-level timestamps, pass `ov::genai::word_timestamps(true)` both when constructing the Whisper pipeline and when calling `generate()`.
 
-```C++
+```c++
 ov::genai::RawSpeechInput raw_speech = read_wav("how_are_you_doing_today.wav");
 auto result = pipeline.generate(raw_speech, ov::genai::return_timestamps(true));
 
-std::cout << std::setprecision(2);
-for (auto& chunk : *result.chunks) {
+std::cout << std::fixed << std::setprecision(2);
+for (auto& chunk : (*result.chunks)[0]) {
     std::cout << "timestamps: [" << chunk.start_ts << ", " << chunk.end_ts << "] text: " << chunk.text << "\n";
 }
-// timestamps: [0, 2] text:  How are you doing today?
+// timestamps: [0.00, 2.00] text:  How are you doing today?
 ```
 
-## Whisper-specific features
+Qwen3-ASR can produce word-level timestamps if integrated with its forced aligner into ASRPipeline:
 
-### Translation
+```c++
+#include "openvino/genai/automatic_speech_recognition/forced_aligner.hpp"
 
-By default, Whisper performs the task of speech transcription, where the source audio language is the same as the target text language. To perform speech translation, where the target text is in English, set the task to "translate":
+auto aligner = std::make_shared<ov::genai::ASRForcedAligner>(forced_aligner_model_dir, "CPU");
+ov::genai::ASRPipeline pipe(qwen3_asr_model_dir, "CPU", ov::genai::forced_aligner(aligner));
+
+auto raw_speech = read_wav("fr_audio.wav");
+auto result = pipe.generate(raw_speech, ov::genai::word_timestamps(true));
+
+std::cout << "Detected language: " << result.languages[0] << "\n";
+std::cout << "Transcription: " << result.texts[0] << "\n";
+std::cout << "\nWord timestamps:\n";
+
+std::cout << std::fixed << std::setprecision(2);
+for (const auto& word : (*result.words)[0]) {
+    std::cout << "[" << word.start_ts << ", " << word.end_ts << "]: " << word.text << "\n";
+}
+```
+
+Output:
+
+```text
+Detected language: French
+Transcription: Les premiers cas de cette maladie saisonnière ont été déclarés fin juillet.
+
+Word timestamps:
+[1.04, 1.12]: Les
+[1.12, 1.44]: premiers
+[1.44, 1.52]: cas
+[1.52, 1.60]: de
+[1.60, 1.84]: cette
+[1.84, 2.16]: maladie
+[2.16, 2.80]: saisonnière
+[2.88, 2.96]: ont
+[2.96, 3.12]: été
+[3.28, 3.76]: déclarés
+[3.84, 4.00]: fin
+[4.00, 4.32]: juillet
+```
+
+### Whisper-specific features
+
+#### Translation
+
+Whisper normally performs transcription, producing text in the language of the source audio. To translate non-English speech into English, set the task to `"translate"`:
 
 ```c++
 ov::genai::RawSpeechInput raw_speech = read_wav("fr_sample.wav");
@@ -154,18 +201,18 @@ auto result = pipeline.generate(raw_speech, ov::genai::task("translate"));
 //  It is a very complex entity that consists...
 ```
 
-### Long-Form audio Transcription
+#### Long-form audio transcription
 
-The Whisper model is designed to work on audio samples of up to 30s in duration. ASR pipeline uses sequential chunking algorithm to transcribe audio samples of arbitrary length.
-Sequential chunking algorithm uses a "sliding window", transcribing 30-second slices one after the other.
+Whisper processes audio in windows of up to 30 seconds. For longer recordings, the pipeline uses a sequential chunking algorithm with a sliding window to transcribe successive portions of the audio.
 
-### Initial prompt and hotwords
+#### Initial prompt and hotwords
 
-ASR pipeline has `initial_prompt` and `hotwords` generate arguments:
-* `initial_prompt`: initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing window
-* `hotwords`: hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to the all processing windows
+Whisper supports the `initial_prompt` and `hotwords` generation arguments:
 
-The Whisper model can use that context to better understand the speech and maintain a consistent writing style. However, prompts do not need to be genuine transcripts from prior audio segments. Such prompts can be used to steer the model to use particular spellings or styles:
+- `initial_prompt`: initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing window
+- `hotwords`: hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to the all processing windows
+
+These arguments help guide transcription and maintain consistent writing style. The supplied text does not need to be an actual earlier transcription. For example, an initial prompt can help recognize an uncommon name:
 
 ```c++
 auto result = pipeline.generate(raw_speech);
@@ -177,11 +224,13 @@ result = pipeline.generate(raw_speech, ov::genai::initial_prompt("Polychrome"));
 
 ### Troubleshooting
 
-#### Empty or rubbish output
+#### Empty or incorrect transcription
+
+If the output is empty or unintelligible, check the input audio and its sample rate. `ASRPipeline` expects normalized audio sampled at 16 kHz.
 
 Example output:
 ```
 ----------------
 ```
 
-To resolve this ensure that audio data has 16k Hz sampling rate
+You can use FFmpeg to convert an existing recording.

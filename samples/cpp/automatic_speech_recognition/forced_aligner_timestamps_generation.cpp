@@ -6,7 +6,6 @@
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
-#include <memory>
 #include <stdexcept>
 #include <string>
 
@@ -15,34 +14,63 @@
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 
 int main(int argc, char* argv[]) try {
-    if (argc < 4 || argc > 5) {
+    if (argc < 4) {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] +
-                                 " <ASR_MODEL_DIR> <FORCED_ALIGNER_MODEL_DIR> \"<WAV_FILE_PATH>\" [DEVICE]");
+                                 " <ASR_MODEL_DIR> <FORCED_ALIGNER_MODEL_DIR> \"<WAV_FILE_PATH>\""
+                                 " [DEVICE] [--language LANGUAGE]");
     }
 
     std::filesystem::path asr_models_path = argv[1];
     std::filesystem::path forced_aligner_models_path = argv[2];
     std::string wav_file_path = argv[3];
-    std::string device = (argc == 5) ? argv[4] : "CPU";
+    std::string device = "CPU";
+    std::string language;
+    bool device_specified = false;
 
-    auto aligner = std::make_shared<ov::genai::ASRForcedAligner>(forced_aligner_models_path, device);
-    ov::genai::ASRPipeline pipeline(asr_models_path, device, ov::genai::forced_aligner(aligner));
-
-    // ASR pipelines expect normalized 16 kHz audio.
-    ov::genai::RawSpeechInput raw_speech = utils::audio::read_wav(wav_file_path);
-
-    // Leave language unset to let Qwen3-ASR detect it from the audio.
-    auto result = pipeline.generate(raw_speech, ov::genai::word_timestamps(true));
-
-    std::cout << "Detected language: " << result.languages[0] << "\n";
-    std::cout << "Transcription: " << result.texts[0] << "\n\n";
-
-    std::cout << "Word timestamps:\n";
-    std::cout << std::fixed << std::setprecision(2);
-    for (const auto& word : (*result.words)[0]) {
-        std::cout << "[" << word.start_ts << ", " << word.end_ts << "]: " << word.text << "\n";
+    for (int i = 4; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--language") {
+            if (++i >= argc) {
+                throw std::runtime_error("Missing value for --language");
+            }
+            language = argv[i];
+        } else if (!device_specified && arg.rfind("-", 0) != 0) {
+            device = arg;
+            device_specified = true;
+        } else {
+            throw std::runtime_error("Unexpected argument: " + arg);
+        }
     }
 
+    ov::genai::ASRPipeline pipeline(asr_models_path, device);
+    ov::genai::ASRForcedAligner aligner(forced_aligner_models_path, device);
+
+    // ASR pipelines expect normalized 16 kHz audio.
+    auto raw_speech = utils::audio::read_wav(wav_file_path);
+
+    // Transcribe audio using the ASR model.
+    auto result = pipeline.generate(raw_speech);
+    const auto& transcript = result.texts[0];
+
+    std::cout << "Transcription: " << transcript << "\n";
+
+    // Use the detected language when available, otherwise use the specified language.
+    if (language.empty() && !result.languages.empty()) {
+        language = result.languages[0];
+    }
+
+    if (language.empty()) {
+        throw std::runtime_error("Specify --language when the ASR model does not report the language");
+    }
+
+    // Align the transcription with the audio to get word timestamps.
+    auto words = aligner.align(raw_speech, transcript, ov::genai::language(language));
+
+    std::cout << "\nWord timestamps:\n";
+    std::cout << std::fixed << std::setprecision(2);
+    for (const auto& word : words) {
+        std::cout << "[" << word.start_ts << ", " << word.end_ts << "]: " << word.text << "\n";
+    }
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';

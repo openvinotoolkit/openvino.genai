@@ -31,25 +31,29 @@ def main():
         # next run. It's not beneficial for CPU.
         ov_config = get_config_for_cache()
 
-    # Word timestamps supported by Whisper models only
-    # Must be passed to ASRPipeline constructor as a property
-    ov_config["word_timestamps"] = True
+    # Whisper word timestamps require this constructor property.
+    # Also enable config.word_timestamps below.
+    # ov_config["word_timestamps"] = True
 
     pipe = openvino_genai.ASRPipeline(args.model_dir, args.device, **ov_config)
 
     config = pipe.get_generation_config()
 
-    # If the language is known in advance, it can be passed to the pipeline:
-    # - Whisper: use a language code such as "en". Other languages require a multilingual model.
-    # - Qwen3-ASR: use a language name such as "English".
-    config.language = "en"
+    # Optional language hints for config.language
+    # - Multilingual Whisper: "en"
+    # - Qwen3-ASR: "English"
+    # - Fun-ASR-Nano: "英文"
 
-    # Whisper models parameters. Ignored for Qwen3-ASR models
-    config.task = "transcribe"
+    # Whisper-specific options
+    config.task = "transcribe"  # Or "translate". Multilingual Whisper only.
     config.return_timestamps = True
-    config.word_timestamps = True
 
-    # Pipeline expects normalized audio with Sample Rate of 16kHz
+    # Word timestamps:
+    # - Whisper: enable the constructor property above.
+    # - Qwen3-ASR: attach its companion forced aligner to ASRPipeline.
+    # config.word_timestamps = True
+
+    # Pipeline expects normalized audio sampled at 16 kHz.
     raw_speech = read_wav(args.wav_file_path)
     result = pipe.generate(raw_speech, config)
 
