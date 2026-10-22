@@ -105,12 +105,15 @@ python benchmark.py -m <model_dir> -d CPU --task visual_text_gen \
 | Device | `num_kv_blocks` | Baseline `P2` TTFT | Offload (via plugin) `P2` TTFT | Speedup | `P0` / `P2` MD5 |
 |---|---|---|---|---|---|
 | CPU | 120 | 104668.61 ms | 7852.92 ms | **~13x** | identical (`e067b6f4...`) |
-| GPU | 220 | 3091.46 ms | 1529.72 ms | **~2.0x** | identical (`e067b6f4...`) |
+| GPU | 220 | 2841.02 ms | 868.44 ms | **~3.3x** | identical (`e067b6f4...`) |
+
+The CPU figures are a single run; the GPU figures are the mean of two baseline/offload pairs run
+back to back (baseline `P2` 2902.85 / 2779.20 ms, offload `P2` 904.92 / 831.96 ms).
 
 The absolute gain is far larger on CPU because CPU prefill is slower, so there is more recompute to
-avoid. Writing the evicted blocks is not free: on GPU `P1` took 4266 ms with offload against 3275 ms
-without (and `P0` 3637 ms against 3239 ms), while on CPU the difference was within noise (`P1`
-113.9 s against 118.0 s). Each figure is a single run. Longer prompts widen the gap and very short
+avoid. Writing the evicted blocks is not free, but on this setup it is small: GPU `P0` / `P1` took
+3224 / 3505 ms and 3180 / 2971 ms with offload against 3562 / 3082 ms and 3353 / 3084 ms without, and
+on CPU `P1` took 113.9 s against 118.0 s - all within run-to-run noise. Longer prompts widen the gap and very short
 ones can erase it, so benchmark with prompt lengths representative of your workload rather than
 relying on these numbers.
 
