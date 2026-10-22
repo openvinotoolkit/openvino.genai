@@ -130,7 +130,7 @@ pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
 
 - **Run Command:**
   ```bash
-  python lora_text2video.py model_dir prompt [lora_adapter_path alpha] ...
+  python lora_text2video.py model_dir prompt [num_frames] [lora_adapter_path alpha] ...
   ```
 
   Example:
