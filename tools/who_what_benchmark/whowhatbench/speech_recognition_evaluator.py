@@ -26,7 +26,6 @@ FUNASR_TOKENIZER_SUBFOLDER = (
 )
 ASR_MODEL_TYPES = {"funasr", "fun_asr", "sense_voice"}
 QWEN_ASR_MODEL_TYPES = {"qwen3_asr"}
-AUDIO_VLM_MODEL_TYPES = {"gemma4", "gemma4_unified"}
 WHISPER_MODEL_TYPES = {"whisper"}
 
 DEFAULT_ASR_INSTRUCTION = "Transcribe this audio."
@@ -325,20 +324,6 @@ class WhisperOptimumTranscriber:
         return _transcribe_whisper(self.model, self.processor, audio, self.language, max_new_tokens)
 
 
-class WhisperGenAITranscriber:
-    def __init__(self, pipeline: Any, language: str = "") -> None:
-        self.pipeline = pipeline
-        # None lets Whisper detect the language from the audio
-        self.language = language or None
-
-    def transcribe(self, audio, max_new_tokens: int) -> str:
-        generation_kwargs = {"max_new_tokens": max_new_tokens}
-        if self.language:
-            generation_kwargs["language"] = self.language
-        result = self.pipeline.generate(np.asarray(audio, dtype=np.float32).tolist(), **generation_kwargs)
-        return result.texts[0].strip()
-
-
 def _get_asr_model_type(model_id: str) -> str:
     model_type = get_model_type(model_id)
     if model_type is None:
@@ -408,7 +393,7 @@ class ASRGenAITranscriber:
             import openvino_genai
 
             pipeline = openvino_genai.WhisperPipeline(str(model_id), device.upper(), **(ov_config or {}))
-            return WhisperGenAITranscriber(pipeline, language)
+            return ASRGenAIPipelineTranscriber(pipeline, language, model_type=model_type)
         _register_model_backend(model_type)
         model = _load_multimodal_model(model_id, device, ov_config, False, True, **kwargs)
         return GenAIMultimodalTranscriber(model, language or "English")
