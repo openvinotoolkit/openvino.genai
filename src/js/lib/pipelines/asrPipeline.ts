@@ -7,6 +7,7 @@ import { ASRDecodedResultChunk, ASRDecodedResults } from "../decodedResults.js";
 import { ASRGenerationConfig, ASRPipelineProperties, StreamingStatus } from "../utils.js";
 import { Tokenizer } from "../tokenizer.js";
 import { ASRPerfMetrics } from "../perfMetrics.js";
+import { PipelineInitialization } from "./pipelineUtils.js";
 
 export type RawSpeechInput = Float32Array | number[];
 
@@ -33,6 +34,7 @@ export class ASRPipeline {
   protected readonly device: string;
   protected pipeline: ASRPipelineWrapper | null = null;
   protected readonly properties: ASRPipelineProperties;
+  private readonly initialization = new PipelineInitialization("ASRPipeline");
 
   /**
    * Construct an ASR pipeline from a folder containing model IRs and tokenizer.
@@ -50,10 +52,12 @@ export class ASRPipeline {
    * Load the pipeline. Must be called once before generate().
    */
   async init(): Promise<void> {
-    const pipeline = new ASRPipelineWrapper();
-    const initPromise = util.promisify(pipeline.init.bind(pipeline));
-    await initPromise(this.modelPath, this.device, this.properties);
-    this.pipeline = pipeline;
+    this.pipeline = await this.initialization.run(async () => {
+      const pipeline = new ASRPipelineWrapper();
+      const initialize = util.promisify(pipeline.init.bind(pipeline));
+      await initialize(this.modelPath, this.device, this.properties);
+      return pipeline;
+    });
   }
 
   /**

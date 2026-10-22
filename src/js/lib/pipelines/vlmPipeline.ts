@@ -13,6 +13,7 @@ import { VLMDecodedResults } from "../decodedResults.js";
 import { Tokenizer } from "../tokenizer.js";
 import type { Tensor } from "openvino-node";
 import { VLMPerfMetrics } from "../perfMetrics.js";
+import { PipelineInitialization } from "./pipelineUtils.js";
 
 /**
  * Options for VLM generation methods.
@@ -34,6 +35,7 @@ export class VLMPipeline {
   protected readonly device: string;
   protected pipeline: VLMPipelineWrapper | null = null;
   protected readonly properties: VLMPipelineProperties;
+  private readonly initialization = new PipelineInitialization("VLMPipeline");
 
   /**
    * Construct a VLM pipeline from a folder containing tokenizer and model IRs.
@@ -52,12 +54,12 @@ export class VLMPipeline {
    * @returns Resolves when initialization is complete.
    */
   async init() {
-    const pipeline = new VLMPipelineWrapper();
-
-    const initPromise = util.promisify(pipeline.init.bind(pipeline));
-    await initPromise(this.modelPath, this.device, this.properties);
-
-    this.pipeline = pipeline;
+    this.pipeline = await this.initialization.run(async () => {
+      const pipeline = new VLMPipelineWrapper();
+      const initialize = util.promisify(pipeline.init.bind(pipeline));
+      await initialize(this.modelPath, this.device, this.properties);
+      return pipeline;
+    });
   }
   /**
    * Start a chat session with an optional system message.

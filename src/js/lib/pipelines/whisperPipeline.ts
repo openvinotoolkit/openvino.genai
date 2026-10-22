@@ -11,6 +11,7 @@ import {
 import { WhisperGenerationConfig, WhisperPipelineProperties, StreamingStatus } from "../utils.js";
 import { Tokenizer } from "../tokenizer.js";
 import { WhisperPerfMetrics } from "../perfMetrics.js";
+import { PipelineInitialization } from "./pipelineUtils.js";
 
 export type RawSpeechInput = Float32Array | number[];
 
@@ -35,6 +36,7 @@ export class WhisperPipeline {
   protected readonly device: string;
   protected pipeline: WhisperPipelineWrapper | null = null;
   protected readonly properties: WhisperPipelineProperties;
+  private readonly initialization = new PipelineInitialization("WhisperPipeline");
 
   /**
    * Construct a Whisper pipeline from a folder containing model IRs and tokenizer.
@@ -52,10 +54,12 @@ export class WhisperPipeline {
    * Load the pipeline. Must be called once before generate().
    */
   async init(): Promise<void> {
-    const pipeline = new WhisperPipelineWrapper();
-    const initPromise = util.promisify(pipeline.init.bind(pipeline));
-    await initPromise(this.modelPath, this.device, this.properties);
-    this.pipeline = pipeline;
+    this.pipeline = await this.initialization.run(async () => {
+      const pipeline = new WhisperPipelineWrapper();
+      const initialize = util.promisify(pipeline.init.bind(pipeline));
+      await initialize(this.modelPath, this.device, this.properties);
+      return pipeline;
+    });
   }
 
   /**

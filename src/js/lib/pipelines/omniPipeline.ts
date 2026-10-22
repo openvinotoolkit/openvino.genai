@@ -12,6 +12,7 @@ import {
 } from "../utils.js";
 import { OmniDecodedResults } from "../decodedResults.js";
 import type { Tensor } from "openvino-node";
+import { PipelineInitialization } from "./pipelineUtils.js";
 
 /**
  * Options for Omni generation.
@@ -58,6 +59,7 @@ export class OmniPipeline {
   protected readonly device: string;
   protected pipeline: OmniPipelineWrapper | null = null;
   protected readonly properties: OmniPipelineProperties;
+  private readonly initialization = new PipelineInitialization("OmniPipeline");
 
   /**
    * Construct an Omni pipeline from a folder containing tokenizer and model IRs.
@@ -78,12 +80,12 @@ export class OmniPipeline {
    * @returns Resolves when initialization is complete.
    */
   async init() {
-    const pipeline = new OmniPipelineWrapper();
-
-    const initPromise = util.promisify(pipeline.init.bind(pipeline));
-    await initPromise(this.modelPath, this.device, this.properties);
-
-    this.pipeline = pipeline;
+    this.pipeline = await this.initialization.run(async () => {
+      const pipeline = new OmniPipelineWrapper();
+      const initialize = util.promisify(pipeline.init.bind(pipeline));
+      await initialize(this.modelPath, this.device, this.properties);
+      return pipeline;
+    });
   }
 
   /**

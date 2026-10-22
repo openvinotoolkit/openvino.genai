@@ -11,6 +11,7 @@ import {
 } from "../utils.js";
 import { DecodedResults } from "../decodedResults.js";
 import { Tokenizer } from "../tokenizer.js";
+import { PipelineInitialization } from "./pipelineUtils.js";
 
 /**
  * This class is used for generation with Large Language Models (LLMs)
@@ -20,6 +21,7 @@ export class LLMPipeline {
   device: string;
   pipeline: LLMPipelineWrapper | null = null;
   properties: LLMPipelineProperties;
+  private readonly initialization = new PipelineInitialization("LLMPipeline");
 
   /**
    * Construct an LLM pipeline from a folder containing tokenizer and model IRs.
@@ -38,15 +40,12 @@ export class LLMPipeline {
    * @returns Resolves when initialization is complete.
    */
   async init() {
-    if (this.pipeline) throw new Error("LLMPipeline is already initialized");
-
-    const pipeline = new LLMPipelineWrapper();
-
-    const initPromise = util.promisify(pipeline.init.bind(pipeline));
-    const result = await initPromise(this.modelPath, this.device, this.properties);
-    this.pipeline = pipeline;
-
-    return result;
+    this.pipeline = await this.initialization.run(async () => {
+      const pipeline = new LLMPipelineWrapper();
+      const initialize = util.promisify(pipeline.init.bind(pipeline));
+      await initialize(this.modelPath, this.device, this.properties);
+      return pipeline;
+    });
   }
 
   /**
