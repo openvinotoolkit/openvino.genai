@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import json
 import pytest
 import sys
 import wave
@@ -108,18 +109,105 @@ def tiny_kokoro_speaker_embedding_file_path(tiny_kokoro_ov_path: Path) -> str:
 
 @pytest.fixture(scope="module")
 def qwen3_reference_audio_wav_path(tmp_path_factory) -> str:
-    samples = 24_000
-    timeline = np.arange(samples, dtype=np.float32) / np.float32(samples)
-    waveform = 0.12 * np.sin(2.0 * np.pi * 220.0 * timeline) + 0.05 * np.sin(2.0 * np.pi * 440.0 * timeline + 0.4)
     output_dir = tmp_path_factory.mktemp("qwen3_tts_ref_audio")
     wav_path = output_dir / "reference_24k.wav"
+    _write_reference_wav(wav_path, 24000)
+    return str(wav_path)
+
+
+def _write_reference_wav(path: Path, sample_rate_hz: int, frequency_hz: float = 220.0) -> None:
+    samples = sample_rate_hz
+    timeline = np.arange(samples, dtype=np.float32) / np.float32(sample_rate_hz)
+    waveform = 0.12 * np.sin(2.0 * np.pi * frequency_hz * timeline) + 0.05 * np.sin(
+        2.0 * np.pi * (frequency_hz * 2.0) * timeline + 0.4
+    )
     pcm = np.asarray(np.clip(waveform, -1.0, 1.0) * 32767.0, dtype=np.int16)
-    with wave.open(str(wav_path), "wb") as wav_file:
+    with wave.open(str(path), "wb") as wav_file:
         wav_file.setnchannels(1)
         wav_file.setsampwidth(2)
-        wav_file.setframerate(24_000)
+        wav_file.setframerate(sample_rate_hz)
         wav_file.writeframes(pcm.tobytes())
-    return str(wav_path)
+
+
+@pytest.fixture(scope="module")
+def qwen3_tts_base_prompt_file(tmp_path_factory) -> str:
+    prompt_dir = tmp_path_factory.mktemp("qwen3_tts_base_prompt_file")
+    _write_reference_wav(prompt_dir / "ref_0.wav", 24000, 220.0)
+    _write_reference_wav(prompt_dir / "ref_1.wav", 24000, 246.0)
+    _write_reference_wav(prompt_dir / "ref_2.wav", 24000, 261.0)
+
+    prompts = [
+        {
+            "prompt": "Hello OpenVINO GenAI from base prompt-file entry zero.",
+            "speech_language": "English",
+            "speech_ref_audio": "ref_0.wav",
+            "speech_ref_text": "Reference transcript for the first entry.",
+        },
+        {
+            "prompt": "Second entry uses ref audio but no reference text.",
+            "speech_language": "Auto",
+            "speech_ref_audio": "ref_1.wav",
+        },
+        {
+            "prompt": "Third entry uses both reference audio and text again.",
+            "speech_language": "English",
+            "speech_ref_audio": "ref_2.wav",
+            "speech_ref_text": "Reference transcript for the third entry.",
+        },
+    ]
+
+    prompt_file_path = prompt_dir / "qwen3_tts_base_prompt_file.jsonl"
+    with open(prompt_file_path, "w", encoding="utf-8") as prompt_file:
+        for item in prompts:
+            prompt_file.write(json.dumps(item) + "\n")
+    return str(prompt_file_path)
+
+
+@pytest.fixture(scope="module")
+def qwen3_tts_customvoice_prompt_file(tmp_path_factory) -> str:
+    prompt_dir = tmp_path_factory.mktemp("qwen3_tts_customvoice_prompt_file")
+    prompts = [
+        {
+            "prompt": "CustomVoice entry with Serena, and no speech instruction.",
+            "speech_language": "English",
+            "speech_voice": "serena",
+        },
+        {
+            "prompt": "CustomVoice entry with Ryan and also using speech instruction.",
+            "speech_language": "Auto",
+            "speech_voice": "Ryan",
+            "speech_instruct": "Use a more energetic pace while keeping pronunciation precise.",
+        },
+    ]
+
+    prompt_file_path = prompt_dir / "qwen3_tts_customvoice_prompt_file.jsonl"
+    with open(prompt_file_path, "w", encoding="utf-8") as prompt_file:
+        for item in prompts:
+            prompt_file.write(json.dumps(item) + "\n")
+    return str(prompt_file_path)
+
+
+@pytest.fixture(scope="module")
+def qwen3_tts_voicedesign_prompt_file(tmp_path_factory) -> str:
+    prompt_dir = tmp_path_factory.mktemp("qwen3_tts_voicedesign_prompt_file")
+    prompts = [
+        {
+            "prompt": "VoiceDesign entry one for a balanced narration style.",
+            "speech_language": "English",
+            "speech_instruct": "Female, mid-twenties, warm and articulate with medium tempo.",
+        },
+        {
+            "prompt": "VoiceDesign entry two for a younger expressive style.",
+            "speech_language": "Auto",
+            "speech_instruct": "Male, late teens, confident and expressive with slightly faster pacing.",
+        },
+    ]
+
+    prompt_file_path = prompt_dir / "qwen3_tts_voicedesign_prompt_file.jsonl"
+    with open(prompt_file_path, "w", encoding="utf-8") as prompt_file:
+        for item in prompts:
+            prompt_file.write(json.dumps(item) + "\n")
+    return str(prompt_file_path)
 
 
 def optimum_supports_ltx2() -> bool:
@@ -1058,6 +1146,78 @@ class TestBenchmarkLLM:
             "--speech_instruct",
             "Some voice design instruct prompt",
         ]
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.llm_bench_qwen3_tts
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-tts"], indirect=True)
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--optimum"],
+            ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--genai"],
+        ],
+    )
+    def test_python_tool_llm_benchmark_qwen3_tts_base_prompt_file(
+        self, convert_model, qwen3_tts_base_prompt_file, sample_args
+    ):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "-pf",
+            qwen3_tts_base_prompt_file,
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.llm_bench_qwen3_tts
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-tts-customvoice"], indirect=True)
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--optimum"],
+            ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--genai"],
+        ],
+    )
+    def test_python_tool_llm_benchmark_qwen3_tts_customvoice_prompt_file(
+        self, convert_model, qwen3_tts_customvoice_prompt_file, sample_args
+    ):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "-pf",
+            qwen3_tts_customvoice_prompt_file,
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.llm_bench_qwen3_tts
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-tts-voicedesign"], indirect=True)
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--optimum"],
+            ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--genai"],
+        ],
+    )
+    def test_python_tool_llm_benchmark_qwen3_tts_voicedesign_prompt_file(
+        self, convert_model, qwen3_tts_voicedesign_prompt_file, sample_args
+    ):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "-pf",
+            qwen3_tts_voicedesign_prompt_file,
+        ] + sample_args
         run_sample(benchmark_py_command)
 
     @pytest.mark.samples
