@@ -464,6 +464,7 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::restore_sta
     OPENVINO_ASSERT(running_sequences.size() == 1, "Internal error: restored sequence group has more than one sequence");
 
     m_scheduler->get_cache_orchestrator().inject_sequence_cache_state(running_sequences[0], sequence_group, loaded.blocks_per_type);
+    m_scheduler->enable_dynamic_memory_allocation_after_restore();
 
     {
         std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
