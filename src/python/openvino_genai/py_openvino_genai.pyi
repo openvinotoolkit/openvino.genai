@@ -6050,9 +6050,9 @@ class TextRerankPipeline:
                 Instruction for instruction-following rerankers (e.g. Qwen3). When unset, a default
                 web-search retrieval instruction is used. Ignored by cross-encoder rerankers.
         """
+        instruction: str | None
         pad_to_max_length: bool | None
         padding_side: str | None
-        instruction: str | None
         @typing.overload
         def __init__(self) -> None:
             ...
