@@ -41,6 +41,15 @@
   components:
     - automatic_speech_recognition
 
+- name: ASR (SenseVoice)
+  cmd: |-
+    python -m pip install transformers==4.57.6 funasr==1.4.1
+    python -m pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@8ea11468f26fa491e8068d63548b31f4dfb6ac6f"
+    GENAI_REQUIRE_SENSEVOICE=1 python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -m sensevoice
+  timeout: 20
+  components:
+    - automatic_speech_recognition
+
 - name: Cacheopt E2E (Part 1)
   cmd: |-
     python -m pytest -v ./tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_1.py
