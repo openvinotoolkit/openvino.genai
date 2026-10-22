@@ -176,6 +176,12 @@ class ASRGenerationConfig(GenerationConfig):
         :param context: System prompt context prepended to Qwen3-ASR transcription requests.
         :type context: Optional[str]
     
+        SenseVoiceSmall parameters:
+    
+        :param use_itn: Whether to enable inverse text normalization for SenseVoiceSmall.
+                        Defaults to False (`woitn`); when True, the `withitn` mode is used.
+        :type use_itn: bool
+    
         For generic generation parameters (max_length, max_new_tokens, num_beams, temperature, etc.)
         see GenerationConfig documentation.
     """
@@ -186,6 +192,7 @@ class ASRGenerationConfig(GenerationConfig):
     language: str | None
     return_timestamps: bool
     task: str | None
+    use_itn: bool
     word_timestamps: bool
     @typing.overload
     def __init__(self, json_path: os.PathLike | str | bytes) -> None:
@@ -422,6 +429,12 @@ class ASRPipeline:
         
             :param context: System prompt context prepended to Qwen3-ASR transcription requests.
             :type context: Optional[str]
+        
+            SenseVoiceSmall parameters:
+        
+            :param use_itn: Whether to enable inverse text normalization for SenseVoiceSmall.
+                            Defaults to False (`woitn`); when True, the `withitn` mode is used.
+            :type use_itn: bool
         
             For generic generation parameters (max_length, max_new_tokens, num_beams, temperature, etc.)
             see GenerationConfig documentation.
