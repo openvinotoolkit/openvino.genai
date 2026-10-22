@@ -279,12 +279,7 @@ describe("LLMPipeline in chat mode", () => {
 });
 
 describe("LLMPipeline perf metrics", () => {
-  it("DecodedResults.perfMetrics", async (t) => {
-    if (os.platform() === "darwin") {
-      t.skip("Skipping perfMetrics test on macOS. Ticket - 173286");
-      return;
-    }
-
+  it("DecodedResults.perfMetrics", async () => {
     const config = {
       max_new_tokens: 20,
     };
