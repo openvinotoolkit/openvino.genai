@@ -3,45 +3,31 @@
 
 #pragma once
 
-#include <atomic>
-#include <memory>
-#include <utility>
+#include "include/base/async_worker.hpp"
 
-#include <napi.h>
-
-#include "include/helper.hpp"
-#include "openvino/openvino.hpp"
-
-template <typename PipelineType>
-class ImageDecodeWorker : public Napi::AsyncWorker {
-public:
-    ImageDecodeWorker(Napi::Function& callback,
-                      std::shared_ptr<PipelineType> pipe,
-                      ov::Tensor latent,
-                      std::shared_ptr<std::atomic<bool>> is_busy)
-        : Napi::AsyncWorker(callback),
-          m_pipe(std::move(pipe)),
-          m_latent(std::move(latent)),
-          m_is_busy(std::move(is_busy)) {}
-    ~ImageDecodeWorker() override = default;
-
-    void Execute() override {
-        m_image = m_pipe->decode(m_latent);
-    }
-
-    void OnOK() override {
-        m_is_busy->store(false);
-        Callback().Call({Env().Null(), cpp_to_js<ov::Tensor, Napi::Value>(Env(), m_image)});
-    }
-
-    void OnError(const Napi::Error& e) override {
-        m_is_busy->store(false);
-        Callback().Call({Napi::Error::New(Env(), e.Message()).Value(), Env().Undefined()});
-    }
-
-private:
-    std::shared_ptr<PipelineType> m_pipe;
-    ov::Tensor m_latent;
-    ov::Tensor m_image;
-    std::shared_ptr<std::atomic<bool>> m_is_busy;
-};
+template <typename Pipeline>
+Napi::Value decode_image(const Napi::CallbackInfo& info,
+                         const std::shared_ptr<Pipeline>& pipeline,
+                         const std::shared_ptr<PipelineState>& state,
+                         const std::string& name) {
+    return with_pipeline_errors(info, [&]() -> Napi::Value {
+        OPENVINO_ASSERT(pipeline, name, " is not initialized");
+        auto operation = std::make_shared<PipelineOperationGuard>(
+            state, PipelineOperation::DECODE, "decode() cannot run while another generate() or decode() is in progress");
+        VALIDATE_ARGS_COUNT(info, 2, "decode()");
+        auto latent = js_to_cpp<ov::Tensor>(info.Env(), info[0]);
+        OPENVINO_ASSERT(info[1].IsFunction(), "decode callback is not a function");
+        queue_pipeline_worker(info,
+                              info[1].As<Napi::Function>(),
+                              {},
+                              [pipeline, latent = std::move(latent), operation = std::move(operation)]() mutable {
+                                  // Resume generation after native decode, independently of JavaScript completion.
+                                  const auto decode_operation = std::move(operation);
+                                  auto image = pipeline->decode(latent);
+                                  return [image = std::move(image)](Napi::Env env) {
+                                      return cpp_to_js<ov::Tensor, Napi::Value>(env, image);
+                                  };
+                              });
+        return info.Env().Undefined();
+    });
+}
