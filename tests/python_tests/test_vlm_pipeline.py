@@ -3962,9 +3962,20 @@ def gemma3_chat_model(tmp_path):
     source = Path(_get_ov_model("optimum-intel-internal-testing/tiny-random-gemma3"))
     for path in source.iterdir():
         if path.name != "preprocessor_config.json":
-            (tmp_path / path.name).symlink_to(path)
-    processor = json.loads((source / "processor_config.json").read_text())["image_processor"]
-    (tmp_path / "preprocessor_config.json").write_text(json.dumps(processor))
+            target = tmp_path / path.name
+            try:
+                target.symlink_to(path, target_is_directory=path.is_dir())
+            except OSError:
+                if path.is_dir():
+                    shutil.copytree(path, target)
+                else:
+                    shutil.copy2(path, target)
+    config_path = source / "preprocessor_config.json"
+    if config_path.exists():
+        shutil.copy2(config_path, tmp_path / config_path.name)
+    else:
+        processor = json.loads((source / "processor_config.json").read_text(encoding="utf-8"))["image_processor"]
+        (tmp_path / config_path.name).write_text(json.dumps(processor), encoding="utf-8")
     return tmp_path
 
 

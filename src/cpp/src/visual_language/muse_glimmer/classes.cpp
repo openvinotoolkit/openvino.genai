@@ -171,7 +171,7 @@ void fill_video_metadata(ov::genai::VideoMetadata& metadata,
             std::iota(metadata.frames_indices.begin(), metadata.frames_indices.end(), 0);
         }
         OPENVINO_ASSERT(metadata.frames_indices.size() % config.temporal_patch_size == 0,
-                        "Muse Glimmer sampled frame count must be a multiple of temporal_patch_size");
+                        "Muse Glimmer unsampled frame count must be a multiple of temporal_patch_size");
         return;
     }
     OPENVINO_ASSERT(config.fps > 0.0f, "Muse Glimmer video processor fps must be positive");
