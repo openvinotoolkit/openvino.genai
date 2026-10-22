@@ -55,6 +55,34 @@ def test_factory_creates_single_strategy(metrics_list, is_genai, is_llamacpp, ex
     assert type(strategy) is expected_cls
 
 
+@pytest.mark.parametrize("use_chat_template", [False, True])
+def test_llamacpp_generation_preserves_special_tokens(use_chat_template):
+    from unittest.mock import Mock
+
+    model = Mock()
+    prompt = "Hello <|im_start|> café"
+    prompt_tokens = [1, 42, 73]
+    model.tokenize.return_value = prompt_tokens
+    model.return_value = {"choices": [{"text": "completion"}]}
+    model.create_chat_completion.return_value = {"choices": [{"message": {"content": "chat"}}]}
+
+    strategy = GenerationStrategy.create([SIMILARITY], False, True)
+    result = strategy.run_generation(model, None, prompt, 8, True, use_chat_template=use_chat_template)
+
+    if use_chat_template:
+        assert result.answer_text == "chat"
+        model.create_chat_completion.assert_called_once_with(
+            messages=[{"role": "user", "content": prompt}], max_tokens=8, temperature=0.0
+        )
+        model.tokenize.assert_not_called()
+        model.assert_not_called()
+    else:
+        assert result.answer_text == "completion"
+        model.tokenize.assert_called_once_with(prompt.encode("utf-8"), add_bos=True, special=True)
+        model.assert_called_once_with(prompt_tokens, max_tokens=8, echo=False, temperature=0.0)
+        model.create_chat_completion.assert_not_called()
+
+
 @pytest.mark.parametrize(
     ("is_llamacpp", "expected_classes"),
     [
