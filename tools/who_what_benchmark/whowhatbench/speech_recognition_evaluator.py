@@ -25,7 +25,6 @@ FUNASR_TOKENIZER_SUBFOLDER = (
     "Qwen3-0.6B"  # Source layout: https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512/tree/main/Qwen3-0.6B
 )
 ASR_MODEL_TYPES = {"funasr", "fun_asr"}
-AUDIO_VLM_MODEL_TYPES = {"gemma4", "gemma4_unified"}
 WHISPER_MODEL_TYPES = {"whisper"}
 
 DEFAULT_ASR_INSTRUCTION = "Transcribe this audio."
@@ -176,7 +175,7 @@ class FunASROptimumTranscriber:
         return self.tokenizer.batch_decode(tokens[:, prompt_len:], skip_special_tokens=True)[0].strip()
 
 
-class FunASRGenAITranscriber:
+class GenAISpeechRecognitionTranscriber:
     def __init__(self, pipeline: Any, language: str = "") -> None:
         self.pipeline = pipeline
         self.language = language
@@ -250,20 +249,6 @@ class WhisperOptimumTranscriber:
         return _transcribe_whisper(self.model, self.processor, audio, self.language, max_new_tokens)
 
 
-class WhisperGenAITranscriber:
-    def __init__(self, pipeline: Any, language: str = "") -> None:
-        self.pipeline = pipeline
-        # None lets Whisper detect the language from the audio
-        self.language = language or None
-
-    def transcribe(self, audio, max_new_tokens: int) -> str:
-        generation_kwargs = {"max_new_tokens": max_new_tokens}
-        if self.language:
-            generation_kwargs["language"] = self.language
-        result = self.pipeline.generate(np.asarray(audio, dtype=np.float32).tolist(), **generation_kwargs)
-        return result.texts[0].strip()
-
-
 def _get_asr_model_type(model_id: str) -> str:
     model_type = get_model_type(model_id)
     if model_type is None:
@@ -306,13 +291,13 @@ class ASRGenAITranscriber:
             import openvino_genai
 
             pipeline = openvino_genai.ASRPipeline(str(model_id), device.upper(), **(ov_config or {}))
-            return FunASRGenAITranscriber(pipeline, language or "en")
+            return GenAISpeechRecognitionTranscriber(pipeline, language or "en")
         if model_type in WHISPER_MODEL_TYPES:
             logger.info("Using OpenVINO GenAI WhisperPipeline API")
             import openvino_genai
 
             pipeline = openvino_genai.WhisperPipeline(str(model_id), device.upper(), **(ov_config or {}))
-            return WhisperGenAITranscriber(pipeline, language)
+            return GenAISpeechRecognitionTranscriber(pipeline, language or "en")
         model = _load_multimodal_model(model_id, device, ov_config, False, True, **kwargs)
         return GenAIMultimodalTranscriber(model, language or "English")
 
