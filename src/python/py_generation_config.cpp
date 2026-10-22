@@ -169,6 +169,7 @@ char generation_config_docstring[] = R"(
     logprob_token_ids: token IDs whose raw full-vocabulary log-probabilities (read before any sampling transform) are
                     reported for each generated position in GenerationOutput.requested_token_logprobs.
                     Greedy or multinomial sampling only, num_return_sequences must be 1; validate() rejects other combinations.
+                    Exposed only by ContinuousBatchingPipeline (read/read_all); LLMPipeline/VLMPipeline generate() do not carry it.
     apply_chat_template: whether to apply chat_template for non-chat scenarios
 
     repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.

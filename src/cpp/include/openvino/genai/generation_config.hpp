@@ -585,6 +585,8 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  * @param logprob_token_ids token IDs whose log-probability (normalized over the full vocabulary) is reported for each
  *                 generated position in GenerationOutput::requested_token_logprobs. Empty (default) disables the feature.
  *                 Requires greedy or multinomial sampling without speculative decoding or parallel sampling; validate() rejects other combinations.
+ *                 The field is exposed only by ContinuousBatchingPipeline (read/read_all); the one-shot LLMPipeline/VLMPipeline
+ *                 generate() return types do not carry it.
  *
  * @param repetition_penalty the parameter for repetition penalty. 1.0 means no penalty.
  * @param presence_penalty reduces absolute log prob if the token was generated at least once.

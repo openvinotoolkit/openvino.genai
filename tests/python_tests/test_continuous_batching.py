@@ -10,7 +10,6 @@ import sys
 import tempfile
 import threading
 import numpy as np
-import torch
 
 from pathlib import Path
 from shutil import rmtree
@@ -193,6 +192,8 @@ def test_generation_handle_echo_only_publishes_output_and_finished_status(
 
 
 def _raw_full_vocab_log_softmax(opt_model, full_ids):
+    import torch
+
     # Independent reference: the full-vocabulary log-softmax of the raw model logits, computed outside
     # the genai sampler. Comparing against the pipeline's own generated_log_probs would share the
     # sampler's log-partition math and let a common normalization bug pass. The stateful model resets
@@ -249,6 +250,66 @@ def test_logprob_token_ids_shape_and_echo(model_facebook_opt_125m: OVConvertedMo
     prompt_ids = model_facebook_opt_125m.hf_tokenizer("The Sun is", add_special_tokens=True)["input_ids"]
     assert out_echo.generated_ids[: len(prompt_ids)] == prompt_ids
     assert len(out_echo.requested_token_logprobs) < len(out_echo.generated_log_probs)
+
+    # Stop-string truncation: removing the stop string from the output truncates the requested
+    # logprobs rows in lockstep, so the row count still equals the number of generated tokens.
+    # Generate once without a stop string (greedy is deterministic), then re-run with the exact
+    # decoded text of one generated token as the stop string. The exact (unstripped) decode matters:
+    # the sampler re-encodes the stop string to size its match window, and a stripped fragment
+    # re-encodes to a different token sequence that the window never reproduces. The token is taken
+    # from position >= 1 so the match cannot fire on the first step (which would empty the output).
+    h_nostop = cb_pipe.add_request(
+        3, "The Sun is",
+        generation_config=GenerationConfig(max_new_tokens=8, logprob_token_ids=[id_a, id_b]),
+    )
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+    out_nostop = h_nostop.read_all()[0]
+    hf_tokenizer = model_facebook_opt_125m.hf_tokenizer
+    stop_token = next(t for t in out_nostop.generated_ids[1:] if hf_tokenizer.decode([t]).strip())
+    stop_string = hf_tokenizer.decode([stop_token])
+    h_stop = cb_pipe.add_request(
+        4, "The Sun is",
+        generation_config=GenerationConfig(max_new_tokens=8, stop_strings={stop_string},
+                                           include_stop_str_in_output=False, logprob_token_ids=[id_a, id_b]),
+    )
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+    out_stop = h_stop.read_all()[0]
+    assert out_stop.generated_ids
+    assert len(out_stop.requested_token_logprobs) == len(out_stop.generated_ids)
+    # The stop string must have truncated the output relative to the no-stop run.
+    assert len(out_stop.generated_ids) < len(out_nostop.generated_ids)
+
+    # Streaming via read(): concatenating per-iteration read() results must reproduce the
+    # requested_token_logprobs (and generated_ids) returned by read_all(). Two handles run in the
+    # same batch (greedy is deterministic), so their token streams are identical.
+    h_stream = cb_pipe.add_request(
+        5, "The Sun is",
+        generation_config=GenerationConfig(max_new_tokens=4, logprob_token_ids=[id_a, id_b]),
+    )
+    h_ref = cb_pipe.add_request(
+        6, "The Sun is",
+        generation_config=GenerationConfig(max_new_tokens=4, logprob_token_ids=[id_a, id_b]),
+    )
+    streamed_ids = []
+    streamed_requested = []
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+        for _seq_idx, out in h_stream.read().items():
+            streamed_ids.extend(out.generated_ids)
+            streamed_requested.extend(out.requested_token_logprobs)
+    while h_stream.can_read():
+        for _seq_idx, out in h_stream.read().items():
+            streamed_ids.extend(out.generated_ids)
+            streamed_requested.extend(out.requested_token_logprobs)
+    out_ref = h_ref.read_all()[0]
+    assert streamed_ids == list(out_ref.generated_ids)
+    assert len(streamed_requested) == len(out_ref.requested_token_logprobs)
+    for streamed_row, ref_row in zip(streamed_requested, out_ref.requested_token_logprobs):
+        assert [tid for tid, _ in streamed_row] == [tid for tid, _ in ref_row]
+        for (_tid, lp), (_rid, ref_lp) in zip(streamed_row, ref_row):
+            assert abs(lp - ref_lp) < 1e-5
 
 
 def test_logprob_token_ids_match_reference(model_facebook_opt_125m: OVConvertedModelSchema):
@@ -357,6 +418,14 @@ def test_logprob_token_ids_rejected(model_facebook_opt_125m: OVConvertedModelSch
         cb_pipe.add_request(0, "The Sun is",
                             generation_config=GenerationConfig(max_new_tokens=1, logprob_token_ids=[10**9]))
 
+    # A non-CB (stateful) pipeline has no enqueue-time check and reaches the shared sampler directly,
+    # so the range check must live in the sampler: an out-of-range id throws a clean error instead of
+    # reading the logits buffer out of bounds.
+    stateful_pipe = create_ov_pipeline(model_path, pipeline_type=PipelineType.STATEFUL)
+    with pytest.raises(Exception, match="out of vocabulary range"):
+        stateful_pipe.generate("The Sun is",
+                               generation_config=GenerationConfig(max_new_tokens=2, logprob_token_ids=[10**9]))
+
     # A speculative pipeline rejects logprob_token_ids at add_request: a per-request config does not
     # carry the pipeline's assistant settings, so validate() passes and the rejection must happen at
     # the enqueue point, not in step() where it would fail every running request.
@@ -366,6 +435,17 @@ def test_logprob_token_ids_rejected(model_facebook_opt_125m: OVConvertedModelSch
     with pytest.raises(Exception, match="not supported with speculative decoding"):
         sd_pipe.add_request(1, "The Sun is",
                             generation_config=GenerationConfig(max_new_tokens=1, logprob_token_ids=[id_a, id_b]))
+
+    # The rejection happened before the request was enqueued: nothing is in flight, and a follow-up
+    # request still completes normally, proving the pipeline was not poisoned by the rejected request.
+    assert not sd_pipe.has_non_finished_requests()
+    follow_up = sd_pipe.add_request(2, "The Sun is",
+                                    generation_config=GenerationConfig(max_new_tokens=2, num_assistant_tokens=5))
+    while sd_pipe.has_non_finished_requests():
+        sd_pipe.step()
+    follow_up_outputs = follow_up.read_all()
+    assert follow_up_outputs
+    assert follow_up_outputs[0].generated_ids
 
 
 @pytest.mark.transformers_dependent(

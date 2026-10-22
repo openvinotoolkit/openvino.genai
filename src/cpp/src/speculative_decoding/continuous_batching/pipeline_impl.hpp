@@ -183,12 +183,6 @@ public:
         eagle_mode_enabled = true;
     };
 
-    // A main-only request (explicit num_assistant_tokens == 0) runs only the main model, so
-    // requested-token logprobs remain valid on it.
-    bool supports_requested_token_logprobs(const GenerationConfig& sampling_params) const override {
-        return sampling_params.num_assistant_tokens.has_value() && sampling_params.num_assistant_tokens.value() == 0;
-    }
-
     bool is_requests_empty();
 
     /**

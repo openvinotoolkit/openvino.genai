@@ -10,11 +10,13 @@ Typical use case is single-token classification: generate one token greedily (`m
 
 :::info
 `logprob_token_ids` is supported with **greedy or multinomial sampling only**, and only for a single sequence (`num_return_sequences == 1`). Beam search, tree search, and speculative decoding are rejected by `GenerationConfig.validate()`.
+
+The values are exposed only by `ContinuousBatchingPipeline` (through `add_request` / `read` / `read_all`). The one-shot `LLMPipeline::generate()` / `VLMPipeline::generate()` return types (`DecodedResults` / `EncodedResults`) do not carry the field, so it is not available through those pipelines.
 :::
 
 ## How the results are exposed
 
-The values are not a separate accessor: they are a field of the generation output, returned by `GenerationHandle::read()` / `read_all()`.
+The values are not a separate accessor: they are a field of the `ContinuousBatchingPipeline` generation output, returned by `GenerationHandle::read()` / `read_all()`.
 
 ```
 GenerationOutput.requested_token_logprobs:

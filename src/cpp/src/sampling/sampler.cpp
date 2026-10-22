@@ -1532,8 +1532,11 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                 }
 
                 auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id, logit_token_offset);
+                // m_size is the full vocabulary width before any transform; TopK/TopP/MinP shrink
+                // m_size during apply() but m_data always spans the full vocab.
+                const size_t full_vocab_size = logit_vector.m_size;
                 logit_processor.apply(logit_vector);
-                
+
                 Token sampled_token;
                 bool is_generate_n_tokens = false;
                 if (sampling_params.is_greedy_decoding()) {
@@ -1590,10 +1593,14 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                 if (is_extend_sequence && !sampling_params.logprob_token_ids.empty()) {
                     // m_data is kept pristine by CopyLogitsToVectorTransform (installed when logprobs > 0 or
                     // logprob_token_ids is set), so this is the raw model logit normalized over the full
-                    // vocabulary; token ids are range-checked at enqueue time.
+                    // vocabulary. The range check lives here (not only at CB enqueue time) because
+                    // non-CB pipelines (stateful, static, VLM, whisper, qwen3-asr) reach this sampler
+                    // without an enqueue-time check and an out-of-range id would read m_data out of bounds.
                     std::vector<std::pair<int64_t, float>> requested_token_logprobs;
                     requested_token_logprobs.reserve(sampling_params.logprob_token_ids.size());
                     for (const auto requested_token_id : sampling_params.logprob_token_ids) {
+                        OPENVINO_ASSERT(requested_token_id >= 0 && static_cast<size_t>(requested_token_id) < full_vocab_size,
+                                        "logprob_token_id is out of vocabulary range: ", requested_token_id);
                         requested_token_logprobs.emplace_back(requested_token_id,
                                                               logit_vector.m_data[requested_token_id] - logit_vector.m_full_vocab_log_sum_exp);
                     }
