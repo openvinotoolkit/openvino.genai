@@ -11,6 +11,7 @@ patch_pyav_for_servercore.install_av_stub_module_for_windows()
 import openvino_genai as ov_genai
 import functools
 import pytest
+import openvino
 import datasets
 from transformers import AutoProcessor, AutoTokenizer
 from transformers.pipelines.automatic_speech_recognition import AutomaticSpeechRecognitionPipeline
