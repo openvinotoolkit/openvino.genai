@@ -1193,7 +1193,17 @@ def test_rerank_documents(rerank_model, dataset_documents, query, config):
 # aligned with https://huggingface.co/tomaarsen/Qwen3-Reranker-0.6B-seq-cls#updated-transformers-usage
 @pytest.mark.parametrize("rerank_model", [QWEN3_RERANK_SEQ_CLS], indirect=True)
 @pytest.mark.parametrize("query", ["Which planet is known as the Red Planet?"])
-@pytest.mark.parametrize("task", ["Given a web search query, retrieve relevant passages that answer the query"])
+@pytest.mark.parametrize(
+    "task",
+    [
+        "Given a web search query, retrieve relevant passages that answer the query",
+        "Given a question about planets, retrieve the passage that answers it",
+    ],
+    ids=[
+        "task=default",
+        "task=custom",
+    ],
+)
 @pytest.mark.parametrize(
     "documents",
     [
@@ -1264,7 +1274,17 @@ def test_qwen3_rerank_npu(llm_model: OVConvertedModelSchema, query, documents):
 
 @pytest.mark.parametrize("llm_model", [QWEN3_RERANK], indirect=True)
 @pytest.mark.parametrize("query", ["Which planet is known as the Red Planet?"])
-@pytest.mark.parametrize("task", ["Given a web search query, retrieve relevant passages that answer the query"])
+@pytest.mark.parametrize(
+    "task",
+    [
+        "Given a web search query, retrieve relevant passages that answer the query",
+        "Given a question about planets, retrieve the passage that answers it",
+    ],
+    ids=[
+        "task=default",
+        "task=custom",
+    ],
+)
 @pytest.mark.parametrize(
     "documents",
     [
