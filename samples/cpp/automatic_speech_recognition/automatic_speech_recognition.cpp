@@ -27,25 +27,29 @@ int main(int argc, char* argv[]) try {
         ov_config = get_config_for_cache();
     }
 
-    // Word timestamps supported by Whisper models only
-    // Must be passed to ASRPipeline constructor as a property
-    ov_config.insert(ov::genai::word_timestamps(true));
+    // Whisper word timestamps require this constructor property.
+    // Also enable config.word_timestamps below.
+    // ov_config.insert(ov::genai::word_timestamps(true));
 
     ov::genai::ASRPipeline pipeline(models_path, device, ov_config);
 
     ov::genai::ASRGenerationConfig config = pipeline.get_generation_config();
 
-    // If language is known in advance it can be passed to the pipeline
-    // In the form of "<|en|>" for Whisper models. Supported by multilingual models only
-    // In the form of "English" for Qwen3-ASR models.
-    config.language = "<|en|>";
+    // Optional language hints for config.language
+    // - Multilingual Whisper: "en"
+    // - Qwen3-ASR: "English"
+    // - Fun-ASR-Nano: "英文"
 
-    // Whisper models parameters. Ignored for Qwen3-ASR models
-    config.task = "transcribe";  // Supported by multilingual models only
+    // Whisper-specific options
+    config.task = "transcribe";  // Or "translate". Multilingual Whisper only.
     config.return_timestamps = true;
-    config.word_timestamps = true;
 
-    // Pipeline expects normalized audio with Sample Rate of 16kHz
+    // Word timestamps:
+    // - Whisper: enable the constructor property above.
+    // - Qwen3-ASR: attach its companion forced aligner to ASRPipeline.
+    // config.word_timestamps = true;
+
+    // Pipeline expects normalized audio sampled at 16 kHz.
     ov::genai::RawSpeechInput raw_speech = utils::audio::read_wav(wav_file_path);
     auto result = pipeline.generate(raw_speech, config);
 
