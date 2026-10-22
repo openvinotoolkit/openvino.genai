@@ -192,15 +192,25 @@ class FunASRGenAITranscriber:
 def _transcribe_whisper(model, processor, audio, language, max_new_tokens, device=None, dtype=None) -> str:
     import torch
 
-    inputs = processor(np.asarray(audio, dtype=np.float32), sampling_rate=AUDIO_SAMPLING_RATE, return_tensors="pt")
+    inputs = processor(
+        np.asarray(audio, dtype=np.float32),
+        sampling_rate=AUDIO_SAMPLING_RATE,
+        return_tensors="pt",
+        truncation=False,
+        return_attention_mask=True,
+    )
     input_features = inputs.input_features
+    attention_mask = inputs.attention_mask
     if device is not None:
         input_features = input_features.to(device=device, dtype=dtype)
+        attention_mask = attention_mask.to(device=device)
     with torch.inference_mode():
         tokens = model.generate(
             input_features=input_features,
+            attention_mask=attention_mask,
+            return_timestamps=input_features.shape[-1] > 2 * model.config.max_source_positions,
             language=language,
-            task="transcribe",
+            task="transcribe" if getattr(model.generation_config, "is_multilingual", True) else None,
             max_new_tokens=max_new_tokens,
             do_sample=False,
         )
@@ -303,9 +313,6 @@ class ASRGenAITranscriber:
 
             pipeline = openvino_genai.WhisperPipeline(str(model_id), device.upper(), **(ov_config or {}))
             return WhisperGenAITranscriber(pipeline, language)
-        if model_type in AUDIO_VLM_MODEL_TYPES:
-            raise ValueError("Gemma4 audio input is not yet supported by the OpenVINO GenAI backend")
-
         model = _load_multimodal_model(model_id, device, ov_config, False, True, **kwargs)
         return GenAIMultimodalTranscriber(model, language or "English")
 
