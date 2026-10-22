@@ -390,9 +390,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         ~ChatTurnRollback() {
             if (active) {
                 restore();
-                if (pipe.m_is_chat_conversation) {
-                    pipe.recover_embedder_after_failed_turn();
-                }
+                pipe.recover_embedder_after_failed_turn();
             }
         }
 

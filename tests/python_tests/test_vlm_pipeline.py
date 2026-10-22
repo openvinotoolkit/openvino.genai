@@ -4123,6 +4123,26 @@ def test_vlm_failed_chat_turn_rolls_back_videochat_embedder_state():
     assert second_turn(fail_first=True) == second_turn(fail_first=False)
 
 
+@pytest.mark.parametrize("attention_backend", ["SDPA", "PA"])
+def test_vlm_failed_template_call_rolls_back_videochat_embedder_state(attention_backend: str):
+    """A chat template that throws inside get_inputs_embeds() must not leave the call's visual token counts."""
+    models_path = _get_ov_model(VIDEOCHAT_FLASH_QWEN_MODEL_ID)
+    video = openvino.Tensor(np.zeros((4, 32, 32, 3), dtype=np.uint8))
+    pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=attention_backend)
+    # Shares its state with the pipeline. Outside of chat the embedder applies the template itself.
+    tokenizer = pipe.get_tokenizer()
+    template = tokenizer.chat_template
+    tokenizer.chat_template = "{{ raise_exception('template failure') }}"
+    with pytest.raises(RuntimeError, match="template failure"):
+        pipe.generate("Describe", videos=[video], generation_config=ROLLBACK_CONFIG)
+    tokenizer.chat_template = template
+    retried = pipe.generate("Describe", videos=[video], generation_config=ROLLBACK_CONFIG)
+    fresh = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=attention_backend).generate(
+        "Describe", videos=[video], generation_config=ROLLBACK_CONFIG
+    )
+    assert _text_and_tokens(retried) == _text_and_tokens(fresh)
+
+
 def test_cb_failed_chat_history_batch_is_rolled_back(rollback_image: openvino.Tensor):
     """A later history that fails must also undo the media an earlier history of the batch registered.
 
