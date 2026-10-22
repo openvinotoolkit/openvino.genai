@@ -134,8 +134,9 @@ def run_gc_after_test():
 
 
 def pytest_collection_modifyitems(items):
+    from openvino_genai import GenerationConfig
     from data.models import GGUFModelDescription
-    from utils.ov_genai_pipelines import PipelineType
+    from utils.ov_genai_pipelines import PipelineType, is_generation_available
 
     for item in items:
         callspec = getattr(item, "callspec", None)
@@ -151,6 +152,14 @@ def pytest_collection_modifyitems(items):
             )
         )
         pipeline_type = callspec.params.get("pipeline_type", PipelineType.AUTO)
+        generation_config_dict = callspec.params.get("generation_config_dict")
+        if generation_config_dict is not None and not is_generation_available(
+            GenerationConfig(**generation_config_dict), pipeline_type
+        ):
+            item.add_marker(
+                pytest.mark.skip(reason="Beam search is unsupported by speculative and prompt lookup decoding")
+            )
+            continue
         test_name = item.originalname
         reason = None
         raises = AssertionError

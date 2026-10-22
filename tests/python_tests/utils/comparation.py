@@ -26,7 +26,7 @@ def compare_generation_results(prompts: list[str],
                                hf_results: list[GenerationResult],
                                ov_results: list[GenerationResult],
                                generation_configs: list[GenerationConfig] | GenerationConfig):
-    if type(generation_configs) is not list:
+    if not isinstance(generation_configs, list):
         generation_configs = [generation_configs] * len(prompts)
 
     assert len(prompts) == len(generation_configs)

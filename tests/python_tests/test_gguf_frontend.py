@@ -6,6 +6,7 @@
 See README.md, "GGUF Frontend Tests", for the steps, CI runtime and model-coverage checklist.
 """
 
+import gc
 import shutil
 import sys
 
@@ -39,7 +40,10 @@ pytestmark = [
 
 @pytest.fixture(scope="module", params=TINY_GGUF_MODELS)
 def tiny_gguf_model(request, tmp_path_factory):
-    return load_tiny_gguf_model(request.param, tmp_path_factory)
+    model = load_tiny_gguf_model(request.param, tmp_path_factory)
+    yield model
+    del model
+    gc.collect()
 
 
 @pytest.fixture(scope="module", params=(*GGUF_PIPELINE_TYPES, PipelineType.AUTO))

@@ -4,6 +4,7 @@
 
 import pytest
 import torch
+import gc
 import os
 import json
 import logging
@@ -184,8 +185,11 @@ def llm_model(request: pytest.FixtureRequest, tmp_path_factory) -> OVConvertedMo
     if isinstance(request.param, GGUFModelDescription):
         model = load_tiny_gguf_model(request.param, tmp_path_factory)
         reference = model.reference
-        return OVConvertedModelSchema(reference.model_id, reference.opt_model, reference.hf_tokenizer, model.gguf_path)
-    return download_and_convert_model(request.param)
+        yield OVConvertedModelSchema(reference.model_id, reference.opt_model, reference.hf_tokenizer, model.gguf_path)
+        del reference, model
+        gc.collect()
+    else:
+        yield download_and_convert_model(request.param)
 
 
 @pytest.fixture(scope="module")

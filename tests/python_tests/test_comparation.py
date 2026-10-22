@@ -32,3 +32,13 @@ def test_compare_generation_results_rejects_incomplete_config_list():
         compare_generation_results(
             ["first", "second"], [result, result], [result, result], [GenerationConfig(max_new_tokens=1)]
         )
+
+
+def test_compare_generation_results_accepts_config_list_subclass():
+    class ConfigList(list):
+        pass
+
+    result = GenerationResult()
+    result.m_generation_ids = ["match"]
+    config = GenerationConfig(max_new_tokens=1)
+    compare_generation_results(["first", "second"], [result, result], [result, result], ConfigList([config, config]))
