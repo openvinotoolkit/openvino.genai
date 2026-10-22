@@ -3,15 +3,10 @@
 
 import util from "node:util";
 import { WhisperPipeline as WhisperPipelineWrapper } from "../addon.js";
-import {
-  WhisperDecodedResultChunk,
-  WhisperDecodedResults,
-  WhisperWordTiming,
-} from "../decodedResults.js";
-import { WhisperGenerationConfig, WhisperPipelineProperties, StreamingStatus } from "../utils.js";
+import { WhisperDecodedResults } from "../decodedResults.js";
+import { WhisperGenerationConfig, WhisperPipelineProperties, TextStreamer } from "../utils.js";
 import { Tokenizer } from "../tokenizer.js";
-import { WhisperPerfMetrics } from "../perfMetrics.js";
-import { PipelineInitialization } from "./pipelineUtils.js";
+import { PipelineInitialization, createTextStream } from "./pipelineUtils.js";
 
 export type RawSpeechInput = Float32Array | number[];
 
@@ -22,7 +17,7 @@ export type WhisperGenerateOptions = {
   /** Generation configuration (e.g. language, task, return_timestamps). */
   generationConfig?: WhisperGenerationConfig;
   /** Callback invoked with each decoded text chunk; return StreamingStatus to control generation. */
-  streamer?: (chunk: string) => StreamingStatus;
+  streamer?: TextStreamer;
 };
 
 /**
@@ -82,80 +77,12 @@ export class WhisperPipeline {
     if (!this.pipeline) throw new Error("WhisperPipeline is not initialized");
     const generationConfig = options?.generationConfig ?? {};
 
-    let streamingStatus = StreamingStatus.RUNNING;
-    let handledError: Error | null;
-    const queue: { done: boolean; chunk: string }[] = [];
-    type ResolveFunction = (arg: { value: string; done: boolean }) => void;
-    let resolvePromise: ResolveFunction | null = null;
-    let rejectPromise: ((reason?: unknown) => void) | null = null;
-
-    const callback = (
-      error: Error | null,
-      result: {
-        texts: string[];
-        scores: number[];
-        perfMetrics: WhisperPerfMetrics;
-        chunks?: WhisperDecodedResultChunk[];
-        words?: WhisperWordTiming[];
-      },
-    ) => {
-      if (error) {
-        if (rejectPromise) {
-          rejectPromise(error);
-          resolvePromise = null;
-          rejectPromise = null;
-        } else {
-          handledError = error;
-        }
-      } else {
-        const fullText = result.texts?.[0] ?? "";
-        if (resolvePromise) {
-          resolvePromise({ done: true, value: fullText });
-          resolvePromise = null;
-          rejectPromise = null;
-        } else {
-          queue.push({ done: true, chunk: fullText });
-        }
-      }
-    };
-
-    const streamer = (chunk: string): StreamingStatus => {
-      if (resolvePromise) {
-        resolvePromise({ done: false, value: chunk });
-        resolvePromise = null;
-        rejectPromise = null;
-      } else {
-        queue.push({ done: false, chunk });
-      }
-      return streamingStatus;
-    };
-
-    this.pipeline.generate(rawSpeech, generationConfig, streamer, callback);
-
-    return {
-      async next() {
-        if (handledError) {
-          const error = handledError;
-          handledError = null;
-          return Promise.reject(error);
-        }
-        const data = queue.shift();
-        if (data) {
-          return { value: data.chunk, done: data.done };
-        }
-        return new Promise<IteratorResult<string>>((resolve, reject) => {
-          resolvePromise = resolve;
-          rejectPromise = reject;
-        });
-      },
-      async return() {
-        streamingStatus = StreamingStatus.CANCEL;
-        return { done: true, value: "" };
-      },
-      [Symbol.asyncIterator]() {
-        return this;
-      },
-    };
+    const { pipeline } = this;
+    return createTextStream((streamer, complete) => {
+      pipeline.generate(rawSpeech, generationConfig, streamer, (error, result) =>
+        complete(error, () => result.texts[0] ?? ""),
+      );
+    });
   }
 
   /**
@@ -199,7 +126,7 @@ export class WhisperPipeline {
   }
 
   /**
-   * Update generation config (e.g. language, task, return_timestamps).
+   * Update generation config fields (e.g. language, task, return_timestamps).
    */
   setGenerationConfig(config: WhisperGenerationConfig): void {
     if (!this.pipeline) throw new Error("WhisperPipeline is not initialized");

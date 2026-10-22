@@ -3,15 +3,10 @@
 
 import util from "node:util";
 import { ChatHistory, LLMPipeline as LLMPipelineWrapper } from "../addon.js";
-import {
-  GenerationConfig,
-  GenerationFinishReason,
-  StreamingStatus,
-  LLMPipelineProperties,
-} from "../utils.js";
+import { GenerationConfig, TextStreamer, LLMPipelineProperties } from "../utils.js";
 import { DecodedResults } from "../decodedResults.js";
 import { Tokenizer } from "../tokenizer.js";
-import { PipelineInitialization } from "./pipelineUtils.js";
+import { PipelineInitialization, createTextStream } from "./pipelineUtils.js";
 
 /**
  * This class is used for generation with Large Language Models (LLMs)
@@ -97,7 +92,7 @@ export class LLMPipeline {
   }
 
   /**
-   * Set generation configuration parameters.
+   * Set the generation parameters.
    * @param config - Generation configuration parameters.
    */
   setGenerationConfig(config: GenerationConfig): void {
@@ -135,94 +130,20 @@ export class LLMPipeline {
       );
     if (typeof generationConfig !== "object") throw new Error("Options must be an object");
 
-    let streamingStatus: StreamingStatus = StreamingStatus.RUNNING;
-    const queue: { done: boolean; subword: string }[] = [];
-    type ResolveFunction = (arg: { value: string; done: boolean }) => void;
-    type RejectFunction = (reason?: unknown) => void;
-    let resolvePromise: ResolveFunction | null;
-    let rejectPromise: RejectFunction | null;
-
-    const callback = (
-      error: Error | null,
-      result: {
-        texts: string[];
-        scores: number[];
-        perfMetrics: any;
-        parsed: Record<string, unknown>[];
-        finishReasons: GenerationFinishReason[];
-      },
-    ) => {
-      if (error) {
-        if (rejectPromise) {
-          rejectPromise(error);
-          // Reset promises
-          resolvePromise = null;
-          rejectPromise = null;
-        } else {
-          throw error;
-        }
-      } else {
-        const decodedResult = new DecodedResults(
-          result.texts,
-          result.scores,
-          result.perfMetrics,
-          result.parsed,
-          result.finishReasons,
-        );
-        const fullText = decodedResult.toString();
-        if (resolvePromise) {
-          // Fulfill pending request
-          resolvePromise({ done: true, value: fullText });
-          // Reset promises
-          resolvePromise = null;
-          rejectPromise = null;
-        } else {
-          // Add data to queue if no pending promise
-          queue.push({ done: true, subword: fullText });
-        }
-      }
-    };
-
-    const streamer = (chunk: string): StreamingStatus => {
-      if (resolvePromise) {
-        // Fulfill pending request
-        resolvePromise({ done: false, value: chunk });
-        // Reset promises
-        resolvePromise = null;
-        rejectPromise = null;
-      } else {
-        // Add data to queue if no pending promise
-        queue.push({ done: false, subword: chunk });
-      }
-      return streamingStatus;
-    };
-
-    this.pipeline.generate(inputs, generationConfig, streamer, callback);
-
-    return {
-      async next() {
-        // If there is data in the queue, return it
-        // Otherwise, return a promise that will resolve when data is available
-        const data = queue.shift();
-
-        if (data !== undefined) {
-          return { value: data.subword, done: data.done };
-        }
-
-        return new Promise((resolve: ResolveFunction, reject: RejectFunction) => {
-          resolvePromise = resolve;
-          rejectPromise = reject;
-        });
-      },
-      async return() {
-        streamingStatus = StreamingStatus.CANCEL;
-
-        return { done: true, value: "" };
-      },
-      [Symbol.asyncIterator]() {
-        return this;
-      },
-    };
+    const { pipeline } = this;
+    return createTextStream((streamer, complete) => {
+      pipeline.generate(inputs, generationConfig, streamer, (error, result) =>
+        complete(error, () =>
+          new DecodedResults(
+            result.texts,
+            result.scores,
+            result.perfMetrics,
+            result.parsed,
+            result.finishReasons,
+          ).toString(),
+        ),
+      );
+    });
   }
 
   /**
@@ -258,7 +179,7 @@ export class LLMPipeline {
   async generate(
     inputs: string | string[] | ChatHistory,
     generationConfig: GenerationConfig = {},
-    streamer?: (chunk: string) => StreamingStatus,
+    streamer?: TextStreamer,
   ): Promise<DecodedResults> {
     if (!this.pipeline) throw new Error("LLMPipeline is not initialized");
     if (typeof generationConfig !== "object") throw new Error("Options must be an object");

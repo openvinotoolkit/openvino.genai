@@ -196,7 +196,10 @@ describe("General LLM test", () => {
     });
 
     it("early break of stream", async () => {
-      const streamer = pipeline.stream("Print hello world");
+      const streamer = pipeline.stream("Print hello world", {
+        max_new_tokens: 32,
+        ignore_eos: true,
+      });
       const chunks = [];
       for await (const chunk of streamer) {
         chunks.push(chunk);

@@ -11,6 +11,12 @@ export enum StreamingStatus {
   TOOL_CALL_STOP,
 }
 
+/** Text callback controlling generation. */
+export type TextStreamer = (chunk: string) => StreamingStatus;
+
+/** Audio callback controlling generation. */
+export type SpeechStreamer = (audioChunk: Tensor) => StreamingStatus;
+
 export enum GenerationFinishReason {
   NONE,
   STOP,

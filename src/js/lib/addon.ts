@@ -18,7 +18,8 @@ import {
 import {
   GenerationConfig,
   GenerationFinishReason,
-  StreamingStatus,
+  TextStreamer,
+  SpeechStreamer,
   VLMPipelineProperties,
   LLMPipelineProperties,
   WhisperGenerationConfig,
@@ -150,7 +151,7 @@ export interface LLMPipeline {
   generate(
     inputs: string | string[] | IChatHistory,
     generationConfig: GenerationConfig,
-    streamer: ((chunk: string) => StreamingStatus) | undefined,
+    streamer: TextStreamer | undefined,
     callback: (
       err: Error | null,
       result: {
@@ -180,7 +181,7 @@ export interface WhisperPipeline {
   generate(
     rawSpeech: Float32Array | number[],
     generationConfig: WhisperGenerationConfig,
-    streamer: ((chunk: string) => StreamingStatus) | undefined,
+    streamer: TextStreamer | undefined,
     callback: (
       err: Error | null,
       result: {
@@ -208,7 +209,7 @@ export interface ASRPipeline {
   generate(
     rawSpeech: Float32Array | number[],
     generationConfig: ASRGenerationConfig,
-    streamer: ((chunk: string) => StreamingStatus) | undefined,
+    streamer: TextStreamer | undefined,
     callback: (
       err: Error | null,
       result: {
@@ -238,7 +239,7 @@ export interface VLMPipeline {
     inputs: string | IChatHistory,
     images: Tensor[] | undefined,
     videos: Tensor[] | undefined,
-    streamer: ((chunk: string) => StreamingStatus) | undefined,
+    streamer: TextStreamer | undefined,
     generationConfig: GenerationConfig | undefined,
     callback: (
       err: Error | null,
@@ -276,8 +277,8 @@ export interface OmniPipeline {
     videos: Tensor[] | undefined,
     videosMetadata: VideoMetadata[] | undefined,
     audios: Tensor[] | undefined,
-    streamer: ((chunk: string) => StreamingStatus) | undefined,
-    speechStreamer: ((audioChunk: Tensor) => StreamingStatus) | undefined,
+    streamer: TextStreamer | undefined,
+    speechStreamer: SpeechStreamer | undefined,
     textConfig: GenerationConfig | undefined,
     talkerSpeechConfig: OmniTalkerSpeechConfig | undefined,
     callback: (

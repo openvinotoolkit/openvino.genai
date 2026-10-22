@@ -7,7 +7,8 @@ import {
   GenerationConfig,
   OmniPipelineProperties,
   OmniTalkerSpeechConfig,
-  StreamingStatus,
+  TextStreamer,
+  SpeechStreamer,
   VideoMetadata,
 } from "../utils.js";
 import { OmniDecodedResults } from "../decodedResults.js";
@@ -39,13 +40,13 @@ export type OmniGenerateOptions = {
    * Optional callback invoked for each generated text subword chunk.
    * Return a {@link StreamingStatus} flag to continue, stop, or cancel generation.
    */
-  streamer?: (chunk: string) => StreamingStatus;
+  streamer?: TextStreamer;
   /**
    * Optional callback invoked for each generated audio chunk.
    * The chunk is a `[1, 1, N_samples]` f32 PCM tensor at 24 kHz.
    * Return a {@link StreamingStatus} flag to continue, stop, or cancel generation.
    */
-  speechStreamer?: (audioChunk: Tensor) => StreamingStatus;
+  speechStreamer?: SpeechStreamer;
 };
 
 /**
