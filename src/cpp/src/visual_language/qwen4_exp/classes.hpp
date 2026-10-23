@@ -52,7 +52,9 @@ public:
         const std::vector<std::pair<size_t, size_t>>& history_vision_count = {}
     ) override;
 
-    LMExtraInputsCallback get_lm_extra_inputs_callback() override;
+    // TODO Add has_ngram_embeddings() getter
+    std::function<ov::Tensor(const ov::Tensor& new_input_ids, const std::vector<int32_t>& beam_indices)>
+    get_ngram_embeddings_callback() override;
 
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(
         size_t inputs_embeds_size,

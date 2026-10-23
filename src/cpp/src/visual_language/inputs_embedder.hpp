@@ -65,10 +65,12 @@ public:
 
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
 
-    LMExtraInputsCallback get_lm_extra_inputs_callback();
-
     // returns per-layer embeddings callback, or nullptr if not available
     std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback();
+    
+    // returns ngram embeddings callback, or nullptr if not available
+    std::function<ov::Tensor(const ov::Tensor& new_input_ids, const std::vector<int32_t>& beam_indices)>
+    get_ngram_embeddings_callback();
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
@@ -208,11 +210,12 @@ private:
 
         virtual const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
 
-        virtual LMExtraInputsCallback get_lm_extra_inputs_callback() {
+        virtual std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback() {
             return nullptr;
         }
 
-        virtual std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback() {
+        virtual std::function<ov::Tensor(const ov::Tensor& new_input_ids, const std::vector<int32_t>& beam_indices)>
+        get_ngram_embeddings_callback() {
             return nullptr;
         }
 

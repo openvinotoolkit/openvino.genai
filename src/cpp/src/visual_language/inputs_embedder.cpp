@@ -469,12 +469,13 @@ const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::get_lm_extra_
     return m_impl->get_lm_extra_inputs();
 }
 
-LMExtraInputsCallback InputsEmbedder::get_lm_extra_inputs_callback() {
-    return m_impl->get_lm_extra_inputs_callback();
-}
-
 std::function<ov::Tensor(const ov::Tensor& new_input_ids)> InputsEmbedder::get_per_layer_embeddings_callback() {
     return m_impl->get_per_layer_embeddings_callback();
+}
+
+std::function<ov::Tensor(const ov::Tensor& new_input_ids, const std::vector<int32_t>& beam_indices)>
+InputsEmbedder::get_ngram_embeddings_callback() {
+    return m_impl->get_ngram_embeddings_callback();
 }
 
 std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {

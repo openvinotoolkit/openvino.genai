@@ -140,9 +140,10 @@ ov::Tensor InputsEmbedderQwen4_Exp::get_inputs_embeds(
     return inputs_embeds;
 }
 
-LMExtraInputsCallback InputsEmbedderQwen4_Exp::get_lm_extra_inputs_callback() {
-    return [this](const ov::Tensor& input_ids, const std::vector<int32_t>& beam_indices) {
-        OPENVINO_ASSERT(input_ids.get_shape()[0] == beam_indices.size(),
+std::function<ov::Tensor(const ov::Tensor& new_input_ids, const std::vector<int32_t>& beam_indices)>
+InputsEmbedderQwen4_Exp::get_ngram_embeddings_callback() {
+    return [this](const ov::Tensor& new_input_ids, const std::vector<int32_t>& beam_indices) {
+        OPENVINO_ASSERT(new_input_ids.get_shape()[0] == beam_indices.size(),
                         "Qwen4Exp beam indices must match the current token batch.");
         ov::Tensor reordered_ngram_history(ov::element::i64, {beam_indices.size(), m_ngram_context_length});
         for (size_t batch = 0; batch < beam_indices.size(); ++batch) {
@@ -154,7 +155,7 @@ LMExtraInputsCallback InputsEmbedderQwen4_Exp::get_lm_extra_inputs_callback() {
                         reordered_ngram_history.data<int64_t>() + batch * m_ngram_context_length);
         }
         m_ngram_history = std::move(reordered_ngram_history);
-        return std::unordered_map<std::string, ov::Tensor>{{"ngram_embeddings", get_ngram_embeddings(input_ids)}};
+        return get_ngram_embeddings(new_input_ids);
     };
 }
 
