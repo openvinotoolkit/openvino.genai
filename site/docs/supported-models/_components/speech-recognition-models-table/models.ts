@@ -29,6 +29,15 @@ export const SPEECH_RECOGNITION_MODELS: SpeechRecognitionModelType[] = [
     ],
   },
   {
+    architecture: 'SenseVoiceSmall',
+    models: [
+      {
+        name: 'SenseVoice-Small',
+        links: ['https://huggingface.co/FunAudioLLM/SenseVoiceSmall'],
+      },
+    ],
+  },
+  {
     architecture: 'WhisperForConditionalGeneration',
     models: [
       {
