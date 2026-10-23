@@ -4,6 +4,8 @@
 
 #include "visual_language/qwen2vl/classes.hpp"
 
+#include <algorithm>
+
 #include "visual_language/clip.hpp"
 
 #include "utils.hpp"
@@ -592,10 +594,22 @@ ov::Tensor merge_text_and_video_image_embeddings(
     const float* image_embeds_data = processed_image_embeds.data<const float>();
     const float* video_embeds_data = processed_video_embeds.data<const float>();
 
-    size_t image_embed_idx = 0;
-    size_t video_embed_idx = 0;
     const int64_t img_token = image_pad_token_id;
     const int64_t vid_token = video_pad_token_id;
+    // Checked before copying: more pad tokens than embeddings would read past the embeddings buffer.
+    const int64_t* input_ids_end = input_ids_data + batch_size * seq_length;
+    const auto image_pad_count = static_cast<size_t>(std::count(input_ids_data, input_ids_end, img_token));
+    const auto video_pad_count = static_cast<size_t>(std::count(input_ids_data, input_ids_end, vid_token));
+    OPENVINO_ASSERT(image_pad_count == processed_image_embeds.get_shape().at(0),
+        "Image embeddings count (", processed_image_embeds.get_shape().at(0),
+        ") does not match image pad tokens in prompt (", image_pad_count, ")");
+
+    OPENVINO_ASSERT(video_pad_count == processed_video_embeds.get_shape().at(0),
+        "Video embeddings count (", processed_video_embeds.get_shape().at(0),
+        ") does not match video pad tokens in prompt (", video_pad_count, ")");
+
+    size_t image_embed_idx = 0;
+    size_t video_embed_idx = 0;
     for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
         for (size_t seq_idx = 0; seq_idx < seq_length; ++seq_idx) {
             size_t flat_idx = batch_idx * seq_length + seq_idx;
@@ -612,14 +626,6 @@ ov::Tensor merge_text_and_video_image_embeddings(
             }
         }
     }
-
-    OPENVINO_ASSERT(image_embed_idx == processed_image_embeds.get_shape().at(0),
-        "Image embeddings count (", processed_image_embeds.get_shape().at(0), 
-        ") does not match image pad tokens in prompt (", image_embed_idx, ")");
-
-    OPENVINO_ASSERT(video_embed_idx == processed_video_embeds.get_shape().at(0),
-        "Video embeddings count (", processed_video_embeds.get_shape().at(0), 
-        ") does not match video pad tokens in prompt (", video_embed_idx, ")");
 
     return merged_embeds;
 }
