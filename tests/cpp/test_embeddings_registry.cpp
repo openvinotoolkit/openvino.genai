@@ -7,10 +7,10 @@
 #include <cstring>
 #include <vector>
 
-#include "visual_language/vision_registry.hpp"
+#include "visual_language/embeddings_registry.hpp"
 
 using ov::genai::ModalityType;
-using ov::genai::VisionRegistry;
+using ov::genai::EmbeddingsRegistry;
 
 namespace {
 
@@ -32,8 +32,8 @@ ov::Tensor make_frames(size_t frames) {
 
 }  // namespace
 
-TEST(VisionRegistry, SameContentSharesEntry) {
-    VisionRegistry registry;
+TEST(EmbeddingsRegistry, SameContentSharesEntry) {
+    EmbeddingsRegistry registry;
     const auto first = registry.register_audio(make_audio(LONG_AUDIO_SAMPLES));
     const auto second = registry.register_audio(make_audio(LONG_AUDIO_SAMPLES));
     EXPECT_EQ(first, second);
@@ -41,8 +41,8 @@ TEST(VisionRegistry, SameContentSharesEntry) {
 }
 
 // Before the fix the second audio hit the first entry and reused its embeddings.
-TEST(VisionRegistry, DifferenceInUnsampledBytesGetsOwnEntry) {
-    VisionRegistry registry;
+TEST(EmbeddingsRegistry, DifferenceInUnsampledBytesGetsOwnEntry) {
+    EmbeddingsRegistry registry;
     auto changed = make_audio(LONG_AUDIO_SAMPLES);
     changed.data<float>()[UNSAMPLED_SAMPLE] = -1.0f;
 
@@ -55,8 +55,8 @@ TEST(VisionRegistry, DifferenceInUnsampledBytesGetsOwnEntry) {
     EXPECT_EQ(registry.get_original(first).data<const float>()[UNSAMPLED_SAMPLE], 0.5f);
 }
 
-TEST(VisionRegistry, CollidingEntryIsFoundAgainAfterProbe) {
-    VisionRegistry registry;
+TEST(EmbeddingsRegistry, CollidingEntryIsFoundAgainAfterProbe) {
+    EmbeddingsRegistry registry;
     auto changed = make_audio(LONG_AUDIO_SAMPLES);
     changed.data<float>()[UNSAMPLED_SAMPLE] = -1.0f;
 
@@ -67,8 +67,8 @@ TEST(VisionRegistry, CollidingEntryIsFoundAgainAfterProbe) {
 }
 
 // Releasing the head of a probe chain may cost a duplicate entry, never a wrong reuse.
-TEST(VisionRegistry, ReleasedChainHeadNeverReturnsWrongEntry) {
-    VisionRegistry registry;
+TEST(EmbeddingsRegistry, ReleasedChainHeadNeverReturnsWrongEntry) {
+    EmbeddingsRegistry registry;
     auto changed = make_audio(LONG_AUDIO_SAMPLES);
     changed.data<float>()[UNSAMPLED_SAMPLE] = -1.0f;
 
@@ -82,8 +82,8 @@ TEST(VisionRegistry, ReleasedChainHeadNeverReturnsWrongEntry) {
 
 // A one-frame video and an image built from the same tensor used to share one entry, and
 // set_encoded_video() then failed on the image entry.
-TEST(VisionRegistry, SameTensorAsImageAndVideoGetsSeparateEntries) {
-    VisionRegistry registry;
+TEST(EmbeddingsRegistry, SameTensorAsImageAndVideoGetsSeparateEntries) {
+    EmbeddingsRegistry registry;
     const auto frames = make_frames(1);
     const auto image = registry.register_image(frames);
     const auto video = registry.register_video(frames);
@@ -94,8 +94,8 @@ TEST(VisionRegistry, SameTensorAsImageAndVideoGetsSeparateEntries) {
     EXPECT_NO_THROW(registry.set_encoded_video(video, {}));
 }
 
-TEST(VisionRegistry, EmptyAudioSharesEntry) {
-    VisionRegistry registry;
+TEST(EmbeddingsRegistry, EmptyAudioSharesEntry) {
+    EmbeddingsRegistry registry;
     const auto first = registry.register_audio(make_audio(0));
     const auto second = registry.register_audio(make_audio(0));
     EXPECT_EQ(first, second);
@@ -103,8 +103,8 @@ TEST(VisionRegistry, EmptyAudioSharesEntry) {
 }
 
 // Tensors wrapping caller memory are not guaranteed to be 8-byte aligned.
-TEST(VisionRegistry, MisalignedTensorMatchesAlignedCopy) {
-    VisionRegistry registry;
+TEST(EmbeddingsRegistry, MisalignedTensorMatchesAlignedCopy) {
+    EmbeddingsRegistry registry;
     constexpr size_t samples = 1001;
     std::vector<uint64_t> storage(samples / 2 + 2);
     auto* misaligned = reinterpret_cast<uint8_t*>(storage.data()) + sizeof(float);
@@ -145,8 +145,8 @@ ov::Tensor packed_copy(const ov::Tensor& tensor) {
 
 }  // namespace
 
-TEST(VisionRegistry, RoiTensorMatchesPackedCopy) {
-    VisionRegistry registry;
+TEST(EmbeddingsRegistry, RoiTensorMatchesPackedCopy) {
+    EmbeddingsRegistry registry;
     const auto parent = make_striped_image();
     const auto roi = top_left_roi(parent);
     ASSERT_FALSE(roi.is_continuous());
@@ -157,8 +157,8 @@ TEST(VisionRegistry, RoiTensorMatchesPackedCopy) {
     EXPECT_EQ(registry.size(), 1);
 }
 
-TEST(VisionRegistry, RoiTensorDoesNotMatchItsRawSpan) {
-    VisionRegistry registry;
+TEST(EmbeddingsRegistry, RoiTensorDoesNotMatchItsRawSpan) {
+    EmbeddingsRegistry registry;
     const auto parent = make_striped_image();
     const auto roi = top_left_roi(parent);
     // Same shape as the ROI, holding the bytes the ROI's data pointer runs over: all of parent row 0.
