@@ -657,17 +657,6 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
 
 std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     const std::vector<std::string>& prompts,
-    const std::vector<std::vector<ov::Tensor>>& images,
-    const std::vector<std::vector<ov::Tensor>>& videos,
-    const std::vector<std::vector<ov::Tensor>>& audios,
-    const std::vector<GenerationConfig>& sampling_params,
-    const StreamerVariant& streamer) {
-    const std::vector<std::vector<VideoMetadata>> empty_videos_metadata_vector(prompts.size());
-    return m_impl->generate(prompts, images, videos, empty_videos_metadata_vector, audios, sampling_params, streamer);
-}
-
-std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
-    const std::vector<std::string>& prompts,
     const ov::AnyMap& properties_map
 ) {
     const size_t batch_size = prompts.size();
@@ -708,17 +697,6 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     const StreamerVariant& streamer
 ) {
     return m_impl->generate(histories, images, videos, sampling_params, streamer);
-}
-
-std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
-    const std::vector<ChatHistory>& histories,
-    const std::vector<std::vector<ov::Tensor>>& images,
-    const std::vector<std::vector<ov::Tensor>>& videos,
-    const std::vector<std::vector<ov::Tensor>>& audios,
-    const std::vector<GenerationConfig>& sampling_params,
-    const StreamerVariant& streamer) {
-    const std::vector<std::vector<VideoMetadata>> empty_videos_metadata_vector(histories.size());
-    return m_impl->generate(histories, images, videos, empty_videos_metadata_vector, audios, sampling_params, streamer);
 }
 
 std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(

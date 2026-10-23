@@ -327,14 +327,6 @@ public:
 
     std::vector<VLMDecodedResults> generate(
         const std::vector<std::string>& prompts,
-        const std::vector<std::vector<ov::Tensor>>& images,
-        const std::vector<std::vector<ov::Tensor>>& videos,
-        const std::vector<std::vector<ov::Tensor>>& audios,
-        const std::vector<GenerationConfig>& sampling_params,
-        const StreamerVariant& streamer=std::monostate{});
-
-    std::vector<VLMDecodedResults> generate(
-        const std::vector<std::string>& prompts,
         const ov::AnyMap& properties_map
     );
 
@@ -356,14 +348,6 @@ public:
         const std::vector<ChatHistory>& histories,
         const std::vector<std::vector<ov::Tensor>>& images,
         const std::vector<std::vector<ov::Tensor>>& videos,
-        const std::vector<GenerationConfig>& sampling_params,
-        const StreamerVariant& streamer=std::monostate{});
-
-    std::vector<VLMDecodedResults> generate(
-        const std::vector<ChatHistory>& histories,
-        const std::vector<std::vector<ov::Tensor>>& images,
-        const std::vector<std::vector<ov::Tensor>>& videos,
-        const std::vector<std::vector<ov::Tensor>>& audios,
         const std::vector<GenerationConfig>& sampling_params,
         const StreamerVariant& streamer=std::monostate{});
 
