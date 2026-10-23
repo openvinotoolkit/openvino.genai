@@ -17,8 +17,16 @@ InputsEmbedderQwen4_Exp::InputsEmbedderQwen4_Exp(
     const std::string& device,
     const ov::AnyMap device_config
 ) : InputsEmbedderQwen3_5(vlm_config, model_dir, tokenizer, device, device_config) {
+    const std::filesystem::path model_path = model_dir / "openvino_ngram_embeddings_model.xml";
+
+    m_has_ngram_embeddings = std::filesystem::exists(model_path);
+
+    if (!m_has_ngram_embeddings) {
+        return;
+    }
+
     initialize_ngram_embeddings_model(
-        utils::singleton_core().read_model(model_dir / "openvino_ngram_embeddings_model.xml"),
+        utils::singleton_core().read_model(model_path),
         device,
         device_config
     );
@@ -32,6 +40,12 @@ InputsEmbedderQwen4_Exp::InputsEmbedderQwen4_Exp(
     const std::string& device,
     const ov::AnyMap device_config
 ) : InputsEmbedderQwen3_5(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
+    m_has_ngram_embeddings = models_map.find("ngram_embeddings") != models_map.end();
+    
+    if (!m_has_ngram_embeddings) {
+        return;
+    }
+
     const auto& [model_str, weights] = utils::get_model_weights_pair(models_map, "ngram_embeddings");
     initialize_ngram_embeddings_model(
         utils::singleton_core().read_model(model_str, weights),
@@ -40,6 +54,7 @@ InputsEmbedderQwen4_Exp::InputsEmbedderQwen4_Exp(
     );
 }
 
+// TODO Consider getting ngram_context_length dynamically from m_ngram_embeddings_request and remove init method
 void InputsEmbedderQwen4_Exp::initialize_ngram_embeddings_model(
     const std::shared_ptr<ov::Model>& model,
     const std::string& device,
@@ -135,13 +150,19 @@ ov::Tensor InputsEmbedderQwen4_Exp::get_inputs_embeds(
                     ngram_history_data + m_ngram_context_length - context_length);
     }
     
-    m_lm_extra_inputs["ngram_embeddings"] = get_ngram_embeddings(m_last_input_ids);
+    if (m_has_ngram_embeddings) {
+        m_lm_extra_inputs["ngram_embeddings"] = get_ngram_embeddings(m_last_input_ids);
+    }
 
     return inputs_embeds;
 }
 
 std::function<ov::Tensor(const ov::Tensor& new_input_ids, const std::vector<int32_t>& beam_indices)>
 InputsEmbedderQwen4_Exp::get_ngram_embeddings_callback() {
+    if (!m_has_ngram_embeddings) {
+        return nullptr;
+    }
+
     return [this](const ov::Tensor& new_input_ids, const std::vector<int32_t>& beam_indices) {
         OPENVINO_ASSERT(new_input_ids.get_shape()[0] == beam_indices.size(),
                         "Qwen4Exp beam indices must match the current token batch.");

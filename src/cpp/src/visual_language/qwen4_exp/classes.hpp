@@ -52,7 +52,6 @@ public:
         const std::vector<std::pair<size_t, size_t>>& history_vision_count = {}
     ) override;
 
-    // TODO Add has_ngram_embeddings() getter
     std::function<ov::Tensor(const ov::Tensor& new_input_ids, const std::vector<int32_t>& beam_indices)>
     get_ngram_embeddings_callback() override;
 
@@ -85,6 +84,7 @@ protected:
     ) override;
 
 private:
+    bool m_has_ngram_embeddings = false;
     ov::InferRequest m_ngram_embeddings_request;
     ov::Tensor m_ngram_history;
     size_t m_ngram_context_length = 0;
