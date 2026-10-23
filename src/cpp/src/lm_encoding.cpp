@@ -145,6 +145,22 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     ov::Shape prompts_shape = input_ids.get_shape();
     const size_t batch_size = prompts_shape[0];
 
+    // Some language models (e.g. the LFM2 hybrid conv/attention backbone used by lfm2_vl) compute
+    // positional information internally and expose no "position_ids" input. Drop a provided
+    // position_ids tensor when the compiled model has no matching port to avoid a port-not-found error.
+    if (position_ids.has_value()) {
+        bool llm_has_position_ids = false;
+        for (const auto& port : m_llm.get_compiled_model().inputs()) {
+            if (port.get_names().count("position_ids")) {
+                llm_has_position_ids = true;
+                break;
+            }
+        }
+        if (!llm_has_position_ids) {
+            position_ids.reset();
+        }
+    }
+
     // Initialize results and performance metrics.
 
     ov::genai::utils::GenerationFinishInfo finish_info;

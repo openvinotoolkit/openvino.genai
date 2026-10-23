@@ -81,6 +81,16 @@ public:
     /// @brief Merge kernel size for downsample MLP merge (config.json merge_kernel_size)
     size_t merge_kernel_size = 2;
 
+    // LFM2-VL specific params
+    size_t downsample_factor = 2;
+    size_t encoder_patch_size = 16;
+    size_t min_image_tokens = 64;
+    size_t lfm2_min_tiles = 2;
+    size_t lfm2_max_tiles = 10;
+    float max_pixels_tolerance = 2.0f;
+    bool use_thumbnail = true;
+    bool do_image_splitting = true;
+
     /// @brief Default constructor
     ProcessorConfig() = default;
 
