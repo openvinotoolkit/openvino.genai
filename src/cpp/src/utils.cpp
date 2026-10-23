@@ -10,6 +10,7 @@
 #include <map>
 #include <memory>
 #include <regex>
+#include <set>
 
 #include "openvino/runtime/properties.hpp"
 #include "openvino/op/add.hpp"
@@ -1203,6 +1204,20 @@ size_t get_available_gpu_memory(const std::string& device, size_t num_cache_tens
     auto max_allocatable_cache = max_alloc_memory_size * num_cache_tensors;
 
     return std::min(total_device_memory - used_device_mem, max_allocatable_cache);
+}
+
+size_t get_available_gpu_memory(const std::vector<std::string>& devices, size_t num_cache_tensors) {
+    OPENVINO_ASSERT(!devices.empty(), "get_available_gpu_memory() needs at least one device.");
+
+    std::set<std::string> distinct(devices.begin(), devices.end());
+    // The per-tensor allocation cap applies on each device, and the cache
+    // tensors are spread evenly over them.
+    const size_t tensors_per_device = std::max<size_t>(num_cache_tensors / distinct.size(), 1);
+
+    size_t available = 0;
+    for (const auto& device : distinct)
+        available += get_available_gpu_memory(device, tensors_per_device);
+    return available;
 }
 
 std::pair<ov::AnyMap, std::optional<std::filesystem::path>> extract_export_properties(const ov::AnyMap& external_properties) {
