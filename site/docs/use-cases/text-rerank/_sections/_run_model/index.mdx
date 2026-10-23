@@ -38,3 +38,37 @@ The `TextRerankPipeline` enables you to reorder candidate documents or passages 
         </Tabs>
     </TabItemJS>
 </LanguageTabs>
+
+:::info Instruction-following rerankers (Qwen3)
+
+For instruction-following rerankers such as [Qwen3-Reranker](https://huggingface.co/Qwen/Qwen3-Reranker-0.6B), pass the **raw** query and documents to `rerank()`. The pipeline applies the Qwen3 prompt template (system prompt, `<Instruct>`/`<Query>`/`<Document>` fields, and assistant suffix) internally — do not format the inputs yourself.
+
+By default the pipeline uses the web-search retrieval instruction `"Given a web search query, retrieve relevant passages that answer the query"`. Qwen recommends tailoring the instruction to your task, which can improve retrieval quality by 1–5%. Override it with the `instruction` option:
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        import openvino_genai
+
+        pipeline = openvino_genai.TextRerankPipeline(
+            model_path,
+            "CPU",
+            top_n=3,
+            instruction="Given a question about planets, retrieve the passage that answers it",
+        )
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        ov::genai::TextRerankPipeline pipeline(
+            models_path,
+            "CPU",
+            ov::genai::top_n(3),
+            ov::genai::instruction("Given a question about planets, retrieve the passage that answers it"));
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+The `instruction` option is ignored by cross-encoder rerankers, which do not use a prompt template.
+
+:::

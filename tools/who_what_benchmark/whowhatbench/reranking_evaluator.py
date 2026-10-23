@@ -134,6 +134,8 @@ class RerankingEvaluator(BaseEvaluator):
             # post/pre processing for qwen models added according to transformers Qwen3-Embedding-0.6B model card:
             # https://huggingface.co/Qwen/Qwen3-Reranker-0.6B#transformers-usage
             if is_qwen3(model.config):
+                # Reference backends need the Qwen3 template applied by hand; the GenAI path applies it in rerank().
+                query, passages = self._apply_qwen3_template(query, passages)
                 pairs = [f"{query}{passage}" for passage in passages]
                 input_data = tokenizer(pairs, padding=True, truncation=True, max_length=DEFAULT_MAX_LENGTH_QWEN, return_tensors="pt", padding_side="left")
             else:
@@ -181,11 +183,8 @@ class RerankingEvaluator(BaseEvaluator):
         if not os.path.exists(result_dir):
             os.makedirs(result_dir)
         for i, data in tqdm(enumerate(inputs), total=len(inputs), desc="Evaluate pipeline"):
-            query = data[0]
-            documents = data[1]
-            if is_qwen3(model.config):
-                query, documents = self._apply_qwen3_template(data[0], data[1])
-            result = gen_answer_fn(model, self.tokenizer, query, documents)
+            # Pass raw query/documents; each backend applies its own formatting (GenAI inside rerank()).
+            result = gen_answer_fn(model, self.tokenizer, data[0], data[1])
 
             queries.append(data[0])
             passages.append(data[1])

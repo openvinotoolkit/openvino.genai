@@ -4,6 +4,7 @@
 #include "openvino/genai/rag/text_rerank_pipeline.hpp"
 
 #include <fstream>
+#include <string_view>
 
 #include "debug_utils.hpp"
 #include "json_utils.hpp"
@@ -26,6 +27,7 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     properties_copy.erase(pad_to_max_length.name());
     properties_copy.erase(truncation.name());
     properties_copy.erase(padding_side.name());
+    properties_copy.erase(instruction.name());
 
     return properties_copy;
 }
@@ -56,6 +58,28 @@ bool has_input(const std::shared_ptr<Model>& model, const std::string& name) {
         }
     }
     return false;
+}
+
+// Qwen3 rerankers are instruction-following causal LMs. apply_qwen3_postprocessing() below reads the score from
+// the logits of the last token, so the suffix must end exactly where the next token is the "yes"/"no" verdict.
+// Mirrors https://huggingface.co/Qwen/Qwen3-Reranker-0.6B#transformers-usage
+constexpr std::string_view QWEN3_RERANK_PREFIX =
+    "<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct "
+    "provided. Note that the answer can only be \"yes\" or \"no\".<|im_end|>\n<|im_start|>user\n";
+constexpr std::string_view QWEN3_RERANK_SUFFIX = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n";
+constexpr std::string_view QWEN3_RERANK_INSTRUCTION =
+    "Given a web search query, retrieve relevant passages that answer the query";
+
+std::string format_qwen3_query(const std::string& query, std::string_view instruction) {
+    std::string formatted{QWEN3_RERANK_PREFIX};
+    formatted.append("<Instruct>: ").append(instruction).append("\n<Query>: ").append(query).append("\n");
+    return formatted;
+}
+
+std::string format_qwen3_document(const std::string& document) {
+    std::string formatted{"<Document>: "};
+    formatted.append(document).append(QWEN3_RERANK_SUFFIX);
+    return formatted;
 }
 
 std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model) {
@@ -143,6 +167,7 @@ TextRerankPipeline::Config::Config(const ov::AnyMap& properties) {
     read_anymap_param(properties, ov::genai::max_length.name(), max_length);
     read_anymap_param(properties, ov::genai::padding_side.name(), padding_side);
     read_anymap_param(properties, ov::genai::pad_to_max_length.name(), pad_to_max_length);
+    read_anymap_param(properties, ov::genai::instruction.name(), instruction);
 };
 
 class TextRerankPipeline::TextRerankPipelineImpl {
@@ -154,6 +179,7 @@ public:
         : m_config{config} {
         const auto model_type = read_model_type(models_path);
         const bool is_qwen3 = model_type.has_value() && model_type.value() == "qwen3";
+        m_is_qwen3 = is_qwen3;
 
         m_tokenization_params.insert({truncation.name(), true});
 
@@ -280,6 +306,7 @@ private:
     AnyMap m_tokenization_params;
     bool m_has_position_ids = false;
     bool m_has_beam_idx = false;
+    bool m_is_qwen3 = false;
 
     TokenizedInputs tokenize(const std::string& query, const std::vector<std::string>& texts) {
         if (m_tokenizer.supports_paired_input()) {
@@ -289,8 +316,17 @@ private:
         std::vector<std::string> concatenated;
         concatenated.reserve(texts.size());
 
-        for (auto& text : texts) {
-            concatenated.push_back(query + text);
+        if (m_is_qwen3) {
+            const std::string_view instruction =
+                m_config.instruction ? std::string_view{*m_config.instruction} : QWEN3_RERANK_INSTRUCTION;
+            const std::string formatted_query = format_qwen3_query(query, instruction);
+            for (const auto& text : texts) {
+                concatenated.push_back(formatted_query + format_qwen3_document(text));
+            }
+        } else {
+            for (const auto& text : texts) {
+                concatenated.push_back(query + text);
+            }
         }
 
         return m_tokenizer.encode(concatenated, m_tokenization_params);

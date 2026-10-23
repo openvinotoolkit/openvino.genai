@@ -1193,7 +1193,17 @@ def test_rerank_documents(rerank_model, dataset_documents, query, config):
 # aligned with https://huggingface.co/tomaarsen/Qwen3-Reranker-0.6B-seq-cls#updated-transformers-usage
 @pytest.mark.parametrize("rerank_model", [QWEN3_RERANK_SEQ_CLS], indirect=True)
 @pytest.mark.parametrize("query", ["Which planet is known as the Red Planet?"])
-@pytest.mark.parametrize("task", ["Given a web search query, retrieve relevant passages that answer the query"])
+@pytest.mark.parametrize(
+    "task",
+    [
+        "Given a web search query, retrieve relevant passages that answer the query",
+        "Given a question about planets, retrieve the passage that answers it",
+    ],
+    ids=[
+        "task=default",
+        "task=custom",
+    ],
+)
 @pytest.mark.parametrize(
     "documents",
     [
@@ -1216,6 +1226,9 @@ def test_rerank_documents(rerank_model, dataset_documents, query, config):
 )
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
 def test_qwen3_seq_cls_rerank_documents(rerank_model: OVConvertedModelSchema, query, task, documents, config):
+    # The reference applies the prompt template by hand; TextRerankPipeline applies it internally
+    # using config.instruction, so both sides build the same prompt.
+    config.instruction = task
     formatted_query = qwen3_reranker_format_queries(query, task)
     formatted_documents = [qwen3_reranker_format_document(doc) for doc in documents]
 
@@ -1228,8 +1241,8 @@ def test_qwen3_seq_cls_rerank_documents(rerank_model: OVConvertedModelSchema, qu
     )
     genai_result = run_text_rerank_genai(
         rerank_model.models_path,
-        formatted_query,
-        formatted_documents,
+        query,
+        documents,
         config,
     )
 
@@ -1238,7 +1251,6 @@ def test_qwen3_seq_cls_rerank_documents(rerank_model: OVConvertedModelSchema, qu
 
 @pytest.mark.parametrize("llm_model", [QWEN3_RERANK], indirect=True)
 @pytest.mark.parametrize("query", ["Which planet is known as the Red Planet?"])
-@pytest.mark.parametrize("task", ["Given a web search query, retrieve relevant passages that answer the query"])
 @pytest.mark.parametrize(
     "documents",
     [
@@ -1251,22 +1263,28 @@ def test_qwen3_seq_cls_rerank_documents(rerank_model: OVConvertedModelSchema, qu
     ],
 )
 @pytest.mark.skipif(**should_skip_npuw_tests())
-def test_qwen3_rerank_npu(llm_model: OVConvertedModelSchema, query, task, documents):
+def test_qwen3_rerank_npu(llm_model: OVConvertedModelSchema, query, documents):
     config = TextRerankPipeline.Config(top_n=4, padding_side="left")
-    formatted_query = qwen3_reranker_format_queries(query, task)
-    formatted_documents = [qwen3_reranker_format_document(doc) for doc in documents]
 
-    cpu_result = run_text_rerank_genai(llm_model.models_path, formatted_query, formatted_documents, config)
-    npu_result = run_text_rerank_genai(
-        llm_model.models_path, formatted_query, formatted_documents, config, "NPU", NPUW_CPU_PROPERTIES
-    )
+    cpu_result = run_text_rerank_genai(llm_model.models_path, query, documents, config)
+    npu_result = run_text_rerank_genai(llm_model.models_path, query, documents, config, "NPU", NPUW_CPU_PROPERTIES)
 
     assert_rerank_results(cpu_result, npu_result, score_diff_max=1e-3)
 
 
 @pytest.mark.parametrize("llm_model", [QWEN3_RERANK], indirect=True)
 @pytest.mark.parametrize("query", ["Which planet is known as the Red Planet?"])
-@pytest.mark.parametrize("task", ["Given a web search query, retrieve relevant passages that answer the query"])
+@pytest.mark.parametrize(
+    "task",
+    [
+        "Given a web search query, retrieve relevant passages that answer the query",
+        "Given a question about planets, retrieve the passage that answers it",
+    ],
+    ids=[
+        "task=default",
+        "task=custom",
+    ],
+)
 @pytest.mark.parametrize(
     "documents",
     [
@@ -1296,6 +1314,9 @@ def test_qwen3_rerank_npu(llm_model: OVConvertedModelSchema, query, task, docume
 )
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
 def test_qwen3_rerank_documents(llm_model: OVConvertedModelSchema, query, task, documents, config):
+    # The reference applies the prompt template by hand; TextRerankPipeline applies it internally
+    # using config.instruction, so both sides build the same prompt.
+    config.instruction = task
     formatted_query = qwen3_reranker_format_queries(query, task)
     formatted_documents = [qwen3_reranker_format_document(doc) for doc in documents]
 
@@ -1308,8 +1329,8 @@ def test_qwen3_rerank_documents(llm_model: OVConvertedModelSchema, query, task, 
     )
     genai_result = run_text_rerank_genai(
         llm_model.models_path,
-        formatted_query,
-        formatted_documents,
+        query,
+        documents,
         config,
     )
 
