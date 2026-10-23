@@ -361,8 +361,21 @@ void init_asr_pipeline(py::module_& m) {
                const std::optional<std::function<std::optional<uint16_t>(py::str)>>& py_text_callback) {
                 ov::genai::ASRTextCallback text_callback;
                 if (py_text_callback) {
-                    text_callback = std::get<ov::genai::ASRTextCallback>(
-                        pyutils::pystreamer_to_streamer(pyutils::PyBindStreamerVariant{*py_text_callback}));
+                    text_callback = [&py_text_callback](std::string delta) -> ov::genai::StreamingStatus {
+                        py::gil_scoped_acquire acquire;
+                        PyObject* text = PyUnicode_DecodeUTF8(delta.data(), delta.size(), "replace");
+                        if (!text)
+                            throw py::error_already_set();
+                        auto py_text = py::reinterpret_steal<py::str>(text);
+                        const auto status = (*py_text_callback)(py_text);
+                        if (!status || *status == static_cast<uint16_t>(ov::genai::StreamingStatus::RUNNING))
+                            return ov::genai::StreamingStatus::RUNNING;
+                        if (*status == static_cast<uint16_t>(ov::genai::StreamingStatus::CANCEL))
+                            return ov::genai::StreamingStatus::CANCEL;
+                        if (*status == static_cast<uint16_t>(ov::genai::StreamingStatus::TOOL_CALL_STOP))
+                            return ov::genai::StreamingStatus::TOOL_CALL_STOP;
+                        return ov::genai::StreamingStatus::STOP;
+                    };
                 }
                 py::gil_scoped_release release;
                 return stream.generate(text_callback);
