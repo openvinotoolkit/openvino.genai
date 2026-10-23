@@ -231,7 +231,7 @@ std::vector<float> LCMScheduler::threshold_sample(const std::vector<float>& flat
     https://arxiv.org/abs/2205.11487
     */
 
-    std::vector<float> thresholded_sample;
+    std::vector<float> thresholded_sample = flat_sample;
     // Calculate abs
     std::vector<float> abs_sample(flat_sample.size());
     std::transform(flat_sample.begin(), flat_sample.end(), abs_sample.begin(), [](float val) { return std::abs(val); });
