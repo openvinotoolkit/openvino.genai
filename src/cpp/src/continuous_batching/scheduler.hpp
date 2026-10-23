@@ -493,6 +493,17 @@ public:
         return m_config;
     }
 
+    /// @return The underlying cache orchestrator, used by session snapshot save/restore.
+    CacheOrchestrator& get_cache_orchestrator() {
+        return *m_cache_orchestrator;
+    }
+
+    /// Session snapshot restore sizes the cache itself, so schedule() never reaches _initialize_cache();
+    /// without this the cache would not grow for the next generated token and the request would be dropped.
+    void enable_dynamic_memory_allocation_after_restore() {
+        m_dynamic_memory_allocation = true;
+    }
+
     void publish_completed_blocks(const Sequence::Ptr& sequence,
                                   size_t processed_before,
                                   size_t processed_after) {

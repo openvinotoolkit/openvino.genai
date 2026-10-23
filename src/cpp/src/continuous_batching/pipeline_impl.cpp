@@ -19,9 +19,11 @@
 #include "continuous_batching/cache/cache_state_dumper.hpp"
 #include "continuous_batching/paged_attention_transformations.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
+#include "continuous_batching/session_snapshot.hpp"
 #include "lora/helper.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "openvino/pass/sdpa_to_paged_attention.hpp"
+#include "logger.hpp"
 #include "utils.hpp"
 
 namespace {
@@ -388,6 +390,90 @@ bool ContinuousBatchingPipeline::ContinuousBatchingImpl::has_non_finished_reques
     return !m_awaiting_requests.empty() || !m_requests.empty();
 }
 
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::save_state(uint64_t request_id, const std::string& path, const CacheOffloadConfig& store_config) {
+    OPENVINO_ASSERT(!m_scheduler->get_config().use_cache_eviction,
+                    "Session snapshot save/restore is not supported together with use_cache_eviction");
+
+    SequenceGroup::Ptr sequence_group;
+    {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        for (auto& candidate : m_requests) {
+            if (candidate->get_request_id() == request_id) {
+                sequence_group = candidate;
+                break;
+            }
+        }
+        if (!sequence_group) {
+            for (auto& candidate : m_awaiting_requests) {
+                if (candidate->get_request_id() == request_id) {
+                    sequence_group = candidate;
+                    break;
+                }
+            }
+        }
+    }
+    OPENVINO_ASSERT(sequence_group, "No active request with id ", request_id, " to save a session snapshot for");
+
+    auto running_sequences = sequence_group->get_running_sequences();
+    OPENVINO_ASSERT(running_sequences.size() == 1,
+                    "Session snapshot only supports a single (non-beam-search, non-forked) sequence per request, "
+                    "got ", running_sequences.size());
+    const auto& sequence = running_sequences[0];
+
+    SessionSnapshot::save(m_scheduler->get_cache_orchestrator(), sequence_group, sequence, path, store_config);
+}
+
+GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::restore_state(
+        uint64_t request_id,
+        const std::string& path,
+        const ov::genai::GenerationConfig& sampling_params,
+        const CacheOffloadConfig& store_config) {
+    OPENVINO_ASSERT(!m_scheduler->get_config().use_cache_eviction,
+                    "Session snapshot save/restore is not supported together with use_cache_eviction");
+
+    auto loaded = SessionSnapshot::load(m_scheduler->get_cache_orchestrator(), path, store_config);
+    OPENVINO_ASSERT(loaded.is_embeddings == (m_model_input_type == ModelInputType::EMBEDDINGS),
+                    "Session snapshot/model mismatch: the snapshot was captured for a ",
+                    loaded.is_embeddings ? "embeddings-routed" : "plain token-id", " model, but the currently "
+                    "loaded model is ", m_model_input_type == ModelInputType::EMBEDDINGS ? "embeddings-routed" : "plain token-id");
+
+    auto sampling_params_copy = sampling_params;
+    if (sampling_params_copy.stop_token_ids.empty())
+        sampling_params_copy.stop_token_ids = m_generation_config.stop_token_ids;
+    if (sampling_params_copy.eos_token_id == -1)
+        sampling_params_copy.set_eos_token_id(m_generation_config.eos_token_id);
+    sampling_params_copy.validate();
+
+    SequenceGroup::Ptr sequence_group;
+    if (loaded.is_embeddings) {
+        OPENVINO_ASSERT(sampling_params_copy.max_length > loaded.input_embeds.get_shape()[1],
+                        "'max_length' must be greater than the number of restored session positions");
+        sequence_group = std::make_shared<SequenceGroup>(request_id,
+                                                         loaded.input_embeds,
+                                                         sampling_params_copy,
+                                                         std::nullopt,  // lm_extra_inputs: not supported in V1
+                                                         loaded.position_ids,
+                                                         loaded.rope_delta,
+                                                         std::nullopt);  // prompt_ids: for detokenization/echo only
+    } else {
+        OPENVINO_ASSERT(sampling_params_copy.max_length > loaded.token_ids.size(),
+                        "'max_length' must be greater than the number of restored session tokens");
+        sequence_group = std::make_shared<SequenceGroup>(request_id, loaded.token_ids, sampling_params_copy);
+    }
+    auto running_sequences = sequence_group->get_running_sequences();
+    OPENVINO_ASSERT(running_sequences.size() == 1, "Internal error: restored sequence group has more than one sequence");
+
+    m_scheduler->get_cache_orchestrator().inject_sequence_cache_state(running_sequences[0], sequence_group, loaded.blocks_per_type);
+    m_scheduler->enable_dynamic_memory_allocation_after_restore();
+
+    {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        m_awaiting_requests.push_back(sequence_group);
+    }
+
+    return std::make_shared<GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params_copy);
+}
+
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_validate_linear_verifier_constraints() const {
     if (!m_scheduler->has_linear_attention_cache()) {
         return;
@@ -627,6 +713,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
         _register_step_cache_usage(scheduler_output.m_cache_usage);
         m_pipeline_metrics.avg_cache_usage = _get_current_running_average_cache_usage();
         _publish_linear_attention_pool_metric();
+
+        GENAI_INFO("[KV_TRACE] step scheduled_groups=%zu scheduled_tokens=%zu cache_usage=%.2f cache_bytes=%zu",
+               scheduler_output.m_scheduled_sequence_groups_ids.size(),
+               scheduler_output.m_total_num_scheduled_tokens,
+               scheduler_output.m_cache_usage,
+               scheduler_output.m_cache_size_in_bytes);
 
         const auto& sched_config = m_scheduler->get_config();
         if (sched_config.use_cache_eviction) {

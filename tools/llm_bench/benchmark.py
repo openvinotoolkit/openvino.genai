@@ -5,8 +5,120 @@ import os
 import sys
 import argparse
 import logging as log
+import re
+import threading
+
+_dll_directory_handles = []
+
+
+class KvTraceOutputFilter:
+    """Limit repetitive KV trace lines while preserving the rest of benchmark output."""
+
+    _LIMITED_PATTERNS = (
+        re.compile(r"\[KV_TRACE\] prefix_restore "),
+        re.compile(r"\[KV_TRACE\] KVCacheManager (?:read_block|write_block) "),
+        re.compile(r"\[KV_TRACE\] KVCacheOffloadCache (?:load|queue_store|publish) "),
+        re.compile(r"\[KV_TRACE\] LinearAttentionOffloadCache (?:load|queue_store|publish) "),
+        re.compile(r"\[KV_TRACE\] KVCacheOffloadManager (?:acquire_slot|read_slot|write_slot) "),
+        re.compile(r"\[KV_TRACE\] offload_load_block "),
+        re.compile(r"\[KV_TRACE\] la_offload_load_block "),
+    )
+
+    def __init__(self, max_lines=3):
+        self.max_lines = max_lines
+        self._counts = {}
+        self._read_fd = None
+        self._saved_fds = []
+        self._thread = None
+
+    def _filter_line(self, line):
+        for pattern in self._LIMITED_PATTERNS:
+            if pattern.search(line):
+                key = pattern.pattern
+                count = self._counts.get(key, 0)
+                self._counts[key] = count + 1
+                if count < self.max_lines:
+                    return line
+                if count == self.max_lines:
+                    return f"[KV_TRACE] ... repeated lines suppressed for {key} ...\n"
+                return None
+        return line
+
+    def _drain(self):
+        with os.fdopen(self._read_fd, "rb", closefd=True) as stream:
+            pending = b""
+            while True:
+                chunk = stream.read(4096)
+                if not chunk:
+                    break
+                pending += chunk
+                lines = pending.split(b"\n")
+                pending = lines.pop()
+                for raw_line in lines:
+                    line = raw_line.decode("utf-8", errors="replace") + "\n"
+                    filtered = self._filter_line(line)
+                    if filtered is not None:
+                        os.write(self._saved_fds[0], filtered.encode("utf-8"))
+            if pending:
+                line = pending.decode("utf-8", errors="replace")
+                filtered = self._filter_line(line)
+                if filtered is not None:
+                    os.write(self._saved_fds[0], filtered.encode("utf-8"))
+
+    def __enter__(self):
+        if not hasattr(os, "pipe"):
+            return self
+        self._read_fd, write_fd = os.pipe()
+        self._saved_fds = [os.dup(1), os.dup(2)]
+        os.dup2(write_fd, 1)
+        os.dup2(write_fd, 2)
+        os.close(write_fd)
+        self._thread = threading.Thread(target=self._drain, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self._thread is None:
+            return False
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os.dup2(self._saved_fds[0], 1)
+        os.dup2(self._saved_fds[1], 2)
+        self._thread.join()
+        os.close(self._saved_fds[0])
+        os.close(self._saved_fds[1])
+        return False
+
+
+def configure_local_runtime():
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    build_root = os.path.join(repo_root, "build_bench")
+    build_python_path = os.path.join(build_root, "openvino_genai")
+    runtime_root = os.environ.get("OPENVINO_GENAI_BENCH_RUNTIME", r"C:\Users\gta\ov_bench_runtime")
+    package_roots = [build_root]
+    dll_paths = [
+        os.path.join(sys.prefix, "Lib", "site-packages", "openvino", "libs"),
+        r"C:\Python312\Lib\site-packages\openvino\libs",
+        build_python_path,
+    ]
+    existing_paths = [path for path in dll_paths if os.path.isdir(path)]
+    for path in [build_python_path, os.path.join(r"C:\Python312\Lib", "site-packages", "openvino", "libs")]:
+        if os.path.isdir(path):
+            _dll_directory_handles.append(os.add_dll_directory(path))
+    os.environ["PATH"] = os.pathsep.join(existing_paths) + os.pathsep + os.environ.get("PATH", "")
+    for path in package_roots:
+        if os.path.isdir(path):
+            sys.path.insert(0, path)
+    dependency_root = os.environ.get(
+        "OPENVINO_GENAI_BENCH_DEPENDENCIES",
+        r"C:\Users\gta\ov_export_venv\Lib\site-packages",
+    )
+    if os.path.isdir(dependency_root):
+        sys.path.append(dependency_root)
+
+
+configure_local_runtime()
 from openvino import get_version
-import torch
 import traceback
 import llm_bench_utils.output_csv
 import llm_bench_utils.output_json
@@ -300,6 +412,32 @@ def get_argparser():
         required=False,
         default=None,
         help="Path to file with Continuous Batching Scheduler settings or dict",
+    )
+    parser.add_argument(
+        "--session_snapshot_save",
+        required=False,
+        default=None,
+        help="Path to write a ContinuousBatchingPipeline session snapshot to. When set, each prompt is "
+        "generated for --session_snapshot_save_steps steps (instead of the full --infer_count) and then "
+        "saved via save_state(), instead of being benchmarked normally. Forces ContinuousBatchingPipeline "
+        "and requires batch_size=1, num_beams=1. Mutually exclusive with --session_snapshot_restore.",
+    )
+    parser.add_argument(
+        "--session_snapshot_save_steps",
+        default=5,
+        type=greater_than_zero,
+        help="Number of continuous-batching steps to run before saving via --session_snapshot_save "
+        "(roughly: enough steps to finish prefill plus a couple of decode steps).",
+    )
+    parser.add_argument(
+        "--session_snapshot_restore",
+        required=False,
+        default=None,
+        help="Path to a ContinuousBatchingPipeline session snapshot (written by --session_snapshot_save) to "
+        "restore via restore_state() instead of tokenizing/prefilling the prompt from scratch. The prompt "
+        "text/file is ignored; the request's token history comes entirely from the snapshot. Forces "
+        "ContinuousBatchingPipeline and requires batch_size=1, num_beams=1. Mutually exclusive with "
+        "--session_snapshot_save.",
     )
     parser.add_argument(
         "--draft_model",
@@ -611,6 +749,14 @@ def main():
     if args.streaming and args.tokens_len is None:
         log.error("--streaming requires --tokens_len to be set.")
         exit(1)
+    if args.session_snapshot_save is not None and args.session_snapshot_restore is not None:
+        log.error("--session_snapshot_save and --session_snapshot_restore are mutually exclusive.")
+        exit(1)
+    if (args.session_snapshot_save is not None or args.session_snapshot_restore is not None) and (
+        args.batch_size != 1 or args.num_beams != 1
+    ):
+        log.error("--session_snapshot_save/--session_snapshot_restore require batch_size=1 and num_beams=1.")
+        exit(1)
     model_path, framework, model_args = analyze_args(args)
     # Set the device for running OpenVINO backend for torch.compile()
     if model_args["torch_compile_backend"]:
@@ -628,6 +774,8 @@ def main():
         if model_args["config"].get("PREC_BF16") and model_args["config"]["PREC_BF16"] is True:
             log.warning("[Warning] Param bf16/prec_bf16 only work for framework pt. It will be disabled.")
         if "cpu" in args.device.lower():
+            import torch
+
             env_omp = os.getenv("OMP_WAIT_POLICY")
             if env_omp is None or env_omp != "PASSIVE":
                 log.warning(
@@ -656,21 +804,22 @@ def main():
     log.info(out_str)
 
     try:
-        if model_args["use_case"].task in ["text_gen", "text_gen_chat", "code_gen"]:
-            iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args["use_case"].task](
-                model_path,
-                framework,
-                args.device,
-                args.tokens_len,
-                args.streaming,
-                model_args,
-                args.num_iters,
-                memory_data_collector,
-            )
-        else:
-            iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args["use_case"].task](
-                model_path, framework, args.device, model_args, args.num_iters, memory_data_collector
-            )
+        with KvTraceOutputFilter():
+            if model_args["use_case"].task in ["text_gen", "text_gen_chat", "code_gen"]:
+                iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args["use_case"].task](
+                    model_path,
+                    framework,
+                    args.device,
+                    args.tokens_len,
+                    args.streaming,
+                    model_args,
+                    args.num_iters,
+                    memory_data_collector,
+                )
+            else:
+                iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args["use_case"].task](
+                    model_path, framework, args.device, model_args, args.num_iters, memory_data_collector
+                )
         memory_data_collector.update_marker("stop")
 
         if args.report is not None or args.report_json is not None:
