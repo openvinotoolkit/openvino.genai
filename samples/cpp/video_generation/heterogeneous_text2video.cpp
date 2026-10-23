@@ -1,9 +1,12 @@
 // Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <memory>
-#include <string>
+#include <cstdint>
+#include <cstdlib>
+#include <exception>
 #include <filesystem>
+#include <iostream>
+#include <string>
 
 #include "progress_bar.hpp"
 #include "imwrite_video.hpp"
@@ -11,18 +14,21 @@
 #include <openvino/genai/video_generation/text2video_pipeline.hpp>
 
 int main(int32_t argc, char* argv[]) try {
-    OPENVINO_ASSERT(argc >= 3 && argc <= 6,
+    OPENVINO_ASSERT(argc >= 3 && argc <= 7,
                     "Usage: ",
                     argv[0],
-                    " <MODEL_DIR> '<PROMPT>' [ <TXT_ENCODE_DEVICE> <DENOISER_DEVICE> <VAE_DEVICE> ]");
+                    " <MODEL_DIR> '<PROMPT>' [<TXT_ENCODE_DEVICE> [<DENOISER_DEVICE> [<VAE_DEVICE> [<NUM_FRAMES>]]]]");
 
     std::filesystem::path models_dir = argv[1];
     std::string prompt = argv[2];
 
     const int width = 704;
     const int height = 480;
-    const int num_frames = 161;
+    const int64_t num_frames = (argc > 6) ? std::stoll(argv[6]) : 161;
     const float frame_rate = 25.0f;
+    // Match the guidance scale used by the basic text2video sample.
+    const float guidance_scale = 3.0f;
+    const uint64_t rng_seed = 42;
     const int number_of_videos_to_generate = 1;
     const int number_of_inference_steps_per_video = 25;
 
@@ -35,9 +41,11 @@ int main(int32_t argc, char* argv[]) try {
     std::cout << "text_encoder_device: " << text_encoder_device << std::endl;
     std::cout << "denoiser_device: " << denoiser_device << std::endl;
     std::cout << "vae_decoder_device: " << vae_decoder_device << std::endl;
+    std::cout << "num_frames: " << num_frames << std::endl;
+    std::cout << "guidance_scale: " << guidance_scale << std::endl;
+    std::cout << "rng_seed: " << rng_seed << std::endl;
 
-    // this is the path to where compiled models will get cached
-    // (so that the 'compile' method run much faster 2nd+ time)
+    // Cache compiled models to speed up compilation on subsequent runs.
     std::string ov_cache_dir = "./cache";
 
     //
@@ -48,7 +56,7 @@ int main(int32_t argc, char* argv[]) try {
     //
     // Step 2: Reshape the pipeline given number of videos, frames, height, width and guidance scale.
     //
-    pipe.reshape(number_of_videos_to_generate, num_frames, height, width, pipe.get_generation_config().guidance_scale);
+    pipe.reshape(number_of_videos_to_generate, num_frames, height, width, guidance_scale);
 
     //
     // Step 3: Compile the pipeline with the specified devices, and properties (like cache dir)
@@ -57,7 +65,7 @@ int main(int32_t argc, char* argv[]) try {
 
     // Note that if there are device-specific properties that are needed, they can
     // be added using ov::device::properties groups, like this:
-    //ov::AnyMap properties = {ov::device::properties("CPU", ov::cache_dir("cpu_cache")),
+    // ov::AnyMap properties = {ov::device::properties("CPU", ov::cache_dir("cpu_cache")),
     //                         ov::device::properties("GPU", ov::cache_dir("gpu_cache")),
     //                         ov::device::properties("NPU", ov::cache_dir("npu_cache"))};
 
@@ -73,6 +81,7 @@ int main(int32_t argc, char* argv[]) try {
             prompt,
             ov::genai::negative_prompt("worst quality, inconsistent motion, blurry, jittery, distorted"),
             ov::genai::num_inference_steps(number_of_inference_steps_per_video),
+            ov::genai::rng_seed(rng_seed),
             ov::genai::callback(progress_bar),
             ov::genai::frame_rate(frame_rate)
         );
