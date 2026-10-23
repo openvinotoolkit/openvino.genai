@@ -23,6 +23,7 @@ from whowhatbench.utils import fix_phi3_v_eos_token_id, patch_transformers_gguf_
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
 from whowhatbench.utils import get_json_config, load_audio_dataset, resolve_json_dataset_path, read_json_dataset
 from whowhatbench.artifacts_manager import Metrics
+from whowhatbench.text_generation_strategies import GenAIGeneration
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -839,22 +840,21 @@ def genai_gen_text(
     assistant_confidence_threshold=0.0,
     generation_config_extra=None,
 ):
-    kwargs = {}
-    if empty_adapters:
-        import openvino_genai
-
-        kwargs["adapters"] = openvino_genai.AdapterConfig()
-    if generation_config_extra:
-        kwargs.update(generation_config_extra)
-
-    return model.generate(
-        question,
-        do_sample=False,
-        max_new_tokens=max_new_tokens,
-        apply_chat_template=use_chat_template,
-        num_assistant_tokens=num_assistant_tokens,
-        assistant_confidence_threshold=assistant_confidence_threshold,
-        **kwargs,
+    return (
+        GenAIGeneration(metrics_list=[])
+        .run_generation(
+            model,
+            tokenizer,
+            question,
+            max_new_tokens,
+            skip_question,
+            use_chat_template=use_chat_template,
+            empty_adapters=empty_adapters,
+            num_assistant_tokens=num_assistant_tokens,
+            assistant_confidence_threshold=assistant_confidence_threshold,
+            generation_config_extra=generation_config_extra,
+        )
+        .answer_text
     )
 
 

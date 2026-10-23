@@ -1,6 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import re
 from typing import Any, Union
 
 import numpy as np
@@ -10,6 +11,66 @@ from .inputs_preprocessors.vlm_inputs_preprocessor import VLMInputsPreprocessor
 
 if TYPE_CHECKING:
     from transformers import Cache
+
+
+_HARMONY_TEMPLATE_MARKERS = ("<|meta_sep|>", "<|channel|>")
+_HARMONY_PROMPT_PREFIX = "<|start|>"
+
+
+def is_harmony_template(tokenizer: Any) -> bool:
+    template_getter = getattr(tokenizer, "get_original_chat_template", None)
+    if callable(template_getter):
+        template = template_getter()
+    else:
+        template = getattr(tokenizer, "chat_template", None)
+        if isinstance(template, dict):
+            template = template.get("default")
+        if not template:
+            return False
+        template_getter = getattr(tokenizer, "get_chat_template", None)
+        if callable(template_getter):
+            template = template_getter()
+    return isinstance(template, str) and any(marker in template for marker in _HARMONY_TEMPLATE_MARKERS)
+
+
+def is_native_harmony_prompt(input_text: str, tokenizer: Any) -> bool:
+    return is_harmony_template(tokenizer) and input_text.startswith(_HARMONY_PROMPT_PREFIX)
+
+
+def normalize_chat_history(input_text: str, tokenizer: Any) -> list[dict[str, str]]:
+    if is_harmony_template(tokenizer):
+        patterns = (
+            re.compile(
+                r"^<\|system\|>(?P<system>.*?)<\|end\|>\s*"
+                r"<\|user\|>(?P<user>.*?)<\|end\|>\s*<\|assistant\|>\s*$",
+                re.DOTALL,
+            ),
+            re.compile(
+                r"^<\|user\|>(?P<user>.*?)<\|end\|>\s*<\|assistant\|>\s*$",
+                re.DOTALL,
+            ),
+            re.compile(
+                r"^(?:<\|im_start\|>system(?:<\|im_sep\|>|\r?\n)(?P<system>.*?)<\|im_end\|>\s*)?"
+                r"<\|im_start\|>user(?:<\|im_sep\|>|\r?\n)(?P<user>.*?)<\|im_end\|>\s*"
+                r"<\|im_start\|>assistant(?:<\|im_sep\|>|\r?\n)\s*$",
+                re.DOTALL,
+            ),
+        )
+
+        for pattern in patterns:
+            match = pattern.fullmatch(input_text)
+            if match is None:
+                continue
+
+            system_message = match.groupdict().get("system")
+            user_message = match.group("user")
+            history = []
+            if system_message is not None:
+                history.append({"role": "system", "content": system_message})
+            history.append({"role": "user", "content": user_message})
+            return history
+
+    return [{"role": "user", "content": input_text}]
 
 
 def find_common_prefix_length(

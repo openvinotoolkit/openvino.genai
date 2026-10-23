@@ -12,6 +12,7 @@ import numpy as np
 import torch
 import hashlib
 import threading
+import re
 import llm_bench_utils.metrics_print as metrics_print
 from transformers import set_seed
 from llm_bench_utils.ov_utils import get_genai_chunk_streamer, OptimumChunkStreamer
@@ -71,6 +72,56 @@ def apply_sd_generation_config(args, gen_config):
 
 
 DEFAULT_OUTPUT_TOKEN_SIZE = 512
+
+_HARMONY_TEMPLATE_MARKERS = ("<|meta_sep|>", "<|channel|>")
+_HARMONY_PROMPT_PREFIX = "<|start|>"
+
+
+def _get_legacy_chat_history(input_text: str):
+    patterns = (
+        re.compile(
+            r"^<\|system\|>(?P<system>.*?)<\|end\|>\s*"
+            r"<\|user\|>(?P<user>.*?)<\|end\|>\s*<\|assistant\|>\s*$",
+            re.DOTALL,
+        ),
+        re.compile(
+            r"^<\|user\|>(?P<user>.*?)<\|end\|>\s*<\|assistant\|>\s*$",
+            re.DOTALL,
+        ),
+        re.compile(
+            r"^(?:<\|im_start\|>system(?:<\|im_sep\|>|\r?\n)(?P<system>.*?)<\|im_end\|>\s*)?"
+            r"<\|im_start\|>user(?:<\|im_sep\|>|\r?\n)(?P<user>.*?)<\|im_end\|>\s*"
+            r"<\|im_start\|>assistant(?:<\|im_sep\|>|\r?\n)\s*$",
+            re.DOTALL,
+        ),
+    )
+
+    for pattern in patterns:
+        match = pattern.fullmatch(input_text)
+        if match is None:
+            continue
+
+        system_message = match.groupdict().get("system")
+        user_message = match.group("user")
+        history = []
+        if system_message is not None:
+            history.append({"role": "system", "content": system_message})
+        history.append({"role": "user", "content": user_message})
+        return history
+
+    return None
+
+
+def _is_harmony_template(tokenizer: object) -> bool:
+    template_getter = getattr(tokenizer, "get_original_chat_template", None)
+    template = template_getter() if callable(template_getter) else getattr(tokenizer, "chat_template", None)
+    return isinstance(template, str) and any(marker in template for marker in _HARMONY_TEMPLATE_MARKERS)
+
+
+def _should_apply_chat_template(args: dict, input_text: str, tokenizer: object) -> bool:
+    if _is_harmony_template(tokenizer):
+        return not input_text.startswith(_HARMONY_PROMPT_PREFIX)
+    return args["apply_chat_template"]
 
 
 # ===== Common Utils =====
@@ -395,10 +446,15 @@ def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_d
 
 
 # ===== GenAI Utils =====
-def apply_chat_template_genai(args: dict, input_text: str, tokenizer: object):
-    input_text_hist = [{"role": "user", "content": input_text}]
+def apply_chat_template_genai(args: dict, input_text: str, tokenizer: object, automatically_applied: bool = False):
+    if _is_harmony_template(tokenizer) and input_text.startswith(_HARMONY_PROMPT_PREFIX):
+        return [input_text] * args["batch_size"]
+    input_text_hist = _get_legacy_chat_history(input_text) if _is_harmony_template(tokenizer) else None
+    input_text_hist = input_text_hist or [{"role": "user", "content": input_text}]
     templated_input_text = tokenizer.apply_chat_template(input_text_hist, add_generation_prompt=True)
     input_text_list = [templated_input_text] * args["batch_size"]
+    if automatically_applied:
+        log.info("Detected Harmony chat template; applied it to the benchmark prompt")
     if not args["disable_prompt_permutation"]:
         log.warning(
             "Enabled chat template applying and permutation of input prompt. "
@@ -407,6 +463,17 @@ def apply_chat_template_genai(args: dict, input_text: str, tokenizer: object):
         )
 
     return input_text_list
+
+
+def _prepare_genai_prompts(args: dict, input_text: str, tokenizer: object):
+    if _should_apply_chat_template(args, input_text, tokenizer):
+        input_text_list = apply_chat_template_genai(
+            args, input_text, tokenizer, automatically_applied=not args["apply_chat_template"]
+        )
+    else:
+        input_text_list = [input_text] * args["batch_size"]
+    encode_kwargs = {"add_special_tokens": False} if _is_harmony_template(tokenizer) else {}
+    return input_text_list, encode_kwargs
 
 
 def genai_generation_config_setup(model: object, max_gen_tokens: int, args: dict):
@@ -465,11 +532,10 @@ def run_text_generation_genai(
 
     # ===== Tokenization =====
     tokenizer = model.get_tokenizer()
-    if args["apply_chat_template"]:
-        input_text_list = apply_chat_template_genai(args, input_text, tokenizer)
+    input_text_list, encode_kwargs = _prepare_genai_prompts(args, input_text, tokenizer)
 
     tokenization_start = time.perf_counter()
-    input_data = tokenizer.encode(input_text_list)
+    input_data = tokenizer.encode(input_text_list, **encode_kwargs)
     tokenization_end = time.perf_counter()
     tokenization_time = [(tokenization_end - tokenization_start) * 1000]
 
@@ -632,10 +698,9 @@ def run_text_generation_genai_with_stream(
 
     # ===== Tokenization =====
     pipe_tokenizer = model.get_tokenizer()
-    if args["apply_chat_template"]:
-        input_text_list = apply_chat_template_genai(args, input_text, pipe_tokenizer)
+    input_text_list, encode_kwargs = _prepare_genai_prompts(args, input_text, pipe_tokenizer)
     tok_encode_start = time.perf_counter()
-    input_data = pipe_tokenizer.encode(input_text_list)
+    input_data = pipe_tokenizer.encode(input_text_list, **encode_kwargs)
     tok_encode_end = time.perf_counter()
     input_token_size = input_data.input_ids.shape[1]
     tok_encode_time = (tok_encode_end - tok_encode_start) * 1000

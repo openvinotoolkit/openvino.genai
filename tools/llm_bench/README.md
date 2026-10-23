@@ -182,7 +182,7 @@ python benchmark.py -m ./models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --t
 **Some additional parameters:**
 - `--cb_config`: Path to file with Continuous Batching Scheduler settings or dict".
 - `--disable_prompt_permutation`: "Disable modification prompt from run to run for avoid prefix caching"
-- `--apply_chat_template`: "Apply chat template for LLM. By default chat template is not applied"
+- `--apply_chat_template`: Apply the model chat template for LLM inputs. GenAI Harmony models apply it automatically to plain text and supported legacy single-turn/ChatML wrappers. Native Harmony prompts are preserved even when this flag is set, without adding special tokens. Other models retain the existing opt-in behavior. The same handling applies to regular and streamer-backed GenAI runs. Use `--disable_prompt_permutation` to preserve the serialized conversation structure.
 - `--from_onnx`: "Load the model from an ONNX file instead of a pre-converted OpenVINO IR."
 
 ```sh
