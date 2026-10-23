@@ -161,6 +161,9 @@ public:
     size_t audio_config_n_window_infer = 200;
     /// @brief Talker: number of codec quantizer groups.
     size_t talker_num_code_groups = 16;
+    /// @brief Code2Wav: upsampling factors. Their product is the number of waveform samples per codec frame.
+    std::vector<size_t> code2wav_config_upsample_rates = {8, 5, 4, 3};
+    std::vector<size_t> code2wav_config_upsampling_ratios = {2, 2};
     // Codec special token IDs (model-specific; -1 until loaded from talker_config in config.json)
     int64_t talker_codec_bos_id = -1;
     int64_t talker_codec_eos_token_id = -1;
