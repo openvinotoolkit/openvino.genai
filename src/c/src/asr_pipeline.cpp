@@ -307,8 +307,8 @@ ov_status_e ov_genai_asr_pipeline_generate(ov_genai_asr_pipeline* pipeline,
         std::unique_ptr<ov_genai_asr_decoded_results> _results = std::make_unique<ov_genai_asr_decoded_results>();
         _results->object = std::make_shared<ov::genai::ASRDecodedResults>();
 
-        // Convert raw speech input to vector
-        std::vector<float> speech_input(raw_speech, raw_speech + raw_speech_size);
+        // Copy caller-owned samples directly into the owning input variant.
+        ov::genai::AudioInputs speech_input{std::vector<float>(raw_speech, raw_speech + raw_speech_size)};
 
         // Generate results
         if (config && config->object) {

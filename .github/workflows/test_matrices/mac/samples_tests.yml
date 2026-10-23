@@ -14,8 +14,22 @@
     - LLM_samples
 
 - name: Automatic Speech Recognition
-  marker: automatic_speech_recognition
+  marker: automatic_speech_recognition and not transformers_lower_v5
   cmd: tests/python_tests/samples
+  components:
+    - automatic_speech_recognition_samples
+
+- name: Automatic Speech Recognition (Qwen3-ASR)
+  extra_cmd: python -m pip install transformers==4.57.6 qwen-asr==0.0.6
+  marker: automatic_speech_recognition and transformers_lower_v5
+  cmd: tests/python_tests/samples/test_automatic_speech_recognition.py -k TinyRandomQwen3ASR
+  components:
+    - automatic_speech_recognition_samples
+
+- name: Automatic Speech Recognition (Fun-ASR)
+  extra_cmd: python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu transformers==4.57.6 funasr==1.4.1 torchaudio==2.11.0
+  marker: automatic_speech_recognition and transformers_lower_v5
+  cmd: tests/python_tests/samples/test_automatic_speech_recognition.py -k TinyRandomFunASR
   components:
     - automatic_speech_recognition_samples
 

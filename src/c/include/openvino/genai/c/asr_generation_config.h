@@ -329,7 +329,8 @@ ov_genai_asr_generation_config_get_hotwords(const ov_genai_asr_generation_config
  * @brief Set the begin suppress tokens.
  * @param config A pointer to the ov_genai_asr_generation_config instance.
  * @param tokens A pointer to the array of token ids to suppress at the beginning.
- * @param tokens_count The number of tokens in the array.
+ * @param tokens_count The number of tokens in the array. NULL tokens with a positive count are invalid;
+ * NULL with zero count clears the suppression list.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e
@@ -364,7 +365,8 @@ ov_genai_asr_generation_config_get_begin_suppress_tokens(const ov_genai_asr_gene
  * @brief Set the suppress tokens.
  * @param config A pointer to the ov_genai_asr_generation_config instance.
  * @param tokens A pointer to the array of token ids to suppress during generation.
- * @param tokens_count The number of tokens in the array.
+ * @param tokens_count The number of tokens in the array. NULL tokens with a positive count are invalid;
+ * NULL with zero count clears the suppression list.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e

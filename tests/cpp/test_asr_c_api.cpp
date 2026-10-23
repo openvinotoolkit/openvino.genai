@@ -217,6 +217,12 @@ TEST(ASRCAPI, SuppressionArraysAndValidation) {
         ASSERT_EQ(OK, api.get(config.get(), output, 2));
         EXPECT_EQ(17, output[0]);
         EXPECT_EQ(23, output[1]);
+        EXPECT_EQ(INVALID_C_PARAM, api.set(config.get(), nullptr, 2));
+        ASSERT_EQ(OK, api.count(config.get(), &count));
+        EXPECT_EQ(2, count);
+        ASSERT_EQ(OK, api.get(config.get(), output, 2));
+        EXPECT_EQ(17, output[0]);
+        EXPECT_EQ(23, output[1]);
         ASSERT_EQ(OK, api.set(config.get(), nullptr, 0));
         ASSERT_EQ(OK, api.count(config.get(), &count));
         EXPECT_EQ(0, count);
