@@ -10,6 +10,7 @@
 #include <pybind11/functional.h>
 
 #include "tokenizer/tokenizers_path.hpp"
+#include "openvino/genai/gguf.hpp"
 
 #include "py_utils.hpp"
 
@@ -336,4 +337,10 @@ void init_tokenizer(py::module_& m) {
         .def("supports_paired_input", &Tokenizer::supports_paired_input, 
              R"(Returns true if the tokenizer supports paired input, false otherwise.)"
         );
+
+    py::class_<ov::genai::GGUFTokenizer, Tokenizer>(m, "GGUFTokenizer", "Tokenizer built from a local GGUF file.")
+        .def(py::init([](const std::filesystem::path& gguf_path, const py::kwargs& kwargs) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::GGUFTokenizer>(gguf_path, pyutils::kwargs_to_any_map(kwargs));
+        }), py::arg("gguf_path"));
 }

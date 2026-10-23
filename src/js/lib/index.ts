@@ -3,7 +3,9 @@
 
 import { LLMPipeline as LLM } from "./pipelines/llmPipeline.js";
 import { VLMPipeline as VLM } from "./pipelines/vlmPipeline.js";
-import { TextEmbeddingPipeline as Embedding } from "./pipelines/textEmbeddingPipeline.js";
+import { TextEmbeddingPipeline as TextEmbedding } from "./pipelines/textEmbeddingPipeline.js";
+import { EmbeddingPipeline as Embedding } from "./pipelines/embeddingPipeline.js";
+import { OmniPipeline as Omni } from "./pipelines/omniPipeline.js";
 import {
   TextRerankPipeline as TextRerank,
   TextRerankPipelineOptions,
@@ -17,6 +19,7 @@ import { Text2SpeechPipeline as Text2Speech } from "./pipelines/text2SpeechPipel
 import {
   LLMPipelineProperties,
   VLMPipelineProperties,
+  OmniPipelineProperties,
   WhisperPipelineProperties,
   ASRPipelineProperties,
   Text2ImagePipelineProperties,
@@ -24,6 +27,7 @@ import {
   InpaintingPipelineProperties,
   Text2SpeechPipelineProperties,
 } from "./utils.js";
+import { EmbeddingPipelineProperties } from "./addon.js";
 
 class PipelineFactory {
   static async LLMPipeline(modelPath: string, device?: string): Promise<LLM>;
@@ -60,8 +64,39 @@ class PipelineFactory {
     return pipeline;
   }
 
+  /**
+   * Creates and initializes an Omni pipeline for text and speech generation.
+   *
+   * @note This is a preview API and is subject to change in future releases.
+   * @param modelPath - A folder containing tokenizer and model IR files.
+   * @param device - Inference device.
+   * @param properties - Device and pipeline properties.
+   * @returns The initialized Omni pipeline.
+   */
+  static async OmniPipeline(
+    modelPath: string,
+    device: string = "CPU",
+    properties: OmniPipelineProperties = {},
+  ) {
+    const pipeline = new Omni(modelPath, device, properties);
+    await pipeline.init();
+
+    return pipeline;
+  }
+
   static async TextEmbeddingPipeline(modelPath: string, device = "CPU", config = {}) {
-    const pipeline = new Embedding(modelPath, device, config);
+    const pipeline = new TextEmbedding(modelPath, device, config);
+    await pipeline.init();
+
+    return pipeline;
+  }
+
+  static async EmbeddingPipeline(
+    modelPath: string,
+    device: string = "CPU",
+    properties: EmbeddingPipelineProperties = {},
+  ) {
+    const pipeline = new Embedding(modelPath, device, properties);
     await pipeline.init();
 
     return pipeline;
@@ -144,7 +179,9 @@ class PipelineFactory {
 export const {
   LLMPipeline,
   VLMPipeline,
+  OmniPipeline,
   TextEmbeddingPipeline,
+  EmbeddingPipeline,
   TextRerankPipeline,
   WhisperPipeline,
   ASRPipeline,
@@ -156,12 +193,18 @@ export const {
 export {
   DecodedResults,
   VLMDecodedResults,
+  OmniDecodedResults,
   WhisperDecodedResults,
   ASRDecodedResults,
   Text2SpeechDecodedResults,
 } from "./decodedResults.js";
-export type { WhisperDecodedResultChunk, WhisperWordTiming } from "./decodedResults.js";
-export type { ASRDecodedResultChunk } from "./decodedResults.js";
+export type {
+  ASRDecodedResultChunk,
+  WhisperDecodedResultChunk,
+  WhisperWordTiming,
+  OmniSpeechResult,
+  OmniSpeechPerfMetrics,
+} from "./decodedResults.js";
 export {
   PerfMetrics,
   VLMPerfMetrics,
