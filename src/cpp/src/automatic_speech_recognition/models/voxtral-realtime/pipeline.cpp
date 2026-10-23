@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -94,6 +95,7 @@ VoxtralConfig load_config(const std::filesystem::path& models_path) {
     const size_t n_fft = preprocessor.at("n_fft").get<size_t>();
     const size_t hop_length = preprocessor.at("hop_length").get<size_t>();
     const size_t first_audio_frames = (num_delay_tokens + 1) * audio_length_per_token;
+    OPENVINO_ASSERT(n_fft >= hop_length, "Voxtral STFT n_fft must be at least hop_length.");
 
     int64_t streaming_pad_token_id = -1;
     for (const auto& special_token : tekken.at("special_tokens")) {
@@ -147,6 +149,55 @@ std::vector<std::string> load_tekken_pieces(const std::filesystem::path& tekken_
             pieces[rank] = base64_decode(entry.at("token_bytes").get<std::string>());
     }
     return pieces;
+}
+
+ASRGenerationConfig resolve_generation_config(const VoxtralConfig& model_config,
+                                              const ASRGenerationConfig& default_config,
+                                              const std::optional<ASRGenerationConfig>& generation_config) {
+    ASRGenerationConfig config = generation_config.value_or(default_config);
+    OPENVINO_ASSERT(config.eos_token_id == -1 || config.eos_token_id == model_config.eos_token_id,
+                    "Voxtral eos_token_id must match the model EOS token.");
+    config.set_eos_token_id(model_config.eos_token_id);
+    config.validate();
+
+    OPENVINO_ASSERT(config.max_length == SIZE_MAX,
+                    "Voxtral supports max_new_tokens but does not support max_length.");
+    OPENVINO_ASSERT(!config.ignore_eos && config.min_new_tokens == 0 && !config.echo && config.logprobs == 0,
+                    "Voxtral does not support ignore_eos, min_new_tokens, echo, or logprobs.");
+    OPENVINO_ASSERT(config.stop_strings.empty() && !config.include_stop_str_in_output,
+                    "Voxtral does not support stop_strings.");
+    OPENVINO_ASSERT(config.repetition_penalty == 1.0f && config.presence_penalty == 0.0f &&
+                        config.frequency_penalty == 0.0f,
+                    "Voxtral does not support generation penalties.");
+    OPENVINO_ASSERT(!config.do_sample && config.num_beams == 1 && config.num_beam_groups == 1 &&
+                        config.diversity_penalty == 0.0f && config.temperature == 1.0f && config.top_p == 1.0f &&
+                        config.top_k == SIZE_MAX && config.min_p == 0.0f && config.rng_seed == 0,
+                    "Voxtral supports greedy decoding only.");
+    OPENVINO_ASSERT(config.num_return_sequences == 1 && config.no_repeat_ngram_size == SIZE_MAX &&
+                        config.stop_criteria == StopCriteria::HEURISTIC && config.length_penalty == 1.0f,
+                    "Voxtral does not support beam-search options.");
+    OPENVINO_ASSERT(config.pruning_ratio == 0 && config.relevance_weight == 0.5f &&
+                        config.assistant_confidence_threshold == 0.0f && !config.num_assistant_tokens.has_value() &&
+                        config.max_ngram_size == 0 && config.branching_factor == 1 && config.tree_depth == 0,
+                    "Voxtral does not support assisted, pruned, or tree-search generation.");
+    OPENVINO_ASSERT(!config.structured_output_config.has_value() && !config.adapters.has_value() &&
+                        config.parsers.empty() && !config.return_omni_outputs,
+                    "Voxtral does not support structured output, adapters, parsers, or Omni outputs.");
+    OPENVINO_ASSERT(!config.language.has_value() && !config.return_timestamps && !config.task.has_value() &&
+                        config.begin_suppress_tokens.empty() && config.suppress_tokens.empty() &&
+                        config.max_initial_timestamp_index == 50 && config.is_multilingual &&
+                        !config.word_timestamps && config.alignment_heads.empty() && !config.initial_prompt.has_value() &&
+                        !config.hotwords.has_value() && !config.context.has_value(),
+                    "Voxtral does not support language, timestamp, prompt, or token-suppression options.");
+    OPENVINO_ASSERT(config.decoder_start_token_id == default_config.decoder_start_token_id &&
+                        config.pad_token_id == default_config.pad_token_id &&
+                        config.translate_token_id == default_config.translate_token_id &&
+                        config.transcribe_token_id == default_config.transcribe_token_id &&
+                        config.prev_sot_token_id == default_config.prev_sot_token_id &&
+                        config.no_timestamps_token_id == default_config.no_timestamps_token_id,
+                    "Voxtral does not support Whisper-specific generation options.");
+    OPENVINO_ASSERT(!config.apply_chat_template, "Voxtral does not support chat templates.");
+    return config;
 }
 
 ov::Tensor make_float_tensor(const ov::Shape& shape) {
@@ -234,13 +285,15 @@ namespace {
 class VoxtralASRStream final : public ASRStreamImplBase {
 public:
     VoxtralASRStream(const std::shared_ptr<VoxtralRealtimeRuntime>& runtime,
+                     const ASRGenerationConfig& default_config,
                      const std::optional<ASRGenerationConfig>& generation_config)
         : ASRStreamImplBase{MAX_QUEUED_AUDIO_FRAMES},
           m_runtime{runtime},
+          m_generation_config{resolve_generation_config(runtime->config, default_config, generation_config)},
           m_audio_request{runtime->audio_encoder.create_infer_request()},
           m_text_request{runtime->text_decoder.create_infer_request()} {
-        (void)generation_config;
         const auto& config = m_runtime->config;
+        m_stop_token_ids = m_generation_config.stop_token_ids;
         m_conv1_cache = make_float_tensor({1, config.feature_size, 2});
         m_conv2_cache = make_float_tensor({1, config.audio_hidden_size, 1});
         m_audio_key_values.reserve(config.audio_num_layers);
@@ -259,37 +312,71 @@ public:
 
 private:
     std::string process_audio(const std::vector<float>& audio_frame) override {
+        if (m_generation_done)
+            return {};
         m_audio_buffer.insert(m_audio_buffer.end(), audio_frame.begin(), audio_frame.end());
         std::string emitted;
+        size_t consumed_samples = 0;
         if (!m_prefill_done && m_audio_buffer.size() >= m_runtime->config.first_chunk_samples) {
-            std::vector<float> first_chunk(m_audio_buffer.begin(),
-                                           m_audio_buffer.begin() + m_runtime->config.first_chunk_samples);
-            m_audio_buffer.erase(m_audio_buffer.begin(), m_audio_buffer.begin() + m_runtime->config.first_chunk_samples);
-            emitted += process_chunk(first_chunk, true);
+            const size_t first_chunk_overlap = m_runtime->config.n_fft - m_runtime->config.hop_length;
+            OPENVINO_ASSERT(m_runtime->config.first_chunk_samples >= first_chunk_overlap,
+                            "Voxtral first chunk must contain the centered-to-non-centered STFT overlap.");
+            const size_t first_chunk_advance = m_runtime->config.first_chunk_samples - first_chunk_overlap;
+            m_chunk_buffer.assign(m_audio_buffer.begin(),
+                                  m_audio_buffer.begin() + m_runtime->config.first_chunk_samples);
+            emitted += process_chunk(m_chunk_buffer, true);
+            consumed_samples += first_chunk_advance;
+            m_audio_overlap_samples = first_chunk_overlap;
         }
-        while (m_prefill_done && m_audio_buffer.size() >= m_runtime->config.subsequent_chunk_samples) {
-            std::vector<float> chunk(m_audio_buffer.begin(),
-                                     m_audio_buffer.begin() + m_runtime->config.subsequent_chunk_samples);
-            m_audio_buffer.erase(m_audio_buffer.begin(), m_audio_buffer.begin() + m_runtime->config.subsequent_chunk_samples);
-            emitted += process_chunk(chunk, false);
+        while (m_prefill_done && !m_generation_done &&
+               m_audio_buffer.size() - consumed_samples >= m_runtime->config.subsequent_chunk_samples) {
+            const auto chunk_start = m_audio_buffer.begin() + consumed_samples;
+            m_chunk_buffer.assign(chunk_start, chunk_start + m_runtime->config.subsequent_chunk_samples);
+            emitted += process_chunk(m_chunk_buffer, false);
+            const size_t frames_emitted = m_runtime->config.audio_length_per_token;
+            const size_t samples_to_advance = frames_emitted * m_runtime->config.hop_length;
+            consumed_samples += samples_to_advance;
+            m_audio_overlap_samples = m_runtime->config.n_fft;
         }
+        if (m_generation_done)
+            m_audio_buffer.clear();
+        else if (consumed_samples > 0)
+            m_audio_buffer.erase(m_audio_buffer.begin(), m_audio_buffer.begin() + consumed_samples);
         return emitted;
     }
 
     std::string flush() override {
         std::string emitted;
+        if (m_generation_done) {
+            return flush_pending_utf8();
+        }
         if (!m_prefill_done && !m_audio_buffer.empty()) {
+            const size_t first_chunk_overlap = m_runtime->config.n_fft - m_runtime->config.hop_length;
+            OPENVINO_ASSERT(m_runtime->config.first_chunk_samples >= first_chunk_overlap,
+                            "Voxtral first chunk must contain the centered-to-non-centered STFT overlap.");
             m_audio_buffer.resize(m_runtime->config.first_chunk_samples, 0.0f);
             emitted += process_chunk(m_audio_buffer, true);
-            m_audio_buffer.clear();
+            m_audio_buffer.erase(m_audio_buffer.begin(),
+                                 m_audio_buffer.end() - first_chunk_overlap);
+            m_audio_overlap_samples = first_chunk_overlap;
         }
-        if (m_prefill_done && !m_audio_buffer.empty()) {
+        if (m_prefill_done && m_audio_buffer.size() > m_audio_overlap_samples) {
             m_audio_buffer.resize(m_runtime->config.subsequent_chunk_samples, 0.0f);
             emitted += process_chunk(m_audio_buffer, false);
-            m_audio_buffer.clear();
         }
-        emitted += m_pending_utf8;
-        m_pending_utf8.clear();
+        if (m_prefill_done && !m_generation_done) {
+            const size_t overlap_samples = std::min(m_audio_overlap_samples, m_audio_buffer.size());
+            m_chunk_buffer.assign(m_runtime->config.subsequent_chunk_samples, 0.0f);
+            std::copy(m_audio_buffer.end() - overlap_samples, m_audio_buffer.end(), m_chunk_buffer.begin());
+            for (size_t delayed_token = 0;
+                 delayed_token < m_runtime->config.num_delay_tokens && !m_generation_done;
+                 ++delayed_token) {
+                emitted += process_chunk(m_chunk_buffer, false);
+                std::fill(m_chunk_buffer.begin(), m_chunk_buffer.end(), 0.0f);
+            }
+        }
+        m_audio_buffer.clear();
+        emitted += flush_pending_utf8();
         return emitted;
     }
 
@@ -376,9 +463,13 @@ private:
                 m_runtime->config.text_sliding_window,
                 m_runtime->config.text_rope_theta);
         }
+        ++m_generated_tokens;
         if (is_first_chunk)
             m_prefill_done = true;
-        if (m_last_token == m_runtime->config.eos_token_id)
+        const bool is_stop_token = m_stop_token_ids.count(m_last_token) > 0;
+        if (is_stop_token || m_generated_tokens >= m_generation_config.max_new_tokens)
+            m_generation_done = true;
+        if (is_stop_token)
             return {};
         return append_token_bytes(m_runtime->decode_token(m_last_token));
     }
@@ -391,7 +482,17 @@ private:
         return emitted;
     }
 
+    std::string flush_pending_utf8() {
+        std::string emitted = std::move(m_pending_utf8);
+        m_pending_utf8.clear();
+        if (!emitted.empty())
+            emitted += "\xef\xbf\xbd";
+        return emitted;
+    }
+
     std::shared_ptr<VoxtralRealtimeRuntime> m_runtime;
+    ASRGenerationConfig m_generation_config;
+    std::set<int64_t> m_stop_token_ids;
     ov::InferRequest m_audio_request;
     ov::InferRequest m_text_request;
     ov::Tensor m_conv1_cache;
@@ -399,9 +500,13 @@ private:
     std::vector<std::pair<ov::Tensor, ov::Tensor>> m_audio_key_values;
     std::vector<std::pair<ov::Tensor, ov::Tensor>> m_text_key_values;
     std::vector<float> m_audio_buffer;
+    std::vector<float> m_chunk_buffer;
+    size_t m_audio_overlap_samples = 0;
+    size_t m_generated_tokens = 0;
     std::string m_pending_utf8;
     int64_t m_last_token = -1;
     bool m_prefill_done = false;
+    bool m_generation_done = false;
 };
 
 }  // namespace
@@ -425,7 +530,7 @@ ASRDecodedResults VoxtralASR::generate(const AudioInputs& audio_inputs,
 
 std::unique_ptr<ASRStreamImplBase> VoxtralASR::create_stream(
     const std::optional<ASRGenerationConfig>& generation_config) {
-    return std::make_unique<VoxtralASRStream>(m_runtime, generation_config);
+    return std::make_unique<VoxtralASRStream>(m_runtime, m_generation_config, generation_config);
 }
 
 }  // namespace ov::genai
