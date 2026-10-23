@@ -218,7 +218,7 @@ public:
                         // copy current cache data
                         if (key_precision == ov::element::u4) {
                             size_t key_stride = std::accumulate(end_key.begin(), end_key.end(), 1, std::multiplies<size_t>());
-                            size_t key_roi_size_byte = key_stride + (key_stride & 1) / sub_byte_data_type_multiplier(key_precision);
+                            size_t key_roi_size_byte = key_stride / sub_byte_data_type_multiplier(key_precision) + (key_stride & 1);
                             std::memcpy(reinterpret_cast<uint8_t*>(key_cache.data()), reinterpret_cast<uint8_t*>(m_key_cache[decoder_layer_id].data()), key_roi_size_byte);
                         } else {
                             key_roi_size_byte = m_key_cache[decoder_layer_id].get_byte_size();
@@ -229,7 +229,7 @@ public:
 
                         if (value_precision == ov::element::u4) {
                             size_t value_stride = std::accumulate(end_value.begin(), end_value.end(), 1, std::multiplies<size_t>());
-                            size_t value_roi_size_byte = value_stride + (value_stride & 1) / sub_byte_data_type_multiplier(value_precision);
+                            size_t value_roi_size_byte = value_stride / sub_byte_data_type_multiplier(value_precision) + (value_stride & 1);
                             std::memcpy(reinterpret_cast<uint8_t*>(value_cache.data()), reinterpret_cast<uint8_t*>(m_value_cache[decoder_layer_id].data()), value_roi_size_byte);
                         } else {
                             value_roi_size_byte = m_value_cache[decoder_layer_id].get_byte_size();
