@@ -85,11 +85,11 @@ protected:
 
 private:
     bool m_has_ngram_embeddings = false;
-    ov::InferRequest m_ngram_embeddings_request;
-    ov::Tensor m_ngram_history;
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ngram_embeddings_ireq_queue = nullptr;
     size_t m_ngram_context_length = 0;
+    ov::Tensor m_ngram_history;
 
-    void initialize_ngram_embeddings_model(
+    void init_ngram_embeddings_model(
         const std::shared_ptr<ov::Model>& model,
         const std::string& device,
         const ov::AnyMap& device_config

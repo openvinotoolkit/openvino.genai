@@ -17,16 +17,16 @@ InputsEmbedderQwen4_Exp::InputsEmbedderQwen4_Exp(
     const std::string& device,
     const ov::AnyMap device_config
 ) : InputsEmbedderQwen3_5(vlm_config, model_dir, tokenizer, device, device_config) {
-    const std::filesystem::path model_path = model_dir / "openvino_ngram_embeddings_model.xml";
+    const std::filesystem::path ngram_embeddings_model_path = model_dir / "openvino_ngram_embeddings_model.xml";
 
-    m_has_ngram_embeddings = std::filesystem::exists(model_path);
+    m_has_ngram_embeddings = std::filesystem::exists(ngram_embeddings_model_path);
 
     if (!m_has_ngram_embeddings) {
         return;
     }
 
-    initialize_ngram_embeddings_model(
-        utils::singleton_core().read_model(model_path),
+    init_ngram_embeddings_model(
+        utils::singleton_core().read_model(ngram_embeddings_model_path),
         device,
         device_config
     );
@@ -40,22 +40,23 @@ InputsEmbedderQwen4_Exp::InputsEmbedderQwen4_Exp(
     const std::string& device,
     const ov::AnyMap device_config
 ) : InputsEmbedderQwen3_5(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
-    m_has_ngram_embeddings = models_map.find("ngram_embeddings") != models_map.end();
+    auto ngram_embeddings_it = models_map.find("ngram_embeddings");
+
+    m_has_ngram_embeddings =  ngram_embeddings_it != models_map.end();
     
     if (!m_has_ngram_embeddings) {
         return;
     }
 
-    const auto& [model_str, weights] = utils::get_model_weights_pair(models_map, "ngram_embeddings");
-    initialize_ngram_embeddings_model(
+    const auto& [model_str, weights] = ngram_embeddings_it->second;
+    init_ngram_embeddings_model(
         utils::singleton_core().read_model(model_str, weights),
         device,
         device_config
     );
 }
 
-// TODO Consider getting ngram_context_length dynamically from m_ngram_embeddings_request and remove init method
-void InputsEmbedderQwen4_Exp::initialize_ngram_embeddings_model(
+void InputsEmbedderQwen4_Exp::init_ngram_embeddings_model(
     const std::shared_ptr<ov::Model>& model,
     const std::string& device,
     const ov::AnyMap& device_config
@@ -68,26 +69,40 @@ void InputsEmbedderQwen4_Exp::initialize_ngram_embeddings_model(
         "Qwen4Exp ngram_history input shape must match text_config.ngram_size - 1.");
     m_ngram_context_length = static_cast<size_t>(ngram_history_input_pshape[1].get_length());
 
-    m_ngram_embeddings_request = utils::singleton_core().compile_model(
+    auto compiled_model = utils::singleton_core().compile_model(
         model,
         device,
         utils::get_model_properties(device_config, "ngram_embeddings", device)
-    ).create_infer_request();
-    m_lm_extra_inputs.clear();
+    );
+
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM ngram embeddings model");
+
+    m_ngram_embeddings_ireq_queue = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_model.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_model]() -> ov::InferRequest {
+            return compiled_model.create_infer_request();
+        }
+    );
 }
 
 ov::Tensor InputsEmbedderQwen4_Exp::get_ngram_embeddings(const ov::Tensor& input_ids) {
-    m_ngram_embeddings_request.set_tensor("input_ids", input_ids);
-    m_ngram_embeddings_request.set_tensor("ngram_history", m_ngram_history);
-    m_ngram_embeddings_request.infer();
+    OPENVINO_ASSERT(m_ngram_embeddings_ireq_queue, "Ngram embeddings model is not loaded");
+
+    CircularBufferQueueElementGuard<ov::InferRequest> guard(m_ngram_embeddings_ireq_queue.get());
+
+    ov::InferRequest& ngram_embeddings_ireq = guard.get();
+
+    ngram_embeddings_ireq.set_tensor("input_ids", input_ids);
+    ngram_embeddings_ireq.set_tensor("ngram_history", m_ngram_history);
+    ngram_embeddings_ireq.infer();
 
     // Update ngram_history from ngram_embeddings model output
-    const ov::Tensor new_ngram_history_view = m_ngram_embeddings_request.get_tensor("new_ngram_history");
+    const ov::Tensor new_ngram_history_view = ngram_embeddings_ireq.get_tensor("new_ngram_history");
     ov::Tensor new_ngram_history(new_ngram_history_view.get_element_type(), new_ngram_history_view.get_shape());
     new_ngram_history_view.copy_to(new_ngram_history);
     m_ngram_history = std::move(new_ngram_history);
 
-    const ov::Tensor ngram_embeddings_view = m_ngram_embeddings_request.get_tensor("ngram_embeddings");
+    const ov::Tensor ngram_embeddings_view = ngram_embeddings_ireq.get_tensor("ngram_embeddings");
     ov::Tensor ngram_embeddings(ngram_embeddings_view.get_element_type(), ngram_embeddings_view.get_shape());
     ngram_embeddings_view.copy_to(ngram_embeddings);
 
