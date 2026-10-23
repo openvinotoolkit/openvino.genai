@@ -84,6 +84,10 @@ protected:
     ) override;
 
 private:
+    // Extra inputs to pass to the language model
+    // Re-init as empty to clear inputs inherited from Qwen3-VL (deepstack_visual_embeds, visual_pos_masks)
+    std::unordered_map<std::string, ov::Tensor> m_lm_extra_inputs;
+
     bool m_has_ngram_embeddings = false;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ngram_embeddings_ireq_queue = nullptr;
     size_t m_ngram_context_length = 0;
