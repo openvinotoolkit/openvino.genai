@@ -251,8 +251,15 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
             current_batch_size += num_running_sequences;
         }
 
+        // beam_offets is keyed by request_id; finished requests are removed from active_sequence_groups,
+        // so the previous group's offset must be looked up by its request_id, not by its position
         for (size_t i = 0; i < active_sequence_groups.size(); i++) {
-            beam_offets[active_sequence_groups.at(i)->get_request_id()] = i == 0 ? 0 : (active_sequence_groups.at(i - 1)->num_running_seqs() + beam_offets[i - 1]);
+            size_t offset = 0;
+            if (i > 0) {
+                const auto& prev_group = active_sequence_groups.at(i - 1);
+                offset = prev_group->num_running_seqs() + beam_offets.at(prev_group->get_request_id());
+            }
+            beam_offets[active_sequence_groups.at(i)->get_request_id()] = offset;
         }
 
         if (m_embedding) {
