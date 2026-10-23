@@ -1205,6 +1205,114 @@ class TestOmniPipelineRealModel:
         assert not np.array_equal(speak(altered), named), "an altered speaker embedding must change the speech"
 
 
+# Long enough for the first turn to fill a whole CPU KV block, which is what prefix caching restores.
+PREFIX_CACHE_PROMPT = "Describe in detail what a calm morning in a small mountain village looks like. " * 3
+CPU_KV_BLOCK_SIZE = 32
+
+requires_paged_attention = pytest.mark.skipif(
+    sys.platform == "darwin" and platform.machine() == "arm64",
+    reason="CVS-194249: PagedAttention is unavailable on macOS arm64.",
+)
+
+
+def _omni_outputs_config(max_new_tokens: int) -> GenerationConfig:
+    config = GenerationConfig(max_new_tokens=max_new_tokens, do_sample=False, ignore_eos=True)
+    config.return_omni_outputs = True
+    return config
+
+
+def _scheduler_config(**fields: bool | int) -> SchedulerConfig:
+    config = SchedulerConfig()
+    for name, value in fields.items():
+        setattr(config, name, value)
+    return config
+
+
+def _generate_omni_outputs(
+    pipe: ContinuousBatchingPipeline, histories: list[ChatHistory], max_new_tokens: int
+) -> list[VLMDecodedResults]:
+    # The overload without media returns plain GenerationResult, which has no hidden states.
+    no_media = [[] for _ in histories]
+    configs = [_omni_outputs_config(max_new_tokens) for _ in histories]
+    return pipe.generate(histories, no_media, no_media, configs)
+
+
+def _two_turns(pipe: ContinuousBatchingPipeline) -> tuple[VLMDecodedResults, VLMDecodedResults]:
+    history = ChatHistory()
+    history.append({"role": "user", "content": PREFIX_CACHE_PROMPT})
+    first = _generate_omni_outputs(pipe, [history], max_new_tokens=8)[0]
+    history.append({"role": "assistant", "content": first.texts[0]})
+    history.append({"role": "user", "content": "Now say it in one sentence."})
+    second = _generate_omni_outputs(pipe, [history], max_new_tokens=8)[0]
+    return first, second
+
+
+def _rows(result: VLMDecodedResults) -> list[np.ndarray]:
+    return [np.array(state.data) for state in result.intermediate_hidden_states[0]]
+
+
+@requires_paged_attention
+def test_prefix_cache_replays_hidden_states_of_restored_prefix(omni_model_path: Path) -> None:
+    """A restored prefix is not recomputed, yet the talker still needs one hidden state per position."""
+    cached = ContinuousBatchingPipeline(omni_model_path, _scheduler_config(enable_prefix_caching=True), "CPU")
+    uncached = ContinuousBatchingPipeline(omni_model_path, _scheduler_config(enable_prefix_caching=False), "CPU")
+
+    first, second = _two_turns(cached)
+    _, reference = _two_turns(uncached)
+
+    # KV restore is capped at the cached hidden states, so a hit proves the rows were replayed, not recomputed.
+    assert second.perf_metrics.get_num_prefix_cache_hit_tokens() >= CPU_KV_BLOCK_SIZE
+    assert len(second.intermediate_hidden_states[0]) == len(second.full_token_ids[0]) - 1
+    assert second.full_token_ids == reference.full_token_ids
+    restored_block = zip(_rows(second)[:CPU_KV_BLOCK_SIZE], _rows(first)[:CPU_KV_BLOCK_SIZE])
+    assert all(np.array_equal(got, want) for got, want in restored_block), "the restored block must replay turn 1"
+    for got, want in zip(_rows(second), _rows(reference)):
+        np.testing.assert_allclose(got, want, rtol=1e-4, atol=1e-5)
+
+
+@requires_paged_attention
+def test_preemption_keeps_one_hidden_state_per_position(omni_model_path: Path) -> None:
+    """A request preempted by recompute must not store the recomputed hidden states twice."""
+    # Each request needs 9 blocks of 32 tokens, so one fits in 12 blocks but three cannot run together.
+    scheduler_config = _scheduler_config(num_kv_blocks=12, dynamic_split_fuse=True, max_num_batched_tokens=256)
+    pipe = ContinuousBatchingPipeline(omni_model_path, scheduler_config, "CPU")
+    histories = [ChatHistory([{"role": "user", "content": f"{PREFIX_CACHE_PROMPT} {index}"}]) for index in range(3)]
+
+    results = _generate_omni_outputs(pipe, histories, max_new_tokens=32)
+
+    for result in results:
+        assert len(result.intermediate_hidden_states[0]) == len(result.full_token_ids[0]) - 1
+
+
+@requires_paged_attention
+def test_prefix_cache_survives_stop_string_trim_at_block_end(omni_model_path: Path) -> None:
+    """A stop string that completes a KV block and is trimmed must not hash past the kept tokens."""
+    pipe = ContinuousBatchingPipeline(omni_model_path, _scheduler_config(enable_prefix_caching=True), "CPU")
+    tokenizer = pipe.get_tokenizer()
+    history = ChatHistory([{"role": "user", "content": PREFIX_CACHE_PROMPT}])
+    max_new_tokens = 96
+    reference = list(_generate_omni_outputs(pipe, [history], max_new_tokens)[0].full_token_ids[0])
+    prompt_len = len(reference) - max_new_tokens
+    generated = reference[prompt_len:]
+
+    # Generated token j is sampled on the step that completes position prompt_len + j.
+    stop_string = None
+    for j in range(-prompt_len % CPU_KV_BLOCK_SIZE, max_new_tokens, CPU_KV_BLOCK_SIZE):
+        text = tokenizer.decode(generated[: j + 1])
+        candidate = tokenizer.decode(generated[j - 2 : j + 1])
+        if j >= 2 and candidate.strip() and text.find(candidate) + len(candidate) == len(text):
+            stop_string = candidate
+            break
+    assert stop_string is not None, "no generated block end is a clean 3-token stop string"
+
+    config = _omni_outputs_config(max_new_tokens)
+    config.stop_strings = {stop_string}
+    stopped = pipe.generate([history], [[]], [[]], [config])[0].full_token_ids[0]
+
+    assert len(stopped) < len(reference)
+    assert list(stopped) == reference[: len(stopped)]
+
+
 # The tiny CI model's tokenizer lacks the audio tokens, so audio dies in the merge assert; audio
 # tests use a real export instead. `expected_audio_pads` is the upstream formula, which the
 # encoder matches since the disjoint-window fix (CVS-193623).

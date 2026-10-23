@@ -64,7 +64,7 @@ class Sequence {
     uint64_t m_grouped_id;
     uint64_t m_id = _get_next_global_sequence_id();
     ov::Tensor m_hidden_state = ov::Tensor();
-    // When enabled, one intermediate hidden state is accumulated per generated token
+    // When enabled, one intermediate hidden state is kept per token position
     // (prefill batches are sliced into per-token tensors before accumulation)
     static constexpr size_t kMaxAccumulatedHiddenStates = 512;
     bool m_accumulate_hidden_states = false;
@@ -194,20 +194,42 @@ public:
         return m_tree_metadata;
     }
 
-    void update_intermediate_hidden_state(const ov::Tensor& tensor) {
-        if (m_accumulate_hidden_states && tensor.get_size() > 0) {
-            if (m_all_intermediate_hidden_states.size() >= kMaxAccumulatedHiddenStates) {
-                if (!m_hidden_state_cap_warned) {
-                    GENAI_WARN("Hidden state accumulation cap reached (%zu tokens); stopping accumulation",
-                               kMaxAccumulatedHiddenStates);
-                    m_hidden_state_cap_warned = true;
-                }
-                return;
-            }
-            ov::Tensor copy(tensor.get_element_type(), tensor.get_shape());
-            tensor.copy_to(copy);
-            m_all_intermediate_hidden_states.push_back(std::move(copy));
+    // A position computed again after preemption replaces its earlier state, so the vector stays
+    // indexed by absolute token position.
+    void set_intermediate_hidden_state(size_t position, const ov::Tensor& tensor) {
+        if (!m_accumulate_hidden_states || tensor.get_size() == 0) {
+            return;
         }
+        if (position >= kMaxAccumulatedHiddenStates) {
+            if (!m_hidden_state_cap_warned) {
+                GENAI_WARN("Hidden state accumulation cap reached (%zu tokens); stopping accumulation",
+                           kMaxAccumulatedHiddenStates);
+                m_hidden_state_cap_warned = true;
+            }
+            return;
+        }
+        // A prefix restored without prefill_intermediate_hidden_states() belongs to a request that did
+        // not ask for hidden states; its later rows cannot be indexed, so they are dropped.
+        if (position > m_all_intermediate_hidden_states.size()) {
+            return;
+        }
+        ov::Tensor copy(tensor.get_element_type(), tensor.get_shape());
+        tensor.copy_to(copy);
+        if (position == m_all_intermediate_hidden_states.size()) {
+            m_all_intermediate_hidden_states.push_back(std::move(copy));
+        } else {
+            m_all_intermediate_hidden_states[position] = std::move(copy);
+        }
+    }
+
+    /// @param rows Hidden states of the prefix restored from the prefix cache, positions [0, rows.size()).
+    void prefill_intermediate_hidden_states(std::vector<ov::Tensor> rows) {
+        OPENVINO_ASSERT(m_all_intermediate_hidden_states.empty(),
+                        "Restored hidden states must precede every computed one");
+        if (rows.size() > kMaxAccumulatedHiddenStates) {
+            rows.resize(kMaxAccumulatedHiddenStates);
+        }
+        m_all_intermediate_hidden_states = std::move(rows);
     }
 
     void set_accumulate_hidden_states(bool enable) {
@@ -380,6 +402,10 @@ public:
     // hash(prefix tokens + block tokens) <--> KV Block
     size_t get_hash(size_t content_length, size_t block_size);
     size_t get_hash(size_t block_size);
+
+    /// @return Number of leading positions get_hash() can identify. A stop-string trim can make it smaller
+    /// than the number of processed tokens.
+    size_t get_prefix_identity_length() const;
 
     void set_prefix_cache_policy(size_t publication_limit,
                                  std::function<size_t(size_t, size_t)> hash_provider = {}) {
