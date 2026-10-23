@@ -620,6 +620,11 @@ def test_forced_language(sample_from_multilingual_dataset, pipelines_fixture):
     expected_language = "en" if model_id not in (QWEN3_ASR_MODEL_ID, FUN_ASR_MODEL_ID) else "English"
     assert detected_language == expected_language
 
+    if model_id == SENSEVOICE_SMALL_TINY_MODEL_ID:
+        assert genai_result.features is not None
+        assert len(genai_result.features) == len(genai_result.texts)
+        assert isinstance(genai_result.features[0], dict)
+
 
 @pytest.mark.parametrize(
     "pipelines_fixture",
@@ -883,6 +888,8 @@ def test_initial_prompt_hotwords(model_descr, sample_from_dataset, pipeline_type
     model_id, path, hf_pipe, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
 
     result = genai_pipe.generate(sample_from_dataset)
+    if pipeline_type == PipelineType.ASR:
+        assert result.features is None
     assert "Kwilter" not in result.texts[0]
     assert "Quilter" in result.texts[0]
 
