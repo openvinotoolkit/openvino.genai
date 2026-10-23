@@ -6,6 +6,7 @@ The applications don't have many configuration options to encourage the reader t
  - [`text2video.py`](./text2video.py) demonstrates basic text to video generation.
  - [`image2video.py`](./image2video.py) demonstrates image-conditioned video generation.
  - [`taylorseer_text2video.py`](./taylorseer_text2video.py) demonstrates text to video generation with TaylorSeer caching optimization for improved performance. LTX-Video model is supported only.
+ - [`heterogeneous_text2video.py`](./heterogeneous_text2video.py) demonstrates running each stage of the text to video pipeline (text encoder, denoiser, VAE decoder) on a different device.
 
 ## Table of Contents
 1. [Download and Convert the Model](#download-and-convert-the-model)
@@ -195,6 +196,31 @@ The TaylorSeer configuration parameters can be adjusted in the source code:
 - `disable_cache_after_step`: Disable caching after this step (default: -2, meaning 2 steps before the end)
 
 For more details about TaylorSeer, see the [diffusion caching documentation](../../../site/docs/concepts/optimization-techniques/diffusion-caching.md).
+
+### Run text to video with multiple devices
+
+The `heterogeneous_text2video.py` sample demonstrates compiling the LTX-Video text encoder, denoiser (transformer), and VAE decoder on separate devices. Each device defaults to CPU. Use devices supported by your exported model and OpenVINO installation.
+
+The usage of this sample is:
+
+`python heterogeneous_text2video.py [-h] model_dir prompt [text_encoder_device] [denoiser_device] [vae_decoder_device] [num_frames]`
+
+For example:
+
+`python heterogeneous_text2video.py ./ltx_video_ov/FP32 "A woman with long brown hair and light skin smiles at another woman with long blonde hair" CPU GPU CPU`
+
+The sample will create a text to video pipeline such that the text encoder and VAE decoder are executed on the CPU, and the denoiser transformer on the GPU.
+
+The sample uses the same resolution (704 x 480), frame rate (25 fps), inference steps (25), and guidance scale (3.0) as the basic text to video sample. It sets the random seed to 42 for reproducible comparisons. The default frame count is 161; to generate a shorter video, pass a frame count after all three device arguments:
+
+```bash
+python heterogeneous_text2video.py ./ltx_video_ov/FP32 "A cat walks through grass in the morning." CPU CPU CPU 9
+python heterogeneous_text2video.py ./ltx_video_ov/FP32 "A cat walks through grass in the morning." CPU GPU CPU 9
+```
+
+Save `video_0.avi` from each run in a separate directory before comparing the outputs. Keep the model, prompt, seed, resolution, frame count, guidance scale, inference steps, and frame rate identical when comparing devices. To investigate output quality, compare FP32 and INT8 exports separately with the other settings held constant. A change in device placement alone does not establish the cause of distorted output.
+
+The Pixel-style castle prompt in the [LoRA sample](#lora-text-to-video-sample-lora_text2videopy) is demonstrated with a Pixel LoRA adapter. This heterogeneous sample does not load that adapter.
 
 ## Troubleshooting
 
