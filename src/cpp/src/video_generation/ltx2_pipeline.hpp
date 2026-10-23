@@ -71,24 +71,6 @@ const VideoGenerationConfig LTX2_3_DEFAULT_CONFIG = VideoGenerationConfig{
     std::vector<int64_t>{28} // spatio_temporal_guidance_blocks
 };
 
-// Repeats each batch entry of a [halves, ...] tensor num_videos times: [neg, pos] -> [neg x n, pos x n],
-// matching the [uncond videos, cond videos] latent layout
-ov::Tensor repeat_per_video(const ov::Tensor& input, size_t num_videos_per_prompt) {
-    if (num_videos_per_prompt == 1) {
-        return input;
-    }
-    ov::Shape repeated_shape = input.get_shape();
-    const size_t halves = repeated_shape[0];
-    repeated_shape[0] *= num_videos_per_prompt;
-    ov::Tensor repeated(input.get_element_type(), repeated_shape);
-    for (size_t h = 0; h < halves; ++h) {
-        for (size_t v = 0; v < num_videos_per_prompt; ++v) {
-            numpy_utils::batch_copy(input, repeated, h, h * num_videos_per_prompt + v);
-        }
-    }
-    return repeated;
-}
-
 // Half of a CFG-batched [uncond, cond] tensor: [2N, ...] -> [N, ...]
 ov::Tensor cfg_half(const ov::Tensor& tensor, size_t num_videos_per_prompt, size_t half_index) {
     ov::Shape shape = tensor.get_shape();
@@ -164,7 +146,15 @@ class LTX2Pipeline : public VideoPipeline {
     // Points at the defaults of the loaded model version; the single source of truth for 'replace_defaults'
     const VideoGenerationConfig* m_default_config = &LTX2_DEFAULT_CONFIG;
 
+    void check_decode_controls(const VideoGenerationConfig& generation_config) const {
+        utils::validate_generation_config(generation_config);
+        OPENVINO_ASSERT(!generation_config.decode_timestep.has_value() &&
+                            !generation_config.decode_noise_scale.has_value(),
+                        "decode_timestep and decode_noise_scale are not supported for LTX2 pipelines");
+    }
+
     void check_inputs(const VideoGenerationConfig& generation_config) const {
+        check_decode_controls(generation_config);
         video_generation_utils::check_video_size(generation_config.height,
                                                  generation_config.width,
                                                  m_vae->get_config().spatial_compression_ratio);
@@ -201,8 +191,8 @@ class LTX2Pipeline : public VideoPipeline {
         m_perf_metrics.encoder_inference_duration["text_encoder"] = Ms{infer_end - infer_start}.count();
 
         ov::Tensor prompt_attention_mask = m_text_encoder->get_prompt_attention_mask();
-        prompt_embeds = repeat_per_video(prompt_embeds, generation_config.num_videos_per_prompt);
-        prompt_attention_mask = repeat_per_video(prompt_attention_mask, generation_config.num_videos_per_prompt);
+        prompt_embeds = video_generation_utils::repeat_per_video(prompt_embeds, generation_config.num_videos_per_prompt);
+        prompt_attention_mask = video_generation_utils::repeat_per_video(prompt_attention_mask, generation_config.num_videos_per_prompt);
 
         infer_start = std::chrono::steady_clock::now();
         LTX2TextConnectors::Output connected = m_connectors->infer(prompt_embeds, prompt_attention_mask);
@@ -790,16 +780,19 @@ public:
                                      static_cast<uint32_t>(m_vocoder->get_config().output_sampling_rate)};
     }
 
-    VideoGenerationResult decode(const ov::Tensor& latent) override {
+    VideoGenerationResult decode(const ov::Tensor& latent,
+                                 const std::optional<VideoGenerationConfig>& generation_config) override {
+        check_decode_controls(generation_config ? *generation_config : m_generation_config);
         ov::Tensor postprocessed = postprocess_latents(latent);
 
         const auto decode_start = std::chrono::steady_clock::now();
         ov::Tensor video = m_vae->decode(postprocessed);
-        m_perf_metrics.vae_decoder_inference_duration =
+        VideoGenerationPerfMetrics decode_metrics;
+        decode_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
 
-        return VideoGenerationResult{video, m_perf_metrics, ov::Tensor(ov::element::f32, ov::Shape{0})};
+        return VideoGenerationResult{video, std::move(decode_metrics), ov::Tensor(ov::element::f32, ov::Shape{0})};
     }
 
     void reshape(int64_t num_videos_per_prompt,

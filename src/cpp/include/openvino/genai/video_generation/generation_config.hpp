@@ -5,6 +5,7 @@
 
 #include <string>
 #include <optional>
+#include <variant>
 
 #include "openvino/genai/image_generation/generation_config.hpp"
 #include "openvino/genai/lora_adapter.hpp"
@@ -74,10 +75,6 @@ struct VideoGenerationConfig {
     /// `guidance_scale`. The same applies to every `audio_*` field below.
     std::optional<float> audio_guidance_scale = std::nullopt;
 
-    // NOTE: new fields must be appended here rather than inserted above. Pipeline default configs
-    // (e.g. LTX2_DEFAULT_CONFIG) are positional aggregate initializers, so inserting mid-struct
-    // silently shifts every value after the insertion point.
-
     /// Scale of the Spatio-Temporal Guidance term (LTX-2.3). Enables an extra transformer pass in
     /// which the blocks listed in `spatio_temporal_guidance_blocks` are perturbed. 0.0 disables it.
     std::optional<float> stg_scale = std::nullopt;
@@ -95,6 +92,20 @@ struct VideoGenerationConfig {
     /// Transformer block indices perturbed by Spatio-Temporal Guidance. Indices outside the model's
     /// block range are ignored, matching the reference implementation.
     std::optional<std::vector<int64_t>> spatio_temporal_guidance_blocks = std::nullopt;
+
+    // NOTE: new fields must be appended here rather than inserted above. Pipeline default configs
+    // (e.g. LTX2_DEFAULT_CONFIG) are positional aggregate initializers, so inserting mid-struct
+    // silently shifts every value after the insertion point.
+
+    /// Timestep conditioning for a VAE decoder: a scalar applies to every video, or provide one
+    /// value per video in the latent batch. If unset, the decoder uses 0.0.
+    /// Setting any value requires a timestep-conditioned decoder.
+    std::optional<std::variant<float, std::vector<float>>> decode_timestep = std::nullopt;
+
+    /// Decode-time interpolation factor between denoised latents and random noise.
+    /// If unset, decode_timestep is used. Setting any value requires a timestep-conditioned decoder.
+    /// Applied to every video in the batch.
+    std::optional<float> decode_noise_scale = std::nullopt;
 };
 
 /**
@@ -123,6 +134,10 @@ static constexpr ov::Property<float> frame_rate{"frame_rate"};
 /// Guidance scale for the audio modality. Unset means the loaded model's default, which on LTX-2.3 is
 /// independent of `guidance_scale` - see 'VideoGenerationConfig::audio_guidance_scale'.
 static constexpr ov::Property<float> audio_guidance_scale{"audio_guidance_scale"};
+/// Timestep conditioning value passed to the VAE decoder.
+static constexpr ov::Property<std::variant<float, std::vector<float>>> decode_timestep{"decode_timestep"};
+/// Decode-time interpolation factor between denoised latents and random noise.
+static constexpr ov::Property<float> decode_noise_scale{"decode_noise_scale"};
 /// Scale of the Spatio-Temporal Guidance term. 0.0 disables the extra transformer pass.
 static constexpr ov::Property<float> stg_scale{"stg_scale"};
 /// Spatio-Temporal Guidance scale for audio. 0.0 disables the audio term.

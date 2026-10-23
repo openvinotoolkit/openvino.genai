@@ -80,8 +80,9 @@ VideoGenerationResult Image2VideoPipeline::generate(const ov::Tensor& image,
     return m_impl->generate(image, positive_prompt, properties);
 }
 
-VideoGenerationResult Image2VideoPipeline::decode(const ov::Tensor& latent) {
-    return m_impl->decode(latent);
+VideoGenerationResult Image2VideoPipeline::decode(const ov::Tensor& latent,
+                                                  const std::optional<VideoGenerationConfig>& generation_config) {
+    return m_impl->decode(latent, generation_config);
 }
 
 VideoGenerationPerfMetrics Image2VideoPipeline::get_performance_metrics() {

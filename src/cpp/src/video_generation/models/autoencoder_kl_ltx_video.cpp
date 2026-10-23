@@ -128,6 +128,13 @@ std::pair<int64_t, int64_t> get_transformer_patch_size(const std::filesystem::pa
     return {patch_size, patch_size_t};
 }
 
+void assert_decoder_batch_compatible(const ov::CompiledModel& decoder, size_t latent_batch) {
+    const auto compiled_batch = decoder.input("latent_sample").get_partial_shape()[0];
+    OPENVINO_ASSERT(compiled_batch.compatible(latent_batch),
+                    "VAE decoder latent batch size must match the compiled decoder batch size (expected ",
+                    compiled_batch, ", got ", latent_batch, ")");
+}
+
 } // namespace
 
 AutoencoderKLLTXVideo::Config::Config(const std::filesystem::path& config_path) {
@@ -145,6 +152,8 @@ AutoencoderKLLTXVideo::Config::Config(const std::filesystem::path& config_path) 
     read_json_param(data, "patch_size", patch_size);
     read_json_param(data, "patch_size_t", patch_size_t);
     read_json_param(data, "spatio_temporal_scaling", spatio_temporal_scaling);
+    read_json_param(data, "spatial_compression_ratio", spatial_compression_ratio);
+    read_json_param(data, "temporal_compression_ratio", temporal_compression_ratio);
     read_json_param(data, "latents_mean_data", latents_mean_data);
     read_json_param(data, "latents_std_data", latents_std_data);
     read_json_param(data, "timestep_conditioning", timestep_conditioning);
@@ -155,12 +164,22 @@ AutoencoderKLLTXVideo::Config::Config(const std::filesystem::path& config_path) 
     if (latents_std_data.empty()) {
         latents_std_data.assign(latent_channels, 1.0f);
     }
+
+    const size_t compression_factor =
+        std::pow(2, std::accumulate(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), 0));
+    if (spatial_compression_ratio == 0) {
+        spatial_compression_ratio = patch_size * compression_factor;
+    }
+    if (temporal_compression_ratio == 0) {
+        temporal_compression_ratio = patch_size_t * compression_factor;
+    }
 }
 
 AutoencoderKLLTXVideo::AutoencoderKLLTXVideo(const std::filesystem::path& vae_decoder_path)
     : m_config(vae_decoder_path / "config.json") {
     m_decoder_model = utils::singleton_core().read_model(vae_decoder_path / "openvino_model.xml");
     std::tie(m_transformer_patch_size, m_transformer_patch_size_t) = get_transformer_patch_size(vae_decoder_path.parent_path() / "transformer" / "config.json");
+    validate_decoder_inputs();
     // apply VaeImageProcessor postprocessing steps by merging them into the VAE decoder model
     merge_vae_video_post_processing();
 }
@@ -237,9 +256,17 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
                                                       int64_t width) {
     OPENVINO_ASSERT(m_decoder_model, "Model has been already compiled. Cannot reshape already compiled model");
     OPENVINO_ASSERT(height > 0, "Height must be positive");
-    OPENVINO_ASSERT(height % 32 == 0, "Height must be divisible by 32 but got ", height);
+    OPENVINO_ASSERT(height % m_config.spatial_compression_ratio == 0,
+                    "Height must be divisible by ",
+                    m_config.spatial_compression_ratio,
+                    " but got ",
+                    height);
     OPENVINO_ASSERT(width > 0, "Width must be positive");
-    OPENVINO_ASSERT(width % 32 == 0, "Width must be divisible by 32 but got ", width);
+    OPENVINO_ASSERT(width % m_config.spatial_compression_ratio == 0,
+                    "Width must be divisible by ",
+                    m_config.spatial_compression_ratio,
+                    " but got ",
+                    width);
 
     if (m_encoder_model) {
         ov::PartialShape input_shape = m_encoder_model->input(0).get_partial_shape();
@@ -252,32 +279,63 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
         m_encoder_model->reshape(idx_to_shape);
     }
 
-    int64_t spatial_compression_ratio =
-        get_config().patch_size *
-        std::pow(
-            2,
-            std::accumulate(get_config().spatio_temporal_scaling.begin(), get_config().spatio_temporal_scaling.end(), 0));
-    int64_t temporal_compression_ratio =
-        get_config().patch_size_t *
-        std::pow(
-            2,
-            std::accumulate(get_config().spatio_temporal_scaling.begin(), get_config().spatio_temporal_scaling.end(), 0));
+    const int64_t latent_num_frames =
+        ((num_frames - 1) / get_config().temporal_compression_ratio + 1) / m_transformer_patch_size_t;
+    const int64_t latent_height =
+        height / (get_config().spatial_compression_ratio * m_transformer_patch_size);
+    const int64_t latent_width =
+        width / (get_config().spatial_compression_ratio * m_transformer_patch_size);
 
-    int64_t latent_num_frames = ((num_frames - 1) / temporal_compression_ratio + 1) / m_transformer_patch_size_t;
-    int64_t latent_height = height / (spatial_compression_ratio * m_transformer_patch_size);
-    int64_t latent_width  = width  / (spatial_compression_ratio * m_transformer_patch_size);
-
-    ov::PartialShape input_shape = m_decoder_model->input(0).get_partial_shape();
-    std::map<size_t, ov::PartialShape> idx_to_shape{{0, {batch_size, input_shape[1], latent_num_frames, latent_height, latent_width}}};
-    m_decoder_model->reshape(idx_to_shape);
+    const ov::PartialShape input_shape = m_decoder_model->input("latent_sample").get_partial_shape();
+    std::map<std::string, ov::PartialShape> inputs_to_shapes{
+        {"latent_sample", {batch_size, input_shape[1], latent_num_frames, latent_height, latent_width}}};
+    if (m_config.timestep_conditioning) {
+        inputs_to_shapes.emplace("timestep", ov::PartialShape{batch_size});
+    }
+    m_decoder_model->reshape(inputs_to_shapes);
 
     return *this;
 }
 
+void AutoencoderKLLTXVideo::validate_decoder_batch(size_t batch_size) {
+    OPENVINO_ASSERT(m_decoder_request, "VAE decoder model must be compiled first. Cannot infer non-compiled model");
+    assert_decoder_batch_compatible(m_decoder_request.get_compiled_model(), batch_size);
+}
+
 ov::Tensor AutoencoderKLLTXVideo::decode(const ov::Tensor& latent) {
     OPENVINO_ASSERT(m_decoder_request, "VAE decoder model must be compiled first. Cannot infer non-compiled model");
+    OPENVINO_ASSERT(latent.get_shape().size() == 5,
+                    "VAE decoder latent input must be rank 5 [B, C, F, H, W]");
 
-    m_decoder_request.set_input_tensor(latent);
+    if (m_config.timestep_conditioning) {
+        ov::Tensor timestep(ov::element::f32, {latent.get_shape()[0]});
+        std::fill_n(timestep.data<float>(), timestep.get_size(), 0.0f);
+        return decode(latent, timestep);
+    }
+
+    validate_decoder_batch(latent.get_shape()[0]);
+    m_decoder_request.set_tensor("latent_sample", latent);
+    m_decoder_request.infer();
+    return m_decoder_request.get_output_tensor();
+}
+
+ov::Tensor AutoencoderKLLTXVideo::decode(const ov::Tensor& latent, const ov::Tensor& timestep) {
+    OPENVINO_ASSERT(m_decoder_request, "VAE decoder model must be compiled first. Cannot infer non-compiled model");
+    OPENVINO_ASSERT(m_config.timestep_conditioning,
+                    "VAE decoder does not support timestep conditioning");
+    OPENVINO_ASSERT(timestep.get_element_type() == ov::element::f32,
+                    "VAE decoder timestep input must have f32 element type, got ",
+                    timestep.get_element_type());
+    OPENVINO_ASSERT(timestep.get_shape().size() == 1,
+                    "VAE decoder timestep input must be rank 1 [B]");
+    OPENVINO_ASSERT(latent.get_shape().size() == 5,
+                    "VAE decoder latent input must be rank 5 [B, C, F, H, W]");
+    OPENVINO_ASSERT(timestep.get_shape()[0] == latent.get_shape()[0],
+                    "VAE decoder timestep batch size must match latent batch size");
+
+    validate_decoder_batch(latent.get_shape()[0]);
+    m_decoder_request.set_tensor("latent_sample", latent);
+    m_decoder_request.set_tensor("timestep", timestep);
     m_decoder_request.infer();
     return m_decoder_request.get_output_tensor();
 }
@@ -346,11 +404,31 @@ size_t AutoencoderKLLTXVideo::get_vae_scale_factor() const {  // TODO: compare w
     return std::pow(2, m_config.block_out_channels.size() - 1);
 }
 
+void AutoencoderKLLTXVideo::validate_decoder_inputs() const {
+    OPENVINO_ASSERT(m_decoder_model->inputs().size() == (m_config.timestep_conditioning ? 2 : 1),
+                    "AutoencoderKLLTXVideo decoder inputs do not match timestep_conditioning in config.json");
+
+    const ov::Output<ov::Node> latent_input = m_decoder_model->input("latent_sample");
+    OPENVINO_ASSERT(latent_input.get_partial_shape().rank().is_static() &&
+                        latent_input.get_partial_shape().rank().get_length() == 5,
+                    "VAE decoder latent_sample input must be rank 5 [B, C, F, H, W]");
+
+    if (m_config.timestep_conditioning) {
+        const ov::Output<ov::Node> timestep_input = m_decoder_model->input("timestep");
+        OPENVINO_ASSERT(timestep_input.get_element_type() == ov::element::f32,
+                        "VAE decoder timestep input must have f32 element type, got ",
+                        timestep_input.get_element_type());
+        OPENVINO_ASSERT(timestep_input.get_partial_shape().rank().is_static() &&
+                            timestep_input.get_partial_shape().rank().get_length() == 1,
+                        "VAE decoder timestep input must be rank 1 [B]");
+    }
+}
+
 void AutoencoderKLLTXVideo::merge_vae_video_post_processing() const {
     ov::preprocess::PrePostProcessor ppp(m_decoder_model);
 
     if (m_config.scaling_factor != 1.0f)
-        ppp.input().preprocess().scale(m_config.scaling_factor);
+        ppp.input("latent_sample").preprocess().scale(m_config.scaling_factor);
 
     // (x / 2 + 0.5) -> clamp(0..1) -> *255 -> round() -> u8
     ppp.output().postprocess().custom([](const ov::Output<ov::Node>& port) {
