@@ -471,7 +471,7 @@ ov_status_e ov_genai_asr_generation_config_get_hotwords(const ov_genai_asr_gener
 ov_status_e ov_genai_asr_generation_config_set_begin_suppress_tokens(ov_genai_asr_generation_config* config,
                                                                      const int64_t* tokens,
                                                                      size_t tokens_count) {
-    if (!config || !(config->object)) {
+    if (!config || !(config->object) || (!tokens && tokens_count != 0)) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
@@ -518,7 +518,7 @@ ov_status_e ov_genai_asr_generation_config_get_begin_suppress_tokens(const ov_ge
 ov_status_e ov_genai_asr_generation_config_set_suppress_tokens(ov_genai_asr_generation_config* config,
                                                                const int64_t* tokens,
                                                                size_t tokens_count) {
-    if (!config || !(config->object)) {
+    if (!config || !(config->object) || (!tokens && tokens_count != 0)) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
