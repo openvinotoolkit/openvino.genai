@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "automatic_speech_recognition/models/voxtral-realtime/cache_utils.hpp"
 #include "utils.hpp"
 #include "whisper/feature_extractor.hpp"
 
@@ -25,9 +26,13 @@ struct VoxtralConfig {
     size_t audio_num_heads;
     size_t audio_num_layers;
     size_t audio_head_dim;
+    size_t audio_sliding_window;
+    float audio_rope_theta;
     size_t text_num_key_value_heads;
     size_t text_num_layers;
     size_t text_head_dim;
+    size_t text_sliding_window;
+    float text_rope_theta;
     size_t audio_length_per_token;
     size_t left_pad_tokens;
     size_t num_delay_tokens;
@@ -78,6 +83,8 @@ VoxtralConfig load_config(const std::filesystem::path& models_path) {
     const nlohmann::json preprocessor = read_json(models_path / "preprocessor_config.json");
     const auto& audio = config.at("audio_config");
     const auto& text = config.at("text_config");
+    const auto& audio_rope = audio.at("rope_parameters");
+    const auto& text_rope = text.at("rope_parameters");
     const auto& tekken_audio = tekken.at("audio");
     const auto& encoding = tekken_audio.at("audio_encoding_config");
 
@@ -96,15 +103,22 @@ VoxtralConfig load_config(const std::filesystem::path& models_path) {
         }
     }
     OPENVINO_ASSERT(streaming_pad_token_id >= 0, "[STREAMING_PAD] token is missing from tekken.json.");
+    OPENVINO_ASSERT(audio_rope.value("rope_type", std::string{"default"}) == "default" &&
+                        text_rope.value("rope_type", std::string{"default"}) == "default",
+                    "Voxtral streaming cache requires default RoPE scaling.");
 
     return VoxtralConfig{
         audio.at("hidden_size").get<size_t>(),
         audio.at("num_attention_heads").get<size_t>(),
         audio.at("num_hidden_layers").get<size_t>(),
         audio.at("head_dim").get<size_t>(),
+        audio.at("sliding_window").get<size_t>(),
+        audio_rope.at("rope_theta").get<float>(),
         text.at("num_key_value_heads").get<size_t>(),
         text.at("num_hidden_layers").get<size_t>(),
         text.at("head_dim").get<size_t>(),
+        text.at("sliding_window").get<size_t>(),
+        text_rope.at("rope_theta").get<float>(),
         audio_length_per_token,
         left_pad_tokens,
         num_delay_tokens,
@@ -300,8 +314,11 @@ private:
         m_conv1_cache = copy_tensor(m_audio_request.get_tensor("conv1_cache_1"));
         m_conv2_cache = copy_tensor(m_audio_request.get_tensor("conv2_cache_1"));
         for (size_t layer = 0; layer < m_audio_key_values.size(); ++layer) {
-            m_audio_key_values[layer].first = copy_tensor(m_audio_request.get_tensor("present." + std::to_string(layer) + ".key"));
-            m_audio_key_values[layer].second = copy_tensor(m_audio_request.get_tensor("present." + std::to_string(layer) + ".value"));
+            m_audio_key_values[layer] = voxtral_realtime::crop_and_rephase_cache(
+                m_audio_request.get_tensor("present." + std::to_string(layer) + ".key"),
+                m_audio_request.get_tensor("present." + std::to_string(layer) + ".value"),
+                m_runtime->config.audio_sliding_window,
+                m_runtime->config.audio_rope_theta);
         }
         return m_audio_request.get_tensor("audio_embeddings");
     }
@@ -353,8 +370,11 @@ private:
         const float* logits_data = logits.data<const float>() + last_position * vocab_size;
         m_last_token = static_cast<int64_t>(std::max_element(logits_data, logits_data + vocab_size) - logits_data);
         for (size_t layer = 0; layer < m_text_key_values.size(); ++layer) {
-            m_text_key_values[layer].first = copy_tensor(m_text_request.get_tensor("present." + std::to_string(layer) + ".key"));
-            m_text_key_values[layer].second = copy_tensor(m_text_request.get_tensor("present." + std::to_string(layer) + ".value"));
+            m_text_key_values[layer] = voxtral_realtime::crop_and_rephase_cache(
+                m_text_request.get_tensor("present." + std::to_string(layer) + ".key"),
+                m_text_request.get_tensor("present." + std::to_string(layer) + ".value"),
+                m_runtime->config.text_sliding_window,
+                m_runtime->config.text_rope_theta);
         }
         if (is_first_chunk)
             m_prefill_done = true;

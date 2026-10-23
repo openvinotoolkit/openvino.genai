@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <future>
 #include <map>
@@ -12,6 +13,7 @@
 #include <thread>
 #include <vector>
 
+#include "automatic_speech_recognition/models/voxtral-realtime/cache_utils.hpp"
 #include "automatic_speech_recognition/pipeline_base.hpp"
 
 using ov::genai::ASRDecodedResults;
@@ -180,4 +182,34 @@ TEST(ASRStream, InferenceErrorPropagatesAndReleasesBlockedProducer) {
     EXPECT_TRUE(producer_failed);
     EXPECT_EQ(stream.processed_frames.size(), failing_frame_id);
     EXPECT_EQ(stream.flush_calls, 0);
+}
+
+TEST(VoxtralCache, CropsAndRephasesRotaryKeys) {
+    ov::Tensor key(ov::element::f32, {1, 1, 5, 4});
+    ov::Tensor value(ov::element::f32, {1, 1, 5, 4});
+    for (size_t index = 0; index < key.get_size(); ++index) {
+        key.data<float>()[index] = static_cast<float>(index + 1);
+        value.data<float>()[index] = static_cast<float>(index + 11);
+    }
+
+    constexpr size_t max_context = 3;
+    constexpr float rope_theta = 10000.0f;
+    const auto [cropped_key, cropped_value] =
+        ov::genai::voxtral_realtime::crop_and_rephase_cache(key, value, max_context, rope_theta);
+
+    ASSERT_EQ(cropped_key.get_shape(), (ov::Shape{1, 1, max_context, 4}));
+    ASSERT_EQ(cropped_value.get_shape(), cropped_key.get_shape());
+    const float* cropped_key_data = cropped_key.data<const float>();
+    const float* cropped_value_data = cropped_value.data<const float>();
+    EXPECT_FLOAT_EQ(cropped_value_data[0], value.data<const float>()[8]);
+    EXPECT_FLOAT_EQ(cropped_value_data[11], value.data<const float>()[19]);
+
+    constexpr size_t evicted_tokens = 2;
+    const double angle = -static_cast<double>(evicted_tokens);
+    const double cosine = std::cos(angle);
+    const double sine = std::sin(angle);
+    const double first = key.data<const float>()[8];
+    const double second = key.data<const float>()[10];
+    EXPECT_NEAR(cropped_key_data[0], first * cosine - second * sine, 1e-6);
+    EXPECT_NEAR(cropped_key_data[2], second * cosine + first * sine, 1e-6);
 }
