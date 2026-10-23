@@ -758,10 +758,8 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Gemma4MtpDecodi
     const std::optional<std::vector<ov::Tensor>>& prompt_ids,
     const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& extra) {
     GenerateStrategy strategy;
-    strategy.prepare_request = [](size_t, const ov::Tensor& input, GenerationConfig&,
-                                  GenerationConfig&, ov::Tensor& main, ov::Tensor& draft) {
+    strategy.prepare_request = [](size_t, const ov::Tensor& input, GenerationConfig&, ov::Tensor& main) {
         main = input;
-        draft = input;
     };
     strategy.check_streaming = [](const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr,
                                   const std::vector<ov::Tensor>& inputs,
