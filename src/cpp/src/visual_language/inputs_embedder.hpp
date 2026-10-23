@@ -468,6 +468,7 @@ private:
     friend class InputsEmbedderVideoChatFlashQwen;
     friend class InputsEmbedderMuseGlimmer;
     friend class InputsEmbedderMiniCPMv4_7;
+    friend class InputsEmbedderMistral3;
 };
 
 /// @brief Universal-tag pattern for a modality. A switch, not a ternary on IMAGE: a ternary would

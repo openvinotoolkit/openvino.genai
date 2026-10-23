@@ -28,6 +28,7 @@
 #include "visual_language/videochat_flash/classes.hpp"
 #include "visual_language/muse_glimmer/classes.hpp"
 #include "visual_language/minicpmv4_7/classes.hpp"
+#include "visual_language/mistral3/classes.hpp"
 
 #include "continuous_batching/timer.hpp"
 #include "utils.hpp"
@@ -381,6 +382,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderMuseGlimmer>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::MINICPMV4_7) {
         m_impl = std::make_shared<InputsEmbedderMiniCPMv4_7>(vlm_config, model_dir, tokenizer, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::MISTRAL3) {
+        m_impl = std::make_shared<InputsEmbedderMistral3>(vlm_config, model_dir, tokenizer, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
@@ -435,6 +438,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
         m_impl = std::make_shared<InputsEmbedderMuseGlimmer>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::MINICPMV4_7) {
         m_impl = std::make_shared<InputsEmbedderMiniCPMv4_7>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::MISTRAL3) {
+        m_impl = std::make_shared<InputsEmbedderMistral3>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
