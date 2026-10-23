@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import pytest
-import importlib.util
 import sys
 import re
 
@@ -85,16 +84,12 @@ class TestAutomaticSpeechRecognition:
             pytest.param(
                 "TinyRandomQwen3ASR",
                 "English",
-                marks=pytest.mark.skipif(
-                    importlib.util.find_spec("qwen_asr") is None, reason="Qwen3-ASR export requires qwen-asr"
-                ),
+                marks=pytest.mark.transformers_lower_v5,
             ),
             pytest.param(
                 "TinyRandomFunASR",
                 "English",
-                marks=pytest.mark.skipif(
-                    importlib.util.find_spec("funasr") is None, reason="Fun-ASR export requires funasr"
-                ),
+                marks=pytest.mark.transformers_lower_v5,
             ),
         ],
         indirect=["convert_model"],
