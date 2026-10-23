@@ -38,11 +38,18 @@ private:
      * @return The number of characters at the end of text that match the start of m_close_tag
      */
     size_t find_close_tag_prefix_length(std::string_view text) const {
-        const size_t max_check = std::min(text.size(), m_close_tag.size());
+        return find_tag_prefix_length(text, m_close_tag);
+    }
+
+    /**
+     * @brief Find the longest suffix of text that is a prefix of tag.
+     */
+    static size_t find_tag_prefix_length(std::string_view text, const std::string& tag) {
+        const size_t max_check = std::min(text.size(), tag.size());
         size_t longest_match = 0;
         for (size_t i = 1; i <= max_check; ++i) {
-            // Compare the last i characters of text with the first i characters of m_close_tag
-            if (text.compare(text.size() - i, i, m_close_tag, 0, i) == 0) {
+            // Compare the last i characters of text with the first i characters of tag
+            if (text.compare(text.size() - i, i, tag, 0, i) == 0) {
                 longest_match = i;
             }
         }
@@ -56,10 +63,14 @@ private:
                                    size_t open_idx, size_t close_idx, std::string& delta_text) {
         // Extract reasoning content between tags
         message["reasoning_content"] = std::string(txt_chunk.substr(open_idx + m_open_tag.size(), close_idx - (open_idx + m_open_tag.size())));
-        message["content"] = std::string(txt_chunk.substr(close_idx + m_close_tag.size()));
-        
+        // Text before the open tag is content too
+        std::string content = std::string(txt_chunk.substr(0, open_idx)) + std::string(txt_chunk.substr(close_idx + m_close_tag.size()));
+        message["content"] = content;
+
         if (!m_keep_original_content) {
-            delta_text = std::string(txt_chunk.substr(close_idx + m_close_tag.size()));
+            delta_text = std::move(content);
+        } else {
+            delta_text = txt_chunk;
         }
         
         m_think_tag_opened = false;
@@ -71,17 +82,20 @@ private:
      * @brief Handle the case where only the open tag is found.
      */
     void handle_open_tag(JsonContainer& delta_message, std::string_view txt_chunk, size_t open_idx, std::string& delta_text) {
-        // Start accumulating reasoning content
-        delta_message["reasoning_content"] = std::string(txt_chunk.substr(open_idx + m_open_tag.size()));
-        
+        // Start accumulating reasoning content, keeping a possible partial close tag in cache
+        const std::string_view after_open = txt_chunk.substr(open_idx + m_open_tag.size());
+        const size_t num_chars_to_keep = find_close_tag_prefix_length(after_open);
+        delta_message["reasoning_content"] = std::string(after_open.substr(0, after_open.size() - num_chars_to_keep));
+
         if (!m_keep_original_content) {
-            delta_text.clear();
+            // Text before the open tag is content
+            delta_text = std::string(txt_chunk.substr(0, open_idx));
         } else {
-            delta_text = txt_chunk;
+            delta_text = std::string(txt_chunk.substr(0, txt_chunk.size() - num_chars_to_keep));
         }
 
         m_think_tag_opened = true;
-        m_text_cache.clear();
+        m_text_cache = std::string(after_open.substr(after_open.size() - num_chars_to_keep));
     }
 
     /**
@@ -180,12 +194,11 @@ public:
         } else if (m_think_tag_opened) {
             handle_inside_reasoning(delta_message, txt_chunk, delta_text);
         } else {
-            // Think tag was not opened yet and not found in the current delta_text.
-            // Accumulate text in the cache to detect if <think> is split between several delta_text pieces.
-            m_text_cache += delta_text;
-            // Clear delta_text while waiting for complete <think> tag detection in cache.
-            // accumulating partial data in m_text_cache until the full <think> tag is detected.
-            delta_text.clear();
+            // Think tag was not opened yet and not found in the current chunk.
+            // Keep only an ending that may be the start of a split open tag, the rest is content.
+            const size_t num_chars_to_keep = find_tag_prefix_length(txt_chunk, m_open_tag);
+            m_text_cache = txt_chunk.substr(txt_chunk.size() - num_chars_to_keep);
+            delta_text = txt_chunk.substr(0, txt_chunk.size() - num_chars_to_keep);
         }
         return delta_text;
     }
