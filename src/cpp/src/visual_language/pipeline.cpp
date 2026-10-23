@@ -950,6 +950,7 @@ private:
         const auto& lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
 
         auto per_layer_callback = m_inputs_embedder->get_per_layer_embeddings_callback();
+        auto ngram_embeddings_callback = m_inputs_embedder->get_ngram_embeddings_callback();
 
         if (m_sampler.get_seed() != generation_config.rng_seed) {
             m_sampler.set_seed(generation_config.rng_seed);
@@ -973,16 +974,16 @@ private:
             max_kv_cache_size,
             use_intermediate_remote_tensor,
             lm_extra_inputs,
-            std::move(per_layer_callback)
+            std::move(per_layer_callback),
+            std::move(ngram_embeddings_callback)
         );
     }
 };
 
 bool requires_sdpa(const std::filesystem::path& models_dir) {
-    // Force models to use SDPA backend by default until PA is supported. Example:
-    // auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    // vlm_config.model_type == VLMModelType::GEMMA3;
-    return false;
+    // Force models to use SDPA backend by default until PA is supported.
+    const auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
+    return vlm_config.model_type == VLMModelType::QWEN4_EXP;
 }
 
 VLMPipeline::VLMPipeline(
