@@ -73,6 +73,9 @@ protected:
 
     std::shared_ptr<VisionRegistry> m_vision_registry;
 
+    // Runs while a failed turn unwinds, so it must not throw.
+    void recover_embedder_after_failed_turn() noexcept;
+
     void stream_tokens(const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr, const GenerationHandle& handle);
 
 protected:
