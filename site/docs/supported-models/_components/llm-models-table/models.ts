@@ -614,6 +614,12 @@ export const LLM_MODELS: LLMModelType[] = [
           'https://huggingface.co/humain-ai/ALLaM-7B-Instruct-preview',
         ],
       },
+      {
+        name: 'DeepSeek-Coder',
+        links: [
+          'https://huggingface.co/deepseek-ai/deepseek-coder-1.3b-instruct',
+        ],
+      },
     ],
   },
   {

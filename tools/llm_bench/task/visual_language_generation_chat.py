@@ -53,6 +53,7 @@ FULL_CHAT_MODEL_TYPES = {
     "qwen3_5_moe",
     "llava_next",
     "llava-qwen2",
+    "minicpmv4_7",
     "qwen3_omni",
     "qwen3_omni_moe",
 }
@@ -117,6 +118,9 @@ class OptimumVLMGenerationChatAdapter(OptimumTextGenerationChatAdapter):
         self.chat_history = []
         self.past_key_values = None
         self.tokenized_history: list = []
+        self.inputs_processor.images = None
+        self.inputs_processor.videos = None
+        self.inputs_processor.chat_history = []
 
     def configure_past_key_values_for_generation(self, full_input_ids: torch.Tensor, prefix_len: int) -> dict:
         past_key_kwargs = {}
