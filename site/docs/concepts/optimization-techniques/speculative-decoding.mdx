@@ -32,6 +32,7 @@ The Continuous Batching backend supports multi-request batching; the Stateful ba
 
 Every strategy is configured in two places: the drafter is selected when the pipeline is **constructed**, and the drafting behavior is tuned **per request** through `GenerationConfig`.
 The shared knob is `num_assistant_tokens` — the number of candidate tokens submitted to the target per iteration, defaulting to `5` when unset.
+Explicit values must not exceed `100`; larger values are rejected during generation configuration validation.
 The remaining knobs are strategy-specific and described in the corresponding sections below.
 
 :::tip Measuring Effectiveness
