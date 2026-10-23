@@ -7,6 +7,7 @@
 
 #include "visual_language/vlm_config.hpp"
 
+#include "openvino/genai/lora_adapter.hpp"
 #include "visual_language/vision_encoder.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "circular_buffer_queue.hpp"
@@ -117,6 +118,8 @@ public:
         const std::vector<EncodedImage>& images,
         const std::vector<EncodedVideo>& videos) const override;
 
+    void set_adapters(const std::optional<AdapterConfig>& adapters) override;
+
 protected:
     // Chat template hardcodes char sequence instead of referring to tag values, so NATIVE_TAG is hardcoded as well.
     inline static const std::string NATIVE_TAG = "<|vision_start|><|image_pad|><|vision_end|>";
@@ -135,6 +138,16 @@ protected:
     size_t m_merge_length;
 
     bool m_with_cu_seqlens_input = false;
+
+    // Patches the merger sub-model with LoRA adapters. Kept alive because in the dynamic modes the adapter weights
+    // live in the infer request state and have to be uploaded into every request taken from the pool.
+    std::optional<AdapterController> m_vision_adapter_controller;
+    // Adapters requested for the next generation, forwarded from the pipeline generation config.
+    std::optional<AdapterConfig> m_vision_adapters;
+
+    // Uploads the LoRA state into a merger infer request taken from the pool. Does nothing in the static modes,
+    // where the adapter weights are already baked into the compiled model.
+    void apply_vision_adapters(ov::InferRequest& request);
 
     virtual void expand_video_tags_in_prompt(
         std::string& unified_prompt,

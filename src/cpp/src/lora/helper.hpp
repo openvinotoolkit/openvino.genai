@@ -34,8 +34,5 @@ utils::SharedOptional<const AnyMap> update_adapters_in_properties(const AnyMap& 
 // Create a new AdapterConfig object with adapters modified by `action` function.
 std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters, const AdapterAction& action);
 
-// Returns true if both configs hold the same adapters with the same alphas in the same order.
-bool have_same_adapters(const std::optional<AdapterConfig>& lhs, const std::optional<AdapterConfig>& rhs);
-
 }
 }

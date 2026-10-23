@@ -101,8 +101,8 @@ public:
     // returns embedding model which converts token_id(s) to embedding vectors
     EmbeddingsModel::Ptr get_embedding_model() const;
 
-    // returns true if LoRA adapters were baked into one of the vision sub-models
-    bool has_vision_adapters() const;
+    // sets LoRA adapters to apply to the vision sub-models during the next generation
+    void set_adapters(const std::optional<AdapterConfig>& adapters);
 
     // returns tokenizer
     Tokenizer get_tokenizer() const;
@@ -197,14 +197,11 @@ private:
         // position ids
         ov::Tensor m_position_ids;
         int64_t m_rope_delta = 0;
-        // True if LoRA adapters were baked into one of the vision sub-models and therefore cannot be changed per generate() call.
-        bool m_has_vision_adapters = false;
         virtual ~IInputsEmbedder() = default;
 
     public:
-        bool has_vision_adapters() const {
-            return m_has_vision_adapters;
-        }
+        // Architectures that support LoRA for the vision part override this to pick up the per-generation config.
+        virtual void set_adapters(const std::optional<AdapterConfig>& adapters) {}
         virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) = 0;
 
         virtual ov::Tensor get_inputs_embeds(const std::string& prompt,

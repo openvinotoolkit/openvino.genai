@@ -28,27 +28,18 @@ namespace ov::genai {
 
 namespace {
 
-// The vision sub-model is served by a pool of infer requests, so only MODE_STATIC is supported: it turns the adapter
-// weights into graph constants and leaves no per-infer-request LoRA state to maintain. Must be called before the model
-// is compiled. Returns true if at least one layer was adapted.
-bool apply_vision_adapters(const std::shared_ptr<ov::Model>& model,
-                           const std::string& device,
-                           const ov::AnyMap& properties) {
+// Patches the vision merger sub-model with the adapters taken from `properties`. Must be called before the model is
+// compiled. The returned controller is only needed by the dynamic modes, where the adapter weights live in the infer
+// request state; in the static modes it has nothing to do at inference time.
+std::optional<AdapterController> create_vision_adapter_controller(const std::shared_ptr<ov::Model>& model,
+                                                                  const std::string& device,
+                                                                  const ov::AnyMap& properties) {
     std::optional<AdapterConfig> adapters;
     if (!update_adapters_from_properties(properties, adapters) || !static_cast<bool>(*adapters)) {
-        return false;
+        return std::nullopt;
     }
-    const auto mode = adapters->get_mode();
-    OPENVINO_ASSERT(mode == AdapterConfig::MODE_AUTO || mode == AdapterConfig::MODE_STATIC,
-        "Only AdapterConfig::MODE_STATIC LoRA adapters are supported for the vision part of a VLM. "
-        "Set AdapterConfig::MODE_STATIC explicitly or leave AdapterConfig::MODE_AUTO.");
-    adapters->set_mode(AdapterConfig::MODE_STATIC);
     adapters->set_tensor_name_prefix(adapters->get_tensor_name_prefix().value_or(VISION_LORA_TENSOR_NAME_PREFIX));
-
-    const size_t ops_count_before = model->get_ops().size();
-    // The controller patches the model in its constructor and has nothing to do at inference time in MODE_STATIC.
-    AdapterController(model, *adapters, device);
-    return model->get_ops().size() != ops_count_before;
+    return AdapterController(model, *adapters, device);
 }
 
 std::shared_ptr<ov::Node> create_f32_nchw_input(std::shared_ptr<ov::Node> input) {
@@ -972,7 +963,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     if (std::filesystem::exists(merger_path)) {
         auto model = utils::singleton_core().read_model(merger_path);
         utils::request_vl_sdpa_transformations(model);
-        m_has_vision_adapters = apply_vision_adapters(model, device, device_config);
+        m_vision_adapter_controller = create_vision_adapter_controller(model, device, device_config);
 
         auto compiled_model = utils::singleton_core().compile_model(
             model, device, utils::get_model_properties(device_config, "vision_embeddings_merger", device));
@@ -1007,7 +998,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
             utils::get_model_weights_pair(models_map, "vision_embeddings_merger").first,
             utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second);
         utils::request_vl_sdpa_transformations(model);
-        m_has_vision_adapters = apply_vision_adapters(model, device, device_config);
+        m_vision_adapter_controller = create_vision_adapter_controller(model, device, device_config);
 
         auto compiled_model = utils::singleton_core().compile_model(
             model, device, utils::get_model_properties(device_config, "vision_embeddings_merger", device));
@@ -1336,6 +1327,21 @@ std::string InputsEmbedderQwen2VL::get_last_pruned_prompt(const std::string& ori
     return pruned_prompt;
 }
 
+void InputsEmbedderQwen2VL::set_adapters(const std::optional<AdapterConfig>& adapters) {
+    m_vision_adapters = adapters;
+    if (m_vision_adapters) {
+        // The prefixes in the incoming config address the language model, the vision controller keeps its own ones.
+        m_vision_adapters->set_tensor_name_prefix(std::nullopt);
+        m_vision_adapters->set_foreign_tensor_name_prefix(std::nullopt);
+    }
+}
+
+void InputsEmbedderQwen2VL::apply_vision_adapters(ov::InferRequest& request) {
+    if (m_vision_adapter_controller) {
+        m_vision_adapter_controller->apply(request, m_vision_adapters);
+    }
+}
+
 void InputsEmbedderQwen2VL::start_chat(const std::string& system_message) {
     IInputsEmbedder::start_chat(system_message);
     m_position_ids = ov::Tensor();
@@ -1370,6 +1376,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen2VL::run_video_image_embeddi
 
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_embeddings_merger.get());
     ov::InferRequest& vision_embeddings_merger = infer_request_guard.get();
+    apply_vision_adapters(vision_embeddings_merger);
     vision_embeddings_merger.set_tensor("hidden_states", concatenated_embeds);
     if (m_with_cu_seqlens_input) {
         ov::Tensor cu_seq_lens = qwen2_vl_utils::get_cu_seqlens(reordered_images_grid_thw, reordered_videos_grid_thw);

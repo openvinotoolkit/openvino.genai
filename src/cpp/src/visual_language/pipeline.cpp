@@ -378,6 +378,7 @@ public:
 
         m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
                                                            generation_config.relevance_weight);
+        m_inputs_embedder->set_adapters(generation_config.adapters);
 
         const auto embeddings_start_time = std::chrono::steady_clock::now();
         
@@ -619,6 +620,7 @@ public:
 
         m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
                                                            generation_config.relevance_weight);
+        m_inputs_embedder->set_adapters(generation_config.adapters);
 
         const auto embeddings_start_time = std::chrono::steady_clock::now();
         VLMChatContext chat_context(history, m_vision_registry, *m_inputs_embedder);
@@ -923,11 +925,6 @@ private:
         }
 
         if (m_adapter_controller) {
-            OPENVINO_ASSERT(!m_inputs_embedder->has_vision_adapters() || !generation_config.adapters ||
-                                have_same_adapters(generation_config.adapters, m_generation_config.adapters),
-                "LoRA adapters cannot be changed per generate() call when the vision part of the model is adapted: "
-                "the vision adapters are baked into the model at the pipeline construction time. "
-                "Construct a new VLMPipeline to use a different set of adapters.");
             m_adapter_controller->apply(m_language, generation_config.adapters);
         }
 

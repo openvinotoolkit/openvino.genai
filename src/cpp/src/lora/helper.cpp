@@ -45,14 +45,6 @@ utils::SharedOptional<const AnyMap> update_adapters_in_properties(const AnyMap& 
 }
 
 
-bool have_same_adapters(const std::optional<AdapterConfig>& lhs, const std::optional<AdapterConfig>& rhs) {
-    if (!lhs || !rhs) {
-        return !lhs && !rhs;
-    }
-    return lhs->get_adapters_and_alphas() == rhs->get_adapters_and_alphas();
-}
-
-
 std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters, const AdapterAction& action) {
     std::optional<AdapterConfig> updated_adapters;
     auto adapters_vector = adapters.get_adapters_and_alphas();

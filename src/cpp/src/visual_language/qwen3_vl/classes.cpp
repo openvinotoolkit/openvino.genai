@@ -611,6 +611,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen3VL::run_video_image_embeddi
 
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(m_ireq_queue_vision_embeddings_merger.get());
     ov::InferRequest& vision_embeddings_merger = infer_request_guard.get();
+    apply_vision_adapters(vision_embeddings_merger);
 
     vision_embeddings_merger.set_tensor("hidden_states", concatenated_embeds);
 

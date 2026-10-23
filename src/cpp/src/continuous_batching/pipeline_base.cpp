@@ -356,6 +356,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     // Set visual token pruning configuration
     m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
                                                        generation_config.relevance_weight);
+    m_inputs_embedder->set_adapters(generation_config.adapters);
 
     // Shared helpers for prompt-ID extraction used in both chat-conversation and multi-prompt branches.
     // Cache-state size is captured pre-embedding so the new prompt-ids slice can be sent
@@ -669,6 +670,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         // Set visual token pruning configuration
         m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
                                                            generation_config.relevance_weight);
+        m_inputs_embedder->set_adapters(generation_config.adapters);
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
 

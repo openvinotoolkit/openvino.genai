@@ -826,11 +826,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::set_adapters(const std::optional<AdapterConfig>& adapters) {
     if (m_adapter_controller) {
-        OPENVINO_ASSERT(!m_inputs_embedder || !m_inputs_embedder->has_vision_adapters() || !adapters ||
-                            have_same_adapters(adapters, m_generation_config.adapters),
-            "LoRA adapters cannot be changed per request when the vision part of the model is adapted: "
-            "the vision adapters are baked into the model at the pipeline construction time. "
-            "Construct a new pipeline to use a different set of adapters.");
         m_adapter_controller->apply(m_model_runner->get_infer_request(), adapters);
     }
 }

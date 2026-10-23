@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <set>
 #include <map>
+#include <mutex>
 #include <string>
 #include <vector>
 #include <fstream>
@@ -317,7 +318,7 @@ struct LoRAWeightGetterDefault {
             return;
         }
 
-        std::cerr << "[ WARNING ] There unused LoRA tensors for tensor name prefix \"" << prefix
+              std::cerr << "[ WARNING ] There unused LoRA tensors for tensor name prefix \"" << prefix
                   << "\" (foreign prefix \"" << foreign_prefix
                   << "\"). The result of generation can be not accurate. Check if a given adapter file is compatible with the base model.\n";
 
@@ -1547,11 +1548,15 @@ struct AdapterControllerImpl {
     std::unordered_set<std::string> variable_names;
     AdapterConfig current_config;
     bool need_full_apply = true;
-    // Tracks which ov::InferRequest instance last received a full apply, since need_full_apply
-    // alone only reflects whether *some* request was initialized, not this one; a pipeline that
-    // recreates infer requests would otherwise skip set_new_adapter_tensors() for requests that
-    // were never actually initialized.
-    std::optional<ov::InferRequest> last_applied_infer_request;
+    // Infer requests whose state already holds the current adapters. A single flag is not enough because a model can
+    // be served by a pool of infer requests, and a pipeline may recreate them; a request missing here was never
+    // initialized and needs a full upload.
+    std::vector<ov::InferRequest> fully_applied_infer_requests;
+    // Subset of the above whose alphas are up to date, so an alpha-only change does not force a full upload.
+    std::vector<ov::InferRequest> alphas_applied_infer_requests;
+    // Guards the members above together with current_config and prepared_tensor_cache: infer request pools are
+    // designed for concurrent use, while a single controller is shared by all of them.
+    std::mutex apply_mutex;
     InferRequestSignatureCache lora_state_evaluators;
 
     PreparedTensorCache prepared_tensor_cache;
@@ -1707,6 +1712,7 @@ struct AdapterControllerImpl {
 
     void apply (ov::InferRequest& infer_request, std::optional<AdapterConfig> config) {
         // FIXME: If a part of LoRA state tensors are not set here, then need to carefully reset state in LLMPipeline where global reset is called after the generation
+        std::lock_guard<std::mutex> lock(apply_mutex);
         ConfigChanged diff;
         if(config) {
             AdapterConfig updated_config = current_config;
@@ -1720,19 +1726,23 @@ struct AdapterControllerImpl {
                 "Cannot change adapters and/or the alphas when not one of the dynamic modes are used.");
             current_config = std::move(updated_config);
         }
-        bool is_new_infer_request = !last_applied_infer_request || *last_applied_infer_request != infer_request;
+        if(need_full_apply || diff.adapter || diff.tensor_name_prefix) {
+            // The uploaded A and B matrices became stale for every request.
+            fully_applied_infer_requests.clear();
+            alphas_applied_infer_requests.clear();
+        } else if(diff.alpha) {
+            alphas_applied_infer_requests.clear();
+        }
         try {
-            if(need_full_apply || is_new_infer_request) {
+            if(!contains_infer_request(fully_applied_infer_requests, infer_request)) {
                 set_new_adapter_tensors(infer_request);
                 // Record initialization only after every state upload has succeeded.
-                last_applied_infer_request = infer_request;
+                fully_applied_infer_requests.push_back(infer_request);
+                alphas_applied_infer_requests.push_back(infer_request);
                 need_full_apply = false;
-            } else if(diff) {
-                if(diff.adapter || diff.tensor_name_prefix) {
-                    set_new_adapter_tensors(infer_request);
-                } else if(diff.alpha) {
-                    set_new_adapter_alphas(infer_request);
-                }
+            } else if(!contains_infer_request(alphas_applied_infer_requests, infer_request)) {
+                set_new_adapter_alphas(infer_request);
+                alphas_applied_infer_requests.push_back(infer_request);
             }
         } catch (...) {
             // Uploads may have updated only part of the state; retry with a full apply.
@@ -1740,6 +1750,10 @@ struct AdapterControllerImpl {
             need_full_apply = true;
             throw;
         }
+    }
+
+    static bool contains_infer_request(const std::vector<ov::InferRequest>& requests, const ov::InferRequest& request) {
+        return std::find(requests.begin(), requests.end(), request) != requests.end();
     }
 
     bool has_state_name(const std::string& name) {
