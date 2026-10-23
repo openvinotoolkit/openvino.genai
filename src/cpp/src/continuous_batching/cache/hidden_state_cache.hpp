@@ -28,8 +28,8 @@ public:
 
     explicit HiddenStateCache(size_t budget_bytes = kDefaultBudgetBytes) : m_budget_bytes(budget_bytes) {}
 
-    /// @param rows One tensor per token of the block, in token order.
-    void put(uint64_t hash, std::vector<ov::Tensor> rows) {
+    /// @param rows One tensor per token of the block, in token order. The cache stores copies.
+    void put(uint64_t hash, const std::vector<ov::Tensor>& rows) {
         size_t bytes = 0;
         for (const ov::Tensor& row : rows) {
             bytes += row.get_byte_size();
@@ -43,8 +43,13 @@ public:
         if (bytes > m_budget_bytes) {
             return;
         }
+        std::vector<ov::Tensor> copies;
+        copies.reserve(rows.size());
+        for (const ov::Tensor& row : rows) {
+            copies.push_back(copy_row(row));
+        }
         m_lru.push_front(hash);
-        m_entries.emplace(hash, Entry{std::move(rows), bytes, m_lru.begin()});
+        m_entries.emplace(hash, Entry{std::move(copies), bytes, m_lru.begin()});
         m_used_bytes += bytes;
         while (m_used_bytes > m_budget_bytes) {
             const auto victim = m_entries.find(m_lru.back());
@@ -54,7 +59,7 @@ public:
         }
     }
 
-    /// @return Rows of the longest leading run of block_hashes that are all cached, in token order.
+    /// @return Copies of the rows of the longest leading run of block_hashes that are all cached, in token order.
     std::vector<ov::Tensor> get_prefix(const std::vector<uint64_t>& block_hashes) {
         std::vector<ov::Tensor> rows;
         std::lock_guard<std::mutex> lock{m_mutex};
@@ -64,7 +69,9 @@ public:
                 break;
             }
             m_lru.splice(m_lru.begin(), m_lru, it->second.lru_it);
-            rows.insert(rows.end(), it->second.rows.begin(), it->second.rows.end());
+            for (const ov::Tensor& row : it->second.rows) {
+                rows.push_back(copy_row(row));
+            }
         }
         return rows;
     }
@@ -75,6 +82,13 @@ public:
     }
 
 private:
+    // Rows reach callers through public results, so a write there must not change what later requests replay.
+    static ov::Tensor copy_row(const ov::Tensor& row) {
+        ov::Tensor copy(row.get_element_type(), row.get_shape());
+        row.copy_to(copy);
+        return copy;
+    }
+
     struct Entry {
         std::vector<ov::Tensor> rows;
         size_t bytes;

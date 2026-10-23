@@ -89,6 +89,25 @@ TEST(HiddenStateCache, PutOfCachedHashKeepsStoredRows) {
     EXPECT_EQ(cache.used_bytes(), kBlockBytes);
 }
 
+TEST(HiddenStateCache, WriteToInsertedRowDoesNotChangeStoredRow) {
+    ov::genai::HiddenStateCache cache;
+    auto block = make_block(10.f);
+    cache.put(1, block);
+
+    block[0].data<float>()[0] = 99.f;
+
+    EXPECT_EQ(first_values(cache.get_prefix({1})), (std::vector<float>{10.f, 11.f}));
+}
+
+TEST(HiddenStateCache, WriteToReturnedRowDoesNotChangeStoredRow) {
+    ov::genai::HiddenStateCache cache;
+    cache.put(1, make_block(10.f));
+
+    cache.get_prefix({1})[0].data<float>()[0] = 99.f;
+
+    EXPECT_EQ(first_values(cache.get_prefix({1})), (std::vector<float>{10.f, 11.f}));
+}
+
 TEST(HiddenStateCache, BlockLargerThanBudgetIsNotStored) {
     ov::genai::HiddenStateCache cache(kBlockBytes - 1);
 

@@ -1260,6 +1260,8 @@ def test_prefix_cache_replays_hidden_states_of_restored_prefix(omni_model_path: 
     first, second = _two_turns(cached)
     _, reference = _two_turns(uncached)
 
+    # KV restore is capped at the cached hidden states, so a hit proves the rows were replayed, not recomputed.
+    assert second.perf_metrics.get_num_prefix_cache_hit_tokens() >= CPU_KV_BLOCK_SIZE
     assert len(second.intermediate_hidden_states[0]) == len(second.full_token_ids[0]) - 1
     assert second.full_token_ids == reference.full_token_ids
     restored_block = zip(_rows(second)[:CPU_KV_BLOCK_SIZE], _rows(first)[:CPU_KV_BLOCK_SIZE])
