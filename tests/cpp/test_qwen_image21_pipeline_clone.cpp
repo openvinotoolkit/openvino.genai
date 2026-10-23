@@ -44,7 +44,10 @@ TEST(QwenImage21PipelineCloneTest, PreservesReshapeValidation) {
     pipeline.compile("CPU");
     ov::genai::Image2ImagePipeline clone = pipeline.clone();
 
-    const ov::AnyMap generation_properties = {ov::genai::strength(0.8f), ov::genai::num_inference_steps(2)};
+    const ov::AnyMap generation_properties = {ov::genai::strength(1.0f),
+                                              ov::genai::height(64),
+                                              ov::genai::width(64),
+                                              ov::genai::num_inference_steps(2)};
     bool got_reshape_validation_error = false;
     try {
         clone.generate("test prompt", make_image(64, 32), generation_properties);
