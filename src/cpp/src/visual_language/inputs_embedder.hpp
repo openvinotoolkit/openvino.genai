@@ -65,6 +65,8 @@ public:
 
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
 
+    LMExtraInputsCallback get_lm_extra_inputs_callback();
+
     // returns per-layer embeddings callback, or nullptr if not available
     std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback();
 
@@ -205,6 +207,10 @@ private:
                                              const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
         virtual const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
+
+        virtual LMExtraInputsCallback get_lm_extra_inputs_callback() {
+            return nullptr;
+        }
 
         virtual std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback() {
             return nullptr;
