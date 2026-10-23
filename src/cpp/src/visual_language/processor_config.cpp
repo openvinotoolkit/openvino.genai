@@ -61,6 +61,8 @@ ov::genai::ProcessorConfig::ProcessorConfig(const nlohmann::json& parsed) {
     // Setting gemma4 config params
     read_json_param(parsed, "pooling_kernel_size", pooling_kernel_size);
     read_json_param(parsed, "max_soft_tokens", max_soft_tokens);
+    read_json_param(parsed, "preserve_native_resolution", preserve_native_resolution);
+    read_json_param(parsed, "pad_to_target", pad_to_target);
 }
 
 ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_path)

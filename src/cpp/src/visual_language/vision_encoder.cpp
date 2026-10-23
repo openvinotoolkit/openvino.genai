@@ -31,6 +31,25 @@
 
 namespace ov::genai {
 
+
+VisionEncoder::VisionEncoder(const VLMModels& models, ConfigOnlyTag)
+    : m_processor_config(models.processor_config),
+      m_video_processor_config(models.video_processor_config) {}
+
+VisionEncoder::VisionEncoder(const VLMModels& models, const std::string& device, const ov::AnyMap& properties)
+    : VisionEncoder(models, ConfigOnlyTag{}) {
+    auto compiled = utils::singleton_core().compile_model(
+        models.at("vision_embeddings"),
+        device,
+        utils::get_model_properties(properties, "vision_embeddings", device));
+    ov::genai::utils::print_compiled_model_properties(compiled, "VLM vision embeddings model");
+    m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled] {
+            return compiled.create_infer_request();
+        });
+}
+
 VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties) {
     auto compiled_model = utils::singleton_core().compile_model(
         model_dir / "openvino_vision_embeddings_model.xml", device,
@@ -210,6 +229,25 @@ VisionEncoder::Ptr VisionEncoder::create(
         return std::make_shared<VisionEncoderMiniCPMv4_7>(models_map, config_dir_path, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
+    }
+}
+
+VisionEncoder::Ptr VisionEncoder::create(const VLMModels& models,
+                                         const std::string& device,
+                                         const ov::AnyMap& properties) {
+    switch (models.config.model_type) {
+    case VLMModelType::GEMMA3:
+        return std::make_shared<VisionEncoderGemma3>(models, device, properties);
+    case VLMModelType::GEMMA4:
+    case VLMModelType::GEMMA4_UNIFIED:
+        return std::make_shared<VisionEncoderGemma4>(models, device, properties);
+    case VLMModelType::QWEN3_5:
+    case VLMModelType::QWEN3_5_MOE:
+        return std::make_shared<VisionEncoderQwen3_5>(models, device, properties);
+    case VLMModelType::MUSE_GLIMMER:
+        return std::make_shared<VisionEncoderMuseGlimmer>(models, device, properties);
+    default:
+        OPENVINO_THROW("Unsupported in-memory VLM model type");
     }
 }
 

@@ -113,6 +113,96 @@ You can pass extensions to pipeline constructors in both Python and C++.
     </TabItemCpp>
 </LanguageTabs>
 
+## Use extensions with the GGUF frontend
+
+Pass the `extensions` property when constructing `LLMPipeline`, `ContinuousBatchingPipeline`, or
+`VLMPipeline`.
+
+GenAI registers the supplied extensions with OpenVINO `Core` and on every GGUF frontend used to
+load and convert the models. For `VLMPipeline`, the same list is registered on both the language
+and projector frontends. Registration happens before model loading and conversion.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        from pathlib import Path
+        import openvino_genai as genai
+
+        extensions = [Path("/path/to/libgguf_extension.so")]
+
+        llm = genai.LLMPipeline(
+            "model.gguf", "CPU", GGUF_READER="FRONTEND", extensions=extensions
+        )
+        batching = genai.ContinuousBatchingPipeline(
+            "model.gguf", genai.SchedulerConfig(), "CPU",
+            {"GGUF_READER": "FRONTEND", "extensions": extensions},
+        )
+        vlm = genai.VLMPipeline(
+            "model.gguf", "CPU", mmproj_path="mmproj.gguf", extensions=extensions
+        )
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        #include <filesystem>
+        #include <vector>
+        #include <openvino/genai/continuous_batching_pipeline.hpp>
+        #include <openvino/genai/extensions.hpp>
+        #include <openvino/genai/gguf.hpp>
+        #include <openvino/genai/llm_pipeline.hpp>
+        #include <openvino/genai/visual_language/pipeline.hpp>
+
+        void load_pipelines() {
+            const auto extensions = ov::genai::extensions(
+                std::vector<std::filesystem::path>{"/path/to/libgguf_extension.so"});
+            const ov::AnyMap properties = {
+                ov::genai::gguf_reader("FRONTEND"), extensions};
+
+            ov::genai::LLMPipeline llm("model.gguf", "CPU", properties);
+            ov::genai::ContinuousBatchingPipeline batching(
+                "model.gguf", ov::genai::SchedulerConfig{}, "CPU", properties);
+            ov::genai::VLMPipeline vlm(
+                "model.gguf", "CPU", ov::genai::mmproj_path("mmproj.gguf"), extensions);
+        }
+        ```
+
+        To pass an operation converter directly as a C++ object:
+
+        ```cpp
+        #include <memory>
+        #include <vector>
+        #include <openvino/frontend/extension/conversion.hpp>
+        #include <openvino/frontend/node_context.hpp>
+        #include <openvino/op/add.hpp>
+        #include <openvino/genai/extensions.hpp>
+        #include <openvino/genai/gguf.hpp>
+        #include <openvino/genai/llm_pipeline.hpp>
+
+        void load_with_converter() {
+            auto converter = std::make_shared<ov::frontend::ConversionExtension>(
+                "GGML_OP_ADD", [](const ov::frontend::NodeContext& node) -> ov::OutputVector {
+                    return {std::make_shared<ov::op::v1::Add>(node.get_input(0), node.get_input(1))};
+                });
+            ov::genai::LLMPipeline pipe(
+                "model.gguf", "CPU", ov::genai::gguf_reader("FRONTEND"),
+                ov::genai::extensions(std::vector<std::shared_ptr<ov::Extension>>{converter}));
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+Replace the library path with an extension built against your OpenVINO version. A GGUF extension
+library can provide architecture or projector builders, `ov::frontend::ConversionExtension`
+operation converters, or `ov::frontend::DecoderTransformationExtension` graph passes. C++ callers
+can also pass created extension objects using `ov::genai::extensions(...)`; Python callers can
+pass extension objects exposed by their OpenVINO bindings, using the item types listed above.
+
+A custom `ov::OpExtension` alone does not translate a GGML operation; provide a corresponding
+conversion extension when the GGUF graph needs that translation. GenAI supplies its own
+`GenAIExtension` for the pipeline's language-model interface. Extensions do not add GenAI
+preprocessing, tokenizer support, or new supported language/projector pairs: the model must still
+meet the [GGUF pipeline requirements](./gguf.mdx).
+
 ## Notes
 
 - Extensions are loaded into the underlying OpenVINO `Core` before the pipeline loads the model.

@@ -58,6 +58,9 @@ public:
     // gemma4 specific config params
     size_t pooling_kernel_size = 3;
     size_t max_soft_tokens = 280;
+    // Bound the native image area instead of filling the maximum patch budget.
+    bool preserve_native_resolution = false;
+    bool pad_to_target = false;
 
     struct {
         size_t num_crops = 4;

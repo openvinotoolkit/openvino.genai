@@ -36,6 +36,11 @@ struct NormalizedPrompt {
 
 class InputsEmbedder {
 public:
+    InputsEmbedder(const VLMModels& models,
+                   const Tokenizer& tokenizer,
+                   const std::string& device,
+                   const ov::AnyMap& properties);
+
     InputsEmbedder(const std::filesystem::path& model_dir,
                    const Tokenizer& tokenizer,
                    const std::string& device,
@@ -359,6 +364,11 @@ private:
         }
 
     protected:
+        IInputsEmbedder(const VLMModels& models,
+                        const Tokenizer& tokenizer,
+                        const std::string& device,
+                        const ov::AnyMap& properties);
+
         IInputsEmbedder(
             const VLMConfig& vlm_config,
             const std::filesystem::path& model_dir,
