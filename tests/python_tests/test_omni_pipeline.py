@@ -1282,6 +1282,35 @@ def test_preemption_keeps_one_hidden_state_per_position(omni_model_path: Path) -
         assert len(result.intermediate_hidden_states[0]) == len(result.full_token_ids[0]) - 1
 
 
+@requires_paged_attention
+def test_prefix_cache_survives_stop_string_trim_at_block_end(omni_model_path: Path) -> None:
+    """A stop string that completes a KV block and is trimmed must not hash past the kept tokens."""
+    pipe = ContinuousBatchingPipeline(omni_model_path, _scheduler_config(enable_prefix_caching=True), "CPU")
+    tokenizer = pipe.get_tokenizer()
+    history = ChatHistory([{"role": "user", "content": PREFIX_CACHE_PROMPT}])
+    max_new_tokens = 96
+    reference = list(_generate_omni_outputs(pipe, [history], max_new_tokens)[0].full_token_ids[0])
+    prompt_len = len(reference) - max_new_tokens
+    generated = reference[prompt_len:]
+
+    # Generated token j is sampled on the step that completes position prompt_len + j.
+    stop_string = None
+    for j in range(-prompt_len % CPU_KV_BLOCK_SIZE, max_new_tokens, CPU_KV_BLOCK_SIZE):
+        text = tokenizer.decode(generated[: j + 1])
+        candidate = tokenizer.decode(generated[j - 2 : j + 1])
+        if j >= 2 and candidate.strip() and text.find(candidate) + len(candidate) == len(text):
+            stop_string = candidate
+            break
+    assert stop_string is not None, "no generated block end is a clean 3-token stop string"
+
+    config = _omni_outputs_config(max_new_tokens)
+    config.stop_strings = {stop_string}
+    stopped = pipe.generate([history], [[]], [[]], [config])[0].full_token_ids[0]
+
+    assert len(stopped) < len(reference)
+    assert list(stopped) == reference[: len(stopped)]
+
+
 # The tiny CI model's tokenizer lacks the audio tokens, so audio dies in the merge assert; audio
 # tests use a real export instead. `expected_audio_pads` is the upstream formula, which the
 # encoder matches since the disjoint-window fix (CVS-193623).

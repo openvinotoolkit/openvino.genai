@@ -403,6 +403,10 @@ public:
     size_t get_hash(size_t content_length, size_t block_size);
     size_t get_hash(size_t block_size);
 
+    /// @return Number of leading positions get_hash() can identify. A stop-string trim can make it smaller
+    /// than the number of processed tokens.
+    size_t get_prefix_identity_length() const;
+
     void set_prefix_cache_policy(size_t publication_limit,
                                  std::function<size_t(size_t, size_t)> hash_provider = {}) {
         OPENVINO_ASSERT(m_prefix_hashes.empty(), "Prefix cache policy must be set before hashing");

@@ -508,7 +508,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_cache_completed_hidden
             const std::vector<ov::Tensor>& rows = sequence->get_all_intermediate_hidden_states();
             // Blocks completed before this step are already cached or were restored from the cache.
             const size_t first_block = kv_data_it->second.num_processed_tokens_before / block_size;
-            const size_t end_block = std::min(processed_after, rows.size()) / block_size;
+            const size_t end_block =
+                std::min({processed_after, rows.size(), sequence->get_prefix_identity_length()}) / block_size;
             for (size_t block = first_block; block < end_block; ++block) {
                 const size_t block_end = (block + 1) * block_size;
                 m_hidden_state_cache->put(
