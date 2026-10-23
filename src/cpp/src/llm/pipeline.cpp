@@ -19,6 +19,7 @@
 #include "speculative_decoding/stateful/fast_draft_strategy.hpp"
 #include "speculative_decoding/stateful/gemma4_mtp_strategy.hpp"
 #include "utils.hpp"
+#include "json_utils.hpp"
 #include "gguf_utils/gguf_utils.hpp"
 #include "gguf_utils/gguf_tokenizer.hpp"
 #include "model_desc.hpp"
@@ -49,6 +50,25 @@ bool should_use_stateful_pipeline(bool is_npu_requested,
         return true;
     }
     return false;
+}
+
+bool is_gemma4_model(const std::filesystem::path& models_path) {
+    const std::filesystem::path config_path = models_path / "config.json";
+    if (!std::filesystem::exists(config_path)) {
+        return false;
+    }
+    const nlohmann::json config = nlohmann::json::parse(std::ifstream{config_path});
+    std::string model_type;
+    ov::genai::utils::read_json_param(config, "model_type", model_type);
+    return model_type.rfind("gemma4", 0) == 0;
+}
+
+void patch_gemma4_chat_template(const std::filesystem::path& models_path, ov::genai::LLMPipelineImplBase& pipeline) {
+    if (!is_gemma4_model(models_path)) {
+        return;
+    }
+    ov::genai::Tokenizer tokenizer = pipeline.get_tokenizer();
+    ov::genai::utils::patch_chat_template_multiline_strings(tokenizer);
 }
 
 // This is a decorator function that wraps a generation callable to apply parsers and reset them before generation if needed.
@@ -294,6 +314,7 @@ ov::genai::LLMPipeline::LLMPipeline(
         m_pimpl = std::make_unique<StatefulLLMPipeline>(model, tokenizer, device, properties, generation_config);
     }
 
+    patch_gemma4_chat_template(models_path, *m_pimpl);
     utils::log_attention_backend(m_pimpl->get_attention_backend());
     m_pimpl->save_load_time(start_time);
 }
@@ -354,6 +375,7 @@ ov::genai::LLMPipeline::LLMPipeline(
         m_pimpl = std::make_unique<StatefulLLMPipeline>(model, tokenizer, device, properties, generation_config);
     }
 
+    patch_gemma4_chat_template(models_path, *m_pimpl);
     utils::log_attention_backend(m_pimpl->get_attention_backend());
     m_pimpl->save_load_time(start_time);
 }
