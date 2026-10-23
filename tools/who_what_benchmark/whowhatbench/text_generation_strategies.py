@@ -174,8 +174,9 @@ class GenAIGeneration(BaseGenerationStrategy):
         if generation_config_extra:
             kwargs.update(generation_config_extra)
 
+        # A batch of one preserves DecodedResults and its per-model metrics.
         output = model.generate(
-            question,
+            [question],
             do_sample=False,
             max_new_tokens=max_new_tokens,
             apply_chat_template=use_chat_template,
@@ -184,7 +185,10 @@ class GenAIGeneration(BaseGenerationStrategy):
             **kwargs,
         )
 
-        return GenerationResults(answer_text=output)
+        return GenerationResults(
+            answer_text=output.texts[0] if hasattr(output, "texts") else output,
+            extended_perf_metrics=getattr(output, "extended_perf_metrics", None),
+        )
 
     def genai_generation_encoded(
         self,
@@ -233,6 +237,7 @@ class GenAIGeneration(BaseGenerationStrategy):
             answer_text=tokenizer.decode(output.tokens[0]),
             prompt_input_ids=torch.from_numpy(tokenized_input.input_ids.data),
             generated_token_ids=torch.Tensor(output.tokens[0]),
+            extended_perf_metrics=getattr(output, "extended_perf_metrics", None),
         )
 
 

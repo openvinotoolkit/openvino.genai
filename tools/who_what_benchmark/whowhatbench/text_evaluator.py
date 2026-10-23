@@ -10,6 +10,7 @@ from typing import Any, Union
 from importlib.resources import files
 
 from .registry import register_evaluator, BaseEvaluator
+from .utils import SDMetricsCollector
 from .whowhat_metrics import TextDivergency, TextSimilarity, KLDivergency
 from .text_generation_strategies import GenerationStrategy, TextGenerationFn, TextGenerationContext
 from .artifacts_manager import GenerationResults, Metrics, ArtifactsSchema, ArtifactsManager
@@ -224,6 +225,7 @@ class TextEvaluator(BaseEvaluator):
         prompt_data = data["prompts"]
         prompts = prompt_data.values if self.num_samples is None else prompt_data.values[: self.num_samples]
 
+        sd_metrics = SDMetricsCollector()
         artifacts_collector = ArtifactsManager(self.requisted_artifacts, output_dir)
         generated_token_ids = artifacts_collector.collect_metadata_for_generation(reference_token_ids_path)
 
@@ -247,6 +249,7 @@ class TextEvaluator(BaseEvaluator):
                     context=TextGenerationContext(reference_tokens=reference_tokens),
                 )
 
+                sd_metrics.collect(output)
                 artifacts_collector.collect(
                     sample_idx,
                     p,
@@ -271,6 +274,7 @@ class TextEvaluator(BaseEvaluator):
                             batch, [generation_config] * len(batch)
                         )
                         for batch_offset, ans in enumerate(ans_batch):
+                            sd_metrics.collect(ans)
                             sample_idx = batch_start_idx + batch_offset
                             artifacts_collector.collect(
                                 sample_idx,
@@ -280,4 +284,6 @@ class TextEvaluator(BaseEvaluator):
 
                         batch.clear()
 
-        return artifacts_collector.build_csv(self.language, self.long_prompt, self.metrics_list)
+        df = artifacts_collector.build_csv(self.language, self.long_prompt, self.metrics_list)
+        sd_metrics.add_columns(df)
+        return df
