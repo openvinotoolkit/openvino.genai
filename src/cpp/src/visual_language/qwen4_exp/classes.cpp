@@ -148,17 +148,19 @@ ov::Tensor InputsEmbedderQwen4_Exp::get_inputs_embeds(
         const auto& cached_ids = m_cache_state.get_state();
         OPENVINO_ASSERT(cached_ids.size() >= input_shape[1], "Qwen4Exp cache is shorter than the current prompt.");
         const size_t prefix_length = cached_ids.size() - input_shape[1];
-        int64_t* positions = m_position_ids.data<int64_t>();
+        // Update position_ids
+        int64_t* position_ids_data = m_position_ids.data<int64_t>();
         for (size_t axis = 0; axis < 4; ++axis) {
             const int64_t offset = static_cast<int64_t>(prefix_length) +
                                    (axis > 0 && prefix_length > 0 ? previous_rope_delta : 0);
             for (size_t token_index = 0; token_index < input_shape[1]; ++token_index) {
-                positions[axis * input_shape[1] + token_index] += offset;
+                position_ids_data[axis * input_shape[1] + token_index] += offset;
             }
         }
         if (prefix_length > 0) {
             m_rope_delta += previous_rope_delta;
         }
+        // Update m_ngram_history
         const size_t context_length = std::min(prefix_length, m_ngram_context_length);
         std::copy_n(cached_ids.begin() + prefix_length - context_length,
                     context_length,
