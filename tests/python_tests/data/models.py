@@ -1,6 +1,8 @@
 # Copyright (C) 2024-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+from dataclasses import dataclass
+
 import pytest
 from optimum.intel.utils.import_utils import is_transformers_version
 
@@ -52,3 +54,62 @@ GGUF_MODEL_LIST = (
         "dynamic_quantization_group_size": "64",
     },
 )
+
+
+@dataclass(frozen=True)
+class GGUFModelDescription:
+    gguf_repo: str
+    gguf_revision: str
+    filename: str
+    hf_repo: str
+    hf_revision: str
+
+
+# Pinned GGUFs (1.8 / 25.5 / 4.9 / 47.2 MB) and their source tokenizer/configuration.
+# The HF model is reconstructed from the GGUF weights, not independently downloaded weights.
+TINY_GGUF_MODELS = [
+    pytest.param(
+        GGUFModelDescription(
+            "aladar/llama-2-tiny-random-GGUF",
+            "8d5321916486e1d33c46b16990e8da6567785769",
+            "llama-2-tiny-random.gguf",
+            "yujiepan/llama-2-tiny-random",
+            "74bb065d6381fdf9fcde5896cb32267ba2c0ee0a",
+        ),
+        marks=pytest.mark.gguf_frontend,
+        id="llama",
+    ),
+    pytest.param(
+        GGUFModelDescription(
+            "mradermacher/tiny-random-qwen3-GGUF",
+            "058102830a84bb976597f4d8462bafe0ea319358",
+            "tiny-random-qwen3.f16.gguf",
+            "snake7gun/tiny-random-qwen3",
+            "add6406ed2f82988fd5194e343572194f71b6f61",
+        ),
+        marks=pytest.mark.gguf_frontend,
+        id="qwen3",
+    ),
+    pytest.param(
+        GGUFModelDescription(
+            "mradermacher/tiny-random-Phi3ForCausalLM-GGUF",
+            "ff12230de1587e824688cc6afef2af22dc2b7807",
+            "tiny-random-Phi3ForCausalLM.f16.gguf",
+            "Xenova/tiny-random-Phi3ForCausalLM",
+            "bac53a980e9402513e0a5f8433656b4f845c1b9b",
+        ),
+        marks=pytest.mark.gguf_frontend,
+        id="phi3",
+    ),
+    pytest.param(
+        GGUFModelDescription(
+            "ggml-org/tinygemma3-GGUF",
+            "c287502cd9e278dac8eed805c112cce5d0081e0b",
+            "tinygemma3-Q8_0.gguf",
+            "ngxson/tinygemma3_cifar",
+            "da67f59d2195a0095711f1494f8ee5823cf54591",
+        ),
+        marks=pytest.mark.gguf_frontend,
+        id="gemma3",
+    ),
+]

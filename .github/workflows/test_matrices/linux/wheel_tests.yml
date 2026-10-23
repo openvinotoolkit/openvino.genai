@@ -170,7 +170,8 @@
     # Match the regular LLM job: Optimum's Gemma-3 exporter requires Transformers <=5.0.
     # The generated GGUF reference build requires CMake >=3.24.
     python -m pip install transformers==5.0.0 cmake==3.26.4
-    python -m pytest -v ./tests/python_tests/test_gguf_frontend.py ./tests/python_tests/test_gguf_generated.py
+    python -m pytest -v ./tests/python_tests/test_llm_pipeline.py --gguf -m gguf_frontend -rx
+    python -m pytest -v ./tests/python_tests/test_gguf_frontend.py ./tests/python_tests/test_gguf_generated.py ./tests/python_tests/test_comparation.py
   timeout: 30
   components:
     - GGUF
