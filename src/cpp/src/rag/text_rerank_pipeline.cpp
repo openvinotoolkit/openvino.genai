@@ -61,7 +61,7 @@ bool has_input(const std::shared_ptr<Model>& model, const std::string& name) {
 }
 
 // Qwen3 rerankers are instruction-following causal LMs. apply_qwen3_postprocessing() below reads the score from
-// the logits of the last token, so the prompt must end exactly where the assistant turn opens.
+// the logits of the last token, so the suffix must end exactly where the next token is the "yes"/"no" verdict.
 // Mirrors https://huggingface.co/Qwen/Qwen3-Reranker-0.6B#transformers-usage
 constexpr std::string_view QWEN3_RERANK_PREFIX =
     "<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct "
