@@ -42,6 +42,9 @@ protected:
 
     size_t m_num_decoder_layers = 0;
 
+    // Vocabulary size of the "logits" output; 0 if unknown (test-only default ctor)
+    size_t m_vocab_size = 0;
+
     // Pre-allocated per-layer storages for the per-token cache re-rotation deltas used in cache eviction case
     std::vector<ov::Tensor> m_rotation_deltas_stores;
 
@@ -165,6 +168,12 @@ public:
 
     virtual bool supports_embedding_prefix_verification() const {
         return false;
+    }
+
+    // Speculative/validation-mode pipelines publish through a path that cannot return requested-token
+    // logprobs; checked in add_request before enqueueing.
+    virtual bool supports_requested_token_logprobs(const GenerationConfig& sampling_params) const {
+        return true;
     }
 
     virtual void initialize_prefix_cache(const SequenceGroup::Ptr& group) {

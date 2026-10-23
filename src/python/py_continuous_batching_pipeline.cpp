@@ -316,6 +316,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
     py::class_<GenerationOutput, std::shared_ptr<GenerationOutput>>(m, "GenerationOutput")
         .def_readwrite("generated_ids", &GenerationOutput::generated_ids)
         .def_readwrite("generated_log_probs", &GenerationOutput::generated_log_probs)
+        .def_readwrite("requested_token_logprobs", &GenerationOutput::requested_token_logprobs)
         .def_readwrite("score", &GenerationOutput::score)
         .def_readwrite("finish_reason", &GenerationOutput::finish_reason);
 

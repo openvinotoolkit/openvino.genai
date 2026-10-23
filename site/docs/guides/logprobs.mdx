@@ -1,0 +1,110 @@
+---
+sidebar_position: 10
+---
+
+# Log-Probabilities for Requested Tokens
+
+`GenerationConfig.logprob_token_ids` reports the log-probability of a fixed set of token IDs at every generated position. It complements `logprobs`, which reports only the log-probability of each generated token (`generated_log_probs`): `logprob_token_ids` reads raw values for arbitrary token IDs from the **full vocabulary** distribution before any sampling transform (the equivalent of vLLM's `logprob_token_ids` with `--logprobs-mode raw_logprobs`), so you can score tokens that are not among the most likely ones.
+
+Typical use case is single-token classification: generate one token greedily (`max_new_tokens=1`), then softmax over the reported log-probabilities of the candidate token IDs to obtain per-class probabilities. The sum of `exp(log_prob)` over the candidate IDs is the probability mass of the candidate set (vLLM's `label_mass`); multiplying the softmax over the candidates by this mass rescales the answer probabilities to the full vocabulary (vLLM's `confidence`).
+
+:::info
+`logprob_token_ids` is supported with **greedy or multinomial sampling only**, and only for a single sequence (`num_return_sequences == 1`). Beam search, tree search and `num_return_sequences > 1` are rejected by `GenerationConfig.validate()`; speculative-decoding and prompt-lookup pipelines reject the request in `add_request()`.
+
+The values are exposed only by `ContinuousBatchingPipeline` (through `add_request` / `read` / `read_all`). The one-shot `LLMPipeline::generate()` / `VLMPipeline::generate()` return types (`DecodedResults` / `EncodedResults`) do not carry the field, so it is not available through those pipelines.
+:::
+
+## How the results are exposed
+
+The values are not a separate accessor: they are a field of the `ContinuousBatchingPipeline` generation output, returned by `GenerationHandle::read()` / `read_all()`.
+
+```
+GenerationOutput.requested_token_logprobs:
+    row per generated position (indexed by generated position only)
+      -> one (token_id, log_prob) pair per requested token ID
+```
+
+Notes:
+
+- `log_prob` is normalized over the full vocabulary, so `exp(log_prob)` is the probability of that token at that position. Only the requested IDs are reported; the full distribution sums to 1.
+- With `echo=True` the rows align with the **generated** tokens, not the echoed prompt tokens (the prompt is prepended to `generated_log_probs` but has no rows here).
+- The field is empty when `logprob_token_ids` is empty.
+
+## Examples
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python showLineNumbers
+        import math
+
+        import openvino_genai as ov_genai
+
+        scheduler_config = ov_genai.SchedulerConfig()
+        scheduler_config.max_num_batched_tokens = 2048
+        scheduler_config.max_num_seqs = 128
+        scheduler_config.cache_size = 8
+
+        pipe = ov_genai.ContinuousBatchingPipeline(models_path, scheduler_config, "CPU")
+
+        generation_config = ov_genai.GenerationConfig()
+        generation_config.max_new_tokens = 1
+        generation_config.temperature = 0.0
+        generation_config.do_sample = False
+        # Candidate token IDs to score (from the model's tokenizer)
+        generation_config.logprob_token_ids = [128, 1494, 374]
+
+        handle = pipe.add_request(request_id=0, prompt="The Sun is", generation_config=generation_config)
+        while pipe.has_non_finished_requests():
+            pipe.step()
+
+        for output in handle.read_all():
+            for position, logprobs in enumerate(output.requested_token_logprobs):
+                print(f"position {position}:")
+                for token_id, log_prob in logprobs:
+                    print(f"    token {token_id}: logprob={log_prob:.4f}  prob={math.exp(log_prob):.4f}")
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp showLineNumbers
+        #include <cmath>
+        #include <filesystem>
+        #include <iostream>
+
+        #include "openvino/genai/continuous_batching_pipeline.hpp"
+
+        int main() {
+            // Path to the exported model directory (model .xml/.bin and tokenizer files)
+            const std::filesystem::path models_path = "path/to/exported_model";
+
+            ov::genai::SchedulerConfig scheduler_config;
+            scheduler_config.max_num_batched_tokens = 2048;
+            scheduler_config.max_num_seqs = 128;
+            scheduler_config.cache_size = 8;
+
+            ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, "CPU");
+
+            ov::genai::GenerationConfig generation_config;
+            generation_config.max_new_tokens = 1;
+            generation_config.temperature = 0.0f;
+            generation_config.do_sample = false;
+            // Candidate token IDs to score (from the model's tokenizer)
+            generation_config.logprob_token_ids = {128, 1494, 374};
+
+            auto handle = pipe.add_request(0, "The Sun is", generation_config);
+            while (pipe.has_non_finished_requests()) {
+                pipe.step();
+            }
+
+            for (const auto& output : handle->read_all()) {
+                for (size_t position = 0; position < output.requested_token_logprobs.size(); ++position) {
+                    for (const auto& [token_id, log_prob] : output.requested_token_logprobs[position]) {
+                        std::cout << "position " << position << ": token " << token_id
+                                  << " logprob=" << log_prob
+                                  << " prob=" << std::exp(log_prob) << "\n";
+                    }
+                }
+            }
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>

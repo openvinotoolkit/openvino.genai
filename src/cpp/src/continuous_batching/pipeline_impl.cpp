@@ -208,6 +208,16 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     auto cache_orchestrator = CacheOrchestrator::create(infer_request, normalized_config, get_available_memory);
     m_num_decoder_layers = cache_orchestrator->get_num_kv_layers();
 
+    // The last dimension of the "logits" output is the vocabulary size the sampler indexes into.
+    // Keep it to validate requested logprob token ids before enqueueing.
+    const auto logits_pshape = model->output("logits").get_partial_shape();
+    if (logits_pshape.rank().is_static()) {
+        const auto& vocab_dim = logits_pshape[logits_pshape.rank().get_length() - 1];
+        if (vocab_dim.is_static()) {
+            m_vocab_size = static_cast<size_t>(vocab_dim.get_length());
+        }
+    }
+
     bool can_use_partial_preemption = true;
     if (execution_device.find("GPU") != std::string::npos && !normalized_config.dynamic_split_fuse) {
         // in case of executing a `vLLM-like` pipeline, it's better not to use partial eviction on the GPU,
@@ -314,6 +324,21 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     if (sampling_params_copy.eos_token_id == -1)
         sampling_params_copy.set_eos_token_id(m_generation_config.eos_token_id);
     sampling_params_copy.validate();
+    if (!sampling_params_copy.logprob_token_ids.empty()) {
+        // A per-request config does not carry the pipeline's assistant settings, so validate() cannot
+        // reject speculative decoding here; enqueueing would fail in the step() error handler for every
+        // running request.
+        OPENVINO_ASSERT(supports_requested_token_logprobs(sampling_params_copy),
+                        "logprob_token_ids is not supported with speculative decoding");
+        // Reject out-of-range requested logprob token ids before enqueueing: an id that fails only in the
+        // sampler during step() would be treated as a pipeline failure and poison every running request.
+        OPENVINO_ASSERT(m_vocab_size > 0,
+                        "logprob_token_ids requires a model with a static vocabulary dimension");
+        for (const auto token_id : sampling_params_copy.logprob_token_ids) {
+            OPENVINO_ASSERT(token_id >= 0 && static_cast<size_t>(token_id) < m_vocab_size,
+                            "logprob_token_id is out of vocabulary range: ", token_id);
+        }
+    }
     size_t prompt_len;
     if (input_ids.get_shape().size() > 1) {
         prompt_len = input_ids.get_shape()[1];

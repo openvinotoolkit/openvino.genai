@@ -53,6 +53,9 @@ void add_partial_result(std::unordered_map<uint64_t, GenerationOutput>& partial_
             for (size_t i = 0; i < generated_len; ++i) {
                 partial_result_iter->second.generated_ids.push_back(iteration_result.second.generated_ids[i]);
                 partial_result_iter->second.generated_log_probs.push_back(iteration_result.second.generated_log_probs[i]);
+                if (i < iteration_result.second.requested_token_logprobs.size()) {
+                    partial_result_iter->second.requested_token_logprobs.push_back(iteration_result.second.requested_token_logprobs[i]);
+                }
             }
             partial_result_iter->second.score = iteration_result.second.score;
             partial_result_iter->second.finish_reason = iteration_result.second.finish_reason;

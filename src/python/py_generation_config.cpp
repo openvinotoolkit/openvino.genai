@@ -166,6 +166,10 @@ char generation_config_docstring[] = R"(
     echo:           if set to true, the model will echo the prompt in the output.
     logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                     Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+    logprob_token_ids: token IDs whose raw full-vocabulary log-probabilities (read before any sampling transform) are
+                    reported for each generated position in GenerationOutput.requested_token_logprobs.
+                    Greedy or multinomial sampling only, num_return_sequences must be 1; validate() rejects other combinations.
+                    Exposed only by ContinuousBatchingPipeline (read/read_all); LLMPipeline/VLMPipeline generate() do not carry it.
     apply_chat_template: whether to apply chat_template for non-chat scenarios
 
     repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
@@ -448,6 +452,7 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("stop_strings", &GenerationConfig::stop_strings)
         .def_readwrite("echo", &GenerationConfig::echo)
         .def_readwrite("logprobs", &GenerationConfig::logprobs)
+        .def_readwrite("logprob_token_ids", &GenerationConfig::logprob_token_ids)
         .def_readwrite("assistant_confidence_threshold", &GenerationConfig::assistant_confidence_threshold)
         .def_readwrite("num_assistant_tokens", &GenerationConfig::num_assistant_tokens)
         .def_readwrite("max_ngram_size", &GenerationConfig::max_ngram_size)
