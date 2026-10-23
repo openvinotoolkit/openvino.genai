@@ -1306,11 +1306,123 @@ ov::genai::GenerationConfig get_multinomial_config() {
     return multinomial_config;
 }
 
+namespace {
+
+template <typename Rewrite>
+std::string rewrite_template_expressions(const std::string& chat_template, Rewrite rewrite) {
+    const std::regex raw_start{R"(\{%[-+]?\s*raw\s*[-+]?%\})"};
+    const std::regex raw_end{R"(\{%[-+]?\s*endraw\s*[-+]?%\})"};
+    std::string rewritten;
+    size_t position = 0;
+    while (position < chat_template.size()) {
+        const size_t block_start = chat_template.find('{', position);
+        if (block_start == std::string::npos || block_start + 1 == chat_template.size()) {
+            rewritten.append(chat_template, position, std::string::npos);
+            break;
+        }
+        const char block_type = chat_template[block_start + 1];
+        if (block_type == '#') {
+            const size_t comment_end = chat_template.find("#}", block_start + 2);
+            const size_t end = comment_end == std::string::npos ? chat_template.size() : comment_end + 2;
+            rewritten.append(chat_template, position, end - position);
+            position = end;
+            continue;
+        }
+        std::match_results<std::string::const_iterator> match;
+        const auto begin = chat_template.cbegin() + block_start;
+        if (block_type == '%' && std::regex_search(begin, chat_template.cend(), match, raw_start,
+                                                  std::regex_constants::match_continuous)) {
+            const auto raw_content = begin + match.length();
+            const bool has_end = std::regex_search(raw_content, chat_template.cend(), match, raw_end);
+            const size_t end = has_end ? std::distance(chat_template.cbegin(), match[0].second) : chat_template.size();
+            rewritten.append(chat_template, position, end - position);
+            position = end;
+            continue;
+        }
+        if (block_type != '{' && block_type != '%') {
+            rewritten.append(chat_template, position, block_start + 1 - position);
+            position = block_start + 1;
+            continue;
+        }
+        const size_t expression_start = block_start + 2;
+        size_t expression_end = expression_start;
+        char quote = 0;
+        std::string closing_brackets;
+        for (; expression_end + 1 < chat_template.size(); ++expression_end) {
+            const char ch = chat_template[expression_end];
+            if (quote) {
+                if (ch == '\\')
+                    ++expression_end;
+                else if (ch == quote)
+                    quote = 0;
+            } else if (ch == '\'' || ch == '"') {
+                quote = ch;
+            } else if (closing_brackets.empty() && ch == (block_type == '{' ? '}' : '%') &&
+                       chat_template[expression_end + 1] == '}') {
+                break;
+            } else if (ch == '{' || ch == '[' || ch == '(') {
+                closing_brackets += ch == '{' ? '}' : ch == '[' ? ']' : ')';
+            } else if (!closing_brackets.empty() && ch == closing_brackets.back()) {
+                closing_brackets.pop_back();
+            }
+        }
+        if (expression_end + 1 >= chat_template.size()) {
+            rewritten.append(chat_template, position, std::string::npos);
+            break;
+        }
+        rewritten.append(chat_template, position, expression_start - position);
+        rewritten += rewrite(chat_template.substr(expression_start, expression_end - expression_start));
+        rewritten.append(chat_template, expression_end, 2);
+        position = expression_end + 2;
+    }
+    return rewritten;
+}
+
+}  // namespace
+
 void patch_chat_template_multiline_strings(Tokenizer& tokenizer) {
-    std::string chat_template = tokenizer.get_chat_template();
     const std::regex multiline_string_concatenation{R"("[ \t]*\r?\n[ \t]*")"};
-    chat_template = std::regex_replace(chat_template, multiline_string_concatenation, "");
-    tokenizer.set_chat_template(chat_template);
+    tokenizer.set_chat_template(std::regex_replace(tokenizer.get_chat_template(), multiline_string_concatenation, ""));
+}
+
+std::string join_multiline_string_literals(const std::string& chat_template) {
+    const std::regex quoted_literal{R"re("(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*')re"};
+    const std::regex multiline_gap{R"([ \t]*\r?\n[ \t]*)"};
+    return rewrite_template_expressions(chat_template, [&](const std::string& expression) {
+        std::string rewritten;
+        size_t position = 0;
+        bool previous_double_quote = false;
+        for (auto it = std::sregex_iterator(expression.begin(), expression.end(), quoted_literal);
+             it != std::sregex_iterator(); ++it) {
+            const auto gap = expression.substr(position, it->position() - position);
+            const auto literal = it->str();
+            if (previous_double_quote && literal.front() == '"' && std::regex_match(gap, multiline_gap)) {
+                rewritten.pop_back();
+                rewritten += literal.substr(1);
+            } else {
+                rewritten += gap + literal;
+            }
+            previous_double_quote = literal.front() == '"';
+            position = it->position() + it->length();
+        }
+        return rewritten + expression.substr(position);
+    });
+}
+
+std::string replace_is_undefined_tests(const std::string& chat_template) {
+    const std::regex quoted_literal_or_undefined{
+        R"re("(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|(\bis\s+undefined\b))re"};
+    return rewrite_template_expressions(chat_template, [&](const std::string& expression) {
+        std::string rewritten;
+        size_t position = 0;
+        for (auto it = std::sregex_iterator(expression.begin(), expression.end(), quoted_literal_or_undefined);
+             it != std::sregex_iterator(); ++it) {
+            rewritten.append(expression, position, it->position() - position);
+            rewritten += (*it)[1].matched ? "is not defined" : it->str();
+            position = it->position() + it->length();
+        }
+        return rewritten + expression.substr(position);
+    });
 }
 
 }  // namespace utils
