@@ -25,6 +25,10 @@ public:
         return m_generation_config;
     }
 
+    virtual std::optional<size_t> get_max_request_tokens() const {
+        return std::nullopt;
+    }
+
     void set_attention_backend(const std::string& attention_backend) {
         m_attention_backend = attention_backend;
     }

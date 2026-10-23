@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <future>
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
@@ -215,6 +216,18 @@ public:
 
     std::optional<AdapterConfig> get_pipeline_adapters() const override {
         return m_main_pipeline->get_pipeline_adapters();
+    }
+
+    std::optional<size_t> get_max_request_tokens() const override {
+        if (!m_main_pipeline && !m_draft_pipeline) {
+            return std::nullopt;
+        }
+        auto main_cap = m_main_pipeline ? m_main_pipeline->get_max_request_tokens() : std::nullopt;
+        auto draft_cap = m_draft_pipeline ? m_draft_pipeline->get_max_request_tokens() : std::nullopt;
+        if (main_cap.has_value() && draft_cap.has_value()) {
+            return std::min(*main_cap, *draft_cap);
+        }
+        return main_cap.has_value() ? main_cap : draft_cap;
     }
 
     bool has_non_finished_requests() override;

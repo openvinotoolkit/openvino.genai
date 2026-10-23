@@ -3302,3 +3302,86 @@ TEST(TestScheduler, clear_expected_num_scheduled_tokens_restores_default_schedul
     }
     sequence_group->finish_iteration();
 }
+
+class ContinuousBatchingImplTestHelper : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
+public:
+    ContinuousBatchingImplTestHelper(std::shared_ptr<ContinuousBatchingScheduler> scheduler) {
+        m_scheduler = scheduler;
+    }
+};
+
+TEST(TestScheduler, SchedulerExposesMaxRequestTokens) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.num_kv_blocks = 8;
+    scheduler_config.enable_prefix_caching = false;
+
+    auto orchestrator = init_cache_orchestrator(scheduler_config, TEST_BLOCK_SIZE);
+    ContinuousBatchingScheduler scheduler(orchestrator, scheduler_config);
+
+    const auto max_tokens = scheduler.get_max_request_tokens();
+    ASSERT_TRUE(max_tokens.has_value());
+    EXPECT_EQ(*max_tokens, 8 * TEST_BLOCK_SIZE);
+}
+
+TEST(TestScheduler, DynamicSchedulerReturnsNulloptMaxRequestTokens) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.num_kv_blocks = 0;
+    scheduler_config.cache_size = 0;
+
+    auto orchestrator = init_cache_orchestrator(scheduler_config, TEST_BLOCK_SIZE);
+    ContinuousBatchingScheduler scheduler(orchestrator, scheduler_config);
+
+    EXPECT_FALSE(scheduler.get_max_request_tokens().has_value());
+}
+
+TEST(TestScheduler, PromptLengthAtCapacityBoundary) {
+    SchedulerConfig scheduler_config;
+    constexpr size_t num_kv_blocks = 8;
+    scheduler_config.num_kv_blocks = num_kv_blocks;
+    scheduler_config.enable_prefix_caching = false;
+
+    auto orchestrator = init_cache_orchestrator(scheduler_config, TEST_BLOCK_SIZE);
+    auto scheduler = std::make_shared<ContinuousBatchingScheduler>(orchestrator, scheduler_config);
+
+    ContinuousBatchingImplTestHelper pipeline(scheduler);
+
+    const auto max_tokens = pipeline.get_max_request_tokens();
+    ASSERT_TRUE(max_tokens.has_value());
+    const size_t capacity = *max_tokens;
+    EXPECT_EQ(capacity, num_kv_blocks * TEST_BLOCK_SIZE);
+
+    GenerationConfig config = utils::get_greedy_config();
+
+    // Case A: Prompt length equal to exact cache token capacity is accepted
+    std::vector<int64_t> tokens_at_capacity(capacity, 1);
+    ov::Tensor input_at_capacity(ov::element::i64, {1, capacity}, tokens_at_capacity.data());
+    EXPECT_NO_THROW(pipeline.add_request(1, input_at_capacity, config));
+
+    // Case B: Prompt length exceeding capacity by 1 token is rejected before prefill with descriptive error
+    std::vector<int64_t> tokens_over_capacity(capacity + 1, 1);
+    ov::Tensor input_over_capacity(ov::element::i64, {1, capacity + 1}, tokens_over_capacity.data());
+    try {
+        pipeline.add_request(2, input_over_capacity, config);
+        FAIL() << "Expected ov::Exception for prompt length exceeding capacity";
+    } catch (const ov::Exception& e) {
+        const std::string message(e.what());
+        EXPECT_NE(message.find("exceeds the maximum token capacity"), std::string::npos) << message;
+        EXPECT_NE(message.find(std::to_string(capacity + 1)), std::string::npos) << message;
+        EXPECT_NE(message.find(std::to_string(capacity)), std::string::npos) << message;
+    }
+
+    // Case C: Dynamic allocation has no fixed limit and accepts requests without capacity rejection
+    SchedulerConfig dynamic_config;
+    dynamic_config.num_kv_blocks = 0;
+    dynamic_config.cache_size = 0;
+
+    auto dynamic_orchestrator = init_cache_orchestrator(dynamic_config, TEST_BLOCK_SIZE);
+    auto dynamic_scheduler = std::make_shared<ContinuousBatchingScheduler>(dynamic_orchestrator, dynamic_config);
+
+    ContinuousBatchingImplTestHelper dynamic_pipeline(dynamic_scheduler);
+    EXPECT_FALSE(dynamic_pipeline.get_max_request_tokens().has_value());
+
+    std::vector<int64_t> long_tokens(capacity + 10, 1);
+    ov::Tensor dynamic_input(ov::element::i64, {1, long_tokens.size()}, long_tokens.data());
+    EXPECT_NO_THROW(dynamic_pipeline.add_request(3, dynamic_input, config));
+}
