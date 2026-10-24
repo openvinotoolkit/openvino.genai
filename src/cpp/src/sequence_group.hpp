@@ -295,6 +295,10 @@ public:
         return m_generated_ids;
     }
 
+    const std::vector<std::vector<std::pair<int64_t, float>>> & get_requested_token_logprobs() const {
+        return m_requested_token_logprobs;
+    }
+
     const LogProbs & get_generated_log_probs() const {
         return m_generated_log_probs;
     }
