@@ -1016,6 +1016,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
         result.m_generation_ids.resize(num_outputs);
         result.m_scores.resize(num_outputs);
         result.m_finish_reasons.resize(num_outputs, GenerationFinishReason::NONE);
+        result.m_requested_token_logprobs.resize(num_outputs);
         result.m_status = request->get_generation_stream()->get_status();
 
         // Always collect intermediate hidden states when model outputs them.
@@ -1034,6 +1035,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
             std::copy(generated_ids.begin(), generated_ids.end(), std::back_inserter(result.m_generation_ids[i]));
             result.m_scores[i] = score;
             result.m_finish_reasons[i] = sequence->get_finish_reason();
+            result.m_requested_token_logprobs[i] = sequence->get_requested_token_logprobs();
             if (result.m_finish_reasons[i] == GenerationFinishReason::NONE && request->handle_stopped()) {
                 result.m_finish_reasons[i] = request->get_generation_stream()->get_finish_reason();
             }

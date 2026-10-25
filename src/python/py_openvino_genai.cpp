@@ -143,7 +143,8 @@ PYBIND11_MODULE(py_openvino_genai, m) {
         .def_readonly("scores", &EncodedResults::scores)
         .def_readonly("perf_metrics", &EncodedResults::perf_metrics)
         .def_readonly("finish_reasons", &EncodedResults::finish_reasons)
-        .def_readonly("extended_perf_metrics", &EncodedResults::extended_perf_metrics);
+        .def_readonly("extended_perf_metrics", &EncodedResults::extended_perf_metrics)
+        .def_readonly("requested_token_logprobs", &EncodedResults::requested_token_logprobs);
 
     init_lora_adapter(m);
     init_parsers(m);

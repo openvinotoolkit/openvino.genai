@@ -1757,6 +1757,19 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
     OPENVINO_ASSERT(logits_shape.size() == 3);
     size_t vocab_size = logits_shape[2];
 
+    // Validate requested-token IDs before creating any request context: an out-of-range ID must
+    // not leave a persistent context (with its LogitProcessor) in m_request_contexts for the next
+    // generate() to reuse (stateful pipelines reuse request ID 0).
+    for (const auto& sequence_group : sequence_groups) {
+        if (!sequence_group->is_scheduled())
+            continue;
+        const auto& sampling_params = sequence_group->get_sampling_parameters();
+        for (const auto requested_token_id : sampling_params.logprob_token_ids) {
+            OPENVINO_ASSERT(requested_token_id >= 0 && static_cast<size_t>(requested_token_id) < vocab_size,
+                            "logprob_token_id is out of vocabulary range: ", requested_token_id);
+        }
+    }
+
     SamplerOutput sampler_output;
     std::unordered_map<uint64_t, std::future<SequenceGroupSamplingInfo>> sg_sampling_future_map;
     struct SamplingFuturesWaiter {

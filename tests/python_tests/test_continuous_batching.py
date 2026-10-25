@@ -400,6 +400,33 @@ def test_logprob_token_ids_config_loading():
     assert cfg.logprob_token_ids == [id_a, id_b]
 
 
+def test_logprob_token_ids_encoded_results(model_facebook_opt_125m: OVConvertedModelSchema):
+    # Identical encoded requests must return identical result contents regardless of backend:
+    # the synchronous encoded generate() must expose requested_token_logprobs on the paged-attention
+    # (continuous batching) adapter exactly as on the stateful pipeline. Encoded (tensor) inputs
+    # are required: a plain string prompt returns a decoded string for a single sequence.
+    model_path = model_facebook_opt_125m.models_path
+    id_a, id_b = 100, 200
+    cfg = GenerationConfig(max_new_tokens=4, logprob_token_ids=[id_a, id_b])
+    prompt_ids = model_facebook_opt_125m.hf_tokenizer("The Sun is", add_special_tokens=True)["input_ids"]
+    input_ids = ov.Tensor(np.array([prompt_ids], dtype=np.int64))
+
+    stateful = create_ov_pipeline(model_path, pipeline_type=PipelineType.STATEFUL).generate(input_ids, generation_config=cfg)
+    cb = create_ov_pipeline(model_path, pipeline_type=PipelineType.PAGED_ATTENTION).generate(input_ids, generation_config=cfg)
+
+    assert stateful.requested_token_logprobs  # sanity: the stateful pipeline already fills this
+    assert cb.tokens == stateful.tokens
+    # The two attention backends round the logits differently, so compare the requested logprobs
+    # with a tolerance (the same 1e-3 as the HF reference comparison in this file).
+    assert len(cb.requested_token_logprobs) == len(stateful.requested_token_logprobs)
+    for cb_seq, sf_seq in zip(cb.requested_token_logprobs, stateful.requested_token_logprobs):
+        assert len(cb_seq) == len(sf_seq)
+        for cb_row, sf_row in zip(cb_seq, sf_seq):
+            assert [tid for tid, _ in cb_row] == [tid for tid, _ in sf_row]
+            for (_tid, cb_lp), (_sfid, sf_lp) in zip(cb_row, sf_row):
+                assert abs(cb_lp - sf_lp) < 1e-3
+
+
 def test_logprob_token_ids_rejected(model_facebook_opt_125m: OVConvertedModelSchema):
     model_path = model_facebook_opt_125m.models_path
     id_a, id_b = 100, 200
@@ -425,6 +452,20 @@ def test_logprob_token_ids_rejected(model_facebook_opt_125m: OVConvertedModelSch
     with pytest.raises(Exception, match="out of vocabulary range"):
         stateful_pipe.generate("The Sun is",
                                generation_config=GenerationConfig(max_new_tokens=2, logprob_token_ids=[10**9]))
+
+    # A rejected request must not leave stale sampler state behind: a follow-up request on the
+    # same stateful pipeline (multinomial sampling, fixed seed) must produce exactly what a fresh
+    # pipeline produces. A stale greedy LogitProcessor from the rejected request would skip the
+    # temperature transform and diverge.
+    follow_up_cfg = GenerationConfig(max_new_tokens=8, do_sample=True, temperature=1.7,
+                                     rng_seed=42, logprob_token_ids=[id_a, id_b])
+    prompt_ids = stateful_pipe.get_tokenizer().encode("The Sun is", add_special_tokens=True).input_ids.data[0].tolist()
+    input_ids = ov.Tensor(np.array([prompt_ids], dtype=np.int64))
+    follow_up = stateful_pipe.generate(input_ids, generation_config=follow_up_cfg)
+    fresh_pipe = create_ov_pipeline(model_path, pipeline_type=PipelineType.STATEFUL)
+    fresh = fresh_pipe.generate(input_ids, generation_config=follow_up_cfg)
+    assert follow_up.tokens[0] and follow_up.tokens[0] == fresh.tokens[0]
+    assert follow_up.requested_token_logprobs[0] == fresh.requested_token_logprobs[0]
 
     # A speculative pipeline rejects logprob_token_ids at add_request: a per-request config does not
     # carry the pipeline's assistant settings, so validate() passes and the rejection must happen at

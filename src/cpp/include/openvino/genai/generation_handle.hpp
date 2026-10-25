@@ -63,6 +63,10 @@ struct EncodedGenerationResult {
     // Full prompt + generated token IDs (needed for talker input construction).
     // Outer vector: per return sequence, aligned with m_intermediate_hidden_states.
     std::vector<std::vector<int64_t>> m_full_token_ids;
+
+    // Per-position logprobs of GenerationConfig::logprob_token_ids, per return sequence, aligned
+    // with m_generation_ids. Empty when the feature is disabled.
+    std::vector<std::vector<std::vector<std::pair<int64_t, float>>>> m_requested_token_logprobs;
 };
 
 struct GenerationResult {

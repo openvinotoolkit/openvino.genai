@@ -1508,6 +1508,9 @@ class EncodedResults:
     def perf_metrics(self) -> PerfMetrics:
         ...
     @property
+    def requested_token_logprobs(self) -> list[list[list[tuple[int, float]]]]:
+        ...
+    @property
     def scores(self) -> list[float]:
         ...
     @property
