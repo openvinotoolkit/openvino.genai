@@ -1,6 +1,6 @@
 ---
 name: llm-bench-fail-analyzer
-description: "Analyze failed llm_bench execution results for a model. Use when: checking llm_bench log, troubleshooting llm_bench fails."
+description: "Analyze a failed llm_bench (tools/llm_bench) run for a model on the transformers, optimum-intel or GenAI backend, and suggest a fix. Use when: llm_bench crashes or reports an error for a model, checking llm_bench logs, troubleshooting llm_bench failures."
 argument-hint: "model_dir and log_info (e.g. /path/to/tencent_HY-MT1.5-1.8B /path/to/logs/for/llm_bench)"
 ---
 

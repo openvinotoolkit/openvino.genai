@@ -1,6 +1,6 @@
 ---
 name: wwb-fail-analyzer
-description: "Analyze results of WWB execution with a specific model with all possible backends. Use when: checking wwb logs, troubleshooting wwb fails."
+description: "Analyze a failed who-what-benchmark (WWB, tools/who_what_benchmark) run for a model on the transformers, optimum-intel or GenAI backend, and suggest a fix. Use when: WWB crashes or reports an error for a model, checking WWB logs, troubleshooting WWB failures."
 argument-hint: "model_id and log_info (e.g. tencent/HY-MT1.5-1.8B /path/to/folder/with/logs/wwb/)"
 ---
 

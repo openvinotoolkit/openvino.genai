@@ -1,6 +1,6 @@
 ---
 name: vlm-model-enabler
-description: "Enables VLM models for GenAI VLM pipelines."
+description: "Enable a new vision-language model in the GenAI VLM pipeline (src/cpp/src/visual_language/) in 4 steps with checkpoints, starting from the model-analysis report. Use when: adding an image-text-to-text model that VLMPipeline does not support yet, or resuming an enablement run in .model_enabler/<model_type>/."
 argument-hint: "HuggingFace model_id and task (e.g. google/gemma-3n-E2B-it image-text-to-text), or a path to an already converted OpenVINO IR model directory (model_dir)."
 ---
 
