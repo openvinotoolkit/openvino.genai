@@ -713,3 +713,26 @@ TEST(TopKThenTemperatureTest, DeferredExpfPathTemperatureOneIsNoOp) {
         EXPECT_EQ(logits.m_vector[i].m_log_prob, before[i].m_log_prob);
     }
 }
+
+// Speculative decoding removes rejected draft tokens from the generated history. Token 3 keeps one of its two
+// occurrences and stays penalized; token 4 loses its only one and must not be penalized any more.
+TEST(LogitProcessorGeneratedHistory, PenalizesOnlyTokensThatRemainAfterRemoval) {
+    GenerationConfig repetition;
+    repetition.repetition_penalty = 2.0f;
+    GenerationConfig presence;
+    presence.presence_penalty = 0.5f;
+    for (const auto& config : {repetition, presence}) {
+        LogitProcessor processor(config, TokenIds{0});
+        for (const int64_t token : {3, 3, 4}) {
+            processor.register_new_generated_token(token);
+        }
+        processor.decrease_generated_token_occurance(3);
+        processor.decrease_generated_token_occurance(4);
+
+        float input[]{1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
+        Logits logits(input, 5);
+        processor.apply(logits);
+        EXPECT_NEAR(input[3], 0.5f, 1e-6f);
+        EXPECT_NEAR(input[4], 1.0f, 1e-6f);
+    }
+}
