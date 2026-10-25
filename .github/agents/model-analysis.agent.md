@@ -1,5 +1,5 @@
 ---
-description: "Static analysis of a HuggingFace or OpenVINO IR model. Reads source code and writes only to .model_analysis/ (the IR export and the report). Use when: understanding model architecture, inspecting IR sub-models, comparing transformers/optimum-intel implementations, scoping enablement work. For pass/fail validation use model-checker."
+description: "Static analysis of a HuggingFace or OpenVINO IR model. Reads source code and writes its outputs only under .model_analysis/ (IR export, helper scripts, report). Use when: understanding model architecture, inspecting IR sub-models, comparing transformers/optimum-intel implementations, scoping enablement work. For pass/fail validation use model-checker."
 tools: [read, edit, search, execute, todo]
 argument-hint: "<model_id_or_ir_path> [task]  e.g. google/gemma-3-4b-it image-text-to-text"
 ---
