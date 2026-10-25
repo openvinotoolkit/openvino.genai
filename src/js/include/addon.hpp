@@ -18,6 +18,7 @@ struct AddonData {
     Napi::FunctionReference text2image_pipeline;
     Napi::FunctionReference image2image_pipeline;
     Napi::FunctionReference inpainting_pipeline;
+    Napi::FunctionReference text2video_pipeline;
     Napi::FunctionReference tokenizer;
     Napi::FunctionReference perf_metrics;
     Napi::FunctionReference vlm_perf_metrics;

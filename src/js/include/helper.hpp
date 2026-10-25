@@ -21,6 +21,8 @@
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
 #include "openvino/genai/speech_generation/speech_generation_perf_metrics.hpp"
 #include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
+#include "openvino/genai/video_generation/generation_config.hpp"
+#include "openvino/genai/video_generation/text2video_pipeline.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "openvino/openvino.hpp"
 
@@ -166,6 +168,10 @@ std::vector<ov::genai::VideoMetadata> js_to_cpp<std::vector<ov::genai::VideoMeta
 template <>
 ov::genai::ImageGenerationConfig js_to_cpp<ov::genai::ImageGenerationConfig>(const Napi::Env& env,
                                                                               const Napi::Value& value);
+/** @brief Builds a new VideoGenerationConfig from the properties set on a JS object. */
+template <>
+ov::genai::VideoGenerationConfig js_to_cpp<ov::genai::VideoGenerationConfig>(const Napi::Env& env,
+                                                                             const Napi::Value& value);
 template <>
 std::vector<ov::Tensor> js_to_cpp<std::vector<ov::Tensor>>(const Napi::Env& env, const Napi::Value& value);
 /**
@@ -331,6 +337,14 @@ Napi::Value cpp_to_js<ov::genai::ImageGenerationConfig, Napi::Value>(
     const ov::genai::ImageGenerationConfig& config);
 
 template <>
+Napi::Value cpp_to_js<ov::genai::VideoGenerationConfig, Napi::Value>(const Napi::Env& env,
+                                                                     const ov::genai::VideoGenerationConfig& config);
+
+template <>
+Napi::Value cpp_to_js<ov::genai::VideoGenerationResult, Napi::Value>(const Napi::Env& env,
+                                                                     const ov::genai::VideoGenerationResult& result);
+
+template <>
 Napi::Value cpp_to_js<ov::genai::RawImageGenerationPerfMetrics, Napi::Value>(
     const Napi::Env& env,
     const ov::genai::RawImageGenerationPerfMetrics& metrics);
@@ -364,6 +378,11 @@ Napi::Object cpp_map_to_js_object(const Napi::Env& env, const std::map<std::stri
 }
 
 bool is_napi_value_int(const Napi::Env& env, const Napi::Value& num);
+
+/** @brief Applies the properties set on a JS object to an existing VideoGenerationConfig. */
+void update_video_generation_config(const Napi::Env& env,
+                                    const Napi::Value& value,
+                                    ov::genai::VideoGenerationConfig& config);
 
 bool is_chat_history(const Napi::Env& env, const Napi::Value& value);
 

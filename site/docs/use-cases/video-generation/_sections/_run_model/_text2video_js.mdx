@@ -1,0 +1,31 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="javascript" showLineNumbers>
+{`import { mkdir, writeFile } from 'node:fs/promises';
+import bmp from 'bmp-js';
+import { Text2VideoPipeline } from 'openvino-genai-node';
+
+const pipeline = await Text2VideoPipeline(modelPath, '${props.device || 'CPU'}');
+const { video } = await pipeline.generate(prompt);
+
+// Save the frames of the first video as BMP files
+const [, numFrames, height, width] = video.getShape();
+const frameSize = height * width * 3;
+await mkdir('frames', { recursive: true });
+
+for (let f = 0; f < numFrames; f++) {
+  const rgb = video.data.subarray(f * frameSize, (f + 1) * frameSize);
+  const abgr = Buffer.allocUnsafe(width * height * 4);
+
+  for (let src = 0, dst = 0; src < rgb.length; src += 3, dst += 4) {
+    abgr[dst] = 255;              // A
+    abgr[dst + 1] = rgb[src + 2]; // B
+    abgr[dst + 2] = rgb[src + 1]; // G
+    abgr[dst + 3] = rgb[src];     // R
+  }
+
+  const bmpData = bmp.encode({ width, height, data: abgr });
+  await writeFile(\`frames/frame_\${String(f).padStart(3, '0')}.bmp\`, bmpData.data);
+}
+`}
+</CodeBlock>

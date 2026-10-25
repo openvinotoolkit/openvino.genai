@@ -262,3 +262,9 @@ export interface ImageGenerationPerfMetrics {
  * @deprecated Use `ImageGenerationPerfMetrics` instead.
  */
 export type Text2ImagePerfMetrics = ImageGenerationPerfMetrics;
+
+/**
+ * Holds performance metrics for each video generate call.
+ * Video generation reports the same metrics as image generation.
+ */
+export type VideoGenerationPerfMetrics = ImageGenerationPerfMetrics;

@@ -1,0 +1,31 @@
+// Copyright (C) 2023-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+#pragma once
+
+#include <atomic>
+
+#include <napi.h>
+
+#include "openvino/genai/video_generation/text2video_pipeline.hpp"
+
+class Text2VideoPipelineWrapper : public Napi::ObjectWrap<Text2VideoPipelineWrapper> {
+public:
+    Text2VideoPipelineWrapper(const Napi::CallbackInfo& info);
+    static Napi::Function get_class(Napi::Env env);
+
+    Napi::Value init(const Napi::CallbackInfo& info);
+    Napi::Value generate(const Napi::CallbackInfo& info);
+    Napi::Value decode(const Napi::CallbackInfo& info);
+    Napi::Value get_generation_config(const Napi::CallbackInfo& info);
+    Napi::Value set_generation_config(const Napi::CallbackInfo& info);
+
+private:
+    std::shared_ptr<ov::genai::Text2VideoPipeline> pipe = nullptr;
+    std::shared_ptr<std::atomic<bool>> is_initializing = std::make_shared<std::atomic<bool>>(false);
+    // Guards both generate() and decode(): set while either runs the shared inference request.
+    std::shared_ptr<std::atomic<bool>> is_busy = std::make_shared<std::atomic<bool>>(false);
+    // Set for the whole generate(), including while suspended in a step callback, so a nested
+    // generate() is rejected even though decode() is permitted during the callback.
+    std::shared_ptr<std::atomic<bool>> is_generating = std::make_shared<std::atomic<bool>>(false);
+};

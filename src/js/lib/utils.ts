@@ -3,6 +3,7 @@
 
 import type { Parser } from "./parsers.js";
 import type { Tensor } from "openvino-node";
+import type { VideoGenerationPerfMetrics } from "./perfMetrics.js";
 
 export enum StreamingStatus {
   RUNNING,
@@ -558,6 +559,63 @@ export type Text2ImagePipelineProperties = Record<string, unknown>;
 export type Image2ImagePipelineProperties = Record<string, unknown>;
 
 export type InpaintingPipelineProperties = Record<string, unknown>;
+
+/**
+ * Video generation config. Fields that are not set keep their current values.
+ * Optional fields can be set to `null` to unset them.
+ */
+export type VideoGenerationConfig = {
+  /** Negative prompt. Ignored when `guidance_scale` is 1 or lower. */
+  negative_prompt?: string | null;
+  /** Number of videos to generate for a single prompt. */
+  num_videos_per_prompt?: Uint;
+  /** Guidance scale used during denoising. */
+  guidance_scale?: number;
+  /** Output video height in pixels. -1 uses the model default. */
+  height?: number;
+  /** Output video width in pixels. -1 uses the model default. */
+  width?: number;
+  /** Number of denoising steps. -1 uses the model default. */
+  num_inference_steps?: number;
+  /** Maximum sequence length for the T5 text encoder. -1 uses the model default. */
+  max_sequence_length?: number;
+  /** Guidance rescale factor, 0 disables rescaling. Unset uses the model default. */
+  guidance_rescale?: number | null;
+  /** Number of video frames to generate. 0 uses the model default. */
+  num_frames?: Uint;
+  /** Video frame rate. Unset uses the model default. */
+  frame_rate?: number | null;
+  /** Guidance scale for the audio modality. Unset uses `guidance_scale`. */
+  audio_guidance_scale?: number | null;
+  /** (LTX-2.3) Spatio-Temporal Guidance scale. 0 disables it. */
+  stg_scale?: number | null;
+  /** Spatio-Temporal Guidance scale for the audio modality. 0 disables the audio term. */
+  audio_stg_scale?: number | null;
+  /** (LTX-2.3) Modality isolation guidance scale. 1 or lower disables it. */
+  modality_scale?: number | null;
+  /** Modality isolation guidance scale for the audio modality. 1 or lower disables the audio term. */
+  audio_modality_scale?: number | null;
+  /** Guidance rescale factor for the audio modality. */
+  audio_guidance_rescale?: number | null;
+  /** Transformer block indices perturbed by Spatio-Temporal Guidance. */
+  spatio_temporal_guidance_blocks?: number[] | null;
+};
+
+export type Text2VideoPipelineProperties = Record<string, unknown>;
+
+export type VideoGenerationResult = {
+  /** Generated video tensor with shape `[num_videos, num_frames, H, W, 3]` and `u8` RGB pixels. */
+  video: Tensor;
+  /** Performance metrics of the call that produced the video. */
+  perfMetrics: VideoGenerationPerfMetrics;
+  /**
+   * Generated audio waveform with shape `[num_videos, num_channels, num_samples]` and `f32` samples.
+   * `undefined` for models without audio.
+   */
+  audio?: Tensor;
+  /** Sample rate of `audio` in Hz, `0` for models without audio. */
+  audioSampleRate: number;
+};
 
 /**
  * Callback for image generation, called once per denoising step.
