@@ -4,6 +4,7 @@
 #include "visual_language/qwen3_vl/classes.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <numeric>
 
 #include "utils.hpp"
@@ -148,11 +149,24 @@ std::pair<ov::Tensor, ov::Tensor> get_position_interpolation_indices_and_weights
         const float h_scale = h > 1 ? static_cast<float>(num_grid_per_side - 1) / (h - 1) : 0.0f;
         const float w_scale = w > 1 ? static_cast<float>(num_grid_per_side - 1) / (w - 1) : 0.0f;
 
+        // Match torch.linspace's endpoint-based rounding for vision position interpolation.
         for (size_t i = 0; i < h; ++i) {
-            h_idxs[i] = static_cast<float>(i) * h_scale;
+            if (h == 1 || i < h / 2) {
+                h_idxs[i] = static_cast<float>(i) * h_scale;
+            } else {
+                h_idxs[i] = std::fma(-h_scale,
+                                     static_cast<float>(h - i - 1),
+                                     static_cast<float>(num_grid_per_side - 1));
+            }
         }
         for (size_t i = 0; i < w; ++i) {
-            w_idxs[i] = static_cast<float>(i) * w_scale;
+            if (w == 1 || i < w / 2) {
+                w_idxs[i] = static_cast<float>(i) * w_scale;
+            } else {
+                w_idxs[i] = std::fma(-w_scale,
+                                     static_cast<float>(w - i - 1),
+                                     static_cast<float>(num_grid_per_side - 1));
+            }
         }
 
         // Compute floor/ceil indices and interpolation weights
