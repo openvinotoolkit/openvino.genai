@@ -13,7 +13,7 @@ Follow these rules when writing, modifying, or reviewing code in this repository
 3. In checks on user input, the error message names the wrong value and the expected one. Don't add a comment that repeats the message.
 4. Don't remove an existing exception or error path, and don't turn it into a warning or a no-op. This doesn't apply to a PR that supports a case the check used to reject and tests that case.
 5. Don't add try/catch blocks just to be safe. Catch only an exception that is expected and handled. Catch-all blocks at the C and JS binding boundaries, which turn exceptions into status codes or JS errors, are expected.
-6. An `ov::Tensor` from `InferRequest::get_tensor()` is a view into the request's buffer, and the next `infer()` on that request overwrites it. Flag such a tensor that is kept (in a member, a cache or chat history) and read after the next `infer()` without a copy.
+6. An output `ov::Tensor` from `InferRequest::get_tensor()` is a view into the request's buffer, and the next `infer()` on that request overwrites it. Flag such a tensor that is kept (in a member, a cache or chat history) and read after the next `infer()` without a deep copy of its data. Copying the `ov::Tensor` handle still shares the buffer. Reusing an input tensor from `get_tensor()` is fine.
 7. `tensor.data<T>()` checks the element type internally, so don't ask for an assert on `get_element_type()` before it. It doesn't check bounds: check indices that come from user input or model output (for example, token ids) against `get_size()` or the shape.
 8. When you move code into a new function, keep its behavior the same.
 
