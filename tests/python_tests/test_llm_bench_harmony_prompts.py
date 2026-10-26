@@ -11,6 +11,7 @@ LLM_BENCH_DIR = Path(__file__).parents[2] / "tools" / "llm_bench"
 sys.path.insert(0, str(LLM_BENCH_DIR))
 
 from task.text_generation import (
+    _get_legacy_chat_history,
     _is_harmony_template,
     _should_apply_chat_template,
     apply_chat_template_genai,
@@ -69,6 +70,52 @@ def test_harmony_template_preserves_legacy_system_role(system_message):
     assert apply_chat_template_genai(args, prompt, HarmonyTokenizer()) == [
         f"<|start|>system:{system_message}|user:Question<|start|>assistant"
     ]
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "<|user|>Hi<|end|><|assistant|>Hello!<|end|><|user|>Summarize X.<|end|><|assistant|>",
+        "<|system|>Rules<|end|><|user|>Hi<|end|><|assistant|>Hello!<|end|><|user|>Summarize X.<|end|><|assistant|>",
+        "<|im_start|>user\nHi<|im_end|><|im_start|>assistant\nHello!<|im_end|>"
+        "<|im_start|>user\nSummarize X.<|im_end|><|im_start|>assistant\n",
+        "<|im_start|>system\nRules<|im_end|><|im_start|>user\nHi<|im_end|>"
+        "<|im_start|>assistant\nHello!<|im_end|><|im_start|>user\nSummarize X.<|im_end|>"
+        "<|im_start|>assistant\n",
+    ],
+)
+def test_legacy_normalizer_rejects_multiturn_prompt(prompt):
+    assert _get_legacy_chat_history(prompt) is None
+
+
+@pytest.mark.parametrize(
+    "control_token", ["<|system|>", "<|user|>", "<|assistant|>", "<|end|>", "<|im_start|>", "<|im_end|>"]
+)
+@pytest.mark.parametrize("role", ["system", "user"])
+@pytest.mark.parametrize("prompt_format", ["legacy", "chatml"])
+def test_legacy_normalizer_rejects_embedded_control_tokens(control_token, role, prompt_format):
+    system_content = f"Before {control_token} after" if role == "system" else "Rules"
+    user_content = f"Before {control_token} after" if role == "user" else "Question"
+    if prompt_format == "chatml":
+        prompt = (
+            f"<|im_start|>system\n{system_content}<|im_end|>"
+            f"<|im_start|>user\n{user_content}<|im_end|><|im_start|>assistant\n"
+        )
+    else:
+        prompt = f"<|system|>{system_content}<|end|><|user|>{user_content}<|end|><|assistant|>"
+    assert _get_legacy_chat_history(prompt) is None
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+@pytest.mark.parametrize("include_system", [False, True])
+def test_phi_role_separator_does_not_change_content(newline, include_system):
+    system_content = " Be brief.\n\nKeep names. "
+    user_content = " Summarize X.\n\nKeep facts. "
+    system = f"<|system|>{newline}{system_content}<|end|>{newline}" if include_system else ""
+    prompt = f"{system}<|user|>{newline}{user_content}<|end|>{newline}<|assistant|>{newline}"
+    expected = [{"role": "system", "content": system_content}] if include_system else []
+    expected.append({"role": "user", "content": user_content})
+    assert _get_legacy_chat_history(prompt) == expected
 
 
 @pytest.mark.parametrize("separator", ["<|im_sep|>", "\n", "\r\n"])

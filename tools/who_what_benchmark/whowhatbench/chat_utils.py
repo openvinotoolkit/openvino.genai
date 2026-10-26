@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 _HARMONY_TEMPLATE_MARKERS = ("<|meta_sep|>", "<|channel|>")
 _HARMONY_PROMPT_PREFIX = "<|start|>"
+_LEGACY_CHAT_CONTROL_TOKENS = ("<|system|>", "<|user|>", "<|assistant|>", "<|end|>", "<|im_start|>", "<|im_end|>")
 
 
 def is_harmony_template(tokenizer: Any) -> bool:
@@ -41,12 +42,12 @@ def normalize_chat_history(input_text: str, tokenizer: Any) -> list[dict[str, st
     if is_harmony_template(tokenizer):
         patterns = (
             re.compile(
-                r"^<\|system\|>(?P<system>.*?)<\|end\|>\s*"
-                r"<\|user\|>(?P<user>.*?)<\|end\|>\s*<\|assistant\|>\s*$",
+                r"^<\|system\|>(?:\r?\n)?(?P<system>.*?)<\|end\|>\s*"
+                r"<\|user\|>(?:\r?\n)?(?P<user>.*?)<\|end\|>\s*<\|assistant\|>\s*$",
                 re.DOTALL,
             ),
             re.compile(
-                r"^<\|user\|>(?P<user>.*?)<\|end\|>\s*<\|assistant\|>\s*$",
+                r"^<\|user\|>(?:\r?\n)?(?P<user>.*?)<\|end\|>\s*<\|assistant\|>\s*$",
                 re.DOTALL,
             ),
             re.compile(
@@ -64,6 +65,11 @@ def normalize_chat_history(input_text: str, tokenizer: Any) -> list[dict[str, st
 
             system_message = match.groupdict().get("system")
             user_message = match.group("user")
+            if any(
+                token in user_message or (system_message is not None and token in system_message)
+                for token in _LEGACY_CHAT_CONTROL_TOKENS
+            ):
+                continue
             history = []
             if system_message is not None:
                 history.append({"role": "system", "content": system_message})

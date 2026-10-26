@@ -190,6 +190,52 @@ def test_normalizes_legacy_harmony_prompt(prompt, expected):
     assert normalize_chat_history(prompt, HarmonyTokenizer()) == expected
 
 
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "<|user|>Hi<|end|><|assistant|>Hello!<|end|><|user|>Summarize X.<|end|><|assistant|>",
+        "<|system|>Rules<|end|><|user|>Hi<|end|><|assistant|>Hello!<|end|><|user|>Summarize X.<|end|><|assistant|>",
+        "<|im_start|>user\nHi<|im_end|><|im_start|>assistant\nHello!<|im_end|>"
+        "<|im_start|>user\nSummarize X.<|im_end|><|im_start|>assistant\n",
+        "<|im_start|>system\nRules<|im_end|><|im_start|>user\nHi<|im_end|>"
+        "<|im_start|>assistant\nHello!<|im_end|><|im_start|>user\nSummarize X.<|im_end|>"
+        "<|im_start|>assistant\n",
+    ],
+)
+def test_multiturn_prompt_is_not_normalized_as_single_turn(prompt):
+    assert normalize_chat_history(prompt, HarmonyTokenizer()) == [{"role": "user", "content": prompt}]
+
+
+@pytest.mark.parametrize(
+    "control_token", ["<|system|>", "<|user|>", "<|assistant|>", "<|end|>", "<|im_start|>", "<|im_end|>"]
+)
+@pytest.mark.parametrize("role", ["system", "user"])
+@pytest.mark.parametrize("prompt_format", ["legacy", "chatml"])
+def test_embedded_control_tokens_are_not_normalized(control_token, role, prompt_format):
+    system_content = f"Before {control_token} after" if role == "system" else "Rules"
+    user_content = f"Before {control_token} after" if role == "user" else "Question"
+    if prompt_format == "chatml":
+        prompt = (
+            f"<|im_start|>system\n{system_content}<|im_end|>"
+            f"<|im_start|>user\n{user_content}<|im_end|><|im_start|>assistant\n"
+        )
+    else:
+        prompt = f"<|system|>{system_content}<|end|><|user|>{user_content}<|end|><|assistant|>"
+    assert normalize_chat_history(prompt, HarmonyTokenizer()) == [{"role": "user", "content": prompt}]
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+@pytest.mark.parametrize("include_system", [False, True])
+def test_phi_role_newlines_are_separators(newline, include_system):
+    system_content = " Be brief.\n\nKeep names. "
+    user_content = " Summarize X.\n\nKeep facts. "
+    system = f"<|system|>{newline}{system_content}<|end|>{newline}" if include_system else ""
+    prompt = f"{system}<|user|>{newline}{user_content}<|end|>{newline}<|assistant|>{newline}"
+    expected = [{"role": "system", "content": system_content}] if include_system else []
+    expected.append({"role": "user", "content": user_content})
+    assert normalize_chat_history(prompt, HarmonyTokenizer()) == expected
+
+
 @pytest.mark.parametrize("separator", ["<|im_sep|>", "\n", "\r\n"])
 @pytest.mark.parametrize("include_system", [False, True])
 def test_normalizes_chatml_separators(separator, include_system):
