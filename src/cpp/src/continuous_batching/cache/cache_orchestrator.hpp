@@ -4,6 +4,7 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <functional>
 #include <limits>
 #include <list>
@@ -807,7 +808,7 @@ public:
      * @return Maximum token capacity in tokens, or std::nullopt if dynamically allocated or unbounded.
      */
     std::optional<size_t> get_max_request_tokens() const {
-        if (m_is_dynamic_allocation) {
+        if (m_is_dynamic_allocation.load(std::memory_order_relaxed)) {
             return std::nullopt;
         }
         size_t min_capacity = std::numeric_limits<size_t>::max();
@@ -834,11 +835,7 @@ public:
     }
 
     void set_dynamic_allocation(bool is_dynamic) {
-        m_is_dynamic_allocation = is_dynamic;
-    }
-
-    bool is_dynamic_allocation() const {
-        return m_is_dynamic_allocation;
+        m_is_dynamic_allocation.store(is_dynamic, std::memory_order_relaxed);
     }
 
     // -----------------------------------------------------------------------
@@ -1230,7 +1227,7 @@ private:
 
     // Linear-attention pool footprint high-water mark.
     size_t m_linear_attention_pool_blocks_high_water = 0;
-    bool m_is_dynamic_allocation = false;
+    std::atomic<bool> m_is_dynamic_allocation{false};
 
     void queue_linear_attention_initial_state_zero(CacheType type,
                                                    BlockManager& block_mgr,

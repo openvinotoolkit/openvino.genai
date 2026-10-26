@@ -3352,16 +3352,29 @@ TEST(TestScheduler, PromptLengthAtCapacityBoundary) {
 
     GenerationConfig config = utils::get_greedy_config();
 
-    // Case A: Prompt length equal to exact cache token capacity is accepted
+    // Case A: Prompt length equal to capacity - 1 fits and leaves room for decoding
+    std::vector<int64_t> tokens_fitting(capacity - 1, 1);
+    ov::Tensor input_fitting(ov::element::i64, {1, capacity - 1}, tokens_fitting.data());
+    EXPECT_NO_THROW(pipeline.add_request(1, input_fitting, config));
+
+    // Case B1: Prompt length equal to exact cache token capacity is rejected before prefill
+    // (exact capacity leaves 0 free slots for generation, leading to decode starvation)
     std::vector<int64_t> tokens_at_capacity(capacity, 1);
     ov::Tensor input_at_capacity(ov::element::i64, {1, capacity}, tokens_at_capacity.data());
-    EXPECT_NO_THROW(pipeline.add_request(1, input_at_capacity, config));
+    try {
+        pipeline.add_request(2, input_at_capacity, config);
+        FAIL() << "Expected ov::Exception for prompt length equal to capacity";
+    } catch (const ov::Exception& e) {
+        const std::string message(e.what());
+        EXPECT_NE(message.find("exceeds the maximum token capacity"), std::string::npos) << message;
+        EXPECT_NE(message.find(std::to_string(capacity)), std::string::npos) << message;
+    }
 
-    // Case B: Prompt length exceeding capacity by 1 token is rejected before prefill with descriptive error
+    // Case B2: Prompt length exceeding capacity by 1 token is rejected before prefill with descriptive error
     std::vector<int64_t> tokens_over_capacity(capacity + 1, 1);
     ov::Tensor input_over_capacity(ov::element::i64, {1, capacity + 1}, tokens_over_capacity.data());
     try {
-        pipeline.add_request(2, input_over_capacity, config);
+        pipeline.add_request(3, input_over_capacity, config);
         FAIL() << "Expected ov::Exception for prompt length exceeding capacity";
     } catch (const ov::Exception& e) {
         const std::string message(e.what());
@@ -3383,5 +3396,41 @@ TEST(TestScheduler, PromptLengthAtCapacityBoundary) {
 
     std::vector<int64_t> long_tokens(capacity + 10, 1);
     ov::Tensor dynamic_input(ov::element::i64, {1, long_tokens.size()}, long_tokens.data());
-    EXPECT_NO_THROW(dynamic_pipeline.add_request(3, dynamic_input, config));
+    EXPECT_NO_THROW(dynamic_pipeline.add_request(4, dynamic_input, config));
+}
+
+TEST(TestScheduler, BatchedGenerateExceedingCapacityLeavesPipelineClean) {
+    SchedulerConfig scheduler_config;
+    constexpr size_t num_kv_blocks = 8;
+    scheduler_config.num_kv_blocks = num_kv_blocks;
+    scheduler_config.enable_prefix_caching = false;
+
+    auto orchestrator = init_cache_orchestrator(scheduler_config, TEST_BLOCK_SIZE);
+    auto scheduler = std::make_shared<ContinuousBatchingScheduler>(orchestrator, scheduler_config);
+
+    ContinuousBatchingImplTestHelper pipeline(scheduler);
+    const auto max_tokens = pipeline.get_max_request_tokens();
+    ASSERT_TRUE(max_tokens.has_value());
+    const size_t capacity = *max_tokens;
+
+    GenerationConfig config = utils::get_greedy_config();
+
+    // Prepare a batch where prompt 0 fits, but prompt 1 equals capacity (which cannot fit generation)
+    std::vector<int64_t> tokens_fitting(capacity - 1, 1);
+    ov::Tensor input_fitting(ov::element::i64, {1, capacity - 1}, tokens_fitting.data());
+
+    std::vector<int64_t> tokens_exceeding(capacity, 1);
+    ov::Tensor input_exceeding(ov::element::i64, {1, capacity}, tokens_exceeding.data());
+
+    std::vector<ov::Tensor> batch_inputs = {input_fitting, input_exceeding};
+    std::vector<GenerationConfig> batch_configs = {config, config};
+
+    // Calling generate should throw an exception due to input_exceeding
+    EXPECT_THROW(pipeline.generate(batch_inputs, batch_configs, {}), ov::Exception);
+
+    // Verify that the pipeline has no pending / awaiting requests leaked from prompt 0
+    EXPECT_FALSE(pipeline.has_non_finished_requests());
+
+    // Subsequent valid call succeeds without hitting "already in running state"
+    EXPECT_NO_THROW(pipeline.add_request(10, input_fitting, config));
 }

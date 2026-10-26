@@ -325,13 +325,12 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
 
     if (m_scheduler) {
         const auto max_request_tokens = m_scheduler->get_max_request_tokens();
-        if (max_request_tokens.has_value() && prompt_len > *max_request_tokens) {
-            OPENVINO_THROW("The requested prompt length (",
-                           prompt_len,
-                           " tokens) exceeds the maximum token capacity supported by the current cache configuration (",
-                           *max_request_tokens,
-                           " tokens). Increase cache_size / num_kv_blocks, reduce prompt length, or raise cache_interval_multiplier for hybrid models.");
-        }
+        OPENVINO_ASSERT(!max_request_tokens.has_value() || prompt_len < *max_request_tokens,
+                        "The requested prompt length (",
+                        prompt_len,
+                        " tokens) exceeds the maximum token capacity supported by the current cache configuration (",
+                        *max_request_tokens,
+                        " tokens). Increase cache_size / num_kv_blocks, reduce prompt length, or raise cache_interval_multiplier for hybrid models.");
     }
 
     std::shared_ptr<SequenceGroup> sequence_group;
@@ -912,9 +911,31 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
                 (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
         "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
 
-    std::vector<GenerationHandle> generations;
+    const auto max_request_tokens = get_max_request_tokens();
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
+        const size_t prompt_len = input_ids[request_id].get_shape().size() > 1
+                                      ? input_ids[request_id].get_shape()[1]
+                                      : input_ids[request_id].get_size();
+        auto sampling_params_copy = sampling_params[request_id];
+        if (sampling_params_copy.stop_token_ids.empty())
+            sampling_params_copy.stop_token_ids = m_generation_config.stop_token_ids;
+        if (sampling_params_copy.eos_token_id == -1)
+            sampling_params_copy.set_eos_token_id(m_generation_config.eos_token_id);
+        sampling_params_copy.validate();
+        OPENVINO_ASSERT(sampling_params_copy.max_length > prompt_len,
+                        "'max_length' must be greater than the number of prompt tokens");
+        OPENVINO_ASSERT(!max_request_tokens.has_value() || prompt_len < *max_request_tokens,
+                        "The requested prompt length (",
+                        prompt_len,
+                        " tokens) exceeds the maximum token capacity supported by the current cache configuration (",
+                        *max_request_tokens,
+                        " tokens). Increase cache_size / num_kv_blocks, reduce prompt length, or raise cache_interval_multiplier for hybrid models.");
+    }
+
+    std::vector<GenerationHandle> generations;
+    generations.reserve(input_ids.size());
+    for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         if (position_ids_list.has_value()) {
             const auto [position_ids, rope_delta] = (*position_ids_list)[request_id];
             m_inputs_embedder->set_position_ids(position_ids);

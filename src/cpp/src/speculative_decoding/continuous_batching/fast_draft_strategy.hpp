@@ -65,6 +65,17 @@ std::vector<EncodedGenerationResult> generate_common(
                         "lm_extra_inputs_list size must match input_ids size.");
     }
 
+    const auto max_tokens = self->get_max_request_tokens();
+    for (size_t rid = 0; rid < input_ids.size(); ++rid) {
+        const size_t prompt_len = input_ids[rid].get_shape().size() > 1 ? input_ids[rid].get_shape()[1] : input_ids[rid].get_size();
+        OPENVINO_ASSERT(!max_tokens.has_value() || prompt_len < *max_tokens,
+                        "The requested prompt length (",
+                        prompt_len,
+                        " tokens) exceeds the maximum token capacity supported by the current cache configuration (",
+                        *max_tokens,
+                        " tokens). Increase cache_size / num_kv_blocks, reduce prompt length, or raise cache_interval_multiplier for hybrid models.");
+    }
+
     std::vector<GenerationHandle> main_generations;
     for (size_t rid = 0; rid < input_ids.size(); ++rid) {
         GenerationConfig main_cfg = sampling_params[rid];

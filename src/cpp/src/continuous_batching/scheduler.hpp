@@ -975,7 +975,6 @@ private:
         // so the prompt phase can allocate without triggering _try_increase_cache.
         m_cache_orchestrator->grow_fixed_size_capacity(total_concurrent_seqs);
         m_dynamic_memory_allocation = true;
-        m_cache_orchestrator->set_dynamic_allocation(true);
     }
 
     // In dynamic-allocation mode, pre-grow the variable-size caches so a newly-arriving prompt
