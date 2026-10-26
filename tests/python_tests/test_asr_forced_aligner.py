@@ -11,12 +11,17 @@ import openvino_genai as ov_genai
 import pytest
 
 from utils.asr_utils.qwen3_asr import (
+    QWEN3_ASR_SPLIT_EXPORT_ATTENTION_BACKENDS,
     forced_aligner_audio,
     forced_aligner_model_path,
     make_broken_aligner,
     qwen3_asr_model_path,
+    qwen3_asr_split_model_path,
     shared_forced_aligner,
 )
+
+# The forced aligner is supported only in the split export, which requires the matching Optimum Intel version.
+pytestmark = pytest.mark.qwen3_asr_split_export
 
 
 FORCED_ALIGNER_REFERENCE_PATH = (
@@ -80,12 +85,12 @@ def test_asr_forced_aligner_bad_directory_rejected():
         ov_genai.ASRForcedAligner(qwen3_asr_model_path(), "CPU")
 
 
-# classify_num is model-configured and must match the decoder logits width.
+# classify_num is model-configured and must match the logits width.
 @pytest.mark.parametrize(
     "mutation,message",
     [
         ("non_positive", "classify_num must be a positive integer"),
-        ("width_mismatch", "decoder logits last dimension must equal classify_num"),
+        ("width_mismatch", "logits last dimension must equal classify_num"),
     ],
 )
 def test_asr_forced_aligner_invalid_classify_num_rejected(mutation, message, tmp_path):
@@ -104,13 +109,19 @@ def test_asr_forced_aligner_invalid_classify_num_rejected(mutation, message, tmp
 
 
 @functools.lru_cache()
-def _qwen3_asr_pipeline_with_aligner():
-    return ov_genai.ASRPipeline(qwen3_asr_model_path(), "CPU", forced_aligner=shared_forced_aligner())
+def _qwen3_asr_pipeline_with_aligner(attention_backend: str):
+    return ov_genai.ASRPipeline(
+        qwen3_asr_split_model_path(),
+        "CPU",
+        forced_aligner=shared_forced_aligner(),
+        ATTENTION_BACKEND=attention_backend,
+    )
 
 
-def test_qwen3_asr_word_timestamps_requires_forced_aligner():
+@pytest.mark.parametrize("attention_backend", QWEN3_ASR_SPLIT_EXPORT_ATTENTION_BACKENDS)
+def test_qwen3_asr_word_timestamps_requires_forced_aligner(attention_backend):
     audio = forced_aligner_audio()
-    pipe = ov_genai.ASRPipeline(qwen3_asr_model_path(), "CPU")
+    pipe = ov_genai.ASRPipeline(qwen3_asr_split_model_path(), "CPU", ATTENTION_BACKEND=attention_backend)
 
     pipe.generate(audio, max_new_tokens=4)
 
@@ -127,8 +138,9 @@ def test_forced_aligner_rejected_for_non_qwen(tmp_path):
         ov_genai.ASRPipeline(model_dir, "CPU", forced_aligner=shared_forced_aligner())
 
 
-def test_qwen3_asr_forced_aligner_toggle():
-    pipe = _qwen3_asr_pipeline_with_aligner()
+@pytest.mark.parametrize("attention_backend", QWEN3_ASR_SPLIT_EXPORT_ATTENTION_BACKENDS)
+def test_qwen3_asr_forced_aligner_toggle(attention_backend):
+    pipe = _qwen3_asr_pipeline_with_aligner(attention_backend)
 
     disabled = pipe.generate(forced_aligner_audio(), word_timestamps=False, max_new_tokens=6)
     assert disabled.words is None
@@ -137,10 +149,13 @@ def test_qwen3_asr_forced_aligner_toggle():
     assert enabled.perf_metrics.get_word_level_timestamps_processing_duration().mean > 0
 
 
-def test_qwen3_asr_forced_aligner_instance_outlives_local():
+@pytest.mark.parametrize("attention_backend", QWEN3_ASR_SPLIT_EXPORT_ATTENTION_BACKENDS)
+def test_qwen3_asr_forced_aligner_instance_outlives_local(attention_backend):
     # A fresh aligner is required: the pipeline must remain the sole owner after the local is dropped.
     aligner = ov_genai.ASRForcedAligner(forced_aligner_model_path(), "CPU")
-    pipe = ov_genai.ASRPipeline(qwen3_asr_model_path(), "CPU", forced_aligner=aligner)
+    pipe = ov_genai.ASRPipeline(
+        qwen3_asr_split_model_path(), "CPU", forced_aligner=aligner, ATTENTION_BACKEND=attention_backend
+    )
 
     del aligner
     gc.collect()
@@ -150,11 +165,12 @@ def test_qwen3_asr_forced_aligner_instance_outlives_local():
     assert_monotonic_word_list(result.words[0])
 
 
-def test_qwen3_asr_forced_aligner_offset_zero_matches_standalone():
+@pytest.mark.parametrize("attention_backend", QWEN3_ASR_SPLIT_EXPORT_ATTENTION_BACKENDS)
+def test_qwen3_asr_forced_aligner_offset_zero_matches_standalone(attention_backend):
     # A single chunk has zero offset, so integrated and standalone alignment must match exactly.
     audio = forced_aligner_audio()
 
-    pipe = _qwen3_asr_pipeline_with_aligner()
+    pipe = _qwen3_asr_pipeline_with_aligner(attention_backend)
     result = pipe.generate(audio, word_timestamps=True, language="English", max_new_tokens=6)
     integrated = result.words[0]
 
@@ -164,10 +180,11 @@ def test_qwen3_asr_forced_aligner_offset_zero_matches_standalone():
     assert [(w.text, w.start_ts, w.end_ts) for w in integrated] == [(w.text, w.start_ts, w.end_ts) for w in standalone]
 
 
-def test_qwen3_asr_forced_aligner_multichunk_runs():
+@pytest.mark.parametrize("attention_backend", QWEN3_ASR_SPLIT_EXPORT_ATTENTION_BACKENDS)
+def test_qwen3_asr_forced_aligner_multichunk_runs(attention_backend):
     # The tiny random classifier cannot validate timestamp quality; verify that the multi-chunk path
     # executes and records multiple encoder invocations.
-    pipe = _qwen3_asr_pipeline_with_aligner()
+    pipe = _qwen3_asr_pipeline_with_aligner(attention_backend)
     duration_sec = 182
     audio = (np.random.default_rng(3).standard_normal(16000 * duration_sec) * 0.01).astype(np.float32).tolist()
     result = pipe.generate(audio, word_timestamps=True, language="English", max_new_tokens=4)

@@ -12,6 +12,7 @@
 
 #include "forced_aligner_config.hpp"
 #include "openvino/core/except.hpp"
+#include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "unicode_helpers.hpp"
 #include "utils.hpp"
 
@@ -228,47 +229,7 @@ std::vector<int64_t> fix_timestamp(const std::vector<int64_t>& data) {
     return fixed;
 }
 
-}  // namespace
-
-Qwen3ForcedAligner::Qwen3ForcedAligner(const std::filesystem::path& models_path,
-                                       const std::string& device,
-                                       const ov::AnyMap& properties)
-    : m_feature_extractor{models_path / "preprocessor_config.json"},
-      m_tokenizer{models_path},
-      m_config{models_path / "config.json"} {
-    for (const std::string& language : m_config.support_languages) {
-        const std::string canonical = normalize_alignment_language(language);
-        if (!canonical.empty()) {
-            m_supported_languages.insert(canonical);
-        }
-    }
-
-    m_encoder = std::make_unique<Qwen3ASREncoder>(models_path, device, properties);
-
-    ov::Core core = utils::singleton_core();
-    ov::CompiledModel compiled_decoder =
-        core.compile_model(models_path / "openvino_decoder_model.xml", device, properties);
-    ov::genai::utils::print_compiled_model_properties(compiled_decoder, "qwen3 forced-aligner decoder model");
-
-    const ov::PartialShape logits_shape = compiled_decoder.output("logits").get_partial_shape();
-    OPENVINO_ASSERT(logits_shape.rank().is_static() && logits_shape.size() == 3 &&
-                        logits_shape[2].is_static() &&
-                        logits_shape[2].get_length() == m_config.classify_num,
-                    "Forced-aligner decoder logits last dimension must equal classify_num=", m_config.classify_num, ".");
-
-    m_decoder = compiled_decoder.create_infer_request();
-}
-
-std::string Qwen3ForcedAligner::resolve_language(const std::string& language) const {
-    OPENVINO_ASSERT(language.find_first_not_of(" \t\n\r\f\v") != std::string::npos,
-                    "Forced alignment requires a non-empty language.");
-    const std::string canonical = normalize_alignment_language(language);
-    OPENVINO_ASSERT(m_supported_languages.empty() || m_supported_languages.count(canonical),
-                    "Language '", language, "' is not supported by this forced-aligner model.");
-    return canonical;
-}
-
-std::string Qwen3ForcedAligner::build_marker_input(const std::vector<std::string>& units, size_t audio_frames) const {
+std::string build_marker_input(const std::vector<std::string>& units, size_t audio_frames) {
     std::string marker;
     marker.reserve(AUDIO_START_TOKEN.size() + audio_frames * AUDIO_PAD_TOKEN.size() + AUDIO_END_TOKEN.size());
     marker += AUDIO_START_TOKEN;
@@ -282,6 +243,62 @@ std::string Qwen3ForcedAligner::build_marker_input(const std::vector<std::string
         marker += TIMESTAMP_TOKEN;
     }
     return marker;
+}
+
+InputsEmbedderQwen3ASR create_inputs_embedder(const std::filesystem::path& models_path,
+                                              const Tokenizer& tokenizer,
+                                              const std::string& device,
+                                              const ov::AnyMap& properties) {
+    OPENVINO_ASSERT(std::filesystem::exists(models_path / "openvino_audio_encoder_model.xml"),
+                    "Qwen3 forced aligner requires the audio encoder, text embeddings, and language model export, "
+                    "but openvino_audio_encoder_model.xml is missing in ",
+                    models_path,
+                    ". Re-export the forced aligner with an Optimum Intel version that produces this format.");
+    return InputsEmbedderQwen3ASR{VLMConfig{models_path / "config.json"}, models_path, tokenizer, device, properties};
+}
+
+ov::InferRequest create_language_model_request(const std::filesystem::path& models_path,
+                                               int64_t classify_num,
+                                               const std::string& device,
+                                               const ov::AnyMap& properties) {
+    ov::CompiledModel compiled_model =
+        utils::singleton_core().compile_model(models_path / "openvino_language_model.xml", device, properties);
+    utils::print_compiled_model_properties(compiled_model, "qwen3 forced-aligner language model");
+
+    const ov::PartialShape logits_shape = compiled_model.output("logits").get_partial_shape();
+    OPENVINO_ASSERT(logits_shape.rank().is_static() && logits_shape.size() == 3 && logits_shape[2].is_static() &&
+                        logits_shape[2].get_length() == classify_num,
+                    "Forced-aligner logits last dimension must equal classify_num=",
+                    classify_num,
+                    ".");
+    return compiled_model.create_infer_request();
+}
+
+}  // namespace
+
+Qwen3ForcedAligner::Qwen3ForcedAligner(const std::filesystem::path& models_path,
+                                       const std::string& device,
+                                       const ov::AnyMap& properties)
+    : m_config{models_path / "config.json"},
+      m_tokenizer{models_path},
+      m_embedder{create_inputs_embedder(models_path, m_tokenizer, device, properties)},
+      m_language_model{create_language_model_request(models_path, m_config.classify_num, device, properties)} {
+    m_embedder.set_apply_chat_template_status(false);
+    for (const std::string& language : m_config.support_languages) {
+        const std::string canonical = normalize_alignment_language(language);
+        if (!canonical.empty()) {
+            m_supported_languages.insert(canonical);
+        }
+    }
+}
+
+std::string Qwen3ForcedAligner::resolve_language(const std::string& language) const {
+    OPENVINO_ASSERT(language.find_first_not_of(" \t\n\r\f\v") != std::string::npos,
+                    "Forced alignment requires a non-empty language.");
+    const std::string canonical = normalize_alignment_language(language);
+    OPENVINO_ASSERT(m_supported_languages.empty() || m_supported_languages.count(canonical),
+                    "Language '", language, "' is not supported by this forced-aligner model.");
+    return canonical;
 }
 
 std::vector<ASRDecodedResultChunk> Qwen3ForcedAligner::align(const std::vector<float>& audio,
@@ -298,13 +315,19 @@ std::vector<ASRDecodedResultChunk> Qwen3ForcedAligner::align(const std::vector<f
         return {};
     }
 
-    const WhisperFeatures features = m_feature_extractor.extract(audio, false);
-    const ov::Tensor encoder_hidden_states = m_encoder->encode(features);
-    const size_t audio_frames = encoder_hidden_states.get_shape().at(1);
+    const std::vector<EncodedAudio> audios =
+        m_embedder.encode_audios({ov::Tensor{ov::element::f32, {audio.size()}, audio.data()}});
+    const size_t audio_frames = audios.at(0).num_audio_tokens;
 
-    const std::string marker = build_marker_input(units, audio_frames);
-    const ov::Tensor input_ids = m_tokenizer.encode(std::vector<std::string>{marker}).input_ids;
+    // The embedder expands the single audio placeholder of the prompt to audio_frames placeholders.
+    VLMPerfMetrics metrics;
+    const ov::Tensor inputs_embeds =
+        m_embedder.get_inputs_embeds(build_marker_input(units, 1), {}, {}, audios, metrics, true, {}, {}, {0}, {});
+    // Each alignment is independent, so drop the token history the embedder accumulates.
+    m_embedder.finish_chat();
 
+    const ov::Tensor input_ids =
+        m_tokenizer.encode(build_marker_input(units, audio_frames), ov::genai::add_special_tokens(false)).input_ids;
     const size_t input_len = input_ids.get_shape().at(1);
     const int64_t* input_ids_data = input_ids.data<const int64_t>();
 
@@ -320,18 +343,25 @@ std::vector<ASRDecodedResultChunk> Qwen3ForcedAligner::align(const std::vector<f
                     " timestamp markers but expected ", units.size() * 2,
                     "; the aligner tokenizer does not encode <timestamp> atomically.");
 
-    m_decoder.reset_state();
-    m_decoder.set_tensor("encoder_hidden_states", encoder_hidden_states);
+    OPENVINO_ASSERT(inputs_embeds.get_shape().at(1) == input_len,
+                    "Forced-aligner marker tokenization must match the embedded prompt length.");
+
+    ov::Tensor attention_mask(ov::element::i64, {1, input_len});
+    std::fill_n(attention_mask.data<int64_t>(), input_len, 1);
     ov::Tensor beam_idx(ov::element::i32, {1});
     beam_idx.data<int32_t>()[0] = 0;
-    m_decoder.set_tensor("beam_idx", beam_idx);
-    m_decoder.set_tensor("input_ids", input_ids);
-    m_decoder.infer();
 
-    const ov::Tensor logits = m_decoder.get_tensor("logits");
+    m_language_model.reset_state();
+    m_language_model.set_tensor("attention_mask", attention_mask);
+    m_language_model.set_tensor("position_ids", m_embedder.get_position_ids(input_len, 0).first);
+    m_language_model.set_tensor("inputs_embeds", inputs_embeds);
+    m_language_model.set_tensor("beam_idx", beam_idx);
+    m_language_model.infer();
+
+    const ov::Tensor logits = m_language_model.get_tensor("logits");
     const ov::Shape logits_shape = logits.get_shape();
     OPENVINO_ASSERT(logits_shape.size() == 3 && logits_shape[0] == 1 && logits_shape[1] == input_len,
-                    "Forced-aligner decoder logits must be shaped [1, input_len, classify_num].");
+                    "Forced-aligner logits must be shaped [1, input_len, classify_num].");
     const size_t class_count = logits_shape.at(2);
     const float* logits_data = logits.data<const float>();
 
