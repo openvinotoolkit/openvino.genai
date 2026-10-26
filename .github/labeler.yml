@@ -10,6 +10,8 @@
 - 'samples/requirements.txt'
 - 'samples/deployment-requirements.txt'
 - 'samples/export-requirements.txt'
+- 'samples/js/package.json'
+- 'samples/js/package-lock.json'
 
 'category: tokenizers':
 - 'src/cpp/include/openvino/genai/tokenizer.hpp'
@@ -77,6 +79,7 @@
 - 'src/python/py_lora_adapter.cpp'
 
 'category: LLM samples':
+- 'samples/c/common/**/*'
 - 'samples/c/text_generation/**/*'
 - 'samples/cpp/text_generation/**/*'
 - 'samples/js/text_generation/**/*'
@@ -97,12 +100,14 @@
 - 'samples/c/whisper_speech_recognition/**/*'
 - 'samples/cpp/automatic_speech_recognition/**/*'
 - 'samples/js/automatic_speech_recognition/**/*'
+- 'samples/js/wav_utils.js'
 - 'samples/python/automatic_speech_recognition/**/*'
 - 'samples/cpp/speech_generation/audio_utils.*'
 
 'category: Image generation samples':
 - 'samples/cpp/image_generation/**/*'
 - 'samples/js/image_generation/**/*'
+- 'samples/js/image_utils.js'
 - 'samples/python/image_generation/**/*'
 - 'tests/python_tests/samples/test_benchmark_image_gen.py'
 - 'tests/python_tests/samples/test_denoising_process.py'
@@ -113,9 +118,11 @@
 - 'tests/python_tests/samples/test_lora_text2image.py'
 
 'category: VLM samples':
+- 'samples/c/common/**/*'
 - 'samples/c/visual_language_chat/**/*'
 - 'samples/cpp/visual_language_chat/**/*'
 - 'samples/js/visual_language_chat/**/*'
+- 'samples/js/image_utils.js'
 - 'samples/python/visual_language_chat/**/*'
 - 'tests/python_tests/samples/test_audio_to_text_chat.py'
 - 'samples/cpp/omni/**/*'
