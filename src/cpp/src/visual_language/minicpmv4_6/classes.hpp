@@ -19,7 +19,8 @@ namespace ov::genai {
 //    The exported openvino_vision_embeddings_model consumes NaViT-patchified
 //    ``pixel_values`` together with ``position_ids``/``window_index``/``merge_index``
 //    and directly returns the merged visual tokens (no separate resampler).
-//  - Language backbone is a Qwen3.5 text model that uses plain 1D position ids
+//  - Language backbone is a Qwen3.5 text model that uses sequential position ids
+//    ([1, tokens] for MiniCPM-V-4.6, repeated over three axes for MiniCPM-OCR)
 //    and merges visual tokens by replacing the ``<|image_pad|>`` placeholder ids
 //    with the vision features (masked scatter), like LLaVA / InternVL.
 class VisionEncoderMiniCPMV4_6 : public VisionEncoder {

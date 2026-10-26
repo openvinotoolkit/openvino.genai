@@ -124,6 +124,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
                              generation_config,
                              is_validation_mode_enabled) {
     m_inputs_embedder = inputs_embedder;
+    m_inputs_embedder->configure_position_ids(*model, true);
     
     // Note: set_inputs_embedder also sets the embedding model internally.
     m_model_runner->set_inputs_embedder(inputs_embedder);

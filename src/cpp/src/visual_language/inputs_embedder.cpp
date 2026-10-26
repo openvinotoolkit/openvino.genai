@@ -525,6 +525,28 @@ void InputsEmbedder::set_position_ids(const ov::Tensor& position_ids) {
     m_impl->set_position_ids(position_ids);
 }
 
+void InputsEmbedder::configure_position_ids(const ov::Model& language_model, bool is_paged_attention) {
+    m_impl->configure_position_ids(language_model, is_paged_attention);
+}
+
+void InputsEmbedder::IInputsEmbedder::configure_position_ids(const ov::Model& language_model,
+                                                           bool is_paged_attention) {
+    if (m_vlm_config.model_type != VLMModelType::MINICPMV4_6) {
+        return;
+    }
+    const auto& shape = language_model.input("position_ids").get_partial_shape();
+    const int64_t sequential_rank = is_paged_attention ? 1 : 2;
+    OPENVINO_ASSERT(shape.rank() == sequential_rank || shape.rank() == sequential_rank + 1,
+                    "Unexpected MiniCPM language position_ids shape: ", shape);
+    if (shape.rank() == sequential_rank) {
+        m_position_ids_axes = 1;
+    } else {
+        OPENVINO_ASSERT(shape[0].is_static() && shape[0].get_length() > 1,
+                        "MiniCPM multi-axis position_ids require a static axis count greater than one, got ", shape);
+        m_position_ids_axes = static_cast<size_t>(shape[0].get_length());
+    }
+}
+
 void InputsEmbedder::set_rope_delta(int64_t rope_delta) {
     m_impl->set_rope_delta(rope_delta);
 }

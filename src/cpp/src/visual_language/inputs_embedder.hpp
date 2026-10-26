@@ -96,6 +96,8 @@ public:
 
     void set_position_ids(const ov::Tensor& position_ids);
 
+    void configure_position_ids(const ov::Model& language_model, bool is_paged_attention);
+
     void set_rope_delta(int64_t rope_delta);
 
     std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta);
@@ -195,6 +197,7 @@ private:
         bool m_add_special_tokens_is_set = false;
         // position ids
         ov::Tensor m_position_ids;
+        size_t m_position_ids_axes = 1;
         int64_t m_rope_delta = 0;
         // Text-only embeddings cached for the speculative (Eagle3) draft path.
         ov::Tensor m_cached_text_embeds;
@@ -263,6 +266,8 @@ private:
         void set_position_ids(const ov::Tensor& position_ids) {
             m_position_ids = position_ids;
         }
+
+        void configure_position_ids(const ov::Model& language_model, bool is_paged_attention);
 
         void set_rope_delta(int64_t rope_delta) {
             m_rope_delta = rope_delta;

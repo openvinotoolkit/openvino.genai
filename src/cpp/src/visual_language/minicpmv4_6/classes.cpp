@@ -336,6 +336,9 @@ EncodedImage VisionEncoderMiniCPMV4_6::encode(const ov::Tensor& image, const ov:
     const bool has_window_index = std::any_of(encoder_inputs.begin(), encoder_inputs.end(), [](const auto& input) {
         return input.get_names().count("window_index") > 0;
     });
+    const auto position_ids_rank = encoder.get_compiled_model().input("position_ids").get_partial_shape().rank();
+    OPENVINO_ASSERT(position_ids_rank == 1 || position_ids_rank == 2,
+                    "MiniCPM vision position_ids must have rank 1 or 2, got ", position_ids_rank);
 
     std::vector<ov::Tensor> patch_features;
     size_t total_tokens = 0;
@@ -352,7 +355,10 @@ EncodedImage VisionEncoderMiniCPMV4_6::encode(const ov::Tensor& image, const ov:
         const int merge_grid_w = has_window_index ? grid_w / static_cast<int>(m_window_kw) : grid_w;
         std::vector<int64_t> merge_index = grouping_index(merge_grid_h, merge_grid_w, static_cast<int>(m_merge_kh), static_cast<int>(m_merge_kw));
 
-        ov::Tensor position_ids_t(ov::element::i64, ov::Shape{position_ids.size()});
+        const ov::Shape position_ids_shape = position_ids_rank == 2
+                                                ? ov::Shape{1, position_ids.size()}
+                                                : ov::Shape{position_ids.size()};
+        ov::Tensor position_ids_t(ov::element::i64, position_ids_shape);
         std::copy(position_ids.begin(), position_ids.end(), position_ids_t.data<int64_t>());
         ov::Tensor window_index_t(ov::element::i64, ov::Shape{window_index.size()});
         std::copy(window_index.begin(), window_index.end(), window_index_t.data<int64_t>());
@@ -418,12 +424,15 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderMiniCPMV4_6::get_pos
     const size_t inputs_embeds_size,
     const size_t history_size
 ) {
-    ov::Tensor position_ids{ov::element::i64, {3, 1, inputs_embeds_size}};
-    for (size_t axis = 0; axis < 3; ++axis) {
+    if (m_position_ids_axes == 1) {
+        return IInputsEmbedder::get_position_ids(inputs_embeds_size, history_size);
+    }
+    ov::Tensor position_ids{ov::element::i64, {m_position_ids_axes, 1, inputs_embeds_size}};
+    for (size_t axis = 0; axis < m_position_ids_axes; ++axis) {
         int64_t* axis_position_ids = position_ids.data<int64_t>() + axis * inputs_embeds_size;
         std::iota(axis_position_ids, axis_position_ids + inputs_embeds_size, static_cast<int64_t>(history_size));
     }
-    return {std::move(position_ids), std::nullopt};
+    return {std::move(position_ids), 0};
 }
 
 std::string InputsEmbedderMiniCPMV4_6::build_image_placeholder(const EncodedImage& image, size_t image_id) const {
