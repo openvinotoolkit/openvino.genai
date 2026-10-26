@@ -351,7 +351,8 @@ ov_genai_speech_generation_config_get_ref_text(const ov_genai_speech_generation_
  * @param[in,out] config Configuration to update.
  * @param[in] ref_audio Tensor with element type F32 and shape [T], [1, T], or [1, 1, T].
  *                      Samples must be at 24000 Hz; no resampling is performed.
- * @return OK on success, INVALID_C_PARAM for NULL arguments or wrong element type, or UNKNOW_EXCEPTION on failure.
+ *                      Pass NULL to clear this field.
+ * @return OK on success, INVALID_C_PARAM for NULL config or wrong element type, or UNKNOW_EXCEPTION on failure.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_speech_generation_config_set_ref_audio(ov_genai_speech_generation_config* config, const ov_tensor_t* ref_audio);

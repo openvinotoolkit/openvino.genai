@@ -317,9 +317,13 @@ ov_status_e ov_genai_speech_generation_config_get_ref_text(const ov_genai_speech
 
 ov_status_e ov_genai_speech_generation_config_set_ref_audio(ov_genai_speech_generation_config* config,
                                                             const ov_tensor_t* ref_audio) {
-    if (!config || !config->object || !ref_audio)
+    if (!config || !config->object)
         return ov_status_e::INVALID_C_PARAM;
     try {
+        if (!ref_audio) {
+            config->object->ref_audio = ov::Tensor();
+            return ov_status_e::OK;
+        }
         ov::Tensor converted;
         const auto status = copy_c_tensor_to_cpp(ref_audio, ov_element_type_e::F32, ov::element::f32, converted);
         if (status != ov_status_e::OK)
