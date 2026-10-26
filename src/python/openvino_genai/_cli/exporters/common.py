@@ -210,6 +210,16 @@ def count_weights(ov_model: ov.Model) -> int:
     return num
 
 
+def resolve_compression(
+    ov_model: ov.Model, weight_format: Optional[str], compression: Optional[WeightCompressionConfig]
+) -> Optional[WeightCompressionConfig]:
+    """The compression a submodel gets: the requested one or, without a weight format, int8_asym for submodels with
+    more than 1B weights (like optimum-intel)."""
+    if weight_format is None and count_weights(ov_model) >= _MAX_UNCOMPRESSED_SIZE:
+        return INT8_ASYM_CONFIG
+    return compression
+
+
 def save_submodel(
     ov_model: ov.Model,
     path: Path,
@@ -218,12 +228,10 @@ def save_submodel(
 ) -> None:
     """Compresses (if requested or if the submodel is large) and saves a submodel.
 
-    ``compression`` is the config this particular submodel gets for an explicit integer weight format. Without a
-    weight format, submodels with more than 1B weights are compressed to int8_asym, like optimum-intel does.
+    ``compression`` is the config this particular submodel gets for an explicit integer weight format, see
+    resolve_compression for the default.
     """
-    if weight_format is None and count_weights(ov_model) >= _MAX_UNCOMPRESSED_SIZE:
-        logger.info(f"{path.name}: the model weights will be quantized to int8_asym.")
-        compression = INT8_ASYM_CONFIG
+    compression = resolve_compression(ov_model, weight_format, compression)
     if compression is not None:
         logger.info(f"{path.name}: applying {compression.mode} weight compression")
         ov_model = compression.compress(ov_model)

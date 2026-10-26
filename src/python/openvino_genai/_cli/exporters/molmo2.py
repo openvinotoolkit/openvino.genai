@@ -18,8 +18,11 @@ The model is split into the three OpenVINO models consumed by ov::genai::VLMPipe
 import gc
 import json
 import logging
+import tempfile
 from pathlib import Path
 from typing import List, Optional
+
+import openvino as ov
 
 from openvino_genai._cli.exporters.base import NativeExporter
 from openvino_genai._cli.exporters.common import (
@@ -28,6 +31,7 @@ from openvino_genai._cli.exporters.common import (
     convert_tokenizer,
     copy_model_files,
     make_stateful,
+    resolve_compression,
     resolve_model_dir,
     save_submodel,
     torch_export,
@@ -328,11 +332,24 @@ class Molmo2Exporter(NativeExporter):
         )
         if not args.disable_stateful:
             make_stateful(language_model)
-        # The PyTorch weights are no longer needed when the language model is compressed.
         del ep, model
         gc.collect()
-        save_submodel(language_model, output / "openvino_language_model.xml", args.weight_format, compression)
-        del language_model
+
+        # Like optimum-intel, the language model is compressed in a second pass: the converted floating-point model is
+        # saved and read back, so its weights are memory-mapped from disk instead of staying in process memory next to
+        # the compressed weights.
+        lm_path = output / "openvino_language_model.xml"
+        language_compression = resolve_compression(language_model, args.weight_format, compression)
+        if language_compression is None:
+            save_submodel(language_model, lm_path, args.weight_format, None)
+            del language_model
+        else:
+            with tempfile.TemporaryDirectory(dir=output, prefix=".genai_cli_") as tmp_dir:
+                tmp_path = Path(tmp_dir) / lm_path.name
+                ov.save_model(language_model, tmp_path, compress_to_fp16=False)
+                del language_model
+                gc.collect()
+                save_submodel(ov.Core().read_model(tmp_path), lm_path, args.weight_format, language_compression)
         gc.collect()
 
         copy_model_files(model_dir, output)
