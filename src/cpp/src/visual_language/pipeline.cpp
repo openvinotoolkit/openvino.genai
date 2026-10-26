@@ -430,7 +430,7 @@ public:
             }
         } else {
             m_inputs_embedder->set_prompt_formatting(
-                generation_config.apply_chat_template ? PromptFormatting::ApplyTemplate : PromptFormatting::Raw);
+                generation_config.apply_chat_template ? PromptFormatting::NeedsTemplate : PromptFormatting::Raw);
         }
 
         auto finish_info = prepare_inputs_and_generate(

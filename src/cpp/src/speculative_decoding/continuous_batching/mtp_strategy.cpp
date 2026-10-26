@@ -222,7 +222,7 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_prompt_formatting(
-            sampling_params.apply_chat_template ? PromptFormatting::ApplyTemplate : PromptFormatting::Raw);
+            sampling_params.apply_chat_template ? PromptFormatting::NeedsTemplate : PromptFormatting::Raw);
         const size_t previous_tokens = m_inputs_embedder->get_cache_state().get_state().size();
         const std::vector<ov::genai::EncodedImage> no_images;
         // add_request() takes no audio. Normalizing with none still rejects an <ov_genai_audio_N> tag,

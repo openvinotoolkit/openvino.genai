@@ -27,7 +27,12 @@ const static std::regex UNIVERSAL_IMAGE_PATTERN{R"(<ov_genai_image_(\d+)>)"};
 const static std::regex UNIVERSAL_VIDEO_PATTERN{R"(<ov_genai_video_(\d+)>)"};
 const static std::regex UNIVERSAL_AUDIO_PATTERN{R"(<ov_genai_audio_(\d+)>)"};
 
-enum class PromptFormatting { Raw, ApplyTemplate, AlreadyTemplated };
+// Explicit add_special_tokens settings override these defaults.
+enum class PromptFormatting {
+    Raw,              // Skip templating; add special tokens by default outside chat.
+    NeedsTemplate,    // Apply the template; omit extra special tokens by default.
+    AlreadyTemplated  // Skip templating and extra special tokens by default.
+};
 
 struct NormalizedPrompt {
     std::string unified_prompt;
@@ -181,7 +186,7 @@ private:
         // True if chat mode is activated to save conversation
         // history between generate() calls.
         bool m_is_chat_conversation = false;
-        PromptFormatting m_prompt_formatting = PromptFormatting::ApplyTemplate;
+        PromptFormatting m_prompt_formatting = PromptFormatting::NeedsTemplate;
         // Finish reason of last generation for chat scenario
         ov::genai::GenerationStatus m_chat_generation_finish_status = ov::genai::GenerationStatus::RUNNING;
         // reflection of tokens contained in the kv cache

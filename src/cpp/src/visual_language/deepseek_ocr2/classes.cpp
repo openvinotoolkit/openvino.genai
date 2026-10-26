@@ -418,7 +418,7 @@ ov::Tensor InputsEmbedderDeepseekOCR2::apply_chat_template_tokenize(const std::s
                                                                     ov::genai::VLMPerfMetrics& metrics) {
     // Skip templating unless the user has explicitly set a custom chat template on the tokenizer.
     const PromptFormatting saved = m_prompt_formatting;
-    if (m_prompt_formatting == PromptFormatting::ApplyTemplate && m_tokenizer.get_chat_template().empty()) {
+    if (m_prompt_formatting == PromptFormatting::NeedsTemplate && m_tokenizer.get_chat_template().empty()) {
         m_prompt_formatting = PromptFormatting::Raw;
     }
     struct Guard {

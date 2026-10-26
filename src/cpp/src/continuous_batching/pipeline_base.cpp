@@ -479,7 +479,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                 m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, m_audio_id, encoded_images, encoded_videos, encoded_audios);
 
             m_inputs_embedder->set_prompt_formatting(
-                sampling_params[i].apply_chat_template ? PromptFormatting::ApplyTemplate : PromptFormatting::Raw);
+                sampling_params[i].apply_chat_template ? PromptFormatting::NeedsTemplate : PromptFormatting::Raw);
 
             size_t cache_size_before = prepare_prompt_ids(prompt, sampling_params[i]);
 
@@ -840,7 +840,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         const auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         m_inputs_embedder->set_prompt_formatting(
-            sampling_params.apply_chat_template ? PromptFormatting::ApplyTemplate : PromptFormatting::Raw);
+            sampling_params.apply_chat_template ? PromptFormatting::NeedsTemplate : PromptFormatting::Raw);
         
         const auto vision_encoding_start = std::chrono::steady_clock::now();
         const auto encoded_images = m_inputs_embedder->encode_images(images);

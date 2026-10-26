@@ -814,7 +814,7 @@ ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(
         std::string templated_prompt;
         bool apply_template = false;
         TimePoint template_end_time;
-        if (m_prompt_formatting == PromptFormatting::ApplyTemplate) {
+        if (m_prompt_formatting == PromptFormatting::NeedsTemplate) {
             ChatHistory history({{{"role", "user"}, {"content", image_prompt}}});
             constexpr bool add_generation_prompt = true;
             templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
