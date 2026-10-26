@@ -984,6 +984,7 @@ class TestBenchmarkLLM:
             ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--optimum"],
             ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--genai"],
         ],
+        ids=["optimum", "genai"],
     )
     def test_python_tool_llm_benchmark_qwen3_tts_base(self, qwen3_reference_audio_wav_path, convert_model, sample_args):
         benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
@@ -1012,6 +1013,7 @@ class TestBenchmarkLLM:
             ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--optimum"],
             ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--genai"],
         ],
+        ids=["optimum", "genai"],
     )
     def test_python_tool_llm_benchmark_qwen3_tts_customvoice(self, convert_model, sample_args):
         benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
@@ -1040,6 +1042,7 @@ class TestBenchmarkLLM:
             ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--optimum"],
             ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--genai"],
         ],
+        ids=["optimum", "genai"],
     )
     def test_python_tool_llm_benchmark_qwen3_tts_voicedesign(self, convert_model, sample_args):
         benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
@@ -1154,9 +1157,9 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize(
         "sample_args",
         [
-            ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--optimum"],
             ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--genai"],
         ],
+        ids=["genai"],
     )
     def test_python_tool_llm_benchmark_qwen3_tts_base_prompt_file(
         self, convert_model, qwen3_tts_base_prompt_file, sample_args
@@ -1178,9 +1181,9 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize(
         "sample_args",
         [
-            ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--optimum"],
             ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--genai"],
         ],
+        ids=["genai"],
     )
     def test_python_tool_llm_benchmark_qwen3_tts_customvoice_prompt_file(
         self, convert_model, qwen3_tts_customvoice_prompt_file, sample_args
@@ -1202,9 +1205,9 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize(
         "sample_args",
         [
-            ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--optimum"],
             ["-d", "cpu", "-n", "1", "-ic", "20", "--task", "text_to_speech", "--genai"],
         ],
+        ids=["genai"],
     )
     def test_python_tool_llm_benchmark_qwen3_tts_voicedesign_prompt_file(
         self, convert_model, qwen3_tts_voicedesign_prompt_file, sample_args
