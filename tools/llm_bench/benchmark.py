@@ -540,7 +540,6 @@ def get_argparser():
     )
     parser.add_argument(
         "--speech_ref_audio",
-        "--speech-ref-audio",
         dest="speech_ref_audio",
         type=str,
         default="",
@@ -548,7 +547,6 @@ def get_argparser():
     )
     parser.add_argument(
         "--speech_ref_text",
-        "--speech-ref-text",
         dest="speech_ref_text",
         type=str,
         default="",
