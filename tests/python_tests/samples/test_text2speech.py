@@ -66,16 +66,24 @@ def tiny_kokoro_speaker_embedding_file_path(tiny_kokoro_ov_path: Path) -> str:
     return str(voice_bin_path)
 
 
-@pytest.fixture(scope="module")
-def qwen3_reference_audio_wav_path(tmp_path_factory) -> str:
+@pytest.fixture(scope="module", params=[1, 2], ids=["mono", "stereo"])
+def qwen3_reference_audio_wav_path(tmp_path_factory, request) -> str:
+    channels = request.param
     samples = 24_000
     timeline = np.arange(samples, dtype=np.float32) / np.float32(samples)
-    waveform = 0.12 * np.sin(2.0 * np.pi * 220.0 * timeline) + 0.05 * np.sin(2.0 * np.pi * 440.0 * timeline + 0.4)
+    left = 0.12 * np.sin(2.0 * np.pi * 220.0 * timeline) + 0.05 * np.sin(2.0 * np.pi * 440.0 * timeline + 0.4)
+
+    if channels == 1:
+        waveform = left
+    else:
+        right = 0.10 * np.sin(2.0 * np.pi * 260.0 * timeline + 0.2) + 0.04 * np.sin(2.0 * np.pi * 520.0 * timeline)
+        waveform = np.stack((left, right), axis=1)
+
     output_dir = tmp_path_factory.mktemp("qwen3_tts_ref_audio")
-    wav_path = output_dir / "reference_24k.wav"
+    wav_path = output_dir / f"reference_24k_{channels}ch.wav"
     pcm = np.asarray(np.clip(waveform, -1.0, 1.0) * 32767.0, dtype=np.int16)
     with wave.open(str(wav_path), "wb") as wav_file:
-        wav_file.setnchannels(1)
+        wav_file.setnchannels(channels)
         wav_file.setsampwidth(2)
         wav_file.setframerate(24_000)
         wav_file.writeframes(pcm.tobytes())
