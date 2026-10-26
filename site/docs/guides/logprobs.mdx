@@ -11,7 +11,7 @@ Typical use case is single-token classification: generate one token greedily (`m
 :::info
 `logprob_token_ids` is supported with **greedy or multinomial sampling only**, and only for a single sequence (`num_return_sequences == 1`). Beam search, tree search and `num_return_sequences > 1` are rejected by `GenerationConfig.validate()`; speculative-decoding and prompt-lookup pipelines reject the request in `add_request()`.
 
-The values are exposed by `ContinuousBatchingPipeline` (through `add_request` / `read` / `read_all`) and by the encoded `generate()` overloads that return `EncodedResults` (one-shot `LLMPipeline` / `VLMPipeline`, including the paged-attention backend). The text output (`DecodedResults`) does not carry the field.
+The values are exposed by `ContinuousBatchingPipeline` (through `add_request` / `read` / `read_all`) and by the one-shot `LLMPipeline` encoded `generate()` overloads that return `EncodedResults` (stateful and paged-attention backends). `VLMPipeline.generate()` returns `VLMDecodedResults` (text) and does not carry the field; VLM callers should use the `ContinuousBatchingPipeline` handle API.
 :::
 
 ## How the results are exposed

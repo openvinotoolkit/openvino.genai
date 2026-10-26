@@ -1849,6 +1849,12 @@ class GenerationConfig:
         echo:           if set to true, the model will echo the prompt in the output.
         logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                         Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+        logprob_token_ids: token IDs whose raw full-vocabulary log-probabilities (read before any sampling transform) are
+                        reported for each generated position in GenerationOutput.requested_token_logprobs.
+                        Greedy or multinomial sampling only, num_return_sequences must be 1; validate() rejects other combinations.
+                        Exposed by ContinuousBatchingPipeline (read/read_all) and by the one-shot LLMPipeline encoded generate()
+                        overloads that return EncodedResults (stateful and paged-attention backends). VLMPipeline generate()
+                        returns VLMDecodedResults (text) and does not carry it; VLM callers should use ContinuousBatchingPipeline.
         apply_chat_template: whether to apply chat_template for non-chat scenarios
     
         repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
@@ -1957,16 +1963,16 @@ class GenerationConfig:
     def length_penalty(self, arg0: typing.SupportsFloat) -> None:
         ...
     @property
-    def logprobs(self) -> int:
-        ...
-    @logprobs.setter
-    def logprobs(self, arg0: typing.SupportsInt) -> None:
-        ...
-    @property
     def logprob_token_ids(self) -> list[int]:
         ...
     @logprob_token_ids.setter
     def logprob_token_ids(self, arg0: collections.abc.Sequence[typing.SupportsInt]) -> None:
+        ...
+    @property
+    def logprobs(self) -> int:
+        ...
+    @logprobs.setter
+    def logprobs(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
     def max_length(self) -> int:
@@ -2873,6 +2879,12 @@ class LLMPipeline:
             echo:           if set to true, the model will echo the prompt in the output.
             logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                             Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+            logprob_token_ids: token IDs whose raw full-vocabulary log-probabilities (read before any sampling transform) are
+                            reported for each generated position in GenerationOutput.requested_token_logprobs.
+                            Greedy or multinomial sampling only, num_return_sequences must be 1; validate() rejects other combinations.
+                            Exposed by ContinuousBatchingPipeline (read/read_all) and by the one-shot LLMPipeline encoded generate()
+                            overloads that return EncodedResults (stateful and paged-attention backends). VLMPipeline generate()
+                            returns VLMDecodedResults (text) and does not carry it; VLM callers should use ContinuousBatchingPipeline.
             apply_chat_template: whether to apply chat_template for non-chat scenarios
         
             repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
@@ -2976,6 +2988,12 @@ class LLMPipeline:
             echo:           if set to true, the model will echo the prompt in the output.
             logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                             Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+            logprob_token_ids: token IDs whose raw full-vocabulary log-probabilities (read before any sampling transform) are
+                            reported for each generated position in GenerationOutput.requested_token_logprobs.
+                            Greedy or multinomial sampling only, num_return_sequences must be 1; validate() rejects other combinations.
+                            Exposed by ContinuousBatchingPipeline (read/read_all) and by the one-shot LLMPipeline encoded generate()
+                            overloads that return EncodedResults (stateful and paged-attention backends). VLMPipeline generate()
+                            returns VLMDecodedResults (text) and does not carry it; VLM callers should use ContinuousBatchingPipeline.
             apply_chat_template: whether to apply chat_template for non-chat scenarios
         
             repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
