@@ -260,10 +260,13 @@ ov_status_e ov_genai_speech_generation_config_set_phonemize_fallback_model_dir(
 
 ov_status_e ov_genai_speech_generation_config_set_speaker(ov_genai_speech_generation_config* config,
                                                           const char* speaker) {
-    if (!config || !config->object || !speaker)
+    if (!config || !config->object)
         return ov_status_e::INVALID_C_PARAM;
     try {
-        config->object->speaker = speaker;
+        if (speaker)
+            config->object->speaker = speaker;
+        else
+            config->object->speaker.clear();
         return ov_status_e::OK;
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
@@ -280,10 +283,13 @@ ov_status_e ov_genai_speech_generation_config_get_speaker(const ov_genai_speech_
 
 ov_status_e ov_genai_speech_generation_config_set_instruct(ov_genai_speech_generation_config* config,
                                                            const char* instruct) {
-    if (!config || !config->object || !instruct)
+    if (!config || !config->object)
         return ov_status_e::INVALID_C_PARAM;
     try {
-        config->object->instruct = instruct;
+        if (instruct)
+            config->object->instruct = instruct;
+        else
+            config->object->instruct.clear();
         return ov_status_e::OK;
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
@@ -300,10 +306,13 @@ ov_status_e ov_genai_speech_generation_config_get_instruct(const ov_genai_speech
 
 ov_status_e ov_genai_speech_generation_config_set_ref_text(ov_genai_speech_generation_config* config,
                                                            const char* ref_text) {
-    if (!config || !config->object || !ref_text)
+    if (!config || !config->object)
         return ov_status_e::INVALID_C_PARAM;
     try {
-        config->object->ref_text = ref_text;
+        if (ref_text)
+            config->object->ref_text = ref_text;
+        else
+            config->object->ref_text.clear();
         return ov_status_e::OK;
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;

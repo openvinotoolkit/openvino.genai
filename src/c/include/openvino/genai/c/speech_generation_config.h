@@ -201,8 +201,8 @@ ov_genai_speech_generation_config_get_language(const ov_genai_speech_generation_
 /**
  * @brief Set the optional Qwen3-TTS CustomVoice speaker name.
  * @param[in,out] config Configuration to update.
- * @param[in] speaker NUL-terminated speaker name.
- * @return OK on success, INVALID_C_PARAM for NULL arguments, or UNKNOW_EXCEPTION on allocation failure.
+ * @param[in] speaker NUL-terminated speaker name. Pass NULL to clear this field.
+ * @return OK on success, INVALID_C_PARAM for NULL config, or UNKNOW_EXCEPTION on allocation failure.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_speech_generation_config_set_speaker(ov_genai_speech_generation_config* config, const char* speaker);
@@ -220,8 +220,8 @@ ov_genai_speech_generation_config_get_speaker(const ov_genai_speech_generation_c
 /**
  * @brief Set optional Qwen3-TTS style instruction text.
  * @param[in,out] config Configuration to update.
- * @param[in] instruct NUL-terminated instruction text.
- * @return OK on success, INVALID_C_PARAM for NULL arguments, or UNKNOW_EXCEPTION on allocation failure.
+ * @param[in] instruct NUL-terminated instruction text. Pass NULL to clear this field.
+ * @return OK on success, INVALID_C_PARAM for NULL config, or UNKNOW_EXCEPTION on allocation failure.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_speech_generation_config_set_instruct(ov_genai_speech_generation_config* config, const char* instruct);
@@ -329,8 +329,8 @@ ov_genai_speech_generation_config_get_subtalker_temperature(const ov_genai_speec
 /**
  * @brief Set optional Qwen3 Base ICL reference transcript text.
  * @param[in,out] config Configuration to update.
- * @param[in] ref_text NUL-terminated transcript text.
- * @return OK on success, INVALID_C_PARAM for NULL arguments, or UNKNOW_EXCEPTION on allocation failure.
+ * @param[in] ref_text NUL-terminated transcript text. Pass NULL to clear this field.
+ * @return OK on success, INVALID_C_PARAM for NULL config, or UNKNOW_EXCEPTION on allocation failure.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_speech_generation_config_set_ref_text(ov_genai_speech_generation_config* config, const char* ref_text);
