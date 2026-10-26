@@ -451,12 +451,12 @@ For the ASR API, refer to the [ASR Generation Config API](https://docs.openvino.
         ```cpp showLineNumbers
         #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
         #include <iostream>
-        #include <thread>
+        #include <future>
 
         ov::genai::ASRPipeline pipe(model_path, "CPU");
         auto stream = pipe.create_stream();
 
-        std::thread producer([&stream, &audio_frames] {
+        auto producer = std::async(std::launch::async, [&stream, &audio_frames] {
             for (const std::vector<float>& audio_frame : audio_frames) {
                 stream.push_audio(audio_frame);
             }
@@ -466,7 +466,7 @@ For the ASR API, refer to the [ASR Generation Config API](https://docs.openvino.
             std::cout << delta << std::flush;
             return ov::genai::StreamingStatus::RUNNING;
         });
-        producer.join();
+        producer.get();
         std::cout << "\nFinal: " << result.texts[0] << std::endl;
         ```
     </TabItemCpp>
