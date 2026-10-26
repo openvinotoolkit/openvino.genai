@@ -1125,6 +1125,16 @@ def genai_gen_visual_text(
     if generation_config_extra is not None:
         kwargs.update(generation_config_extra)
 
+    if model.config.model_type == "lfm3_vl":
+        import openvino_genai
+
+        # Optimum's LFM3-VL preprocessing disables thinking for reference generation.
+        history = openvino_genai.ChatHistory([{"role": "user", "content": prompt}])
+        history.set_extra_context({"enable_thinking": False})
+        prompt = history
+        if "image" in kwargs:
+            kwargs["images"] = [kwargs.pop("image")]
+
     out = model.generate(
         prompt,
         **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer),
@@ -1158,6 +1168,8 @@ def genai_gen_visual_text_chat(
     import openvino_genai
 
     chat_history = openvino_genai.ChatHistory()
+    if model.config.model_type == "lfm3_vl":
+        chat_history.set_extra_context({"enable_thinking": False})
     answers: list[str] = []
     chat_input: VisualTextChatInput
     for chat_input in inputs:

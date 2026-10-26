@@ -35,6 +35,7 @@ enum class VLMModelType {
     DEEPSEEK_OCR2,
     MUSE_GLIMMER,
     MINICPMV4_7,
+    LFM3_VL,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to

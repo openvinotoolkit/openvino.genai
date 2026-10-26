@@ -33,6 +33,16 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'Lfm3VlForConditionalGeneration',
+    models: [
+      {
+        name: 'LFM3-VL',
+        links: ['https://huggingface.co/LiquidAI/lfm3-vl-1.9b-rl'],
+        notesLink: '#lfm3-vl-notes',
+      },
+    ],
+  },
+  {
     architecture: 'LLaVA',
     models: [
       {
