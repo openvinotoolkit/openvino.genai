@@ -21,11 +21,6 @@ namespace gguf_utils {
 struct GGUFProperties {
     ov::AnyMap rest;
     bool enable_save_ov_model = false;
-    std::optional<bool> legacy_reader;
-
-    bool use_legacy_reader() const {
-        return legacy_reader.value_or(true);
-    }
 };
 
 GGUFProperties extract_gguf_properties(const ov::AnyMap& properties);

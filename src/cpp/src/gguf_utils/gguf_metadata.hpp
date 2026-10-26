@@ -3,12 +3,6 @@
 
 #pragma once
 
-#include <cstdint>
-#include <string>
-#include <variant>
-#include <vector>
+#include "openvino/frontend/gguf/parser.hpp"
 
-#include "openvino/runtime/tensor.hpp"
-
-using GGUFMetaData =
-    std::variant<std::monostate, float, int, ov::Tensor, std::string, std::vector<std::string>, std::vector<int32_t>>;
+using GGUFMetaData = ov::frontend::gguf::GGUFMetaData;

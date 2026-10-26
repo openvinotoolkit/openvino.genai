@@ -28,15 +28,18 @@ GGUFProperties extract_gguf_properties(const ov::AnyMap& external_properties) {
     auto reader_it = result.rest.find(ov::genai::gguf_reader.name());
     if (reader_it != result.rest.end()) {
         const auto reader = reader_it->second.as<std::string>();
-        OPENVINO_ASSERT(reader == FRONTEND_GGUF_READER || reader == LEGACY_GGUF_READER,
-                        "GGUF reader must be either '",
+        if (reader == LEGACY_GGUF_READER) {
+            OPENVINO_THROW("The legacy GGUF reader has been removed. "
+                           "Please use GGUF_READER=\"FRONTEND\" (Python) or "
+                           "ov::genai::gguf_reader(\"FRONTEND\") (C++), "
+                           "or omit the property as the OpenVINO GGUF frontend is now the default.");
+        }
+        OPENVINO_ASSERT(reader == FRONTEND_GGUF_READER,
+                        "GGUF reader must be '",
                         FRONTEND_GGUF_READER,
-                        "' or '",
-                        LEGACY_GGUF_READER,
                         "', got '",
                         reader,
                         "'");
-        result.legacy_reader = reader == LEGACY_GGUF_READER;
         result.rest.erase(reader_it);
     }
 
@@ -46,19 +49,7 @@ GGUFProperties extract_gguf_properties(const ov::AnyMap& external_properties) {
 std::shared_ptr<ov::Model> read_gguf_model(const std::filesystem::path& model_path,
                                          const GGUFProperties& properties) {
 #ifdef ENABLE_GGUF
-    try {
-        return create_from_gguf(model_path.string(), properties.enable_save_ov_model, properties.use_legacy_reader());
-    } catch (const std::exception& error) {
-        if (!properties.legacy_reader.has_value()) {
-            OPENVINO_THROW(error.what(),
-                           "\nThe default legacy GGUF reader failed to load this model. "
-                           "Try GGUF_READER=\"FRONTEND\" (Python) or "
-                           "ov::genai::gguf_reader(\"FRONTEND\") (C++). "
-                           "The OpenVINO GGUF frontend should provide better model quality and broader "
-                           "architecture support, but it is in preview and may have limitations.");
-        }
-        throw;
-    }
+    return create_from_gguf(model_path.string(), properties.enable_save_ov_model);
 #else
     OPENVINO_THROW("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
 #endif

@@ -133,18 +133,6 @@ FetchContent_Declare(safetensors.h
     URL_HASH SHA256=9aaf5961609601cf9aaa96582a207bce7c6e5fbf57ed2cc669bb7bde6a937d4b)
 FetchContent_MakeAvailable(safetensors.h)
 
-if(ENABLE_GGUF)
-    FetchContent_Declare(
-      gguflib
-      URL https://github.com/Lourdle/gguf-tools/archive/bac796ada809ac293e685db59b075971181cb008.zip
-      URL_HASH SHA256=4d6eab5055468d222833f3f83fe2f7909ccd06114278c2c0b468570ef002c22d)
-    FetchContent_MakeAvailable(gguflib)
-    set_target_properties(gguf-tools PROPERTIES EXCLUDE_FROM_ALL ON)
-
-    add_library(gguflib STATIC ${gguflib_SOURCE_DIR}/fp16.c ${gguflib_SOURCE_DIR}/gguflib.c)
-    set_target_properties(gguflib PROPERTIES POSITION_INDEPENDENT_CODE ON)
-    target_include_directories(gguflib PUBLIC "${gguflib_SOURCE_DIR}")
-endif()
 
 # Disable XGrammar for Android platform, causes issues in CI
 if(ANDROID)
@@ -206,10 +194,7 @@ configure_file("${OpenVINOGenAI_SOURCE_DIR}/cmake/templates/version.cpp.in"
 
 # Object library
 if(NOT ENABLE_GGUF)
-    set(GGUF_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf.cpp
-                     ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_quants.cpp
-                     ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_modeling.cpp
-                     ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/building_blocks.cpp)
+    set(GGUF_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_modeling.cpp)
     list(REMOVE_ITEM SOURCE_FILES ${GGUF_SOURCES})
 endif()
 
@@ -228,7 +213,6 @@ if(ENABLE_XGRAMMAR)
 endif()
 
 if(ENABLE_GGUF)
-    target_link_libraries(${TARGET_NAME_OBJ} PRIVATE gguflib)
     target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE ENABLE_GGUF)
     # GGUF conversion routes through the OpenVINO GGUF frontend + its GenAIExtension
     # (header openvino/frontend/gguf/extension/genai.hpp). The frontend is a LINKABLE_FRONTEND
@@ -301,7 +285,6 @@ if(ENABLE_XGRAMMAR)
 endif()
 
 if(ENABLE_GGUF)
-  target_link_libraries(${TARGET_NAME} PRIVATE gguflib)
   if(TARGET openvino::frontend::gguf)
     target_link_libraries(${TARGET_NAME} PRIVATE openvino::frontend::gguf)
   endif()

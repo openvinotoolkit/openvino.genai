@@ -38,7 +38,6 @@ from data.models import GGUF_MODEL_LIST
 # both exist.
 GGUF_READERS = (
     pytest.param("FRONTEND", id="frontend"),
-    pytest.param("LEGACY", id="legacy"),
 )
 
 
@@ -384,31 +383,8 @@ def test_gguf_kquant_invalid_last_dim_is_rejected(tmp_path, tensor_type, last_di
         ov_genai.LLMPipeline(str(gguf_path), "CPU", GGUF_READER=gguf_reader)
 
 
-@pytest.mark.parametrize("reader", [None, "LEGACY", "FRONTEND"])
-@pytest.mark.parametrize("with_tokenizer", [False, True])
-def test_gguf_default_reader_failure_hint(tmp_path, reader, with_tokenizer):
-    gguf_path = tmp_path / "malformed_kquant.gguf"
-    _write_minimal_gguf(gguf_path, _GGUF_TYPE_Q4_K, 32)
-    properties = {} if reader is None else {"GGUF_READER": reader}
-    args = (str(gguf_path),)
-    if with_tokenizer:
-        from tokenizers import Tokenizer
-        from tokenizers.models import WordLevel
-        from transformers import PreTrainedTokenizerFast
-        from utils.hugging_face import convert_and_save_tokenizer
-
-        backend = Tokenizer(WordLevel({"[UNK]": 0}, unk_token="[UNK]"))
-        hf_tokenizer = PreTrainedTokenizerFast(tokenizer_object=backend, unk_token="[UNK]")
-        convert_and_save_tokenizer(hf_tokenizer, tmp_path)
-        args += (ov_genai.Tokenizer(tmp_path),)
-
-    with pytest.raises(RuntimeError, match="multiple of.*256") as exc:
-        ov_genai.LLMPipeline(*args, "CPU", **properties)
-
-    message = str(exc.value)
-    assert ("The default legacy GGUF reader failed" in message) == (reader is None)
-    if reader is None:
-        assert 'GGUF_READER="FRONTEND"' in message
-        assert 'ov::genai::gguf_reader("FRONTEND")' in message
-        assert "better model quality" in message
-        assert "preview" in message
+def test_gguf_legacy_reader_removed(tmp_path):
+    gguf_path = tmp_path / "model.gguf"
+    _write_minimal_gguf(gguf_path, _GGUF_TYPE_Q4_K, 256)
+    with pytest.raises(RuntimeError, match="The legacy GGUF reader has been removed"):
+        ov_genai.LLMPipeline(str(gguf_path), "CPU", GGUF_READER="LEGACY")

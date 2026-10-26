@@ -49,7 +49,7 @@
 #include <cctype>
 #include <vector>
 #include <utility>
-#include "gguf_utils/gguf.hpp"
+#include "openvino/frontend/gguf/parser.hpp"
 #endif
 
 extern "C" {
@@ -1186,7 +1186,7 @@ public:
     GGUFAdapterImpl(const std::filesystem::path& path) {
         // Use get_gguf_data to load raw tensors without enforcing a full model structure
         // This is crucial for adapters which only contain sparse weights
-        auto gguf_data = get_gguf_data(path.string());
+        auto gguf_data = ov::frontend::gguf::get_gguf_data(path.string());
         auto& raw_tensors = std::get<1>(gguf_data);
 
         ConstantMap constant_map;

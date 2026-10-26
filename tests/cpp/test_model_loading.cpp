@@ -8,21 +8,26 @@
 #include "utils.hpp"
 
 TEST(GGUFProperties, FilterConversionPropertiesAndPreservePluginProperties) {
-    for (const std::string reader : {"LEGACY", "FRONTEND"}) {
-        const ov::AnyMap properties{ov::genai::gguf_reader(reader),
-                                    ov::genai::enable_save_ov_model(true),
-                                    {"INFERENCE_NUM_THREADS", 2}};
-        const auto extracted = ov::genai::gguf_utils::extract_gguf_properties(properties);
-        EXPECT_EQ(extracted.use_legacy_reader(), reader == "LEGACY");
-        EXPECT_TRUE(extracted.enable_save_ov_model);
-        ASSERT_EQ(extracted.rest.size(), 1);
-        EXPECT_EQ(extracted.rest.at("INFERENCE_NUM_THREADS").as<int>(), 2);
-        EXPECT_EQ(properties.size(), 3);
-    }
+    const ov::AnyMap properties{ov::genai::gguf_reader("FRONTEND"),
+                                ov::genai::enable_save_ov_model(true),
+                                {"INFERENCE_NUM_THREADS", 2}};
+    const auto extracted = ov::genai::gguf_utils::extract_gguf_properties(properties);
+    EXPECT_TRUE(extracted.enable_save_ov_model);
+    ASSERT_EQ(extracted.rest.size(), 1);
+    EXPECT_EQ(extracted.rest.at("INFERENCE_NUM_THREADS").as<int>(), 2);
+    EXPECT_EQ(properties.size(), 3);
+
     const auto defaults = ov::genai::gguf_utils::extract_gguf_properties({});
-    EXPECT_TRUE(defaults.use_legacy_reader());
-    EXPECT_FALSE(defaults.legacy_reader.has_value());
     EXPECT_FALSE(defaults.enable_save_ov_model);
+}
+
+TEST(GGUFProperties, LegacyReaderThrowsInformativeError) {
+    try {
+        ov::genai::gguf_utils::extract_gguf_properties({ov::genai::gguf_reader("LEGACY")});
+        FAIL() << "GGUF_READER='LEGACY' must throw an informative exception";
+    } catch (const ov::Exception& e) {
+        EXPECT_NE(std::string(e.what()).find("The legacy GGUF reader has been removed"), std::string::npos);
+    }
 }
 
 TEST(GGUFProperties, RejectInvalidReader) {
