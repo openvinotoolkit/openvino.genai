@@ -1067,6 +1067,14 @@ Napi::Value cpp_to_js<ov::genai::EmbeddingResults, Napi::Value>(const Napi::Env&
 }
 
 template <>
+Napi::Value cpp_to_js<ov::genai::EmbedResult, Napi::Value>(const Napi::Env& env,
+                                                           const ov::genai::EmbedResult& embed_result) {
+    auto js_object = Napi::Object::New(env);
+    js_object.Set("embeddings", cpp_to_js<ov::Tensor, Napi::Value>(env, embed_result.embeddings));
+    return js_object;
+}
+
+template <>
 Napi::Value cpp_to_js<std::optional<std::string>, Napi::Value>(const Napi::Env& env, const std::optional<std::string>& value) {
     if (value.has_value()) {
         return Napi::String::New(env, value.value());
