@@ -311,7 +311,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readwrite("m_scores", &EncodedGenerationResult::m_scores)
         .def_readonly("finish_reasons", &EncodedGenerationResult::m_finish_reasons)
         .def_readonly("perf_metrics", &EncodedGenerationResult::perf_metrics)
-        .def_readonly("extended_perf_metrics", &EncodedGenerationResult::extended_perf_metrics);
+        .def_readonly("extended_perf_metrics", &EncodedGenerationResult::extended_perf_metrics)
+        .def_readonly("requested_token_logprobs", &EncodedGenerationResult::m_requested_token_logprobs);
 
     py::class_<GenerationOutput, std::shared_ptr<GenerationOutput>>(m, "GenerationOutput")
         .def_readwrite("generated_ids", &GenerationOutput::generated_ids)

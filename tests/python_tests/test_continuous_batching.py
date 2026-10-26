@@ -426,6 +426,19 @@ def test_logprob_token_ids_encoded_results(model_facebook_opt_125m: OVConvertedM
             for (_tid, cb_lp), (_sfid, sf_lp) in zip(cb_row, sf_row):
                 assert abs(cb_lp - sf_lp) < 1e-3
 
+    # The raw ContinuousBatchingPipeline batch encoded generate() returns EncodedGenerationResult;
+    # the field must be exposed there too, with the same per-position contents.
+    raw_cb_results = create_ov_cb_pipeline(model_path, pipeline_type=PipelineType.CONTINUOUS_BATCHING).generate(
+        [input_ids], [cfg])
+    assert len(raw_cb_results) == 1
+    assert raw_cb_results[0].m_generation_ids[0] == stateful.tokens[0]
+    for raw_seq, sf_seq in zip(raw_cb_results[0].requested_token_logprobs, stateful.requested_token_logprobs):
+        assert len(raw_seq) == len(sf_seq)
+        for raw_row, sf_row in zip(raw_seq, sf_seq):
+            assert [tid for tid, _ in raw_row] == [tid for tid, _ in sf_row]
+            for (_tid, raw_lp), (_sfid, sf_lp) in zip(raw_row, sf_row):
+                assert abs(raw_lp - sf_lp) < 1e-3
+
 
 def test_logprob_token_ids_rejected(model_facebook_opt_125m: OVConvertedModelSchema):
     model_path = model_facebook_opt_125m.models_path
