@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <future>
 #include <vector>
 
 #include "visual_language/vision_registry.hpp"
@@ -40,6 +41,168 @@ TEST(VisionRegistry, SameContentSharesEntry) {
     EXPECT_EQ(registry.size(), 1);
 }
 
+TEST(VisionRegistry, CompletedImageSurvivesLastRelease) {
+    VisionRegistry registry(1024);
+    const auto image = make_frames(1);
+    const auto first = registry.register_image(image);
+    registry.set_encoded_image(first, {});
+    registry.release_ref(first);
+    EXPECT_EQ(registry.register_image(image), first);
+    EXPECT_TRUE(registry.has_encoded_image(first));
+}
+
+TEST(VisionRegistry, DefaultCapacityReleasesCompletedImage) {
+    VisionRegistry registry;
+    const auto id = registry.register_image(make_frames(1));
+    registry.set_encoded_image(id, {});
+    registry.release_ref(id);
+    EXPECT_EQ(registry.size(), 0);
+}
+
+TEST(VisionRegistry, IdleBudgetEvictsLeastRecentlyUsedImage) {
+    const auto image = make_frames(1);
+    VisionRegistry registry(image.get_byte_size() * 2);
+    const auto first = registry.register_image(image);
+    registry.set_encoded_image(first, {});
+    registry.release_ref(first);
+    auto changed = make_frames(1);
+    changed.data<uint8_t>()[0]++;
+    const auto second = registry.register_image(changed);
+    registry.set_encoded_image(second, {});
+    registry.release_ref(second);
+    EXPECT_EQ(registry.register_image(image), first);
+    registry.release_ref(first);
+    changed.data<uint8_t>()[0]++;
+    const auto third = registry.register_image(changed);
+    registry.set_encoded_image(third, {});
+    registry.release_ref(third);
+    EXPECT_TRUE(registry.contains(first));
+    EXPECT_FALSE(registry.contains(second));
+    EXPECT_TRUE(registry.contains(third));
+}
+
+TEST(VisionRegistry, PinnedEntrySurvivesCapacityReduction) {
+    VisionRegistry registry(1024);
+    const auto id = registry.register_image(make_frames(1));
+    registry.set_encoded_image(id, {});
+    registry.set_capacity(0);
+    EXPECT_TRUE(registry.contains(id));
+    registry.release_ref(id);
+    EXPECT_FALSE(registry.contains(id));
+}
+
+TEST(VisionRegistry, VideoMetadataDistinguishesEntries) {
+    VisionRegistry registry;
+    const auto frames = make_frames(4);
+    const auto first = registry.register_video(frames, {24.0f, {0, 1}});
+    EXPECT_EQ(registry.register_video(frames, {24.0f, {0, 1}}), first);
+    EXPECT_NE(registry.register_video(frames, {30.0f, {0, 1}}), first);
+    EXPECT_NE(registry.register_video(frames, {24.0f, {1, 0}}), first);
+}
+
+TEST(VisionRegistry, RepeatedImageSkipsEncodingAndPreservesOutput) {
+    VisionRegistry registry(1024);
+    size_t calls = 0;
+    const auto encode = [&](const ov::Tensor&) {
+        ++calls;
+        ov::genai::EncodedImage image;
+        image.resized_source = make_audio(4, static_cast<float>(calls));
+        image.num_image_tokens = 4;
+        return image;
+    };
+    const auto first = registry.encode_image(make_frames(1), encode);
+    const auto second = registry.encode_image(make_frames(1), encode);
+    EXPECT_EQ(calls, 1);
+    EXPECT_EQ(second.num_image_tokens, 4);
+    registry.set_capacity(0);
+    EXPECT_EQ(registry.size(), 0);
+    EXPECT_EQ(first.resized_source.data<const float>()[0], 1.0f);
+    EXPECT_EQ(second.resized_source.data<const float>()[0], 1.0f);
+    registry.encode_image(make_frames(1), encode);
+    EXPECT_EQ(calls, 2);
+}
+
+TEST(VisionRegistry, VideoMetadataChangeRequiresEncoding) {
+    VisionRegistry registry(4096);
+    size_t calls = 0;
+    const auto encode = [&](const ov::Tensor&, const ov::genai::VideoMetadata& metadata) {
+        ++calls;
+        ov::genai::EncodedVideo video;
+        video.metadata = metadata;
+        return video;
+    };
+    const auto frames = make_frames(4);
+    registry.encode_video(frames, {24.0f, {0, 1}}, encode);
+    registry.encode_video(frames, {24.0f, {0, 1}}, encode);
+    EXPECT_EQ(calls, 1);
+    const auto changed = registry.encode_video(frames, {30.0f, {0, 1}}, encode);
+    EXPECT_EQ(calls, 2);
+    EXPECT_EQ(changed.metadata.fps, 30.0f);
+    registry.encode_video(frames, {24.0f, {1, 0}}, encode);
+    EXPECT_EQ(calls, 3);
+}
+
+TEST(VisionRegistry, FailedEncodingReleasesTransientEntry) {
+    VisionRegistry registry(1024);
+    EXPECT_ANY_THROW(registry.encode_image(make_frames(1), [](const ov::Tensor&) -> ov::genai::EncodedImage {
+        OPENVINO_THROW("Expected encoder failure");
+    }));
+    EXPECT_EQ(registry.size(), 0);
+}
+
+TEST(VisionRegistry, PayloadBudgetIncludesEncodedTensors) {
+    const auto image = make_frames(1);
+    VisionRegistry registry(image.get_byte_size());
+    size_t calls = 0;
+    const auto encode = [&](const ov::Tensor&) {
+        ++calls;
+        ov::genai::EncodedImage encoded;
+        encoded.resized_source = make_audio(1);
+        return encoded;
+    };
+    registry.encode_image(image, encode);
+    EXPECT_EQ(registry.size(), 0);
+    registry.encode_image(image, encode);
+    EXPECT_EQ(calls, 2);
+}
+
+TEST(VisionRegistry, InputMutationRequiresEncoding) {
+    VisionRegistry registry(1024);
+    size_t calls = 0;
+    const auto encode = [&](const ov::Tensor&) {
+        ++calls;
+        return ov::genai::EncodedImage{};
+    };
+    auto image = make_frames(1);
+    registry.encode_image(image, encode);
+    image.data<uint8_t>()[0]++;
+    registry.encode_image(image, encode);
+    registry.encode_image(make_frames(1), encode);
+    EXPECT_EQ(calls, 2);
+}
+
+TEST(VisionRegistry, ConcurrentMissesEncodeOnce) {
+    VisionRegistry registry(1024);
+    size_t calls = 0;
+    const auto encode = [&](const ov::Tensor&) {
+        ++calls;
+        return ov::genai::EncodedImage{};
+    };
+    auto first = std::async(std::launch::async, [&] { return registry.encode_image(make_frames(1), encode); });
+    auto second = std::async(std::launch::async, [&] { return registry.encode_image(make_frames(1), encode); });
+    EXPECT_EQ(first.get().num_image_tokens, 0);
+    EXPECT_EQ(second.get().num_image_tokens, 0);
+    EXPECT_EQ(calls, 1);
+}
+
+TEST(VisionRegistry, AudioIsNotRetainedByVisionBudget) {
+    VisionRegistry registry(1024);
+    const auto id = registry.register_audio(make_audio(4));
+    registry.set_encoded_audio(id, {});
+    registry.release_ref(id);
+    EXPECT_EQ(registry.size(), 0);
+}
+
 // Before the fix the second audio hit the first entry and reused its embeddings.
 TEST(VisionRegistry, DifferenceInUnsampledBytesGetsOwnEntry) {
     VisionRegistry registry;
@@ -66,17 +229,17 @@ TEST(VisionRegistry, CollidingEntryIsFoundAgainAfterProbe) {
     EXPECT_EQ(registry.size(), 2);
 }
 
-// Releasing the head of a probe chain may cost a duplicate entry, never a wrong reuse.
 TEST(VisionRegistry, ReleasedChainHeadNeverReturnsWrongEntry) {
     VisionRegistry registry;
     auto changed = make_audio(LONG_AUDIO_SAMPLES);
     changed.data<float>()[UNSAMPLED_SAMPLE] = -1.0f;
 
     const auto first = registry.register_audio(make_audio(LONG_AUDIO_SAMPLES));
-    registry.register_audio(changed);
+    const auto second = registry.register_audio(changed);
     registry.release_ref(first);
 
     const auto again = registry.register_audio(changed);
+    EXPECT_EQ(again, second);
     EXPECT_EQ(registry.get_original(again).data<const float>()[UNSAMPLED_SAMPLE], -1.0f);
 }
 

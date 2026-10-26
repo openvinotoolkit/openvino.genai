@@ -247,21 +247,19 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::sample_video_if_needed(
 std::vector<ov::Tensor> InputsEmbedder::IInputsEmbedder::to_single_image_tensors(const std::vector<ov::Tensor>& images) {
     std::vector<ov::Tensor> single_image_tensors;
     for (const auto& image : images) {
-        ov::Tensor reshaped_image = image;
         ov::Shape image_shape = image.get_shape();
         switch (image_shape.size()) {
             case 3:
-                reshaped_image.set_shape({1, image_shape.at(0), image_shape.at(1), image_shape.at(2)});
+                image_shape.insert(image_shape.begin(), 1);
                 break;
             case 4: break;
             default: OPENVINO_THROW("Input image must have [NHWC] or [HWC] layout, given image shape is ", image_shape);
         }
-        ov::Shape reshaped_image_shape = reshaped_image.get_shape();
-        for (size_t batch_idx = 0; batch_idx < reshaped_image_shape.at(0); ++batch_idx) {
+        for (size_t batch_idx = 0; batch_idx < image_shape.at(0); ++batch_idx) {
             ov::Tensor single_image{
-                reshaped_image.get_element_type(),
-                {1, reshaped_image_shape.at(1), reshaped_image_shape.at(2), reshaped_image_shape.at(3)},
-                reshaped_image.data<uint8_t>() + batch_idx * reshaped_image_shape.at(1) * reshaped_image_shape.at(2) * reshaped_image_shape.at(3)
+                image.get_element_type(),
+                {1, image_shape.at(1), image_shape.at(2), image_shape.at(3)},
+                image.data<uint8_t>() + batch_idx * image_shape.at(1) * image_shape.at(2) * image_shape.at(3)
             };
             single_image_tensors.push_back(std::move(single_image));
         }
@@ -337,6 +335,7 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
                                const Tokenizer& tokenizer,
                                const std::string& device,
                                const ov::AnyMap device_config) {
+    initialize_vision_cache(device_config);
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
@@ -391,6 +390,7 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
                                const std::filesystem::path& config_dir_path,
                                const std::string& device,
                                const ov::AnyMap device_config) {
+    initialize_vision_cache(device_config);
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json");
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
@@ -470,15 +470,51 @@ std::function<ov::Tensor(const ov::Tensor& new_input_ids)> InputsEmbedder::get_p
     return m_impl->get_per_layer_embeddings_callback();
 }
 
+void InputsEmbedder::initialize_vision_cache(const ov::AnyMap& properties) {
+    const auto it = properties.find(vision_cache_capacity_bytes.name());
+    const int64_t capacity = it == properties.end() ? 0 : it->second.as<int64_t>();
+    OPENVINO_ASSERT(capacity >= 0, "vision_cache_capacity_bytes must be non-negative");
+    m_vision_cache_enabled = capacity > 0;
+    m_vision_registry = std::make_shared<VisionRegistry>(static_cast<size_t>(capacity));
+}
+
 std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
-    return m_impl->encode_images(images);
+    if (!m_vision_cache_enabled) {
+        return m_impl->encode_images(images);
+    }
+    std::vector<EncodedImage> encoded;
+    encoded.reserve(images.size());
+    for (const auto& image : images) {
+        encoded.push_back(m_vision_registry->encode_image(image, [this](const ov::Tensor& original) {
+            auto result = m_impl->encode_images({original});
+            OPENVINO_ASSERT(result.size() == 1, "Expected one encoded image per input image");
+            return std::move(result.front());
+        }));
+    }
+    return encoded;
 }
 
 std::vector<ov::genai::EncodedVideo> InputsEmbedder::encode_videos(
     const std::vector<ov::Tensor>& videos,
     const std::vector<VideoMetadata>& videos_metadata
 ) {
-    return m_impl->encode_videos(videos, videos_metadata);
+    OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
+                    "Number of videos and videos metadata must match if metadata provided.");
+    if (!m_vision_cache_enabled) {
+        return m_impl->encode_videos(videos, videos_metadata);
+    }
+    std::vector<EncodedVideo> encoded;
+    encoded.reserve(videos.size());
+    for (size_t index = 0; index < videos.size(); ++index) {
+        const auto metadata = videos_metadata.empty() ? VideoMetadata{} : videos_metadata[index];
+        encoded.push_back(m_vision_registry->encode_video(
+            videos[index], metadata, [this](const ov::Tensor& original, const VideoMetadata& original_metadata) {
+                auto result = m_impl->encode_videos({original}, {original_metadata});
+                OPENVINO_ASSERT(result.size() == 1, "Expected one encoded video per input video");
+                return std::move(result.front());
+            }));
+    }
+    return encoded;
 }
 
 std::vector<EncodedAudio> InputsEmbedder::encode_audios(const std::vector<ov::Tensor>& audios) {

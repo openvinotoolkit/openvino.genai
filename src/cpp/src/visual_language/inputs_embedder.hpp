@@ -18,6 +18,7 @@
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/embedding_model.hpp"
 #include "visual_language/vision_encoder.hpp"
+#include "visual_language/vision_registry.hpp"
 #include "visual_language/vision_token_pruning_processor.hpp"
 
 namespace ov::genai {
@@ -75,6 +76,8 @@ public:
     std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback();
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
+
+    const std::shared_ptr<VisionRegistry>& get_vision_registry() const { return m_vision_registry; }
 
     std::vector<ov::genai::EncodedVideo> encode_videos(
         const std::vector<ov::Tensor>& videos,
@@ -448,6 +451,10 @@ private:
     };
 
     std::shared_ptr<IInputsEmbedder> m_impl;
+    std::shared_ptr<VisionRegistry> m_vision_registry;
+    bool m_vision_cache_enabled = false;
+
+    void initialize_vision_cache(const ov::AnyMap& properties);
 
     friend class InputsEmbedderMiniCPM;
     friend class InputsEmbedderLLaVA;

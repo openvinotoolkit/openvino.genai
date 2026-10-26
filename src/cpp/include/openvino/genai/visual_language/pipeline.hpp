@@ -15,6 +15,10 @@
 
 namespace ov::genai {
 
+/// @brief Maximum tensor payload bytes retained for unreferenced image/video encodings per pipeline.
+/// Zero (default) disables cross-request retention. Active histories and requests may exceed this budget.
+static constexpr ov::Property<size_t> vision_cache_capacity_bytes{"vision_cache_capacity_bytes"};
+
 class OPENVINO_GENAI_EXPORTS VLMDecodedResults : public DecodedResults{
 public:
     VLMPerfMetrics perf_metrics;

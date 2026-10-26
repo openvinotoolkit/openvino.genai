@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "visual_language/vision_registry.hpp"
+#include "logger.hpp"
 
+#include <chrono>
 #include <cstring>
 
 namespace ov::genai {
@@ -16,7 +18,11 @@ VisionRegistry::VisionEntry::VisionEntry(VisionEntry&& other) noexcept
       encoded_image(std::move(other.encoded_image)),
       encoded_video(std::move(other.encoded_video)),
       encoded_audio(std::move(other.encoded_audio)),
-      ref_count(other.ref_count.load()) {}
+    ref_count(other.ref_count.load()),
+    metadata(std::move(other.metadata)),
+    content_hash(other.content_hash),
+    retained_bytes(other.retained_bytes),
+    idle_position(other.idle_position) {}
 
 VisionRegistry::VisionEntry& VisionRegistry::VisionEntry::operator=(VisionEntry&& other) noexcept {
     if (this != &other) {
@@ -26,6 +32,10 @@ VisionRegistry::VisionEntry& VisionRegistry::VisionEntry::operator=(VisionEntry&
         encoded_video = std::move(other.encoded_video);
         encoded_audio = std::move(other.encoded_audio);
         ref_count.store(other.ref_count.load());
+        metadata = std::move(other.metadata);
+        content_hash = other.content_hash;
+        retained_bytes = other.retained_bytes;
+        idle_position = other.idle_position;
     }
     return *this;
 }
@@ -125,7 +135,7 @@ VisionID VisionRegistry::compute_hash(const ov::Tensor& tensor) {
     return hash;
 }
 
-VisionID VisionRegistry::register_vision(const ov::Tensor& tensor, ModalityType type) {
+VisionID VisionRegistry::register_vision(const ov::Tensor& tensor, ModalityType type, const VideoMetadata& metadata) {
     const auto pack = [&tensor]() {
         ov::Tensor packed(tensor.get_element_type(), tensor.get_shape());
         tensor.copy_to(packed);
@@ -134,19 +144,32 @@ VisionID VisionRegistry::register_vision(const ov::Tensor& tensor, ModalityType 
     // Hashing and comparison read raw bytes, which for a strided ROI are not its logical content.
     const bool is_contiguous = tensor.is_continuous();
     ov::Tensor content = is_contiguous ? tensor : pack();
-    auto id = compute_hash(content);
+    auto hash = compute_hash(content);
+    if (type == ModalityType::VIDEO) {
+        hash ^= std::hash<float>{}(metadata.fps);
+        for (size_t index : metadata.frames_indices) {
+            hash = (hash ^ index) * 0x100000001b3;
+        }
+    }
 
     std::lock_guard<std::mutex> lock(m_mutex);
-    // The hash samples large tensors, so a hit is only a candidate. Probe past entries with other content.
-    for (auto it = m_entries.find(id); it != m_entries.end(); it = m_entries.find(++id)) {
-        if (it->second.type == type && same_content(it->second.original, content)) {
-            it->second.ref_count++;
+    auto& bucket = m_hash_buckets[hash];
+    for (VisionID id : bucket) {
+        auto& entry = m_entries.at(id);
+        if (entry.type == type && entry.metadata.fps == metadata.fps &&
+            entry.metadata.frames_indices == metadata.frames_indices && same_content(entry.original, content)) {
+            pin(entry);
             return id;
         }
     }
     // A packed ROI is already a private copy; a contiguous tensor may be caller memory and needs one.
     ov::Tensor owned_tensor = is_contiguous ? pack() : std::move(content);
-    m_entries.emplace(id, VisionEntry(type, std::move(owned_tensor))).first->second.ref_count++;
+    const VisionID id = m_next_id++;
+    auto& entry = m_entries.emplace(id, VisionEntry(type, std::move(owned_tensor))).first->second;
+    entry.metadata = metadata;
+    entry.content_hash = hash;
+    entry.ref_count++;
+    bucket.push_back(id);
     return id;
 }
 
@@ -154,8 +177,8 @@ VisionID VisionRegistry::register_image(const ov::Tensor& image) {
     return register_vision(image, ModalityType::IMAGE);
 }
 
-VisionID VisionRegistry::register_video(const ov::Tensor& video) {
-    return register_vision(video, ModalityType::VIDEO);
+VisionID VisionRegistry::register_video(const ov::Tensor& video, const VideoMetadata& metadata) {
+    return register_vision(video, ModalityType::VIDEO, metadata);
 }
 
 VisionID VisionRegistry::register_audio(const ov::Tensor& audio) {
@@ -193,16 +216,125 @@ void VisionRegistry::add_ref(const VisionID& id) {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_entries.find(id);
     OPENVINO_ASSERT(it != m_entries.end(), "Vision ID not found in VisionRegistry: ", id);
-    it->second.ref_count++;
+    pin(it->second);
 }
 
 void VisionRegistry::release_ref(const VisionID& id) {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_entries.find(id);
     OPENVINO_ASSERT(it != m_entries.end(), "Vision ID not found in VisionRegistry: ", id);
+    OPENVINO_ASSERT(it->second.ref_count > 0, "Vision entry has no references: ", id);
     if (--it->second.ref_count == 0) {
-        m_entries.erase(it);
+        auto& entry = it->second;
+        if (m_capacity_bytes == 0 || (!entry.encoded_image && !entry.encoded_video)) {
+            erase_entry(id);
+            return;
+        }
+        entry.retained_bytes = entry_bytes(entry);
+        m_idle_bytes += entry.retained_bytes;
+        m_idle_entries.push_back(id);
+        entry.idle_position = std::prev(m_idle_entries.end());
+        evict_idle_entries();
     }
+}
+
+void VisionRegistry::set_capacity(size_t capacity_bytes) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_capacity_bytes = capacity_bytes;
+    evict_idle_entries();
+}
+
+EncodedImage VisionRegistry::encode_image(const ov::Tensor& image,
+                                          const std::function<EncodedImage(const ov::Tensor&)>& encode) {
+    const auto lookup_start = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lock(m_encoding_mutex);
+    const VisionID id = register_image(image);
+    const ScopedReference reference{*this, id};
+    const bool cache_hit = has_encoded_image(id);
+    const auto encode_start = std::chrono::steady_clock::now();
+    if (!cache_hit) {
+        set_encoded_image(id, encode(get_original(id)));
+    }
+    GENAI_DEBUG("Image embedding cache: id=%llu hit=%s lookup_ms=%.3f encoder_ms=%.3f",
+                static_cast<unsigned long long>(id), cache_hit ? "true" : "false",
+                std::chrono::duration<double, std::milli>(encode_start - lookup_start).count(),
+                cache_hit ? 0.0 : std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - encode_start).count());
+    return get_encoded_image(id);
+}
+
+EncodedVideo VisionRegistry::encode_video(
+    const ov::Tensor& video,
+    const VideoMetadata& metadata,
+    const std::function<EncodedVideo(const ov::Tensor&, const VideoMetadata&)>& encode) {
+    std::lock_guard<std::mutex> lock(m_encoding_mutex);
+    const VisionID id = register_video(video, metadata);
+    const ScopedReference reference{*this, id};
+    if (!has_encoded_video(id)) {
+        set_encoded_video(id, encode(get_original(id), metadata));
+    }
+    return get_encoded_video(id);
+}
+
+void VisionRegistry::pin(VisionEntry& entry) {
+    if (entry.idle_position) {
+        m_idle_entries.erase(*entry.idle_position);
+        entry.idle_position.reset();
+        m_idle_bytes -= entry.retained_bytes;
+    }
+    entry.ref_count++;
+}
+
+void VisionRegistry::erase_entry(VisionID id) {
+    auto& entry = m_entries.at(id);
+    if (entry.idle_position) {
+        m_idle_entries.erase(*entry.idle_position);
+        m_idle_bytes -= entry.retained_bytes;
+    }
+    auto bucket = m_hash_buckets.find(entry.content_hash);
+    auto& ids = bucket->second;
+    ids.erase(std::find(ids.begin(), ids.end(), id));
+    if (ids.empty()) {
+        m_hash_buckets.erase(bucket);
+    }
+    m_entries.erase(id);
+}
+
+void VisionRegistry::evict_idle_entries() {
+    while (!m_idle_entries.empty() && (m_capacity_bytes == 0 || m_idle_bytes > m_capacity_bytes)) {
+        erase_entry(m_idle_entries.front());
+    }
+}
+
+size_t VisionRegistry::entry_bytes(const VisionEntry& entry) {
+    size_t bytes = 0;
+    std::unordered_map<const void*, size_t> buffers;
+    const auto account = [&](const ov::Tensor& tensor) {
+        if (tensor) {
+            auto& accounted = buffers[tensor.data()];
+            const size_t size = tensor.get_byte_size();
+            if (size > accounted) {
+                bytes += size - accounted;
+                accounted = size;
+            }
+        }
+    };
+    account(entry.original);
+    if (entry.encoded_image) {
+        const auto& image = *entry.encoded_image;
+        account(image.resized_source);
+        account(image.images_features_projection);
+        account(image.resampled_image.resampled_source);
+        for (const auto& row : image.resampled_image.vision_embed_tensors) {
+            for (const auto& tensor : row) {
+                account(tensor);
+            }
+        }
+    }
+    if (entry.encoded_video) {
+        account(entry.encoded_video->video_features);
+    }
+    return bytes;
 }
 
 size_t VisionRegistry::size() const {

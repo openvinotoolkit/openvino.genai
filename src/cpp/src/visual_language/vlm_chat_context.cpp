@@ -42,7 +42,7 @@ VLMChatContext::ProcessedChatData VLMChatContext::process(
     }
     
     std::vector<size_t> new_image_indices = m_history_state->register_images(new_images);
-    std::vector<size_t> new_video_indices = m_history_state->register_videos(new_videos);
+    std::vector<size_t> new_video_indices = m_history_state->register_videos(new_videos, new_videos_metadata);
     std::vector<size_t> new_audio_indices = m_history_state->register_audios(new_audios);
     
     ManualTimer vision_encoding_timer("Vision Encoding");

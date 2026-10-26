@@ -84,7 +84,8 @@ public:
     void add_message_metadata(MessageMetadata metadata);
 
     std::vector<size_t> register_images(const std::vector<ov::Tensor>& images);
-    std::vector<size_t> register_videos(const std::vector<ov::Tensor>& videos);
+    std::vector<size_t> register_videos(const std::vector<ov::Tensor>& videos,
+                                      const std::vector<VideoMetadata>& metadata = {});
     std::vector<size_t> register_audios(const std::vector<ov::Tensor>& audios);
 
     VisionID get_image_vision_id(size_t index) const { return m_image_index_to_id.at(index); }

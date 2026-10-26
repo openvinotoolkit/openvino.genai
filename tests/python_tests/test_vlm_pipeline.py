@@ -891,6 +891,68 @@ def test_vlm_readonly_image_tensor(ov_pipe_model: VlmModelInfo, cat_image_32x32)
     )
 
 
+@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
+@pytest.mark.parametrize("with_video", [False, True])
+def test_vlm_vision_cache_output_parity(backend, with_video):
+    model_id = "optimum-intel-internal-testing/tiny-random-qwen3.5"
+    if is_transformers_version("<", "5.0"):
+        pytest.skip("Qwen3.5 requires transformers >= 5.0")
+    model_path = _get_ov_model(model_id)
+    reference = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
+    cached = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend,
+                         vision_cache_capacity_bytes=64 * 1024 * 1024)
+    config = GenerationConfig(max_new_tokens=4, do_sample=False, ignore_eos=True)
+    image = np.full((32, 32, 3), 42, dtype=np.uint8)
+    video = np.full((4, 32, 32, 3), 42, dtype=np.uint8)
+    for turn in range(3):
+        prompt = f"<ov_genai_image_0>Describe this image. Turn {turn}."
+        media = {"images": [openvino.Tensor(image.copy())]}
+        if with_video:
+            prompt += " <ov_genai_video_0>Describe the video."
+            media["videos"] = [openvino.Tensor(video.copy())]
+            metadata = VideoMetadata()
+            metadata.fps = 24.0 if turn < 2 else 30.0
+            metadata.frames_indices = [0, 1] if turn < 2 else [2, 3]
+            media["videos_metadata"] = [metadata]
+        expected = reference.generate(prompt, generation_config=config, **media)
+        actual = cached.generate(prompt, generation_config=config, **media)
+        assert actual.texts == expected.texts
+        assert actual.perf_metrics.get_num_input_tokens() == expected.perf_metrics.get_num_input_tokens()
+        assert list(media["images"][0].shape) == [32, 32, 3]
+    for pipe in (reference, cached):
+        history = ChatHistory()
+        history.append({"role": "user", "content": "Describe this image."})
+        result = pipe.generate(history, images=[openvino.Tensor(image.copy())], generation_config=config)
+        if pipe is reference:
+            expected_texts = result.texts
+        else:
+            assert result.texts == expected_texts
+
+
+def test_vlm_vision_cache_sequential_add_request():
+    if is_transformers_version("<", "5.0"):
+        pytest.skip("Qwen3.5 requires transformers >= 5.0")
+    model_path = _get_ov_model("optimum-intel-internal-testing/tiny-random-qwen3.5")
+    reference = ContinuousBatchingPipeline(model_path, SchedulerConfig(), "CPU")
+    cached = ContinuousBatchingPipeline(model_path, SchedulerConfig(), "CPU",
+                                        {"vision_cache_capacity_bytes": 64 * 1024 * 1024})
+    config = GenerationConfig(max_new_tokens=4, do_sample=False, ignore_eos=True, apply_chat_template=False)
+    tokenizer = reference.get_tokenizer()
+    history = [{"role": "user", "content": "<ov_genai_image_0>Describe this image."}]
+    image = np.full((1, 32, 32, 3), 42, dtype=np.uint8)
+    for turn in range(3):
+        prompt = tokenizer.apply_chat_template(history, add_generation_prompt=True)
+        results = []
+        for pipe in (reference, cached):
+            handle = pipe.add_request(turn, prompt, images=[openvino.Tensor(image.copy())], generation_config=config)
+            while pipe.has_non_finished_requests():
+                pipe.step()
+            results.append(handle.read_all()[0].generated_ids)
+        assert results[0] == results[1]
+        history.append({"role": "assistant", "content": tokenizer.decode(results[0])})
+        history.append({"role": "user", "content": "Give another detail."})
+
+
 @pytest.mark.parametrize(
     "config",
     [
