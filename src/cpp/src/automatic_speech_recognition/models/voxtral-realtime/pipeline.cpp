@@ -4,6 +4,7 @@
 #include "automatic_speech_recognition/models/voxtral-realtime/pipeline.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <fstream>
 #include <nlohmann/json.hpp>
@@ -286,8 +287,9 @@ class VoxtralASRStream final : public ASRStreamImplBase {
 public:
     VoxtralASRStream(const std::shared_ptr<VoxtralRealtimeRuntime>& runtime,
                      const ASRGenerationConfig& default_config,
-                     const std::optional<ASRGenerationConfig>& generation_config)
-        : ASRStreamImplBase{MAX_QUEUED_AUDIO_FRAMES},
+                     const std::optional<ASRGenerationConfig>& generation_config,
+                     const float load_time_ms)
+        : ASRStreamImplBase{MAX_QUEUED_AUDIO_FRAMES, load_time_ms},
           m_runtime{runtime},
           m_generation_config{resolve_generation_config(runtime->config, default_config, generation_config)},
           m_audio_request{runtime->audio_encoder.create_infer_request()},
@@ -363,6 +365,7 @@ private:
         if (m_prefill_done && m_audio_buffer.size() > m_audio_overlap_samples) {
             m_audio_buffer.resize(m_runtime->config.subsequent_chunk_samples, 0.0f);
             emitted += process_chunk(m_audio_buffer, false);
+            m_audio_overlap_samples = m_runtime->config.n_fft;
         }
         if (m_prefill_done && !m_generation_done) {
             const size_t overlap_samples = std::min(m_audio_overlap_samples, m_audio_buffer.size());
@@ -386,7 +389,10 @@ private:
             waveform.resize(m_runtime->config.left_pad_samples, 0.0f);
         waveform.insert(waveform.end(), samples.begin(), samples.end());
 
+        const TimePoint features_start_time = std::chrono::steady_clock::now();
         const WhisperFeatures features = m_runtime->feature_extractor.extract(waveform, false, is_first_chunk);
+        PerfMetrics::emplace_duration(m_perf_metrics.asr_raw_metrics.features_extraction_durations,
+                                      features_start_time);
         ov::Tensor input_features(ov::element::f32, {1, features.feature_size, features.n_frames});
         std::copy(features.data.begin(), features.data.end(), input_features.data<float>());
         m_audio_request.set_tensor("input_features", input_features);
@@ -396,7 +402,11 @@ private:
             m_audio_request.set_tensor("past_key_values." + std::to_string(layer) + ".key", m_audio_key_values[layer].first);
             m_audio_request.set_tensor("past_key_values." + std::to_string(layer) + ".value", m_audio_key_values[layer].second);
         }
+        const TimePoint infer_start_time = std::chrono::steady_clock::now();
         m_audio_request.infer();
+        const MicroSeconds infer_duration{PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start_time)};
+        m_perf_metrics.asr_raw_metrics.encode_inference_durations.emplace_back(infer_duration);
+        m_perf_metrics.raw_metrics.m_inference_durations[0] += infer_duration;
 
         m_conv1_cache = copy_tensor(m_audio_request.get_tensor("conv1_cache_1"));
         m_conv2_cache = copy_tensor(m_audio_request.get_tensor("conv2_cache_1"));
@@ -449,13 +459,22 @@ private:
             m_text_request.set_tensor("past_key_values." + std::to_string(layer) + ".key", m_text_key_values[layer].first);
             m_text_request.set_tensor("past_key_values." + std::to_string(layer) + ".value", m_text_key_values[layer].second);
         }
+        const TimePoint infer_start_time = std::chrono::steady_clock::now();
         m_text_request.infer();
+        const MicroSeconds infer_duration{
+            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start_time)};
+        m_perf_metrics.asr_raw_metrics.decode_inference_durations.emplace_back(infer_duration);
+        m_perf_metrics.raw_metrics.m_inference_durations[0] += infer_duration;
 
         const ov::Tensor logits = m_text_request.get_tensor("logits");
         const size_t vocab_size = logits.get_shape().back();
         const size_t last_position = logits.get_shape()[1] - 1;
         const float* logits_data = logits.data<const float>() + last_position * vocab_size;
+        const TimePoint sampling_start_time = std::chrono::steady_clock::now();
         m_last_token = static_cast<int64_t>(std::max_element(logits_data, logits_data + vocab_size) - logits_data);
+        const TimePoint token_time = std::chrono::steady_clock::now();
+        PerfMetrics::emplace_duration(m_perf_metrics.raw_metrics.m_sampling_durations, sampling_start_time, token_time);
+        m_perf_metrics.raw_metrics.m_token_infer_durations.emplace_back(infer_duration);
         for (size_t layer = 0; layer < m_text_key_values.size(); ++layer) {
             m_text_key_values[layer] = voxtral_realtime::crop_and_rephase_cache(
                 m_text_request.get_tensor("present." + std::to_string(layer) + ".key"),
@@ -464,14 +483,25 @@ private:
                 m_runtime->config.text_rope_theta);
         }
         ++m_generated_tokens;
+        m_perf_metrics.raw_metrics.m_new_token_times.emplace_back(token_time);
+        m_perf_metrics.raw_metrics.m_batch_sizes.emplace_back(1);
         if (is_first_chunk)
             m_prefill_done = true;
         const bool is_stop_token = m_stop_token_ids.count(m_last_token) > 0;
-        if (is_stop_token || m_generated_tokens >= m_generation_config.max_new_tokens)
+        if (is_stop_token || m_generated_tokens >= m_generation_config.max_new_tokens) {
             m_generation_done = true;
-        if (is_stop_token)
+            stop_generation();
+        }
+        const TimePoint detokenization_start_time = std::chrono::steady_clock::now();
+        if (is_stop_token) {
+            PerfMetrics::emplace_duration(m_perf_metrics.raw_metrics.detokenization_durations,
+                                          detokenization_start_time);
             return {};
-        return append_token_bytes(m_runtime->decode_token(m_last_token));
+        }
+        std::string emitted = append_token_bytes(m_runtime->decode_token(m_last_token));
+        PerfMetrics::emplace_duration(m_perf_metrics.raw_metrics.detokenization_durations,
+                                      detokenization_start_time);
+        return emitted;
     }
 
     std::string append_token_bytes(const std::string& token_bytes) {
@@ -483,10 +513,10 @@ private:
     }
 
     std::string flush_pending_utf8() {
-        std::string emitted = std::move(m_pending_utf8);
+        std::string emitted;
+        if (!m_pending_utf8.empty())
+            emitted = "\xef\xbf\xbd";
         m_pending_utf8.clear();
-        if (!emitted.empty())
-            emitted += "\xef\xbf\xbd";
         return emitted;
     }
 
@@ -530,7 +560,7 @@ ASRDecodedResults VoxtralASR::generate(const AudioInputs& audio_inputs,
 
 std::unique_ptr<ASRStreamImplBase> VoxtralASR::create_stream(
     const std::optional<ASRGenerationConfig>& generation_config) {
-    return std::make_unique<VoxtralASRStream>(m_runtime, m_generation_config, generation_config);
+    return std::make_unique<VoxtralASRStream>(m_runtime, m_generation_config, generation_config, m_load_time_ms);
 }
 
 }  // namespace ov::genai

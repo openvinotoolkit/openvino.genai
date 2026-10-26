@@ -17,7 +17,7 @@ void erase_allowed_asr_ctor_properties(ov::AnyMap& properties);
 /// Owns the input queue and generation state of ASRStream; derived classes implement model inference.
 class ASRStreamImplBase {
 public:
-    explicit ASRStreamImplBase(size_t max_queued_frames);
+    explicit ASRStreamImplBase(size_t max_queued_frames, float load_time_ms = 0.0f);
     virtual ~ASRStreamImplBase() = default;
 
     void push_audio(const std::vector<float>& audio_frame);
@@ -29,15 +29,18 @@ protected:
     virtual std::string process_audio(const std::vector<float>& audio_frame) = 0;
     /// Run inference on audio buffered after the last frame and return the remaining text.
     virtual std::string flush() = 0;
+    void stop_generation();
+
+    ASRPerfMetrics m_perf_metrics;
 
 private:
     enum class GenerationState { NOT_STARTED, RUNNING, STOPPED };
 
     /// Return std::nullopt when the end of audio is reached.
     std::optional<std::vector<float>> pop_audio_frame();
-    void stop_generation();
 
     const size_t m_max_queued_frames;
+    const float m_load_time_ms;
     std::mutex m_mutex;
     std::condition_variable m_frame_pushed;
     std::condition_variable m_frame_popped;

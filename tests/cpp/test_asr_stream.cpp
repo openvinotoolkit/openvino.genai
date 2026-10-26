@@ -11,6 +11,7 @@
 #include <map>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "automatic_speech_recognition/models/voxtral-realtime/cache_utils.hpp"
@@ -18,7 +19,9 @@
 
 using ov::genai::ASRDecodedResults;
 using ov::genai::ASRStreamImplBase;
+using ov::genai::MicroSeconds;
 using ov::genai::StreamingStatus;
+using ov::genai::TimePoint;
 
 namespace {
 
@@ -53,6 +56,44 @@ protected:
 
 private:
     const size_t m_failing_frame_id;
+};
+
+class CompletingStream final : public ASRStreamImplBase {
+public:
+    CompletingStream(std::promise<void>& completion_started, std::shared_future<void> allow_completion)
+        : ASRStreamImplBase{2, 5.0f},
+          m_completion_started{completion_started},
+          m_allow_completion{std::move(allow_completion)} {}
+
+    size_t flush_calls = 0;
+
+protected:
+    std::string process_audio(const std::vector<float>&) override {
+        const TimePoint token_time = std::chrono::steady_clock::now();
+        m_perf_metrics.asr_raw_metrics.decode_inference_durations.emplace_back(MicroSeconds{10.0f});
+        m_perf_metrics.raw_metrics.m_inference_durations[0] += MicroSeconds{10.0f};
+        m_perf_metrics.raw_metrics.m_token_infer_durations.emplace_back(MicroSeconds{10.0f});
+        m_perf_metrics.raw_metrics.m_new_token_times.emplace_back(token_time);
+        m_perf_metrics.raw_metrics.m_batch_sizes.emplace_back(1);
+        m_perf_metrics.raw_metrics.m_sampling_durations.emplace_back(MicroSeconds{1.0f});
+        m_perf_metrics.raw_metrics.detokenization_durations.emplace_back(MicroSeconds{2.0f});
+        if (++m_processed_frames == 2) {
+            m_completion_started.set_value();
+            m_allow_completion.wait();
+            stop_generation();
+        }
+        return "done";
+    }
+
+    std::string flush() override {
+        ++flush_calls;
+        return "end";
+    }
+
+private:
+    std::promise<void>& m_completion_started;
+    std::shared_future<void> m_allow_completion;
+    size_t m_processed_frames = 0;
 };
 
 }  // namespace
@@ -163,6 +204,46 @@ TEST(ASRStream, CallbackStopEndsGenerationAndRejectsAudio) {
     EXPECT_THROW(stream.push_audio(make_frame(2)), ov::Exception);
 }
 
+TEST(ASRStream, ModelCompletionReleasesBlockedProducerAndEndsGeneration) {
+    std::promise<void> completion_started;
+    std::promise<void> allow_completion;
+    CompletingStream stream{completion_started, allow_completion.get_future().share()};
+    stream.push_audio(make_frame(0));
+    stream.push_audio(make_frame(1));
+
+    auto blocked_push = std::async(std::launch::async, [&] {
+        stream.push_audio(make_frame(2));
+        stream.push_audio(make_frame(3));
+        stream.push_audio(make_frame(4));
+    });
+
+    auto generation = std::async(std::launch::async, [&] {
+        return stream.generate(nullptr);
+    });
+    completion_started.get_future().wait();
+    EXPECT_EQ(blocked_push.wait_for(BLOCKED_CHECK_TIMEOUT), std::future_status::timeout);
+    allow_completion.set_value();
+
+    ASRDecodedResults results = generation.get();
+    EXPECT_THROW(blocked_push.get(), ov::Exception);
+    ASSERT_EQ(results.texts.size(), 1);
+    EXPECT_EQ(results.texts[0], "donedoneend");
+    EXPECT_EQ(stream.flush_calls, 1);
+    EXPECT_FLOAT_EQ(results.perf_metrics.get_load_time(), 5.0f);
+    EXPECT_EQ(results.perf_metrics.get_num_generated_tokens(), 2);
+    EXPECT_GT(results.perf_metrics.get_ttft().mean, 0.0f);
+    EXPECT_GT(results.perf_metrics.get_tpot().mean, 0.0f);
+    EXPECT_GT(results.perf_metrics.get_ipot().mean, 0.0f);
+    EXPECT_GT(results.perf_metrics.get_throughput().mean, 0.0f);
+    EXPECT_GT(results.perf_metrics.get_inference_duration().mean, 0.0f);
+    EXPECT_GT(results.perf_metrics.get_generate_duration().mean, 0.0f);
+    EXPECT_FLOAT_EQ(results.perf_metrics.get_tokenization_duration().mean, 0.0f);
+    EXPECT_GT(results.perf_metrics.get_detokenization_duration().mean, 0.0f);
+    EXPECT_GT(results.perf_metrics.get_decode_inference_duration().mean, 0.0f);
+    EXPECT_GT(results.perf_metrics.get_sampling_duration().mean, 0.0f);
+    EXPECT_THROW(stream.push_audio(make_frame(2)), ov::Exception);
+}
+
 TEST(ASRStream, InferenceErrorPropagatesAndReleasesBlockedProducer) {
     constexpr size_t failing_frame_id = 2;
     RecordingStream stream{1, failing_frame_id};
@@ -185,8 +266,8 @@ TEST(ASRStream, InferenceErrorPropagatesAndReleasesBlockedProducer) {
 }
 
 TEST(VoxtralCache, CropsAndRephasesRotaryKeys) {
-    ov::Tensor key(ov::element::f32, {1, 1, 5, 4});
-    ov::Tensor value(ov::element::f32, {1, 1, 5, 4});
+    ov::Tensor key(ov::element::f32, {2, 2, 5, 4});
+    ov::Tensor value(ov::element::f32, {2, 2, 5, 4});
     for (size_t index = 0; index < key.get_size(); ++index) {
         key.data<float>()[index] = static_cast<float>(index + 1);
         value.data<float>()[index] = static_cast<float>(index + 11);
@@ -197,12 +278,14 @@ TEST(VoxtralCache, CropsAndRephasesRotaryKeys) {
     const auto [cropped_key, cropped_value] =
         ov::genai::voxtral_realtime::crop_and_rephase_cache(key, value, max_context, rope_theta);
 
-    ASSERT_EQ(cropped_key.get_shape(), (ov::Shape{1, 1, max_context, 4}));
+    ASSERT_EQ(cropped_key.get_shape(), (ov::Shape{2, 2, max_context, 4}));
     ASSERT_EQ(cropped_value.get_shape(), cropped_key.get_shape());
     const float* cropped_key_data = cropped_key.data<const float>();
     const float* cropped_value_data = cropped_value.data<const float>();
     EXPECT_FLOAT_EQ(cropped_value_data[0], value.data<const float>()[8]);
     EXPECT_FLOAT_EQ(cropped_value_data[11], value.data<const float>()[19]);
+    EXPECT_FLOAT_EQ(cropped_value_data[36], value.data<const float>()[68]);
+    EXPECT_FLOAT_EQ(cropped_value_data[47], value.data<const float>()[79]);
 
     constexpr size_t evicted_tokens = 2;
     const double angle = -static_cast<double>(evicted_tokens);
@@ -212,4 +295,9 @@ TEST(VoxtralCache, CropsAndRephasesRotaryKeys) {
     const double second = key.data<const float>()[10];
     EXPECT_NEAR(cropped_key_data[0], first * cosine - second * sine, 1e-6);
     EXPECT_NEAR(cropped_key_data[2], second * cosine + first * sine, 1e-6);
+
+    const double later_first = key.data<const float>()[68];
+    const double later_second = key.data<const float>()[70];
+    EXPECT_NEAR(cropped_key_data[36], later_first * cosine - later_second * sine, 1e-6);
+    EXPECT_NEAR(cropped_key_data[38], later_second * cosine + later_first * sine, 1e-6);
 }

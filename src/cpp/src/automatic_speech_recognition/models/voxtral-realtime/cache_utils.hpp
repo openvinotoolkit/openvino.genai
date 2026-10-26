@@ -15,6 +15,22 @@ namespace ov::genai::voxtral_realtime {
 namespace detail {
 
 template <typename T>
+void rephase_key_token(const T* source,
+                       T* destination,
+                       const size_t head_dim,
+                       const std::vector<double>& cosines,
+                       const std::vector<double>& sines) {
+    const size_t head_dim_half = head_dim / 2;
+    for (size_t index = 0; index < head_dim_half; ++index) {
+        const double first = static_cast<double>(source[index]);
+        const double second = static_cast<double>(source[index + head_dim_half]);
+        destination[index] = static_cast<T>(first * cosines[index] - second * sines[index]);
+        destination[index + head_dim_half] =
+            static_cast<T>(second * cosines[index] + first * sines[index]);
+    }
+}
+
+template <typename T>
 std::pair<ov::Tensor, ov::Tensor> crop_and_rephase_cache(const ov::Tensor& key,
                                                           const ov::Tensor& value,
                                                           const size_t max_context,
@@ -25,9 +41,9 @@ std::pair<ov::Tensor, ov::Tensor> crop_and_rephase_cache(const ov::Tensor& key,
     const size_t sequence_length = shape[2];
     const size_t head_dim = shape[3];
     const size_t evicted_tokens = sequence_length - max_context;
-    const size_t retained_tokens = max_context;
+    const size_t tokens_per_head = max_context;
     const size_t head_dim_half = head_dim / 2;
-    const ov::Shape retained_shape{batch_size, num_heads, retained_tokens, head_dim};
+    const ov::Shape retained_shape{batch_size, num_heads, tokens_per_head, head_dim};
     ov::Tensor retained_key(key.get_element_type(), retained_shape);
     ov::Tensor retained_value(value.get_element_type(), retained_shape);
     const T* key_data = key.data<const T>();
@@ -46,24 +62,18 @@ std::pair<ov::Tensor, ov::Tensor> crop_and_rephase_cache(const ov::Tensor& key,
         sines[index] = std::sin(angle);
     }
 
-    for (size_t batch = 0; batch < batch_size; ++batch) {
-        for (size_t head = 0; head < num_heads; ++head) {
-            const size_t source_head_offset = (batch * num_heads + head) * sequence_length * head_dim;
-            const size_t retained_head_offset = (batch * num_heads + head) * retained_tokens * head_dim;
-            for (size_t token = 0; token < retained_tokens; ++token) {
-                const size_t source_offset = source_head_offset + (token + evicted_tokens) * head_dim;
-                const size_t retained_offset = retained_head_offset + token * head_dim;
-                for (size_t index = 0; index < head_dim_half; ++index) {
-                    const double first = static_cast<double>(key_data[source_offset + index]);
-                    const double second = static_cast<double>(key_data[source_offset + index + head_dim_half]);
-                    retained_key_data[retained_offset + index] =
-                        static_cast<T>(first * cosines[index] - second * sines[index]);
-                    retained_key_data[retained_offset + index + head_dim_half] =
-                        static_cast<T>(second * cosines[index] + first * sines[index]);
-                }
-                std::copy_n(value_data + source_offset, head_dim, retained_value_data + retained_offset);
-            }
-        }
+    const size_t retained_token_count = batch_size * num_heads * tokens_per_head;
+    for (size_t output_token = 0; output_token < retained_token_count; ++output_token) {
+        const size_t head_index = output_token / tokens_per_head;
+        const size_t token_index = output_token % tokens_per_head + evicted_tokens;
+        const size_t source_offset = (head_index * sequence_length + token_index) * head_dim;
+        const size_t retained_offset = output_token * head_dim;
+        rephase_key_token(key_data + source_offset,
+                          retained_key_data + retained_offset,
+                          head_dim,
+                          cosines,
+                          sines);
+        std::copy_n(value_data + source_offset, head_dim, retained_value_data + retained_offset);
     }
     return {std::move(retained_key), std::move(retained_value)};
 }
