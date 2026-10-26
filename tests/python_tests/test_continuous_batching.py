@@ -458,6 +458,18 @@ def test_logprob_token_ids_rejected(model_facebook_opt_125m: OVConvertedModelSch
         cb_pipe.add_request(0, "The Sun is",
                             generation_config=GenerationConfig(max_new_tokens=1, logprob_token_ids=[10**9]))
 
+    # A failed batch must not leave partially enqueued requests behind: in generate([p0, p1]) the
+    # first (valid) request is enqueued before the second (out-of-range) config is rejected, so
+    # without a rollback the next generate() would fail with "already in running state".
+    prompt_ids = model_facebook_opt_125m.hf_tokenizer("The Sun is", add_special_tokens=True)["input_ids"]
+    prompt_tensor = ov.Tensor(np.array([prompt_ids], dtype=np.int64))
+    with pytest.raises(Exception, match="out of vocabulary range"):
+        cb_pipe.generate([prompt_tensor, prompt_tensor],
+                         [GenerationConfig(max_new_tokens=1),
+                          GenerationConfig(max_new_tokens=1, logprob_token_ids=[10**9])])
+    follow_up = cb_pipe.generate([prompt_tensor], [GenerationConfig(max_new_tokens=1)])
+    assert follow_up and follow_up[0].m_generation_ids
+
     # A non-CB (stateful) pipeline has no enqueue-time check and reaches the shared sampler directly,
     # so the range check must live in the sampler: an out-of-range id throws a clean error instead of
     # reading the logits buffer out of bounds.
