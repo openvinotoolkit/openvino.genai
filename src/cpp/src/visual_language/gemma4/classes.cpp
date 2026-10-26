@@ -777,7 +777,7 @@ void InputsEmbedderGemma4::patch_chat_template() {
     //     "first "
     //     "second"
     // Normalize the pair to "first second" before parsing.
-    utils::patch_chat_template_multiline_strings(m_tokenizer);
+    set_chat_template_patcher(m_tokenizer, utils::patch_chat_template_multiline_strings);
 }
 
 }  // namespace ov::genai

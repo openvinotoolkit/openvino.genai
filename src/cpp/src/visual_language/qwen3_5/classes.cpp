@@ -28,14 +28,13 @@ InputsEmbedderQwen3_5::InputsEmbedderQwen3_5(
 }
 
 void InputsEmbedderQwen3_5::patch_chat_template() {
-    std::string patched_chat_template = m_tokenizer.get_chat_template();
-    // minja does not support "undefined" keyword for "is" operator:
-    // e.g. "if enable_thinking is undefined" in Qwen3.8 chat template.
-    // Replace with supported syntax "not var is defined"
-    const std::regex var_is_undefined_pattern{R"((\b[\w\.]+)\s+is\s+undefined)"};
-    patched_chat_template = std::regex_replace(patched_chat_template, var_is_undefined_pattern, "not $1 is defined");
-
-    m_tokenizer.set_chat_template(patched_chat_template);
+    set_chat_template_patcher(m_tokenizer, [](const std::string& chat_template) {
+        // minja does not support "undefined" keyword for "is" operator:
+        // e.g. "if enable_thinking is undefined" in Qwen3.8 chat template.
+        // Replace with supported syntax "not var is defined"
+        const std::regex var_is_undefined_pattern{R"((\b[\w\.]+)\s+is\s+undefined)"};
+        return std::regex_replace(chat_template, var_is_undefined_pattern, "not $1 is defined");
+    });
 }
 
 std::pair<ov::Tensor, int64_t> InputsEmbedderQwen3_5::create_position_ids(
