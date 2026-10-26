@@ -135,6 +135,7 @@
 'category: RAG samples':
 - 'samples/cpp/rag/**/*'
 - 'samples/js/rag/**/*'
+- 'samples/js/image_utils.js'
 - 'samples/python/rag/**/*'
 - 'tests/python_tests/samples/test_rag_sample.py'
 
