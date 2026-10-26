@@ -74,7 +74,7 @@ Install the export and runtime dependencies:
 ```sh
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
 pip install -r ../../deployment-requirements.txt
-pip install --upgrade git+https://github.com/huggingface/optimum-intel.git@voxtral_streaming_asr
+pip install --upgrade git+https://github.com/kbalka/optimum-intel.git@voxtral_streaming_asr
 ```
 
 Export the model to OpenVINO:
