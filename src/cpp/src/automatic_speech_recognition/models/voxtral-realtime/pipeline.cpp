@@ -4,11 +4,14 @@
 #include "automatic_speech_recognition/models/voxtral-realtime/pipeline.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <fstream>
+#include <mutex>
 #include <nlohmann/json.hpp>
 #include <set>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -254,6 +257,8 @@ struct VoxtralRealtimeRuntime {
     std::vector<std::string> tekken_pieces;
     ov::CompiledModel audio_encoder;
     ov::CompiledModel text_decoder;
+    bool profiling_enabled = false;
+    std::map<std::string, std::string> broadcast_shapes;
 
     VoxtralRealtimeRuntime(const std::filesystem::path& models_path,
                            const std::string& device,
@@ -267,9 +272,39 @@ struct VoxtralRealtimeRuntime {
           tekken_pieces{load_tekken_pieces(models_path / "tekken.json")} {
         ov::AnyMap device_properties = properties;
         erase_allowed_asr_ctor_properties(device_properties);
+        const auto profiling = device_properties.find(ov::enable_profiling.name());
+        profiling_enabled = profiling != device_properties.end() && profiling->second.as<bool>();
         ov::Core core = utils::singleton_core();
         audio_encoder = core.compile_model(models_path / "openvino_audio_encoder.xml", device, device_properties);
         text_decoder = core.compile_model(models_path / "openvino_text_decoder.xml", device, device_properties);
+        if (profiling_enabled) {
+            for (const std::string component : {"audio", "text"}) {
+                const auto model = (component == "audio" ? audio_encoder : text_decoder).get_runtime_model();
+                for (const auto& node : model->get_ops()) {
+                    const auto& rt_info = node->get_rt_info();
+                    const auto layer_type = rt_info.find("layerType");
+                    if (std::string{node->get_type_name()} != "Broadcast" &&
+                        (layer_type == rt_info.end() || layer_type->second.as<std::string>() != "Broadcast"))
+                        continue;
+                    std::ostringstream shapes;
+                    shapes << " compiled graph inputs=";
+                    for (const auto& input : node->inputs())
+                        shapes << input.get_partial_shape();
+                    shapes << " outputs=";
+                    std::set<std::string> consumers;
+                    for (const auto& output : node->outputs())
+                        shapes << output.get_partial_shape();
+                    for (const auto& output : node->outputs()) {
+                        for (const auto& input : output.get_target_inputs())
+                            consumers.insert(input.get_node()->get_friendly_name());
+                    }
+                    shapes << " consumers=";
+                    for (const auto& consumer : consumers)
+                        shapes << consumer << ";";
+                    broadcast_shapes.emplace(component + "/" + node->get_friendly_name(), shapes.str());
+                }
+            }
+        }
     }
 
     std::string decode_token(const int64_t token_id) const {
@@ -312,7 +347,53 @@ public:
         }
     }
 
+    size_t get_kv_cache_size() const override {
+        return m_kv_cache_size_bytes.load(std::memory_order_relaxed);
+    }
+
+    std::map<std::string, std::pair<size_t, size_t>> get_kv_cache_window_sizes() const override {
+        const std::lock_guard<std::mutex> lock{m_stage_durations_mutex};
+        return {{"audio", {m_audio_window_size, m_runtime->config.audio_sliding_window}},
+                {"text", {m_text_window_size, m_runtime->config.text_sliding_window}}};
+    }
+
+    std::map<std::string, double> get_stage_durations() const override {
+        const std::lock_guard<std::mutex> lock{m_stage_durations_mutex};
+        return m_stage_durations;
+    }
+
 private:
+    void collect_profiling_durations(const ov::InferRequest& request, const std::string& component) {
+        if (!m_runtime->profiling_enabled)
+            return;
+        const auto profiling_info = request.get_profiling_info();
+        std::map<std::string, double> counters;
+        const std::string group_prefix = component + "_op/";
+        const std::string node_prefix = component + "_node/";
+        for (const auto& info : profiling_info) {
+            if (info.status != ov::ProfilingInfo::Status::EXECUTED)
+                continue;
+            const double duration_ms = std::chrono::duration<double, std::milli>(info.real_time).count();
+            counters[group_prefix + info.node_type + "/" + info.exec_type] += duration_ms;
+            if (info.node_type == "Broadcast") {
+                const auto shapes = m_runtime->broadcast_shapes.find(component + "/" + info.node_name);
+                const std::string shape_description = shapes == m_runtime->broadcast_shapes.end()
+                    ? " graph shapes unavailable (plugin node not matched to compiled graph)"
+                    : shapes->second;
+                counters[node_prefix + info.node_name + " [" + info.exec_type + "]" + shape_description] += duration_ms;
+            }
+        }
+        const std::lock_guard<std::mutex> lock{m_stage_durations_mutex};
+        for (auto it = m_stage_durations.begin(); it != m_stage_durations.end();) {
+            if (it->first.compare(0, group_prefix.size(), group_prefix) == 0 ||
+                it->first.compare(0, node_prefix.size(), node_prefix) == 0)
+                it = m_stage_durations.erase(it);
+            else
+                ++it;
+        }
+        m_stage_durations.insert(counters.begin(), counters.end());
+    }
+
     std::string process_audio(const std::vector<float>& audio_frame) override {
         if (m_generation_done)
             return {};
@@ -408,14 +489,24 @@ private:
         m_perf_metrics.asr_raw_metrics.encode_inference_durations.emplace_back(infer_duration);
         m_perf_metrics.raw_metrics.m_inference_durations[0] += infer_duration;
 
+        collect_profiling_durations(m_audio_request, "audio");
         m_conv1_cache = copy_tensor(m_audio_request.get_tensor("conv1_cache_1"));
         m_conv2_cache = copy_tensor(m_audio_request.get_tensor("conv2_cache_1"));
+        const TimePoint cache_start_time = std::chrono::steady_clock::now();
         for (size_t layer = 0; layer < m_audio_key_values.size(); ++layer) {
-            m_audio_key_values[layer] = voxtral_realtime::crop_and_rephase_cache(
+            voxtral_realtime::crop_and_rephase_cache(
                 m_audio_request.get_tensor("present." + std::to_string(layer) + ".key"),
                 m_audio_request.get_tensor("present." + std::to_string(layer) + ".value"),
                 m_runtime->config.audio_sliding_window,
-                m_runtime->config.audio_rope_theta);
+                m_runtime->config.audio_rope_theta,
+                m_audio_key_values[layer]);
+        }
+        const double cache_duration_ms =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - cache_start_time).count();
+        {
+            const std::lock_guard<std::mutex> lock{m_stage_durations_mutex};
+            m_stage_durations.at("audio_inference") += std::chrono::duration<double, std::milli>(infer_duration).count();
+            m_stage_durations.at("audio_kv_cache") += cache_duration_ms;
         }
         return m_audio_request.get_tensor("audio_embeddings");
     }
@@ -466,6 +557,7 @@ private:
         m_perf_metrics.asr_raw_metrics.decode_inference_durations.emplace_back(infer_duration);
         m_perf_metrics.raw_metrics.m_inference_durations[0] += infer_duration;
 
+        collect_profiling_durations(m_text_request, "text");
         const ov::Tensor logits = m_text_request.get_tensor("logits");
         const size_t vocab_size = logits.get_shape().back();
         const size_t last_position = logits.get_shape()[1] - 1;
@@ -475,13 +567,27 @@ private:
         const TimePoint token_time = std::chrono::steady_clock::now();
         PerfMetrics::emplace_duration(m_perf_metrics.raw_metrics.m_sampling_durations, sampling_start_time, token_time);
         m_perf_metrics.raw_metrics.m_token_infer_durations.emplace_back(infer_duration);
+        const TimePoint cache_start_time = std::chrono::steady_clock::now();
         for (size_t layer = 0; layer < m_text_key_values.size(); ++layer) {
-            m_text_key_values[layer] = voxtral_realtime::crop_and_rephase_cache(
+            voxtral_realtime::crop_and_rephase_cache(
                 m_text_request.get_tensor("present." + std::to_string(layer) + ".key"),
                 m_text_request.get_tensor("present." + std::to_string(layer) + ".value"),
                 m_runtime->config.text_sliding_window,
-                m_runtime->config.text_rope_theta);
+                m_runtime->config.text_rope_theta,
+                m_text_key_values[layer]);
         }
+        const double cache_duration_ms =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - cache_start_time).count();
+        {
+            const std::lock_guard<std::mutex> lock{m_stage_durations_mutex};
+            m_stage_durations.at("text_inference") += std::chrono::duration<double, std::milli>(infer_duration).count();
+            m_stage_durations.at("text_kv_cache") += cache_duration_ms;
+            m_audio_window_size = m_audio_key_values.front().first.get_shape()[2];
+            m_text_window_size = m_text_key_values.front().first.get_shape()[2];
+        }
+        m_kv_cache_size_bytes.store(voxtral_realtime::get_kv_cache_size(m_audio_key_values) +
+                                        voxtral_realtime::get_kv_cache_size(m_text_key_values),
+                                    std::memory_order_relaxed);
         ++m_generated_tokens;
         m_perf_metrics.raw_metrics.m_new_token_times.emplace_back(token_time);
         m_perf_metrics.raw_metrics.m_batch_sizes.emplace_back(1);
@@ -529,6 +635,12 @@ private:
     ov::Tensor m_conv2_cache;
     std::vector<std::pair<ov::Tensor, ov::Tensor>> m_audio_key_values;
     std::vector<std::pair<ov::Tensor, ov::Tensor>> m_text_key_values;
+    std::atomic<size_t> m_kv_cache_size_bytes{0};
+    mutable std::mutex m_stage_durations_mutex;
+    size_t m_audio_window_size = 0;
+    size_t m_text_window_size = 0;
+    std::map<std::string, double> m_stage_durations{
+        {"audio_inference", 0.0}, {"text_inference", 0.0}, {"audio_kv_cache", 0.0}, {"text_kv_cache", 0.0}};
     std::vector<float> m_audio_buffer;
     std::vector<float> m_chunk_buffer;
     size_t m_audio_overlap_samples = 0;

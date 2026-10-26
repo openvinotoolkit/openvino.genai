@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <mutex>
@@ -22,6 +23,16 @@ public:
 
     void push_audio(const std::vector<float>& audio_frame);
     void end_audio();
+    size_t get_num_generated_tokens() const;
+    virtual size_t get_kv_cache_size() const {
+        OPENVINO_THROW("KV-cache size monitoring is not supported by this ASR model.");
+    }
+    virtual std::map<std::string, std::pair<size_t, size_t>> get_kv_cache_window_sizes() const {
+        OPENVINO_THROW("KV-cache window monitoring is not supported by this ASR model.");
+    }
+    virtual std::map<std::string, double> get_stage_durations() const {
+        OPENVINO_THROW("Stage timing is not supported by this ASR model.");
+    }
     ASRDecodedResults generate(const ASRTextCallback& text_callback);
 
 protected:
@@ -41,6 +52,7 @@ private:
 
     const size_t m_max_queued_frames;
     const float m_load_time_ms;
+    std::atomic<size_t> m_num_generated_tokens{0};
     std::mutex m_mutex;
     std::condition_variable m_frame_pushed;
     std::condition_variable m_frame_popped;

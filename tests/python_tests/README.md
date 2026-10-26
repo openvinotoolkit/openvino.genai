@@ -41,6 +41,25 @@ python -m pytest tests/python_tests/ -k "test_multibatch" --model_ids "TinyLlama
 
 List of currently supported models can be found in tests/python_tests/data/models.py:get_models_list
 
+## Voxtral parallel streaming
+
+The opt-in CPU integration test uses one pipeline with two independent streams.
+It compares final transcripts and callback deltas with sequential baselines for
+two different speech inputs, uses different input frame sizes, and repeats the
+parallel run with fresh streams. A barrier at the first text callback ensures
+both generation calls are active before either can finish.
+
+Provide a local exported Voxtral Realtime model:
+
+```sh
+VOXTRAL_OV_MODEL=/path/to/exported/voxtral \
+python -m pytest tests/python_tests/test_voxtral_streaming.py -m real_models -v
+```
+
+The test downloads a pinned LibriSpeech dummy dataset through the Hugging Face
+Hub cache. After the first run, it can run offline with `HF_HUB_OFFLINE=1` and
+`HF_DATASETS_OFFLINE=1`. Without `VOXTRAL_OV_MODEL`, the test is skipped.
+
 ## GGUF Frontend Tests
 
 The Linux precommit GGUF jobs include a tiny-model suite comparing the frontend with

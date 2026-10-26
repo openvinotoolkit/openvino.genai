@@ -46,6 +46,8 @@ protected:
         const size_t frame_id = static_cast<size_t>(audio_frame.at(0));
         OPENVINO_ASSERT(frame_id != m_failing_frame_id, "Injected inference failure.");
         processed_frames.push_back(audio_frame);
+        m_perf_metrics.raw_metrics.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
+        m_perf_metrics.raw_metrics.m_batch_sizes.emplace_back(1);
         return std::to_string(frame_id) + ",";
     }
 
@@ -57,6 +59,30 @@ protected:
 private:
     const size_t m_failing_frame_id;
 };
+
+TEST(ASRStream, GeneratedTokenCountIsAvailableDuringGeneration) {
+    constexpr size_t num_frames = 3;
+    RecordingStream stream{2};
+    EXPECT_THROW(stream.get_stage_durations(), ov::Exception);
+    EXPECT_THROW(stream.get_kv_cache_window_sizes(), ov::Exception);
+    std::vector<size_t> token_counts;
+
+    auto generation = std::async(std::launch::async, [&] {
+        return stream.generate([&](std::string) {
+            token_counts.push_back(stream.get_num_generated_tokens());
+            return StreamingStatus::RUNNING;
+        });
+    });
+
+    for (size_t frame_id = 0; frame_id < num_frames; ++frame_id)
+        stream.push_audio(make_frame(frame_id));
+    stream.end_audio();
+
+    ASRDecodedResults results = generation.get();
+    EXPECT_EQ(token_counts, (std::vector<size_t>{1, 2, 3, 3}));
+    EXPECT_EQ(stream.get_num_generated_tokens(), num_frames);
+    EXPECT_EQ(results.perf_metrics.get_num_generated_tokens(), num_frames);
+}
 
 class CompletingStream final : public ASRStreamImplBase {
 public:
@@ -275,11 +301,14 @@ TEST(VoxtralCache, CropsAndRephasesRotaryKeys) {
 
     constexpr size_t max_context = 3;
     constexpr float rope_theta = 10000.0f;
-    const auto [cropped_key, cropped_value] =
-        ov::genai::voxtral_realtime::crop_and_rephase_cache(key, value, max_context, rope_theta);
+    std::pair<ov::Tensor, ov::Tensor> retained;
+    ov::genai::voxtral_realtime::crop_and_rephase_cache(key, value, max_context, rope_theta, retained);
+    const auto& [cropped_key, cropped_value] = retained;
 
     ASSERT_EQ(cropped_key.get_shape(), (ov::Shape{2, 2, max_context, 4}));
     ASSERT_EQ(cropped_value.get_shape(), cropped_key.get_shape());
+    EXPECT_EQ(ov::genai::voxtral_realtime::get_kv_cache_size({{cropped_key, cropped_value}}),
+              2 * 2 * 2 * max_context * 4 * sizeof(float));
     const float* cropped_key_data = cropped_key.data<const float>();
     const float* cropped_value_data = cropped_value.data<const float>();
     EXPECT_FLOAT_EQ(cropped_value_data[0], value.data<const float>()[8]);
@@ -300,4 +329,87 @@ TEST(VoxtralCache, CropsAndRephasesRotaryKeys) {
     const double later_second = key.data<const float>()[70];
     EXPECT_NEAR(cropped_key_data[36], later_first * cosine - later_second * sine, 1e-6);
     EXPECT_NEAR(cropped_key_data[38], later_second * cosine + later_first * sine, 1e-6);
+}
+
+TEST(VoxtralCache, ReportsRetainedTensorBytes) {
+    using ov::genai::voxtral_realtime::get_kv_cache_size;
+    EXPECT_EQ(get_kv_cache_size({}), 0);
+
+    std::vector<std::pair<ov::Tensor, ov::Tensor>> caches{
+        {ov::Tensor(ov::element::f32, {1, 2, 0, 4}), ov::Tensor(ov::element::f32, {1, 2, 0, 4})}};
+    EXPECT_EQ(get_kv_cache_size(caches), 0);
+
+    caches.emplace_back(ov::Tensor(ov::element::f32, {1, 2, 5, 4}),
+                        ov::Tensor(ov::element::f32, {1, 2, 5, 4}));
+    caches.emplace_back(ov::Tensor(ov::element::f16, {1, 2, 5, 4}),
+                        ov::Tensor(ov::element::f16, {1, 2, 5, 4}));
+    EXPECT_EQ(get_kv_cache_size(caches), 2 * 1 * 2 * 5 * 4 * (sizeof(float) + sizeof(ov::float16)));
+}
+
+template <typename T>
+class VoxtralCacheTypes : public testing::Test {};
+
+using CacheElementTypes = testing::Types<float, ov::float16, ov::bfloat16>;
+TYPED_TEST_SUITE(VoxtralCacheTypes, CacheElementTypes);
+
+TYPED_TEST(VoxtralCacheTypes, ReusesBuffersAndMatchesReferenceAcrossWindow) {
+    using T = TypeParam;
+    constexpr size_t max_context = 4;
+    constexpr size_t head_dim = 8;
+    constexpr size_t num_heads = 6;
+    constexpr float rope_theta = 10000.0f;
+    const ov::element::Type element_type = ov::element::from<T>();
+    std::pair<ov::Tensor, ov::Tensor> retained;
+    const void* retained_key_pointer = nullptr;
+    const void* retained_value_pointer = nullptr;
+    for (const size_t sequence_length : {0, 2, 4, 7, 10, 5, 4, 1, 7}) {
+        SCOPED_TRACE(sequence_length);
+        const ov::Shape shape{2, 3, sequence_length, head_dim};
+        ov::Tensor key(element_type, shape);
+        ov::Tensor value(element_type, shape);
+        for (size_t index = 0; index < key.get_size(); ++index) {
+            key.data<T>()[index] = static_cast<T>(static_cast<float>(static_cast<int>(index % 31) - 15) / 16);
+            value.data<T>()[index] = static_cast<T>(static_cast<float>(index % 23) / 8);
+        }
+        ov::genai::voxtral_realtime::crop_and_rephase_cache(key, value, max_context, rope_theta, retained);
+        const size_t retained_length = std::min(sequence_length, max_context);
+        const size_t evicted = sequence_length - retained_length;
+        EXPECT_EQ(retained.first.get_shape(), (ov::Shape{2, 3, retained_length, head_dim}));
+        EXPECT_EQ(retained.second.get_shape(), retained.first.get_shape());
+        if (retained_key_pointer) {
+            EXPECT_EQ(retained.first.data(), retained_key_pointer);
+            EXPECT_EQ(retained.second.data(), retained_value_pointer);
+        }
+        if (retained_length == max_context) {
+            retained_key_pointer = retained.first.data();
+            retained_value_pointer = retained.second.data();
+        }
+        for (size_t head = 0; head < num_heads; ++head) {
+            for (size_t token = 0; token < retained_length; ++token) {
+                for (size_t dim = 0; dim < head_dim; ++dim) {
+                    const size_t source = (head * sequence_length + evicted + token) * head_dim;
+                    const size_t destination = (head * retained_length + token) * head_dim;
+                    const size_t half_dim = dim % (head_dim / 2);
+                    const double angle = -static_cast<double>(evicted) *
+                        std::pow(static_cast<double>(rope_theta),
+                                 -2.0 * static_cast<double>(half_dim) / static_cast<double>(head_dim));
+                    const double first = static_cast<double>(key.data<const T>()[source + half_dim]);
+                    const double second = static_cast<double>(key.data<const T>()[source + half_dim + head_dim / 2]);
+                    const double expected = dim < head_dim / 2
+                        ? first * std::cos(angle) - second * std::sin(angle)
+                        : second * std::cos(angle) + first * std::sin(angle);
+                    EXPECT_EQ(static_cast<float>(retained.first.data<const T>()[destination + dim]),
+                              static_cast<float>(static_cast<T>(expected)));
+                    EXPECT_EQ(static_cast<float>(retained.second.data<const T>()[destination + dim]),
+                              static_cast<float>(value.data<const T>()[source + dim]));
+                }
+            }
+        }
+        for (size_t index = 0; index < key.get_size(); ++index) {
+            EXPECT_EQ(static_cast<float>(key.data<const T>()[index]),
+                      static_cast<float>(static_cast<T>(static_cast<float>(static_cast<int>(index % 31) - 15) / 16)));
+            EXPECT_EQ(static_cast<float>(value.data<const T>()[index]),
+                      static_cast<float>(static_cast<T>(static_cast<float>(index % 23) / 8)));
+        }
+    }
 }

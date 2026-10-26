@@ -70,8 +70,9 @@ ASRDecodedResults ASRStreamImplBase::generate(const ASRTextCallback& text_callba
     m_perf_metrics.raw_metrics.m_inference_durations.emplace_back(MicroSeconds{0.0f});
     m_perf_metrics.raw_metrics.tokenization_durations.emplace_back(MicroSeconds{0.0f});
     std::string transcript;
-    const auto emit = [&transcript, &text_callback](std::string delta) {
+    const auto emit = [this, &transcript, &text_callback](std::string delta) {
         transcript += delta;
+        m_num_generated_tokens.store(m_perf_metrics.raw_metrics.m_new_token_times.size(), std::memory_order_relaxed);
         if (delta.empty() || !text_callback) {
             return StreamingStatus::RUNNING;
         }
@@ -127,6 +128,10 @@ void ASRStreamImplBase::stop_generation() {
         m_queue.clear();
     }
     m_frame_popped.notify_all();
+}
+
+size_t ASRStreamImplBase::get_num_generated_tokens() const {
+    return m_num_generated_tokens.load(std::memory_order_relaxed);
 }
 
 }  // namespace ov::genai

@@ -9,9 +9,18 @@
 #include <utility>
 #include <vector>
 
+#include "openvino/core/parallel.hpp"
 #include "openvino/openvino.hpp"
 
 namespace ov::genai::voxtral_realtime {
+
+inline size_t get_kv_cache_size(const std::vector<std::pair<ov::Tensor, ov::Tensor>>& key_values) {
+    size_t size_bytes = 0;
+    for (const auto& [key, value] : key_values)
+        size_bytes += key.get_byte_size() + value.get_byte_size();
+    return size_bytes;
+}
+
 namespace detail {
 
 template <typename T>
@@ -31,10 +40,11 @@ void rephase_key_token(const T* source,
 }
 
 template <typename T>
-std::pair<ov::Tensor, ov::Tensor> crop_and_rephase_cache(const ov::Tensor& key,
-                                                          const ov::Tensor& value,
-                                                          const size_t max_context,
-                                                          const float rope_theta) {
+void crop_and_rephase_cache(const ov::Tensor& key,
+                           const ov::Tensor& value,
+                           const size_t max_context,
+                           const float rope_theta,
+                           std::pair<ov::Tensor, ov::Tensor>& retained) {
     const ov::Shape& shape = key.get_shape();
     const size_t batch_size = shape[0];
     const size_t num_heads = shape[1];
@@ -43,13 +53,10 @@ std::pair<ov::Tensor, ov::Tensor> crop_and_rephase_cache(const ov::Tensor& key,
     const size_t evicted_tokens = sequence_length - max_context;
     const size_t tokens_per_head = max_context;
     const size_t head_dim_half = head_dim / 2;
-    const ov::Shape retained_shape{batch_size, num_heads, tokens_per_head, head_dim};
-    ov::Tensor retained_key(key.get_element_type(), retained_shape);
-    ov::Tensor retained_value(value.get_element_type(), retained_shape);
     const T* key_data = key.data<const T>();
     const T* value_data = value.data<const T>();
-    T* retained_key_data = retained_key.data<T>();
-    T* retained_value_data = retained_value.data<T>();
+    T* retained_key_data = retained.first.data<T>();
+    T* retained_value_data = retained.second.data<T>();
 
     std::vector<double> cosines(head_dim_half);
     std::vector<double> sines(head_dim_half);
@@ -62,50 +69,56 @@ std::pair<ov::Tensor, ov::Tensor> crop_and_rephase_cache(const ov::Tensor& key,
         sines[index] = std::sin(angle);
     }
 
-    const size_t retained_token_count = batch_size * num_heads * tokens_per_head;
-    for (size_t output_token = 0; output_token < retained_token_count; ++output_token) {
-        const size_t head_index = output_token / tokens_per_head;
-        const size_t token_index = output_token % tokens_per_head + evicted_tokens;
-        const size_t source_offset = (head_index * sequence_length + token_index) * head_dim;
-        const size_t retained_offset = output_token * head_dim;
-        rephase_key_token(key_data + source_offset,
-                          retained_key_data + retained_offset,
-                          head_dim,
-                          cosines,
-                          sines);
-        std::copy_n(value_data + source_offset, head_dim, retained_value_data + retained_offset);
-    }
-    return {std::move(retained_key), std::move(retained_value)};
+    ov::parallel_for(batch_size * num_heads, [&](const size_t head_index) {
+        const size_t source_offset = (head_index * sequence_length + evicted_tokens) * head_dim;
+        const size_t retained_offset = head_index * tokens_per_head * head_dim;
+        for (size_t token = 0; token < tokens_per_head; ++token) {
+            rephase_key_token(key_data + source_offset + token * head_dim,
+                             retained_key_data + retained_offset + token * head_dim,
+                             head_dim,
+                             cosines,
+                             sines);
+        }
+        std::copy_n(value_data + source_offset, tokens_per_head * head_dim, retained_value_data + retained_offset);
+    });
 }
 
 }  // namespace detail
 
-inline std::pair<ov::Tensor, ov::Tensor> crop_and_rephase_cache(const ov::Tensor& key,
-                                                                 const ov::Tensor& value,
-                                                                 const size_t max_context,
-                                                                 const float rope_theta) {
+inline void crop_and_rephase_cache(const ov::Tensor& key,
+                                  const ov::Tensor& value,
+                                  const size_t max_context,
+                                  const float rope_theta,
+                                  std::pair<ov::Tensor, ov::Tensor>& retained) {
     OPENVINO_ASSERT(key.get_shape().size() == 4 && key.get_shape() == value.get_shape(),
                     "Voxtral key/value caches must have matching [batch, heads, sequence, head_dim] shapes.");
     OPENVINO_ASSERT(max_context > 0, "Voxtral sliding-window context must be positive.");
     OPENVINO_ASSERT(key.get_element_type() == value.get_element_type(),
                     "Voxtral key/value cache element types must match.");
+    ov::Shape retained_shape = key.get_shape();
+    retained_shape[2] = std::min(retained_shape[2], max_context);
+    for (ov::Tensor* tensor : {&retained.first, &retained.second}) {
+        if (!*tensor || tensor->get_element_type() != key.get_element_type())
+            *tensor = ov::Tensor(key.get_element_type(), retained_shape);
+        else
+            tensor->set_shape(retained_shape);
+    }
     if (key.get_shape()[2] <= max_context) {
-        ov::Tensor key_copy(key.get_element_type(), key.get_shape());
-        ov::Tensor value_copy(value.get_element_type(), value.get_shape());
-        key.copy_to(key_copy);
-        value.copy_to(value_copy);
-        return {std::move(key_copy), std::move(value_copy)};
+        key.copy_to(retained.first);
+        value.copy_to(retained.second);
+        return;
     }
 
     OPENVINO_ASSERT(key.get_shape()[3] > 0 && key.get_shape()[3] % 2 == 0,
                     "Voxtral RoPE head dimension must be positive and even.");
     OPENVINO_ASSERT(rope_theta > 0.0f, "Voxtral RoPE theta must be positive.");
     if (key.get_element_type() == ov::element::f32)
-        return detail::crop_and_rephase_cache<float>(key, value, max_context, rope_theta);
-    if (key.get_element_type() == ov::element::f16)
-        return detail::crop_and_rephase_cache<ov::float16>(key, value, max_context, rope_theta);
-    if (key.get_element_type() == ov::element::bf16)
-        return detail::crop_and_rephase_cache<ov::bfloat16>(key, value, max_context, rope_theta);
-    OPENVINO_THROW("Unsupported Voxtral KV-cache element type: ", key.get_element_type());
+        detail::crop_and_rephase_cache<float>(key, value, max_context, rope_theta, retained);
+    else if (key.get_element_type() == ov::element::f16)
+        detail::crop_and_rephase_cache<ov::float16>(key, value, max_context, rope_theta, retained);
+    else if (key.get_element_type() == ov::element::bf16)
+        detail::crop_and_rephase_cache<ov::bfloat16>(key, value, max_context, rope_theta, retained);
+    else
+        OPENVINO_THROW("Unsupported Voxtral KV-cache element type: ", key.get_element_type());
 }
 }  // namespace ov::genai::voxtral_realtime

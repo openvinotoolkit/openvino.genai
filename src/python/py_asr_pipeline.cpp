@@ -366,6 +366,34 @@ void init_asr_pipeline(py::module_& m) {
              &ASRStream::end_audio,
              py::call_guard<py::gil_scoped_release>(),
              "Signal the end of audio input. May be called once.")
+        .def("get_num_generated_tokens",
+             &ASRStream::get_num_generated_tokens,
+             "Return the number of generated tokens so far. Safe to call while generate() is running.")
+        .def("get_kv_cache_size",
+             &ASRStream::get_kv_cache_size,
+             "Return retained audio and text KV tensor bytes after the latest completed inference chunk. "
+             "Excludes convolution caches, inference request buffers and temporary allocations. "
+             "Safe to call while generate() is running. Raises if the model does not support KV-cache size monitoring.")
+        .def("get_kv_cache_window_sizes",
+             &ASRStream::get_kv_cache_window_sizes,
+             "Return audio and text KV windows as {component: (retained_positions, maximum_positions)}. "
+             "Retained sizes start at zero and reflect tensor sequence lengths after the latest completed "
+             "inference chunk and cropping. Safe to call during generation. "
+             "Raises if window monitoring is unsupported by the model.")
+        .def("get_stage_durations",
+             &ASRStream::get_stage_durations,
+             "Return cumulative stage durations in milliseconds: audio_inference, text_inference, audio_kv_cache, "
+             "text_kv_cache. Inference covers infer() calls; KV timings cover allocation, copying, cropping and "
+             "rephasing. Excludes feature extraction, convolution cache copies, tensor setup, sampling and callbacks. "
+             "With PERF_COUNT enabled, audio_op/<node_type>/<exec_type> and text_op/<node_type>/<exec_type> keys "
+             "group latest plugin real-time counters in milliseconds. CPU counters are running averages, "
+             "not cumulative or per-call times; do not accumulate or difference them. "
+             "audio_node/<description> and text_node/<description> report executed Broadcast counters with "
+             "node names, execution types, compiled-graph partial shapes (? is dynamic) and consumer names, "
+             "not measured runtime shapes. "
+             "Unmatched plugin nodes are marked explicitly. Plugin counters may overlap or exclude runtime overhead; "
+             "do not add them to wall-clock stages. "
+             "Safe to call while generate() is running. Raises if stage timing is unsupported by the model.")
         .def(
             "generate",
             [](ASRStream& stream,

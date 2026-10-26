@@ -128,6 +128,26 @@ void ASRStream::end_audio() {
     m_impl->end_audio();
 }
 
+size_t ASRStream::get_num_generated_tokens() const {
+    OPENVINO_ASSERT(m_impl, "ASR stream has been moved from.");
+    return m_impl->get_num_generated_tokens();
+}
+
+size_t ASRStream::get_kv_cache_size() const {
+    OPENVINO_ASSERT(m_impl, "ASR stream has been moved from.");
+    return m_impl->get_kv_cache_size();
+}
+
+std::map<std::string, std::pair<size_t, size_t>> ASRStream::get_kv_cache_window_sizes() const {
+    OPENVINO_ASSERT(m_impl, "ASR stream has been moved from.");
+    return m_impl->get_kv_cache_window_sizes();
+}
+
+std::map<std::string, double> ASRStream::get_stage_durations() const {
+    OPENVINO_ASSERT(m_impl, "ASR stream has been moved from.");
+    return m_impl->get_stage_durations();
+}
+
 ASRDecodedResults ASRStream::generate(const ASRTextCallback& text_callback) {
     OPENVINO_ASSERT(m_impl, "ASR stream has been moved from.");
     return m_impl->generate(text_callback);

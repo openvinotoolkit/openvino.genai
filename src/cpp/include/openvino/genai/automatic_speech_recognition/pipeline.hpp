@@ -5,11 +5,13 @@
 
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <ostream>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -105,6 +107,44 @@ public:
 
     /// Signal the end of audio input. generate() processes the queued frames and returns. May be called once.
     void end_audio();
+
+    /// Return the number of generated tokens so far. Safe to call while generate() is running.
+    size_t get_num_generated_tokens() const;
+
+    /**
+     * @brief Return retained key/value tensor bytes after the latest completed inference chunk.
+     *
+     * Includes audio and text KV caches, but excludes convolution caches, inference request buffers and
+     * temporary allocations. Safe to call while generate() is running. Throws if the model does not support
+     * KV-cache size monitoring.
+     */
+    size_t get_kv_cache_size() const;
+
+    /**
+     * @brief Return retained and maximum KV-cache positions for the audio and text windows.
+     *
+     * Each map value is {retained_positions, maximum_positions}. Retained sizes start at zero and
+     * reflect tensor sequence lengths after the latest completed inference chunk and cropping.
+     * Safe to call during generation. Throws if window monitoring is unsupported by the model.
+     */
+    std::map<std::string, std::pair<size_t, size_t>> get_kv_cache_window_sizes() const;
+
+    /**
+     * @brief Return cumulative stage durations in milliseconds for the current stream.
+     *
+     * Keys are audio_inference, text_inference, audio_kv_cache and text_kv_cache. Inference durations cover
+     * infer() calls; cache durations cover retained KV tensor allocation, copying, cropping and rephasing.
+     * Feature extraction, convolution cache copies, tensor setup, sampling and callbacks are excluded.
+     * Safe to call while generate() is running. Throws if stage timing is unsupported by the model.
+     * With ov::enable_profiling enabled (PERF_COUNT), additional audio_op/<node_type>/<exec_type> and
+     * text_op/<node_type>/<exec_type> keys group the latest plugin real-time counters, in milliseconds.
+     * CPU counters are running averages, not per-call or cumulative durations; do not difference or accumulate them.
+     * audio_node/<description> and text_node/<description> keys report individual executed Broadcast counters,
+     * with node names, execution types, compiled-graph partial shapes (? denotes dynamic) and consumer names.
+     * Shapes are not runtime tensor measurements. Unmatched plugin node names are marked explicitly.
+     * Plugin counters may overlap or omit overhead and must not be added to wall-clock stage durations.
+     */
+    std::map<std::string, double> get_stage_durations() const;
 
     /**
      * @brief Run inference over all audio pushed to the stream and return the complete transcription.
