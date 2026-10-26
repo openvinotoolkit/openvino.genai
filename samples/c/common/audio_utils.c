@@ -31,8 +31,8 @@ int load_wav_file(const char* filename, float** audio_data, size_t* audio_length
         return -1;
     }
 
-    if (wav.channels != 1) {
-        fprintf(stderr, "Error: Only mono audio is supported (found %u channels)\n", wav.channels);
+    if (wav.channels != 1 && wav.channels != 2) {
+        fprintf(stderr, "Error: Only mono or stereo audio is supported (found %u channels)\n", wav.channels);
         drwav_uninit(&wav);
         return -1;
     }
@@ -53,14 +53,53 @@ int load_wav_file(const char* filename, float** audio_data, size_t* audio_length
 
     {
         const drwav_uint64 expected_frames = wav.totalPCMFrameCount;
-        const drwav_uint64 frames_read = drwav_read_pcm_frames_f32(&wav, expected_frames, *audio_data);
-        drwav_uninit(&wav);
-        if (frames_read != expected_frames) {
-            fprintf(stderr, "Error: Cannot read audio data\n");
-            free(*audio_data);
-            *audio_data = NULL;
-            *audio_length = 0;
-            return -1;
+        if (wav.channels == 1) {
+            const drwav_uint64 frames_read = drwav_read_pcm_frames_f32(&wav, expected_frames, *audio_data);
+            drwav_uninit(&wav);
+            if (frames_read != expected_frames) {
+                fprintf(stderr, "Error: Cannot read audio data\n");
+                free(*audio_data);
+                *audio_data = NULL;
+                *audio_length = 0;
+                return -1;
+            }
+        } else {
+            if (wav.totalPCMFrameCount > SIZE_MAX / (sizeof(float) * (size_t)wav.channels)) {
+                fprintf(stderr, "Error: WAV frame count exceeds the supported allocation size\n");
+                drwav_uninit(&wav);
+                free(*audio_data);
+                *audio_data = NULL;
+                *audio_length = 0;
+                return -1;
+            }
+
+            const size_t interleaved_count = (size_t)wav.totalPCMFrameCount * (size_t)wav.channels;
+            float* interleaved = (float*)malloc(interleaved_count * sizeof(float));
+            if (!interleaved) {
+                fprintf(stderr, "Error: Cannot allocate memory for interleaved audio data\n");
+                drwav_uninit(&wav);
+                free(*audio_data);
+                *audio_data = NULL;
+                *audio_length = 0;
+                return -1;
+            }
+
+            const drwav_uint64 frames_read = drwav_read_pcm_frames_f32(&wav, expected_frames, interleaved);
+            drwav_uninit(&wav);
+            if (frames_read != expected_frames) {
+                fprintf(stderr, "Error: Cannot read audio data\n");
+                free(interleaved);
+                free(*audio_data);
+                *audio_data = NULL;
+                *audio_length = 0;
+                return -1;
+            }
+
+            for (size_t i = 0; i < *audio_length; ++i) {
+                const size_t idx = 2 * i;
+                (*audio_data)[i] = 0.5f * (interleaved[idx] + interleaved[idx + 1]);
+            }
+            free(interleaved);
         }
     }
 
