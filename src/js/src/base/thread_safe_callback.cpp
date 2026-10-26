@@ -13,6 +13,11 @@
 
 namespace {
 
+class CallbackEnvironmentClosing : public std::runtime_error {
+public:
+    CallbackEnvironmentClosing() : std::runtime_error("Node.js environment is closing") {}
+};
+
 class JavaScriptCallbackError : public std::runtime_error {
 public:
     JavaScriptCallbackError(std::string message, std::string stack)
@@ -23,6 +28,43 @@ public:
 };
 
 }  // namespace
+
+Napi::Value call_js_callback(const Napi::Function& callback,
+                            const std::initializer_list<napi_value>& arguments,
+                            napi_value receiver) {
+    const auto env = callback.Env();
+    if (!receiver) {
+        receiver = env.Undefined();
+    }
+    napi_value result = nullptr;
+    // Inspect raw statuses before node-addon-api constructs an error during shutdown.
+    const napi_status status =
+        napi_call_function(env, receiver, callback, arguments.size(), arguments.begin(), &result);
+    if (status == napi_ok) {
+        return Napi::Value(env, result);
+    }
+    if (status == napi_cannot_run_js || status == napi_closing) {
+        throw CallbackEnvironmentClosing();
+    }
+    OPENVINO_ASSERT(status == napi_pending_exception, "Failed to invoke a JavaScript callback. Status: ", status);
+    napi_value exception = nullptr;
+    const napi_status exception_status = napi_get_and_clear_last_exception(env, &exception);
+    OPENVINO_ASSERT(exception_status == napi_ok, "Failed to retrieve a callback exception. Status: ", exception_status);
+    const Napi::Value value(env, exception);
+    if (!value.IsObject() && !value.IsFunction() && !value.IsSymbol()) {
+        // Coercion only probes whether V8 can run; preserve the original thrown value.
+        napi_value string = nullptr;
+        const napi_status conversion_status = napi_coerce_to_string(env, exception, &string);
+        if (conversion_status == napi_pending_exception || conversion_status == napi_cannot_run_js ||
+            conversion_status == napi_closing) {
+            throw CallbackEnvironmentClosing();
+        }
+        OPENVINO_ASSERT(conversion_status == napi_ok,
+                        "Failed to inspect a primitive callback exception. Status: ",
+                        conversion_status);
+    }
+    throw Napi::Error(env, exception);
+}
 
 class CallbackEnvironment {
 public:
@@ -80,6 +122,8 @@ struct ThreadSafeCallback::State {
         }
         try {
             (*invocation)(Napi::Env(env), Napi::Function(env, callback));
+        } catch (const CallbackEnvironmentClosing&) {
+            return;
         } catch (const Napi::Error& error) {
             report_exception(env, error.Value());
         } catch (const std::exception& error) {

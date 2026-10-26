@@ -53,7 +53,7 @@ inline void complete_pipeline_callback(Napi::Env env,
         }
     }
     operation.reset();
-    callback.Call({error, error.IsNull() ? result : env.Null()});
+    call_js_callback(callback, {error, error.IsNull() ? result : env.Null()});
 }
 
 class PipelineWorker final : public Napi::AsyncWorker {

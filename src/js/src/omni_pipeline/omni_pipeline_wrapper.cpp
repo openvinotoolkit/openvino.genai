@@ -67,7 +67,7 @@ Napi::Value OmniPipelineWrapper::generate(const Napi::CallbackInfo& info) {
                     try {
                         return context->speech_streamer->call_and_wait<ov::genai::StreamingStatus>(
                             [chunk](Napi::Env env, Napi::Function callback) {
-                                return callback.Call({cpp_to_js<ov::Tensor, Napi::Value>(env, chunk)});
+                                return call_js_callback(callback, {cpp_to_js<ov::Tensor, Napi::Value>(env, chunk)});
                             },
                             to_streaming_status);
                     } catch (const std::exception&) {

@@ -11,9 +11,10 @@ std::function<bool(size_t, size_t, ov::Tensor&)> make_image_generation_step_call
         try {
             return context->streamer->call_and_wait<bool>(
                 [step, num_steps, latent](Napi::Env env, Napi::Function callback) {
-                    return callback.Call({Napi::Number::New(env, static_cast<double>(step)),
-                                          Napi::Number::New(env, static_cast<double>(num_steps)),
-                                          cpp_to_js<ov::Tensor, Napi::Value>(env, latent)});
+                    return call_js_callback(callback,
+                                            {Napi::Number::New(env, static_cast<double>(step)),
+                                             Napi::Number::New(env, static_cast<double>(num_steps)),
+                                             cpp_to_js<ov::Tensor, Napi::Value>(env, latent)});
                 },
                 [](const Napi::Value& value) {
                     OPENVINO_ASSERT(value.IsBoolean(), "Step callback must return a boolean or a Promise<boolean>");

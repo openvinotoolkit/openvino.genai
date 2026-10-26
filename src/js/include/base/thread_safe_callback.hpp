@@ -7,6 +7,7 @@
 #include <exception>
 #include <functional>
 #include <future>
+#include <initializer_list>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -18,6 +19,9 @@
 
 class CallbackEnvironment;
 
+Napi::Value call_js_callback(const Napi::Function& callback,
+                            const std::initializer_list<napi_value>& arguments,
+                            napi_value receiver = nullptr);
 std::exception_ptr capture_callback_exception(Napi::Env env, const Napi::Value& value);
 Napi::Error callback_error(Napi::Env env, const std::exception_ptr& exception, const std::string& prefix = {});
 
@@ -109,7 +113,7 @@ public:
                                     .As<Napi::Object>()
                                     .Get("then")
                                     .As<Napi::Function>();
-                    then.Call(value, {fulfilled, rejected});
+                    call_js_callback(then, {fulfilled, rejected}, value);
                     OPENVINO_ASSERT(allow_promise, "Callback must return synchronously");
                 } else {
                     result->resolve(convert(value));

@@ -13,7 +13,7 @@ void JSParser::parse(ov::genai::JsonContainer& message) {
     message = parser_callback.call_and_wait<ov::genai::JsonContainer>(
         [this, &message](Napi::Env env, Napi::Function parse) {
             auto js_message = cpp_to_js<ov::genai::JsonContainer, Napi::Value>(env, message);
-            auto result = parse.Call(parser_callback.receiver(), {js_message});
+            auto result = call_js_callback(parse, {js_message}, parser_callback.receiver());
             return result.IsPromise() ? result : js_message;
         },
         [](const Napi::Value& value) {

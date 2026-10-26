@@ -40,7 +40,7 @@ std::function<ov::genai::StreamingStatus(std::string)> make_text_streamer(Infere
         try {
             return context->streamer->call_and_wait<ov::genai::StreamingStatus>(
                 [word = std::move(word)](Napi::Env env, Napi::Function callback) {
-                    return callback.Call({Napi::String::New(env, word)});
+                    return call_js_callback(callback, {Napi::String::New(env, word)});
                 },
                 to_streaming_status);
         } catch (const std::exception&) {
