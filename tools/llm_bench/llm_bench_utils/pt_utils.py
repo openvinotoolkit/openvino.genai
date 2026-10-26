@@ -340,6 +340,26 @@ def _load_qwen3_omni_pt_pipeline(model_path, device, memory_data_collector, mem_
     return pipe, processor, from_pretrain_time
 
 
+def _load_qwen3_tts_pt_pipeline(model_path, device, memory_data_collector, mem_consumption):
+    from qwen_tts import Qwen3TTSModel
+
+    log.info(f"Load Qwen3-TTS PyTorch model from model path:{model_path}")
+    if mem_consumption:
+        memory_data_collector.start()
+
+    start = time.perf_counter()
+    device_map = str(_select_torch_device(device))
+    pipe = Qwen3TTSModel.from_pretrained(str(model_path), device_map=device_map)
+    from_pretrain_time = time.perf_counter() - start
+
+    if mem_consumption:
+        memory_data_collector.stop_and_collect_data("pretrained")
+        memory_data_collector.log_data(compilation=True)
+
+    log.info(f"Model path:{model_path}, from pretrained time: {from_pretrain_time:.2f}s")
+    return pipe, from_pretrain_time
+
+
 def create_image_text_gen_model(model_path, device, memory_data_collector, **kwargs):
     model_path = Path(model_path)
     if not model_path.exists():
@@ -371,24 +391,9 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
     model_path = Path(model_path)
     from_pretrain_time = 0
     if kwargs.get("is_qwen3_tts_model", False):
-        from qwen_tts import Qwen3TTSModel
-
-        log.info(f"Load Qwen3-TTS PyTorch model from model path:{model_path}")
-        if kwargs.get("mem_consumption"):
-            memory_data_collector.start()
-
-        start = time.perf_counter()
-        device_map = str(_select_torch_device(device))
-
-        pipe = Qwen3TTSModel.from_pretrained(str(model_path), device_map=device_map)
-        end = time.perf_counter()
-        from_pretrain_time = end - start
-
-        if kwargs.get("mem_consumption"):
-            memory_data_collector.stop_and_collect_data("pretrained")
-            memory_data_collector.log_data(compilation=True)
-
-        log.info(f"Model path:{model_path}, from pretrained time: {from_pretrain_time:.2f}s")
+        pipe, from_pretrain_time = _load_qwen3_tts_pt_pipeline(
+            model_path, device, memory_data_collector, kwargs.get("mem_consumption")
+        )
         return pipe, None, None, from_pretrain_time, False
     if kwargs.get("is_omni_model", False):
         pipe, processor, from_pretrain_time = _load_qwen3_omni_pt_pipeline(
