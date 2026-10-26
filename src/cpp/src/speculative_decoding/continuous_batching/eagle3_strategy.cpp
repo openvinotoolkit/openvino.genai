@@ -3,11 +3,33 @@
 
 #include <algorithm>
 
+#include "continuous_batching/pipeline_base.hpp"
 #include "eagle3_strategy.hpp"
 #include "openvino/pass/pa_kv_reorder_fusion.hpp"
 #include "speculative_decoding/eagle3_model_transforms.hpp"
 
 namespace ov::genai {
+namespace {
+
+constexpr char kDraftEmbeddingsExtraInputName[] = "__ov_genai_internal_draft_embeddings";
+
+ov::Tensor extract_draft_embeddings(std::optional<std::unordered_map<std::string, ov::Tensor>>& lm_extra_inputs) {
+    if (!lm_extra_inputs.has_value()) {
+        return {};
+    }
+
+    auto it = lm_extra_inputs->find(kDraftEmbeddingsExtraInputName);
+    if (it == lm_extra_inputs->end()) {
+        return {};
+    }
+
+    ov::Tensor draft_embeddings = it->second;
+    lm_extra_inputs->erase(it);
+    return draft_embeddings;
+}
+
+}  // namespace
+
 KVUpdateWrapper::KVUpdateWrapper(const ov::genai::ModelDesc& kv_model_desc) {
     m_compiled_model =
             utils::singleton_core().compile_model(kv_model_desc.model, kv_model_desc.device, kv_model_desc.properties);
@@ -174,7 +196,22 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::align_request_pair_processe
     // These values represent the processed-prefix lengths after each pipeline
     // independently restores cached prompt prefix blocks.
     const size_t main_processed = main_request->get_num_processed_tokens();
-    const size_t draft_processed = draft_request->get_num_processed_tokens();
+    size_t draft_processed = draft_request->get_num_processed_tokens();
+
+    if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        // The draft (embeddings) restore was deferred so its cache identity can be bound to the main
+        // model's image-aware hash here. The draft input is the main sequence shifted by one token, so a
+        // draft prefix of length L maps to the main prefix of length L + 1. This prevents reusing draft
+        // blocks cached for a prompt with identical text but a different image.
+        auto draft_pipeline = std::static_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_draft_pipeline);
+        draft_processed = draft_pipeline->restore_draft_prefix_with_identity(
+            request_id,
+            main_processed,
+            [main_request](size_t length, size_t block_size) {
+                return main_request->get_sequences().front()->get_hash(length + 1, block_size);
+            });
+    }
+
     const size_t common_restored_prefix = std::min(main_processed, draft_processed);
 
     // Enforce a shared processed prefix to keep main/draft cache states coherent.
@@ -199,6 +236,11 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::align_request_pair_processe
                         ", target_processed_tokens=",
                         aligned_draft_processed);
     }
+
+    // Report the aligned prefix both pipelines actually restart from, overriding each pipeline's
+    // independent pre-alignment restore count.
+    main_request->set_num_prefix_cache_hit_tokens(common_restored_prefix);
+    draft_request->set_num_prefix_cache_hit_tokens(common_restored_prefix);
 }
 
 void ContinuousBatchingPipeline::Eagle3DecodingImpl::validate_awaiting_requests(
@@ -249,6 +291,31 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::update_eagle_pipeline_param
     m_draft_eagle_pipeline->set_d2t_for_draft_decoding(d2t_tensor);
 }
 
+std::unordered_map<std::string, ov::Tensor>
+ContinuousBatchingPipeline::Eagle3DecodingImpl::prepare_lm_extra_inputs(
+    std::unordered_map<std::string, ov::Tensor> lm_extra_inputs) const {
+    auto prepared_inputs = IContinuousBatchingPipeline::prepare_lm_extra_inputs(std::move(lm_extra_inputs));
+    if (m_inputs_embedder) {
+        // Preserve each request's text embeddings before the embedder reuses its cache.
+        const ov::Tensor cached_text_embeds = m_inputs_embedder->get_cached_text_embeds();
+        if (cached_text_embeds) {
+            ov::Tensor cached_text_embeds_copy(cached_text_embeds.get_element_type(), cached_text_embeds.get_shape());
+            cached_text_embeds.copy_to(cached_text_embeds_copy);
+            prepared_inputs[kDraftEmbeddingsExtraInputName] = std::move(cached_text_embeds_copy);
+        }
+    }
+    return prepared_inputs;
+}
+
+void ContinuousBatchingPipeline::Eagle3DecodingImpl::prepare_inputs_embedder(
+    const GenerationConfig& sampling_params) const {
+    if (m_inputs_embedder) {
+        const bool drafting_disabled = sampling_params.num_assistant_tokens.has_value() &&
+                                       sampling_params.num_assistant_tokens.value() == 0;
+        m_inputs_embedder->set_cached_text_embeds_enabled(!drafting_disabled);
+    }
+}
+
 GenerationHandle
 ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
                                                                  const ov::Tensor& input_ids,
@@ -258,6 +325,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     if (sampling_params.num_assistant_tokens.has_value() && sampling_params.num_assistant_tokens.value() == 0) {
         // No speculative draft for this request: run only the main model.
+        extract_draft_embeddings(lm_extra_inputs);
         return m_main_pipeline->add_request(request_id,
                                             input_ids,
                                             sampling_params,
@@ -268,9 +336,13 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
+
+    // Extract draft-only embeddings that were staged in lm_extra_inputs and remove
+    // them so the main pipeline receives only its regular auxiliary inputs.
+    ov::Tensor draft_embeddings = extract_draft_embeddings(lm_extra_inputs);
     // remove first token from input_ids to create the draft model input
     // refer to: https://github.com/SafeAILab/EAGLE/blob/main/eagle/model/cnets.py#L617
-    ov::Tensor draft_input = create_draft_input(input_ids);
+    ov::Tensor draft_input = create_draft_input(draft_embeddings ? draft_embeddings : input_ids);
     std::optional<ov::Tensor> draft_prompt_ids = prompt_ids;
     ov::Tensor main_position_ids;
     std::optional<int64_t> main_rope_delta;
@@ -341,19 +413,13 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
     strategy.prepare_request = [this](size_t,
                                       const ov::Tensor& in_ids,
                                       GenerationConfig& main_cfg,
-                                      GenerationConfig& draft_cfg,
-                                      ov::Tensor& main_in,
-                                      ov::Tensor& draft_in) {
+                                      ov::Tensor& main_in) {
         OPENVINO_ASSERT(main_cfg.assistant_confidence_threshold == 0.f,
                         "Eagle3 only supports num_assistant_tokens (assistant_confidence_threshold must be 0.f)");
         if (!main_cfg.num_assistant_tokens.has_value()) {
             main_cfg.num_assistant_tokens = m_main_pipeline->default_num_assistant_tokens;
-            draft_cfg.num_assistant_tokens = main_cfg.num_assistant_tokens;
         }
-        draft_cfg.ignore_eos = true;
-        draft_cfg.stop_strings = {};
         main_in = in_ids;
-        draft_in = create_draft_input(in_ids);
     };
 
     strategy.check_streaming = [](const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr,

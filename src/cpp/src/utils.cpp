@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <variant>
 #include <fstream>
+#include <map>
 #include <memory>
 #include <regex>
 
@@ -20,7 +21,7 @@
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
 #include "openvino/genai/text_streamer.hpp"
-#include "gguf_utils/gguf_modeling.hpp"
+#include "gguf_utils/gguf_utils.hpp"
 
 
 #include "sampling/sampler.hpp"
@@ -149,7 +150,7 @@ namespace ov {
 namespace genai {
 namespace utils {
 
-enum class ModelType { Default, Whisper, TextEmbedding };
+enum class ModelType { Default, Whisper, TextEmbedding, TextRerank };
 
 Tensor init_attention_mask(const Tensor& input_ids) {
     auto shape = input_ids.get_shape();
@@ -203,11 +204,11 @@ ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
     return streamer;
 }
 
-ov::genai::OmniSpeechStreamerVariant get_audio_streamer_from_map(const ov::AnyMap& config_map) {
+ov::genai::OmniSpeechStreamerVariant get_speech_streamer_from_map(const ov::AnyMap& config_map) {
     ov::genai::OmniSpeechStreamerVariant streamer = std::monostate();
 
-    if (config_map.count(AUDIO_STREAMER_ARG_NAME)) {
-        auto any_val = config_map.at(AUDIO_STREAMER_ARG_NAME);
+    if (config_map.count(SPEECH_STREAMER_ARG_NAME)) {
+        auto any_val = config_map.at(SPEECH_STREAMER_ARG_NAME);
         if (any_val.is<std::shared_ptr<ov::genai::OmniSpeechStreamerBase>>()) {
             streamer = any_val.as<std::shared_ptr<ov::genai::OmniSpeechStreamerBase>>();
         } else if (any_val.is<std::function<StreamingStatus(const ov::Tensor&)>>()) {
@@ -494,13 +495,10 @@ void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::str
 }
 
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& properties) {
-    auto [filtered_properties, enable_save_ov_model] = extract_gguf_properties(properties);
+    const auto gguf_props = gguf_utils::extract_gguf_properties(properties);
+    const ov::AnyMap& filtered_properties = gguf_props.rest;
     if (is_gguf_model(model_dir)) {
-#ifdef ENABLE_GGUF
-        return create_from_gguf(model_dir.string(), enable_save_ov_model);
-#else
-        OPENVINO_ASSERT("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
-#endif
+        return gguf_utils::read_gguf_model(model_dir, gguf_props);
     } else {
         std::filesystem::path model_path = model_dir;
 
@@ -537,6 +535,9 @@ CacheTypes get_cache_types(const ov::Model& model) {
     // "ReadValue" node is cache representation in stateful model
     const std::string state_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
     CacheTypes cache_types;
+    if (gguf_utils::has_gguf_recurrent_states(model)) {
+        cache_types.add_linear();
+    }
 
     for (const auto& op : model.get_ops()) {
         // check input size, as in LoRA adapters case it could be 0
@@ -792,11 +793,23 @@ void get_npu_text_embedding_config(ov::AnyMap& properties,
     update_npu_config_text_embedding(properties, kv_pos, kv_desc);
 }
 
+void get_npu_text_rerank_config(ov::AnyMap& properties,
+                                const KVAxesPosition& kv_pos,
+                                KVDesc& kv_desc,
+                                const TextRerankPipeline::Config& text_rerank_config) {
+    const auto max_length = static_cast<uint32_t>(text_rerank_config.max_length.value_or(1024u));
+    kv_desc.max_prompt_len = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(max_length);
+    kv_desc.min_response_len = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u);
+    update_npu_config(properties, kv_pos, kv_desc);
+    update_config(properties, {"NPUW_TEXT_RERANK", "YES"});
+}
+
 std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_impl(const std::shared_ptr<ov::Model>& model,
                                                                   const ov::AnyMap& config,
                                                                   const KVAxesPosition& kv_pos,
                                                                   ModelType model_type,
-                                                                  const TextEmbeddingPipeline::Config& text_embed_config = {}) {
+                                                                  const TextEmbeddingPipeline::Config& text_embed_config = {},
+                                                                  const TextRerankPipeline::Config& text_rerank_config = {}) {
     ov::CompiledModel compiled;
     ov::AnyMap properties = config;
     KVDesc kv_desc;
@@ -811,6 +824,9 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_impl(const std::sha
         switch (model_type) {
         case ModelType::TextEmbedding:
             get_npu_text_embedding_config(properties, kv_pos, kv_desc, text_embed_config);
+            break;
+        case ModelType::TextRerank:
+            get_npu_text_rerank_config(properties, kv_pos, kv_desc, text_rerank_config);
             break;
         case ModelType::Whisper:
             get_npu_model_config(properties, kv_pos, kv_desc, true);
@@ -846,6 +862,58 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_embedding(cons
                                                                             const KVAxesPosition& kv_pos,
                                                                             const TextEmbeddingPipeline::Config& text_embed_config) {
     return compile_decoder_for_npu_impl(model, config, kv_pos, ModelType::TextEmbedding, text_embed_config);
+}
+
+std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_rerank(const std::shared_ptr<ov::Model>& model,
+                                                                         const ov::AnyMap& config,
+                                                                         const KVAxesPosition& kv_pos,
+                                                                         const TextRerankPipeline::Config& text_rerank_config) {
+    return compile_decoder_for_npu_impl(model, config, kv_pos, ModelType::TextRerank, {}, text_rerank_config);
+}
+
+ov::CompiledModel compile_kokoro_for_npu_speech_generation(const std::filesystem::path& model_path,
+                                                           const ov::AnyMap& properties,
+                                                           size_t static_input_ids_length) {
+    auto& core = singleton_core();
+    auto model = core.read_model(model_path, {}, properties);
+
+    std::map<std::string, ov::PartialShape> static_shapes;
+    if (model->inputs().size() >= 1) {
+        static_shapes.emplace(model->input(0).get_any_name(),
+                              ov::PartialShape{1, static_cast<int64_t>(static_input_ids_length)});
+    }
+    if (model->inputs().size() >= 2) {
+        static_shapes.emplace(model->input(1).get_any_name(), ov::PartialShape{1, 256});
+    }
+    if (model->inputs().size() >= 3) {
+        static_shapes.emplace(model->input(2).get_any_name(), ov::PartialShape{1});
+    }
+
+    if (!static_shapes.empty()) {
+        model->reshape(static_shapes);
+    }
+
+    ov::AnyMap compile_properties = properties;
+
+    set_config_default(compile_properties, "NPU_USE_NPUW", std::string{"YES"});
+    if (is_npuw_enabled(compile_properties)) {
+        set_config_default(compile_properties, "NPUW_DEVICES", std::string{"NPU,CPU"});
+        set_config_default(compile_properties, "NPUW_KOKORO", std::string{"YES"});
+
+        OPENVINO_ASSERT(!(compile_properties.count("CACHE_DIR") > 0 && compile_properties.count("NPUW_CACHE_DIR") > 0),
+                        "Both CACHE_DIR and NPUW_CACHE_DIR are set for Kokoro on NPU. "
+                        "Please specify only one cache directory key.");
+
+        auto it = compile_properties.find("CACHE_DIR");
+        if (it != compile_properties.end()) {
+            auto cache_dir_val = it->second;
+            compile_properties.erase(it);
+            set_config_default(compile_properties, "NPUW_CACHE_DIR", cache_dir_val);
+            GENAI_INFO("Kokoro NPU: remapped CACHE_DIR to NPUW_CACHE_DIR");
+        }
+    }
+
+    return core.compile_model(model, "NPU", compile_properties);
 }
 
 size_t get_npu_kv_cache_capacity(const ov::CompiledModel& compiled_model) {

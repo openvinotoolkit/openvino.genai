@@ -29,6 +29,18 @@ struct ImageSize {
     size_t width = 0;
 };
 
+/// @brief Slices grid layout: how a source image is adaptively split into slices (rows x cols).
+struct SlicesGrid {
+    /// @brief Number of slice rows.
+    size_t rows = 0;
+    /// @brief Number of slice columns.
+    size_t cols = 0;
+
+    bool has_slices() const {
+        return rows != 0 && cols != 0;
+    }
+};
+
 
 struct ResampledImage {
     ov::Tensor resampled_source;
@@ -66,6 +78,14 @@ struct EncodedImage {
     /// @brief Resampled image, used only by MiniCPM.
     ResampledImage resampled_image;
 
+    /// @brief Per-crop sizes in patches (thumbnail first, then detail slices by rows).
+    /// Used only by MiniCPM-V 4.7.
+    std::vector<ImageSize> crop_sizes;
+
+    /// @brief Slices grid layout (rows, cols), zeroed if image is not sliced.
+    /// Used only by MiniCPM-V 4.7.
+    SlicesGrid slices_grid;
+
     /// @brief Number of image tokens required to append to a normalized prompt
     size_t num_image_tokens = 0;
 };
@@ -84,6 +104,14 @@ struct EncodedVideo {
 
     /// @brief A number of encoded frames.
     size_t frame_num = 0;
+
+    /// @brief Per-crop sizes in patches of a single frame (thumbnail first, then detail slices by rows).
+    /// Each video frame has the same crop sizes layout. Used only by MiniCPM-V 4.7.
+    std::vector<ImageSize> crop_sizes;
+
+    /// @brief Slices grid layout of a single frame (rows, cols), zeroed if frame is not sliced.
+    /// Used only by MiniCPM-V 4.7.
+    SlicesGrid slices_grid;
 
     /// @brief Video metadata, used for video input processing and prompt normalization.
     VideoMetadata metadata;

@@ -4,6 +4,7 @@
 #include "visual_language/qwen3_vl/classes.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <numeric>
 
 #include "utils.hpp"
@@ -148,11 +149,24 @@ std::pair<ov::Tensor, ov::Tensor> get_position_interpolation_indices_and_weights
         const float h_scale = h > 1 ? static_cast<float>(num_grid_per_side - 1) / (h - 1) : 0.0f;
         const float w_scale = w > 1 ? static_cast<float>(num_grid_per_side - 1) / (w - 1) : 0.0f;
 
+        // Match torch.linspace's endpoint-based rounding for vision position interpolation.
         for (size_t i = 0; i < h; ++i) {
-            h_idxs[i] = static_cast<float>(i) * h_scale;
+            if (h == 1 || i < h / 2) {
+                h_idxs[i] = static_cast<float>(i) * h_scale;
+            } else {
+                h_idxs[i] = std::fma(-h_scale,
+                                     static_cast<float>(h - i - 1),
+                                     static_cast<float>(num_grid_per_side - 1));
+            }
         }
         for (size_t i = 0; i < w; ++i) {
-            w_idxs[i] = static_cast<float>(i) * w_scale;
+            if (w == 1 || i < w / 2) {
+                w_idxs[i] = static_cast<float>(i) * w_scale;
+            } else {
+                w_idxs[i] = std::fma(-w_scale,
+                                     static_cast<float>(w - i - 1),
+                                     static_cast<float>(num_grid_per_side - 1));
+            }
         }
 
         // Compute floor/ceil indices and interpolation weights
@@ -588,6 +602,12 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen3VL::run_video_image_embeddi
     ov::Tensor concatenated_embeds =
         qwen2_vl_utils::concatenate_video_image_embeds(reordered_video_embeds, reordered_image_embeds);
 
+    if (reordered_video_embeds.size() + reordered_image_embeds.size() == 1) {
+        ov::Tensor owned_embeds(concatenated_embeds.get_element_type(), concatenated_embeds.get_shape());
+        concatenated_embeds.copy_to(owned_embeds);
+        concatenated_embeds = std::move(owned_embeds);
+    }
+
     // Combined grid for position computation
     std::vector<std::array<size_t, 3>> combined_grid_thw;
     combined_grid_thw.insert(combined_grid_thw.end(),
@@ -750,6 +770,7 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
             m_lm_extra_inputs["deepstack_visual_embeds"] = std::move(deepstack_visual_embeds);
         }
 
+        set_cached_text_embeds(text_embeds);
         ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
         std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
         return inputs_embeds;
@@ -805,6 +826,8 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
     if (has_lm_extra_input("visual_pos_masks")) {
         m_lm_extra_inputs["visual_pos_masks"] = create_visual_pos_masks(input_ids, image_pad_token_id, video_pad_token_id);
     }
+
+    set_cached_text_embeds(text_embeds);
 
     return qwen2_vl_utils::merge_text_and_video_image_embeddings(input_ids,
                                                                  text_embeds,
