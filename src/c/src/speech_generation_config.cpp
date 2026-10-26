@@ -221,10 +221,13 @@ CONFIG_NUMBER_ACCESSORS(subtalker_temperature, float)
 
 ov_status_e ov_genai_speech_generation_config_set_language(ov_genai_speech_generation_config* config,
                                                            const char* language) {
-    if (!config || !config->object || !language)
+    if (!config || !config->object)
         return ov_status_e::INVALID_C_PARAM;
     try {
-        config->object->language = language;
+        if (language)
+            config->object->language = language;
+        else
+            config->object->language.clear();
         return ov_status_e::OK;
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;

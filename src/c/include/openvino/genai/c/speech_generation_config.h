@@ -177,15 +177,16 @@ ov_genai_speech_generation_config_get_phonemize_fallback_model_dir(const ov_gena
                                                                    char* buffer,
                                                                    size_t* size);
 /**
- * @brief Set the Kokoro G2P language code (default "en-us").
+ * @brief Set language selector for speech backends that support language-aware generation.
  * @param[in,out] config Configuration to update.
- * @param[in] language NUL-terminated language code, such as "en-us" or "en-gb".
- * @return OK on success, INVALID_C_PARAM for NULL arguments, or UNKNOW_EXCEPTION on allocation failure.
+ * @param[in] language NUL-terminated language code, for example "en-us" or "en-gb".
+ *                     Pass NULL to clear and use backend-specific default language handling.
+ * @return OK on success, INVALID_C_PARAM for NULL config, or UNKNOW_EXCEPTION on allocation failure.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_speech_generation_config_set_language(ov_genai_speech_generation_config* config, const char* language);
 /**
- * @brief Read the Kokoro G2P language code.
+ * @brief Read the configured language selector.
  * @param[in] config Configuration to read.
  * @param[out] buffer Caller-owned UTF-8 buffer, or NULL to query the required byte count.
  * @param[in,out] size Buffer capacity on input; on success receives the required byte count, including the NUL
