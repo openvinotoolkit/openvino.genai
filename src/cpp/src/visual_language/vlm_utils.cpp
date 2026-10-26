@@ -6,8 +6,88 @@
 #include "utils.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 
 namespace ov::genai::vlm_utils {
+
+ImageSize find_best_resize(
+    const double height,
+    const double width,
+    const int scale_resolution,
+    const int patch_size,
+    const int merge_factor,
+    const bool allow_upscale) {
+    double new_height = height;
+    double new_width = width;
+    if (height * width > static_cast<double>(scale_resolution) * scale_resolution || allow_upscale) {
+        const double aspect_ratio = width / height;
+        new_height = scale_resolution / std::sqrt(aspect_ratio);
+        new_width = new_height * aspect_ratio;
+    }
+    const int factor = patch_size * merge_factor;
+    const auto align_size = [factor](const double length) {
+        return static_cast<size_t>(std::max(static_cast<int>(std::round(length / factor)) * factor, factor));
+    };
+    return {align_size(new_height), align_size(new_width)};
+}
+
+ImageSize get_refine_size(
+    const int height,
+    const int width,
+    const SlicesGrid& grid,
+    const int scale_resolution,
+    const int patch_size,
+    const int merge_factor) {
+    OPENVINO_ASSERT(grid.has_slices(), "Refining an image requires a non-empty slices grid");
+    const int grid_rows = static_cast<int>(grid.rows);
+    const int grid_cols = static_cast<int>(grid.cols);
+    const auto align_size = [](const int length, const int divisor) {
+        return std::max(static_cast<int>(std::round(static_cast<double>(length) / divisor)) * divisor, divisor);
+    };
+    const int refine_height = align_size(height, grid_rows);
+    const int refine_width = align_size(width, grid_cols);
+    const ImageSize best = find_best_resize(
+        static_cast<double>(refine_height) / grid_rows,
+        static_cast<double>(refine_width) / grid_cols,
+        scale_resolution,
+        patch_size,
+        merge_factor,
+        /*allow_upscale=*/true);
+    return {best.height * grid.rows, best.width * grid.cols};
+}
+
+SlicesGrid get_slices_grid(const int height, const int width, const int max_slice_nums, const int scale_resolution) {
+    const double log_ratio = std::log(static_cast<double>(width) / height);
+    const double ratio =
+        static_cast<double>(width) * height / (static_cast<double>(scale_resolution) * scale_resolution);
+    const int multiple = std::min(static_cast<int>(std::ceil(ratio)), max_slice_nums);
+    if (multiple <= 1) {
+        return {};
+    }
+
+    SlicesGrid best_grid{1, 1};
+    double min_error = std::numeric_limits<double>::infinity();
+    for (int num_slices : {multiple - 1, multiple, multiple + 1}) {
+        if (num_slices == 1 || num_slices > max_slice_nums) {
+            continue;
+        }
+        for (int num_rows = 1; num_rows <= num_slices; ++num_rows) {
+            if (num_slices % num_rows != 0) {
+                continue;
+            }
+            const int num_cols = num_slices / num_rows;
+            const double error = std::abs(log_ratio - std::log(static_cast<double>(num_cols) / num_rows));
+            if (error < min_error) {
+                best_grid = {static_cast<size_t>(num_rows), static_cast<size_t>(num_cols)};
+                min_error = error;
+            } else if (error == min_error && static_cast<size_t>(num_rows) > best_grid.rows) {
+                best_grid = {static_cast<size_t>(num_rows), static_cast<size_t>(num_cols)};
+            }
+        }
+    }
+    return best_grid;
+}
 
 std::vector<std::variant<ov::Tensor, size_t>> split_tokenize(const std::string& text,
                                                              ov::genai::Tokenizer& tokenizer,

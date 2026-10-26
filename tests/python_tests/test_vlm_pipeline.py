@@ -165,10 +165,6 @@ else:
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
-# MiniCPM-V-4.6 (model_type "minicpmv4_6"): NaViT SigLIP vision tower + Qwen3.5 text
-# backbone. Requires transformers >= 5.7 and optimum-intel with minicpmv4_6 export
-# support. The matching tiny-random fixture follows the optimum-intel naming used in
-# optimum-intel/tests/openvino/utils_tests.py.
 MODEL_MINICPMV4_6 = "optimum-intel-internal-testing/tiny-random-minicpmv4_6"
 MODEL_QWEN35_MTP = "optimum-intel-internal-testing/tiny-random-qwen3.5-mtp"
 MODEL_DEEPSEEK_OCR2 = "optimum-intel-internal-testing/tiny-random-deepseek-ocr-2"

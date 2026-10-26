@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include <array>
 #include <filesystem>
+#include <mutex>
 
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/vision_encoder.hpp"
@@ -38,22 +38,7 @@ public:
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
 
-private:
-    void load_vision_params(const std::filesystem::path& config_dir_path);
-
-    size_t m_num_patches_per_side = 70;  // vision_config.image_size / patch_size
-    size_t m_patch_size = 14;
-    size_t m_scale_resolution = 448;
-    size_t m_max_slice_nums = 9;
-    size_t m_window_kh = 2;
-    size_t m_window_kw = 2;
-    size_t m_merge_kh = 2;
-    size_t m_merge_kw = 2;
-    size_t m_downsample_merge_factor = 4;
-    size_t m_token_divisor = 16;  // 16x downsample -> grid_h*grid_w/16 tokens
-    bool m_slice_mode = true;
-    std::array<float, 3> m_image_mean{0.5f, 0.5f, 0.5f};
-    std::array<float, 3> m_image_std{0.5f, 0.5f, 0.5f};
+    void update_vision_config(const VLMConfig& vlm_config);
 };
 
 class InputsEmbedderMiniCPMV4_6 : public InputsEmbedder::IInputsEmbedder {
@@ -92,6 +77,10 @@ public:
 
 private:
     std::string build_image_placeholder(const EncodedImage& image, size_t image_id) const;
+    void encode_vision_token_ids();
+
+    std::once_flag m_vision_token_ids_once_flag;
+    int64_t m_image_token_id = -1;
 };
 
 } // namespace ov::genai

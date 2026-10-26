@@ -666,6 +666,7 @@ def load_prompts(args):
 
         return {"prompts": prompts, "images": images, "videos": videos}
 
+    dataset_split = "validation"
     if args.split is not None:
         dataset_split = args.split
 
@@ -1250,15 +1251,6 @@ def genai_gen_reranking(model, tokenizer, query, documents):
 
 
 def is_model_with_automatic_crop(config):
-    model_type = getattr(config, "model_type", "")
-    # MiniCPM-V-4.6 (model_type="minicpmv4_6") is a standard transformers
-    # image-text-to-text model: its generate() returns the full input+output
-    # sequence, so the question must be cropped like for other HF VLMs. Only the
-    # legacy custom-code MiniCPM-V/-o models return an already-cropped decoded
-    # answer and must keep crop_question=False. The substring check below would
-    # otherwise wrongly match "minicpmv" inside "minicpmv4_6".
-    if model_type == "minicpmv4_6":
-        return False
     return (
         "internvl" in config.model_type
         # remote-code MiniCPM-V only: the native transformers ones (e.g. minicpmv4_7) return the prompt with the answer
