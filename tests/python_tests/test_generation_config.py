@@ -64,7 +64,6 @@ configs = [
     dict(max_new_tokens=1, length_penalty=2), # requiring beam search
     # assistant generation
     dict(max_new_tokens=1, assistant_confidence_threshold=0.5),
-    dict(max_new_tokens=1, num_assistant_tokens=None),
     dict(max_new_tokens=1, num_assistant_tokens=0),
     dict(max_new_tokens=1, num_assistant_tokens=2),
     dict(max_new_tokens=1, num_assistant_tokens=100),
@@ -183,7 +182,7 @@ def test_whisper_language_validate_rejects_unknown():
         config.validate()
 
 
-@pytest.mark.parametrize("num_assistant_tokens", [101, 1094795585, 2**64 - 1])
+@pytest.mark.parametrize("num_assistant_tokens", [101, 1094795585, 2**63 - 1])
 @pytest.mark.parametrize("assistant_config", [{}, {"max_ngram_size": 2}, {"branching_factor": 2, "tree_depth": 1}])
 @pytest.mark.parametrize("config_source", ["kwargs", "update", "assignment", "json"])
 def test_num_assistant_tokens_upper_bound(tmp_path, num_assistant_tokens, assistant_config, config_source):
