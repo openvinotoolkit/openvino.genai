@@ -130,17 +130,6 @@ if(CMAKE_CROSSCOMPILING)
     # we cannot check OpenVINO during cross-compile
     set(pybind11_stubgen_AVAILABLE OFF)
 else()
-    execute_process(
-        COMMAND ${Python3_EXECUTABLE} -c "import openvino"
-        RESULT_VARIABLE EXIT_CODE
-        OUTPUT_VARIABLE OUTPUT_TEXT
-        ERROR_VARIABLE ERROR_TEXT)
-
-    # OpenVINO is not available because of import error
-    if(NOT EXIT_CODE EQUAL 0)
-        set(pybind11_stubgen_AVAILABLE OFF)
-    endif()
-
     # pybind11-stubgen has to import openvino, whose frontend extensions are not declared
     # free-threading safe. Loading them re-enables the GIL at runtime, which crashes a
     # free-threaded interpreter, so fall back to the .pyi files stored next to the sources.
@@ -151,6 +140,17 @@ else()
         ERROR_QUIET)
     if(python3_gil_disabled STREQUAL "1")
         set(pybind11_stubgen_AVAILABLE OFF)
+    else()
+        execute_process(
+            COMMAND ${Python3_EXECUTABLE} -c "import openvino"
+            RESULT_VARIABLE EXIT_CODE
+            OUTPUT_VARIABLE OUTPUT_TEXT
+            ERROR_VARIABLE ERROR_TEXT)
+
+        # OpenVINO is not available because of import error
+        if(NOT EXIT_CODE EQUAL 0)
+            set(pybind11_stubgen_AVAILABLE OFF)
+        endif()
     endif()
 endif()
 
@@ -223,7 +223,7 @@ if(pybind11_stubgen_AVAILABLE)
         VERBATIM)
 
     add_custom_target(${TARGET_NAME}_stub ALL DEPENDS ${output_file})
-elseif(OpenVINODeveloperPackage_FOUND)
+elseif(OpenVINODeveloperPackage_FOUND AND NOT python3_gil_disabled STREQUAL "1")
     # Produce warning message at build time as well
     add_custom_command(OUTPUT pybind11_stub_gen_not_found.txt
         COMMAND ${CMAKE_COMMAND}

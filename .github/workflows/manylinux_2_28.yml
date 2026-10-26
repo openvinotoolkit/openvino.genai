@@ -182,10 +182,10 @@ jobs:
             rm -rf ${{ env.BUILD_DIR }}/CMakeCache.txt
 
             # Free threaded interpreters are not exposed as python3.Xt in the manylinux image
-            gil_option=""
+            gil_option="ON"
             if [[ $py_version == "3.14t" ]]; then
               python_exec_path=/opt/python/cp314-cp314t/bin/python3
-              gil_option="-DENABLE_GIL_PYTHON_API=OFF"
+              gil_option="OFF"
             else
               python_exec_path=$(python$py_version -c "import sys; print(sys.executable)")
             fi
@@ -194,7 +194,7 @@ jobs:
             /usr/bin/cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
                   -DENABLE_PYTHON=ON \
                   -DPython3_EXECUTABLE=${python_exec_path} \
-                  $gil_option \
+                  -DENABLE_GIL_PYTHON_API=$gil_option \
                   -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
                   -S ${{ env.SRC_DIR }} \
                   -B ${{ env.BUILD_DIR }}
@@ -377,10 +377,10 @@ jobs:
           mapfile -t build_reqs < <(python3.11 -c "import sys, tomllib; print('\n'.join(tomllib.load(open(sys.argv[1], 'rb'))['build-system']['requires']))" "${{ env.SRC_DIR }}/pyproject.toml")
           $python_exec_path -m pip install "${build_reqs[@]}" ${{ needs.openvino_download.outputs.ov_wheel_source }}
 
-          cmake_args="-DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_C_COMPILER_LAUNCHER=sccache"
-          # Free threaded interpreters ship without the GIL, so the bindings must be built accordingly.
+          # Free-threaded interpreters ship without the GIL, so the bindings must be built accordingly.
           # py-build-cmake only reads the `local`, `cross` and `override` config settings, any other
           # key (`cmake.args`, ...) is silently ignored, hence the `override=` form below.
+          # sccache launchers come from the CMAKE_<LANG>_COMPILER_LAUNCHER env vars.
           gil_option="ON"
           if [[ "${{ matrix.python-version }}" == *t ]]; then
             gil_option="OFF"
@@ -388,9 +388,12 @@ jobs:
 
           $python_exec_path -m pip wheel -v --no-deps --no-build-isolation --wheel-dir ${{ env.WHEELS_DIR }} \
               --config-settings=override=cmake.options.ENABLE_GIL_PYTHON_API="$gil_option" \
-              --config-settings=cmake.args="$cmake_args" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}
+
+          # Downstream tests run on Python 3.11 only, so make sure the wheel loads in its own interpreter
+          $python_exec_path -m pip install --no-deps ${{ env.WHEELS_DIR }}/openvino_genai-*.whl
+          $python_exec_path -c "import openvino_genai; print(openvino_genai.__version__)"
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
       - name: Show sccache stats

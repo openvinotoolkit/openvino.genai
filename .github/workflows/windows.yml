@@ -489,7 +489,7 @@ jobs:
           $buildReqs = @(& $pythonExecutablePath -c "import sys, tomli; print('\n'.join(tomli.load(open(sys.argv[1], 'rb'))['build-system']['requires']))" "${{ env.SRC_DIR }}/pyproject.toml")
           & $pythonExecutablePath -m pip install @buildReqs ${{ needs.openvino_download.outputs.ov_wheel_source }}
 
-          # Free threaded interpreters ship without the GIL, so the bindings must be built accordingly.
+          # Free-threaded interpreters ship without the GIL, so the bindings must be built accordingly.
           # py-build-cmake only reads the `local`, `cross` and `override` config settings, any other
           # key (`cmake.args`, ...) is silently ignored, hence the `override=` form below.
           $gilOption = if ('${{ matrix.python-version }}'.EndsWith('t')) { 'OFF' } else { 'ON' }
@@ -505,6 +505,12 @@ jobs:
             --config-settings='override=wheel.build_tag="${{ github.run_number }}"' `
             ${{ needs.openvino_download.outputs.ov_wheel_source }} `
             ${{ env.SRC_DIR }}
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          # Downstream tests run on Python 3.11 only, so make sure the wheel loads in its own interpreter
+          & $pythonExecutablePath -m pip install --no-deps (Get-ChildItem "${{ env.WHEELS_DIR }}\openvino_genai-*.whl").FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $pythonExecutablePath -c "import openvino_genai; print(openvino_genai.__version__)"
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
       - name: Show ccache stats
