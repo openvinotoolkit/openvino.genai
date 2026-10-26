@@ -4036,6 +4036,9 @@ def test_qwen3_omni_audio_rejected_on_audio_token_id_mismatch(tmp_path: Path) ->
 
 
 @pytest.mark.parametrize("chat_api", ["start_chat", "ChatHistory"])
+@pytest.mark.transformers_lower_v5(
+    reason="CVS-186059: Gemma3 export fails with an eltwise shape mismatch with Transformers 5.0"
+)
 def test_gemma3_pa_chat_does_not_duplicate_bos(chat_api):
     model_dir = _get_ov_model("optimum-intel-internal-testing/tiny-random-gemma3")
     prompt = "Hello"
