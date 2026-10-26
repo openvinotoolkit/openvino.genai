@@ -58,7 +58,7 @@ def collect_pair(extended):
     [
         (40, 32, 24, 75, 25),
         (6, 0, 0, 0, 0),
-        (6, 0, 3, 0, 0),
+        (6, 0, 3, None, None),
         (0, 0, 0, 0, 0),
         (40, 32, 0, 0, 100),
         (40, 32, 32, 100, 0),
@@ -69,8 +69,12 @@ def test_rates_use_candidates_in_both_tools(processed, candidates, accepted, acc
         assert numbers["draft_processed_tokens"] == processed
         assert numbers["draft_candidate_tokens"] == candidates
         assert numbers["num_accepted"] == accepted
-        assert numbers["acceptance_rate"] == pytest.approx(acceptance)
-        assert numbers["miss_rate"] == pytest.approx(miss)
+        if acceptance is None:
+            assert numbers["acceptance_rate"] is None
+            assert numbers["miss_rate"] is None
+        else:
+            assert numbers["acceptance_rate"] == pytest.approx(acceptance)
+            assert numbers["miss_rate"] == pytest.approx(miss)
 
 
 @pytest.mark.parametrize("getter", [None, float("nan"), float("inf")])
@@ -85,15 +89,13 @@ def test_acceptance_fallback_uses_candidates(getter):
         assert numbers["miss_rate"] == 25
 
 
-@pytest.mark.parametrize("failure", ["missing_candidates", "missing_rejected", "rejected_exception", "invalid_counts"])
+@pytest.mark.parametrize("failure", ["missing_candidates", "missing_rejected", "invalid_counts"])
 def test_unavailable_candidate_data_does_not_fall_back_to_processed(failure):
     extended = metrics()
     if failure == "missing_candidates":
         del extended.get_num_draft_tokens
     elif failure == "missing_rejected":
         del extended.get_num_rejected_tokens
-    elif failure == "rejected_exception":
-        extended.get_num_rejected_tokens = Mock(side_effect=RuntimeError("inconsistent counters"))
     else:
         extended.get_num_rejected_tokens = lambda: 33
     for numbers in collect_pair(extended):
@@ -101,6 +103,17 @@ def test_unavailable_candidate_data_does_not_fall_back_to_processed(failure):
         assert numbers["num_accepted"] == 24
         assert numbers.get("acceptance_rate") is None
         assert numbers.get("miss_rate") is None
+
+
+@pytest.mark.parametrize("tool", ["llm_bench", "wwb"])
+def test_native_counter_consistency_errors_are_not_hidden(tool):
+    extended = metrics()
+    extended.get_num_rejected_tokens = Mock(side_effect=RuntimeError("inconsistent counters"))
+    with pytest.raises(RuntimeError, match="inconsistent counters"):
+        if tool == "llm_bench":
+            get_sd_metrics(extended)
+        else:
+            SDMetricsCollector._get_token_numbers(SimpleNamespace(extended_perf_metrics=extended))
 
 
 @pytest.mark.parametrize(
@@ -139,11 +152,50 @@ def test_mixed_csv_keeps_zero_rows_and_missing_values():
     df = pd.DataFrame({"prompts": ["a", "b", "c", "d"]})
     collector.add_columns(df)
     result = pd.read_csv(io.StringIO(df.to_csv(index=False)))
-    assert result["acceptance_rate"].iloc[:3].tolist() == [75, 0, 0]
-    assert result["miss_rate"].iloc[:3].tolist() == [25, 0, 0]
+    assert result["acceptance_rate"].iloc[:2].tolist() == [75, 0]
+    assert result["miss_rate"].iloc[:2].tolist() == [25, 0]
+    assert result[["acceptance_rate", "miss_rate"]].iloc[2].isna().all()
     assert result["num_accepted"].iloc[:3].tolist() == [24, 0, 3]
     assert result["draft_processed_tokens"].iloc[1] == 0
     assert result[list(collector.COLUMNS)].iloc[3].isna().all()
+
+
+def test_cb_batch_totals_are_recorded_once_and_marked_with_their_scope():
+    collector = SDMetricsCollector()
+    batch_metrics = metrics()
+    batch_metrics.get_num_draft_tokens = Mock(return_value=32)
+    collector.collect_batch([SimpleNamespace(extended_perf_metrics=batch_metrics)] * 2)
+    collector.collect_batch([SimpleNamespace(extended_perf_metrics=metrics(10, 8, 4))])
+    df = pd.DataFrame({"answers": ["a", "b", "c"]})
+    collector.add_columns(df)
+    result = pd.read_csv(io.StringIO(df.to_csv(index=False)))
+    batch_metrics.get_num_draft_tokens.assert_called_once()
+    assert result["answers"].tolist() == ["a", "b", "c"]
+    assert result["draft_candidate_tokens"].sum() == 40
+    assert result["num_accepted"].sum() == 28
+    assert result[list(collector.COLUMNS)].iloc[1].isna().all()
+    assert result["sd_metrics_scope"].iloc[[0, 2]].tolist() == ["batch", "batch"]
+    assert result["sd_batch_size"].iloc[[0, 2]].tolist() == [2, 1]
+
+
+def test_csv_preserves_unavailable_rate_columns_when_no_candidates_are_recorded():
+    collector = SDMetricsCollector()
+    collector.collect(SimpleNamespace(extended_perf_metrics=metrics(6, 0, 3)))
+    df = pd.DataFrame({"answers": ["answer"]})
+    collector.add_columns(df)
+    result = pd.read_csv(io.StringIO(df.to_csv(index=False)))
+    assert set(collector.COLUMNS).issubset(result.columns)
+    assert result[["acceptance_rate", "miss_rate"]].isna().all().all()
+    assert result["num_accepted"].iloc[0] == 3
+
+
+def test_non_sd_batch_has_no_sd_columns():
+    collector = SDMetricsCollector()
+    collector.collect_batch([])
+    collector.collect_batch([SimpleNamespace(extended_perf_metrics=None)] * 2)
+    df = pd.DataFrame({"answers": ["a", "b"]})
+    collector.add_columns(df)
+    assert list(df.columns) == ["answers"]
 
 
 def test_non_sd_has_no_csv_columns_or_sd_log(caplog):
@@ -158,9 +210,11 @@ def test_non_sd_has_no_csv_columns_or_sd_log(caplog):
     assert "Speculative decoding" not in caplog.text
 
 
-def test_logger_formats_unavailable_rates(caplog):
-    extended = metrics()
-    del extended.get_num_draft_tokens
+@pytest.mark.parametrize("missing_candidates", [False, True])
+def test_logger_formats_unavailable_rates(caplog, missing_candidates):
+    extended = metrics(6, 0, 3)
+    if missing_candidates:
+        del extended.get_num_draft_tokens
     with caplog.at_level(logging.INFO):
         print_metrics(1, gen_iterate_data(), sd_metric=get_sd_metrics(extended))
     assert "acceptance rate: NA, miss rate: NA" in caplog.text
@@ -185,7 +239,7 @@ def test_evaluator_keeps_per_prompt_sd_csv_with_upstream_artifacts(monkeypatch, 
     if batched:
         model = Mock()
         model.generate.side_effect = [
-            [SimpleNamespace(m_generation_ids=["answer"], extended_perf_metrics=m) for m in extended[:2]],
+            [SimpleNamespace(m_generation_ids=["answer"], extended_perf_metrics=extended[0]) for _ in range(2)],
             [SimpleNamespace(m_generation_ids=["answer"], extended_perf_metrics=None)],
         ]
         kwargs = {"generation_config": SimpleNamespace(), "seqs_per_request": 2}
@@ -198,9 +252,16 @@ def test_evaluator_keeps_per_prompt_sd_csv_with_upstream_artifacts(monkeypatch, 
     assert result["prompts"].tolist() == prompts
     assert result["answers"].tolist() == ["answer"] * 3
     assert result["metrics"].tolist() == ["similarity"] * 3
-    assert result["acceptance_rate"].iloc[:2].tolist() == [75, 0]
-    assert result["miss_rate"].iloc[:2].tolist() == [25, 0]
-    assert pd.isna(result["acceptance_rate"].iloc[2])
+    assert result["acceptance_rate"].iloc[0] == 75
+    assert result["miss_rate"].iloc[0] == 25
+    assert result[["acceptance_rate", "miss_rate"]].iloc[1:].isna().all().all()
+    if batched:
+        assert result["sd_metrics_scope"].iloc[0] == "batch"
+        assert result["sd_batch_size"].iloc[0] == 2
+        assert result[list(SDMetricsCollector.COLUMNS)].iloc[1].isna().all()
+    else:
+        assert result["num_accepted"].iloc[1] == 3
+        assert set(SDMetricsCollector.BATCH_COLUMNS).isdisjoint(result.columns)
 
 
 @pytest.mark.parametrize("sd_enabled", [False, True])
