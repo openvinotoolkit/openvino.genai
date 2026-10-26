@@ -66,10 +66,11 @@ def _patch_text_model_for_export(text_model) -> None:
     def split_linear(linear: nn.Linear, sizes: List[int]) -> List[nn.Linear]:
         layers, start = [], 0
         for size in sizes:
-            layer = nn.Linear(linear.in_features, size, bias=linear.bias is not None, dtype=linear.weight.dtype)
-            layer.weight = nn.Parameter(linear.weight[start : start + size].detach().clone(), requires_grad=False)
+            # Row slices of the fused weight are views: the split layers share its memory instead of copying it.
+            layer = nn.Linear(linear.in_features, size, bias=linear.bias is not None, device="meta")
+            layer.weight = nn.Parameter(linear.weight.detach()[start : start + size], requires_grad=False)
             if linear.bias is not None:
-                layer.bias = nn.Parameter(linear.bias[start : start + size].detach().clone(), requires_grad=False)
+                layer.bias = nn.Parameter(linear.bias.detach()[start : start + size], requires_grad=False)
             layers.append(layer)
             start += size
         return layers
@@ -257,13 +258,24 @@ class Molmo2Exporter(NativeExporter):
         text_config = model.config.text_config
         vit_config = model.config.vit_config
 
+        compression = weight_compression_config_from_args(args)
+        # As in optimum-intel, the requested compression applies to the language model, the other (small) models
+        # get int8 weights.
+        other_compression = INT8_SYM_CONFIG if compression is not None else None
+
+        # Every submodel is compressed and saved right after its conversion to keep the peak memory low.
         logger.info("Exporting the text embeddings model")
         ep = torch_export(
             TextEmbeddings(model.model.transformer.wte),
             args=(torch.randint(0, 100, (2, 5)),),
             dynamic_shapes={"input_ids": {0: dynamic, 1: dynamic}},
         )
-        text_embeddings = convert_exported_program(ep, ["input_ids"], ["inputs_embeds"])
+        save_submodel(
+            convert_exported_program(ep, ["input_ids"], ["inputs_embeds"]),
+            output / "openvino_text_embeddings_model.xml",
+            args.weight_format,
+            other_compression,
+        )
 
         logger.info("Exporting the vision embeddings model")
         num_crops, num_patches = 3, vit_config.image_num_pos
@@ -277,7 +289,12 @@ class Molmo2Exporter(NativeExporter):
             # The pooling window differs between images (2x2) and video frames (3x3).
             dynamic_shapes={"images": {0: dynamic, 1: dynamic}, "pooled_patches_idx": {0: dynamic, 1: dynamic, 2: dynamic}},
         )
-        vision_embeddings = convert_exported_program(ep, ["images", "pooled_patches_idx"], ["last_hidden_state"])
+        save_submodel(
+            convert_exported_program(ep, ["images", "pooled_patches_idx"], ["last_hidden_state"]),
+            output / "openvino_vision_embeddings_model.xml",
+            args.weight_format,
+            other_compression,
+        )
 
         logger.info("Exporting the language model")
         _patch_text_model_for_export(model.model.transformer)
@@ -311,17 +328,12 @@ class Molmo2Exporter(NativeExporter):
         )
         if not args.disable_stateful:
             make_stateful(language_model)
-
+        # The PyTorch weights are no longer needed when the language model is compressed.
         del ep, model
         gc.collect()
-
-        compression = weight_compression_config_from_args(args)
-        # As in optimum-intel, the requested compression applies to the language model, the other (small) models
-        # get int8 weights.
-        other_compression = INT8_SYM_CONFIG if compression is not None else None
         save_submodel(language_model, output / "openvino_language_model.xml", args.weight_format, compression)
-        save_submodel(text_embeddings, output / "openvino_text_embeddings_model.xml", args.weight_format, other_compression)
-        save_submodel(vision_embeddings, output / "openvino_vision_embeddings_model.xml", args.weight_format, other_compression)
+        del language_model
+        gc.collect()
 
         copy_model_files(model_dir, output)
         if not args.disable_convert_tokenizer:
