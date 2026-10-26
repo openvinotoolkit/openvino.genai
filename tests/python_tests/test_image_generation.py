@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
+import shutil
+from pathlib import Path
 
 import pytest
 import numpy as np
@@ -538,6 +540,30 @@ class TestImageGeneration:
         )
 
         assert image is not None
+
+    @pytest.mark.parametrize("image_generation_model", [QWEN_IMAGE_21_MODEL_ID], indirect=True)
+    @pytest.mark.parametrize("indices_dtype", [ov.Type.i32, ov.Type.i64], ids=["i32", "i64"])
+    def test_qwen_image21_image2image_indices_dtype(self, image_generation_model, indices_dtype, tmp_path):
+        model_path = tmp_path / "model"
+        shutil.copytree(image_generation_model, model_path)
+        vision_path = model_path / "vision_encoder" / "openvino_model.xml"
+        vision_model = ov.Core().read_model(Path(image_generation_model) / "vision_encoder" / "openvino_model.xml")
+        preprocessor = ov.preprocess.PrePostProcessor(vision_model)
+        preprocessor.input("bilinear_indices").tensor().set_element_type(indices_dtype)
+        preprocessor.input("bilinear_indices").preprocess().convert_element_type()
+        ov.save_model(preprocessor.build(), vision_path)
+
+        pipe = ov_genai.Image2ImagePipeline(model_path, "CPU")
+        image = pipe.generate(
+            "test prompt",
+            get_random_image(),
+            width=64,
+            height=64,
+            num_inference_steps=2,
+        )
+
+        assert image.shape == [1, 64, 64, 4]
+        assert image.element_type == ov.Type.u8
 
     @pytest.mark.parametrize(
         "image_generation_model", [FLUX2_KLEIN_MODEL_ID, QWEN_IMAGE_MODEL_ID, QWEN_IMAGE_21_MODEL_ID], indirect=True
