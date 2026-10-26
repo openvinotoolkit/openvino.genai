@@ -46,6 +46,10 @@ public:
 
     /// @return Number of additional blocks that can be stored without dropping an existing one.
     virtual size_t get_num_free_blocks() const = 0;
+
+    /// Makes everything written so far durable. A synchronous write does not imply persistence for
+    /// a buffering backend, so callers that report data as saved must flush first. Throws on failure.
+    virtual void flush() {}
 };
 
 }  // namespace ov::genai

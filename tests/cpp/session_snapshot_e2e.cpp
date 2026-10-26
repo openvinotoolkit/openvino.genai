@@ -324,6 +324,75 @@ TEST(TestSessionSnapshotEndToEnd, RestoreRejectsACorruptedFile) {
     std::filesystem::remove(snapshot_path);
 }
 
+TEST(TestSessionSnapshotEndToEnd, RestoreRespectsAFixedCacheBudget) {
+    const char* model_path = std::getenv(MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0') {
+        GTEST_SKIP() << MODEL_PATH_ENV << " is not set, skipping session snapshot end-to-end test.";
+    }
+
+    const std::string prompt = repeat("The quick brown fox jumps over the lazy dog. ", 40);
+    const auto snapshot_path =
+        std::filesystem::temp_directory_path() / "openvino_genai_session_snapshot_budget_test.bin";
+    {
+        // Dynamic cache sizing (num_kv_blocks == 0) so the snapshot can be larger than the budgets below.
+        ContinuousBatchingPipeline pipeline(model_path, make_scheduler_config(), session_snapshot_device());
+        constexpr uint64_t REQUEST_ID = 47;
+        auto handle = pipeline.add_request(REQUEST_ID, prompt, make_greedy_config(1000));
+        for (size_t i = 0; i < 8 && handle->get_status() == GenerationStatus::RUNNING; ++i) {
+            pipeline.step();
+        }
+        ASSERT_EQ(handle->get_status(), GenerationStatus::RUNNING)
+            << "the request finished naturally before it could be interrupted, test setup is invalid";
+        pipeline.save_state(REQUEST_ID, snapshot_path.string());
+    }
+
+    {
+        auto fixed_config = make_scheduler_config();
+        fixed_config.num_kv_blocks = 4;
+        ContinuousBatchingPipeline pipeline(model_path, fixed_config, session_snapshot_device());
+        EXPECT_THROW(pipeline.restore_state(48, snapshot_path.string(), make_greedy_config(4)), ov::Exception)
+            << "a snapshot larger than a fixed num_kv_blocks budget must be rejected, not grow the pool";
+        EXPECT_FALSE(pipeline.has_non_finished_requests()) << "a rejected restore must not leave a request behind";
+    }
+
+    {
+        auto fixed_config = make_scheduler_config();
+        fixed_config.num_kv_blocks = 200;  // far more than the ~450-token snapshot needs, still small in memory
+        ContinuousBatchingPipeline pipeline(model_path, fixed_config, session_snapshot_device());
+        auto handle = pipeline.restore_state(49, snapshot_path.string(), make_greedy_config(4));
+        while (pipeline.has_non_finished_requests()) {
+            pipeline.step();
+        }
+        auto outputs = handle->read_all();
+        ASSERT_FALSE(outputs.empty());
+        EXPECT_EQ(outputs.front().generated_ids.size(), 4u);
+    }
+    std::filesystem::remove(snapshot_path);
+}
+
+TEST(TestSessionSnapshotEndToEnd, SaveRejectsARequestStillInPrefill) {
+    const char* model_path = std::getenv(MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0') {
+        GTEST_SKIP() << MODEL_PATH_ENV << " is not set, skipping session snapshot end-to-end test.";
+    }
+
+    auto scheduler_config = make_scheduler_config();
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_batched_tokens = 64;  // forces the prompt below to prefill in several chunks
+    ContinuousBatchingPipeline pipeline(model_path, scheduler_config, session_snapshot_device());
+
+    const std::string prompt = repeat("The quick brown fox jumps over the lazy dog. ", 40);
+    constexpr uint64_t REQUEST_ID = 50;
+    auto handle = pipeline.add_request(REQUEST_ID, prompt, make_greedy_config(1000));
+    pipeline.step();
+    ASSERT_EQ(handle->get_status(), GenerationStatus::RUNNING);
+
+    const auto snapshot_path =
+        std::filesystem::temp_directory_path() / "openvino_genai_session_snapshot_prefill_test.bin";
+    EXPECT_THROW(pipeline.save_state(REQUEST_ID, snapshot_path.string()), ov::Exception);
+    EXPECT_FALSE(std::filesystem::exists(snapshot_path)) << "a rejected save must not leave a file behind";
+}
+
 TEST(TestSessionSnapshotEndToEnd, SaveRejectsCacheEviction) {
     const char* model_path = std::getenv(MODEL_PATH_ENV);
     if (model_path == nullptr || *model_path == '\0') {

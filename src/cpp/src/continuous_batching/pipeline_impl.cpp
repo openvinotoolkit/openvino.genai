@@ -463,7 +463,18 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::restore_sta
     auto running_sequences = sequence_group->get_running_sequences();
     OPENVINO_ASSERT(running_sequences.size() == 1, "Internal error: restored sequence group has more than one sequence");
 
-    m_scheduler->get_cache_orchestrator().inject_sequence_cache_state(running_sequences[0], sequence_group, loaded.blocks_per_type);
+    try {
+        m_scheduler->get_cache_orchestrator().inject_sequence_cache_state(running_sequences[0],
+                                                                          sequence_group,
+                                                                          loaded.blocks_per_type,
+                                                                          m_scheduler->is_cache_budget_dynamic());
+    } catch (...) {
+        // Injection allocates blocks before it finishes validating the payload; give them back.
+        if (m_scheduler->has_block_table(running_sequences[0]->get_id())) {
+            m_scheduler->free_sequence(running_sequences[0]->get_id());
+        }
+        throw;
+    }
     m_scheduler->enable_dynamic_memory_allocation_after_restore();
 
     {

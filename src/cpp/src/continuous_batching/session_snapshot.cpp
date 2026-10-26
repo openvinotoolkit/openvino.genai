@@ -150,6 +150,8 @@ void write_blocks_through_plugin(const std::vector<std::vector<uint8_t>>& blocks
                         "Session snapshot KV cache store plugin ran out of capacity while saving block ", i,
                         " of ", blocks.size(), " (group '", group, "')");
     }
+    // The snapshot is reported as saved once this returns, so the plugin must have made it durable.
+    store->flush();
 }
 
 /// Reads back `num_blocks` blocks (each `slot_bytes`) previously written by write_blocks_through_plugin.
@@ -233,6 +235,13 @@ void SessionSnapshot::save(CacheOrchestrator& orchestrator,
     uint64_t kv_block_size_in_bytes = 0;
     uint64_t kv_slot_bytes = 0;
     uint32_t kv_num_layers = 0;
+    // restore_state() treats every position but the last as already having its KV computed, so a
+    // request still in the middle of a chunked prefill (or not scheduled yet) would be saved with
+    // unwritten cache blocks and silently resume from garbage.
+    OPENVINO_ASSERT(seq_group->get_num_processed_tokens() + 1 >= num_positions,
+                    "Session snapshot cannot be saved while the request is still prefilling: ",
+                    seq_group->get_num_processed_tokens(), " of ", num_positions,
+                    " positions have been processed. Step the pipeline until prefill completes first");
     {
         auto& kv_manager = static_cast<KVCacheManager&>(orchestrator.get_cache_manager(CacheType::KV_CACHE));
         kv_block_size_in_bytes = kv_manager.get_block_size_in_bytes();

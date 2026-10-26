@@ -40,6 +40,7 @@ public:
     size_t get_block_size() const override;
     size_t get_capacity_blocks() const override;
     size_t get_num_free_blocks() const override;
+    void flush() override;
 
 private:
     OvKVCacheBlockKey make_key(size_t hash) const;

@@ -292,17 +292,27 @@ public:
      *
      * @param blocks_per_type KV: one entry per logical block, in token order. Linear attention
      *                        (if present): exactly one entry (the latest checkpoint).
+     * @param allow_cache_growth Whether the KV pool may grow to fit the snapshot. False when the user
+     *                        configured a fixed budget (num_kv_blocks / cache_size): a snapshot that
+     *                        does not fit is then rejected instead of silently exceeding that budget.
      */
     void inject_sequence_cache_state(Sequence::Ptr sequence,
                                      SequenceGroup::Ptr seq_group,
-                                     const std::map<CacheType, std::vector<std::vector<uint8_t>>>& blocks_per_type) {
+                                     const std::map<CacheType, std::vector<std::vector<uint8_t>>>& blocks_per_type,
+                                     bool allow_cache_growth) {
         const size_t full_length = seq_group->get_prompt_len();
         OPENVINO_ASSERT(full_length > 0, "Session snapshot token history must not be empty");
         // Bypasses the Scheduler, so dynamic cache allocation (num_kv_blocks == 0) would otherwise
         // never grow the pool before allocate_tokens() below requires it; mirrors what
         // Scheduler::_initialize_cache()/_try_increase_cache() do for normally-arriving requests.
-        ensure_sequence_token_capacity({{full_length, 1}});
+        if (allow_cache_growth) {
+            ensure_sequence_token_capacity({{full_length, 1}});
+        }
         ensure_sequence_capacity(seq_group);
+        // Checked before anything is allocated so that a rejected snapshot leaves the cache untouched.
+        OPENVINO_ASSERT(can_allocate_tokens(seq_group, full_length - 1),
+                        "The session snapshot (", full_length, " tokens) does not fit in the configured cache "
+                        "budget (num_kv_blocks / cache_size); restore it into a pipeline with a larger budget");
         // Allocate for full_length - 1, not full_length: the very last saved token was only ever
         // sampled as an output, never fed through a forward pass as an input, so (same invariant as
         // the update_processed_tokens_num(full_length - 1) call below) its own KV has never been

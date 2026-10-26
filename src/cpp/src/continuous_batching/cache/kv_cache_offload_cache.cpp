@@ -88,16 +88,22 @@ void KVCacheOffloadCache::on_blocks_overwritten(std::size_t hash, const BlocksPe
     }
 
     bool reclaimed = false;
-    if (m_store->get_num_free_blocks() == 0) {
-        if (m_reclamation_paused) {
-            ++m_statistics.num_failed;
-            return;
+    try {
+        if (m_store->get_num_free_blocks() == 0) {
+            if (m_reclamation_paused) {
+                ++m_statistics.num_failed;
+                return;
+            }
+            reclaimed = reclaim_oldest_entry();
+            if (!reclaimed) {
+                ++m_statistics.num_failed;
+                return;
+            }
         }
-        reclaimed = reclaim_oldest_entry();
-        if (!reclaimed) {
-            ++m_statistics.num_failed;
-            return;
-        }
+    } catch (const std::exception& error) {
+        GENAI_WARN("KV cache offload capacity check failed for hash %zu: %s", hash, error.what());
+        ++m_statistics.num_failed;
+        return;
     }
 
     QueuedStore queued;
@@ -139,9 +145,9 @@ void KVCacheOffloadCache::run_writer() {
         const bool reclaimed = front.reclaimed;
 
         bool stored = true;
+        const auto write_started = std::chrono::steady_clock::now();
         lock.unlock();
         try {
-            ScopedTimer timer(m_statistics.store_write_us);
             stored = m_store->write_block(hash, front.data);
             OPENVINO_ASSERT(stored, "KV cache offload store ran out of capacity after reservation for hash ", hash);
         } catch (const std::exception& error) {
@@ -149,6 +155,10 @@ void KVCacheOffloadCache::run_writer() {
             stored = false;
         }
         lock.lock();
+        // Accumulated only under the mutex, which get_statistics() also takes.
+        m_statistics.store_write_us += static_cast<std::size_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - write_started)
+                .count());
 
         m_queued_stores.pop_front();
         if (stored) {

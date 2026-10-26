@@ -195,7 +195,16 @@ GenerationHandle ContinuousBatchingPipeline::SpeculativeDecodingImpl::restore_st
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
     m_draft_generations.insert({request_id, m_draft_pipeline->restore_state(request_id, path + ".draft", draft_sampling_params, store_config)});
-    auto main_handle = m_main_pipeline->restore_state(request_id, path + ".main", sampling_params, store_config);
+    GenerationHandle main_handle;
+    try {
+        main_handle = m_main_pipeline->restore_state(request_id, path + ".main", sampling_params, store_config);
+    } catch (...) {
+        // Do not leave a half-restored pair behind: cancel the draft request that was already
+        // injected so its cache blocks are freed on the next step, and forget its handle.
+        m_draft_generations.at(request_id)->cancel();
+        m_draft_generations.erase(request_id);
+        throw;
+    }
     // No-op for the base (FastDraft) strategy; Eagle3DecodingImpl overrides this to re-sync main
     // and draft to the same processed-token count, since the two sides may have been saved (and
     // therefore restored) with slightly different histories.

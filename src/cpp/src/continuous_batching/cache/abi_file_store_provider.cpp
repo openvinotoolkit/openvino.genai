@@ -46,10 +46,15 @@ void destroy_store(void* self) {
     delete static_cast<AbiFileStoreInstance*>(self);
 }
 
+// C++ exceptions must not unwind through the C vtable, so every callback below converts them to a status.
 OvKVCacheStatus store_has_blocks(void* self, const OvKVCacheBlockKey* keys, uint8_t* out_present, size_t count) {
     auto* instance = static_cast<AbiFileStoreInstance*>(self);
-    for (size_t i = 0; i < count; ++i) {
-        out_present[i] = instance->store->has_block(fold_key(keys[i])) ? 1 : 0;
+    try {
+        for (size_t i = 0; i < count; ++i) {
+            out_present[i] = instance->store->has_block(fold_key(keys[i])) ? 1 : 0;
+        }
+    } catch (...) {
+        return OV_KVCACHE_ERR_IO;
     }
     return OV_KVCACHE_OK;
 }
@@ -73,7 +78,15 @@ OvKVCacheStatus store_read_blocks(void* self,
 
         const size_t hash = fold_key(req.key);
         std::vector<uint8_t> data;
-        if (!instance->store->read_block(hash, data)) {
+        bool found = false;
+        try {
+            found = instance->store->read_block(hash, data);
+        } catch (...) {
+            result.status = OV_KVCACHE_ERR_IO;
+            any_failed = true;
+            continue;
+        }
+        if (!found) {
             result.status = OV_KVCACHE_ERR_NOT_FOUND;
             any_failed = true;
             continue;
@@ -122,14 +135,14 @@ OvKVCacheStatus store_write_blocks(void* self,
 
         const size_t hash = fold_key(req.key);
         const auto* source_bytes = static_cast<const uint8_t*>(req.source);
-        std::vector<uint8_t> data(source_bytes, source_bytes + req.bytes);
-        if (!instance->store->write_block(hash, data)) {
-            result.status = OV_KVCACHE_ERR_CAPACITY;
-            any_failed = true;
-            continue;
-        }
+        try {
+            std::vector<uint8_t> data(source_bytes, source_bytes + req.bytes);
+            if (!instance->store->write_block(hash, data)) {
+                result.status = OV_KVCACHE_ERR_CAPACITY;
+                any_failed = true;
+                continue;
+            }
 
-        {
             std::lock_guard<std::mutex> lock(instance->witness_mutex);
             if (req.witness.data != nullptr && req.witness.len > 0) {
                 const auto* witness_bytes = static_cast<const uint8_t*>(req.witness.data);
@@ -137,6 +150,10 @@ OvKVCacheStatus store_write_blocks(void* self,
             } else {
                 instance->witnesses.erase(hash);
             }
+        } catch (...) {
+            result.status = OV_KVCACHE_ERR_IO;
+            any_failed = true;
+            continue;
         }
         result.status = OV_KVCACHE_OK;
         result.bytes_written = req.bytes;
@@ -146,11 +163,15 @@ OvKVCacheStatus store_write_blocks(void* self,
 
 OvKVCacheStatus store_drop_blocks(void* self, const OvKVCacheBlockKey* keys, size_t count) {
     auto* instance = static_cast<AbiFileStoreInstance*>(self);
-    std::lock_guard<std::mutex> lock(instance->witness_mutex);
-    for (size_t i = 0; i < count; ++i) {
-        const size_t hash = fold_key(keys[i]);
-        instance->store->drop_block(hash);
-        instance->witnesses.erase(hash);
+    try {
+        std::lock_guard<std::mutex> lock(instance->witness_mutex);
+        for (size_t i = 0; i < count; ++i) {
+            const size_t hash = fold_key(keys[i]);
+            instance->store->drop_block(hash);
+            instance->witnesses.erase(hash);
+        }
+    } catch (...) {
+        return OV_KVCACHE_ERR_IO;
     }
     return OV_KVCACHE_OK;
 }
@@ -211,7 +232,12 @@ OvKVCacheStatus provider_open(void* /*self*/,
             continue;
         }
         if (std::strcmp(property.key, "block_size_bytes") == 0) {
-            block_size_bytes = static_cast<size_t>(std::stoull(property.value));
+            try {
+                block_size_bytes = static_cast<size_t>(std::stoull(property.value));
+            } catch (const std::exception&) {
+                out->status = OV_KVCACHE_ERR_INVALID_ARG;
+                return out->status;
+            }
         } else if (std::strcmp(property.key, "device") == 0) {
             device = property.value;
         }

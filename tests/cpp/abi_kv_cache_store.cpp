@@ -84,6 +84,32 @@ TEST(TestAbiFileStoreProvider, ReadReportsMissForUnknownHash) {
     EXPECT_FALSE(store->read_block(1234, data));
 }
 
+TEST(TestAbiFileStoreProvider, MissLeavesTheCallersBufferUntouched) {
+    auto store = open_store(/*num_blocks=*/4);
+    std::vector<uint8_t> data = {1, 2, 3};
+    EXPECT_FALSE(store->read_block(1234, data));
+    EXPECT_EQ(data, (std::vector<uint8_t>{1, 2, 3}));
+}
+
+TEST(TestAbiFileStoreProvider, MalformedBlockSizeIsReportedAsInvalidArgInsteadOfThrowing) {
+    const OvKVCacheStoreModuleInfo* module_info = get_file_store_provider_module_info();
+    const OvKVCacheStoreProviderDescriptor* provider = module_info->get_provider(0);
+
+    for (const char* bad_value : {"not-a-number", "99999999999999999999999999"}) {
+        const OvKVCacheProperty properties[] = {{"block_size_bytes", bad_value}};
+        OvKVCacheStoreOpenOptions options{};
+        options.capacity_bytes = BLOCK_SIZE * 4;
+        options.properties = properties;
+        options.property_count = 1;
+
+        OvKVCacheStoreOpenResult result{};
+        OvKVCacheStatus status = OV_KVCACHE_OK;
+        EXPECT_NO_THROW(status = provider->vtable->open(provider->self, nullptr, &options, &result)) << bad_value;
+        EXPECT_EQ(status, OV_KVCACHE_ERR_INVALID_ARG) << bad_value;
+        EXPECT_EQ(result.store, nullptr) << bad_value;
+    }
+}
+
 TEST(TestAbiFileStoreProvider, DropBlockRemovesTheEntry) {
     auto store = open_store(/*num_blocks=*/4);
     ASSERT_TRUE(store->write_block(1, make_block(1)));

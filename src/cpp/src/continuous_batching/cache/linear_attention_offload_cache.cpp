@@ -59,16 +59,22 @@ void LinearAttentionOffloadCache::on_blocks_overwritten(std::size_t hash, const 
     }
 
     bool reclaimed = false;
-    if (m_store->get_num_free_blocks() == 0) {
-        if (m_reclamation_paused) {
-            ++m_statistics.num_failed;
-            return;
+    try {
+        if (m_store->get_num_free_blocks() == 0) {
+            if (m_reclamation_paused) {
+                ++m_statistics.num_failed;
+                return;
+            }
+            reclaimed = reclaim_oldest_entry();
+            if (!reclaimed) {
+                ++m_statistics.num_failed;
+                return;
+            }
         }
-        reclaimed = reclaim_oldest_entry();
-        if (!reclaimed) {
-            ++m_statistics.num_failed;
-            return;
-        }
+    } catch (const std::exception& error) {
+        GENAI_WARN("Linear attention cache offload capacity check failed for hash %zu: %s", hash, error.what());
+        ++m_statistics.num_failed;
+        return;
     }
 
     QueuedStore queued;

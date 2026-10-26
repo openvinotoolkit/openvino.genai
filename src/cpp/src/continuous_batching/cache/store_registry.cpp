@@ -3,6 +3,7 @@
 
 #include "continuous_batching/cache/store_registry.hpp"
 
+#include <cstddef>
 #include <cstring>
 
 #ifdef _WIN32
@@ -120,7 +121,11 @@ std::unique_ptr<IKVCacheStore> try_open_plugin_store(const KVCacheDiskLayout& la
     }
 
     const OvKVCacheStoreProviderDescriptor* provider = find_provider(*module_info, config.store_provider_name);
-    if (provider == nullptr || provider->vtable == nullptr || provider->vtable->open == nullptr) {
+    // struct_bytes bounds what the host may read; open() is a tail entry, so check it covers the pointer.
+    constexpr size_t provider_open_end =
+        offsetof(OvKVCacheStoreProviderVTable, open) + sizeof(OvKVCacheStoreProviderVTable::open);
+    if (provider == nullptr || provider->vtable == nullptr || provider->vtable->struct_bytes < provider_open_end ||
+        provider->vtable->open == nullptr) {
         GENAI_WARN("KV cache store plugin '%s' has no usable provider named '%s'",
                    config.store_library_path.c_str(),
                    config.store_provider_name.c_str());
@@ -145,6 +150,16 @@ std::unique_ptr<IKVCacheStore> try_open_plugin_store(const KVCacheDiskLayout& la
         GENAI_WARN("KV cache store plugin '%s' failed to open a store instance (status %d)",
                    config.store_library_path.c_str(),
                    static_cast<int>(result.status));
+        return nullptr;
+    }
+
+    constexpr size_t store_sync_end = offsetof(OvKVCacheStoreVTable, read_blocks_async);
+    if (result.vtable->struct_bytes < store_sync_end) {
+        GENAI_WARN("KV cache store plugin '%s' returned a store vtable missing required synchronous entries",
+                   config.store_library_path.c_str());
+        if (result.vtable->destroy != nullptr) {
+            result.vtable->destroy(result.store);
+        }
         return nullptr;
     }
 

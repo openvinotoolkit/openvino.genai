@@ -80,14 +80,15 @@ bool AbiKVCacheStore::write_block(size_t hash, const std::vector<uint8_t>& data)
 }
 
 bool AbiKVCacheStore::read_block(size_t hash, std::vector<uint8_t>& data) const {
-    data.assign(m_block_size, 0);
+    // Read into a scratch buffer so a not-found or failed read leaves the caller's buffer untouched.
+    std::vector<uint8_t> scratch(m_block_size, 0);
     ContentHash returned_witness{};
 
     OvKVCacheStoreReadRequest request{};
     request.key = make_key(hash);
     request.target.kind = OV_KVCACHE_TARGET_HOST;
-    request.target.base = data.data();
-    request.target.bytes = data.size();
+    request.target.base = scratch.data();
+    request.target.bytes = scratch.size();
     request.witness_out.data = &returned_witness;
     request.witness_out.capacity = sizeof(returned_witness);
 
@@ -99,12 +100,13 @@ bool AbiKVCacheStore::read_block(size_t hash, std::vector<uint8_t>& data) const 
     OPENVINO_ASSERT(status == OV_KVCACHE_OK && result.status == OV_KVCACHE_OK,
                     "ABI store read_blocks failed with status ",
                     result.status);
-    OPENVINO_ASSERT(result.bytes_read == data.size(), "ABI store returned a short read");
+    OPENVINO_ASSERT(result.bytes_read == scratch.size(), "ABI store returned a short read");
 
-    const ContentHash expected_witness = compute_content_hash(data.data(), data.size());
+    const ContentHash expected_witness = compute_content_hash(scratch.data(), scratch.size());
     OPENVINO_ASSERT(result.witness.len == sizeof(expected_witness) &&
                         std::memcmp(&expected_witness, &returned_witness, sizeof(expected_witness)) == 0,
                     "ABI store witness mismatch for a read block - payload may be corrupted");
+    data = std::move(scratch);
     return true;
 }
 
@@ -128,6 +130,16 @@ size_t AbiKVCacheStore::get_num_free_blocks() const {
     OPENVINO_ASSERT(status == OV_KVCACHE_OK, "ABI store stats failed with status ", status);
     OPENVINO_ASSERT(stats.blocks <= m_capacity_blocks, "ABI store reported more used blocks than its capacity");
     return m_capacity_blocks - stats.blocks;
+}
+
+void AbiKVCacheStore::flush() {
+    // flush is a tail entry of the vtable: only call it when struct_bytes says the plugin provides it.
+    constexpr size_t flush_end = offsetof(OvKVCacheStoreVTable, flush) + sizeof(OvKVCacheStoreVTable::flush);
+    if (m_vtable->struct_bytes < flush_end || m_vtable->flush == nullptr) {
+        return;
+    }
+    const OvKVCacheStatus status = m_vtable->flush(m_store);
+    OPENVINO_ASSERT(status == OV_KVCACHE_OK, "ABI store flush failed with status ", status);
 }
 
 }  // namespace ov::genai
