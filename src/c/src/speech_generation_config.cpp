@@ -172,8 +172,20 @@ ov_status_e ov_genai_speech_generation_config_get_generation_config(const ov_gen
         return ov_status_e::INVALID_C_PARAM;
     try {
         auto result = std::make_unique<ov_genai_generation_config>();
-        result->object = std::static_pointer_cast<ov::genai::GenerationConfig>(config->object);
+        result->object = std::make_shared<ov::genai::GenerationConfig>(*(config->object));
         *generation_config = result.release();
+        return ov_status_e::OK;
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+}
+
+ov_status_e ov_genai_speech_generation_config_set_generation_config(ov_genai_speech_generation_config* config,
+                                                                    const ov_genai_generation_config* generation_config) {
+    if (!config || !config->object || !generation_config || !generation_config->object)
+        return ov_status_e::INVALID_C_PARAM;
+    try {
+        *std::static_pointer_cast<ov::genai::GenerationConfig>(config->object) = *(generation_config->object);
         return ov_status_e::OK;
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;

@@ -331,12 +331,14 @@ static int run_base(int argc, char** argv) {
     if (max_new_tokens > 0) {
         CHECK_STATUS(ov_genai_speech_generation_config_get_generation_config(config, &generation_config));
         CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(generation_config, (size_t)max_new_tokens));
+        CHECK_STATUS(ov_genai_speech_generation_config_set_generation_config(config, generation_config));
         ov_genai_generation_config_free(generation_config);
         generation_config = NULL;
     }
     if (has_seed) {
         CHECK_STATUS(ov_genai_speech_generation_config_get_generation_config(config, &generation_config));
         CHECK_STATUS(ov_genai_generation_config_set_rng_seed(generation_config, (size_t)seed));
+        CHECK_STATUS(ov_genai_speech_generation_config_set_generation_config(config, generation_config));
         ov_genai_generation_config_free(generation_config);
         generation_config = NULL;
     }
@@ -515,6 +517,7 @@ static int run_customvoice(int argc, char** argv) {
     if (max_new_tokens > 0) {
         CHECK_STATUS(ov_genai_speech_generation_config_get_generation_config(config, &generation_config));
         CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(generation_config, (size_t)max_new_tokens));
+        CHECK_STATUS(ov_genai_speech_generation_config_set_generation_config(config, generation_config));
         ov_genai_generation_config_free(generation_config);
         generation_config = NULL;
     }
@@ -522,6 +525,7 @@ static int run_customvoice(int argc, char** argv) {
     if (has_seed) {
         CHECK_STATUS(ov_genai_speech_generation_config_get_generation_config(config, &generation_config));
         CHECK_STATUS(ov_genai_generation_config_set_rng_seed(generation_config, (size_t)seed));
+        CHECK_STATUS(ov_genai_speech_generation_config_set_generation_config(config, generation_config));
         ov_genai_generation_config_free(generation_config);
         generation_config = NULL;
     }
@@ -633,12 +637,14 @@ static int run_voice_design(int argc, char** argv) {
     if (max_new_tokens > 0) {
         CHECK_STATUS(ov_genai_speech_generation_config_get_generation_config(config, &generation_config));
         CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(generation_config, (size_t)max_new_tokens));
+        CHECK_STATUS(ov_genai_speech_generation_config_set_generation_config(config, generation_config));
         ov_genai_generation_config_free(generation_config);
         generation_config = NULL;
     }
     if (has_seed) {
         CHECK_STATUS(ov_genai_speech_generation_config_get_generation_config(config, &generation_config));
         CHECK_STATUS(ov_genai_generation_config_set_rng_seed(generation_config, (size_t)seed));
+        CHECK_STATUS(ov_genai_speech_generation_config_set_generation_config(config, generation_config));
         ov_genai_generation_config_free(generation_config);
         generation_config = NULL;
     }

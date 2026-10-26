@@ -46,10 +46,11 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_speech_generation_config_validate(const ov_genai_speech_generation_config* config);
 
 /**
- * @brief Get the underlying GenerationConfig view from ov_genai_speech_generation_config.
+ * @brief Get a copy of the GenerationConfig part from ov_genai_speech_generation_config.
  *
- * The returned handle shares ownership of the same underlying object as @p config,
- * so updates performed through generation-config setters are reflected in @p config.
+ * The returned handle owns an independent GenerationConfig copy.
+ * Updates performed through generation-config setters are not reflected in @p config
+ * unless applied back with ov_genai_speech_generation_config_set_generation_config().
  * @param[in] config A pointer to the ov_genai_speech_generation_config instance.
  * @param[out] generation_config Receives a new ov_genai_generation_config handle.
  * @return OK on success or INVALID_C_PARAM for NULL arguments.
@@ -57,6 +58,19 @@ ov_genai_speech_generation_config_validate(const ov_genai_speech_generation_conf
 OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_speech_generation_config_get_generation_config(const ov_genai_speech_generation_config* config,
                                                         ov_genai_generation_config** generation_config);
+
+/**
+ * @brief Apply GenerationConfig fields to ov_genai_speech_generation_config.
+ *
+ * This updates only the GenerationConfig base fields and preserves
+ * SpeechGenerationConfig-specific fields.
+ * @param[in,out] config A pointer to the ov_genai_speech_generation_config instance.
+ * @param[in] generation_config Source GenerationConfig values.
+ * @return OK on success or INVALID_C_PARAM for NULL arguments.
+ */
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_speech_generation_config_set_generation_config(ov_genai_speech_generation_config* config,
+                                                        const ov_genai_generation_config* generation_config);
 
 /**
  * @brief Set the minimum SpeechT5 output length ratio (default 0.0).
