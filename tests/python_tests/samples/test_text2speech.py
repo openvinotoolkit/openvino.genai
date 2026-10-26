@@ -689,7 +689,9 @@ class TestTextToSpeechSample:
             py_speaker_embedding_path,
             c_speaker_embedding_path,
         ]:
-            assert os.path.exists(speaker_embedding_path), f"Speaker embedding artifact should exist: {speaker_embedding_path}"
+            assert os.path.exists(speaker_embedding_path), (
+                f"Speaker embedding artifact should exist: {speaker_embedding_path}"
+            )
         for ref_codes_path in [cpp_ref_codes_path, py_ref_codes_path, c_ref_codes_path]:
             assert os.path.exists(ref_codes_path), f"Reference codes artifact should exist: {ref_codes_path}"
         for wav_path in generated_wav_paths:
@@ -718,7 +720,8 @@ class TestTextToSpeechSample:
     @pytest.mark.parametrize(
         "convert_model",
         ["tiny-random-qwen3-tts-customvoice"],
-        ids=["qwen3_tts_customvoice"],        indirect=True,
+        ids=["qwen3_tts_customvoice"],
+        indirect=True,
     )
     @pytest.mark.parametrize(
         "case_name,prompt,speaker,language,instruct",
