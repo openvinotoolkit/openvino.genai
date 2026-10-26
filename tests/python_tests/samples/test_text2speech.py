@@ -36,7 +36,7 @@ def compare_speech_audio(cpp_output: Path, python_output: Path, c_output: Path, 
         first_audio, second_audio = waveforms[first], waveforms[second]
         if deterministic:
             assert first_audio.shape == second_audio.shape, f"{first} and {second} audio lengths differ"
-            np.testing.assert_allclose(first_audio, second_audio, rtol=1e-4, atol=1e-5)
+            np.testing.assert_array_equal(first_audio.view(np.uint32), second_audio.view(np.uint32))
         else:
             # SpeechT5 waveforms and lengths vary between independent runs.
             assert 0.5 <= first_audio.size / second_audio.size <= 2.0, (
