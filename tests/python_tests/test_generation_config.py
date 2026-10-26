@@ -141,20 +141,33 @@ def test_invalid_fields_assinment_rises(fields):
 
 
 unsigned_fields = [
-    "max_new_tokens", "max_length", "min_new_tokens", "logprobs", "num_beam_groups", "num_beams",
-    "num_return_sequences", "no_repeat_ngram_size", "top_k", "rng_seed", "pruning_ratio",
-    "num_assistant_tokens", "max_ngram_size", "branching_factor", "tree_depth",
+    "max_new_tokens",
+    "max_length",
+    "min_new_tokens",
+    "logprobs",
+    "num_beam_groups",
+    "num_beams",
+    "num_return_sequences",
+    "no_repeat_ngram_size",
+    "top_k",
+    "rng_seed",
+    "pruning_ratio",
+    "num_assistant_tokens",
+    "max_ngram_size",
+    "branching_factor",
+    "tree_depth",
 ]
+
+
+@pytest.mark.parametrize("value", [-1, "-1", -1.0])
 @pytest.mark.parametrize("field", unsigned_fields)
-def test_negative_value_for_unsigned_field_throws(field):
-    # Assigning the attribute already rejects a negative value; kwargs must not wrap it to SIZE_MAX instead
-    with pytest.raises(TypeError):
-        setattr(GenerationConfig(), field, -1)
-    with pytest.raises(RuntimeError):
-        GenerationConfig(**{field: -1})
+def test_negative_value_for_unsigned_field_throws(field, value):
+    # kwargs must not wrap a negative value to SIZE_MAX, whatever its Python type
+    with pytest.raises(RuntimeError, match=f"'{field}' must be non-negative"):
+        GenerationConfig(**{field: value})
     config = GenerationConfig()
-    with pytest.raises(RuntimeError):
-        config.update_generation_config(**{field: -1})
+    with pytest.raises(RuntimeError, match=f"'{field}' must be non-negative"):
+        config.update_generation_config(**{field: value})
 
 
 # Whisper lang_to_id uses the wrapped key format from converted-model
