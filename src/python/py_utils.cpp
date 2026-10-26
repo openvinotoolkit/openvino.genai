@@ -222,7 +222,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                 }
             }
             return parsers;
-        } else if (property_name == "extensions") {
+        } else if (property_name == "extensions" || property_name == "GGUF_FRONTEND_EXTENSIONS") {
             auto property_list = py_obj.cast<py::list>();
             ov::genai::ExtensionList extensions;
             py::object pathlib_path = py::module_::import("pathlib").attr("Path");

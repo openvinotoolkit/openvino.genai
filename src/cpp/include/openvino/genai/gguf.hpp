@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "openvino/genai/extensions.hpp"
 #include "openvino/genai/tokenizer.hpp"
 
 namespace ov::genai {
@@ -64,5 +65,16 @@ public:
 */
 static constexpr ov::Property<std::string> gguf_reader{"GGUF_READER"};
 
+/**
+ * @brief Architecture, projector, converter and transformation extensions for GGUF frontend loading.
+ * Accepts the same extension objects and library paths as ov::genai::extensions.
+ * A nonempty list selects the frontend reader unless LEGACY was explicitly requested.
+ */
+template <typename T>
+std::pair<std::string, ov::Any> gguf_frontend_extensions(T&& values) {
+    auto property = extensions(std::forward<T>(values));
+    property.first = "GGUF_FRONTEND_EXTENSIONS";
+    return property;
+}
 
 }  // namespace ov::genai

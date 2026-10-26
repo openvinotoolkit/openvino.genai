@@ -142,15 +142,27 @@ std::shared_ptr<ov::Model> create_language_model(
 
 } // namespace
 
-std::shared_ptr<ov::Model> convert_gguf_with_frontend(const std::string& model_path) {
+std::shared_ptr<ov::Model> convert_gguf_with_frontend(const std::string& model_path,
+                                                      const ov::genai::ExtensionList& extensions) {
     ov::frontend::gguf::FrontEnd frontend;
+    for (const auto& extension : extensions) {
+        if (const auto* path = std::get_if<std::filesystem::path>(&extension)) {
+            static_cast<ov::frontend::FrontEnd&>(frontend).add_extension(path->string());
+        } else {
+            const auto& object = std::get<std::shared_ptr<ov::Extension>>(extension);
+            OPENVINO_ASSERT(object, "GGUF frontend extension must not be null");
+            frontend.add_extension(object);
+        }
+    }
     frontend.add_extension(std::make_shared<ov::frontend::gguf::GenAIExtension>());
     return frontend.convert(frontend.load(model_path));
 }
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
                                             bool enable_save_ov_model,
-                                            bool use_legacy_reader) {
+                                            bool use_legacy_reader,
+                                            const ov::genai::ExtensionList& extensions) {
+    OPENVINO_ASSERT(!use_legacy_reader || extensions.empty(), "GGUF frontend extensions require the frontend reader");
     auto start_time = std::chrono::high_resolution_clock::now();
     std::stringstream ss;
     std::shared_ptr<ov::Model> model;
@@ -176,7 +188,7 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
         ss << "Loading and converting GGUF model via the OpenVINO GGUF frontend: " << model_path;
         ov::genai::utils::print_gguf_debug_info(ss.str());
 
-        model = convert_gguf_with_frontend(model_path);
+        model = convert_gguf_with_frontend(model_path, extensions);
     }
 
     if (enable_save_ov_model) {

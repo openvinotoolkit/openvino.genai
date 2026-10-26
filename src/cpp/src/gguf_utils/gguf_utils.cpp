@@ -40,6 +40,16 @@ GGUFProperties extract_gguf_properties(const ov::AnyMap& external_properties) {
         result.rest.erase(reader_it);
     }
 
+    if (const auto it = result.rest.find("GGUF_FRONTEND_EXTENSIONS"); it != result.rest.end()) {
+        result.frontend_extensions = it->second.as<ExtensionList>();
+        result.rest.erase(it);
+        if (!result.frontend_extensions.empty()) {
+            OPENVINO_ASSERT(!result.legacy_reader.value_or(false),
+                            "GGUF_FRONTEND_EXTENSIONS cannot be used with GGUF_READER=LEGACY");
+            result.legacy_reader = false;
+        }
+    }
+
     return result;
 }
 
@@ -47,7 +57,10 @@ std::shared_ptr<ov::Model> read_gguf_model(const std::filesystem::path& model_pa
                                          const GGUFProperties& properties) {
 #ifdef ENABLE_GGUF
     try {
-        return create_from_gguf(model_path.string(), properties.enable_save_ov_model, properties.use_legacy_reader());
+        return create_from_gguf(model_path.string(),
+                                properties.enable_save_ov_model,
+                                properties.use_legacy_reader(),
+                                properties.frontend_extensions);
     } catch (const std::exception& error) {
         if (!properties.legacy_reader.has_value()) {
             OPENVINO_THROW(error.what(),

@@ -412,3 +412,24 @@ def test_gguf_default_reader_failure_hint(tmp_path, reader, with_tokenizer):
         assert 'ov::genai::gguf_reader("FRONTEND")' in message
         assert "better model quality" in message
         assert "preview" in message
+
+
+@pytest.mark.parametrize("reader", [None, "FRONTEND"])
+def test_gguf_frontend_extension_library_is_forwarded(tmp_path, reader):
+    model = tmp_path / "model.gguf"
+    _write_minimal_gguf(model, _GGUF_TYPE_Q4_K, 256)
+    library = tmp_path / "missing_architecture_extension.so"
+    properties = {"GGUF_FRONTEND_EXTENSIONS": [str(library)]}
+    if reader is not None:
+        properties["GGUF_READER"] = reader
+    with pytest.raises(RuntimeError, match="missing_architecture_extension") as exc:
+        ov_genai.LLMPipeline(str(model), "CPU", **properties)
+    assert "default legacy GGUF reader failed" not in str(exc.value)
+
+
+def test_gguf_frontend_extensions_reject_legacy_reader(tmp_path):
+    model = tmp_path / "model.gguf"
+    _write_minimal_gguf(model, _GGUF_TYPE_Q4_K, 256)
+    with pytest.raises(RuntimeError, match="cannot be used with GGUF_READER=LEGACY"):
+        ov_genai.LLMPipeline(str(model), "CPU", GGUF_READER="LEGACY",
+                            GGUF_FRONTEND_EXTENSIONS=[str(tmp_path / "extension.so")])
