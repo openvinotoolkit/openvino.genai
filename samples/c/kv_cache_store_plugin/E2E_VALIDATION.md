@@ -177,17 +177,22 @@ a full re-prefill baseline - the correctness check above deliberately uses a sho
 fast, which is not representative of the real performance win (same prefix-length caveat as
 Scenario 1).
 
-**Real numbers from this exact script** (Qwen3.5-9B, GPU, sample plugin):
+**Real numbers from this exact script** (Qwen3.5-9B, GPU, sample plugin). Both timings start before
+the request is submitted (baseline) or `restore_state()` is called (restore) and stop at the first
+token, so reading and checking the snapshot and allocating its cache count against the restore:
 
 | Device | TTFT without restore (full re-prefill) | TTFT with restore (via your plugin) | Speedup |
 |---|---|---|---|
-| GPU | 3794.20 ms | 598.76 ms | **~6.3x** |
+| GPU | 3879.25 ms | 829.22 ms | **~4.7x** |
+
+The row is the mean of two runs (without restore 4062.69 / 3695.80 ms, with restore 819.12 /
+839.31 ms, i.e. 4.96x / 4.40x). One run prints:
 
 ```
 PASS: the restored continuation matches the uninterrupted baseline token-for-token.
-PERF: TTFT without session restore (full re-prefill): 3794.20 ms
-PERF: TTFT with session restore (via your plugin):    598.76 ms
-PERF: Speedup: 6.34x
+PERF: TTFT without session restore (full re-prefill): 4062.69 ms
+PERF: TTFT with session restore (via your plugin):    819.12 ms
+PERF: Speedup: 4.96x
 ```
 
 Unlike Scenario 1, this does not depend on prefix-cache hits, so the linear-attention checkpoint

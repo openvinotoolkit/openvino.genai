@@ -24,6 +24,7 @@ import argparse
 import os
 import sys
 import tempfile
+import time
 
 import openvino_genai as ov_genai
 
@@ -118,10 +119,13 @@ def measure_speedup(model: str, device: str, store_config: ov_genai.CacheOffload
     scheduler_config.max_num_batched_tokens = 8192
 
     pipeline = ov_genai.ContinuousBatchingPipeline(model, scheduler_config, device)
+    # Both timings start before the request is submitted/restored and stop after the first token, so
+    # reading and checking the snapshot and allocating its cache count against the restore.
+    start = time.perf_counter()
     handle = pipeline.add_request(11, long_prompt, make_greedy_config(1))
     while pipeline.has_non_finished_requests():
         pipeline.step()
-    baseline_ttft_ms = handle.get_perf_metrics().get_ttft().mean
+    baseline_ttft_ms = (time.perf_counter() - start) * 1000
     del pipeline, handle
 
     pipeline = ov_genai.ContinuousBatchingPipeline(model, scheduler_config, device)
@@ -136,10 +140,11 @@ def measure_speedup(model: str, device: str, store_config: ov_genai.CacheOffload
     del pipeline, handle
 
     pipeline = ov_genai.ContinuousBatchingPipeline(model, scheduler_config, device)
+    start = time.perf_counter()
     handle = pipeline.restore_state(13, snapshot_path, make_greedy_config(1), store_config)
     while pipeline.has_non_finished_requests():
         pipeline.step()
-    restore_ttft_ms = handle.get_perf_metrics().get_ttft().mean
+    restore_ttft_ms = (time.perf_counter() - start) * 1000
     del pipeline, handle
     if os.path.exists(snapshot_path):
         os.remove(snapshot_path)

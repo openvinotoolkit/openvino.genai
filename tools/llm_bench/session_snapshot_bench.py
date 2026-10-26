@@ -38,10 +38,12 @@ def make_greedy_config(max_new_tokens: int) -> ov_genai.GenerationConfig:
 
 def measure_baseline_ttft(model_dir: str, device: str, prompt: str) -> float:
     pipeline = ov_genai.ContinuousBatchingPipeline(model_dir, make_scheduler_config(), device)
-    handle = pipeline.add_request(61, prompt, make_greedy_config(1))
+    # Timed from before the request is submitted, the same way as the restore path below.
+    start = time.perf_counter()
+    pipeline.add_request(61, prompt, make_greedy_config(1))
     while pipeline.has_non_finished_requests():
         pipeline.step()
-    return handle.get_perf_metrics().get_ttft().mean
+    return (time.perf_counter() - start) * 1000
 
 
 def measure_restore_ttft(model_dir: str, device: str, prompt: str, snapshot_path: str) -> float:
@@ -61,10 +63,13 @@ def measure_restore_ttft(model_dir: str, device: str, prompt: str, snapshot_path
 
     # Simulate a process restart: brand-new pipeline instance restores from disk.
     pipeline = ov_genai.ContinuousBatchingPipeline(model_dir, make_scheduler_config(), device)
-    handle = pipeline.restore_state(63, snapshot_path, make_greedy_config(1))
+    # The handle's own TTFT clock starts only after restore_state() has loaded the snapshot, so time
+    # the whole restore instead.
+    start = time.perf_counter()
+    pipeline.restore_state(63, snapshot_path, make_greedy_config(1))
     while pipeline.has_non_finished_requests():
         pipeline.step()
-    return handle.get_perf_metrics().get_ttft().mean
+    return (time.perf_counter() - start) * 1000
 
 
 def main():
