@@ -3993,7 +3993,8 @@ def _build_vision_lora(models_path: Path, adapter_path: Path, rank: int = 2) -> 
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("backend", ATTENTION_BACKEND)
-def test_vlm_vision_lora(backend: str, cat_tensor: openvino.Tensor, tmp_path: Path) -> None:
+@pytest.mark.parametrize("mode", [AdapterConfig.Mode.MODE_STATIC, AdapterConfig.Mode.MODE_DYNAMIC])
+def test_vlm_vision_lora(backend: str, mode, cat_tensor: openvino.Tensor, tmp_path: Path) -> None:
     models_path = _get_ov_model(VISION_LORA_MODEL_ID)
     adapter_path = tmp_path / "vision_lora.safetensors"
     assert _build_vision_lora(models_path, adapter_path) > 0, "No vision layer to adapt was found"
@@ -4003,7 +4004,7 @@ def test_vlm_vision_lora(backend: str, cat_tensor: openvino.Tensor, tmp_path: Pa
         PROMPTS[0], images=[cat_tensor], generation_config=config
     )
 
-    adapters = AdapterConfig(Adapter(str(adapter_path)), 1.0, AdapterConfig.Mode.MODE_STATIC)
+    adapters = AdapterConfig(Adapter(str(adapter_path)), 1.0, mode)
     adapted = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend, adapters=adapters).generate(
         PROMPTS[0], images=[cat_tensor], generation_config=config
     )
@@ -4012,28 +4013,26 @@ def test_vlm_vision_lora(backend: str, cat_tensor: openvino.Tensor, tmp_path: Pa
 
 
 @pytest.mark.precommit
-def test_vlm_vision_lora_dynamic_mode_rejected(tmp_path: Path) -> None:
+@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
+def test_vlm_vision_lora_switched_per_generate(backend: str, cat_tensor: openvino.Tensor, tmp_path: Path) -> None:
     models_path = _get_ov_model(VISION_LORA_MODEL_ID)
     adapter_path = tmp_path / "vision_lora.safetensors"
     assert _build_vision_lora(models_path, adapter_path) > 0, "No vision layer to adapt was found"
 
-    adapters = AdapterConfig(Adapter(str(adapter_path)), 1.0, AdapterConfig.Mode.MODE_DYNAMIC)
-    with pytest.raises(RuntimeError, match="MODE_STATIC"):
-        VLMPipeline(models_path, "CPU", adapters=adapters)
+    config = GenerationConfig(max_new_tokens=DEFAULT_MAX_NEW_TOKENS, do_sample=False)
+    adapter = Adapter(str(adapter_path))
+    pipe = VLMPipeline(
+        models_path, "CPU", ATTENTION_BACKEND=backend,
+        adapters=AdapterConfig(adapter, 1.0, AdapterConfig.Mode.MODE_DYNAMIC),
+    )
 
+    adapted = pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=config).texts[0]
+    disabled = pipe.generate(
+        PROMPTS[0], images=[cat_tensor], generation_config=config, adapters=AdapterConfig()
+    ).texts[0]
+    other_alpha = pipe.generate(
+        PROMPTS[0], images=[cat_tensor], generation_config=config, adapters=AdapterConfig(adapter, 2.0)
+    ).texts[0]
 
-@pytest.mark.precommit
-def test_vlm_vision_lora_cannot_be_changed_per_generate(cat_tensor: openvino.Tensor, tmp_path: Path) -> None:
-    models_path = _get_ov_model(VISION_LORA_MODEL_ID)
-    adapter_path = tmp_path / "vision_lora.safetensors"
-    assert _build_vision_lora(models_path, adapter_path) > 0, "No vision layer to adapt was found"
-
-    adapters = AdapterConfig(Adapter(str(adapter_path)), 1.0, AdapterConfig.Mode.MODE_STATIC)
-    pipe = VLMPipeline(models_path, "CPU", adapters=adapters)
-    with pytest.raises(RuntimeError, match="cannot be changed per generate"):
-        pipe.generate(
-            PROMPTS[0],
-            images=[cat_tensor],
-            generation_config=GenerationConfig(max_new_tokens=1),
-            adapters=AdapterConfig(),
-        )
+    assert disabled != adapted, "Disabling the adapters did not affect the generated text"
+    assert other_alpha != adapted, "Changing the alpha did not affect the generated text"
