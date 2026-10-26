@@ -718,14 +718,41 @@ class TestTextToSpeechSample:
     @pytest.mark.parametrize(
         "convert_model",
         ["tiny-random-qwen3-tts-customvoice"],
-        indirect=True,
+        ids=["qwen3_tts_customvoice"],        indirect=True,
     )
-    def test_sample_qwen3_tts_customvoice(self, convert_model, tmp_path: Path):
-        prompt = "Hello from Qwen3 custom voice sample test."
-        instruct = "Speak with clear articulation and a friendly, professional tone."
+    @pytest.mark.parametrize(
+        "case_name,prompt,speaker,language,instruct",
+        [
+            (
+                "english_with_instruct",
+                "Hello from Qwen3 custom voice sample test.",
+                "serena",
+                "english",
+                "Speak with clear articulation and a friendly, professional tone.",
+            ),
+            (
+                "multilingual_no_instruct",
+                "今天阳光很好，愿你一切顺利。",
+                "Eric",
+                "Chinese",
+                None,
+            ),
+        ],
+        ids=["english", "multilingual"],
+    )
+    def test_sample_qwen3_tts_customvoice(
+        self,
+        convert_model,
+        case_name: str,
+        prompt: str,
+        speaker: str,
+        language: str,
+        instruct: str | None,
+        tmp_path: Path,
+    ):
         seed = "42"
 
-        run_dir = tmp_path / "qwen3_tts_customvoice_sample"
+        run_dir = tmp_path / f"qwen3_tts_customvoice_sample_{case_name}"
         run_dir.mkdir(parents=True, exist_ok=True)
         cpp_output_wav = run_dir / "cpp_customvoice.wav"
         py_output_wav = run_dir / "py_customvoice.wav"
@@ -739,11 +766,9 @@ class TestTextToSpeechSample:
             convert_model,
             prompt,
             "--speaker",
-            "serena",
+            speaker,
             "--language",
-            "english",
-            "--instruct",
-            instruct,
+            language,
             "--max_new_tokens",
             "32",
             "--seed",
@@ -751,6 +776,8 @@ class TestTextToSpeechSample:
             "--output_wav_path",
             str(cpp_output_wav),
         ]
+        if instruct:
+            cpp_command.extend(["--instruct", instruct])
         cpp_result = run_sample(cpp_command)
 
         py_script = SAMPLES_PY_DIR / "speech_generation/qwen3_tts.py"
@@ -761,11 +788,9 @@ class TestTextToSpeechSample:
             convert_model,
             prompt,
             "--speaker",
-            "serena",
+            speaker,
             "--language",
-            "english",
-            "--instruct",
-            instruct,
+            language,
             "--max_new_tokens",
             "32",
             "--seed",
@@ -773,6 +798,8 @@ class TestTextToSpeechSample:
             "--output_wav_path",
             str(py_output_wav),
         ]
+        if instruct:
+            py_command.extend(["--instruct", instruct])
         py_result = run_sample(py_command)
 
         c_command = [
@@ -781,11 +808,9 @@ class TestTextToSpeechSample:
             convert_model,
             prompt,
             "--speaker",
-            "serena",
+            speaker,
             "--language",
-            "english",
-            "--instruct",
-            instruct,
+            language,
             "--max_new_tokens",
             "32",
             "--seed",
@@ -793,88 +818,8 @@ class TestTextToSpeechSample:
             "--output_wav_path",
             str(c_output_wav),
         ]
-        c_result = run_sample(c_command)
-
-        assert "Text successfully converted to audio file" in cpp_result.stdout
-        assert "Text successfully converted to audio file" in py_result.stdout
-        assert "Text successfully converted to audio file" in c_result.stdout
-
-        compare_speech_audio(cpp_output_wav, py_output_wav, c_output_wav, 24000, True)
-
-    @pytest.mark.speech_generation
-    @pytest.mark.qwen3_tts
-    @pytest.mark.samples
-    @pytest.mark.parametrize(
-        "convert_model",
-        ["tiny-random-qwen3-tts-customvoice"],
-        indirect=True,
-    )
-    def test_sample_qwen3_tts_customvoice_multilingual_parity(self, convert_model, tmp_path: Path):
-        prompt = "今天阳光很好，愿你一切顺利。"
-        seed = "42"
-
-        run_dir = tmp_path / "qwen3_tts_customvoice_multilingual_sample"
-        run_dir.mkdir(parents=True, exist_ok=True)
-        cpp_output_wav = run_dir / "cpp_customvoice_multilingual.wav"
-        py_output_wav = run_dir / "py_customvoice_multilingual.wav"
-        c_output_wav = run_dir / "c_customvoice_multilingual.wav"
-
-        cpp_sample = SAMPLES_CPP_DIR / "qwen3_tts"
-        c_sample = SAMPLES_C_DIR / "qwen3_tts_c"
-        cpp_command = [
-            cpp_sample,
-            "customvoice",
-            convert_model,
-            prompt,
-            "--speaker",
-            "Eric",
-            "--language",
-            "Chinese",
-            "--max_new_tokens",
-            "32",
-            "--seed",
-            seed,
-            "--output_wav_path",
-            str(cpp_output_wav),
-        ]
-        cpp_result = run_sample(cpp_command)
-
-        py_script = SAMPLES_PY_DIR / "speech_generation/qwen3_tts.py"
-        py_command = [
-            sys.executable,
-            py_script,
-            "customvoice",
-            convert_model,
-            prompt,
-            "--speaker",
-            "Eric",
-            "--language",
-            "Chinese",
-            "--max_new_tokens",
-            "32",
-            "--seed",
-            seed,
-            "--output_wav_path",
-            str(py_output_wav),
-        ]
-        py_result = run_sample(py_command)
-
-        c_command = [
-            c_sample,
-            "customvoice",
-            convert_model,
-            prompt,
-            "--speaker",
-            "Eric",
-            "--language",
-            "Chinese",
-            "--max_new_tokens",
-            "32",
-            "--seed",
-            seed,
-            "--output_wav_path",
-            str(c_output_wav),
-        ]
+        if instruct:
+            c_command.extend(["--instruct", instruct])
         c_result = run_sample(c_command)
 
         assert "Text successfully converted to audio file" in cpp_result.stdout
