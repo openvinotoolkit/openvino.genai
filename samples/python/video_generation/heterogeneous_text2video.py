@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (C) 2025-2026 Intel Corporation
+# Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
@@ -33,7 +33,7 @@ def main():
     frame_rate = 25
     # Match the guidance scale used by the basic text2video sample.
     guidance_scale = 3.0
-    rng_seed = 42
+    seed = 42
     number_of_videos_to_generate = 1
     number_of_inference_steps_per_video = 25
 
@@ -42,7 +42,7 @@ def main():
     print(f"vae_decoder_device = {args.vae_decoder_device}")
     print(f"num_frames = {num_frames}")
     print(f"guidance_scale = {guidance_scale}")
-    print(f"rng_seed = {rng_seed}")
+    print(f"seed = {seed}")
 
     # Cache compiled models to speed up compilation on subsequent runs.
     ov_cache_dir = "./cache"
@@ -79,12 +79,13 @@ def main():
     # Step 4: Use the Text2VideoPipeline to generate 'number_of_videos_to_generate' videos.
     #
 
+    generator = openvino_genai.CppStdGenerator(seed)
     for i in range(0, number_of_videos_to_generate):
         output = pipe.generate(
             args.prompt,
             negative_prompt="worst quality, inconsistent motion, blurry, jittery, distorted",
             num_inference_steps=number_of_inference_steps_per_video,
-            rng_seed=rng_seed,
+            generator=generator,
             frame_rate=frame_rate,
         )
 

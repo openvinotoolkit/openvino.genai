@@ -1,4 +1,4 @@
-// Copyright (C) 2025-2026 Intel Corporation
+// Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cstdint>
@@ -6,11 +6,13 @@
 #include <exception>
 #include <filesystem>
 #include <iostream>
+#include <memory>
 #include <string>
 
 #include "progress_bar.hpp"
 #include "imwrite_video.hpp"
 
+#include <openvino/genai/image_generation/generation_config.hpp>
 #include <openvino/genai/video_generation/text2video_pipeline.hpp>
 
 int main(int32_t argc, char* argv[]) try {
@@ -28,7 +30,7 @@ int main(int32_t argc, char* argv[]) try {
     const float frame_rate = 25.0f;
     // Match the guidance scale used by the basic text2video sample.
     const float guidance_scale = 3.0f;
-    const uint64_t rng_seed = 42;
+    const uint32_t seed = 42;
     const int number_of_videos_to_generate = 1;
     const int number_of_inference_steps_per_video = 25;
 
@@ -43,7 +45,7 @@ int main(int32_t argc, char* argv[]) try {
     std::cout << "vae_decoder_device: " << vae_decoder_device << std::endl;
     std::cout << "num_frames: " << num_frames << std::endl;
     std::cout << "guidance_scale: " << guidance_scale << std::endl;
-    std::cout << "rng_seed: " << rng_seed << std::endl;
+    std::cout << "seed: " << seed << std::endl;
 
     // Cache compiled models to speed up compilation on subsequent runs.
     std::string ov_cache_dir = "./cache";
@@ -74,6 +76,7 @@ int main(int32_t argc, char* argv[]) try {
     //
     // Step 4: Use the Text2VideoPipeline to generate 'number_of_videos_to_generate' videos.
     //
+    auto generator = std::make_shared<ov::genai::CppStdGenerator>(seed);
     for (int videoi = 0; videoi < number_of_videos_to_generate; videoi++) {
         std::cout << "Generating video " << videoi << std::endl;
 
@@ -81,7 +84,7 @@ int main(int32_t argc, char* argv[]) try {
             prompt,
             ov::genai::negative_prompt("worst quality, inconsistent motion, blurry, jittery, distorted"),
             ov::genai::num_inference_steps(number_of_inference_steps_per_video),
-            ov::genai::rng_seed(rng_seed),
+            ov::genai::generator(generator),
             ov::genai::callback(progress_bar),
             ov::genai::frame_rate(frame_rate)
         );
