@@ -126,7 +126,7 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
 ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
     const bool add_special_tokens =
         m_add_special_tokens_is_set ? m_add_special_tokens
-                                   : !(m_is_chat_conversation || m_apply_chat_template || m_prompt_is_templated);
+                                   : !m_is_chat_conversation && m_prompt_formatting == PromptFormatting::Raw;
     ManualTimer encode_timer("Encode");
     encode_timer.start();
 
@@ -140,7 +140,7 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const s
         ov::Tensor encoded_input_ids;
         bool apply_template = false;
         TimePoint template_end_time;
-        if (m_apply_chat_template) {
+        if (m_prompt_formatting == PromptFormatting::ApplyTemplate) {
             std::string templated_prompt;
             ChatHistory history({{{"role", "user"}, {"content", prompt}}});
             constexpr bool add_generation_prompt = true;
@@ -548,8 +548,8 @@ void InputsEmbedder::update_chat_history(const std::string& decoded_results, con
     m_impl->update_chat_history(decoded_results, generation_finish_status);
 }
 
-void InputsEmbedder::set_apply_chat_template_status(bool apply_chat_template, bool prompt_is_templated) {
-    m_impl->set_apply_chat_template_status(apply_chat_template, prompt_is_templated);
+void InputsEmbedder::set_prompt_formatting(PromptFormatting prompt_formatting) {
+    m_impl->set_prompt_formatting(prompt_formatting);
 }
 
 void InputsEmbedder::finish_chat() {
