@@ -84,8 +84,8 @@
 
 - name: Image generation (Qwen-Image 2.1)
   cmd: |-
-    # Qwen-Image 2.1 export requires optimum-intel master and diffusers 0.41.0.
-    python -m pip install transformers==5.0.0 diffusers==0.41.0
+    # Qwen-Image 2.1 export requires optimum-intel master.
+    python -m pip install transformers==5.5.0
     python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@main#egg=optimum-intel"
     python -m pytest -v ./tests/python_tests/test_image_generation.py -k "qwen-image-2.1" --override-ini cache_dir=/mount/caches/pytest/
   timeout: 45

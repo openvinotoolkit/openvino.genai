@@ -52,6 +52,17 @@ Models should belong to the same family and have the same tokenizers.
 
 <ImageGenerationModelsTable />
 
+:::warning Image Generation Models Notes
+#### Qwen-Image-2.1 {#qwen-image-2_1-notes}
+
+The model requires `optimum-intel` built from the master branch and `diffusers==0.41.0` for the export with `optimum-cli`:
+
+```bash
+pip install diffusers==0.41.0
+pip install git+https://github.com/huggingface/optimum-intel.git
+```
+:::
+
 ## Video Generation Models
 
 <VideoGenerationModelsTable />
