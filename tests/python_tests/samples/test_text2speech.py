@@ -364,8 +364,12 @@ class TestTextToSpeechSample:
 
         run_dir = tmp_path / "qwen3_tts_base_sample"
         run_dir.mkdir(parents=True, exist_ok=True)
-        speaker_embedding_path = run_dir / "speaker_embedding.bin"
-        ref_codes_path = run_dir / "ref_codes.bin"
+        cpp_speaker_embedding_path = run_dir / "cpp_speaker_embedding.bin"
+        py_speaker_embedding_path = run_dir / "py_speaker_embedding.bin"
+        c_speaker_embedding_path = run_dir / "c_speaker_embedding.bin"
+        cpp_ref_codes_path = run_dir / "cpp_ref_codes.bin"
+        py_ref_codes_path = run_dir / "py_ref_codes.bin"
+        c_ref_codes_path = run_dir / "c_ref_codes.bin"
 
         cpp_xvector_wav = run_dir / "cpp_xvector.wav"
         py_xvector_wav = run_dir / "py_xvector.wav"
@@ -415,7 +419,7 @@ class TestTextToSpeechSample:
                 "--output_wav_path",
                 str(cpp_xvector_wav),
                 "--save_speaker_embedding_file_path",
-                str(speaker_embedding_path),
+                str(cpp_speaker_embedding_path),
             ]
         )
         py_xvector_first = run_sample(
@@ -436,7 +440,7 @@ class TestTextToSpeechSample:
                 "--output_wav_path",
                 str(py_xvector_wav),
                 "--save_speaker_embedding_file_path",
-                str(speaker_embedding_path),
+                str(py_speaker_embedding_path),
             ]
         )
         c_xvector_first = run_sample(
@@ -456,7 +460,7 @@ class TestTextToSpeechSample:
                 "--output_wav_path",
                 str(c_xvector_wav),
                 "--save_speaker_embedding_file_path",
-                str(speaker_embedding_path),
+                str(c_speaker_embedding_path),
             ]
         )
 
@@ -467,7 +471,7 @@ class TestTextToSpeechSample:
                 convert_model,
                 prompt,
                 "--speaker_embedding_file_path",
-                str(speaker_embedding_path),
+                str(cpp_speaker_embedding_path),
                 "--language",
                 "english",
                 "--max_new_tokens",
@@ -486,7 +490,7 @@ class TestTextToSpeechSample:
                 convert_model,
                 prompt,
                 "--speaker_embedding_file_path",
-                str(speaker_embedding_path),
+                str(py_speaker_embedding_path),
                 "--language",
                 "english",
                 "--max_new_tokens",
@@ -504,7 +508,7 @@ class TestTextToSpeechSample:
                 convert_model,
                 prompt,
                 "--speaker_embedding_file_path",
-                str(speaker_embedding_path),
+                str(c_speaker_embedding_path),
                 "--language",
                 "english",
                 "--max_new_tokens",
@@ -535,9 +539,9 @@ class TestTextToSpeechSample:
                 "--output_wav_path",
                 str(cpp_icl_wav),
                 "--save_speaker_embedding_file_path",
-                str(speaker_embedding_path),
+                str(cpp_speaker_embedding_path),
                 "--save_ref_codec_ids_file_path",
-                str(ref_codes_path),
+                str(cpp_ref_codes_path),
             ]
         )
         py_icl_first = run_sample(
@@ -560,9 +564,9 @@ class TestTextToSpeechSample:
                 "--output_wav_path",
                 str(py_icl_wav),
                 "--save_speaker_embedding_file_path",
-                str(speaker_embedding_path),
+                str(py_speaker_embedding_path),
                 "--save_ref_codec_ids_file_path",
-                str(ref_codes_path),
+                str(py_ref_codes_path),
             ]
         )
         c_icl_first = run_sample(
@@ -584,9 +588,9 @@ class TestTextToSpeechSample:
                 "--output_wav_path",
                 str(c_icl_wav),
                 "--save_speaker_embedding_file_path",
-                str(speaker_embedding_path),
+                str(c_speaker_embedding_path),
                 "--save_ref_codec_ids_file_path",
-                str(ref_codes_path),
+                str(c_ref_codes_path),
             ]
         )
 
@@ -597,11 +601,11 @@ class TestTextToSpeechSample:
                 convert_model,
                 prompt,
                 "--speaker_embedding_file_path",
-                str(speaker_embedding_path),
+                str(cpp_speaker_embedding_path),
                 "--ref_text",
                 ref_text,
                 "--ref_codec_ids_file_path",
-                str(ref_codes_path),
+                str(cpp_ref_codes_path),
                 "--language",
                 "english",
                 "--max_new_tokens",
@@ -620,11 +624,11 @@ class TestTextToSpeechSample:
                 convert_model,
                 prompt,
                 "--speaker_embedding_file_path",
-                str(speaker_embedding_path),
+                str(py_speaker_embedding_path),
                 "--ref_text",
                 ref_text,
                 "--ref_codec_ids_file_path",
-                str(ref_codes_path),
+                str(py_ref_codes_path),
                 "--language",
                 "english",
                 "--max_new_tokens",
@@ -642,11 +646,11 @@ class TestTextToSpeechSample:
                 convert_model,
                 prompt,
                 "--speaker_embedding_file_path",
-                str(speaker_embedding_path),
+                str(c_speaker_embedding_path),
                 "--ref_text",
                 ref_text,
                 "--ref_codec_ids_file_path",
-                str(ref_codes_path),
+                str(c_ref_codes_path),
                 "--language",
                 "english",
                 "--max_new_tokens",
@@ -680,8 +684,14 @@ class TestTextToSpeechSample:
         for result in [cpp_icl_first, py_icl_first, c_icl_first]:
             assert "Saved reference codes" in result.stdout
 
-        assert os.path.exists(speaker_embedding_path), "Speaker embedding artifact should exist"
-        assert os.path.exists(ref_codes_path), "Reference codes artifact should exist"
+        for speaker_embedding_path in [
+            cpp_speaker_embedding_path,
+            py_speaker_embedding_path,
+            c_speaker_embedding_path,
+        ]:
+            assert os.path.exists(speaker_embedding_path), f"Speaker embedding artifact should exist: {speaker_embedding_path}"
+        for ref_codes_path in [cpp_ref_codes_path, py_ref_codes_path, c_ref_codes_path]:
+            assert os.path.exists(ref_codes_path), f"Reference codes artifact should exist: {ref_codes_path}"
         for wav_path in generated_wav_paths:
             assert os.path.exists(wav_path), f"Generated WAV output should exist: {wav_path}"
 
