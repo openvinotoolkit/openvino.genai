@@ -225,6 +225,59 @@ static void print_usage(const char* program) {
             program);
 }
 
+static int write_audio_and_perf(const ov_genai_text2speech_decoded_results* results, const char* output_wav_path) {
+    ov_tensor_t* speech = NULL;
+    ov_genai_perf_metrics* metrics = NULL;
+    uint32_t sample_rate = 0;
+    size_t speech_count = 0;
+    size_t sample_count = 0;
+    void* speech_data = NULL;
+    float throughput_mean = 0.0f;
+    float throughput_std = 0.0f;
+    float generate_duration_mean = 0.0f;
+    float generate_duration_std = 0.0f;
+
+    if (ov_genai_text2speech_decoded_results_get_speeches_count(results, &speech_count) != OK) {
+        goto fail;
+    }
+    if (speech_count != 1) {
+        fprintf(stderr, "Expected 1 waveform, got %zu.\n", speech_count);
+        goto fail;
+    }
+
+    if (ov_genai_text2speech_decoded_results_get_output_sample_rate(results, &sample_rate) != OK ||
+        ov_genai_text2speech_decoded_results_get_speech_at(results, 0, &speech) != OK ||
+        ov_tensor_get_size(speech, &sample_count) != OK ||
+        ov_tensor_data(speech, &speech_data) != OK) {
+        goto fail;
+    }
+
+    if (!save_wav_file(output_wav_path, (const float*)speech_data, sample_count, sample_rate)) {
+        fprintf(stderr, "Failed to write output WAV '%s'.\n", output_wav_path);
+        goto fail;
+    }
+
+    printf("[Info] Text successfully converted to audio file \"%s\".\n", output_wav_path);
+
+    if (ov_genai_text2speech_decoded_results_get_perf_metrics(results, &metrics) == OK &&
+        ov_genai_perf_metrics_get_throughput(metrics, &throughput_mean, &throughput_std) == OK &&
+        ov_genai_perf_metrics_get_generate_duration(metrics, &generate_duration_mean, &generate_duration_std) == OK &&
+        (throughput_mean > 0.0f || generate_duration_mean > 0.0f)) {
+        printf("\n\n=== Performance Summary ===\n");
+        printf("Throughput              : %f samples/sec.\n", throughput_mean);
+        printf("Total Generation Time   : %f sec.\n", generate_duration_mean / 1000.0f);
+    }
+
+    ov_genai_text2speech_decoded_results_perf_metrics_free(metrics);
+    ov_tensor_free(speech);
+    return 1;
+
+fail:
+    ov_genai_text2speech_decoded_results_perf_metrics_free(metrics);
+    ov_tensor_free(speech);
+    return 0;
+}
+
 static int run_base(int argc, char** argv) {
     const char* model_dir = NULL;
     const char* prompt = NULL;
@@ -249,13 +302,8 @@ static int run_base(int argc, char** argv) {
     ov_tensor_t* speaker_embedding = NULL;
     ov_tensor_t* ref_audio = NULL;
     ov_tensor_t* ref_codec_ids = NULL;
-    ov_tensor_t* speech = NULL;
     ov_tensor_t* saved_speaker_embedding = NULL;
     ov_tensor_t* saved_ref_codec_ids = NULL;
-    uint32_t sample_rate = 0;
-    size_t speech_count = 0;
-    size_t sample_count = 0;
-    void* speech_data = NULL;
     int success = 0;
 
     if (argc < 5) {
@@ -361,6 +409,9 @@ static int run_base(int argc, char** argv) {
 
     CHECK_STATUS(ov_genai_speech_generation_config_validate(config));
 
+    const int icl_mode = (ref_text && ref_text[0] != '\0');
+    printf("[Info] Qwen3-TTS Base voice clone (%s mode).\n", icl_mode ? "ICL" : "x-vector");
+
     if (speaker_embedding_path) {
         speaker_embedding = load_speaker_embedding(speaker_embedding_path, pipeline);
         if (!speaker_embedding) {
@@ -370,23 +421,9 @@ static int run_base(int argc, char** argv) {
     }
 
     CHECK_STATUS(ov_genai_text2speech_pipeline_generate(pipeline, prompt, speaker_embedding, config, &results));
-    CHECK_STATUS(ov_genai_text2speech_decoded_results_get_speeches_count(results, &speech_count));
-    if (speech_count != 1) {
-        fprintf(stderr, "Expected 1 waveform, got %zu.\n", speech_count);
+    if (!write_audio_and_perf(results, output_wav_path)) {
         goto done;
     }
-
-    CHECK_STATUS(ov_genai_text2speech_decoded_results_get_output_sample_rate(results, &sample_rate));
-    CHECK_STATUS(ov_genai_text2speech_decoded_results_get_speech_at(results, 0, &speech));
-    CHECK_STATUS(ov_tensor_get_size(speech, &sample_count));
-    CHECK_STATUS(ov_tensor_data(speech, &speech_data));
-
-    if (!save_wav_file(output_wav_path, (const float*)speech_data, sample_count, sample_rate)) {
-        fprintf(stderr, "Failed to write output WAV '%s'.\n", output_wav_path);
-        goto done;
-    }
-
-    printf("[Info] Text successfully converted to audio file \"%s\".\n", output_wav_path);
 
     if (save_speaker_embedding_path) {
         status = ov_genai_text2speech_decoded_results_get_speaker_embedding(results, &saved_speaker_embedding);
@@ -422,7 +459,6 @@ static int run_base(int argc, char** argv) {
 done:
     ov_tensor_free(saved_ref_codec_ids);
     ov_tensor_free(saved_speaker_embedding);
-    ov_tensor_free(speech);
     ov_tensor_free(ref_codec_ids);
     ov_tensor_free(ref_audio);
     ov_tensor_free(speaker_embedding);
@@ -451,11 +487,6 @@ static int run_customvoice(int argc, char** argv) {
     ov_genai_speech_generation_config* config = NULL;
     ov_genai_generation_config* generation_config = NULL;
     ov_genai_text2speech_decoded_results* results = NULL;
-    ov_tensor_t* speech = NULL;
-    uint32_t sample_rate = 0;
-    size_t sample_count = 0;
-    size_t speech_count = 0;
-    void* speech_data = NULL;
     int success = 0;
 
     if (argc < 6) {
@@ -533,24 +564,12 @@ static int run_customvoice(int argc, char** argv) {
     CHECK_STATUS(ov_genai_speech_generation_config_validate(config));
     CHECK_STATUS(ov_genai_text2speech_pipeline_generate(pipeline, prompt, NULL, config, &results));
 
-    CHECK_STATUS(ov_genai_text2speech_decoded_results_get_speeches_count(results, &speech_count));
-    if (speech_count != 1)
-        goto done;
-    CHECK_STATUS(ov_genai_text2speech_decoded_results_get_output_sample_rate(results, &sample_rate));
-    CHECK_STATUS(ov_genai_text2speech_decoded_results_get_speech_at(results, 0, &speech));
-    CHECK_STATUS(ov_tensor_get_size(speech, &sample_count));
-    CHECK_STATUS(ov_tensor_data(speech, &speech_data));
-
-    if (!save_wav_file(output_wav_path, (const float*)speech_data, sample_count, sample_rate)) {
-        fprintf(stderr, "Failed to write output WAV '%s'.\n", output_wav_path);
+    if (!write_audio_and_perf(results, output_wav_path)) {
         goto done;
     }
-
-    printf("[Info] Text successfully converted to audio file \"%s\".\n", output_wav_path);
     success = 1;
 
 done:
-    ov_tensor_free(speech);
     ov_genai_text2speech_decoded_results_free(results);
     ov_genai_generation_config_free(generation_config);
     ov_genai_speech_generation_config_free(config);
@@ -575,11 +594,6 @@ static int run_voice_design(int argc, char** argv) {
     ov_genai_speech_generation_config* config = NULL;
     ov_genai_generation_config* generation_config = NULL;
     ov_genai_text2speech_decoded_results* results = NULL;
-    ov_tensor_t* speech = NULL;
-    uint32_t sample_rate = 0;
-    size_t sample_count = 0;
-    size_t speech_count = 0;
-    void* speech_data = NULL;
     int success = 0;
 
     if (argc < 6) {
@@ -652,24 +666,12 @@ static int run_voice_design(int argc, char** argv) {
     CHECK_STATUS(ov_genai_speech_generation_config_validate(config));
     CHECK_STATUS(ov_genai_text2speech_pipeline_generate(pipeline, prompt, NULL, config, &results));
 
-    CHECK_STATUS(ov_genai_text2speech_decoded_results_get_speeches_count(results, &speech_count));
-    if (speech_count != 1)
-        goto done;
-    CHECK_STATUS(ov_genai_text2speech_decoded_results_get_output_sample_rate(results, &sample_rate));
-    CHECK_STATUS(ov_genai_text2speech_decoded_results_get_speech_at(results, 0, &speech));
-    CHECK_STATUS(ov_tensor_get_size(speech, &sample_count));
-    CHECK_STATUS(ov_tensor_data(speech, &speech_data));
-
-    if (!save_wav_file(output_wav_path, (const float*)speech_data, sample_count, sample_rate)) {
-        fprintf(stderr, "Failed to write output WAV '%s'.\n", output_wav_path);
+    if (!write_audio_and_perf(results, output_wav_path)) {
         goto done;
     }
-
-    printf("[Info] Text successfully converted to audio file \"%s\".\n", output_wav_path);
     success = 1;
 
 done:
-    ov_tensor_free(speech);
     ov_genai_text2speech_decoded_results_free(results);
     ov_genai_generation_config_free(generation_config);
     ov_genai_speech_generation_config_free(config);
