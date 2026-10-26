@@ -209,18 +209,18 @@ static int str_eq(const char* a, const char* b) {
 static void print_usage(const char* program) {
     fprintf(stderr, "Usage:\n");
     fprintf(stderr,
-            "  %s base <MODEL_DIR> \"<PROMPT>\" (--ref_audio_wav_path <PATH.wav> | --speaker_embedding_file_path <PATH.bin>)\\n"
-            "      [--ref_text \"<TRANSCRIPT>\"] [--ref_codec_ids_file_path <PATH.bin>]\\n"
-            "      [--save_speaker_embedding_file_path <PATH.bin>] [--save_ref_codec_ids_file_path <PATH.bin>]\\n"
+            "  %s base <MODEL_DIR> \"<PROMPT>\" (--ref_audio_wav_path <PATH.wav> | --speaker_embedding_file_path <PATH.bin>)\n"
+            "      [--ref_text \"<TRANSCRIPT>\"] [--ref_codec_ids_file_path <PATH.bin>]\n"
+            "      [--save_speaker_embedding_file_path <PATH.bin>] [--save_ref_codec_ids_file_path <PATH.bin>]\n"
                 "      [--language <LANG>] [--device <DEVICE>] [--max_new_tokens <N>] [--seed <N>] [--output_wav_path <PATH.wav>]\n",
             program);
     fprintf(stderr,
-            "  %s customvoice <MODEL_DIR> \"<PROMPT>\" --speaker <NAME>\\n"
-            "      [--language <LANG>] [--instruct \"<STYLE>\"] [--device <DEVICE>]\\n"
+            "  %s customvoice <MODEL_DIR> \"<PROMPT>\" --speaker <NAME>\n"
+            "      [--language <LANG>] [--instruct \"<STYLE>\"] [--device <DEVICE>]\n"
                 "      [--max_new_tokens <N>] [--seed <N>] [--output_wav_path <PATH.wav>]\n",
             program);
     fprintf(stderr,
-            "  %s voice-design <MODEL_DIR> \"<PROMPT>\" --instruct \"<VOICE_DESCRIPTION>\"\\n"
+            "  %s voice-design <MODEL_DIR> \"<PROMPT>\" --instruct \"<VOICE_DESCRIPTION>\"\n"
                 "      [--language <LANG>] [--device <DEVICE>] [--max_new_tokens <N>] [--seed <N>] [--output_wav_path <PATH.wav>]\n",
             program);
 }
