@@ -103,7 +103,7 @@ def get_whisper_models_list(tiny_only=False):
 # used whisper models are relatively small
 # cache them in memory to speedup tests
 @functools.lru_cache()
-def read_asr_model(params, word_timestamps=False, pipeline_type=PipelineType.WHISPER):
+def read_asr_model(params, word_timestamps=False, pipeline_type=PipelineType.WHISPER, attention_backend=None):
     model_id, path = params
     if model_id == QWEN3_ASR_MODEL_ID:
         skip_if_qwen3_asr_package_is_unavailable()
@@ -185,6 +185,8 @@ def read_asr_model(params, word_timestamps=False, pipeline_type=PipelineType.WHI
     properties = {}
     if word_timestamps:
         properties["word_timestamps"] = True
+    if attention_backend:
+        properties["ATTENTION_BACKEND"] = attention_backend
     if pipeline_type == PipelineType.CONTINUOUS_BATCHING:
         assert (path / "openvino_audio_encoder_model.xml").is_file(), "Continuous batching requires a split ASR export"
         genai_pipe = ov_genai.ContinuousBatchingPipeline(
@@ -399,18 +401,25 @@ def make_deterministic_audio(num_samples: int) -> np.ndarray:
     return (0.1 * np.random.default_rng(num_samples).standard_normal(num_samples)).astype(np.float32)
 
 
-# ASRPipeline runs Qwen3-ASR split export through ContinuousBatchingPipeline.
-QWEN3_ASR_SPLIT_EXPORT_ASR_PARAM = pytest.param(
-    (QWEN3_ASR_MODEL_ID, PipelineType.ASR),
-    id=f"{get_model_pipeline_pair_id((QWEN3_ASR_MODEL_ID, PipelineType.ASR))}-split",
-    marks=[
-        pytest.mark.qwen3_asr_split_export,
-        pytest.mark.skipif(
-            sys.platform == "darwin" and platform.machine() == "arm64",
-            reason="PagedAttention requires SVE on ARM and is unavailable on macOS arm64.",
-        ),
-    ],
-)
+# ASRPipeline runs Qwen3-ASR split export through ContinuousBatchingPipeline for PA and VLMPipeline for SDPA.
+QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS = [
+    pytest.param(
+        (QWEN3_ASR_MODEL_ID, PipelineType.ASR, {"attention_backend": "PA"}),
+        id=f"{get_model_pipeline_pair_id((QWEN3_ASR_MODEL_ID, PipelineType.ASR))}-split-PA",
+        marks=[
+            pytest.mark.qwen3_asr_split_export,
+            pytest.mark.skipif(
+                sys.platform == "darwin" and platform.machine() == "arm64",
+                reason="PagedAttention requires SVE on ARM and is unavailable on macOS arm64.",
+            ),
+        ],
+    ),
+    pytest.param(
+        (QWEN3_ASR_MODEL_ID, PipelineType.ASR, {"attention_backend": "SDPA"}),
+        id=f"{get_model_pipeline_pair_id((QWEN3_ASR_MODEL_ID, PipelineType.ASR))}-split-SDPA",
+        marks=pytest.mark.qwen3_asr_split_export,
+    ),
+]
 
 
 @pytest.fixture
@@ -673,7 +682,7 @@ def test_language_detection(model_descr, sample_from_multilingual_dataset, langu
             (SENSEVOICE_SMALL_TINY_MODEL_ID, PipelineType.ASR),
         ]
     )
-    + [QWEN3_ASR_SPLIT_EXPORT_ASR_PARAM],
+    + QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS,
     indirect=True,
 )
 @pytest.mark.parametrize("sample_from_multilingual_dataset", ["fr"], indirect=True)
@@ -766,7 +775,7 @@ def test_return_timestamps_max_new_tokens_short_form(model_descr, sample_from_da
             (FUN_ASR_MODEL_ID, PipelineType.ASR),
         ]
     )
-    + [QWEN3_ASR_SPLIT_EXPORT_ASR_PARAM],
+    + QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS,
     indirect=True,
 )
 @pytest.mark.parametrize(
@@ -1019,7 +1028,7 @@ def test_random_sampling(model_descr, sample_from_dataset, pipeline_type):
             (FUN_ASR_MODEL_ID, PipelineType.ASR),
         ]
     )
-    + [QWEN3_ASR_SPLIT_EXPORT_ASR_PARAM],
+    + QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS,
     indirect=True,
 )
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
@@ -1166,7 +1175,7 @@ def streamer_for_test(request):
             (SENSEVOICE_SMALL_TINY_MODEL_ID, PipelineType.ASR),
         ]
     )
-    + [QWEN3_ASR_SPLIT_EXPORT_ASR_PARAM],
+    + QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS,
     indirect=True,
 )
 def test_streamers(sample_from_dataset, pipelines_fixture, streamer_for_test):
@@ -1209,7 +1218,7 @@ def test_streamers(sample_from_dataset, pipelines_fixture, streamer_for_test):
 
 @pytest.mark.parametrize(
     "pipelines_fixture",
-    get_model_pipeline_pair_params([(QWEN3_ASR_MODEL_ID, PipelineType.ASR)]) + [QWEN3_ASR_SPLIT_EXPORT_ASR_PARAM],
+    get_model_pipeline_pair_params([(QWEN3_ASR_MODEL_ID, PipelineType.ASR)]) + QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS,
     indirect=True,
 )
 def test_qwen3_asr_streamer_rejects_multi_chunk_audio(pipelines_fixture):
@@ -1218,3 +1227,16 @@ def test_qwen3_asr_streamer_rejects_multi_chunk_audio(pipelines_fixture):
 
     with pytest.raises(RuntimeError, match="Qwen3-ASR streaming supports audio up to 1200 seconds"):
         genai_pipe.generate(audio, language="English", max_new_tokens=1, streamer=lambda subword: False)
+
+
+@pytest.mark.parametrize("model_id", ["openai/whisper-tiny", QWEN3_ASR_MODEL_ID])
+def test_attention_backend_without_paged_attention(model_id):
+    _, path, _, _ = read_asr_model(
+        (model_id, get_ov_cache_converted_models_dir() / model_id.split("/")[-1]), pipeline_type=PipelineType.ASR
+    )
+
+    ov_genai.ASRPipeline(path, "CPU", ATTENTION_BACKEND="SDPA")
+    with pytest.raises(RuntimeError, match="attention backend is supported only for Qwen3-ASR split export"):
+        ov_genai.ASRPipeline(path, "CPU", ATTENTION_BACKEND="PA")
+    with pytest.raises(RuntimeError, match="Attention backend must be either 'PA' or 'SDPA'"):
+        ov_genai.ASRPipeline(path, "CPU", ATTENTION_BACKEND="SDPA_BACKEND")

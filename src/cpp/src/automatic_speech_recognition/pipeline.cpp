@@ -43,6 +43,23 @@ ASRModelType read_model_type(const std::filesystem::path& models_path) {
     OPENVINO_THROW("Unsupported '", value, "' ASR model type");
 }
 
+bool is_qwen3_asr_split_export(const std::filesystem::path& models_path) {
+    return std::filesystem::exists(models_path / "openvino_audio_encoder_model.xml");
+}
+
+// Only Qwen3-ASR split export implements PagedAttention backend. Other models run SDPA-like stateful decoders.
+ov::AnyMap remove_sdpa_attention_backend(const ov::AnyMap& properties) {
+    if (!properties.count("ATTENTION_BACKEND")) {
+        return properties;
+    }
+    auto [properties_without_backend, attention_backend] = ov::genai::utils::extract_attention_backend(properties);
+    OPENVINO_ASSERT(attention_backend == ov::genai::SDPA_BACKEND,
+                    "'",
+                    ov::genai::PA_BACKEND,
+                    "' attention backend is supported only for Qwen3-ASR split export");
+    return properties_without_backend;
+}
+
 std::optional<ov::genai::ASRGenerationConfig> get_config_from_map(const ov::AnyMap& config_map) {
     if (config_map.count(ov::genai::utils::CONFIG_ARG_NAME)) {
         return config_map.at(ov::genai::utils::CONFIG_ARG_NAME).as<ov::genai::ASRGenerationConfig>();
@@ -63,28 +80,29 @@ ASRPipeline::ASRPipeline(const std::filesystem::path& models_path,
     OPENVINO_ASSERT(!properties.count(ov::genai::forced_aligner.name()) || model_type == ASRModelType::qwen3_asr,
                     "'forced_aligner' is only supported for Qwen3-ASR models.");
 
-    switch (model_type) {
-    case ASRModelType::whisper: {
-        m_impl = std::make_unique<WhisperASRPipelineAdapter>(models_path, device, properties);
-        break;
-    }
-    case ASRModelType::qwen3_asr: {
-        // Split export (audio encoder + text embeddings + language model) runs on ContinuousBatchingPipeline.
-        if (std::filesystem::exists(models_path / "openvino_audio_encoder_model.xml")) {
-            m_impl = std::make_unique<Qwen3ASRContinuousBatchingAdapter>(models_path, device, properties);
-        } else {
-            m_impl = std::make_unique<Qwen3EncoderDecoderASR>(models_path, device, properties);
+    // Split export: audio encoder, text embeddings and language model.
+    if (model_type == ASRModelType::qwen3_asr && is_qwen3_asr_split_export(models_path)) {
+        m_impl = create_qwen3_asr_split_pipeline(models_path, device, properties);
+    } else {
+        const ov::AnyMap impl_properties = remove_sdpa_attention_backend(properties);
+        switch (model_type) {
+        case ASRModelType::whisper: {
+            m_impl = std::make_unique<WhisperASRPipelineAdapter>(models_path, device, impl_properties);
+            break;
         }
-        break;
-    }
-    case ASRModelType::fun_asr: {
-        m_impl = std::make_unique<FunASR>(models_path, device, properties);
-        break;
-    }
-    case ASRModelType::sense_voice: {
-        m_impl = std::make_unique<SenseVoiceSmall>(models_path, device, properties);
-        break;
-    }
+        case ASRModelType::qwen3_asr: {
+            m_impl = std::make_unique<Qwen3EncoderDecoderASR>(models_path, device, impl_properties);
+            break;
+        }
+        case ASRModelType::fun_asr: {
+            m_impl = std::make_unique<FunASR>(models_path, device, impl_properties);
+            break;
+        }
+        case ASRModelType::sense_voice: {
+            m_impl = std::make_unique<SenseVoiceSmall>(models_path, device, impl_properties);
+            break;
+        }
+        }
     }
     const auto stop_time = std::chrono::steady_clock::now();
     m_impl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
