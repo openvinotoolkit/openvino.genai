@@ -399,7 +399,7 @@ def disable_diffusers_model_progress_bar(model):
 
 
 class SDMetricsCollector:
-    """Collects the speculative decoding token numbers reported for every prompt."""
+    """Collects per-prompt SD counters, or one explicitly marked total per CB batch."""
 
     COLUMNS = (
         "draft_processed_tokens",
@@ -409,6 +409,7 @@ class SDMetricsCollector:
         "acceptance_rate",
         "miss_rate",
     )
+    BATCH_COLUMNS = ("sd_metrics_scope", "sd_batch_size")
 
     def __init__(self):
         self.token_numbers = []
@@ -416,8 +417,19 @@ class SDMetricsCollector:
     def collect(self, answer):
         self.token_numbers.append(self._get_token_numbers(answer))
 
+    def collect_batch(self, answers):
+        if not answers:
+            return
+        # Native CB results repeat the same batch totals for every prompt. Store them
+        # only on the first row, marking their scope and keeping the other rows aligned.
+        numbers = self._get_token_numbers(answers[0])
+        if numbers is not None:
+            numbers.update(sd_metrics_scope="batch", sd_batch_size=len(answers))
+        self.token_numbers.append(numbers)
+        self.token_numbers.extend([None] * (len(answers) - 1))
+
     def add_columns(self, df):
-        for column in self.COLUMNS:
+        for column in self.COLUMNS + self.BATCH_COLUMNS:
             if any(numbers and column in numbers for numbers in self.token_numbers):
                 df[column] = [numbers.get(column) if numbers else None for numbers in self.token_numbers]
 
@@ -438,14 +450,14 @@ class SDMetricsCollector:
         ):
             return token_numbers
         candidates = extended_perf_metrics.get_num_draft_tokens()
-        try:
-            rejected = extended_perf_metrics.get_num_rejected_tokens()
-        except RuntimeError:
-            return token_numbers
+        rejected = extended_perf_metrics.get_num_rejected_tokens()
         if candidates < 0 or rejected < 0 or rejected > candidates:
             return token_numbers
         token_numbers["draft_candidate_tokens"] = candidates
         token_numbers["rejected_tokens"] = rejected
+        if candidates == 0 and token_numbers["num_accepted"] > 0:
+            token_numbers.update(acceptance_rate=None, miss_rate=None)
+            return token_numbers
         token_numbers["miss_rate"] = rejected / candidates * 100 if candidates > 0 else 0.0
         acceptance_rate = 0.0
         if candidates > 0:
