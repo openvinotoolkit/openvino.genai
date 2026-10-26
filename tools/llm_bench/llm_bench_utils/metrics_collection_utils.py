@@ -6,6 +6,7 @@ from math import isfinite
 
 # the raw metrics durations are reported in microseconds, while the metrics below are reported in milliseconds
 US_IN_MS = 1000
+MS_IN_S = 1000
 
 
 def get_average(values):
@@ -25,7 +26,7 @@ def get_sd_per_model_metrics(model_metrics):
         "ttft": model_metrics.get_ttft().mean,
         "ttst": model_metrics.get_ttst().mean,
         "tpot": tpot,
-        "throughput": US_IN_MS / tpot if tpot > 0 else -1,
+        "throughput": MS_IN_S / tpot if tpot > 0 else -1,
         "num_generated_tokens": sum(batch_sizes) if len(batch_sizes) > 0 else len(durations),
         "infer_count": len(durations),
         "first_infer_latency": infer_durations[0] if len(infer_durations) > 0 else -1,
@@ -46,15 +47,15 @@ def get_sd_candidate_tokens(extended_perf_metrics):
     ):
         return None
     candidates = extended_perf_metrics.get_num_draft_tokens()
-    try:
-        rejected = extended_perf_metrics.get_num_rejected_tokens()
-    except RuntimeError:
-        # Older producers can report accepted tokens exceeding recorded candidates.
-        return None
+    rejected = extended_perf_metrics.get_num_rejected_tokens()
     if candidates < 0 or rejected < 0 or rejected > candidates:
         return None
     candidate_tokens = {"draft_candidate_tokens": candidates, "rejected_tokens": rejected}
-    # No recorded candidates means both rates are reported as zero in both tools.
+    if candidates == 0 and extended_perf_metrics.get_num_accepted_tokens() > 0:
+        # Some SD producers report accepted tokens without recording candidate counts.
+        candidate_tokens.update(acceptance_rate=None, miss_rate=None)
+        return candidate_tokens
+    # With neither candidate nor accepted draft tokens, retain the zero-rate convention.
     acceptance_rate = 0.0
     if candidates > 0:
         acceptance_rate = get_sd_value(extended_perf_metrics, "get_draft_acceptance_rate")
