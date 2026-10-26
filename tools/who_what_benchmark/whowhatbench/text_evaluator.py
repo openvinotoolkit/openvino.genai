@@ -273,8 +273,8 @@ class TextEvaluator(BaseEvaluator):
                         ans_batch = model.generate(
                             batch, [generation_config] * len(batch)
                         )
+                        sd_metrics.collect_batch(ans_batch)
                         for batch_offset, ans in enumerate(ans_batch):
-                            sd_metrics.collect(ans)
                             sample_idx = batch_start_idx + batch_offset
                             artifacts_collector.collect(
                                 sample_idx,
