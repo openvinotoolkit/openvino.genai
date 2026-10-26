@@ -38,12 +38,12 @@ int main(int argc, char* argv[]) try {
     // If language is known in advance it can be passed to the pipeline
     // In the form of "<|en|>" for Whisper models. Supported by multilingual models only
     // In the form of "English" for Qwen3-ASR models.
-    // config.language = "<|en|>";
+    config.language = "<|en|>";
 
     // Whisper models parameters. Ignored for Qwen3-ASR models
-    // config.task = "transcribe";  // Supported by multilingual models only
-    // config.return_timestamps = true;
-    // config.word_timestamps = true;
+    config.task = "transcribe";  // Supported by multilingual models only
+    config.return_timestamps = true;
+    config.word_timestamps = true;
 
     // Pipeline expects normalized audio with Sample Rate of 16kHz
     ov::genai::RawSpeechInput raw_speech = utils::audio::read_wav(wav_file_path);
