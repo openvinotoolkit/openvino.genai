@@ -7,7 +7,7 @@
   components:
     - automatic_speech_recognition
 
-# TODO(CVS-198293): Re-enable Qwen3-ASR tests when its upstream dependencies support Pillow 13.
+# TODO(CVS-198293): Re-enable Qwen3-ASR tests when its Gradio dependency supports Pillow 13.
 # - name: ASR (Qwen3-ASR)
 #   cmd: |-
 #     python -m pip install transformers==4.57.6 qwen-asr==0.0.6
