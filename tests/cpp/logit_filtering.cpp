@@ -3,7 +3,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <limits>
+#include <random>
+#include <set>
+#include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <openvino/core/except.hpp>
@@ -81,6 +86,153 @@ const std::vector<TopPTestStruct> TOP_P_TRANSFORM_TEST_CASES = {
 INSTANTIATE_TEST_SUITE_P(VariousInputs,
                          TopPFilteringTest,
                          testing::ValuesIn(TOP_P_TRANSFORM_TEST_CASES));
+
+namespace {
+// Softmax(logits / 0.7) of a row with a N(0, spread) tail and `head` tokens `lead` above it.
+std::vector<float> random_probabilities(size_t size, size_t head, float lead, float spread, uint32_t seed) {
+    std::mt19937 rng(seed);
+    std::normal_distribution<float> tail(0.0f, spread);
+    std::vector<float> row(size);
+    for (auto& value : row)
+        value = tail(rng);
+    std::uniform_int_distribution<size_t> pick(0, size - 1);
+    for (size_t i = 0; i < head; ++i)
+        row[pick(rng)] = lead - 4.0f * static_cast<float>(i) / static_cast<float>(head);
+    Logits logits(row.data(), size);
+    TemperatureLogitTransform(0.7f).apply(logits);
+    return row;
+}
+
+// Sort every token, then walk to the first prefix whose mass exceeds top_p.
+std::vector<Token> reference_nucleus(const std::vector<float>& probabilities, float top_p) {
+    std::vector<Token> tokens;
+    for (size_t i = 0; i < probabilities.size(); ++i)
+        tokens.emplace_back(probabilities[i], static_cast<int64_t>(i));
+    std::sort(tokens.begin(), tokens.end(), [](const Token& lhs, const Token& rhs) {
+        return lhs.m_log_prob > rhs.m_log_prob || (lhs.m_log_prob == rhs.m_log_prob && lhs.m_index < rhs.m_index);
+    });
+    float sum = 0.0f;
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        sum += tokens[i].m_log_prob;
+        if (sum > top_p) {
+            tokens.resize(i + 1);
+            break;
+        }
+    }
+    return tokens;
+}
+
+void expect_same_tokens(const Logits& logits, const std::vector<Token>& expected) {
+    ASSERT_EQ(logits.m_size, logits.m_vector.size());
+    ASSERT_EQ(logits.m_size, expected.size());
+    for (size_t i = 0; i < expected.size(); ++i) {
+        EXPECT_EQ(logits.m_vector[i].m_index, expected[i].m_index) << "position " << i;
+        EXPECT_EQ(logits.m_vector[i].m_log_prob, expected[i].m_log_prob) << "position " << i;
+    }
+}
+}  // namespace
+
+// The threshold rounds must give the nucleus of a full sort, from m_data and from an initialized m_vector. The
+// largest top_p values need tokens far below the first threshold, so they exercise the widening rounds.
+TEST(TopPFilteringTest, MatchesFullSortOnLargeRows) {
+    struct Row { size_t head; float lead; float spread; };
+    const Row rows[] = {{1, 16.0f, 2.0f}, {64, 10.0f, 2.0f}, {4096, 4.0f, 2.0f}, {1, 4.0f, 0.5f}, {1, 40.0f, 6.0f}};
+    for (const float top_p : {0.2f, 0.9f, 0.95f, 0.999f, 0.99999f}) {
+        for (size_t r = 0; r < std::size(rows); ++r) {
+            SCOPED_TRACE("top_p " + std::to_string(top_p) + ", row " + std::to_string(r));
+            const auto probabilities = random_probabilities(50000, rows[r].head, rows[r].lead, rows[r].spread, 11 + r);
+            const auto expected = reference_nucleus(probabilities, top_p);
+
+            auto data = probabilities;
+            Logits from_data(data.data(), data.size());
+            TopPFilter(top_p).apply(from_data);
+            expect_same_tokens(from_data, expected);
+
+            auto copy = probabilities;
+            Logits from_vector(copy.data(), copy.size());
+            from_vector.initialize_vector();
+            TopPFilter(top_p).apply(from_vector);
+            expect_same_tokens(from_vector, expected);
+        }
+    }
+}
+
+// The softmax records the top probability exactly, and TopPFilter only starts its threshold from it.
+TEST(TopPFilteringTest, MaxProbabilityHintDoesNotChangeTheNucleus) {
+    const auto probabilities = random_probabilities(50000, 64, 10.0f, 2.0f, 3);
+    const float top = *std::max_element(probabilities.begin(), probabilities.end());
+    const auto expected = reference_nucleus(probabilities, 0.95f);
+    for (const float hint : {top, 1.0f, 1e-30f, 0.0f, NAN}) {
+        SCOPED_TRACE("hint " + std::to_string(hint));
+        auto data = probabilities;
+        Logits logits(data.data(), data.size());
+        logits.m_max_probability = hint;
+        TopPFilter(0.95f).apply(logits);
+        expect_same_tokens(logits, expected);
+    }
+
+    std::vector<float> row(1000);
+    for (size_t i = 0; i < row.size(); ++i)
+        row[i] = static_cast<float>(i % 97) * 0.1f;
+    for (const bool vector_path : {false, true}) {
+        auto data = row;
+        Logits logits(data.data(), data.size());
+        if (vector_path)
+            logits.initialize_vector();
+        TemperatureLogitTransform(0.7f).apply(logits);
+        float max_probability = 0.0f;
+        for (size_t i = 0; i < logits.m_size; ++i)
+            max_probability = std::max(max_probability, vector_path ? logits.m_vector[i].m_log_prob : logits.m_data[i]);
+        EXPECT_EQ(logits.m_max_probability, max_probability);
+    }
+}
+
+TEST(TopPFilteringTest, KeepsEveryTokenWhenNoPrefixExceedsTopP) {
+    float input[] = {0.1f, 0.3f, 0.2f};
+    Logits logits(input, 3);
+    TopPFilter(0.9f).apply(logits);
+    expect_same_tokens(logits, {{0.3f, 1}, {0.2f, 2}, {0.1f, 0}});
+}
+
+TEST(TopPFilteringTest, OrdersTiesByIndex) {
+    float input[] = {0.125f, 0.25f, 0.125f, 0.25f, 0.125f, 0.125f};
+    Logits logits(input, 6);
+    TopPFilter(0.6f).apply(logits);
+    expect_same_tokens(logits, {{0.25f, 1}, {0.25f, 3}, {0.125f, 0}});
+}
+
+TEST(TopPFilteringTest, KeepsEveryTokenOfANaNRow) {
+    float input[] = {NAN, NAN, NAN, NAN};
+    Logits logits(input, 4);
+    TopPFilter(0.9f).apply(logits);
+    ASSERT_EQ(logits.m_size, 4u);
+    ASSERT_EQ(logits.m_vector.size(), 4u);
+    std::set<int64_t> indices;
+    for (const auto& token : logits.m_vector)
+        indices.insert(token.m_index);
+    EXPECT_EQ(indices, (std::set<int64_t>{0, 1, 2, 3}));
+}
+
+TEST(TemperatureTransformTest, FlushesTheFarTailToZero) {
+    // After the 1/T scaling the tail sits 100+ below the top, where expf would return denormals.
+    std::vector<float> input(1000, -80.0f);
+    input[3] = 0.0f;
+    input[7] = -5.0f;
+    input[11] = -44.0f;
+    Logits logits(input.data(), input.size());
+    TemperatureLogitTransform(0.7f).apply(logits);
+    const float scale = 1.0f / 0.7f;
+    const float norm_sum = 1.0f + expf(-5.0f * scale) + expf(-44.0f * scale);
+    EXPECT_FLOAT_EQ(input[3], 1.0f / norm_sum);
+    EXPECT_FLOAT_EQ(input[7], expf(-5.0f * scale) / norm_sum);
+    EXPECT_FLOAT_EQ(input[11], expf(-44.0f * scale) / norm_sum);
+    for (size_t i = 0; i < input.size(); ++i) {
+        EXPECT_NE(std::fpclassify(input[i]), FP_SUBNORMAL) << "token " << i;
+        if (i != 3 && i != 7 && i != 11) {
+            EXPECT_EQ(input[i], 0.0f) << "token " << i;
+        }
+    }
+}
 
 
 
@@ -370,9 +522,9 @@ INSTANTIATE_TEST_SUITE_P(VariousInputs,
 // ---------------------------------------------------------------------------
 // MinPFilter works on normalised probabilities in m_data / m_vector.
 // Following the TopPFilter test pattern, input values are pre-computed
-// softmax probabilities placed directly in m_data (no Temperature step).
-// MinPFilter::apply() calls initialize_vector() internally, so every
-// parameterised test also exercises the fast-path vector-initialisation.
+// softmax probabilities placed directly in m_data (no Temperature step),
+// so every parameterised test exercises the fast path that collects the
+// surviving tokens from m_data.
 //
 // Probabilities used across test cases (softmax of logits {1, 2, 4, 3}):
 //   idx=0: 0.032058   idx=1: 0.087144   idx=2: 0.643952   idx=3: 0.236846
@@ -449,6 +601,32 @@ TEST(MinPFilteringTest, TopTokenAlwaysSurvives) {
     auto logits = Logits(input, 4);
     MinPFilter(0.99f).apply(logits);
     EXPECT_EQ(logits.m_size, 4u);
+}
+
+// Collecting from m_data must keep the same tokens, in the same order, as compacting an initialized m_vector.
+TEST(MinPFilteringTest, FastPathMatchesVectorPath) {
+    for (const float min_p : {0.0f, 0.01f, 0.05f, 0.5f}) {
+        SCOPED_TRACE("min_p " + std::to_string(min_p));
+        const auto probabilities = random_probabilities(50000, 64, 10.0f, 2.0f, 5);
+        auto copy = probabilities;
+        Logits from_vector(copy.data(), copy.size());
+        from_vector.initialize_vector();
+        MinPFilter(min_p).apply(from_vector);
+
+        auto data = probabilities;
+        Logits from_data(data.data(), data.size());
+        MinPFilter(min_p).apply(from_data);
+        expect_same_tokens(from_data, from_vector.m_vector);
+    }
+}
+
+TEST(MinPFilteringTest, KeepsOneTokenOfANaNRow) {
+    float input[] = {NAN, NAN, NAN};
+    auto logits = Logits(input, 3);
+    MinPFilter(0.1f).apply(logits);
+    ASSERT_EQ(logits.m_size, 1u);
+    ASSERT_EQ(logits.m_vector.size(), 1u);
+    EXPECT_EQ(logits.m_vector[0].m_index, 0);
 }
 
 TEST(MinPFilteringTest, AlwaysKeepsAtLeastOneToken) {

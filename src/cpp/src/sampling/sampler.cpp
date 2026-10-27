@@ -381,10 +381,12 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
                 }
             }
 
-            // sort tokens
-            std::sort(tokens.begin(), tokens.end(), [](Token left, Token right) {
-                return left.m_log_prob > right.m_log_prob;  // Most probable tokens in front
+            // sort the tokens the loop below can take, most probable in front
+            const auto taken = tokens.begin() + ptrdiff_t(std::min(tokens.size(), 2 * group_size));
+            std::partial_sort(tokens.begin(), taken, tokens.end(), [](const Token& left, const Token& right) {
+                return left.m_log_prob > right.m_log_prob;
             });
+            tokens.erase(taken, tokens.end());
 
             size_t add_count = 0;
             for (Token token : tokens) {
