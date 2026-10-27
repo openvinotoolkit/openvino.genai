@@ -90,6 +90,7 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
     std::vector<ov::genai::EncodedVideo> m_encoded_videos;
     std::vector<ov::genai::EncodedAudio> m_encoded_audios;
     std::vector<size_t> m_history_image_sequence;
+    std::vector<size_t> m_history_video_sequence;
     // Prompt-order audio ids across turns. Unlike 0..N, keeps reversed and repeated tags.
     std::vector<size_t> m_history_audio_sequence;
     std::vector<std::pair<std::size_t, std::size_t>> m_history_vision_count;  // pair<video count, image count>
@@ -395,6 +396,7 @@ public:
 
         const size_t new_image_count = encoded_images.size();
         const auto history_image_sequence_before = m_history_image_sequence.size();
+        const auto history_video_sequence_before = m_history_video_sequence.size();
         const auto history_audio_sequence_before = m_history_audio_sequence.size();
         if (m_is_chat_conversation) {
             m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
@@ -415,8 +417,9 @@ public:
 
                 m_encoded_videos.reserve(m_encoded_videos.size() + encoded_videos.size());
                 m_encoded_videos.insert(m_encoded_videos.end(), encoded_videos.begin(), encoded_videos.end());
-                video_sequence.resize(m_encoded_videos.size());
-                std::iota(video_sequence.begin(), video_sequence.end(), 0);
+                m_history_video_sequence.insert(m_history_video_sequence.end(),
+                                                video_sequence.begin(), video_sequence.end());
+                video_sequence = m_history_video_sequence;
                 encoded_videos = m_encoded_videos;
 
                 m_encoded_audios.reserve(m_encoded_audios.size() + encoded_audios.size());
@@ -497,6 +500,7 @@ public:
 
                     OPENVINO_ASSERT(videos.size() <= m_encoded_videos.size(), "Number of videos to remove is more than stored videos!");
                     m_encoded_videos.resize(m_encoded_videos.size() - videos.size());
+                    m_history_video_sequence.resize(history_video_sequence_before);
 
                     OPENVINO_ASSERT(audios.size() <= m_encoded_audios.size(), "Number of audios to remove is more than stored audios!");
                     m_encoded_audios.resize(m_encoded_audios.size() - audios.size());
@@ -515,6 +519,7 @@ public:
             m_encoded_videos.clear();
             m_encoded_audios.clear();
             m_history_image_sequence.clear();
+            m_history_video_sequence.clear();
             m_history_audio_sequence.clear();
             m_history_vision_count.clear();
         }
@@ -619,7 +624,22 @@ public:
         const auto embeddings_start_time = std::chrono::steady_clock::now();
         VLMChatContext chat_context(history, m_vision_registry, *m_inputs_embedder);
 
-        auto processed_chat_data = chat_context.process(images, videos, videos_metadata, audios);
+        std::vector<ov::Tensor> single_images;
+        single_images.reserve(images.size());
+        for (const auto& image : images) {
+            const auto& shape = image.get_shape();
+            if (shape.size() == 4) {
+                OPENVINO_ASSERT(shape[0] > 0, "Image batches must contain at least one image.");
+                for (size_t batch_idx = 0; batch_idx < shape[0]; ++batch_idx) {
+                    single_images.emplace_back(image,
+                                               ov::Coordinate{batch_idx, 0, 0, 0},
+                                               ov::Coordinate{batch_idx + 1, shape[1], shape[2], shape[3]});
+                }
+            } else {
+                single_images.push_back(image);
+            }
+        }
+        auto processed_chat_data = chat_context.process(single_images, videos, videos_metadata, audios);
 
         perf_metrics.vlm_raw_metrics.vision_encoding_durations.emplace_back(processed_chat_data.vision_encoding_duration);
         auto& audio_durations = perf_metrics.vlm_raw_metrics.audio_encoding_durations;
@@ -784,6 +804,7 @@ public:
         m_encoded_videos.clear();
         m_encoded_audios.clear();
         m_history_image_sequence.clear();
+        m_history_video_sequence.clear();
         m_history_audio_sequence.clear();
         m_history_vision_count.clear();
     }

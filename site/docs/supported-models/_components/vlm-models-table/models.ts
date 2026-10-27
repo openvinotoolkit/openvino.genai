@@ -32,7 +32,6 @@ export const VLM_MODELS: VLMModelType[] = [
       },
     ],
   },
-
   {
     architecture: 'LFM3VL',
     models: [
