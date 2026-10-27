@@ -1,6 +1,7 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import enum
+import platform
 import sys
 import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
 
@@ -10,6 +11,7 @@ patch_pyav_for_servercore.install_av_stub_module_for_windows()
 import openvino_genai as ov_genai
 import functools
 import pytest
+import openvino
 import datasets
 from transformers import AutoProcessor, AutoTokenizer
 from transformers.pipelines.automatic_speech_recognition import AutomaticSpeechRecognitionPipeline
@@ -21,7 +23,7 @@ import numpy as np
 import pathlib
 import importlib.metadata as metadata
 from packaging.version import parse
-from utils.constants import get_ov_cache_converted_models_dir, extra_generate_kwargs
+from utils.constants import get_ov_cache_converted_models_dir, extra_generate_kwargs, get_default_llm_properties
 
 from utils.network import retry_request
 from utils.atomic_download import AtomicDownloadManager
@@ -48,6 +50,7 @@ from utils.asr_utils.sensevoice import (
 class PipelineType(enum.Enum):
     WHISPER = "whisper"
     ASR = "asr"
+    CONTINUOUS_BATCHING = "continuous_batching"
 
 
 def get_pipeline_cls(pipeline_type: PipelineType):
@@ -182,13 +185,20 @@ def read_asr_model(params, word_timestamps=False, pipeline_type=PipelineType.WHI
     properties = {}
     if word_timestamps:
         properties["word_timestamps"] = True
-    pipeline_cls = get_pipeline_cls(pipeline_type)
+    if pipeline_type == PipelineType.CONTINUOUS_BATCHING:
+        assert (path / "openvino_audio_encoder_model.xml").is_file(), "Continuous batching requires a split ASR export"
+        genai_pipe = ov_genai.ContinuousBatchingPipeline(
+            path, ov_genai.SchedulerConfig(), "CPU", get_default_llm_properties()
+        )
+    else:
+        pipeline_cls = get_pipeline_cls(pipeline_type)
+        genai_pipe = pipeline_cls(path, "CPU", **properties, ENABLE_MMAP=False)
 
     return (
         model_id,
         path,
         hf_pipe,
-        pipeline_cls(path, "CPU", **properties, ENABLE_MMAP=False),
+        genai_pipe,
     )
 
 
@@ -385,14 +395,61 @@ def get_model_pipeline_pair_params(model_pipeline_pairs=MODEL_PIPELINE_PAIRS):
     ]
 
 
+def make_deterministic_audio(num_samples: int) -> np.ndarray:
+    return (0.1 * np.random.default_rng(num_samples).standard_normal(num_samples)).astype(np.float32)
+
+
 @pytest.fixture
 def pipelines_fixture(request):
     model_id, pipeline_type = request.param[:2]
     options = request.param[2] if len(request.param) > 2 else {}
     model_name = model_id.split("/")[-1]
+    if request.node.get_closest_marker("qwen3_asr_split_export"):
+        # Keep split and legacy exports in separate converted-model caches.
+        model_name += "-split"
     model_path = get_ov_cache_converted_models_dir() / model_name
     model_id, _, hf_pipe, genai_pipe = read_asr_model((model_id, model_path), pipeline_type=pipeline_type, **options)
     return hf_pipe, genai_pipe, model_id, pipeline_type
+
+
+@pytest.mark.qwen3_asr_split_export
+@pytest.mark.skipif(
+    sys.platform == "darwin" and platform.machine() == "arm64",
+    reason="PagedAttention requires SVE on ARM and is unavailable on macOS arm64.",
+)
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params([(QWEN3_ASR_MODEL_ID, PipelineType.CONTINUOUS_BATCHING)]),
+    indirect=True,
+)
+@pytest.mark.parametrize(
+    "audios",
+    [
+        # 137 and 261 mel frames (hop length 160) end with partial chunks.
+        pytest.param([make_deterministic_audio(num_samples) for num_samples in (21920, 41760)], id="short-first"),
+        pytest.param([make_deterministic_audio(num_samples) for num_samples in (41760, 21920)], id="long-first"),
+    ],
+)
+def test_qwen3_asr_cb_add_request_matches_optimum(pipelines_fixture, audios):
+    optimum_pipe, pipe, _, _ = pipelines_fixture
+    config = ov_genai.GenerationConfig(max_new_tokens=16, do_sample=False)
+    expected_ids = [
+        optimum_pipe.generate_ids(audio, max_new_tokens=16, do_sample=False)[0].tolist() for audio in audios
+    ]
+    handles = [
+        pipe.add_request(request_id, "", [], [], [openvino.Tensor(audio)], config)
+        for request_id, audio in enumerate(audios)
+    ]
+
+    while pipe.has_non_finished_requests():
+        pipe.step()
+
+    for handle, expected in zip(handles, expected_ids, strict=True):
+        results = handle.read_all()
+        assert len(results) == 1
+        assert expected
+        assert results[0].generated_ids == expected
+    assert not pipe.has_non_finished_requests()
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
