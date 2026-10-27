@@ -42,6 +42,10 @@ struct Logits {
     // NaN (default) means logprobs were not requested; sampler uses the post-filter logprob.
     float m_full_vocab_log_sum_exp = std::numeric_limits<float>::quiet_NaN();
 
+    // Set by the softmax of TemperatureLogitTransform: the largest probability, 1 / Σ exp. TopPFilter starts its
+    // threshold from it; NaN (default) means it is not known.
+    float m_max_probability = std::numeric_limits<float>::quiet_NaN();
+
     Logits(float* data, size_t size): m_data(data), m_size(size) {}
 
 
@@ -61,6 +65,13 @@ struct Logits {
         m_vector.resize(new_size);
     }
 };
+
+// exp(x) for x <= 0, flushed to zero below -64. Smaller terms cannot change a float sum that includes the top term
+// (1.0), the normalised result stays a normal float for any vocabulary, and expf is very slow when its result is
+// denormal.
+inline float exp_flush_tail(float x) {
+    return x < -64.0f ? 0.0f : expf(x);
+}
 
 namespace LogitTransformers {
 
@@ -87,55 +98,85 @@ public:
 };
 
 
+// The nucleus is the shortest prefix of the tokens sorted by descending probability whose mass exceeds top_p, or every
+// token if no prefix does. The tokens with p >= threshold form a prefix of the same order, so once their mass exceeds
+// top_p they contain the nucleus and only they need sorting. The threshold starts 10 nats below the most likely token
+// and is lowered until that holds, so no pass builds or sorts the whole vocabulary.
 class TopPFilter : public ILogitTransformer {
 public:
     TopPFilter(double top_p) : m_top_p(top_p) {}
 
-    bool partial_sort_and_resize(Logits& logits) {
-        // Since most of the time huge part of logits vector contains minimal values
-        // expensive sorting of entire vector might be unnecessary, especially for low values of top_p.
-        // This method partially sorts vector finding M top elements and stops when top_p condition is met.
-        // It iterates a few times starting with M = 16 and multiplying it by 2 each iteration until M = 1024.
-        // If top_p is found in considered scope it resizes logits vector and returns true. Otherwise it returns false.
-        // Note that it can we less performant than standard approach if logits value are more evenly distributed across the vector.
-        for (size_t step = 16; step <= 1024; step *= 2) {
-            if (logits.m_vector.size() <= step)
-                break;
-            std::partial_sort(logits.m_vector.begin(), logits.m_vector.begin() + step, logits.m_vector.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
-            float sum = 0.0;
-            for (int i = 0; i < step; i++) {
-                sum += logits.m_vector[i].m_log_prob;
-                if (sum > m_top_p) {
-                    logits.resize(i+1);
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    void full_sort_and_resize(Logits& logits) {
-        std::sort(logits.m_vector.begin(), logits.m_vector.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
-        float probability_sum = 0.0f;
-        size_t nucleus_size = 0;
-        for (const auto& logit : logits.m_vector) {
-            probability_sum += logit.m_log_prob;
-            nucleus_size += 1;
-            if (probability_sum > m_top_p) break;
-        }
-        logits.resize(nucleus_size);
-    }
-
     void apply(Logits& logits) override {
-        if (!logits.is_vector_initialized()) {
-            // Fast path (logprobs == 0): Temperature ran directly on m_data; copy probs to m_vector now.
-            logits.initialize_vector();
-        }
-        // m_vector holds normalised probabilities (from Temperature via m_vector or m_data path).
+        // Probabilities are normalised (Temperature has run): in m_data on the fast path, otherwise in m_vector (after
+        // top_k or min_p, or the full-vocabulary copy when logprobs are requested).
         // Note: TopPFilter truncates but does NOT renormalize — the retained probabilities sum to at most top_p < 1.
         // _multinomial_sample accounts for this by scaling the random draw by total_weight (not assuming sum == 1).
-        if (!partial_sort_and_resize(logits))
-            full_sort_and_resize(logits);
+        const size_t size = logits.m_size;
+        const bool from_data = !logits.is_vector_initialized();
+        // Only the number of rounds depends on the max, so any value gives the nucleus, even NaN, which fails every
+        // threshold until the last round.
+        float max_probability = logits.m_max_probability;
+        if (std::isnan(max_probability)) {
+            const auto by_probability = [](const Token& lhs, const Token& rhs) {
+                return lhs.m_log_prob < rhs.m_log_prob;
+            };
+            max_probability = from_data
+                ? *std::max_element(logits.m_data, logits.m_data + size)
+                : std::max_element(logits.m_vector.begin(), logits.m_vector.end(), by_probability)->m_log_prob;
+        }
+
+        // Copies of the tokens above the threshold; m_vector stays intact for the next round.
+        std::vector<Token> selected;
+        for (float nats = 10.0f;; nats *= 2.0f) {
+            // The last round takes every token with a probability (NaN fails every comparison).
+            const bool last_round = nats > 40.0f;
+            const float threshold = last_round ? 0.0f : max_probability * std::exp(-nats);
+            selected.clear();
+            if (from_data) {
+                for (size_t i = 0; i < size; ++i)
+                    if (logits.m_data[i] >= threshold)
+                        selected.emplace_back(logits.m_data[i], static_cast<int64_t>(i));
+            } else {
+                for (size_t i = 0; i < size; ++i)
+                    if (logits.m_vector[i].m_log_prob >= threshold)
+                        selected.push_back(logits.m_vector[i]);
+            }
+            // Ties are ordered by index, so the nucleus and the sampled token do not depend on the sort implementation.
+            std::sort(selected.begin(), selected.end(), [](const Token& lhs, const Token& rhs) {
+                return lhs.m_log_prob > rhs.m_log_prob ||
+                       (lhs.m_log_prob == rhs.m_log_prob && lhs.m_index < rhs.m_index);
+            });
+            float sum = 0.0f;
+            for (size_t i = 0; i < selected.size(); ++i) {
+                sum += selected[i].m_log_prob;
+                if (sum > m_top_p) {
+                    selected.resize(i + 1);
+                    keep(logits, selected);
+                    return;
+                }
+            }
+            if (last_round || selected.size() == size)
+                break;
+        }
+        // No prefix exceeds top_p: keep every token, the ones without a probability last.
+        for (size_t i = 0; i < size; ++i) {
+            if (from_data && !(logits.m_data[i] >= 0.0f))
+                selected.emplace_back(logits.m_data[i], static_cast<int64_t>(i));
+            else if (!from_data && !(logits.m_vector[i].m_log_prob >= 0.0f))
+                selected.push_back(logits.m_vector[i]);
+        }
+        keep(logits, selected);
+    }
+
+private:
+    static void keep(Logits& logits, std::vector<Token>& selected) {
+        if (logits.is_vector_initialized()) {
+            std::copy(selected.begin(), selected.end(), logits.m_vector.begin());
+            logits.resize(selected.size());
+        } else {
+            logits.m_vector = std::move(selected);
+            logits.m_size = logits.m_vector.size();
+        }
     }
 
 protected:
@@ -156,8 +197,25 @@ public:
 
     void apply(Logits& logits) override {
         if (!logits.is_vector_initialized()) {
-            // Fast path (logprobs == 0): Temperature ran directly on m_data; copy probs to m_vector now.
-            logits.initialize_vector();
+            // Fast path (logprobs == 0): Temperature ran directly on m_data; collect only the passing tokens.
+            float max_prob = 0.0f;
+            size_t argmax_idx = 0;
+            for (size_t i = 0; i < logits.m_size; ++i) {
+                if (logits.m_data[i] > max_prob) {
+                    max_prob = logits.m_data[i];
+                    argmax_idx = i;
+                }
+            }
+            const float threshold = static_cast<float>(m_min_p) * max_prob;
+            for (size_t i = 0; i < logits.m_size; ++i) {
+                if (logits.m_data[i] >= threshold)
+                    logits.m_vector.emplace_back(logits.m_data[i], static_cast<int64_t>(i));
+            }
+            // Same NaN fallback as below.
+            if (logits.m_vector.empty())
+                logits.m_vector.emplace_back(logits.m_data[argmax_idx], static_cast<int64_t>(argmax_idx));
+            logits.m_size = logits.m_vector.size();
+            return;
         }
         // m_vector holds normalised probabilities (Temperature has run).
         // Find p_max in a single O(N) pass, tracking the argmax index as a fallback.
@@ -271,7 +329,7 @@ public:
         const float max_logit = *std::max_element(logits.m_data, logits.m_data + logits.m_size);
         float sum = 0.0f;
         for (size_t i = 0; i < logits.m_size; ++i)
-            sum += expf(logits.m_data[i] - max_logit);
+            sum += exp_flush_tail(logits.m_data[i] - max_logit);
         logits.m_full_vocab_log_sum_exp = logf(sum) + max_logit;
     }
 };
@@ -323,40 +381,31 @@ public:
                 for (size_t i = 1; i < logits.m_size; i++)
                     if (logits.m_vector[i].m_log_prob > max_logit)
                         max_logit = logits.m_vector[i].m_log_prob;
+                // 1 / T is exactly 1 at T = 1, so one loop serves both.
+                const float scaling_factor = 1.0f / m_temperature;
                 float norm_sum = 0.0f;
-                if (m_temperature == 1.0f) {
-                    for (size_t i = 0; i < logits.m_size; i++) {
-                        logits.m_vector[i].m_log_prob = expf(logits.m_vector[i].m_log_prob - max_logit);
-                        norm_sum += logits.m_vector[i].m_log_prob;
-                    }
-                } else {
-                    const float scaling_factor = 1.0f / m_temperature;
-                    for (size_t i = 0; i < logits.m_size; i++) {
-                        logits.m_vector[i].m_log_prob = expf((logits.m_vector[i].m_log_prob - max_logit) * scaling_factor);
-                        norm_sum += logits.m_vector[i].m_log_prob;
-                    }
+                for (size_t i = 0; i < logits.m_size; i++) {
+                    logits.m_vector[i].m_log_prob =
+                        exp_flush_tail((logits.m_vector[i].m_log_prob - max_logit) * scaling_factor);
+                    norm_sum += logits.m_vector[i].m_log_prob;
                 }
                 for (size_t i = 0; i < logits.m_size; i++)
                     logits.m_vector[i].m_log_prob /= norm_sum;
+                // The top token's exp is exactly 1.
+                logits.m_max_probability = 1.0f / norm_sum;
             } else {
                 // No effective top_k filtering: expf on all m_data elements directly.
                 float max_logit = *std::max_element(logits.m_data, logits.m_data + logits.m_size);
+                const float scaling_factor = 1.0f / m_temperature;
                 float norm_sum = 0.0f;
-                if (m_temperature == 1.0f) {
-                    for (size_t i = 0; i < logits.m_size; i++) {
-                        logits.m_data[i] = expf(logits.m_data[i] - max_logit);
-                        norm_sum += logits.m_data[i];
-                    }
-                } else {
-                    const float scaling_factor = 1.0f / m_temperature;
-                    for (size_t i = 0; i < logits.m_size; i++) {
-                        logits.m_data[i] = expf((logits.m_data[i] - max_logit) * scaling_factor);
-                        norm_sum += logits.m_data[i];
-                    }
+                for (size_t i = 0; i < logits.m_size; i++) {
+                    logits.m_data[i] = exp_flush_tail((logits.m_data[i] - max_logit) * scaling_factor);
+                    norm_sum += logits.m_data[i];
                 }
                 // Normalization required for TopPFilter correctness (cumulative prob comparison).
                 for (size_t i = 0; i < logits.m_size; i++)
                     logits.m_data[i] /= norm_sum;
+                logits.m_max_probability = 1.0f / norm_sum;
             }
         }
     }
