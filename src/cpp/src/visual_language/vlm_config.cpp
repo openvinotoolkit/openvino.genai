@@ -37,6 +37,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"deepseek_ocr2", VLMModelType::DEEPSEEK_OCR2},
         {"muse_glimmer", VLMModelType::MUSE_GLIMMER},
         {"minicpmv4_7", VLMModelType::MINICPMV4_7},
+        {"lfm2_vl", VLMModelType::LFM2_VL},
     };
 
     auto it = model_types_map.find(value);
@@ -99,6 +100,12 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     // DeepSeek-OCR-2
     read_json_param(parsed, "view_separator", view_separator);
     read_json_param(parsed, "image_token_id", image_token_id);
+
+    // LFM2-VL
+    if (model_type == VLMModelType::LFM2_VL) {
+        read_json_param(parsed, "downsample_factor", downsample_factor);
+        read_json_param(parsed, "vision_config.num_patches", vision_config_num_patches);
+    }
 
     // MiniCPM-V 4.7
     if (model_type == VLMModelType::MINICPMV4_7) {

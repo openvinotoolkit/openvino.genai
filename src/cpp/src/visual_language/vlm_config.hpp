@@ -35,6 +35,7 @@ enum class VLMModelType {
     DEEPSEEK_OCR2,
     MUSE_GLIMMER,
     MINICPMV4_7,
+    LFM2_VL,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to
@@ -182,6 +183,12 @@ public:
     int64_t video_token_id = -1;
     // Speaker name-to-codec-token mapping
     std::map<std::string, int64_t> speaker_ids;
+
+    // LFM2-VL specific config params
+    /// @brief Vision-to-text projector spatial downsample factor (config.json downsample_factor).
+    size_t downsample_factor = 2;
+    /// @brief Number of position-embedding entries in the vision tower (config.json vision_config.num_patches).
+    size_t vision_config_num_patches = 256;
 
     /// @brief Default constructor.
     VLMConfig() = default;
