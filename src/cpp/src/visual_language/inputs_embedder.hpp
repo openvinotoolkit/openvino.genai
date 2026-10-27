@@ -197,7 +197,6 @@ private:
         bool m_add_special_tokens_is_set = false;
         // position ids
         ov::Tensor m_position_ids;
-        size_t m_position_ids_axes = 1;
         int64_t m_rope_delta = 0;
         // Text-only embeddings cached for the speculative (Eagle3) draft path.
         ov::Tensor m_cached_text_embeds;
@@ -267,7 +266,8 @@ private:
             m_position_ids = position_ids;
         }
 
-        void configure_position_ids(const ov::Model& language_model, bool is_paged_attention);
+        // The PA model has its batch dimension removed from position_ids.
+        virtual void configure_position_ids(const ov::Model& language_model, bool is_paged_attention) {}
 
         void set_rope_delta(int64_t rope_delta) {
             m_rope_delta = rope_delta;

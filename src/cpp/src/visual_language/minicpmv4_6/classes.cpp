@@ -305,6 +305,20 @@ InputsEmbedderMiniCPMV4_6::InputsEmbedderMiniCPMV4_6(
     static_cast<VisionEncoderMiniCPMV4_6&>(*m_vision_encoder).update_vision_config(m_vlm_config);
 }
 
+void InputsEmbedderMiniCPMV4_6::configure_position_ids(const ov::Model& language_model, bool is_paged_attention) {
+    const auto& shape = language_model.input("position_ids").get_partial_shape();
+    const int64_t sequential_rank = is_paged_attention ? 1 : 2;
+    OPENVINO_ASSERT(shape.rank() == sequential_rank || shape.rank() == sequential_rank + 1,
+                    "Unexpected MiniCPM language position_ids shape: ", shape);
+    if (shape.rank() == sequential_rank) {
+        m_position_ids_axes = 1;
+    } else {
+        OPENVINO_ASSERT(shape[0].is_static() && shape[0].get_length() > 1,
+                        "MiniCPM multi-axis position_ids require a static axis count greater than one, got ", shape);
+        m_position_ids_axes = static_cast<size_t>(shape[0].get_length());
+    }
+}
+
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderMiniCPMV4_6::get_position_ids(
     const size_t inputs_embeds_size,
     const size_t history_size

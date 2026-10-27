@@ -69,6 +69,8 @@ public:
         const size_t history_size
     ) override;
 
+    void configure_position_ids(const ov::Model& language_model, bool is_paged_attention) override;
+
     NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
@@ -81,6 +83,7 @@ private:
 
     std::once_flag m_vision_token_ids_once_flag;
     int64_t m_image_token_id = -1;
+    size_t m_position_ids_axes = 1;
 };
 
 } // namespace ov::genai
