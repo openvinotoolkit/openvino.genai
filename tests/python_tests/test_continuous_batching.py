@@ -208,16 +208,20 @@ def test_logprob_token_ids_shape_and_echo(model_facebook_opt_125m: OVConvertedMo
 
     cb_pipe = create_ov_cb_pipeline(model_path, pipeline_type=PipelineType.CONTINUOUS_BATCHING)
     h_standalone = cb_pipe.add_request(
-        0, "The Sun is",
+        0,
+        "The Sun is",
         generation_config=GenerationConfig(max_new_tokens=4, logprob_token_ids=[id_a, id_b]),
     )
     h_topk = cb_pipe.add_request(
-        1, "The Sun is",
-        generation_config=GenerationConfig(max_new_tokens=2, do_sample=True, temperature=1.0, top_k=2,
-                                           logprob_token_ids=[id_a, id_b]),
+        1,
+        "The Sun is",
+        generation_config=GenerationConfig(
+            max_new_tokens=2, do_sample=True, temperature=1.0, top_k=2, logprob_token_ids=[id_a, id_b]
+        ),
     )
     h_echo = cb_pipe.add_request(
-        2, "The Sun is",
+        2,
+        "The Sun is",
         generation_config=GenerationConfig(max_new_tokens=2, echo=True, logprob_token_ids=[id_a, id_b]),
     )
     while cb_pipe.has_non_finished_requests():
@@ -259,7 +263,8 @@ def test_logprob_token_ids_shape_and_echo(model_facebook_opt_125m: OVConvertedMo
     # re-encodes to a different token sequence that the window never reproduces. The token is taken
     # from position >= 1 so the match cannot fire on the first step (which would empty the output).
     h_nostop = cb_pipe.add_request(
-        3, "The Sun is",
+        3,
+        "The Sun is",
         generation_config=GenerationConfig(max_new_tokens=8, logprob_token_ids=[id_a, id_b]),
     )
     while cb_pipe.has_non_finished_requests():
@@ -269,9 +274,14 @@ def test_logprob_token_ids_shape_and_echo(model_facebook_opt_125m: OVConvertedMo
     stop_token = next(t for t in out_nostop.generated_ids[1:] if hf_tokenizer.decode([t]).strip())
     stop_string = hf_tokenizer.decode([stop_token])
     h_stop = cb_pipe.add_request(
-        4, "The Sun is",
-        generation_config=GenerationConfig(max_new_tokens=8, stop_strings={stop_string},
-                                           include_stop_str_in_output=False, logprob_token_ids=[id_a, id_b]),
+        4,
+        "The Sun is",
+        generation_config=GenerationConfig(
+            max_new_tokens=8,
+            stop_strings={stop_string},
+            include_stop_str_in_output=False,
+            logprob_token_ids=[id_a, id_b],
+        ),
     )
     while cb_pipe.has_non_finished_requests():
         cb_pipe.step()
@@ -285,11 +295,13 @@ def test_logprob_token_ids_shape_and_echo(model_facebook_opt_125m: OVConvertedMo
     # requested_token_logprobs (and generated_ids) returned by read_all(). Two handles run in the
     # same batch (greedy is deterministic), so their token streams are identical.
     h_stream = cb_pipe.add_request(
-        5, "The Sun is",
+        5,
+        "The Sun is",
         generation_config=GenerationConfig(max_new_tokens=4, logprob_token_ids=[id_a, id_b]),
     )
     h_ref = cb_pipe.add_request(
-        6, "The Sun is",
+        6,
+        "The Sun is",
         generation_config=GenerationConfig(max_new_tokens=4, logprob_token_ids=[id_a, id_b]),
     )
     streamed_ids = []
@@ -334,7 +346,8 @@ def test_logprob_token_ids_match_reference(model_facebook_opt_125m: OVConvertedM
 
     # Greedy: every requested score at every generated position equals the raw full-vocab log-softmax.
     h_greedy = cb_pipe.add_request(
-        0, prompt,
+        0,
+        prompt,
         generation_config=GenerationConfig(max_new_tokens=4, logprob_token_ids=[id_a, id_b]),
     )
     while cb_pipe.has_non_finished_requests():
@@ -348,24 +361,32 @@ def test_logprob_token_ids_match_reference(model_facebook_opt_125m: OVConvertedM
     id_out = ref_pos0.topk(3).indices[2].item()
     assert id_out not in (id_a, id_b)
     h_topk_full = cb_pipe.add_request(
-        1, prompt,
-        generation_config=GenerationConfig(max_new_tokens=4, do_sample=True, temperature=1.0, top_k=2,
-                                           logprob_token_ids=[id_a, id_b, id_out]),
+        1,
+        prompt,
+        generation_config=GenerationConfig(
+            max_new_tokens=4, do_sample=True, temperature=1.0, top_k=2, logprob_token_ids=[id_a, id_b, id_out]
+        ),
     )
     while cb_pipe.has_non_finished_requests():
         cb_pipe.step()
     out_topk_full = h_topk_full.read_all()[0]
     # Position-0 logits depend only on the prompt, so id_out is verifiably outside top-2 there.
-    top2 = _raw_full_vocab_log_softmax(opt_model, prompt_ids + list(out_topk_full.generated_ids))[prefix - 1].topk(2).indices
+    top2 = (
+        _raw_full_vocab_log_softmax(opt_model, prompt_ids + list(out_topk_full.generated_ids))[prefix - 1]
+        .topk(2)
+        .indices
+    )
     assert id_out not in set(top2.tolist())
     compare_requested(out_topk_full.requested_token_logprobs, prompt_ids + list(out_topk_full.generated_ids))
 
     # Multinomial with non-unit temperature: requested logprobs are raw, pre-sampling values, so they
     # match the same reference along the sampled sequence at every position.
     h_temp = cb_pipe.add_request(
-        2, prompt,
-        generation_config=GenerationConfig(max_new_tokens=4, do_sample=True, temperature=0.7,
-                                           logprob_token_ids=[id_a, id_b]),
+        2,
+        prompt,
+        generation_config=GenerationConfig(
+            max_new_tokens=4, do_sample=True, temperature=0.7, logprob_token_ids=[id_a, id_b]
+        ),
     )
     while cb_pipe.has_non_finished_requests():
         cb_pipe.step()
@@ -376,7 +397,8 @@ def test_logprob_token_ids_match_reference(model_facebook_opt_125m: OVConvertedM
     # top-1 generated_log_probs at the same position (both read the same raw distribution).
     t0 = out_greedy.generated_ids[0]
     h_num = cb_pipe.add_request(
-        3, prompt,
+        3,
+        prompt,
         generation_config=GenerationConfig(max_new_tokens=1, logprobs=1, logprob_token_ids=[t0]),
     )
     while cb_pipe.has_non_finished_requests():
@@ -411,8 +433,12 @@ def test_logprob_token_ids_encoded_results(model_facebook_opt_125m: OVConvertedM
     prompt_ids = model_facebook_opt_125m.hf_tokenizer("The Sun is", add_special_tokens=True)["input_ids"]
     input_ids = ov.Tensor(np.array([prompt_ids], dtype=np.int64))
 
-    stateful = create_ov_pipeline(model_path, pipeline_type=PipelineType.STATEFUL).generate(input_ids, generation_config=cfg)
-    cb = create_ov_pipeline(model_path, pipeline_type=PipelineType.PAGED_ATTENTION).generate(input_ids, generation_config=cfg)
+    stateful = create_ov_pipeline(model_path, pipeline_type=PipelineType.STATEFUL).generate(
+        input_ids, generation_config=cfg
+    )
+    cb = create_ov_pipeline(model_path, pipeline_type=PipelineType.PAGED_ATTENTION).generate(
+        input_ids, generation_config=cfg
+    )
 
     assert stateful.requested_token_logprobs  # sanity: the stateful pipeline already fills this
     assert cb.tokens == stateful.tokens
@@ -429,7 +455,8 @@ def test_logprob_token_ids_encoded_results(model_facebook_opt_125m: OVConvertedM
     # The raw ContinuousBatchingPipeline batch encoded generate() returns EncodedGenerationResult;
     # the field must be exposed there too, with the same per-position contents.
     raw_cb_results = create_ov_cb_pipeline(model_path, pipeline_type=PipelineType.CONTINUOUS_BATCHING).generate(
-        [input_ids], [cfg])
+        [input_ids], [cfg]
+    )
     assert len(raw_cb_results) == 1
     assert raw_cb_results[0].m_generation_ids[0] == stateful.tokens[0]
     for raw_seq, sf_seq in zip(raw_cb_results[0].requested_token_logprobs, stateful.requested_token_logprobs):
@@ -455,8 +482,9 @@ def test_logprob_token_ids_rejected(model_facebook_opt_125m: OVConvertedModelSch
     # Out-of-range ids are rejected at enqueue time, before they can fail in step() and poison the pipeline.
     cb_pipe = create_ov_cb_pipeline(model_path, pipeline_type=PipelineType.CONTINUOUS_BATCHING)
     with pytest.raises(Exception, match="out of vocabulary range"):
-        cb_pipe.add_request(0, "The Sun is",
-                            generation_config=GenerationConfig(max_new_tokens=1, logprob_token_ids=[10**9]))
+        cb_pipe.add_request(
+            0, "The Sun is", generation_config=GenerationConfig(max_new_tokens=1, logprob_token_ids=[10**9])
+        )
 
     # A failed batch must not leave partially enqueued requests behind: in generate([p0, p1]) the
     # first (valid) request is enqueued before the second (out-of-range) config is rejected, so
@@ -464,9 +492,10 @@ def test_logprob_token_ids_rejected(model_facebook_opt_125m: OVConvertedModelSch
     prompt_ids = model_facebook_opt_125m.hf_tokenizer("The Sun is", add_special_tokens=True)["input_ids"]
     prompt_tensor = ov.Tensor(np.array([prompt_ids], dtype=np.int64))
     with pytest.raises(Exception, match="out of vocabulary range"):
-        cb_pipe.generate([prompt_tensor, prompt_tensor],
-                         [GenerationConfig(max_new_tokens=1),
-                          GenerationConfig(max_new_tokens=1, logprob_token_ids=[10**9])])
+        cb_pipe.generate(
+            [prompt_tensor, prompt_tensor],
+            [GenerationConfig(max_new_tokens=1), GenerationConfig(max_new_tokens=1, logprob_token_ids=[10**9])],
+        )
     follow_up = cb_pipe.generate([prompt_tensor], [GenerationConfig(max_new_tokens=1)])
     assert follow_up and follow_up[0].m_generation_ids
 
@@ -475,15 +504,17 @@ def test_logprob_token_ids_rejected(model_facebook_opt_125m: OVConvertedModelSch
     # reading the logits buffer out of bounds.
     stateful_pipe = create_ov_pipeline(model_path, pipeline_type=PipelineType.STATEFUL)
     with pytest.raises(Exception, match="out of vocabulary range"):
-        stateful_pipe.generate("The Sun is",
-                               generation_config=GenerationConfig(max_new_tokens=2, logprob_token_ids=[10**9]))
+        stateful_pipe.generate(
+            "The Sun is", generation_config=GenerationConfig(max_new_tokens=2, logprob_token_ids=[10**9])
+        )
 
     # A rejected request must not leave stale sampler state behind: a follow-up request on the
     # same stateful pipeline (multinomial sampling, fixed seed) must produce exactly what a fresh
     # pipeline produces. A stale greedy LogitProcessor from the rejected request would skip the
     # temperature transform and diverge.
-    follow_up_cfg = GenerationConfig(max_new_tokens=8, do_sample=True, temperature=1.7,
-                                     rng_seed=42, logprob_token_ids=[id_a, id_b])
+    follow_up_cfg = GenerationConfig(
+        max_new_tokens=8, do_sample=True, temperature=1.7, rng_seed=42, logprob_token_ids=[id_a, id_b]
+    )
     prompt_ids = stateful_pipe.get_tokenizer().encode("The Sun is", add_special_tokens=True).input_ids.data[0].tolist()
     input_ids = ov.Tensor(np.array([prompt_ids], dtype=np.int64))
     follow_up = stateful_pipe.generate(input_ids, generation_config=follow_up_cfg)
@@ -499,14 +530,16 @@ def test_logprob_token_ids_rejected(model_facebook_opt_125m: OVConvertedModelSch
         model_path, SchedulerConfig(), "CPU", properties={"draft_model": draft_model(model_path)}
     )
     with pytest.raises(Exception, match="not supported with speculative decoding"):
-        sd_pipe.add_request(1, "The Sun is",
-                            generation_config=GenerationConfig(max_new_tokens=1, logprob_token_ids=[id_a, id_b]))
+        sd_pipe.add_request(
+            1, "The Sun is", generation_config=GenerationConfig(max_new_tokens=1, logprob_token_ids=[id_a, id_b])
+        )
 
     # The rejection happened before the request was enqueued: nothing is in flight, and a follow-up
     # request still completes normally, proving the pipeline was not poisoned by the rejected request.
     assert not sd_pipe.has_non_finished_requests()
-    follow_up = sd_pipe.add_request(2, "The Sun is",
-                                    generation_config=GenerationConfig(max_new_tokens=2, num_assistant_tokens=5))
+    follow_up = sd_pipe.add_request(
+        2, "The Sun is", generation_config=GenerationConfig(max_new_tokens=2, num_assistant_tokens=5)
+    )
     while sd_pipe.has_non_finished_requests():
         sd_pipe.step()
     follow_up_outputs = follow_up.read_all()
@@ -517,14 +550,15 @@ def test_logprob_token_ids_rejected(model_facebook_opt_125m: OVConvertedModelSch
     # different path than speculative decoding: PromptLookupImpl::add_request requires a
     # prompt-lookup config (is_prompt_lookup()), and the base add_request's validate() then
     # rejects logprob_token_ids combined with the assisting-generation fields it carries.
-    pl_pipe = ContinuousBatchingPipeline(
-        model_path, SchedulerConfig(), "CPU", properties={"prompt_lookup": True}
-    )
+    pl_pipe = ContinuousBatchingPipeline(model_path, SchedulerConfig(), "CPU", properties={"prompt_lookup": True})
     with pytest.raises(Exception, match="logprob_token_ids"):
-        pl_pipe.add_request(3, "The Sun is",
-                            generation_config=GenerationConfig(
-                                max_new_tokens=1, num_assistant_tokens=5, max_ngram_size=3,
-                                logprob_token_ids=[id_a, id_b]))
+        pl_pipe.add_request(
+            3,
+            "The Sun is",
+            generation_config=GenerationConfig(
+                max_new_tokens=1, num_assistant_tokens=5, max_ngram_size=3, logprob_token_ids=[id_a, id_b]
+            ),
+        )
     assert not pl_pipe.has_non_finished_requests()
 
 
