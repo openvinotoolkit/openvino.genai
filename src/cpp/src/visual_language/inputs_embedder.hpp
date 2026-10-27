@@ -96,8 +96,6 @@ public:
 
     void set_position_ids(const ov::Tensor& position_ids);
 
-    void configure_position_ids(const ov::Model& language_model, bool is_paged_attention);
-
     void set_rope_delta(int64_t rope_delta);
 
     std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta);
@@ -265,9 +263,6 @@ private:
         void set_position_ids(const ov::Tensor& position_ids) {
             m_position_ids = position_ids;
         }
-
-        // The PA model has its batch dimension removed from position_ids.
-        virtual void configure_position_ids(const ov::Model& language_model, bool is_paged_attention) {}
 
         void set_rope_delta(int64_t rope_delta) {
             m_rope_delta = rope_delta;

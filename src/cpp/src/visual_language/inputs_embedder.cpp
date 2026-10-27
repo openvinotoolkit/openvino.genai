@@ -342,7 +342,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
         m_impl = std::make_shared<InputsEmbedderMiniCPM>(vlm_config, model_dir, tokenizer, device, device_config);
-    } else if (vlm_config.model_type == VLMModelType::MINICPMV4_6) {
+    } else if (vlm_config.model_type == VLMModelType::MINICPMV4_6 ||
+               vlm_config.model_type == VLMModelType::MINICPM_OCR) {
         m_impl = std::make_shared<InputsEmbedderMiniCPMV4_6>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA) {
         m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, model_dir, tokenizer, device, device_config);
@@ -398,7 +399,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
         m_impl = std::make_shared<InputsEmbedderMiniCPM>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
-    } else if (vlm_config.model_type == VLMModelType::MINICPMV4_6) {
+    } else if (vlm_config.model_type == VLMModelType::MINICPMV4_6 ||
+               vlm_config.model_type == VLMModelType::MINICPM_OCR) {
         m_impl = std::make_shared<InputsEmbedderMiniCPMV4_6>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA) {
         m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
@@ -523,10 +525,6 @@ ov::Tensor InputsEmbedder::encode_prompt(const std::string& original_prompt) {
 
 void InputsEmbedder::set_position_ids(const ov::Tensor& position_ids) {
     m_impl->set_position_ids(position_ids);
-}
-
-void InputsEmbedder::configure_position_ids(const ov::Model& language_model, bool is_paged_attention) {
-    m_impl->configure_position_ids(language_model, is_paged_attention);
 }
 
 void InputsEmbedder::set_rope_delta(int64_t rope_delta) {

@@ -197,40 +197,23 @@ TEST_P(MiniCPMVisionPositionIdsTest, MatchesExportedInputRank) {
         ov::op::v0::Constant::create(ov::element::i64, ov::Shape{}, {2}));
     models.emplace("text_embeddings", serialize_model(
         std::make_shared<ov::Model>(ov::OutputVector{embeddings}, ov::ParameterVector{input_ids})));
-    vision_config.model_type = ov::genai::VLMModelType::MINICPMV4_6;
+    vision_config.model_type = batched_positions ? ov::genai::VLMModelType::MINICPMV4_6
+                                                : ov::genai::VLMModelType::MINICPM_OCR;
     ov::genai::InputsEmbedderMiniCPMV4_6 embedder(
         vision_config, models, ov::genai::Tokenizer{}, config_dir, "CPU", {});
-    const ov::PartialShape language_position_shape = batched_positions
-        ? ov::PartialShape{-1, -1} : ov::PartialShape{3, -1, -1};
-    auto language_positions = std::make_shared<ov::op::v0::Parameter>(
-        ov::element::i64, language_position_shape);
-    language_positions->output(0).set_names({"position_ids"});
-    ov::Model language_model(ov::OutputVector{language_positions}, ov::ParameterVector{language_positions});
-    for (const bool is_paged_attention : {false, true}) {
-        const ov::PartialShape input_shape = is_paged_attention
-            ? (batched_positions ? ov::PartialShape{-1} : ov::PartialShape{3, -1})
-            : language_position_shape;
-        language_positions->set_partial_shape(input_shape);
-        language_model.validate_nodes_and_infer_types();
-        embedder.configure_position_ids(language_model, is_paged_attention);
-        for (const size_t history_size : {size_t{0}, size_t{7}}) {
-            const auto [position_ids, rope_delta] = embedder.get_position_ids(4, history_size);
-            EXPECT_EQ(position_ids.get_shape(), batched_positions ? (ov::Shape{1, 4}) : (ov::Shape{3, 1, 4}));
-            EXPECT_EQ(rope_delta, batched_positions ? std::nullopt : std::optional<int64_t>{0});
-            for (size_t idx = 0; idx < position_ids.get_size(); ++idx) {
-                EXPECT_EQ(position_ids.data<int64_t>()[idx], static_cast<int64_t>(history_size + idx % 4));
-            }
+    for (const size_t history_size : {size_t{0}, size_t{7}}) {
+        const auto [position_ids, rope_delta] = embedder.get_position_ids(4, history_size);
+        EXPECT_EQ(position_ids.get_shape(), batched_positions ? (ov::Shape{1, 4}) : (ov::Shape{3, 1, 4}));
+        EXPECT_EQ(rope_delta, batched_positions ? std::nullopt : std::optional<int64_t>{0});
+        for (size_t idx = 0; idx < position_ids.get_size(); ++idx) {
+            EXPECT_EQ(position_ids.data<int64_t>()[idx], static_cast<int64_t>(history_size + idx % 4));
         }
-        const auto [decode_positions, decode_delta] = embedder.get_generation_phase_position_ids(1, 11, 0);
-        EXPECT_EQ(decode_positions.get_shape(), batched_positions ? (ov::Shape{1, 1}) : (ov::Shape{3, 1, 1}));
-        EXPECT_EQ(decode_delta, batched_positions ? std::nullopt : std::optional<int64_t>{0});
-        for (size_t idx = 0; idx < decode_positions.get_size(); ++idx) {
-            EXPECT_EQ(decode_positions.data<int64_t>()[idx], 11);
-        }
-
-        language_positions->set_partial_shape(ov::PartialShape{});
-        language_model.validate_nodes_and_infer_types();
-        EXPECT_THROW(embedder.configure_position_ids(language_model, is_paged_attention), ov::Exception);
+    }
+    const auto [decode_positions, decode_delta] = embedder.get_generation_phase_position_ids(1, 11, 0);
+    EXPECT_EQ(decode_positions.get_shape(), batched_positions ? (ov::Shape{1, 1}) : (ov::Shape{3, 1, 1}));
+    EXPECT_EQ(decode_delta, batched_positions ? std::nullopt : std::optional<int64_t>{0});
+    for (size_t idx = 0; idx < decode_positions.get_size(); ++idx) {
+        EXPECT_EQ(decode_positions.data<int64_t>()[idx], 11);
     }
 }
 

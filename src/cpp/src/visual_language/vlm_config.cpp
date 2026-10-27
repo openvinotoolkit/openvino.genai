@@ -16,7 +16,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"minicpmv", VLMModelType::MINICPM},
         {"minicpmo", VLMModelType::MINICPM},
         {"minicpmv4_6", VLMModelType::MINICPMV4_6},
-        {"minicpm_ocr", VLMModelType::MINICPMV4_6},
+        {"minicpm_ocr", VLMModelType::MINICPM_OCR},
         {"llava", VLMModelType::LLAVA},
         {"llava-qwen2", VLMModelType::NANOLLAVA},
         {"llava_next", VLMModelType::LLAVA_NEXT},
@@ -103,7 +103,8 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     read_json_param(parsed, "image_token_id", image_token_id);
 
     // MiniCPM-V 4.6 / OCR / 4.7
-    if (model_type == VLMModelType::MINICPMV4_6 || model_type == VLMModelType::MINICPMV4_7) {
+    if (model_type == VLMModelType::MINICPMV4_6 || model_type == VLMModelType::MINICPM_OCR ||
+        model_type == VLMModelType::MINICPMV4_7) {
         read_json_param(parsed, "vision_config.image_size", vision_config_image_size);
         std::vector<size_t> window_kernel_size_vec;
         read_json_param(parsed, "vision_config.window_kernel_size", window_kernel_size_vec);
