@@ -265,9 +265,8 @@ ImageSize smart_resize(size_t height, size_t width, size_t factor, size_t min_pi
         OPENVINO_THROW("Absolute aspect ratio must be smaller than 200");
     }
 
-    // Match Python round(), including ties to even at half-factor dimensions.
-    size_t h_bar = std::nearbyint(static_cast<double>(height) / factor) * factor;
-    size_t w_bar = std::nearbyint(static_cast<double>(width) / factor) * factor;
+    size_t h_bar = std::round(static_cast<float>(height) / factor) * factor;
+    size_t w_bar = std::round(static_cast<float>(width) / factor) * factor;
 
     if (h_bar * w_bar > max_pixels) {
         double beta = std::sqrt((height * width) / static_cast<double>(max_pixels));
