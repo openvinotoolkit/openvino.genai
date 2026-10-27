@@ -395,6 +395,10 @@ def get_model_pipeline_pair_params(model_pipeline_pairs=MODEL_PIPELINE_PAIRS):
     ]
 
 
+def make_deterministic_audio(num_samples: int) -> np.ndarray:
+    return (0.1 * np.random.default_rng(num_samples).standard_normal(num_samples)).astype(np.float32)
+
+
 @pytest.fixture
 def pipelines_fixture(request):
     model_id, pipeline_type = request.param[:2]
@@ -421,8 +425,9 @@ def pipelines_fixture(request):
 @pytest.mark.parametrize(
     "audios",
     [
-        pytest.param([np.zeros(seconds * 16000, dtype=np.float32) for seconds in (1, 2)], id="short-first"),
-        pytest.param([np.zeros(seconds * 16000, dtype=np.float32) for seconds in (2, 1)], id="long-first"),
+        # 137 and 261 mel frames (hop length 160) end with partial chunks.
+        pytest.param([make_deterministic_audio(num_samples) for num_samples in (21920, 41760)], id="short-first"),
+        pytest.param([make_deterministic_audio(num_samples) for num_samples in (41760, 21920)], id="long-first"),
     ],
 )
 def test_qwen3_asr_cb_add_request_matches_optimum(pipelines_fixture, audios):
