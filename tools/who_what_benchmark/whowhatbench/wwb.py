@@ -177,7 +177,7 @@ def parse_args():
         "image-embedding - for creation of embedding for a list of texts and images, \n"
         "video-embedding - for creation of embedding for a list of texts and videos, \n"
         "speech-generation - for text to speech generation, \n"
-        "speech-recognition - for speech to text generation, with native ASR models (FunASR) "
+        "speech-recognition - for speech to text generation, with native ASR models (FunASR, Whisper) "
         "or audio-capable multimodal models",
     )
     parser.add_argument(
@@ -453,7 +453,8 @@ def parse_args():
         help="Speech-generation language. For Qwen3 this can be values such as English, Chinese, or Auto. "
         "For Kokoro this can be values such as en-us, en-gb, es, fr-fr, hi, it, pt-br, ja, or zh."
         "For speech-recognition: the language forced during transcription, in the form the model expects. "
-        "FunASR takes a code such as 'en', 'zh' or 'ja' and defaults to 'en'; audio VLMs take a name such as "
+        "FunASR takes a code such as 'en', 'zh' or 'ja' and defaults to 'en'; Whisper takes a code such as 'en' "
+        "and detects the language from the audio when unset; audio VLMs take a name such as "
         "'English' or 'Japanese' and default to 'English'.",
     )
     parser.add_argument(
