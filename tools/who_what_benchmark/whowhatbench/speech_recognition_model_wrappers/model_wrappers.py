@@ -294,9 +294,12 @@ class ASRGenAITranscriber:
     @staticmethod
     def create(model_id, device="CPU", ov_config=None, language="", **kwargs):
         model_type = _get_asr_model_type(model_id)
-        if model_type in FUNASR_MODEL_TYPES | WHISPER_MODEL_TYPES:
+        if model_type in FUNASR_MODEL_TYPES:
             logger.info("Using OpenVINO GenAI ASRPipeline API")
             return GenAISpeechRecognitionTranscriber(model_id, device, ov_config, language or "en")
+        if model_type in WHISPER_MODEL_TYPES:
+            logger.info("Using OpenVINO GenAI ASRPipeline API")
+            return GenAISpeechRecognitionTranscriber(model_id, device, ov_config, language)
         model = _load_multimodal_model(model_id, device, ov_config, False, True, **kwargs)
         return GenAIMultimodalTranscriber(model, language or "English")
 
