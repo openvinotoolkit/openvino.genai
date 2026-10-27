@@ -100,6 +100,7 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     // DeepSeek-OCR-2
     read_json_param(parsed, "view_separator", view_separator);
     read_json_param(parsed, "image_token_id", image_token_id);
+    read_json_param(parsed, "video_token_id", video_token_id);
 
     // MiniCPM-V 4.7
     if (model_type == VLMModelType::MINICPMV4_7) {
