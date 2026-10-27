@@ -59,6 +59,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "optimum-intel-internal-testing/tiny-random-fun-asr",
         "convert_args": ["--weight-format", "fp32"],
     },
+    "whisper-tiny": {
+        "name": "openai/whisper-tiny",
+        "convert_args": ["--weight-format", "fp32"],
+    },
     "tiny-random-llava-next-video": {
         "name": "optimum-intel-internal-testing/tiny-random-llava-next-video",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],

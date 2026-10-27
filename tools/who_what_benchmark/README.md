@@ -365,13 +365,14 @@ The speech-generation evaluator reports these metrics:
 ### Compare Speech-recognition models (ASR)
 
 `speech-recognition` works with native ASR models, for example
-[FunAudioLLM/Fun-ASR-Nano-2512](https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512).
+[FunAudioLLM/Fun-ASR-Nano-2512](https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512) and
+[openai/whisper-tiny](https://huggingface.co/openai/whisper-tiny).
 
 The metric is `similarity = max(0, 1 - error rate)` between the normalized target and `--base-model`
 transcripts, where 1 is a perfect match and 0 is completely different. WWB uses character error rate
 (CER) when `--speech-language` is `zh`, `ja`, `Chinese`, or `Japanese`, and word error rate (WER) otherwise.
 
-#### FunASR
+#### Speech recognition pipeline
 
 ```sh
 pip install .[funasr]
