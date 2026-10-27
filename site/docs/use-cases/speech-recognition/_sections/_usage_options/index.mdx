@@ -468,6 +468,9 @@ Construct the `ASRForcedAligner` and pass the instance into `ASRPipeline`. The A
 
 When word timestamps are enabled for Qwen3-ASR, audio is processed in chunks of approximately 180 seconds. This can change chunk boundaries and therefore the transcription compared with plain transcription.
 
+Qwen3-ASR streaming supports only audio that fits a single chunk: up to approximately 1200 seconds, or 180 seconds with word timestamps enabled.
+For longer audio, `generate()` throws an exception when a streamer is passed. Call `generate()` without a streamer instead.
+
 The forced aligner is also available as a standalone `ASRForcedAligner` class, usable independently of `ASRPipeline`.
 
 <LanguageTabs>
