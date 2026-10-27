@@ -80,10 +80,7 @@ pip install timm einops
 
 #### LFM3-VL {#lfm3-vl-notes}
 
-1. Requires an Optimum-Intel version with `lfm3_vl` export support and trusted remote code during export (`--trust-remote-code`).
-2. Supports text-only, single-image, multi-image, and image-chat generation. Video and audio inputs are not supported.
-3. The model's chat template enables thinking by default. To compare against Optimum's non-thinking preprocessing, set `enable_thinking` to `false` in the `ChatHistory` extra context.
-4. The hybrid convolution/attention decoder reprocesses the full conversation during chat generation rather than trimming convolution states.
+The model requires `transformers>=5.20` for the export with `optimum-cli` and `--trust-remote-code` argument.
 
 #### MiniCPM-V-4_5 {#minicpm-v-4_5-notes}
 
