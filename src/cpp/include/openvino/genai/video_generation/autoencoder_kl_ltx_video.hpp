@@ -73,8 +73,6 @@ public:
     AutoencoderKLLTXVideo& reshape(int64_t batch_size, int64_t num_frames, int64_t height, int64_t width);
 
 private:
-    friend class LTXPipeline;
-
     void validate_decoder_batch(size_t batch_size);
 
     void validate_decoder_inputs() const;
