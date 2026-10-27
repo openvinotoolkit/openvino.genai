@@ -317,4 +317,3 @@ class ASROptimumTranscriber:
 
         model = _load_multimodal_model(model_id, device, ov_config, False, False, **kwargs)
         return MultimodalTranscriber(model, model_id, language or "English")
-
