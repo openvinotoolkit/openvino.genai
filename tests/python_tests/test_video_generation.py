@@ -563,7 +563,7 @@ class TestVideoGenerationPipelines:
         single_result = pipe.decode(single_latent, generation_config=decode_config)
         assert single_result.video.shape == _conditioned_decoder_video_shape(conditioned_video_generation_model, 1)
 
-        malformed_batch_latent = ov.Tensor(np.zeros([2, 1, 1], dtype=np.float32))
+        malformed_batch_latent = ov.Tensor(np.zeros([2, 1], dtype=np.float32))
         with pytest.raises(RuntimeError, match="unpack_latents expects"):
             pipe.decode(malformed_batch_latent, generation_config=decode_config)
 
@@ -967,6 +967,24 @@ class TestVideoGenerationPipelines:
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
         result = pipe.generate("test prompt", **GEN_KWARGS)
         assert result.video.shape == [1, 9, 32, 32, 3]
+
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
+    def test_decode_metrics_initialized(self, video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        latents = []
+
+        def capture_latent(_step, _num_steps, latent):
+            latents.append(ov.Tensor(np.array(latent.data, copy=True)))
+            return True
+
+        pipe.generate("test prompt", **{**GEN_KWARGS, "num_inference_steps": 1}, callback=capture_latent)
+        assert len(latents) == 1
+
+        metrics = pipe.decode(latents[0]).perf_metrics
+        assert metrics.get_load_time() == 0.0
+        assert metrics.get_generate_duration() == 0.0
+        assert metrics.get_vae_encoder_infer_duration() == 0.0
+        assert metrics.get_inference_duration() == pytest.approx(metrics.get_vae_decoder_infer_duration())
 
     @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID], indirect=True)
     def test_ltx2_decode_rejects_stored_timesteps(self, video_generation_model):

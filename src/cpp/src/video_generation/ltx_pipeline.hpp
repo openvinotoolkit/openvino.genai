@@ -865,7 +865,7 @@ public:
         ov::Tensor video = decode_inputs.timestep.has_value()
                        ? m_vae->decode(decode_inputs.latent, *decode_inputs.timestep)
                        : m_vae->decode(decode_inputs.latent);
-        VideoGenerationPerfMetrics decode_metrics;
+        VideoGenerationPerfMetrics decode_metrics{};
         decode_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();

@@ -787,7 +787,7 @@ public:
 
         const auto decode_start = std::chrono::steady_clock::now();
         ov::Tensor video = m_vae->decode(postprocessed);
-        VideoGenerationPerfMetrics decode_metrics;
+        VideoGenerationPerfMetrics decode_metrics{};
         decode_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
