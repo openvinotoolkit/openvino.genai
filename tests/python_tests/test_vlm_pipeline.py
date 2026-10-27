@@ -1566,9 +1566,8 @@ def _create_pipeline_and_template_setter(pipeline_kind: str, model_id: str):
     models_path = _get_ov_model(model_id)
     if pipeline_kind == "vlm":
         pipeline = VLMPipeline(models_path, "CPU")
-        return pipeline, pipeline.set_chat_template
+        return pipeline, pipeline.get_tokenizer().set_chat_template
     pipeline = ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
-    # Serving only has access to the tokenizer of a ContinuousBatchingPipeline.
     return pipeline, pipeline.get_tokenizer().set_chat_template
 
 
