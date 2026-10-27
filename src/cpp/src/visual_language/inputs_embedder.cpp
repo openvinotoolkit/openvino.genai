@@ -290,6 +290,16 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_text_embedding(
     return result;
 }
 
+ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds_from_ids(const ov::Tensor& input_ids,
+                                                                       ov::genai::VLMPerfMetrics& metrics) {
+    CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
+    const ov::Tensor text_embeds = get_text_embedding(embeddings_request_guard.get(), input_ids, metrics);
+    // The embeddings request owns text_embeds and returns to the queue once the guard is released.
+    ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
+    text_embeds.copy_to(inputs_embeds);
+    return inputs_embeds;
+}
+
 std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
     std::vector<EncodedImage> encoded_images;
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
@@ -492,6 +502,10 @@ const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::get_lm_extra_
 
 std::function<ov::Tensor(const ov::Tensor& new_input_ids)> InputsEmbedder::get_per_layer_embeddings_callback() {
     return m_impl->get_per_layer_embeddings_callback();
+}
+
+ov::Tensor InputsEmbedder::get_inputs_embeds_from_ids(const ov::Tensor& input_ids, ov::genai::VLMPerfMetrics& metrics) {
+    return m_impl->get_inputs_embeds_from_ids(input_ids, metrics);
 }
 
 std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {

@@ -97,9 +97,10 @@ jobs:
       with:
         platform: ubuntu22
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
-        revision: 7d4f9bc290af3e77eec7a3a5783a3637e116db92
-        branch_name: master
-        event_name: pull_request
+        revision: latest_available_commit
+        # Set specific revision and uncomment to use OV from its PR build:
+        # branch_name: master
+        # event_name: pull_request
 
     - name: Clone docker tag from OpenVINO repo
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

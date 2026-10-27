@@ -1142,6 +1142,76 @@ def test_gemma4_mtp_pa_matches_main_only(gemma4_mtp_vlm_model_path: Path):
     assert all(r.extended_perf_metrics is not None for r in actual)
 
 
+def test_gemma4_mtp_pa_encoded_matches_string_input(gemma4_mtp_vlm_model_path: Path):
+    assistant_path = generate_and_save_gemma4_mtp_assistant_model(gemma4_mtp_vlm_model_path)
+    config = GenerationConfig(
+        do_sample=False, max_new_tokens=12, num_assistant_tokens=3, ignore_eos=True, apply_chat_template=False
+    )
+    prompts = ["OpenVINO is", "The sky is"]
+
+    pipeline = ContinuousBatchingPipeline(
+        gemma4_mtp_vlm_model_path,
+        SchedulerConfig(),
+        "CPU",
+        {"draft_model": draft_model(assistant_path, "CPU")},
+    )
+    tokenizer = pipeline.get_tokenizer()
+    expected = pipeline.generate(prompts, [config] * len(prompts))
+    input_ids = [tokenizer.encode(prompt).input_ids for prompt in prompts]
+    actual = pipeline.generate(input_ids, [config] * len(prompts))
+    assert [tokenizer.decode(r.m_generation_ids) for r in actual] == [r.m_generation_ids for r in expected]
+
+
+def test_gemma4_mtp_pa_counts_final_round_acceptance(gemma4_mtp_vlm_model_path: Path):
+    assistant_path = generate_and_save_gemma4_mtp_assistant_model(gemma4_mtp_vlm_model_path)
+    config = GenerationConfig(do_sample=False, max_new_tokens=5, num_assistant_tokens=3, ignore_eos=True)
+
+    pipeline = ContinuousBatchingPipeline(
+        gemma4_mtp_vlm_model_path,
+        SchedulerConfig(),
+        "CPU",
+        {"draft_model": draft_model(assistant_path, "CPU")},
+    )
+    result = pipeline.generate(["OpenVINO is"], [config])[0]
+    metrics = result.extended_perf_metrics
+    main_steps = len(metrics.main_model_metrics.raw_metrics.m_durations)
+    # Every target step emits one token plus the draft tokens it accepted, including the finishing step.
+    assert main_steps + metrics.get_num_accepted_tokens() == config.max_new_tokens
+
+
+@pytest.mark.parametrize("dynamic_split_fuse", [True, False])
+def test_gemma4_mtp_pa_constrained_batch_budget(gemma4_mtp_vlm_model_path: Path, dynamic_split_fuse: bool):
+    assistant_path = generate_and_save_gemma4_mtp_assistant_model(gemma4_mtp_vlm_model_path)
+    configs = [
+        GenerationConfig(
+            do_sample=False, max_new_tokens=count, num_assistant_tokens=3, ignore_eos=True, apply_chat_template=False
+        )
+        for count in (6, 14, 9)
+    ]
+    # Prompts must fit max_num_batched_tokens for the non-split-fuse scheduler.
+    prompts = ["Hello", "The", "Sky"]
+    scheduler_config = SchedulerConfig()
+    # A single 1 + 3 token verification window fills the whole batch.
+    scheduler_config.max_num_batched_tokens = 4
+    scheduler_config.max_num_seqs = 2
+    scheduler_config.dynamic_split_fuse = dynamic_split_fuse
+    properties = {"KV_CACHE_PRECISION": "f16"}
+
+    baseline = ContinuousBatchingPipeline(gemma4_mtp_vlm_model_path, scheduler_config, "CPU", properties)
+    expected = [result.m_generation_ids for result in baseline.generate(prompts, configs)]
+    del baseline
+
+    pipeline = ContinuousBatchingPipeline(
+        gemma4_mtp_vlm_model_path,
+        scheduler_config,
+        "CPU",
+        {**properties, "draft_model": draft_model(assistant_path, "CPU")},
+    )
+    results = pipeline.generate(prompts, configs)
+    assert [result.m_generation_ids for result in results] == expected
+    assert results[0].extended_perf_metrics.get_num_draft_tokens() > 0
+
+
 def test_gemma4_mtp_pa_shared_cache_across_blocks(gemma4_mtp_vlm_model_path: Path):
     assistant_path = generate_and_save_gemma4_mtp_assistant_model(gemma4_mtp_vlm_model_path)
     config = GenerationConfig(do_sample=False, max_new_tokens=40, num_assistant_tokens=3, ignore_eos=True)

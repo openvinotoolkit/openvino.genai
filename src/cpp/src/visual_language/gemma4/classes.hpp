@@ -97,6 +97,8 @@ public:
 
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const override;
 
+    ov::Tensor get_inputs_embeds_from_ids(const ov::Tensor& input_ids, ov::genai::VLMPerfMetrics& metrics) override;
+
     std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback() override {
         if (!has_per_layer_embeddings()) {
             return nullptr;
@@ -141,6 +143,8 @@ private:
     std::once_flag m_vision_token_ids_once_flag;
 
     void encode_vision_token_ids();
+
+    void update_lm_extra_inputs(const ov::Tensor& input_ids);
 
     void patch_chat_template();
 };
