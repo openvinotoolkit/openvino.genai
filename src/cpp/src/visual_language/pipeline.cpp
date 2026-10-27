@@ -15,6 +15,7 @@
 #include "openvino/runtime/properties.hpp"
 #include "sampling/sampler.hpp"
 #include "utils.hpp"
+#include "speculative_decoding/dflash_model_transforms.hpp"
 #include "visual_language/continuous_batching_adapter.hpp"
 #include "visual_language/embedding_model.hpp"
 #include "visual_language/inputs_embedder.hpp"
@@ -1034,6 +1035,7 @@ VLMPipeline::VLMPipeline(
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
     utils::clear_false_prompt_lookup_from_config(properties);
     utils::validate_vlm_model_properties(properties);
+    utils::dflash::reject_dflash_draft_on_npu(utils::is_npu_requested(device, properties), properties);
     if (device == "NPU") {
         auto it = properties.find("scheduler_config");
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
@@ -1086,6 +1088,7 @@ VLMPipeline::VLMPipeline(
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
     utils::clear_false_prompt_lookup_from_config(properties);
     utils::validate_vlm_model_properties(properties);
+    utils::dflash::reject_dflash_draft_on_npu(utils::is_npu_requested(device, properties), properties);
     if (device == "NPU") {
         auto it = properties.find("scheduler_config");
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
