@@ -819,6 +819,16 @@ jobs:
           requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt;${{ env.SRC_DIR }}/tools/llm_bench/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
+      - name: Test LLM Benchmark unit regressions
+        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench }}
+        run: |
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+          python -m pytest -vs \
+            ${{ env.SRC_DIR }}/tests/python_tests/test_llm_bench_harmony_prompts.py \
+            ${{ env.SRC_DIR }}/tests/python_tests/test_atomic_download.py
+        env:
+          HF_HUB_OFFLINE: "1"
+
       - name: Convert models for cache types gtests
         if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
         run: |
