@@ -63,6 +63,12 @@ public:
                                  const std::vector<size_t>& videos_sequence = {},
                                  const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
+    // Returns cached text embeddings used to prepare Eagle3 speculative-decoding inputs.
+    // Returns an empty tensor when no cached text embeddings are available.
+    ov::Tensor get_cached_text_embeds() const;
+
+    void set_cached_text_embeds_enabled(bool enabled);
+
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
 
     // returns per-layer embeddings callback, or nullptr if not available
@@ -190,6 +196,9 @@ private:
         // position ids
         ov::Tensor m_position_ids;
         int64_t m_rope_delta = 0;
+        // Text-only embeddings cached for the speculative (Eagle3) draft path.
+        ov::Tensor m_cached_text_embeds;
+        bool m_cached_text_embeds_enabled = false;
         virtual ~IInputsEmbedder() = default;
 
     public:
@@ -322,6 +331,32 @@ private:
             size_t base_video_id,
             const std::vector<EncodedImage>& images,
             const std::vector<EncodedVideo>& videos) const;
+
+        virtual ov::Tensor get_cached_text_embeds() const {
+            return m_cached_text_embeds;
+        }
+
+        void set_cached_text_embeds_enabled(bool enabled) {
+            m_cached_text_embeds_enabled = enabled;
+            if (!enabled) {
+                m_cached_text_embeds = ov::Tensor();
+            }
+        }
+
+        void set_cached_text_embeds(const ov::Tensor& text_embeds) {
+            if (!m_cached_text_embeds_enabled) {
+                return;
+            }
+            OPENVINO_ASSERT(text_embeds, "Cannot cache an empty text embeddings tensor");
+            if (!m_cached_text_embeds || m_cached_text_embeds.get_element_type() != text_embeds.get_element_type() ||
+                m_cached_text_embeds.get_shape() != text_embeds.get_shape()) {
+                m_cached_text_embeds = ov::Tensor(text_embeds.get_element_type(), text_embeds.get_shape());
+            }
+            OPENVINO_ASSERT(m_cached_text_embeds.get_element_type() == text_embeds.get_element_type() &&
+                                m_cached_text_embeds.get_shape() == text_embeds.get_shape(),
+                            "Cached and source text embeddings must have matching element types and shapes");
+            text_embeds.copy_to(m_cached_text_embeds);
+        }
 
     protected:
         IInputsEmbedder(
