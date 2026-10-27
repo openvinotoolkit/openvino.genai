@@ -282,6 +282,19 @@ EmbedResult MultimodalEmbeddingPipelineImpl::multimodal_embed(
                 // token_type_ids LM input is set above via batched_token_type_ids
                 continue;
             }
+            if (name == "visual_pos_masks" && encoded_images.empty() && encoded_videos.empty() &&
+                has_lm_input(name)) {
+                // Text-only batch: the mask must cover the whole padded batch [batch_size, max_seq_length],
+                // the per-item dummy mask only matches a single unpadded sequence.
+                const auto mask_type = m_compiled_language_model.input(name).get_element_type();
+                OPENVINO_ASSERT(mask_type == ov::element::boolean,
+                                "visual_pos_masks must have element type boolean, got ",
+                                mask_type);
+                ov::Tensor batched_visual_pos_masks(mask_type, {batch_size, max_seq_length});
+                std::fill_n(batched_visual_pos_masks.data<bool>(), batched_visual_pos_masks.get_size(), false);
+                m_language_model_request.set_tensor(name, batched_visual_pos_masks);
+                continue;
+            }
             if (has_lm_input(name) && tensor.get_size() > 0) {
                 m_language_model_request.set_tensor(name, tensor);
             }
