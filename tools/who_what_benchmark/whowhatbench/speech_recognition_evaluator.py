@@ -216,9 +216,16 @@ class FunASRSourceTranscriber:
 
 
 class FunASROptimumTranscriber:
-    def __init__(self, model: Any, tokenizer: Any, language: str = "") -> None:
-        self.model = model
-        self.tokenizer = tokenizer
+    def __init__(self, model_id, model_type, device, ov_config, language: str = "") -> None:
+        from optimum.intel.openvino import OVModelForSpeechSeq2Seq
+        from transformers import AutoTokenizer
+
+        self.model = OVModelForSpeechSeq2Seq.from_pretrained(model_id, device=device, ov_config=ov_config)
+        if model_type == "sense_voice":
+            self.tokenizer = None
+        else:
+            subfolder = FUNASR_TOKENIZER_SUBFOLDER if model_type == "funasr" else ""
+            self.tokenizer = AutoTokenizer.from_pretrained(str(model_id), subfolder=subfolder)
         self.preprocess_kwargs = {"language": language} if language else {}
 
     def transcribe(self, audio, max_new_tokens: int) -> str:
@@ -240,8 +247,10 @@ class FunASROptimumTranscriber:
 
 
 class ASRGenAIPipelineTranscriber:
-    def __init__(self, pipeline: Any, language: str = "", model_type: str = "") -> None:
-        self.pipeline = pipeline
+    def __init__(self, model_id, device, ov_config, language: str = "", model_type: str = "") -> None:
+        import openvino_genai
+
+        self.pipeline = openvino_genai.ASRPipeline(str(model_id), device.upper(), **(ov_config or {}))
         self.language = language
         self.is_sense_voice = model_type == "sense_voice"
 
@@ -314,9 +323,12 @@ class WhisperHFTranscriber:
 
 
 class WhisperOptimumTranscriber:
-    def __init__(self, model: Any, processor: Any, language: str = "") -> None:
-        self.model = model
-        self.processor = processor
+    def __init__(self, model_id, device, ov_config, language: str = "") -> None:
+        from optimum.intel.openvino import OVModelForSpeechSeq2Seq
+        from transformers import WhisperProcessor
+
+        self.model = OVModelForSpeechSeq2Seq.from_pretrained(model_id, device=device, ov_config=ov_config)
+        self.processor = WhisperProcessor.from_pretrained(str(model_id))
         # None lets Whisper detect the language from the audio
         self.language = language or None
 
@@ -381,19 +393,12 @@ class ASRGenAITranscriber:
     @staticmethod
     def create(model_id, device="CPU", ov_config=None, language="", **kwargs):
         model_type = _get_asr_model_type(model_id)
-        if model_type in FUNASR_MODEL_TYPES | QWEN_ASR_MODEL_TYPES:
+        if model_type in FUNASR_MODEL_TYPES | QWEN_ASR_MODEL_TYPES | WHISPER_MODEL_TYPES:
             logger.info("Using OpenVINO GenAI ASRPipeline API")
-            import openvino_genai
-
-            pipeline = openvino_genai.ASRPipeline(str(model_id), device.upper(), **(ov_config or {}))
             default_language = "en" if model_type in FUNASR_MODEL_TYPES else ""
-            return ASRGenAIPipelineTranscriber(pipeline, language or default_language, model_type=model_type)
-        if model_type in WHISPER_MODEL_TYPES:
-            logger.info("Using OpenVINO GenAI WhisperPipeline API")
-            import openvino_genai
-
-            pipeline = openvino_genai.WhisperPipeline(str(model_id), device.upper(), **(ov_config or {}))
-            return ASRGenAIPipelineTranscriber(pipeline, language, model_type=model_type)
+            return ASRGenAIPipelineTranscriber(
+                model_id, device, ov_config, language or default_language, model_type=model_type
+            )
         _register_model_backend(model_type)
         model = _load_multimodal_model(model_id, device, ov_config, False, True, **kwargs)
         return GenAIMultimodalTranscriber(model, language or "English")
@@ -404,24 +409,11 @@ class ASROptimumTranscriber:
     def create(model_id, device="CPU", ov_config=None, language="", **kwargs):
         model_type = _get_asr_model_type(model_id)
         if model_type in FUNASR_MODEL_TYPES:
-            logger.info("Using Optimum API")
-            from transformers import AutoTokenizer
-
-            model = _load_optimum_speech_model(model_id, device, ov_config)
-            if model_type == "sense_voice":
-                tokenizer = None
-            else:
-                subfolder = FUNASR_TOKENIZER_SUBFOLDER if model_type == "funasr" else ""
-                tokenizer = AutoTokenizer.from_pretrained(str(model_id), subfolder=subfolder)
-            return FunASROptimumTranscriber(model, tokenizer, language or "en")
+            logger.info("Using Optimum FunASR API")
+            return FunASROptimumTranscriber(model_id, model_type, device, ov_config, language or "en")
         if model_type in WHISPER_MODEL_TYPES:
             logger.info("Using Optimum Whisper API")
-            from optimum.intel.openvino import OVModelForSpeechSeq2Seq
-            from transformers import WhisperProcessor
-
-            model = OVModelForSpeechSeq2Seq.from_pretrained(model_id, device=device, ov_config=ov_config)
-            processor = WhisperProcessor.from_pretrained(str(model_id))
-            return WhisperOptimumTranscriber(model, processor, language)
+            return WhisperOptimumTranscriber(model_id, device, ov_config, language)
 
         _register_model_backend(model_type)
         if model_type in QWEN_ASR_MODEL_TYPES:
