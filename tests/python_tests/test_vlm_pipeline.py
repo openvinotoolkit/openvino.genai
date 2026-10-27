@@ -1583,7 +1583,7 @@ def test_set_chat_template_applies_model_patch(pipeline_kind, model_id, raw_temp
 
     assert tokenizer.apply_chat_template(history, add_generation_prompt=False) == expected
     assert tokenizer.get_original_chat_template() == raw_template
-    assert tokenizer.get_chat_template() != raw_template
+    assert tokenizer.chat_template != raw_template
 
 
 @pytest.mark.parametrize("pipeline_kind", ["vlm", "continuous_batching"])
@@ -1592,13 +1592,13 @@ def test_inline_chat_template_is_patched_and_not_stored(pipeline_kind, model_id,
     pipeline, _ = _create_pipeline_and_template_setter(pipeline_kind, model_id)
     tokenizer = pipeline.get_tokenizer()
     history = [{"role": "user", "content": content}]
-    stored_template = tokenizer.get_chat_template()
+    stored_template = tokenizer.chat_template
     original_template = tokenizer.get_original_chat_template()
 
     rendered = tokenizer.apply_chat_template(history, add_generation_prompt=False, chat_template=raw_template)
 
     assert rendered == expected
-    assert tokenizer.get_chat_template() == stored_template
+    assert tokenizer.chat_template == stored_template
     assert tokenizer.get_original_chat_template() == original_template
 
 
