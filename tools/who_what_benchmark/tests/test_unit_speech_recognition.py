@@ -12,12 +12,12 @@ import torch
 
 from whowhatbench.whowhat_metrics import TranscriptSimilarity
 from whowhatbench.utils import to_mono_16k
-from whowhatbench.speech_recognition_evaluator import (
+from whowhatbench.speech_recognition_evaluator import SpeechRecognitionEvaluator
+from whowhatbench.speech_recognition_model_wrappers.model_wrappers import (
     ASRGenAITranscriber,
     ASRGenAIPipelineTranscriber,
     FunASROptimumTranscriber,
     Qwen3ASROptimumTranscriber,
-    SpeechRecognitionEvaluator,
 )
 
 
@@ -231,13 +231,13 @@ def test_qwen3_asr_optimum_transcribes_with_export_settings(export, eos_token_id
 )
 def test_asr_genai_uses_asr_pipeline(monkeypatch, model_type, language, expected_language):
     import openvino_genai
-    from whowhatbench import speech_recognition_evaluator
+    from whowhatbench.speech_recognition_model_wrappers import model_wrappers
 
     pipeline = Mock()
     pipeline.generate.return_value = types.SimpleNamespace(texts=[" decoded "])
     pipeline_factory = Mock(return_value=pipeline)
     monkeypatch.setattr(openvino_genai, "ASRPipeline", pipeline_factory)
-    monkeypatch.setattr(speech_recognition_evaluator, "_get_asr_model_type", lambda _: model_type)
+    monkeypatch.setattr(model_wrappers, "_get_asr_model_type", lambda _: model_type)
 
     transcriber = ASRGenAITranscriber.create("model_dir", "CPU", language=language)
     assert isinstance(transcriber, ASRGenAIPipelineTranscriber)
