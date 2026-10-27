@@ -79,6 +79,27 @@ protected:
     virtual void prepare_inputs_embedder(const GenerationConfig& sampling_params) const;
     virtual std::unordered_map<std::string, ov::Tensor> prepare_lm_extra_inputs(
         std::unordered_map<std::string, ov::Tensor> lm_extra_inputs) const;
+
+    struct VLMGenerationOutput {
+        std::vector<VLMDecodedResults> results;
+        std::vector<GenerationStatus> statuses;
+    };
+
+    VLMGenerationOutput generate_vlm(const std::vector<std::string>& prompts,
+                                     const std::vector<std::vector<ov::Tensor>>& images,
+                                     const std::vector<std::vector<ov::Tensor>>& videos,
+                                     const std::vector<std::vector<VideoMetadata>>& videos_metadata,
+                                     const std::vector<std::vector<ov::Tensor>>& audios,
+                                     const std::vector<GenerationConfig>& sampling_params,
+                                     const StreamerVariant& streamer);
+
+    VLMGenerationOutput generate_vlm(const std::vector<ChatHistory>& histories,
+                                     const std::vector<std::vector<ov::Tensor>>& images,
+                                     const std::vector<std::vector<ov::Tensor>>& videos,
+                                     const std::vector<std::vector<VideoMetadata>>& videos_metadata,
+                                     const std::vector<std::vector<ov::Tensor>>& audios,
+                                     const std::vector<GenerationConfig>& sampling_params,
+                                     const StreamerVariant& streamer);
 public:
     GenerationConfig get_config() const;
     void set_config(const GenerationConfig& config);

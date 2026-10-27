@@ -80,6 +80,14 @@ ov::Tensor create_draft_input_embeds(const ov::Tensor& input_embeds) {
     return shifted;
 }
 
+SequenceGroup::Ptr find_awaiting_request(const std::vector<SequenceGroup::Ptr>& requests, uint64_t request_id) {
+    const auto found = std::find_if(requests.begin(), requests.end(), [request_id](const auto& group) {
+        return group->get_request_id() == request_id;
+    });
+    OPENVINO_ASSERT(found != requests.end(), "MTP requires an awaiting request: ", request_id);
+    return *found;
+}
+
 }  // namespace
 
 ContinuousBatchingPipeline::MtpDecodingImpl::MtpDecodingImpl(const ov::genai::ModelDesc& main_model_desc,
@@ -216,15 +224,8 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
 }
 
 void ContinuousBatchingPipeline::MtpDecodingImpl::align_request_pair_processed_prefix(uint64_t request_id) {
-    auto find_request = [request_id](const std::vector<SequenceGroup::Ptr>& requests) {
-        const auto found = std::find_if(requests.begin(), requests.end(), [request_id](const auto& group) {
-            return group->get_request_id() == request_id;
-        });
-        OPENVINO_ASSERT(found != requests.end(), "MTP alignment requires both awaiting requests: ", request_id);
-        return *found;
-    };
-    const auto main_group = find_request(m_main_pipeline->get_awaiting_requests());
-    const auto draft_group = find_request(m_draft_pipeline->get_awaiting_requests());
+    const auto main_group = find_awaiting_request(m_main_pipeline->get_awaiting_requests(), request_id);
+    const auto draft_group = find_awaiting_request(m_draft_pipeline->get_awaiting_requests(), request_id);
     draft_group->get_sequences().front()->set_prefix_cache_policy(draft_group->get_prompt_len(),
         [main_group](size_t length, size_t block_size) {
             return main_group->get_sequences().front()->get_hash(length + 1, block_size);
@@ -338,7 +339,7 @@ ContinuousBatchingPipeline::Gemma4MtpDecodingImpl::Gemma4MtpDecodingImpl(
     }
     m_inputs_embedder = embedder;
     m_model_input_type = ModelInputType::EMBEDDINGS;
-    m_vision_registry = std::make_shared<VisionRegistry>();
+    m_embeddings_registry = std::make_shared<EmbeddingsRegistry>();
     m_embedding = embedder->get_embedding_model();
     OPENVINO_ASSERT(m_embedding, "Gemma4 MTP requires a text embedding model.");
 
@@ -450,7 +451,6 @@ GenerationHandle ContinuousBatchingPipeline::Gemma4MtpDecodingImpl::add_request(
                     "Gemma4 MTP requires one non-empty prompt per request.");
     auto handle = m_main_pipeline->add_request(request_id, embeds, effective_config, prompt_ids, lm_extra_inputs);
     m_requests.insert_or_assign(request_id, RequestState{{}, shape[1], 0});
-    m_request_configs.insert_or_assign(request_id, effective_config);
     return handle;
 }
 
@@ -477,29 +477,51 @@ GenerationHandle ContinuousBatchingPipeline::Gemma4MtpDecodingImpl::add_request(
     return add_request(request_id, embeds, config, prompt_ids, m_inputs_embedder->get_lm_extra_inputs());
 }
 
-void ContinuousBatchingPipeline::Gemma4MtpDecodingImpl::append_main_outputs(const GeneratedRequests& generated) {
-    for (const auto& [request_id, sequences] : generated) {
-        OPENVINO_ASSERT(sequences.size() == 1, "Gemma4 MTP supports a single sequence per request.");
-        const auto& sequence = sequences.begin()->second;
-        auto& state = m_requests.at(request_id);
-        if (!sequence.token_ids.empty()) {
-            const size_t accepted_length = state.prompt_length + sequence.token_ids.size();
-            const ov::Tensor& hidden = sequence.hidden_states;
+void ContinuousBatchingPipeline::Gemma4MtpDecodingImpl::accept_verified_tokens(
+    const std::map<uint64_t, size_t>& processed_before,
+    const GeneratedRequests& generated) {
+    for (auto& [request_id, state] : m_requests) {
+        const auto& group = *state.main_group;
+        // Unscheduled requests keep their candidates pending until a later step verifies them.
+        if (group.get_num_processed_tokens() <= processed_before.at(request_id)) {
+            continue;
+        }
+        OPENVINO_ASSERT(group.get_num_tokens_to_validate() == 0,
+                        "Gemma4 MTP requires the verification window of request ", request_id,
+                        " to be scheduled in a single step.");
+        const size_t generated_length = group.get_sequences().front()->get_generated_len();
+        // A prompt chunk without the last prompt token generates nothing.
+        if (generated_length == state.verified_length) {
+            continue;
+        }
+        const size_t new_tokens = generated_length - state.verified_length;
+        const size_t accepted = std::min(state.pending_drafts, new_tokens - 1);
+        m_perf_metrics.num_accepted_tokens += accepted;
+        if (state.pending_drafts) {
+            m_sd_metrics.update_acceptance_rate(request_id, 100.f * accepted / state.pending_drafts);
+            m_sd_metrics.update_draft_accepted_tokens(request_id, accepted);
+        }
+        m_sd_metrics.update_generated_len(new_tokens);
+
+        // Finished requests are absent from generated and need no hidden state for drafting.
+        const auto request = generated.find(request_id);
+        if (request != generated.end()) {
+            OPENVINO_ASSERT(request->second.size() == 1, "Gemma4 MTP supports a single sequence per request.");
+            const ov::Tensor& hidden = request->second.begin()->second.hidden_states;
             OPENVINO_ASSERT(hidden && hidden.get_shape().size() == 3,
                             "Gemma4 MTP target did not provide hidden states.");
-            const size_t matches = state.generated_length == 0
-                ? hidden.get_shape()[0] - 1
-                : sequence.token_ids.size() - 1 - state.generated_length;
-            OPENVINO_ASSERT(matches < hidden.get_shape()[0],
-                            "Gemma4 MTP target did not provide the accepted token's hidden state: matches=",
-                            matches, ", hidden length=", hidden.get_shape()[0],
-                            ", generated length=", sequence.token_ids.size(),
-                            ", previous generated length=", state.generated_length, ".");
-            auto [start, end] = utils::make_roi(hidden.get_shape(), 0, matches, matches + 1);
+            const size_t row = state.verified_length == 0 ? hidden.get_shape()[0] - 1 : accepted;
+            OPENVINO_ASSERT(row < hidden.get_shape()[0],
+                            "Gemma4 MTP target did not provide the accepted token's hidden state: row=",
+                            row, ", hidden length=", hidden.get_shape()[0],
+                            ", generated length=", generated_length,
+                            ", previous verified length=", state.verified_length, ".");
+            auto [start, end] = utils::make_roi(hidden.get_shape(), 0, row, row + 1);
             state.hidden_state = ov::Tensor(hidden.get_element_type(), {1, 1, hidden.get_shape()[2]});
             ov::Tensor(hidden, start, end).copy_to(state.hidden_state);
-            state.generated_length = sequence.token_ids.size();
         }
+        state.verified_length = generated_length;
+        state.pending_drafts = 0;
     }
 }
 
@@ -521,22 +543,32 @@ std::map<uint64_t, std::vector<int64_t>> ContinuousBatchingPipeline::Gemma4MtpDe
     std::array<ov::Tensor, 4> shared_tensors;
     int32_t max_context_len = 0;
     auto main = std::static_pointer_cast<ContinuousBatchingForMtpDecodingImpl>(m_main_pipeline);
+    // The sampler cannot verify a partially scheduled window, so all decoding windows must fit one batch.
+    size_t free_batch_tokens = m_max_num_batched_tokens;
+    for (const auto& [request_id, generated] : requests) {
+        if (!generated.empty() && !generated.begin()->second.token_ids.empty()) {
+            const size_t window = m_requests.at(request_id).main_group->get_num_available_tokens_for_batching();
+            free_batch_tokens -= std::min(free_batch_tokens, window);
+        }
+    }
     for (const auto& [request_id, generated] : requests) {
         if (generated.empty() || generated.begin()->second.token_ids.empty()) {
             continue;
         }
         const auto& sequence = generated.begin()->second;
         const auto& state = m_requests.at(request_id);
-        if (!state.hidden_state) {
+        if (!state.hidden_state || state.pending_drafts) {
             continue;
         }
         const auto& config = m_request_configs.at(request_id);
-        const size_t remaining = config.get_max_new_tokens() - sequence.token_ids.size();
-        const size_t limit = std::min(config.num_assistant_tokens.value_or(m_default_num_assistant_tokens),
-                                      remaining > 0 ? remaining - 1 : 0);
+        const size_t remaining = config.get_max_new_tokens(state.prompt_length) - sequence.token_ids.size();
+        const size_t limit = std::min({config.num_assistant_tokens.value_or(m_default_num_assistant_tokens),
+                                       remaining > 0 ? remaining - 1 : 0,
+                                       free_batch_tokens});
         if (limit == 0) {
             continue;
         }
+        free_batch_tokens -= limit;
         const size_t length = state.prompt_length + sequence.token_ids.size();
         OPENVINO_ASSERT(length + limit <= static_cast<size_t>(std::numeric_limits<int32_t>::max()),
                         "Gemma4 MTP draft requires an i32-compatible context length.");
@@ -661,15 +693,14 @@ void ContinuousBatchingPipeline::Gemma4MtpDecodingImpl::step() {
     try {
         m_main_pipeline->pull_awaiting_requests();
         const auto before = m_main_pipeline->get_generated_requests();
-        std::map<uint64_t, size_t> draft_counts;
         const auto drafts = draft_tokens(before);
         for (const auto& [request_id, sequences] : before) {
             if (sequences.empty() || sequences.begin()->second.token_ids.empty()) {
                 continue;
             }
             const auto& sequence = sequences.begin()->second;
-            const auto& state = m_requests.at(request_id);
-            if (!state.hidden_state) {
+            auto& state = m_requests.at(request_id);
+            if (!state.hidden_state || state.pending_drafts) {
                 continue;
             }
             auto candidates = sequence;
@@ -679,11 +710,15 @@ void ContinuousBatchingPipeline::Gemma4MtpDecodingImpl::step() {
                 candidates.log_probs.insert(candidates.log_probs.end(), draft->second.size(), 0.f);
             }
             const auto updated = m_main_pipeline->update_request(request_id, {{sequences.begin()->first, candidates}}, false);
-            draft_counts[request_id] = updated.inserted_tokens_cnt;
+            state.pending_drafts = updated.inserted_tokens_cnt;
             m_perf_metrics.num_draft_tokens += updated.inserted_tokens_cnt;
             m_sd_metrics.update_draft_generated_len(request_id, updated.inserted_tokens_cnt);
         }
         m_main_pipeline->sync_generated_embeddings();
+        std::map<uint64_t, size_t> processed_before;
+        for (const auto& [request_id, state] : m_requests) {
+            processed_before.emplace(request_id, state.main_group->get_num_processed_tokens());
+        }
         const auto main_start = std::chrono::steady_clock::now();
         m_main_pipeline->step();
         const auto main_end = std::chrono::steady_clock::now();
@@ -702,25 +737,7 @@ void ContinuousBatchingPipeline::Gemma4MtpDecodingImpl::step() {
             main_raw.m_batch_sizes.push_back(processed);
         }
         const auto after = m_main_pipeline->get_generated_requests();
-        append_main_outputs(after);
-        for (const auto& [request_id, candidates] : after) {
-            const auto before_it = before.find(request_id);
-            if (before_it == before.end() || before_it->second.empty() || candidates.empty()) {
-                continue;
-            }
-            const size_t old_length = before_it->second.begin()->second.token_ids.size();
-            const size_t new_length = candidates.begin()->second.token_ids.size();
-            if (new_length > old_length) {
-                const size_t accepted = std::min(draft_counts[request_id], new_length - old_length - 1);
-                m_perf_metrics.num_accepted_tokens += accepted;
-                if (draft_counts[request_id]) {
-                    m_sd_metrics.update_acceptance_rate(
-                        request_id, 100.f * accepted / draft_counts[request_id]);
-                    m_sd_metrics.update_draft_accepted_tokens(request_id, accepted);
-                }
-                m_sd_metrics.update_generated_len(new_length - old_length);
-            }
-        }
+        accept_verified_tokens(processed_before, after);
         for (auto it = m_requests.begin(); it != m_requests.end();) {
             if (!after.count(it->first)) {
                 m_request_configs.erase(it->first);
@@ -752,7 +769,7 @@ std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::Gemma4MtpDecodingImp
 }
 
 std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Gemma4MtpDecodingImpl::generate(
-    const std::vector<ov::Tensor>& embeds, const std::vector<GenerationConfig>& configs,
+    const std::vector<ov::Tensor>& inputs, const std::vector<GenerationConfig>& configs,
     const StreamerVariant& streamer,
     const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& positions,
     const std::optional<std::vector<ov::Tensor>>& prompt_ids,
@@ -771,7 +788,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Gemma4MtpDecodi
     strategy.stop_timer = [](const TimePoint& start) {
         return PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start);
     };
-    return generate_common(this, embeds, configs, streamer, positions, prompt_ids, extra, strategy);
+    return generate_common(this, inputs, configs, streamer, positions, prompt_ids, extra, strategy);
 }
 
 }  // namespace ov::genai

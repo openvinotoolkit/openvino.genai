@@ -70,14 +70,15 @@ public:
                           const ModelDesc& draft_model_desc,
                           const std::shared_ptr<InputsEmbedder>& inputs_embedder);
 
-    GenerationHandle add_request(uint64_t request_id, const ov::Tensor& input_embeds,
+    // Accepts token IDs [1, seq_len] or input embeddings [1, seq_len, hidden_size].
+    GenerationHandle add_request(uint64_t request_id, const ov::Tensor& input,
                                  const GenerationConfig& config,
                                  std::optional<ov::Tensor> prompt_ids = std::nullopt,
                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs = std::nullopt) override;
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt,
                                  const GenerationConfig& config) override;
     std::vector<EncodedGenerationResult> generate(
-        const std::vector<ov::Tensor>& input_embeds, const std::vector<GenerationConfig>& configs,
+        const std::vector<ov::Tensor>& inputs, const std::vector<GenerationConfig>& configs,
         const StreamerVariant& streamer,
         const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt,
         const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
@@ -91,12 +92,20 @@ protected:
 
 private:
     struct RequestState {
+        // Keeps the verification result readable after the main pipeline frees a finished request.
+        SequenceGroup::Ptr main_group;
         ov::Tensor hidden_state;
         size_t prompt_length = 0;
-        size_t generated_length = 0;
+        // Generated tokens confirmed by the main model.
+        size_t verified_length = 0;
+        // Draft candidates inserted into main_group and awaiting verification.
+        size_t pending_drafts = 0;
     };
 
-    void append_main_outputs(const GeneratedRequests& generated);
+    // Must be called under m_embeddings_mutex.
+    GenerationHandle add_embeds_request(uint64_t request_id, const ov::Tensor& embeds,
+                                        const GenerationConfig& config, const ov::Tensor& prompt_ids);
+    void accept_verified_tokens(const std::map<uint64_t, size_t>& processed_before, const GeneratedRequests& generated);
     std::map<uint64_t, std::vector<int64_t>> draft_tokens(const GeneratedRequests& requests);
 
     std::map<uint64_t, RequestState> m_requests;
