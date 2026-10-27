@@ -33,7 +33,7 @@ All five strategies are available through the `LLMPipeline` Python and C++ APIs.
 Prompt Lookup Decoding, EAGLE3, DFlash and DSpark are additionally supported in `VLMPipeline` (e.g. Qwen3-VL, Qwen3.5, MiniCPM-V 4.7).
 
 The Continuous Batching backend supports multi-request batching; the Stateful backend is single-request.
-Multinomial sampling is supported on the Continuous Batching backend, except with EAGLE3 tree drafting, DFlash and DSpark; the Stateful backend supports greedy decoding only.
+Multinomial sampling is supported on the Continuous Batching backend, except with EAGLE3 tree drafting; the Stateful backend supports greedy decoding only.
 :::
 
 Every strategy is configured in two places: the drafter is selected when the pipeline is **constructed**, and the drafting behavior is tuned **per request** through `GenerationConfig`.
@@ -360,6 +360,13 @@ Beam search is not supported.
 Like EAGLE3, the draft is trained against a specific target and reads the target's *hidden states*.
 Unlike EAGLE3, it does not run once per candidate: it fills a whole block of masked positions in a single forward pass, so drafting more candidates costs little extra draft time.
 
+The draft backbone predicts every position of the block independently.
+[DSpark](#dspark) and DFlash v2 drafts add a Markov head, so that every drafted token depends on the one before it.
+
+The draft runs as a continuous-batching pipeline of its own next to the target, on PagedAttention, so the drafts of all scheduled requests run together in one inference.
+At load time, OpenVINO GenAI reuses the target's embedding and LM-head weights instead of duplicating them in the draft, and computes the draft logits only for the drafted positions.
+Use `LLMPipeline` for text targets and `VLMPipeline` for vision-language targets; for a VLM, the target's embedding pipeline supplies the draft's `inputs_embeds`.
+
 ### Model Preparation
 
 Export the target and the matching DFlash draft with `optimum-cli`.
@@ -422,13 +429,39 @@ Tune `num_assistant_tokens` on prompts that resemble your use case, balancing th
 As the block grows, the accepted tokens per step rise and then plateau, while the step latency keeps growing, so past some point a larger block slows generation down.
 :::
 
+### Sampling
+
+DFlash supports greedy decoding and multinomial sampling.
+With multinomial sampling, the draft samples its candidates and the target validates them with speculative sampling, as described in the [Overview](#overview).
+With prefix caching, a hybrid-attention target such as Qwen3.5 supports greedy decoding only; see [Prefix Caching with Speculative Decoding](#prefix-caching-with-speculative-decoding).
+
+The draft sampler takes or draws every drafted token from the backbone distribution after the request's logit processors, as the regular sampler does.
+A draft with a Markov head chooses its candidates as described in [Candidate Selection](#candidate-selection).
+The draft does not apply structured output or stop strings; the target enforces them when it validates the candidates.
+
+### KV Cache and Scheduling
+
+The draft has a KV cache of its own, set by the `scheduler_config` passed to `draft_model`.
+Without one, the draft uses a copy of the target's `SchedulerConfig`, and a fixed `cache_size` is split between the target and the draft in proportion to their KV size per token.
+With dynamic split fuse, the default, the draft step that runs the last prompt rows of a request also drafts its first block.
+Without dynamic split fuse, a scheduler step runs either prompt or generation rows, so the first block waits one step and every request runs one target step without candidates.
+
+### Draft Step Metrics
+
+`result.extended_perf_metrics` breaks every DFlash draft step down.
+`draft_step_metrics` holds the wall-clock time of each draft step, until its candidates are submitted to the target.
+Within each step, `draft_model_metrics` holds the draft-backbone inference, `draft_markov_head_metrics` the Markov head inference of DSpark and DFlash v2 drafts, and `draft_sampling_metrics` the candidate sampling; the rest is scheduling, input preparation, and candidate submission.
+`get_draft_to_main_inference_duration_ratio()` counts the Markov head inference with the draft backbone's.
+
 :::warning Runtime limits
 DFlash uses the Continuous Batching backend on CPU and GPU; NPU and the Stateful backend are not supported.
 
-- Greedy decoding only, with one return sequence per request.
+- Greedy decoding and multinomial sampling are supported, with one return sequence per request.
   Beam search, adapters, prompt lookup, and `assistant_confidence_threshold` are not supported.
 - Cache eviction (`SchedulerConfig.use_cache_eviction`) is not supported for the target or the draft.
 - With a VLM target and prefix caching, `ChatHistory` and image `add_request()` requests need `num_assistant_tokens` > 0.
+- For a linear-attention target, leave `SchedulerConfig.num_linear_attention_blocks` at `0` for automatic allocation, or explicitly provide one committed state row per concurrent request plus `num_assistant_tokens + 1` speculative checkpoint rows, and one more row with prefix caching.
+- Streaming is supported for a single request.
 - Omni intermediate outputs (`return_omni_outputs`) are not supported.
 :::
 
@@ -444,6 +477,9 @@ When the context allows several continuations, such as "of course" and "no probl
 The Markov head is a small sequential stage after the parallel draft: it biases every drafted position by the token drafted before it, so the tokens of a block follow from each other.
 
 DSpark drafts run through the DFlash pipeline, so the [DFlash](#dflash) section, including its runtime limits, applies to them as well.
+
+DFlash v2 drafts have a gated Markov head, which also reads the draft hidden states.
+This section applies to them as well, except that their Markov head has no dense Markov walk.
 
 ### Model Preparation
 
@@ -503,10 +539,10 @@ As for DFlash, set `num_assistant_tokens` per request. A DSpark draft also takes
 `draft_model` loads the Markov head next to the draft backbone and runs it on the draft device, in one of two modes selected by the `markov_head_top_k` draft property:
 
 - Top-K candidate scorer (the default): keeps the `K` best backbone candidates at every drafted position and scores every pair of neighboring candidates with the Markov head, in one inference for all scheduled requests. By default, `K` is the value stored in the exported Markov head: 64 for drafts exported with optimum-intel, or the draft vocabulary size if it is smaller. Set `markov_head_top_k` to another `K` between 1 and the draft vocabulary size to change it. The pipeline warns for a `K` of 1, where the Markov head has no effect, and for a `K` below 8, where fewer draft tokens may be accepted.
-- Dense Markov walk (`markov_head_top_k = 0`): corrects every drafted position with the Markov head, one inference per position.
+- Dense Markov walk (`markov_head_top_k = 0`, DSpark drafts only): corrects every drafted position with the Markov head, one inference per position.
 
-The Top-K candidate scorer runs the Markov head once per step instead of once per drafted position, so it is usually faster. It drafts the same tokens as the dense walk up to floating-point rounding, except where the walk would pick a token outside the `K` candidates.
-The target verifies every drafted token either way, so the mode does not change the output.
+The Top-K candidate scorer runs the Markov head once per step instead of once per drafted position, so it is usually faster. With greedy decoding, it drafts the same tokens as the dense walk up to floating-point rounding, except where the walk would pick a token outside the `K` candidates.
+The target verifies every drafted token either way, so the mode changes neither the greedy output nor the output distribution of sampled decoding.
 `draft_model` rejects `markov_head_top_k` for a draft without a Markov head.
 
 <LanguageTabs>
@@ -526,5 +562,5 @@ The target verifies every drafted token either way, so the mode does not change 
 
 ### Candidate Selection
 
-- With the Top-K candidate scorer, the draft walks the candidates position by position, taking the best-scoring candidate after the previous drafted token. When the request's penalties or `min_new_tokens` can change the best token, the draft sampler applies them to the candidate scores, and a drafted token outside the candidates ends the block.
-- With the dense Markov walk, the draft takes every drafted token from the backbone logits corrected by the Markov head, after the request's logit processors.
+- With the Top-K candidate scorer, greedy decoding walks the candidates position by position, taking the best-scoring candidate after the previous drafted token. When the request's penalties or `min_new_tokens` can change the best token, the draft sampler applies them to the candidate scores, and a drafted token outside the candidates ends the block. Multinomial sampling draws every drafted token from its `K` candidates, with the request temperature applied to their scores.
+- With the dense Markov walk, the draft takes or draws every drafted token from the backbone logits corrected by the Markov head, after the request's logit processors.
