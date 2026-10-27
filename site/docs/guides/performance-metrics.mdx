@@ -133,6 +133,8 @@ These metrics distinguish draft candidates from draft-model processing work:
 - `get_draft_acceptance_rate()` returns `accepted / draft` as a value in the `[0, 1]` range.
 - `draft_model_metrics.get_num_generated_tokens()` reports draft-model processed tokens and can include non-candidate work such as cache or state alignment; do not use it as the acceptance-rate denominator.
 
+With DFlash and DSpark drafts, `draft_step_metrics` reports the duration of every draft step, and `draft_markov_head_metrics` and `draft_sampling_metrics` report the time the step spends in the Markov head and in candidate sampling.
+
 <LanguageTabs>
     <TabItemPython>
         ```python
