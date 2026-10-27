@@ -48,7 +48,7 @@ Napi::Value VLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
                                  images = std::move(images),
                                  videos = std::move(videos),
                                  properties = std::move(properties)]() mutable -> JsResultProducer {
-            auto config = pipe->get_generation_config();
+            ov::genai::GenerationConfig config;
             config.update_generation_config(properties);
             ov::genai::StreamerVariant streamer = std::monostate();
             if (context->streamer) {

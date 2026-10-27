@@ -43,7 +43,7 @@ Napi::Value LLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
                                  pipe = pipe,
                                  inputs = std::move(inputs),
                                  properties = std::move(generation_config)]() mutable -> JsResultProducer {
-            auto config = pipe->get_generation_config();
+            ov::genai::GenerationConfig config;
             config.update_generation_config(properties);
             ov::genai::StreamerVariant streamer = std::monostate();
             if (context->streamer) {
