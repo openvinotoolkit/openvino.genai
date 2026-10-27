@@ -55,7 +55,7 @@ Qwen3ASRPipelineBase::Qwen3ASRPipelineBase(const std::filesystem::path& models_p
     m_generation_config.stop_token_ids.insert(151645);
 }
 
-ASRDecodedResults Qwen3ASRPipelineBase::generate(const AudioInputs& audio_inputs,
+ASRDecodedResults Qwen3ASRPipelineBase::generate(const std::vector<float>& audio,
                                                  const std::optional<ASRGenerationConfig>& generation_config,
                                                  const std::shared_ptr<StreamerBase> streamer) {
     const auto start_time = std::chrono::steady_clock::now();
@@ -65,14 +65,6 @@ ASRDecodedResults Qwen3ASRPipelineBase::generate(const AudioInputs& audio_inputs
     ASRDecodedResults results;
     results.perf_metrics.load_time = m_load_time_ms;
     results.perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
-
-    const std::vector<float>& audio = std::visit(
-        ov::genai::utils::overloaded{
-            [](const std::vector<float>& input) -> const std::vector<float>& {
-                return input;
-            },
-        },
-        audio_inputs);
 
     const size_t max_chunk_sec = config.word_timestamps ? MAX_TIMESTAMPED_ASR_INPUT_SECONDS : MAX_ASR_INPUT_SECONDS;
     const std::vector<AudioChunk> chunks =

@@ -24,7 +24,7 @@ namespace ov::genai {
  */
 class Qwen3ASRPipelineBase : public ASRPipelineImplBase {
 public:
-    ASRDecodedResults generate(const AudioInputs& audio_inputs,
+    ASRDecodedResults generate(const std::vector<float>& audio,
                                const std::optional<ASRGenerationConfig>& generation_config,
                                const std::shared_ptr<StreamerBase> streamer = nullptr) override;
 

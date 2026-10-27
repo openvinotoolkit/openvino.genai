@@ -313,11 +313,11 @@ An entry may be empty or omit a key when the corresponding tag is not recognized
 
 #### Batched Transcription
 
-SenseVoiceSmall supports transcribing multiple audio inputs in a single inference. Pass a list of utterances instead of a single audio input.
+SenseVoiceSmall supports transcribing multiple audio inputs in a single inference. Pass a list of waveforms instead of a single waveform.
 
 Results preserve input order: `texts[i]`, `languages[i]` and `metadata[i]` correspond to the i-th input. Generation settings, including `language` and `use_itn`, apply to the entire batch.
 
-Inputs are padded to the longest utterance, so grouping audio of similar duration reduces padding overhead. Streaming is supported only for a single utterance.
+Inputs are padded to the longest waveform, so grouping audio of similar duration reduces padding overhead. Streaming is supported only for a single audio input.
 
 <LanguageTabs>
     <TabItemPython>
@@ -333,7 +333,7 @@ Inputs are padded to the longest utterance, so grouping audio of similar duratio
         ```cpp
         ov::genai::ASRPipeline pipe(model_path, "CPU");
 
-        std::vector<std::vector<float>> audio_batch{raw_speech_1, raw_speech_2};
+        ov::genai::AudioInputs audio_batch = std::vector<std::vector<float>>{raw_speech_1, raw_speech_2};
         auto result = pipe.generate(audio_batch, ov::genai::language("en"));
         for (const auto& text : result.texts) {
             std::cout << text << '\n';

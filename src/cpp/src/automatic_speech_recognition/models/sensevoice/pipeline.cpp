@@ -10,7 +10,6 @@
 #include <optional>
 #include <string>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "openvino/core/except.hpp"
@@ -159,16 +158,9 @@ SenseVoiceSmall::SenseVoiceSmall(const std::filesystem::path& models_path,
     m_request = model.create_infer_request();
 }
 
-ASRDecodedResults SenseVoiceSmall::generate(const AudioInputs& audio_inputs,
+ASRDecodedResults SenseVoiceSmall::generate(const std::vector<float>& audio,
                                             const std::optional<ASRGenerationConfig>& generation_config,
                                             const std::shared_ptr<StreamerBase> streamer) {
-    const std::vector<float>& audio = std::visit(
-        ov::genai::utils::overloaded{
-            [](const std::vector<float>& input) -> const std::vector<float>& {
-                return input;
-            },
-        },
-        audio_inputs);
     return transcribe({&audio}, generation_config, streamer);
 }
 
@@ -192,9 +184,9 @@ ASRDecodedResults SenseVoiceSmall::transcribe(const std::vector<const std::vecto
 
     const size_t batch_size = audios.size();
     OPENVINO_ASSERT(!streamer || batch_size == 1,
-                    "SenseVoiceSmall supports streamers only for a single audio input, but got ",
+                    "SenseVoiceSmall supports streamers only for a single audio input, but received ",
                     batch_size,
-                    " utterances.");
+                    " audio inputs.");
 
     ASRDecodedResults results;
     results.perf_metrics.load_time = m_load_time_ms;

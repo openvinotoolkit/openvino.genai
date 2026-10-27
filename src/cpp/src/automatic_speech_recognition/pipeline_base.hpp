@@ -23,7 +23,7 @@ public:
         : m_generation_config(utils::from_config_json_if_exists<ASRGenerationConfig>(models_path)),
           m_tokenizer{tokenizer} {}
 
-    virtual ASRDecodedResults generate(const AudioInputs& audio_inputs,
+    virtual ASRDecodedResults generate(const std::vector<float>& audio,
                                        const std::optional<ASRGenerationConfig>& generation_config,
                                        const std::shared_ptr<StreamerBase> streamer) = 0;
 
@@ -34,7 +34,7 @@ public:
                         "This ASR model supports only one utterance per call, but received ",
                         audio_batch.size(),
                         ".");
-        return generate(AudioInputs{audio_batch.front()}, generation_config, streamer);
+        return generate(audio_batch.front(), generation_config, streamer);
     }
 
     virtual void set_generation_config(const ASRGenerationConfig& config) {
