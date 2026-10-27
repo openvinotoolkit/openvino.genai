@@ -303,12 +303,28 @@ python benchmark.py -m models/whisper-base/ --media ./how_are_you_doing_today.wa
 # Qwen3-Omni speech recognition
 python benchmark.py -m models/qwen3-omni/ --media ./how_are_you_doing_today.wav -p "Transcribe this audio." -n 2 --task speech_to_text
 
+# Gemma 4 E4B speech recognition (requires transformers>=5.5)
+optimum-cli export openvino --model google/gemma-4-E4B-it --task image-text-to-text models/gemma-4-E4B-it
+# OpenVINO GenAI backend (default)
+python benchmark.py -m models/gemma-4-E4B-it/ --media ./how_are_you_doing_today.wav -p "Transcribe this audio." -n 2 --task speech_to_text
+# Optimum Intel backend
+python benchmark.py -m models/gemma-4-E4B-it/ --media ./how_are_you_doing_today.wav -p "Transcribe this audio." -n 2 --task speech_to_text --optimum
+
+# Gemma 4 12B unified architecture (requires transformers==5.10.0)
+optimum-cli export openvino --model google/gemma-4-12B-it --task image-text-to-text models/gemma-4-12B-it
+# OpenVINO GenAI backend (default)
+python benchmark.py -m models/gemma-4-12B-it/ --media ./how_are_you_doing_today.wav -p "Transcribe this audio." -n 2 --task speech_to_text
+# Optimum Intel backend
+python benchmark.py -m models/gemma-4-12B-it/ --media ./how_are_you_doing_today.wav -p "Transcribe this audio." -n 2 --task speech_to_text --optimum
+
 # FunASR speech recognition
 optimum-cli export openvino --model FunAudioLLM/Fun-ASR-Nano-2512 models/fun-asr
 python benchmark.py -m models/fun-asr/ --media ./how_are_you_doing_today.wav -n 2
 ```
 
-> **Supported Speech to Text model types:** whisper, qwen3-asr, fun-asr, qwen3-omni
+Gemma 4 accepts one mono, 16 kHz audio input up to 30 seconds. The OpenVINO GenAI backend downmixes and resamples input audio automatically. With `--optimum`, provide a 16 kHz file; the loader downmixes multichannel audio but preserves its original sample rate. In multi-turn visual chat, audio is not retained in history for subsequent turns.
+
+> **Supported Speech to Text model types:** whisper, qwen3-asr, fun-asr, qwen3-omni, gemma4
 
 
 ### Text Rerank models
