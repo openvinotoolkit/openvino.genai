@@ -17,7 +17,7 @@ public:
 private:
     EncodedVideo encode_frames_with_config(const std::vector<ov::Tensor>& frames,
                                           const ProcessorConfig& config,
-                                          const ImageSize& target);
+                                          bool is_video);
 };
 
 class InputsEmbedderLFM3VL : public InputsEmbedder::IInputsEmbedder {

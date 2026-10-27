@@ -17,29 +17,29 @@ namespace ov::genai {
 
 EncodedImage VisionEncoderLFM3VL::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     const ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
-    OPENVINO_ASSERT(config.patch_size > 0 && config.merge_size > 0 && config.temporal_patch_size > 0,
-                    "LFM3-VL patch sizes and spatial merge size must be positive.");
     const ov::Shape& shape = image.get_shape();
     OPENVINO_ASSERT(shape.size() == 4 && shape[0] == 1 && shape[1] > 0 && shape[2] > 0 && shape[3] == 3,
                     "LFM3-VL expects a non-empty RGB image with shape [1, height, width, 3].");
-    const ImageSize target = qwen2_vl_utils::smart_resize(shape[1], shape[2],
-                                                        config.patch_size * config.merge_size,
-                                                        config.min_pixels, config.max_pixels);
-    auto encoded = encode_frames_with_config({image}, config, target);
+    auto encoded = encode_frames_with_config({image}, config, false);
     EncodedImage result{std::move(encoded.video_features), encoded.resized_source_size};
     result.num_image_tokens = encoded.num_video_tokens;
     return result;
 }
 
 EncodedVideo VisionEncoderLFM3VL::encode_frames(const std::vector<ov::Tensor>& frames) {
-    OPENVINO_ASSERT(!frames.empty(), "LFM3-VL video must contain at least one frame.");
-    const auto& config = m_video_processor_config;
+    return encode_frames_with_config(frames, m_video_processor_config, true);
+}
+
+EncodedVideo VisionEncoderLFM3VL::encode_frames_with_config(const std::vector<ov::Tensor>& frames,
+                                                          const ProcessorConfig& config,
+                                                          bool is_video) {
+    OPENVINO_ASSERT(!frames.empty(), "LFM3-VL vision encoding requires at least one frame.");
     OPENVINO_ASSERT(config.patch_size > 0 && config.merge_size > 0 && config.temporal_patch_size > 0 &&
                         config.min_pixels > 0 && config.max_pixels >= config.min_pixels,
-                    "LFM3-VL video patch sizes and pixel limits must be positive and ordered.");
+                    "LFM3-VL patch sizes and pixel limits must be positive and ordered.");
     const auto& shape = frames.front().get_shape();
     OPENVINO_ASSERT(shape.size() == 4 && shape[0] == 1 && shape[1] > 0 && shape[2] > 0 && shape[3] == 3,
-                    "LFM3-VL video frames must have shape [1, height, width, 3].");
+                    "LFM3-VL frames must have shape [1, height, width, 3].");
     const size_t factor = config.patch_size * config.merge_size;
     size_t height = shape[1];
     size_t width = shape[2];
@@ -49,11 +49,12 @@ EncodedVideo VisionEncoderLFM3VL::encode_frames(const std::vector<ov::Tensor>& f
         width = static_cast<size_t>(width * scale);
     }
     OPENVINO_ASSERT(static_cast<double>(std::max(height, width)) / std::min(height, width) <= 200.0,
-                    "LFM3-VL video aspect ratio must not exceed 200.");
-    const size_t num_frames = std::max(frames.size(), config.temporal_patch_size);
+                    "LFM3-VL aspect ratio must not exceed 200.");
+    // Image limits are spatial; video limits cover all temporally padded frames.
+    const size_t temporal_factor = is_video ? config.temporal_patch_size : 1;
+    const size_t num_frames = std::max(frames.size(), temporal_factor);
     const size_t rounded_frames =
-        static_cast<size_t>(std::nearbyint(static_cast<double>(num_frames) / config.temporal_patch_size)) *
-        config.temporal_patch_size;
+        static_cast<size_t>(std::nearbyint(static_cast<double>(num_frames) / temporal_factor)) * temporal_factor;
     ImageSize target{
         static_cast<size_t>(std::nearbyint(static_cast<double>(height) / factor)) * factor,
         static_cast<size_t>(std::nearbyint(static_cast<double>(width) / factor)) * factor,
@@ -67,16 +68,8 @@ EncodedVideo VisionEncoderLFM3VL::encode_frames(const std::vector<ov::Tensor>& f
         target.height = static_cast<size_t>(std::ceil(height * beta / factor)) * factor;
         target.width = static_cast<size_t>(std::ceil(width * beta / factor)) * factor;
     }
-    return encode_frames_with_config(frames, config, target);
-}
-
-EncodedVideo VisionEncoderLFM3VL::encode_frames_with_config(const std::vector<ov::Tensor>& frames,
-                                                          const ProcessorConfig& config,
-                                                          const ImageSize& target) {
-    OPENVINO_ASSERT(!frames.empty(), "LFM3-VL vision encoding requires at least one frame.");
     std::vector<clip_image_u8> resized_frames;
     resized_frames.reserve(frames.size());
-    const auto& shape = frames.front().get_shape();
     for (const auto& frame : frames) {
         OPENVINO_ASSERT(frame.get_shape() == shape && frame.get_element_type() == ov::element::u8,
                         "LFM3-VL frames must have the same shape and uint8 element type.");
