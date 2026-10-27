@@ -94,6 +94,15 @@ def _build_parser():
     base.add_argument("--device", default="CPU", help="Device to run the model on (default: CPU)")
     base.add_argument("--max_new_tokens", type=int, default=None, help="Optional cap for generated tokens")
     base.add_argument("--seed", type=int, default=None, help="Optional RNG seed for deterministic generation")
+    base.add_argument(
+        "--do_sample", choices=("true", "false"), default=None, help="Sample talker tokens (default: model config)"
+    )
+    base.add_argument(
+        "--subtalker_dosample",
+        choices=("true", "false"),
+        default=None,
+        help="Sample subtalker tokens (default: model config)",
+    )
     base.add_argument("--output_wav_path", default="output_audio.wav", help="Output WAV path")
 
     customvoice = subparsers.add_parser("customvoice", help="Qwen3-TTS CustomVoice generation")
@@ -105,6 +114,15 @@ def _build_parser():
     customvoice.add_argument("--device", default="CPU", help="Device to run the model on (default: CPU)")
     customvoice.add_argument("--max_new_tokens", type=int, default=None, help="Optional cap for generated tokens")
     customvoice.add_argument("--seed", type=int, default=None, help="Optional RNG seed for deterministic generation")
+    customvoice.add_argument(
+        "--do_sample", choices=("true", "false"), default=None, help="Sample talker tokens (default: model config)"
+    )
+    customvoice.add_argument(
+        "--subtalker_dosample",
+        choices=("true", "false"),
+        default=None,
+        help="Sample subtalker tokens (default: model config)",
+    )
     customvoice.add_argument("--output_wav_path", default="output_audio.wav", help="Output WAV path")
 
     voice_design = subparsers.add_parser("voice-design", help="Qwen3-TTS VoiceDesign generation")
@@ -115,6 +133,15 @@ def _build_parser():
     voice_design.add_argument("--device", default="CPU", help="Device to run the model on (default: CPU)")
     voice_design.add_argument("--max_new_tokens", type=int, default=None, help="Optional cap for generated tokens")
     voice_design.add_argument("--seed", type=int, default=None, help="Optional RNG seed for deterministic generation")
+    voice_design.add_argument(
+        "--do_sample", choices=("true", "false"), default=None, help="Sample talker tokens (default: model config)"
+    )
+    voice_design.add_argument(
+        "--subtalker_dosample",
+        choices=("true", "false"),
+        default=None,
+        help="Sample subtalker tokens (default: model config)",
+    )
     voice_design.add_argument("--output_wav_path", default="output_audio.wav", help="Output WAV path")
 
     return parser
@@ -145,6 +172,10 @@ def _run_base(args):
         generation_properties["max_new_tokens"] = args.max_new_tokens
     if args.seed is not None:
         generation_properties["rng_seed"] = args.seed
+    if args.do_sample is not None:
+        generation_properties["do_sample"] = args.do_sample == "true"
+    if args.subtalker_dosample is not None:
+        generation_properties["subtalker_dosample"] = args.subtalker_dosample == "true"
 
     icl_mode = bool(args.ref_text.strip())
     print(f"[Info] Qwen3-TTS Base voice clone ({'ICL' if icl_mode else 'x-vector'} mode).")
@@ -187,6 +218,10 @@ def _run_customvoice(args):
         generation_properties["max_new_tokens"] = args.max_new_tokens
     if args.seed is not None:
         generation_properties["rng_seed"] = args.seed
+    if args.do_sample is not None:
+        generation_properties["do_sample"] = args.do_sample == "true"
+    if args.subtalker_dosample is not None:
+        generation_properties["subtalker_dosample"] = args.subtalker_dosample == "true"
 
     result = pipe.generate(args.text, None, **generation_properties)
     _write_audio_and_perf(result, args.output_wav_path)
@@ -205,6 +240,10 @@ def _run_voice_design(args):
         generation_properties["max_new_tokens"] = args.max_new_tokens
     if args.seed is not None:
         generation_properties["rng_seed"] = args.seed
+    if args.do_sample is not None:
+        generation_properties["do_sample"] = args.do_sample == "true"
+    if args.subtalker_dosample is not None:
+        generation_properties["subtalker_dosample"] = args.subtalker_dosample == "true"
 
     result = pipe.generate(args.text, None, **generation_properties)
     _write_audio_and_perf(result, args.output_wav_path)
