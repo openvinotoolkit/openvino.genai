@@ -661,3 +661,65 @@ class TestTextToSpeechSample:
 
         assert "Text successfully converted to audio file" in cpp_result.stdout
         assert "Text successfully converted to audio file" in py_result.stdout
+
+    @pytest.mark.speech_generation
+    @pytest.mark.qwen3_tts
+    @pytest.mark.samples
+    @pytest.mark.parametrize(
+        "convert_model",
+        ["tiny-random-qwen3-tts"],
+        indirect=True,
+    )
+    @pytest.mark.parametrize("sample_kind", ["python", "cpp"])
+    def test_sample_qwen3_tts_sampling_options(
+        self,
+        convert_model,
+        qwen3_reference_audio_wav_path: str,
+        sample_kind: str,
+        tmp_path: Path,
+    ):
+        prompt = "Hello from OpenVINO GenAI Qwen3 Base sample."
+        if sample_kind == "python":
+            launcher = [sys.executable, SAMPLES_PY_DIR / "speech_generation/qwen3_tts.py"]
+        else:
+            launcher = [SAMPLES_CPP_DIR / "qwen3_tts"]
+
+        def run_base(output_name: str, *sampling_args: str) -> bytes:
+            output_wav = tmp_path / f"{output_name}.wav"
+            run_sample(
+                [
+                    *launcher,
+                    "base",
+                    convert_model,
+                    prompt,
+                    "--ref_audio_wav_path",
+                    qwen3_reference_audio_wav_path,
+                    "--language",
+                    "english",
+                    "--max_new_tokens",
+                    "32",
+                    "--output_wav_path",
+                    str(output_wav),
+                    *sampling_args,
+                ]
+            )
+            return output_wav.read_bytes()
+
+        greedy_args = ("--do_sample", "false", "--subtalker_dosample", "false")
+        assert run_base("greedy_1", *greedy_args) == run_base("greedy_2", *greedy_args), (
+            "Output must be identical when sampling is disabled"
+        )
+
+        seeded_args = ("--do_sample", "true", "--subtalker_dosample", "true")
+        seeded_first = run_base("seed_7_1", *seeded_args, "--rng_seed", "7")
+        assert seeded_first == run_base("seed_7_2", *seeded_args, "--rng_seed", "7"), (
+            "Output must be identical for the same --rng_seed"
+        )
+
+        for invalid_args in (
+            ("--do_sample", "maybe"),
+            ("--subtalker_dosample", "2"),
+            ("--rng_seed", "abc"),
+        ):
+            with pytest.raises(subprocess.CalledProcessError):
+                run_base("invalid", *invalid_args)
