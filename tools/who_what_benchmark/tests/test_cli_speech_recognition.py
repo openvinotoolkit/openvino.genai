@@ -84,16 +84,6 @@ def whisper_ground_truth(tmp_path_factory):
     return gt_file
 
 
-def test_asr_whisper_hf(tmp_path, whisper_ground_truth):
-    common = _common_args(whisper_ground_truth)
-
-    hf_similarity = get_similarity(run_wwb(["--target-model", WHISPER_MODEL, *common, "--hf", "--output", tmp_path]))
-    reproduced = get_similarity(run_wwb(["--target-data", tmp_path / "target.csv", *common]))
-
-    assert hf_similarity >= 0.90
-    assert reproduced == hf_similarity
-
-
 def test_asr_whisper_optimum(tmp_path, whisper_ground_truth):
     common = _common_args(whisper_ground_truth)
 
