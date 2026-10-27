@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 FUNASR_TOKENIZER_SUBFOLDER = (
     "Qwen3-0.6B"  # Source layout: https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512/tree/main/Qwen3-0.6B
 )
-ASR_MODEL_TYPES = {"funasr", "fun_asr"}
+FUNASR_MODEL_TYPES = {"funasr", "fun_asr"}
 WHISPER_MODEL_TYPES = {"whisper"}
 
 DEFAULT_ASR_INSTRUCTION = "Transcribe this audio."
@@ -267,7 +267,7 @@ class ASRHFTranscriber:
     @staticmethod
     def create(model_id, device="CPU", ov_config=None, language="", **kwargs):
         model_type = _get_asr_model_type(model_id)
-        if model_type in ASR_MODEL_TYPES:
+        if model_type in FUNASR_MODEL_TYPES:
             logger.info("Using FunASR API")
             return FunASRSourceTranscriber(
                 model_id,
@@ -286,7 +286,7 @@ class ASRGenAITranscriber:
     @staticmethod
     def create(model_id, device="CPU", ov_config=None, language="", **kwargs):
         model_type = _get_asr_model_type(model_id)
-        if model_type in ASR_MODEL_TYPES:
+        if model_type in FUNASR_MODEL_TYPES:
             logger.info("Using OpenVINO GenAI ASRPipeline API")
             import openvino_genai
 
@@ -306,7 +306,7 @@ class ASROptimumTranscriber:
     @staticmethod
     def create(model_id, device="CPU", ov_config=None, language="", **kwargs):
         model_type = _get_asr_model_type(model_id)
-        if model_type in ASR_MODEL_TYPES:
+        if model_type in FUNASR_MODEL_TYPES:
             logger.info("Using Optimum API")
             from optimum.intel.openvino import OVModelForSpeechSeq2Seq
             from transformers import AutoTokenizer
