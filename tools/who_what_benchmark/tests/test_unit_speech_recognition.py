@@ -148,10 +148,13 @@ class _FakeTokenizer:
     "generated",
     [torch.tensor([[1, 2, 3, 7, 8]]), types.SimpleNamespace(sequences=torch.tensor([[1, 2, 3, 7, 8]]))],
 )
-def test_funasr_optimum_transcriber_decodes_generated_ids_only(generated):
+def test_funasr_optimum_transcriber_decodes_generated_ids_only(generated, monkeypatch):
     model, tokenizer = _FakeSpeechSeq2Seq(generated), _FakeTokenizer()
+    monkeypatch.setattr("optimum.intel.openvino.OVModelForSpeechSeq2Seq.from_pretrained", lambda *a, **kw: model)
+    monkeypatch.setattr("transformers.AutoTokenizer.from_pretrained", lambda *a, **kw: tokenizer)
 
-    assert FunASROptimumTranscriber(model, tokenizer, "en").transcribe(np.zeros(16, dtype=np.float32), 32) == "decoded"
+    transcriber = FunASROptimumTranscriber("model_id", "funasr", "CPU", None, "en")
+    assert transcriber.transcribe(np.zeros(16, dtype=np.float32), 32) == "decoded"
     assert model.preprocess_call == {"sampling_rate": 16000, "language": "en"}
     assert model.generate_call["max_new_tokens"] == 32
     # the 3 prompt ids are dropped, only the generated ids are decoded
