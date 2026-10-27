@@ -471,6 +471,11 @@ When word timestamps are enabled for Qwen3-ASR, audio is processed in chunks of 
 Qwen3-ASR streaming supports only audio that fits a single chunk: up to approximately 1200 seconds, or 180 seconds with word timestamps enabled.
 For longer audio, `generate()` throws an exception when a streamer is passed. Call `generate()` without a streamer instead.
 
+Qwen3-ASR models exported with a separate audio encoder (`openvino_audio_encoder_model.xml`) run with the `PA` attention backend by default.
+For such models, audio longer than a single chunk is split into chunks, and all chunks are transcribed together as a single batch.
+Batching reduces the total transcription time, but peak memory consumption grows with the audio duration.
+On memory-constrained devices, split long audio into shorter parts and call `generate()` for each part.
+
 The forced aligner is also available as a standalone `ASRForcedAligner` class, usable independently of `ASRPipeline`.
 
 <LanguageTabs>
