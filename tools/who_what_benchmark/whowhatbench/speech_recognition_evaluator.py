@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 FUNASR_TOKENIZER_SUBFOLDER = (
     "Qwen3-0.6B"  # Source layout: https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512/tree/main/Qwen3-0.6B
 )
-ASR_MODEL_TYPES = {"funasr", "fun_asr", "sense_voice"}
+FUNASR_MODEL_TYPES = {"funasr", "fun_asr", "sense_voice"}
 QWEN_ASR_MODEL_TYPES = {"qwen3_asr"}
 WHISPER_MODEL_TYPES = {"whisper"}
 
@@ -359,7 +359,7 @@ class ASRHFTranscriber:
     @staticmethod
     def create(model_id, device="CPU", ov_config=None, language="", **kwargs):
         model_type = _get_asr_model_type(model_id)
-        if model_type in ASR_MODEL_TYPES:
+        if model_type in FUNASR_MODEL_TYPES:
             logger.info("Using FunASR API")
             return FunASRSourceTranscriber(
                 model_id,
@@ -381,12 +381,12 @@ class ASRGenAITranscriber:
     @staticmethod
     def create(model_id, device="CPU", ov_config=None, language="", **kwargs):
         model_type = _get_asr_model_type(model_id)
-        if model_type in ASR_MODEL_TYPES | QWEN_ASR_MODEL_TYPES:
+        if model_type in FUNASR_MODEL_TYPES | QWEN_ASR_MODEL_TYPES:
             logger.info("Using OpenVINO GenAI ASRPipeline API")
             import openvino_genai
 
             pipeline = openvino_genai.ASRPipeline(str(model_id), device.upper(), **(ov_config or {}))
-            default_language = "en" if model_type in ASR_MODEL_TYPES else ""
+            default_language = "en" if model_type in FUNASR_MODEL_TYPES else ""
             return ASRGenAIPipelineTranscriber(pipeline, language or default_language, model_type=model_type)
         if model_type in WHISPER_MODEL_TYPES:
             logger.info("Using OpenVINO GenAI WhisperPipeline API")
@@ -403,7 +403,7 @@ class ASROptimumTranscriber:
     @staticmethod
     def create(model_id, device="CPU", ov_config=None, language="", **kwargs):
         model_type = _get_asr_model_type(model_id)
-        if model_type in ASR_MODEL_TYPES:
+        if model_type in FUNASR_MODEL_TYPES:
             logger.info("Using Optimum API")
             from transformers import AutoTokenizer
 
