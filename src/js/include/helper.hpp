@@ -14,6 +14,7 @@
 #include "openvino/genai/image_generation/generation_config.hpp"
 #include "openvino/genai/image_generation/image_generation_perf_metrics.hpp"
 #include "openvino/genai/omni/pipeline.hpp"
+#include "openvino/genai/rag/embedding_pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/genai/rag/text_rerank_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
@@ -230,6 +231,11 @@ Napi::Value cpp_to_js<ov::genai::EmbeddingResult, Napi::Value>(const Napi::Env& 
 template <>
 Napi::Value cpp_to_js<ov::genai::EmbeddingResults, Napi::Value>(const Napi::Env& env,
                                                                 const ov::genai::EmbeddingResults& embedding_result);
+
+/** @brief  A template specialization for TargetType Napi::Value and SourceType ov::genai::EmbedResult */
+template <>
+Napi::Value cpp_to_js<ov::genai::EmbedResult, Napi::Value>(const Napi::Env& env,
+                                                           const ov::genai::EmbedResult& embed_result);
 
 /** @brief  A template specialization for TargetType Napi::Value and SourceType std::vector<std::string> */
 template <>
