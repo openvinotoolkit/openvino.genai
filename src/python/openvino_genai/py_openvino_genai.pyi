@@ -44,9 +44,9 @@ class ASRDecodedResults:
         perf_metrics:       performance metrics with tpot, ttft, etc. of type ov::genai::ASRPerfMetrics.
         chunks:             optional chunks of resulting sequences with timestamps
         words:              optional chunks of resulting words with timestamps
-        features:           optional model-specific features for each transcription.
-                            Models without feature support leave this unset (None in Python).
-                            When present, features[i] corresponds to texts[i]. Each map holds
+        metadata:           optional model-specific metadata for each transcription.
+                            Models without metadata support leave this unset (None in Python).
+                            When present, metadata[i] corresponds to texts[i]. Each map holds
                             model-defined key/value metadata and may be empty when no metadata
                             is predicted.
     """
@@ -56,10 +56,10 @@ class ASRDecodedResults:
     def chunks(self) -> list[list[ASRDecodedResultChunk]] | None:
         ...
     @property
-    def features(self) -> list[dict[str, typing.Any]] | None:
+    def languages(self) -> list[str]:
         ...
     @property
-    def languages(self) -> list[str]:
+    def metadata(self) -> list[dict[str, typing.Any]] | None:
         ...
     @property
     def perf_metrics(self) -> ASRPerfMetrics:

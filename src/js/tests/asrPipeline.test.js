@@ -197,11 +197,11 @@ describe("ASRPipeline with word_timestamps=true (Whisper backend)", () => {
   });
 });
 
-describe("ASRPipeline features forwarding", () => {
-  // Mock the native pipeline to verify feature forwarding without a SenseVoice model.
-  it("generate() forwards native features into ASRDecodedResults", async () => {
+describe("ASRPipeline metadata forwarding", () => {
+  // Mock the native pipeline to verify metadata forwarding without a SenseVoice model.
+  it("generate() forwards native metadata into ASRDecodedResults", async () => {
     const pipeline = new ASRPipelineClass(WHISPER_MODEL_PATH, "CPU");
-    const nativeFeatures = [{ emotion: "HAPPY", event: "Speech" }];
+    const nativeMetadata = [{ emotion: "HAPPY", event: "Speech" }];
     pipeline.pipeline = {
       generate(_rawSpeech, _config, _streamer, callback) {
         callback(null, {
@@ -211,19 +211,19 @@ describe("ASRPipeline features forwarding", () => {
           languages: ["en"],
           chunks: undefined,
           words: undefined,
-          features: nativeFeatures,
+          metadata: nativeMetadata,
         });
       },
     };
 
     const result = await pipeline.generate(new Float32Array(10));
 
-    assert.ok(Array.isArray(result.features));
-    assert.strictEqual(result.features.length, 1);
-    assert.deepStrictEqual(result.features[0], { emotion: "HAPPY", event: "Speech" });
+    assert.ok(Array.isArray(result.metadata));
+    assert.strictEqual(result.metadata.length, 1);
+    assert.deepStrictEqual(result.metadata[0], { emotion: "HAPPY", event: "Speech" });
   });
 
-  it("generate() leaves features undefined when the native layer omits them", async () => {
+  it("generate() leaves metadata undefined when the native layer omits it", async () => {
     const pipeline = new ASRPipelineClass(WHISPER_MODEL_PATH, "CPU");
     pipeline.pipeline = {
       generate(_rawSpeech, _config, _streamer, callback) {
@@ -238,7 +238,7 @@ describe("ASRPipeline features forwarding", () => {
 
     const result = await pipeline.generate(new Float32Array(10));
 
-    assert.strictEqual(result.features, undefined);
+    assert.strictEqual(result.metadata, undefined);
   });
 });
 

@@ -8,7 +8,6 @@
 #include <filesystem>
 #include <set>
 
-#include "cpp_to_js.hpp"
 #include "openvino/core/type/element_type.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
@@ -201,6 +200,16 @@ ov::genai::ImageGenerationPerfMetrics& unwrap<ov::genai::ImageGenerationPerfMetr
 
 ov::genai::ChatHistory unwrap_chat_history(const Napi::Env& env, const Napi::Value& value);
 
+/**
+ * @brief  Template function to convert C++ data types into Javascript data types
+ * @tparam TargetType Destinated Javascript data type.
+ * @tparam SourceType C++ data type.
+ * @param info Contains the environment in which to construct a JavaScript object.
+ * @return SourceType converted to a TargetType.
+ */
+template <typename SourceType, typename TargetType>
+TargetType cpp_to_js(const Napi::Env& env, const SourceType& value);
+
 /** @brief  A template specialization for TargetType Napi::Value and SourceType int64_t */
 template <>
 Napi::Value cpp_to_js<int64_t, Napi::Value>(const Napi::Env& env, const int64_t& value);
@@ -262,6 +271,20 @@ template <>
 Napi::Value cpp_to_js<std::vector<std::pair<size_t, float>>, Napi::Value>(
     const Napi::Env& env,
     const std::vector<std::pair<size_t, float>>& rerank_results);
+
+/**
+ * @brief  A template specialization for TargetType Napi::Value and SourceType ov::Any.
+ * An empty ov::Any maps to null. Throws for unsupported stored types.
+ */
+template <>
+Napi::Value cpp_to_js<ov::Any, Napi::Value>(const Napi::Env& env, const ov::Any& value);
+
+template <>
+Napi::Value cpp_to_js<ov::AnyMap, Napi::Value>(const Napi::Env& env, const ov::AnyMap& value);
+
+template <>
+Napi::Value cpp_to_js<std::vector<ov::AnyMap>, Napi::Value>(const Napi::Env& env,
+                                                            const std::vector<ov::AnyMap>& value);
 
 template <>
 Napi::Value cpp_to_js<ov::Tensor, Napi::Value>(const Napi::Env& env, const ov::Tensor& tensor);

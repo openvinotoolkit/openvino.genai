@@ -48,13 +48,13 @@ struct OPENVINO_GENAI_EXPORTS ASRDecodedResults {
     std::optional<std::vector<std::vector<ASRDecodedResultChunk>>> words = std::nullopt;
 
     /**
-     * @brief Optional model-specific features for each transcription.
+     * @brief Optional model-specific metadata for each transcription.
      *
-     * Models that do not support such features leave this unset.
-     * When present, `features[i]` corresponds to `texts[i]`.
+     * Models that do not provide metadata leave this unset.
+     * When present, `metadata[i]` corresponds to `texts[i]`.
      * Each map contains model-defined key/value metadata and may be empty.
      */
-    std::optional<std::vector<ov::AnyMap>> features = std::nullopt;
+    std::optional<std::vector<ov::AnyMap>> metadata = std::nullopt;
 
     operator std::string() const {
         std::stringstream ss;

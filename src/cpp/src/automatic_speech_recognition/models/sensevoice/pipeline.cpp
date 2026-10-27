@@ -86,7 +86,7 @@ SenseVoiceRichPrefix parse_rich_prefix(ov::genai::Tokenizer& tokenizer,
                                        const std::map<std::string, int64_t>& lid_dict) {
     SenseVoiceRichPrefix prefix;
     // SenseVoice prefix order: language, emotion, event, textnorm.
-    // Textnorm is consumed but not exposed as a result feature.
+    // Textnorm is consumed but not exposed as result metadata.
     std::array<std::optional<std::string>, 4> tags;
     const size_t max_rich = std::min<size_t>(tags.size(), token_ids.size());
     for (size_t i = 0; i < max_rich; ++i) {
@@ -197,14 +197,14 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudioInputs& audio_inputs,
                                             : rich_prefix.language;
     results.languages.push_back(result_language);
 
-    ov::AnyMap feature_entry;
+    ov::AnyMap metadata_entry;
     if (rich_prefix.emotion.has_value()) {
-        feature_entry.emplace("emotion", rich_prefix.emotion.value());
+        metadata_entry.emplace("emotion", rich_prefix.emotion.value());
     }
     if (rich_prefix.event.has_value()) {
-        feature_entry.emplace("event", rich_prefix.event.value());
+        metadata_entry.emplace("event", rich_prefix.event.value());
     }
-    results.features = std::vector<ov::AnyMap>{std::move(feature_entry)};
+    results.metadata = std::vector<ov::AnyMap>{std::move(metadata_entry)};
 
     if (streamer) {
         streamer->write(transcription_token_ids);

@@ -621,9 +621,9 @@ def test_forced_language(sample_from_multilingual_dataset, pipelines_fixture):
     assert detected_language == expected_language
 
     if model_id == SENSEVOICE_SMALL_TINY_MODEL_ID:
-        assert genai_result.features is not None
-        assert len(genai_result.features) == len(genai_result.texts)
-        assert isinstance(genai_result.features[0], dict)
+        assert genai_result.metadata is not None
+        assert len(genai_result.metadata) == len(genai_result.texts)
+        assert isinstance(genai_result.metadata[0], dict)
 
 
 @pytest.mark.parametrize(
@@ -889,7 +889,7 @@ def test_initial_prompt_hotwords(model_descr, sample_from_dataset, pipeline_type
 
     result = genai_pipe.generate(sample_from_dataset)
     if pipeline_type == PipelineType.ASR:
-        assert result.features is None
+        assert result.metadata is None
     assert "Kwilter" not in result.texts[0]
     assert "Quilter" in result.texts[0]
 

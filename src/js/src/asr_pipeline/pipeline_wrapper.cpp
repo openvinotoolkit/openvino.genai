@@ -120,22 +120,20 @@ void asrPerformInferenceThread(ASRTsfnContext* context) {
         } else {
             std::shared_ptr<ov::genai::ASRDecodedResults> final_result =
                 std::make_shared<ov::genai::ASRDecodedResults>(std::move(result));
+            std::shared_ptr<std::string> final_callback_error = std::make_shared<std::string>();
 
             napi_status status = context->callback_tsfn.BlockingCall(
-                [final_result](Napi::Env env, Napi::Function js_callback) {
-                    Napi::Value js_result;
+                [final_result, final_callback_error](Napi::Env env, Napi::Function js_callback) {
                     try {
-                        js_result = to_asr_decoded_result(env, *final_result);
+                        js_callback.Call({env.Null(), to_asr_decoded_result(env, *final_result)});
                     } catch (const std::exception& err) {
-                        js_callback.Call(
-                            {Napi::Error::New(env, "Failed to convert ASR results: " + std::string(err.what())).Value(),
-                             env.Null()});
-                        return;
+                        *final_callback_error = "The final callback failed. Details:\n" + std::string(err.what());
                     }
-                    js_callback.Call({env.Null(), js_result});
                 });
             if (status != napi_ok) {
                 report_error("The final BlockingCall failed with status " + std::to_string(static_cast<int>(status)));
+            } else if (!final_callback_error->empty()) {
+                report_error(*final_callback_error);
             }
         }
     } catch (const std::exception& e) {

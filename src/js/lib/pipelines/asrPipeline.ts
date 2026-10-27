@@ -162,7 +162,7 @@ export class ASRPipeline {
    * @param options.streamer - Optional callback invoked for each decoded chunk.
    * - Return a `StreamingStatus` flag to indicate whether generation should be stopped or cancelled
    * @returns Decoded texts, scores, detected languages, optional timestamps, optional
-   *   model-specific features, and perf metrics.
+   *   model-specific metadata, and perf metrics.
    */
   async generate(
     rawSpeech: RawSpeechInput,
@@ -179,7 +179,7 @@ export class ASRPipeline {
       res.languages,
       res.chunks,
       res.words,
-      res.features,
+      res.metadata,
     );
   }
 
