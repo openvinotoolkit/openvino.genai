@@ -63,6 +63,12 @@ void apply_dflash_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& propert
 DFlashRTInfo extract_dflash_info_from_config(ov::AnyMap& config);
 
 /**
+ * @brief Rejects a DFlash draft in the pipeline properties when is_npu_requested, that is, when the target or the draft
+ * runs on NPU, where pipelines use the stateful backend: DFlash runs on the continuous batching backend only.
+ */
+void reject_dflash_draft_on_npu(bool is_npu_requested, const ov::AnyMap& properties);
+
+/**
  * @brief Promotes DFlash-specific GPU requirements to explicit OpenVINO compile properties.
  *
  * The GPU plugin intentionally ignores generic activation-scale RT info for LLM graphs. DFlash v2
