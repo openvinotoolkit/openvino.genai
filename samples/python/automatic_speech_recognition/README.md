@@ -63,6 +63,35 @@ timestamps: [0.00, 2.00] text:  How are you doing today?
 
 Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#speech-recognition-models-whisper-based) for more details.
 
+# Voxtral Realtime streaming
+
+Voxtral Realtime uses `ASRPipeline.create_stream()` to transcribe audio incrementally. The streaming model export is
+provided by [optimum-intel PR #2075](https://github.com/huggingface/optimum-intel/pull/2075); use an Optimum Intel
+version containing that support.
+
+Install the export and runtime dependencies:
+
+```sh
+pip install --upgrade-strategy eager -r ../../export-requirements.txt
+pip install -r ../../deployment-requirements.txt
+pip install --upgrade git+https://github.com/kbalka/optimum-intel.git@voxtral_streaming_asr
+```
+
+Export the model to OpenVINO:
+
+```sh
+optimum-cli export openvino --trust-remote-code --model mistralai/Voxtral-Mini-4B-Realtime-2602 voxtral-realtime-2602
+```
+
+Run the streaming example with a mono or multichannel audio file. Audio is resampled to mono 16 kHz before streaming:
+
+```sh
+python voxtral_streaming.py voxtral-realtime-2602 audio.wav
+```
+
+The script submits 100 ms audio frames from a producer thread while inference runs and prints transcript deltas as they
+arrive. The optional third argument selects the inference device; it defaults to `CPU`.
+
 # ASR pipeline usage
 
 ```python

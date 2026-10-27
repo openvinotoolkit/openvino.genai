@@ -10,6 +10,7 @@
 
 #include "automatic_speech_recognition/models/fun-asr/pipeline.hpp"
 #include "automatic_speech_recognition/models/qwen3-asr/pipeline.hpp"
+#include "automatic_speech_recognition/models/voxtral-realtime/pipeline.hpp"
 #include "automatic_speech_recognition/models/sensevoice/pipeline.hpp"
 #include "automatic_speech_recognition/models/whisper/pipeline.hpp"
 #include "automatic_speech_recognition/pipeline_base.hpp"
@@ -17,7 +18,7 @@
 
 namespace {
 
-enum class ASRModelType { whisper, qwen3_asr, fun_asr, sense_voice };
+enum class ASRModelType { whisper, qwen3_asr, fun_asr, voxtral_realtime, sense_voice };
 
 ASRModelType read_model_type(const std::filesystem::path& models_path) {
     auto config_path = models_path / "config.json";
@@ -32,6 +33,7 @@ ASRModelType read_model_type(const std::filesystem::path& models_path) {
         {"whisper", ASRModelType::whisper},
         {"qwen3_asr", ASRModelType::qwen3_asr},
         {"fun_asr", ASRModelType::fun_asr},
+        {"voxtral_realtime", ASRModelType::voxtral_realtime},
         {"sense_voice", ASRModelType::sense_voice},
     };
 
@@ -75,6 +77,10 @@ ASRPipeline::ASRPipeline(const std::filesystem::path& models_path,
         m_impl = std::make_unique<FunASR>(models_path, device, properties);
         break;
     }
+    case ASRModelType::voxtral_realtime: {
+        m_impl = std::make_unique<VoxtralASR>(models_path, device, properties);
+        break;
+    }
     case ASRModelType::sense_voice: {
         m_impl = std::make_unique<SenseVoiceSmall>(models_path, device, properties);
         break;
@@ -100,6 +106,35 @@ ASRDecodedResults ASRPipeline::generate(const AudioInputs& audio_inputs, const o
     const std::shared_ptr<StreamerBase> base_streamer = utils::create_streamer(streamer_variant, m_impl->m_tokenizer);
 
     return m_impl->generate(audio_inputs, config, base_streamer);
+}
+
+ASRStream::ASRStream(std::unique_ptr<ASRStreamImplBase> impl) : m_impl{std::move(impl)} {
+    OPENVINO_ASSERT(m_impl, "ASR stream implementation must not be null.");
+}
+
+ASRStream::ASRStream(ASRStream&&) noexcept = default;
+
+ASRStream& ASRStream::operator=(ASRStream&&) noexcept = default;
+
+ASRStream::~ASRStream() = default;
+
+void ASRStream::push_audio(const std::vector<float>& audio_frame) {
+    OPENVINO_ASSERT(m_impl, "ASR stream has been moved from.");
+    m_impl->push_audio(audio_frame);
+}
+
+void ASRStream::end_audio() {
+    OPENVINO_ASSERT(m_impl, "ASR stream has been moved from.");
+    m_impl->end_audio();
+}
+
+ASRDecodedResults ASRStream::generate(const ASRTextCallback& text_callback) {
+    OPENVINO_ASSERT(m_impl, "ASR stream has been moved from.");
+    return m_impl->generate(text_callback);
+}
+
+ASRStream ASRPipeline::create_stream(const std::optional<ASRGenerationConfig>& generation_config) {
+    return ASRStream{m_impl->create_stream(generation_config)};
 }
 
 Tokenizer ASRPipeline::get_tokenizer() {

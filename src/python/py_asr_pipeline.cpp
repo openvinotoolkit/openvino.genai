@@ -21,6 +21,7 @@ using ov::genai::ASRDecodedResults;
 using ov::genai::ASRForcedAligner;
 using ov::genai::ASRGenerationConfig;
 using ov::genai::ASRPerfMetrics;
+using ov::genai::ASRStream;
 using ov::genai::ASRPipeline;
 using ov::genai::ASRRawPerfMetrics;
 using ov::genai::AudioInputs;
@@ -76,6 +77,14 @@ auto asr_decoded_result_chunk_docstring = R"(
     :param end_ts   chunk end time in seconds
     :param text     chunk text
     :param token_ids token ids corresponding to the chunk text
+)";
+
+auto asr_stream_docstring = R"(
+    Streaming audio transcription session.
+
+    generate() runs inference once for the whole stream and consumes audio frames submitted by push_audio()
+    until end_audio() is called. Another thread may call push_audio() and end_audio() while generate() runs.
+    Frames are processed in the order push_audio() calls complete.
 )";
 
 auto asr_generation_config_docstring = R"(
@@ -346,6 +355,47 @@ void init_asr_pipeline(py::module_& m) {
             return res;
         });
 
+    py::class_<ASRStream>(m, "ASRStream", asr_stream_docstring)
+        .def("push_audio",
+             &ASRStream::push_audio,
+             py::arg("audio_frame"),
+             py::call_guard<py::gil_scoped_release>(),
+             "Enqueue normalized mono 16 kHz audio samples for generate() without running inference. "
+             "Blocks while the bounded input queue is full. Raises after end_audio() or once generate() has stopped.")
+        .def("end_audio",
+             &ASRStream::end_audio,
+             py::call_guard<py::gil_scoped_release>(),
+             "Signal the end of audio input. May be called once.")
+        .def(
+            "generate",
+            [](ASRStream& stream,
+               const std::optional<std::function<std::optional<uint16_t>(py::str)>>& py_text_callback) {
+                ov::genai::ASRTextCallback text_callback;
+                if (py_text_callback) {
+                    text_callback = [&py_text_callback](std::string delta) -> ov::genai::StreamingStatus {
+                        py::gil_scoped_acquire acquire;
+                        PyObject* text = PyUnicode_DecodeUTF8(delta.data(), delta.size(), "replace");
+                        if (!text)
+                            throw py::error_already_set();
+                        auto py_text = py::reinterpret_steal<py::str>(text);
+                        const auto status = (*py_text_callback)(py_text);
+                        if (!status || *status == static_cast<uint16_t>(ov::genai::StreamingStatus::RUNNING))
+                            return ov::genai::StreamingStatus::RUNNING;
+                        if (*status == static_cast<uint16_t>(ov::genai::StreamingStatus::CANCEL))
+                            return ov::genai::StreamingStatus::CANCEL;
+                        if (*status == static_cast<uint16_t>(ov::genai::StreamingStatus::TOOL_CALL_STOP))
+                            return ov::genai::StreamingStatus::TOOL_CALL_STOP;
+                        return ov::genai::StreamingStatus::STOP;
+                    };
+                }
+                py::gil_scoped_release release;
+                return stream.generate(text_callback);
+            },
+            py::arg("text_callback") = std::nullopt,
+            "Run inference once over all audio pushed to the stream and return the complete transcription. "
+            "Blocks until end_audio() is called and the queue is drained, or text_callback returns "
+            "StreamingStatus.STOP or StreamingStatus.CANCEL. text_callback receives transcript deltas.");
+
     py::class_<ASRPipeline>(m, "ASRPipeline", "Automatic speech recognition pipeline")
         .def(
             py::init([](const std::filesystem::path& models_path, const std::string& device, const py::kwargs& kwargs) {
@@ -386,6 +436,12 @@ void init_asr_pipeline(py::module_& m) {
             (asr_generate_docstring + std::string(" \n ") + asr_generation_config_docstring).c_str())
 
         .def("get_tokenizer", &ASRPipeline::get_tokenizer)
+        .def(
+            "create_stream",
+            &ASRPipeline::create_stream,
+            py::arg("generation_config") = std::nullopt,
+            "Create a stateful input stream for ASR models that support incremental audio."
+        )
         .def("get_generation_config", &ASRPipeline::get_generation_config, py::return_value_policy::copy)
         .def("set_generation_config", &ASRPipeline::set_generation_config, py::arg("config"));
 

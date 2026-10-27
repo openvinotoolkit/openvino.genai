@@ -564,6 +564,56 @@ Such prompts can be used to steer the model to use particular spellings or style
 For the ASR API, refer to the [ASR Generation Config API](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.ASRGenerationConfig.html).
 :::
 
+### Streaming Audio Input
+
+`ASRPipeline.create_stream()` is available for Voxtral Realtime models. `generate()` runs inference once for the whole stream and delivers transcript deltas to a callback. While it runs, another thread submits normalized, mono 16 kHz PCM frames with `push_audio()`, which only enqueues them, and calls `end_audio()` after the last frame. Frames are processed in submission order. `push_audio()` blocks while the bounded input queue is full and raises after `end_audio()` or once `generate()` has stopped. A callback returning `StreamingStatus.STOP` stops generation; inference errors are raised from `generate()`. Other ASR models continue to use `ASRPipeline.generate()` with a complete audio input.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python showLineNumbers
+        import threading
+        import openvino_genai as ov_genai
+
+        pipe = ov_genai.ASRPipeline(model_path, "CPU")
+        stream = pipe.create_stream()
+
+        def produce_audio():
+            for audio_frame in audio_frames:
+                stream.push_audio(audio_frame)
+            stream.end_audio()
+
+        producer = threading.Thread(target=produce_audio)
+        producer.start()
+        result = stream.generate(lambda delta: print(delta, end="", flush=True))
+        producer.join()
+        print("\nFinal:", result.texts[0])
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp showLineNumbers
+        #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
+        #include <iostream>
+        #include <future>
+
+        ov::genai::ASRPipeline pipe(model_path, "CPU");
+        auto stream = pipe.create_stream();
+
+        auto producer = std::async(std::launch::async, [&stream, &audio_frames] {
+            for (const std::vector<float>& audio_frame : audio_frames) {
+                stream.push_audio(audio_frame);
+            }
+            stream.end_audio();
+        });
+        const auto result = stream.generate([](std::string delta) {
+            std::cout << delta << std::flush;
+            return ov::genai::StreamingStatus::RUNNING;
+        });
+        producer.get();
+        std::cout << "\nFinal: " << result.texts[0] << std::endl;
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
 ### Performance Metrics
 
 `ASRPipeline` returns `ASRDecodedResults` with a `perf_metrics` field of type `ASRPerfMetrics`, which extends [`PerfMetrics`](/docs/guides/performance-metrics).

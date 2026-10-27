@@ -8,6 +8,7 @@ from openvino_genai.py_openvino_genai import ASRDecodedResults
 from openvino_genai.py_openvino_genai import ASRForcedAligner
 from openvino_genai.py_openvino_genai import ASRGenerationConfig
 from openvino_genai.py_openvino_genai import ASRPerfMetrics
+from openvino_genai.py_openvino_genai import ASRStream
 from openvino_genai.py_openvino_genai import ASRPipeline
 from openvino_genai.py_openvino_genai import ASRRawPerfMetrics
 from openvino_genai.py_openvino_genai import Adapter

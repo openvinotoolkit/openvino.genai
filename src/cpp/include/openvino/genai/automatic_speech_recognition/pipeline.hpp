@@ -4,6 +4,7 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <ostream>
@@ -74,6 +75,54 @@ struct OPENVINO_GENAI_EXPORTS ASRDecodedResults {
 
 class ASRPipelineImplBase;
 class ASRForcedAligner;
+class ASRStreamImplBase;
+
+/// Receives transcript deltas. Returning STOP or CANCEL stops generation and discards not yet processed audio.
+using ASRTextCallback = std::function<StreamingStatus(std::string)>;
+
+/**
+ * @brief Streaming audio transcription session.
+ *
+ * generate() runs inference once for the whole stream and consumes audio frames submitted by push_audio()
+ * until end_audio() is called. A producer thread may call push_audio() and end_audio() while generate() runs
+ * in a different thread. All methods are thread-safe. Frames are processed in the order push_audio() calls
+ * complete. Every thread must return from push_audio(), end_audio() and generate() before the stream is
+ * destroyed or moved.
+ */
+class OPENVINO_GENAI_EXPORTS ASRStream {
+public:
+    ASRStream(ASRStream&&) noexcept;
+    ASRStream& operator=(ASRStream&&) noexcept;
+    ~ASRStream();
+
+    /**
+     * @brief Enqueue normalized mono 16 kHz audio samples for generate() without running inference.
+     *
+     * Blocks while the bounded input queue is full until generate() consumes a frame. Throws after end_audio() or
+     * once generate() has stopped: after completion, after the callback requested a stop, or after an error.
+     */
+    void push_audio(const std::vector<float>& audio_frame);
+
+    /// Signal the end of audio input. generate() processes the queued frames and returns. May be called once.
+    void end_audio();
+
+    /**
+     * @brief Run inference over all audio pushed to the stream and return the complete transcription.
+     *
+     * May be called once. Blocks until end_audio() is called and the queue is drained, or the callback requests
+     * a stop. The callback is invoked on the calling thread with each non-empty transcript delta and must not wait
+     * for push_audio() because a full queue isn't drained while the callback runs. Exceptions thrown by inference
+     * or the callback propagate from generate() and stop the stream.
+     */
+    ASRDecodedResults generate(const ASRTextCallback& text_callback = nullptr);
+
+private:
+    explicit ASRStream(std::unique_ptr<ASRStreamImplBase> impl);
+
+    std::unique_ptr<ASRStreamImplBase> m_impl;
+
+    friend class ASRPipeline;
+};
 
 class OPENVINO_GENAI_EXPORTS ASRPipeline {
     std::unique_ptr<ASRPipelineImplBase> m_impl;
@@ -99,6 +148,9 @@ public:
     }
 
     ASRDecodedResults generate(const AudioInputs& audio_inputs, const ov::AnyMap& config_map);
+
+    /// Create a stateful input stream when the selected ASR model supports incremental audio.
+    ASRStream create_stream(const std::optional<ASRGenerationConfig>& generation_config = std::nullopt);
 
     Tokenizer get_tokenizer();
     ASRGenerationConfig get_generation_config() const;
