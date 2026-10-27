@@ -14,6 +14,14 @@ Other models with similar architectures may also work successfully even if not e
 Consider testing any unlisted models to verify compatibility with your specific use case.
 :::
 
+:::note Optimum Intel version
+Recently added models may require a newer `optimum-intel` version than the latest PyPI release. If an export fails for a newly supported model, install the latest version from GitHub:
+
+```bash
+pip install git+https://github.com/huggingface/optimum-intel.git
+```
+:::
+
 ## Large Language Models (LLMs)
 
 :::tip LoRA Support
@@ -102,10 +110,9 @@ Apply https://huggingface.co/microsoft/Phi-4-multimodal-instruct/discussions/78/
 
 #### Gemma 4 {#gemma4-notes}
 
-Gemma 4 implementation supports text, image and video inputs.
+Gemma 4 supports text, image, video, and audio inputs. Audio tensors must contain mono 16 kHz float32 WAV samples.
 
-Gemma 4 models require `transformers==5.5.0` for the export with `optimum-cli`, except for `google/gemma-4-12B-it`.
-The `google/gemma-4-12B-it` model uses the `Gemma4UnifiedForConditionalGeneration` architecture and requires `transformers==5.10.0` for the export with `optimum-cli`.
+The `google/gemma-4-12B-it` model requires `transformers==5.10.0` for the export with `optimum-cli`.
 
 #### Qwen3-VL {#qwen3_vl-notes}
 
@@ -140,6 +147,13 @@ Fun-ASR models require the `funasr` package and trusted remote code during expor
 ```bash
 pip install funasr
 optimum-cli export openvino --trust-remote-code -m FunAudioLLM/Fun-ASR-Nano-2512 fun-asr-nano
+```
+
+SenseVoiceSmall models require the `funasr` package and trusted remote code during export:
+
+```bash
+pip install funasr
+optimum-cli export openvino -m FunAudioLLM/SenseVoiceSmall sensevoice-small --trust-remote-code
 ```
 :::
 
