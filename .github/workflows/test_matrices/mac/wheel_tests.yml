@@ -7,14 +7,15 @@
   components:
     - automatic_speech_recognition
 
-- name: ASR (Qwen3-ASR)
-  cmd: |-
-    python -m pip install transformers==4.57.6 qwen-asr==0.0.6
-    python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "qwen3-asr"
-    python -m pytest -v ./tests/python_tests/test_asr_forced_aligner.py
-  timeout: 60
-  components:
-    - automatic_speech_recognition
+# TODO(CVS-198293): Re-enable Qwen3-ASR tests when its upstream dependencies support Pillow 13.
+# - name: ASR (Qwen3-ASR)
+#   cmd: |-
+#     python -m pip install transformers==4.57.6 qwen-asr==0.0.6
+#     python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "qwen3-asr"
+#     python -m pytest -v ./tests/python_tests/test_asr_forced_aligner.py
+#   timeout: 60
+#   components:
+#     - automatic_speech_recognition
 
 - name: ASR (Fun-ASR)
   cmd: |-
