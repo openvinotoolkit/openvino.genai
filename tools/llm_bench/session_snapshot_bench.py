@@ -40,10 +40,14 @@ def measure_baseline_ttft(model_dir: str, device: str, prompt: str) -> float:
     pipeline = ov_genai.ContinuousBatchingPipeline(model_dir, make_scheduler_config(), device)
     # Timed from before the request is submitted, the same way as the restore path below.
     start = time.perf_counter()
-    pipeline.add_request(61, prompt, make_greedy_config(1))
+    # The handle must outlive the loop: destroying it stops the request before any token is produced.
+    handle = pipeline.add_request(61, prompt, make_greedy_config(1))
     while pipeline.has_non_finished_requests():
         pipeline.step()
-    return (time.perf_counter() - start) * 1000
+    elapsed_ms = (time.perf_counter() - start) * 1000
+    if len(handle.read_all()[0].generated_ids) != 1:
+        raise RuntimeError("the baseline request did not produce exactly one token")
+    return elapsed_ms
 
 
 def measure_restore_ttft(model_dir: str, device: str, prompt: str, snapshot_path: str) -> float:
@@ -66,10 +70,13 @@ def measure_restore_ttft(model_dir: str, device: str, prompt: str, snapshot_path
     # The handle's own TTFT clock starts only after restore_state() has loaded the snapshot, so time
     # the whole restore instead.
     start = time.perf_counter()
-    pipeline.restore_state(63, snapshot_path, make_greedy_config(1))
+    handle = pipeline.restore_state(63, snapshot_path, make_greedy_config(1))
     while pipeline.has_non_finished_requests():
         pipeline.step()
-    return (time.perf_counter() - start) * 1000
+    elapsed_ms = (time.perf_counter() - start) * 1000
+    if len(handle.read_all()[0].generated_ids) != 1:
+        raise RuntimeError("the restored request did not produce exactly one token")
+    return elapsed_ms
 
 
 def main():

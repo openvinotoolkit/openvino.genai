@@ -104,16 +104,17 @@ python benchmark.py -m <model_dir> -d CPU --task visual_text_gen \
 
 | Device | `num_kv_blocks` | Baseline `P2` TTFT | Offload (via plugin) `P2` TTFT | Speedup | `P0` / `P2` MD5 |
 |---|---|---|---|---|---|
-| CPU | 120 | 104668.61 ms | 7852.92 ms | **~13x** | identical (`e067b6f4...`) |
-| GPU | 220 | 2841.02 ms | 868.44 ms | **~3.3x** | identical (`e067b6f4...`) |
+| CPU | 120 | 76874.31 ms | 5562.59 ms | **~13.8x** | identical (`e067b6f4...`) |
+| GPU | 220 | 2636.81 ms | 777.23 ms | **~3.4x** | identical (`e067b6f4...`) |
 
 The CPU figures are a single run; the GPU figures are the mean of two baseline/offload pairs run
-back to back (baseline `P2` 2902.85 / 2779.20 ms, offload `P2` 904.92 / 831.96 ms).
+back to back (baseline `P2` 2703.94 / 2569.68 ms, offload `P2` 772.60 / 781.85 ms).
 
 The absolute gain is far larger on CPU because CPU prefill is slower, so there is more recompute to
 avoid. Writing the evicted blocks is not free, but on this setup it is small: GPU `P0` / `P1` took
-3224 / 3505 ms and 3180 / 2971 ms with offload against 3562 / 3082 ms and 3353 / 3084 ms without, and
-on CPU `P1` took 113.9 s against 118.0 s - all within run-to-run noise. Longer prompts widen the gap and very short
+2711 / 2804 ms and 2916 / 2792 ms with offload against 2927 / 2774 ms and 2725 / 2655 ms without, and
+on CPU `P1` took 80.7 s against 84.4 s - differences of a few percent at most, comparable to the
+run-to-run spread. Longer prompts widen the gap and very short
 ones can erase it, so benchmark with prompt lengths representative of your workload rather than
 relying on these numbers.
 
@@ -183,16 +184,16 @@ token, so reading and checking the snapshot and allocating its cache count again
 
 | Device | TTFT without restore (full re-prefill) | TTFT with restore (via your plugin) | Speedup |
 |---|---|---|---|
-| GPU | 3879.25 ms | 829.22 ms | **~4.7x** |
+| GPU | 3295.89 ms | 766.36 ms | **~4.3x** |
 
-The row is the mean of two runs (without restore 4062.69 / 3695.80 ms, with restore 819.12 /
-839.31 ms, i.e. 4.96x / 4.40x). One run prints:
+The row is the mean of two runs (without restore 3276.57 / 3315.21 ms, with restore 762.54 /
+770.17 ms, i.e. 4.30x / 4.30x). One run prints:
 
 ```
 PASS: the restored continuation matches the uninterrupted baseline token-for-token.
-PERF: TTFT without session restore (full re-prefill): 4062.69 ms
-PERF: TTFT with session restore (via your plugin):    819.12 ms
-PERF: Speedup: 4.96x
+PERF: TTFT without session restore (full re-prefill): 3276.57 ms
+PERF: TTFT with session restore (via your plugin):    762.54 ms
+PERF: Speedup: 4.30x
 ```
 
 Unlike Scenario 1, this does not depend on prefix-cache hits, so the linear-attention checkpoint

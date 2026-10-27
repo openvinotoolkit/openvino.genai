@@ -4,11 +4,14 @@
 #include "continuous_batching/cache/abi_file_store_provider.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 #include "continuous_batching/cache/abi_sdk_fingerprint.hpp"
 #include "continuous_batching/cache/file_kv_cache_store.hpp"
@@ -30,16 +33,34 @@ struct AbiFileStoreInstance {
 
     std::unique_ptr<FileKVCacheStore> store;
     size_t block_size;
+    /// Guards `key_ids`, `next_id` and `witnesses`.
     mutable std::mutex witness_mutex;
+    /// Full 128-bit ABI key -> the id FileKVCacheStore addresses the block by. Keys that differ only
+    /// in `hi` must stay distinct, so the id is allocated here instead of being derived from `lo`.
+    std::map<std::pair<uint64_t, uint64_t>, size_t> key_ids;
+    size_t next_id = 0;
     std::unordered_map<size_t, std::vector<uint8_t>> witnesses;
 };
 
-// size_t keys at this layer are already a single folded 64-bit value, mirrored into both halves
-// of the 128-bit wire key by AbiKVCacheStore::to_abi_hash(); read it back from either half (NOT
-// their XOR, which would always cancel out to 0 since both halves are identical).
 // OvKVCacheBlockKey.group is not used by this single-group default provider.
-size_t fold_key(const OvKVCacheBlockKey& key) {
-    return static_cast<size_t>(key.hash.lo);
+std::pair<uint64_t, uint64_t> full_key(const OvKVCacheBlockKey& key) {
+    return {key.hash.lo, key.hash.hi};
+}
+
+std::optional<size_t> find_id(AbiFileStoreInstance& instance, const OvKVCacheBlockKey& key) {
+    std::lock_guard<std::mutex> lock(instance.witness_mutex);
+    const auto it = instance.key_ids.find(full_key(key));
+    return it == instance.key_ids.end() ? std::nullopt : std::optional<size_t>(it->second);
+}
+
+/// @return The id for `key` and whether it was newly allocated by this call.
+std::pair<size_t, bool> get_or_create_id(AbiFileStoreInstance& instance, const OvKVCacheBlockKey& key) {
+    std::lock_guard<std::mutex> lock(instance.witness_mutex);
+    const auto [it, inserted] = instance.key_ids.emplace(full_key(key), instance.next_id);
+    if (inserted) {
+        ++instance.next_id;
+    }
+    return {it->second, inserted};
 }
 
 void destroy_store(void* self) {
@@ -51,7 +72,8 @@ OvKVCacheStatus store_has_blocks(void* self, const OvKVCacheBlockKey* keys, uint
     auto* instance = static_cast<AbiFileStoreInstance*>(self);
     try {
         for (size_t i = 0; i < count; ++i) {
-            out_present[i] = instance->store->has_block(fold_key(keys[i])) ? 1 : 0;
+            const auto id = find_id(*instance, keys[i]);
+            out_present[i] = id.has_value() && instance->store->has_block(*id) ? 1 : 0;
         }
     } catch (...) {
         return OV_KVCACHE_ERR_IO;
@@ -76,11 +98,11 @@ OvKVCacheStatus store_read_blocks(void* self,
             continue;
         }
 
-        const size_t hash = fold_key(req.key);
+        const auto id = find_id(*instance, req.key);
         std::vector<uint8_t> data;
         bool found = false;
         try {
-            found = instance->store->read_block(hash, data);
+            found = id.has_value() && instance->store->read_block(*id, data);
         } catch (...) {
             result.status = OV_KVCACHE_ERR_IO;
             any_failed = true;
@@ -99,7 +121,7 @@ OvKVCacheStatus store_read_blocks(void* self,
         std::memcpy(req.target.base, data.data(), data.size());
 
         std::lock_guard<std::mutex> lock(instance->witness_mutex);
-        auto it = instance->witnesses.find(hash);
+        auto it = instance->witnesses.find(*id);
         if (it != instance->witnesses.end() && req.witness_out.data != nullptr) {
             if (it->second.size() > req.witness_out.capacity) {
                 result.status = OV_KVCACHE_ERR_BUFFER_TOO_SMALL;
@@ -133,11 +155,15 @@ OvKVCacheStatus store_write_blocks(void* self,
             continue;
         }
 
-        const size_t hash = fold_key(req.key);
-        const auto* source_bytes = static_cast<const uint8_t*>(req.source);
+        const auto source_bytes = static_cast<const uint8_t*>(req.source);
+        const auto [id, created] = get_or_create_id(*instance, req.key);
         try {
             std::vector<uint8_t> data(source_bytes, source_bytes + req.bytes);
-            if (!instance->store->write_block(hash, data)) {
+            if (!instance->store->write_block(id, data)) {
+                if (created) {
+                    std::lock_guard<std::mutex> lock(instance->witness_mutex);
+                    instance->key_ids.erase(full_key(req.key));
+                }
                 result.status = OV_KVCACHE_ERR_CAPACITY;
                 any_failed = true;
                 continue;
@@ -146,11 +172,15 @@ OvKVCacheStatus store_write_blocks(void* self,
             std::lock_guard<std::mutex> lock(instance->witness_mutex);
             if (req.witness.data != nullptr && req.witness.len > 0) {
                 const auto* witness_bytes = static_cast<const uint8_t*>(req.witness.data);
-                instance->witnesses[hash].assign(witness_bytes, witness_bytes + req.witness.len);
+                instance->witnesses[id].assign(witness_bytes, witness_bytes + req.witness.len);
             } else {
-                instance->witnesses.erase(hash);
+                instance->witnesses.erase(id);
             }
         } catch (...) {
+            if (created) {
+                std::lock_guard<std::mutex> lock(instance->witness_mutex);
+                instance->key_ids.erase(full_key(req.key));
+            }
             result.status = OV_KVCACHE_ERR_IO;
             any_failed = true;
             continue;
@@ -166,9 +196,13 @@ OvKVCacheStatus store_drop_blocks(void* self, const OvKVCacheBlockKey* keys, siz
     try {
         std::lock_guard<std::mutex> lock(instance->witness_mutex);
         for (size_t i = 0; i < count; ++i) {
-            const size_t hash = fold_key(keys[i]);
-            instance->store->drop_block(hash);
-            instance->witnesses.erase(hash);
+            const auto it = instance->key_ids.find(full_key(keys[i]));
+            if (it == instance->key_ids.end()) {
+                continue;
+            }
+            instance->store->drop_block(it->second);
+            instance->witnesses.erase(it->second);
+            instance->key_ids.erase(it);
         }
     } catch (...) {
         return OV_KVCACHE_ERR_IO;
@@ -212,7 +246,7 @@ const char* provider_name(void* /*self*/) {
 }
 
 OvKVCacheStatus provider_open(void* /*self*/,
-                              const OvKVCacheNamespace* /*ns*/,
+                              const OvKVCacheNamespace* ns,
                               const OvKVCacheStoreOpenOptions* opts,
                               OvKVCacheStoreOpenResult* out) {
     if (out == nullptr) {
@@ -221,6 +255,16 @@ OvKVCacheStatus provider_open(void* /*self*/,
     *out = OvKVCacheStoreOpenResult{};
     if (opts == nullptr) {
         out->status = OV_KVCACHE_ERR_INVALID_ARG;
+        return out->status;
+    }
+    // A session snapshot must outlive the store that wrote it, but this provider's data is a
+    // run-scoped file that disappears with the instance, so refuse instead of reporting a save
+    // that can never be restored.
+    constexpr char snapshot_prefix[] = "session_snapshot_";
+    constexpr size_t snapshot_prefix_len = sizeof(snapshot_prefix) - 1;
+    if (ns != nullptr && ns->bytes != nullptr && ns->len >= snapshot_prefix_len &&
+        std::memcmp(ns->bytes, snapshot_prefix, snapshot_prefix_len) == 0) {
+        out->status = OV_KVCACHE_ERR_UNSUPPORTED;
         return out->status;
     }
 

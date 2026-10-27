@@ -349,6 +349,9 @@ public:
             const auto& la_block_table = get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_block_tables(seq_id)[0];
             OPENVINO_ASSERT(!la_block_table.empty(), "No linear attention block allocated for the restored sequence");
             la_manager.write_block(static_cast<size_t>(la_block_table.back()->get_index()), it->second.at(0));
+            // Allocation leaves the live-state handle on the first row at endpoint 0, but the restored
+            // state sits in the last row, so point the handle at it for later speculative scratch prep.
+            get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).advance_linear_attention_live_state(seq_id, full_length - 1);
         }
 
         // Mark all but the LAST token as processed, not the full length: the invariant the rest of

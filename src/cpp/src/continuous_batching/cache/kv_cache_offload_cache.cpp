@@ -154,11 +154,13 @@ void KVCacheOffloadCache::run_writer() {
             GENAI_WARN("KV cache offload store failed for hash %zu: %s", hash, error.what());
             stored = false;
         }
-        lock.lock();
-        // Accumulated only under the mutex, which get_statistics() also takes.
-        m_statistics.store_write_us += static_cast<std::size_t>(
+        // Stop the clock before re-taking the mutex, so lock contention is not counted as write time.
+        const auto write_us = static_cast<std::size_t>(
             std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - write_started)
                 .count());
+        lock.lock();
+        // Accumulated only under the mutex, which get_statistics() also takes.
+        m_statistics.store_write_us += write_us;
 
         m_queued_stores.pop_front();
         if (stored) {
