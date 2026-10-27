@@ -12,7 +12,10 @@ import torch
 from whowhatbench.whowhat_metrics import TranscriptSimilarity
 from whowhatbench.utils import to_mono_16k
 from whowhatbench.speech_recognition_evaluator import SpeechRecognitionEvaluator
-from whowhatbench.speech_recognition_model_wrappers.model_wrappers import FunASROptimumTranscriber
+from whowhatbench.speech_recognition_model_wrappers.model_wrappers import (
+    FunASROptimumTranscriber,
+    _transcribe_whisper,
+)
 
 
 def _frame(answers):
@@ -157,6 +160,42 @@ def test_funasr_optimum_transcriber_decodes_generated_ids_only(generated, monkey
     assert model.generate_call["max_new_tokens"] == 32
     # the 3 prompt ids are dropped, only the generated ids are decoded
     assert tokenizer.decoded.tolist() == [[7, 8]]
+
+
+class _FakeWhisperProcessor:
+    def __call__(self, audio, **kwargs):
+        return types.SimpleNamespace(input_features=torch.zeros(1, 80, 3000), attention_mask=torch.ones(1, 3000))
+
+    def batch_decode(self, tokens, **kwargs):
+        return ["decoded"]
+
+
+class _FakeWhisperModel:
+    def __init__(self, is_multilingual):
+        self.config = types.SimpleNamespace(max_source_positions=1500)
+        self.generation_config = types.SimpleNamespace(is_multilingual=is_multilingual)
+        self.generate_call = None
+
+    def generate(self, **kwargs):
+        self.generate_call = kwargs
+        return torch.tensor([[1, 2]])
+
+
+@pytest.mark.parametrize(
+    "is_multilingual, language, expected_language, expected_task",
+    [
+        (True, "fr", "fr", "transcribe"),
+        (True, None, None, "transcribe"),
+        (False, "en", None, None),
+        (False, None, None, None),
+    ],
+)
+def test_whisper_language_and_task_follow_model_type(is_multilingual, language, expected_language, expected_task):
+    model = _FakeWhisperModel(is_multilingual)
+
+    assert _transcribe_whisper(model, _FakeWhisperProcessor(), np.zeros(16), language, 32) == "decoded"
+    assert model.generate_call["language"] == expected_language
+    assert model.generate_call["task"] == expected_task
 
 
 @pytest.mark.parametrize(

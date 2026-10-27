@@ -204,13 +204,17 @@ def _transcribe_whisper(model, processor, audio, language, max_new_tokens, devic
     if device is not None:
         input_features = input_features.to(device=device, dtype=dtype)
         attention_mask = attention_mask.to(device=device)
+    # English-only checkpoints reject both `task` and `language`, and their language is always English
+    is_multilingual = getattr(model.generation_config, "is_multilingual", True)
+    if not is_multilingual and language:
+        logger.warning("Whisper model is English-only, ignoring language '%s'", language)
     with torch.inference_mode():
         tokens = model.generate(
             input_features=input_features,
             attention_mask=attention_mask,
             return_timestamps=input_features.shape[-1] > 2 * model.config.max_source_positions,
-            language=language,
-            task="transcribe" if getattr(model.generation_config, "is_multilingual", True) else None,
+            language=language if is_multilingual else None,
+            task="transcribe" if is_multilingual else None,
             max_new_tokens=max_new_tokens,
             do_sample=False,
         )
