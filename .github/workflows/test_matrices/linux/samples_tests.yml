@@ -66,17 +66,18 @@
   components:
     - Speech_generation_samples
 
-# TODO(CVS-198293): Re-enable Qwen3-TTS tests when its Gradio dependency supports Pillow 13.
-# - name: Speech generation (Qwen3 TTS)
-#   extra_cmd: |
-#     python -m pip install transformers==4.57.3
-#     python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu torch==2.11.0 torchaudio==2.11.0
-#     python -m pip install qwen-tts
-#   marker: speech_generation and qwen3_tts
-#   cmd: tests/python_tests/samples
-#   runner: aks-linux-4-cores-16gb
-#   components:
-#     - Speech_generation_samples
+- name: Speech generation (Qwen3 TTS)
+  extra_cmd: |
+    python -m pip install transformers==4.57.3
+    python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu torch==2.11.0 torchaudio==2.11.0
+    python -m pip install qwen-tts
+    # TODO(CVS-198293): Drop the commit pin when Qwen supports a Gradio release with Pillow 13.
+    python -m pip install --no-deps pillow==13.0.0 "gradio @ git+https://github.com/gradio-app/gradio.git@d6972ed9d1185634cea083e0263839543d5ceb8d"
+  marker: speech_generation and qwen3_tts
+  cmd: tests/python_tests/samples
+  runner: aks-linux-4-cores-16gb
+  components:
+    - Speech_generation_samples
 
 - name: Video generation
   # LTX-2.3 export support landed after the optimum-intel pin in samples/export-requirements.txt
