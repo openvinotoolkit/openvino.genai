@@ -88,10 +88,6 @@ wwb --target-model llava-int8 --gt-data llava_test/gt.csv --model-type visual-te
 
 > **NOTE**: use `--model-type visual-text-chat` option to run evaluation in chat mode
 
-For LFM3-VL, WWB disables thinking in GenAI visual-text and visual-text-chat
-evaluation to match Optimum's reference preprocessing. The GenAI pipeline's
-default thinking behavior outside WWB is unchanged.
-
 ### Compare Visual Language Models with video inputs (VLMs)
 ```sh
 # Export FP16 model to OpenVINO

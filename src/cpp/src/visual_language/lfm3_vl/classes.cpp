@@ -35,13 +35,16 @@ EncodedImage VisionEncoderLFM3VL::encode(const ov::Tensor& image, const ov::AnyM
     for (size_t row = 0; row < grid_h; ++row) {
         for (size_t col = 0; col < grid_w; ++col) {
             for (size_t channel = 0; channel < 3; ++channel) {
+                // Match Torchvision's fused rescaling and normalization.
+                const float mean = config.image_mean[channel] * 255.0f;
+                const float stddev = config.image_std[channel] * 255.0f;
                 for (size_t temporal = 0; temporal < config.temporal_patch_size; ++temporal) {
                     for (size_t y = 0; y < config.patch_size; ++y) {
-                        const size_t src_offset = channel * target.height * target.width +
-                                                  (row * config.patch_size + y) * target.width +
-                                                  col * config.patch_size;
-                        std::copy_n(normalized.buf.data() + src_offset, config.patch_size, dst);
-                        dst += config.patch_size;
+                        const size_t src_offset = ((row * config.patch_size + y) * target.width +
+                                                   col * config.patch_size) * 3 + channel;
+                        for (size_t x = 0; x < config.patch_size; ++x) {
+                            *dst++ = (static_cast<float>(resized.buf[src_offset + x * 3]) - mean) / stddev;
+                        }
                     }
                 }
             }
