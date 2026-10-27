@@ -913,3 +913,80 @@ class TestTextToSpeechSample:
         assert "Text successfully converted to audio file" in c_result.stdout
 
         compare_speech_audio(cpp_output_wav, py_output_wav, c_output_wav, 24000, True)
+
+    @pytest.mark.speech_generation
+    @pytest.mark.qwen3_tts
+    @pytest.mark.samples
+    @pytest.mark.parametrize(
+        "convert_model,variant,variant_args",
+        [
+            ("tiny-random-qwen3-tts", "base", ()),
+            ("tiny-random-qwen3-tts-customvoice", "customvoice", ("--speaker", "serena")),
+            ("tiny-random-qwen3-tts-voicedesign", "voice-design", ("--instruct", "Speak calmly.")),
+        ],
+        ids=["base", "customvoice", "voice-design"],
+        indirect=["convert_model"],
+    )
+    @pytest.mark.parametrize("sample_kind", ["python", "cpp", "c"])
+    def test_sample_qwen3_tts_sampling_options(
+        self,
+        convert_model,
+        qwen3_reference_audio_wav_path: str,
+        variant: str,
+        variant_args: tuple[str, ...],
+        sample_kind: str,
+        tmp_path: Path,
+    ):
+        prompt = "Hello from OpenVINO GenAI Qwen3 sample."
+        if sample_kind == "python":
+            launcher = [sys.executable, SAMPLES_PY_DIR / "speech_generation/qwen3_tts.py"]
+        elif sample_kind == "cpp":
+            launcher = [SAMPLES_CPP_DIR / "qwen3_tts"]
+        else:
+            launcher = [SAMPLES_C_DIR / "qwen3_tts_c"]
+
+        if variant == "base":
+            variant_args = ("--ref_audio_wav_path", qwen3_reference_audio_wav_path)
+
+        def run_generation(output_name: str, *sampling_args: str) -> bytes:
+            output_wav = tmp_path / f"{output_name}.wav"
+            run_sample(
+                [
+                    *launcher,
+                    variant,
+                    convert_model,
+                    prompt,
+                    *variant_args,
+                    "--language",
+                    "english",
+                    "--max_new_tokens",
+                    "32",
+                    "--output_wav_path",
+                    str(output_wav),
+                    *sampling_args,
+                ]
+            )
+            audio, sample_rate = sf.read(output_wav, dtype="float32")
+            assert sample_rate == 24000
+            assert audio.ndim == 1 and audio.size > 0
+            assert np.isfinite(audio).all()
+            return output_wav.read_bytes()
+
+        greedy_args = ("--do_sample", "false", "--subtalker_dosample", "false")
+        assert run_generation("greedy_1", *greedy_args) == run_generation("greedy_2", *greedy_args), (
+            "Output must be identical when sampling is disabled"
+        )
+
+        seeded_args = ("--do_sample", "true", "--subtalker_dosample", "true")
+        seeded_first = run_generation("seed_7_1", *seeded_args, "--seed", "7")
+        assert seeded_first == run_generation("seed_7_2", *seeded_args, "--seed", "7"), (
+            "Output must be identical for the same --seed"
+        )
+
+        for invalid_args in (
+            ("--do_sample", "maybe"),
+            ("--subtalker_dosample", "2"),
+            ("--seed", "abc"),
+        ):
+            with pytest.raises(subprocess.CalledProcessError):
+                run_generation("invalid", *invalid_args)

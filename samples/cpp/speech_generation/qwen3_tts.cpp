@@ -118,7 +118,9 @@ int run_base(const std::vector<std::string>& args) {
                     " (--ref_audio_wav_path <PATH.wav> | --speaker_embedding_file_path <PATH.bin>)"
                     " [--ref_text \"<TRANSCRIPT>\"] [--ref_codec_ids_file_path <PATH.bin>]"
                     " [--save_speaker_embedding_file_path <PATH.bin>] [--save_ref_codec_ids_file_path <PATH.bin>]"
-                    " [--language <LANG>] [--device <DEVICE>] [--max_new_tokens <N>] [--seed <N>] [--output_wav_path <PATH.wav>]");
+                    " [--language <LANG>] [--device <DEVICE>] [--max_new_tokens <N>]"
+                    " [--do_sample <true|false>] [--subtalker_dosample <true|false>] [--seed <N>]"
+                    " [--output_wav_path <PATH.wav>]");
 
     const std::string models_path = args[2];
     const std::string prompt = args[3];
@@ -127,6 +129,7 @@ int run_base(const std::vector<std::string>& args) {
     std::string language;
     std::string ref_text;
     std::optional<int64_t> max_new_tokens;
+    ov::AnyMap properties;
     std::optional<std::string> ref_audio_wav_path;
     std::optional<std::string> speaker_embedding_path;
     std::optional<std::string> ref_codec_ids_path;
@@ -160,6 +163,9 @@ int run_base(const std::vector<std::string>& args) {
             OPENVINO_ASSERT(*max_new_tokens > 0, "--max_new_tokens must be > 0");
         } else if (option == "--seed") {
             seed = static_cast<size_t>(std::stoull(value));
+        } else if (option == "--do_sample" || option == "--subtalker_dosample") {
+            OPENVINO_ASSERT(value == "true" || value == "false", option, " must be true or false");
+            properties[option.substr(2)] = value == "true";
         } else if (option == "--output_wav_path") {
             output_wav_path = value;
         } else {
@@ -179,7 +185,6 @@ int run_base(const std::vector<std::string>& args) {
     ov::genai::Text2SpeechPipeline pipe(models_path, device, get_pipeline_config_for_device(device));
     const ov::Shape expected_speaker_shape = pipe.get_speaker_embedding_shape();
 
-    ov::AnyMap properties;
     if (!language.empty()) {
         properties["language"] = language;
     }
@@ -233,7 +238,8 @@ int run_customvoice(const std::vector<std::string>& args) {
     OPENVINO_ASSERT(args.size() >= 4,
                     "Usage: qwen3_tts customvoice <MODEL_DIR> \"<PROMPT>\" --speaker <NAME>"
                     " [--language <LANG>] [--instruct \"<STYLE>\"] [--device <DEVICE>]"
-                    " [--max_new_tokens <N>] [--seed <N>] [--output_wav_path <PATH.wav>]");
+                    " [--max_new_tokens <N>] [--do_sample <true|false>] [--subtalker_dosample <true|false>]"
+                    " [--seed <N>] [--output_wav_path <PATH.wav>]");
 
     const std::string models_path = args[2];
     const std::string prompt = args[3];
@@ -244,6 +250,7 @@ int run_customvoice(const std::vector<std::string>& args) {
     std::string instruct;
     std::optional<int64_t> max_new_tokens;
     std::optional<size_t> seed;
+    ov::AnyMap properties;
 
     for (int arg_idx = 4; arg_idx < static_cast<int>(args.size());) {
         const std::string option = args[arg_idx++];
@@ -263,6 +270,9 @@ int run_customvoice(const std::vector<std::string>& args) {
             OPENVINO_ASSERT(*max_new_tokens > 0, "--max_new_tokens must be > 0");
         } else if (option == "--seed") {
             seed = static_cast<size_t>(std::stoull(value));
+        } else if (option == "--do_sample" || option == "--subtalker_dosample") {
+            OPENVINO_ASSERT(value == "true" || value == "false", option, " must be true or false");
+            properties[option.substr(2)] = value == "true";
         } else if (option == "--output_wav_path") {
             output_wav_path = value;
         } else {
@@ -274,7 +284,6 @@ int run_customvoice(const std::vector<std::string>& args) {
 
     ov::genai::Text2SpeechPipeline pipe(models_path, device, get_pipeline_config_for_device(device));
 
-    ov::AnyMap properties;
     properties["speaker"] = speaker;
     if (!language.empty()) {
         properties["language"] = language;
@@ -297,7 +306,9 @@ int run_customvoice(const std::vector<std::string>& args) {
 int run_voice_design(const std::vector<std::string>& args) {
     OPENVINO_ASSERT(args.size() >= 4,
                     "Usage: qwen3_tts voice-design <MODEL_DIR> \"<PROMPT>\" --instruct \"<VOICE_DESCRIPTION>\""
-                    " [--language <LANG>] [--device <DEVICE>] [--max_new_tokens <N>] [--seed <N>] [--output_wav_path <PATH.wav>]");
+                    " [--language <LANG>] [--device <DEVICE>] [--max_new_tokens <N>]"
+                    " [--do_sample <true|false>] [--subtalker_dosample <true|false>] [--seed <N>]"
+                    " [--output_wav_path <PATH.wav>]");
 
     const std::string models_path = args[2];
     const std::string prompt = args[3];
@@ -307,6 +318,7 @@ int run_voice_design(const std::vector<std::string>& args) {
     std::string language;
     std::optional<int64_t> max_new_tokens;
     std::optional<size_t> seed;
+    ov::AnyMap properties;
 
     for (int arg_idx = 4; arg_idx < static_cast<int>(args.size());) {
         const std::string option = args[arg_idx++];
@@ -324,6 +336,9 @@ int run_voice_design(const std::vector<std::string>& args) {
             OPENVINO_ASSERT(*max_new_tokens > 0, "--max_new_tokens must be > 0");
         } else if (option == "--seed") {
             seed = static_cast<size_t>(std::stoull(value));
+        } else if (option == "--do_sample" || option == "--subtalker_dosample") {
+            OPENVINO_ASSERT(value == "true" || value == "false", option, " must be true or false");
+            properties[option.substr(2)] = value == "true";
         } else if (option == "--output_wav_path") {
             output_wav_path = value;
         } else {
@@ -336,7 +351,6 @@ int run_voice_design(const std::vector<std::string>& args) {
 
     ov::genai::Text2SpeechPipeline pipe(models_path, device, get_pipeline_config_for_device(device));
 
-    ov::AnyMap properties;
     properties["instruct"] = instruct;
     if (!language.empty()) {
         properties["language"] = language;
