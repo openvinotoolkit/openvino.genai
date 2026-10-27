@@ -11,10 +11,8 @@ import torch
 
 from whowhatbench.whowhat_metrics import TranscriptSimilarity
 from whowhatbench.utils import to_mono_16k
-from whowhatbench.speech_recognition_evaluator import (
-    FunASROptimumTranscriber,
-    SpeechRecognitionEvaluator,
-)
+from whowhatbench.speech_recognition_evaluator import SpeechRecognitionEvaluator
+from whowhatbench.speech_recognition_model_wrappers.model_wrappers import FunASROptimumTranscriber
 
 
 def _frame(answers):

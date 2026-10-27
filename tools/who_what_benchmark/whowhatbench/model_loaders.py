@@ -1311,7 +1311,7 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
 
 def load_speech_recognition_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
     language = kwargs.pop("speech_language", "") or ""
-    from .speech_recognition_evaluator import ASRGenAITranscriber, ASRHFTranscriber, ASROptimumTranscriber
+    from .speech_recognition_model_wrappers import ASRGenAITranscriber, ASRHFTranscriber, ASROptimumTranscriber
 
     if use_hf:
         kwargs["torch_dtype"] = _resolve_torch_dtype(kwargs.get("torch_dtype"))
