@@ -43,6 +43,15 @@
 #   components:
 #     - VLM_samples
 
+- name: VLM audio
+  marker: vlm_audio
+  # optimum-intel commit with gemma4 audio inputs support
+  extra_cmd: pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@00131a8967a21cd7bea3fe59413fb35b537d57af"
+  cmd: tests/python_tests/samples
+  runner: aks-linux-4-cores-16gb
+  components:
+    - VLM_samples
+
 - name: Rag
   marker: rag
   cmd: tests/python_tests/samples
