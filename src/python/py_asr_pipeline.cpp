@@ -170,6 +170,12 @@ auto asr_generation_config_docstring = R"(
     :param context: System prompt context prepended to Qwen3-ASR transcription requests.
     :type context: Optional[str]
 
+    SenseVoiceSmall parameters:
+
+    :param use_itn: Whether to enable inverse text normalization for SenseVoiceSmall.
+                    Defaults to False (`woitn`); when True, the `withitn` mode is used.
+    :type use_itn: bool
+
     For generic generation parameters (max_length, max_new_tokens, num_beams, temperature, etc.)
     see GenerationConfig documentation.
 )";
@@ -273,6 +279,7 @@ void init_asr_pipeline(py::module_& m) {
         .def_readwrite("initial_prompt", &ASRGenerationConfig::initial_prompt)
         .def_readwrite("hotwords", &ASRGenerationConfig::hotwords)
         .def_readwrite("context", &ASRGenerationConfig::context)
+        .def_readwrite("use_itn", &ASRGenerationConfig::use_itn)
         .def("update_generation_config", [](ASRGenerationConfig& config, const py::kwargs& kwargs) {
             config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
         });

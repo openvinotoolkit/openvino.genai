@@ -225,7 +225,7 @@ python benchmark.py -m ./models/gemma-3n-E2B-it/ -n 2 --task visual_text_gen_cha
 python benchmark.py -m ./models/gemma-3n-E2B-it/ -n 2 --task visual_text_gen_chat -pf ./prompts/vlm_chat.jsonl
 ```
 
-> **Supported VLM model types:** llava, llava-next, qwen2-vl, llava-qwen2, internvl-chat, minicpmv, phi3-v, minicpm-v, minicpmo, maira2, qwen2-5-vl
+> **Supported VLM model types:** llava, llava-next, qwen2-vl, llava-qwen2, internvl-chat, minicpmv, minicpmv4-7, phi3-v, minicpm-v, minicpmo, maira2, qwen2-5-vl
 
 ### Image Generation Models
 ```sh

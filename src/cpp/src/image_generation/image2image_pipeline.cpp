@@ -219,6 +219,14 @@ ov::Tensor Image2ImagePipeline::generate(const std::string& positive_prompt, ov:
     return m_impl->generate(positive_prompt, initial_image, {}, properties);
 }
 
+ov::Tensor Image2ImagePipeline::generate(const std::string& positive_prompt, const std::vector<ov::Tensor>& initial_images, const ov::AnyMap& properties) {
+    OPENVINO_ASSERT(!initial_images.empty(), "Initial images cannot be empty when passed to Image2ImagePipeline::generate");
+    for (const ov::Tensor& initial_image : initial_images) {
+        OPENVINO_ASSERT(initial_image, "Initial image cannot be empty when passed to Image2ImagePipeline::generate");
+    }
+    return m_impl->generate(positive_prompt, initial_images, properties);
+}
+
 ov::Tensor Image2ImagePipeline::decode(const ov::Tensor latent) {
     return m_impl->decode(latent);
 }

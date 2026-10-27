@@ -210,6 +210,57 @@ Language handling depends on the model architecture. Models with language identi
     </TabItemJS>
 </LanguageTabs>
 
+### SenseVoiceSmall-specific Options
+
+:::info
+These features are specific to SenseVoiceSmall used with `ASRPipeline`. They do not apply to other ASR model architectures.
+:::
+
+:::note
+SenseVoiceSmall supports automatic language identification (`language="auto"`) and explicit language selection using language codes such as `en`, `zh`, `yue`, `ja`, and `ko`.
+:::
+
+#### Inverse Text Normalization
+
+SenseVoiceSmall supports inverse text normalization (ITN) during transcription. By default, `use_itn=false` selects the `woitn` mode. Set `use_itn=true` to select the `withitn` mode.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        pipe = ov_genai.ASRPipeline(model_path, "CPU")
+
+        # Example output for the same audio with ITN disabled and enabled:
+        #   use_itn=False: "...presented him with fifty pieces of gold"
+        #   use_itn=True:  "...presented him with 50 pieces of gold."
+        result = pipe.generate(raw_speech, use_itn=True)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        ov::genai::ASRPipeline pipe(model_path, "CPU");
+
+        // Enable inverse text normalization (default: false)
+        auto result = pipe.generate(raw_speech, ov::genai::use_itn(true));
+        ```
+    </TabItemCpp>
+    <TabItemJS>
+        ```javascript
+        const pipeline = await ASRPipeline(modelPath, "CPU");
+
+        // Enable inverse text normalization (default: false)
+        const result = await pipeline.generate(rawSpeech, {
+          generationConfig: { use_itn: true },
+        });
+        ```
+    </TabItemJS>
+</LanguageTabs>
+
+:::note
+SenseVoiceSmall does not currently generate segment-level or word-level timestamps. `return_timestamps` and `word_timestamps` are accepted but ignored, and `chunks` and `words` remain unset. Normal transcription and streaming are unaffected.
+
+For supported languages, word-level timestamps can be generated separately using `ASRForcedAligner`: first transcribe the audio with SenseVoiceSmall, then pass the audio and transcription to the standalone aligner. See [Word-level Timestamps Prediction](#word-level-timestamps-prediction) for details.
+:::
+
 ### Whisper-specific Features
 
 :::info
