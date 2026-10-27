@@ -158,7 +158,7 @@ public:
      * Performs latent video decoding. It can be useful to use within 'callback' which accepts current latent video
      * @param latent A latent video
     * @param generation_config Optional configuration for this decode only. If omitted, uses the configuration
-    *   saved by generation. A timestep list must match the latent batch size.
+    *   saved by generation. A scalar timestep applies to every video in the latent batch.
      * @returns VideoGenerationResult with:
      *   - video: a video tensor decoded with VAE auto encoder shaped as [num_videos_per_prompt, num_frames, height, width, 3]
      *   - performance_stat: ov::genai::VideoGenerationPerfMetrics with timing and other performance metrics for the generation run.

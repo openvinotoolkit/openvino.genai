@@ -100,7 +100,7 @@ To decode just one latent from a batch callback, supply a decode-only config wit
         import openvino as ov
 
         decode_config = pipe.get_generation_config()
-        decode_config.decode_timestep = [0.05]
+        decode_config.decode_timestep = 0.05
         decode_config.decode_noise_scale = 0.0
 
         def callback(step, num_steps, latent):
@@ -112,7 +112,7 @@ To decode just one latent from a batch callback, supply a decode-only config wit
     <TabItemCpp>
         ```cpp
         ov::genai::VideoGenerationConfig decode_config = pipe.get_generation_config();
-        decode_config.decode_timestep = std::vector<float>{0.05f};
+        decode_config.decode_timestep = 0.05f;
         decode_config.decode_noise_scale = 0.0f;
 
         auto callback = [&](size_t step, size_t num_steps, ov::Tensor& latent) {
@@ -217,8 +217,8 @@ Refer to the [LoRA Adapters](/docs/guides/lora-adapters) for more details on wor
 - `guidance_rescale`: Rescales the guided prediction towards the unguided one to counter overexposure. `0.0` disables rescaling.
 - `generator`: Controls randomness for reproducible results. Same generator seed produces identical videos across runs.
 - `frame_rate`: Target video FPS used by the pipeline.
-- `decode_timestep`: Timestep conditioning value passed to a timestep-conditioned LTX VAE decoder. Unset by default (`None` in Python); an unset value uses `0.0` during decoding. A scalar applies to all videos; a list must contain exactly one value per video in the latent batch. Decoders without timestep conditioning reject any explicitly set value, including `0.0`.
-- `decode_noise_scale`: Scalar interpolation factor between denoised latents and random noise before VAE decoding. When omitted, each video's noise scale defaults to that video's `decode_timestep`. This parameter requires a timestep-conditioned LTX VAE decoder. `decode(latent)` uses the pipeline's saved generation config; `decode(latent, generation_config)` uses the provided config only for that call. In both cases, a timestep list must match the latent batch.
+- `decode_timestep`: Scalar timestep conditioning value passed to a timestep-conditioned LTX VAE decoder for every video in the batch. Unset by default (`None` in Python); an unset value uses `0.0` during decoding. Decoders without timestep conditioning reject any explicitly set value, including `0.0`.
+- `decode_noise_scale`: Scalar interpolation factor between denoised latents and random noise before VAE decoding. When omitted, the noise scale defaults to `decode_timestep` for every video. This parameter requires a timestep-conditioned LTX VAE decoder. `decode(latent)` uses the pipeline's saved generation config; `decode(latent, generation_config)` uses the provided config only for that call.
 
 LTX-2 family only:
 

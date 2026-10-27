@@ -180,15 +180,14 @@ class TestVideoGenerationConfig:
         assert config.decode_timestep == pytest.approx(0.05)
         assert config.decode_noise_scale == pytest.approx(0.025)
 
-    def test_config_accepts_per_video_decode_timesteps(self):
+    def test_config_accepts_scalar_decode_timestep_only(self):
         config = ov_genai.VideoGenerationConfig()
-        config.decode_timestep = [0.0, 0.5]
-        assert config.decode_timestep == pytest.approx([0.0, 0.5])
-
         config.decode_timestep = 0.0
         assert config.decode_timestep == pytest.approx(0.0)
         config.decode_timestep = None
         assert config.decode_timestep is None
+        with pytest.raises(TypeError):
+            config.decode_timestep = [0.0, 0.5]
 
     def test_config_validate_guidance_scale_with_negative_prompt(self, video_generation_model):
         """guidance_scale <= 1 with negative_prompt is accepted (warning only)."""
@@ -412,7 +411,6 @@ class TestVideoGenerationPipelines:
         "decode_config",
         [
             {"decode_timestep": 0.0},
-            {"decode_timestep": [0.0]},
             {"decode_noise_scale": 0.0},
         ],
     )
@@ -462,8 +460,8 @@ class TestVideoGenerationPipelines:
         np.testing.assert_array_equal(default_result.video.data, explicit_result.video.data)
         assert not np.array_equal(default_result.video.data, no_noise_result.video.data)
 
-    def test_batch_decode_timesteps_match_individual_scales(self, conditioned_video_generation_model):
-        def generate(decode_timestep, **decode_options):
+    def test_batch_decode_timestep_applies_to_all_videos(self, conditioned_video_generation_model):
+        def generate(**decode_options):
             pipe = ov_genai.Text2VideoPipeline(conditioned_video_generation_model, "CPU")
             return np.array(
                 pipe.generate(
@@ -473,28 +471,20 @@ class TestVideoGenerationPipelines:
                     num_frames=9,
                     num_inference_steps=1,
                     num_videos_per_prompt=2,
-                    decode_timestep=decode_timestep,
+                    decode_timestep=0.25,
                     generator=ov_genai.CppStdGenerator(42),
                     **decode_options,
                 ).video.data,
                 copy=True,
             )
 
-        per_video = generate([0.0, 1.0])
-        no_noise = generate([0.0, 1.0], decode_noise_scale=0.0)
-        all_noise = generate([0.0, 1.0], decode_noise_scale=1.0)
-        assert per_video.ndim == 5 and per_video.shape[0] == 2
-        np.testing.assert_array_equal(per_video[0], no_noise[0])
-        np.testing.assert_array_equal(per_video[1], all_noise[1])
-        assert not np.array_equal(per_video[1], no_noise[1])
-        np.testing.assert_array_equal(
-            generate(0.0, decode_noise_scale=0.0), generate([0.0, 0.0], decode_noise_scale=0.0)
-        )
-        np.testing.assert_array_equal(
-            generate(1.0, decode_noise_scale=0.0), generate([1.0, 1.0], decode_noise_scale=0.0)
-        )
-        np.testing.assert_array_equal(generate(1.0), generate([1.0, 1.0]))
-        np.testing.assert_array_equal(generate([1.0, 1.0]), generate([1.0, 1.0], decode_noise_scale=1.0))
+        default = generate()
+        explicit = generate(decode_noise_scale=0.25)
+        no_noise = generate(decode_noise_scale=0.0)
+        assert default.ndim == 5 and default.shape[0] == 2
+        np.testing.assert_array_equal(default, explicit)
+        for video in range(2):
+            assert not np.array_equal(default[video], no_noise[video])
 
     def test_batched_cfg_uses_distinct_conditioning(self, video_generation_model):
         def generate_latents(guidance_scale):
@@ -522,9 +512,9 @@ class TestVideoGenerationPipelines:
         assert not np.array_equal(low_guidance[0], high_guidance[0])
         assert not np.array_equal(low_guidance[1], high_guidance[1])
 
-    def test_batch_decode_timestep_length_rejected(self, conditioned_video_generation_model):
+    def test_batch_decode_timestep_list_rejected(self, conditioned_video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(conditioned_video_generation_model, "CPU")
-        with pytest.raises(RuntimeError, match="decode_timestep list length"):
+        with pytest.raises((TypeError, RuntimeError)):
             pipe.generate(
                 "test prompt",
                 height=32,
@@ -535,7 +525,7 @@ class TestVideoGenerationPipelines:
                 decode_timestep=[0.25],
             )
 
-    def test_decode_uses_latent_batch_for_stored_timesteps(self, conditioned_video_generation_model):
+    def test_decode_uses_latent_batch_with_scalar_timestep(self, conditioned_video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(conditioned_video_generation_model, "CPU")
         latents = []
 
@@ -550,7 +540,7 @@ class TestVideoGenerationPipelines:
             num_frames=9,
             num_inference_steps=1,
             num_videos_per_prompt=2,
-            decode_timestep=[0.0, 0.0],
+            decode_timestep=0.0,
             decode_noise_scale=0.0,
             callback=capture_latent,
         )
@@ -563,21 +553,20 @@ class TestVideoGenerationPipelines:
         assert result.video.shape == _conditioned_decoder_video_shape(conditioned_video_generation_model, 2)
 
         single_latent = ov.Tensor(np.array(latents[0].data[:1], copy=True))
-        with pytest.raises(RuntimeError, match="decode_timestep list length"):
-            pipe.decode(single_latent)
+        assert pipe.decode(single_latent).video.shape == _conditioned_decoder_video_shape(
+            conditioned_video_generation_model, 1
+        )
 
         decode_config = pipe.get_generation_config()
-        decode_config.decode_timestep = [0.0]
+        decode_config.decode_timestep = 0.0
         decode_config.decode_noise_scale = 0.0
         single_result = pipe.decode(single_latent, generation_config=decode_config)
         assert single_result.video.shape == _conditioned_decoder_video_shape(conditioned_video_generation_model, 1)
 
         malformed_batch_latent = ov.Tensor(np.zeros([2, 1, 1], dtype=np.float32))
-        with pytest.raises(RuntimeError, match="decode_timestep list length"):
+        with pytest.raises(RuntimeError, match="unpack_latents expects"):
             pipe.decode(malformed_batch_latent, generation_config=decode_config)
 
-        with pytest.raises(RuntimeError, match="decode_timestep list length"):
-            pipe.decode(single_latent)
         assert pipe.decode(latents[0]).video.shape == result.video.shape
 
     def test_decode_override_in_batch_callback(self, conditioned_video_generation_model):
@@ -586,7 +575,7 @@ class TestVideoGenerationPipelines:
         decode_only_config.decode_timestep = 0.25
         decode_only_config.decode_noise_scale = 0.0
         decode_config = pipe.get_generation_config()
-        decode_config.decode_timestep = [0.25]
+        decode_config.decode_timestep = 0.25
         decode_config.decode_noise_scale = 1.0
         decode_config.generator = ov_genai.CppStdGenerator(123)
         previews = []
@@ -605,7 +594,7 @@ class TestVideoGenerationPipelines:
             num_frames=9,
             num_inference_steps=1,
             num_videos_per_prompt=2,
-            decode_timestep=[0.25, 0.5],
+            decode_timestep=0.25,
             generator=ov_genai.CppStdGenerator(42),
             callback=callback,
         )
@@ -614,8 +603,7 @@ class TestVideoGenerationPipelines:
         decoded = pipe.decode(captured_latents[0], generation_config=decode_only_config)
         assert decoded.video.shape == previews[0].shape
         assert decode_only_config.height == -1 and decode_only_config.width == -1
-        with pytest.raises(RuntimeError, match="decode_timestep list length"):
-            pipe.decode(captured_latents[0])
+        assert pipe.decode(captured_latents[0]).video.shape == previews[0].shape
 
     def test_decode_noise_is_mixed_after_denormalization(self, conditioned_video_generation_model, tmp_path):
         identity_model = tmp_path / "identity_normalization_model"
@@ -965,10 +953,9 @@ class TestVideoGenerationPipelines:
             {"decode_timestep": 0.25, "decode_noise_scale": 0.0},
             {"decode_timestep": 0.0, "decode_noise_scale": 0.25},
             {"decode_timestep": 0.0},
-            {"decode_timestep": [0.0]},
             {"decode_noise_scale": 0.0},
         ],
-        ids=["decode-timestep", "decode-noise-scale", "zero-timestep", "zero-timestep-list", "zero-noise-scale"],
+        ids=["decode-timestep", "decode-noise-scale", "zero-timestep", "zero-noise-scale"],
     )
     def test_ltx2_decode_controls_rejected(self, video_generation_model, decode_config):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
@@ -985,7 +972,7 @@ class TestVideoGenerationPipelines:
     def test_ltx2_decode_rejects_stored_timesteps(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
         config = pipe.get_generation_config()
-        config.decode_timestep = [0.0, 0.25]
+        config.decode_timestep = 0.25
         pipe.set_generation_config(config)
         latent = ov.Tensor(np.zeros([2, 1, 1, 1, 1], dtype=np.float32))
         with pytest.raises(RuntimeError, match="not supported for LTX2"):
@@ -998,7 +985,6 @@ class TestVideoGenerationPipelines:
         "decode_config",
         [
             {"decode_timestep": 0.0},
-            {"decode_timestep": [0.0]},
             {"decode_noise_scale": 0.0},
         ],
     )
