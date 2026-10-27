@@ -29,6 +29,7 @@
 
 #include "eagle3_model_transforms.hpp"
 #include "logger.hpp"
+#include "model_desc.hpp"
 #include "utils.hpp"
 
 namespace ov {
@@ -610,6 +611,17 @@ DFlashRTInfo extract_dflash_info_from_config(ov::AnyMap& config) {
     }
 
     return info;
+}
+
+void reject_dflash_draft_on_npu(bool is_npu_requested, const ov::AnyMap& properties) {
+    if (!is_npu_requested) {
+        return;
+    }
+    const auto draft_properties = get_draft_model_from_config(properties).properties;
+    const auto dflash_mode = draft_properties.find("dflash_mode");
+    OPENVINO_ASSERT(dflash_mode == draft_properties.end() || !dflash_mode->second.as<bool>(),
+                    "DFlash speculative decoding requires the Continuous Batching/Paged Attention backend on CPU or GPU; "
+                    "NPU is not supported.");
 }
 
 void apply_dflash_gpu_compile_properties(const DFlashRTInfo& info,

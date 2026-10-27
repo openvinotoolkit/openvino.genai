@@ -416,3 +416,10 @@ def test_draft_with_markov_head_needs_its_model(dflash_models, tmp_path):
 def test_gated_markov_head_has_no_dense_step(dflash_models):
     with pytest.raises(RuntimeError, match="selects the dense Markov walk"):
         ov_genai.draft_model(dflash_models["dflash2"], "CPU", markov_head_top_k=0)
+
+
+def test_draft_on_npu_is_rejected(dflash_models):
+    # NPU pipelines use the stateful backend, and DFlash runs on the continuous batching backend only.
+    draft = ov_genai.draft_model(dflash_models["dflash"], "NPU")
+    with pytest.raises(RuntimeError, match="NPU is not supported"):
+        ov_genai.LLMPipeline(dflash_models["target"], "CPU", draft_model=draft)
