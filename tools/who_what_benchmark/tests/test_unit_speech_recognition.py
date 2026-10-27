@@ -202,6 +202,30 @@ def test_whisper_language_and_task_follow_model_type(is_multilingual, language, 
     assert model.generate_call["task"] == expected_task
 
 
+class _FakeGenAIPipeline:
+    last_generate_kwargs = None
+
+    def __init__(self, model_id, device, **kwargs):
+        pass
+
+    def generate(self, audio, **kwargs):
+        _FakeGenAIPipeline.last_generate_kwargs = kwargs
+        return types.SimpleNamespace(texts=[" decoded "])
+
+
+@pytest.mark.parametrize("model_type, expected_language", [("whisper", None), ("funasr", "en")])
+def test_genai_asr_language_default_depends_on_model_type(model_type, expected_language, monkeypatch):
+    monkeypatch.setattr("openvino_genai.ASRPipeline", _FakeGenAIPipeline, raising=False)
+    monkeypatch.setattr(
+        "whowhatbench.speech_recognition_model_wrappers.model_wrappers.get_model_type", lambda model_id: model_type
+    )
+
+    transcriber = ASRGenAITranscriber.create("model_dir")
+
+    assert transcriber.transcribe(np.zeros(16, dtype=np.float32), 32) == "decoded"
+    assert _FakeGenAIPipeline.last_generate_kwargs.get("language") == expected_language
+
+
 @pytest.mark.parametrize(
     "export, eos_token_id, pad_token_id, language, decoded",
     [
