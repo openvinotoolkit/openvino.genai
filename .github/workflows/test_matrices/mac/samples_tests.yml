@@ -31,14 +31,15 @@
   components:
     - Speech_generation_samples
 
-- name: Speech generation (Qwen3 TTS)
-  extra_cmd: |
-    python -m pip install transformers==4.57.3
-    python -m pip install qwen-tts
-  marker: speech_generation and qwen3_tts
-  cmd: tests/python_tests/samples
-  components:
-    - Speech_generation_samples
+# TODO(CVS-198293): Re-enable Qwen3-TTS tests when its Gradio dependency supports Pillow 13.
+# - name: Speech generation (Qwen3 TTS)
+#   extra_cmd: |
+#     python -m pip install transformers==4.57.3
+#     python -m pip install qwen-tts
+#   marker: speech_generation and qwen3_tts
+#   cmd: tests/python_tests/samples
+#   components:
+#     - Speech_generation_samples
 
 # Disabled on macOS: UnigramTokenizer reads vocab log-probs as f32, but arm64 CPU defaults to f16 inference precision. Ticket: CVS-191863
 # - name: Video generation
