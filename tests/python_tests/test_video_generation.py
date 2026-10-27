@@ -1063,15 +1063,39 @@ class TestVideoGenerationPipelines:
         result = pipe.generate("test prompt", num_videos_per_prompt=2, **GEN_KWARGS)
         assert result.video.shape == [2, 9, 32, 32, 3]
 
-    def test_decode_rejects_fixed_vae_batch_before_unpack(self, conditioned_video_generation_model):
+    def test_decode_rejects_fixed_vae_batch(self, conditioned_video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(conditioned_video_generation_model)
         pipe.reshape(2, 9, 32, 32, 3.0)
         pipe.compile("CPU")
-        pipe.generate("test prompt", num_videos_per_prompt=2, **GEN_KWARGS)
+        latents = []
 
-        malformed_single_latent = ov.Tensor(np.zeros([1, 1, 1], dtype=np.float32))
+        def capture_latent(_step, _num_steps, latent):
+            latents.append(np.array(latent.data, copy=True))
+            return True
+
+        pipe.generate("test prompt", num_videos_per_prompt=2, **GEN_KWARGS, callback=capture_latent)
+        assert len(latents) == 1
+
+        malformed_single_latent = ov.Tensor(latents[0][:1].copy())
         with pytest.raises(RuntimeError, match="expected 2, got 1"):
             pipe.decode(malformed_single_latent)
+
+    @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
+    @pytest.mark.parametrize("sequence_length_offset", [-1, 1])
+    def test_decode_rejects_mismatched_packed_sequence_length(self, video_generation_model, sequence_length_offset):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        latents = []
+
+        def capture_latent(_step, _num_steps, latent):
+            latents.append(np.array(latent.data, copy=True))
+            return True
+
+        pipe.generate("test prompt", **GEN_KWARGS, callback=capture_latent)
+        assert len(latents) == 1
+        batch_size, sequence_length, feature_dimensions = latents[0].shape
+        malformed = np.zeros((batch_size, sequence_length + sequence_length_offset, feature_dimensions), dtype=np.float32)
+        with pytest.raises(RuntimeError, match="Packed latent sequence length S"):
+            pipe.decode(ov.Tensor(malformed))
 
     @pytest.mark.parametrize(
         "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True

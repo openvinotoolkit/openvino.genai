@@ -135,6 +135,11 @@ inline ov::Tensor unpack_latents(const ov::Tensor& latents,
     const ov::Shape in_shape = latents.get_shape();
     OPENVINO_ASSERT(in_shape.size() == 3, "unpack_latents expects [B, S, D] input shape");
     const size_t batch_size = in_shape.at(0), sequence_length = in_shape.at(1), feature_dimensions = in_shape.at(2);
+    OPENVINO_ASSERT(num_frames > 0 && height > 0 && width > 0, "Unpack dimensions must be positive");
+    OPENVINO_ASSERT(sequence_length % num_frames == 0 &&
+                        (sequence_length / num_frames) % height == 0 &&
+                        sequence_length / num_frames / height == width,
+                    "Packed latent sequence length S must equal num_frames * height * width");
 
     const size_t patch_volume = patch_size_t * patch_size * patch_size;
     OPENVINO_ASSERT(feature_dimensions % patch_volume == 0, "D must be divisible by patch_size_t * patch_size * patch_size");
