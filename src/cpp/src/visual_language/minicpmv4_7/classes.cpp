@@ -9,6 +9,7 @@
 
 #include "utils.hpp"
 #include "visual_language/clip.hpp"
+#include "visual_language/minicpmv4_x_utils.hpp"
 #include "visual_language/vlm_utils.hpp"
 
 namespace ov::genai {
@@ -73,10 +74,10 @@ SlicedImage slice_image(const clip_image_u8& source, const ProcessorConfig& conf
     const int height = source.ny;
     const int width = source.nx;
 
-    const SlicesGrid slices_grid = vlm_utils::get_slices_grid(height, width, max_slice_nums, scale_resolution);
+    const SlicesGrid slices_grid = minicpmv4_x_utils::get_slices_grid(height, width, max_slice_nums, scale_resolution);
 
     const bool allow_upscale = !slices_grid.has_slices();
-    const ImageSize thumbnail_size = vlm_utils::find_best_resize(height, width, scale_resolution, patch_size, 4, allow_upscale);
+    const ImageSize thumbnail_size = minicpmv4_x_utils::find_best_resize(height, width, scale_resolution, patch_size, 4, allow_upscale);
     clip_image_u8 thumbnail;
     bicubic_resize(source, thumbnail, static_cast<int>(thumbnail_size.width), static_cast<int>(thumbnail_size.height));
 
@@ -85,7 +86,7 @@ SlicedImage slice_image(const clip_image_u8& source, const ProcessorConfig& conf
     result.crop_sizes.push_back({thumbnail_size.height / patch_side, thumbnail_size.width / patch_side});
 
     if (slices_grid.has_slices()) {
-        const ImageSize refine_size = vlm_utils::get_refine_size(height, width, slices_grid, scale_resolution, patch_size, 4);
+        const ImageSize refine_size = minicpmv4_x_utils::get_refine_size(height, width, slices_grid, scale_resolution, patch_size, 4);
         clip_image_u8 refine_img;
         bicubic_resize(source, refine_img, static_cast<int>(refine_size.width), static_cast<int>(refine_size.height));
         const int slice_h = static_cast<int>(refine_size.height / slices_grid.rows);

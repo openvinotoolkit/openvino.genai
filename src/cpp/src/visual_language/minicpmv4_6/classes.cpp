@@ -7,6 +7,7 @@
 #include <numeric>
 
 #include "visual_language/clip.hpp"
+#include "visual_language/minicpmv4_x_utils.hpp"
 #include "visual_language/vlm_utils.hpp"
 #include "utils.hpp"
 
@@ -161,7 +162,7 @@ EncodedImage VisionEncoderMiniCPMV4_6::encode(const ov::Tensor& image, const ov:
     const size_t downsample_factor = config.merge_kernel_size * (has_window_index ? config.window_kernel_size : 1);
 
     clip_image_u8 source = tensor_to_clip_image_u8(image);
-    const SlicesGrid slices_grid = vlm_utils::get_slices_grid(source.ny, source.nx, max_slice_nums, scale_resolution);
+    const SlicesGrid slices_grid = minicpmv4_x_utils::get_slices_grid(source.ny, source.nx, max_slice_nums, scale_resolution);
 
     // Build the ordered list of resized u8 patches: [source, *slices] and their
     // patch-grid sizes {grid_h, grid_w}.
@@ -169,7 +170,7 @@ EncodedImage VisionEncoderMiniCPMV4_6::encode(const ov::Tensor& image, const ov:
     std::vector<std::pair<int, int>> patch_grids;  // {grid_h, grid_w} in patches
 
     // Source image (always present).
-    const ImageSize src_size = vlm_utils::find_best_resize(
+    const ImageSize src_size = minicpmv4_x_utils::find_best_resize(
         source.ny,
         source.nx,
         scale_resolution,
@@ -185,7 +186,7 @@ EncodedImage VisionEncoderMiniCPMV4_6::encode(const ov::Tensor& image, const ov:
     int slice_grid_h = 0;
     int slice_grid_w = 0;
     if (slices_grid.has_slices()) {
-        const ImageSize refine = vlm_utils::get_refine_size(
+        const ImageSize refine = minicpmv4_x_utils::get_refine_size(
             source.ny,
             source.nx,
             slices_grid,
