@@ -4,6 +4,7 @@
 #pragma once
 
 #include <algorithm>
+#include <functional>
 #include "continuous_batching/pipeline_impl.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "update_request_structs.hpp"
@@ -183,6 +184,14 @@ public:
         eagle_mode_enabled = true;
     };
 
+    void step() override {
+        // draft model may be disabled by num_assistant_tokens = 0
+        if (!m_is_validation_mode_enabled) {
+            m_batch_size = 0;
+        }
+        ContinuousBatchingForSpeculativeDecodingImpl::step();
+    }
+
     bool is_requests_empty();
 
     /**
@@ -209,6 +218,48 @@ public:
             return m_model_runner->get_infer_request().get_tensor(name);
         }
         return {};
+    }
+
+    // Restores the deferred draft prefix under a main-aware hash identity, capped at `ceiling` draft
+    // tokens. Binding the draft cache identity to the main model's image-aware prefix hash ensures a draft
+    // block is reused only when the main model restored the same image-dependent context, preventing reuse
+    // of draft blocks cached for a prompt with identical text but a different image.
+    size_t restore_draft_prefix_with_identity(uint64_t request_id,
+                                              size_t ceiling,
+                                              const std::function<size_t(size_t, size_t)>& hash_provider) {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        for (const auto& group : m_awaiting_requests) {
+            if (group->get_request_id() != request_id) {
+                continue;
+            }
+            for (const auto& sequence : group->get_sequences()) {
+                sequence->set_prefix_cache_policy(group->get_prompt_len(), hash_provider);
+            }
+            if (m_scheduler->get_config().enable_prefix_caching) {
+                m_scheduler->restore_cached_blocks(group, ceiling);
+            }
+            group->set_num_prefix_cache_hit_tokens(group->get_num_processed_tokens());
+            return group->get_num_processed_tokens();
+        }
+        OPENVINO_THROW("Eagle3 draft prefix restore requires an awaiting request: ", request_id);
+    }
+
+protected:
+    // Defer the draft (embeddings) prefix restore to align_request_pair_processed_prefix(), which binds the
+    // draft cache identity to the main model's image-aware hash before restoring. Restoring here with the
+    // draft's own image-blind text embeddings could reuse blocks produced for a different image.
+    void initialize_prefix_cache(const SequenceGroup::Ptr& group) override {
+        if (!m_is_validation_mode_enabled && m_model_input_type == ModelInputType::EMBEDDINGS) {
+            return;
+        }
+        ContinuousBatchingImpl::initialize_prefix_cache(group);
+    }
+
+    // The embeddings draft gets a finite publication limit in restore_draft_prefix_with_identity(), so its
+    // prompt blocks are allocated unpublished and must be published here to be reusable; the limit keeps
+    // speculative tails unpublished. The main model keeps the speculative default and publishes inline.
+    bool _can_publish_kv_only_completed_blocks() const override {
+        return !m_is_validation_mode_enabled && m_model_input_type == ModelInputType::EMBEDDINGS;
     }
 };
 
