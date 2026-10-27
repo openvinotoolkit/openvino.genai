@@ -1178,7 +1178,7 @@ def test_qwen35_mtp_matches_main_only(qwen35_mtp_model_path: Path):
 
 # After preemption, pending tokens must be replayed before MTP can enter its atomic verification window.
 # Currently step() raises instead, failing the batch rather than replaying and continuing generation.
-@pytest.mark.skip(reason="Hybrid MTP verification rejects preempted requests with pending tokens to replay")
+@pytest.mark.skip(reason="Hybrid MTP verification rejects preempted requests with pending tokens to replay, CVS-198275")
 def test_qwen35_mtp_preemption_replays_before_verification(qwen35_mtp_model_path: Path):
     scheduler = get_hybrid_prefix_caching_scheduler_config(64, 64)
     draft_scheduler = SchedulerConfig()
