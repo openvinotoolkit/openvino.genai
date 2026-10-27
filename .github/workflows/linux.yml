@@ -882,7 +882,7 @@ jobs:
             trap 'rm -rf "${temp_model_dir}"' EXIT
             export_venv="${RUNNER_TEMP}/qwen-image21-export-venv"
             python -m venv --system-site-packages "${export_venv}"
-            "${export_venv}/bin/python" -m pip install "transformers==${transformers_version}"
+            "${export_venv}/bin/python" -m pip install "transformers==${transformers_version}" "optimum==2.3.0"
             "${export_venv}/bin/python" -m pip install --no-deps "${optimum_intel_package}"
             "${export_venv}/bin/optimum-cli" export openvino -m "${model_id}" --trust-remote-code --weight-format fp16 "${temp_model_dir}"
             fixture_files_are_complete "${temp_model_dir}"
