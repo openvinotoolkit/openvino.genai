@@ -756,8 +756,12 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
 
     if (images.empty() && videos.empty()) {
         if (has_lm_extra_input("visual_pos_masks")) {
+            // Some exported LM graphs (e.g. Qwen3-VL-Embedding) build the deepstack gather indices from
+            // visual_pos_masks and reshape the gathered rows to the [batch, seq_len, hidden] shape of
+            // inputs_embeds, so the dummy mask must have batch * seq_len elements.
             const size_t batch_size = input_ids.get_shape()[0];
-            ov::Tensor visual_pos_masks(ov::element::boolean, {batch_size, 1});
+            const size_t seq_len = input_ids.get_shape()[1];
+            ov::Tensor visual_pos_masks(ov::element::boolean, {batch_size, seq_len});
             std::fill_n(visual_pos_masks.data<bool>(), visual_pos_masks.get_size(), false);
             m_lm_extra_inputs["visual_pos_masks"] = std::move(visual_pos_masks);
         }
