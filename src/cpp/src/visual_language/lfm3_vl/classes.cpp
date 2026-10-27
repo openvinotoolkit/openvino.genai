@@ -274,32 +274,27 @@ ov::Tensor InputsEmbedderLFM3VL::get_inputs_embeds(const std::string& prompt,
     for (size_t video_id : videos_sequence) {
         video_embeds.push_back(videos.at(video_id).video_features);
     }
+    const size_t hidden_size = text_embeds.get_shape()[2];
     const int64_t* ids = input_ids.data<const int64_t>();
-    ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
-    text_embeds.copy_to(inputs_embeds);
-    const size_t hidden_size = inputs_embeds.get_shape()[2];
-    auto merge_features = [&](const std::vector<ov::Tensor>& features, int64_t token_id, const char* modality) {
+    auto prepare_features = [&](std::vector<ov::Tensor>& features, int64_t token_id, const char* modality) {
         size_t num_tokens = 0;
-        for (const auto& feature : features) {
-            num_tokens += feature.get_shape()[1];
+        for (auto& feature : features) {
+            const auto& shape = feature.get_shape();
+            OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1 && shape[2] == hidden_size,
+                            "LFM3-VL vision embeddings must have shape [1, tokens, text hidden size].");
+            num_tokens += shape[1];
+            // Encoded images and videos own the buffers until embedding insertion completes.
+            feature = ov::Tensor(feature.get_element_type(), {shape[1], hidden_size}, feature.data());
         }
         OPENVINO_ASSERT(static_cast<size_t>(std::count(ids, ids + input_ids.get_size(), token_id)) == num_tokens,
                         "LFM3-VL ", modality, " token count does not match the number of vision embeddings.");
-        size_t position = 0;
-        for (const auto& feature : features) {
-            const float* src = feature.data<const float>();
-            for (size_t row = 0; row < feature.get_shape()[1]; ++row) {
-                while (ids[position] != token_id) {
-                    ++position;
-                }
-                std::copy_n(src + row * hidden_size, hidden_size,
-                            inputs_embeds.data<float>() + position++ * hidden_size);
-            }
-        }
+        return features.empty() ? ov::Tensor(text_embeds.get_element_type(), {0, hidden_size})
+                                : qwen2_vl_utils::concatenate_video_image_embeds({}, features);
     };
-    merge_features(image_embeds, m_vlm_config.image_token_id, "image");
-    merge_features(video_embeds, m_vlm_config.video_token_id, "video");
-    return inputs_embeds;
+    const auto flat_images = prepare_features(image_embeds, m_vlm_config.image_token_id, "image");
+    const auto flat_videos = prepare_features(video_embeds, m_vlm_config.video_token_id, "video");
+    return qwen2_vl_utils::merge_text_and_video_image_embeddings(input_ids, text_embeds, flat_images, flat_videos,
+                                                               m_vlm_config.image_token_id, m_vlm_config.video_token_id);
 }
 
 }  // namespace ov::genai
