@@ -582,6 +582,9 @@ class TestVideoGenerationPipelines:
 
     def test_decode_override_in_batch_callback(self, conditioned_video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(conditioned_video_generation_model, "CPU")
+        decode_only_config = ov_genai.VideoGenerationConfig()
+        decode_only_config.decode_timestep = 0.25
+        decode_only_config.decode_noise_scale = 0.0
         decode_config = pipe.get_generation_config()
         decode_config.decode_timestep = [0.25]
         decode_config.decode_noise_scale = 1.0
@@ -608,6 +611,9 @@ class TestVideoGenerationPipelines:
         )
         assert len(previews) == 1
         assert previews[0].shape == _conditioned_decoder_video_shape(conditioned_video_generation_model, 1)
+        decoded = pipe.decode(captured_latents[0], generation_config=decode_only_config)
+        assert decoded.video.shape == previews[0].shape
+        assert decode_only_config.height == -1 and decode_only_config.width == -1
         with pytest.raises(RuntimeError, match="decode_timestep list length"):
             pipe.decode(captured_latents[0])
 

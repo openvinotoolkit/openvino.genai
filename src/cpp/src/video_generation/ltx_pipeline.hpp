@@ -901,9 +901,10 @@ public:
 
     VideoGenerationResult decode(const ov::Tensor& latent,
                                  const std::optional<VideoGenerationConfig>& generation_config_override) override {
-        const VideoGenerationConfig& generation_config = generation_config_override
-                                                             ? *generation_config_override
-                                                             : m_custom_generation_config;
+        VideoGenerationConfig generation_config = generation_config_override
+                                                       ? *generation_config_override
+                                                       : m_custom_generation_config;
+        replace_defaults(generation_config);
         check_inputs(generation_config);
         VAEDecodeInputs decode_inputs = prepare_vae_decode_inputs(latent,
                                                                    generation_config,
