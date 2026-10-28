@@ -1,6 +1,7 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import enum
+import platform
 import sys
 import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
 
@@ -10,6 +11,7 @@ patch_pyav_for_servercore.install_av_stub_module_for_windows()
 import openvino_genai as ov_genai
 import functools
 import pytest
+import openvino
 import datasets
 from transformers import AutoProcessor, AutoTokenizer
 from transformers.pipelines.automatic_speech_recognition import AutomaticSpeechRecognitionPipeline
@@ -21,7 +23,7 @@ import numpy as np
 import pathlib
 import importlib.metadata as metadata
 from packaging.version import parse
-from utils.constants import get_ov_cache_converted_models_dir, extra_generate_kwargs
+from utils.constants import get_ov_cache_converted_models_dir, extra_generate_kwargs, get_default_llm_properties
 
 from utils.network import retry_request
 from utils.atomic_download import AtomicDownloadManager
@@ -48,6 +50,7 @@ from utils.asr_utils.sensevoice import (
 class PipelineType(enum.Enum):
     WHISPER = "whisper"
     ASR = "asr"
+    CONTINUOUS_BATCHING = "continuous_batching"
 
 
 def get_pipeline_cls(pipeline_type: PipelineType):
@@ -182,13 +185,20 @@ def read_asr_model(params, word_timestamps=False, pipeline_type=PipelineType.WHI
     properties = {}
     if word_timestamps:
         properties["word_timestamps"] = True
-    pipeline_cls = get_pipeline_cls(pipeline_type)
+    if pipeline_type == PipelineType.CONTINUOUS_BATCHING:
+        assert (path / "openvino_audio_encoder_model.xml").is_file(), "Continuous batching requires a split ASR export"
+        genai_pipe = ov_genai.ContinuousBatchingPipeline(
+            path, ov_genai.SchedulerConfig(), "CPU", get_default_llm_properties()
+        )
+    else:
+        pipeline_cls = get_pipeline_cls(pipeline_type)
+        genai_pipe = pipeline_cls(path, "CPU", **properties, ENABLE_MMAP=False)
 
     return (
         model_id,
         path,
         hf_pipe,
-        pipeline_cls(path, "CPU", **properties, ENABLE_MMAP=False),
+        genai_pipe,
     )
 
 
@@ -385,14 +395,75 @@ def get_model_pipeline_pair_params(model_pipeline_pairs=MODEL_PIPELINE_PAIRS):
     ]
 
 
+def make_deterministic_audio(num_samples: int) -> np.ndarray:
+    return (0.1 * np.random.default_rng(num_samples).standard_normal(num_samples)).astype(np.float32)
+
+
+# ASRPipeline runs Qwen3-ASR split export through ContinuousBatchingPipeline.
+QWEN3_ASR_SPLIT_EXPORT_ASR_PARAM = pytest.param(
+    (QWEN3_ASR_MODEL_ID, PipelineType.ASR),
+    id=f"{get_model_pipeline_pair_id((QWEN3_ASR_MODEL_ID, PipelineType.ASR))}-split",
+    marks=[
+        pytest.mark.qwen3_asr_split_export,
+        pytest.mark.skipif(
+            sys.platform == "darwin" and platform.machine() == "arm64",
+            reason="PagedAttention requires SVE on ARM and is unavailable on macOS arm64.",
+        ),
+    ],
+)
+
+
 @pytest.fixture
 def pipelines_fixture(request):
     model_id, pipeline_type = request.param[:2]
     options = request.param[2] if len(request.param) > 2 else {}
     model_name = model_id.split("/")[-1]
+    if request.node.get_closest_marker("qwen3_asr_split_export"):
+        # Keep split and legacy exports in separate converted-model caches.
+        model_name += "-split"
     model_path = get_ov_cache_converted_models_dir() / model_name
     model_id, _, hf_pipe, genai_pipe = read_asr_model((model_id, model_path), pipeline_type=pipeline_type, **options)
     return hf_pipe, genai_pipe, model_id, pipeline_type
+
+
+@pytest.mark.qwen3_asr_split_export
+@pytest.mark.skipif(
+    sys.platform == "darwin" and platform.machine() == "arm64",
+    reason="PagedAttention requires SVE on ARM and is unavailable on macOS arm64.",
+)
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params([(QWEN3_ASR_MODEL_ID, PipelineType.CONTINUOUS_BATCHING)]),
+    indirect=True,
+)
+@pytest.mark.parametrize(
+    "audios",
+    [
+        # 137 and 261 mel frames (hop length 160) end with partial chunks.
+        pytest.param([make_deterministic_audio(num_samples) for num_samples in (21920, 41760)], id="short-first"),
+        pytest.param([make_deterministic_audio(num_samples) for num_samples in (41760, 21920)], id="long-first"),
+    ],
+)
+def test_qwen3_asr_cb_add_request_matches_optimum(pipelines_fixture, audios):
+    optimum_pipe, pipe, _, _ = pipelines_fixture
+    config = ov_genai.GenerationConfig(max_new_tokens=16, do_sample=False)
+    expected_ids = [
+        optimum_pipe.generate_ids(audio, max_new_tokens=16, do_sample=False)[0].tolist() for audio in audios
+    ]
+    handles = [
+        pipe.add_request(request_id, "", [], [], [openvino.Tensor(audio)], config)
+        for request_id, audio in enumerate(audios)
+    ]
+
+    while pipe.has_non_finished_requests():
+        pipe.step()
+
+    for handle, expected in zip(handles, expected_ids, strict=True):
+        results = handle.read_all()
+        assert len(results) == 1
+        assert expected
+        assert results[0].generated_ids == expected
+    assert not pipe.has_non_finished_requests()
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
@@ -601,7 +672,8 @@ def test_language_detection(model_descr, sample_from_multilingual_dataset, langu
             (FUN_ASR_MODEL_ID, PipelineType.ASR),
             (SENSEVOICE_SMALL_TINY_MODEL_ID, PipelineType.ASR),
         ]
-    ),
+    )
+    + [QWEN3_ASR_SPLIT_EXPORT_ASR_PARAM],
     indirect=True,
 )
 @pytest.mark.parametrize("sample_from_multilingual_dataset", ["fr"], indirect=True)
@@ -693,7 +765,8 @@ def test_return_timestamps_max_new_tokens_short_form(model_descr, sample_from_da
             (QWEN3_ASR_MODEL_ID, PipelineType.ASR),
             (FUN_ASR_MODEL_ID, PipelineType.ASR),
         ]
-    ),
+    )
+    + [QWEN3_ASR_SPLIT_EXPORT_ASR_PARAM],
     indirect=True,
 )
 @pytest.mark.parametrize(
@@ -945,13 +1018,16 @@ def test_random_sampling(model_descr, sample_from_dataset, pipeline_type):
             (QWEN3_ASR_MODEL_ID, PipelineType.ASR),
             (FUN_ASR_MODEL_ID, PipelineType.ASR),
         ]
-    ),
+    )
+    + [QWEN3_ASR_SPLIT_EXPORT_ASR_PARAM],
     indirect=True,
 )
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
-def test_perf_metrics(sample_from_dataset, pipelines_fixture):
+def test_perf_metrics(sample_from_dataset, pipelines_fixture, request):
     _, genai_pipe, model_id, pipeline_type = pipelines_fixture
+    # Qwen3-ASR split export extracts mel features inside the audio encoding stage.
+    has_features_extraction = request.node.get_closest_marker("qwen3_asr_split_export") is None
 
     if model_id in (QWEN3_ASR_MODEL_ID, FUN_ASR_MODEL_ID):
         generate_kwargs = {"language": "English", "max_new_tokens": 200}
@@ -981,7 +1057,8 @@ def test_perf_metrics(sample_from_dataset, pipelines_fixture):
     else:
         assert perf_metrics.get_tokenization_duration().mean == 0
     assert perf_metrics.get_detokenization_duration().mean > 0
-    assert perf_metrics.get_features_extraction_duration().mean > 0
+    if has_features_extraction:
+        assert perf_metrics.get_features_extraction_duration().mean > 0
     if model_id not in (QWEN3_ASR_MODEL_ID, FUN_ASR_MODEL_ID):
         assert perf_metrics.get_word_level_timestamps_processing_duration().mean > 0
     assert perf_metrics.get_encode_inference_duration().mean > 0
@@ -991,10 +1068,13 @@ def test_perf_metrics(sample_from_dataset, pipelines_fixture):
     # assert that calculating statistics manually from the raw counters we get the same results as from PerfMetrics
     raw_metrics = get_raw_metrics(perf_metrics, pipeline_type)
 
-    raw_dur = np.array(raw_metrics.features_extraction_durations) / 1000
-    mean_dur, std_dur = perf_metrics.get_features_extraction_duration()
-    assert np.allclose(mean_dur, np.mean(raw_dur))
-    assert np.allclose(std_dur, np.std(raw_dur))
+    if has_features_extraction:
+        raw_dur = np.array(raw_metrics.features_extraction_durations) / 1000
+        mean_dur, std_dur = perf_metrics.get_features_extraction_duration()
+        assert np.allclose(mean_dur, np.mean(raw_dur))
+        assert np.allclose(std_dur, np.std(raw_dur))
+    else:
+        assert len(raw_metrics.features_extraction_durations) == 0
 
     if model_id not in (QWEN3_ASR_MODEL_ID, FUN_ASR_MODEL_ID):
         assert len(raw_metrics.word_level_timestamps_processing_durations) == 1
@@ -1085,7 +1165,8 @@ def streamer_for_test(request):
             (FUN_ASR_MODEL_ID, PipelineType.ASR),
             (SENSEVOICE_SMALL_TINY_MODEL_ID, PipelineType.ASR),
         ]
-    ),
+    )
+    + [QWEN3_ASR_SPLIT_EXPORT_ASR_PARAM],
     indirect=True,
 )
 def test_streamers(sample_from_dataset, pipelines_fixture, streamer_for_test):
@@ -1124,3 +1205,16 @@ def test_streamers(sample_from_dataset, pipelines_fixture, streamer_for_test):
 
     assert expected == result_handler.decode(genai_pipe.get_tokenizer())
     result_handler.reset()
+
+
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params([(QWEN3_ASR_MODEL_ID, PipelineType.ASR)]) + [QWEN3_ASR_SPLIT_EXPORT_ASR_PARAM],
+    indirect=True,
+)
+def test_qwen3_asr_streamer_rejects_multi_chunk_audio(pipelines_fixture):
+    _, genai_pipe, _, _ = pipelines_fixture
+    audio = np.zeros(1210 * 16000, dtype=np.float32)
+
+    with pytest.raises(RuntimeError, match="Qwen3-ASR streaming supports audio up to 1200 seconds"):
+        genai_pipe.generate(audio, language="English", max_new_tokens=1, streamer=lambda subword: False)
