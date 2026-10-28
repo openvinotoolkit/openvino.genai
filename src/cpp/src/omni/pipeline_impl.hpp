@@ -7,6 +7,9 @@
 #include <string>
 #include <vector>
 
+#include "gguf_utils/gguf_lfm2_audio.hpp"
+#include "gguf_utils/gguf_lfm3_audio.hpp"
+#include "omni/talker_speech_config_utils.hpp"
 #include "openvino/core/any.hpp"
 #include "openvino/genai/chat_history.hpp"
 #include "openvino/genai/omni/pipeline.hpp"
@@ -14,7 +17,6 @@
 #include "openvino/genai/omni/talker.hpp"
 #include "openvino/genai/omni/talker_speech_config.hpp"
 #include "openvino/genai/streamer_base.hpp"
-#include "omni/talker_speech_config_utils.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/visual_language/video_metadata.hpp"
 #include "openvino/runtime/tensor.hpp"
@@ -25,8 +27,10 @@ namespace ov::genai {
 /// TalkerBase (speech-side). Speech is gated per-call via OmniTalkerSpeechConfig::return_audio.
 class OmniPipeline::OmniPipelineImpl {
 public:
-    OmniPipelineImpl(const std::shared_ptr<VLMPipelineBase>& vlm,
-                     const std::shared_ptr<TalkerBase>& talker);
+#ifdef ENABLE_GGUF
+    OmniPipelineImpl(const std::filesystem::path& models, const std::string& device, const ov::AnyMap& properties);
+#endif
+    OmniPipelineImpl(const std::shared_ptr<VLMPipelineBase>& vlm, const std::shared_ptr<TalkerBase>& talker);
 
     OmniDecodedResults generate(const std::string& prompt,
                                 const std::vector<ov::Tensor>& images,
@@ -51,6 +55,12 @@ public:
     /// @brief Return the VLM's loaded GenerationConfig (parsed from generation_config.json).
     /// Used as the default text_config when callers don't pass one explicitly.
     GenerationConfig get_text_generation_config() const {
+#ifdef ENABLE_GGUF
+        if (m_lfm2)
+            return m_lfm2->get_generation_config();
+        if (m_lfm3)
+            return m_lfm3->get_generation_config();
+#endif
         return m_vlm->get_generation_config();
     }
 
@@ -59,10 +69,12 @@ public:
     }
 
     std::shared_ptr<VLMPipelineBase> get_vlm() const {
+        OPENVINO_ASSERT(m_vlm, "This Omni backend has no standalone VLM; use OmniPipeline::generate");
         return m_vlm;
     }
 
     std::shared_ptr<TalkerBase> get_talker() const {
+        OPENVINO_ASSERT(m_talker, "This Omni backend has no standalone talker; use OmniPipeline::generate");
         return m_talker;
     }
 
@@ -70,6 +82,10 @@ private:
     /// @brief Reject non-Omni-capable models early, before any inference work.
     void assert_omni_capable() const;
 
+#ifdef ENABLE_GGUF
+    std::shared_ptr<GGUFLFM2Speech> m_lfm2;
+    std::shared_ptr<GGUFLFM3Speech> m_lfm3;
+#endif
     std::shared_ptr<VLMPipelineBase> m_vlm;
     std::shared_ptr<TalkerBase> m_talker;
     OmniTalkerSpeechConfig m_default_talker_speech_config;

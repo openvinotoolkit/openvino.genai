@@ -1,0 +1,8 @@
+{
+  "image_processor": {
+    "size": {"height": 32, "width": 48},
+    "patch_size": 2,
+    "image_mean": [0.5, 0.5, 0.5],
+    "image_std": [0.5, 0.5, 0.5]
+  }
+}

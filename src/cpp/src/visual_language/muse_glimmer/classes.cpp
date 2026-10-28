@@ -29,15 +29,17 @@ constexpr const char* VIDEO_START = "<|vid_start|>";
 constexpr const char* VIDEO_SEPARATOR = "<|vid_frame_separator|>";
 constexpr const char* VIDEO_END = "<|vid_end|>";
 
+template <typename Float>
 std::pair<int, int> compute_image_size(const int image_width,
                                        const int image_height,
                                        const size_t patch_hw,
-                                       const size_t max_tokens) {
-    float image_grid_height = static_cast<float>(image_height) / static_cast<float>(patch_hw);
-    float image_grid_width = static_cast<float>(image_width) / static_cast<float>(patch_hw);
-    const float ratio = image_grid_height > 0.0f ? image_grid_width / image_grid_height : 1.0f;
-    if (image_grid_height * image_grid_width > static_cast<float>(max_tokens)) {
-        image_grid_height = std::sqrt(static_cast<float>(max_tokens) / ratio);
+                                       const size_t max_tokens,
+                                       const bool prefer_larger_grid = false) {
+    Float image_grid_height = static_cast<Float>(image_height) / static_cast<Float>(patch_hw);
+    Float image_grid_width = static_cast<Float>(image_width) / static_cast<Float>(patch_hw);
+    const Float ratio = image_grid_height > 0 ? image_grid_width / image_grid_height : 1;
+    if (image_grid_height * image_grid_width > static_cast<Float>(max_tokens)) {
+        image_grid_height = std::sqrt(static_cast<Float>(max_tokens) / ratio);
         image_grid_width = image_grid_height * ratio;
     }
 
@@ -59,16 +61,17 @@ std::pair<int, int> compute_image_size(const int image_width,
                                 std::max(1, static_cast<int>(std::round(image_grid_width))));
     }
 
-    const float source_ratio = static_cast<float>(image_height) / static_cast<float>(image_width);
+    const Float source_ratio = static_cast<Float>(image_height) / static_cast<Float>(image_width);
     const auto best = std::min_element(
         candidates.cbegin(),
         candidates.cend(),
-        [source_ratio](const std::pair<int, int>& lhs, const std::pair<int, int>& rhs) {
-            const float lhs_delta =
-                std::abs(static_cast<float>(lhs.first) / static_cast<float>(lhs.second) - source_ratio);
-            const float rhs_delta =
-                std::abs(static_cast<float>(rhs.first) / static_cast<float>(rhs.second) - source_ratio);
-            return lhs_delta < rhs_delta;
+        [source_ratio, prefer_larger_grid](const std::pair<int, int>& lhs, const std::pair<int, int>& rhs) {
+            const Float lhs_delta =
+                std::abs(static_cast<Float>(lhs.first) / static_cast<Float>(lhs.second) - source_ratio);
+            const Float rhs_delta =
+                std::abs(static_cast<Float>(rhs.first) / static_cast<Float>(rhs.second) - source_ratio);
+            return lhs_delta < rhs_delta ||
+                   (prefer_larger_grid && lhs_delta == rhs_delta && lhs.first * lhs.second > rhs.first * rhs.second);
         });
 
     return {best->first * static_cast<int>(patch_hw), best->second * static_cast<int>(patch_hw)};
@@ -128,7 +131,10 @@ MuseGlimmerVisionInputs get_vision_inputs(const std::vector<ov::Tensor>& frames,
 
     clip_image_u8 input_image = tensor_to_clip_image_u8(frames.front());
     const size_t patch_hw = config.patch_size * config.merge_size;
-    const auto [target_height, target_width] = compute_image_size(input_image.nx, input_image.ny, patch_hw, max_tokens);
+    const auto [target_height, target_width] =
+        config.preserve_native_resolution
+            ? compute_image_size<double>(input_image.nx, input_image.ny, patch_hw, max_tokens, true)
+            : compute_image_size<float>(input_image.nx, input_image.ny, patch_hw, max_tokens);
     const size_t grid_height = static_cast<size_t>(target_height) / config.patch_size;
     const size_t grid_width = static_cast<size_t>(target_width) / config.patch_size;
 
@@ -163,6 +169,18 @@ void fill_video_metadata(ov::genai::VideoMetadata& metadata,
                     config.temporal_patch_size,
                     " frames, got ",
                     total_num_frames);
+    if (!config.do_sample_frames) {
+        if (metadata.fps == 0.0f)
+            metadata.fps = config.fps > 0.0f ? config.fps : 24.0f;
+        OPENVINO_ASSERT(metadata.fps > 0.0f, "Muse Glimmer video metadata fps must be positive");
+        if (metadata.frames_indices.empty()) {
+            metadata.frames_indices.resize(total_num_frames);
+            std::iota(metadata.frames_indices.begin(), metadata.frames_indices.end(), 0);
+        }
+        OPENVINO_ASSERT(metadata.frames_indices.size() % config.temporal_patch_size == 0,
+                        "Muse Glimmer sampled frame count must be a multiple of temporal_patch_size");
+        return;
+    }
     OPENVINO_ASSERT(config.fps > 0.0f, "Muse Glimmer video processor fps must be positive");
     if (metadata.fps == 0.0f) {
         GENAI_WARN("Muse Glimmer video metadata fps is not set. Assuming the input frames are pre-sampled at fps=" +
@@ -192,6 +210,10 @@ void fill_video_metadata(ov::genai::VideoMetadata& metadata,
                     ", got ",
                     num_frames);
 
+    if (num_frames == 1) {
+        metadata.frames_indices = {0};
+        return;
+    }
     metadata.frames_indices.reserve(num_frames);
     for (size_t idx = 0; idx < num_frames; ++idx) {
         const double position =

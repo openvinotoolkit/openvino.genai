@@ -8,6 +8,8 @@ For optimal performance and memory consumption, use prepared OpenVINO IR models 
 
 Use the GGUF frontend when your model is available only in GGUF format or you need to run an existing GGUF file directly.
 
+For LFM3 text, vision, audio and speech pipelines, see [Run LFM3 models](./gguf-lfm3.mdx).
+
 OpenVINO GenAI can load a local `.gguf` file directly, including its tokenizer metadata. No Optimum export is required. `ENABLE_GGUF` is enabled by default in GenAI CMake. Use a compatible OpenVINO build that includes the GGUF frontend.
 
 The default `GGUF_READER="LEGACY"` supports the `llama`, `qwen2`, and `qwen3` architectures. Select `GGUF_READER="FRONTEND"` explicitly to use the OpenVINO GGUF frontend, which supports more architectures and is expected to provide better model quality through more complete handling of GGUF metadata.
@@ -73,3 +75,88 @@ print(pipe.generate(history, max_new_tokens=64))
 ```
 
 Chat requires a suitable template in the GGUF metadata. See [Tokenization](./tokenization.mdx) for configuring the tokenizer and [Streaming](./streaming.mdx) for streamer behavior.
+
+## Bonsai models
+
+Bonsai and Ternary-Bonsai use the existing Qwen3 and Qwen3.5 pipelines. With an OpenVINO
+GGUF frontend supporting these formats, select `GGUF_READER="FRONTEND"` for Q1_0,
+PQ2_0, PTQ1_0, and legacy Q2_0 weights. Bonsai-2 also uses this path for its Hadamard
+transforms. SDPA and PagedAttention are supported.
+
+For 27B multimodal checkpoints, supply the matching BF16 or Q8_0 projector file:
+
+```python
+pipe = genai.VLMPipeline(
+    "Ternary-Bonsai-2-27B-PQ2_0.gguf",
+    "CPU",
+    mmproj_path="Ternary-Bonsai-2-27B-mmproj-Q8_0.gguf",
+)
+print(pipe.generate("Describe the image.", images=[image], max_new_tokens=64))
+```
+
+`image` is an `openvino.Tensor` containing RGB pixels with shape `[1, H, W, 3]` and
+type `uint8`. The existing Qwen3.5 processor reads patch and merge sizes from the
+projector metadata. DSpark companion files require a dedicated draft-model consumer;
+they cannot be passed to GenAI's ordinary autoregressive draft-model API.
+
+## LFM2 multimodal models
+
+LFM2-VL/LFM2.5-VL use `VLMPipeline` with the matching vision projector. The image
+processor supports an overview plus 2–10 tiles, row/column markers and multiple images.
+Pass RGB `uint8` tensors `[1,H,W,3]` using `<image>` or universal image tags.
+
+LFM2/LFM2.5 Audio input uses the `lfm2a` projector. Supply mono `float32` waveform
+samples at 16 kHz (at least 160 samples). `<audio>` and universal audio tags support
+multiple clips and explicit ordering. Audio and vision models use separate projectors.
+SDPA and PagedAttention support text generation from audio or images.
+
+```python
+import openvino as ov
+import openvino_genai as genai
+
+pipe = genai.VLMPipeline(
+    "LFM2.5-Audio-1.5B-Q4_0.gguf", "CPU",
+    mmproj_path="mmproj-LFM2.5-Audio-1.5B-Q4_0.gguf",
+)
+print(pipe.generate("<audio> Transcribe the audio.",
+                    audios=[ov.Tensor(samples_16khz)], max_new_tokens=128))
+```
+
+LFM2.5 Audio speech generation additionally requires the bundle's vocoder and
+spectral detokenizer GGUF files. `OmniPipeline` uses CPU/SDPA for this path:
+
+```python
+pipe = genai.OmniPipeline(
+    "LFM2.5-Audio-1.5B-Q4_0.gguf", "CPU",
+    mmproj_path="mmproj-LFM2.5-Audio-1.5B-Q4_0.gguf",
+    vocoder_path="vocoder-LFM2.5-Audio-1.5B-Q4_0.gguf",
+    audio_detokenizer_path="tokenizer-LFM2.5-Audio-1.5B-Q4_0.gguf",
+)
+result = pipe.generate("Say hello.",
+                       text_config=genai.GenerationConfig(max_new_tokens=128))
+waveform_24khz = result.speech_result.waveforms[0].data
+```
+
+Speech defaults to interleaved text/audio. Set `lfm2_audio_mode="sequential"` at
+construction for sequential TTS; `talker_speech_config.return_audio=False` produces
+text only. The text configuration's token limit counts combined text/audio steps;
+the speech configuration's limit caps codec frames. `cp_temperature` and `cp_top_k`
+control audio sampling; unset temperature uses greedy audio decoding. The model has
+one fixed voice. Speech callbacks receive owned chunks after the complete waveform
+has been decoded; they do not reduce time to first audio. `ChatHistory` can retain
+audio inputs across follow-ups, but returned waveform outputs are not replayed as
+assistant codec tokens. Beam search, token penalties, speculative decoding, structured
+output and standalone `get_vlm()`/`get_talker()` are unavailable on this speech backend.
+Older Mimi-based LFM2 speech output requires a separate codec implementation.
+
+The pinned LFM2.5 Q4_0 bundle is revision
+`7d525f883a077e20afb782f2ff618edcae0e39e4`; LFM2-VL-450M validation uses revision
+`7cf9679aa137039135e342aa77014f7b5f2bef73`. Other sizes and quantizations need their
+own accuracy qualification.
+
+Local validation on the pinned bundle passed 54 media/reference cases across SDPA
+and PagedAttention, plus speech API and preprocessing/ISTFT regression tests.
+Audio matched all 109 reference greedy choices per backend; vision passed the
+existing greedy-choice gate on square, JPEG and tiled images. This validates local
+choices on identical generated histories, rather than strict full-logit parity
+or free-running speech fidelity against a publisher recording.

@@ -31,6 +31,11 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"gemma3n", VLMModelType::GEMMA3N},
         {"gemma4", VLMModelType::GEMMA4},
         {"gemma4_unified", VLMModelType::GEMMA4_UNIFIED},
+        {"lfm3_audio", VLMModelType::LFM3_AUDIO},
+        {"lfm3_gguf_vl", VLMModelType::LFM3_GGUF_VL},
+        {"lfm3_omni", VLMModelType::LFM3_OMNI},
+        {"lfm2_audio", VLMModelType::LFM2_AUDIO},
+        {"lfm2_vl", VLMModelType::LFM2_VL},
         {"videochat_flash_qwen", VLMModelType::VIDEOCHAT_FLASH_QWEN},
         {"qwen3_omni", VLMModelType::QWEN3_OMNI},
         {"qwen3_omni_moe", VLMModelType::QWEN3_OMNI},
@@ -56,10 +61,14 @@ void assert_size(size_t size, VLMModelType model_type) {
 
 }  // namespace
 
-VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
-    std::ifstream stream(json_path);
-    OPENVINO_ASSERT(stream.is_open(), "Failed to open '", json_path, "' with processor config");
-    nlohmann::json parsed = nlohmann::json::parse(stream);
+VLMConfig::VLMConfig(const std::filesystem::path& json_path)
+    : VLMConfig([&json_path] {
+          std::ifstream stream(json_path);
+          OPENVINO_ASSERT(stream.is_open(), "Failed to open '", json_path, "' with processor config");
+          return nlohmann::json::parse(stream);
+      }()) {}
+
+VLMConfig::VLMConfig(const nlohmann::json& parsed) {
     using ov::genai::utils::read_json_param;
     model_type = to_vlm_model_type(parsed.at("model_type"));
     read_json_param(parsed, "hidden_size", hidden_size);
@@ -98,6 +107,9 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
         read_json_param(parsed, "text_config.use_bidirectional_attention", use_bidirectional_attention);
     }
 
+    read_json_param(parsed, "position_ids_offset", position_ids_offset);
+    read_json_param(parsed, "image_separator", image_separator);
+
     // DeepSeek-OCR-2
     read_json_param(parsed, "view_separator", view_separator);
     read_json_param(parsed, "image_token_id", image_token_id);
@@ -129,8 +141,12 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
 
     // Qwen3-Omni: vision/audio configs are nested under thinker_config
     if (model_type == VLMModelType::QWEN3_OMNI) {
-        read_json_param(parsed, "thinker_config.vision_config.num_position_embeddings", vision_config_num_position_embeddings);
-        read_json_param(parsed, "thinker_config.vision_config.deepstack_visual_indexes", vision_config_deepstack_visual_indexes);
+        read_json_param(parsed,
+                        "thinker_config.vision_config.num_position_embeddings",
+                        vision_config_num_position_embeddings);
+        read_json_param(parsed,
+                        "thinker_config.vision_config.deepstack_visual_indexes",
+                        vision_config_deepstack_visual_indexes);
         read_json_param(parsed, "enable_audio_output", enable_audio_output);
         read_json_param(parsed, "tts_bos_token_id", tts_bos_token_id);
         read_json_param(parsed, "tts_eos_token_id", tts_eos_token_id);

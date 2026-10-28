@@ -256,9 +256,9 @@ ov::genai::LLMPipeline::LLMPipeline(
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
     bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
-    utils::extract_extensions_to_core(properties);
+    const auto extensions = utils::extract_extensions_to_core(properties);
 
-    std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
+    std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties, extensions);
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
     if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
@@ -276,7 +276,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 #endif
         } catch (const ov::Exception& exception) {
             utils::log_paged_attention_fallback(exception);
-            model = utils::read_model(models_path, properties);
+            model = utils::read_model(models_path, properties, extensions);
         }
     }
 
@@ -299,27 +299,30 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
-    utils::extract_extensions_to_core(properties);
+    const auto extensions = utils::extract_extensions_to_core(properties);
     bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
 
     // The reader choice determines whether tokenizer metadata is available on the model.
     const auto gguf_properties = gguf_utils::extract_gguf_properties(properties);
 
     // Read model and create tokenizer once to avoid double I/O during pipeline construction.
-    std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
+    std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties, extensions);
     // For GGUF the frontend attaches tokenizer metadata to the model's rt_info, so build the
     // tokenizer from what was already read instead of re-opening the .gguf. Exceptions: the
     // legacy reader's model has no such rt_info, and enable_save_ov_model needs the source
     // directory to write the tokenizer/detokenizer IRs to, which the metadata alone can't give.
-    const bool tokenizer_from_model = is_gguf_model(models_path) && !gguf_properties.enable_save_ov_model &&
-                                      !gguf_properties.use_legacy_reader();
+    const bool gguf_frontend = is_gguf_model(models_path) && !gguf_properties.use_legacy_reader();
+    const bool tokenizer_from_model = gguf_frontend && !gguf_properties.enable_save_ov_model;
+    const auto gguf_stop_tokens =
+        gguf_frontend ? gguf_stop_token_ids(gguf_tokenizer_metadata_from_model(model)) : std::set<int64_t>{};
     const Tokenizer tokenizer =
         tokenizer_from_model ? GGUFTokenizer(GGUFTokenizerParameters(take_gguf_tokenizer_metadata(model)), properties)
                              : Tokenizer(models_path, properties);
     // On the from-file path the frontend's metadata is still on the model and no longer read.
     erase_gguf_tokenizer_metadata(model);
 
-    const auto generation_config = utils::from_config_json_if_exists(models_path);
+    auto generation_config = utils::from_config_json_if_exists(models_path);
+    generation_config.stop_token_ids.insert(gguf_stop_tokens.begin(), gguf_stop_tokens.end());
     if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
@@ -336,7 +339,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 #endif
         } catch (const ov::Exception& exception) {
             utils::log_paged_attention_fallback(exception);
-            model = utils::read_model(models_path, properties);
+            model = utils::read_model(models_path, properties, extensions);
         }
     }
 

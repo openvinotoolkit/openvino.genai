@@ -12,6 +12,10 @@
 #include <vector>
 #include "openvino/runtime/core.hpp"
 #include "utils.hpp"
+#include "openvino/op/constant.hpp"
+#include "openvino/op/read_value.hpp"
+#include "openvino/op/result.hpp"
+#include "openvino/op/util/variable.hpp"
 
 using namespace ov::genai::utils;
 
@@ -96,3 +100,18 @@ INSTANTIATE_TEST_SUITE_P(
         }
         return name;
     });
+
+TEST(GetCacheTypes, GGUFFixedRecurrentStateRequiresResetInsteadOfTrimming) {
+    auto initial = ov::op::v0::Constant::create(ov::element::f32, {1, 4, 8, 8}, {0});
+    auto variable = std::make_shared<ov::op::util::Variable>(
+        ov::op::util::VariableInfo{initial->get_output_partial_shape(0), ov::element::f32, "recurrent.0"});
+    auto read = std::make_shared<ov::op::v6::ReadValue>(initial, variable);
+    ov::Model model(ov::OutputVector{read}, ov::ParameterVector{});
+    EXPECT_FALSE(get_cache_types(model).has_linear());
+    model.set_rt_info(std::vector<std::string>{"recurrent.0", "recurrent_out.0"}, "gguf_recurrent_states");
+    auto types = get_cache_types(model);
+    EXPECT_TRUE(types.has_linear());
+    CacheState cache(types);
+    cache.num_tokens_to_trim = 1;
+    EXPECT_TRUE(cache.needs_reset());
+}

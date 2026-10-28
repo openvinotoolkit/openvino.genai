@@ -87,6 +87,18 @@ std::vector<int32_t> tensor_to_i32_vector(const ov::Tensor& tensor) {
 
 }  // namespace
 
+TEST(TestModelRunnerEmbeddingPrompt, media_placeholders_preserve_original_prompt_ids) {
+    ov::Tensor embeddings(ov::element::f32, {1, 3, 4});
+    TokenIds prompt{11, 999, 12};
+    ov::Tensor prompt_tensor(ov::element::i64, {1, 3}, prompt.data());
+    SequenceGroup group(0, embeddings, utils::get_greedy_config(), {}, std::nullopt, std::nullopt, prompt_tensor);
+
+    // Request storage must own the prompt after the embedding assembly buffers are reused.
+    prompt[0] = 43;
+    EXPECT_EQ(group.get_prompt_ids(), (TokenIds{11, 999, 12}));
+    EXPECT_EQ(group.get_prompt_len(), 3);
+}
+
 TEST(TestModelRunnerLinearAttentionPaging, prefill_uses_read_plus_interval_write_blocks_layout) {
     ov::Core core;
     ov::InferRequest request = core.compile_model(create_dummy_la_paging_model(), "CPU").create_infer_request();

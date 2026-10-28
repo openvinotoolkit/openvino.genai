@@ -28,6 +28,11 @@ private:
 
 class InputsEmbedderMuseGlimmer : public InputsEmbedder::IInputsEmbedder {
 public:
+    InputsEmbedderMuseGlimmer(const VLMModels& models,
+                              const Tokenizer& tokenizer,
+                              const std::string& device,
+                              const ov::AnyMap& properties)
+        : IInputsEmbedder(models, tokenizer, device, properties) {}
     InputsEmbedderMuseGlimmer(const VLMConfig& vlm_config,
                               const std::filesystem::path& model_dir,
                               const Tokenizer& tokenizer,

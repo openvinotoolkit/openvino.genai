@@ -6,6 +6,9 @@
 #include <utility>
 
 #include "openvino/core/except.hpp"
+#ifdef ENABLE_GGUF
+#    include "gguf_utils/gguf.hpp"
+#endif
 
 namespace ov::genai {
 
@@ -21,8 +24,9 @@ void enforce_text_config_compatible_with_audio(const GenerationConfig& text_conf
     }
     OPENVINO_ASSERT(!text_config.is_beam_search(),
                     "OmniPipeline: return_audio is not compatible with beam search (num_beams > 1)");
-    OPENVINO_ASSERT(!text_config.is_prompt_lookup() && !text_config.is_assisting_generation(),
-                    "OmniPipeline: return_audio is not compatible with prompt lookup or assistant/speculative decoding");
+    OPENVINO_ASSERT(
+        !text_config.is_prompt_lookup() && !text_config.is_assisting_generation(),
+        "OmniPipeline: return_audio is not compatible with prompt lookup or assistant/speculative decoding");
     OPENVINO_ASSERT(text_config.num_return_sequences == 1,
                     "OmniPipeline: return_audio requires num_return_sequences == 1 (got ",
                     text_config.num_return_sequences,
@@ -32,12 +36,26 @@ void enforce_text_config_compatible_with_audio(const GenerationConfig& text_conf
 }  // namespace
 
 OmniPipeline::OmniPipelineImpl::OmniPipelineImpl(const std::shared_ptr<VLMPipelineBase>& vlm,
-                                                  const std::shared_ptr<TalkerBase>& talker) :
-    m_vlm{vlm}, m_talker{talker} {
+                                                 const std::shared_ptr<TalkerBase>& talker)
+    : m_vlm{vlm},
+      m_talker{talker} {
     OPENVINO_ASSERT(m_vlm, "OmniPipeline: VLM pointer is null");
     OPENVINO_ASSERT(m_talker, "OmniPipeline: talker pointer is null");
     assert_omni_capable();
 }
+
+#ifdef ENABLE_GGUF
+OmniPipeline::OmniPipelineImpl::OmniPipelineImpl(const std::filesystem::path& models,
+                                                 const std::string& device,
+                                                 const ov::AnyMap& properties) {
+    const bool lfm3 = std::filesystem::is_directory(models) ||
+                      std::get<std::string>(get_gguf_metadata(models).at("general.architecture")) == "lfm3";
+    if (lfm3)
+        m_lfm3 = std::make_shared<GGUFLFM3Speech>(models, device, properties);
+    else
+        m_lfm2 = std::make_shared<GGUFLFM2Speech>(models, device, properties);
+}
+#endif
 
 void OmniPipeline::OmniPipelineImpl::assert_omni_capable() const {
     OPENVINO_ASSERT(
@@ -51,20 +69,47 @@ void OmniPipeline::OmniPipelineImpl::assert_omni_capable() const {
 }
 
 OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const std::string& prompt,
-                                                             const std::vector<ov::Tensor>& images,
-                                                             const std::vector<ov::Tensor>& videos,
-                                                             const std::vector<VideoMetadata>& videos_metadata,
-                                                             const std::vector<ov::Tensor>& audios,
-                                                             const GenerationConfig& text_config,
-                                                             const OmniTalkerSpeechConfig& talker_speech_config,
-                                                             const StreamerVariant& streamer,
-                                                             const OmniSpeechStreamerVariant& speech_streamer) {
+                                                            const std::vector<ov::Tensor>& images,
+                                                            const std::vector<ov::Tensor>& videos,
+                                                            const std::vector<VideoMetadata>& videos_metadata,
+                                                            const std::vector<ov::Tensor>& audios,
+                                                            const GenerationConfig& text_config,
+                                                            const OmniTalkerSpeechConfig& talker_speech_config,
+                                                            const StreamerVariant& streamer,
+                                                            const OmniSpeechStreamerVariant& speech_streamer) {
+#ifdef ENABLE_GGUF
+    if (m_lfm3) {
+        ChatHistory history(
+            {{{"role", "system"}, {"content", m_lfm3->default_system_prompt(talker_speech_config.return_audio)}},
+             {{"role", "user"}, {"content", prompt}}});
+        return m_lfm3->generate(history,
+                                images,
+                                videos,
+                                videos_metadata,
+                                audios,
+                                text_config,
+                                talker_speech_config,
+                                streamer,
+                                speech_streamer);
+    }
+    if (m_lfm2) {
+        OPENVINO_ASSERT(images.empty() && videos.empty() && videos_metadata.empty(),
+                        "LFM2 audio accepts audio and text");
+        ChatHistory history(
+            {{{"role", "system"}, {"content", m_lfm2->default_system_prompt(talker_speech_config.return_audio)}},
+             {{"role", "user"}, {"content", prompt}}});
+        return m_lfm2->generate(history, audios, text_config, talker_speech_config, streamer, speech_streamer);
+    }
+#endif
     validate_omni_talker_speech_config(talker_speech_config);
     enforce_text_config_compatible_with_audio(text_config, talker_speech_config);
 
     OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
-                    "OmniPipeline: videos_metadata size (", videos_metadata.size(),
-                    ") must match videos size (", videos.size(), ") or be empty");
+                    "OmniPipeline: videos_metadata size (",
+                    videos_metadata.size(),
+                    ") must match videos size (",
+                    videos.size(),
+                    ") or be empty");
 
     if (talker_speech_config.return_audio) {
         GenerationConfig text_cfg = text_config;
@@ -87,20 +132,40 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const std::string& p
 }
 
 OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const ChatHistory& history,
-                                                             const std::vector<ov::Tensor>& images,
-                                                             const std::vector<ov::Tensor>& videos,
-                                                             const std::vector<VideoMetadata>& videos_metadata,
-                                                             const std::vector<ov::Tensor>& audios,
-                                                             const GenerationConfig& text_config,
-                                                             const OmniTalkerSpeechConfig& talker_speech_config,
-                                                             const StreamerVariant& streamer,
-                                                             const OmniSpeechStreamerVariant& speech_streamer) {
+                                                            const std::vector<ov::Tensor>& images,
+                                                            const std::vector<ov::Tensor>& videos,
+                                                            const std::vector<VideoMetadata>& videos_metadata,
+                                                            const std::vector<ov::Tensor>& audios,
+                                                            const GenerationConfig& text_config,
+                                                            const OmniTalkerSpeechConfig& talker_speech_config,
+                                                            const StreamerVariant& streamer,
+                                                            const OmniSpeechStreamerVariant& speech_streamer) {
+#ifdef ENABLE_GGUF
+    if (m_lfm3)
+        return m_lfm3->generate(history,
+                                images,
+                                videos,
+                                videos_metadata,
+                                audios,
+                                text_config,
+                                talker_speech_config,
+                                streamer,
+                                speech_streamer);
+    if (m_lfm2) {
+        OPENVINO_ASSERT(images.empty() && videos.empty() && videos_metadata.empty(),
+                        "LFM2 audio accepts audio and text");
+        return m_lfm2->generate(history, audios, text_config, talker_speech_config, streamer, speech_streamer);
+    }
+#endif
     validate_omni_talker_speech_config(talker_speech_config);
     enforce_text_config_compatible_with_audio(text_config, talker_speech_config);
 
     OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
-                    "OmniPipeline: videos_metadata size (", videos_metadata.size(),
-                    ") must match videos size (", videos.size(), ") or be empty");
+                    "OmniPipeline: videos_metadata size (",
+                    videos_metadata.size(),
+                    ") must match videos size (",
+                    videos.size(),
+                    ") or be empty");
 
     if (talker_speech_config.return_audio) {
         GenerationConfig text_cfg = text_config;

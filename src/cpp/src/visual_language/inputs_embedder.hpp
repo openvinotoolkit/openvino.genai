@@ -3,22 +3,22 @@
 
 #pragma once
 
+#include <filesystem>
+#include <functional>
+#include <regex>
 #include <string>
 #include <vector>
-#include <filesystem>
-#include <regex>
-#include <functional>
 
-#include "utils.hpp"
 #include "lm_encoding.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
-#include "openvino/runtime/tensor.hpp"
 #include "openvino/runtime/infer_request.hpp"
-#include "visual_language/vlm_config.hpp"
+#include "openvino/runtime/tensor.hpp"
+#include "utils.hpp"
 #include "visual_language/embedding_model.hpp"
 #include "visual_language/vision_encoder.hpp"
 #include "visual_language/vision_token_pruning_processor.hpp"
+#include "visual_language/vlm_config.hpp"
 
 namespace ov::genai {
 struct VLMPerfMetrics;
@@ -36,14 +36,17 @@ struct NormalizedPrompt {
 
 class InputsEmbedder {
 public:
+    InputsEmbedder(const VLMModels& models,
+                   const Tokenizer& tokenizer,
+                   const std::string& device,
+                   const ov::AnyMap& properties);
+
     InputsEmbedder(const std::filesystem::path& model_dir,
                    const Tokenizer& tokenizer,
                    const std::string& device,
                    const ov::AnyMap device_config);
 
-    InputsEmbedder(const std::filesystem::path& model_dir,
-                   const std::string& device,
-                   const ov::AnyMap device_config);
+    InputsEmbedder(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap device_config);
 
     InputsEmbedder(const ModelsMap& models_map,
                    const Tokenizer& tokenizer,
@@ -52,7 +55,11 @@ public:
                    const ov::AnyMap device_config);
 
     // compute input embedding for prompt and multiple images
-    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
+    ov::Tensor get_inputs_embeds(const std::string& prompt,
+                                 const std::vector<ov::genai::EncodedImage>& images,
+                                 ov::genai::VLMPerfMetrics& metrics,
+                                 bool recalculate_merged_embeddings = true,
+                                 const std::vector<size_t>& image_sequence = {});
 
     ov::Tensor get_inputs_embeds(const std::string& prompt,
                                  const std::vector<ov::genai::EncodedImage>& images,
@@ -76,15 +83,17 @@ public:
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
-    std::vector<ov::genai::EncodedVideo> encode_videos(
-        const std::vector<ov::Tensor>& videos,
-        const std::vector<VideoMetadata>& videos_metadata = {}
-    );
+    std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos,
+                                                       const std::vector<VideoMetadata>& videos_metadata = {});
 
     std::vector<EncodedAudio> encode_audios(const std::vector<ov::Tensor>& audios);
+    void set_audio_encoder(AudioEncode encoder) {
+        m_impl->set_audio_encoder(std::move(encoder));
+    }
 
     // compute position ids for language model input
-    std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
+    std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size,
+                                                                   const size_t history_size);
 
     /**
      * Encodes the original prompt text into token IDs for use as a lookup table in prompt lookup decoding.
@@ -98,7 +107,9 @@ public:
 
     void set_rope_delta(int64_t rope_delta);
 
-    std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta);
+    std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(const size_t inputs_embeds_size,
+                                                                                    const size_t history_size,
+                                                                                    int64_t rope_delta);
 
     // returns embedding model which converts token_id(s) to embedding vectors
     EmbeddingsModel::Ptr get_embedding_model() const;
@@ -113,41 +124,38 @@ public:
     void start_chat(const std::string& system_message);
 
     // adds currently generated text to chat history
-    void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
+    void update_chat_history(const std::string& decoded_results,
+                             const ov::genai::GenerationStatus generation_finish_status);
 
     // gets last pruned prompt after vision token pruning
     std::string get_last_pruned_prompt(const std::string& original_prompt) const;
 
-    // set the apply_chat_template flag, which determines whether chat template should be applied for non-chat scenarios
-    void set_apply_chat_template_status(bool apply_chat_template);
+    // Configure template application, including prompts already formatted by the caller.
+    void set_apply_chat_template_status(bool apply_chat_template, bool prompt_is_templated = false);
 
     // finishes chat and clears a chat history
     void finish_chat();
 
     // set CDPruner setting
     virtual void set_vision_token_pruning_config(size_t pruning_ratio, float relevance_weight);
-    virtual NormalizedPrompt normalize_prompt(
-        const std::string& prompt,
-        size_t base_id,
-        const std::vector<EncodedImage>& images
-    ) const;
+    virtual NormalizedPrompt normalize_prompt(const std::string& prompt,
+                                              size_t base_id,
+                                              const std::vector<EncodedImage>& images) const;
 
-    virtual NormalizedPrompt normalize_prompt(
-        const std::string& prompt,
-        size_t base_image_id,
-        size_t base_video_id,
-        const std::vector<EncodedImage>& images,
-        const std::vector<EncodedVideo>& videos) const;
+    virtual NormalizedPrompt normalize_prompt(const std::string& prompt,
+                                              size_t base_image_id,
+                                              size_t base_video_id,
+                                              const std::vector<EncodedImage>& images,
+                                              const std::vector<EncodedVideo>& videos) const;
 
     /// @brief Audio-aware normalization. Fills audios_sequence and expands each placeholder run.
-    virtual NormalizedPrompt normalize_prompt(
-        const std::string& prompt,
-        size_t base_image_id,
-        size_t base_video_id,
-        size_t base_audio_id,
-        const std::vector<EncodedImage>& images,
-        const std::vector<EncodedVideo>& videos,
-        const std::vector<EncodedAudio>& audios) const;
+    virtual NormalizedPrompt normalize_prompt(const std::string& prompt,
+                                              size_t base_image_id,
+                                              size_t base_video_id,
+                                              size_t base_audio_id,
+                                              const std::vector<EncodedImage>& images,
+                                              const std::vector<EncodedVideo>& videos,
+                                              const std::vector<EncodedAudio>& audios) const;
 
     /// @brief Audio-aware embeds. audios_sequence indexes audios directly, like the vision
     /// sequences: callers rebase it with vlm_utils::rebase_media_sequence() first.
@@ -183,6 +191,8 @@ private:
         // Chat history
         // True if chat template should be applied for non-chat scenario
         bool m_apply_chat_template = true;
+        // The caller may already have formatted the prompt with the chat template.
+        bool m_prompt_is_templated = false;
         // Finish reason of last generation for chat scenario
         ov::genai::GenerationStatus m_chat_generation_finish_status = ov::genai::GenerationStatus::RUNNING;
         // reflection of tokens contained in the kv cache
@@ -202,16 +212,21 @@ private:
         virtual ~IInputsEmbedder() = default;
 
     public:
-        virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) = 0;
-
         virtual ov::Tensor get_inputs_embeds(const std::string& prompt,
                                              const std::vector<ov::genai::EncodedImage>& images,
-                                             const std::vector<ov::genai::EncodedVideo>& videos,
                                              ov::genai::VLMPerfMetrics& metrics,
                                              bool recalculate_merged_embeddings = true,
-                                             const std::vector<size_t>& image_sequence = {},
-                                             const std::vector<size_t>& videos_sequence = {},
-                                             const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
+                                             const std::vector<size_t>& image_sequence = {}) = 0;
+
+        virtual ov::Tensor get_inputs_embeds(
+            const std::string& prompt,
+            const std::vector<ov::genai::EncodedImage>& images,
+            const std::vector<ov::genai::EncodedVideo>& videos,
+            ov::genai::VLMPerfMetrics& metrics,
+            bool recalculate_merged_embeddings = true,
+            const std::vector<size_t>& image_sequence = {},
+            const std::vector<size_t>& videos_sequence = {},
+            const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
         virtual const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
 
@@ -223,8 +238,7 @@ private:
 
         virtual std::vector<ov::genai::EncodedVideo> encode_videos(
             const std::vector<ov::Tensor>& videos,
-            const std::vector<VideoMetadata>& videos_metadata = {}
-        );
+            const std::vector<VideoMetadata>& videos_metadata = {});
 
         /// @brief Encode each audio independently, holding no state. The default guards the input
         /// vector, so a model with no audio tower fails loudly instead of discarding the audio.
@@ -235,14 +249,13 @@ private:
 
         /// @brief normalize_prompt() for audio-capable models. Fills audios_sequence with absolute
         /// indices in prompt order and expands each run to its real placeholder count.
-        virtual NormalizedPrompt normalize_prompt(
-            const std::string& prompt,
-            size_t image_base_id,
-            size_t video_base_id,
-            size_t audio_base_id,
-            const std::vector<EncodedImage>& images,
-            const std::vector<EncodedVideo>& videos,
-            const std::vector<ov::genai::EncodedAudio>& audios) const;
+        virtual NormalizedPrompt normalize_prompt(const std::string& prompt,
+                                                  size_t image_base_id,
+                                                  size_t video_base_id,
+                                                  size_t audio_base_id,
+                                                  const std::vector<EncodedImage>& images,
+                                                  const std::vector<EncodedVideo>& videos,
+                                                  const std::vector<ov::genai::EncodedAudio>& audios) const;
 
         /// @brief get_inputs_embeds() for audio-capable models. audios_sequence lists indices
         /// into audios in placeholder order, which is what allows audio anywhere in the prompt.
@@ -257,9 +270,13 @@ private:
             const std::vector<size_t>& videos_sequence,
             const std::vector<size_t>& audios_sequence,
             const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count);
+        virtual void set_audio_encoder(AudioEncode) {
+            OPENVINO_THROW("This family has no audio adapter");
+        }
 
-        virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
-        
+        virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size,
+                                                                               const size_t history_size);
+
         void set_position_ids(const ov::Tensor& position_ids) {
             m_position_ids = position_ids;
         }
@@ -268,7 +285,10 @@ private:
             m_rope_delta = rope_delta;
         }
 
-        virtual std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta);
+        virtual std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(
+            const size_t inputs_embeds_size,
+            const size_t history_size,
+            int64_t rope_delta);
 
         EmbeddingsModel::Ptr get_embedding_model() const {
             return m_embedding;
@@ -291,8 +311,9 @@ private:
             return m_cache_state;
         }
 
-        void set_apply_chat_template_status(bool apply_chat_template) {
+        void set_apply_chat_template_status(bool apply_chat_template, bool prompt_is_templated = false) {
             m_apply_chat_template = apply_chat_template;
+            m_prompt_is_templated = prompt_is_templated;
         }
 
         /**
@@ -310,7 +331,8 @@ private:
 
         virtual void start_chat(const std::string& system_message);
 
-        virtual void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
+        virtual void update_chat_history(const std::string& decoded_results,
+                                         const ov::genai::GenerationStatus generation_finish_status);
 
         // Get last pruned prompt after vision token pruning.
         virtual std::string get_last_pruned_prompt(const std::string& original_prompt) const {
@@ -320,17 +342,14 @@ private:
 
         virtual void finish_chat();
 
-        virtual NormalizedPrompt normalize_prompt(
-            const std::string& prompt,
-            size_t base_id,
-            const std::vector<EncodedImage>& images
-        ) const = 0;
-        virtual NormalizedPrompt normalize_prompt(
-            const std::string& prompt,
-            size_t base_image_id,
-            size_t base_video_id,
-            const std::vector<EncodedImage>& images,
-            const std::vector<EncodedVideo>& videos) const;
+        virtual NormalizedPrompt normalize_prompt(const std::string& prompt,
+                                                  size_t base_id,
+                                                  const std::vector<EncodedImage>& images) const = 0;
+        virtual NormalizedPrompt normalize_prompt(const std::string& prompt,
+                                                  size_t base_image_id,
+                                                  size_t base_video_id,
+                                                  const std::vector<EncodedImage>& images,
+                                                  const std::vector<EncodedVideo>& videos) const;
 
         virtual ov::Tensor get_cached_text_embeds() const {
             return m_cached_text_embeds;
@@ -359,6 +378,11 @@ private:
         }
 
     protected:
+        IInputsEmbedder(const VLMModels& models,
+                        const Tokenizer& tokenizer,
+                        const std::string& device,
+                        const ov::AnyMap& properties);
+
         IInputsEmbedder(
             const VLMConfig& vlm_config,
             const Tokenizer& tokenizer,
@@ -381,6 +405,13 @@ private:
 
         virtual ov::Tensor apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);
 
+        /// @brief Runs `m_audio_encoder` on each audio and joins its chunks into one [tokens, hidden_size] tensor.
+        /// An empty audio keeps its slot with zero tokens when `allow_empty` is set.
+        std::vector<ov::genai::EncodedAudio> encode_audios_with_encoder(const std::vector<ov::Tensor>& audios,
+                                                                        bool allow_empty);
+
+        AudioEncode m_audio_encoder;
+
         ov::Tensor update_history(const ov::Tensor& new_chat_tokens);
 
         ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);
@@ -390,20 +421,18 @@ private:
          * 2. Replace universal tags with native and save image order.
          * 3. If there were no universal tags, restore image order from native.
          * 4. If no tags were found, prepend native tags and assume incremental ordering.
-         * 
+         *
          * @param automatic_tag MiniCPM-V-2_6 inserts
          * <image>./</image>\n per image but it only replaces
          * <image>./</image> leaving \n untouched.
          * automatic_tag allows to handle this by being separated from native_tag param.
          */
-        std::pair<std::string, std::vector<size_t>> normalize(
-            const std::string& prompt,
-            const std::string& native_tag,
-            const std::string& automatic_tag,
-            size_t base_idx,
-            size_t n_visions,
-            ModalityType modality_type = ModalityType::IMAGE
-        ) const;
+        std::pair<std::string, std::vector<size_t>> normalize(const std::string& prompt,
+                                                              const std::string& native_tag,
+                                                              const std::string& automatic_tag,
+                                                              size_t base_idx,
+                                                              size_t n_visions,
+                                                              ModalityType modality_type = ModalityType::IMAGE) const;
 
         /**
          * @brief Sample video frames if metadata indicates sampling is needed.
@@ -411,18 +440,17 @@ private:
         ov::Tensor sample_video_if_needed(const ov::Tensor& video, const VideoMetadata& metadata) const;
 
         /**
-        * @brief Converts a vector of batched images ([NHWC]) into a vector of individual image tensors ([1HWC]).
-        *
-        * @param images A vector of tensors representing the images. Each tensor can have a shape of either [NHWC] or [HWC].
-        * @return A vector of tensors where each tensor represents a single image with a shape of [1, H, W, C].
-        */
+         * @brief Converts a vector of batched images ([NHWC]) into a vector of individual image tensors ([1HWC]).
+         *
+         * @param images A vector of tensors representing the images. Each tensor can have a shape of either [NHWC] or
+         * [HWC].
+         * @return A vector of tensors where each tensor represents a single image with a shape of [1, H, W, C].
+         */
         std::vector<ov::Tensor> to_single_image_tensors(const std::vector<ov::Tensor>& images);
 
-        ov::Tensor get_text_embedding(
-            EmbeddingsRequest& req,
-            const ov::Tensor& input_ids,
-            ov::genai::VLMPerfMetrics& metrics
-        );
+        ov::Tensor get_text_embedding(EmbeddingsRequest& req,
+                                      const ov::Tensor& input_ids,
+                                      ov::genai::VLMPerfMetrics& metrics);
 
         /**
          * @brief Check if CDPruner is available and enabled.
@@ -445,10 +473,7 @@ private:
          */
         std::optional<VisionTokenPruningProcessor::PruningResult> execute_pruning_pipeline(
             const PruningContext& context) {
-            return m_pruning_processor->execute(context,
-                                                m_position_ids,
-                                                m_cache_state,
-                                                m_prev_hist_length);
+            return m_pruning_processor->execute(context, m_position_ids, m_cache_state, m_prev_hist_length);
         }
     };
 
@@ -470,6 +495,9 @@ private:
     friend class InputsEmbedderGemma3;
     friend class InputsEmbedderGemma3n;
     friend class InputsEmbedderGemma4;
+    friend class InputsEmbedderLFM3;
+    friend class InputsEmbedderLFM2Audio;
+    friend class InputsEmbedderLFM2Vision;
     friend class InputsEmbedderDeepseekOCR2;
     friend class InputsEmbedderVideoChatFlashQwen;
     friend class InputsEmbedderMuseGlimmer;
@@ -481,23 +509,21 @@ private:
 /// route every non-IMAGE modality to the video regex.
 inline const std::regex& universal_pattern_for(ModalityType modality_type) {
     switch (modality_type) {
-        case ModalityType::IMAGE:
-            return UNIVERSAL_IMAGE_PATTERN;
-        case ModalityType::VIDEO:
-            return UNIVERSAL_VIDEO_PATTERN;
-        case ModalityType::AUDIO:
-            return UNIVERSAL_AUDIO_PATTERN;
-        default:
-            OPENVINO_THROW("Unhandled ModalityType in universal_pattern_for().");
+    case ModalityType::IMAGE:
+        return UNIVERSAL_IMAGE_PATTERN;
+    case ModalityType::VIDEO:
+        return UNIVERSAL_VIDEO_PATTERN;
+    case ModalityType::AUDIO:
+        return UNIVERSAL_AUDIO_PATTERN;
+    default:
+        OPENVINO_THROW("Unhandled ModalityType in universal_pattern_for().");
     }
 }
 
 template <typename Func>
-std::pair<std::string, std::vector<size_t>> universal_to_native(
-    const std::string& prompt,
-    const Func& write_native,
-    ModalityType modality_type = ModalityType::IMAGE
-) {
+std::pair<std::string, std::vector<size_t>> universal_to_native(const std::string& prompt,
+                                                                const Func& write_native,
+                                                                ModalityType modality_type = ModalityType::IMAGE) {
     std::stringstream stream;
     std::vector<size_t> vision_sequence;
     std::smatch match;
@@ -519,13 +545,11 @@ void verify_ids(const std::vector<size_t>& vision_indices, size_t base_idx, size
 
 /// @brief Resolve media tags into a native-tag prompt plus absolute media indices. Same policy for
 /// every modality. Free function so it is unit-testable without a model; normalize() forwards here.
-std::pair<std::string, std::vector<size_t>> normalize_media_tags(
-    const std::string& prompt,
-    const std::string& native_tag,
-    const std::string& automatic_tag,
-    size_t base_idx,
-    size_t n_media,
-    ModalityType modality_type
-);
+std::pair<std::string, std::vector<size_t>> normalize_media_tags(const std::string& prompt,
+                                                                 const std::string& native_tag,
+                                                                 const std::string& automatic_tag,
+                                                                 size_t base_idx,
+                                                                 size_t n_media,
+                                                                 ModalityType modality_type);
 
-} // namespace ov::genai
+}  // namespace ov::genai

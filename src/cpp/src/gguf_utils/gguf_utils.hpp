@@ -10,6 +10,7 @@
 
 #include "openvino/core/any.hpp"
 #include "openvino/core/model.hpp"
+#include "openvino/genai/extensions.hpp"
 
 namespace ov::genai {
 
@@ -30,7 +31,7 @@ struct GGUFProperties {
 
 GGUFProperties extract_gguf_properties(const ov::AnyMap& properties);
 std::shared_ptr<ov::Model> read_gguf_model(const std::filesystem::path& model_path,
-                                         const GGUFProperties& properties);
+                                         const GGUFProperties& properties, const ExtensionList& extensions = {});
 bool has_gguf_recurrent_states(const ov::Model& model);
 
 }  // namespace gguf_utils

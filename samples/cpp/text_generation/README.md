@@ -59,6 +59,52 @@ See [Run GGUF models](https://openvinotoolkit.github.io/openvino.genai/docs/guid
 > `"LEGACY"`, the hand-written reader described above; passing `ov::genai::gguf_reader("FRONTEND")`
 > (C++) or `GGUF_READER="FRONTEND"` (Python) uses the OpenVINO GGUF frontend instead.
 
+### GGUF frontend extensions with GenAI
+
+Pass extensions through the `extensions` property when constructing the pipeline. Shared libraries
+can register `ArchitectureExtension`, `ProjectorExtension`, `ConversionExtension`, and other GGUF
+frontend extensions. GenAI registers them on the frontend before loading the model. For an
+in-memory C++ extension, pass a `std::vector<std::shared_ptr<ov::Extension>>` instead of library
+paths.
+
+```cpp
+#include <filesystem>
+#include <openvino/genai/extensions.hpp>
+#include <openvino/genai/llm_pipeline.hpp>
+
+std::vector<std::filesystem::path> gguf_extensions{
+    "/path/to/libgguf_extensions.so",
+};
+
+ov::genai::LLMPipeline pipe(
+    "model.gguf",
+    "CPU",
+    ov::genai::gguf_reader("FRONTEND"),
+    ov::genai::extensions(gguf_extensions));
+```
+
+For a GGUF multimodal pipeline, the same property is registered on the language-model and
+projector frontends:
+
+```cpp
+#include <filesystem>
+#include <openvino/genai/extensions.hpp>
+#include <openvino/genai/visual_language/pipeline.hpp>
+
+std::vector<std::filesystem::path> gguf_extensions{
+    "/path/to/libgguf_extensions.so",
+};
+
+ov::genai::VLMPipeline pipe(
+    "language.gguf",
+    "CPU",
+    ov::genai::mmproj_path("mmproj.gguf"),
+    ov::genai::extensions(gguf_extensions));
+```
+
+The extension library must be built against a compatible OpenVINO release. See the [GGUF extension guide](https://github.com/openvinotoolkit/openvino/blob/master/src/frontends/gguf/docs/extensions.md)
+for extension implementations and build instructions.
+
 ## Sample Descriptions
 ### Common information
 Follow [Get Started with Samples](https://docs.openvino.ai/2026/get-started/learn-openvino/openvino-samples/get-started-demos.html) to get common information about OpenVINO samples.

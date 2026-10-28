@@ -198,3 +198,36 @@ CLEANUP_CACHE=1 python -m pytest tests/python_tests -m samples
 ```
 
 Test images are saved to pytest's default cache dir. It can be changed with `--override-ini cache_dir=new_path`. `-p no:cacheprovider` disables the cache.
+
+## GGUF multimodal acceptance
+
+`test_gguf_mmproj_acceptance.py` runs pinned Gemma3, Gemma4, Muse and Qwen3.5
+checkpoint conversions against the CPU-only llama.cpp oracle built by
+`gguf_reference`. The OpenVINO Ubuntu 22 workflow calls this harness with its
+own build artifacts and a pinned companion GenAI commit. Its separate family
+steps select compatible Transformers versions and retain JUnit and modality
+reports. The harness uses its own fixtures; `--noconftest` avoids initializing
+unrelated pipeline test fixtures.
+
+For a focused local image/chat/API check after installing the test dependencies,
+CMake >=3.24, a C++17 compiler, sentencepiece and ffmpeg:
+
+```sh
+python -m pip install transformers==5.0.0
+python -m pytest --noconftest tests/python_tests/test_gguf_mmproj_acceptance.py \
+  -k 'gemma3 and square and SDPA' -v
+```
+
+Set `GGUF_MMPROJ_REPORT_DIR` to retain JSON reports and oracle logs and
+`GGUF_RUNTIME_MANIFEST` to attach exact runtime source/build provenance. The
+harness requires every requested modality/API case and checks greedy choices
+on the same token history. Tiny fixtures establish numerical agreement, not
+text quality. Real quantized acceptance expands the pinned Qwen3.5 checkpoint
+to represented F16 and requantizes it to pure Q4_0, recording tensor inventories
+and hashes. This creates a new fixture and does not establish parity for the
+original mixed-weight checkpoint. Q4_K_M accuracy loss remains a plugin gap.
+Optimum directory/map loading is checked separately from llama.cpp agreement.
+The tiny Qwen fixture uses explicit RoPE sections `[1, 1, 0]` scaled to its head
+size, and omits MTP export; the converter's production defaults do not fit it.
+Muse materializes the tied output tensor for the reference loader. These fixture
+adaptations are recorded in the source manifest and apply to both engines.

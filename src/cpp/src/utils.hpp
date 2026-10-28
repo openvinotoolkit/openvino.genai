@@ -2,27 +2,25 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
-#include <type_traits>
+#include <cstdint>
 #include <optional>
 #include <stdexcept>
-#include <utility>
 #include <tuple>
-#include <cstdint>
+#include <type_traits>
+#include <utility>
 
-#include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/extensions.hpp"
+#include "openvino/genai/generation_config.hpp"
+#include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
-#include "openvino/genai/visual_language/pipeline.hpp"
+#include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/genai/rag/text_rerank_pipeline.hpp"
-#include "openvino/runtime/core.hpp"
-
-#include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/scheduler_config.hpp"
-#include "openvino/genai/generation_config.hpp"
-
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/visibility.hpp"
+#include "openvino/genai/visual_language/pipeline.hpp"
+#include "openvino/runtime/core.hpp"
 
 namespace ov {
 namespace genai {
@@ -38,23 +36,21 @@ namespace genai {
 namespace utils {
 
 // Variable template that checks if a type has begin() and end() member functions
-template<typename, typename = void>
+template <typename, typename = void>
 constexpr bool is_container = false;
 
-template<typename T>
-constexpr bool is_container<T,
-    std::void_t<decltype(std::declval<T>().begin()),
-                decltype(std::declval<T>().end())>> = true;
+template <typename T>
+constexpr bool is_container<T, std::void_t<decltype(std::declval<T>().begin()), decltype(std::declval<T>().end())>> =
+    true;
 
 enum class GenerationChatInputsType {
-    UNDEF = 0, // Default value, type of inputs is not defined
-    STRING = 1, // Type of inputs is StringInputs
-    ENCODED_INPUTS = 2, // Type of inputs is EncodedInputs
-    CHAT_HISTORY = 3, // Type of inputs is ChatHistory
+    UNDEF = 0,           // Default value, type of inputs is not defined
+    STRING = 1,          // Type of inputs is StringInputs
+    ENCODED_INPUTS = 2,  // Type of inputs is EncodedInputs
+    CHAT_HISTORY = 3,    // Type of inputs is ChatHistory
 };
 
-struct GenerationFinishInfo
-{
+struct GenerationFinishInfo {
     EncodedResults results;
     GenerationStatus streaming_finish_status;
 };
@@ -66,7 +62,9 @@ struct GenerationFinishInfo
 // request_id identifies which request was dropped when several are generated together.
 inline void assert_request_was_scheduled(GenerationStatus status, uint64_t request_id) {
     OPENVINO_ASSERT(status != GenerationStatus::IGNORED,
-                    "Request ", request_id, " was dropped by the scheduler because it did not fit in the "
+                    "Request ",
+                    request_id,
+                    " was dropped by the scheduler because it did not fit in the "
                     "available cache budget (out of memory). Increase cache_size / num_kv_blocks, reduce the "
                     "prompt or generation length, or for hybrid (linear-attention) models raise "
                     "cache_interval_multiplier to lower per-token cache usage.");
@@ -76,11 +74,19 @@ Tensor init_attention_mask(const Tensor& position_ids);
 
 void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask, int64_t start_pos = 0);
 
-template <typename T> struct OmitOptional { using value = T; };
-template <typename T> struct OmitOptional<std::optional<T>> { using value = T; };
+template <typename T>
+struct OmitOptional {
+    using value = T;
+};
+template <typename T>
+struct OmitOptional<std::optional<T>> {
+    using value = T;
+};
 
-template <typename T> constexpr bool is_optional = false;
-template <typename T> constexpr bool is_optional<std::optional<T>> = true;
+template <typename T>
+constexpr bool is_optional = false;
+template <typename T>
+constexpr bool is_optional<std::optional<T>> = true;
 
 template <typename T>
 void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T& param) {
@@ -92,8 +98,7 @@ void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T&
             else {
                 OPENVINO_THROW("Got empty ov::Any for parameter name: " + name);
             }
-        }
-        else {
+        } else {
             param = it->second.as<typename OmitOptional<T>::value>();
         }
     }
@@ -109,8 +114,9 @@ const std::string VIDEOS_BATCHES_ARG_NAME = "videos_batches";
 const std::string VIDEOS_METADATA_BATCHES_ARG_NAME = "videos_metadata_batches";
 const std::string AUDIOS_BATCHES_ARG_NAME = "audios_batches";
 
-template<typename Config = ov::genai::GenerationConfig>
-Config from_config_json_if_exists(const std::filesystem::path& models_path, const char config_name[] = "generation_config.json") {
+template <typename Config = ov::genai::GenerationConfig>
+Config from_config_json_if_exists(const std::filesystem::path& models_path,
+                                  const char config_name[] = "generation_config.json") {
     auto config_file_path = models_path / config_name;
     return std::filesystem::exists(config_file_path) ? Config{config_file_path} : Config{};
 }
@@ -128,7 +134,8 @@ void set_config_default(ov::AnyMap& config, const std::string& key, ov::Any valu
 // Returns true when NPUW is enabled via NPU_USE_NPUW.
 bool is_npuw_enabled(const ov::AnyMap& config);
 
-ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend);
+ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend,
+                                                          const ov::genai::TokenizedInputs& subtrahend);
 
 void apply_slice_before_matmul_transformation(std::shared_ptr<ov::Model> model);
 
@@ -158,11 +165,15 @@ extern const std::string PER_MODEL_PROPERTIES;
 ///        which are not bound to a specific device).
 /// @return A new ov::AnyMap with the merged result. The input map is left
 ///         untouched so callers may continue using the meta keys.
-ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device = "");
+ov::AnyMap get_model_properties(const ov::AnyMap& properties,
+                                const std::string& model_role,
+                                const std::string& device = "");
 
 std::pair<ov::AnyMap, bool> extract_paired_input_props(const ov::AnyMap& external_properties);
 
-std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config);
+std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,
+                                      const ov::AnyMap& config,
+                                      const ExtensionList& extensions = {});
 
 void release_core_plugin(const std::string& device);
 
@@ -171,12 +182,25 @@ size_t get_first_history_difference(const ov::Tensor& encoded_history, const std
 struct CacheTypes {
     CacheTypes() = default;
     explicit CacheTypes(uint8_t m) : mask(m) {}
-    void add_kvcache() { mask |= (1u << 0); }
-    void add_linear() { mask |= (1u << 1); }
-    bool has_kvcache() const { return (mask & (1u << 0)) != 0; }
-    bool has_linear() const { return (mask & (1u << 1)) != 0; }
-    bool is_hybrid() const { return has_kvcache() && has_linear(); }
-    uint8_t value() const { return mask; }
+    void add_kvcache() {
+        mask |= (1u << 0);
+    }
+    void add_linear() {
+        mask |= (1u << 1);
+    }
+    bool has_kvcache() const {
+        return (mask & (1u << 0)) != 0;
+    }
+    bool has_linear() const {
+        return (mask & (1u << 1)) != 0;
+    }
+    bool is_hybrid() const {
+        return has_kvcache() && has_linear();
+    }
+    uint8_t value() const {
+        return mask;
+    }
+
 private:
     uint8_t mask = 0;
 };
@@ -195,6 +219,7 @@ KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model);
 class CacheState {
     std::vector<int64_t> state;
     CacheTypes cache_types;
+
 public:
     // Default constructor
     CacheState() = default;
@@ -227,16 +252,24 @@ public:
         cache_types = types;
     }
 
-    bool has_linear() const { return cache_types.has_linear(); }
-    bool has_kvcache() const { return cache_types.has_kvcache(); }
-    bool is_hybrid() const { return cache_types.is_hybrid(); }
+    bool has_linear() const {
+        return cache_types.has_linear();
+    }
+    bool has_kvcache() const {
+        return cache_types.has_kvcache();
+    }
+    bool is_hybrid() const {
+        return cache_types.is_hybrid();
+    }
 
     bool needs_reset() const {
         return reset_mem_state || (num_tokens_to_trim > 0 && has_linear());
     }
 };
 
-void trim_kv_cache(ov::InferRequest request, CacheState& cache_state, std::optional<AdapterController> adapter_controller);
+void trim_kv_cache(ov::InferRequest request,
+                   CacheState& cache_state,
+                   std::optional<AdapterController> adapter_controller);
 
 ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front);
 
@@ -246,7 +279,7 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
 
 void print_gguf_debug_info(const std::string& debug_info);
 
-void print_scheduler_config_info(const SchedulerConfig &scheduler_config);
+void print_scheduler_config_info(const SchedulerConfig& scheduler_config);
 
 struct KVDesc {
     uint32_t max_prompt_len;
@@ -258,15 +291,17 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu(const std::shared_p
                                                              const KVAxesPosition& kv_pos,
                                                              const bool is_whisper = false);
 
-std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_embedding(const std::shared_ptr<ov::Model>& model,
-                                                                            const ov::AnyMap& config,
-                                                                            const KVAxesPosition& kv_pos,
-                                                                            const ov::genai::TextEmbeddingPipeline::Config& text_embed_config);
+std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_embedding(
+    const std::shared_ptr<ov::Model>& model,
+    const ov::AnyMap& config,
+    const KVAxesPosition& kv_pos,
+    const ov::genai::TextEmbeddingPipeline::Config& text_embed_config);
 
-std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_rerank(const std::shared_ptr<ov::Model>& model,
-                                                                         const ov::AnyMap& config,
-                                                                         const KVAxesPosition& kv_pos,
-                                                                         const ov::genai::TextRerankPipeline::Config& text_rerank_config);
+std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_rerank(
+    const std::shared_ptr<ov::Model>& model,
+    const ov::AnyMap& config,
+    const KVAxesPosition& kv_pos,
+    const ov::genai::TextRerankPipeline::Config& text_rerank_config);
 
 ov::CompiledModel compile_kokoro_for_npu_speech_generation(const std::filesystem::path& model_path,
                                                            const ov::AnyMap& properties,
@@ -282,10 +317,11 @@ size_t get_npu_kv_cache_capacity(const ov::CompiledModel& compiled_model);
 /// consumers (e.g. the Eagle3 KV cache reorder model) assume a single precision shared by all key/value inputs.
 ov::element::Type get_compiled_kv_cache_precision(const ov::CompiledModel& compiled_model);
 
-/// @brief SharedOptional is a wrapper around a reference to an existing object and an optional shared alternative value.
-/// The difference from std::optional is that the default state is not empty and contains a reference to an existing object outside the class.
-/// Another difference is that the alternative value is shared between all instances of SharedOptional like std::shared_ptr.
-/// This class enables copy-on-write behaviour when a potentially expensive to replicate object is modified optionally.
+/// @brief SharedOptional is a wrapper around a reference to an existing object and an optional shared alternative
+/// value. The difference from std::optional is that the default state is not empty and contains a reference to an
+/// existing object outside the class. Another difference is that the alternative value is shared between all instances
+/// of SharedOptional like std::shared_ptr. This class enables copy-on-write behaviour when a potentially expensive to
+/// replicate object is modified optionally.
 /// @tparam T type of held value
 template <typename T>
 class SharedOptional {
@@ -293,12 +329,10 @@ public:
     using non_const_T = std::remove_const_t<T>;
 
     // Constructor: Requires a reference to the default value.
-    explicit SharedOptional(T* default_value)
-        : value_ref(default_value) {}
+    explicit SharedOptional(T* default_value) : value_ref(default_value) {}
 
     // Constructor: In case of reference, the object taken an ownership.
-    explicit SharedOptional(T& _alternative)
-        : alternative(std::make_shared<non_const_T>(_alternative)) {
+    explicit SharedOptional(T& _alternative) : alternative(std::make_shared<non_const_T>(_alternative)) {
         value_ref = &*alternative;
     }
 
@@ -340,12 +374,16 @@ public:
     }
 
 private:
-    T* value_ref;               // Reference to the default value.
-    std::shared_ptr<non_const_T> alternative; // Optional alternative value.
+    T* value_ref;                              // Reference to the default value.
+    std::shared_ptr<non_const_T> alternative;  // Optional alternative value.
 };
 
-template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
-template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+template <class... Ts>
+struct overloaded : Ts... {
+    using Ts::operator()...;
+};
+template <class... Ts>
+overloaded(Ts...) -> overloaded<Ts...>;
 std::shared_ptr<StreamerBase> create_streamer(StreamerVariant streamer, Tokenizer tokenizer);
 
 std::optional<ov::Any> pop_option(ov::AnyMap& config, const std::string& option_name);
@@ -368,13 +406,16 @@ const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map
 /// not in the known VLM roles. No-op if the key is absent.
 void validate_vlm_model_properties(const ov::AnyMap& properties);
 
-std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config = std::nullopt);
+std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(
+    const ov::AnyMap& properties,
+    std::optional<SchedulerConfig> default_config = std::nullopt);
 
 SchedulerConfig get_latency_oriented_scheduler_config();
 
 bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_npu_requested = false);
 
-std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties, bool is_npu_requested = false);
+std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties,
+                                                             bool is_npu_requested = false);
 
 /**
  * @brief Extracts the "extensions" key from the provided properties map and returns the corresponding
@@ -399,7 +440,7 @@ ExtensionList extract_extensions(ov::AnyMap& properties);
  *
  * @param properties Properties map that may contain the "extensions" key.
  */
-void extract_extensions_to_core(ov::AnyMap& properties);
+ExtensionList extract_extensions_to_core(ov::AnyMap& properties);
 
 void clear_false_prompt_lookup_from_config(ov::AnyMap& properties);
 
@@ -411,14 +452,18 @@ void log_paged_attention_fallback(const ov::Exception& exception);
 
 void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16);
 
-ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov::Tensor& text_embeds, const std::vector<ov::Tensor>& image_embeds, int64_t image_token_id);
+ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids,
+                                                 ov::Tensor& text_embeds,
+                                                 const std::vector<ov::Tensor>& image_embeds,
+                                                 int64_t image_token_id);
 
 size_t get_available_gpu_memory(const std::string& device, size_t num_cache_tensors);
 
 /**
  * @brief Extracts and removes blob import/export related properties from the provided map.
  */
-std::pair<ov::AnyMap, std::optional<std::filesystem::path>> extract_export_properties(const ov::AnyMap& external_properties);
+std::pair<ov::AnyMap, std::optional<std::filesystem::path>> extract_export_properties(
+    const ov::AnyMap& external_properties);
 
 /**
  * @brief Imports a compiled model from a blob file previously exported using export_model.
@@ -428,11 +473,10 @@ ov::CompiledModel import_model(const std::filesystem::path& blob_path,
                                const ov::AnyMap& properties);
 
 /**
- * @brief Imports a compiled model from a blob tensor previously exported using export_model and read into an ov::Tensor.
+ * @brief Imports a compiled model from a blob tensor previously exported using export_model and read into an
+ * ov::Tensor.
  */
-ov::CompiledModel import_model(const ov::Tensor& blob_tensor,
-                               const std::string& device,
-                               const ov::AnyMap& properties);
+ov::CompiledModel import_model(const ov::Tensor& blob_tensor, const std::string& device, const ov::AnyMap& properties);
 
 /**
  * @brief Exports a compiled model to a blob file for later use with import_model.
@@ -456,7 +500,10 @@ bool has_input(const std::shared_ptr<Model>& model, const std::string& name);
  * @param range_end The ending index (exclusive) along the specified dimension.
  * @return A pair of ov::Coordinate (start, end) for ROI slicing.
  */
-std::pair<ov::Coordinate, ov::Coordinate> make_roi(const std::vector<size_t>& shape, const size_t dim, const size_t range_start, const size_t range_end);
+std::pair<ov::Coordinate, ov::Coordinate> make_roi(const std::vector<size_t>& shape,
+                                                   const size_t dim,
+                                                   const size_t range_start,
+                                                   const size_t range_end);
 
 /**
  * Create a sub-tensor (ROI view) by slicing along a single dimension.
@@ -468,10 +515,16 @@ ov::genai::GenerationConfig get_greedy_config();
 ov::genai::GenerationConfig get_multinomial_config();
 
 /**
- * @brief Patches the chat template in the provided Tokenizer and
- * removes any implicit concatenation of adjacent multiline string literals.
+ * @brief Removes implicit concatenation of adjacent multiline string literals, which minja rejects.
  */
+std::string join_multiline_string_literals(const std::string& chat_template);
+
 void patch_chat_template_multiline_strings(Tokenizer& tokenizer);
+
+/**
+ * @brief Rewrites "x is undefined" as "not x is defined", since minja has no "undefined" test.
+ */
+std::string replace_is_undefined_tests(const std::string& chat_template);
 
 }  // namespace utils
 }  // namespace genai

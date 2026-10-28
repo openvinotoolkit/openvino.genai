@@ -30,6 +30,10 @@ private:
 
 class InputsEmbedderGemma4 : public InputsEmbedder::IInputsEmbedder {
 public:
+    InputsEmbedderGemma4(const VLMModels& models,
+                         const Tokenizer& tokenizer,
+                         const std::string& device,
+                         const ov::AnyMap& properties);
     InputsEmbedderGemma4(const VLMConfig& vlm_config,
                          const std::filesystem::path& model_dir,
                          const Tokenizer& tokenizer,
@@ -71,6 +75,9 @@ public:
                                  const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) override;
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images) override;
+    void set_audio_encoder(AudioEncode encoder) override {
+        IInputsEmbedder::m_audio_encoder = std::move(encoder);
+    }
 
     std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos,
                                                        const std::vector<VideoMetadata>& videos_metadata = {}) override;
@@ -108,10 +115,12 @@ public:
     }
 
 private:
-    std::unique_ptr<AudioEncoderGemma4> m_audio_encoder;
+    std::unique_ptr<AudioEncoderGemma4> m_native_audio_encoder;
+    void patch_chat_template();
 
     // Per-layer text embeddings model (Gemma4-specific)
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_per_layer_embeddings_requests = nullptr;
+    void create_per_layer_embeddings_requests(ov::CompiledModel compiled);
 
     // Extra inputs to pass to the language model
     std::unordered_map<std::string, ov::Tensor> m_lm_extra_inputs;
@@ -133,7 +142,7 @@ private:
     }
 
     bool has_token_type_ids() const;
-    
+
     ov::Tensor get_token_type_ids(const ov::Tensor& input_ids);
 
     int64_t m_image_token_id = -1;
@@ -141,8 +150,6 @@ private:
     std::once_flag m_vision_token_ids_once_flag;
 
     void encode_vision_token_ids();
-
-    void patch_chat_template();
 };
 
 }  // namespace ov::genai

@@ -65,6 +65,39 @@ print(pipe.generate("Explain why the sky is blue.", max_new_tokens=64))
 
 The frontend supports more architectures and is expected to provide better model quality, but is in preview and may have limitations. It requires a compatible OpenVINO build with the GGUF frontend. See [Run GGUF models](https://openvinotoolkit.github.io/openvino.genai/docs/guides/gguf) for model format recommendations and tokenizer, chat, and streaming examples.
 
+#### Registering GGUF frontend extensions
+
+Pass extension library paths in the `extensions` property. For text generation, also select the
+OpenVINO GGUF frontend with `GGUF_READER="FRONTEND"`:
+
+```python
+import openvino_genai as genai
+
+pipe = genai.LLMPipeline(
+    "model.gguf",
+    "CPU",
+    GGUF_READER="FRONTEND",
+    extensions=["/path/to/libgguf_extensions.so"],
+)
+```
+
+The library can register `ArchitectureExtension`, `ProjectorExtension`, `ConversionExtension`, and
+other GGUF frontend extensions. For a GGUF multimodal pipeline, provide the language model, its
+mmproj file, and the same `extensions` list:
+
+```python
+pipe = genai.VLMPipeline(
+    "language.gguf",
+    "CPU",
+    mmproj_path="mmproj.gguf",
+    extensions=["/path/to/libgguf_extensions.so"],
+)
+```
+
+GenAI registers the extensions on the GGUF frontend before loading and conversion. The library must
+be built against a compatible OpenVINO release. See the [GGUF extension guide](https://github.com/openvinotoolkit/openvino/blob/master/src/frontends/gguf/docs/extensions.md)
+for extension implementations and build instructions.
+
 ## Sample Descriptions
 ### Common information
 Follow [Get Started with Samples](https://docs.openvino.ai/2026/get-started/learn-openvino/openvino-samples/get-started-demos.html) to get common information about OpenVINO samples.
