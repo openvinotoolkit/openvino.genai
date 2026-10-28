@@ -809,4 +809,8 @@ const std::unordered_map<std::string, ov::Tensor>& InputsEmbedderGemma4::get_lm_
     return m_lm_extra_inputs;
 }
 
+void InputsEmbedderGemma4::patch_chat_template() {
+    utils::patch_chat_template_multiline_strings(m_tokenizer);
+}
+
 }  // namespace ov::genai

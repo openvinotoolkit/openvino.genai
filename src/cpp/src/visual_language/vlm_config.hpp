@@ -6,7 +6,6 @@
 #include <filesystem>
 #include <map>
 #include <nlohmann/json_fwd.hpp>
-
 #include <openvino/runtime/properties.hpp>
 
 #include "openvino/genai/visibility.hpp"
@@ -31,6 +30,9 @@ enum class VLMModelType {
     GEMMA3N,
     GEMMA4,
     GEMMA4_UNIFIED,
+    LFM3_AUDIO,
+    LFM3_GGUF_VL,
+    LFM3_OMNI,
     LFM2_AUDIO,
     LFM2_VL,
     VIDEOCHAT_FLASH_QWEN,

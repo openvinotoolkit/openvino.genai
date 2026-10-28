@@ -29,6 +29,8 @@ endif()
 set(TEST_TARGET_NAME "tests_continuous_batching")
 
 add_executable(${TEST_TARGET_NAME} ${tests_src} $<TARGET_OBJECTS:openvino_genai_obj>)
+target_compile_definitions(${TEST_TARGET_NAME} PRIVATE
+                          LFM3_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data/lfm3")
 add_executable(tests_cache_allocation_failure allocation_failure/prepared_cache.cpp
                $<TARGET_OBJECTS:openvino_genai_obj>)
 

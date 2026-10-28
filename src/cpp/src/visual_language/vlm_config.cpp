@@ -31,6 +31,9 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"gemma3n", VLMModelType::GEMMA3N},
         {"gemma4", VLMModelType::GEMMA4},
         {"gemma4_unified", VLMModelType::GEMMA4_UNIFIED},
+        {"lfm3_audio", VLMModelType::LFM3_AUDIO},
+        {"lfm3_gguf_vl", VLMModelType::LFM3_GGUF_VL},
+        {"lfm3_omni", VLMModelType::LFM3_OMNI},
         {"lfm2_audio", VLMModelType::LFM2_AUDIO},
         {"lfm2_vl", VLMModelType::LFM2_VL},
         {"videochat_flash_qwen", VLMModelType::VIDEOCHAT_FLASH_QWEN},
@@ -138,8 +141,12 @@ VLMConfig::VLMConfig(const nlohmann::json& parsed) {
 
     // Qwen3-Omni: vision/audio configs are nested under thinker_config
     if (model_type == VLMModelType::QWEN3_OMNI) {
-        read_json_param(parsed, "thinker_config.vision_config.num_position_embeddings", vision_config_num_position_embeddings);
-        read_json_param(parsed, "thinker_config.vision_config.deepstack_visual_indexes", vision_config_deepstack_visual_indexes);
+        read_json_param(parsed,
+                        "thinker_config.vision_config.num_position_embeddings",
+                        vision_config_num_position_embeddings);
+        read_json_param(parsed,
+                        "thinker_config.vision_config.deepstack_visual_indexes",
+                        vision_config_deepstack_visual_indexes);
         read_json_param(parsed, "enable_audio_output", enable_audio_output);
         read_json_param(parsed, "tts_bos_token_id", tts_bos_token_id);
         read_json_param(parsed, "tts_eos_token_id", tts_eos_token_id);

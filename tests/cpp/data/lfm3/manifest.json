@@ -1,0 +1,75 @@
+{
+  "torch": "2.14.1+cpu",
+  "sources": {
+    "feature_extraction_lfm3_omni.py": {
+      "revision": "ce2458cbce4ad970f92032ed94e3d18d30b04f9c",
+      "sha256": "bafd4bcf85d17c0bbf5cf213633935a6b03c731e55a348e70b0ecaf5a876ef5e",
+      "url": "https://huggingface.co/LiquidAI/LFM3-Omni-2B/resolve/ce2458cbce4ad970f92032ed94e3d18d30b04f9c/feature_extraction_lfm3_omni.py"
+    },
+    "modeling_liquid_codec.py": {
+      "revision": "ce2458cbce4ad970f92032ed94e3d18d30b04f9c",
+      "sha256": "5ca87e1b6e0549b40dc90fad5ee9d55620e9defb78c67e19c5937208c8e14f74",
+      "url": "https://huggingface.co/LiquidAI/LFM3-Omni-2B/resolve/ce2458cbce4ad970f92032ed94e3d18d30b04f9c/modeling_liquid_codec.py"
+    }
+  },
+  "audio": [
+    {
+      "samples": 1,
+      "feature_shape": [
+        1,
+        1,
+        128
+      ]
+    },
+    {
+      "samples": 400,
+      "feature_shape": [
+        1,
+        1,
+        128
+      ]
+    },
+    {
+      "samples": 1281,
+      "feature_shape": [
+        1,
+        7,
+        128
+      ]
+    },
+    {
+      "samples": 16000,
+      "feature_shape": [
+        1,
+        99,
+        128
+      ]
+    },
+    {
+      "samples": 48001,
+      "feature_shape": [
+        1,
+        299,
+        128
+      ]
+    }
+  ],
+  "istft": [
+    {
+      "frames": 1,
+      "samples": 320
+    },
+    {
+      "frames": 6,
+      "samples": 1920
+    },
+    {
+      "frames": 18,
+      "samples": 5760
+    },
+    {
+      "frames": 37,
+      "samples": 11840
+    }
+  ]
+}

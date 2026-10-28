@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "gguf_utils/gguf_lfm2_audio.hpp"
+#include "gguf_utils/gguf_lfm3_audio.hpp"
 #include "omni/talker_speech_config_utils.hpp"
 #include "openvino/core/any.hpp"
 #include "openvino/genai/chat_history.hpp"
@@ -27,11 +28,9 @@ namespace ov::genai {
 class OmniPipeline::OmniPipelineImpl {
 public:
 #ifdef ENABLE_GGUF
-    OmniPipelineImpl(const std::filesystem::path& models, const std::string& device, const ov::AnyMap& properties)
-        : m_lfm2(std::make_shared<GGUFLFM2Speech>(models, device, properties)) {}
+    OmniPipelineImpl(const std::filesystem::path& models, const std::string& device, const ov::AnyMap& properties);
 #endif
-    OmniPipelineImpl(const std::shared_ptr<VLMPipelineBase>& vlm,
-                     const std::shared_ptr<TalkerBase>& talker);
+    OmniPipelineImpl(const std::shared_ptr<VLMPipelineBase>& vlm, const std::shared_ptr<TalkerBase>& talker);
 
     OmniDecodedResults generate(const std::string& prompt,
                                 const std::vector<ov::Tensor>& images,
@@ -59,6 +58,8 @@ public:
 #ifdef ENABLE_GGUF
         if (m_lfm2)
             return m_lfm2->get_generation_config();
+        if (m_lfm3)
+            return m_lfm3->get_generation_config();
 #endif
         return m_vlm->get_generation_config();
     }
@@ -83,6 +84,7 @@ private:
 
 #ifdef ENABLE_GGUF
     std::shared_ptr<GGUFLFM2Speech> m_lfm2;
+    std::shared_ptr<GGUFLFM3Speech> m_lfm3;
 #endif
     std::shared_ptr<VLMPipelineBase> m_vlm;
     std::shared_ptr<TalkerBase> m_talker;

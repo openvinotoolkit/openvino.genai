@@ -12,6 +12,7 @@
 #include "openvino/frontend/gguf/adapt_mmproj_to_genai.hpp"
 #include "openvino/frontend/gguf/extension/genai.hpp"
 #include "openvino/frontend/gguf/frontend.hpp"
+#include "openvino/frontend/gguf/make_stateful.hpp"
 #include "openvino/genai/gguf.hpp"
 
 namespace ov::genai {
@@ -48,7 +49,9 @@ private:
 AudioEncoderConfig audio_encoder_config(const MmprojMetadata& meta) {
     const auto projector = meta.text("audio.projector");
     AudioEncoderConfig config;
-    if (projector == "lfm2a") {
+    if (projector == "lfm3a") {
+        config.type = AudioEncoderType::LFM3;
+    } else if (projector == "lfm2a") {
         config.type = AudioEncoderType::LFM2;
     } else if (projector == "gemma4ua") {
         config.type = AudioEncoderType::GEMMA4_UNIFIED;
@@ -77,6 +80,34 @@ Configs gguf_configs(const std::string& architecture,
                      const GGUFMultimodalModels& models) {
     Configs c;
     c.config["hidden_size"] = models.language->input("inputs_embeds").get_partial_shape()[2].get_length();
+    if (architecture == "lfm3") {
+        const bool vision = meta.has("vision.projector");
+        const bool audio = meta.has("audio.projector");
+        c.config["model_type"] = vision ? (audio ? "lfm3_omni" : "lfm3_gguf_vl") : "lfm3_audio";
+        c.config["position_ids_offset"] = 0;
+        c.image = json::object();
+        c.video = json::object();
+        if (vision) {
+            c.config["vision_config"]["patch_size"] = 16;
+            c.image = {{"patch_size", 16},
+                       {"temporal_patch_size", 2},
+                       {"merge_size", 2},
+                       {"image_mean", {.5, .5, .5}},
+                       {"image_std", {.5, .5, .5}},
+                       {"preserve_native_resolution", true},
+                       {"min_pixels", 65536},
+                       {"max_pixels", 16777216}};
+            c.video = c.image;
+            c.video["do_sample_frames"] = true;
+            c.video["fps"] = 2.;
+            c.video["min_frames"] = 4;
+            c.video["max_frames"] = audio ? 384 : 768;
+            c.video["min_pixels"] = 4096;
+            c.video["max_pixels"] = 25165824;
+            c.video["max_video_frame_tokens"] = 768;
+        }
+        return c;
+    }
     if (projector == "lfm2a") {
         c.config["model_type"] = "lfm2_audio";
         c.config["position_ids_offset"] = 0;
@@ -162,12 +193,19 @@ Configs gguf_configs(const std::string& architecture,
 GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
                                           const std::filesystem::path& mmproj,
                                           const ov::AnyMap& properties,
-                                          const ExtensionList& extensions) {
+                                          const ExtensionList& extensions,
+                                          bool collect_audio_hidden_states) {
     namespace gguf = ov::frontend::gguf;
     GGUFMultimodalModels result;
     gguf::FrontEnd frontend;
     auto genai = register_gguf_extensions(frontend, extensions, gguf::GenAIExtension::InputMode::EMBEDS_TO_LOGITS);
     result.language = frontend.convert(frontend.load(language.string()));
+    if (!collect_audio_hidden_states) {
+        const auto outputs = result.language->get_results();
+        for (const auto& output : outputs)
+            if (output->output(0).get_names().count("audio_hidden_states"))
+                result.language->remove_result(output);
+    }
     result.language->set_rt_info(ov::element::f16, {"runtime_options", ov::hint::kv_cache_precision.name()});
     auto tokenizer_metadata = take_gguf_tokenizer_metadata(result.language);
     result.stop_token_ids = gguf_stop_token_ids(tokenizer_metadata);
@@ -179,12 +217,16 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     const auto architecture = result.language->get_rt_info<std::string>("gguf_architecture");
     const bool lfm_audio =
         architecture == "lfm2" && meta.has("audio.projector") && meta.text("audio.projector") == "lfm2a";
-    const auto projector = lfm_audio ? meta.text("audio.projector") : meta.text("vision.projector");
+    const bool lfm3 = architecture == "lfm3";
+    const bool vision_present = meta.has("vision.projector");
+    const auto projector =
+        (lfm_audio || (lfm3 && !vision_present)) ? meta.text("audio.projector") : meta.text("vision.projector");
     const bool gemma4 = architecture == "gemma4" && (projector == "gemma4v" || projector == "gemma4uv");
     OPENVINO_ASSERT((architecture == "gemma3" && projector == "gemma3") ||
                         ((architecture == "qwen35" || architecture == "qwen35moe") && projector == "qwen3vl_merger") ||
                         (architecture == "muse-glimmer" && projector == "muse-glimmer") || gemma4 || lfm_audio ||
-                        (architecture == "lfm2" && projector == "lfm2"),
+                        (architecture == "lfm2" && projector == "lfm2") ||
+                        (lfm3 && (projector == "lfm3vl" || projector == "lfm3a")),
                     "Unsupported GGUF language/projector pair: ",
                     architecture,
                     " / ",
@@ -193,16 +235,25 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     auto& vlm = result.vlm;
     using Adapter = gguf::pass::AdaptMmprojToGenAI;
     Adapter vision_adapter(Adapter::Modality::VISION, Adapter::Layout::VISION_ENCODERS);
-    if (!lfm_audio) {
+    if (!lfm_audio && (!lfm3 || vision_present)) {
         auto vision = combined->clone();
         vision_adapter.run_on_model(vision);
         vlm.models = vision_adapter.get_vision_models();
     }
-    if ((gemma4 || lfm_audio) && meta.has("audio.projector")) {
+    if ((gemma4 || lfm_audio || lfm3) && meta.has("audio.projector")) {
         auto audio = combined->clone();
         Adapter(Adapter::Modality::AUDIO).run_on_model(audio);
+        if (lfm3)
+            gguf::pass::GGUFMakeStateful().run_on_model(audio);
         vlm.models["audio_embeddings"] = audio;
         vlm.audio_encoder = audio_encoder_config(meta);
+    }
+    if (lfm3 && meta.has("audio_generation.projector")) {
+        auto generation = combined->clone();
+        Adapter adapter(Adapter::Modality::AUDIO_GENERATION);
+        adapter.run_on_model(generation);
+        result.audio_generation = adapter.get_audio_generation_models();
+        gguf::pass::GGUFMakeStateful().run_on_model(result.audio_generation.at("codec"));
     }
     vlm.models["text_embeddings"] = genai->get_embedding_model();
     if (const auto& per_layer = genai->get_per_layer_embedding_model())

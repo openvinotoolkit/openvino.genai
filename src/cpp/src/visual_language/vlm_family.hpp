@@ -3,14 +3,15 @@
 
 #pragma once
 
+#include "automatic_speech_recognition/models/qwen3-asr/split/inputs_embedder.hpp"
 #include "visual_language/deepseek_ocr2/classes.hpp"
 #include "visual_language/gemma3/classes.hpp"
 #include "visual_language/gemma3n/classes.hpp"
 #include "visual_language/gemma4/classes.hpp"
 #include "visual_language/internvl_chat/classes.hpp"
 #include "visual_language/lfm2/classes.hpp"
+#include "visual_language/lfm3/classes.hpp"
 #include "visual_language/lfm3_vl/classes.hpp"
-#include "automatic_speech_recognition/models/qwen3-asr/split/inputs_embedder.hpp"
 #include "visual_language/llava/classes.hpp"
 #include "visual_language/llava_next/classes.hpp"
 #include "visual_language/llava_next_video/classes.hpp"
@@ -44,6 +45,11 @@ struct NoVisionEncoder {};
 template <typename Visitor>
 decltype(auto) visit_vlm_family(VLMModelType type, Visitor&& visit) {
     switch (type) {
+    case VLMModelType::LFM3_AUDIO:
+        return visit(VLMFamily<NoVisionEncoder, InputsEmbedderLFM3>{});
+    case VLMModelType::LFM3_GGUF_VL:
+    case VLMModelType::LFM3_OMNI:
+        return visit(VLMFamily<VisionEncoderLFM3, InputsEmbedderLFM3>{});
     case VLMModelType::LFM2_AUDIO:
         return visit(VLMFamily<NoVisionEncoder, InputsEmbedderLFM2Audio>{});
     case VLMModelType::QWEN3_ASR:

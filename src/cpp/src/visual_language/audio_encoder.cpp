@@ -9,6 +9,7 @@
 
 #include "openvino/opsets/opset15.hpp"
 #include "utils.hpp"
+#include "visual_language/lfm3/preprocessing.hpp"
 
 namespace ov::genai {
 namespace {
@@ -144,6 +145,49 @@ private:
     std::mutex m_mutex;
 };
 
+class LFM3AudioEncoder : public AudioEncoderBase {
+public:
+    LFM3AudioEncoder(const std::shared_ptr<ov::Model>& model, const std::string& device, const ov::AnyMap& properties)
+        : AudioEncoderBase(model, device, properties) {
+        m_features = compile_features(lfm3_spectrogram());
+    }
+
+private:
+    size_t min_samples() const override {
+        return 1;
+    }
+
+    std::vector<ov::Tensor> encode_waveform(const float* samples, size_t count) override {
+        const size_t padded = count <= 400 ? 400 : count + (160 - (count - 400) % 160) % 160;
+        ov::Tensor input(ov::element::f32, {padded});
+        std::fill_n(input.data<float>(), padded, 0.f);
+        std::copy_n(samples, count, input.data<float>());
+        m_features.set_input_tensor(input);
+        m_features.infer();
+        const auto mel = m_features.get_output_tensor();
+        const auto frames = mel.get_shape()[1];
+        m_encoder.reset_state();
+        try {
+            std::vector<ov::Tensor> output;
+            for (size_t start = 0; start < frames; start += 256) {
+                const auto length = std::min(size_t(256), frames - start);
+                ov::Tensor features(ov::element::f32, {1, 1, 128, length});
+                for (size_t m = 0; m < 128; ++m)
+                    std::copy_n(mel.data<const float>() + m * frames + start,
+                                length,
+                                features.data<float>() + m * length);
+                m_encoder.set_tensor("features", features);
+                output.push_back(infer());
+            }
+            m_encoder.reset_state();
+            return output;
+        } catch (...) {
+            m_encoder.reset_state();
+            throw;
+        }
+    }
+};
+
 class LFM2AudioEncoder : public AudioEncoderBase {
 public:
     LFM2AudioEncoder(const std::shared_ptr<ov::Model>& model,
@@ -262,6 +306,9 @@ AudioEncode create_audio_encoder(const std::shared_ptr<ov::Model>& model,
                                  const ov::AnyMap& properties) {
     std::shared_ptr<AudioEncoderBase> encoder;
     switch (config.type) {
+    case AudioEncoderType::LFM3:
+        encoder = std::make_shared<LFM3AudioEncoder>(model, device, properties);
+        break;
     case AudioEncoderType::LFM2:
         encoder = std::make_shared<LFM2AudioEncoder>(model, config.num_mel_bins, device, properties);
         break;

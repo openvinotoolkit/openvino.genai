@@ -27,7 +27,8 @@ OmniPipeline::OmniPipeline(const std::filesystem::path& models_path,
                            const std::string& device,
                            const ov::AnyMap& properties) {
 #ifdef ENABLE_GGUF
-    if (models_path.extension() == ".gguf") {
+    if (models_path.extension() == ".gguf" ||
+        std::filesystem::exists(models_path / "openvino_audio_depthformer_model.xml")) {
         m_pimpl = std::make_unique<OmniPipelineImpl>(models_path, device, properties);
         return;
     }
@@ -36,21 +37,20 @@ OmniPipeline::OmniPipeline(const std::filesystem::path& models_path,
                                                  std::make_shared<Talker>(models_path, device, properties));
 }
 
-OmniPipeline::OmniPipeline(const std::shared_ptr<VLMPipelineBase>& vlm,
-                           const std::shared_ptr<TalkerBase>& talker)
+OmniPipeline::OmniPipeline(const std::shared_ptr<VLMPipelineBase>& vlm, const std::shared_ptr<TalkerBase>& talker)
     : m_pimpl(std::make_unique<OmniPipelineImpl>(vlm, talker)) {}
 
 OmniPipeline::~OmniPipeline() = default;
 
 OmniDecodedResults OmniPipeline::generate(const std::string& prompt,
-                                           const std::vector<ov::Tensor>& images,
-                                           const std::vector<ov::Tensor>& videos,
-                                           const std::vector<VideoMetadata>& videos_metadata,
-                                           const std::vector<ov::Tensor>& audios,
-                                           const GenerationConfig& text_config,
-                                           const OmniTalkerSpeechConfig& talker_speech_config,
-                                           const StreamerVariant& streamer,
-                                           const OmniSpeechStreamerVariant& speech_streamer) {
+                                          const std::vector<ov::Tensor>& images,
+                                          const std::vector<ov::Tensor>& videos,
+                                          const std::vector<VideoMetadata>& videos_metadata,
+                                          const std::vector<ov::Tensor>& audios,
+                                          const GenerationConfig& text_config,
+                                          const OmniTalkerSpeechConfig& talker_speech_config,
+                                          const StreamerVariant& streamer,
+                                          const OmniSpeechStreamerVariant& speech_streamer) {
     return m_pimpl->generate(prompt,
                              images,
                              videos,
@@ -63,11 +63,11 @@ OmniDecodedResults OmniPipeline::generate(const std::string& prompt,
 }
 
 OmniDecodedResults OmniPipeline::generate(const std::string& prompt,
-                                           const std::vector<ov::Tensor>& images,
-                                           const GenerationConfig& text_config,
-                                           const OmniTalkerSpeechConfig& talker_speech_config,
-                                           const StreamerVariant& streamer,
-                                           const OmniSpeechStreamerVariant& speech_streamer) {
+                                          const std::vector<ov::Tensor>& images,
+                                          const GenerationConfig& text_config,
+                                          const OmniTalkerSpeechConfig& talker_speech_config,
+                                          const StreamerVariant& streamer,
+                                          const OmniSpeechStreamerVariant& speech_streamer) {
     return m_pimpl->generate(prompt,
                              images,
                              /*videos=*/{},
@@ -80,13 +80,13 @@ OmniDecodedResults OmniPipeline::generate(const std::string& prompt,
 }
 
 OmniDecodedResults OmniPipeline::generate(const std::string& prompt,
-                                           const std::vector<ov::Tensor>& images,
-                                           const std::vector<ov::Tensor>& videos,
-                                           const std::vector<VideoMetadata>& videos_metadata,
-                                           const GenerationConfig& text_config,
-                                           const OmniTalkerSpeechConfig& talker_speech_config,
-                                           const StreamerVariant& streamer,
-                                           const OmniSpeechStreamerVariant& speech_streamer) {
+                                          const std::vector<ov::Tensor>& images,
+                                          const std::vector<ov::Tensor>& videos,
+                                          const std::vector<VideoMetadata>& videos_metadata,
+                                          const GenerationConfig& text_config,
+                                          const OmniTalkerSpeechConfig& talker_speech_config,
+                                          const StreamerVariant& streamer,
+                                          const OmniSpeechStreamerVariant& speech_streamer) {
     return m_pimpl->generate(prompt,
                              images,
                              videos,
@@ -99,11 +99,11 @@ OmniDecodedResults OmniPipeline::generate(const std::string& prompt,
 }
 
 OmniDecodedResults OmniPipeline::generate(const std::string& prompt,
-                                           const ov::Tensor& image,
-                                           const GenerationConfig& text_config,
-                                           const OmniTalkerSpeechConfig& talker_speech_config,
-                                           const StreamerVariant& streamer,
-                                           const OmniSpeechStreamerVariant& speech_streamer) {
+                                          const ov::Tensor& image,
+                                          const GenerationConfig& text_config,
+                                          const OmniTalkerSpeechConfig& talker_speech_config,
+                                          const StreamerVariant& streamer,
+                                          const OmniSpeechStreamerVariant& speech_streamer) {
     return m_pimpl->generate(prompt,
                              std::vector<ov::Tensor>{image},
                              /*videos=*/{},
@@ -116,14 +116,14 @@ OmniDecodedResults OmniPipeline::generate(const std::string& prompt,
 }
 
 OmniDecodedResults OmniPipeline::generate(const ChatHistory& history,
-                                           const std::vector<ov::Tensor>& images,
-                                           const std::vector<ov::Tensor>& videos,
-                                           const std::vector<VideoMetadata>& videos_metadata,
-                                           const std::vector<ov::Tensor>& audios,
-                                           const GenerationConfig& text_config,
-                                           const OmniTalkerSpeechConfig& talker_speech_config,
-                                           const StreamerVariant& streamer,
-                                           const OmniSpeechStreamerVariant& speech_streamer) {
+                                          const std::vector<ov::Tensor>& images,
+                                          const std::vector<ov::Tensor>& videos,
+                                          const std::vector<VideoMetadata>& videos_metadata,
+                                          const std::vector<ov::Tensor>& audios,
+                                          const GenerationConfig& text_config,
+                                          const OmniTalkerSpeechConfig& talker_speech_config,
+                                          const StreamerVariant& streamer,
+                                          const OmniSpeechStreamerVariant& speech_streamer) {
     return m_pimpl->generate(history,
                              images,
                              videos,
@@ -136,11 +136,11 @@ OmniDecodedResults OmniPipeline::generate(const ChatHistory& history,
 }
 
 OmniDecodedResults OmniPipeline::generate(const ChatHistory& history,
-                                           const std::vector<ov::Tensor>& images,
-                                           const GenerationConfig& text_config,
-                                           const OmniTalkerSpeechConfig& talker_speech_config,
-                                           const StreamerVariant& streamer,
-                                           const OmniSpeechStreamerVariant& speech_streamer) {
+                                          const std::vector<ov::Tensor>& images,
+                                          const GenerationConfig& text_config,
+                                          const OmniTalkerSpeechConfig& talker_speech_config,
+                                          const StreamerVariant& streamer,
+                                          const OmniSpeechStreamerVariant& speech_streamer) {
     return m_pimpl->generate(history,
                              images,
                              /*videos=*/{},
@@ -153,13 +153,13 @@ OmniDecodedResults OmniPipeline::generate(const ChatHistory& history,
 }
 
 OmniDecodedResults OmniPipeline::generate(const ChatHistory& history,
-                                           const std::vector<ov::Tensor>& images,
-                                           const std::vector<ov::Tensor>& videos,
-                                           const std::vector<VideoMetadata>& videos_metadata,
-                                           const GenerationConfig& text_config,
-                                           const OmniTalkerSpeechConfig& talker_speech_config,
-                                           const StreamerVariant& streamer,
-                                           const OmniSpeechStreamerVariant& speech_streamer) {
+                                          const std::vector<ov::Tensor>& images,
+                                          const std::vector<ov::Tensor>& videos,
+                                          const std::vector<VideoMetadata>& videos_metadata,
+                                          const GenerationConfig& text_config,
+                                          const OmniTalkerSpeechConfig& talker_speech_config,
+                                          const StreamerVariant& streamer,
+                                          const OmniSpeechStreamerVariant& speech_streamer) {
     return m_pimpl->generate(history,
                              images,
                              videos,
@@ -172,11 +172,11 @@ OmniDecodedResults OmniPipeline::generate(const ChatHistory& history,
 }
 
 OmniDecodedResults OmniPipeline::generate(const ChatHistory& history,
-                                           const ov::Tensor& image,
-                                           const GenerationConfig& text_config,
-                                           const OmniTalkerSpeechConfig& talker_speech_config,
-                                           const StreamerVariant& streamer,
-                                           const OmniSpeechStreamerVariant& speech_streamer) {
+                                          const ov::Tensor& image,
+                                          const GenerationConfig& text_config,
+                                          const OmniTalkerSpeechConfig& talker_speech_config,
+                                          const StreamerVariant& streamer,
+                                          const OmniSpeechStreamerVariant& speech_streamer) {
     return m_pimpl->generate(history,
                              std::vector<ov::Tensor>{image},
                              /*videos=*/{},

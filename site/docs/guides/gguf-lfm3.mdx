@@ -1,0 +1,133 @@
+---
+sidebar_position: 8
+---
+
+# Run LFM3 models
+
+LFM3 GGUF models use the existing GenAI pipeline APIs with an OpenVINO build that
+includes the LFM3 GGUF frontend. Supply the matching `mmproj` file for multimodal
+variants. The examples below use CPU and SDPA.
+
+| Model | Pipeline | Input | Output |
+| --- | --- | --- | --- |
+| LFM3-1.7B | `LLMPipeline` | Text | Text |
+| LFM3-VL-2B | `VLMPipeline` | Text, images, video | Text |
+| LFM3-Audio-2B | `VLMPipeline` or `OmniPipeline` | Text, audio | Text; `OmniPipeline` also returns speech |
+| LFM3-Omni-2B | `VLMPipeline` or `OmniPipeline` | Text, images, video, audio together | Text; `OmniPipeline` also returns speech |
+
+```python
+import numpy as np
+import openvino as ov
+import openvino_genai as genai
+
+text = genai.LLMPipeline("LFM3-1.7B-QAD-Q4_0.gguf", "CPU", GGUF_READER="FRONTEND")
+print(text.generate("Explain gravity.", max_new_tokens=32))
+
+vision = genai.VLMPipeline(
+    "LFM3-VL-2B-QAD-Q4_0.gguf", "CPU",
+    mmproj_path="mmproj-LFM3-VL-2B-Q8_0.gguf", ATTENTION_BACKEND="SDPA",
+)
+image = ov.Tensor(np.full((1, 256, 256, 3), 128, dtype=np.uint8))
+print(vision.generate("<image> Describe the image.", images=[image], max_new_tokens=32))
+
+omni = genai.OmniPipeline(
+    "LFM3-Omni-2B-Q4_0.gguf", "CPU",
+    mmproj_path="mmproj-LFM3-Omni-2B-Q8_0.gguf", ATTENTION_BACKEND="SDPA",
+)
+audio = ov.Tensor(np.zeros(16000, dtype=np.float32))
+speech = genai.OmniTalkerSpeechConfig()
+speech.audio_chunk_frames = 4
+result = omni.generate(
+    "<image> <audio> Describe these inputs.", images=[image], audios=[audio],
+    text_config=genai.GenerationConfig(max_new_tokens=64), talker_speech_config=speech,
+)
+print(result.texts)
+waveform = result.speech_result.waveforms[0]  # f32 [1, samples], 24000 Hz
+```
+
+Input audio must be mono float32 at 16000 Hz, shaped `[samples]` or `[1, samples]`.
+The pipeline extracts 128 log-mel bands and streams feature chunks through the
+stateful encoder. Each audio clip starts with a fresh encoder state.
+
+Video tensors contain RGB frames with shape `[frames, height, width, 3]`. Pass
+`VideoMetadata.fps` for the source frame rate. Frames are sampled at 2 fps unless
+`frames_indices` explicitly selects them. LFM3-VL allows up to 768 selected frames;
+LFM3-Omni allows up to 384. Adjacent frame pairs form temporal patches, and a final
+unpaired frame is duplicated. Omni requires source fps metadata for timestamps.
+Use `<image>`, `<video>` and `<audio>` tags to specify the order of media in the
+prompt; universal GenAI media tags work in `ChatHistory` as well.
+
+```python
+metadata = genai.VideoMetadata()
+metadata.fps = 24.0
+video = ov.Tensor(np.zeros((48, 128, 128, 3), dtype=np.uint8))
+result = omni.generate(
+    "<video> <audio> Describe the clip and sound.", videos=[video],
+    videos_metadata=[metadata], audios=[audio],
+    text_config=genai.GenerationConfig(max_new_tokens=64),
+)
+```
+
+Speech uses the LFM3 mmproj's depthformer, feedback and codec components; it does
+not require LFM2 vocoder or audio-detokenizer files. `cp_temperature`, `cp_top_k`
+and `rng_seed` control codebook sampling. The model has a fixed voice; speaker
+selection and the Qwen talker temperature/top-k controls are unsupported.
+Speech generation accepts one greedy or sampled sequence with SDPA on CPU.
+`talker_speech_config.return_audio=False` returns text only.
+
+Supply a `speech_streamer` callback or `OmniSpeechStreamerBase` to receive PCM
+chunks during generation. Overlap-add synthesis retains its tail between chunks
+and flushes it at the end. A `CANCEL` callback discards the result's waveform and
+rolls back media registration; the next call starts with fresh inference state.
+Explicit `ChatHistory` retains media references across turns.
+
+## Load saved IR
+
+A converted LFM3 directory can be loaded with the same pipeline constructors. It
+must contain the tokenizer assets, `config.json`, generation and processor
+configuration, and the model files below. Saving adapted models is a C++ frontend
+operation; see the [GGUF frontend runtime documentation](https://github.com/openvinotoolkit/openvino/blob/master/src/frontends/gguf/docs/runtime.md).
+
+| Component | IR filename |
+| --- | --- |
+| Language | `openvino_language_model.xml` |
+| Text embeddings | `openvino_text_embeddings_model.xml` |
+| Vision, when present | `openvino_vision_embeddings_model.xml` |
+| Audio input, when present | `openvino_audio_embeddings_model.xml` |
+| Speech depthformer | `openvino_audio_depthformer_model.xml` |
+| Speech feedback | `openvino_audio_feedback_model.xml` |
+| Speech codec | `openvino_audio_codec_model.xml` |
+
+Keep each `.bin` weights file with its `.xml`. For `OmniPipeline`, the saved
+language model must retain its normalized `audio_hidden_states` output, and the
+codec must retain its state and ISTFT window. Ordinary text/VLM readers select
+only the logits output. Combined `processor_config.json` and split image/video
+processor configuration files are supported.
+
+The adapted GGUF VL bundle uses `model_type: "lfm3_gguf_vl"` in `config.json`.
+Audio and Omni bundles use `lfm3_audio` and `lfm3_omni`. The `lfm3_vl` model type
+selects the Optimum export's packed vision inputs.
+
+```python
+vision = genai.VLMPipeline("saved-lfm3-vl", "CPU", ATTENTION_BACKEND="SDPA")
+omni = genai.OmniPipeline("saved-lfm3-omni", "CPU", ATTENTION_BACKEND="SDPA")
+```
+
+The focused tests retain LiquidAI's original feature-extractor and ISTFT classes
+at pinned revisions and compare preprocessing and streamed synthesis with their
+outputs. Native frontend component parity is tested separately. Real-checkpoint
+CPU checks cover seven text/media/speech API cases, including streaming,
+cancellation and recovery. Three saved-IR family cases compare directory and
+serialized VLM constructors with GGUF, including exact Audio/Omni speech replay.
+Text-only chat prefixes match the pinned native CPU reference for all four
+families; media and speech component parity are separate checks.
+
+Retained Q8_0 projector comparisons exceed the original `1e-5` NMSE acceptance
+gate. Quantized multimodal numerical acceptance remains incomplete despite the
+passing API and saved-IR checks.
+
+Final CPU validation passes 104 directly affected C++ regressions, including
+11 LFM3 processor/input-boundary cases, plus 7 public-API and 3 saved-IR cases.
+Independent correctness review and the final source/runtime audit completed.
+An independent full sampled text/codebook/feedback/waveform trajectory comparison
+remains unestablished. See the [validation summary](https://github.com/mvafin/openvino/blob/agents/gguf-lfm3/src/frontends/gguf/docs/lfm3_validation.json).

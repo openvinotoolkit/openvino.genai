@@ -15,6 +15,7 @@ namespace ov::genai {
 struct GGUFMultimodalModels {
     std::shared_ptr<ov::Model> language;
     VLMModels vlm;
+    std::map<std::string, std::shared_ptr<ov::Model>> audio_generation;
     Tokenizer tokenizer;
     std::set<int64_t> stop_token_ids;
 
@@ -30,5 +31,6 @@ struct GGUFMultimodalModels {
 GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
                                           const std::filesystem::path& mmproj,
                                           const ov::AnyMap& properties,
-                                          const ExtensionList& extensions = {});
+                                          const ExtensionList& extensions = {},
+                                          bool collect_audio_hidden_states = false);
 }  // namespace ov::genai

@@ -1,24 +1,24 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <map>
-#include <vector>
-#include <string>
-#include <iostream>
+#include "gguf_utils/gguf_modeling.hpp"
+
 #include <chrono>
+#include <iostream>
+#include <map>
+#include <openvino/openvino.hpp>
 #include <sstream>
 #include <stdexcept>
-
-#include <openvino/openvino.hpp>
-#include "openvino/runtime/core.hpp"
-#include "openvino/opsets/opset13.hpp"
-#include "openvino/frontend/gguf/extension/genai.hpp"
-#include "openvino/frontend/gguf/frontend.hpp"
+#include <string>
+#include <vector>
 
 #include "gguf_utils/building_blocks.hpp"
 #include "gguf_utils/gguf_frontend_extensions.hpp"
-#include "gguf_utils/gguf_modeling.hpp"
 #include "gguf_utils/gguf_utils.hpp"
+#include "openvino/frontend/gguf/extension/genai.hpp"
+#include "openvino/frontend/gguf/frontend.hpp"
+#include "openvino/opsets/opset13.hpp"
+#include "openvino/runtime/core.hpp"
 #include "utils.hpp"
 
 using namespace ov;
@@ -32,51 +32,39 @@ auto set_name = [](auto node, const std::string& name) {
     node->set_friendly_name(name);
 };
 
-std::shared_ptr<ov::Model> create_language_model(
-    const std::map<std::string, GGUFMetaData>& configs,
-    std::unordered_map<std::string, ov::Tensor>& consts,
-    std::unordered_map<std::string, gguf_tensor_type>& qtypes) {
+std::shared_ptr<ov::Model> create_language_model(const std::map<std::string, GGUFMetaData>& configs,
+                                                 std::unordered_map<std::string, ov::Tensor>& consts,
+                                                 std::unordered_map<std::string, gguf_tensor_type>& qtypes) {
     // Create input parameters
-    auto input_ids = std::make_shared<ov::op::v0::Parameter>(
-        ov::element::i64, ov::PartialShape{-1, -1});
+    auto input_ids = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{-1, -1});
     set_name(input_ids, "input_ids");
 
-    auto attention_mask = std::make_shared<ov::op::v0::Parameter>(
-        ov::element::i64, ov::PartialShape{-1, -1});
+    auto attention_mask = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{-1, -1});
     set_name(attention_mask, "attention_mask");
 
-    auto position_ids = std::make_shared<ov::op::v0::Parameter>(
-        ov::element::i64, ov::PartialShape{-1, -1});
+    auto position_ids = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{-1, -1});
     set_name(position_ids, "position_ids");
 
-    auto beam_idx = std::make_shared<ov::op::v0::Parameter>(
-        ov::element::i32, ov::PartialShape{-1});
+    auto beam_idx = std::make_shared<ov::op::v0::Parameter>(ov::element::i32, ov::PartialShape{-1});
     set_name(beam_idx, "beam_idx");
 
     // Create embedding layer
-    auto [inputs_embeds, embeddings] = make_embedding(
-        "model.embed_tokens",
-        input_ids->output(0),
-        consts,
-        qtypes.at("model.embed_tokens.qtype"));
+    auto [inputs_embeds, embeddings] =
+        make_embedding("model.embed_tokens", input_ids->output(0), consts, qtypes.at("model.embed_tokens.qtype"));
 
     auto hidden_states = inputs_embeds;
 
     // Initialize RoPE
-    auto rope_const = init_rope(
-        std::get<int>(configs.at("head_size")),
-        std::get<int>(configs.at("max_position_embeddings")),
-        std::get<float>(configs.at("rope_freq_base")));
+    auto rope_const = init_rope(std::get<int>(configs.at("head_size")),
+                                std::get<int>(configs.at("max_position_embeddings")),
+                                std::get<float>(configs.at("rope_freq_base")));
 
     // Get input shape components
     auto input_shape = std::make_shared<ov::op::v3::ShapeOf>(input_ids);
-    auto batch_axis = std::make_shared<ov::op::v0::Constant>(
-        ov::element::i64, ov::Shape{1}, 0);
-    auto batch_size = std::make_shared<ov::op::v8::Gather>(
-        input_shape, batch_axis, batch_axis);
+    auto batch_axis = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, 0);
+    auto batch_size = std::make_shared<ov::op::v8::Gather>(input_shape, batch_axis, batch_axis);
 
-    auto hidden_dim = std::make_shared<ov::op::v0::Constant>(
-        ov::element::i64, ov::Shape{1}, 3);
+    auto hidden_dim = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, 3);
 
     // Process layers
     ov::SinkVector sinks;
@@ -85,21 +73,20 @@ std::shared_ptr<ov::Model> create_language_model(
     std::shared_ptr<ov::Node> output_shape = nullptr;
 
     for (int i = 0; i < std::get<int>(configs.at("layer_num")); ++i) {
-        auto [new_hidden, layer_sinks, new_mask, new_cos_sin, new_shape] = layer(
-            configs,
-            consts,
-            qtypes,
-            i,
-            hidden_states,
-            attention_mask,
-            causal_mask,
-            position_ids,
-            rope_const,
-            beam_idx,
-            batch_size,
-            hidden_dim,
-            cos_sin_cached,
-            output_shape);
+        auto [new_hidden, layer_sinks, new_mask, new_cos_sin, new_shape] = layer(configs,
+                                                                                 consts,
+                                                                                 qtypes,
+                                                                                 i,
+                                                                                 hidden_states,
+                                                                                 attention_mask,
+                                                                                 causal_mask,
+                                                                                 position_ids,
+                                                                                 rope_const,
+                                                                                 beam_idx,
+                                                                                 batch_size,
+                                                                                 hidden_dim,
+                                                                                 cos_sin_cached,
+                                                                                 output_shape);
 
         hidden_states = new_hidden;
         causal_mask = new_mask;
@@ -110,19 +97,10 @@ std::shared_ptr<ov::Model> create_language_model(
     }
 
     // Final layer norm
-    auto final_norm = make_rms_norm(
-        "model.norm",
-        hidden_states,
-        consts,
-        std::get<float>(configs.at("rms_norm_eps")));
+    auto final_norm = make_rms_norm("model.norm", hidden_states, consts, std::get<float>(configs.at("rms_norm_eps")));
 
     // LM head
-    auto embed_out = make_lm_head(
-        "lm_head",
-        final_norm,
-        consts,
-        embeddings,
-        qtypes.at("lm_head.qtype"));
+    auto embed_out = make_lm_head("lm_head", final_norm, consts, embeddings, qtypes.at("lm_head.qtype"));
 
     // Create results
     auto logits = std::make_shared<ov::op::v0::Result>(embed_out);
@@ -141,7 +119,7 @@ std::shared_ptr<ov::Model> create_language_model(
     return model;
 }
 
-} // namespace
+}  // namespace
 
 std::shared_ptr<ov::Model> convert_gguf_with_frontend(const std::string& model_path,
                                                       const ov::genai::ExtensionList& extensions) {
@@ -149,7 +127,14 @@ std::shared_ptr<ov::Model> convert_gguf_with_frontend(const std::string& model_p
     ov::genai::register_gguf_extensions(frontend,
                                         extensions,
                                         ov::frontend::gguf::GenAIExtension::InputMode::IDS_TO_LOGITS);
-    return frontend.convert(frontend.load(model_path));
+    auto model = frontend.convert(frontend.load(model_path));
+    if (model->has_rt_info("gguf_architecture") && model->get_rt_info<std::string>("gguf_architecture") == "lfm3") {
+        const auto results = model->get_results();
+        for (const auto& result : results)
+            if (result->output(0).get_names().count("audio_hidden_states"))
+                model->remove_result(result);
+    }
+    return model;
 }
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
@@ -189,8 +174,9 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
         ov::genai::utils::save_openvino_model(model, save_path.string(), true);
     }
 
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::high_resolution_clock::now() - start_time).count();
+    auto duration =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start_time)
+            .count();
     ss.str("");
     ss << (use_legacy_reader ? "Legacy GGUF" : "GGUF model") << " conversion done. Time: " << duration << "ms";
     ov::genai::utils::print_gguf_debug_info(ss.str());

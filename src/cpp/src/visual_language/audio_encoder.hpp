@@ -20,7 +20,8 @@ using AudioEncode = std::function<std::vector<ov::Tensor>(const ov::Tensor&)>;
 enum class AudioEncoderType {
     GEMMA4,          // log-mel spectrogram input, 30 s chunks
     GEMMA4_UNIFIED,  // raw 640-sample waveform frames
-    LFM2,            // normalized log-mel features plus relative position embeddings
+    LFM3,
+    LFM2,  // normalized log-mel features plus relative position embeddings
 };
 
 struct AudioEncoderConfig {
