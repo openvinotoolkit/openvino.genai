@@ -100,7 +100,8 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     const size_t max_kv_cache_size,
     const bool use_intermediate_remote_tensor,
     const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs,
-    std::function<ov::Tensor(const ov::Tensor& new_input_ids)> per_layer_embeddings_callback
+    std::function<ov::Tensor(const ov::Tensor& new_input_ids)> per_layer_embeddings_callback,
+    std::function<ov::Tensor(const ov::Tensor& new_input_ids, const std::vector<int32_t>& beam_indices)> ngram_embeddings_callback
 ) {
     std::vector<GenerationHandle> generations;
     for (SequenceGroup::Ptr sequence_group : sequence_groups) {
@@ -279,6 +280,9 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
                     ov::Tensor new_token_type_ids(tensor.get_element_type(), {total_num_tokens, 1});
                     std::fill_n(new_token_type_ids.data<int64_t>(), new_token_type_ids.get_size(), 0);
                     m_llm.set_tensor(name, new_token_type_ids);
+                } else if (name == "ngram_embeddings" && ngram_embeddings_callback) {
+                    // TODO Unify callbacks handling (per_layer_embeddings_callback, ngram_embeddings_callback)
+                    m_llm.set_tensor(name, ngram_embeddings_callback(new_input_ids, next_beams));
                 }
             }
         } else {
