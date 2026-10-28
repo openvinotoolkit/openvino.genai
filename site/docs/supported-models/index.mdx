@@ -14,6 +14,14 @@ Other models with similar architectures may also work successfully even if not e
 Consider testing any unlisted models to verify compatibility with your specific use case.
 :::
 
+:::note Optimum Intel version
+Recently added models may require a newer `optimum-intel` version than the latest PyPI release. If an export fails for a newly supported model, install the latest version from GitHub:
+
+```bash
+pip install git+https://github.com/huggingface/optimum-intel.git
+```
+:::
+
 ## Large Language Models (LLMs)
 
 :::tip LoRA Support
@@ -69,6 +77,10 @@ pip install timm einops
 
 1. `openbmb/MiniCPM-o-2_6` doesn't support `transformers>=4.52` which is required for `optimum-cli` export.
 2. `--task image-text-to-text` is required for `optimum-cli export openvino --trust-remote-code` because `image-text-to-text` isn't `MiniCPM-o-2_6`'s native task.
+
+#### LFM3-VL {#lfm3-vl-notes}
+
+The model requires `transformers>=5.20` for the export with `optimum-cli` and `--trust-remote-code` argument.
 
 #### MiniCPM-V-4_5 {#minicpm-v-4_5-notes}
 
@@ -139,6 +151,13 @@ Fun-ASR models require the `funasr` package and trusted remote code during expor
 ```bash
 pip install funasr
 optimum-cli export openvino --trust-remote-code -m FunAudioLLM/Fun-ASR-Nano-2512 fun-asr-nano
+```
+
+SenseVoiceSmall models require the `funasr` package and trusted remote code during export:
+
+```bash
+pip install funasr
+optimum-cli export openvino -m FunAudioLLM/SenseVoiceSmall sensevoice-small --trust-remote-code
 ```
 :::
 

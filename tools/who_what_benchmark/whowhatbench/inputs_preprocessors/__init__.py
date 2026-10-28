@@ -1,4 +1,5 @@
 from .llava import LLAVAInputsPreprocessor, NanoLlavaInputsPreprocessor
+from .lfm3_vl import Lfm3VLInputsPreprocessor
 from .minicpmv import MiniCPMV4_7InputsPreprocessor, MiniCPMVInputsPreprocessor
 from .minicpmo import MiniCPMOInputsPreprocessor
 from .internvl import InternVLInputsPreprocessor
@@ -14,6 +15,7 @@ from .deepseek_ocr2 import DeepseekOCR2InputsPreprocessor
 from .vlm_inputs_preprocessor import VLMInputsPreprocessor
 
 MODEL_TYPE_TO_CLS_MAPPING = {
+    "lfm3_vl": Lfm3VLInputsPreprocessor,
     "muse_glimmer": MuseGlimmerInputsPreprocessor,
     "qwen3_vl": Qwen3VLInputsPreprocessor,
     "qwen3_5_moe": Qwen3_5VLInputsPreprocessor,

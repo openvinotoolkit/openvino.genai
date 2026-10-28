@@ -14,6 +14,7 @@
 #include "visual_language/qwen3_5/classes.hpp"
 #include "visual_language/qwen4_exp/classes.hpp"
 #include "visual_language/qwen3_omni/classes.hpp"
+#include "automatic_speech_recognition/models/qwen3-asr/split/inputs_embedder.hpp"
 #include "visual_language/phi3_vision/classes.hpp"
 #include "visual_language/phi4mm/classes.hpp"
 #include "visual_language/minicpm/classes.hpp"
@@ -29,6 +30,7 @@
 #include "visual_language/videochat_flash/classes.hpp"
 #include "visual_language/muse_glimmer/classes.hpp"
 #include "visual_language/minicpmv4_7/classes.hpp"
+#include "visual_language/lfm3_vl/classes.hpp"
 
 #include "continuous_batching/timer.hpp"
 #include "utils.hpp"
@@ -58,6 +60,7 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::IInputsEmbedder::g
 
 void InputsEmbedder::IInputsEmbedder::start_chat(const std::string& system_message) {
     m_is_chat_conversation = true;
+    m_cached_text_embeds = ov::Tensor();
     if (!m_cache_state.get_state().empty()) {
         m_cache_state.reset_state();
     }
@@ -84,8 +87,16 @@ void InputsEmbedder::IInputsEmbedder::update_chat_history(const std::string& dec
 
 void InputsEmbedder::IInputsEmbedder::finish_chat() {
     m_is_chat_conversation = false;
+    m_cached_text_embeds = ov::Tensor();
     m_cache_state.reset_state();
 }
+
+InputsEmbedder::IInputsEmbedder::IInputsEmbedder(const VLMConfig& vlm_config,
+                                                 const Tokenizer& tokenizer,
+                                                 EmbeddingsModel::Ptr embedding)
+    : m_vlm_config{vlm_config},
+      m_embedding{std::move(embedding)},
+      m_tokenizer{tokenizer} {}
 
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const VLMConfig& vlm_config,
@@ -340,6 +351,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
         m_impl = std::make_shared<InputsEmbedderMiniCPM>(vlm_config, model_dir, tokenizer, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::LFM3_VL) {
+        m_impl = std::make_shared<InputsEmbedderLFM3VL>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA) {
         m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::NANOLLAVA) {
@@ -366,6 +379,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderQwen3_5>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN3_OMNI) {
         m_impl = std::make_shared<InputsEmbedderQwen3Omni>(vlm_config, model_dir, tokenizer, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::QWEN3_ASR) {
+        m_impl = std::make_shared<InputsEmbedderQwen3ASR>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3N) {
@@ -396,6 +411,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
         m_impl = std::make_shared<InputsEmbedderMiniCPM>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::LFM3_VL) {
+        m_impl = std::make_shared<InputsEmbedderLFM3VL>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA) {
         m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::NANOLLAVA) {
@@ -422,6 +439,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
         m_impl = std::make_shared<InputsEmbedderQwen3_5>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN3_OMNI) {
         m_impl = std::make_shared<InputsEmbedderQwen3Omni>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::QWEN3_ASR) {
+        m_impl = std::make_shared<InputsEmbedderQwen3ASR>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3N) {
@@ -530,6 +549,14 @@ void InputsEmbedder::set_position_ids(const ov::Tensor& position_ids) {
 
 void InputsEmbedder::set_rope_delta(int64_t rope_delta) {
     m_impl->set_rope_delta(rope_delta);
+}
+
+ov::Tensor InputsEmbedder::get_cached_text_embeds() const {
+    return m_impl->get_cached_text_embeds();
+}
+
+void InputsEmbedder::set_cached_text_embeds_enabled(bool enabled) {
+    m_impl->set_cached_text_embeds_enabled(enabled);
 }
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta) {
