@@ -49,15 +49,16 @@ bool is_qwen3_asr_split_export(const std::filesystem::path& models_path) {
 
 // Only Qwen3-ASR split export implements PagedAttention backend. Other models run SDPA-like stateful decoders.
 ov::AnyMap remove_sdpa_attention_backend(const ov::AnyMap& properties) {
-    if (!properties.count("ATTENTION_BACKEND")) {
+    const auto attention_backend_it = properties.find("ATTENTION_BACKEND");
+    if (attention_backend_it == properties.end()) {
         return properties;
     }
-    auto [properties_without_backend, attention_backend] = ov::genai::utils::extract_attention_backend(properties);
-    OPENVINO_ASSERT(attention_backend == ov::genai::SDPA_BACKEND,
+    // Reject PA before extract_attention_backend() checks PagedAttention platform availability.
+    OPENVINO_ASSERT(attention_backend_it->second.as<std::string>() != ov::genai::PA_BACKEND,
                     "'",
                     ov::genai::PA_BACKEND,
                     "' attention backend is supported only for Qwen3-ASR split export");
-    return properties_without_backend;
+    return ov::genai::utils::extract_attention_backend(properties).first;
 }
 
 std::optional<ov::genai::ASRGenerationConfig> get_config_from_map(const ov::AnyMap& config_map) {

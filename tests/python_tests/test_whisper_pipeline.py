@@ -1229,6 +1229,23 @@ def test_qwen3_asr_streamer_rejects_multi_chunk_audio(pipelines_fixture):
         genai_pipe.generate(audio, language="English", max_new_tokens=1, streamer=lambda subword: False)
 
 
+@pytest.mark.parametrize("pipelines_fixture", QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS, indirect=True)
+def test_qwen3_asr_split_multi_chunk_audio(pipelines_fixture):
+    _, genai_pipe, _, _ = pipelines_fixture
+    audio = make_deterministic_audio(1210 * 16000)
+
+    results = [genai_pipe.generate(audio, language="English", max_new_tokens=4) for _ in range(2)]
+
+    # Repeated calls must not leak state or metrics between generate() calls.
+    assert results[0].texts == results[1].texts
+    for result in results:
+        assert len(result.texts) == 1
+        asr_raw_metrics = result.perf_metrics.asr_raw_metrics
+        assert len(asr_raw_metrics.encode_inference_durations) == 2
+        assert len(asr_raw_metrics.decode_inference_durations) > 0
+        assert result.perf_metrics.get_inference_duration().mean > 0
+
+
 @pytest.mark.parametrize("model_id", ["openai/whisper-tiny", QWEN3_ASR_MODEL_ID])
 def test_attention_backend_without_paged_attention(model_id):
     _, path, _, _ = read_asr_model(
