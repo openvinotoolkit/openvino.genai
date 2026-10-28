@@ -3,11 +3,16 @@
 
 import util from "node:util";
 import { VLMPipeline as VLMPipelineWrapper, type ChatHistory } from "../addon.js";
-import { GenerationConfig, VLMPipelineProperties, TextStreamer } from "../utils.js";
+import {
+  GenerationConfig,
+  GenerationFinishReason,
+  VLMPipelineProperties,
+  StreamingStatus,
+} from "../utils.js";
 import { VLMDecodedResults } from "../decodedResults.js";
 import { Tokenizer } from "../tokenizer.js";
 import type { Tensor } from "openvino-node";
-import { PipelineInitialization, createTextStream } from "./pipelineUtils.js";
+import { VLMPerfMetrics } from "../perfMetrics.js";
 
 /**
  * Options for VLM generation methods.
@@ -29,7 +34,6 @@ export class VLMPipeline {
   protected readonly device: string;
   protected pipeline: VLMPipelineWrapper | null = null;
   protected readonly properties: VLMPipelineProperties;
-  private readonly initialization = new PipelineInitialization("VLMPipeline");
 
   /**
    * Construct a VLM pipeline from a folder containing tokenizer and model IRs.
@@ -48,12 +52,12 @@ export class VLMPipeline {
    * @returns Resolves when initialization is complete.
    */
   async init() {
-    this.pipeline = await this.initialization.run(async () => {
-      const pipeline = new VLMPipelineWrapper();
-      const initialize = util.promisify(pipeline.init.bind(pipeline));
-      await initialize(this.modelPath, this.device, this.properties);
-      return pipeline;
-    });
+    const pipeline = new VLMPipelineWrapper();
+
+    const initPromise = util.promisify(pipeline.init.bind(pipeline));
+    await initPromise(this.modelPath, this.device, this.properties);
+
+    this.pipeline = pipeline;
   }
   /**
    * Start a chat session with an optional system message.
@@ -115,20 +119,94 @@ export class VLMPipeline {
     if (!this.pipeline) throw new Error("Pipeline is not initialized");
     const { images, videos, generationConfig } = options;
 
-    const { pipeline } = this;
-    return createTextStream((streamer, complete) => {
-      pipeline.generate(inputs, images, videos, streamer, generationConfig, (error, result) =>
-        complete(error, () =>
-          new VLMDecodedResults(
-            result.texts,
-            result.scores,
-            result.perfMetrics,
-            result.parsed,
-            result.finishReasons,
-          ).toString(),
-        ),
-      );
-    });
+    let streamingStatus: StreamingStatus = StreamingStatus.RUNNING;
+    const queue: { done: boolean; subword: string }[] = [];
+    type ResolveFunction = (arg: { value: string; done: boolean }) => void;
+    type RejectFunction = (reason?: unknown) => void;
+    let resolvePromise: ResolveFunction | null;
+    let rejectPromise: RejectFunction | null;
+
+    const callback = (
+      error: Error | null,
+      result: {
+        texts: string[];
+        scores: number[];
+        perfMetrics: VLMPerfMetrics;
+        parsed: Record<string, unknown>[];
+        finishReasons: GenerationFinishReason[];
+      },
+    ) => {
+      if (error) {
+        if (rejectPromise) {
+          rejectPromise(error);
+          // Reset promises
+          resolvePromise = null;
+          rejectPromise = null;
+        } else {
+          throw error;
+        }
+      } else {
+        const decodedResult = new VLMDecodedResults(
+          result.texts,
+          result.scores,
+          result.perfMetrics,
+          result.parsed,
+          result.finishReasons,
+        );
+        const fullText = decodedResult.toString();
+        if (resolvePromise) {
+          // Fulfill pending request
+          resolvePromise({ done: true, value: fullText });
+          // Reset promises
+          resolvePromise = null;
+          rejectPromise = null;
+        } else {
+          // Add data to queue if no pending promise
+          queue.push({ done: true, subword: fullText });
+        }
+      }
+    };
+
+    const streamer = (chunk: string): StreamingStatus => {
+      if (resolvePromise) {
+        // Fulfill pending request
+        resolvePromise({ done: false, value: chunk });
+        // Reset promises
+        resolvePromise = null;
+        rejectPromise = null;
+      } else {
+        // Add data to queue if no pending promise
+        queue.push({ done: false, subword: chunk });
+      }
+      return streamingStatus;
+    };
+
+    this.pipeline.generate(inputs, images, videos, streamer, generationConfig, callback);
+
+    return {
+      async next() {
+        // If there is data in the queue, return it
+        // Otherwise, return a promise that will resolve when data is available
+        const data = queue.shift();
+
+        if (data) {
+          return { value: data.subword, done: data.done };
+        }
+
+        return new Promise((resolve: ResolveFunction, reject: (reason?: unknown) => void) => {
+          resolvePromise = resolve;
+          rejectPromise = reject;
+        });
+      },
+      async return() {
+        streamingStatus = StreamingStatus.CANCEL;
+
+        return { done: true, value: "" };
+      },
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+    };
   }
   /**
    * Generate sequences for VLMs with optional streaming.
@@ -147,7 +225,7 @@ export class VLMPipeline {
    */
   async generate(
     inputs: string | ChatHistory,
-    options: VLMGenerateOptions & { streamer?: TextStreamer } = {},
+    options: VLMGenerateOptions & { streamer?: (chunk: string) => StreamingStatus } = {},
   ): Promise<VLMDecodedResults> {
     const { images, videos, generationConfig, streamer } = options;
     if (!this.pipeline) throw new Error("Pipeline is not initialized");
@@ -182,7 +260,7 @@ export class VLMPipeline {
   }
 
   /**
-   * Set the generation parameters.
+   * Set generation configuration parameters.
    * @param config - Generation configuration parameters.
    */
   setGenerationConfig(config: GenerationConfig): void {

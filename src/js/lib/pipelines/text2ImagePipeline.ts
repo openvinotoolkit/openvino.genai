@@ -10,7 +10,6 @@ import {
   ImageGenerationCallback,
   Text2ImagePipelineProperties,
 } from "../utils.js";
-import { PipelineInitialization } from "./pipelineUtils.js";
 
 export type Text2ImageGenerateOptions = ImageGenerationConfig & {
   /**
@@ -32,7 +31,6 @@ export class Text2ImagePipeline {
   protected readonly device: string;
   protected pipeline: Text2ImagePipelineWrapper | null = null;
   protected readonly properties: Text2ImagePipelineProperties;
-  private readonly initialization = new PipelineInitialization("Text2ImagePipeline");
 
   constructor(modelPath: string, device: string, properties: Text2ImagePipelineProperties = {}) {
     this.modelPath = modelPath;
@@ -44,12 +42,10 @@ export class Text2ImagePipeline {
    * Load the pipeline. Must be called once before generate().
    */
   async init(): Promise<void> {
-    this.pipeline = await this.initialization.run(async () => {
-      const pipeline = new Text2ImagePipelineWrapper();
-      const initialize = util.promisify(pipeline.init.bind(pipeline));
-      await initialize(this.modelPath, this.device, this.properties);
-      return pipeline;
-    });
+    const pipeline = new Text2ImagePipelineWrapper();
+    const initPromise = util.promisify(pipeline.init.bind(pipeline));
+    await initPromise(this.modelPath, this.device, this.properties);
+    this.pipeline = pipeline;
   }
 
   /**

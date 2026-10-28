@@ -6,7 +6,6 @@ import { Tensor } from "openvino-node";
 import { Text2SpeechPipeline as Text2SpeechPipelineWrapper } from "../addon.js";
 import { Text2SpeechDecodedResults } from "../decodedResults.js";
 import { SpeechGenerationConfig, Text2SpeechPipelineProperties } from "../utils.js";
-import { PipelineInitialization } from "./pipelineUtils.js";
 
 /**
  * Options for Text2Speech generation methods.
@@ -30,7 +29,6 @@ export class Text2SpeechPipeline {
   protected readonly device: string;
   protected pipeline: Text2SpeechPipelineWrapper | null = null;
   protected readonly properties: Text2SpeechPipelineProperties;
-  private readonly initialization = new PipelineInitialization("Text2SpeechPipeline");
 
   /**
    * Construct a Text2Speech pipeline from a folder containing model IRs.
@@ -48,12 +46,10 @@ export class Text2SpeechPipeline {
    * Load the pipeline. Must be called once before generate().
    */
   async init(): Promise<void> {
-    this.pipeline = await this.initialization.run(async () => {
-      const pipeline = new Text2SpeechPipelineWrapper();
-      const initialize = util.promisify(pipeline.init.bind(pipeline));
-      await initialize(this.modelPath, this.device, this.properties);
-      return pipeline;
-    });
+    const pipeline = new Text2SpeechPipelineWrapper();
+    const initPromise = util.promisify(pipeline.init.bind(pipeline));
+    await initPromise(this.modelPath, this.device, this.properties);
+    this.pipeline = pipeline;
   }
 
   /**

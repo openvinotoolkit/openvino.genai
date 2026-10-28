@@ -10,7 +10,6 @@ import {
   ImageGenerationCallback,
   InpaintingPipelineProperties,
 } from "../utils.js";
-import { PipelineInitialization } from "./pipelineUtils.js";
 
 export type InpaintingGenerateOptions = ImageGenerationConfig & {
   /**
@@ -33,7 +32,6 @@ export class InpaintingPipeline {
   protected readonly device: string;
   protected pipeline: InpaintingPipelineWrapper | null = null;
   protected readonly properties: InpaintingPipelineProperties;
-  private readonly initialization = new PipelineInitialization("InpaintingPipeline");
 
   constructor(modelPath: string, device: string, properties: InpaintingPipelineProperties = {}) {
     this.modelPath = modelPath;
@@ -45,12 +43,10 @@ export class InpaintingPipeline {
    * Load the pipeline. Must be called once before generate().
    */
   async init(): Promise<void> {
-    this.pipeline = await this.initialization.run(async () => {
-      const pipeline = new InpaintingPipelineWrapper();
-      const initialize = util.promisify(pipeline.init.bind(pipeline));
-      await initialize(this.modelPath, this.device, this.properties);
-      return pipeline;
-    });
+    const pipeline = new InpaintingPipelineWrapper();
+    const initPromise = util.promisify(pipeline.init.bind(pipeline));
+    await initPromise(this.modelPath, this.device, this.properties);
+    this.pipeline = pipeline;
   }
 
   /**

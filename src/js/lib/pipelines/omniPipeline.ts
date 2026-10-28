@@ -7,13 +7,11 @@ import {
   GenerationConfig,
   OmniPipelineProperties,
   OmniTalkerSpeechConfig,
-  TextStreamer,
-  SpeechStreamer,
+  StreamingStatus,
   VideoMetadata,
 } from "../utils.js";
 import { OmniDecodedResults } from "../decodedResults.js";
 import type { Tensor } from "openvino-node";
-import { PipelineInitialization } from "./pipelineUtils.js";
 
 /**
  * Options for Omni generation.
@@ -40,13 +38,13 @@ export type OmniGenerateOptions = {
    * Optional callback invoked for each generated text subword chunk.
    * Return a {@link StreamingStatus} flag to continue, stop, or cancel generation.
    */
-  streamer?: TextStreamer;
+  streamer?: (chunk: string) => StreamingStatus;
   /**
    * Optional callback invoked for each generated audio chunk.
    * The chunk is a `[1, 1, N_samples]` f32 PCM tensor at 24 kHz.
    * Return a {@link StreamingStatus} flag to continue, stop, or cancel generation.
    */
-  speechStreamer?: SpeechStreamer;
+  speechStreamer?: (audioChunk: Tensor) => StreamingStatus;
 };
 
 /**
@@ -60,7 +58,6 @@ export class OmniPipeline {
   protected readonly device: string;
   protected pipeline: OmniPipelineWrapper | null = null;
   protected readonly properties: OmniPipelineProperties;
-  private readonly initialization = new PipelineInitialization("OmniPipeline");
 
   /**
    * Construct an Omni pipeline from a folder containing tokenizer and model IRs.
@@ -81,12 +78,12 @@ export class OmniPipeline {
    * @returns Resolves when initialization is complete.
    */
   async init() {
-    this.pipeline = await this.initialization.run(async () => {
-      const pipeline = new OmniPipelineWrapper();
-      const initialize = util.promisify(pipeline.init.bind(pipeline));
-      await initialize(this.modelPath, this.device, this.properties);
-      return pipeline;
-    });
+    const pipeline = new OmniPipelineWrapper();
+
+    const initPromise = util.promisify(pipeline.init.bind(pipeline));
+    await initPromise(this.modelPath, this.device, this.properties);
+
+    this.pipeline = pipeline;
   }
 
   /**

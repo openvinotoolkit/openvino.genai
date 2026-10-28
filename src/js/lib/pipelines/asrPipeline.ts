@@ -3,10 +3,10 @@
 
 import util from "node:util";
 import { ASRPipeline as ASRPipelineWrapper } from "../addon.js";
-import { ASRDecodedResults } from "../decodedResults.js";
-import { ASRGenerationConfig, ASRPipelineProperties, TextStreamer } from "../utils.js";
+import { ASRDecodedResultChunk, ASRDecodedResults } from "../decodedResults.js";
+import { ASRGenerationConfig, ASRPipelineProperties, StreamingStatus } from "../utils.js";
 import { Tokenizer } from "../tokenizer.js";
-import { PipelineInitialization, createTextStream } from "./pipelineUtils.js";
+import { ASRPerfMetrics } from "../perfMetrics.js";
 
 export type RawSpeechInput = Float32Array | number[];
 
@@ -17,7 +17,7 @@ export type ASRGenerateOptions = {
   /** Generation configuration (e.g. language, task, return_timestamps). */
   generationConfig?: ASRGenerationConfig;
   /** Callback invoked with each decoded text chunk; return StreamingStatus to control generation. */
-  streamer?: TextStreamer;
+  streamer?: (chunk: string) => StreamingStatus;
 };
 
 /**
@@ -33,7 +33,6 @@ export class ASRPipeline {
   protected readonly device: string;
   protected pipeline: ASRPipelineWrapper | null = null;
   protected readonly properties: ASRPipelineProperties;
-  private readonly initialization = new PipelineInitialization("ASRPipeline");
 
   /**
    * Construct an ASR pipeline from a folder containing model IRs and tokenizer.
@@ -51,12 +50,10 @@ export class ASRPipeline {
    * Load the pipeline. Must be called once before generate().
    */
   async init(): Promise<void> {
-    this.pipeline = await this.initialization.run(async () => {
-      const pipeline = new ASRPipelineWrapper();
-      const initialize = util.promisify(pipeline.init.bind(pipeline));
-      await initialize(this.modelPath, this.device, this.properties);
-      return pipeline;
-    });
+    const pipeline = new ASRPipelineWrapper();
+    const initPromise = util.promisify(pipeline.init.bind(pipeline));
+    await initPromise(this.modelPath, this.device, this.properties);
+    this.pipeline = pipeline;
   }
 
   /**
@@ -76,12 +73,81 @@ export class ASRPipeline {
     if (!this.pipeline) throw new Error("ASRPipeline is not initialized");
     const generationConfig = options?.generationConfig ?? {};
 
-    const { pipeline } = this;
-    return createTextStream((streamer, complete) => {
-      pipeline.generate(rawSpeech, generationConfig, streamer, (error, result) =>
-        complete(error, () => result.texts[0] ?? ""),
-      );
-    });
+    let streamingStatus = StreamingStatus.RUNNING;
+    let handledError: Error | null;
+    const queue: { done: boolean; chunk: string }[] = [];
+    type ResolveFunction = (arg: { value: string; done: boolean }) => void;
+    let resolvePromise: ResolveFunction | null = null;
+    let rejectPromise: ((reason?: unknown) => void) | null = null;
+
+    const callback = (
+      error: Error | null,
+      result: {
+        texts: string[];
+        scores: number[];
+        languages: string[];
+        perfMetrics: ASRPerfMetrics;
+        chunks?: ASRDecodedResultChunk[][];
+        words?: ASRDecodedResultChunk[][];
+      },
+    ) => {
+      if (error) {
+        if (rejectPromise) {
+          rejectPromise(error);
+          resolvePromise = null;
+          rejectPromise = null;
+        } else {
+          handledError = error;
+        }
+      } else {
+        const fullText = result.texts?.[0] ?? "";
+        if (resolvePromise) {
+          resolvePromise({ done: true, value: fullText });
+          resolvePromise = null;
+          rejectPromise = null;
+        } else {
+          queue.push({ done: true, chunk: fullText });
+        }
+      }
+    };
+
+    const streamer = (chunk: string): StreamingStatus => {
+      if (resolvePromise) {
+        resolvePromise({ done: false, value: chunk });
+        resolvePromise = null;
+        rejectPromise = null;
+      } else {
+        queue.push({ done: false, chunk });
+      }
+      return streamingStatus;
+    };
+
+    this.pipeline.generate(rawSpeech, generationConfig, streamer, callback);
+
+    return {
+      async next() {
+        if (handledError) {
+          const error = handledError;
+          handledError = null;
+          return Promise.reject(error);
+        }
+        const data = queue.shift();
+        if (data) {
+          return { value: data.chunk, done: data.done };
+        }
+        return new Promise<IteratorResult<string>>((resolve, reject) => {
+          resolvePromise = resolve;
+          rejectPromise = reject;
+        });
+      },
+      async return() {
+        streamingStatus = StreamingStatus.CANCEL;
+        return { done: true, value: "" };
+      },
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+    };
   }
 
   /**
@@ -132,7 +198,7 @@ export class ASRPipeline {
   }
 
   /**
-   * Merge generation config fields (e.g. language, task, return_timestamps), preserving omitted fields.
+   * Update generation config (e.g. language, task, return_timestamps).
    */
   setGenerationConfig(config: ASRGenerationConfig): void {
     if (!this.pipeline) throw new Error("ASRPipeline is not initialized");

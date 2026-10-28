@@ -9,7 +9,6 @@ import {
   TextEmbeddingConfig,
   TextEmbeddingPipeline as TextEmbeddingPipelineWrap,
 } from "../addon.js";
-import { PipelineInitialization } from "./pipelineUtils.js";
 
 export class TextEmbeddingPipeline {
   modelPath: string;
@@ -18,7 +17,6 @@ export class TextEmbeddingPipeline {
   ovProperties: object;
   pipeline: TextEmbeddingPipelineWrapper | null = null;
   isInitialized = false;
-  private readonly initialization = new PipelineInitialization("TextEmbeddingPipeline");
 
   constructor(
     modelPath: string,
@@ -33,13 +31,14 @@ export class TextEmbeddingPipeline {
   }
 
   async init() {
-    this.pipeline = await this.initialization.run(async () => {
-      const pipeline = new TextEmbeddingPipelineWrap();
-      const initialize = util.promisify(pipeline.init.bind(pipeline));
-      await initialize(this.modelPath, this.device, this.config, this.ovProperties);
-      return pipeline;
-    });
-    this.isInitialized = true;
+    if (this.pipeline) throw new Error("TextEmbeddingPipeline is already initialized");
+
+    this.pipeline = new TextEmbeddingPipelineWrap();
+
+    const initPromise = util.promisify(this.pipeline.init.bind(this.pipeline));
+    await initPromise(this.modelPath, this.device, this.config, this.ovProperties);
+
+    return;
   }
 
   embedDocumentsSync(texts: string[]): EmbeddingResults {

@@ -7,7 +7,6 @@ import {
   TextRerankResults,
   TextRerankPipeline as TextRerankPipelineWrapper,
 } from "../addon.js";
-import { PipelineInitialization } from "./pipelineUtils.js";
 
 /**
  * Options for initializing TextRerankPipeline.
@@ -30,7 +29,6 @@ export class TextRerankPipeline {
   config: TextRerankPipelineConfig;
   ovProperties: object;
   pipeline: TextRerankPipelineWrapper | null = null;
-  private readonly initialization = new PipelineInitialization("TextRerankPipeline");
 
   /**
    * Constructs a TextRerankPipeline from xml/bin files, tokenizer and configuration in the same directory.
@@ -49,12 +47,13 @@ export class TextRerankPipeline {
    * @throws {Error} If the pipeline is already initialized.
    */
   async init() {
-    this.pipeline = await this.initialization.run(async () => {
-      const pipeline = new TextRerankPipelineWrapper();
-      const initialize = util.promisify(pipeline.init.bind(pipeline));
-      await initialize(this.modelPath, this.device, this.config, this.ovProperties);
-      return pipeline;
-    });
+    if (this.pipeline) throw new Error("TextRerankPipeline is already initialized");
+
+    const pipeline = new TextRerankPipelineWrapper();
+
+    const initPromise = util.promisify(pipeline.init.bind(pipeline));
+    await initPromise(this.modelPath, this.device, this.config, this.ovProperties);
+    this.pipeline = pipeline;
   }
 
   /**
