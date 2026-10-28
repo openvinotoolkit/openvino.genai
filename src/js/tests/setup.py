@@ -165,11 +165,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--to-env-file", type=str, help="Path to the .env file to save environment variables (default: test.env)"
     )
+    parser.add_argument(
+        "--models",
+        nargs="+",
+        choices=TEST_MODELS,
+        default=list(TEST_MODELS),
+        help="Models to download and convert (default: all models)",
+    )
     args = parser.parse_args()
 
     env_vars = {}
 
-    for model_name, model_info in TEST_MODELS.items():
+    for model_name in args.models:
+        model_info = TEST_MODELS[model_name]
         try:
             result = hugging_face.download_and_convert_model_class(**model_info)
             if model_name == "OMNI":

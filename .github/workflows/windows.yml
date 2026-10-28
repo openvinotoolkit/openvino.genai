@@ -955,7 +955,7 @@ jobs:
     name: Node.js bindings tests (Node ${{ matrix.nodejs-version }}, ${{ matrix.test.name }})
     needs: [ smart_ci, openvino_download, genai_build_wheels, genai_build_genai_wheel, genai_build_nodejs ]
     if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
-    timeout-minutes: 20
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -963,12 +963,16 @@ jobs:
         test:
           - name: core
             files: "./tests/bindings.test.js ./tests/chatHistory.test.js ./tests/generationConfig.test.js ./tests/parsers.test.js ./tests/structuredOutput.test.js ./tests/tokenizer.test.js"
+            models: "LLM VLM WHISPER_MODEL"
           - name: text-and-rag
             files: "./tests/embeddingPipeline.test.js ./tests/llmPipeline.test.js ./tests/textEmbeddingsPipeline.test.js ./tests/textRerankPipeline.test.js"
+            models: "LLM EMBEDDING_MODEL MULTIMODAL_EMBEDDINGS_MODEL RERANK_MODEL"
           - name: image-and-vlm
             files: "./tests/image2ImagePipeline.test.js ./tests/inpaintingPipeline.test.js ./tests/omniPipeline.test.js ./tests/text2ImagePipeline.test.js ./tests/vlmPipeline.test.js"
+            models: "VLM OMNI IMAGE_GENERATION_MODEL"
           - name: speech
             files: "./tests/asrPipeline.test.js ./tests/text2SpeechPipeline.test.js ./tests/whisperPipeline.test.js"
+            models: "WHISPER_MODEL TTS_MODEL"
     defaults:
       run:
         shell: pwsh
@@ -1037,7 +1041,7 @@ jobs:
       - name: Run npm package tests
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
-          python ./tests/setup.py --to-env-file test.env
+          python ./tests/setup.py --to-env-file test.env --models ${{ matrix.test.models }}
           node --env-file=test.env --test ${{ matrix.test.files }}
 
   Overall_Status:
