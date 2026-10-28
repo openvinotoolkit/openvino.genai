@@ -135,3 +135,30 @@ def test_matrix_components_are_declared_in_components_yml(path):
     for entry in load_yaml(path):
         for component in entry["components"]:
             assert component.lower() in known, f"Unknown component '{component}' in {matrix_file_id(path)}"
+
+
+@pytest.mark.parametrize("platform", ["linux", "windows", "mac"])
+def test_c_api_changes_run_asr_comparisons_and_independent_unit_tests(platform):
+    components = load_yaml(COMPONENTS_YML)
+    affected = {component: True for component in ["C_API", *components["C_API"]["revalidate"]]}
+    samples = bm.filter_matrix(affected, load_yaml(MATRICES_DIR / platform / "samples_tests.yml"))
+    asr_samples = [entry for entry in samples if "Automatic Speech Recognition" in entry["name"]]
+    assert len(asr_samples) == 3
+
+    jobs = load_yaml(SCRIPTS_DIR.parent / "workflows" / f"{platform}.yml")["jobs"]
+    job = jobs["genai_asr_c_api_tests"]
+    assert ".C_API" in job["if"]
+    assert ".automatic_speech_recognition" in job["if"]
+    assert "continuous_batching" not in job["if"]
+    assert not any("tools" in dependency for dependency in job["needs"])
+    commands = "\n".join(step.get("run", "") for step in job["steps"])
+    assert "tests_asr_c_api" in commands
+    assert '--gtest_filter="ASRCAPI.*"' in commands
+    assert "optimum-cli" not in commands
+    assert "genai_asr_c_api_tests" in jobs["Overall_Status"]["needs"]
+
+
+def test_linux_asr_job_mounts_workspace_at_host_path():
+    job = load_yaml(SCRIPTS_DIR.parent / "workflows" / "linux.yml")["jobs"]["genai_asr_c_api_tests"]
+    # download-artifact uses the container workspace; shell steps use the host workspace.
+    assert "${{ github.workspace }}:${{ github.workspace }}" in job["container"]["volumes"]

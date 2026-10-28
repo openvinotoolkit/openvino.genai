@@ -172,6 +172,7 @@ GGUF:
 C_API:
   revalidate:
     - LLM_samples
+    - automatic_speech_recognition_samples
 
 JS_API:
   revalidate:

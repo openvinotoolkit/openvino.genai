@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
+#include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
@@ -158,4 +159,20 @@ struct ov_genai_chat_history_opaque {
  */
 struct ov_genai_json_container_opaque {
     std::shared_ptr<ov::genai::JsonContainer> object;
+};
+
+struct ov_genai_asr_generation_config_opaque {
+    std::shared_ptr<ov::genai::ASRGenerationConfig> object;
+};
+
+struct ov_genai_asr_pipeline_opaque {
+    std::shared_ptr<ov::genai::ASRPipeline> object;
+};
+
+struct ov_genai_asr_decoded_results_opaque {
+    std::shared_ptr<ov::genai::ASRDecodedResults> object;
+};
+
+struct ov_genai_asr_decoded_result_chunk_opaque {
+    std::shared_ptr<ov::genai::ASRDecodedResultChunk> object;
 };
