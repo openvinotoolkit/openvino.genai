@@ -37,6 +37,7 @@ enum class VLMModelType {
     MUSE_GLIMMER,
     MINICPMV4_7,
     LFM3_VL,
+    LFM2_VL,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to

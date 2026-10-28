@@ -1007,10 +1007,15 @@ private:
 };
 
 bool requires_sdpa(const std::filesystem::path& models_dir) {
-    // Force models to use SDPA backend by default until PA is supported. Example:
-    // auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    // vlm_config.model_type == VLMModelType::GEMMA3;
-    return false;
+    // Force models to use the SDPA backend by default until PagedAttention supports them.
+    // LFM2-VL / LFM2.5-VL wrap the Liquid `lfm2` hybrid text backbone, which interleaves
+    // short-convolution layers (with their own conv-state cache) and full-attention layers.
+    // The PagedAttention/continuous-batching path only manages the attention KV blocks and
+    // does not reproduce the hybrid conv-state cache correctly, so greedy decoding silently
+    // diverges from optimum-intel after a few tokens. The stateful SDPA backend keeps the
+    // model's own conv + KV state, so it stays aligned. Route this model type to SDPA.
+    auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
+    return vlm_config.model_type == VLMModelType::LFM2_VL;
 }
 
 VLMPipeline::VLMPipeline(

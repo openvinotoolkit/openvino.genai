@@ -167,6 +167,7 @@ MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
 MODEL_QWEN35_MTP = "optimum-intel-internal-testing/tiny-random-qwen3.5-mtp"
 MODEL_DEEPSEEK_OCR2 = "optimum-intel-internal-testing/tiny-random-deepseek-ocr-2"
+MODEL_LFM2_VL = "optimum-intel-internal-testing/tiny-random-lfm2-vl"
 
 AUDIO_INPUT_SUPPORTED_MODELS = [
     "optimum-intel-internal-testing/tiny-random-gemma4",
@@ -195,6 +196,7 @@ else:
         "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
         "qnguyen3/nanoLLaVA",
         MODEL_DEEPSEEK_OCR2,
+        MODEL_LFM2_VL,
         *VIDEO_MODEL_IDS,
     ]
 
@@ -216,6 +218,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     MODEL_GEMMA3N: lambda idx: "<image_soft_token>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     MODEL_DEEPSEEK_OCR2: lambda idx: "<image>",
+    MODEL_LFM2_VL: lambda idx: "<image>",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
@@ -267,6 +270,22 @@ DEFAULT_RESOLUTION = 336
 
 
 ATTENTION_BACKEND: list[str] = ["PA", "SDPA"]
+
+# Models whose text backbone is a hybrid short-convolution + attention stack (e.g. the Liquid
+# `lfm2` backbone used by LFM2-VL / LFM2.5-VL). The PagedAttention / continuous-batching backend
+# only manages the attention KV blocks and does not reproduce the hybrid conv-state cache, so these
+# models are routed to the stateful SDPA backend by default (see `requires_sdpa()` in pipeline.cpp)
+# and are only exercised with SDPA in the test matrix.
+SDPA_ONLY_MODELS: set[str] = {
+    MODEL_LFM2_VL,
+}
+
+
+def attention_backends_for_model(model_id: str) -> list[str]:
+    if model_id in SDPA_ONLY_MODELS:
+        return ["SDPA"]
+    return ATTENTION_BACKEND
+
 
 PROMPT_LOOKUP: list[bool] = [True, False]
 
@@ -583,7 +602,7 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
 
 parametrize_all_models = pytest.mark.parametrize(
     "ov_pipe_model",
-    [(m, b, pl) for m in MODEL_IDS for b in ATTENTION_BACKEND for pl in PROMPT_LOOKUP if b == "PA" or pl is False],
+    [(m, b, pl) for m in MODEL_IDS for b in attention_backends_for_model(m) for pl in PROMPT_LOOKUP if b == "PA" or pl is False],
     ids=lambda p: f"{p[0]}/{p[1]}/{p[2]}",
     indirect=["ov_pipe_model"],
 )
@@ -2772,7 +2791,7 @@ def parametrize_optimum_vs_genai(models: list[str] | None = None) -> Callable[[C
         )
 
     for model_id in models:
-        supported_attn_backends = ATTENTION_BACKEND
+        supported_attn_backends = attention_backends_for_model(model_id)
         supported_preprocessing = ["CPP", "GRAPH"]
 
         if model_id not in MODELS_THAT_SUPPORT_GRAPH_PREPROCESSING:
@@ -2788,7 +2807,7 @@ def parametrize_optimum_vs_genai(models: list[str] | None = None) -> Callable[[C
             supported_has_video_inputs = [False, True]
 
         for attn_backend, preprocessing, has_image, has_video in product(
-            ATTENTION_BACKEND,
+            supported_attn_backends,
             supported_preprocessing,
             supported_has_image_inputs,
             supported_has_video_inputs,
