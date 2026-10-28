@@ -173,7 +173,6 @@ def analyze_args(args):
     model_args['torch_compile_options'] = args.torch_compile_options
     model_args['torch_compile_input_module'] = args.torch_compile_input_module
     model_args['media'] = args.media
-    model_args["disable_prompt_permutation"] = args.disable_prompt_permutation
     model_args["static_reshape"] = args.static_reshape
     model_args["num_frames"] = args.num_frames
     model_args["frame_rate"] = args.frame_rate
@@ -259,13 +258,19 @@ def analyze_args(args):
             model_args["config"] = config
     if model_framework == "ov":
         set_default_param_for_ov_config(model_args["config"])
-        if "ATTENTION_BACKEND" not in model_args["config"] and not optimum and args.device != "NPU":
+        if "ATTENTION_BACKEND" not in model_args["config"] and not optimum and args.device.upper() != "NPU":
             if use_case.task in ["text_gen", "text_gen_chat", "visual_text_gen", "visual_text_gen_chat"]:
                 model_args["config"]["ATTENTION_BACKEND"] = PA_ATTENTION_BACKEND
         log.info(f"OV Config={model_args['config']}")
     elif model_framework == 'pt':
         log.info(f"PT Config={model_args['config']}")
     model_args['model_name'] = model_name
+
+    model_args["disable_prompt_permutation"] = args.disable_prompt_permutation
+    # prompt_permutation is designed to bypass the prefix-caching optimization in PA mode
+    # NPU does not support PA
+    if args.device.upper() == "NPU":
+        model_args["disable_prompt_permutation"] = True
 
     cb_config = None
     if args.cb_config:
