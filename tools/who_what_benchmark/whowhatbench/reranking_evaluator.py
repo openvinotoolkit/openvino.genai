@@ -143,7 +143,7 @@ class RerankingEvaluator(BaseEvaluator):
                 # reserve the suffix budget and re-append it at the token level when truncation is needed. Mirrors GenAI.
                 suffix_ids = tokenizer(suffix, add_special_tokens=False).input_ids
                 full_pairs = [f"{pair}{suffix}" for pair in pairs]
-                encoded = tokenizer(full_pairs, padding=False, truncation=False)
+                encoded = tokenizer(full_pairs, padding=False, truncation=True, max_length=DEFAULT_MAX_LENGTH_QWEN + 1)
                 if max(len(ids) for ids in encoded["input_ids"]) > DEFAULT_MAX_LENGTH_QWEN:
                     encoded = tokenizer(
                         pairs, padding=False, truncation=True, max_length=DEFAULT_MAX_LENGTH_QWEN - len(suffix_ids)

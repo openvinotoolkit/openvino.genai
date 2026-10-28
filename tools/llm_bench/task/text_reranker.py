@@ -53,7 +53,7 @@ def tokenize_qwen3(tokenizer, pairs: list, max_length: int):
     # the suffix budget and re-append it at the token level when truncation is needed. Mirrors GenAI's encode_qwen3.
     suffix_ids = tokenizer(QWEN3_RERANKER_SUFFIX, add_special_tokens=False).input_ids
     full_pairs = [f"{pair}{QWEN3_RERANKER_SUFFIX}" for pair in pairs]
-    encoded = tokenizer(full_pairs, padding=False, truncation=False)
+    encoded = tokenizer(full_pairs, padding=False, truncation=True, max_length=max_length + 1)
     if max(len(ids) for ids in encoded["input_ids"]) > max_length:
         encoded = tokenizer(pairs, padding=False, truncation=True, max_length=max_length - len(suffix_ids))
         for ids, mask in zip(encoded["input_ids"], encoded["attention_mask"]):
