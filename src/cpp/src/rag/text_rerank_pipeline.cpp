@@ -3,8 +3,10 @@
 
 #include "openvino/genai/rag/text_rerank_pipeline.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <string_view>
+#include <vector>
 
 #include "debug_utils.hpp"
 #include "json_utils.hpp"
@@ -77,9 +79,16 @@ std::string format_qwen3_query(const std::string& query, std::string_view instru
 }
 
 std::string format_qwen3_document(const std::string& document) {
-    std::string formatted{"<Document>: "};
-    formatted.append(document).append(QWEN3_RERANK_SUFFIX);
-    return formatted;
+    // The suffix is appended at the token level after truncation (see TextRerankPipelineImpl::tokenize),
+    // so it is intentionally omitted from the string here.
+    return "<Document>: " + document;
+}
+
+std::vector<int64_t> tokenize_qwen3_suffix(Tokenizer& tokenizer) {
+    const TokenizedInputs encoded =
+        tokenizer.encode(std::string{QWEN3_RERANK_SUFFIX}, ov::genai::add_special_tokens(false));
+    const int64_t* data = encoded.input_ids.data<int64_t>();
+    return {data, data + encoded.input_ids.get_size()};
 }
 
 std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model) {
@@ -206,6 +215,7 @@ public:
         m_has_beam_idx = has_input(model, "beam_idx");
 
         if (is_qwen3) {
+            m_qwen3_suffix_ids = tokenize_qwen3_suffix(m_tokenizer);
             const auto vocab = m_tokenizer.get_vocab();
             const auto token_true_id = vocab.at("yes");
             const auto token_false_id = vocab.at("no");
@@ -307,6 +317,7 @@ private:
     bool m_has_position_ids = false;
     bool m_has_beam_idx = false;
     bool m_is_qwen3 = false;
+    std::vector<int64_t> m_qwen3_suffix_ids;
 
     TokenizedInputs tokenize(const std::string& query, const std::vector<std::string>& texts) {
         if (m_tokenizer.supports_paired_input()) {
@@ -323,13 +334,60 @@ private:
             for (const auto& text : texts) {
                 concatenated.push_back(formatted_query + format_qwen3_document(text));
             }
-        } else {
-            for (const auto& text : texts) {
-                concatenated.push_back(query + text);
-            }
+            return encode_qwen3(concatenated);
+        }
+
+        for (const auto& text : texts) {
+            concatenated.push_back(query + text);
         }
 
         return m_tokenizer.encode(concatenated, m_tokenization_params);
+    }
+
+    // The model scores the last token, so the suffix must survive truncation. Reserve its token
+    // budget, left-pad so every row ends on a real token, then re-append the suffix after truncation.
+    TokenizedInputs encode_qwen3(const std::vector<std::string>& prompts) {
+        ov::AnyMap params = m_tokenization_params;
+        params[padding_side.name()] = std::string("left");
+        if (m_config.max_length) {
+            OPENVINO_ASSERT(*m_config.max_length > m_qwen3_suffix_ids.size(),
+                            "max_length (",
+                            *m_config.max_length,
+                            ") must exceed the Qwen3 suffix length (",
+                            m_qwen3_suffix_ids.size(),
+                            ")");
+            params[max_length.name()] = *m_config.max_length - m_qwen3_suffix_ids.size();
+        }
+        return append_qwen3_suffix(m_tokenizer.encode(prompts, params));
+    }
+
+    TokenizedInputs append_qwen3_suffix(const TokenizedInputs& encoded) const {
+        const size_t suffix_len = m_qwen3_suffix_ids.size();
+        if (suffix_len == 0) {
+            return encoded;
+        }
+
+        const ov::Shape shape = encoded.input_ids.get_shape();
+        const size_t batch = shape[0];
+        const size_t length = shape[1];
+        const size_t new_length = length + suffix_len;
+
+        ov::Tensor input_ids(ov::element::i64, {batch, new_length});
+        ov::Tensor attention_mask(ov::element::i64, {batch, new_length});
+
+        const int64_t* src_ids = encoded.input_ids.data<int64_t>();
+        const int64_t* src_mask = encoded.attention_mask.data<int64_t>();
+        int64_t* dst_ids = input_ids.data<int64_t>();
+        int64_t* dst_mask = attention_mask.data<int64_t>();
+
+        for (size_t b = 0; b < batch; ++b) {
+            std::copy_n(src_ids + b * length, length, dst_ids + b * new_length);
+            std::copy(m_qwen3_suffix_ids.begin(), m_qwen3_suffix_ids.end(), dst_ids + b * new_length + length);
+            std::copy_n(src_mask + b * length, length, dst_mask + b * new_length);
+            std::fill_n(dst_mask + b * new_length + length, suffix_len, int64_t{1});
+        }
+
+        return {input_ids, attention_mask, encoded.token_type_ids};
     }
 };
 
