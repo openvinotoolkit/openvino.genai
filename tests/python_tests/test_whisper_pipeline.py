@@ -727,7 +727,7 @@ def test_sensevoice_use_itn_changes_transcription(sample_from_dataset, pipelines
 def test_sensevoice_batch_matches_single(generate_kwargs):
     model_id = SENSEVOICE_SMALL_TINY_MODEL_ID
     path = get_ov_cache_converted_models_dir() / model_id.split("/")[-1]
-    read_asr_model((model_id, path), pipeline_type=PipelineType.ASR)
+    _, _, hf_pipe, _ = read_asr_model((model_id, path), pipeline_type=PipelineType.ASR)
     genai_pipe = ov_genai.ASRPipeline(path, "CPU", INFERENCE_PRECISION_HINT="f32", ENABLE_MMAP=False)
 
     samples = get_audio_dataset(long_form=False)
@@ -749,6 +749,14 @@ def test_sensevoice_batch_matches_single(generate_kwargs):
     batch_of_one = genai_pipe.generate([audios[0]], **generate_kwargs)
     assert batch_of_one.texts == [single_texts[0]]
     assert batch_of_one.metadata == singles[0].metadata
+
+    optimum_texts = [hf_pipe(audio, **generate_kwargs)["text"] for audio in audios]
+    if optimum_texts != single_texts and sys.platform == "darwin" and platform.machine() == "arm64":
+        pytest.xfail(
+            "Optimum runs at the default f16 inference precision on macOS arm64, "
+            "which can flip near-tied CTC tokens of the tiny random model"
+        )
+    assert single_texts == optimum_texts
 
 
 @pytest.mark.parametrize(
