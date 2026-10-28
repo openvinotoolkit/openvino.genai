@@ -115,6 +115,9 @@ You can pass extensions to pipeline constructors in both Python and C++.
 
 ## Use extensions with the GGUF frontend
 
+Extensions are optional: built-in supported models load without an extension library. Use them
+to add or customize frontend functionality. Supply your own extension library by its file path.
+
 Pass the `extensions` property when constructing `LLMPipeline`, `ContinuousBatchingPipeline`, or
 `VLMPipeline`.
 

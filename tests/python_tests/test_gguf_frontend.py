@@ -94,6 +94,16 @@ TINY_GGUF_MODELS = [
 ]
 
 
+TINY_GGUF_VLM_MODELS = {
+    "gemma3": ("gemma3", "0cc4c5a822bbc68aeb312fd789046463ca301d14"),
+    "gemma4": ("gemma4", "422d12880b72b92b1547ac7ce2e1a4865f6bec6c"),
+    "gemma4-unified": ("gemma4-unified-it", "becd0eb532fcbccb96576e32eab0dd304e4e4c47"),
+    "qwen35": ("qwen3.5", "aa8ac4a953c6081e0afaa34bd95cefd9c852ddbf"),
+    "qwen35moe": ("qwen3.5-moe", "3061bafacf5a42fc57e620dc54ab19fae19ad594"),
+    "muse-glimmer": ("muse-glimmer", "cb70af191bbbf704a47b7d24dd5287d97dd60103"),
+}
+
+
 def reference_properties():
     return {**get_default_llm_properties(), "DYNAMIC_QUANTIZATION_GROUP_SIZE": 0}
 
@@ -314,16 +324,8 @@ def test_tiny_gguf_saved_ir(tiny_gguf_model, pipeline_type, tmp_path):
 def tiny_gguf_vlm_model(request, llama_reference_tools, tmp_path_factory):
     from test_gguf_generated import run_reference_command
 
-    models = {
-        "gemma3": ("gemma3", "0cc4c5a822bbc68aeb312fd789046463ca301d14"),
-        "gemma4": ("gemma4", "422d12880b72b92b1547ac7ce2e1a4865f6bec6c"),
-        "gemma4-unified": ("gemma4-unified-it", "becd0eb532fcbccb96576e32eab0dd304e4e4c47"),
-        "qwen35": ("qwen3.5", "aa8ac4a953c6081e0afaa34bd95cefd9c852ddbf"),
-        "qwen35moe": ("qwen3.5-moe", "3061bafacf5a42fc57e620dc54ab19fae19ad594"),
-        "muse-glimmer": ("muse-glimmer", "cb70af191bbbf704a47b7d24dd5287d97dd60103"),
-    }
     family = getattr(request, "param", "gemma3")
-    name, revision = models[family]
+    name, revision = TINY_GGUF_VLM_MODELS[family]
     repo = "optimum-intel-internal-testing/tiny-random-" + name
     source = Path(retry_request(lambda: snapshot_download(repo, revision=revision)))
     build = llama_reference_tools[0].parent.parent
@@ -360,7 +362,8 @@ def tiny_gguf_vlm_model(request, llama_reference_tools, tmp_path_factory):
     "tiny_gguf_vlm_model,media",
     [
         pytest.param(family, media, id=f"{family}-{media}")
-        for family in ["gemma4", "gemma4-unified", "qwen35", "qwen35moe", "muse-glimmer"]
+        for family in TINY_GGUF_VLM_MODELS
+        if family != "gemma3"
         for media in (["image", "video", "audio"] if family.startswith("gemma4") else ["image", "video"])
         if (family, media) != ("muse-glimmer", "video")
     ]
