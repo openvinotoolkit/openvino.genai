@@ -192,16 +192,65 @@
   components:
     - RAG
 
-# Test timed out on Windows. Ticket: 198295
-# - name: WWB tests
-#   cmd: |-
-#     # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
-#     python -m pip install transformers==5.0.0
-#     python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
-#     python -m pytest -v ./tools/who_what_benchmark/tests --ignore=./tools/who_what_benchmark/tests/test_cli_image.py --ignore=./tools/who_what_benchmark/tests/test_cli_vlm.py --ignore=./tools/who_what_benchmark/tests/test_cli_videos.py --ignore=./tools/who_what_benchmark/tests/test_cli_speech_recognition.py --ignore=./tools/who_what_benchmark/tests/test_cli_speechgen_qwen3.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
-#   timeout: 120
-#   components:
-#     - WWB
+- name: WWB CDPruner and reranking tests
+  cmd: |-
+    # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
+    python -m pip install transformers==5.0.0
+    python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
+    python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_cdpruner.py ./tools/who_what_benchmark/tests/test_cli_reranking.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
+  timeout: 120
+  components:
+    - WWB
+
+- name: WWB embedding tests
+  cmd: |-
+    # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
+    python -m pip install transformers==5.0.0
+    python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
+    python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_embeddings.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
+  timeout: 120
+  components:
+    - WWB
+
+- name: WWB speech generation tests
+  cmd: |-
+    # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
+    python -m pip install transformers==5.0.0
+    python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
+    python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_speechgen.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
+  timeout: 120
+  components:
+    - WWB
+
+- name: WWB text tests
+  cmd: |-
+    # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
+    python -m pip install transformers==5.0.0
+    python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
+    python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_text.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
+  timeout: 120
+  components:
+    - WWB
+
+- name: WWB text agent tests
+  cmd: |-
+    # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
+    python -m pip install transformers==5.0.0
+    python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
+    python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_text_agent.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
+  timeout: 120
+  components:
+    - WWB
+
+- name: WWB unit and utility tests
+  cmd: |-
+    # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
+    python -m pip install transformers==5.0.0
+    python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
+    python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_text_gguf.py ./tools/who_what_benchmark/tests/test_cli_text_llamacpp_args.py ./tools/who_what_benchmark/tests/test_speechgen_omni_loader.py ./tools/who_what_benchmark/tests/test_text_generation_strategies.py ./tools/who_what_benchmark/tests/test_torch_dtype.py ./tools/who_what_benchmark/tests/test_unit_image.py ./tools/who_what_benchmark/tests/test_unit_speech_recognition.py ./tools/who_what_benchmark/tests/test_unit_text.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
+  timeout: 120
+  components:
+    - WWB
 
 - name: WWB ASR tests (FunASR, Qwen3-ASR)
   cmd: |-
