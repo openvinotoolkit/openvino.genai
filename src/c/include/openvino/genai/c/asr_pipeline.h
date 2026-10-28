@@ -233,7 +233,7 @@ OPENVINO_GENAI_C_EXPORTS void ov_genai_asr_pipeline_free(ov_genai_asr_pipeline* 
  * @param raw_speech A pointer to the raw speech input array (float values).
  * @param raw_speech_size Number of normalized mono float samples at 16 kHz.
  * @param config A pointer to the ov_genai_asr_generation_config, NULL uses the pipeline's current configuration.
- * @param results A pointer to the ov_genai_asr_decoded_results, which retrieves the results of the generation.
+ * @param results A pointer to a newly allocated result handle. Free with ov_genai_asr_decoded_results_free.
  * @return Status code of the operation: OK(0) for success.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_asr_pipeline_generate(ov_genai_asr_pipeline* pipeline,
@@ -287,7 +287,7 @@ ov_genai_asr_decoded_results_get_words_count(const ov_genai_asr_decoded_results*
  * @brief Get word at specific index from ov_genai_asr_decoded_results.
  * @param results A pointer to the ov_genai_asr_decoded_results instance.
  * @param result_index Transcription index in the nested timestamp arrays (zero for single audio input).
- * @param index The index of the chunk to retrieve.
+ * @param index The index of the word to retrieve.
  * @param chunk A pointer to a newly allocated handle. Free with ov_genai_asr_decoded_result_chunk_free.
  * The handle owns a copy and remains valid independently of its source.
  * @return ov_status_e A status code, return OK(0) if successful.

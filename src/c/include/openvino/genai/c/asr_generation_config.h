@@ -29,7 +29,10 @@
 typedef struct ov_genai_asr_generation_config_opaque ov_genai_asr_generation_config;
 
 /**
- * @brief Create ov_genai_asr_generation_config.
+ * @brief Create ov_genai_asr_generation_config with model-independent C++ ASRGenerationConfig defaults.
+ * This does not load settings from a model. For model-specific settings, obtain a copy with
+ * ov_genai_asr_pipeline_get_generation_config or load the model's generation configuration JSON with
+ * ov_genai_asr_generation_config_create_from_json.
  * @param config A pointer to the newly allocated configuration. Free with ov_genai_asr_generation_config_free.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
@@ -211,7 +214,11 @@ ov_genai_asr_generation_config_get_is_multilingual(const ov_genai_asr_generation
 /**
  * @brief Set the language for generation.
  * @param config A pointer to the ov_genai_asr_generation_config instance.
- * @param language Language: "en" or "<|en|>" for Whisper; "English" for Qwen3-ASR and Fun-ASR. Can be NULL to unset.
+ * @param language Model-specific language value. Multilingual Whisper and SenseVoiceSmall use codes such as "en";
+ * SenseVoiceSmall also accepts "auto". Qwen3-ASR uses names such as "English" and "Japanese".
+ * Fun-ASR inserts the value directly into a Chinese-language transcription instruction; its model examples use
+ * labels such as "英文" and "日文". "English" may work, but language names are not equivalent supported inputs
+ * across these models. Can be NULL to unset.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_asr_generation_config_set_language(ov_genai_asr_generation_config* config,
@@ -257,9 +264,9 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_asr_generation_config_get_task(const ov_genai_asr_generation_config* config, char* task, size_t* task_size);
 
 /**
- * @brief Set whether to return timestamps.
+ * @brief Set whether to return segment timestamps for Whisper.
  * @param config A pointer to the ov_genai_asr_generation_config instance.
- * @param return_timestamps True to return timestamps for segments (default: false).
+ * @param return_timestamps True to return Whisper segment timestamps (default: false). Ignored by other models.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e
@@ -431,6 +438,10 @@ ov_genai_asr_generation_config_get_context(const ov_genai_asr_generation_config*
 
 /**
  * @brief Set whether to return word-level timestamps.
+ * Whisper requires the "word_timestamps" constructor property to be enabled and appropriate alignment_heads
+ * in the model's generation configuration. Enabling this flag alone does not enable the constructor property.
+ * Qwen3-ASR requires an ASRForcedAligner, available in C++ and Python; the C API cannot currently provide one,
+ * so Qwen3-ASR word timestamps are unavailable through C. Fun-ASR and SenseVoiceSmall ignore this flag.
  * @param config A pointer to the ov_genai_asr_generation_config instance.
  * @param word_timestamps True to return word-level timestamps (default: false).
  * @return ov_status_e A status code, return OK(0) if successful.
@@ -448,7 +459,10 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_asr_generation_config_get_word_timestamps(const ov_genai_asr_generation_config* config, bool* word_timestamps);
 
 /**
- * @brief Copy base generation settings into the ASR configuration, preserving ASR-specific fields.
+ * @brief Replace all base GenerationConfig fields, preserving ASR-specific fields.
+ * This copies the entire base configuration, including generation limits and EOS/stop token IDs; it does not
+ * merge individual updates. To change individual base settings, first obtain a copy with
+ * ov_genai_asr_generation_config_get_generation_config, modify that copy, and pass it to this function.
  * @param config The ASR configuration to update.
  * @param generation_config The base settings to copy. Ownership remains with the caller.
  * @return OK on success, INVALID_C_PARAM for NULL arguments, UNKNOW_EXCEPTION on failure.

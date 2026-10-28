@@ -20,25 +20,44 @@ The device is optional and defaults to CPU. The shared WAV loader accepts mono P
 resamples it to 16 kHz when needed.
 
 By default, the sample uses automatic language selection and disables timestamps,
-so the same command works with Whisper, Qwen3-ASR, and Fun-ASR exports.
+so the same command works across supported ASR exports, including SenseVoiceSmall.
+See the [supported speech recognition models](../../../site/docs/supported-models/index.mdx#speech-recognition-models)
+for the current list.
 
 To reproduce the C++ Whisper example with English and word timestamps:
 
 ```sh
-./build/automatic_speech_recognition_c whisper-tiny audio.wav --language '<|en|>' --timestamps --word-timestamps
+./build/automatic_speech_recognition_c whisper-tiny audio.wav --language en --timestamps --word-timestamps
 ```
 
 Use `--max-new-tokens N` to bound transcription length.
 
-For Qwen3-ASR or Fun-ASR, pass `--language English` to select English explicitly.
-Whisper supports segment and word timestamps. Qwen3-ASR word timestamps require a
-forced aligner; passing a preconstructed aligner is currently a C++ API feature.
+Language values depend on the model:
+
+- Multilingual Whisper and SenseVoiceSmall use codes such as `en`; SenseVoiceSmall also accepts `auto`.
+- Qwen3-ASR uses names such as `English` and `Japanese`.
+- Fun-ASR inserts the supplied value into a Chinese-language transcription instruction.
+  Its model examples use labels such as `英文` and `日文`; `English` may work, but
+  language names should not be assumed equivalent across models.
+
+Whisper supports segment and word timestamps. Word timestamps require the
+`word_timestamps` constructor property and appropriate `alignment_heads` in the
+model's generation configuration; the sample enables the property when
+`--word-timestamps` is supplied. Qwen3-ASR word timestamps require an
+`ASRForcedAligner`, available in C++ and Python but currently unavailable through
+the C API. Fun-ASR and SenseVoiceSmall ignore the word timestamp flag. Segment
+timestamps selected by `--timestamps` are supported only for Whisper.
 
 The pipeline selects the model architecture automatically. Configuration can be
 retrieved from the pipeline, changed using `ov_genai_asr_generation_config_*`,
 and passed to `ov_genai_asr_pipeline_generate`. Passing `NULL` for the configuration
-uses the pipeline defaults. Base generation settings are independent copies;
-apply edits with `ov_genai_asr_generation_config_set_generation_config`.
+uses the configuration stored in the pipeline, including updates made through
+`ov_genai_asr_pipeline_set_generation_config`. Creating a standalone configuration
+uses model-independent defaults; retrieve the pipeline configuration or load its
+JSON file when model-specific settings are needed. Base generation settings are
+independent copies. To change individual settings, get a copy, modify it, and
+apply it with `ov_genai_asr_generation_config_set_generation_config`, which
+replaces every base field, including generation limits and EOS/stop token IDs.
 
 Text and language getters support a two-call buffer-size query, including the
 null terminator. Segment and word getters take a transcription index followed
@@ -46,24 +65,5 @@ by a timestamp index. Returned configurations, results, metrics, and timestamp
 handles are owned by the caller and must be released with their matching free
 functions. Timestamp handles remain valid after freeing the result or pipeline.
 
-## C API regression tests
-
-Build `tests_asr_c_api` with `ENABLE_TESTS=ON`. It contains model-free unit tests
-and optional real-model C/C++ comparisons. Supply all three exported model paths
-and mono 16 kHz PCM test audio to run the complete suite without skips:
-
-```sh
-ASR_TEST_WHISPER_MODEL=/models/whisper-tiny \
-ASR_TEST_QWEN_MODEL=/models/qwen3-asr \
-ASR_TEST_FUN_MODEL=/models/fun-asr \
-ASR_TEST_WAV=/audio/test.wav \
-./build/tests/cpp/tests_asr_c_api
-```
-
-Random fixture models need a `generation_config.json` with a finite
-`max_new_tokens` (for example, 16) so default-config inference terminates.
-The suite compares default and per-call configurations, stored configuration,
-transcriptions, scores, languages, timestamps, metrics, and retained results.
-The Whisper case additionally compares both legacy Whisper C and C++ pipelines.
-The sample pytest suite compares the C executable against Python for all three
-architectures and verifies Whisper output against the other language samples.
+Developer regression-test instructions are in
+[tests/cpp/README_ASR_C_API.md](../../../tests/cpp/README_ASR_C_API.md).
