@@ -335,6 +335,16 @@
   components:
     - visual_language
 
+- name: VLM (Qwen3.8-Flash-Next)
+  cmd: |-
+    # TODO Use upstream optimum-intel repo and commit from main branch after merge
+    python -m pip install --no-deps "optimum-intel @ git+https://github.com/rkazants/optimum-intel.git@qwen38_flash_next"
+    python -m pip install transformers==5.17.0
+    python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen38-flash-next"
+  timeout: 60
+  components:
+    - visual_language
+
 - name: VLM (gemma3n)
   cmd: |-
     python -m pip install transformers==4.57.0
