@@ -140,7 +140,9 @@ class RerankingEvaluator(BaseEvaluator):
                 pairs = [f"{query}{passage}" for passage in passages]
                 # Reserve budget for the suffix, truncate the content, then re-append it so it survives truncation.
                 suffix_ids = tokenizer(suffix, add_special_tokens=False).input_ids
-                encoded = tokenizer(pairs, padding=False, truncation=True, max_length=DEFAULT_MAX_LENGTH_QWEN - len(suffix_ids))
+                encoded = tokenizer(
+                    pairs, padding=False, truncation=True, max_length=DEFAULT_MAX_LENGTH_QWEN - len(suffix_ids)
+                )
                 for ids, mask in zip(encoded["input_ids"], encoded["attention_mask"]):
                     ids.extend(suffix_ids)
                     mask.extend([1] * len(suffix_ids))
