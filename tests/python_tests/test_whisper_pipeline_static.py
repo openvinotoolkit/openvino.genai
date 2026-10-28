@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from utils.constants import NPUW_CPU_PROPERTIES
-from utils.network import retry_request
+from utils.network import cached_snapshot_download, retry_request
 from utils.atomic_download import AtomicDownloadManager
 from test_whisper_pipeline import (
     get_whisper_models_list,
@@ -12,7 +12,6 @@ from test_whisper_pipeline import (
 )
 from transformers import AutoTokenizer, WhisperProcessor
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
-from huggingface_hub import snapshot_download
 import openvino_genai as ov_genai
 import openvino_tokenizers
 import openvino
@@ -28,7 +27,7 @@ dynamic_config = {**NPUW_CPU_PROPERTIES}
 def load_and_save_whisper_model(params, stateful=False, **tokenizer_kwargs):
     model_id, path = params
 
-    model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+    model_cached = cached_snapshot_download(model_id)
     processor = retry_request(lambda: WhisperProcessor.from_pretrained(model_cached, trust_remote_code=True))
     if not stateful:
         path = pathlib.Path(f"{path}_with_past")

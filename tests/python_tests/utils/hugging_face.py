@@ -21,7 +21,7 @@ from transformers import GenerationConfig as HFGenerationConfig
 from optimum.intel import OVModelForCausalLM
 from optimum.intel.openvino.modeling import OVModel
 
-from huggingface_hub import hf_hub_download, snapshot_download
+from huggingface_hub import hf_hub_download
 
 from openvino import save_model
 from openvino_genai import GenerationResult, GenerationConfig, StopCriteria
@@ -33,7 +33,7 @@ from utils.constants import (
     get_ov_cache_converted_models_dir,
     get_ov_cache_downloaded_models_dir,
 )
-from utils.network import retry_request
+from utils.network import cached_snapshot_download, retry_request
 from utils.atomic_download import AtomicDownloadManager
 
 from utils.constants import OV_MODEL_FILENAME, OV_MODEL_INDEX
@@ -226,7 +226,7 @@ def get_huggingface_models(
     **model_kwargs,
 ) -> tuple[OptimizedModel, AutoTokenizer | None]:
     if not local_files_only and isinstance(model_id, str):
-        model_id = snapshot_download(model_id)  # required to avoid HF rate limits
+        model_id = cached_snapshot_download(model_id)
 
     def auto_tokenizer_from_pretrained() -> AutoTokenizer:
         return AutoTokenizer.from_pretrained(
@@ -460,10 +460,10 @@ def download_gguf_model(
 
 
 def load_hf_model_from_gguf(gguf_model_id, gguf_filename):
-    model_cached = snapshot_download(gguf_model_id)  # required to avoid HF rate limits
+    model_cached = cached_snapshot_download(gguf_model_id)
     return retry_request(lambda: AutoModelForCausalLM.from_pretrained(model_cached, gguf_file=gguf_filename))
 
 
 def load_hf_tokenizer_from_gguf(gguf_model_id, gguf_filename):
-    model_cached = snapshot_download(gguf_model_id)  # required to avoid HF rate limits
+    model_cached = cached_snapshot_download(gguf_model_id)
     return retry_request(lambda: AutoTokenizer.from_pretrained(model_cached, gguf_file=gguf_filename))

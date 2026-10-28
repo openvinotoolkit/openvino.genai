@@ -32,8 +32,9 @@ Every Hub access must resolve to files stored in `$HF_HOME/hub` so that a warm c
 
 ### Models and single files
 
-- Models: `snapshot_download(model_id)` wrapped in `retry_request(...)` (`utils.network` / WWB `ov_utils`). Pass the returned path to `from_pretrained`, `optimum-cli`, or GenAI pipelines.
-- Single files (LoRA adapters, GGUF, JSON): `snapshot_download(repo_id, allow_patterns=[filename])`, then `Path(result) / filename`.
+- Models: in `tests/python_tests`, use `utils.network.cached_snapshot_download(model_id)`. It retries and memoizes per process: each raw `snapshot_download` call queries the Hub API even when all files are already cached, so calling it in every parametrized test case floods the Hub. In WWB, use `snapshot_download(model_id)` wrapped in `retry_request(...)` (`ov_utils`). Pass the returned path to `from_pretrained`, `optimum-cli`, or GenAI pipelines.
+- Single files (LoRA adapters, GGUF, JSON): `cached_snapshot_download(repo_id, allow_patterns=[filename])`, then `Path(result) / filename`.
+- Don't pass `cache_dir`. It bypasses `$HF_HOME/hub`.
 - Don't use `hf_hub_download(..., local_dir=tmp_path)`. It bypasses the shared cache and downloads again on every run.
 - Pin a revision with the **full 40-char commit hash**. Short hashes and branch names can't be resolved from the cache alone.
 

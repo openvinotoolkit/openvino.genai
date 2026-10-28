@@ -6,6 +6,7 @@ import sys
 import gc
 import openvino_genai as ov_genai
 from utils.hugging_face import download_gguf_model
+from utils.network import cached_snapshot_download
 
 # Constants
 # Use OpenVINO IR model (pre-converted) to test GGUF adapter support
@@ -46,11 +47,8 @@ def test_gguf_lora_generation():
     and runs successfully, which proves the GGUF adapter support works correctly.
     We don't verify output changes because the adapter may not affect all prompts.
     """
-    from huggingface_hub import snapshot_download
-    from pathlib import Path
-
     # Download pre-converted OpenVINO IR model
-    model_path = snapshot_download(repo_id=MODEL_ID, cache_dir=Path.home() / ".cache" / "huggingface" / "hub")
+    model_path = cached_snapshot_download(MODEL_ID)
 
     # Download GGUF adapter
     adapter_path = download_gguf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
@@ -148,10 +146,7 @@ class TestGGUFLoRANameConversion:
 
         If name conversion was broken, the adapter would load but not affect output.
         """
-        from huggingface_hub import snapshot_download
-        from pathlib import Path
-
-        model_path = snapshot_download(repo_id=MODEL_ID, cache_dir=Path.home() / ".cache" / "huggingface" / "hub")
+        model_path = cached_snapshot_download(MODEL_ID)
         adapter_path = download_gguf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
 
         device = "CPU"
@@ -197,11 +192,8 @@ class TestGGUFLoRAAlphaScaling:
         works correctly (can be set and doesn't cause errors), not that it always
         changes output.
         """
-        from huggingface_hub import snapshot_download
-        from pathlib import Path
-
         # Download model and adapter
-        model_path = snapshot_download(repo_id=MODEL_ID, cache_dir=Path.home() / ".cache" / "huggingface" / "hub")
+        model_path = cached_snapshot_download(MODEL_ID)
         adapter_path = download_gguf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
 
         device = "CPU"
@@ -301,10 +293,7 @@ class TestGGUFLoRAIntegration:
     @pytest.mark.skipif(sys.platform == "darwin", reason="Sporadic instability on Mac")
     def test_adapter_with_multiple_prompts(self):
         """Test that GGUF adapter works consistently across multiple prompts."""
-        from huggingface_hub import snapshot_download
-        from pathlib import Path
-
-        model_path = snapshot_download(repo_id=MODEL_ID, cache_dir=Path.home() / ".cache" / "huggingface" / "hub")
+        model_path = cached_snapshot_download(MODEL_ID)
         adapter_path = download_gguf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
 
         device = "CPU"
@@ -342,10 +331,7 @@ class TestGGUFLoRAIntegration:
     @pytest.mark.skipif(sys.platform == "darwin", reason="Sporadic instability on Mac")
     def test_adapter_reloading(self):
         """Test that adapter can be loaded, unloaded, and reloaded."""
-        from huggingface_hub import snapshot_download
-        from pathlib import Path
-
-        model_path = snapshot_download(repo_id=MODEL_ID, cache_dir=Path.home() / ".cache" / "huggingface" / "hub")
+        model_path = cached_snapshot_download(MODEL_ID)
         adapter_path = download_gguf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
 
         device = "CPU"

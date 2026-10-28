@@ -10,14 +10,13 @@ import openvino
 import openvino_genai as ov_genai
 import openvino_tokenizers
 import pytest
-from huggingface_hub import snapshot_download
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 from transformers import AutoProcessor, AutoTokenizer
 
 from utils.asr_utils.fun_asr import FUN_ASR_MODEL_ID
 from utils.atomic_download import AtomicDownloadManager
 from utils.constants import get_ov_cache_converted_models_dir
-from utils.network import retry_request
+from utils.network import cached_snapshot_download, retry_request
 
 QWEN3_ASR_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-asr"
 QWEN3_FORCED_ALIGNER_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-forced-aligner"
@@ -111,7 +110,7 @@ def save_model(model_id: str, tmp_path: pathlib.Path):
     manager = AtomicDownloadManager(tmp_path)
 
     def save_to_temp(temp_path: pathlib.Path) -> None:
-        model_cached = snapshot_download(model_id)  # Avoid repeated Hugging Face Hub requests.
+        model_cached = cached_snapshot_download(model_id)
 
         tokenizer_cached = model_cached
         if model_id == FUN_ASR_MODEL_ID:

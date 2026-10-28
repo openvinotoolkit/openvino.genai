@@ -3,6 +3,7 @@
 import json
 from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
 from utils.ov_genai_pipelines import create_ov_pipeline, PipelineType
+from utils.network import cached_snapshot_download
 import pytest
 from openvino_genai import (
     Tokenizer,
@@ -20,7 +21,6 @@ from openvino_genai import (
     ReasoningParser,
 )
 from transformers import AutoTokenizer
-from huggingface_hub import snapshot_download
 import re
 from io import StringIO
 
@@ -44,7 +44,7 @@ def hf_ov_genai_models(request, tmp_path_factory):
     model_dir = tmp_path_factory.getbasetemp() / model_id.replace("/", "_")
     model_dir.mkdir(exist_ok=True, parents=True)
 
-    model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+    model_cached = cached_snapshot_download(model_id)
     hf_tokenizer = AutoTokenizer.from_pretrained(model_cached)
     convert_and_save_tokenizer(hf_tokenizer, model_dir)
 
