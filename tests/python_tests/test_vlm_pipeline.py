@@ -433,11 +433,13 @@ def is_optimum_intel_version_for_videochat_flash_qwen():
     return "videochat_flash_qwen" in MODEL_TYPE_TO_CLS_MAPPING
 
 
-def _get_ov_model(model_id: str) -> str:
+def _get_ov_model(model_id: str, revision: str | None = None) -> str:
     _maybe_skip_unsupported_model_export(model_id)
 
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
     dir_name = str(model_id).replace(os.sep, "_")
+    if revision is not None:
+        dir_name = f"{dir_name}_{revision}"
     model_dir = ov_cache_converted_dir / dir_name
     manager = AtomicDownloadManager(model_dir)
 
@@ -445,7 +447,7 @@ def _get_ov_model(model_id: str) -> str:
         return model_dir
 
     def convert_to_temp(temp_dir: Path) -> None:
-        model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+        model_cached = retry_request(lambda: snapshot_download(model_id, revision=revision))
         align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
         processor = retry_request(
             lambda: transformers.AutoProcessor.from_pretrained(

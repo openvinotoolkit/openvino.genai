@@ -304,7 +304,9 @@ def test_set_chat_template(ov_hf_tokenizers):
 
 PATCHED_CHAT_TEMPLATE_CASES = [
     pytest.param(
+        "vlm",
         MODEL_GEMMA,
+        "0cc4c5a822bbc68aeb312fd789046463ca301d14",
         "[{{ messages[0]['content'] | trim }}]",
         "  hi  ",
         "[  hi  ]",
@@ -315,14 +317,32 @@ PATCHED_CHAT_TEMPLATE_CASES = [
         id="gemma3-trim-removed",
     ),
     pytest.param(
+        "continuous_batching",
+        MODEL_GEMMA,
+        "0cc4c5a822bbc68aeb312fd789046463ca301d14",
+        "[{{ messages[0]['content'] | trim }}]",
+        "  hi  ",
+        "[  hi  ]",
+        marks=pytest.mark.skipif(
+            is_transformers_version(">=", "5.0"),
+            reason="Gemma 3 tiny-model export is unsupported with Transformers >=5",
+        ),
+        id="gemma3-trim-removed-cb",
+    ),
+    # Gemma4 FP16 PagedAttention cannot initialize in the CPU CB pipeline.
+    pytest.param(
+        "vlm",
         "optimum-intel-internal-testing/tiny-random-gemma4",
+        "422d12880b72b92b1547ac7ce2e1a4865f6bec6c",
         '{{ "first "\n    "second" }}',
         "unused",
         "first second",
         id="gemma4-multiline-literals",
     ),
     pytest.param(
+        "vlm",
         "optimum-intel-internal-testing/tiny-random-qwen3.5",
+        "aa8ac4a953c6081e0afaa34bd95cefd9c852ddbf",
         "{% if enable_thinking is undefined %}default{% else %}explicit{% endif %}",
         "unused",
         "default",
@@ -332,22 +352,36 @@ PATCHED_CHAT_TEMPLATE_CASES = [
         ),
         id="qwen3.5-is-undefined",
     ),
+    pytest.param(
+        "continuous_batching",
+        "optimum-intel-internal-testing/tiny-random-qwen3.5",
+        "aa8ac4a953c6081e0afaa34bd95cefd9c852ddbf",
+        "{% if enable_thinking is undefined %}default{% else %}explicit{% endif %}",
+        "unused",
+        "default",
+        marks=pytest.mark.skipif(
+            not (is_transformers_version(">=", "5.2.0") and is_transformers_version("<", "5.3.0")),
+            reason="Qwen 3.5 tiny-model export is covered by the Transformers 5.2.x VLM job",
+        ),
+        id="qwen3.5-is-undefined-cb",
+    ),
 ]
 
 
-def _create_vlm_pipeline(pipeline_kind: str, model_id: str):
+def _create_vlm_pipeline(pipeline_kind: str, model_id: str, revision: str):
     if sys.platform == "darwin" and "gemma3" in model_id:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
-    models_path = _get_ov_model(model_id)
+    models_path = _get_ov_model(model_id, revision)
     if pipeline_kind == "vlm":
         return VLMPipeline(models_path, "CPU")
     return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
 
 
-@pytest.mark.parametrize("pipeline_kind", ["vlm", "continuous_batching"])
-@pytest.mark.parametrize("model_id, raw_template, content, expected", PATCHED_CHAT_TEMPLATE_CASES)
-def test_set_chat_template_applies_model_patch(pipeline_kind, model_id, raw_template, content, expected):
-    pipeline = _create_vlm_pipeline(pipeline_kind, model_id)
+@pytest.mark.parametrize(
+    "pipeline_kind, model_id, revision, raw_template, content, expected", PATCHED_CHAT_TEMPLATE_CASES
+)
+def test_set_chat_template_applies_model_patch(pipeline_kind, model_id, revision, raw_template, content, expected):
+    pipeline = _create_vlm_pipeline(pipeline_kind, model_id, revision)
     tokenizer = pipeline.get_tokenizer()
     history = [{"role": "user", "content": content}]
 
@@ -358,10 +392,13 @@ def test_set_chat_template_applies_model_patch(pipeline_kind, model_id, raw_temp
     assert tokenizer.chat_template != raw_template
 
 
-@pytest.mark.parametrize("pipeline_kind", ["vlm", "continuous_batching"])
-@pytest.mark.parametrize("model_id, raw_template, content, expected", PATCHED_CHAT_TEMPLATE_CASES)
-def test_inline_chat_template_is_patched_and_not_stored(pipeline_kind, model_id, raw_template, content, expected):
-    pipeline = _create_vlm_pipeline(pipeline_kind, model_id)
+@pytest.mark.parametrize(
+    "pipeline_kind, model_id, revision, raw_template, content, expected", PATCHED_CHAT_TEMPLATE_CASES
+)
+def test_inline_chat_template_is_patched_and_not_stored(
+    pipeline_kind, model_id, revision, raw_template, content, expected
+):
+    pipeline = _create_vlm_pipeline(pipeline_kind, model_id, revision)
     tokenizer = pipeline.get_tokenizer()
     history = [{"role": "user", "content": content}]
     stored_template = tokenizer.chat_template
