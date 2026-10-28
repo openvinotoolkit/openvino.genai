@@ -14,16 +14,51 @@
   components:
     - automatic_speech_recognition_samples
 
-- name: dreamlike_anime_1_0
+- name: dreamlike_anime_1_0 encrypted
   marker: dreamlike_anime_1_0
-  cmd: tests/python_tests/samples
+  cmd: tests/python_tests/samples/test_encrypted_stable_diffusion.py
   runner: aks-win-8-cores-32gb-test
   components:
     - Image_generation_samples
 
-- name: LCM_Dreamshaper_v7_int8_ov
+- name: dreamlike_anime_1_0 LoRA
+  marker: dreamlike_anime_1_0
+  cmd: tests/python_tests/samples/test_lora_text2image.py
+  runner: aks-win-8-cores-32gb-test
+  components:
+    - Image_generation_samples
+
+- name: dreamlike_anime_1_0 text-to-image
+  marker: dreamlike_anime_1_0
+  cmd: tests/python_tests/samples/test_text2image.py
+  runner: aks-win-8-cores-32gb-test
+  components:
+    - Image_generation_samples
+
+- name: LCM_Dreamshaper benchmark
   marker: LCM_Dreamshaper_v7_int8_ov
-  cmd: tests/python_tests/samples
+  cmd: tests/python_tests/samples/test_benchmark_image_gen.py
+  runner: aks-win-8-cores-16gb-test
+  components:
+    - Image_generation_samples
+
+- name: LCM_Dreamshaper heterogeneous
+  marker: LCM_Dreamshaper_v7_int8_ov
+  cmd: tests/python_tests/samples/test_heterogeneous_stable_diffusion.py
+  runner: aks-win-8-cores-16gb-test
+  components:
+    - Image_generation_samples
+
+- name: LCM_Dreamshaper image-to-image
+  marker: LCM_Dreamshaper_v7_int8_ov
+  cmd: tests/python_tests/samples/test_image2image.py
+  runner: aks-win-8-cores-16gb-test
+  components:
+    - Image_generation_samples
+
+- name: LCM_Dreamshaper inpainting
+  marker: LCM_Dreamshaper_v7_int8_ov
+  cmd: tests/python_tests/samples/test_inpainting.py
   runner: aks-win-8-cores-16gb-test
   components:
     - Image_generation_samples
