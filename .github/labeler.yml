@@ -44,6 +44,15 @@
 - 'src/python/py_vlm_pipeline.cpp'
 - 'tests/python_tests/test_vlm_pipeline.py'
 
+'category: omni':
+- 'src/cpp/include/openvino/genai/omni/**/*'
+- 'src/cpp/src/omni/**/*'
+- 'src/cpp/src/visual_language/qwen3_omni/**/*'
+- 'src/python/py_omni_pipeline.cpp'
+- 'tests/python_tests/test_omni_pipeline.py'
+- 'samples/cpp/omni/**/*'
+- 'samples/python/omni/**/*'
+
 'category: RAG':
 - 'src/cpp/include/openvino/genai/rag/**/*'
 - 'src/cpp/src/rag/**/*'
@@ -85,6 +94,7 @@
 'category: automatic speech recognition samples':
 - 'samples/cpp/automatic_speech_recognition/**/*'
 - 'samples/python/automatic_speech_recognition/**/*'
+- 'samples/cpp/speech_generation/audio_utils.*'
 
 'category: Image generation samples':
 - 'samples/cpp/image_generation/**/*'
@@ -100,7 +110,12 @@
 'category: VLM samples':
 - 'samples/cpp/visual_language_chat/**/*'
 - 'samples/python/visual_language_chat/**/*'
+- 'tests/python_tests/samples/test_audio_to_text_chat.py'
+- 'samples/cpp/omni/**/*'
+- 'samples/python/omni/**/*'
+- 'samples/cpp/speech_generation/audio_utils.*'
 - 'tests/python_tests/samples/test_benchmark_vlm.py'
+- 'tests/python_tests/samples/test_omni_chat.py'
 - 'tests/python_tests/samples/test_visual_language_chat.py'
 
 'category: RAG samples':
@@ -179,7 +194,7 @@
 - 'tests/cpp/block_manager.cpp'
 - 'tests/cpp/cache_eviction.cpp'
 - 'tests/cpp/cache_manager.cpp'
-- 'tests/cpp/scheduler.cpp'
+- 'tests/cpp/scheduler*'
 - 'tests/python_tests/data/long_prompts.txt'
 - 'tests/python_tests/data/short_prompts.txt'
 - 'tests/python_tests/data/test_dataset.py'

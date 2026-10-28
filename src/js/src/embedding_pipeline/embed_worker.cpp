@@ -1,0 +1,40 @@
+// Copyright (C) 2023-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+#include "include/helper.hpp"
+#include "include/embedding_pipeline/embed_worker.hpp"
+
+EmbeddingPipelineEmbedWorker::EmbeddingPipelineEmbedWorker(
+    Function& callback,
+    std::shared_ptr<ov::genai::EmbeddingPipeline> pipe,
+    std::shared_ptr<std::atomic<bool>> is_embedding,
+    ov::genai::StringInputs text,
+    std::vector<ov::Tensor> images,
+    std::vector<ov::Tensor> videos,
+    std::vector<ov::genai::VideoMetadata> videos_metadata,
+    ov::AnyMap properties
+) : AsyncWorker(callback),
+    pipe(std::move(pipe)),
+    is_embedding(std::move(is_embedding)),
+    text(std::move(text)),
+    images(std::move(images)),
+    videos(std::move(videos)),
+    videos_metadata(std::move(videos_metadata)),
+    properties(std::move(properties)) {};
+
+void EmbeddingPipelineEmbedWorker::Execute() {
+    this->embed_result = this->pipe->embed(this->text, this->images, this->videos, this->videos_metadata, this->properties);
+};
+
+void EmbeddingPipelineEmbedWorker::OnOK() {
+    this->is_embedding->store(false);
+    Callback().Call({
+        Env().Null(),                                                              // Error result
+        cpp_to_js<ov::genai::EmbedResult, Napi::Value>(Env(), this->embed_result)  // Ok result
+    });
+};
+
+void EmbeddingPipelineEmbedWorker::OnError(const Napi::Error& error) {
+    this->is_embedding->store(false);
+    Callback().Call({Napi::Error::New(Env(), error.Message()).Value()});
+}

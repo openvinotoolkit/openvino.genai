@@ -1,0 +1,19 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="cpp" showLineNumbers>
+{`#include "openvino/genai/image_generation/image2image_pipeline.hpp"
+#include "load_image.hpp"
+#include "imwrite.hpp"
+
+int main(int argc, char* argv[]) {
+    const std::string models_path = argv[1];
+
+    std::vector<ov::Tensor> initial_images{utils::load_image("capybara.png"), utils::load_image("cat.png")};
+
+    ov::genai::Image2ImagePipeline pipe(models_path, "${props.device || 'CPU'}");
+    ov::Tensor generated_image = pipe.generate("Put the cat from Picture 2 next to the capybara from Picture 1", initial_images);
+
+    imwrite("image.bmp", generated_image, true);
+}
+`}
+</CodeBlock>

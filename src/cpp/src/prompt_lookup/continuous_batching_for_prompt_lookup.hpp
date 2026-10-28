@@ -60,5 +60,9 @@ protected:
     bool sync_embeddings_after_candidates() const override {
         return true;
     }
+
+    bool supports_embedding_prefix_verification() const override {
+        return true;
+    }
 };
 }

@@ -326,6 +326,7 @@ public:
     }
     class TokenizerImpl;
 private:
+    friend class GGUFTokenizer;
     friend class StructuredOutputConfig;
     friend class Sampler;
     std::shared_ptr<TokenizerImpl> m_pimpl;

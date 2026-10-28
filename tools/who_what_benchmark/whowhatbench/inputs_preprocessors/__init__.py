@@ -1,5 +1,5 @@
 from .llava import LLAVAInputsPreprocessor, NanoLlavaInputsPreprocessor
-from .minicpmv import MiniCPMVInputsPreprocessor
+from .minicpmv import MiniCPMV4_7InputsPreprocessor, MiniCPMVInputsPreprocessor
 from .minicpmo import MiniCPMOInputsPreprocessor
 from .internvl import InternVLInputsPreprocessor
 from .phi3 import Phi3MMInputsPreprocessor
@@ -32,6 +32,7 @@ MODEL_TYPE_TO_CLS_MAPPING = {
     "phi4_multimodal": Phi4MMInputsPreprocessor,
     "phi3_v": Phi3MMInputsPreprocessor,
     "minicpmv": MiniCPMVInputsPreprocessor,
+    "minicpmv4_7": MiniCPMV4_7InputsPreprocessor,
     "minicpmo": MiniCPMOInputsPreprocessor,
     "llava_next": LLAVAInputsPreprocessor,
     "llava-qwen2": NanoLlavaInputsPreprocessor,

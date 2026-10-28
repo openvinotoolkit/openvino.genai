@@ -24,6 +24,15 @@
   components:
     - automatic_speech_recognition
 
+- name: ASR (SenseVoice)
+  cmd: |-
+    python -m pip install transformers==4.57.6 funasr==1.4.1
+    python -m pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@8ea11468f26fa491e8068d63548b31f4dfb6ac6f"
+    GENAI_REQUIRE_SENSEVOICE=1 python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -m sensevoice
+  timeout: 60
+  components:
+    - automatic_speech_recognition
+
 # Only supported on X64 or ARM with SVE support
 # - name: Cacheopt E2E (Part 1)
 #   cmd: python -m pytest -v tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_1.py
@@ -36,6 +45,14 @@
 #   timeout: 240
 #   components:
 #     - continuous_batching
+
+- name: Omni (API)
+  cmd: |-
+    python -m pip install transformers==5.1.0
+    python -m pytest -v ./tests/python_tests/test_omni_pipeline.py
+  timeout: 40
+  components:
+    - omni
 
 - name: GGUF Reader tests
   cmd: |-
@@ -76,7 +93,7 @@
     # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
     python -m pip install transformers==5.0.0
     python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
-    python -m pytest -v ./tools/who_what_benchmark/tests --ignore=./tools/who_what_benchmark/tests/test_cli_image.py --ignore=./tools/who_what_benchmark/tests/test_cli_vlm.py --ignore=./tools/who_what_benchmark/tests/test_cli_videos.py --ignore=./tools/who_what_benchmark/tests/test_cli_speech_recognition.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
+    python -m pytest -v ./tools/who_what_benchmark/tests --ignore=./tools/who_what_benchmark/tests/test_cli_image.py --ignore=./tools/who_what_benchmark/tests/test_cli_vlm.py --ignore=./tools/who_what_benchmark/tests/test_cli_videos.py --ignore=./tools/who_what_benchmark/tests/test_cli_speech_recognition.py --ignore=./tools/who_what_benchmark/tests/test_cli_speechgen_qwen3.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
   timeout: 120
   components:
     - WWB

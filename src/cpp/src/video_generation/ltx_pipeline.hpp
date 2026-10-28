@@ -45,7 +45,6 @@ const VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
 };
 
 void check_inputs(const VideoGenerationConfig& generation_config, size_t vae_scale_factor) {
-    utils::validate_generation_config(generation_config);
     video_generation_utils::check_video_size(generation_config.height, generation_config.width, 32);
 
     OPENVINO_ASSERT(generation_config.max_sequence_length <= 512,
@@ -56,6 +55,18 @@ void check_inputs(const VideoGenerationConfig& generation_config, size_t vae_sca
                     vae_scale_factor);
     OPENVINO_ASSERT(!generation_config.audio_guidance_scale.has_value(),
                     "'audio_guidance_scale' is not supported for LTX-Video pipelines");
+    OPENVINO_ASSERT(!generation_config.audio_guidance_rescale.has_value(),
+                    "'audio_guidance_rescale' is not supported for LTX-Video pipelines");
+    OPENVINO_ASSERT(!generation_config.stg_scale.has_value(),
+                    "'stg_scale' is not supported for LTX-Video pipelines");
+    OPENVINO_ASSERT(!generation_config.audio_stg_scale.has_value(),
+                    "'audio_stg_scale' is not supported for LTX-Video pipelines");
+    OPENVINO_ASSERT(!generation_config.modality_scale.has_value(),
+                    "'modality_scale' is not supported for LTX-Video pipelines");
+    OPENVINO_ASSERT(!generation_config.audio_modality_scale.has_value(),
+                    "'audio_modality_scale' is not supported for LTX-Video pipelines");
+    OPENVINO_ASSERT(!generation_config.spatio_temporal_guidance_blocks.has_value(),
+                    "'spatio_temporal_guidance_blocks' is not supported for LTX-Video pipelines");
 }
 
 }  // anonymous namespace

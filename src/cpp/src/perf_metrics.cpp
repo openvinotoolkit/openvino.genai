@@ -181,7 +181,11 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
     sampling_duration = calc_mean_and_std(raw_metrics.m_sampling_durations);
 
     // tokens per second
-    throughput = {1000.0f / tpot.mean, (tpot.std * 1000.0f) / (tpot.mean * tpot.mean)};
+    if (tpot.mean > 0.0f) {
+        throughput = {1000.0f / tpot.mean, (tpot.std * 1000.0f) / (tpot.mean * tpot.mean)};
+    } else {
+        throughput = {-1.0f, -1.0f};
+    }
     m_evaluated = true;
 }
 

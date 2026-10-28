@@ -32,7 +32,12 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     // note that ignore_eos is not present in HF GenerationConfig
     read_json_param(data, "ignore_eos", ignore_eos);
     read_json_param(data, "min_new_tokens", min_new_tokens);
-    read_json_param(data, "stop_strings", stop_strings);
+    // HF allows stop_strings to be a single string or a list of strings
+    if (data.contains("stop_strings") && data["stop_strings"].is_string()) {
+        stop_strings.insert(data["stop_strings"].get<std::string>());
+    } else {
+        read_json_param(data, "stop_strings", stop_strings);
+    }
     // note that include_stop_str_in_output is not present in HF GenerationConfig
     read_json_param(data, "include_stop_str_in_output", include_stop_str_in_output);
     // note that stop_token_ids is not present in HF GenerationConfig, but some generation_config.json define

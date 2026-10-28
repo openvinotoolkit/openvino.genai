@@ -153,6 +153,18 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "hf-internal-testing/tiny-random-SpeechT5ForTextToSpeech",
         "convert_args": ["--model-kwargs",  json.dumps({"vocoder": "fxmarty/speecht5-hifigan-tiny"})]
     },
+    "tiny-random-qwen3-tts": {
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3-tts",
+        "convert_args": ["--trust-remote-code"],
+    },
+    "tiny-random-qwen3-tts-customvoice": {
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3-tts-customvoice",
+        "convert_args": ["--trust-remote-code"],
+    },
+    "tiny-random-qwen3-tts-voicedesign": {
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3-tts-voicedesign",
+        "convert_args": ["--trust-remote-code"],
+    },
     "Qwen3-1.7B": {
         "name": "Qwen/Qwen3-1.7B",
         "convert_args": ["--task", "text-generation-with-past", "--trust-remote-code"],
@@ -181,6 +193,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "optimum-intel-internal-testing/tiny-random-ltx2",
         "convert_args": ["--trust-remote-code"],
     },
+    "tiny-random-ltx2.3": {
+        "name": "optimum-intel-internal-testing/tiny-random-ltx2.3",
+        "convert_args": ["--trust-remote-code"],
+    },
     "tiny-random-flux": {
         "name": "optimum-intel-internal-testing/tiny-random-flux",
         "convert_args": ["--trust-remote-code", "--weight-format", "fp16"],
@@ -191,6 +207,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
     },
     "tiny-random-qwen3-vl": {
         "name": "optimum-intel-internal-testing/tiny-random-qwen3-vl",
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
+    },
+    "tiny-random-gemma4": {
+        "name": "optimum-intel-internal-testing/tiny-random-gemma4",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
     },
     "tiny-random-qwen3-omni": {

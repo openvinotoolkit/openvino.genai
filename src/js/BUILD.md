@@ -158,6 +158,7 @@ If you don't want to set up the Python environment, or you would like to run the
 - `LLM_PATH` - Path to the LLM model
 - `VLM_PATH` - Path to the vision-language model
 - `EMBEDDING_MODEL_PATH` - Path to the text embedding model
+- `MULTIMODAL_EMBEDDINGS_MODEL_PATH` - Path to the multimodal embedding model
 - `RERANK_MODEL_PATH` - Path to the reranking model
 
 3. Run the tests:

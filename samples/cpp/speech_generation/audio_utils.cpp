@@ -5,7 +5,6 @@
 
 #include <cstring>
 #include <fstream>
-#include <iostream>
 #include <memory>
 #include <vector>
 
@@ -41,9 +40,7 @@ bool is_wav_buffer(const std::string& buf) {
 namespace utils {
 namespace audio {
 
-#define COMMON_SAMPLE_RATE 16000
-
-ov::genai::RawSpeechInput read_wav(const std::string& filename) {
+ov::genai::RawSpeechInput read_wav(const std::string& filename, uint32_t expected_sample_rate) {
     drwav wav;
     std::vector<uint8_t> wav_data;  // used for pipe input from stdin
 
@@ -77,9 +74,9 @@ ov::genai::RawSpeechInput read_wav(const std::string& filename) {
         throw std::runtime_error("WAV file must be mono or stereo");
     }
 
-    if (wav.sampleRate != COMMON_SAMPLE_RATE) {
+    if (wav.sampleRate != expected_sample_rate) {
         drwav_uninit(&wav);
-        throw std::runtime_error("WAV file must be " + std::to_string(COMMON_SAMPLE_RATE / 1000) + " kHz");
+        throw std::runtime_error("WAV file must be " + std::to_string(expected_sample_rate / 1000) + " kHz");
     }
 
     // drwav_uninit invalidates the struct, so keep what we still need for the conversion below.
@@ -106,8 +103,8 @@ ov::genai::RawSpeechInput read_wav(const std::string& filename) {
     return pcmf32;
 }
 
-ov::Tensor read_wav_as_tensor(const std::string& filename) {
-    ov::genai::RawSpeechInput pcm = read_wav(filename);
+ov::Tensor read_wav_as_tensor(const std::string& filename, uint32_t expected_sample_rate) {
+    ov::genai::RawSpeechInput pcm = read_wav(filename, expected_sample_rate);
     const size_t sample_count = pcm.size();
 
     // Move the decoded samples into an allocator so the tensor owns them directly, avoiding a

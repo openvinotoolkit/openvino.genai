@@ -1,7 +1,7 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-from openvino_genai import GenerationConfig, WhisperGenerationConfig
+from openvino_genai import GenerationConfig, WhisperGenerationConfig, ASRGenerationConfig
 import json
 import math
 import os
@@ -229,3 +229,27 @@ def test_multiple_eos_are_read_as_stop_token_ids(tmp_path):
 
     assert generation_config.eos_token_id == 2
     assert generation_config.stop_token_ids == { 2, 32000, 32007 }
+
+
+# HF GenerationConfig documents stop_strings as `str or list[str]`
+@pytest.mark.parametrize("stop_strings", ["<|end|>", ["<|end|>"], ["<|end|>", "###"]])
+def test_stop_strings_are_read_from_json(tmp_path, stop_strings):
+    configs = [
+        ({"eos_token_id": 2, "stop_strings": stop_strings}, "generation_config.json"),
+    ]
+
+    generation_config = load_genai_generation_config_from_file(configs, tmp_path)
+
+    expected = {stop_strings} if isinstance(stop_strings, str) else set(stop_strings)
+    assert generation_config.stop_strings == expected
+
+
+@pytest.mark.parametrize("use_itn", [True, False])
+def test_asr_use_itn_read_from_json(tmp_path, use_itn):
+    config_path = tmp_path / "generation_config.json"
+    with config_path.open("w", encoding="utf-8") as f:
+        json.dump({"use_itn": use_itn}, f)
+
+    config = ASRGenerationConfig(config_path)
+
+    assert config.use_itn == use_itn
