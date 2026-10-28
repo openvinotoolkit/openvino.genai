@@ -28,6 +28,7 @@
 #include "visual_language/videochat_flash/classes.hpp"
 #include "visual_language/muse_glimmer/classes.hpp"
 #include "visual_language/minicpmv4_7/classes.hpp"
+#include "visual_language/lfm3_vl/classes.hpp"
 
 namespace ov::genai {
 
@@ -115,6 +116,8 @@ VideoProcessorConfig VisionEncoder::get_video_processor_config() const {
 VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir, const VLMModelType model_type, const std::string& device, const ov::AnyMap properties) {
     if (model_type == VLMModelType::MINICPM) {
         return std::make_shared<VisionEncoderMiniCPM>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::LFM3_VL) {
+        return std::make_shared<VisionEncoderLFM3VL>(model_dir, device, properties);
     } else if (model_type == VLMModelType::LLAVA) {
         return std::make_shared<VisionEncoderLLaVA>(model_dir, device, properties);
     } else if (model_type == VLMModelType::NANOLLAVA) {
@@ -168,6 +171,8 @@ VisionEncoder::Ptr VisionEncoder::create(
     const ov::AnyMap device_config) {
     if (model_type == VLMModelType::MINICPM) {
         return std::make_shared<VisionEncoderMiniCPM>(models_map, config_dir_path, device, device_config);
+    } else if (model_type == VLMModelType::LFM3_VL) {
+        return std::make_shared<VisionEncoderLFM3VL>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::LLAVA) {
         return std::make_shared<VisionEncoderLLaVA>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::NANOLLAVA) {
