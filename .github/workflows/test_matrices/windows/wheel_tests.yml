@@ -83,7 +83,7 @@
   timeout: 90
   components:
     - LLM
-    - Image_generation
+    - image_generation
 
 - name: Image generation (Qwen-Image 2.1)
   cmd: |-
@@ -93,7 +93,7 @@
     python -m pytest -s -v tests/python_tests/test_image_generation.py -k "qwen-image-2.1" --override-ini cache_dir=/mount/caches/pytest/
   timeout: 45
   components:
-    - Image_generation
+    - image_generation
 
 - name: LLM with transformers under 5.0
   cmd: |-
@@ -103,7 +103,7 @@
   timeout: 90
   components:
     - LLM
-    - Image_generation
+    - image_generation
 
 - name: VLM (match_optimum_with_resolutions)
   cmd: |-
