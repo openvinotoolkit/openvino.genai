@@ -420,16 +420,12 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 
 const std::string PER_MODEL_PROPERTIES = "MODEL_PROPERTIES";
 
-ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device) {
+ov::AnyMap resolve_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device) {
     ov::AnyMap result;
     for (const auto& property : properties) {
         // Ignore MODEL_PROPERTIES as they are used only within this function
         // to construct final properties map for a given model.
         if (property.first == PER_MODEL_PROPERTIES) {
-            continue;
-        }
-        // LoRA adapters are consumed by GenAI itself and are not a plugin property.
-        if (property.first == AdaptersProperty::name()) {
             continue;
         }
         // When a concrete device is known, DEVICE_PROPERTIES[device] is
@@ -468,6 +464,13 @@ ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string&
     for (const auto& property : role_it->second.as<ov::AnyMap>()) {
         result.insert_or_assign(property.first, property.second);
     }
+    return result;
+}
+
+ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device) {
+    ov::AnyMap result = resolve_model_properties(properties, model_role, device);
+    // LoRA adapters are consumed by GenAI itself and are not a plugin property.
+    result.erase(AdaptersProperty::name());
     return result;
 }
 

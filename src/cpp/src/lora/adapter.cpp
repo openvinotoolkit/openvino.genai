@@ -318,7 +318,7 @@ struct LoRAWeightGetterDefault {
             return;
         }
 
-              std::cerr << "[ WARNING ] There unused LoRA tensors for tensor name prefix \"" << prefix
+        std::cerr << "[ WARNING ] There unused LoRA tensors for tensor name prefix \"" << prefix
                   << "\" (foreign prefix \"" << foreign_prefix
                   << "\"). The result of generation can be not accurate. Check if a given adapter file is compatible with the base model.\n";
 

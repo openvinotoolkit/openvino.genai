@@ -158,6 +158,10 @@ extern const std::string PER_MODEL_PROPERTIES;
 ///        which are not bound to a specific device).
 /// @return A new ov::AnyMap with the merged result. The input map is left
 ///         untouched so callers may continue using the meta keys.
+ov::AnyMap resolve_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device = "");
+
+/// @brief Same as resolve_model_properties(), with the GenAI-only `adapters` entry removed so the
+///        result can be passed to a plugin. Use resolve_model_properties() to read the adapters.
 ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device = "");
 
 std::pair<ov::AnyMap, bool> extract_paired_input_props(const ov::AnyMap& external_properties);
