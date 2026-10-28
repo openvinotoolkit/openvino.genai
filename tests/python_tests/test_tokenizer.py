@@ -326,6 +326,10 @@ PATCHED_CHAT_TEMPLATE_CASES = [
         "{% if enable_thinking is undefined %}default{% else %}explicit{% endif %}",
         "unused",
         "default",
+        marks=pytest.mark.skipif(
+            not (is_transformers_version(">=", "5.2.0") and is_transformers_version("<", "5.3.0")),
+            reason="Qwen 3.5 tiny-model export is covered by the Transformers 5.2.x VLM job",
+        ),
         id="qwen3.5-is-undefined",
     ),
 ]
