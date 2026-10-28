@@ -86,6 +86,8 @@
   cmd: |-
     # Qwen-Image 2.1 export requires optimum-intel master, transformers 5.15.1, and diffusers 0.41.0
     python -m pip install --no-deps diffusers==0.41.0 transformers==5.15.1
+    # diffusers 0.41.0 needs huggingface_hub>=1.32.0, which --no-deps does not pull in.
+    python -m pip install huggingface_hub==1.33.0
     python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@main#egg=optimum-intel"
     python -m pytest -v ./tests/python_tests/test_image_generation.py -k "qwen-image-2.1" --override-ini cache_dir=/mount/caches/pytest/
   timeout: 45
