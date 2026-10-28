@@ -592,6 +592,16 @@ GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, co
     return m_impl->add_request(request_id, prompt, images, videos, sampling_params);
 }
 
+GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id,
+                                                         const std::string& prompt,
+                                                         const std::vector<ov::Tensor>& images,
+                                                         const std::vector<ov::Tensor>& videos,
+                                                         const std::vector<ov::Tensor>& audios,
+                                                         const ov::genai::GenerationConfig& sampling_params) {
+    assert_supported_add_request_lora_modes(m_impl->get_pipeline_adapters(), sampling_params);
+    return m_impl->add_request(request_id, prompt, images, videos, {}, audios, sampling_params);
+}
+
 GenerationHandle ContinuousBatchingPipeline::add_request(
     uint64_t request_id,
     const std::string& prompt,
@@ -604,8 +614,6 @@ GenerationHandle ContinuousBatchingPipeline::add_request(
     assert_supported_add_request_lora_modes(m_impl->get_pipeline_adapters(), generation_config.value());
 
     const auto multimodal_inputs = extract_multimodal_inputs(properties_map);
-    OPENVINO_ASSERT(!multimodal_inputs.audios.has_value() || multimodal_inputs.audios->empty(),
-                    "Audio input is not supported by add_request(). Use generate() with audios_batches instead.");
 
     if (!multimodal_inputs.has_value()) {
         return m_impl->add_request(request_id, prompt, generation_config.value());
@@ -617,6 +625,7 @@ GenerationHandle ContinuousBatchingPipeline::add_request(
         multimodal_inputs.images.value_or(std::vector<ov::Tensor>{}),
         multimodal_inputs.videos.value_or(std::vector<ov::Tensor>{}),
         multimodal_inputs.videos_metadata.value_or(std::vector<VideoMetadata>{}),
+        multimodal_inputs.audios.value_or(std::vector<ov::Tensor>{}),
         generation_config.value()
     );
 }

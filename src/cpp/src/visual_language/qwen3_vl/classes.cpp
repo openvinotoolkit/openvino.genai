@@ -4,6 +4,7 @@
 #include "visual_language/qwen3_vl/classes.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <numeric>
 
 #include "utils.hpp"
@@ -148,11 +149,24 @@ std::pair<ov::Tensor, ov::Tensor> get_position_interpolation_indices_and_weights
         const float h_scale = h > 1 ? static_cast<float>(num_grid_per_side - 1) / (h - 1) : 0.0f;
         const float w_scale = w > 1 ? static_cast<float>(num_grid_per_side - 1) / (w - 1) : 0.0f;
 
+        // Match torch.linspace's endpoint-based rounding for vision position interpolation.
         for (size_t i = 0; i < h; ++i) {
-            h_idxs[i] = static_cast<float>(i) * h_scale;
+            if (h == 1 || i < h / 2) {
+                h_idxs[i] = static_cast<float>(i) * h_scale;
+            } else {
+                h_idxs[i] = std::fma(-h_scale,
+                                     static_cast<float>(h - i - 1),
+                                     static_cast<float>(num_grid_per_side - 1));
+            }
         }
         for (size_t i = 0; i < w; ++i) {
-            w_idxs[i] = static_cast<float>(i) * w_scale;
+            if (w == 1 || i < w / 2) {
+                w_idxs[i] = static_cast<float>(i) * w_scale;
+            } else {
+                w_idxs[i] = std::fma(-w_scale,
+                                     static_cast<float>(w - i - 1),
+                                     static_cast<float>(num_grid_per_side - 1));
+            }
         }
 
         // Compute floor/ceil indices and interpolation weights
@@ -747,8 +761,12 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
 
     if (images.empty() && videos.empty()) {
         if (has_lm_extra_input("visual_pos_masks")) {
+            // Some exported LM graphs (e.g. Qwen3-VL-Embedding) build the deepstack gather indices from
+            // visual_pos_masks and reshape the gathered rows to the [batch, seq_len, hidden] shape of
+            // inputs_embeds, so the dummy mask must have batch * seq_len elements.
             const size_t batch_size = input_ids.get_shape()[0];
-            ov::Tensor visual_pos_masks(ov::element::boolean, {batch_size, 1});
+            const size_t seq_len = input_ids.get_shape()[1];
+            ov::Tensor visual_pos_masks(ov::element::boolean, {batch_size, seq_len});
             std::fill_n(visual_pos_masks.data<bool>(), visual_pos_masks.get_size(), false);
             m_lm_extra_inputs["visual_pos_masks"] = std::move(visual_pos_masks);
         }
@@ -761,6 +779,7 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
             m_lm_extra_inputs["deepstack_visual_embeds"] = std::move(deepstack_visual_embeds);
         }
 
+        set_cached_text_embeds(text_embeds);
         ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
         std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
         return inputs_embeds;
@@ -816,6 +835,8 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
     if (has_lm_extra_input("visual_pos_masks")) {
         m_lm_extra_inputs["visual_pos_masks"] = create_visual_pos_masks(input_ids, image_pad_token_id, video_pad_token_id);
     }
+
+    set_cached_text_embeds(text_embeds);
 
     return qwen2_vl_utils::merge_text_and_video_image_embeddings(input_ids,
                                                                  text_embeds,
