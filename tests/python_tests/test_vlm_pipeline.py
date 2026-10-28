@@ -433,6 +433,11 @@ def is_optimum_intel_version_for_videochat_flash_qwen():
 
 
 def get_auto_processor_trust_remote_code(model_id: str) -> bool:
+    """
+    tiny-random-minicpmv47 model has "auto_map" in "processor_config.json" pointing to custom files,
+    which don't exist on HF, so saving model with "trust_remote_code=True" leads to error.
+    Ticket to update and align tiny-random-minicpmv47 - CVS-198487
+    """
     return False if "minicpmv47" in model_id else True
 
 
