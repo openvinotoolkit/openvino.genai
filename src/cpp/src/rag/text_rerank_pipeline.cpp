@@ -348,7 +348,13 @@ private:
     // budget, left-pad so every row ends on a real token, then re-append the suffix after truncation.
     TokenizedInputs encode_qwen3(const std::vector<std::string>& prompts) {
         ov::AnyMap params = m_tokenization_params;
+        OPENVINO_ASSERT(!m_config.padding_side || *m_config.padding_side == "left",
+                        "Qwen3 rerankers require padding_side='left'");
         params[padding_side.name()] = std::string("left");
+        // Without an explicit max_length the tokenizer falls back to the model's exported limit, which this path
+        // cannot read to reserve the suffix budget against; padding to it would then overflow once the suffix is added.
+        OPENVINO_ASSERT(m_config.max_length || !(m_config.pad_to_max_length && *m_config.pad_to_max_length),
+                        "Qwen3 rerankers require max_length to be set when pad_to_max_length=true");
         if (m_config.max_length) {
             OPENVINO_ASSERT(*m_config.max_length > m_qwen3_suffix_ids.size(),
                             "max_length (",

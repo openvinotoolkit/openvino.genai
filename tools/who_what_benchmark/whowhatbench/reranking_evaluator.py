@@ -126,8 +126,9 @@ class RerankingEvaluator(BaseEvaluator):
         task = "Given a web search query, retrieve relevant passages that answer the query"
 
         qwen3_query = f"{prefix}<Instruct>: {task}\n<Query>: {query}\n"
-        qwen3_passages = [f"<Document>: {doc}{suffix}" for doc in passages]
-        return qwen3_query, qwen3_passages
+        # Suffix is appended at the token level after truncation (see default_gen_answer), mirroring GenAI's rerank().
+        qwen3_passages = [f"<Document>: {doc}" for doc in passages]
+        return qwen3_query, qwen3_passages, suffix
 
     def _generate_data(self, model, gen_answer_fn=None, result_dir="reference"):
         def default_gen_answer(model, tokenizer, query, passages):
@@ -135,9 +136,15 @@ class RerankingEvaluator(BaseEvaluator):
             # https://huggingface.co/Qwen/Qwen3-Reranker-0.6B#transformers-usage
             if is_qwen3(model.config):
                 # Reference backends need the Qwen3 template applied by hand; the GenAI path applies it in rerank().
-                query, passages = self._apply_qwen3_template(query, passages)
+                query, passages, suffix = self._apply_qwen3_template(query, passages)
                 pairs = [f"{query}{passage}" for passage in passages]
-                input_data = tokenizer(pairs, padding=True, truncation=True, max_length=DEFAULT_MAX_LENGTH_QWEN, return_tensors="pt", padding_side="left")
+                # Reserve budget for the suffix, truncate the content, then re-append it so it survives truncation.
+                suffix_ids = tokenizer(suffix, add_special_tokens=False).input_ids
+                encoded = tokenizer(pairs, padding=False, truncation=True, max_length=DEFAULT_MAX_LENGTH_QWEN - len(suffix_ids))
+                for ids, mask in zip(encoded["input_ids"], encoded["attention_mask"]):
+                    ids.extend(suffix_ids)
+                    mask.extend([1] * len(suffix_ids))
+                input_data = tokenizer.pad(encoded, padding=True, return_tensors="pt", padding_side="left")
             else:
                 tokenizer_kwargs = {"truncation": True, "padding": True, "max_length": DEFAULT_MAX_LENGTH}
                 inputs = [query] * len(passages)

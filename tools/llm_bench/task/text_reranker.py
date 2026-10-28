@@ -38,7 +38,8 @@ def build_qwen3_query(input_text: str) -> str:
 
 
 def build_qwen3_documents(texts: list) -> list:
-    return [f"{doc}{QWEN3_RERANKER_SUFFIX}" for doc in texts]
+    # Suffix is appended at the token level after truncation (see tokenize_qwen3), mirroring GenAI's rerank().
+    return list(texts)
 
 
 def build_qwen3_pairs(input_text: str, texts: list) -> list:
@@ -47,9 +48,13 @@ def build_qwen3_pairs(input_text: str, texts: list) -> list:
 
 
 def tokenize_qwen3(tokenizer, pairs: list, max_length: int):
-    return tokenizer(
-        pairs, padding=True, truncation=True, max_length=max_length, return_tensors="pt", padding_side="left"
-    )
+    # Reserve budget for the suffix, truncate the content, then re-append the suffix so it survives truncation.
+    suffix_ids = tokenizer(QWEN3_RERANKER_SUFFIX, add_special_tokens=False).input_ids
+    encoded = tokenizer(pairs, padding=False, truncation=True, max_length=max_length - len(suffix_ids))
+    for ids, mask in zip(encoded["input_ids"], encoded["attention_mask"]):
+        ids.extend(suffix_ids)
+        mask.extend([1] * len(suffix_ids))
+    return tokenizer.pad(encoded, padding=True, return_tensors="pt", padding_side="left")
 
 
 class TextRerankerOptimum(CommonPipeline):
