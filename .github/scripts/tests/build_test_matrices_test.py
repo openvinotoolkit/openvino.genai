@@ -156,3 +156,9 @@ def test_c_api_changes_run_asr_comparisons_and_independent_unit_tests(platform):
     assert '--gtest_filter="ASRCAPI.*"' in commands
     assert "optimum-cli" not in commands
     assert "genai_asr_c_api_tests" in jobs["Overall_Status"]["needs"]
+
+
+def test_linux_asr_job_mounts_workspace_at_host_path():
+    job = load_yaml(SCRIPTS_DIR.parent / "workflows" / "linux.yml")["jobs"]["genai_asr_c_api_tests"]
+    # download-artifact uses the container workspace; shell steps use the host workspace.
+    assert "${{ github.workspace }}:${{ github.workspace }}" in job["container"]["volumes"]

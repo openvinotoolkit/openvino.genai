@@ -432,7 +432,7 @@ ov_genai_asr_generation_config_get_context(const ov_genai_asr_generation_config*
 /**
  * @brief Set whether to return word-level timestamps.
  * @param config A pointer to the ov_genai_asr_generation_config instance.
- * @param word_timestamps True to return word-level word-level timestamps (default: false).
+ * @param word_timestamps True to return word-level timestamps (default: false).
  * @return ov_status_e A status code, return OK(0) if successful.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e
