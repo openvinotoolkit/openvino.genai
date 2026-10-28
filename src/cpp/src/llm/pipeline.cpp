@@ -35,14 +35,14 @@ std::shared_ptr<ov::Model> peek_draft_model(const ov::AnyMap& properties) {
 
 // With the main model on NPU, NPUW_PA selects the NPU PA front-end, which runs under continuous batching.
 // It is read from the language model's compile properties and must agree with ATTENTION_BACKEND.
+// ATTENTION_BACKEND=PA and a scheduler config are both explicit PA requests, which on NPU only NPUW_PA serves.
 bool requests_npuw_pa(const ov::AnyMap& user_properties,
                       const ov::AnyMap& properties,
                       const std::string& device,
                       const std::string& attention_backend,
                       bool has_draft_model) {
     const auto model_properties = ov::genai::utils::get_model_properties(properties, "language_model", device);
-    const auto it = model_properties.find("NPUW_PA");
-    const bool npuw_pa = it != model_properties.end() && it->second.as<bool>();
+    const bool npuw_pa = ov::genai::utils::is_property_enabled(model_properties, "NPUW_PA");
     OPENVINO_ASSERT(!npuw_pa || !has_draft_model,
                     "NPUW_PA=YES does not support speculative decoding. Remove the draft model or NPUW_PA.");
     OPENVINO_ASSERT(!npuw_pa || attention_backend == ov::genai::PA_BACKEND,
@@ -53,6 +53,9 @@ bool requests_npuw_pa(const ov::AnyMap& user_properties,
         user_properties.count("ATTENTION_BACKEND") > 0 && attention_backend == ov::genai::PA_BACKEND;
     OPENVINO_ASSERT(npuw_pa || !pa_backend_requested,
                     "ATTENTION_BACKEND=PA on NPU needs NPUW_PA=YES. Set NPUW_PA=YES, or remove ATTENTION_BACKEND to "
+                    "use the stateful NPU pipeline.");
+    OPENVINO_ASSERT(npuw_pa || user_properties.count(ov::genai::scheduler_config.name()) == 0,
+                    "A scheduler config on NPU needs NPUW_PA=YES. Set NPUW_PA=YES, or remove the scheduler config to "
                     "use the stateful NPU pipeline.");
     return npuw_pa;
 }
