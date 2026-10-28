@@ -399,10 +399,17 @@ std::pair<ov::Tensor, int64_t> create_position_ids(
             ++i;
         }
         const size_t run_len = i - run_start;
-        const auto [crop_h, crop_w] =
-            is_image ? images_crop_sizes.at(image_crop_index++) : videos_crop_sizes.at(video_crop_index++);
+        const std::vector<ImageSize>& crop_sizes = is_image ? images_crop_sizes : videos_crop_sizes;
+        size_t& crop_index = is_image ? image_crop_index : video_crop_index;
+        OPENVINO_ASSERT(run_start > 0,
+            "Unexpected vision pad token in prompt. Vision pad tokens must follow a frame start token.");
+        OPENVINO_ASSERT(crop_index < crop_sizes.size(),
+            "Vision crop index ", crop_index, " exceeds available crop sizes ", crop_sizes.size());
+        const auto [crop_h, crop_w] = crop_sizes[crop_index++];
         const int64_t canvas_h = static_cast<int64_t>(crop_h / downsample_factor);
         const int64_t canvas_w = static_cast<int64_t>(crop_w / downsample_factor);
+        OPENVINO_ASSERT(run_len == static_cast<size_t>(canvas_h * canvas_w),
+            "Vision pad token count ", run_len, " doesn't match expected ", canvas_h * canvas_w, " for the crop.");
         const size_t frame_start = run_start - 1;
 
         if (frame_start > current_idx) {
@@ -427,6 +434,9 @@ std::pair<ov::Tensor, int64_t> create_position_ids(
         current_pos = canvas_origin + std::max(canvas_h, canvas_w) + 1;
         current_idx = i;
     }
+
+    OPENVINO_ASSERT(image_crop_index == images_crop_sizes.size() && video_crop_index == videos_crop_sizes.size(),
+        "Number of vision pad token runs doesn't match the number of encoded crops.");
 
     if (current_idx < seq_len) {
         fill_text_positions(current_idx, seq_len, current_pos);
