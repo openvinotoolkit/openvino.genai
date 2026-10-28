@@ -6,16 +6,24 @@ import logging
 import inspect
 
 import numpy as np
+from enum import Enum
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from whowhatbench.artifacts_manager import GenerationResults, Metrics
 from whowhatbench.utils import patch_awq_for_inference, get_ignore_parameters_flag
 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class GenerationResults:
+    def __init__(self, answer_text, prompt_input_ids=None, logits=None, generated_token_ids=None):
+        self.answer_text = answer_text
+        self.prompt_input_ids = prompt_input_ids
+        self.logits = logits
+        self.generated_token_ids = generated_token_ids
 
 
 @dataclass
@@ -49,8 +57,15 @@ class TextGenerationFn(Protocol):
     ) -> GenerationResults: ...
 
 
+class Metrics(Enum):
+    SIMILARITY = "similarity"
+    DIVERGENCY = "divergency"
+    KL_DIVERGENCY = "kl_divergency"
+    TOKEN_SIMILARITY = "token_similarity"
+
+
 class BaseGenerationStrategy(ABC):
-    def __init__(self, metrics_list: list = None):
+    def __init__(self, metrics_list: list = None, **kwargs):
         self.metrics_list = metrics_list
 
     @property

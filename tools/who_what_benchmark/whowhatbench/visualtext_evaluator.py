@@ -80,7 +80,7 @@ class VisualTextEvaluator(TextEvaluator):
 
         if not set(self.metrics_list) <= {"similarity", "divergency"}:
             raise ValueError(
-                "Unsupported metrics weere requested, supported metrics for current model-type are - 'similarity', 'divergency'"
+                "Unsupported metrics were requested, supported metrics for current model-type are - 'similarity', 'divergency'"
             )
 
     def score(self, model_or_data, gen_answer_fn=None, **kwargs):

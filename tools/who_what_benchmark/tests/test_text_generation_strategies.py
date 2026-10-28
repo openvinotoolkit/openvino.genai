@@ -43,7 +43,7 @@ TOKEN_SIMILARITY = Metrics.TOKEN_SIMILARITY.value
     ("metrics_list", "is_genai", "is_llamacpp", "expected_cls"),
     [
         (MetricsStrategy([SIMILARITY], False), False, False, OptimumHFGeneration),
-        (MetricsStrategy([SIMILARITY], True), True, False, GenAIGeneration),
+        (MetricsStrategy([SIMILARITY], False), True, False, GenAIGeneration),
         (MetricsStrategy([SIMILARITY], False), False, True, LlamaCPPGeneration),
         (MetricsStrategy([KL_DIVERGENCY], False), False, False, KLDivergencyGeneration),
         (MetricsStrategy([KL_DIVERGENCY], False), False, True, LlamaCPPKLDivergencyGeneration),
@@ -66,7 +66,7 @@ def test_llamacpp_generation_preserves_special_tokens(use_chat_template):
     model.return_value = {"choices": [{"text": "completion"}]}
     model.create_chat_completion.return_value = {"choices": [{"message": {"content": "chat"}}]}
 
-    strategy = GenerationStrategy.create([SIMILARITY], False, True)
+    strategy = GenerationStrategy.create(MetricsStrategy([SIMILARITY]), False, True)
     result = strategy.run_generation(model, None, prompt, 8, True, use_chat_template=use_chat_template)
 
     if use_chat_template:

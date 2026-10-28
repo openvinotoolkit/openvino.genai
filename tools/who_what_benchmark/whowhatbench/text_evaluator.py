@@ -10,8 +10,14 @@ from typing import Any, Union
 from importlib.resources import files
 
 from .registry import register_evaluator, BaseEvaluator
-from .text_generation_strategies import GenerationStrategy, TextGenerationFn, TextGenerationFn
-from .artifacts_manager import GenerationResults, Metrics, ArtifactsManager, MetricsStrategy, MetricContext
+from .text_generation_strategies import (
+    GenerationResults,
+    Metrics,
+    GenerationStrategy,
+    TextGenerationFn,
+    TextGenerationContext,
+)
+from .artifacts_manager import ArtifactsManager, MetricsStrategy, MetricContext
 
 
 PROMPTS_FILE = 'text_prompts.yaml'
