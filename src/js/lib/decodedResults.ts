@@ -207,6 +207,12 @@ export class ASRDecodedResults extends DecodedResults {
     public languages: string[] = [],
     public chunks?: ASRDecodedResultChunk[][],
     public words?: ASRDecodedResultChunk[][],
+    /**
+     * Optional model-specific metadata for each transcription.
+     * When present, `metadata[i]` corresponds to `texts[i]`; each map holds model-defined
+     * key/value metadata and may be empty when no metadata is predicted.
+     */
+    public metadata?: Array<Record<string, unknown>>,
   ) {
     super(texts, scores, perfMetrics, []);
     this.perfMetrics = perfMetrics;
