@@ -9,14 +9,15 @@
 #include <unordered_map>
 
 #include "automatic_speech_recognition/models/fun-asr/pipeline.hpp"
-#include "automatic_speech_recognition/models/qwen3-asr/pipeline.hpp"
+#include "automatic_speech_recognition/models/qwen3-asr/encoder_decoder/pipeline.hpp"
+#include "automatic_speech_recognition/models/sensevoice/pipeline.hpp"
 #include "automatic_speech_recognition/models/whisper/pipeline.hpp"
 #include "automatic_speech_recognition/pipeline_base.hpp"
 #include "utils.hpp"
 
 namespace {
 
-enum class ASRModelType { whisper, qwen3_asr, fun_asr };
+enum class ASRModelType { whisper, qwen3_asr, fun_asr, sense_voice };
 
 ASRModelType read_model_type(const std::filesystem::path& models_path) {
     auto config_path = models_path / "config.json";
@@ -31,6 +32,7 @@ ASRModelType read_model_type(const std::filesystem::path& models_path) {
         {"whisper", ASRModelType::whisper},
         {"qwen3_asr", ASRModelType::qwen3_asr},
         {"fun_asr", ASRModelType::fun_asr},
+        {"sense_voice", ASRModelType::sense_voice},
     };
 
     auto it = model_types_map.find(value);
@@ -55,17 +57,26 @@ ASRPipeline::ASRPipeline(const std::filesystem::path& models_path,
                          const std::string& device,
                          const ov::AnyMap& properties) {
     const auto start_time = std::chrono::steady_clock::now();
-    switch (read_model_type(models_path)) {
+    const ASRModelType model_type = read_model_type(models_path);
+
+    OPENVINO_ASSERT(!properties.count(ov::genai::forced_aligner.name()) || model_type == ASRModelType::qwen3_asr,
+                    "'forced_aligner' is only supported for Qwen3-ASR models.");
+
+    switch (model_type) {
     case ASRModelType::whisper: {
         m_impl = std::make_unique<WhisperASRPipelineAdapter>(models_path, device, properties);
         break;
     }
     case ASRModelType::qwen3_asr: {
-        m_impl = std::make_unique<Qwen3ASR>(models_path, device, properties);
+        m_impl = std::make_unique<Qwen3EncoderDecoderASR>(models_path, device, properties);
         break;
     }
     case ASRModelType::fun_asr: {
         m_impl = std::make_unique<FunASR>(models_path, device, properties);
+        break;
+    }
+    case ASRModelType::sense_voice: {
+        m_impl = std::make_unique<SenseVoiceSmall>(models_path, device, properties);
         break;
     }
     }

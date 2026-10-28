@@ -95,6 +95,24 @@ std::shared_ptr<ov::Model> make_matmul_div_tanh_mul_model(const ov::PartialShape
     return std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{input});
 }
 
+// Build: Parameter -> MatMul -> Multiply(scale) -> Divide -> Tanh -> Multiply -> Result
+// Mirrors models with an extra logit-scaling factor ahead of a Gemma-style softcap chain
+// (e.g. MatMul output multiplied by a constant before being divided/tanh'd/multiplied again).
+std::shared_ptr<ov::Model> make_matmul_mul_div_tanh_mul_model(const ov::PartialShape& input_shape, size_t hidden, size_t vocab) {
+    auto input = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, input_shape);
+    auto weights = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{hidden, vocab}, 0.0f);
+    auto matmul = std::make_shared<ov::op::v0::MatMul>(input, weights);
+    auto scale = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{}, 0.5f);
+    auto scale_multiply = std::make_shared<ov::op::v1::Multiply>(matmul, scale);
+    auto divisor = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{}, 2.0f);
+    auto divide = std::make_shared<ov::op::v1::Divide>(scale_multiply, divisor);
+    auto tanh = std::make_shared<ov::op::v0::Tanh>(divide);
+    auto multiplier = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{}, 1.0f);
+    auto multiply = std::make_shared<ov::op::v1::Multiply>(tanh, multiplier);
+    auto result = std::make_shared<ov::op::v0::Result>(multiply);
+    return std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{input});
+}
+
 // Build model with specific weight values for correctness tests
 std::shared_ptr<ov::Model> make_matmul_model_with_weights(const ov::PartialShape& input_shape,
                                                           size_t hidden, size_t vocab,
@@ -138,6 +156,13 @@ TEST(SliceBeforeMatmul, AllPatterns) {
     // MatMul -> Divide -> Tanh -> Multiply -> Result
     {
         auto model = make_matmul_div_tanh_mul_model(ov::PartialShape{1, -1, 64}, 64, 128);
+        ov::genai::utils::apply_slice_before_matmul_transformation(model);
+        ASSERT_EQ(count_ops<ov::op::v8::Slice>(model), 1u);
+        ASSERT_TRUE((has_op_before_matmul<ov::op::v8::Slice>(model)));
+    }
+    // MatMul -> Multiply(scale) -> Divide -> Tanh -> Multiply -> Result
+    {
+        auto model = make_matmul_mul_div_tanh_mul_model(ov::PartialShape{1, -1, 64}, 64, 128);
         ov::genai::utils::apply_slice_before_matmul_transformation(model);
         ASSERT_EQ(count_ops<ov::op::v8::Slice>(model), 1u);
         ASSERT_TRUE((has_op_before_matmul<ov::op::v8::Slice>(model)));
@@ -219,6 +244,13 @@ TEST(GatherBeforeMatmul, AllPatterns) {
     // MatMul -> Divide -> Tanh -> Multiply -> Result
     {
         auto model = make_matmul_div_tanh_mul_model(ov::PartialShape{1, -1, 64}, 64, 128);
+        ov::genai::utils::apply_gather_before_matmul_transformation(model);
+        ASSERT_EQ(count_ops<ov::op::v8::Gather>(model), 1u);
+        ASSERT_TRUE((has_op_before_matmul<ov::op::v8::Gather>(model)));
+    }
+    // MatMul -> Multiply(scale) -> Divide -> Tanh -> Multiply -> Result
+    {
+        auto model = make_matmul_mul_div_tanh_mul_model(ov::PartialShape{1, -1, 64}, 64, 128);
         ov::genai::utils::apply_gather_before_matmul_transformation(model);
         ASSERT_EQ(count_ops<ov::op::v8::Gather>(model), 1u);
         ASSERT_TRUE((has_op_before_matmul<ov::op::v8::Gather>(model)));

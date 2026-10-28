@@ -5,7 +5,6 @@
 
 #include <chrono>
 #include <filesystem>
-#include <list>
 #include <map>
 #include <memory>
 #include <optional>
@@ -25,6 +24,9 @@
 #include "visual_language/vlm_config.hpp"
 
 namespace ov::genai {
+
+/// @brief Closes an active speech streamer exactly once, on every exit path. Defined in the .cpp.
+class SpeechStreamerGuard;
 
 /// @brief Configuration for Qwen3-Omni speech generation.
 struct Qwen3OmniSpeechConfig {
@@ -98,7 +100,7 @@ public:
     /// @brief Generate speech from thinker generation results.
     /// @param full_token_ids All token IDs from the full sequence (prompt + generated).
     /// @param all_intermediate_hidden_states Accumulated layer-14 hidden states [one tensor per step].
-    /// @param audio_streamer Callback or OmniSpeechStreamerBase for streaming (monostate = batch mode).
+    /// @param speech_streamer Callback or OmniSpeechStreamerBase for streaming (monostate = batch mode).
     /// @param talker_speech_config Speech generation knobs. Reads `audio_chunk_frames`, `speaker`
     ///                              (variant: name or embedding tensor), `max_new_tokens`, `rng_seed`,
     ///                              and the `talker_*` / `cp_*` optional sampling overrides. Unset
@@ -109,7 +111,7 @@ public:
     ///       ov::InferRequests across talker and CodePredictor sampling.
     TalkerResults generate_speech(const std::vector<int64_t>& full_token_ids,
                                  const std::vector<ov::Tensor>& all_intermediate_hidden_states,
-                                 const OmniSpeechStreamerVariant& audio_streamer,
+                                 const OmniSpeechStreamerVariant& speech_streamer,
                                  const OmniTalkerSpeechConfig& talker_speech_config);
 
     /// @brief Generate speech from a live thinker -> talker bridge instead of a finished result.
@@ -126,10 +128,10 @@ public:
     ///
     /// @param text_source Read end of the bridge. Must not be null. Read from the calling thread,
     ///                    which OmniPipeline runs separately from the thinker's.
-    /// @param audio_streamer @see the overload above.
+    /// @param speech_streamer @see the overload above.
     /// @param talker_speech_config @see the overload above.
     TalkerResults generate_speech(const std::shared_ptr<OmniTextSourceBase>& text_source,
-                                 const OmniSpeechStreamerVariant& audio_streamer,
+                                 const OmniSpeechStreamerVariant& speech_streamer,
                                  const OmniTalkerSpeechConfig& talker_speech_config);
 
     /// @brief Source of the projected text row the talker adds to its input at each decode step.
@@ -181,12 +183,6 @@ private:
     ov::InferRequest m_talker_projections;  // dual-output: text_projection + hidden_projection
     ov::InferRequest m_code_predictor;
     ov::InferRequest m_code2wav;
-
-    // LRU cache for talker token embeddings to avoid redundant inference.
-    // Bounded to kMaxEmbeddingCacheSize entries; evicts least recently used on overflow.
-    static constexpr size_t kMaxEmbeddingCacheSize = 256;
-    std::list<std::pair<int64_t, ov::Tensor>> m_embedding_lru_list;
-    std::unordered_map<int64_t, std::list<std::pair<int64_t, ov::Tensor>>::iterator> m_embedding_lru_map;
 
     // Pre-allocated scratch buffers reused across generate_speech() calls
     std::vector<float> m_talker_buf;
@@ -302,10 +298,12 @@ private:
     /// token budget, or the speech streamer says to stop — pulling one text row per step from
     /// `trailing`. Shared by both generate_speech() overloads; everything that differs between them
     /// is decided before this is called.
+    /// @param streamer_guard Owns the speech streamer for the enclosing generate_speech() call; closed
+    ///                       here as soon as the last chunk is out, before the full waveform is assembled.
     /// @param start_time When the enclosing generate_speech() was entered, for the perf record.
     TalkerResults run_talker(const ov::Tensor& talker_input,
                              TrailingSupply& trailing,
-                             const OmniSpeechStreamerVariant& audio_streamer,
+                             SpeechStreamerGuard& streamer_guard,
                              const OmniTalkerSpeechConfig& talker_speech_config,
                              std::chrono::steady_clock::time_point start_time);
 

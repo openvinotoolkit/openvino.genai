@@ -55,10 +55,13 @@ protected:
     std::vector<ov::genai::EncodedImage> m_history_images;
     std::vector<size_t> m_history_image_ids;
     std::vector<ov::genai::EncodedVideo> m_history_videos;
+    std::vector<ov::genai::EncodedAudio> m_history_audios;
+    std::vector<size_t> m_history_audio_ids;
     std::vector<size_t> m_history_video_ids;
     std::vector<std::pair<std::size_t, std::size_t>> m_history_vision_count;  // pair<video count, image count>
     size_t m_image_id = 0;
     size_t m_video_id = 0;
+    size_t m_audio_id = 0;
 
     float m_load_time_ms = 0.0f;
     // to access m_load_time_ms
@@ -68,23 +71,21 @@ protected:
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
     std::mutex m_embeddings_mutex;
 
-    // Per-request audio batches passed by the audios-aware generate() overloads.
-    // Populated under m_embeddings_mutex by the audio overload and consumed inside the
-    // per-prompt loop right before tokenization, so each prompt sees its own audio
-    // embeddings (m_inputs_embedder->encode_audios overwrites internal cache state).
-    // Empty when the no-audio overloads are used.
-    std::vector<std::vector<ov::Tensor>> m_pending_audios_batches;
-
     // Thinker -> talker bridge for the current generate() call, stashed by the omni_streamer-aware
     // overloads and read by the decode loop in ContinuousBatchingImpl::generate. Threaded as a
     // member rather than a parameter so the chain of generate() virtuals down to the decode loop
-    // stays untouched — same reason (and same scoped-guard discipline) as m_pending_audios_batches.
+    // stays untouched; the overloads reset it with a scoped guard on every exit path.
     // Null on every non-Omni path, which is what keeps those paths byte-for-byte unchanged.
     std::shared_ptr<OmniStreamerBase> m_pending_omni_streamer;
 
     std::shared_ptr<VisionRegistry> m_vision_registry;
 
     void stream_tokens(const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr, const GenerationHandle& handle);
+
+protected:
+    virtual void prepare_inputs_embedder(const GenerationConfig& sampling_params) const;
+    virtual std::unordered_map<std::string, ov::Tensor> prepare_lm_extra_inputs(
+        std::unordered_map<std::string, ov::Tensor> lm_extra_inputs) const;
 public:
     GenerationConfig get_config() const;
     void set_config(const GenerationConfig& config);
@@ -152,10 +153,6 @@ public:
                                  const std::vector<VideoMetadata>& videos_metadata,
                                  GenerationConfig sampling_params);
 
-    /**
-     * Overload accepting audios. Audios are encoded under m_embeddings_mutex before text tokenization so
-     * <|AUDIO|> placeholders resolve to fresh embeddings (Qwen3-Omni).
-     */
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
                                  const std::vector<ov::Tensor>& images,

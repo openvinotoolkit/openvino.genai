@@ -25,7 +25,7 @@ FUNASR_TOKENIZER_SUBFOLDER = (
     "Qwen3-0.6B"  # Source layout: https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512/tree/main/Qwen3-0.6B
 )
 ASR_MODEL_TYPES = {"funasr", "fun_asr"}
-AUDIO_VLM_MODEL_TYPES = {"gemma4", "gemma4_unified"}
+QWEN_ASR_MODEL_TYPES = {"qwen3_asr"}
 
 DEFAULT_ASR_INSTRUCTION = "Transcribe this audio."
 # Language specific prompt https://huggingface.co/google/gemma-4-12B#6-audio
@@ -60,9 +60,10 @@ class MultimodalTranscriber:
             self.processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
         self.instruction = asr_instruction(language)
 
-    def transcribe(self, audio, max_new_tokens: int) -> str:
-        import torch
+    def prepare_generation_inputs(self, inputs):
+        return inputs
 
+    def prepare_inputs(self, audio):
         messages = [
             {
                 "role": "user",
@@ -80,14 +81,66 @@ class MultimodalTranscriber:
                 return_dict=True,
                 return_tensors="pt",
             )
+        return inputs
+
+    def decode_transcription(self, tokens) -> str:
+        return self.processor.batch_decode(tokens, skip_special_tokens=True)[0]
+
+    def transcribe(self, audio, max_new_tokens: int) -> str:
+        import torch
+
+        inputs = self.prepare_inputs(audio)
         device = getattr(self.model, "device", None)
         if isinstance(device, torch.device):
             inputs = inputs.to(device)
 
         prompt_len = inputs["input_ids"].shape[-1]
+        generation_inputs = self.prepare_generation_inputs(inputs)
         with torch.inference_mode():
-            tokens = self.model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
-        return self.processor.batch_decode(tokens[:, prompt_len:], skip_special_tokens=True)[0]
+            tokens = self.model.generate(**generation_inputs, max_new_tokens=max_new_tokens, do_sample=False)
+        tokens = getattr(tokens, "sequences", tokens)
+        return self.decode_transcription(tokens[:, prompt_len:])
+
+
+class Qwen3ASRTranscriber(MultimodalTranscriber):
+    def __init__(self, model: Any, model_id: str, language: str = "") -> None:
+        super().__init__(model, model_id)
+        self.language = language
+
+    def prepare_inputs(self, audio):
+        messages = [
+            {"role": "system", "content": ""},
+            {"role": "user", "content": [{"type": "audio", "audio": ""}]},
+        ]
+        prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+        if self.language:
+            prompt += f"language {self.language}<asr_text>"
+        return self.processor(text=prompt, audio=audio, sampling_rate=AUDIO_SAMPLING_RATE, return_tensors="pt")
+
+    def decode_transcription(self, tokens) -> str:
+        decoded = super().decode_transcription(tokens)
+        return decoded.partition("<asr_text>")[2].strip() if "<asr_text>" in decoded else decoded.strip()
+
+
+class Qwen3ASROptimumTranscriber(Qwen3ASRTranscriber):
+    """Handle current split and legacy encoder/decoder Optimum exports."""
+
+    def prepare_generation_inputs(self, inputs):
+        if hasattr(self.model, "audio_encoder"):
+            return inputs
+        generation_inputs = {
+            "input_features": inputs["input_features"],
+            "decoder_input_ids": inputs["input_ids"],
+            "attention_mask": inputs["feature_attention_mask"],
+            "decoder_start_token_id": self.model.config.decoder_start_token_id,
+        }
+        # Legacy exports can lack generation_config.json; split exports read their own EOS and pad IDs.
+        if self.model.generation_config.eos_token_id is None:
+            tokenizer = self.processor.tokenizer
+            generation_inputs["eos_token_id"] = [tokenizer.pad_token_id, tokenizer.eos_token_id]
+        if self.model.generation_config.pad_token_id is None:
+            generation_inputs["pad_token_id"] = self.processor.tokenizer.pad_token_id
+        return generation_inputs
 
 
 class GenAIMultimodalTranscriber:
@@ -108,7 +161,9 @@ class GenAIMultimodalTranscriber:
 
 
 class FunASRSourceTranscriber:
-    def __init__(self, model_id: str, language: str = "") -> None:
+    def __init__(self, model_id: str, language: str = "", torch_dtype=None) -> None:
+        import torch
+
         try:
             from funasr import AutoModel
         except ImportError as error:
@@ -118,6 +173,14 @@ class FunASRSourceTranscriber:
             ) from error
 
         self.language = language or None
+        precision_kwargs = {}
+        if torch_dtype is not None:
+            precision_kwargs = {
+                "fp16": False,
+                "bf16": False,
+                "llm_dtype": {torch.float32: "fp32", torch.float16: "fp16", torch.bfloat16: "bf16"}[torch_dtype],
+            }
+
         with _silenced_output():
             self.model = AutoModel(
                 model=str(model_id),
@@ -125,7 +188,12 @@ class FunASRSourceTranscriber:
                 device="cpu",
                 disable_update=True,
                 trust_remote_code=True,
+                **precision_kwargs,
             )
+
+        if torch_dtype is not None:
+            # Cast only the decoder: casting the audio encoder breaks inference with its FP32 inputs.
+            self.model.model.llm.to(dtype=torch_dtype)
 
     def transcribe(self, audio, max_new_tokens: int) -> str:
         import torch
@@ -160,7 +228,7 @@ class FunASROptimumTranscriber:
         return self.tokenizer.batch_decode(tokens[:, prompt_len:], skip_special_tokens=True)[0].strip()
 
 
-class FunASRGenAITranscriber:
+class ASRGenAIPipelineTranscriber:
     def __init__(self, pipeline: Any, language: str = "") -> None:
         self.pipeline = pipeline
         self.language = language
@@ -187,14 +255,39 @@ def _load_multimodal_model(model_id, device, ov_config, use_hf, use_genai, **kwa
     return load_visual_text_model(model_id, device, ov_config, use_hf, use_genai, **kwargs)
 
 
+def _register_model_backend(model_type: str) -> None:
+    if model_type in QWEN_ASR_MODEL_TYPES:
+        try:
+            import qwen_asr  # noqa: F401
+        except ImportError as error:
+            raise ModuleNotFoundError(
+                "The `qwen-asr` package is required to evaluate Qwen3-ASR models. "
+                "Please install it with `pip install qwen-asr`."
+            ) from error
+
+
+def _load_optimum_speech_model(model_id, device, ov_config):
+    from optimum.intel.openvino import OVModelForSpeechSeq2Seq
+
+    return OVModelForSpeechSeq2Seq.from_pretrained(model_id, device=device, ov_config=ov_config)
+
+
 class ASRHFTranscriber:
     @staticmethod
     def create(model_id, device="CPU", ov_config=None, language="", **kwargs):
-        if _get_asr_model_type(model_id) in ASR_MODEL_TYPES:
+        model_type = _get_asr_model_type(model_id)
+        if model_type in ASR_MODEL_TYPES:
             logger.info("Using FunASR API")
-            return FunASRSourceTranscriber(model_id, language or "en")
+            return FunASRSourceTranscriber(
+                model_id,
+                language or "en",
+                torch_dtype=kwargs.get("torch_dtype"),
+            )
 
+        _register_model_backend(model_type)
         model = _load_multimodal_model(model_id, device, ov_config, True, False, **kwargs)
+        if model_type in QWEN_ASR_MODEL_TYPES:
+            return Qwen3ASRTranscriber(model, model_id, language)
         return MultimodalTranscriber(model, model_id, language or "English")
 
 
@@ -202,15 +295,14 @@ class ASRGenAITranscriber:
     @staticmethod
     def create(model_id, device="CPU", ov_config=None, language="", **kwargs):
         model_type = _get_asr_model_type(model_id)
-        if model_type in ASR_MODEL_TYPES:
+        if model_type in ASR_MODEL_TYPES | QWEN_ASR_MODEL_TYPES:
             logger.info("Using OpenVINO GenAI ASRPipeline API")
             import openvino_genai
 
             pipeline = openvino_genai.ASRPipeline(str(model_id), device.upper(), **(ov_config or {}))
-            return FunASRGenAITranscriber(pipeline, language or "en")
-        if model_type in AUDIO_VLM_MODEL_TYPES:
-            raise ValueError("Gemma4 audio input is not yet supported by the OpenVINO GenAI backend")
-
+            default_language = "en" if model_type in ASR_MODEL_TYPES else ""
+            return ASRGenAIPipelineTranscriber(pipeline, language or default_language)
+        _register_model_backend(model_type)
         model = _load_multimodal_model(model_id, device, ov_config, False, True, **kwargs)
         return GenAIMultimodalTranscriber(model, language or "English")
 
@@ -221,13 +313,17 @@ class ASROptimumTranscriber:
         model_type = _get_asr_model_type(model_id)
         if model_type in ASR_MODEL_TYPES:
             logger.info("Using Optimum API")
-            from optimum.intel.openvino import OVModelForSpeechSeq2Seq
             from transformers import AutoTokenizer
 
-            model = OVModelForSpeechSeq2Seq.from_pretrained(model_id, device=device, ov_config=ov_config)
+            model = _load_optimum_speech_model(model_id, device, ov_config)
             subfolder = FUNASR_TOKENIZER_SUBFOLDER if model_type == "funasr" else ""
             tokenizer = AutoTokenizer.from_pretrained(str(model_id), subfolder=subfolder)
             return FunASROptimumTranscriber(model, tokenizer, language or "en")
+
+        _register_model_backend(model_type)
+        if model_type in QWEN_ASR_MODEL_TYPES:
+            model = _load_optimum_speech_model(model_id, device, ov_config)
+            return Qwen3ASROptimumTranscriber(model, model_id, language)
 
         model = _load_multimodal_model(model_id, device, ov_config, False, False, **kwargs)
         return MultimodalTranscriber(model, model_id, language or "English")

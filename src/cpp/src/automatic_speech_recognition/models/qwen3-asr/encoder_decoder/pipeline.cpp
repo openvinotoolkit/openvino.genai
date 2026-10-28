@@ -5,9 +5,12 @@
 
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
+#include <iterator>
+#include <optional>
 
-#include "audio_chunk.hpp"
-#include "streamer.hpp"
+#include "automatic_speech_recognition/models/qwen3-asr/audio_chunk.hpp"
+#include "automatic_speech_recognition/models/qwen3-asr/streamer.hpp"
 #include "utils.hpp"
 
 namespace {
@@ -23,10 +26,14 @@ int64_t get_required_token_id(const ov::genai::Tokenizer& tokenizer, const std::
 
 namespace ov::genai {
 
-Qwen3ASR::Qwen3ASR(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties)
+Qwen3EncoderDecoderASR::Qwen3EncoderDecoderASR(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties)
     : ASRPipelineImplBase(models_path),
       m_feature_extractor{models_path / "preprocessor_config.json"},
       m_asr_text_token_id{get_required_token_id(m_tokenizer, "<asr_text>")} {
+    if (const auto it = properties.find(ov::genai::forced_aligner.name()); it != properties.end()) {
+        m_forced_aligner = it->second.as<std::shared_ptr<ASRForcedAligner>>();
+    }
+
     ov::AnyMap properties_copy = properties;
     erase_allowed_asr_ctor_properties(properties_copy);
     m_encoder = std::make_unique<Qwen3ASREncoder>(models_path, device, properties_copy);
@@ -39,12 +46,13 @@ Qwen3ASR::Qwen3ASR(const std::filesystem::path& models_path, const std::string& 
     m_decoder->set_seed(m_generation_config.rng_seed);
 }
 
-ASRDecodedResults Qwen3ASR::generate(const AudioInputs& audio_inputs,
+ASRDecodedResults Qwen3EncoderDecoderASR::generate(const AudioInputs& audio_inputs,
                                      const std::optional<ASRGenerationConfig>& generation_config,
                                      const std::shared_ptr<StreamerBase> streamer) {
     auto start_time = std::chrono::steady_clock::now();
 
     const ASRGenerationConfig config = resolve_generation_config(generation_config);
+
     m_decoder->set_seed(config.rng_seed);
 
     ASRDecodedResults results;
@@ -59,19 +67,27 @@ ASRDecodedResults Qwen3ASR::generate(const AudioInputs& audio_inputs,
         },
         audio_inputs);
 
+    const size_t max_chunk_sec = config.word_timestamps ? MAX_TIMESTAMPED_ASR_INPUT_SECONDS : MAX_ASR_INPUT_SECONDS;
     const std::vector<AudioChunk> chunks =
-        split_audio_into_chunks({audio}, m_feature_extractor.sampling_rate, MAX_ASR_INPUT_SECONDS);
+        split_audio_into_chunks({audio}, m_feature_extractor.sampling_rate, max_chunk_sec);
 
     const auto infer_results = infer(chunks, config, results.perf_metrics, streamer);
     if (streamer) {
         streamer->end();
     }
 
-    auto [merged_texts, merged_languages] = merge_chunk_results(chunks, infer_results, config);
+    const std::vector<std::pair<std::string, std::string>> parsed_results =
+        parse_chunk_results(infer_results, config.language);
+
+    auto [merged_texts, merged_languages] = merge_chunk_results(chunks, parsed_results);
     results.languages = std::move(merged_languages);
     for (size_t i = 0; i < merged_texts.size(); ++i) {
         results.texts.push_back(merged_texts[i]);
         results.scores.push_back(0.0f);
+    }
+
+    if (config.word_timestamps) {
+        align_words(chunks, parsed_results, results);
     }
 
     auto stop_time = std::chrono::steady_clock::now();
@@ -81,7 +97,7 @@ ASRDecodedResults Qwen3ASR::generate(const AudioInputs& audio_inputs,
     return results;
 }
 
-std::vector<std::string> Qwen3ASR::build_text_prompt(size_t batch_size, const ASRGenerationConfig& config) {
+std::vector<std::string> Qwen3EncoderDecoderASR::build_text_prompt(size_t batch_size, const ASRGenerationConfig& config) {
     std::string context;
     if (config.context.has_value()) {
         context = config.context.value();
@@ -100,7 +116,7 @@ std::vector<std::string> Qwen3ASR::build_text_prompt(size_t batch_size, const AS
     return std::vector<std::string>(batch_size, prompt);
 }
 
-std::pair<std::string, std::string> Qwen3ASR::parse_asr_output(const std::string& raw,
+std::pair<std::string, std::string> Qwen3EncoderDecoderASR::parse_asr_output(const std::string& raw,
                                                                const std::optional<std::string>& forced_language) {
     static const std::string asr_text_tag = "<asr_text>";
     static const std::string lang_prefix = "language ";
@@ -132,10 +148,21 @@ std::pair<std::string, std::string> Qwen3ASR::parse_asr_output(const std::string
     return {language, text_part};
 }
 
-std::pair<std::vector<std::string>, std::vector<std::string>> Qwen3ASR::merge_chunk_results(
-    const std::vector<AudioChunk>& chunks,
+
+std::vector<std::pair<std::string, std::string>> Qwen3EncoderDecoderASR::parse_chunk_results(
     const std::vector<std::string>& infer_results,
-    const ASRGenerationConfig& config) {
+    const std::optional<std::string>& forced_language) {
+    std::vector<std::pair<std::string, std::string>> parsed_results;
+    parsed_results.reserve(infer_results.size());
+    for (const std::string& raw : infer_results) {
+        parsed_results.push_back(parse_asr_output(raw, forced_language));
+    }
+    return parsed_results;
+}
+
+std::pair<std::vector<std::string>, std::vector<std::string>> Qwen3EncoderDecoderASR::merge_chunk_results(
+    const std::vector<AudioChunk>& chunks,
+    const std::vector<std::pair<std::string, std::string>>& parsed_results) {
     size_t num_samples = 0;
     for (const auto& chunk : chunks) {
         num_samples = std::max(num_samples, chunk.orig_batch + 1);
@@ -145,18 +172,60 @@ std::pair<std::vector<std::string>, std::vector<std::string>> Qwen3ASR::merge_ch
     std::vector<std::string> merged_languages(num_samples);
     for (size_t i = 0; i < chunks.size(); ++i) {
         const size_t orig = chunks[i].orig_batch;
-        auto [language, text] = parse_asr_output(infer_results[i], config.language);
+        const auto& [language, text] = parsed_results[i];
         if (!merged_texts[orig].empty()) {
             merged_texts[orig] += ' ';
         }
         merged_texts[orig] += text;
-        merged_languages[orig] = std::move(language);  // last wins
+        merged_languages[orig] = language;  // Use the language reported for the last chunk.
     }
 
     return {std::move(merged_texts), std::move(merged_languages)};
 }
 
-std::vector<std::string> Qwen3ASR::extend_audio_tokens(const std::vector<std::string>& prompts,
+
+void Qwen3EncoderDecoderASR::align_words(const std::vector<AudioChunk>& chunks,
+                           const std::vector<std::pair<std::string, std::string>>& parsed_results,
+                           ASRDecodedResults& results) {
+    size_t num_samples = 0;
+    for (const auto& chunk : chunks) {
+        num_samples = std::max(num_samples, chunk.orig_batch + 1);
+    }
+
+    std::vector<std::vector<ASRDecodedResultChunk>> words(num_samples);
+
+    for (size_t i = 0; i < chunks.size(); ++i) {
+        const auto& [language, text] = parsed_results[i];
+        if (text.empty()) {
+            continue;
+        }
+
+        const auto align_start = std::chrono::steady_clock::now();
+        std::vector<ASRDecodedResultChunk> chunk_words =
+            m_forced_aligner->align(chunks[i].wav, text, ov::genai::language(language));
+        const auto align_stop = std::chrono::steady_clock::now();
+        results.perf_metrics.asr_raw_metrics.word_level_timestamps_processing_durations.emplace_back(
+            MicroSeconds(PerfMetrics::get_microsec(align_stop - align_start)));
+
+        const float chunk_offset_sec = chunks[i].offset_sec;
+        for (ASRDecodedResultChunk& word : chunk_words) {
+            word.start_ts += chunk_offset_sec;
+            word.end_ts += chunk_offset_sec;
+        }
+
+        if (!chunk_words.empty()) {
+            std::vector<ASRDecodedResultChunk>& sample_words = words[chunks[i].orig_batch];
+            sample_words.insert(sample_words.end(),
+                                std::make_move_iterator(chunk_words.begin()),
+                                std::make_move_iterator(chunk_words.end()));
+        }
+    }
+
+    results.words = std::move(words);
+}
+
+
+std::vector<std::string> Qwen3EncoderDecoderASR::extend_audio_tokens(const std::vector<std::string>& prompts,
                                                        const std::vector<size_t>& audio_lengths) {
     OPENVINO_ASSERT(prompts.size() == audio_lengths.size(),
                     "extend_audio_tokens: prompts and audio_lengths must have the same size");
@@ -181,7 +250,7 @@ std::vector<std::string> Qwen3ASR::extend_audio_tokens(const std::vector<std::st
     return results;
 }
 
-std::vector<std::string> Qwen3ASR::infer(std::vector<AudioChunk> chunks,
+std::vector<std::string> Qwen3EncoderDecoderASR::infer(std::vector<AudioChunk> chunks,
                                          const ASRGenerationConfig& config,
                                          ASRPerfMetrics& perf_metrics,
                                          const std::shared_ptr<StreamerBase>& streamer_ptr) {
@@ -247,7 +316,7 @@ std::vector<std::string> Qwen3ASR::infer(std::vector<AudioChunk> chunks,
     return results;
 }
 
-ASRGenerationConfig Qwen3ASR::resolve_generation_config(const std::optional<ASRGenerationConfig>& generation_config) const {
+ASRGenerationConfig Qwen3EncoderDecoderASR::resolve_generation_config(const std::optional<ASRGenerationConfig>& generation_config) const {
     ASRGenerationConfig config = generation_config.value_or(m_generation_config);
     if (config.stop_token_ids.empty()) {
         config.stop_token_ids = m_generation_config.stop_token_ids;
@@ -261,10 +330,14 @@ ASRGenerationConfig Qwen3ASR::resolve_generation_config(const std::optional<ASRG
     return config;
 }
 
-void Qwen3ASR::validate_generation_config(const ASRGenerationConfig& config) const {
+void Qwen3EncoderDecoderASR::validate_generation_config(const ASRGenerationConfig& config) const {
     config.validate();
 
     OPENVINO_ASSERT(!config.is_beam_search(), "Qwen3-ASR does not support beam search decoding");
+
+    OPENVINO_ASSERT(!config.word_timestamps || m_forced_aligner,
+                    "Qwen3-ASR word timestamps require a forced aligner. Construct ASRPipeline with "
+                    "ov::genai::forced_aligner(aligner) passing a pre-constructed ASRForcedAligner.");
 }
 
 }  // namespace ov::genai

@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
-    "node": ">=21.0.0"
+    "node": ">=22.0.0"
   },
   "scripts": {
     "test": "node tests/usage.test.js"
@@ -18,5 +18,8 @@
     "pngjs": "^7.0.0",
     "yargs": "^18.0.0",
     "zod": "^4.1.13"
+  },
+  "optionalDependencies": {
+    "@u4/opencv4nodejs": "^6.1.4"
   }
 }
