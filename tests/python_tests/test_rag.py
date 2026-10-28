@@ -650,6 +650,7 @@ def run_qwen3_rerank_optimum(
         concatenated,
         padding=True,
         truncation=True,
+        padding_side="left",
         return_tensors="pt",
     )
     logits = model(**inputs).logits
