@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
 #include <limits>
 #include <set>
 
@@ -1144,7 +1145,7 @@ create_tokenizer_from_parameters(const std::shared_ptr<void>& shared_object_ov_t
 }
 
 std::set<int64_t> gguf_stop_token_ids(const ov::AnyMap& tokenizer_metadata) {
-    // Mirrors llama.cpp's end-of-generation set: eos/eot/eom plus known end-of-turn texts.
+    // Mirrors llama.cpp's end-of-generation set: eos/eot/eom/fim plus known end-of-turn texts.
     static const std::set<std::string> eog_texts{
         "<|eot_id|>", "<|im_end|>", "<|end|>", "<|return|>", "<|call|>", "<|flush|>", "<|calls|>",
         "<end_of_turn>", "<|endoftext|>", "</s>", "<|eom_id|>", "<EOT>", "_<EOT>", "[EOT]", "[EOS]",
@@ -1176,6 +1177,24 @@ std::set<int64_t> gguf_stop_token_ids(const ov::AnyMap& tokenizer_metadata) {
         ids.erase(found["<|end|>"]);
     if (found.count("</s>") && found.count("<|tool_response>"))
         ids.erase(found["</s>"]);
+    const auto add_fim_stop = [&](const char* key, std::initializer_list<const char*> aliases) {
+        int64_t id = -1;
+        if (const auto it = tokenizer_metadata.find(key); it != tokenizer_metadata.end())
+            id = read_tokenizer_id(tokenizer_config_from_rt_info({*it}), key);
+        if (const auto it = tokenizer_metadata.find("tokens");
+            it != tokenizer_metadata.end() && it->second.is<std::vector<std::string>>()) {
+            const auto& tokens = it->second.as<std::vector<std::string>>();
+            if (id < 0 || static_cast<size_t>(id) >= tokens.size()) {
+                const auto token = std::find_first_of(tokens.begin(), tokens.end(), aliases.begin(), aliases.end());
+                id = token == tokens.end() ? -1 : std::distance(tokens.begin(), token);
+            }
+        }
+        if (id >= 0)
+            ids.insert(id);
+    };
+    add_fim_stop("fim_pad_token_id", {"<|fim_pad|>", "<fim-pad>", "<fim_pad>", "<PAD>", "[PAD]"});
+    add_fim_stop("fim_rep_token_id", {"<|fim_repo|>", "<|repo_name|>", "<fim-repo>", "<REPO>", "<reponame>"});
+    add_fim_stop("fim_sep_token_id", {"<|file_sep|>"});
     return ids;
 }
 
