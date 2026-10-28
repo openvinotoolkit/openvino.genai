@@ -79,8 +79,8 @@ std::string format_qwen3_query(const std::string& query, std::string_view instru
 }
 
 std::string format_qwen3_document(const std::string& document) {
-    // The suffix is appended at the token level after truncation (see TextRerankPipelineImpl::tokenize),
-    // so it is intentionally omitted from the string here.
+    // The suffix is added by encode_qwen3(): in the prompt string when nothing is truncated, or at the
+    // token level after truncation. It is intentionally omitted from the content string here.
     return "<Document>: " + document;
 }
 
@@ -344,27 +344,52 @@ private:
         return m_tokenizer.encode(concatenated, m_tokenization_params);
     }
 
-    // The model scores the last token, so the suffix must survive truncation. Reserve its token
-    // budget, left-pad so every row ends on a real token, then re-append the suffix after truncation.
-    TokenizedInputs encode_qwen3(const std::vector<std::string>& prompts) {
-        ov::AnyMap params = m_tokenization_params;
+    // The model scores the last token, so the suffix must survive truncation. Keep the suffix in the
+    // prompt string and tokenize in a single pass whenever the content fits (so the token sequence
+    // matches the reference exactly). Only when truncation is actually required do we reserve the suffix
+    // budget, truncate the content, and re-append the suffix at the token level.
+    TokenizedInputs encode_qwen3(const std::vector<std::string>& content_prompts) {
         OPENVINO_ASSERT(!m_config.padding_side || *m_config.padding_side == "left",
                         "Qwen3 rerankers require padding_side='left'");
-        params[padding_side.name()] = std::string("left");
         // Without an explicit max_length the tokenizer falls back to the model's exported limit, which this path
         // cannot read to reserve the suffix budget against; padding to it would then overflow once the suffix is added.
         OPENVINO_ASSERT(m_config.max_length || !(m_config.pad_to_max_length && *m_config.pad_to_max_length),
                         "Qwen3 rerankers require max_length to be set when pad_to_max_length=true");
-        if (m_config.max_length) {
-            OPENVINO_ASSERT(*m_config.max_length > m_qwen3_suffix_ids.size(),
-                            "max_length (",
-                            *m_config.max_length,
-                            ") must exceed the Qwen3 suffix length (",
-                            m_qwen3_suffix_ids.size(),
-                            ")");
-            params[max_length.name()] = *m_config.max_length - m_qwen3_suffix_ids.size();
+
+        ov::AnyMap params = m_tokenization_params;
+        params[padding_side.name()] = std::string("left");
+
+        std::vector<std::string> full_prompts;
+        full_prompts.reserve(content_prompts.size());
+        for (const auto& prompt : content_prompts) {
+            full_prompts.push_back(prompt + std::string{QWEN3_RERANK_SUFFIX});
         }
-        return append_qwen3_suffix(m_tokenizer.encode(prompts, params));
+
+        if (!m_config.max_length) {
+            // No truncation budget configured: a single pass keeps the suffix in the string, matching the reference.
+            return m_tokenizer.encode(full_prompts, params);
+        }
+
+        OPENVINO_ASSERT(*m_config.max_length > m_qwen3_suffix_ids.size(),
+                        "max_length (",
+                        *m_config.max_length,
+                        ") must exceed the Qwen3 suffix length (",
+                        m_qwen3_suffix_ids.size(),
+                        ")");
+
+        // Measure the untruncated length; if nothing would be cut, the faithful single pass is enough.
+        ov::AnyMap measure_params = params;
+        measure_params[truncation.name()] = false;
+        measure_params.erase(max_length.name());
+        measure_params.erase(pad_to_max_length.name());
+        const TokenizedInputs measured = m_tokenizer.encode(full_prompts, measure_params);
+        if (measured.input_ids.get_shape()[1] <= *m_config.max_length) {
+            return m_tokenizer.encode(full_prompts, params);
+        }
+
+        // Truncation needed: reserve the suffix budget on the content, then re-append the suffix tokens.
+        params[max_length.name()] = *m_config.max_length - m_qwen3_suffix_ids.size();
+        return append_qwen3_suffix(m_tokenizer.encode(content_prompts, params));
     }
 
     TokenizedInputs append_qwen3_suffix(const TokenizedInputs& encoded) const {

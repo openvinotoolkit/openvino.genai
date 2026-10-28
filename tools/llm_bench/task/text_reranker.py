@@ -38,7 +38,8 @@ def build_qwen3_query(input_text: str) -> str:
 
 
 def build_qwen3_documents(texts: list) -> list:
-    # Suffix is appended at the token level after truncation (see tokenize_qwen3), mirroring GenAI's rerank().
+    # Suffix is added by tokenize_qwen3 (in the string when nothing is truncated, at the token level
+    # after truncation), mirroring GenAI's rerank(), so it is omitted from the content here.
     return list(texts)
 
 
@@ -48,12 +49,16 @@ def build_qwen3_pairs(input_text: str, texts: list) -> list:
 
 
 def tokenize_qwen3(tokenizer, pairs: list, max_length: int):
-    # Reserve budget for the suffix, truncate the content, then re-append the suffix so it survives truncation.
+    # Keep the suffix in the prompt string and tokenize in a single pass when the content fits; only reserve
+    # the suffix budget and re-append it at the token level when truncation is needed. Mirrors GenAI's encode_qwen3.
     suffix_ids = tokenizer(QWEN3_RERANKER_SUFFIX, add_special_tokens=False).input_ids
-    encoded = tokenizer(pairs, padding=False, truncation=True, max_length=max_length - len(suffix_ids))
-    for ids, mask in zip(encoded["input_ids"], encoded["attention_mask"]):
-        ids.extend(suffix_ids)
-        mask.extend([1] * len(suffix_ids))
+    full_pairs = [f"{pair}{QWEN3_RERANKER_SUFFIX}" for pair in pairs]
+    encoded = tokenizer(full_pairs, padding=False, truncation=False)
+    if max(len(ids) for ids in encoded["input_ids"]) > max_length:
+        encoded = tokenizer(pairs, padding=False, truncation=True, max_length=max_length - len(suffix_ids))
+        for ids, mask in zip(encoded["input_ids"], encoded["attention_mask"]):
+            ids.extend(suffix_ids)
+            mask.extend([1] * len(suffix_ids))
     return tokenizer.pad(encoded, padding=True, return_tensors="pt", padding_side="left")
 
 
