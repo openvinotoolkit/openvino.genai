@@ -10,6 +10,7 @@
 
 #include "automatic_speech_recognition/models/fun-asr/pipeline.hpp"
 #include "automatic_speech_recognition/models/qwen3-asr/encoder_decoder/pipeline.hpp"
+#include "automatic_speech_recognition/models/qwen3-asr/split/pipeline.hpp"
 #include "automatic_speech_recognition/models/sensevoice/pipeline.hpp"
 #include "automatic_speech_recognition/models/whisper/pipeline.hpp"
 #include "automatic_speech_recognition/pipeline_base.hpp"
@@ -68,7 +69,12 @@ ASRPipeline::ASRPipeline(const std::filesystem::path& models_path,
         break;
     }
     case ASRModelType::qwen3_asr: {
-        m_impl = std::make_unique<Qwen3EncoderDecoderASR>(models_path, device, properties);
+        // Split export (audio encoder + text embeddings + language model) runs on ContinuousBatchingPipeline.
+        if (std::filesystem::exists(models_path / "openvino_audio_encoder_model.xml")) {
+            m_impl = std::make_unique<Qwen3ASRContinuousBatchingAdapter>(models_path, device, properties);
+        } else {
+            m_impl = std::make_unique<Qwen3EncoderDecoderASR>(models_path, device, properties);
+        }
         break;
     }
     case ASRModelType::fun_asr: {

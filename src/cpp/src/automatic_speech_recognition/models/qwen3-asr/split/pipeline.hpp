@@ -3,43 +3,33 @@
 
 #pragma once
 
-#include <cstdint>
-#include <optional>
+#include <filesystem>
+#include <memory>
 #include <string>
 #include <vector>
 
-#include "automatic_speech_recognition/models/qwen3-asr/audio_chunk.hpp"
-#include "automatic_speech_recognition/pipeline_base.hpp"
-#include "decoder.hpp"
-#include "encoder.hpp"
-#include "whisper/feature_extractor.hpp"
+#include "automatic_speech_recognition/models/qwen3-asr/pipeline_base.hpp"
+#include "openvino/genai/continuous_batching_pipeline.hpp"
 
 namespace ov::genai {
 
-class Qwen3EncoderDecoderASR : public ASRPipelineImplBase {
+/**
+ * @brief Runs Qwen3-ASR split export (audio encoder, text embeddings and language model) through
+ * ContinuousBatchingPipeline. Audio chunks are transcribed as a single continuous batch.
+ */
+class Qwen3ASRContinuousBatchingAdapter : public Qwen3ASRPipelineBase {
 public:
-    Qwen3EncoderDecoderASR(const std::filesystem::path& models_path,
-                           const std::string& device,
-                           const ov::AnyMap& properties);
-
-    ASRDecodedResults generate(const AudioInputs& audio_inputs,
-                               const std::optional<ASRGenerationConfig>& generation_config,
-                               const std::shared_ptr<StreamerBase> streamer = nullptr) override;
+    Qwen3ASRContinuousBatchingAdapter(const std::filesystem::path& models_path,
+                                      const std::string& device,
+                                      const ov::AnyMap& properties);
 
 private:
-    WhisperFeatureExtractor m_feature_extractor;
-    const int64_t m_asr_text_token_id;
+    ContinuousBatchingPipeline m_impl;
 
-    static constexpr size_t MAX_ASR_INPUT_SECONDS = 1200;
-
-    std::vector<std::string> infer(std::vector<AudioChunk> chunks,
+    std::vector<std::string> infer(const std::vector<AudioChunk>& chunks,
                                    const ASRGenerationConfig& config,
                                    ASRPerfMetrics& perf_metrics,
-                                   const std::shared_ptr<StreamerBase>& streamer_ptr = nullptr);
-
-    ASRGenerationConfig resolve_generation_config(const std::optional<ASRGenerationConfig>& generation_config) const;
-
-    void validate_generation_config(const ASRGenerationConfig& config) const;
+                                   const std::shared_ptr<StreamerBase>& streamer) override;
 };
 
 }  // namespace ov::genai
