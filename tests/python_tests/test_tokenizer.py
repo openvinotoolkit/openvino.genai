@@ -308,6 +308,10 @@ PATCHED_CHAT_TEMPLATE_CASES = [
         "[{{ messages[0]['content'] | trim }}]",
         "  hi  ",
         "[  hi  ]",
+        marks=pytest.mark.skipif(
+            is_transformers_version(">=", "5.0"),
+            reason="Gemma 3 tiny-model export is unsupported with Transformers >=5",
+        ),
         id="gemma3-trim-removed",
     ),
     pytest.param(
