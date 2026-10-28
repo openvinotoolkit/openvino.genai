@@ -333,8 +333,10 @@ inline constexpr float CANDIDATE_ROW_GAP = 1.0e4f;
 // Spreads the lattice row that follows candidate previous_index at position - 1 over the vocabulary, so the request's
 // logit processors and sampler pick the token as they do from a full logits row. Candidate j gets
 // edge_scores[position, previous_index, j]. Every other token keeps its backbone logit, shifted below the candidates
-// by at least CANDIDATE_ROW_GAP: a candidate still wins after penalties unless the processors mask all K of them
-// (e.g. structured output), and then the token comes from the remaining backbone logits.
+// by at least CANDIDATE_ROW_GAP: a candidate still wins after the usual penalties unless the processors mask all K of
+// them (e.g. structured output), and then the token comes from the remaining backbone logits. A repetition_penalty
+// far below 1 can lift a non-candidate above the candidates, as it would in the token-by-token Markov walk, and the
+// walk then ends the block at that token.
 inline void fill_candidate_row(const float* backbone_logits,
                                size_t vocab_size,
                                const ov::Tensor& edge_scores,
