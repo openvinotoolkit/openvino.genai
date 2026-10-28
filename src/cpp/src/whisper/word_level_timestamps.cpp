@@ -340,7 +340,9 @@ std::pair<std::vector<std::string>, std::vector<std::vector<int64_t>>> split_tok
     const std::vector<int64_t>& tokens,
     ov::genai::Tokenizer& tokenizer) {
     const std::string decoded_full = tokenizer.decode(tokens, ov::genai::skip_special_tokens(false));
-    const std::string replacement_char = u8"\uFFFD";
+    // Spell out U+FFFD's UTF-8 bytes so this remains a std::string under C++20,
+    // where a u8 literal has the incompatible char8_t element type.
+    const std::string replacement_char = "\xEF\xBF\xBD";
 
     std::vector<std::string> words;
     std::vector<std::vector<int64_t>> word_tokens;
