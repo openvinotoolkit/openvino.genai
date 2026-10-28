@@ -9,6 +9,8 @@
 #include "visual_language/gemma4/classes.hpp"
 #include "visual_language/internvl_chat/classes.hpp"
 #include "visual_language/lfm2/classes.hpp"
+#include "visual_language/lfm3_vl/classes.hpp"
+#include "automatic_speech_recognition/models/qwen3-asr/split/inputs_embedder.hpp"
 #include "visual_language/llava/classes.hpp"
 #include "visual_language/llava_next/classes.hpp"
 #include "visual_language/llava_next_video/classes.hpp"
@@ -44,6 +46,10 @@ decltype(auto) visit_vlm_family(VLMModelType type, Visitor&& visit) {
     switch (type) {
     case VLMModelType::LFM2_AUDIO:
         return visit(VLMFamily<NoVisionEncoder, InputsEmbedderLFM2Audio>{});
+    case VLMModelType::QWEN3_ASR:
+        return visit(VLMFamily<NoVisionEncoder, InputsEmbedderQwen3ASR>{});
+    case VLMModelType::LFM3_VL:
+        return visit(VLMFamily<VisionEncoderLFM3VL, InputsEmbedderLFM3VL>{});
     case VLMModelType::MINICPM:
         return visit(VLMFamily<VisionEncoderMiniCPM, InputsEmbedderMiniCPM>{});
     case VLMModelType::MINICPMV4_7:

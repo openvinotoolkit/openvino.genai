@@ -176,6 +176,12 @@ class ASRGenerationConfig(GenerationConfig):
         :param context: System prompt context prepended to Qwen3-ASR transcription requests.
         :type context: Optional[str]
     
+        SenseVoiceSmall parameters:
+    
+        :param use_itn: Whether to enable inverse text normalization for SenseVoiceSmall.
+                        Defaults to False (`woitn`); when True, the `withitn` mode is used.
+        :type use_itn: bool
+    
         For generic generation parameters (max_length, max_new_tokens, num_beams, temperature, etc.)
         see GenerationConfig documentation.
     """
@@ -186,6 +192,7 @@ class ASRGenerationConfig(GenerationConfig):
     language: str | None
     return_timestamps: bool
     task: str | None
+    use_itn: bool
     word_timestamps: bool
     @typing.overload
     def __init__(self, json_path: os.PathLike | str | bytes) -> None:
@@ -422,6 +429,12 @@ class ASRPipeline:
         
             :param context: System prompt context prepended to Qwen3-ASR transcription requests.
             :type context: Optional[str]
+        
+            SenseVoiceSmall parameters:
+        
+            :param use_itn: Whether to enable inverse text normalization for SenseVoiceSmall.
+                            Defaults to False (`woitn`); when True, the `withitn` mode is used.
+            :type use_itn: bool
         
             For generic generation parameters (max_length, max_new_tokens, num_beams, temperature, etc.)
             see GenerationConfig documentation.
@@ -1291,6 +1304,9 @@ class ContinuousBatchingPipeline:
         ...
     @typing.overload
     def __init__(self, models_path: os.PathLike | str | bytes, tokenizer: Tokenizer, scheduler_config: SchedulerConfig, device: str, **kwargs) -> None:
+        ...
+    @typing.overload
+    def add_request(self, request_id: typing.SupportsInt, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], audios: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, **kwargs) -> GenerationHandle:
         ...
     @typing.overload
     def add_request(self, request_id: typing.SupportsInt, input_ids: openvino._pyopenvino.Tensor, generation_config: GenerationConfig) -> GenerationHandle:
@@ -5621,7 +5637,7 @@ class Text2SpeechPipeline:
                     device (str): Device to run the model on (e.g., CPU, GPU).
         """
     @typing.overload
-    def generate(self, text: str, speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
+    def generate(self, text: str, speaker_embedding: typing.Any = None, generation_config: openvino_genai.py_openvino_genai.SpeechGenerationConfig | None = None, **kwargs) -> Text2SpeechDecodedResults:
         """
             Generates speeches based on input texts
         
@@ -5638,8 +5654,11 @@ class Text2SpeechPipeline:
                                         - Qwen3-TTS VoiceDesign: ignored and should not be provided.
             :type speaker_embedding: openvino.Tensor or None
         
-            :param properties: speech generation parameters specified as properties
-            :type properties: dict
+            :param generation_config: speech generation configuration override
+            :type generation_config: SpeechGenerationConfig or None
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to SpeechGenerationConfig fields.
+            :type kwargs: dict
         
             :returns: raw audios of the input texts spoken in the specified speaker's voice;
                       sample rate is provided via Text2SpeechDecodedResults.output_sample_rate
@@ -5722,7 +5741,7 @@ class Text2SpeechPipeline:
             :type ref_codec_ids: openvino.Tensor
         """
     @typing.overload
-    def generate(self, texts: collections.abc.Sequence[str], speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
+    def generate(self, texts: collections.abc.Sequence[str], speaker_embedding: typing.Any = None, generation_config: openvino_genai.py_openvino_genai.SpeechGenerationConfig | None = None, **kwargs) -> Text2SpeechDecodedResults:
         """
             Generates speeches based on input texts
         
@@ -5739,8 +5758,11 @@ class Text2SpeechPipeline:
                                         - Qwen3-TTS VoiceDesign: ignored and should not be provided.
             :type speaker_embedding: openvino.Tensor or None
         
-            :param properties: speech generation parameters specified as properties
-            :type properties: dict
+            :param generation_config: speech generation configuration override
+            :type generation_config: SpeechGenerationConfig or None
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to SpeechGenerationConfig fields.
+            :type kwargs: dict
         
             :returns: raw audios of the input texts spoken in the specified speaker's voice;
                       sample rate is provided via Text2SpeechDecodedResults.output_sample_rate

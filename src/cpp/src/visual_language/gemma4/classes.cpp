@@ -10,17 +10,13 @@
 #include <numeric>
 #include <regex>
 #include <sstream>
+#include <string_view>
 
 #include "logger.hpp"
 #include "utils.hpp"
 #include "visual_language/clip.hpp"
 
 namespace {
-// Gemma4 places audio as <|audio> + one <|audio|> per encoder token + <audio|>.
-constexpr const char* AUDIO_START = "<|audio>";
-constexpr const char* AUDIO_TOKEN = "<|audio|>";
-constexpr const char* AUDIO_END = "<audio|>";
-
 constexpr float DEFAULT_METADATA_FPS = 24.0f;
 
 /// @brief Compute target dimensions for aspect-ratio-preserving resize.
@@ -196,6 +192,22 @@ void fill_video_metadata(ov::genai::VideoMetadata& video_metadata,
     }
 }
 
+int64_t get_gemma4_token_type(int64_t input_id,
+                              int64_t image_token_id,
+                              int64_t video_token_id,
+                              int64_t audio_token_id) {
+    if (input_id == image_token_id) {
+        return 1;
+    }
+    if (input_id == video_token_id) {
+        return 2;
+    }
+    if (input_id == audio_token_id) {
+        return 3;
+    }
+    return 0;
+}
+
 }  // namespace
 
 namespace ov::genai {
@@ -353,6 +365,9 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
                                            const std::string& device,
                                            const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {
+    patch_chat_template();
+    m_native_audio_encoder = AudioEncoderGemma4::create(model_dir, vlm_config.model_type, device, device_config);
+
     // per-layer embeddings model is optional, large MOE models don't have it
     if (!has_per_layer_embeddings()) {
         return;
@@ -373,6 +388,10 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
                                            const std::string& device,
                                            const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
+    patch_chat_template();
+    m_native_audio_encoder =
+        AudioEncoderGemma4::create(models_map, vlm_config.model_type, config_dir_path, device, device_config);
+
     // per-layer embeddings model is optional, large MOE models don't have it
     if (!has_per_layer_embeddings()) {
         return;
@@ -388,17 +407,6 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
         device,
         utils::get_model_properties(device_config, "text_embeddings_per_layer", device));
     create_per_layer_embeddings_requests(compiled);
-}
-
-std::vector<ov::genai::EncodedAudio> InputsEmbedderGemma4::encode_audios(const std::vector<ov::Tensor>& audios) {
-    if (audios.empty())
-        return {};
-    if (m_audio_token_id < 0) {
-        const auto encoded = m_tokenizer.encode(AUDIO_TOKEN, add_special_tokens(false)).input_ids;
-        OPENVINO_ASSERT(encoded.get_size() == 1, "Gemma4 requires a single audio placeholder token");
-        m_audio_token_id = encoded.data<const int64_t>()[0];
-    }
-    return encode_audios_with_encoder(audios, true);
 }
 
 std::vector<ov::genai::EncodedImage> InputsEmbedderGemma4::encode_images(const std::vector<ov::Tensor>& images) {
@@ -436,6 +444,33 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderGemma4::encode_videos(
         encoded_videos.emplace_back(std::move(encoded_video));
     }
     return encoded_videos;
+}
+
+std::vector<ov::genai::EncodedAudio> InputsEmbedderGemma4::encode_audios(const std::vector<ov::Tensor>& audios) {
+    if (audios.empty()) {
+        return {};
+    }
+
+    if (m_vlm_config.audio_token_id < 0) {
+        const auto encoded = m_tokenizer.encode(m_vlm_config.audio_token, add_special_tokens(false)).input_ids;
+        OPENVINO_ASSERT(encoded.get_size() == 1, "Gemma4 requires a single audio placeholder token");
+        m_vlm_config.audio_token_id = encoded.data<const int64_t>()[0];
+    }
+    if (IInputsEmbedder::m_audio_encoder)
+        return encode_audios_with_encoder(audios, true);
+
+    OPENVINO_ASSERT(m_native_audio_encoder,
+                    "Gemma4 audio input was provided, but openvino_audio_embeddings_model.xml is not available");
+
+    std::vector<EncodedAudio> encoded_audios;
+    encoded_audios.reserve(audios.size());
+    for (const ov::Tensor& audio : audios) {
+        ov::Tensor audio_features = m_native_audio_encoder->encode(audio);
+        const ov::Shape& shape = audio_features.get_shape();
+        const size_t num_audio_tokens = shape[1];
+        encoded_audios.push_back({std::move(audio_features), num_audio_tokens});
+    }
+    return encoded_audios;
 }
 
 NormalizedPrompt InputsEmbedderGemma4::normalize_prompt(const std::string& prompt,
@@ -491,26 +526,49 @@ NormalizedPrompt InputsEmbedderGemma4::normalize_prompt(const std::string& promp
                                                         size_t base_audio_id,
                                                         const std::vector<EncodedImage>& images,
                                                         const std::vector<EncodedVideo>& videos,
-                                                        const std::vector<ov::genai::EncodedAudio>& audios) const {
-    auto result = normalize_prompt(prompt, base_image_id, base_video_id, images, videos);
-    // Runs even without audios so that a stray <ov_genai_audio_N> is rejected.
-    std::tie(result.unified_prompt, result.audios_sequence) = normalize(
-        result.unified_prompt, AUDIO_TOKEN, AUDIO_TOKEN, base_audio_id, audios.size(), ModalityType::AUDIO);
-    // Grow each single placeholder to the encoder's token count, wrapped in the audio markers.
-    size_t search_offset = 0;
-    for (size_t audio_id : result.audios_sequence) {
-        const size_t relative_id = audio_id - base_audio_id;
-        OPENVINO_ASSERT(relative_id < audios.size(), "Audio index ", audio_id, " is out of range");
-        std::string tag = AUDIO_START;
-        for (size_t i = 0; i < audios[relative_id].num_audio_tokens; ++i)
-            tag += AUDIO_TOKEN;
-        tag += AUDIO_END;
-        const auto pos = result.unified_prompt.find(AUDIO_TOKEN, search_offset);
-        OPENVINO_ASSERT(pos != std::string::npos, "Failed to find audio token in prompt during normalization");
-        result.unified_prompt.replace(pos, std::string_view(AUDIO_TOKEN).size(), tag);
-        search_offset = pos + tag.size();
+                                                        const std::vector<EncodedAudio>& audios) const {
+    NormalizedPrompt result = normalize_prompt(prompt, base_image_id, base_video_id, images, videos);
+
+    const std::string& audio_token = m_vlm_config.audio_token;
+    // Gemma4 processor places untagged audio after the text, unlike images and videos.
+    if (result.unified_prompt.find(audio_token) == std::string::npos &&
+        !std::regex_search(result.unified_prompt, UNIVERSAL_AUDIO_PATTERN)) {
+        for (size_t audio = 0; audio < audios.size(); ++audio) {
+            result.unified_prompt += audio_token;
+        }
     }
+
+    std::tie(result.unified_prompt, result.audios_sequence) =
+        normalize(result.unified_prompt, audio_token, audio_token, base_audio_id, audios.size(), ModalityType::AUDIO);
+
+    expand_audio_tags_in_prompt(result.unified_prompt, audios, result.audios_sequence, base_audio_id);
+
     return result;
+}
+
+void InputsEmbedderGemma4::expand_audio_tags_in_prompt(std::string& unified_prompt,
+                                                       const std::vector<EncodedAudio>& encoded_audios,
+                                                       const std::vector<size_t>& audios_sequence,
+                                                       size_t audio_base_id) const {
+    const std::string& boa = m_vlm_config.boa_token;
+    const std::string& eoa = m_vlm_config.eoa_token;
+    const std::string& audio_token = m_vlm_config.audio_token;
+    size_t search_offset = 0;
+    for (size_t audio_id : audios_sequence) {
+        const size_t num_audio_tokens = encoded_audios.at(audio_id - audio_base_id).num_audio_tokens;
+        std::string expanded_tag;
+        expanded_tag.reserve(boa.size() + num_audio_tokens * audio_token.size() + eoa.size());
+        expanded_tag += boa;
+        for (size_t token = 0; token < num_audio_tokens; ++token) {
+            expanded_tag += audio_token;
+        }
+        expanded_tag += eoa;
+
+        const size_t pos = unified_prompt.find(audio_token, search_offset);
+        OPENVINO_ASSERT(pos != std::string::npos, "Failed to find audio token in prompt during expansion");
+        unified_prompt.replace(pos, audio_token.size(), expanded_tag);
+        search_offset = pos + expanded_tag.size();
+    }
 }
 
 void InputsEmbedderGemma4::expand_video_tags_in_prompt(std::string& unified_prompt,
@@ -587,7 +645,10 @@ ov::Tensor InputsEmbedderGemma4::get_per_layer_embeddings(const ov::Tensor& inpu
 
     const ov::Tensor& output = req.get_output_tensor();
     ov::Tensor result(output.get_element_type(), output.get_shape());
-    output.copy_to(result);
+    // Avoid copy_to() for zero-sized outputs because it may invoke memcpy with null tensor data.
+    if (output.get_size() > 0) {
+        output.copy_to(result);
+    }
     return result;
 }
 
@@ -607,8 +668,7 @@ ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(
     bool recalculate_merged_embeddings,
     const std::vector<size_t>& images_sequence,
     const std::vector<size_t>& videos_sequence,
-    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
-) {
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
     return get_inputs_embeds(prompt,
                              images,
                              videos,
@@ -631,8 +691,7 @@ ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(
     const std::vector<size_t>& images_sequence,
     const std::vector<size_t>& videos_sequence,
     const std::vector<size_t>& audios_sequence,
-    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
-) {
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
     std::vector<ov::Tensor> image_embeds;
     image_embeds.reserve(images_sequence.size());
     for (size_t new_image_id : images_sequence) {
@@ -675,19 +734,7 @@ ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(
 
     ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
 
-    // Placeholder run k takes audios[audios_sequence[k]], so out-of-order tags place the right audio.
-    std::vector<ov::Tensor> audio_embeds;
-    audio_embeds.reserve(audios_sequence.size());
-    for (size_t audio_id : audios_sequence) {
-        const auto& audio = audios.at(audio_id);
-        if (audio.num_audio_tokens == 0)
-            continue;
-        audio_embeds.emplace_back(audio.audio_features.get_element_type(),
-                                  ov::Shape{1, audio.num_audio_tokens, audio.audio_features.get_shape().at(1)},
-                                  const_cast<void*>(audio.audio_features.data()));
-    }
-
-    if (image_embeds.empty() && video_embeds.empty() && audio_embeds.empty()) {
+    if (image_embeds.empty() && video_embeds.empty() && audios_sequence.empty()) {
         text_embeds.copy_to(inputs_embeds);
         return inputs_embeds;
     }
@@ -706,9 +753,23 @@ ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(
             utils::merge_text_and_image_embeddings_llava(input_ids, inputs_embeds, video_embeds, m_video_token_id);
     }
 
-    if (!audio_embeds.empty())
-        inputs_embeds =
-            utils::merge_text_and_image_embeddings_llava(input_ids, inputs_embeds, audio_embeds, m_audio_token_id);
+    if (!audios_sequence.empty()) {
+        OPENVINO_ASSERT(m_vlm_config.audio_token_id >= 0, "Gemma4 audio_token_id is not configured");
+        std::vector<ov::Tensor> audio_embeds;
+        audio_embeds.reserve(audios_sequence.size());
+        for (size_t audio_id : audios_sequence) {
+            const auto& audio = audios.at(audio_id);
+            if (audio.num_audio_tokens)
+                audio_embeds.emplace_back(audio.audio_features.get_element_type(),
+                                          ov::Shape{1, audio.num_audio_tokens, audio.audio_features.get_shape().back()},
+                                          const_cast<void*>(audio.audio_features.data()));
+        }
+        if (!audio_embeds.empty())
+            inputs_embeds = utils::merge_text_and_image_embeddings_llava(input_ids,
+                                                                         inputs_embeds,
+                                                                         audio_embeds,
+                                                                         m_vlm_config.audio_token_id);
+    }
 
     return inputs_embeds;
 }
@@ -726,7 +787,8 @@ ov::Tensor InputsEmbedderGemma4::get_token_type_ids(const ov::Tensor& input_ids)
     ov::Tensor token_type_ids(ov::element::i64, input_ids.get_shape());
     int64_t* token_type_data = token_type_ids.data<int64_t>();
     for (size_t i = 0; i < num_elements; ++i) {
-        token_type_data[i] = (input_ids_data[i] == m_image_token_id || input_ids_data[i] == m_video_token_id) ? 1 : 0;
+        token_type_data[i] =
+            get_gemma4_token_type(input_ids_data[i], m_image_token_id, m_video_token_id, m_vlm_config.audio_token_id);
     }
     return token_type_ids;
 }

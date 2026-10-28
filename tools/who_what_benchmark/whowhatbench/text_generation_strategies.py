@@ -1,4 +1,4 @@
-# Copyright (C) 2023-2026 Intel Corporation
+# Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import torch
@@ -7,23 +7,56 @@ import inspect
 
 import numpy as np
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Any, Protocol
 
-from .utils import patch_awq_for_inference, get_ignore_parameters_flag
-from .artifacts_manager import GenerationResults, Metrics
+from whowhatbench.utils import patch_awq_for_inference, get_ignore_parameters_flag
+from whowhatbench.artifacts_manager import GenerationResults, Metrics
 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class TextGenerationContext:
+    """Per-prompt extra data passed to a text generation function in addition to the prompt.
+
+    Attributes:
+        reference_tokens: Prompt token ids stored by the reference model run. Used to score the target model
+            on the identical input (e.g. for KL divergency). None if no reference data is available.
+    """
+
+    reference_tokens: np.ndarray | None = None
+
+
+class TextGenerationFn(Protocol):
+    """Signature of the `gen_answer_fn` accepted by `TextEvaluator`."""
+
+    def __call__(  # noqa: E704
+        self,
+        model: Any,
+        tokenizer: Any,
+        prompt: str,
+        max_new_tokens: int,
+        crop_question: bool,
+        use_chat_template: bool = False,
+        empty_adapters: bool = False,
+        num_assistant_tokens: int = 0,
+        assistant_confidence_threshold: float = 0.0,
+        generation_config_extra: dict | None = None,
+        context: TextGenerationContext | None = None,
+    ) -> GenerationResults: ...
+
+
 class BaseGenerationStrategy(ABC):
-    def __init__(self, metrcis_list: list = None):
-        self.metrcis_list = metrcis_list
+    def __init__(self, metrics_list: list = None):
+        self.metrics_list = metrics_list
 
     @property
     def produced_fields(self) -> frozenset:
         fields = {"answer_text"}
-        if self.metrcis_list and Metrics.TOKEN_SIMILARITY.value in self.metrcis_list:
+        if self.metrics_list and Metrics.TOKEN_SIMILARITY.value in self.metrics_list:
             fields.update({"prompt_input_ids", "generated_token_ids"})
         return frozenset(fields)
 
@@ -33,7 +66,6 @@ class BaseGenerationStrategy(ABC):
         model,
         tokenizer,
         question,
-        reference_tokens,
         max_new_tokens,
         skip_question,
         use_chat_template=False,
@@ -41,20 +73,24 @@ class BaseGenerationStrategy(ABC):
         num_assistant_tokens=0,
         assistant_confidence_threshold=0.0,
         generation_config_extra=None,
-    ):
+        context: TextGenerationContext | None = None,
+    ) -> GenerationResults:
         pass
+
+    @property
+    def whoami(self):
+        return type(self).__name__
 
 
 class LlamaCPPGeneration(BaseGenerationStrategy):
-    def __init__(self, metrcis_list: list = None):
-        super().__init__(metrcis_list)
+    def __init__(self, metrics_list: list = None, **kwargs):
+        super().__init__(metrics_list)
 
     def run_generation(
         self,
         model,
         tokenizer,
         question,
-        reference_tokens,
         max_new_tokens,
         skip_question,
         use_chat_template=False,
@@ -62,7 +98,8 @@ class LlamaCPPGeneration(BaseGenerationStrategy):
         num_assistant_tokens=0,
         assistant_confidence_threshold=0.0,
         generation_config_extra=None,
-    ):
+        context: TextGenerationContext | None = None,
+    ) -> GenerationResults:
         output_text = None
         if use_chat_template:
             output = model.create_chat_completion(
@@ -79,15 +116,14 @@ class LlamaCPPGeneration(BaseGenerationStrategy):
 
 
 class GenAIGeneration(BaseGenerationStrategy):
-    def __init__(self, metrcis_list: list = None):
-        super().__init__(metrcis_list)
+    def __init__(self, metrics_list: list = None, **kwargs):
+        super().__init__(metrics_list)
 
     def run_generation(
         self,
         model,
         tokenizer,
         question,
-        reference_tokens,
         max_new_tokens,
         skip_question,
         use_chat_template=False,
@@ -95,8 +131,9 @@ class GenAIGeneration(BaseGenerationStrategy):
         num_assistant_tokens=0,
         assistant_confidence_threshold=0.0,
         generation_config_extra=None,
-    ):
-        if Metrics.TOKEN_SIMILARITY.value in self.metrcis_list:
+        context: TextGenerationContext | None = None,
+    ) -> GenerationResults:
+        if Metrics.TOKEN_SIMILARITY.value in self.metrics_list:
             gen_fn = self.genai_generation_encoded
         else:
             gen_fn = self.genai_generation
@@ -105,7 +142,6 @@ class GenAIGeneration(BaseGenerationStrategy):
             model,
             tokenizer,
             question,
-            reference_tokens,
             max_new_tokens,
             skip_question,
             use_chat_template=use_chat_template,
@@ -113,6 +149,7 @@ class GenAIGeneration(BaseGenerationStrategy):
             num_assistant_tokens=num_assistant_tokens,
             assistant_confidence_threshold=assistant_confidence_threshold,
             generation_config_extra=generation_config_extra,
+            context=context,
         )
 
     def genai_generation(
@@ -120,7 +157,6 @@ class GenAIGeneration(BaseGenerationStrategy):
         model,
         tokenizer,
         question,
-        reference_tokens,
         max_new_tokens,
         skip_question,
         use_chat_template=False,
@@ -128,7 +164,8 @@ class GenAIGeneration(BaseGenerationStrategy):
         num_assistant_tokens=0,
         assistant_confidence_threshold=0.0,
         generation_config_extra=None,
-    ):
+        context: TextGenerationContext | None = None,
+    ) -> GenerationResults:
         kwargs = {}
         if empty_adapters:
             import openvino_genai
@@ -154,7 +191,6 @@ class GenAIGeneration(BaseGenerationStrategy):
         model,
         tokenizer,
         question,
-        reference_tokens,
         max_new_tokens,
         skip_question,
         use_chat_template=False,
@@ -162,7 +198,8 @@ class GenAIGeneration(BaseGenerationStrategy):
         num_assistant_tokens=0,
         assistant_confidence_threshold=0.0,
         generation_config_extra=None,
-    ):
+        context: TextGenerationContext | None = None,
+    ) -> GenerationResults:
         kwargs = {}
         if empty_adapters:
             import openvino_genai
@@ -200,15 +237,14 @@ class GenAIGeneration(BaseGenerationStrategy):
 
 
 class OptimumHFGeneration(BaseGenerationStrategy):
-    def __init__(self, metrcis_list: list = None):
-        super().__init__(metrcis_list)
+    def __init__(self, metrics_list: list = None, **kwargs):
+        super().__init__(metrics_list)
 
     def run_generation(
         self,
         model,
         tokenizer,
         prompt,
-        reference_tokens,
         max_new_tokens,
         crop_question,
         use_chat_template=False,
@@ -216,7 +252,8 @@ class OptimumHFGeneration(BaseGenerationStrategy):
         num_assistant_tokens=0,
         assistant_confidence_threshold=0.0,
         generation_config_extra=None,
-    ):
+        context: TextGenerationContext | None = None,
+    ) -> GenerationResults:
         is_awq = getattr(model, "is_awq", None) is not None
         device = "cpu"
         if hasattr(model, "device"):
@@ -255,8 +292,8 @@ class OptimumHFGeneration(BaseGenerationStrategy):
 
 
 class KLDivergencyGeneration(BaseGenerationStrategy):
-    def __init__(self, metrcis_list: list = None, kld_ctx: int = None, kld_chunk: int = None):
-        super().__init__(metrcis_list)
+    def __init__(self, metrics_list: list = None, kld_ctx: int = None, kld_chunk: int = None, **kwargs):
+        super().__init__(metrics_list)
         self.kld_ctx = kld_ctx
         self.kld_chunk = kld_chunk
 
@@ -321,7 +358,6 @@ class KLDivergencyGeneration(BaseGenerationStrategy):
         model,
         tokenizer,
         prompt,
-        reference_tokens,
         max_new_tokens,
         crop_question,
         use_chat_template=False,
@@ -329,15 +365,16 @@ class KLDivergencyGeneration(BaseGenerationStrategy):
         num_assistant_tokens=0,
         assistant_confidence_threshold=0.0,
         generation_config_extra=None,
-    ):
+        context: TextGenerationContext | None = None,
+    ) -> GenerationResults:
         is_awq = getattr(model, "is_awq", None) is not None
         device = "cpu"
         if hasattr(model, "device"):
             device = model.device
 
         prompt_input_ids = None
-        if reference_tokens is not None:
-            prompt_input_ids = torch.from_numpy(reference_tokens).to(dtype=torch.long)
+        if context is not None and context.reference_tokens is not None:
+            prompt_input_ids = torch.from_numpy(context.reference_tokens).to(dtype=torch.long)
         else:
             if use_chat_template:
                 message = [{"role": "user", "content": prompt}]
@@ -411,7 +448,6 @@ class LlamaCPPKLDivergencyGeneration(KLDivergencyGeneration):
         model,
         tokenizer,
         prompt,
-        reference_tokens,
         max_new_tokens,
         crop_question,
         use_chat_template=False,
@@ -419,10 +455,11 @@ class LlamaCPPKLDivergencyGeneration(KLDivergencyGeneration):
         num_assistant_tokens=0,
         assistant_confidence_threshold=0.0,
         generation_config_extra=None,
+        context: TextGenerationContext | None = None,
     ):
         prompt_input_ids = None
-        if reference_tokens is not None:
-            prompt_input_ids = torch.from_numpy(reference_tokens).to(dtype=torch.long)
+        if context is not None and context.reference_tokens is not None:
+            prompt_input_ids = torch.from_numpy(context.reference_tokens).to(dtype=torch.long)
         else:
             prompt_ids = model.tokenize(prompt.encode("utf-8"), add_bos=True, special=False)
             prompt_input_ids = torch.tensor([prompt_ids], dtype=torch.long)
@@ -440,8 +477,8 @@ class LlamaCPPKLDivergencyGeneration(KLDivergencyGeneration):
 class CompositeGenerationStrategy(BaseGenerationStrategy):
     """Runs several strategies one after another and merges the fields each of them is responsible for."""
 
-    def __init__(self, strategies: list, metrcis_list: list = None):
-        super().__init__(metrcis_list)
+    def __init__(self, strategies: list, metrics_list: list = None, **kwargs):
+        super().__init__(metrics_list)
         field_owners = {}
         for strategy in strategies:
             for field in strategy.produced_fields:
@@ -458,7 +495,6 @@ class CompositeGenerationStrategy(BaseGenerationStrategy):
         model,
         tokenizer,
         question,
-        reference_tokens,
         max_new_tokens,
         skip_question,
         use_chat_template=False,
@@ -466,14 +502,14 @@ class CompositeGenerationStrategy(BaseGenerationStrategy):
         num_assistant_tokens=0,
         assistant_confidence_threshold=0.0,
         generation_config_extra=None,
-    ):
+        context: TextGenerationContext | None = None,
+    ) -> GenerationResults:
         merged = GenerationResults(answer_text="")
         for strategy in self.strategies:
             output = strategy.run_generation(
                 model,
                 tokenizer,
                 question,
-                reference_tokens,
                 max_new_tokens,
                 skip_question,
                 use_chat_template=use_chat_template,
@@ -481,6 +517,7 @@ class CompositeGenerationStrategy(BaseGenerationStrategy):
                 num_assistant_tokens=num_assistant_tokens,
                 assistant_confidence_threshold=assistant_confidence_threshold,
                 generation_config_extra=generation_config_extra,
+                context=context,
             )
             for field in strategy.produced_fields:
                 setattr(merged, field, getattr(output, field))
