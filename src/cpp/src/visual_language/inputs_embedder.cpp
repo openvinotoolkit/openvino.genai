@@ -354,7 +354,7 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
     } else if (vlm_config.model_type == VLMModelType::MINICPMV4_6 ||
                vlm_config.model_type == VLMModelType::MINICPM_OCR) {
         m_impl = std::make_shared<InputsEmbedderMiniCPMV4_6>(vlm_config, model_dir, tokenizer, device, device_config);
-    } else if (vlm_config.model_type == VLMModelType::LFM3_VL) {
+    } else if (vlm_config.model_type == VLMModelType::LFM3_VL || vlm_config.model_type == VLMModelType::LFM3_OMNI) {
         m_impl = std::make_shared<InputsEmbedderLFM3VL>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA) {
         m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, model_dir, tokenizer, device, device_config);
@@ -415,7 +415,7 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
     } else if (vlm_config.model_type == VLMModelType::MINICPMV4_6 ||
                vlm_config.model_type == VLMModelType::MINICPM_OCR) {
         m_impl = std::make_shared<InputsEmbedderMiniCPMV4_6>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
-    } else if (vlm_config.model_type == VLMModelType::LFM3_VL) {
+    } else if (vlm_config.model_type == VLMModelType::LFM3_VL || vlm_config.model_type == VLMModelType::LFM3_OMNI) {
         m_impl = std::make_shared<InputsEmbedderLFM3VL>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA) {
         m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
