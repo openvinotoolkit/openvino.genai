@@ -85,7 +85,9 @@ void InputsEmbedderQwen4_Exp::init_ngram_embeddings_model(
     );
 }
 
-ov::Tensor InputsEmbedderQwen4_Exp::get_ngram_embeddings(const ov::Tensor& input_ids) {
+ov::Tensor InputsEmbedderQwen4_Exp::compute_ngram_embeddings(const ov::Tensor& input_ids,
+                                                            const ov::Tensor& ngram_history,
+                                                            ov::Tensor* new_ngram_history) {
     OPENVINO_ASSERT(m_ngram_embeddings_ireq_queue, "Ngram embeddings model is not loaded");
 
     CircularBufferQueueElementGuard<ov::InferRequest> guard(m_ngram_embeddings_ireq_queue.get());
@@ -93,19 +95,27 @@ ov::Tensor InputsEmbedderQwen4_Exp::get_ngram_embeddings(const ov::Tensor& input
     ov::InferRequest& ngram_embeddings_ireq = guard.get();
 
     ngram_embeddings_ireq.set_tensor("input_ids", input_ids);
-    ngram_embeddings_ireq.set_tensor("ngram_history", m_ngram_history);
+    ngram_embeddings_ireq.set_tensor("ngram_history", ngram_history);
     ngram_embeddings_ireq.infer();
 
-    // Update ngram_history from ngram_embeddings model output
-    const ov::Tensor new_ngram_history_view = ngram_embeddings_ireq.get_tensor("new_ngram_history");
-    ov::Tensor new_ngram_history(new_ngram_history_view.get_element_type(), new_ngram_history_view.get_shape());
-    new_ngram_history_view.copy_to(new_ngram_history);
-    m_ngram_history = std::move(new_ngram_history);
+    if (new_ngram_history) {
+        const ov::Tensor new_ngram_history_view = ngram_embeddings_ireq.get_tensor("new_ngram_history");
+        *new_ngram_history = ov::Tensor(new_ngram_history_view.get_element_type(), new_ngram_history_view.get_shape());
+        new_ngram_history_view.copy_to(*new_ngram_history);
+    }
 
     const ov::Tensor ngram_embeddings_view = ngram_embeddings_ireq.get_tensor("ngram_embeddings");
     ov::Tensor ngram_embeddings(ngram_embeddings_view.get_element_type(), ngram_embeddings_view.get_shape());
     ngram_embeddings_view.copy_to(ngram_embeddings);
 
+    return ngram_embeddings;
+}
+
+ov::Tensor InputsEmbedderQwen4_Exp::get_ngram_embeddings(const ov::Tensor& input_ids) {
+    // Update ngram_history from ngram_embeddings model output
+    ov::Tensor new_ngram_history;
+    ov::Tensor ngram_embeddings = compute_ngram_embeddings(input_ids, m_ngram_history, &new_ngram_history);
+    m_ngram_history = std::move(new_ngram_history);
     return ngram_embeddings;
 }
 
@@ -195,6 +205,23 @@ InputsEmbedderQwen4_Exp::get_ngram_embeddings_callback() {
         m_ngram_history = std::move(reordered_ngram_history);
         return get_ngram_embeddings(new_input_ids);
     };
+}
+
+std::function<ov::Tensor(const ov::Tensor& input_ids, const ov::Tensor& ngram_history)>
+InputsEmbedderQwen4_Exp::get_stateless_ngram_embeddings_callback() {
+    if (!m_has_ngram_embeddings) {
+        return nullptr;
+    }
+
+    return [this](const ov::Tensor& input_ids, const ov::Tensor& ngram_history) {
+        OPENVINO_ASSERT(ngram_history.get_size() == m_ngram_context_length,
+                        "Qwen4Exp n-gram history must hold ngram_size - 1 tokens.");
+        return compute_ngram_embeddings(input_ids, ngram_history);
+    };
+}
+
+ov::Tensor InputsEmbedderQwen4_Exp::get_ngram_history() const {
+    return m_has_ngram_embeddings ? m_ngram_history : ov::Tensor();
 }
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderQwen4_Exp::get_position_ids(

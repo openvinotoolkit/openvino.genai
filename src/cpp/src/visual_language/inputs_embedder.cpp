@@ -492,6 +492,15 @@ InputsEmbedder::get_ngram_embeddings_callback() {
     return m_impl->get_ngram_embeddings_callback();
 }
 
+std::function<ov::Tensor(const ov::Tensor& input_ids, const ov::Tensor& ngram_history)>
+InputsEmbedder::get_stateless_ngram_embeddings_callback() {
+    return m_impl->get_stateless_ngram_embeddings_callback();
+}
+
+ov::Tensor InputsEmbedder::get_ngram_history() const {
+    return m_impl->get_ngram_history();
+}
+
 std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
     return m_impl->encode_images(images);
 }

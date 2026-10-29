@@ -78,6 +78,14 @@ public:
     std::function<ov::Tensor(const ov::Tensor& new_input_ids, const std::vector<int32_t>& beam_indices)>
     get_ngram_embeddings_callback();
 
+    // returns the n-gram embeddings of input ids [1, tokens] following the n-gram history [1, ngram_size - 1], without
+    // changing the history of the embedder (continuous batching keeps one per sequence), or nullptr if not available
+    std::function<ov::Tensor(const ov::Tensor& input_ids, const ov::Tensor& ngram_history)>
+    get_stateless_ngram_embeddings_callback();
+
+    // returns the n-gram history [1, ngram_size - 1] after the last prompt, or an empty tensor if not available
+    ov::Tensor get_ngram_history() const;
+
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
     std::vector<ov::genai::EncodedVideo> encode_videos(
@@ -226,6 +234,15 @@ private:
         virtual std::function<ov::Tensor(const ov::Tensor& new_input_ids, const std::vector<int32_t>& beam_indices)>
         get_ngram_embeddings_callback() {
             return nullptr;
+        }
+
+        virtual std::function<ov::Tensor(const ov::Tensor& input_ids, const ov::Tensor& ngram_history)>
+        get_stateless_ngram_embeddings_callback() {
+            return nullptr;
+        }
+
+        virtual ov::Tensor get_ngram_history() const {
+            return {};
         }
 
         virtual std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);

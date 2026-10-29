@@ -55,6 +55,11 @@ public:
     std::function<ov::Tensor(const ov::Tensor& new_input_ids, const std::vector<int32_t>& beam_indices)>
     get_ngram_embeddings_callback() override;
 
+    std::function<ov::Tensor(const ov::Tensor& input_ids, const ov::Tensor& ngram_history)>
+    get_stateless_ngram_embeddings_callback() override;
+
+    ov::Tensor get_ngram_history() const override;
+
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(
         size_t inputs_embeds_size,
         size_t history_size
@@ -100,6 +105,11 @@ private:
     );
 
     ov::Tensor get_ngram_embeddings(const ov::Tensor& input_ids);
+
+    // n-gram embeddings of input_ids following ngram_history, and the history for the next tokens if requested
+    ov::Tensor compute_ngram_embeddings(const ov::Tensor& input_ids,
+                                        const ov::Tensor& ngram_history,
+                                        ov::Tensor* new_ngram_history = nullptr);
 };
 
 } // namespace ov::genai
