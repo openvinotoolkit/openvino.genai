@@ -1079,6 +1079,8 @@ class TestVideoGenerationPipelines:
         malformed_single_latent = ov.Tensor(latents[0][:1].copy())
         with pytest.raises(RuntimeError, match="expected 2, got 1"):
             pipe.decode(malformed_single_latent)
+        with pytest.raises(RuntimeError, match="expected 2, got 1"):
+            pipe.decode(ov.Tensor(np.zeros((1, 1, 1), dtype=np.float32)))
 
     @pytest.mark.parametrize("video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID], indirect=True)
     @pytest.mark.parametrize("sequence_length_offset", [-1, 1])

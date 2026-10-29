@@ -72,9 +72,10 @@ public:
 
     AutoencoderKLLTXVideo& reshape(int64_t batch_size, int64_t num_frames, int64_t height, int64_t width);
 
-private:
+    /** Validates the packed latent batch against the compiled VAE decoder input. */
     void validate_decoder_batch(size_t batch_size);
 
+private:
     void validate_decoder_inputs() const;
 
     void merge_vae_video_post_processing() const;

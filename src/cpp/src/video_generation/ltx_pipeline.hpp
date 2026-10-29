@@ -238,6 +238,7 @@ class LTXPipeline : public VideoPipeline {
                         latent.get_element_type());
         OPENVINO_ASSERT(latent.get_shape().size() == 3, "unpack_latents expects [B, S, D] input shape");
         const size_t batch_size = latent.get_shape()[0];
+        m_vae->validate_decoder_batch(batch_size);
 
         ov::Tensor unpacked = video_generation_utils::unpack_latents(latent,
                                                                      m_latent_num_frames,
