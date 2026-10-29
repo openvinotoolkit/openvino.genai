@@ -15,33 +15,6 @@
 
 namespace {
 
-// Passes all fields of the config as generate() properties, unset optional fields as empty values.
-// ov::genai::generation_config() can't be used, its VideoGenerationConfig overload is declared but not defined.
-ov::AnyMap to_generation_properties(const ov::genai::VideoGenerationConfig& config) {
-    const auto optional_value = [](const auto& value) {
-        return value ? ov::Any(*value) : ov::Any();
-    };
-    return {
-        {"negative_prompt", optional_value(config.negative_prompt)},
-        {"num_videos_per_prompt", config.num_videos_per_prompt},
-        {"guidance_scale", config.guidance_scale},
-        {"height", config.height},
-        {"width", config.width},
-        {"num_inference_steps", config.num_inference_steps},
-        {"max_sequence_length", config.max_sequence_length},
-        {"guidance_rescale", optional_value(config.guidance_rescale)},
-        {"num_frames", config.num_frames},
-        {"frame_rate", optional_value(config.frame_rate)},
-        {"audio_guidance_scale", optional_value(config.audio_guidance_scale)},
-        {"stg_scale", optional_value(config.stg_scale)},
-        {"audio_stg_scale", optional_value(config.audio_stg_scale)},
-        {"modality_scale", optional_value(config.modality_scale)},
-        {"audio_modality_scale", optional_value(config.audio_modality_scale)},
-        {"audio_guidance_rescale", optional_value(config.audio_guidance_rescale)},
-        {"spatio_temporal_guidance_blocks", optional_value(config.spatio_temporal_guidance_blocks)},
-    };
-}
-
 struct Text2VideoTsfnContext {
     Text2VideoTsfnContext(std::string prompt,
                           ov::AnyMap generation_properties,

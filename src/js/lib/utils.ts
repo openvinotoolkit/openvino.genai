@@ -565,11 +565,14 @@ export type InpaintingPipelineProperties = Record<string, unknown>;
  * Optional fields can be set to `null` to unset them.
  */
 export type VideoGenerationConfig = {
-  /** Negative prompt. Ignored when `guidance_scale` is 1 or lower. */
+  /**
+   * Negative prompt. Used only with classifier-free guidance, which is on when `guidance_scale`
+   * or the audio guidance scale (after the model defaults are applied) is above 1.
+   */
   negative_prompt?: string | null;
-  /** Number of videos to generate for a single prompt. */
+  /** Number of videos to generate per `generate()` call. */
   num_videos_per_prompt?: Uint;
-  /** Guidance scale used during denoising. */
+  /** Guidance scale. Classifier-free guidance is on when it is above 1. */
   guidance_scale?: number;
   /** Output video height in pixels. -1 uses the model default. */
   height?: number;
@@ -577,27 +580,49 @@ export type VideoGenerationConfig = {
   width?: number;
   /** Number of denoising steps. -1 uses the model default. */
   num_inference_steps?: number;
-  /** Maximum sequence length for the T5 text encoder. -1 uses the model default. */
+  /** Maximum sequence length of the text encoder and tokenizer. -1 uses the model default. */
   max_sequence_length?: number;
-  /** Guidance rescale factor, 0 disables rescaling. Unset uses the model default. */
+  /**
+   * Guidance rescale factor that fixes overexposure with zero terminal SNR
+   * (https://arxiv.org/pdf/2305.08891.pdf). 0 or lower disables rescaling.
+   * Unset uses the model default, which is 0 (disabled) for LTX-Video.
+   */
   guidance_rescale?: number | null;
-  /** Number of video frames to generate. 0 uses the model default. */
+  /** Number of video frames to generate. 0 uses the model default, which is 161 for LTX-Video. */
   num_frames?: Uint;
-  /** Video frame rate. Unset uses the model default. */
+  /**
+   * Video frame rate, which affects the rope interpolation scale.
+   * Unset uses the model default, which is 25 for LTX-Video.
+   */
   frame_rate?: number | null;
-  /** Guidance scale for the audio modality. Unset uses `guidance_scale`. */
+  /**
+   * Guidance scale for the audio modality. Unset uses the model's own default: LTX-2.3 has one (7.0)
+   * that is independent of `guidance_scale`, so the audio modality can turn on classifier-free guidance
+   * on its own. Models without an audio default, such as LTX-2.0, fall back to `guidance_scale`.
+   * The other `audio_*` fields work the same way.
+   */
   audio_guidance_scale?: number | null;
-  /** (LTX-2.3) Spatio-Temporal Guidance scale. 0 disables it. */
+  /**
+   * (LTX-2.3) Spatio-Temporal Guidance scale. Adds a transformer pass that perturbs the blocks in
+   * `spatio_temporal_guidance_blocks`. 0 disables it.
+   */
   stg_scale?: number | null;
   /** Spatio-Temporal Guidance scale for the audio modality. 0 disables the audio term. */
   audio_stg_scale?: number | null;
-  /** (LTX-2.3) Modality isolation guidance scale. 1 or lower disables it. */
+  /**
+   * (LTX-2.3) Modality isolation guidance scale. Adds a transformer pass without the audio-to-video and
+   * video-to-audio cross attention. 1 or lower disables it. The pass is shared with `audio_modality_scale`,
+   * but each modality is guided only when its own scale is above 1.
+   */
   modality_scale?: number | null;
   /** Modality isolation guidance scale for the audio modality. 1 or lower disables the audio term. */
   audio_modality_scale?: number | null;
   /** Guidance rescale factor for the audio modality. */
   audio_guidance_rescale?: number | null;
-  /** Transformer block indices perturbed by Spatio-Temporal Guidance. */
+  /**
+   * Transformer block indices perturbed by Spatio-Temporal Guidance.
+   * Indices outside the model's block range are ignored.
+   */
   spatio_temporal_guidance_blocks?: number[] | null;
 };
 
