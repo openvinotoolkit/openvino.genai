@@ -47,7 +47,7 @@ Napi::Value Image2ImagePipelineWrapper::generate(const Napi::CallbackInfo& info)
         OPENVINO_ASSERT(info[3].IsUndefined() || info[3].IsNull() || info[3].IsFunction(),
                         "Image2ImagePipeline.generate() expects streamer to be a function, null or undefined.");
         OPENVINO_ASSERT(info[4].IsFunction(), "generate done callback is not a function");
-        auto context = std::make_unique<InferenceThreadContext>(std::move(operation), "image2image_perform_inference_thread");
+        auto context = std::make_unique<InferenceThreadContext>(std::move(operation), "image2image_inference_thread");
         if (info[3].IsFunction()) {
             context->streamer =
                 std::make_unique<ThreadSafeCallback>(env, info[3].As<Napi::Function>(), "Image2Image_streamer");

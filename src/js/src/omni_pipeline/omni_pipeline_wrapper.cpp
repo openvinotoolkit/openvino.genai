@@ -39,7 +39,7 @@ Napi::Value OmniPipelineWrapper::generate(const Napi::CallbackInfo& info) {
         ov::genai::OmniTalkerSpeechConfig speech_config;
         set_if_defined(env, info[8], speech_config);
         OPENVINO_ASSERT(info[9].IsFunction(), "generate callback is not a function");
-        auto context = std::make_unique<InferenceThreadContext>(std::move(operation), "omniPerformInferenceThread");
+        auto context = std::make_unique<InferenceThreadContext>(std::move(operation), "omni_inference_thread");
         if (info[5].IsFunction()) {
             context->streamer =
                 std::make_unique<ThreadSafeCallback>(env, info[5].As<Napi::Function>(), "Omni_text_streamer");

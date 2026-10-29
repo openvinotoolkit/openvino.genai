@@ -34,7 +34,7 @@ Napi::Value WhisperPipelineWrapper::generate(const Napi::CallbackInfo& info) {
         auto properties = js_to_cpp<ov::AnyMap>(env, info[1]);
         OPENVINO_ASSERT(info[2].IsFunction() || info[2].IsUndefined(), "streamer callback is not a function");
         OPENVINO_ASSERT(info[3].IsFunction(), "generate callback is not a function");
-        auto context = std::make_unique<InferenceThreadContext>(std::move(operation), "whisperPerformInferenceThread");
+        auto context = std::make_unique<InferenceThreadContext>(std::move(operation), "whisper_inference_thread");
         if (info[2].IsFunction()) {
             context->streamer =
                 std::make_unique<ThreadSafeCallback>(env, info[2].As<Napi::Function>(), "Whisper_streamer");

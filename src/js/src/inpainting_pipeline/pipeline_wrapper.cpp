@@ -55,7 +55,7 @@ Napi::Value InpaintingPipelineWrapper::generate(const Napi::CallbackInfo& info) 
         OPENVINO_ASSERT(info[4].IsUndefined() || info[4].IsNull() || info[4].IsFunction(),
                         "InpaintingPipeline.generate() expects streamer to be a function, null or undefined.");
         OPENVINO_ASSERT(info[5].IsFunction(), "generate done callback is not a function");
-        auto context = std::make_unique<InferenceThreadContext>(std::move(operation), "inpainting_perform_inference_thread");
+        auto context = std::make_unique<InferenceThreadContext>(std::move(operation), "inpainting_inference_thread");
         if (info[4].IsFunction()) {
             context->streamer =
                 std::make_unique<ThreadSafeCallback>(env, info[4].As<Napi::Function>(), "Inpainting_streamer");

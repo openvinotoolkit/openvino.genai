@@ -33,7 +33,7 @@ Napi::Value Text2SpeechPipelineWrapper::generate(const Napi::CallbackInfo& info)
         set_if_defined(env, info[1], speaker_embedding);
         auto properties = js_to_cpp<ov::AnyMap>(env, info[2]);
         OPENVINO_ASSERT(info[3].IsFunction(), "generate callback is not a function");
-        auto context = std::make_unique<InferenceThreadContext>(std::move(operation), "text2speechPerformInferenceThread");
+        auto context = std::make_unique<InferenceThreadContext>(std::move(operation), "text2speech_inference_thread");
         context->run_generate = [pipe = pipe,
                                  inputs = std::move(inputs),
                                  speaker_embedding = std::move(speaker_embedding),

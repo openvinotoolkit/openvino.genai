@@ -38,7 +38,7 @@ Napi::Value VLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
         OPENVINO_ASSERT(info[3].IsFunction() || info[3].IsUndefined(), "streamer must be a function or undefined");
         auto properties = js_to_cpp<ov::AnyMap>(env, info[4]);
         OPENVINO_ASSERT(info[5].IsFunction(), "generate callback is not a function");
-        auto context = std::make_unique<InferenceThreadContext>(std::move(operation), "vlmPerformInferenceThread");
+        auto context = std::make_unique<InferenceThreadContext>(std::move(operation), "vlm_inference_thread");
         if (info[3].IsFunction()) {
             context->streamer = std::make_unique<ThreadSafeCallback>(env, info[3].As<Napi::Function>(), "VLM_streamer");
         }
