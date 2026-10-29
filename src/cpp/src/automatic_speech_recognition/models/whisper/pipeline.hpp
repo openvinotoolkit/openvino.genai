@@ -22,9 +22,10 @@ public:
         m_whisper_pipeline.set_generation_config(to_whisper_config(config));
     }
 
-    ASRDecodedResults generate(const std::vector<float>& raw_speech,
+    ASRDecodedResults generate(const AudiosView& audios,
                                const std::optional<ASRGenerationConfig>& generation_config,
                                const std::shared_ptr<StreamerBase> streamer) override {
+        const std::vector<float>& raw_speech = get_single_audio(audios);
         OptionalWhisperGenerationConfig whisper_config = std::nullopt;
         if (generation_config.has_value()) {
             whisper_config = to_whisper_config(generation_config.value());

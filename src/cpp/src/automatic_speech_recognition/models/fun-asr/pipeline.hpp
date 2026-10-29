@@ -17,7 +17,7 @@ class FunASR : public ASRPipelineImplBase {
 public:
     FunASR(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties);
 
-    ASRDecodedResults generate(const std::vector<float>& audio,
+    ASRDecodedResults generate(const AudiosView& audios,
                                const std::optional<ASRGenerationConfig>& generation_config,
                                const std::shared_ptr<StreamerBase> streamer = nullptr) override;
 

@@ -26,26 +26,25 @@ int64_t resolve_language_id(const std::map<std::string, int64_t>& lid_dict,
     return it->second;
 }
 
-ov::Tensor stack_padded_features(const std::vector<ov::Tensor>& utterance_features, ov::Tensor& speech_lengths) {
-    const size_t batch_size = utterance_features.size();
+ov::Tensor stack_padded_features(const std::vector<ov::Tensor>& features, ov::Tensor& speech_lengths) {
+    const size_t batch_size = features.size();
     int64_t* lengths = speech_lengths.data<int64_t>();
     size_t max_frames = 0;
     for (size_t b = 0; b < batch_size; ++b) {
-        const size_t frames = utterance_features[b].get_shape()[1];
+        const size_t frames = features[b].get_shape()[1];
         lengths[b] = static_cast<int64_t>(frames);
         max_frames = std::max(max_frames, frames);
     }
     if (batch_size == 1) {
-        return utterance_features.front();
+        return features.front();
     }
 
-    const size_t feature_size = utterance_features.front().get_shape()[2];
+    const size_t feature_size = features.front().get_shape()[2];
     ov::Tensor batch(ov::element::f32, ov::Shape{batch_size, max_frames, feature_size});
     float* data = batch.data<float>();
     std::fill_n(data, batch.get_size(), 0.0f);
     for (size_t b = 0; b < batch_size; ++b) {
-        const ov::Tensor& features = utterance_features[b];
-        std::copy_n(features.data<const float>(), features.get_size(), data + b * max_frames * feature_size);
+        std::copy_n(features[b].data<const float>(), features[b].get_size(), data + b * max_frames * feature_size);
     }
     return batch;
 }
@@ -158,26 +157,9 @@ SenseVoiceSmall::SenseVoiceSmall(const std::filesystem::path& models_path,
     m_request = model.create_infer_request();
 }
 
-ASRDecodedResults SenseVoiceSmall::generate(const std::vector<float>& audio,
+ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
                                             const std::optional<ASRGenerationConfig>& generation_config,
                                             const std::shared_ptr<StreamerBase> streamer) {
-    return transcribe({&audio}, generation_config, streamer);
-}
-
-ASRDecodedResults SenseVoiceSmall::generate_batch(const std::vector<std::vector<float>>& audio_batch,
-                                                  const std::optional<ASRGenerationConfig>& generation_config,
-                                                  const std::shared_ptr<StreamerBase> streamer) {
-    std::vector<const std::vector<float>*> audios;
-    audios.reserve(audio_batch.size());
-    for (const std::vector<float>& audio : audio_batch) {
-        audios.push_back(&audio);
-    }
-    return transcribe(audios, generation_config, streamer);
-}
-
-ASRDecodedResults SenseVoiceSmall::transcribe(const std::vector<const std::vector<float>*>& audios,
-                                              const std::optional<ASRGenerationConfig>& generation_config,
-                                              const std::shared_ptr<StreamerBase>& streamer) {
     const auto start_time = std::chrono::steady_clock::now();
 
     const ASRGenerationConfig config = resolve_generation_config(generation_config);
@@ -193,13 +175,13 @@ ASRDecodedResults SenseVoiceSmall::transcribe(const std::vector<const std::vecto
     results.perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
 
     const auto features_start_time = std::chrono::steady_clock::now();
-    std::vector<ov::Tensor> utterance_features;
-    utterance_features.reserve(batch_size);
-    for (const std::vector<float>* audio : audios) {
-        utterance_features.push_back(m_feature_extractor.extract(*audio));
+    std::vector<ov::Tensor> features;
+    features.reserve(batch_size);
+    for (const std::vector<float>& audio : audios) {
+        features.push_back(m_feature_extractor.extract(audio));
     }
     ov::Tensor speech_lengths(ov::element::i64, ov::Shape{batch_size});
-    const ov::Tensor features = stack_padded_features(utterance_features, speech_lengths);
+    const ov::Tensor input_features = stack_padded_features(features, speech_lengths);
     const auto features_stop_time = std::chrono::steady_clock::now();
     results.perf_metrics.asr_raw_metrics.features_extraction_durations.emplace_back(
         MicroSeconds(PerfMetrics::get_microsec(features_stop_time - features_start_time)));
@@ -210,7 +192,7 @@ ASRDecodedResults SenseVoiceSmall::transcribe(const std::vector<const std::vecto
     const std::string textnorm_key = config.use_itn ? "withitn" : "woitn";
     std::fill_n(textnorm.data<int64_t>(), batch_size, m_config.textnorm_dict.at(textnorm_key));
 
-    m_request.set_tensor("input_features", features);
+    m_request.set_tensor("input_features", input_features);
     m_request.set_tensor("speech_lengths", speech_lengths);
     m_request.set_tensor("language", language);
     m_request.set_tensor("textnorm", textnorm);

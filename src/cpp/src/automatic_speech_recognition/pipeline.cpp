@@ -113,17 +113,18 @@ ASRDecodedResults ASRPipeline::generate(const AudioInputs& audio_inputs,
                                         const std::optional<ASRGenerationConfig>& generation_config,
                                         StreamerVariant streamer) {
     const std::shared_ptr<StreamerBase> base_streamer = utils::create_streamer(streamer, m_impl->m_tokenizer);
-    return std::visit(
+    const AudiosView audios = std::visit(
         utils::overloaded{
-            [&](const std::vector<float>& audio) {
-                return m_impl->generate(audio, generation_config, base_streamer);
+            [](const std::vector<float>& audio) {
+                return AudiosView{std::cref(audio)};
             },
-            [&](const std::vector<std::vector<float>>& audio_batch) {
+            [](const std::vector<std::vector<float>>& audio_batch) {
                 OPENVINO_ASSERT(!audio_batch.empty(), "ASRPipeline::generate() requires a non-empty audio batch");
-                return m_impl->generate_batch(audio_batch, generation_config, base_streamer);
+                return AudiosView(audio_batch.begin(), audio_batch.end());
             },
         },
         audio_inputs);
+    return m_impl->generate(audios, generation_config, base_streamer);
 }
 
 ASRDecodedResults ASRPipeline::generate(const AudioInputs& audio_inputs, const ov::AnyMap& config_map) {

@@ -3,12 +3,17 @@
 
 #pragma once
 
+#include <functional>
+#include <vector>
+
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {
 
 void erase_allowed_asr_ctor_properties(ov::AnyMap& properties);
+
+using AudiosView = std::vector<std::reference_wrapper<const std::vector<float>>>;
 
 class ASRPipelineImplBase {
 public:
@@ -23,19 +28,9 @@ public:
         : m_generation_config(utils::from_config_json_if_exists<ASRGenerationConfig>(models_path)),
           m_tokenizer{tokenizer} {}
 
-    virtual ASRDecodedResults generate(const std::vector<float>& audio,
+    virtual ASRDecodedResults generate(const AudiosView& audios,
                                        const std::optional<ASRGenerationConfig>& generation_config,
                                        const std::shared_ptr<StreamerBase> streamer) = 0;
-
-    virtual ASRDecodedResults generate_batch(const std::vector<std::vector<float>>& audio_batch,
-                                             const std::optional<ASRGenerationConfig>& generation_config,
-                                             const std::shared_ptr<StreamerBase> streamer) {
-        OPENVINO_ASSERT(audio_batch.size() == 1,
-                        "This ASR model supports only one utterance per call, but received ",
-                        audio_batch.size(),
-                        ".");
-        return generate(audio_batch.front(), generation_config, streamer);
-    }
 
     virtual void set_generation_config(const ASRGenerationConfig& config) {
         m_generation_config = config;
@@ -43,6 +38,15 @@ public:
     }
 
     virtual ~ASRPipelineImplBase() = default;
+
+protected:
+    static const std::vector<float>& get_single_audio(const AudiosView& audios) {
+        OPENVINO_ASSERT(audios.size() == 1,
+                        "This ASR model supports only one audio per generate, but received ",
+                        audios.size(),
+                        ".");
+        return audios.front();
+    }
 };
 
 }  // namespace ov::genai

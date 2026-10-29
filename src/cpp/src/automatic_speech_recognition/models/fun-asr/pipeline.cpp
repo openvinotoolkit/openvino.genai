@@ -45,9 +45,10 @@ FunASR::FunASR(const std::filesystem::path& models_path, const std::string& devi
     m_decoder->set_seed(m_generation_config.rng_seed);
 }
 
-ASRDecodedResults FunASR::generate(const std::vector<float>& audio,
+ASRDecodedResults FunASR::generate(const AudiosView& audios,
                                    const std::optional<ASRGenerationConfig>& generation_config,
                                    const std::shared_ptr<StreamerBase> streamer) {
+    const std::vector<float>& audio = get_single_audio(audios);
     auto start_time = std::chrono::steady_clock::now();
 
     const ASRGenerationConfig config = resolve_generation_config(generation_config);

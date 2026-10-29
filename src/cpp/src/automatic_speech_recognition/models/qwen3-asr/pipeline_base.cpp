@@ -55,9 +55,10 @@ Qwen3ASRPipelineBase::Qwen3ASRPipelineBase(const std::filesystem::path& models_p
     m_generation_config.stop_token_ids.insert(151645);
 }
 
-ASRDecodedResults Qwen3ASRPipelineBase::generate(const std::vector<float>& audio,
+ASRDecodedResults Qwen3ASRPipelineBase::generate(const AudiosView& audios,
                                                  const std::optional<ASRGenerationConfig>& generation_config,
                                                  const std::shared_ptr<StreamerBase> streamer) {
+    const std::vector<float>& audio = get_single_audio(audios);
     const auto start_time = std::chrono::steady_clock::now();
 
     const ASRGenerationConfig config = resolve_generation_config(generation_config);

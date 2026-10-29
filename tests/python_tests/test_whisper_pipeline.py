@@ -788,7 +788,7 @@ def test_asr_batch_requires_batch_capable_model(sample_from_dataset, pipelines_f
 
     assert genai_pipe.generate([sample_from_dataset]).texts == genai_pipe.generate(sample_from_dataset).texts
 
-    with pytest.raises(RuntimeError, match="only one utterance per call"):
+    with pytest.raises(RuntimeError, match="only one audio per generate"):
         genai_pipe.generate([sample_from_dataset, sample_from_dataset])
 
 

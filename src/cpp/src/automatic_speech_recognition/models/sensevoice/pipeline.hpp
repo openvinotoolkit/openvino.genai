@@ -22,20 +22,13 @@ class SenseVoiceSmall : public ASRPipelineImplBase {
 public:
     SenseVoiceSmall(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties);
 
-    ASRDecodedResults generate(const std::vector<float>& audio,
+    ASRDecodedResults generate(const AudiosView& audios,
                                const std::optional<ASRGenerationConfig>& generation_config,
                                const std::shared_ptr<StreamerBase> streamer = nullptr) override;
-
-    ASRDecodedResults generate_batch(const std::vector<std::vector<float>>& audio_batch,
-                                     const std::optional<ASRGenerationConfig>& generation_config,
-                                     const std::shared_ptr<StreamerBase> streamer) override;
 
     void set_generation_config(const ASRGenerationConfig& config) override;
 
 private:
-    ASRDecodedResults transcribe(const std::vector<const std::vector<float>*>& audios,
-                                 const std::optional<ASRGenerationConfig>& generation_config,
-                                 const std::shared_ptr<StreamerBase>& streamer);
     ASRGenerationConfig resolve_generation_config(const std::optional<ASRGenerationConfig>& generation_config) const;
     void validate_generation_config(const ASRGenerationConfig& config) const;
 
