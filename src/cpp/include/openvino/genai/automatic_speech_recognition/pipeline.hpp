@@ -12,6 +12,7 @@
 #include <variant>
 #include <vector>
 
+#include "openvino/core/any.hpp"
 #include "openvino/genai/automatic_speech_recognition/generation_config.hpp"
 #include "openvino/genai/automatic_speech_recognition/perf_metrics.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
@@ -45,6 +46,15 @@ struct OPENVINO_GENAI_EXPORTS ASRDecodedResults {
 
     std::optional<std::vector<std::vector<ASRDecodedResultChunk>>> chunks = std::nullopt;
     std::optional<std::vector<std::vector<ASRDecodedResultChunk>>> words = std::nullopt;
+
+    /**
+     * @brief Optional model-specific metadata for each transcription.
+     *
+     * Models that do not provide metadata leave this unset.
+     * When present, `metadata[i]` corresponds to `texts[i]`.
+     * Each map contains model-defined key/value metadata and may be empty.
+     */
+    std::optional<std::vector<ov::AnyMap>> metadata = std::nullopt;
 
     operator std::string() const {
         std::stringstream ss;

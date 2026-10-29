@@ -14,6 +14,8 @@ namespace ov::genai {
 
 enum class VLMModelType {
     MINICPM,
+    MINICPMV4_6,
+    MINICPM_OCR,
     LLAVA,
     NANOLLAVA,
     LLAVA_NEXT,
