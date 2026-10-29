@@ -105,8 +105,10 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
                     "DFlash draft model must have exactly one of 'last_hidden_state' or 'logits' output.");
 
     // Resolve authoritative metadata before mutating either model so a malformed target leaves the draft reusable.
+    // extract_pruned_draft_vocabulary removes the draft's 'd2t' output only once its checks pass.
     auto retained_hidden_state_locators =
         utils::dflash::resolve_target_hidden_state_locators(main_model, m_rt_info.target_layer_ids);
+    const auto pruned_vocabulary = utils::dflash::extract_pruned_draft_vocabulary(main_model, draft_model, m_rt_info);
 
     // The VLM draft keeps its external inputs_embeds; the LLM draft gets the target embedding grafted in.
     if (m_inputs_embedder) {
@@ -132,6 +134,9 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
                     "DFlash draft model has no 'sampled_tokens_indices' input, so its candidate logits cannot be gathered.");
     if (markov_head_reads_hidden_states) {
         utils::dflash::gather_last_hidden_state_with_logits(draft_model);
+    }
+    if (pruned_vocabulary) {
+        utils::dflash::widen_draft_logits_to_target_vocabulary(draft_model, *pruned_vocabulary);
     }
     validate_target_has_no_unmanaged_state(main_model);
     utils::dflash::expose_target_hidden_states(main_model, retained_hidden_state_locators, m_rt_info.target_layer_ids);

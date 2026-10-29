@@ -378,6 +378,8 @@ The draft must be trained against the same target and runs with the target's tok
 The draft backbone is exported as `openvino_model.xml`, and the Markov head of a DSpark or DFlash v2 draft next to it as `openvino_markov_head_model.xml`.
 INT8 and INT4 weight formats compress only the draft backbone; the Markov head keeps the checkpoint precision unless `--weight-format fp16` or `fp32` converts it.
 
+DSpark and DFlash v1 drafts can have a pruned vocabulary, as [openbmb/MiniCPM-OCR-1.0-DSpark](https://huggingface.co/openbmb/MiniCPM-OCR-1.0-DSpark) does: their own LM head predicts a subset of the target vocabulary, which OpenVINO GenAI maps to the target vocabulary when it loads the draft.
+
 ### Configuration and Usage
 
 Per request, DFlash needs no configuration beyond `num_assistant_tokens`, the number of candidates the draft fills in each step.

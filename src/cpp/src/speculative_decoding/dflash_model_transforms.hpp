@@ -191,6 +191,37 @@ void attach_target_lm_head_to_draft(const std::shared_ptr<ov::Model>& main_model
 void gather_last_hidden_state_with_logits(const std::shared_ptr<ov::Model>& draft_model);
 
 /**
+ * @brief The vocabulary of a draft that predicts a subset of the target vocabulary with its own lm_head.
+ */
+struct PrunedDraftVocabulary {
+    // target_token_ids[i] is the target token id of draft token i.
+    std::vector<int64_t> target_token_ids;
+    size_t target_vocab_size = 0;
+};
+
+/**
+ * @brief Reads the vocabulary of a draft with a pruned vocabulary and removes its 'd2t' output. Returns std::nullopt
+ * for a draft without a 'd2t' output, which predicts the target vocabulary.
+ *
+ * Such a draft exports 'logits' over its own vocabulary and, as Eagle-3 drafts do, a constant 'd2t' output: draft token
+ * i is target token i + d2t[i]. The target token ids must be distinct and below the target logits width. A Markov head
+ * must score target-vocabulary logits, and its candidate scorer's K must not exceed the draft vocabulary size.
+ */
+std::optional<PrunedDraftVocabulary> extract_pruned_draft_vocabulary(const std::shared_ptr<ov::Model>& main_model,
+                                                                     const std::shared_ptr<ov::Model>& draft_model,
+                                                                     const DFlashRTInfo& info);
+
+/**
+ * @brief Widens the draft 'logits' to the target vocabulary: each draft logit moves to the column of its target token,
+ * and the target tokens outside the draft vocabulary get -inf, so neither the Markov head nor the draft sampler
+ * proposes them.
+ *
+ * Run after apply_gather_before_matmul_transformation(), which looks for the draft lm_head right before 'logits'.
+ */
+void widen_draft_logits_to_target_vocabulary(const std::shared_ptr<ov::Model>& draft_model,
+                                             const PrunedDraftVocabulary& vocabulary);
+
+/**
  * @brief Attaches the target token embedding into the draft graph.
  *
  * Clones the target token-embedding weight subgraph (including any INT4 decompression chain) and
