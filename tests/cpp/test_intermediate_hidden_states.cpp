@@ -12,7 +12,6 @@ namespace {
 
 constexpr size_t kBlockSize = 2;
 constexpr size_t kHiddenSize = 4;
-constexpr size_t kBlockBytes = kBlockSize * kHiddenSize * sizeof(float);
 
 ov::Tensor make_row(float value) {
     ov::Tensor row(ov::element::f32, {1, kHiddenSize});
@@ -26,6 +25,12 @@ std::vector<ov::Tensor> make_block(float value) {
         rows.push_back(make_row(value + static_cast<float>(i)));
     }
     return rows;
+}
+
+ov::genai::HiddenStateCache make_cache(size_t capacity_tokens = 64) {
+    return ov::genai::HiddenStateCache{[capacity_tokens] {
+        return capacity_tokens;
+    }};
 }
 
 ov::genai::Sequence::Ptr make_accumulating_sequence() {
@@ -47,7 +52,7 @@ std::vector<float> first_values(const std::vector<ov::Tensor>& rows) {
 }  // namespace
 
 TEST(HiddenStateCache, GetPrefixReturnsRowsOfLeadingCachedBlocksInOrder) {
-    ov::genai::HiddenStateCache cache;
+    auto cache = make_cache();
     cache.put(1, make_block(10.f));
     cache.put(2, make_block(20.f));
 
@@ -57,7 +62,7 @@ TEST(HiddenStateCache, GetPrefixReturnsRowsOfLeadingCachedBlocksInOrder) {
 }
 
 TEST(HiddenStateCache, GetPrefixStopsAtFirstMissingBlock) {
-    ov::genai::HiddenStateCache cache;
+    auto cache = make_cache();
     cache.put(1, make_block(10.f));
     cache.put(3, make_block(30.f));
 
@@ -65,8 +70,8 @@ TEST(HiddenStateCache, GetPrefixStopsAtFirstMissingBlock) {
     EXPECT_TRUE(cache.get_prefix({2, 3}).empty());
 }
 
-TEST(HiddenStateCache, EvictsLeastRecentlyUsedBlockOverBudget) {
-    ov::genai::HiddenStateCache cache(2 * kBlockBytes);
+TEST(HiddenStateCache, EvictsLeastRecentlyUsedBlockOverCapacity) {
+    auto cache = make_cache(2 * kBlockSize);
     cache.put(1, make_block(10.f));
     cache.put(2, make_block(20.f));
     cache.get_prefix({1});
@@ -76,21 +81,21 @@ TEST(HiddenStateCache, EvictsLeastRecentlyUsedBlockOverBudget) {
     EXPECT_TRUE(cache.get_prefix({2}).empty());
     EXPECT_EQ(cache.get_prefix({1}).size(), kBlockSize);
     EXPECT_EQ(cache.get_prefix({3}).size(), kBlockSize);
-    EXPECT_EQ(cache.used_bytes(), 2 * kBlockBytes);
+    EXPECT_EQ(cache.used_tokens(), 2 * kBlockSize);
 }
 
 TEST(HiddenStateCache, PutOfCachedHashKeepsStoredRows) {
-    ov::genai::HiddenStateCache cache;
+    auto cache = make_cache();
     cache.put(1, make_block(10.f));
 
     cache.put(1, make_block(99.f));
 
     EXPECT_EQ(first_values(cache.get_prefix({1})), (std::vector<float>{10.f, 11.f}));
-    EXPECT_EQ(cache.used_bytes(), kBlockBytes);
+    EXPECT_EQ(cache.used_tokens(), kBlockSize);
 }
 
 TEST(HiddenStateCache, WriteToInsertedRowDoesNotChangeStoredRow) {
-    ov::genai::HiddenStateCache cache;
+    auto cache = make_cache();
     auto block = make_block(10.f);
     cache.put(1, block);
 
@@ -100,7 +105,7 @@ TEST(HiddenStateCache, WriteToInsertedRowDoesNotChangeStoredRow) {
 }
 
 TEST(HiddenStateCache, WriteToReturnedRowDoesNotChangeStoredRow) {
-    ov::genai::HiddenStateCache cache;
+    auto cache = make_cache();
     cache.put(1, make_block(10.f));
 
     cache.get_prefix({1})[0].data<float>()[0] = 99.f;
@@ -108,13 +113,30 @@ TEST(HiddenStateCache, WriteToReturnedRowDoesNotChangeStoredRow) {
     EXPECT_EQ(first_values(cache.get_prefix({1})), (std::vector<float>{10.f, 11.f}));
 }
 
-TEST(HiddenStateCache, BlockLargerThanBudgetIsNotStored) {
-    ov::genai::HiddenStateCache cache(kBlockBytes - 1);
+TEST(HiddenStateCache, BlockLargerThanCapacityIsNotStored) {
+    auto cache = make_cache(kBlockSize - 1);
 
     cache.put(1, make_block(10.f));
 
     EXPECT_TRUE(cache.get_prefix({1}).empty());
-    EXPECT_EQ(cache.used_bytes(), 0);
+    EXPECT_EQ(cache.used_tokens(), 0);
+}
+
+TEST(HiddenStateCache, CapacityFollowsProvider) {
+    size_t capacity = kBlockSize;
+    ov::genai::HiddenStateCache cache{[&capacity] {
+        return capacity;
+    }};
+    cache.put(1, make_block(10.f));
+    cache.put(2, make_block(20.f));
+    EXPECT_TRUE(cache.get_prefix({1}).empty());
+
+    capacity = 2 * kBlockSize;
+    cache.put(3, make_block(30.f));
+
+    EXPECT_EQ(cache.get_prefix({2}).size(), kBlockSize);
+    EXPECT_EQ(cache.get_prefix({3}).size(), kBlockSize);
+    EXPECT_EQ(cache.used_tokens(), 2 * kBlockSize);
 }
 
 TEST(IntermediateHiddenStates, PositionComputedAgainAfterPreemptionReplacesItsState) {
@@ -151,4 +173,18 @@ TEST(IntermediateHiddenStates, PrefillAfterComputedStatesThrows) {
     sequence->set_intermediate_hidden_state(0, make_row(0.f));
 
     EXPECT_THROW(sequence->prefill_intermediate_hidden_states(make_block(1.f)), ov::Exception);
+}
+
+TEST(IntermediateHiddenStates, PositionAtCapComputedAgainIsNotStored) {
+    const auto sequence = make_accumulating_sequence();
+    // Sequence::kMaxAccumulatedHiddenStates, which is private.
+    constexpr size_t cap = 512;
+    for (size_t position = 0; position <= cap; ++position) {
+        sequence->set_intermediate_hidden_state(position, make_row(static_cast<float>(position)));
+    }
+
+    // Preemption computes the position again after the cap warning was logged.
+    sequence->set_intermediate_hidden_state(cap, make_row(0.f));
+
+    EXPECT_EQ(sequence->get_all_intermediate_hidden_states().size(), cap);
 }

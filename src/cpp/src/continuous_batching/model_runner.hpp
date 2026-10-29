@@ -416,8 +416,6 @@ public:
     void enable_hidden_state_import(bool on)   { on ? m_hidden_state_flags |= HS_IMPORT   : m_hidden_state_flags &= ~HS_IMPORT; }
     void enable_hidden_state_internal(bool on) { on ? m_hidden_state_flags |= HS_INTERNAL : m_hidden_state_flags &= ~HS_INTERNAL; }
 
-    bool has_intermediate_hidden_states_output() const { return m_has_intermediate_hidden_states_output; }
-
     // MTP draft uses rank-1 sequential positions instead of VLM M-RoPE positions.
     void enable_mtp_draft_positions(bool on) { m_mtp_draft_positions = on; }
 

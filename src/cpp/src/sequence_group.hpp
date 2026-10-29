@@ -200,17 +200,16 @@ public:
         if (!m_accumulate_hidden_states || tensor.get_size() == 0) {
             return;
         }
-        if (position >= kMaxAccumulatedHiddenStates) {
-            if (!m_hidden_state_cap_warned) {
-                GENAI_WARN("Hidden state accumulation cap reached (%zu tokens); stopping accumulation",
-                           kMaxAccumulatedHiddenStates);
-                m_hidden_state_cap_warned = true;
-            }
+        if (position >= kMaxAccumulatedHiddenStates && !m_hidden_state_cap_warned) {
+            GENAI_WARN("Hidden state accumulation cap reached (%zu tokens); stopping accumulation",
+                       kMaxAccumulatedHiddenStates);
+            m_hidden_state_cap_warned = true;
             return;
         }
+        // Preemption can compute a position past the cap again after the warning was logged.
         // A prefix restored without prefill_intermediate_hidden_states() belongs to a request that did
-        // not ask for hidden states; its later rows cannot be indexed, so they are dropped.
-        if (position > m_all_intermediate_hidden_states.size()) {
+        // not ask for hidden states; its later hidden states cannot be indexed, so they are dropped.
+        if (position >= kMaxAccumulatedHiddenStates || position > m_all_intermediate_hidden_states.size()) {
             return;
         }
         ov::Tensor copy(tensor.get_element_type(), tensor.get_shape());
@@ -222,14 +221,14 @@ public:
         }
     }
 
-    /// @param rows Hidden states of the prefix restored from the prefix cache, positions [0, rows.size()).
-    void prefill_intermediate_hidden_states(std::vector<ov::Tensor> rows) {
+    /// @param hidden_states Hidden states restored from the prefix cache, for positions [0, hidden_states.size()).
+    void prefill_intermediate_hidden_states(std::vector<ov::Tensor> hidden_states) {
         OPENVINO_ASSERT(m_all_intermediate_hidden_states.empty(),
                         "Restored hidden states must precede every computed one");
-        if (rows.size() > kMaxAccumulatedHiddenStates) {
-            rows.resize(kMaxAccumulatedHiddenStates);
+        if (hidden_states.size() > kMaxAccumulatedHiddenStates) {
+            hidden_states.resize(kMaxAccumulatedHiddenStates);
         }
-        m_all_intermediate_hidden_states = std::move(rows);
+        m_all_intermediate_hidden_states = std::move(hidden_states);
     }
 
     void set_accumulate_hidden_states(bool enable) {
