@@ -2792,6 +2792,12 @@ public:
             return true;
         };
 
+        // A latest-only manager restores from a single checkpoint, so a snapshot's checkpoint at the last
+        // computed position is usable without the earlier ones that the chain walk below needs.
+        if (m_restore_latest_prefix_block_only && prompt_len > 1) {
+            extend_chain(prompt_len - 1);
+        }
+
         size_t covered_len = 0;
         for (size_t content_len = m_block_size; content_len <= prompt_len; content_len += m_block_size) {
             if (!extend_chain(content_len)) {
@@ -2801,7 +2807,7 @@ public:
         }
 
         // A restored session ends on its last computed position (prompt_len - 1), which is usually not block aligned.
-        if (prompt_len > 1) {
+        if (!m_restore_latest_prefix_block_only && prompt_len > 1) {
             const size_t tail_len = prompt_len - 1;
             if (tail_len % m_block_size != 0 && covered_len == tail_len / m_block_size * m_block_size) {
                 extend_chain(tail_len);

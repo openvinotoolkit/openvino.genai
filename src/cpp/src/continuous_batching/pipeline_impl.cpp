@@ -463,6 +463,14 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::restore_sta
                             "Session snapshot block ending at token ", entry.content_len,
                             " is missing from the prefix-caching offload store, so the snapshot cannot be restored");
         }
+        if (loaded.la_entry) {
+            auto* la_offload = m_scheduler->get_cache_orchestrator().get_la_offload_cache();
+            OPENVINO_ASSERT(la_offload != nullptr,
+                            "Restoring a format 4 session snapshot of a hybrid model requires linear-attention cache offload");
+            OPENVINO_ASSERT(la_offload->contains(loaded.la_entry->hash),
+                            "Session snapshot linear-attention checkpoint is missing from the prefix-caching offload "
+                            "store, so the snapshot cannot be restored");
+        }
         OPENVINO_ASSERT(sampling_params_copy.max_length > loaded.token_ids.size(),
                         "'max_length' must be greater than the number of restored session tokens");
 

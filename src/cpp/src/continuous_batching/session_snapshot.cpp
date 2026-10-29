@@ -226,12 +226,15 @@ void save_prefix_offload_format(CacheOrchestrator& orchestrator,
                                 const Sequence::CPtr& sequence,
                                 const std::filesystem::path& path) {
     OPENVINO_ASSERT(orchestrator.has_kv_cache(), "Session snapshot requires a model with KV cache inputs");
-    OPENVINO_ASSERT(!orchestrator.has_linear_attention_cache(),
-                    "Session snapshot format 4 does not support models with a linear-attention cache yet");
     OPENVINO_ASSERT(seq_group->get_sequence_group_type() == SequenceGroupType::TOKENS,
                     "Session snapshot format 4 does not support embeddings-routed models yet");
     auto* kv_offload = orchestrator.get_kv_offload_cache();
     OPENVINO_ASSERT(kv_offload != nullptr, "Session snapshot format 4 requires KV cache offload to be enabled");
+    const bool has_la = orchestrator.has_linear_attention_cache();
+    auto* la_offload = has_la ? orchestrator.get_la_offload_cache() : nullptr;
+    OPENVINO_ASSERT(!has_la || la_offload != nullptr,
+                    "Session snapshot format 4 requires linear-attention cache offload to be enabled "
+                    "(cache_offload_config.linear_attention_capacity_bytes)");
 
     std::vector<int64_t> token_ids = seq_group->get_prompt_ids();
     const auto& generated = sequence->get_generated_ids();
@@ -252,6 +255,7 @@ void save_prefix_offload_format(CacheOrchestrator& orchestrator,
 
     std::vector<SessionSnapshot::PrefixEntry> entries;
     std::vector<size_t> pinned_hashes;
+    std::vector<size_t> pinned_la_hashes;
     try {
         for (size_t block = 0; block * block_tokens < computed_len; ++block) {
             OPENVINO_ASSERT(block < indices.size(), "Sequence has fewer KV blocks than its computed length needs");
@@ -264,8 +268,29 @@ void save_prefix_offload_format(CacheOrchestrator& orchestrator,
             pinned_hashes.push_back(hash);
             entries.push_back({content_len, hash});
         }
+        const size_t num_kv_entries = entries.size();
+
+        // The recurrent state at the last computed position summarizes the whole history, so one checkpoint
+        // is enough. It is stored last in the entry list.
+        size_t la_interval = 0;
+        if (has_la) {
+            la_interval = orchestrator.get_block_size(CacheType::LINEAR_ATTENTION_CACHE);
+            const auto la_indices =
+                logical_block_indices(orchestrator.get_block_manager(CacheType::LINEAR_ATTENTION_CACHE), sequence->get_id());
+            OPENVINO_ASSERT(!la_indices.empty(), "Linear attention cache has no block allocated for this sequence");
+            const size_t la_hash = mutable_sequence->get_hash(computed_len, la_interval);
+            OPENVINO_ASSERT(la_offload->persist(la_hash, la_indices.back()),
+                            "Session snapshot could not store the linear-attention checkpoint in the prefix-caching "
+                            "offload store: no slot is free and every entry is pinned. "
+                            "Increase cache_offload_config.linear_attention_capacity_bytes");
+            pinned_la_hashes.push_back(la_hash);
+            entries.push_back({computed_len, la_hash});
+        }
         // The snapshot is reported as saved once this returns, so the store must have made it durable.
         kv_offload->flush_durable();
+        if (has_la) {
+            la_offload->flush_durable();
+        }
 
         const std::string device = orchestrator.get_device();
         PrefixOffloadHeader header{};
@@ -273,12 +298,20 @@ void save_prefix_offload_format(CacheOrchestrator& orchestrator,
         header.format_version = FORMAT_VERSION_PREFIX_OFFLOAD;
         header.device_len = static_cast<uint32_t>(device.size());
         header.kv_present = 1;
+        header.la_present = has_la ? 1 : 0;
         header.kv_num_layers = static_cast<uint32_t>(kv_manager.get_num_layers());
         header.kv_block_size_in_bytes = kv_manager.get_block_size_in_bytes();
         header.kv_slot_bytes = kv_manager.get_block_layout().get_slot_size();
         header.kv_block_tokens = block_tokens;
+        if (has_la) {
+            const auto& la_manager = static_cast<const LinearAttentionCacheManager&>(
+                orchestrator.get_cache_manager(CacheType::LINEAR_ATTENTION_CACHE));
+            header.la_block_size_in_bytes = la_manager.get_block_size_in_bytes();
+            header.la_slot_bytes = la_manager.get_block_layout().get_slot_size();
+            header.la_cache_interval = la_interval;
+        }
         header.num_tokens = num_positions;
-        header.num_kv_entries = entries.size();
+        header.num_kv_entries = num_kv_entries;
         header.checksum = prefix_offload_checksum(header, device, token_ids, entries);
 
         std::ofstream out(path, std::ios::binary | std::ios::trunc);
@@ -290,6 +323,9 @@ void save_prefix_offload_format(CacheOrchestrator& orchestrator,
     } catch (...) {
         for (const size_t hash : pinned_hashes) {
             kv_offload->unpin(hash);
+        }
+        for (const size_t hash : pinned_la_hashes) {
+            la_offload->unpin(hash);
         }
         throw;
     }
@@ -305,10 +341,12 @@ SessionSnapshot::Loaded load_prefix_offload_format(const CacheOrchestrator& orch
 
     // Bound every size read from the file by the file itself before allocating anything for it.
     const uint64_t file_size = std::filesystem::file_size(path);
+    OPENVINO_ASSERT(header.la_present <= 1, "Session snapshot file is truncated or corrupted");
+    const uint64_t num_entries = header.num_kv_entries + header.la_present;
     OPENVINO_ASSERT(header.device_len <= file_size && header.num_tokens <= file_size / sizeof(int64_t) &&
                         header.num_kv_entries <= file_size / sizeof(SessionSnapshot::PrefixEntry) &&
                         sizeof(header) + header.device_len + header.num_tokens * sizeof(int64_t) +
-                                header.num_kv_entries * sizeof(SessionSnapshot::PrefixEntry) ==
+                                num_entries * sizeof(SessionSnapshot::PrefixEntry) ==
                             file_size,
                     "Session snapshot file is truncated or corrupted");
 
@@ -318,15 +356,20 @@ SessionSnapshot::Loaded load_prefix_offload_format(const CacheOrchestrator& orch
     result.prefix_offload_format = true;
     result.token_ids.resize(header.num_tokens);
     read_exact(in, result.token_ids.data(), result.token_ids.size() * sizeof(int64_t));
-    result.kv_entries.resize(header.num_kv_entries);
-    read_exact(in, result.kv_entries.data(), result.kv_entries.size() * sizeof(SessionSnapshot::PrefixEntry));
-    OPENVINO_ASSERT(prefix_offload_checksum(header, device, result.token_ids, result.kv_entries) == header.checksum,
+    std::vector<SessionSnapshot::PrefixEntry> entries(num_entries);
+    read_exact(in, entries.data(), entries.size() * sizeof(SessionSnapshot::PrefixEntry));
+    OPENVINO_ASSERT(prefix_offload_checksum(header, device, result.token_ids, entries) == header.checksum,
                     "Session snapshot failed its integrity check (file may be corrupted)");
+    result.kv_entries.assign(entries.begin(), entries.begin() + header.num_kv_entries);
+    if (header.la_present) {
+        result.la_entry = entries.back();
+    }
 
     OPENVINO_ASSERT(header.kv_present && orchestrator.has_kv_cache(),
                     "Session snapshot/model mismatch: snapshot KV cache presence differs from the loaded model");
-    OPENVINO_ASSERT(!header.la_present && !orchestrator.has_linear_attention_cache(),
-                    "Session snapshot format 4 does not support models with a linear-attention cache yet");
+    OPENVINO_ASSERT(static_cast<bool>(header.la_present) == orchestrator.has_linear_attention_cache(),
+                    "Session snapshot/model mismatch: snapshot linear-attention cache presence differs from the "
+                    "loaded model");
     OPENVINO_ASSERT(!header.is_embeddings, "Session snapshot format 4 does not support embeddings-routed models yet");
     OPENVINO_ASSERT(device == orchestrator.get_device(),
                     "Session snapshot was captured on device '", device, "' but the current pipeline uses '",
@@ -342,6 +385,18 @@ SessionSnapshot::Loaded load_prefix_offload_format(const CacheOrchestrator& orch
     OPENVINO_ASSERT(header.kv_block_tokens == orchestrator.get_block_size(CacheType::KV_CACHE),
                     "Session snapshot was captured with a KV block size of ", header.kv_block_tokens,
                     " tokens but the current pipeline uses ", orchestrator.get_block_size(CacheType::KV_CACHE));
+    if (header.la_present) {
+        const auto& la_manager = static_cast<const LinearAttentionCacheManager&>(
+            orchestrator.get_cache_manager(CacheType::LINEAR_ATTENTION_CACHE));
+        OPENVINO_ASSERT(header.la_block_size_in_bytes == la_manager.get_block_size_in_bytes() &&
+                            header.la_slot_bytes == la_manager.get_block_layout().get_slot_size(),
+                        "Session snapshot was captured with an incompatible linear-attention cache layout for the "
+                        "currently loaded model");
+        OPENVINO_ASSERT(header.la_cache_interval == orchestrator.get_block_size(CacheType::LINEAR_ATTENTION_CACHE),
+                        "Session snapshot was captured with a linear-attention checkpoint interval of ",
+                        header.la_cache_interval, " tokens but the current pipeline uses ",
+                        orchestrator.get_block_size(CacheType::LINEAR_ATTENTION_CACHE));
+    }
 
     OPENVINO_ASSERT(header.num_tokens >= 1, "Session snapshot holds no tokens");
     uint64_t previous_len = 0;
@@ -350,6 +405,8 @@ SessionSnapshot::Loaded load_prefix_offload_format(const CacheOrchestrator& orch
                         "Session snapshot has an invalid prefix entry (file may be corrupted)");
         previous_len = entry.content_len;
     }
+    OPENVINO_ASSERT(!result.la_entry || result.la_entry->content_len == header.num_tokens - 1,
+                    "Session snapshot has an invalid linear-attention entry (file may be corrupted)");
     return result;
 }
 
@@ -360,8 +417,10 @@ bool SessionSnapshot::prefix_offload_format_requested(const CacheOrchestrator& o
     if (value == nullptr || std::string_view(value) != "4") {
         return false;
     }
-    if (orchestrator.get_kv_offload_cache() == nullptr) {
-        GENAI_WARN("%s=4 needs KV cache offload to be enabled; falling back to the self-contained snapshot format",
+    auto* kv_offload = orchestrator.get_kv_offload_cache();
+    if (kv_offload == nullptr || (orchestrator.has_linear_attention_cache() && orchestrator.get_la_offload_cache() == nullptr)) {
+        GENAI_WARN("%s=4 needs KV (and for hybrid models linear-attention) cache offload to be enabled; falling back to "
+                   "the self-contained snapshot format",
                    FORMAT_ENV);
         return false;
     }

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <map>
+#include <optional>
 #include <vector>
 
 #include "continuous_batching/cache/cache_type.hpp"
@@ -100,6 +101,8 @@ public:
         /// from the offload store through these entries (the restored request is a normal prompt).
         bool prefix_offload_format = false;
         std::vector<PrefixEntry> kv_entries;
+        /// The linear-attention checkpoint at the last computed position, for models that have that cache.
+        std::optional<PrefixEntry> la_entry;
     };
 
     /**

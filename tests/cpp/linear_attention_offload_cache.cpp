@@ -339,6 +339,51 @@ TEST(TestLinearAttentionOffloadCache, PersistWithQueuedStoresInFlightDoesNotDead
     EXPECT_EQ(offload_cache->get_num_entries(), 4);
 }
 
+namespace {
+
+/// A snapshot keeps one checkpoint, at the last computed position (num_tokens - 1), in the store. A latest-only
+/// block manager must restore from it even though none of the earlier checkpoints exist.
+void expect_snapshot_checkpoint_is_restored(size_t num_tokens) {
+    constexpr size_t cache_interval = 4;
+    LaCacheFixture fixture(/*num_blocks=*/2);
+    auto offload_cache = make_offload_cache(fixture, 2);
+    BlockManager block_manager(/*num_blocks=*/2,
+                               /*enable_prefix_caching=*/true,
+                               cache_interval,
+                               /*num_layers=*/1,
+                               /*fixed_blocks_per_sequence=*/0,
+                               /*restore_latest_prefix_block_only=*/true);
+
+    std::vector<int64_t> tokens(num_tokens);
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        tokens[i] = static_cast<int64_t>(i);
+    }
+    auto consumer = make_group(tokens, /*request_id=*/30);
+    const auto sequence = consumer->get_running_sequences().at(0);
+    const auto expected = fixture.fill_block(0, /*seed=*/41);
+    ASSERT_TRUE(offload_cache->persist(sequence->get_hash(num_tokens - 1, cache_interval), /*block_index=*/0));
+
+    EXPECT_EQ(block_manager.warm_prefix_cache(consumer, *offload_cache), 1);
+    EXPECT_TRUE(block_manager.restore_cached_blocks(consumer));
+    EXPECT_EQ(consumer->get_num_processed_tokens(), num_tokens - 1);
+
+    block_manager.free_sequence(sequence->get_id());
+}
+
+}  // namespace
+
+TEST(TestLinearAttentionOffloadCache, WarmRestoresASnapshotCheckpointThatIsNotIntervalAligned) {
+    expect_snapshot_checkpoint_is_restored(/*num_tokens=*/10);
+}
+
+TEST(TestLinearAttentionOffloadCache, WarmRestoresASnapshotCheckpointOnAnIntervalBoundary) {
+    expect_snapshot_checkpoint_is_restored(/*num_tokens=*/9);
+}
+
+TEST(TestLinearAttentionOffloadCache, WarmRestoresASnapshotCheckpointWhenThePromptEndsOnAnIntervalBoundary) {
+    expect_snapshot_checkpoint_is_restored(/*num_tokens=*/8);
+}
+
 TEST(TestLinearAttentionOffloadCache, ConcurrentOverwritesNeverEvictAPinnedEntry) {
     LaCacheFixture fixture;
     auto offload_cache = make_offload_cache(fixture, 2);
