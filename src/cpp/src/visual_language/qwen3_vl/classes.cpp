@@ -100,9 +100,10 @@ void fill_video_metadata(EncodedVideo& encoded_video,
         num_frames = static_cast<size_t>(
             total_num_frames / static_cast<double>(video_metadata.fps) * static_cast<double>(video_config.fps)
         );
-        num_frames = std::clamp(num_frames, video_config.min_frames, std::min(video_config.max_frames, total_num_frames));
+        // Not std::clamp: min_frames may exceed total_num_frames, and the transformers processors cap at the total.
+        num_frames = std::min({std::max(num_frames, video_config.min_frames), video_config.max_frames, total_num_frames});
     } else if (num_frames == 0) {
-        num_frames = std::clamp(total_num_frames, video_config.min_frames, video_config.max_frames);
+        num_frames = std::min(std::max(total_num_frames, video_config.min_frames), video_config.max_frames);
     }
 
     OPENVINO_ASSERT(num_frames > 1 && num_frames <= total_num_frames,
@@ -110,7 +111,8 @@ void fill_video_metadata(EncodedVideo& encoded_video,
 
     video_metadata.frames_indices.reserve(num_frames);
     for (size_t i = 0; i < num_frames; ++i) {
-        size_t frame_idx = static_cast<size_t>(std::round(
+        // nearbyint rounds halves to even, as the linspace(...).round() of the transformers processors.
+        size_t frame_idx = static_cast<size_t>(std::nearbyint(
             static_cast<double>(i) * static_cast<double>(total_num_frames - 1) / static_cast<double>(num_frames - 1)
         ));
         video_metadata.frames_indices.push_back(frame_idx);
