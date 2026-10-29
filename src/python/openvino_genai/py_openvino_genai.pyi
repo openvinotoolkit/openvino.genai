@@ -2490,14 +2490,14 @@ class Image2VideoPipeline:
         ...
     def decode(self, latent: openvino._pyopenvino.Tensor, generation_config: openvino_genai.py_openvino_genai.VideoGenerationConfig | None = None) -> VideoGenerationResult:
         """
-        Decode a packed latent tensor into a video.
-
-        :param latent: Packed latent tensor produced during denoising.
-        :type latent: openvino.Tensor
-        :param generation_config: Optional configuration for this decode only; defaults to the saved configuration.
-        :type generation_config: VideoGenerationConfig | None
-        :return: Decoded video and performance metrics.
-        :rtype: VideoGenerationResult
+                        Decode a packed latent tensor into a video.
+        
+                        :param latent: Packed latent tensor produced during denoising.
+                        :type latent: openvino.Tensor
+                        :param generation_config: Optional configuration for this decode only; defaults to the saved configuration.
+                        :type generation_config: VideoGenerationConfig | None
+                        :return: Decoded video and performance metrics.
+                        :rtype: VideoGenerationResult
         """
     def generate(self, image: openvino._pyopenvino.Tensor, prompt: str, **kwargs) -> VideoGenerationResult:
         ...
@@ -5902,16 +5902,16 @@ class Text2VideoPipeline:
         ...
     def decode(self, latent: openvino._pyopenvino.Tensor, generation_config: openvino_genai.py_openvino_genai.VideoGenerationConfig | None = None) -> VideoGenerationResult:
         """
-        Decode a packed latent tensor into a video.
-
-        The latent tensor must be obtained from the generation callback.
-
-        :param latent: Packed latent tensor produced during denoising.
-        :type latent: openvino.Tensor
-        :param generation_config: Optional configuration for this decode only; defaults to the saved generation config.
-        :type generation_config: VideoGenerationConfig | None
-        :return: Decoded video and performance metrics.
-        :rtype: VideoGenerationResult
+                        Decode a packed latent tensor into a video.
+        
+                        The latent tensor must be obtained from the generation callback.
+        
+                        :param latent: Packed latent tensor produced during denoising.
+                        :type latent: openvino.Tensor
+                        :param generation_config: Optional configuration for this decode only; defaults to the saved generation config.
+                        :type generation_config: VideoGenerationConfig | None
+                        :return: Decoded video and performance metrics.
+                        :rtype: VideoGenerationResult
         """
     def generate(self, prompt: str, **kwargs) -> VideoGenerationResult:
         ...
