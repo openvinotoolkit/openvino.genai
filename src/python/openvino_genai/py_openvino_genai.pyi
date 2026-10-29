@@ -2458,8 +2458,17 @@ class Image2VideoPipeline:
     @typing.overload
     def compile(self, text_encode_device: str, denoise_device: str, vae_device: str, **kwargs) -> None:
         ...
-    def decode(self, latent: openvino._pyopenvino.Tensor, generation_config: VideoGenerationConfig | None = None) -> VideoGenerationResult:
-        ...
+    def decode(self, latent: openvino._pyopenvino.Tensor, generation_config: openvino_genai.py_openvino_genai.VideoGenerationConfig | None = None) -> VideoGenerationResult:
+        """
+        Decode a packed latent tensor into a video.
+
+        :param latent: Packed latent tensor produced during denoising.
+        :type latent: openvino.Tensor
+        :param generation_config: Optional configuration for this decode only; defaults to the saved configuration.
+        :type generation_config: VideoGenerationConfig | None
+        :return: Decoded video and performance metrics.
+        :rtype: VideoGenerationResult
+        """
     def generate(self, image: openvino._pyopenvino.Tensor, prompt: str, **kwargs) -> VideoGenerationResult:
         ...
     def get_generation_config(self) -> VideoGenerationConfig:
@@ -5855,8 +5864,19 @@ class Text2VideoPipeline:
     @typing.overload
     def compile(self, text_encode_device: str, denoise_device: str, vae_device: str, **kwargs) -> None:
         ...
-    def decode(self, latent: openvino._pyopenvino.Tensor, generation_config: VideoGenerationConfig | None = None) -> VideoGenerationResult:
-        ...
+    def decode(self, latent: openvino._pyopenvino.Tensor, generation_config: openvino_genai.py_openvino_genai.VideoGenerationConfig | None = None) -> VideoGenerationResult:
+        """
+        Decode a packed latent tensor into a video.
+
+        The latent tensor must be obtained from the generation callback.
+
+        :param latent: Packed latent tensor produced during denoising.
+        :type latent: openvino.Tensor
+        :param generation_config: Optional configuration for this decode only; defaults to the saved generation config.
+        :type generation_config: VideoGenerationConfig | None
+        :return: Decoded video and performance metrics.
+        :rtype: VideoGenerationResult
+        """
     def generate(self, prompt: str, **kwargs) -> VideoGenerationResult:
         ...
     def get_generation_config(self) -> VideoGenerationConfig:
@@ -6901,18 +6921,6 @@ class VideoGenerationConfig:
     def audio_guidance_scale(self, arg0: typing.SupportsFloat | None) -> None:
         ...
     @property
-    def decode_noise_scale(self) -> float | None:
-        ...
-    @decode_noise_scale.setter
-    def decode_noise_scale(self, arg0: typing.SupportsFloat | None) -> None:
-        ...
-    @property
-    def decode_timestep(self) -> float | None:
-        ...
-    @decode_timestep.setter
-    def decode_timestep(self, arg0: typing.SupportsFloat | None) -> None:
-        ...
-    @property
     def audio_modality_scale(self) -> float | None:
         ...
     @audio_modality_scale.setter
@@ -6923,6 +6931,18 @@ class VideoGenerationConfig:
         ...
     @audio_stg_scale.setter
     def audio_stg_scale(self, arg0: typing.SupportsFloat | None) -> None:
+        ...
+    @property
+    def decode_noise_scale(self) -> float | None:
+        ...
+    @decode_noise_scale.setter
+    def decode_noise_scale(self, arg0: typing.SupportsFloat | None) -> None:
+        ...
+    @property
+    def decode_timestep(self) -> float | None:
+        ...
+    @decode_timestep.setter
+    def decode_timestep(self, arg0: typing.SupportsFloat | None) -> None:
         ...
     @property
     def frame_rate(self) -> float | None:
