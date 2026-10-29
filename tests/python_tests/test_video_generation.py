@@ -1093,7 +1093,9 @@ class TestVideoGenerationPipelines:
         pipe.generate("test prompt", **GEN_KWARGS, callback=capture_latent)
         assert len(latents) == 1
         batch_size, sequence_length, feature_dimensions = latents[0].shape
-        malformed = np.zeros((batch_size, sequence_length + sequence_length_offset, feature_dimensions), dtype=np.float32)
+        malformed = np.zeros(
+            (batch_size, sequence_length + sequence_length_offset, feature_dimensions), dtype=np.float32
+        )
         with pytest.raises(RuntimeError, match="Packed latent sequence length S"):
             pipe.decode(ov.Tensor(malformed))
 
