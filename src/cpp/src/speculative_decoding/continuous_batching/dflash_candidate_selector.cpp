@@ -239,8 +239,11 @@ const float* CandidateSelector::backbone_logits(size_t block, size_t position) c
 
 float CandidateSelector::scaled_logit(float logit) const {
     const float value = logit * m_output_multiplier;
-    return m_final_logit_softcapping > 0.0f ? std::tanh(value / m_final_logit_softcapping) * m_final_logit_softcapping
-                                            : value;
+    // A target token outside a pruned draft vocabulary has a -inf logit, which the soft cap must keep.
+    if (m_final_logit_softcapping <= 0.0f || value == -std::numeric_limits<float>::infinity()) {
+        return value;
+    }
+    return std::tanh(value / m_final_logit_softcapping) * m_final_logit_softcapping;
 }
 
 const float* CandidateSelector::markov_bias(size_t block) const {
