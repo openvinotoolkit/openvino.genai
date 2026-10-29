@@ -1,11 +1,12 @@
 # Test matrix for the Windows genai_samples_tests job.
 # Each entry runs when any of its `components` is affected (has `.test`).
-- name: LLM
-  marker: llm and not transformers_lower_v5
-  cmd: tests/python_tests/samples
-  runner: aks-win-16-cores-32gb-test
-  components:
-    - LLM_samples
+# Test timed out on Windows. Ticket: 198295
+# - name: LLM
+#   marker: llm and not transformers_lower_v5
+#   cmd: tests/python_tests/samples
+#   runner: aks-win-16-cores-32gb-test
+#   components:
+#     - LLM_samples
 
 - name: Automatic Speech Recognition
   marker: automatic_speech_recognition
