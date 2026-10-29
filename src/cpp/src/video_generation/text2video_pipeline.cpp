@@ -86,6 +86,10 @@ void Text2VideoPipeline::compile(const std::string& text_encode_device,
     m_impl->save_load_time(start_time);
 }
 
+VideoGenerationResult Text2VideoPipeline::decode(const ov::Tensor& latent) {
+    return decode(latent, std::nullopt);
+}
+
 VideoGenerationResult Text2VideoPipeline::decode(const ov::Tensor& latent,
                                                  const std::optional<VideoGenerationConfig>& generation_config) {
     return m_impl->decode(latent, generation_config);

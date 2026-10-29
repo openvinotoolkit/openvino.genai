@@ -114,13 +114,21 @@ public:
     }
 
     /**
-     * Performs latent video decoding.
-        * @param latent A packed latent video tensor.
-        * @param generation_config Optional configuration for this decode only. If omitted, uses the configuration
-        *   saved by generation. A scalar timestep applies to every video in the latent batch.
+     * Decodes a packed latent video using the saved generation configuration.
+     * @param latent A packed latent video tensor.
+     * @returns Decoded video and performance metrics.
      */
-        VideoGenerationResult decode(const ov::Tensor& latent,
-                               const std::optional<VideoGenerationConfig>& generation_config = std::nullopt);
+    VideoGenerationResult decode(const ov::Tensor& latent);
+
+    /**
+     * Performs latent video decoding.
+     * @param latent A packed latent video tensor.
+     * @param generation_config Optional configuration for this decode only. If omitted, uses the configuration
+     *   saved by generation. A scalar timestep applies to every video in the latent batch.
+     * @returns Decoded video and performance metrics.
+     */
+    VideoGenerationResult decode(const ov::Tensor& latent,
+                                 const std::optional<VideoGenerationConfig>& generation_config);
 
     VideoGenerationPerfMetrics get_performance_metrics();
 
