@@ -47,6 +47,10 @@ struct PrefixOffloadHeader {
     uint64_t la_slot_bytes;
     uint64_t kv_block_tokens;
     uint64_t la_cache_interval;
+    // Only meaningful when is_embeddings is set.
+    uint64_t hidden_size;
+    uint64_t position_dims;
+    int64_t rope_delta;
     uint64_t num_tokens;
     uint64_t num_kv_entries;
     uint64_t checksum;
@@ -208,14 +212,70 @@ void read_blocks_through_plugin(std::vector<std::vector<uint8_t>>& blocks,
     }
 }
 
+/// The conversation history a snapshot carries: token ids, or for embeddings-routed models the input
+/// embeddings and position ids (the sequence keeps no token ids for those, so they cannot be recomputed).
+struct SnapshotHistory {
+    bool is_embeddings = false;
+    std::vector<int64_t> token_ids;
+    std::vector<uint8_t> embeds_bytes;
+    std::vector<uint8_t> position_ids_bytes;
+    uint64_t hidden_size = 0;
+    uint64_t position_dims = 0;
+    uint64_t num_positions = 0;
+    int64_t rope_delta = 0;
+};
+
+SnapshotHistory capture_history(const SequenceGroup::CPtr& seq_group, const Sequence::CPtr& sequence) {
+    SnapshotHistory history;
+    history.is_embeddings = seq_group->get_sequence_group_type() == SequenceGroupType::EMBEDDINGS;
+    if (history.is_embeddings) {
+        // V1 scope: text-only history. Any of these being set means images/video/other multimodal
+        // state is part of the conversation, which this format does not yet capture. The tensor
+        // fields are default-constructed (empty `_impl`) when unused, so check with `operator!()`
+        // rather than calling get_size()/get_shape() on them, which throw on an unset tensor.
+        OPENVINO_ASSERT(!seq_group->get_token_type_ids().has_value() &&
+                        !seq_group->get_deepstack_visual_embeds() &&
+                        !seq_group->get_visual_pos_masks().has_value() &&
+                        !seq_group->get_per_layer_inputs(),
+                        "Session snapshot only supports text-only requests for embeddings-routed models "
+                        "(e.g. no images/video in the conversation history)");
+
+        history.hidden_size = seq_group->get_hidden_size();
+        const auto& prompt_embeds = seq_group->get_input_embeds();
+        const auto& generated_embeds = sequence->get_generated_ids_embeds();
+        history.num_positions = prompt_embeds.size() + generated_embeds.size();
+        history.embeds_bytes = flatten_embeds(prompt_embeds, generated_embeds, history.hidden_size);
+
+        const auto& position_ids_list = sequence->get_position_ids_list();
+        OPENVINO_ASSERT(position_ids_list.size() == history.num_positions,
+                        "Internal error: position ids count does not match the embeddings count");
+        history.position_dims = position_ids_list.empty() ? 0 : position_ids_list.front().get_size();
+        history.position_ids_bytes = flatten_position_ids(position_ids_list, history.position_dims);
+        history.rope_delta = sequence->get_rope_delta();
+    } else {
+        history.token_ids = seq_group->get_prompt_ids();
+        const auto& generated = sequence->get_generated_ids();
+        history.token_ids.insert(history.token_ids.end(), generated.begin(), generated.end());
+        history.num_positions = history.token_ids.size();
+    }
+    return history;
+}
+
+struct ByteSpan {
+    const uint8_t* data;
+    size_t size;
+};
+
 uint64_t prefix_offload_checksum(PrefixOffloadHeader header,
                                  const std::string& device,
-                                 const std::vector<int64_t>& token_ids,
+                                 const std::vector<ByteSpan>& history,
                                  const std::vector<SessionSnapshot::PrefixEntry>& entries) {
     header.checksum = 0;
     uint64_t hash = fnv1a(reinterpret_cast<const uint8_t*>(&header), sizeof(header));
     hash = fnv1a(reinterpret_cast<const uint8_t*>(device.data()), device.size(), hash);
-    hash = fnv1a(reinterpret_cast<const uint8_t*>(token_ids.data()), token_ids.size() * sizeof(int64_t), hash);
+    for (const ByteSpan& span : history) {
+        hash = fnv1a(span.data, span.size, hash);
+    }
     return fnv1a(reinterpret_cast<const uint8_t*>(entries.data()),
                  entries.size() * sizeof(SessionSnapshot::PrefixEntry),
                  hash);
@@ -226,8 +286,6 @@ void save_prefix_offload_format(CacheOrchestrator& orchestrator,
                                 const Sequence::CPtr& sequence,
                                 const std::filesystem::path& path) {
     OPENVINO_ASSERT(orchestrator.has_kv_cache(), "Session snapshot requires a model with KV cache inputs");
-    OPENVINO_ASSERT(seq_group->get_sequence_group_type() == SequenceGroupType::TOKENS,
-                    "Session snapshot format 4 does not support embeddings-routed models yet");
     auto* kv_offload = orchestrator.get_kv_offload_cache();
     OPENVINO_ASSERT(kv_offload != nullptr, "Session snapshot format 4 requires KV cache offload to be enabled");
     const bool has_la = orchestrator.has_linear_attention_cache();
@@ -236,10 +294,8 @@ void save_prefix_offload_format(CacheOrchestrator& orchestrator,
                     "Session snapshot format 4 requires linear-attention cache offload to be enabled "
                     "(cache_offload_config.linear_attention_capacity_bytes)");
 
-    std::vector<int64_t> token_ids = seq_group->get_prompt_ids();
-    const auto& generated = sequence->get_generated_ids();
-    token_ids.insert(token_ids.end(), generated.begin(), generated.end());
-    const size_t num_positions = token_ids.size();
+    const SnapshotHistory history = capture_history(seq_group, sequence);
+    const size_t num_positions = history.num_positions;
     OPENVINO_ASSERT(seq_group->get_num_processed_tokens() + 1 >= num_positions,
                     "Session snapshot cannot be saved while the request is still prefilling: ",
                     seq_group->get_num_processed_tokens(), " of ", num_positions,
@@ -312,13 +368,25 @@ void save_prefix_offload_format(CacheOrchestrator& orchestrator,
         }
         header.num_tokens = num_positions;
         header.num_kv_entries = num_kv_entries;
-        header.checksum = prefix_offload_checksum(header, device, token_ids, entries);
+        header.is_embeddings = history.is_embeddings ? 1 : 0;
+        header.hidden_size = history.hidden_size;
+        header.position_dims = history.position_dims;
+        header.rope_delta = history.rope_delta;
+        const std::vector<ByteSpan> history_spans =
+            history.is_embeddings
+                ? std::vector<ByteSpan>{{history.embeds_bytes.data(), history.embeds_bytes.size()},
+                                        {history.position_ids_bytes.data(), history.position_ids_bytes.size()}}
+                : std::vector<ByteSpan>{{reinterpret_cast<const uint8_t*>(history.token_ids.data()),
+                                         history.token_ids.size() * sizeof(int64_t)}};
+        header.checksum = prefix_offload_checksum(header, device, history_spans, entries);
 
         std::ofstream out(path, std::ios::binary | std::ios::trunc);
         OPENVINO_ASSERT(out.is_open(), "Failed to create session snapshot file at '", path.string(), "'");
         write_exact(out, &header, sizeof(header));
         write_exact(out, device.data(), device.size());
-        write_exact(out, token_ids.data(), token_ids.size() * sizeof(int64_t));
+        for (const ByteSpan& span : history_spans) {
+            write_exact(out, span.data, span.size);
+        }
         write_exact(out, entries.data(), entries.size() * sizeof(SessionSnapshot::PrefixEntry));
     } catch (...) {
         for (const size_t hash : pinned_hashes) {
@@ -341,25 +409,62 @@ SessionSnapshot::Loaded load_prefix_offload_format(const CacheOrchestrator& orch
 
     // Bound every size read from the file by the file itself before allocating anything for it.
     const uint64_t file_size = std::filesystem::file_size(path);
-    OPENVINO_ASSERT(header.la_present <= 1, "Session snapshot file is truncated or corrupted");
+    OPENVINO_ASSERT(header.la_present <= 1 && header.is_embeddings <= 1, "Session snapshot file is truncated or corrupted");
     const uint64_t num_entries = header.num_kv_entries + header.la_present;
-    OPENVINO_ASSERT(header.device_len <= file_size && header.num_tokens <= file_size / sizeof(int64_t) &&
-                        header.num_kv_entries <= file_size / sizeof(SessionSnapshot::PrefixEntry) &&
-                        sizeof(header) + header.device_len + header.num_tokens * sizeof(int64_t) +
-                                num_entries * sizeof(SessionSnapshot::PrefixEntry) ==
-                            file_size,
+    const bool is_embeddings = header.is_embeddings != 0;
+    uint64_t embeds_size = 0;
+    uint64_t position_ids_size = 0;
+    uint64_t token_ids_size = 0;
+    bool sizes_in_range = header.device_len <= file_size && header.num_tokens <= file_size &&
+                          header.num_kv_entries <= file_size / sizeof(SessionSnapshot::PrefixEntry);
+    if (sizes_in_range && is_embeddings) {
+        sizes_in_range = header.hidden_size >= 1 && header.hidden_size <= file_size && header.position_dims <= 8 &&
+                         header.num_tokens <= file_size / (header.hidden_size * sizeof(float));
+        if (sizes_in_range) {
+            embeds_size = header.num_tokens * header.hidden_size * sizeof(float);
+            position_ids_size = header.num_tokens * header.position_dims * sizeof(int64_t);
+        }
+    } else if (sizes_in_range) {
+        token_ids_size = header.num_tokens * sizeof(int64_t);
+    }
+    OPENVINO_ASSERT(sizes_in_range && sizeof(header) + header.device_len + token_ids_size + embeds_size +
+                                              position_ids_size + num_entries * sizeof(SessionSnapshot::PrefixEntry) ==
+                                          file_size,
                     "Session snapshot file is truncated or corrupted");
 
     std::string device(header.device_len, '\0');
     read_exact(in, device.data(), device.size());
     SessionSnapshot::Loaded result;
     result.prefix_offload_format = true;
-    result.token_ids.resize(header.num_tokens);
-    read_exact(in, result.token_ids.data(), result.token_ids.size() * sizeof(int64_t));
+    result.is_embeddings = is_embeddings;
+    std::vector<uint8_t> embeds_bytes(embeds_size);
+    std::vector<uint8_t> position_ids_bytes(position_ids_size);
+    std::vector<ByteSpan> history_spans;
+    if (is_embeddings) {
+        read_exact(in, embeds_bytes.data(), embeds_bytes.size());
+        read_exact(in, position_ids_bytes.data(), position_ids_bytes.size());
+        history_spans = {{embeds_bytes.data(), embeds_bytes.size()},
+                         {position_ids_bytes.data(), position_ids_bytes.size()}};
+    } else {
+        result.token_ids.resize(header.num_tokens);
+        read_exact(in, result.token_ids.data(), result.token_ids.size() * sizeof(int64_t));
+        history_spans = {{reinterpret_cast<const uint8_t*>(result.token_ids.data()), token_ids_size}};
+    }
     std::vector<SessionSnapshot::PrefixEntry> entries(num_entries);
     read_exact(in, entries.data(), entries.size() * sizeof(SessionSnapshot::PrefixEntry));
-    OPENVINO_ASSERT(prefix_offload_checksum(header, device, result.token_ids, entries) == header.checksum,
+    OPENVINO_ASSERT(prefix_offload_checksum(header, device, history_spans, entries) == header.checksum,
                     "Session snapshot failed its integrity check (file may be corrupted)");
+    if (is_embeddings) {
+        result.hidden_size = header.hidden_size;
+        result.rope_delta = header.rope_delta;
+        result.input_embeds = ov::Tensor(ov::element::f32, ov::Shape{1, header.num_tokens, header.hidden_size});
+        std::memcpy(result.input_embeds.data(), embeds_bytes.data(), embeds_bytes.size());
+        const ov::Shape position_ids_shape = header.position_dims > 1
+                                                  ? ov::Shape{header.position_dims, 1, header.num_tokens}
+                                                  : ov::Shape{1, header.num_tokens};
+        result.position_ids = ov::Tensor(ov::element::i64, position_ids_shape);
+        std::memcpy(result.position_ids.data(), position_ids_bytes.data(), position_ids_bytes.size());
+    }
     result.kv_entries.assign(entries.begin(), entries.begin() + header.num_kv_entries);
     if (header.la_present) {
         result.la_entry = entries.back();
@@ -370,7 +475,6 @@ SessionSnapshot::Loaded load_prefix_offload_format(const CacheOrchestrator& orch
     OPENVINO_ASSERT(static_cast<bool>(header.la_present) == orchestrator.has_linear_attention_cache(),
                     "Session snapshot/model mismatch: snapshot linear-attention cache presence differs from the "
                     "loaded model");
-    OPENVINO_ASSERT(!header.is_embeddings, "Session snapshot format 4 does not support embeddings-routed models yet");
     OPENVINO_ASSERT(device == orchestrator.get_device(),
                     "Session snapshot was captured on device '", device, "' but the current pipeline uses '",
                     orchestrator.get_device(), "'");
@@ -443,46 +547,15 @@ void SessionSnapshot::save(CacheOrchestrator& orchestrator,
     const bool store_backed = store_plugin_requested(store_config);
 
     const uint64_t seq_id = sequence->get_id();
-    const bool is_embeddings = seq_group->get_sequence_group_type() == SequenceGroupType::EMBEDDINGS;
-
-    std::vector<int64_t> token_ids;
-    std::vector<uint8_t> embeds_bytes;
-    std::vector<uint8_t> position_ids_bytes;
-    uint64_t hidden_size = 0;
-    uint64_t position_dims = 0;
-    uint64_t num_positions = 0;
-    int64_t rope_delta = 0;
-
-    if (is_embeddings) {
-        // V1 scope: text-only history. Any of these being set means images/video/other multimodal
-        // state is part of the conversation, which this format does not yet capture. The tensor
-        // fields are default-constructed (empty `_impl`) when unused, so check with `operator!()`
-        // rather than calling get_size()/get_shape() on them, which throw on an unset tensor.
-        OPENVINO_ASSERT(!seq_group->get_token_type_ids().has_value() &&
-                        !seq_group->get_deepstack_visual_embeds() &&
-                        !seq_group->get_visual_pos_masks().has_value() &&
-                        !seq_group->get_per_layer_inputs(),
-                        "Session snapshot only supports text-only requests for embeddings-routed models "
-                        "(e.g. no images/video in the conversation history)");
-
-        hidden_size = seq_group->get_hidden_size();
-        const auto& prompt_embeds = seq_group->get_input_embeds();
-        const auto& generated_embeds = sequence->get_generated_ids_embeds();
-        num_positions = prompt_embeds.size() + generated_embeds.size();
-        embeds_bytes = flatten_embeds(prompt_embeds, generated_embeds, hidden_size);
-
-        const auto& position_ids_list = sequence->get_position_ids_list();
-        OPENVINO_ASSERT(position_ids_list.size() == num_positions,
-                        "Internal error: position ids count does not match the embeddings count");
-        position_dims = position_ids_list.empty() ? 0 : position_ids_list.front().get_size();
-        position_ids_bytes = flatten_position_ids(position_ids_list, position_dims);
-        rope_delta = sequence->get_rope_delta();
-    } else {
-        token_ids = seq_group->get_prompt_ids();
-        const auto& generated = sequence->get_generated_ids();
-        token_ids.insert(token_ids.end(), generated.begin(), generated.end());
-        num_positions = token_ids.size();
-    }
+    SnapshotHistory history = capture_history(seq_group, sequence);
+    const bool is_embeddings = history.is_embeddings;
+    std::vector<int64_t>& token_ids = history.token_ids;
+    const std::vector<uint8_t>& embeds_bytes = history.embeds_bytes;
+    const std::vector<uint8_t>& position_ids_bytes = history.position_ids_bytes;
+    const uint64_t hidden_size = history.hidden_size;
+    const uint64_t position_dims = history.position_dims;
+    const uint64_t num_positions = history.num_positions;
+    const int64_t rope_delta = history.rope_delta;
 
     std::vector<std::vector<uint8_t>> kv_blocks;
     uint64_t kv_block_size_in_bytes = 0;

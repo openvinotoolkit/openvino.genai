@@ -471,22 +471,33 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::restore_sta
                             "Session snapshot linear-attention checkpoint is missing from the prefix-caching offload "
                             "store, so the snapshot cannot be restored");
         }
-        OPENVINO_ASSERT(sampling_params_copy.max_length > loaded.token_ids.size(),
-                        "'max_length' must be greater than the number of restored session tokens");
+        const size_t num_positions =
+            loaded.is_embeddings ? loaded.input_embeds.get_shape()[1] : loaded.token_ids.size();
+        OPENVINO_ASSERT(sampling_params_copy.max_length > num_positions,
+                        "'max_length' must be greater than the number of restored session positions");
 
-        auto restored_group = std::make_shared<SequenceGroup>(request_id, loaded.token_ids, sampling_params_copy);
+        auto restored_group =
+            loaded.is_embeddings
+                ? std::make_shared<SequenceGroup>(request_id,
+                                                  loaded.input_embeds,
+                                                  sampling_params_copy,
+                                                  std::nullopt,  // lm_extra_inputs: text-only history
+                                                  loaded.position_ids,
+                                                  loaded.rope_delta,
+                                                  std::nullopt)  // prompt_ids: for detokenization/echo only
+                : std::make_shared<SequenceGroup>(request_id, loaded.token_ids, sampling_params_copy);
         {
             std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
             _throw_if_failed();
             initialize_prefix_cache(restored_group);
             // Like the self-contained format, the restore must be complete: all but the last token have their cache.
-            if (restored_group->get_num_processed_tokens() + 1 != loaded.token_ids.size()) {
+            if (restored_group->get_num_processed_tokens() + 1 != num_positions) {
                 const auto restored_seq_id = restored_group->get_running_sequences()[0]->get_id();
                 if (m_scheduler->has_block_table(restored_seq_id)) {
                     m_scheduler->free_sequence(restored_seq_id);
                 }
                 OPENVINO_THROW("Session snapshot restore recovered only ", restored_group->get_num_processed_tokens(),
-                               " of ", loaded.token_ids.size() - 1, " cached positions");
+                               " of ", num_positions - 1, " cached positions");
             }
             restored_group->set_num_prefix_cache_hit_tokens(restored_group->get_num_processed_tokens());
             m_awaiting_requests.push_back(restored_group);

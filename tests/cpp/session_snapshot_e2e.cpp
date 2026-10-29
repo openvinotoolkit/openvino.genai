@@ -534,12 +534,17 @@ private:
     std::optional<std::string> m_previous;
 };
 
-SchedulerConfig make_offload_scheduler_config() {
+SchedulerConfig make_offload_scheduler_config(bool hybrid = false) {
     auto config = make_scheduler_config();
-    // A small device cache, so a filler request can push an earlier conversation out of it (about 256 tokens).
-    config.num_kv_blocks = session_snapshot_device().find("GPU") != std::string::npos ? 16 : 8;
     config.use_cache_offload = true;
     config.cache_offload_config.capacity_bytes = 256u * 1024u * 1024u;
+    if (hybrid) {
+        // Dynamic device cache; a linear-attention checkpoint is large, so the store holds only a few of them.
+        config.cache_offload_config.linear_attention_capacity_bytes = 1024u * 1024u * 1024u;
+    } else {
+        // A small device cache, so a filler request can push an earlier conversation out of it (about 256 tokens).
+        config.num_kv_blocks = session_snapshot_device().find("GPU") != std::string::npos ? 16 : 8;
+    }
     return config;
 }
 
@@ -565,14 +570,10 @@ void step_until_generated(ContinuousBatchingPipeline& pipeline,
 
 }  // namespace
 
-// Format 4 keeps no payload in the snapshot file: the blocks are persisted in the pipeline's own
+// Format 4 keeps no KV/linear-attention payload in the snapshot file: the blocks are persisted in the pipeline's own
 // prefix-caching offload store and a restore re-submits the history as an ordinary prompt. Snapshots are
 // taken once where the last computed position ends a block and once where it does not (the partial tail).
-TEST(TestSessionSnapshotEndToEnd, PrefixOffloadFormatRestoredRequestContinuesIdenticallyToUninterruptedRun) {
-    const char* model_path = std::getenv(MODEL_PATH_ENV);
-    if (model_path == nullptr || *model_path == '\0') {
-        GTEST_SKIP() << MODEL_PATH_ENV << " is not set, skipping session snapshot end-to-end test.";
-    }
+void run_prefix_offload_round_trip(const std::string& model_path, bool hybrid) {
     ScopedEnv format(SNAPSHOT_FORMAT_ENV, "4");
 
     const std::string prompt = repeat("The quick brown fox jumps over the lazy dog. ", 10) + " Continue the story:";
@@ -584,8 +585,7 @@ TEST(TestSessionSnapshotEndToEnd, PrefixOffloadFormatRestoredRequestContinuesIde
     std::vector<int64_t> baseline_ids;
     size_t prompt_tokens = 0;
     {
-        ContinuousBatchingPipeline pipeline(model_path, make_offload_scheduler_config(), device);
-        prompt_tokens = pipeline.get_tokenizer().encode(prompt).input_ids.get_size();
+        ContinuousBatchingPipeline pipeline(model_path, make_offload_scheduler_config(hybrid), device);
         auto handle = pipeline.add_request(60, prompt, make_greedy_config(TOTAL_NEW_TOKENS));
         while (pipeline.has_non_finished_requests()) {
             pipeline.step();
@@ -593,8 +593,11 @@ TEST(TestSessionSnapshotEndToEnd, PrefixOffloadFormatRestoredRequestContinuesIde
         auto outputs = handle->read_all();
         ASSERT_FALSE(outputs.empty());
         baseline_ids = outputs.front().generated_ids;
+        // Includes any chat template the pipeline applies, unlike tokenizing the prompt directly.
+        prompt_tokens = handle->get_perf_metrics().num_input_tokens;
     }
     ASSERT_EQ(baseline_ids.size(), TOTAL_NEW_TOKENS);
+    ASSERT_GT(prompt_tokens, 0u);
 
     // A request with `g` generated tokens has N = prompt_tokens + g positions and N - 1 computed ones.
     size_t aligned_generated = 1;
@@ -607,7 +610,7 @@ TEST(TestSessionSnapshotEndToEnd, PrefixOffloadFormatRestoredRequestContinuesIde
     std::vector<std::filesystem::path> snapshot_paths;
     std::vector<std::vector<int64_t>> generated_at_save;
     {
-        ContinuousBatchingPipeline pipeline(model_path, make_offload_scheduler_config(), device);
+        ContinuousBatchingPipeline pipeline(model_path, make_offload_scheduler_config(hybrid), device);
         auto handle = pipeline.add_request(61, prompt, make_greedy_config(SPLIT_RUN_BUDGET));
         std::vector<int64_t> generated_so_far;
         for (size_t point : save_points) {
@@ -616,6 +619,8 @@ TEST(TestSessionSnapshotEndToEnd, PrefixOffloadFormatRestoredRequestContinuesIde
             snapshot_paths.push_back(std::filesystem::temp_directory_path() /
                                      ("openvino_genai_session_snapshot_v4_" + std::to_string(point) + ".bin"));
             pipeline.save_state(61, snapshot_paths.back().string());
+            std::cout << "[ SIZE     ] format 4 snapshot after " << point << " generated tokens: "
+                      << std::filesystem::file_size(snapshot_paths.back()) << " bytes" << std::endl;
             generated_at_save.push_back(generated_so_far);
         }
         // Restoring next to the still-running original would share blocks it keeps writing to, so end it first.
@@ -625,10 +630,13 @@ TEST(TestSessionSnapshotEndToEnd, PrefixOffloadFormatRestoredRequestContinuesIde
         }
 
         // Displace the original conversation from the small device cache: what comes back has to be read from
-        // the offload store, and the restore only succeeds if every cached position is recovered.
-        const std::string filler = repeat("Completely unrelated tokens to evict the cached prefix. ", 18);
-        auto filler_results = pipeline.generate({filler}, {make_greedy_config(4)});
-        ASSERT_FALSE(filler_results.at(0).m_generation_ids.at(0).empty());
+        // the offload store, and the restore only succeeds if every cached position is recovered. A hybrid model
+        // keeps its dynamic cache; there the linear-attention checkpoint at the last position is only in the store.
+        if (!hybrid) {
+            const std::string filler = repeat("Completely unrelated tokens to evict the cached prefix. ", 18);
+            auto filler_results = pipeline.generate({filler}, {make_greedy_config(4)});
+            ASSERT_FALSE(filler_results.at(0).m_generation_ids.at(0).empty());
+        }
 
         for (size_t i = 0; i < save_points.size(); ++i) {
             const size_t remaining = TOTAL_NEW_TOKENS - save_points[i];
@@ -652,6 +660,23 @@ TEST(TestSessionSnapshotEndToEnd, PrefixOffloadFormatRestoredRequestContinuesIde
     for (const auto& path : snapshot_paths) {
         std::filesystem::remove(path);
     }
+}
+
+TEST(TestSessionSnapshotEndToEnd, PrefixOffloadFormatRestoredRequestContinuesIdenticallyToUninterruptedRun) {
+    const char* model_path = std::getenv(MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0') {
+        GTEST_SKIP() << MODEL_PATH_ENV << " is not set, skipping session snapshot end-to-end test.";
+    }
+    run_prefix_offload_round_trip(model_path, /*hybrid=*/false);
+}
+
+// Qwen3.5 is hybrid and embeddings-routed: the snapshot also carries its input embeddings and position ids.
+TEST(TestSessionSnapshotEndToEnd, PrefixOffloadFormatHybridModelRestoredRequestContinuesIdenticallyToUninterruptedRun) {
+    const char* model_path = std::getenv(VLM_MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0') {
+        GTEST_SKIP() << VLM_MODEL_PATH_ENV << " is not set, skipping hybrid session snapshot end-to-end test.";
+    }
+    run_prefix_offload_round_trip(model_path, /*hybrid=*/true);
 }
 
 // A fresh pipeline has an empty (run-scoped) offload store, so the blocks a format 4 snapshot refers to are
