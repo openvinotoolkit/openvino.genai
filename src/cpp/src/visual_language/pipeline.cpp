@@ -19,7 +19,7 @@
 #include "visual_language/embedding_model.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/pipeline_base.hpp"
-#include "visual_language/vision_registry.hpp"
+#include "visual_language/embeddings_registry.hpp"
 #include "visual_language/vlm_chat_context.hpp"
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/vlm_utils.hpp"
@@ -96,7 +96,7 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
     std::vector<std::pair<std::size_t, std::size_t>> m_history_vision_count;  // pair<video count, image count>
 
     std::string m_system_message;
-    std::shared_ptr<VisionRegistry> m_vision_registry;
+    std::shared_ptr<EmbeddingsRegistry> m_embeddings_registry;
 private:
     void finalize_initialization(
         const std::shared_ptr<ov::Model>& language_model,
@@ -117,7 +117,7 @@ private:
         m_sampler.set_tokenizer(m_tokenizer);
         m_sampler.set_seed(m_generation_config.rng_seed);
 
-        m_vision_registry = std::make_shared<VisionRegistry>();
+        m_embeddings_registry = std::make_shared<EmbeddingsRegistry>();
 
         // NPU does not support history, so use full chat history on each chat iteration.
         // Linear attention forces full KV cache reset, need to provide all image/video embeddings.
@@ -472,7 +472,7 @@ public:
         if (m_is_chat_conversation) {
             // Update m_history with pruned content if pruning is enabled
             if (generation_config.pruning_ratio > 0) {
-                auto history_state = ChatHistoryInternalState::get_or_create(m_history, m_vision_registry);
+                auto history_state = ChatHistoryInternalState::get_or_create(m_history, m_embeddings_registry);
                 size_t last_user_idx = history_state->get_last_user_message_index();
 
                 // Replace the original prompt with the pruned prompt after CDPruner
@@ -622,7 +622,7 @@ public:
                                                            generation_config.relevance_weight);
 
         const auto embeddings_start_time = std::chrono::steady_clock::now();
-        VLMChatContext chat_context(history, m_vision_registry, *m_inputs_embedder);
+        VLMChatContext chat_context(history, m_embeddings_registry, *m_inputs_embedder);
 
         std::vector<ov::Tensor> single_images;
         single_images.reserve(images.size());
