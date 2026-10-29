@@ -8,12 +8,12 @@ namespace ov::genai {
 
 VLMChatContext::VLMChatContext(
     const ChatHistory& history,
-    const std::shared_ptr<VisionRegistry>& vision_registry,
+    const std::shared_ptr<EmbeddingsRegistry>& embeddings_registry,
     InputsEmbedder& embedder
 ) : m_history(history),
-    m_vision_registry(vision_registry),
+    m_embeddings_registry(embeddings_registry),
     m_inputs_embedder(embedder),
-    m_history_state(ChatHistoryInternalState::get_or_create(history, vision_registry))
+    m_history_state(ChatHistoryInternalState::get_or_create(history, embeddings_registry))
 {
     OPENVINO_ASSERT(!m_history.empty(), "Chat history cannot be empty");
 
@@ -115,18 +115,18 @@ void VLMChatContext::encode_visions_if_needed(
     const std::vector<VideoMetadata>& videos_metadata
 ) {
     for (size_t idx : image_indices) {
-        VisionID id = m_history_state->get_image_vision_id(idx);
-        if (!m_vision_registry->has_encoded_image(id)) {
-            const ov::Tensor& original = m_vision_registry->get_original(id);
+        EmbeddingID id = m_history_state->get_image_embedding_id(idx);
+        if (!m_embeddings_registry->has_encoded_image(id)) {
+            const ov::Tensor& original = m_embeddings_registry->get_original(id);
             const auto encoded = m_inputs_embedder.encode_images({original});
-            m_vision_registry->set_encoded_image(id, std::move(encoded[0]));
+            m_embeddings_registry->set_encoded_image(id, std::move(encoded[0]));
         }
     }
 
     for (size_t idx : video_indices) {
-        VisionID id = m_history_state->get_video_vision_id(idx);
-        if (!m_vision_registry->has_encoded_video(id)) {
-            const ov::Tensor& original = m_vision_registry->get_original(id);
+        EmbeddingID id = m_history_state->get_video_embedding_id(idx);
+        if (!m_embeddings_registry->has_encoded_video(id)) {
+            const ov::Tensor& original = m_embeddings_registry->get_original(id);
 
             std::vector<VideoMetadata> resolved_videos_metadata = {};
             if (!videos_metadata.empty()) {
@@ -138,7 +138,7 @@ void VLMChatContext::encode_visions_if_needed(
             }
 
             const auto encoded = m_inputs_embedder.encode_videos({original}, resolved_videos_metadata);
-            m_vision_registry->set_encoded_video(id, std::move(encoded[0]));
+            m_embeddings_registry->set_encoded_video(id, std::move(encoded[0]));
         }
     }
 }
@@ -148,13 +148,13 @@ void VLMChatContext::encode_visions_if_needed(
 std::vector<MicroSeconds> VLMChatContext::encode_audios_if_needed(const std::vector<size_t>& audio_indices) {
     std::vector<MicroSeconds> audio_encoding_durations;
     for (size_t idx : audio_indices) {
-        VisionID id = m_history_state->get_audio_vision_id(idx);
-        if (!m_vision_registry->has_encoded_audio(id)) {
-            const ov::Tensor& original = m_vision_registry->get_original(id);
+        EmbeddingID id = m_history_state->get_audio_embedding_id(idx);
+        if (!m_embeddings_registry->has_encoded_audio(id)) {
+            const ov::Tensor& original = m_embeddings_registry->get_original(id);
             const auto audio_encoding_start = std::chrono::steady_clock::now();
             auto encoded = m_inputs_embedder.encode_audios({original});
             PerfMetrics::emplace_duration(audio_encoding_durations, audio_encoding_start);
-            m_vision_registry->set_encoded_audio(id, std::move(encoded[0]));
+            m_embeddings_registry->set_encoded_audio(id, std::move(encoded[0]));
         }
     }
 

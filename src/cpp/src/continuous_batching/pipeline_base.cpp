@@ -747,7 +747,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
 
-        VLMChatContext chat_context(histories[i], m_vision_registry, *m_inputs_embedder);
+        VLMChatContext chat_context(histories[i], m_embeddings_registry, *m_inputs_embedder);
         chat_contexts.push_back(std::move(chat_context));
 
         // Audio goes through the chat context so it is registered, content-hashed and reused
