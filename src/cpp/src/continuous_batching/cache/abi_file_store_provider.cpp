@@ -291,6 +291,24 @@ OvKVCacheStatus provider_open(void* /*self*/,
         return out->status;
     }
 
+    // The group descriptor for this namespace must agree with the block size the store is built for.
+    if (ns != nullptr && ns->bytes != nullptr && opts->groups != nullptr) {
+        for (uint64_t i = 0; i < opts->group_count; ++i) {
+            const OvKVCacheGroupInfo& info = opts->groups[i];
+            if (info.group != nullptr && info.group_len == ns->len &&
+                std::memcmp(info.group, ns->bytes, ns->len) == 0 && info.block_bytes != *block_size_bytes) {
+                if (opts->log != nullptr) {
+                    opts->log(OV_KVCACHE_LOG_ERROR, "file store: group block_bytes disagrees with block_size_bytes");
+                }
+                out->status = OV_KVCACHE_ERR_INVALID_ARG;
+                return out->status;
+            }
+        }
+    }
+    if (opts->log != nullptr) {
+        opts->log(OV_KVCACHE_LOG_DEBUG, "file store: opening store instance");
+    }
+
     try {
         CacheOffloadConfig config;
         config.path = opts->directory != nullptr ? opts->directory : "";

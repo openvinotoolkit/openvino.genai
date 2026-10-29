@@ -106,7 +106,7 @@
 /// a renamed entry symbol); the host rejects a major mismatch loudly instead of
 /// loading a stale plugin and failing later on symbol lookup.
 #define OV_KVCACHE_STORE_ABI_MAJOR 1
-#define OV_KVCACHE_STORE_ABI_MINOR 0
+#define OV_KVCACHE_STORE_ABI_MINOR 1
 
 /// The plugin module's single C discovery entry symbol.
 #define OV_KVCACHE_STORE_ENTRY_SYMBOL "ov_pipeline_query_kvcache_store_providers"
@@ -305,12 +305,38 @@ typedef struct OvKVCacheProperty {
     const char* value;
 } OvKVCacheProperty;
 
+/// Describes one cache group the host will use. Strings are borrowed for the `open` call.
+typedef struct OvKVCacheGroupInfo {
+    const char* group;       ///< group name; equals the namespace passed to `open`
+    uint32_t group_len;
+    uint32_t block_tokens;   ///< tokens one block covers (for a state group: the checkpoint interval); 0 if not token-addressed
+    uint64_t block_bytes;    ///< exact byte size of every read and write of this group
+} OvKVCacheGroupInfo;
+
+/// Host log severity: ERROR 1, WARNING 2, INFO 3, DEBUG 4.
+typedef uint32_t OvKVCacheLogLevel;
+#define OV_KVCACHE_LOG_ERROR 1
+#define OV_KVCACHE_LOG_WARNING 2
+#define OV_KVCACHE_LOG_INFO 3
+#define OV_KVCACHE_LOG_DEBUG 4
+
+/// Host logger handed to the plugin. `message` is NUL-terminated and borrowed for the call;
+/// the callback is thread-safe and valid for the process lifetime.
+typedef void (*OvKVCacheLogFn)(OvKVCacheLogLevel level, const char* message);
+
+/// Fields after `reserved0` were appended in ABI 1.1. A plugin may read them only if it was built
+/// against 1.1 or newer; the host never loads a plugin whose minor exceeds its own.
 typedef struct OvKVCacheStoreOpenOptions {
     const char* directory;
     uint64_t capacity_bytes;
     const OvKVCacheProperty* properties;
     uint64_t property_count;
     uint32_t reserved0;
+    // ---- appended in 1.1 ----
+    const OvKVCacheGroupInfo* groups;  ///< every cache group the host will use; may be NULL when `group_count` is 0
+    uint64_t group_count;
+    uint64_t witness_bytes_max;        ///< largest witness the host will pass to a write
+    OvKVCacheLogFn log;                ///< host logger; may be NULL
 } OvKVCacheStoreOpenOptions;
 
 // Forward declaration: the store instance vtable is produced by `open` and is
@@ -518,6 +544,7 @@ static_assert(std::is_standard_layout<OvKVCacheStoreWriteRequest>::value, "ABI s
 static_assert(std::is_standard_layout<OvKVCacheStoreWriteResult>::value, "ABI struct must be standard layout");
 static_assert(std::is_standard_layout<OvKVCacheStoreStats>::value, "ABI struct must be standard layout");
 static_assert(std::is_standard_layout<OvKVCacheProperty>::value, "ABI struct must be standard layout");
+static_assert(std::is_standard_layout<OvKVCacheGroupInfo>::value, "ABI struct must be standard layout");
 static_assert(std::is_standard_layout<OvKVCacheStoreOpenOptions>::value, "ABI struct must be standard layout");
 static_assert(std::is_standard_layout<OvKVCacheStoreOpenResult>::value, "ABI struct must be standard layout");
 static_assert(std::is_standard_layout<OvKVCacheStoredNamespaceInfo>::value, "ABI struct must be standard layout");

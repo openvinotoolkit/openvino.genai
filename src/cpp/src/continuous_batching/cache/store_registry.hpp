@@ -28,11 +28,15 @@ namespace ov::genai {
  * to avoid key collisions between unrelated cache types.
  *
  * A successfully loaded plugin library is never unloaded, per the ABI contract.
+ *
+ * @param block_tokens Tokens one block covers (a linear-attention group: the checkpoint interval),
+ * reported to the plugin as `OvKVCacheGroupInfo::block_tokens`; 0 when blocks are not token-addressed.
  */
 std::unique_ptr<IKVCacheStore> open_kv_cache_store(const KVCacheDiskLayout& layout,
                                                    const CacheOffloadConfig& config,
                                                    const std::string& device,
-                                                   const std::string& group);
+                                                   const std::string& group,
+                                                   size_t block_tokens = 0);
 
 /**
  * @brief Opens ONLY a vendor plugin store - never falls back to the in-tree default.
@@ -47,6 +51,7 @@ std::unique_ptr<IKVCacheStore> open_kv_cache_store(const KVCacheDiskLayout& layo
 std::unique_ptr<IKVCacheStore> open_required_kv_cache_store_plugin(const KVCacheDiskLayout& layout,
                                                                     const CacheOffloadConfig& config,
                                                                     const std::string& device,
-                                                                    const std::string& group);
+                                                                    const std::string& group,
+                                                                    size_t block_tokens = 0);
 
 }  // namespace ov::genai

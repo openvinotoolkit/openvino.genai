@@ -22,6 +22,7 @@
 #include "continuous_batching/cache/abi_sdk_fingerprint.hpp"
 #include "continuous_batching/cache/file_kv_cache_store.hpp"
 #include "continuous_batching/cache/kv_cache_offload_manager.hpp"
+#include "content_hash.hpp"
 #include "logger.hpp"
 #include "openvino/genai/c/kv_cache_store_provider_abi.h"
 
@@ -48,6 +49,23 @@ void* resolve_symbol(void* handle, const char* name) {
 #else
     return dlsym(handle, name);
 #endif
+}
+
+void plugin_log(OvKVCacheLogLevel level, const char* message) {
+    switch (level) {
+    case OV_KVCACHE_LOG_ERROR:
+        GENAI_ERR("[kv_cache_store plugin] %s", message != nullptr ? message : "");
+        break;
+    case OV_KVCACHE_LOG_WARNING:
+        GENAI_WARN("[kv_cache_store plugin] %s", message != nullptr ? message : "");
+        break;
+    case OV_KVCACHE_LOG_INFO:
+        GENAI_INFO("[kv_cache_store plugin] %s", message != nullptr ? message : "");
+        break;
+    default:
+        GENAI_DEBUG("[kv_cache_store plugin] %s", message != nullptr ? message : "");
+        break;
+    }
 }
 
 bool handshake_ok(const std::string& library_path, const OvKVCacheStoreModuleInfo& info) {
@@ -99,7 +117,8 @@ std::unique_ptr<IKVCacheStore> make_default_store(const KVCacheDiskLayout& layou
 std::unique_ptr<IKVCacheStore> try_open_plugin_store(const KVCacheDiskLayout& layout,
                                                      const CacheOffloadConfig& config,
                                                      const std::string& device,
-                                                     const std::string& group) {
+                                                     const std::string& group,
+                                                     size_t block_tokens) {
     void* handle = load_library(config.store_library_path);
     if (handle == nullptr) {
         GENAI_WARN("Failed to load KV cache store plugin '%s'", config.store_library_path.c_str());
@@ -140,7 +159,14 @@ std::unique_ptr<IKVCacheStore> try_open_plugin_store(const KVCacheDiskLayout& la
     options.capacity_bytes = config.capacity_bytes;
     options.properties = properties;
     options.property_count = 2;
-
+    const OvKVCacheGroupInfo group_info{group.c_str(),
+                                        static_cast<uint32_t>(group.size()),
+                                        static_cast<uint32_t>(block_tokens),
+                                        static_cast<uint64_t>(layout.get_slot_size())};
+    options.groups = &group_info;
+    options.group_count = 1;
+    options.witness_bytes_max = sizeof(ContentHash);
+    options.log = &plugin_log;
     // The ABI opens one store instance per namespace; the group (kv / la / snapshot path) is the namespace.
     const OvKVCacheNamespace ns{reinterpret_cast<const uint8_t*>(group.data()), static_cast<uint64_t>(group.size())};
 
@@ -182,9 +208,10 @@ std::unique_ptr<IKVCacheStore> try_open_plugin_store(const KVCacheDiskLayout& la
 std::unique_ptr<IKVCacheStore> open_kv_cache_store(const KVCacheDiskLayout& layout,
                                                    const CacheOffloadConfig& config,
                                                    const std::string& device,
-                                                   const std::string& group) {
+                                                   const std::string& group,
+                                                   size_t block_tokens) {
     if (config.allow_untrusted_store_plugin && !config.store_library_path.empty()) {
-        if (auto store = try_open_plugin_store(layout, config, device, group)) {
+        if (auto store = try_open_plugin_store(layout, config, device, group, block_tokens)) {
             return store;
         }
         GENAI_WARN("Falling back to the default file store for group '%s'", group.c_str());
@@ -195,11 +222,12 @@ std::unique_ptr<IKVCacheStore> open_kv_cache_store(const KVCacheDiskLayout& layo
 std::unique_ptr<IKVCacheStore> open_required_kv_cache_store_plugin(const KVCacheDiskLayout& layout,
                                                                     const CacheOffloadConfig& config,
                                                                     const std::string& device,
-                                                                    const std::string& group) {
+                                                                    const std::string& group,
+                                                                    size_t block_tokens) {
     OPENVINO_ASSERT(config.allow_untrusted_store_plugin && !config.store_library_path.empty(),
                     "A KV cache store plugin is required here (group '", group,
                     "') but none is configured: set both allow_untrusted_store_plugin and store_library_path");
-    auto store = try_open_plugin_store(layout, config, device, group);
+    auto store = try_open_plugin_store(layout, config, device, group, block_tokens);
     OPENVINO_ASSERT(store != nullptr,
                     "Failed to open the required KV cache store plugin '", config.store_library_path,
                     "' for group '", group, "'");

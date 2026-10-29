@@ -359,6 +359,11 @@ static OvKVCacheStatus provider_open(void* self,
     ns_len = (ns != NULL && ns->bytes != NULL) ? ns->len : 0;
     ns_bytes = ns_len > 0 ? ns->bytes : NULL;
 
+    /* ABI 1.1: the host passes group sizes and a logger; a real plugin would pre-size its storage from opts->groups. */
+    if (opts != NULL && opts->log != NULL) {
+        opts->log(OV_KVCACHE_LOG_INFO, "sample-in-memory: opening store");
+    }
+
     ensure_registry_mutex();
     sample_mutex_lock(&g_registry_mutex);
     for (it = g_directories; it != NULL; it = it->next) {

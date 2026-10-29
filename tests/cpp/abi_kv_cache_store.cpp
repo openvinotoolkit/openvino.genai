@@ -157,6 +157,58 @@ TEST(TestAbiFileStoreProvider, SessionSnapshotNamespacesAreRejectedBecauseTheSto
     accepted.vtable->destroy(accepted.store);
 }
 
+namespace {
+std::vector<std::pair<OvKVCacheLogLevel, std::string>> g_captured_logs;
+void capture_log(OvKVCacheLogLevel level, const char* message) {
+    g_captured_logs.emplace_back(level, message);
+}
+}  // namespace
+
+TEST(TestAbiFileStoreProvider, OpenAcceptsMatchingGroupInfoAndForwardsLogsToTheHostCallback) {
+    const OvKVCacheStoreProviderDescriptor* provider = get_file_store_provider_module_info()->get_provider(0);
+    const std::string block_size_str = std::to_string(BLOCK_SIZE);
+    const OvKVCacheProperty properties[] = {{"block_size_bytes", block_size_str.c_str()}};
+    const std::string group = "kv";
+    const OvKVCacheGroupInfo groups[] = {{group.c_str(), static_cast<uint32_t>(group.size()), 32, BLOCK_SIZE}};
+    const OvKVCacheNamespace ns{reinterpret_cast<const uint8_t*>(group.data()), group.size()};
+
+    OvKVCacheStoreOpenOptions options{};
+    options.capacity_bytes = BLOCK_SIZE * 4;
+    options.properties = properties;
+    options.property_count = 1;
+    options.groups = groups;
+    options.group_count = 1;
+    options.witness_bytes_max = 16;
+    options.log = &capture_log;
+
+    g_captured_logs.clear();
+    OvKVCacheStoreOpenResult result{};
+    ASSERT_EQ(provider->vtable->open(provider->self, &ns, &options, &result), OV_KVCACHE_OK);
+    result.vtable->destroy(result.store);
+    ASSERT_FALSE(g_captured_logs.empty());
+    EXPECT_EQ(g_captured_logs.front().first, static_cast<OvKVCacheLogLevel>(OV_KVCACHE_LOG_DEBUG));
+}
+
+TEST(TestAbiFileStoreProvider, OpenRejectsGroupInfoWhoseBlockBytesDisagreeWithTheStoreBlockSize) {
+    const OvKVCacheStoreProviderDescriptor* provider = get_file_store_provider_module_info()->get_provider(0);
+    const std::string block_size_str = std::to_string(BLOCK_SIZE);
+    const OvKVCacheProperty properties[] = {{"block_size_bytes", block_size_str.c_str()}};
+    const std::string group = "kv";
+    const OvKVCacheGroupInfo groups[] = {{group.c_str(), static_cast<uint32_t>(group.size()), 32, BLOCK_SIZE + 1}};
+    const OvKVCacheNamespace ns{reinterpret_cast<const uint8_t*>(group.data()), group.size()};
+
+    OvKVCacheStoreOpenOptions options{};
+    options.capacity_bytes = BLOCK_SIZE * 4;
+    options.properties = properties;
+    options.property_count = 1;
+    options.groups = groups;
+    options.group_count = 1;
+
+    OvKVCacheStoreOpenResult result{};
+    EXPECT_EQ(provider->vtable->open(provider->self, &ns, &options, &result), OV_KVCACHE_ERR_INVALID_ARG);
+    EXPECT_EQ(result.store, nullptr);
+}
+
 TEST(TestAbiFileStoreProvider, MissLeavesTheCallersBufferUntouched) {
     auto store = open_store(/*num_blocks=*/4);
     std::vector<uint8_t> data = {1, 2, 3};
