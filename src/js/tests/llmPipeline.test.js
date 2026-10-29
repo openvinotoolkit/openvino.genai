@@ -279,12 +279,7 @@ describe("LLMPipeline in chat mode", () => {
 });
 
 describe("LLMPipeline perf metrics", () => {
-  it("DecodedResults.perfMetrics", async (t) => {
-    if (os.platform() === "darwin") {
-      t.skip("Skipping perfMetrics test on macOS. Ticket - 173286");
-      return;
-    }
-
+  it("DecodedResults.perfMetrics", async () => {
     const config = {
       max_new_tokens: 20,
     };
@@ -344,22 +339,20 @@ describe("LLMPipeline perf metrics", () => {
 
     // assert that calculating statistics manually from the raw counters
     // we get the same restults as from PerfMetrics
-    //
-    // Disabled due to potential floating-point differences. (CVS-175568)
-    // assert.strictEqual(
-    //   (perfMetrics.rawMetrics.generateDurations / 1000).toFixed(3),
-    //   generateDuration.mean.toFixed(3),
-    // );
+    assert.strictEqual(
+      Math.fround(perfMetrics.rawMetrics.generateDurations[0] / 1000),
+      generateDuration.mean,
+    );
 
-    // assert.strictEqual(
-    //   (perfMetrics.rawMetrics.tokenizationDurations / 1000).toFixed(3),
-    //   tokenizationDuration.mean.toFixed(3),
-    // );
+    assert.strictEqual(
+      Math.fround(perfMetrics.rawMetrics.tokenizationDurations[0] / 1000),
+      tokenizationDuration.mean,
+    );
 
-    // assert.strictEqual(
-    //   (perfMetrics.rawMetrics.detokenizationDurations / 1000).toFixed(3),
-    //   detokenizationDuration.mean.toFixed(3),
-    // );
+    assert.strictEqual(
+      Math.fround(perfMetrics.rawMetrics.detokenizationDurations[0] / 1000),
+      detokenizationDuration.mean,
+    );
 
     assert.ok(perfMetrics.rawMetrics.timesToFirstToken.length > 0);
     assert.ok(perfMetrics.rawMetrics.newTokenTimes.length > 0);
