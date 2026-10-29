@@ -676,6 +676,13 @@ def load_prompts(args):
         else:
             videos = [None] * len(prompts)
 
+        if args.model_type in ("text-to-video", "image-to-video"):
+            data = df.to_dict(orient="list")
+            data["prompt"] = data.pop("prompts")
+            data["images"] = images
+            data["videos"] = videos
+            return data
+
         return {"prompts": prompts, "images": images, "videos": videos}
 
     dataset_split = "validation"
