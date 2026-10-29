@@ -2766,14 +2766,15 @@ public:
         // Hold every chain block until the walk is over. A warmed block keeps the timestamp it was created
         // with, so releasing it immediately would make it the very next block the allocator overwrites.
         std::vector<BlocksPerLayer> chain;
-        for (size_t content_len = m_block_size; content_len <= prompt_len; content_len += m_block_size) {
+        // @return false when the chain cannot be extended with the block ending at `content_len`.
+        const auto extend_chain = [&](size_t content_len) {
             const auto hash = sequence->get_hash(content_len, m_block_size);
             if (m_allocator.has_cached_block(hash, m_prefix_hash_to_cached_blocks)) {
                 chain.push_back(m_allocator.get_cached_block(hash, m_prefix_hash_to_cached_blocks));
-                continue;
+                return true;
             }
             if (!source.contains(hash) || !m_allocator.can_allocate_blocks(1)) {
-                break;
+                return false;
             }
 
             auto blocks = allocate_cached_block(hash, content_len);
@@ -2783,11 +2784,28 @@ public:
                 m_prefix_hash_to_cached_blocks.erase(hash);
                 unregister_cached_hash(hash);
                 m_allocator.free_uncached(blocks);
-                break;
+                return false;
             }
 
             chain.push_back(std::move(blocks));
             ++num_restored;
+            return true;
+        };
+
+        size_t covered_len = 0;
+        for (size_t content_len = m_block_size; content_len <= prompt_len; content_len += m_block_size) {
+            if (!extend_chain(content_len)) {
+                break;
+            }
+            covered_len = content_len;
+        }
+
+        // A restored session ends on its last computed position (prompt_len - 1), which is usually not block aligned.
+        if (prompt_len > 1) {
+            const size_t tail_len = prompt_len - 1;
+            if (tail_len % m_block_size != 0 && covered_len == tail_len / m_block_size * m_block_size) {
+                extend_chain(tail_len);
+            }
         }
 
         // Drop ownership so that the regular restore path can claim the chain by hash.

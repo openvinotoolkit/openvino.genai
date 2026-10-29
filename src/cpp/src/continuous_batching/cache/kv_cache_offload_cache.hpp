@@ -81,6 +81,8 @@ public:
     /// Waits until every queued store has reached the backing file.
     void flush();
 
+    /// Like flush(), then makes everything written so far durable in the store (IKVCacheStore::flush). Throws on failure.
+    void flush_durable();
     /**
      * @brief Synchronously stores the block at @p block_index under @p hash and pins the entry.
      *

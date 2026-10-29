@@ -155,6 +155,12 @@ void LinearAttentionOffloadCache::flush() {
     m_drained_cv.wait(lock, [this] { return m_queued_stores.empty(); });
 }
 
+void LinearAttentionOffloadCache::flush_durable() {
+    std::unique_lock<std::mutex> lock(m_mutex);
+    m_drained_cv.wait(lock, [this] { return m_queued_stores.empty(); });
+    m_store->flush();
+}
+
 const LinearAttentionOffloadCache::QueuedStore* LinearAttentionOffloadCache::find_queued(std::size_t hash) const {
     for (const auto& queued : m_queued_stores) {
         if (queued.hash == hash) {

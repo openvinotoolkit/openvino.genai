@@ -3,8 +3,11 @@
 
 #include "continuous_batching/session_snapshot.hpp"
 
+#include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <string_view>
 
 #include "continuous_batching/cache/block_manager.hpp"
 #include "continuous_batching/cache/cache_orchestrator.hpp"
@@ -13,6 +16,7 @@
 #include "continuous_batching/cache/kv_cache_store.hpp"
 #include "continuous_batching/cache/linear_attention_cache_manager.hpp"
 #include "continuous_batching/cache/store_registry.hpp"
+#include "logger.hpp"
 #include "openvino/core/except.hpp"
 
 namespace ov::genai {
@@ -21,6 +25,33 @@ namespace {
 
 constexpr char MAGIC[8] = {'O', 'V', 'G', 'S', 'E', 'S', 'S', '1'};
 constexpr uint32_t FORMAT_VERSION = 3;
+
+// v4: no block payloads, only the token history and the prefix hashes of the blocks that were stored
+// in the pipeline's prefix-caching offload store.
+constexpr uint32_t FORMAT_VERSION_PREFIX_OFFLOAD = 4;
+constexpr const char* FORMAT_ENV = "OV_GENAI_SESSION_SNAPSHOT_FORMAT";
+
+#pragma pack(push, 1)
+struct PrefixOffloadHeader {
+    char magic[8];
+    uint32_t format_version;
+    uint32_t device_len;
+    uint8_t kv_present;
+    uint8_t la_present;
+    uint8_t is_embeddings;
+    uint8_t reserved;
+    uint32_t kv_num_layers;
+    uint64_t kv_block_size_in_bytes;
+    uint64_t kv_slot_bytes;
+    uint64_t la_block_size_in_bytes;
+    uint64_t la_slot_bytes;
+    uint64_t kv_block_tokens;
+    uint64_t la_cache_interval;
+    uint64_t num_tokens;
+    uint64_t num_kv_entries;
+    uint64_t checksum;
+};
+#pragma pack(pop)
 
 #pragma pack(push, 1)
 struct FileHeader {
@@ -177,13 +208,176 @@ void read_blocks_through_plugin(std::vector<std::vector<uint8_t>>& blocks,
     }
 }
 
+uint64_t prefix_offload_checksum(PrefixOffloadHeader header,
+                                 const std::string& device,
+                                 const std::vector<int64_t>& token_ids,
+                                 const std::vector<SessionSnapshot::PrefixEntry>& entries) {
+    header.checksum = 0;
+    uint64_t hash = fnv1a(reinterpret_cast<const uint8_t*>(&header), sizeof(header));
+    hash = fnv1a(reinterpret_cast<const uint8_t*>(device.data()), device.size(), hash);
+    hash = fnv1a(reinterpret_cast<const uint8_t*>(token_ids.data()), token_ids.size() * sizeof(int64_t), hash);
+    return fnv1a(reinterpret_cast<const uint8_t*>(entries.data()),
+                 entries.size() * sizeof(SessionSnapshot::PrefixEntry),
+                 hash);
+}
+
+void save_prefix_offload_format(CacheOrchestrator& orchestrator,
+                                const SequenceGroup::CPtr& seq_group,
+                                const Sequence::CPtr& sequence,
+                                const std::filesystem::path& path) {
+    OPENVINO_ASSERT(orchestrator.has_kv_cache(), "Session snapshot requires a model with KV cache inputs");
+    OPENVINO_ASSERT(!orchestrator.has_linear_attention_cache(),
+                    "Session snapshot format 4 does not support models with a linear-attention cache yet");
+    OPENVINO_ASSERT(seq_group->get_sequence_group_type() == SequenceGroupType::TOKENS,
+                    "Session snapshot format 4 does not support embeddings-routed models yet");
+    auto* kv_offload = orchestrator.get_kv_offload_cache();
+    OPENVINO_ASSERT(kv_offload != nullptr, "Session snapshot format 4 requires KV cache offload to be enabled");
+
+    std::vector<int64_t> token_ids = seq_group->get_prompt_ids();
+    const auto& generated = sequence->get_generated_ids();
+    token_ids.insert(token_ids.end(), generated.begin(), generated.end());
+    const size_t num_positions = token_ids.size();
+    OPENVINO_ASSERT(seq_group->get_num_processed_tokens() + 1 >= num_positions,
+                    "Session snapshot cannot be saved while the request is still prefilling: ",
+                    seq_group->get_num_processed_tokens(), " of ", num_positions,
+                    " positions have been processed. Step the pipeline until prefill completes first");
+
+    auto& kv_manager = static_cast<KVCacheManager&>(orchestrator.get_cache_manager(CacheType::KV_CACHE));
+    const size_t block_tokens = orchestrator.get_block_size(CacheType::KV_CACHE);
+    // The last position was only sampled, not forwarded, so its KV does not exist.
+    const size_t computed_len = num_positions - 1;
+    const auto indices = logical_block_indices(orchestrator.get_block_manager(CacheType::KV_CACHE), sequence->get_id());
+    // get_hash memoizes the sequence's prefix hashes, hence the mutable access.
+    const auto mutable_sequence = std::const_pointer_cast<Sequence>(sequence);
+
+    std::vector<SessionSnapshot::PrefixEntry> entries;
+    std::vector<size_t> pinned_hashes;
+    try {
+        for (size_t block = 0; block * block_tokens < computed_len; ++block) {
+            OPENVINO_ASSERT(block < indices.size(), "Sequence has fewer KV blocks than its computed length needs");
+            const size_t content_len = std::min((block + 1) * block_tokens, computed_len);
+            const size_t hash = mutable_sequence->get_hash(content_len, block_tokens);
+            OPENVINO_ASSERT(kv_offload->persist(hash, indices[block]),
+                            "Session snapshot could not store KV block ", block,
+                            " in the prefix-caching offload store: no slot is free and every entry is pinned. "
+                            "Increase cache_offload_config.capacity_bytes");
+            pinned_hashes.push_back(hash);
+            entries.push_back({content_len, hash});
+        }
+        // The snapshot is reported as saved once this returns, so the store must have made it durable.
+        kv_offload->flush_durable();
+
+        const std::string device = orchestrator.get_device();
+        PrefixOffloadHeader header{};
+        std::memcpy(header.magic, MAGIC, sizeof(MAGIC));
+        header.format_version = FORMAT_VERSION_PREFIX_OFFLOAD;
+        header.device_len = static_cast<uint32_t>(device.size());
+        header.kv_present = 1;
+        header.kv_num_layers = static_cast<uint32_t>(kv_manager.get_num_layers());
+        header.kv_block_size_in_bytes = kv_manager.get_block_size_in_bytes();
+        header.kv_slot_bytes = kv_manager.get_block_layout().get_slot_size();
+        header.kv_block_tokens = block_tokens;
+        header.num_tokens = num_positions;
+        header.num_kv_entries = entries.size();
+        header.checksum = prefix_offload_checksum(header, device, token_ids, entries);
+
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        OPENVINO_ASSERT(out.is_open(), "Failed to create session snapshot file at '", path.string(), "'");
+        write_exact(out, &header, sizeof(header));
+        write_exact(out, device.data(), device.size());
+        write_exact(out, token_ids.data(), token_ids.size() * sizeof(int64_t));
+        write_exact(out, entries.data(), entries.size() * sizeof(SessionSnapshot::PrefixEntry));
+    } catch (...) {
+        for (const size_t hash : pinned_hashes) {
+            kv_offload->unpin(hash);
+        }
+        throw;
+    }
+}
+
+SessionSnapshot::Loaded load_prefix_offload_format(const CacheOrchestrator& orchestrator,
+                                                   const std::filesystem::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    OPENVINO_ASSERT(in.is_open(), "Session snapshot file not found at '", path.string(), "'");
+
+    PrefixOffloadHeader header{};
+    read_exact(in, &header, sizeof(header));
+
+    // Bound every size read from the file by the file itself before allocating anything for it.
+    const uint64_t file_size = std::filesystem::file_size(path);
+    OPENVINO_ASSERT(header.device_len <= file_size && header.num_tokens <= file_size / sizeof(int64_t) &&
+                        header.num_kv_entries <= file_size / sizeof(SessionSnapshot::PrefixEntry) &&
+                        sizeof(header) + header.device_len + header.num_tokens * sizeof(int64_t) +
+                                header.num_kv_entries * sizeof(SessionSnapshot::PrefixEntry) ==
+                            file_size,
+                    "Session snapshot file is truncated or corrupted");
+
+    std::string device(header.device_len, '\0');
+    read_exact(in, device.data(), device.size());
+    SessionSnapshot::Loaded result;
+    result.prefix_offload_format = true;
+    result.token_ids.resize(header.num_tokens);
+    read_exact(in, result.token_ids.data(), result.token_ids.size() * sizeof(int64_t));
+    result.kv_entries.resize(header.num_kv_entries);
+    read_exact(in, result.kv_entries.data(), result.kv_entries.size() * sizeof(SessionSnapshot::PrefixEntry));
+    OPENVINO_ASSERT(prefix_offload_checksum(header, device, result.token_ids, result.kv_entries) == header.checksum,
+                    "Session snapshot failed its integrity check (file may be corrupted)");
+
+    OPENVINO_ASSERT(header.kv_present && orchestrator.has_kv_cache(),
+                    "Session snapshot/model mismatch: snapshot KV cache presence differs from the loaded model");
+    OPENVINO_ASSERT(!header.la_present && !orchestrator.has_linear_attention_cache(),
+                    "Session snapshot format 4 does not support models with a linear-attention cache yet");
+    OPENVINO_ASSERT(!header.is_embeddings, "Session snapshot format 4 does not support embeddings-routed models yet");
+    OPENVINO_ASSERT(device == orchestrator.get_device(),
+                    "Session snapshot was captured on device '", device, "' but the current pipeline uses '",
+                    orchestrator.get_device(), "'");
+
+    const auto& kv_manager = static_cast<const KVCacheManager&>(orchestrator.get_cache_manager(CacheType::KV_CACHE));
+    OPENVINO_ASSERT(header.kv_num_layers == kv_manager.get_num_layers() &&
+                        header.kv_block_size_in_bytes == kv_manager.get_block_size_in_bytes() &&
+                        header.kv_slot_bytes == kv_manager.get_block_layout().get_slot_size(),
+                    "Session snapshot was captured with an incompatible KV cache layout for the currently "
+                    "loaded model");
+    // Block hashes chain over whole blocks, so a different block size makes every stored hash unreachable.
+    OPENVINO_ASSERT(header.kv_block_tokens == orchestrator.get_block_size(CacheType::KV_CACHE),
+                    "Session snapshot was captured with a KV block size of ", header.kv_block_tokens,
+                    " tokens but the current pipeline uses ", orchestrator.get_block_size(CacheType::KV_CACHE));
+
+    OPENVINO_ASSERT(header.num_tokens >= 1, "Session snapshot holds no tokens");
+    uint64_t previous_len = 0;
+    for (const auto& entry : result.kv_entries) {
+        OPENVINO_ASSERT(entry.content_len > previous_len && entry.content_len <= header.num_tokens - 1,
+                        "Session snapshot has an invalid prefix entry (file may be corrupted)");
+        previous_len = entry.content_len;
+    }
+    return result;
+}
+
 }  // namespace
+
+bool SessionSnapshot::prefix_offload_format_requested(const CacheOrchestrator& orchestrator) {
+    const char* value = std::getenv(FORMAT_ENV);
+    if (value == nullptr || std::string_view(value) != "4") {
+        return false;
+    }
+    if (orchestrator.get_kv_offload_cache() == nullptr) {
+        GENAI_WARN("%s=4 needs KV cache offload to be enabled; falling back to the self-contained snapshot format",
+                   FORMAT_ENV);
+        return false;
+    }
+    return true;
+}
 
 void SessionSnapshot::save(CacheOrchestrator& orchestrator,
                            const SequenceGroup::CPtr& seq_group,
                            const Sequence::CPtr& sequence,
                            const std::filesystem::path& path,
                            const CacheOffloadConfig& store_config) {
+    if (prefix_offload_format_requested(orchestrator)) {
+        save_prefix_offload_format(orchestrator, seq_group, sequence, path);
+        return;
+    }
+
     const bool has_kv = orchestrator.has_kv_cache();
     const bool has_la = orchestrator.has_linear_attention_cache();
     OPENVINO_ASSERT(has_kv, "Session snapshot requires a model with KV cache inputs");
@@ -328,6 +522,21 @@ SessionSnapshot::Loaded SessionSnapshot::load(const CacheOrchestrator& orchestra
                                               const CacheOffloadConfig& store_config) {
     std::ifstream in(path, std::ios::binary);
     OPENVINO_ASSERT(in.is_open(), "Session snapshot file not found at '", path.string(), "'");
+
+    {
+        // Peek at the version to pick the format; anything else falls through to the v3 checks below.
+        char magic[sizeof(MAGIC)] = {};
+        uint32_t version = 0;
+        in.read(magic, sizeof(magic));
+        in.read(reinterpret_cast<char*>(&version), sizeof(version));
+        const bool is_prefix_offload_format = in.good() && std::memcmp(magic, MAGIC, sizeof(MAGIC)) == 0 &&
+                                              version == FORMAT_VERSION_PREFIX_OFFLOAD;
+        in.clear();
+        in.seekg(0);
+        if (is_prefix_offload_format) {
+            return load_prefix_offload_format(orchestrator, path);
+        }
+    }
 
     FileHeader header{};
     read_exact(in, &header, sizeof(header));

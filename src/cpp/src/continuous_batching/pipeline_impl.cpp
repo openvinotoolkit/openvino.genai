@@ -420,6 +420,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::save_state(uint64_t req
                     "got ", running_sequences.size());
     const auto& sequence = running_sequences[0];
 
+    if (SessionSnapshot::prefix_offload_format_requested(m_scheduler->get_cache_orchestrator())) {
+        OPENVINO_ASSERT(store_config == CacheOffloadConfig{} || store_config == m_scheduler->get_config().cache_offload_config,
+                        "Session snapshot format 4 stores blocks through the pipeline's own cache_offload_config; "
+                        "leave store_config unset or pass the same configuration");
+    }
+
     SessionSnapshot::save(m_scheduler->get_cache_orchestrator(), sequence_group, sequence, path, store_config);
 }
 
@@ -443,6 +449,42 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::restore_sta
     if (sampling_params_copy.eos_token_id == -1)
         sampling_params_copy.set_eos_token_id(m_generation_config.eos_token_id);
     sampling_params_copy.validate();
+
+    if (loaded.prefix_offload_format) {
+        // The blocks stay in the offload store; the history is submitted as an ordinary prompt and the
+        // regular prefix restore brings them back.
+        OPENVINO_ASSERT(store_config == CacheOffloadConfig{} || store_config == m_scheduler->get_config().cache_offload_config,
+                        "Session snapshot format 4 reads blocks through the pipeline's own cache_offload_config; "
+                        "leave store_config unset or pass the same configuration");
+        auto* kv_offload = m_scheduler->get_cache_orchestrator().get_kv_offload_cache();
+        OPENVINO_ASSERT(kv_offload != nullptr, "Restoring a format 4 session snapshot requires KV cache offload to be enabled");
+        for (const auto& entry : loaded.kv_entries) {
+            OPENVINO_ASSERT(kv_offload->contains(entry.hash),
+                            "Session snapshot block ending at token ", entry.content_len,
+                            " is missing from the prefix-caching offload store, so the snapshot cannot be restored");
+        }
+        OPENVINO_ASSERT(sampling_params_copy.max_length > loaded.token_ids.size(),
+                        "'max_length' must be greater than the number of restored session tokens");
+
+        auto restored_group = std::make_shared<SequenceGroup>(request_id, loaded.token_ids, sampling_params_copy);
+        {
+            std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+            _throw_if_failed();
+            initialize_prefix_cache(restored_group);
+            // Like the self-contained format, the restore must be complete: all but the last token have their cache.
+            if (restored_group->get_num_processed_tokens() + 1 != loaded.token_ids.size()) {
+                const auto restored_seq_id = restored_group->get_running_sequences()[0]->get_id();
+                if (m_scheduler->has_block_table(restored_seq_id)) {
+                    m_scheduler->free_sequence(restored_seq_id);
+                }
+                OPENVINO_THROW("Session snapshot restore recovered only ", restored_group->get_num_processed_tokens(),
+                               " of ", loaded.token_ids.size() - 1, " cached positions");
+            }
+            restored_group->set_num_prefix_cache_hit_tokens(restored_group->get_num_processed_tokens());
+            m_awaiting_requests.push_back(restored_group);
+        }
+        return std::make_shared<GenerationHandleImpl>(restored_group->get_generation_stream(), sampling_params_copy);
+    }
 
     SequenceGroup::Ptr sequence_group;
     if (loaded.is_embeddings) {

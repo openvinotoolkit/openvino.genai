@@ -496,3 +496,229 @@ TEST(TestSessionSnapshotEndToEnd, HybridModelRestoreAvoidsFullPrefillLatency) {
     }
     run_prefill_latency_comparison(model_path);
 }
+
+namespace {
+
+constexpr const char* SNAPSHOT_FORMAT_ENV = "OV_GENAI_SESSION_SNAPSHOT_FORMAT";
+
+/// Sets (or clears, when `value` is null) an environment variable for the lifetime of the object.
+class ScopedEnv {
+public:
+    ScopedEnv(const char* name, const char* value) : m_name(name) {
+        if (const char* previous = std::getenv(name)) {
+            m_previous = previous;
+        }
+        apply(value);
+    }
+    ~ScopedEnv() {
+        apply(m_previous ? m_previous->c_str() : nullptr);
+    }
+    void set(const char* value) {
+        apply(value);
+    }
+
+private:
+    void apply(const char* value) {
+#ifdef _WIN32
+        _putenv_s(m_name.c_str(), value ? value : "");
+#else
+        if (value) {
+            setenv(m_name.c_str(), value, 1);
+        } else {
+            unsetenv(m_name.c_str());
+        }
+#endif
+    }
+
+    std::string m_name;
+    std::optional<std::string> m_previous;
+};
+
+SchedulerConfig make_offload_scheduler_config() {
+    auto config = make_scheduler_config();
+    // A small device cache, so a filler request can push an earlier conversation out of it (about 256 tokens).
+    config.num_kv_blocks = session_snapshot_device().find("GPU") != std::string::npos ? 16 : 8;
+    config.use_cache_offload = true;
+    config.cache_offload_config.capacity_bytes = 256u * 1024u * 1024u;
+    return config;
+}
+
+// KV block size in tokens: 32 on CPU, 16 on GPU (the paged-attention page size).
+size_t kv_block_tokens_for_device(const std::string& device) {
+    return device.find("GPU") != std::string::npos ? 16 : 32;
+}
+
+/// Runs the pipeline until the request has produced `target` tokens in total.
+void step_until_generated(ContinuousBatchingPipeline& pipeline,
+                          GenerationHandle& handle,
+                          size_t target,
+                          std::vector<int64_t>& generated_ids) {
+    while (generated_ids.size() < target && handle->get_status() == GenerationStatus::RUNNING) {
+        pipeline.step();
+        while (handle->can_read()) {
+            for (auto& [seq_id, output] : handle->read()) {
+                generated_ids.insert(generated_ids.end(), output.generated_ids.begin(), output.generated_ids.end());
+            }
+        }
+    }
+}
+
+}  // namespace
+
+// Format 4 keeps no payload in the snapshot file: the blocks are persisted in the pipeline's own
+// prefix-caching offload store and a restore re-submits the history as an ordinary prompt. Snapshots are
+// taken once where the last computed position ends a block and once where it does not (the partial tail).
+TEST(TestSessionSnapshotEndToEnd, PrefixOffloadFormatRestoredRequestContinuesIdenticallyToUninterruptedRun) {
+    const char* model_path = std::getenv(MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0') {
+        GTEST_SKIP() << MODEL_PATH_ENV << " is not set, skipping session snapshot end-to-end test.";
+    }
+    ScopedEnv format(SNAPSHOT_FORMAT_ENV, "4");
+
+    const std::string prompt = repeat("The quick brown fox jumps over the lazy dog. ", 10) + " Continue the story:";
+    constexpr size_t TOTAL_NEW_TOKENS = 56;
+    constexpr size_t SPLIT_RUN_BUDGET = 1000;
+    const std::string device = session_snapshot_device();
+    const size_t block_tokens = kv_block_tokens_for_device(device);
+
+    std::vector<int64_t> baseline_ids;
+    size_t prompt_tokens = 0;
+    {
+        ContinuousBatchingPipeline pipeline(model_path, make_offload_scheduler_config(), device);
+        prompt_tokens = pipeline.get_tokenizer().encode(prompt).input_ids.get_size();
+        auto handle = pipeline.add_request(60, prompt, make_greedy_config(TOTAL_NEW_TOKENS));
+        while (pipeline.has_non_finished_requests()) {
+            pipeline.step();
+        }
+        auto outputs = handle->read_all();
+        ASSERT_FALSE(outputs.empty());
+        baseline_ids = outputs.front().generated_ids;
+    }
+    ASSERT_EQ(baseline_ids.size(), TOTAL_NEW_TOKENS);
+
+    // A request with `g` generated tokens has N = prompt_tokens + g positions and N - 1 computed ones.
+    size_t aligned_generated = 1;
+    while ((prompt_tokens + aligned_generated - 1) % block_tokens != 0) {
+        ++aligned_generated;
+    }
+    const std::vector<size_t> save_points = {aligned_generated, aligned_generated + 3};
+    ASSERT_LT(save_points.back(), TOTAL_NEW_TOKENS);
+
+    std::vector<std::filesystem::path> snapshot_paths;
+    std::vector<std::vector<int64_t>> generated_at_save;
+    {
+        ContinuousBatchingPipeline pipeline(model_path, make_offload_scheduler_config(), device);
+        auto handle = pipeline.add_request(61, prompt, make_greedy_config(SPLIT_RUN_BUDGET));
+        std::vector<int64_t> generated_so_far;
+        for (size_t point : save_points) {
+            step_until_generated(pipeline, handle, point, generated_so_far);
+            ASSERT_EQ(generated_so_far.size(), point);
+            snapshot_paths.push_back(std::filesystem::temp_directory_path() /
+                                     ("openvino_genai_session_snapshot_v4_" + std::to_string(point) + ".bin"));
+            pipeline.save_state(61, snapshot_paths.back().string());
+            generated_at_save.push_back(generated_so_far);
+        }
+        // Restoring next to the still-running original would share blocks it keeps writing to, so end it first.
+        handle->stop();
+        while (pipeline.has_non_finished_requests()) {
+            pipeline.step();
+        }
+
+        // Displace the original conversation from the small device cache: what comes back has to be read from
+        // the offload store, and the restore only succeeds if every cached position is recovered.
+        const std::string filler = repeat("Completely unrelated tokens to evict the cached prefix. ", 18);
+        auto filler_results = pipeline.generate({filler}, {make_greedy_config(4)});
+        ASSERT_FALSE(filler_results.at(0).m_generation_ids.at(0).empty());
+
+        for (size_t i = 0; i < save_points.size(); ++i) {
+            const size_t remaining = TOTAL_NEW_TOKENS - save_points[i];
+            auto restored = pipeline.restore_state(70 + i, snapshot_paths[i].string(), make_greedy_config(remaining));
+            while (pipeline.has_non_finished_requests()) {
+                pipeline.step();
+            }
+            auto outputs = restored->read_all();
+            ASSERT_FALSE(outputs.empty());
+
+            std::vector<int64_t> stitched_ids = generated_at_save[i];
+            stitched_ids.insert(stitched_ids.end(), outputs.front().generated_ids.begin(), outputs.front().generated_ids.end());
+            EXPECT_EQ(stitched_ids, baseline_ids)
+                << "resuming from a format 4 snapshot taken after " << save_points[i] << " generated tokens diverged "
+                << "from the uninterrupted baseline";
+            // Everything but the last position must come from the cache; only that one is recomputed.
+            EXPECT_EQ(restored->get_perf_metrics().get_num_prefix_cache_hit_tokens(),
+                      prompt_tokens + save_points[i] - 1);
+        }
+    }
+    for (const auto& path : snapshot_paths) {
+        std::filesystem::remove(path);
+    }
+}
+
+// A fresh pipeline has an empty (run-scoped) offload store, so the blocks a format 4 snapshot refers to are
+// gone: the restore must fail explicitly instead of silently re-running prefill.
+TEST(TestSessionSnapshotEndToEnd, PrefixOffloadFormatRestoreRejectsABlockThatIsNotInTheStore) {
+    const char* model_path = std::getenv(MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0') {
+        GTEST_SKIP() << MODEL_PATH_ENV << " is not set, skipping session snapshot end-to-end test.";
+    }
+    ScopedEnv format(SNAPSHOT_FORMAT_ENV, "4");
+
+    const std::string prompt = repeat("The quick brown fox jumps over the lazy dog. ", 10) + " Continue the story:";
+    const auto snapshot_path = std::filesystem::temp_directory_path() / "openvino_genai_session_snapshot_v4_missing.bin";
+    {
+        ContinuousBatchingPipeline pipeline(model_path, make_offload_scheduler_config(), session_snapshot_device());
+        auto handle = pipeline.add_request(62, prompt, make_greedy_config(1000));
+        std::vector<int64_t> generated;
+        step_until_generated(pipeline, handle, 5, generated);
+        pipeline.save_state(62, snapshot_path.string());
+    }
+
+    ContinuousBatchingPipeline pipeline(model_path, make_offload_scheduler_config(), session_snapshot_device());
+    try {
+        pipeline.restore_state(63, snapshot_path.string(), make_greedy_config(5));
+        ADD_FAILURE() << "restoring a snapshot whose blocks are not in the offload store must throw";
+    } catch (const ov::Exception& error) {
+        EXPECT_NE(std::string(error.what()).find("missing from the prefix-caching offload store"), std::string::npos)
+            << error.what();
+    }
+    EXPECT_FALSE(pipeline.has_non_finished_requests()) << "a rejected restore must not leave a request behind";
+    std::filesystem::remove(snapshot_path);
+}
+
+TEST(TestSessionSnapshotEndToEnd, PrefixOffloadFormatSnapshotFileHoldsNoBlockPayload) {
+    const char* model_path = std::getenv(MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0') {
+        GTEST_SKIP() << MODEL_PATH_ENV << " is not set, skipping session snapshot end-to-end test.";
+    }
+    ScopedEnv format(SNAPSHOT_FORMAT_ENV, "4");
+
+    // Must fit the small device cache of the offload configuration (about 256 tokens).
+    const std::string prompt = repeat("The quick brown fox jumps over the lazy dog. ", 15);
+    const auto v4_path = std::filesystem::temp_directory_path() / "openvino_genai_session_snapshot_v4_size.bin";
+    const auto v3_path = std::filesystem::temp_directory_path() / "openvino_genai_session_snapshot_v3_size.bin";
+    {
+        ContinuousBatchingPipeline pipeline(model_path, make_offload_scheduler_config(), session_snapshot_device());
+        auto handle = pipeline.add_request(64, prompt, make_greedy_config(1000));
+        std::vector<int64_t> generated;
+        step_until_generated(pipeline, handle, 5, generated);
+        pipeline.save_state(64, v4_path.string());
+        format.set(nullptr);  // the same state, in the self-contained format
+        pipeline.save_state(64, v3_path.string());
+    }
+
+    const auto v4_size = std::filesystem::file_size(v4_path);
+    const auto v3_size = std::filesystem::file_size(v3_path);
+    std::filesystem::remove(v4_path);
+    std::filesystem::remove(v3_path);
+    EXPECT_LT(v4_size * 100, v3_size) << "format 4 holds " << v4_size << " bytes against " << v3_size
+                                      << " for the self-contained format, so it must be carrying block payload";
+}
+
+TEST(TestSessionSnapshotEndToEnd, PrefixOffloadFormatFallsBackToTheSelfContainedFormatWithoutOffload) {
+    const char* model_path = std::getenv(MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0') {
+        GTEST_SKIP() << MODEL_PATH_ENV << " is not set, skipping session snapshot end-to-end test.";
+    }
+    ScopedEnv format(SNAPSHOT_FORMAT_ENV, "4");
+    run_round_trip_test(model_path);
+}

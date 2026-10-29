@@ -615,3 +615,104 @@ TEST(TestKVCacheOffloadCache, ConcurrentOverwritesNeverEvictAPinnedEntry) {
     EXPECT_TRUE(offload_cache->contains(1000));
     EXPECT_LE(offload_cache->get_num_entries(), 2);
 }
+
+namespace {
+
+/// Forwards to a real store and counts flush() calls.
+class FlushCountingStore : public IKVCacheStore {
+public:
+    FlushCountingStore(std::unique_ptr<IKVCacheStore> inner, size_t& flush_count)
+        : m_inner(std::move(inner)),
+          m_flush_count(flush_count) {}
+
+    bool has_block(size_t hash) const override {
+        return m_inner->has_block(hash);
+    }
+    bool write_block(size_t hash, const std::vector<uint8_t>& data) override {
+        return m_inner->write_block(hash, data);
+    }
+    bool read_block(size_t hash, std::vector<uint8_t>& data) const override {
+        return m_inner->read_block(hash, data);
+    }
+    void drop_block(size_t hash) override {
+        m_inner->drop_block(hash);
+    }
+    size_t get_block_size() const override {
+        return m_inner->get_block_size();
+    }
+    size_t get_capacity_blocks() const override {
+        return m_inner->get_capacity_blocks();
+    }
+    size_t get_num_free_blocks() const override {
+        return m_inner->get_num_free_blocks();
+    }
+    void flush() override {
+        ++m_flush_count;
+        m_inner->flush();
+    }
+
+private:
+    std::unique_ptr<IKVCacheStore> m_inner;
+    size_t& m_flush_count;
+};
+
+/// Persists the blocks a snapshot of `num_tokens` tokens would reference (the last token has no KV), then
+/// warms a fresh block manager for the same history the way a restore does.
+void expect_snapshot_tail_is_restored(size_t num_tokens) {
+    constexpr size_t block_size = 4;
+    const size_t computed_len = num_tokens - 1;
+    const size_t num_blocks = (computed_len + block_size - 1) / block_size;
+    CacheFixture fixture(num_blocks);
+    auto offload_cache = make_offload_cache(fixture, num_blocks);
+    BlockManager block_manager(num_blocks, /*enable_prefix_caching=*/true, block_size, /*num_layers=*/1);
+
+    std::vector<int64_t> tokens(num_tokens);
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        tokens[i] = static_cast<int64_t>(i);
+    }
+    auto consumer = make_group(tokens, /*request_id=*/20);
+    const auto sequence = consumer->get_running_sequences().at(0);
+    for (size_t block = 0; block < num_blocks; ++block) {
+        const size_t content_len = std::min((block + 1) * block_size, computed_len);
+        fixture.fill_block(block, static_cast<uint8_t>(block + 1));
+        ASSERT_TRUE(offload_cache->persist(sequence->get_hash(content_len, block_size), block));
+    }
+
+    EXPECT_EQ(block_manager.warm_prefix_cache(consumer, *offload_cache), num_blocks);
+    EXPECT_TRUE(block_manager.restore_cached_blocks(consumer));
+    EXPECT_EQ(consumer->get_num_processed_tokens(), computed_len);
+
+    block_manager.free_sequence(sequence->get_id());
+}
+
+}  // namespace
+
+TEST(TestKVCacheOffloadCache, FlushDurableWaitsForQueuedStoresThenFlushesTheStore) {
+    CacheFixture fixture;
+    size_t flush_count = 0;
+    auto backend = std::make_unique<KVCacheOffloadManager>(fixture.cache_manager->get_block_layout(),
+                                                           make_offload_config(fixture, 2),
+                                                           "CPU");
+    auto store = std::make_unique<FlushCountingStore>(std::make_unique<FileKVCacheStore>(std::move(backend)), flush_count);
+    KVCacheOffloadCache offload_cache(*fixture.cache_manager, std::move(store), /*max_queued_stores=*/8);
+    fixture.fill_block(0, /*seed=*/5);
+    offload_cache.on_blocks_overwritten(/*hash=*/1, make_block_set(0));
+
+    offload_cache.flush_durable();
+
+    EXPECT_TRUE(offload_cache.contains(1));
+    EXPECT_EQ(offload_cache.get_num_entries(), 1);
+    EXPECT_EQ(flush_count, 1);
+}
+
+TEST(TestKVCacheOffloadCache, WarmPrefixCacheRestoresASnapshotTailThatIsNotBlockAligned) {
+    expect_snapshot_tail_is_restored(/*num_tokens=*/10);
+}
+
+TEST(TestKVCacheOffloadCache, WarmPrefixCacheRestoresASnapshotTailWhenThePromptEndsOnABlockBoundary) {
+    expect_snapshot_tail_is_restored(/*num_tokens=*/8);
+}
+
+TEST(TestKVCacheOffloadCache, WarmPrefixCacheRestoresASnapshotWhoseLastComputedPositionEndsABlock) {
+    expect_snapshot_tail_is_restored(/*num_tokens=*/9);
+}

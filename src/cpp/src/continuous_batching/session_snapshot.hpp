@@ -66,6 +66,20 @@ public:
                       const std::filesystem::path& path,
                       const CacheOffloadConfig& store_config = {});
 
+    /**
+     * @brief Whether save() writes the experimental v4 format: the snapshot file keeps only the token
+     * history and the prefix hashes of the sequence's blocks, whose contents live in the pipeline's
+     * prefix-caching offload store. Enabled by OV_GENAI_SESSION_SNAPSHOT_FORMAT=4 and only effective when
+     * the orchestrator has a KV offload cache; load() dispatches on the file's own version instead.
+     */
+    static bool prefix_offload_format_requested(const CacheOrchestrator& orchestrator);
+
+    /// A block of the sequence's prefix chain, addressed the way the prefix-caching offload store keys it.
+    struct PrefixEntry {
+        uint64_t content_len;
+        uint64_t hash;
+    };
+
     /// Cache payload loaded from a snapshot, keyed by cache type, each a list of blocks in the
     /// order they must be written back (KV: full logical order; linear-attention: single entry).
     struct Loaded {
@@ -81,6 +95,11 @@ public:
         int64_t rope_delta = 0;
 
         std::map<CacheType, std::vector<std::vector<uint8_t>>> blocks_per_type;
+
+        /// Set for the v4 format: `blocks_per_type` is empty and the cache contents must be brought back
+        /// from the offload store through these entries (the restored request is a normal prompt).
+        bool prefix_offload_format = false;
+        std::vector<PrefixEntry> kv_entries;
     };
 
     /**

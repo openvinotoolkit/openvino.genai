@@ -74,6 +74,8 @@ public:
     /// Waits until every queued store has reached the backing file.
     void flush();
 
+    /// Like flush(), then makes everything written so far durable in the store (IKVCacheStore::flush). Throws on failure.
+    void flush_durable();
     /// Same contract as KVCacheOffloadCache::persist.
     bool persist(std::size_t hash, std::size_t block_index);
 
