@@ -345,6 +345,9 @@ Napi::Value Text2VideoPipelineWrapper::set_generation_config(const Napi::Callbac
     auto env = info.Env();
     try {
         OPENVINO_ASSERT(this->pipe, "Text2VideoPipeline is not initialized");
+        // The generation thread reads the pipeline config
+        OPENVINO_ASSERT(!this->is_generating->load(),
+                        "setGenerationConfig() cannot run while generate() is in progress");
         VALIDATE_ARGS_COUNT(info, 1, "setGenerationConfig()");
         OPENVINO_ASSERT(!info[0].IsUndefined() && !info[0].IsNull(), "Generation config cannot be undefined or null");
         // Start from the current config so that fields which are not passed keep their values

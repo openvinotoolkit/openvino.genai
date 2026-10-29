@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { basename, join } from "node:path";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import yargs from "yargs/yargs";
 import { hideBin } from "yargs/helpers";
 import { encode } from "node-wav";
@@ -62,6 +62,8 @@ async function main() {
   const [, numFrames, height, width, channels] = video.getShape();
   const frameSize = height * width * channels;
   const outputDir = "genai_video_frames";
+  // Start from an empty directory, so frames of a previous run don't end up in the video
+  await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
   for (let i = 0; i < numFrames; i++) {
     // slice() copies the frame, a Tensor can't be created from a view with a nonzero byteOffset

@@ -89,6 +89,7 @@ export class Text2VideoPipeline {
   /**
    * Update video generation config.
    * Fields that are not passed keep their current values.
+   * Throws while a generate() call is in progress.
    */
   setGenerationConfig(config: VideoGenerationConfig): void {
     if (!this.pipeline) throw new Error("Text2VideoPipeline is not initialized");

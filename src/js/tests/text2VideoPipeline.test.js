@@ -99,6 +99,11 @@ describe("Text2VideoPipeline generation config", () => {
       () => pipeline.setGenerationConfig({ guidance_scale: "high" }),
       /VideoGenerationConfig\.guidance_scale/,
     );
+    // Out of the int range of max_sequence_length
+    assert.throws(
+      () => pipeline.setGenerationConfig({ max_sequence_length: 2 ** 32 + 128 }),
+      /VideoGenerationConfig\.max_sequence_length/,
+    );
     assert.throws(
       () => pipeline.setGenerationConfig({ num_images_per_prompt: 2 }),
       /Unsupported VideoGenerationConfig property: num_images_per_prompt/,
@@ -233,6 +238,7 @@ describe("Text2VideoPipeline methods", { skip: os.platform() === "darwin" }, () 
     assert.ok(captured, "should have captured a latent");
     const decoded = await pipeline.decode(captured);
     assert.deepStrictEqual(decoded.video.getShape(), [1, 9, 32, 32, 3]);
+    assert.strictEqual(decoded.audio, undefined);
   });
 
   it("generate resolves when callback asks to stop", async () => {
@@ -308,6 +314,19 @@ describe("Text2VideoPipeline concurrency", { skip: os.platform() === "darwin" },
       /decode\(\) cannot run while another generate\(\) or decode\(\) is in progress/,
     );
     await decoding;
+  });
+
+  it("setGenerationConfig() rejects while a generate() is in progress", async () => {
+    const original = pipeline.getGenerationConfig();
+    const generating = pipeline.generate("a tiny robot", SMALL_VIDEO);
+    assert.throws(
+      () => pipeline.setGenerationConfig({ num_frames: 17 }),
+      /setGenerationConfig\(\) cannot run while generate\(\) is in progress/,
+    );
+    await generating;
+    pipeline.setGenerationConfig({ num_frames: 17 });
+    assert.strictEqual(pipeline.getGenerationConfig().num_frames, 17);
+    pipeline.setGenerationConfig(original);
   });
 
   it("a rejected generate() call leaves the pipeline usable", async () => {

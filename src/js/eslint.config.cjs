@@ -110,6 +110,7 @@ module.exports = defineConfig([
             "negative_prompt",
             "guidance_rescale",
             "spatio_temporal_guidance_blocks",
+            "max_sequence_length",
           ],
         },
       ],

@@ -3,11 +3,15 @@
 
 import logging
 import shutil
+import time
 import uuid
 from pathlib import Path
 from typing import Callable
 
 logger = logging.getLogger(__name__)
+
+# How long to wait for a destination created by another process to become visible
+FINAL_PATH_TIMEOUT_SECONDS = 120
 
 
 class AtomicDownloadManager:
@@ -55,6 +59,16 @@ class AtomicDownloadManager:
             except Exception:
                 logger.exception("Error during move - assuming it was created successfully by another process")
                 self._cleanup_temp()
+                self._wait_for_final_path()
+
+    def _wait_for_final_path(self) -> None:
+        # On a network file system, a directory that another machine has just created can stay invisible for a while
+        deadline = time.monotonic() + FINAL_PATH_TIMEOUT_SECONDS
+        while not self.final_path.exists():
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"Destination did not appear after the move failed: {self.final_path}")
+            logger.info(f"Waiting for the destination to appear: {self.final_path}")
+            time.sleep(5)
 
     def _cleanup_temp(self) -> None:
         if self.temp_path.exists():

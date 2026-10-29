@@ -4,6 +4,7 @@
 #include "include/helper.hpp"
 
 #include <cmath>
+#include <limits>
 #include <typeindex>
 
 #include "include/addon.hpp"
@@ -924,7 +925,10 @@ void update_video_generation_config(const Napi::Env& env,
          }},
         {"max_sequence_length",
          [](const Napi::Env& env, const Napi::Value& v, Config& c) {
-             c.max_sequence_length = static_cast<int>(js_to_cpp<int64_t>(env, v));
+             const auto value = js_to_cpp<int64_t>(env, v);
+             OPENVINO_ASSERT(value >= std::numeric_limits<int>::min() && value <= std::numeric_limits<int>::max(),
+                             "The value is out of the int range.");
+             c.max_sequence_length = static_cast<int>(value);
          }},
         {"guidance_rescale",
          [](const Napi::Env& env, const Napi::Value& v, Config& c) {
@@ -1884,8 +1888,9 @@ Napi::Value cpp_to_js<ov::genai::VideoGenerationResult, Napi::Value>(const Napi:
     obj.Set("video", cpp_to_js<ov::Tensor, Napi::Value>(env, result.video));
     // VideoGenerationPerfMetrics adds nothing to ImageGenerationPerfMetrics, so the image wrapper is reused
     obj.Set("perfMetrics", cpp_to_js<ov::genai::ImageGenerationPerfMetrics, Napi::Value>(env, result.performance_stat));
-    // Models without audio leave the audio tensor empty
-    obj.Set("audio", result.audio ? cpp_to_js<ov::Tensor, Napi::Value>(env, result.audio) : env.Undefined());
+    // Models without audio return an empty audio tensor
+    const bool has_audio = result.audio && result.audio.get_size() > 0;
+    obj.Set("audio", has_audio ? cpp_to_js<ov::Tensor, Napi::Value>(env, result.audio) : env.Undefined());
     obj.Set("audioSampleRate", Napi::Number::New(env, result.audio_sample_rate));
     return obj;
 }
