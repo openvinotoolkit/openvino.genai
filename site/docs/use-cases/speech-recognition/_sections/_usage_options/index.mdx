@@ -261,6 +261,56 @@ SenseVoiceSmall does not currently generate segment-level or word-level timestam
 For supported languages, word-level timestamps can be generated separately using `ASRForcedAligner`: first transcribe the audio with SenseVoiceSmall, then pass the audio and transcription to the standalone aligner. See [Word-level Timestamps Prediction](#word-level-timestamps-prediction) for details.
 :::
 
+#### Emotion and Event Metadata
+
+SenseVoiceSmall reports recognized `emotion` and `event` tags through `ASRDecodedResults.metadata`. This optional field is part of the generic ASR API, where `metadata[i]` corresponds to `texts[i]`. The detected language is available separately through `languages`.
+
+An entry may be empty or omit a key when the corresponding tag is not recognized. ASR models that do not provide metadata leave `metadata` unset.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        result = pipe.generate(raw_speech)
+
+        if result.metadata:
+            metadata = result.metadata[0]
+            for key in ("emotion", "event"):
+                if key in metadata:
+                    print(f"{key}: {metadata[key]}")
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        auto result = pipe.generate(raw_speech);
+
+        if (result.metadata && !result.metadata->empty()) {
+            const auto& metadata = result.metadata->front();
+            if (auto it = metadata.find("emotion"); it != metadata.end()) {
+                std::cout << "emotion: " << it->second.as<std::string>() << "\n";
+            }
+            if (auto it = metadata.find("event"); it != metadata.end()) {
+                std::cout << "event: " << it->second.as<std::string>() << "\n";
+            }
+        }
+        ```
+    </TabItemCpp>
+    <TabItemJS>
+        ```javascript
+        const result = await pipeline.generate(rawSpeech);
+
+        const metadata = result.metadata?.[0];
+        if (metadata) {
+          if (metadata.emotion !== undefined) {
+            console.log("emotion:", metadata.emotion);
+          }
+          if (metadata.event !== undefined) {
+            console.log("event:", metadata.event);
+          }
+        }
+        ```
+    </TabItemJS>
+</LanguageTabs>
+
 ### Whisper-specific Features
 
 :::info

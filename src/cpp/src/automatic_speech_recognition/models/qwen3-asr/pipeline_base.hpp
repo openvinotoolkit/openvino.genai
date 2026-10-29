@@ -30,6 +30,9 @@ public:
 
 protected:
     Qwen3ASRPipelineBase(const std::filesystem::path& models_path, const ov::AnyMap& properties);
+    Qwen3ASRPipelineBase(const std::filesystem::path& models_path,
+                         const Tokenizer& tokenizer,
+                         const ov::AnyMap& properties);
 
     /**
      * @brief Transcribe audio chunks. A streamer is passed only for a single chunk.
