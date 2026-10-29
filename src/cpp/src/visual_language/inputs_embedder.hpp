@@ -455,6 +455,7 @@ private:
     std::shared_ptr<IInputsEmbedder> m_impl;
 
     friend class InputsEmbedderMiniCPM;
+    friend class InputsEmbedderMiniCPMV4_6;
     friend class InputsEmbedderLLaVA;
     friend class InputsEmbedderNanoLLaVA;
     friend class InputsEmbedderLLaVANext;
@@ -474,6 +475,7 @@ private:
     friend class InputsEmbedderVideoChatFlashQwen;
     friend class InputsEmbedderMuseGlimmer;
     friend class InputsEmbedderMiniCPMv4_7;
+    friend class InputsEmbedderLFM3VL;
 };
 
 /// @brief Universal-tag pattern for a modality. A switch, not a ternary on IMAGE: a ternary would
