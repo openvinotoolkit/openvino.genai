@@ -433,7 +433,7 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     if (is_vlm_dflash) {
         m_inputs_embedder = main_model_desc.inputs_embedder;
         m_model_input_type = ModelInputType::EMBEDDINGS;
-        m_vision_registry = std::make_shared<VisionRegistry>();
+        m_embeddings_registry = std::make_shared<EmbeddingsRegistry>();
     }
     const auto draft_embedding_model =
         m_inputs_embedder ? m_inputs_embedder->get_embedding_model() : nullptr;

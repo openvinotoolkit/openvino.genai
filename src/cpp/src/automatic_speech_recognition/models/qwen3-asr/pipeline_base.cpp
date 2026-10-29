@@ -40,7 +40,12 @@ size_t get_num_samples(const std::vector<ov::genai::AudioChunk>& chunks) {
 namespace ov::genai {
 
 Qwen3ASRPipelineBase::Qwen3ASRPipelineBase(const std::filesystem::path& models_path, const ov::AnyMap& properties)
-    : ASRPipelineImplBase(models_path),
+    : Qwen3ASRPipelineBase(models_path, Tokenizer{models_path}, properties) {}
+
+Qwen3ASRPipelineBase::Qwen3ASRPipelineBase(const std::filesystem::path& models_path,
+                                           const Tokenizer& tokenizer,
+                                           const ov::AnyMap& properties)
+    : ASRPipelineImplBase(models_path, tokenizer),
       m_feature_extractor{models_path / "preprocessor_config.json"},
       m_asr_text_token_id{get_required_token_id(m_tokenizer, "<asr_text>")},
       m_forced_aligner{get_forced_aligner(properties)} {
