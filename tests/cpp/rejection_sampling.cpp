@@ -6,6 +6,7 @@
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <numeric>
 #include <random>
 #include <vector>
 
@@ -136,6 +137,48 @@ TEST(RejectionSampling, SamplesTheResidualTailOfADenseTarget) {
         tail_draws += detail::sample_residual(Logits(p.data(), p.size()), proposal, rng).m_index > 1;
     }
     EXPECT_GT(tail_draws, 0u);
+}
+
+// A draft draws its candidates with the multinomial sampler, which must reach the same kind of tail: the proposal
+// recorded for this row gives the tail 1% of the mass, and a float running sum never gets there. The sampler draws
+// from probabilities in m_data, or in m_vector when logprobs are requested.
+TEST(RejectionSampling, DrawsTheDenseTailItsProposalRecords) {
+    constexpr size_t tail_size = 400000;
+    constexpr float tail_probability = 2.5e-8f;
+    constexpr size_t num_draws = 10000;
+    std::vector<float> probabilities(2 + tail_size, tail_probability);
+    probabilities[0] = 0.39f;
+    probabilities[1] = 0.6f;
+    const auto proposal = detail::make_draft_proposal(Logits(probabilities.data(), probabilities.size()));
+    ASSERT_TRUE(proposal.is_dense());
+    const double recorded_tail_mass =
+        std::accumulate(proposal.probabilities.begin() + 2, proposal.probabilities.end(), 0.0);
+    std::vector<float> logits;
+    for (const float probability : probabilities) {
+        logits.push_back(std::log(probability));
+    }
+
+    const auto tail_frequency = [&](const GenerationConfig& config) {
+        auto group = std::make_shared<SequenceGroup>(0, TokenIds{0}, config);
+        group->schedule_tokens(1);
+        group->set_output_seq_len(1);
+        std::vector<float> row = logits;
+        Sampler sampler;
+        sampler.sample({group}, logits_tensor(row, 1));
+        EXPECT_EQ(group->num_running_seqs(), num_draws);
+        size_t tail_draws = 0;
+        for (const auto& sequence : group->get_sequences()) {
+            tail_draws += sequence->get_generated_ids().back() > 1;
+        }
+        return static_cast<double>(tail_draws) / num_draws;
+    };
+    GenerationConfig config;
+    config.max_new_tokens = 8;
+    config.do_sample = true;
+    config.num_return_sequences = num_draws;
+    EXPECT_NEAR(tail_frequency(config), recorded_tail_mass, 0.004) << "probabilities in m_data";
+    config.logprobs = 1;
+    EXPECT_NEAR(tail_frequency(config), recorded_tail_mass, 0.004) << "probabilities in m_vector";
 }
 
 TEST(RejectionSampling, RejectsInvalidDistributions) {
