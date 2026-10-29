@@ -214,6 +214,17 @@ private:
     /// @brief Convert codec codes to waveform.
     ov::Tensor codes_to_wav(const ov::Tensor& codes);
 
+    /// @brief Stack frames [begin, end) of codes into m_stack_codes_buf.
+    /// @return m_stack_codes_buf with shape [1, num_code_groups, end - begin].
+    ov::Tensor stack_codes_range(const std::vector<std::vector<int64_t>>& codes, size_t begin, size_t end);
+
+    /// @brief Convert frames [begin, end) of codes to waveform for one streamed chunk.
+    /// @param left_context_frames Up to this many frames before begin are decoded as context and then dropped.
+    ov::Tensor decode_chunk(const std::vector<std::vector<int64_t>>& codes,
+                            size_t begin,
+                            size_t end,
+                            size_t left_context_frames);
+
     /// @brief Reset talker KV cache state.
     void reset_talker();
 
