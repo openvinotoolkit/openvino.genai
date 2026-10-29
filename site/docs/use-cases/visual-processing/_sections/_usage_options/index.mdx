@@ -58,6 +58,7 @@ Tags let you place media anywhere, including between spans of text:
 19. Muse Glimmer: `<|image|>`
 20. DeepSeek-OCR-2: `<image>`
 21. LFM3-VL: `<|vision_start|><|image|><|vision_end|>`
+22. LFM3-Omni: `<|vision_start|><|image|><|vision_end|>`
 
 #### Video Tags
 
@@ -70,10 +71,12 @@ Tags let you place media anywhere, including between spans of text:
 7. Muse Glimmer: `<|video|>`
 8. MiniCPM-V-4.7: `<video>./</video>\n`
 9. LFM3-VL: `<|vision_start|><|video|><|vision_end|>`
+10. LFM3-Omni: `<|vision_start|><|video|><|vision_end|>`
 
 #### Audio Tags
 
 1. Qwen3-Omni: `<|audio_start|><|audio_pad|><|audio_end|>`
+2. LFM3-Omni: `<|vision_start|><|audio|><|vision_end|>`
 
 #### Qwen3-Omni Notes
 
@@ -92,6 +95,45 @@ accounting is correct and nothing raises, but generation quality may differ from
 implementation. If you need that combination, compare against `transformers` on your own data
 before relying on it.
 :::
+
+#### LFM3-Omni Notes {#lfm3-omni-notes}
+
+Untagged media is prepended in the order images, videos, audio, followed by the text.
+
+LFM3-Omni has no separate talker: its language model emits text and speech in one token stream. `OmniPipeline` decodes
+that stream with the SDPA backend, which it selects unless `ATTENTION_BACKEND` is set. With `ATTENTION_BACKEND="PA"`
+it returns text only. `OmniTalkerSpeechConfig.output_mode` sets the order of text and speech:
+`SpeechOutputMode.INTERLEAVED` (default) alternates short blocks of text and speech, `SpeechOutputMode.SPEECH_ONLY`
+answers with speech only. The voice and the language are set in the system prompt, as the model card describes, for
+example `Perform TTS in American English using a female voice.` The `cp_temperature`, `cp_top_k` and
+`cp_repetition_penalty` fields control speech sampling; `speaker` and the `talker_*` fields are rejected.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        pipe = openvino_genai.OmniPipeline(models_path, "CPU")
+        history = openvino_genai.ChatHistory()
+        history.append({"role": "system", "content": "Perform TTS in American English using a female voice."})
+        history.append({"role": "user", "content": "OpenVINO GenAI runs LFM3-Omni."})
+        speech_config = openvino_genai.OmniTalkerSpeechConfig()
+        speech_config.output_mode = openvino_genai.SpeechOutputMode.SPEECH_ONLY
+        result = pipe.generate(history, text_config=openvino_genai.GenerationConfig(), talker_speech_config=speech_config)
+        waveform = result.speech_result.waveforms[0]  # [1, 1, num_samples], 24 kHz
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        ov::genai::OmniPipeline pipe(models_path, "CPU");
+        ov::genai::ChatHistory history;
+        history.push_back({{"role", "system"}, {"content", "Perform TTS in American English using a female voice."}});
+        history.push_back({{"role", "user"}, {"content", "OpenVINO GenAI runs LFM3-Omni."}});
+        ov::genai::OmniTalkerSpeechConfig speech_config;
+        speech_config.output_mode = ov::genai::SpeechOutputMode::SPEECH_ONLY;
+        auto result = pipe.generate(history, {}, {}, {}, {}, ov::genai::GenerationConfig{}, speech_config);
+        ov::Tensor waveform = result.speech_result.waveforms[0];  // [1, 1, num_samples], 24 kHz
+        ```
+    </TabItemCpp>
+</LanguageTabs>
 
 ### Use Different Generation Parameters
 

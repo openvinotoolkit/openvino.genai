@@ -82,6 +82,12 @@ pip install timm einops
 
 The model requires `transformers>=5.20` for the export with `optimum-cli` and `--trust-remote-code` argument.
 
+#### LFM3-Omni {#lfm3-omni-notes}
+
+The model requires `transformers>=5.20.2` and an Optimum Intel version with `lfm3_omni` export support. Export it with
+`--task image-text-to-text --trust-remote-code`. `VLMPipeline` produces text from text, image, video and audio input.
+Speech output goes through `OmniPipeline`, see [LFM3-Omni Notes](/docs/use-cases/visual-processing/#lfm3-omni-notes).
+
 #### MiniCPM-V-4_5 {#minicpm-v-4_5-notes}
 
 The model requires `transformers<5.0` for the export with `optimum-cli`.
