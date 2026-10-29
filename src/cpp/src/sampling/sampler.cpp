@@ -135,12 +135,10 @@ MatchStopStringResult match_stop_string(Tokenizer& tokenizer,
                       size_t draft_generated_tokens = 0) {
     MatchStopStringResult result;
     if (generated_tokens.size() >= stop_strings.first) {
-        // draft_generated_tokens is to handle case with >= 1 generated tokens per step
-        size_t offset = generated_tokens.size() - draft_generated_tokens;
-        if (offset < stop_strings.first) {
-            return result;
-        }
-        offset -= stop_strings.first;
+        // draft_generated_tokens is to handle case with >= 1 generated tokens per step. It counts the validated
+        // candidates, so after a rejection it can exceed the number of generated tokens.
+        const size_t window = draft_generated_tokens + stop_strings.first;
+        const size_t offset = generated_tokens.size() > window ? generated_tokens.size() - window : 0;
         TokenIds buffer(generated_tokens.begin() + offset, generated_tokens.end());
         std::string decoded_buffer = tokenizer.decode(buffer);
         for (const auto& stop_string : stop_strings.second) {
