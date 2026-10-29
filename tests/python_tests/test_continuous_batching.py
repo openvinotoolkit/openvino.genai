@@ -1129,6 +1129,37 @@ def test_qwen35_mtp_extended_perf_metrics(qwen35_mtp_model_path: Path):
     generate_and_collect_metrics()
 
 
+def test_qwen35_mtp_sampled_streaming(qwen35_mtp_model_path: Path):
+    mtp_pipe = create_ov_cb_pipeline(
+        qwen35_mtp_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+    )
+    generation_config = GenerationConfig(
+        do_sample=True,
+        temperature=0.8,
+        top_k=20,
+        top_p=0.95,
+        rng_seed=5,
+        max_new_tokens=32,
+        ignore_eos=True,
+        num_assistant_tokens=3,
+    )
+    streamed = []
+
+    def streamer(subword):
+        streamed.append(subword)
+        return StreamingStatus.RUNNING
+
+    result = mtp_pipe.generate(["OpenVINO is"], [generation_config], streamer)[0]
+
+    assert result.m_generation_ids[0]
+    assert "".join(streamed) == result.m_generation_ids[0]
+    metrics = result.extended_perf_metrics
+    assert len(metrics.main_model_metrics.raw_metrics.m_durations) > 1
+    assert metrics.get_num_draft_tokens() > 0
+    assert metrics.get_num_accepted_tokens() <= metrics.get_num_draft_tokens()
+
+
 @pytest.mark.parametrize(
     "prompts,max_num_batched_tokens",
     dynamic_split_fuse_prompt_cases,
