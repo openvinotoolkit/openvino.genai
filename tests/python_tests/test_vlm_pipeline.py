@@ -141,6 +141,14 @@ PROMPTS: list[str] = [
     "Describe the image"
 ]
 
+MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
+MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
+MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
+MODEL_QWEN35_MTP = "optimum-intel-internal-testing/tiny-random-qwen3.5-mtp"
+MODEL_QWEN38_FLASH_NEXT = "optimum-intel-internal-testing/tiny-random-qwen38-flash-next"
+MODEL_MINICPMV4_6 = "optimum-intel-internal-testing/tiny-random-minicpmv4_6"
+MODEL_DEEPSEEK_OCR2 = "optimum-intel-internal-testing/tiny-random-deepseek-ocr-2"
+
 VIDEO_MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
     # llava_next_video is not supported yet by optimum-intel 423b423 with transformers 5.0
@@ -160,14 +168,8 @@ else:
         "optimum-intel-internal-testing/tiny-random-gemma4-moe",
         "optimum-intel-internal-testing/tiny-random-gemma4-unified-it",
         "optimum-intel-internal-testing/tiny-random-gemma4-31B",
+        MODEL_QWEN38_FLASH_NEXT,
     ]
-
-MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
-MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
-MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
-MODEL_MINICPMV4_6 = "optimum-intel-internal-testing/tiny-random-minicpmv4_6"
-MODEL_QWEN35_MTP = "optimum-intel-internal-testing/tiny-random-qwen3.5-mtp"
-MODEL_DEEPSEEK_OCR2 = "optimum-intel-internal-testing/tiny-random-deepseek-ocr-2"
 
 AUDIO_INPUT_SUPPORTED_MODELS = [
     "optimum-intel-internal-testing/tiny-random-gemma4",
@@ -214,6 +216,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen3.5": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
+    MODEL_QWEN38_FLASH_NEXT: lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
     MODEL_GEMMA3N: lambda idx: "<image_soft_token>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
@@ -240,6 +243,7 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen3.5": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
+    MODEL_QWEN38_FLASH_NEXT: lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-gemma4": lambda idx: "<|video|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-moe": lambda idx: "<|video|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-unified-it": lambda idx: "<|video|>",
@@ -259,11 +263,13 @@ RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": 336,
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": 256,
     "optimum-intel-internal-testing/tiny-random-qwen3.5": 256,
+    MODEL_QWEN38_FLASH_NEXT: 256,
 }
 
 
 RESOLUTION_BY_VIDEO_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-llava-next-video": 32,
+    MODEL_QWEN38_FLASH_NEXT: 64,
 }
 
 
@@ -341,6 +347,10 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
     } and is_transformers_version("<", "5.2.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.2.0."
+        )
+    if model_id == MODEL_QWEN38_FLASH_NEXT and is_transformers_version("<", "5.17.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of Qwen38-Flash-Next. Minimum required is 5.17.0."
         )
     if model_id == "optimum-intel-internal-testing/tiny-random-muse-glimmer" and is_transformers_version("<", "5.15.0"):
         pytest.skip(
@@ -549,6 +559,9 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
 
     if "qwen3-vl" in ov_model and ov_backend == "SDPA":
         pytest.xfail(QWEN3_VL_SDPA_XFAIL_REASON)
+
+    if ov_model == MODEL_QWEN38_FLASH_NEXT and ov_backend == "PA":
+        pytest.xfail("Qwen3.8-Flash-Next model does not support PA backend")
 
     models_path = _get_ov_model(ov_model)
 
@@ -2013,6 +2026,7 @@ else:
         ("optimum-intel-internal-testing/tiny-random-gemma4-unified-it", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-gemma4-31B", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-qwen3.5", "SDPA"),
+        (MODEL_QWEN38_FLASH_NEXT, "SDPA"),
     ]
 
 
@@ -2651,6 +2665,7 @@ OPTIMUM_VS_GENAI_PER_MODEL_IMAGE_RESOLUTIONS = {
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": [(100, 77), (350, 350), (480, 512)],
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": [(100, 77), (350, 350), (480, 512)],
     "optimum-intel-internal-testing/tiny-random-qwen3.5": [(100, 77), (350, 350), (480, 512)],
+    MODEL_QWEN38_FLASH_NEXT: [(100, 77), (350, 350), (480, 512)],
     # (999, 666) resolution fails, result is reasonable and close to optimum-intel output.
     # There is a known image resize incompatibility, so different image sizes are used to test the Gemma 4 model.
     "optimum-intel-internal-testing/tiny-random-gemma4": [(100, 77), (1000, 666), (997, 666), (999, 665), (1920, 1080)],
@@ -2661,6 +2676,7 @@ OPTIMUM_VS_GENAI_PER_MODEL_VIDEO_RESOLUTIONS = {
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": [(32, 32), (70, 70)],
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": [(32, 32), (70, 70)],
     "optimum-intel-internal-testing/tiny-random-qwen3.5": [(32, 32), (70, 70)],
+    MODEL_QWEN38_FLASH_NEXT: [(32, 32), (70, 70)],
 }
 
 # test-id glob pattern -> xfail reason
@@ -2698,6 +2714,12 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     "*tiny-random-qwen3.5/*/video-32x32": "CVS-180070",
     # qwen3.5 cases that use 70x70 video (both CPP and GRAPH preprocessing)
     "*tiny-random-qwen3.5/*/video-70x70": "CVS-180070",
+    # Qwen3.8-Flash-Next image cases
+    "*tiny-random-qwen38-flash-next/*/image-100x77": "CVS-180070",
+    "*tiny-random-qwen38-flash-next/*/image-350x350": "CVS-180070",
+    # Qwen3.8-Flash-Next video cases
+    "*tiny-random-qwen38-flash-next/*/video-*": "CVS-180070",
+    "*tiny-random-qwen38-flash-next/*/preresized-image+video": "CVS-180070",
     # llava-next-video graph pre-processing 'real' resize cases that include video
     "*tiny-random-llava-next-video/*/GRAPH/video*": "CVS-180070",
     "*tiny-random-llava-next-video/*/GRAPH/image*/video*": "CVS-180070",
@@ -2724,6 +2746,7 @@ MODELS_THAT_SUPPORT_GRAPH_PREPROCESSING = [
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl",
     "optimum-intel-internal-testing/tiny-random-qwen3.5",
+    MODEL_QWEN38_FLASH_NEXT,
     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
 ]
 

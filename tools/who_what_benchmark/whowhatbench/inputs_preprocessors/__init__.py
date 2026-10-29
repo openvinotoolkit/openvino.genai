@@ -8,6 +8,7 @@ from .phi3 import Phi3MMInputsPreprocessor
 from .phi4 import Phi4MMInputsPreprocessor
 from .qwen2 import Qwen2VLInputsPreprocessor
 from .qwen3 import Qwen3VLInputsPreprocessor, Qwen3_5VLInputsPreprocessor, Qwen3OmniInputsPreprocessor
+from .qwen4_exp import Qwen4_ExpInputsPreprocessor
 from .gemma3 import Gemma3InputsPreprocessor
 from .gemma4 import Gemma4InputsPreprocessor, Gemma4UnifiedInputsPreprocessor, Gemma3nInputsPreprocessor
 from .muse_glimmer import MuseGlimmerInputsPreprocessor
@@ -26,6 +27,7 @@ MODEL_TYPE_TO_CLS_MAPPING = {
     "qwen2_vl": Qwen2VLInputsPreprocessor,
     "qwen2_5_vl": Qwen2VLInputsPreprocessor,
     "qwen2_5_vl_text": Qwen2VLInputsPreprocessor,
+    "qwen4_exp": Qwen4_ExpInputsPreprocessor,
     "llava": LLAVAInputsPreprocessor,
     "gemma3": Gemma3InputsPreprocessor,
     "gemma4_unified": Gemma4UnifiedInputsPreprocessor,
