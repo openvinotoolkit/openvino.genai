@@ -53,10 +53,10 @@ StreamingStatus Qwen3ASRStreamer::write(const std::vector<int64_t>& tokens) {
     return m_streamer->write(transcript_tokens);
 }
 
-void Qwen3ASRStreamer::end() {
-    if (m_streamer) {
-        m_streamer->end();
-    }
-}
+/**
+ * end() isn't forwarded because ContinuousBatchingPipeline calls it at the end of generation, while
+ * Qwen3ASRPipelineBase::generate() finalizes the wrapped streamer itself.
+ */
+void Qwen3ASRStreamer::end() {}
 
 }  // namespace ov::genai
