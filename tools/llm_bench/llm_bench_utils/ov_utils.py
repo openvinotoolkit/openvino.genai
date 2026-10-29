@@ -929,16 +929,17 @@ def create_image_text_gen_model(model_path, device, memory_data_collector, **kwa
     if not model_path_existed:
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
+        if kwargs.get("genai", True):
+            if not is_genai_available(log_msg=True):
+                raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
+            return create_genai_image_text_gen_model(model_path, device, ov_config, memory_data_collector, **kwargs)
+
         remote_code = False
         try:
             model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
         except Exception:
             model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
             remote_code = True
-        if kwargs.get("genai", True):
-            if not is_genai_available(log_msg=True):
-                raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
-            return create_genai_image_text_gen_model(model_path, device, ov_config, memory_data_collector, **kwargs)
 
         log.info("Selected Optimum Intel for benchmarking")
         ov_config.pop("ATTENTION_BACKEND", None)

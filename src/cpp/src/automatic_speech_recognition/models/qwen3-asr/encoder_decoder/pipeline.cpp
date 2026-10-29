@@ -16,7 +16,14 @@ Qwen3EncoderDecoderASR::Qwen3EncoderDecoderASR(const std::filesystem::path& mode
     ov::AnyMap properties_copy = properties;
     erase_allowed_asr_ctor_properties(properties_copy);
     m_encoder = std::make_unique<Qwen3ASREncoder>(models_path, device, properties_copy);
-    m_decoder = std::make_unique<Qwen3ASRDecoder>(models_path, device, properties_copy);
+    size_t max_encoder_len = 0;
+    if (device == "NPU") {
+        m_max_asr_input_seconds = 60;
+        max_encoder_len = m_encoder->get_npuw_qwen3_asr_max_encoder_len(m_max_asr_input_seconds,
+                                                                      m_feature_extractor.sampling_rate,
+                                                                      m_feature_extractor.hop_length);
+    }
+    m_decoder = std::make_unique<Qwen3ASRDecoder>(models_path, device, properties_copy, max_encoder_len);
     m_decoder->set_seed(m_generation_config.rng_seed);
 }
 

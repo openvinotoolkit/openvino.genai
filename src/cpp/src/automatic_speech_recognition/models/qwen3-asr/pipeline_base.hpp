@@ -53,6 +53,7 @@ protected:
                                                         const ASRGenerationConfig& config) const;
 
     WhisperFeatureExtractor m_feature_extractor;
+    size_t m_max_asr_input_seconds = MAX_ASR_INPUT_SECONDS;
 
 private:
     const int64_t m_asr_text_token_id;

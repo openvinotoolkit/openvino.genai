@@ -74,7 +74,9 @@ ASRDecodedResults Qwen3ASRPipelineBase::generate(const AudioInputs& audio_inputs
         },
         audio_inputs);
 
-    const size_t max_chunk_sec = config.word_timestamps ? MAX_TIMESTAMPED_ASR_INPUT_SECONDS : MAX_ASR_INPUT_SECONDS;
+    const size_t max_chunk_sec = config.word_timestamps
+                                    ? std::min(MAX_TIMESTAMPED_ASR_INPUT_SECONDS, m_max_asr_input_seconds)
+                                    : m_max_asr_input_seconds;
     const std::vector<AudioChunk> chunks =
         split_audio_into_chunks({audio}, m_feature_extractor.sampling_rate, max_chunk_sec);
     OPENVINO_ASSERT(!streamer || chunks.size() == 1,
