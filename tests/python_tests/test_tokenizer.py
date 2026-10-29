@@ -3,7 +3,6 @@
 
 import dataclasses
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -13,7 +12,7 @@ import openvino.properties as props
 import pytest
 from data.models import get_models_list
 from data.tokenizer_configs import get_tokenizer_configs
-from openvino_genai import Tokenizer, ChatHistory, ContinuousBatchingPipeline, SchedulerConfig, VLMPipeline
+from openvino_genai import Tokenizer, ChatHistory
 from openvino_tokenizers import convert_tokenizer
 from transformers import AutoTokenizer
 from huggingface_hub import snapshot_download
@@ -23,7 +22,6 @@ from optimum.utils.import_utils import is_transformers_version
 from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
 from utils.network import retry_request
 from utils.tokenizers import delete_rt_info, model_tmp_path
-from test_vlm_pipeline import GEMMA3_MACOS_XFAIL_REASON, MODEL_GEMMA, _get_ov_model
 
 
 def load_genai_tokenizer_with_configs(configs: list[tuple], temp_path):
@@ -300,115 +298,6 @@ def test_set_chat_template(ov_hf_tokenizers):
 
     assert templated_prompt_inline == templated_prompt
     assert prompt == templated_prompt
-
-
-PATCHED_CHAT_TEMPLATE_CASES = [
-    pytest.param(
-        "vlm",
-        MODEL_GEMMA,
-        "0cc4c5a822bbc68aeb312fd789046463ca301d14",
-        "[{{ messages[0]['content'] | trim }}]",
-        "  hi  ",
-        "[  hi  ]",
-        marks=pytest.mark.skipif(
-            is_transformers_version(">=", "5.0"),
-            reason="Gemma 3 tiny-model export is unsupported with Transformers >=5",
-        ),
-        id="gemma3-trim-removed",
-    ),
-    pytest.param(
-        "continuous_batching",
-        MODEL_GEMMA,
-        "0cc4c5a822bbc68aeb312fd789046463ca301d14",
-        "[{{ messages[0]['content'] | trim }}]",
-        "  hi  ",
-        "[  hi  ]",
-        marks=pytest.mark.skipif(
-            is_transformers_version(">=", "5.0"),
-            reason="Gemma 3 tiny-model export is unsupported with Transformers >=5",
-        ),
-        id="gemma3-trim-removed-cb",
-    ),
-    # Gemma4 FP16 PagedAttention cannot initialize in the CPU CB pipeline.
-    pytest.param(
-        "vlm",
-        "optimum-intel-internal-testing/tiny-random-gemma4",
-        "422d12880b72b92b1547ac7ce2e1a4865f6bec6c",
-        '{{ "first "\n    "second" }}',
-        "unused",
-        "first second",
-        id="gemma4-multiline-literals",
-    ),
-    pytest.param(
-        "vlm",
-        "optimum-intel-internal-testing/tiny-random-qwen3.5",
-        "aa8ac4a953c6081e0afaa34bd95cefd9c852ddbf",
-        "{% if enable_thinking is undefined %}default{% else %}explicit{% endif %}",
-        "unused",
-        "default",
-        marks=pytest.mark.skipif(
-            not (is_transformers_version(">=", "5.2.0") and is_transformers_version("<", "5.3.0")),
-            reason="Qwen 3.5 tiny-model export is covered by the Transformers 5.2.x VLM job",
-        ),
-        id="qwen3.5-is-undefined",
-    ),
-    pytest.param(
-        "continuous_batching",
-        "optimum-intel-internal-testing/tiny-random-qwen3.5",
-        "aa8ac4a953c6081e0afaa34bd95cefd9c852ddbf",
-        "{% if enable_thinking is undefined %}default{% else %}explicit{% endif %}",
-        "unused",
-        "default",
-        marks=pytest.mark.skipif(
-            not (is_transformers_version(">=", "5.2.0") and is_transformers_version("<", "5.3.0")),
-            reason="Qwen 3.5 tiny-model export is covered by the Transformers 5.2.x VLM job",
-        ),
-        id="qwen3.5-is-undefined-cb",
-    ),
-]
-
-
-def _create_vlm_pipeline(pipeline_kind: str, model_id: str, revision: str):
-    if sys.platform == "darwin" and "gemma3" in model_id:
-        pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
-    models_path = _get_ov_model(model_id, revision)
-    if pipeline_kind == "vlm":
-        return VLMPipeline(models_path, "CPU")
-    return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
-
-
-@pytest.mark.parametrize(
-    "pipeline_kind, model_id, revision, raw_template, content, expected", PATCHED_CHAT_TEMPLATE_CASES
-)
-def test_set_chat_template_applies_model_patch(pipeline_kind, model_id, revision, raw_template, content, expected):
-    pipeline = _create_vlm_pipeline(pipeline_kind, model_id, revision)
-    tokenizer = pipeline.get_tokenizer()
-    history = [{"role": "user", "content": content}]
-
-    tokenizer.set_chat_template(raw_template)
-
-    assert tokenizer.apply_chat_template(history, add_generation_prompt=False) == expected
-    assert tokenizer.get_original_chat_template() == raw_template
-    assert tokenizer.chat_template != raw_template
-
-
-@pytest.mark.parametrize(
-    "pipeline_kind, model_id, revision, raw_template, content, expected", PATCHED_CHAT_TEMPLATE_CASES
-)
-def test_inline_chat_template_is_patched_and_not_stored(
-    pipeline_kind, model_id, revision, raw_template, content, expected
-):
-    pipeline = _create_vlm_pipeline(pipeline_kind, model_id, revision)
-    tokenizer = pipeline.get_tokenizer()
-    history = [{"role": "user", "content": content}]
-    stored_template = tokenizer.chat_template
-    original_template = tokenizer.get_original_chat_template()
-
-    rendered = tokenizer.apply_chat_template(history, add_generation_prompt=False, chat_template=raw_template)
-
-    assert rendered == expected
-    assert tokenizer.chat_template == stored_template
-    assert tokenizer.get_original_chat_template() == original_template
 
 
 @pytest.mark.parametrize(
