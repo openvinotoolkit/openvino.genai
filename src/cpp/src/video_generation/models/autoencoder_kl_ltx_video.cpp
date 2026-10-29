@@ -165,8 +165,9 @@ AutoencoderKLLTXVideo::Config::Config(const std::filesystem::path& config_path) 
         latents_std_data.assign(latent_channels, 1.0f);
     }
 
-    const size_t compression_factor =
-        std::pow(2, std::accumulate(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), 0));
+    const size_t scaling_steps =
+        std::count(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), true);
+    const size_t compression_factor = size_t{1} << scaling_steps;
     if (spatial_compression_ratio == 0) {
         spatial_compression_ratio = patch_size * compression_factor;
     }
