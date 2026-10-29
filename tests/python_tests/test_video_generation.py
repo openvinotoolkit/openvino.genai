@@ -306,39 +306,41 @@ class TestVideoGenerationPipelines:
 
         # Cancellation must not consume the host templates needed by the next call.
         stopped = pipe.generate(
-            "test prompt", callback=lambda step, num_steps, latent: True,
-            guidance_scale=3.0, **GEN_KWARGS,
+            "test prompt",
+            callback=lambda step, num_steps, latent: True,
+            guidance_scale=3.0,
+            **GEN_KWARGS,
         )
         assert len(stopped.video.shape) == 0
 
         def run():
             return pipe.generate(
-                "test prompt", guidance_scale=3.0,
-                generator=ov_genai.CppStdGenerator(42), **GEN_KWARGS,
+                "test prompt",
+                guidance_scale=3.0,
+                generator=ov_genai.CppStdGenerator(42),
+                **GEN_KWARGS,
             )
 
         capfd.readouterr()
         first = run()
-        compiled_models = [
-            line for line in capfd.readouterr().out.splitlines() if line.startswith("Model: ")
-        ]
+        compiled_models = [line for line in capfd.readouterr().out.splitlines() if line.startswith("Model: ")]
         expected_models = ["Model: Gemma3 text encoder model", "Model: LTX2 text connectors model"]
         if denoise_device == "GPU.0":
             expected_models.append("Model: LTX2 Video Transformer 3D model")
         if vae_device == "GPU.0":
-            expected_models.extend([
-                "Model: Auto encoder KL LTX2 video decoder model",
-                "Model: Auto encoder KL LTX2 audio decoder model",
-                "Model: LTX2 vocoder model",
-            ])
+            expected_models.extend(
+                [
+                    "Model: Auto encoder KL LTX2 video decoder model",
+                    "Model: Auto encoder KL LTX2 audio decoder model",
+                    "Model: LTX2 vocoder model",
+                ]
+            )
         assert compiled_models == expected_models
         second = run()
         config = pipe.get_generation_config()
         passes_per_step = 2
         passes_per_step += bool(config.stg_scale or config.audio_stg_scale)
-        passes_per_step += (
-            (config.modality_scale or 1.0) > 1.0 or (config.audio_modality_scale or 1.0) > 1.0
-        )
+        passes_per_step += (config.modality_scale or 1.0) > 1.0 or (config.audio_modality_scale or 1.0) > 1.0
         assert len(first.perf_metrics.raw_metrics.transformer_inference_durations) == (
             GEN_KWARGS["num_inference_steps"] * passes_per_step
         )

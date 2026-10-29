@@ -50,10 +50,14 @@ def main():
         help="floating-point compute precision (INFERENCE_PRECISION_HINT) of the denoise device only",
     )
     parser.add_argument("--output-prefix", default="genai", help="prefix for the output video/audio files")
+    parser.add_argument("--width", type=int, default=WIDTH)
+    parser.add_argument("--height", type=int, default=HEIGHT)
+    parser.add_argument("--num-frames", type=int, default=NUM_FRAMES)
+    parser.add_argument("--num-inference-steps", type=int, default=NUM_INFERENCE_STEPS)
     parser.add_argument(
         "--reshape",
         action="store_true",
-        help="compile for the static shapes in the model's own generation config",
+        help="compile for the selected static generation shapes",
     )
     args = parser.parse_args()
 
@@ -68,11 +72,11 @@ def main():
 
     gen_config = pipe.get_generation_config()
     gen_config.negative_prompt = DEFAULT_NEGATIVE_PROMPT
-    gen_config.width = WIDTH
-    gen_config.height = HEIGHT
-    gen_config.num_frames = NUM_FRAMES
+    gen_config.width = args.width
+    gen_config.height = args.height
+    gen_config.num_frames = args.num_frames
     gen_config.frame_rate = FRAME_RATE
-    gen_config.num_inference_steps = NUM_INFERENCE_STEPS
+    gen_config.num_inference_steps = args.num_inference_steps
     gen_config.guidance_scale = GUIDANCE_SCALE
     gen_config.stg_scale = 1.0
     gen_config.audio_stg_scale = 1.0
@@ -80,6 +84,7 @@ def main():
     gen_config.audio_modality_scale = 3.0
     gen_config.spatio_temporal_guidance_blocks = [28]
     gen_config.generator = openvino_genai.TorchGenerator(SEED)
+    pipe.set_generation_config(gen_config)
 
     if args.reshape:
         # Has to happen before compile() — a compiled pipeline cannot be reshaped. Static shapes
@@ -106,8 +111,6 @@ def main():
     # }
 
     pipe.compile(args.text_encode_device, args.denoise_device, args.vae_device, config=properties)
-
-    pipe.set_generation_config(gen_config)
 
     output = pipe.generate(args.prompt)
 
