@@ -17,8 +17,11 @@ public:
     float m_load_time_ms = 0.0f;
 
     ASRPipelineImplBase(const std::filesystem::path& models_path)
+        : ASRPipelineImplBase(models_path, Tokenizer{models_path}) {}
+
+    ASRPipelineImplBase(const std::filesystem::path& models_path, const Tokenizer& tokenizer)
         : m_generation_config(utils::from_config_json_if_exists<ASRGenerationConfig>(models_path)),
-          m_tokenizer{models_path} {}
+          m_tokenizer{tokenizer} {}
 
     virtual ASRDecodedResults generate(const AudioInputs& audio_inputs,
                                        const std::optional<ASRGenerationConfig>& generation_config,

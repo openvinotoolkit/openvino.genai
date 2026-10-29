@@ -13,6 +13,7 @@
 #include "visual_language/qwen3_vl/classes.hpp"
 #include "visual_language/qwen3_5/classes.hpp"
 #include "visual_language/qwen3_omni/classes.hpp"
+#include "automatic_speech_recognition/models/qwen3-asr/split/inputs_embedder.hpp"
 #include "visual_language/phi3_vision/classes.hpp"
 #include "visual_language/phi4mm/classes.hpp"
 #include "visual_language/minicpm/classes.hpp"
@@ -21,6 +22,7 @@
 #include "visual_language/llava_next/classes.hpp"
 #include "visual_language/llava_next_video/classes.hpp"
 #include "visual_language/internvl_chat/classes.hpp"
+#include "visual_language/minicpmv4_6/classes.hpp"
 #include "visual_language/gemma3/classes.hpp"
 #include "visual_language/gemma3n/classes.hpp"
 #include "visual_language/gemma4/classes.hpp"
@@ -28,6 +30,7 @@
 #include "visual_language/videochat_flash/classes.hpp"
 #include "visual_language/muse_glimmer/classes.hpp"
 #include "visual_language/minicpmv4_7/classes.hpp"
+#include "visual_language/lfm3_vl/classes.hpp"
 
 #include "continuous_batching/timer.hpp"
 #include "utils.hpp"
@@ -87,6 +90,13 @@ void InputsEmbedder::IInputsEmbedder::finish_chat() {
     m_cached_text_embeds = ov::Tensor();
     m_cache_state.reset_state();
 }
+
+InputsEmbedder::IInputsEmbedder::IInputsEmbedder(const VLMConfig& vlm_config,
+                                                 const Tokenizer& tokenizer,
+                                                 EmbeddingsModel::Ptr embedding)
+    : m_vlm_config{vlm_config},
+      m_embedding{std::move(embedding)},
+      m_tokenizer{tokenizer} {}
 
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const VLMConfig& vlm_config,
@@ -341,6 +351,11 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
         m_impl = std::make_shared<InputsEmbedderMiniCPM>(vlm_config, model_dir, tokenizer, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::MINICPMV4_6 ||
+               vlm_config.model_type == VLMModelType::MINICPM_OCR) {
+        m_impl = std::make_shared<InputsEmbedderMiniCPMV4_6>(vlm_config, model_dir, tokenizer, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::LFM3_VL) {
+        m_impl = std::make_shared<InputsEmbedderLFM3VL>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA) {
         m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::NANOLLAVA) {
@@ -365,6 +380,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderQwen3_5>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN3_OMNI) {
         m_impl = std::make_shared<InputsEmbedderQwen3Omni>(vlm_config, model_dir, tokenizer, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::QWEN3_ASR) {
+        m_impl = std::make_shared<InputsEmbedderQwen3ASR>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3N) {
@@ -395,6 +412,11 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
         m_impl = std::make_shared<InputsEmbedderMiniCPM>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::MINICPMV4_6 ||
+               vlm_config.model_type == VLMModelType::MINICPM_OCR) {
+        m_impl = std::make_shared<InputsEmbedderMiniCPMV4_6>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::LFM3_VL) {
+        m_impl = std::make_shared<InputsEmbedderLFM3VL>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA) {
         m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::NANOLLAVA) {
@@ -419,6 +441,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
         m_impl = std::make_shared<InputsEmbedderQwen3_5>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN3_OMNI) {
         m_impl = std::make_shared<InputsEmbedderQwen3Omni>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::QWEN3_ASR) {
+        m_impl = std::make_shared<InputsEmbedderQwen3ASR>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3N) {

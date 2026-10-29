@@ -19,7 +19,7 @@
 #include "visual_language/embedding_model.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/pipeline_base.hpp"
-#include "visual_language/vision_registry.hpp"
+#include "visual_language/embeddings_registry.hpp"
 #include "visual_language/vlm_chat_context.hpp"
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/vlm_utils.hpp"
@@ -77,6 +77,7 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
     Sampler m_sampler;
     size_t m_max_prompt_len = std::numeric_limits<size_t>::max();
     bool m_is_npu = false;
+    bool m_has_position_ids = true;
     size_t m_image_id = 0;
     size_t m_video_id = 0;
     size_t m_audio_id = 0;
@@ -88,12 +89,14 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
     std::vector<ov::genai::EncodedImage> m_encoded_images;
     std::vector<ov::genai::EncodedVideo> m_encoded_videos;
     std::vector<ov::genai::EncodedAudio> m_encoded_audios;
+    std::vector<size_t> m_history_image_sequence;
+    std::vector<size_t> m_history_video_sequence;
     // Prompt-order audio ids across turns. Unlike 0..N, keeps reversed and repeated tags.
     std::vector<size_t> m_history_audio_sequence;
     std::vector<std::pair<std::size_t, std::size_t>> m_history_vision_count;  // pair<video count, image count>
 
     std::string m_system_message;
-    std::shared_ptr<VisionRegistry> m_vision_registry;
+    std::shared_ptr<EmbeddingsRegistry> m_embeddings_registry;
 private:
     void finalize_initialization(
         const std::shared_ptr<ov::Model>& language_model,
@@ -105,6 +108,7 @@ private:
         utils::CacheState& cache_state = m_inputs_embedder->get_cache_state();
         cache_state.set_cache_types(utils::get_cache_types(*language_model));
         cache_state.seq_length_axis = kv_pos.seq_len;
+        m_has_position_ids = utils::has_input(language_model, "position_ids");
 
         if (m_generation_config.eos_token_id == -1) {
             m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
@@ -113,7 +117,7 @@ private:
         m_sampler.set_tokenizer(m_tokenizer);
         m_sampler.set_seed(m_generation_config.rng_seed);
 
-        m_vision_registry = std::make_shared<VisionRegistry>();
+        m_embeddings_registry = std::make_shared<EmbeddingsRegistry>();
 
         // NPU does not support history, so use full chat history on each chat iteration.
         // Linear attention forces full KV cache reset, need to provide all image/video embeddings.
@@ -390,6 +394,9 @@ public:
 
         auto [unified_prompt, image_sequence, video_sequence, audio_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, m_audio_id, encoded_images, encoded_videos, encoded_audios);
 
+        const size_t new_image_count = encoded_images.size();
+        const auto history_image_sequence_before = m_history_image_sequence.size();
+        const auto history_video_sequence_before = m_history_video_sequence.size();
         const auto history_audio_sequence_before = m_history_audio_sequence.size();
         if (m_is_chat_conversation) {
             m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
@@ -403,14 +410,16 @@ public:
 
                 m_encoded_images.reserve(m_encoded_images.size() + encoded_images.size());
                 m_encoded_images.insert(m_encoded_images.end(), encoded_images.begin(), encoded_images.end());
-                image_sequence.resize(m_encoded_images.size());
-                std::iota(image_sequence.begin(), image_sequence.end(), 0);
+                m_history_image_sequence.insert(m_history_image_sequence.end(),
+                                                image_sequence.begin(), image_sequence.end());
+                image_sequence = m_history_image_sequence;
                 encoded_images = m_encoded_images;
 
                 m_encoded_videos.reserve(m_encoded_videos.size() + encoded_videos.size());
                 m_encoded_videos.insert(m_encoded_videos.end(), encoded_videos.begin(), encoded_videos.end());
-                video_sequence.resize(m_encoded_videos.size());
-                std::iota(video_sequence.begin(), video_sequence.end(), 0);
+                m_history_video_sequence.insert(m_history_video_sequence.end(),
+                                                video_sequence.begin(), video_sequence.end());
+                video_sequence = m_history_video_sequence;
                 encoded_videos = m_encoded_videos;
 
                 m_encoded_audios.reserve(m_encoded_audios.size() + encoded_audios.size());
@@ -463,7 +472,7 @@ public:
         if (m_is_chat_conversation) {
             // Update m_history with pruned content if pruning is enabled
             if (generation_config.pruning_ratio > 0) {
-                auto history_state = ChatHistoryInternalState::get_or_create(m_history, m_vision_registry);
+                auto history_state = ChatHistoryInternalState::get_or_create(m_history, m_embeddings_registry);
                 size_t last_user_idx = history_state->get_last_user_message_index();
 
                 // Replace the original prompt with the pruned prompt after CDPruner
@@ -476,9 +485,7 @@ public:
             m_inputs_embedder->update_chat_history(decoded_results, finish_info.streaming_finish_status);
 
             if (finish_info.streaming_finish_status != ov::genai::GenerationStatus::CANCEL) {
-                // using here images.size() instead of encoded_images.size() since
-                // encoded_images could be overriden when m_use_full_chat_history is true
-                m_image_id += images.size();
+                m_image_id += new_image_count;
                 m_video_id += videos.size();
                 m_audio_id += audios.size();
                 // Tail of chat template is missing in KV cache.
@@ -487,11 +494,13 @@ public:
             } else {
                 m_history.pop_back();
                 if (m_use_full_chat_history) {
-                    OPENVINO_ASSERT(images.size() <= m_encoded_images.size(), "Number of images to remove is more than stored images!");
-                    m_encoded_images.resize(m_encoded_images.size() - images.size());
+                    OPENVINO_ASSERT(new_image_count <= m_encoded_images.size(), "Number of images to remove is more than stored images!");
+                    m_encoded_images.resize(m_encoded_images.size() - new_image_count);
+                    m_history_image_sequence.resize(history_image_sequence_before);
 
                     OPENVINO_ASSERT(videos.size() <= m_encoded_videos.size(), "Number of videos to remove is more than stored videos!");
                     m_encoded_videos.resize(m_encoded_videos.size() - videos.size());
+                    m_history_video_sequence.resize(history_video_sequence_before);
 
                     OPENVINO_ASSERT(audios.size() <= m_encoded_audios.size(), "Number of audios to remove is more than stored audios!");
                     m_encoded_audios.resize(m_encoded_audios.size() - audios.size());
@@ -509,6 +518,8 @@ public:
             m_encoded_images.clear();
             m_encoded_videos.clear();
             m_encoded_audios.clear();
+            m_history_image_sequence.clear();
+            m_history_video_sequence.clear();
             m_history_audio_sequence.clear();
             m_history_vision_count.clear();
         }
@@ -611,9 +622,24 @@ public:
                                                            generation_config.relevance_weight);
 
         const auto embeddings_start_time = std::chrono::steady_clock::now();
-        VLMChatContext chat_context(history, m_vision_registry, *m_inputs_embedder);
+        VLMChatContext chat_context(history, m_embeddings_registry, *m_inputs_embedder);
 
-        auto processed_chat_data = chat_context.process(images, videos, videos_metadata, audios);
+        std::vector<ov::Tensor> single_images;
+        single_images.reserve(images.size());
+        for (const auto& image : images) {
+            const auto& shape = image.get_shape();
+            if (shape.size() == 4) {
+                OPENVINO_ASSERT(shape[0] > 0, "Image batches must contain at least one image.");
+                for (size_t batch_idx = 0; batch_idx < shape[0]; ++batch_idx) {
+                    single_images.emplace_back(image,
+                                               ov::Coordinate{batch_idx, 0, 0, 0},
+                                               ov::Coordinate{batch_idx + 1, shape[1], shape[2], shape[3]});
+                }
+            } else {
+                single_images.push_back(image);
+            }
+        }
+        auto processed_chat_data = chat_context.process(single_images, videos, videos_metadata, audios);
 
         perf_metrics.vlm_raw_metrics.vision_encoding_durations.emplace_back(processed_chat_data.vision_encoding_duration);
         auto& audio_durations = perf_metrics.vlm_raw_metrics.audio_encoding_durations;
@@ -777,6 +803,8 @@ public:
         m_encoded_images.clear();
         m_encoded_videos.clear();
         m_encoded_audios.clear();
+        m_history_image_sequence.clear();
+        m_history_video_sequence.clear();
         m_history_audio_sequence.clear();
         m_history_vision_count.clear();
     }
@@ -966,7 +994,7 @@ private:
             streamer_ptr,
             m_sampler,
             std::move(requests),
-            position_ids,
+            m_has_position_ids ? std::optional<ov::Tensor>{position_ids} : std::nullopt,
             cache_state,
             m_embedding,
             rope_delta,

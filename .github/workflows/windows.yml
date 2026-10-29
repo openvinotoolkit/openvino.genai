@@ -985,7 +985,9 @@ jobs:
   genai_nodejs_tests:
     name: Node.js bindings tests (Node ${{ matrix.nodejs-version }})
     needs: [ smart_ci, openvino_download, genai_build_wheels, genai_build_genai_wheel, genai_build_nodejs ]
-    if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
+    # Tests timed out on Windows. Ticket: 198295
+    # if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
+    if: ${{ false }}
     timeout-minutes: 20
     strategy:
       fail-fast: false

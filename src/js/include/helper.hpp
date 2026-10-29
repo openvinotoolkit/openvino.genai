@@ -272,6 +272,20 @@ Napi::Value cpp_to_js<std::vector<std::pair<size_t, float>>, Napi::Value>(
     const Napi::Env& env,
     const std::vector<std::pair<size_t, float>>& rerank_results);
 
+/**
+ * @brief  A template specialization for TargetType Napi::Value and SourceType ov::Any.
+ * An empty ov::Any maps to null. Throws for unsupported stored types.
+ */
+template <>
+Napi::Value cpp_to_js<ov::Any, Napi::Value>(const Napi::Env& env, const ov::Any& value);
+
+template <>
+Napi::Value cpp_to_js<ov::AnyMap, Napi::Value>(const Napi::Env& env, const ov::AnyMap& value);
+
+template <>
+Napi::Value cpp_to_js<std::vector<ov::AnyMap>, Napi::Value>(const Napi::Env& env,
+                                                            const std::vector<ov::AnyMap>& value);
+
 template <>
 Napi::Value cpp_to_js<ov::Tensor, Napi::Value>(const Napi::Env& env, const ov::Tensor& tensor);
 
