@@ -44,6 +44,11 @@ class ASRDecodedResults:
         perf_metrics:       performance metrics with tpot, ttft, etc. of type ov::genai::ASRPerfMetrics.
         chunks:             optional chunks of resulting sequences with timestamps
         words:              optional chunks of resulting words with timestamps
+        metadata:           optional model-specific metadata for each transcription.
+                            Models without metadata support leave this unset (None in Python).
+                            When present, metadata[i] corresponds to texts[i]. Each map holds
+                            model-defined key/value metadata and may be empty when no metadata
+                            is predicted.
     """
     def __repr__(self) -> str:
         ...
@@ -52,6 +57,9 @@ class ASRDecodedResults:
         ...
     @property
     def languages(self) -> list[str]:
+        ...
+    @property
+    def metadata(self) -> list[dict[str, typing.Any]] | None:
         ...
     @property
     def perf_metrics(self) -> ASRPerfMetrics:
@@ -1304,6 +1312,9 @@ class ContinuousBatchingPipeline:
         ...
     @typing.overload
     def __init__(self, models_path: os.PathLike | str | bytes, tokenizer: Tokenizer, scheduler_config: SchedulerConfig, device: str, **kwargs) -> None:
+        ...
+    @typing.overload
+    def add_request(self, request_id: typing.SupportsInt, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], audios: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, **kwargs) -> GenerationHandle:
         ...
     @typing.overload
     def add_request(self, request_id: typing.SupportsInt, input_ids: openvino._pyopenvino.Tensor, generation_config: GenerationConfig) -> GenerationHandle:
