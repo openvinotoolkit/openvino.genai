@@ -6,7 +6,8 @@
 The tiny random drafts of the shared speculative decoding scenarios reject almost every candidate. Here every token
 embedding carries a large channel 0 that only token 0 reads out, so the target and all drafts predict token 0: greedy
 speculative decoding must reproduce the target and accept every candidate, also when requests are drafted together,
-split or preempted.
+split or preempted. The pruned DSpark draft predicts a random subset of the target vocabulary, which holds token 0,
+with its own lm_head.
 """
 
 import functools
@@ -39,16 +40,24 @@ if not all(
         "This optimum-intel version predates huggingface/optimum-intel#2098, which exports DSpark and DFlash-2 drafts.",
         allow_module_level=True,
     )
+dflash_utils = pytest.importorskip("optimum.exporters.openvino.dflash_utils")
 
 TINY_QWEN3 = "optimum-intel-internal-testing/tiny-random-qwen3"
-VARIANTS = ("dflash", "dspark", "dflash2")
+VARIANTS = ("dflash", "dspark", "dspark_pruned", "dflash2")
+PRUNED_DRAFT_VOCAB_SIZE = 512
+# huggingface/optimum-intel#2099 exports DSpark drafts with a pruned vocabulary
+PRUNED_VOCABULARY_EXPORT = hasattr(dflash_utils, "has_pruned_draft_vocabulary")
 # draft variant and draft properties: DSpark's Markov head drafts with its candidate scorer or its dense step
 DRAFTS = {
     "dflash": ("dflash", {}),
     "dspark": ("dspark", {}),
     "dspark-markov-step": ("dspark", {"markov_head_top_k": 0}),
+    "dspark-pruned": ("dspark_pruned", {}),
+    "dspark-pruned-markov-step": ("dspark_pruned", {"markov_head_top_k": 0}),
     "dflash2": ("dflash2", {}),
 }
+# no pair of the shared speculative decoding scenarios has a draft with a pruned vocabulary
+PRUNED_DRAFTS = ("dspark-pruned", "dspark-pruned-markov-step")
 
 
 def _keep_first_channel(norm):
@@ -86,10 +95,11 @@ def _build_target(output_dir: Path):
         model.lm_head.weight[0, 0] = 1.0
     _keep_first_channel(model.model.norm)
     _save_checkpoint(model, output_dir, ["Qwen3ForCausalLM"])
-    return config
+    return model
 
 
-def _build_draft(output_dir: Path, variant: str, target_config):
+def _build_draft(output_dir: Path, variant: str, target):
+    target_config = target.config
     config = deepcopy(target_config)
     num_target_layers = target_config.num_hidden_layers
     target_layer_ids = [0, num_target_layers - 1]
@@ -120,9 +130,19 @@ def _build_draft(output_dir: Path, variant: str, target_config):
         config.mask_token_id = mask_token_id
         config.target_layer_ids = target_layer_ids
         model_class = model_patcher.Qwen3DSparkForCausalLM
+        if variant == "dspark_pruned":
+            config.draft_vocab_size = PRUNED_DRAFT_VOCAB_SIZE
+            config.tie_word_embeddings = False
     config.architectures = architectures
     torch.manual_seed(0)
     model = model_class(config).eval()
+    if variant == "dspark_pruned":
+        # Draft token i is target token i + d2t[i], read out by the target LM head row of that token.
+        others = torch.randperm(config.vocab_size - 1)[: PRUNED_DRAFT_VOCAB_SIZE - 1] + 1
+        target_ids = torch.cat([others[:7], torch.zeros(1, dtype=torch.long), others[7:]])
+        with torch.no_grad():
+            model.d2t.copy_(target_ids - torch.arange(PRUNED_DRAFT_VOCAB_SIZE))
+            model.lm_head.weight.copy_(target.lm_head.weight[target_ids])
     # the draft reads out through the target embedding and LM head
     _keep_first_channel(model.norm)
     _save_checkpoint(model, output_dir, architectures)
@@ -138,16 +158,23 @@ def _export(checkpoint_dir: Path, output_dir: Path):
 @pytest.fixture(scope="module")
 def dflash_models(tmp_path_factory):
     root = tmp_path_factory.mktemp("dflash_acceptance")
-    target_config = _build_target(root / "target_hf")
+    target = _build_target(root / "target_hf")
     models = {"target": _export(root / "target_hf", root / "target")}
     for variant in VARIANTS:
-        _build_draft(root / f"{variant}_hf", variant, target_config)
+        if variant == "dspark_pruned" and not PRUNED_VOCABULARY_EXPORT:
+            continue
+        _build_draft(root / f"{variant}_hf", variant, target)
         models[variant] = _export(root / f"{variant}_hf", root / variant)
     return models
 
 
 def _pair(models, draft=None) -> ModelPair:
     variant, draft_properties = DRAFTS[draft] if draft else (None, {})
+    if variant is not None and variant not in models:
+        pytest.skip(
+            "This optimum-intel version cannot export DSpark drafts with a pruned vocabulary "
+            "(huggingface/optimum-intel#2099)."
+        )
     return ModelPair(models["target"], models.get(variant), draft_properties, is_vlm=False)
 
 
@@ -215,3 +242,53 @@ def test_greedy_requests_with_penalties_accept_every_candidate(dflash_models, dr
     outputs, results = _generate(_block_pipeline(pair), prompts, penalized(_block_config()))
     assert outputs == target
     _assert_every_candidate_accepted(results)
+
+
+@pytest.mark.parametrize("draft", PRUNED_DRAFTS)
+def test_staggered_requests_accept_every_candidate(dflash_models, target_outputs, draft):
+    pair = _pair(dflash_models, draft)
+    pipe = _block_pipeline(pair)
+    prompts = _block_prompts(pair)
+    handles = {}
+    # a new request arrives while the earlier ones are prefilling, validating or drafting
+    arrival_steps = {0: 0, 1: 3, 2: 7}
+    step = 0
+    while len(handles) < len(prompts) or pipe.has_non_finished_requests():
+        for request_id, arrival in arrival_steps.items():
+            if arrival == step:
+                handles[request_id] = pipe.add_request(request_id, prompts[request_id], _block_config())
+        if pipe.has_non_finished_requests():
+            pipe.step()
+        step += 1
+    outputs = [handles[request_id].read_all()[0].generated_ids for request_id in range(len(prompts))]
+    assert outputs == target_outputs
+
+
+@pytest.mark.parametrize("draft", PRUNED_DRAFTS)
+def test_prefix_caching_accepts_every_candidate(dflash_models, target_outputs, draft):
+    pair = _pair(dflash_models, draft)
+    prompts = _block_prompts(pair)
+    pipe = _block_pipeline(pair, _block_scheduler_config(enable_prefix_caching=True))
+    runs = [_generate(pipe, [prompt], _block_config()) for prompt in prompts + prompts]
+    assert [outputs[0] for outputs, _ in runs] == target_outputs + target_outputs
+    for _, results in runs:
+        _assert_every_candidate_accepted(results)
+
+
+@pytest.mark.parametrize("draft", PRUNED_DRAFTS)
+def test_sampled_requests_accept_candidates(dflash_models, draft):
+    # The target accepts or replaces every sampled candidate by speculative sampling against the distribution the
+    # draft drew it from; the draws of both follow the request seed.
+    config = _block_config()
+    config.do_sample = True
+    config.temperature = 0.8
+    # A Top-K candidate lattice proposes only its candidates: over the whole vocabulary, the tiny target would give
+    # them too little probability to accept any.
+    config.top_k = 4
+    config.rng_seed = 3
+    pair = _pair(dflash_models, draft)
+    prompts = _block_prompts(pair)
+    outputs, results = _generate(_block_pipeline(pair), prompts, config)
+    assert all(len(tokens) == BLOCK_MAX_NEW_TOKENS for tokens in outputs)
+    assert results[0].extended_perf_metrics.get_num_accepted_tokens() > 0
+    assert _generate(_block_pipeline(pair), prompts, config)[0] == outputs

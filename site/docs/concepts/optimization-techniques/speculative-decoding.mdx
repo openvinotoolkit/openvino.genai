@@ -372,6 +372,8 @@ The draft must be trained against the same target and runs with the target's tok
 
 <OptimumCLI model='z-lab/Qwen3.5-9B-DFlash' outputDir='Qwen3.5-9B-DFlash-ov-int4' weightFormat='int4' task='text-generation-with-past' trustRemoteCode />
 
+DFlash and DSpark drafts can also have a pruned vocabulary, predicting only part of the target vocabulary, as [openbmb/MiniCPM-OCR-1.0-DSpark](https://huggingface.co/openbmb/MiniCPM-OCR-1.0-DSpark) does; DFlash-2 drafts with a pruned vocabulary are not supported.
+
 ### Configuration and Usage
 
 Per request, DFlash needs no configuration beyond `num_assistant_tokens`, the number of candidates the draft fills in each step.
