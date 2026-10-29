@@ -66,6 +66,13 @@ public:
      */
     WhisperFeatures extract(const std::vector<float>& raw_speech, bool pad_to_max_duration = true);
 
+    /**
+     * @brief Log-mel spectrogram of the uncentered STFT (torch.stft with center=False), flattened [feature_size,
+     * n_frames]. Frame i starts at sample i * hop_length and the last window is zero padded, so every sample is
+     * covered. Values are (max(log10(mel), log_floor) + 4) / 4, with no chunk padding and no dynamic range clamp.
+     */
+    WhisperFeatures extract_uncentered(const std::vector<float>& raw_speech, float log_floor) const;
+
 private:
     std::vector<float> sin_vals;
     std::vector<float> cos_vals;

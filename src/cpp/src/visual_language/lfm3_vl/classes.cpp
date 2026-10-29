@@ -204,11 +204,11 @@ NormalizedPrompt InputsEmbedderLFM3VL::normalize_prompt(const std::string& promp
                                                       size_t base_video_id,
                                                       const std::vector<EncodedImage>& images,
                                                       const std::vector<EncodedVideo>& videos) const {
-    auto normalized = normalize_prompt(prompt, base_image_id, images);
     const std::string native_tag =
         m_vlm_config.vision_start_token + m_vlm_config.video_token + m_vlm_config.vision_end_token;
+    // Videos go first, so untagged images are prepended before them, as in the processor's [image, video, text].
     auto [unified_prompt, video_sequence] =
-        normalize(normalized.unified_prompt, native_tag, native_tag, base_video_id, videos.size(), ModalityType::VIDEO);
+        normalize(prompt, native_tag, native_tag, base_video_id, videos.size(), ModalityType::VIDEO);
     size_t offset = 0;
     for (size_t video_id : video_sequence) {
         const auto& video = videos.at(video_id - base_video_id);
@@ -236,7 +236,9 @@ NormalizedPrompt InputsEmbedderLFM3VL::normalize_prompt(const std::string& promp
         unified_prompt.replace(pos, native_tag.size(), expanded_tag);
         offset = pos + expanded_tag.size();
     }
-    return {std::move(unified_prompt), std::move(normalized.images_sequence), std::move(video_sequence)};
+    auto normalized = normalize_prompt(unified_prompt, base_image_id, images);
+    normalized.videos_sequence = std::move(video_sequence);
+    return normalized;
 }
 
 ov::Tensor InputsEmbedderLFM3VL::get_inputs_embeds(const std::string& prompt,
@@ -254,6 +256,20 @@ ov::Tensor InputsEmbedderLFM3VL::get_inputs_embeds(const std::string& prompt,
                                                  bool recalculate_merged_embeddings,
                                                  const std::vector<size_t>& image_sequence,
                                                  const std::vector<size_t>& videos_sequence,
+                                                 const std::vector<std::pair<size_t, size_t>>& history_vision_count) {
+    return get_inputs_embeds(prompt, images, videos, {}, metrics, recalculate_merged_embeddings, image_sequence,
+                             videos_sequence, {}, history_vision_count);
+}
+
+ov::Tensor InputsEmbedderLFM3VL::get_inputs_embeds(const std::string& prompt,
+                                                 const std::vector<EncodedImage>& images,
+                                                 const std::vector<EncodedVideo>& videos,
+                                                 const std::vector<EncodedAudio>& audios,
+                                                 VLMPerfMetrics& metrics,
+                                                 bool recalculate_merged_embeddings,
+                                                 const std::vector<size_t>& image_sequence,
+                                                 const std::vector<size_t>& videos_sequence,
+                                                 const std::vector<size_t>& audios_sequence,
                                                  const std::vector<std::pair<size_t, size_t>>& history_vision_count) {
     const ov::Tensor input_ids = get_encoded_input_ids(prompt, metrics);
     CircularBufferQueueElementGuard<EmbeddingsRequest> guard(m_embedding->get_request_queue().get());
@@ -286,8 +302,40 @@ ov::Tensor InputsEmbedderLFM3VL::get_inputs_embeds(const std::string& prompt,
     };
     const auto flat_images = prepare_features(image_embeds, m_vlm_config.image_token_id, "image");
     const auto flat_videos = prepare_features(video_embeds, m_vlm_config.video_token_id, "video");
-    return qwen2_vl_utils::merge_text_and_video_image_embeddings(input_ids, text_embeds, flat_images, flat_videos,
-                                                               m_vlm_config.image_token_id, m_vlm_config.video_token_id);
+    ov::Tensor inputs_embeds = qwen2_vl_utils::merge_text_and_video_image_embeddings(
+        input_ids, text_embeds, flat_images, flat_videos, m_vlm_config.image_token_id, m_vlm_config.video_token_id);
+    if (audios_sequence.empty()) {
+        return inputs_embeds;
+    }
+
+    size_t num_audio_tokens = 0;
+    for (size_t audio_id : audios_sequence) {
+        const auto& features = audios.at(audio_id).audio_features;
+        OPENVINO_ASSERT(features.get_element_type() == ov::element::f32 && features.get_shape().size() == 2 &&
+                            features.get_shape()[1] == hidden_size,
+                        "LFM3 audio embeddings must be f32 with shape [tokens, text hidden size].");
+        num_audio_tokens += features.get_shape()[0];
+    }
+    const int64_t audio_token_id = m_vlm_config.audio_token_id;
+    OPENVINO_ASSERT(static_cast<size_t>(std::count(ids, ids + input_ids.get_size(), audio_token_id)) == num_audio_tokens,
+                    "LFM3 audio token count does not match the number of audio embeddings.");
+    float* dst = inputs_embeds.data<float>();
+    auto audio_it = audios_sequence.begin();
+    size_t row = 0;
+    for (size_t pos = 0; pos < input_ids.get_size(); ++pos) {
+        if (ids[pos] != audio_token_id) {
+            continue;
+        }
+        // Zero-token audios own no placeholders and are skipped.
+        while (row == audios.at(*audio_it).num_audio_tokens) {
+            ++audio_it;
+            row = 0;
+        }
+        const float* src = audios.at(*audio_it).audio_features.data<const float>() + row * hidden_size;
+        std::copy_n(src, hidden_size, dst + pos * hidden_size);
+        ++row;
+    }
+    return inputs_embeds;
 }
 
 }  // namespace ov::genai

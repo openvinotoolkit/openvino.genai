@@ -25,6 +25,13 @@
 namespace {
 using ov::genai::WhisperFeatures;
 
+constexpr double WHISPER_MIN_POWER = 1e-10;
+
+int mel_worker_count() {
+    // hardware_concurrency() may return 0, and the workers stride by the thread count.
+    return std::clamp(static_cast<int>(std::thread::hardware_concurrency()), 1, 4);
+}
+
 static bool hann_window(const size_t length, const bool periodic, std::vector<float>& output) {
     if (output.size() < length) {
         output.resize(length);
@@ -138,7 +145,8 @@ static void log_mel_spectrogram_worker_thread(int ith,
                                               const std::vector<float>& mel_filter,
                                               WhisperFeatures& features,
                                               const std::vector<float>& sin_vals,
-                                              const std::vector<float>& cos_vals) {
+                                              const std::vector<float>& cos_vals,
+                                              double min_power) {
     std::vector<float> fft_in(frame_size, 0.0);
     std::vector<float> fft_out(2 * frame_size);
     int n_fft = 1 + (frame_size / 2);
@@ -184,14 +192,14 @@ static void log_mel_spectrogram_worker_thread(int ith,
                 sum += fft_out[k] * mel_filter[j * n_fft + k];
             }
 
-            sum = log10(std::max(sum, 1e-10));
+            sum = log10(std::max(sum, min_power));
 
             features.data[j * features.n_frames + i] = sum;
         }
     }
 
     // Otherwise fft_out are all zero
-    double sum = log10(1e-10);
+    double sum = log10(min_power);
     for (; i < features.n_frames; i += n_threads) {
         for (int j = 0; j < features.feature_size; j++) {
             features.data[j * features.n_frames + i] = sum;
@@ -380,7 +388,8 @@ WhisperFeatures mel_spectrogram_convert_audio(const std::vector<float>& raw_spee
                                       std::cref(mel_filter),
                                       std::ref(features),
                                       std::cref(sin_vals),
-                                      std::cref(cos_vals));
+                                      std::cref(cos_vals),
+                                      WHISPER_MIN_POWER);
         }
 
         // main thread
@@ -394,7 +403,8 @@ WhisperFeatures mel_spectrogram_convert_audio(const std::vector<float>& raw_spee
                                           mel_filter,
                                           features,
                                           sin_vals,
-                                          cos_vals);
+                                          cos_vals,
+                                          WHISPER_MIN_POWER);
 
         for (int iw = 0; iw < n_threads - 1; ++iw) {
             workers[iw].join();
@@ -504,7 +514,7 @@ WhisperFeatures WhisperFeatureExtractor::extract(const std::vector<float>& raw_s
                     raw_speech.size(),
                     ", required > ",
                     n_fft / 2);
-    size_t n_threads = std::min(4, (int32_t)std::thread::hardware_concurrency());
+    const size_t n_threads = mel_worker_count();
     return mel_spectrogram_convert_audio(raw_speech,
                                          sampling_rate,
                                          feature_size,
@@ -516,6 +526,61 @@ WhisperFeatures WhisperFeatureExtractor::extract(const std::vector<float>& raw_s
                                          sin_vals,
                                          cos_vals,
                                          pad_to_max_duration);
+}
+
+WhisperFeatures WhisperFeatureExtractor::extract_uncentered(const std::vector<float>& raw_speech,
+                                                            float log_floor) const {
+    OPENVINO_ASSERT(!raw_speech.empty(), "raw_speech must not be empty");
+    WhisperFeatures features;
+    features.feature_size = feature_size;
+    features.n_frames =
+        raw_speech.size() <= n_fft ? 1 : 1 + (raw_speech.size() - n_fft + hop_length - 1) / hop_length;
+    features.n_active_frames = features.n_frames;
+    features.data.resize(features.feature_size * features.n_frames);
+
+    std::vector<float> padded(raw_speech);
+    padded.resize((features.n_frames - 1) * hop_length + n_fft, 0.0f);
+    std::vector<float> hann;
+    hann_window(n_fft, true, hann);
+
+    const double min_power = std::pow(10.0, log_floor);
+    const int n_threads = mel_worker_count();
+    std::vector<std::thread> workers;
+    for (int iw = 1; iw < n_threads; ++iw) {
+        workers.emplace_back(log_mel_spectrogram_worker_thread,
+                             iw,
+                             std::cref(hann),
+                             std::cref(padded),
+                             static_cast<int>(raw_speech.size()),
+                             static_cast<int>(n_fft),
+                             static_cast<int>(hop_length),
+                             n_threads,
+                             std::cref(mel_filter),
+                             std::ref(features),
+                             std::cref(sin_vals),
+                             std::cref(cos_vals),
+                             min_power);
+    }
+    log_mel_spectrogram_worker_thread(0,
+                                      hann,
+                                      padded,
+                                      static_cast<int>(raw_speech.size()),
+                                      static_cast<int>(n_fft),
+                                      static_cast<int>(hop_length),
+                                      n_threads,
+                                      mel_filter,
+                                      features,
+                                      sin_vals,
+                                      cos_vals,
+                                      min_power);
+    for (auto& worker : workers) {
+        worker.join();
+    }
+
+    for (float& value : features.data) {
+        value = (value + 4.0f) / 4.0f;
+    }
+    return features;
 }
 
 }  // namespace genai
