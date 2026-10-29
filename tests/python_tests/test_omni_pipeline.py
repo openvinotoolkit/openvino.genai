@@ -1984,7 +1984,7 @@ def test_audio_identical_tensor_not_reencoded(qwen3_omni_pipe_pa: VLMPipeline, a
     """Re-sending the same tensor on a later turn must hit the content-hash cache, not re-encode.
 
     Uses the ChatHistory overload on one persistent ChatHistory object, because that is where the
-    cache lives: `VLMChatContext` registers media in the `VisionRegistry` and skips encoding on a
+    cache lives: `VLMChatContext` registers media in the `EmbeddingsRegistry` and skips encoding on a
     hash hit. The `start_chat()` + prompt path accumulates `m_history_*` and re-encodes each turn
     instead — for images and video too, not just audio — and a fresh ChatHistory per call would
     release the registry refs and drop the entry.

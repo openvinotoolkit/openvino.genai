@@ -143,7 +143,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     // Note: set_inputs_embedder also sets the embedding model internally.
     m_model_runner->set_inputs_embedder(inputs_embedder);
     m_model_input_type = ModelInputType::EMBEDDINGS;
-    m_vision_registry = std::make_shared<VisionRegistry>();
+    m_embeddings_registry = std::make_shared<EmbeddingsRegistry>();
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
