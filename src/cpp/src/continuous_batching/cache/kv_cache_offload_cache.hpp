@@ -82,6 +82,24 @@ public:
     void flush();
 
     /**
+     * @brief Synchronously stores the block at @p block_index under @p hash and pins the entry.
+     *
+     * Unlike the opportunistic path this is reliable: it waits for in-flight stores, reuses an existing
+     * entry for the same hash, and reclaims the oldest unpinned entry if the store is full. Every
+     * successful call adds one pin that the caller must release with unpin().
+     *
+     * @return false if no slot can be freed because every entry is pinned or the store rejects the write.
+     * @throws ov::Exception if reading the block or writing to the store fails; nothing is published then.
+     */
+    bool persist(std::size_t hash, std::size_t block_index);
+
+    /// @return false if @p hash has no published entry to pin.
+    bool pin(std::size_t hash);
+
+    /// Releases one pin; unpinning an entry that is not pinned does nothing.
+    void unpin(std::size_t hash);
+
+    /**
      * @brief Reads the stored contents for @p hash.
      * @return false if @p hash has no entry, in which case @p block_data is left untouched.
      */
@@ -108,6 +126,7 @@ private:
     };
 
     /// @return Whether an existing entry was dropped to free up room for a new one.
+    /// Pinned entries are never dropped.
     bool reclaim_oldest_entry();
 
     const QueuedStore* find_queued(std::size_t hash) const;
@@ -119,6 +138,7 @@ private:
     KVCacheManager& m_cache_manager;
     std::unique_ptr<IKVCacheStore> m_store;
     std::unordered_map<std::size_t, Entry> m_entries;
+    std::unordered_map<std::size_t, std::size_t> m_pin_counts;
     // Front is the oldest entry and the first to be replaced when the file is full.
     std::list<std::size_t> m_insertion_order;
     // A store stays queued until it is published, so readers never lose sight of it.

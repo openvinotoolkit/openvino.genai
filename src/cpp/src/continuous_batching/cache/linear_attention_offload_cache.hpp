@@ -74,6 +74,15 @@ public:
     /// Waits until every queued store has reached the backing file.
     void flush();
 
+    /// Same contract as KVCacheOffloadCache::persist.
+    bool persist(std::size_t hash, std::size_t block_index);
+
+    /// @return false if @p hash has no published entry to pin.
+    bool pin(std::size_t hash);
+
+    /// Releases one pin; unpinning an entry that is not pinned does nothing.
+    void unpin(std::size_t hash);
+
     /**
      * @brief Reads the stored contents for @p hash.
      * @return false if @p hash has no entry, in which case @p block_data is left untouched.
@@ -101,6 +110,7 @@ private:
     };
 
     /// @return Whether an existing entry was dropped to free up room for a new one.
+    /// Pinned entries are never dropped.
     bool reclaim_oldest_entry();
 
     const QueuedStore* find_queued(std::size_t hash) const;
@@ -112,6 +122,7 @@ private:
     LinearAttentionCacheManager& m_cache_manager;
     std::unique_ptr<IKVCacheStore> m_store;
     std::unordered_map<std::size_t, Entry> m_entries;
+    std::unordered_map<std::size_t, std::size_t> m_pin_counts;
     // Front is the oldest entry and the first to be replaced when the file is full.
     std::list<std::size_t> m_insertion_order;
     // A store stays queued until it is published, so readers never lose sight of it.

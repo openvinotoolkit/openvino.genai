@@ -6,6 +6,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <thread>
 #include <vector>
 
 #include "continuous_batching/cache/block_manager.hpp"
@@ -194,4 +195,169 @@ TEST(TestLinearAttentionOffloadCache, BlockManagerWarmsPrefixBlockFromOffloadCac
 
     block_manager.set_overwritten_block_observer(nullptr);
     block_manager.free_sequence(consumer->get_running_sequences().at(0)->get_id());
+}
+
+TEST(TestLinearAttentionOffloadCache, PersistStoresNewHashSynchronously) {
+    LaCacheFixture fixture;
+    auto offload_cache = make_offload_cache(fixture, 2);
+    const auto expected = fixture.fill_block(1, /*seed=*/7);
+
+    ASSERT_TRUE(offload_cache->persist(/*hash=*/42, /*block_index=*/1));
+
+    EXPECT_EQ(offload_cache->get_num_entries(), 1);
+    std::vector<uint8_t> restored;
+    ASSERT_TRUE(offload_cache->read(42, restored));
+    EXPECT_EQ(restored, expected);
+}
+
+TEST(TestLinearAttentionOffloadCache, PersistOfKnownHashKeepsTheStoredCopy) {
+    LaCacheFixture fixture;
+    auto offload_cache = make_offload_cache(fixture, 2);
+    const auto expected = fixture.fill_block(0, /*seed=*/3);
+    offload_cache->on_blocks_overwritten(/*hash=*/5, make_block_set(0));
+    offload_cache->flush();
+    fixture.fill_block(1, /*seed=*/200);
+
+    ASSERT_TRUE(offload_cache->persist(/*hash=*/5, /*block_index=*/1));
+
+    EXPECT_EQ(offload_cache->get_statistics().num_stored, 1);
+    std::vector<uint8_t> restored;
+    ASSERT_TRUE(offload_cache->read(5, restored));
+    EXPECT_EQ(restored, expected);
+}
+
+TEST(TestLinearAttentionOffloadCache, PersistWaitsForAQueuedStoreOfTheSameHash) {
+    LaCacheFixture fixture;
+    auto offload_cache = make_offload_cache(fixture, 2);
+    const auto expected = fixture.fill_block(0, /*seed=*/9);
+    offload_cache->on_blocks_overwritten(/*hash=*/7, make_block_set(0));
+
+    ASSERT_TRUE(offload_cache->persist(/*hash=*/7, /*block_index=*/0));
+
+    EXPECT_EQ(offload_cache->get_num_entries(), 1);
+    EXPECT_EQ(offload_cache->get_statistics().num_stored, 1);
+    std::vector<uint8_t> restored;
+    ASSERT_TRUE(offload_cache->read(7, restored));
+    EXPECT_EQ(restored, expected);
+}
+
+TEST(TestLinearAttentionOffloadCache, PersistReclaimsTheOldestUnpinnedEntryWhenFull) {
+    LaCacheFixture fixture;
+    auto offload_cache = make_offload_cache(fixture, 2);
+    fixture.fill_block(0, /*seed=*/1);
+    fixture.fill_block(1, /*seed=*/2);
+    offload_cache->on_blocks_overwritten(/*hash=*/1, make_block_set(0));
+    offload_cache->on_blocks_overwritten(/*hash=*/2, make_block_set(1));
+    offload_cache->flush();
+    ASSERT_TRUE(offload_cache->pin(1));
+    const auto newest = fixture.fill_block(2, /*seed=*/50);
+
+    ASSERT_TRUE(offload_cache->persist(/*hash=*/3, /*block_index=*/2));
+
+    EXPECT_TRUE(offload_cache->contains(1));
+    EXPECT_FALSE(offload_cache->contains(2));
+    std::vector<uint8_t> restored;
+    ASSERT_TRUE(offload_cache->read(3, restored));
+    EXPECT_EQ(restored, newest);
+    EXPECT_EQ(offload_cache->get_statistics().num_replaced, 1);
+}
+
+TEST(TestLinearAttentionOffloadCache, PersistFailsWithoutSideEffectsWhenEveryEntryIsPinned) {
+    LaCacheFixture fixture;
+    auto offload_cache = make_offload_cache(fixture, 1);
+    fixture.fill_block(0, /*seed=*/1);
+    fixture.fill_block(1, /*seed=*/2);
+    ASSERT_TRUE(offload_cache->persist(/*hash=*/1, /*block_index=*/0));
+
+    EXPECT_FALSE(offload_cache->persist(/*hash=*/2, /*block_index=*/1));
+
+    EXPECT_TRUE(offload_cache->contains(1));
+    EXPECT_FALSE(offload_cache->contains(2));
+    EXPECT_EQ(offload_cache->get_num_entries(), 1);
+}
+
+TEST(TestLinearAttentionOffloadCache, PinnedEntrySurvivesOverwriteReclamationUntilUnpinned) {
+    LaCacheFixture fixture;
+    auto offload_cache = make_offload_cache(fixture, 1);
+    fixture.fill_block(0, /*seed=*/1);
+    fixture.fill_block(1, /*seed=*/2);
+    ASSERT_TRUE(offload_cache->persist(/*hash=*/1, /*block_index=*/0));
+
+    offload_cache->on_blocks_overwritten(/*hash=*/2, make_block_set(1));
+    offload_cache->flush();
+    EXPECT_TRUE(offload_cache->contains(1));
+    EXPECT_FALSE(offload_cache->contains(2));
+    EXPECT_EQ(offload_cache->get_statistics().num_failed, 1);
+
+    offload_cache->unpin(1);
+    offload_cache->on_blocks_overwritten(/*hash=*/3, make_block_set(1));
+    offload_cache->flush();
+    EXPECT_FALSE(offload_cache->contains(1));
+    EXPECT_TRUE(offload_cache->contains(3));
+}
+
+TEST(TestLinearAttentionOffloadCache, PinsAreReferenceCounted) {
+    LaCacheFixture fixture;
+    auto offload_cache = make_offload_cache(fixture, 1);
+    fixture.fill_block(0, /*seed=*/1);
+    fixture.fill_block(1, /*seed=*/2);
+
+    EXPECT_FALSE(offload_cache->pin(/*hash=*/999));
+    EXPECT_NO_THROW(offload_cache->unpin(/*hash=*/999));
+
+    ASSERT_TRUE(offload_cache->persist(/*hash=*/1, /*block_index=*/0));
+    ASSERT_TRUE(offload_cache->persist(/*hash=*/1, /*block_index=*/0));
+    offload_cache->unpin(1);
+    offload_cache->on_blocks_overwritten(/*hash=*/2, make_block_set(1));
+    offload_cache->flush();
+    EXPECT_TRUE(offload_cache->contains(1));
+
+    offload_cache->unpin(1);
+    offload_cache->on_blocks_overwritten(/*hash=*/2, make_block_set(1));
+    offload_cache->flush();
+    EXPECT_FALSE(offload_cache->contains(1));
+    EXPECT_TRUE(offload_cache->contains(2));
+}
+
+TEST(TestLinearAttentionOffloadCache, PersistWithQueuedStoresInFlightDoesNotDeadlockOrLoseEntries) {
+    LaCacheFixture fixture;
+    auto offload_cache = make_offload_cache(fixture, 4);
+    for (size_t i = 0; i < 3; ++i) {
+        fixture.fill_block(i, /*seed=*/static_cast<uint8_t>(10 * (i + 1)));
+        offload_cache->on_blocks_overwritten(/*hash=*/100 + i, make_block_set(static_cast<int>(i)));
+    }
+    const auto last = fixture.fill_block(3, /*seed=*/99);
+
+    ASSERT_TRUE(offload_cache->persist(/*hash=*/200, /*block_index=*/3));
+
+    for (size_t i = 0; i < 3; ++i) {
+        EXPECT_TRUE(offload_cache->contains(100 + i));
+    }
+    std::vector<uint8_t> restored;
+    ASSERT_TRUE(offload_cache->read(200, restored));
+    EXPECT_EQ(restored, last);
+    EXPECT_EQ(offload_cache->get_num_entries(), 4);
+}
+
+TEST(TestLinearAttentionOffloadCache, ConcurrentOverwritesNeverEvictAPinnedEntry) {
+    LaCacheFixture fixture;
+    auto offload_cache = make_offload_cache(fixture, 2);
+    fixture.fill_block(0, /*seed=*/1);
+    fixture.fill_block(1, /*seed=*/2);
+    ASSERT_TRUE(offload_cache->persist(/*hash=*/1000, /*block_index=*/0));
+
+    std::thread overwriter([&] {
+        for (size_t i = 0; i < 200; ++i) {
+            offload_cache->on_blocks_overwritten(/*hash=*/i, make_block_set(1));
+        }
+    });
+    for (size_t i = 0; i < 50; ++i) {
+        offload_cache->persist(/*hash=*/2000 + i, /*block_index=*/1);
+        offload_cache->unpin(2000 + i);
+    }
+    overwriter.join();
+    offload_cache->flush();
+
+    EXPECT_TRUE(offload_cache->contains(1000));
+    EXPECT_LE(offload_cache->get_num_entries(), 2);
 }

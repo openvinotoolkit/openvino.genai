@@ -176,16 +176,66 @@ LinearAttentionOffloadCache::ScopedReclamationPause::~ScopedReclamationPause() {
 }
 
 bool LinearAttentionOffloadCache::reclaim_oldest_entry() {
-    if (m_insertion_order.empty()) {
+    for (auto it = m_insertion_order.begin(); it != m_insertion_order.end(); ++it) {
+        const std::size_t oldest_hash = *it;
+        if (m_pin_counts.find(oldest_hash) != m_pin_counts.end()) {
+            continue;
+        }
+        OPENVINO_ASSERT(m_entries.find(oldest_hash) != m_entries.end(),
+                        "Linear attention cache offload index and insertion order are out of sync");
+        m_insertion_order.erase(it);
+        m_entries.erase(oldest_hash);
+        m_store->drop_block(oldest_hash);
+        return true;
+    }
+    return false;
+}
+
+bool LinearAttentionOffloadCache::persist(std::size_t hash, std::size_t block_index) {
+    std::unique_lock<std::mutex> lock(m_mutex);
+    // Past this wait the mutex stays held, so the writer thread cannot take a slot behind our back.
+    m_drained_cv.wait(lock, [this] { return m_queued_stores.empty(); });
+
+    if (m_entries.find(hash) != m_entries.end()) {
+        ++m_pin_counts[hash];
+        return true;
+    }
+
+    bool reclaimed = false;
+    if (m_store->get_num_free_blocks() == 0) {
+        reclaimed = reclaim_oldest_entry();
+        if (!reclaimed) {
+            return false;
+        }
+    }
+
+    const auto data = m_cache_manager.read_block(block_index);
+    if (!m_store->write_block(hash, data)) {
         return false;
     }
-    const std::size_t oldest_hash = m_insertion_order.front();
-    OPENVINO_ASSERT(m_entries.find(oldest_hash) != m_entries.end(),
-                    "Linear attention cache offload index and insertion order are out of sync");
-    m_insertion_order.pop_front();
-    m_entries.erase(oldest_hash);
-    m_store->drop_block(oldest_hash);
+    publish(hash, reclaimed);
+    ++m_pin_counts[hash];
     return true;
+}
+
+bool LinearAttentionOffloadCache::pin(std::size_t hash) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_entries.find(hash) == m_entries.end()) {
+        return false;
+    }
+    ++m_pin_counts[hash];
+    return true;
+}
+
+void LinearAttentionOffloadCache::unpin(std::size_t hash) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const auto it = m_pin_counts.find(hash);
+    if (it == m_pin_counts.end()) {
+        return;
+    }
+    if (--it->second == 0) {
+        m_pin_counts.erase(it);
+    }
 }
 
 bool LinearAttentionOffloadCache::contains(std::size_t hash) const {
