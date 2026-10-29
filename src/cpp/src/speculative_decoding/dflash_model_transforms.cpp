@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -22,6 +23,7 @@
 #include "openvino/op/gather.hpp"
 #include "openvino/op/matmul.hpp"
 #include "openvino/op/multiply.hpp"
+#include "openvino/op/pad.hpp"
 #include "openvino/op/parameter.hpp"
 #include "openvino/op/result.hpp"
 #include "openvino/op/util/topk_base.hpp"
@@ -250,6 +252,29 @@ bool has_port_named(const std::vector<ov::Output<ov::Node>>& ports, const std::s
     return std::any_of(ports.begin(), ports.end(), [&](const ov::Output<ov::Node>& port) {
         return port.get_names().count(name) != 0;
     });
+}
+
+std::shared_ptr<ov::op::v0::Result> find_result_named(const std::shared_ptr<ov::Model>& model,
+                                                      const std::string& name) {
+    for (const auto& result : model->get_results()) {
+        if (result->output(0).get_names().count(name) != 0) {
+            return result;
+        }
+    }
+    return nullptr;
+}
+
+// The size of the last axis of the model's 'logits' output, its vocabulary.
+size_t logits_width(const std::shared_ptr<ov::Model>& model, const char* model_name) {
+    const auto logits = find_result_named(model, "logits");
+    OPENVINO_ASSERT(logits, "The DFlash ", model_name, " has no 'logits' output.");
+    const auto shape = logits->get_output_partial_shape(0);
+    OPENVINO_ASSERT(shape.rank().is_static() && shape.rank().get_length() > 0 &&
+                        shape[shape.rank().get_length() - 1].is_static(),
+                    "The DFlash ",
+                    model_name,
+                    " 'logits' must have a static vocabulary size.");
+    return static_cast<size_t>(shape[shape.rank().get_length() - 1].get_length());
 }
 
 // Builds a model from one computation of the Markov head model. ov::Model rejects the computation if it reads an
@@ -848,6 +873,135 @@ void gather_last_hidden_state_with_logits(const std::shared_ptr<ov::Model>& draf
         }
     }
     OPENVINO_THROW("DFlash draft model has no 'last_hidden_state' output to gather.");
+}
+
+std::optional<PrunedDraftVocabulary> extract_pruned_draft_vocabulary(const std::shared_ptr<ov::Model>& main_model,
+                                                                     const std::shared_ptr<ov::Model>& draft_model,
+                                                                     const DFlashRTInfo& info) {
+    OPENVINO_ASSERT(main_model && draft_model, "DFlash requires both target and draft models.");
+    const auto d2t_result = find_result_named(draft_model, "d2t");
+    if (!d2t_result) {
+        return std::nullopt;
+    }
+    OPENVINO_ASSERT(info.dflash_version == 1,
+                    "DFlash v",
+                    info.dflash_version,
+                    " drafts with a pruned vocabulary ('d2t' output) are not supported.");
+    const auto d2t = ov::as_type_ptr<ov::op::v0::Constant>(d2t_result->input_value(0).get_node_shared_ptr());
+    OPENVINO_ASSERT(d2t, "The DFlash draft 'd2t' output must be a constant.");
+    OPENVINO_ASSERT(d2t->get_element_type() == ov::element::i64 && d2t->get_shape().size() == 1 &&
+                        ov::shape_size(d2t->get_shape()) > 0,
+                    "The DFlash draft 'd2t' output must be a non-empty rank-1 i64 constant, got ",
+                    d2t->get_element_type(),
+                    " ",
+                    d2t->get_shape(),
+                    ".");
+    const auto offsets = d2t->cast_vector<int64_t>();
+    const size_t draft_vocab_size = offsets.size();
+    const size_t draft_logits_width = logits_width(draft_model, "draft model");
+    OPENVINO_ASSERT(draft_logits_width == draft_vocab_size,
+                    "The DFlash draft 'logits' must have one column per 'd2t' entry, ",
+                    draft_vocab_size,
+                    ", got ",
+                    draft_logits_width,
+                    ".");
+
+    PrunedDraftVocabulary vocabulary;
+    vocabulary.target_vocab_size = logits_width(main_model, "target model");
+    const auto target_vocab_size = static_cast<int64_t>(vocabulary.target_vocab_size);
+    std::vector<bool> is_draft_token(vocabulary.target_vocab_size, false);
+    vocabulary.target_token_ids.reserve(draft_vocab_size);
+    for (size_t draft_id = 0; draft_id < draft_vocab_size; ++draft_id) {
+        const auto id = static_cast<int64_t>(draft_id);
+        const int64_t offset = offsets[draft_id];
+        OPENVINO_ASSERT(offset >= -id && offset < target_vocab_size - id,
+                        "The DFlash draft 'd2t' must map the draft tokens to target token ids below the target "
+                        "vocabulary size ",
+                        target_vocab_size,
+                        ", got offset ",
+                        offset,
+                        " for draft token ",
+                        id,
+                        ".");
+        OPENVINO_ASSERT(!is_draft_token[id + offset],
+                        "The DFlash draft 'd2t' must map the draft tokens to distinct target token ids, got target "
+                        "token id ",
+                        id + offset,
+                        " again for draft token ",
+                        id,
+                        ".");
+        is_draft_token[id + offset] = true;
+        vocabulary.target_token_ids.push_back(id + offset);
+    }
+
+    if (info.markov_head_computation) {
+        constexpr const char* model_name = "Markov head";
+        const size_t markov_head_vocab_size =
+            std::stoull(read_markov_head_rt_info(info.markov_head_computation, model_name, "vocab_size"));
+        OPENVINO_ASSERT(markov_head_vocab_size == vocabulary.target_vocab_size,
+                        "The Markov head of a draft with a pruned vocabulary must score target-vocabulary logits, "
+                        "its vocab_size must be ",
+                        vocabulary.target_vocab_size,
+                        ", got ",
+                        markov_head_vocab_size,
+                        ".");
+        if (!is_markov_step(info.markov_head_computation)) {
+            const size_t top_k =
+                std::stoull(read_markov_head_rt_info(info.markov_head_computation, model_name, "top_k"));
+            OPENVINO_ASSERT(top_k <= draft_vocab_size,
+                            MARKOV_HEAD_TOP_K,
+                            " must be at most the draft vocabulary size ",
+                            draft_vocab_size,
+                            " of a draft with a pruned vocabulary, got ",
+                            top_k,
+                            ".");
+        }
+    }
+    draft_model->remove_result(d2t_result);
+    draft_model->validate_nodes_and_infer_types();
+    return vocabulary;
+}
+
+void widen_draft_logits_to_target_vocabulary(const std::shared_ptr<ov::Model>& draft_model,
+                                             const PrunedDraftVocabulary& vocabulary) {
+    OPENVINO_ASSERT(draft_model, "DFlash draft model cannot be null.");
+    const auto logits_result = find_result_named(draft_model, "logits");
+    OPENVINO_ASSERT(logits_result, "The DFlash draft model has no 'logits' output.");
+    const auto draft_logits = logits_result->input_value(0);
+    const auto shape = draft_logits.get_partial_shape();
+    const size_t draft_vocab_size = vocabulary.target_token_ids.size();
+    OPENVINO_ASSERT(shape.rank().is_static() && shape.rank().get_length() > 0 &&
+                        dimension_matches(shape[shape.rank().get_length() - 1], draft_vocab_size),
+                    "The DFlash draft 'logits' must have one column per draft token, ",
+                    draft_vocab_size,
+                    ".");
+    const int64_t vocab_axis = shape.rank().get_length() - 1;
+
+    // Pad appends a -inf column after the draft logits, which the target tokens outside the draft vocabulary read.
+    std::vector<int32_t> columns(vocabulary.target_vocab_size, static_cast<int32_t>(draft_vocab_size));
+    for (size_t draft_id = 0; draft_id < draft_vocab_size; ++draft_id) {
+        columns.at(vocabulary.target_token_ids[draft_id]) = static_cast<int32_t>(draft_id);
+    }
+    std::vector<int64_t> pads_end(vocab_axis + 1, 0);
+    pads_end.back() = 1;
+    const ov::Shape pads_shape{pads_end.size()};
+    const auto padded = std::make_shared<ov::op::v12::Pad>(
+        draft_logits,
+        ov::op::v0::Constant::create(ov::element::i64, pads_shape, std::vector<int64_t>(pads_end.size(), 0)),
+        ov::op::v0::Constant::create(ov::element::i64, pads_shape, pads_end),
+        ov::op::v0::Constant::create(draft_logits.get_element_type(),
+                                     ov::Shape{},
+                                     {-std::numeric_limits<float>::infinity()}),
+        ov::op::PadMode::CONSTANT);
+    const auto widened =
+        std::make_shared<ov::op::v8::Gather>(padded,
+                                             ov::op::v0::Constant::create(ov::element::i32,
+                                                                          ov::Shape{columns.size()},
+                                                                          columns),
+                                             ov::op::v0::Constant::create(ov::element::i64, ov::Shape{}, {vocab_axis}));
+    widened->set_friendly_name("dflash_target_vocabulary_logits");
+    logits_result->input(0).replace_source_output(widened);
+    draft_model->validate_nodes_and_infer_types();
 }
 
 void attach_target_embedding_to_draft(const std::shared_ptr<ov::Model>& main_model,

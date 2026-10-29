@@ -1030,6 +1030,17 @@ void pause_if_unconfident(const Token& sampled_token, const Sequence::Ptr& seque
     }
 }
 
+// Whether the logit processors left a greedy row a token to take: a token they mask has a logit of -inf.
+static bool has_unmasked_logit(const Logits& logits) {
+    for (size_t i = 0; i < logits.m_size; ++i) {
+        const float value = logits.is_vector_initialized() ? logits.m_vector[i].m_log_prob : logits.m_data[i];
+        if (value > -std::numeric_limits<float>::infinity()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Removes tokens whose rows this step has already processed: rejected candidates and the candidates after them, or
 // tokens beyond max_new_tokens. The KV cache of the request is rolled back by its largest removal.
 void roll_back_tokens(const Sequence::Ptr& sequence, size_t num_tokens, AssistingPipelineInfo& assisting_pipeline_info) {
@@ -1507,19 +1518,25 @@ SampledBlock Sampler::_start_block(const SequenceGroup::Ptr& sequence_group, siz
     return block;
 }
 
-int64_t Sampler::_sample_block_token(const Sequence::Ptr& sequence,
-                                     const ov::genai::GenerationConfig& sampling_params,
-                                     Logits& logits,
-                                     RequestSamplerContext& context) {
+std::optional<int64_t> Sampler::_sample_block_token(const Sequence::Ptr& sequence,
+                                                    const ov::genai::GenerationConfig& sampling_params,
+                                                    Logits& logits,
+                                                    RequestSamplerContext& context) {
     LogitProcessor& logit_processor = context.logit_processor;
     logit_processor.update_generated_len(sequence->get_generated_len());
     logit_processor.apply(logits);
     std::optional<SamplingDistribution> distribution;
     Token token;
     if (sampling_params.is_greedy_decoding()) {
+        if (!has_unmasked_logit(logits)) {
+            return std::nullopt;
+        }
         token = _greedy_sample(logits, sampling_params.logprobs);
     } else {
         distribution.emplace(logits);
+        if (!distribution->has_mass()) {
+            return std::nullopt;
+        }
         token = distribution->sample(context.rng_engine);
     }
     append_sampled_token(token, sequence, logit_processor);
@@ -1547,11 +1564,14 @@ SequenceGroupSamplingInfo Sampler::_sample_block_from_sequence_group(const Seque
     SequenceGroupSamplingInfo sg_sampling_info;
     const SampledBlock block = _start_block(sequence_group, 0);
     const Sequence::Ptr sequence = sequence_group->get_running_sequences().front();
-    for (size_t candidate = 0; candidate < block.num_candidates; ++candidate) {
+    size_t candidate = 0;
+    for (; candidate < block.num_candidates; ++candidate) {
         Logits logits = _get_logit_vector(sequence_group_logits, 0, block.num_rows - 1 - candidate);
-        _sample_block_token(sequence, sequence_group->get_sampling_parameters(), logits, context);
+        if (!_sample_block_token(sequence, sequence_group->get_sampling_parameters(), logits, context)) {
+            break;
+        }
     }
-    sg_sampling_info.sampler_output.num_generated_tokens = block.num_candidates;
+    sg_sampling_info.sampler_output.num_generated_tokens = candidate;
     return sg_sampling_info;
 }
 
@@ -1609,7 +1629,11 @@ std::vector<SequenceGroupSamplingInfo> Sampler::_sample_blocks(const std::vector
                         break;
                     }
                     Logits logits{row.data(), vocab_size};
-                    previous_token = _sample_block_token(sequences[block], params(block), logits, *contexts[block]);
+                    const auto token = _sample_block_token(sequences[block], params(block), logits, *contexts[block]);
+                    if (!token) {
+                        break;
+                    }
+                    previous_token = *token;
                 }
                 return position;
             }));
@@ -1646,8 +1670,11 @@ std::vector<SequenceGroupSamplingInfo> Sampler::_sample_blocks(const std::vector
                         return false;
                     }
                     Logits logits{rows[block].data(), vocab_size};
-                    previous_tokens[block] =
-                        _sample_block_token(sequences[block], params(block), logits, *contexts[block]);
+                    const auto token = _sample_block_token(sequences[block], params(block), logits, *contexts[block]);
+                    if (!token) {
+                        return false;
+                    }
+                    previous_tokens[block] = *token;
                     return true;
                 }));
             }
