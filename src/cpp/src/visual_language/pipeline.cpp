@@ -371,6 +371,8 @@ public:
         if (!m_is_chat_conversation) {
             reset_language_state();
             m_language.get_tensor("attention_mask").set_shape({1, 0});
+            // A call that threw after tokenization skipped the reset at its end.
+            m_inputs_embedder->get_cache_state().reset_state();
         }
 
         setup_generation_config(generation_config);
