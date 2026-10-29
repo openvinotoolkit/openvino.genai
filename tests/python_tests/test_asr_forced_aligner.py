@@ -79,6 +79,11 @@ def test_asr_forced_aligner_language_errors(language_kwargs, message):
         shared_forced_aligner().align(forced_aligner_audio(), "how are you", **language_kwargs)
 
 
+def test_asr_forced_aligner_empty_audio_rejected():
+    with pytest.raises(RuntimeError, match="requires non-empty audio"):
+        shared_forced_aligner().align([], "how are you", language="english")
+
+
 def test_asr_forced_aligner_bad_directory_rejected():
     # A normal Qwen3-ASR export lacks the forced-aligner config fields.
     with pytest.raises(RuntimeError, match="timestamp_token_id must be a non-negative integer"):

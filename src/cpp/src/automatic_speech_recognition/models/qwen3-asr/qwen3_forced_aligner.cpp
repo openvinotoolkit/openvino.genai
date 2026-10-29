@@ -314,6 +314,7 @@ std::vector<ASRDecodedResultChunk> Qwen3ForcedAligner::align(const std::vector<f
     if (units.empty()) {
         return {};
     }
+    OPENVINO_ASSERT(!audio.empty(), "Forced alignment requires non-empty audio.");
 
     const std::vector<EncodedAudio> audios =
         m_embedder.encode_audios({ov::Tensor{ov::element::f32, {audio.size()}, audio.data()}});
