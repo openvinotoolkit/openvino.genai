@@ -8,6 +8,9 @@ import logging as log
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import urlopen
+
+import llm_bench_utils.gen_output_data as gen_output_data
+import llm_bench_utils.metrics_print as metrics_print
 import numpy as np
 import soundfile as sf
 
@@ -318,3 +321,62 @@ def kokoro_generate_from_preprocessed(model, preprocessed_input, args):
         return extract_audio_array(generation_result)
 
     raise RuntimeError("Kokoro model wrapper must provide generate_from_preprocessed")
+
+
+def _build_tts_audio_metrics(out_size, sample_rate, generation_time):
+    output_duration_s = (out_size / sample_rate) if sample_rate > 0 else 0
+    rtf = (generation_time / output_duration_s) if output_duration_s > 0 else -1
+    return {
+        "samples": int(out_size),
+        "duration_s": output_duration_s,
+        "sample_rate": int(sample_rate),
+        "rtf": rtf,
+    }
+
+
+def _record_tts_iter(
+    num,
+    args,
+    iter_data_list,
+    md5_list,
+    prompt_index,
+    result_md5_list,
+    in_size,
+    out_size,
+    generation_time,
+    tokenization_kwargs,
+    memory_metrics,
+    sample_rate,
+):
+    iter_data = gen_output_data.gen_iterate_data(
+        iter_idx=num,
+        in_size=in_size,
+        out_size=out_size,
+        gen_time=generation_time,
+        res_md5=result_md5_list,
+        prompt_idx=prompt_index,
+        **tokenization_kwargs,
+        **memory_metrics,
+    )
+    tts_audio_metrics = _build_tts_audio_metrics(out_size, sample_rate, generation_time)
+    iter_data["tts_output_duration_s"] = tts_audio_metrics["duration_s"]
+    iter_data["tts_sample_rate"] = tts_audio_metrics["sample_rate"]
+    iter_data["tts_rtf"] = tts_audio_metrics["rtf"]
+    iter_data_list.append(iter_data)
+    metrics_print.print_metrics(
+        iter_num=num,
+        iter_data=iter_data,
+        warm_up=(num == 0),
+        **tokenization_kwargs,
+        batch_size=args["batch_size"],
+        prompt_idx=prompt_index,
+        tts_audio=tts_audio_metrics,
+    )
+    md5_list[num][prompt_index] = result_md5_list
+    if num > 0:
+        prev_md5 = md5_list[num - 1][prompt_index]
+        if result_md5_list != prev_md5:
+            log.warning(
+                f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
+                f"is different from md5 of the {num - 1} iteration {prev_md5}"
+            )
