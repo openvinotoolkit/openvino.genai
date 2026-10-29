@@ -955,8 +955,7 @@ jobs:
     name: Node.js bindings tests (Node ${{ matrix.nodejs-version }})
     needs: [ smart_ci, openvino_download, genai_build_wheels, genai_build_genai_wheel, genai_build_nodejs ]
     if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
-    # Exporting the video generation test model takes several minutes on Windows when it is not cached yet
-    timeout-minutes: 30
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
