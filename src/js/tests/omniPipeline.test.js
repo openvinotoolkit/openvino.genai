@@ -12,6 +12,7 @@ import {
   VLMDecodedResults,
   OmniDecodedResults,
   ChatHistory,
+  SpeechOutputMode,
   StreamingStatus,
 } from "../dist/index.js";
 
@@ -150,6 +151,21 @@ describe("OmniPipeline", { skip: os.platform() === "darwin" }, () => {
     );
     await activeGeneration;
   });
+
+  for (const [field, value, message] of [
+    ["output_mode", SpeechOutputMode.SPEECH_ONLY, /output_mode applies to models/],
+    ["cp_repetition_penalty", 1.1, /cp_repetition_penalty applies to LFM3-Omni only/],
+  ]) {
+    it(`should reject ${field} for a model with a separate talker`, async () => {
+      await assert.rejects(
+        pipeline.generate("Hi", {
+          textConfig: { max_new_tokens: 4 },
+          talkerSpeechConfig: { ...deterministicSpeechConfig, [field]: value },
+        }),
+        message,
+      );
+    });
+  }
 
   it("should generate with ChatHistory", async () => {
     const history = new ChatHistory();

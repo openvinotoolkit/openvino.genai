@@ -48,7 +48,7 @@ export type OmniGenerateOptions = {
 };
 
 /**
- * This class is used for generation with omni models (e.g. Qwen3-Omni) that
+ * This class is used for generation with omni models (Qwen3-Omni, LFM3-Omni) that
  * produce both text and speech from text, image, video, and audio inputs.
  *
  * @note This is a preview API and is subject to change in future releases.
@@ -63,9 +63,10 @@ export class OmniPipeline {
    * Construct an Omni pipeline from a folder containing tokenizer and model IRs.
    * @param modelPath - A folder to read tokenizer and model IRs.
    * @param device - Inference device. A tokenizer is always compiled for CPU.
-   * @param properties - Device and pipeline properties. Speech output uses the
+   * @param properties - Device and pipeline properties. Qwen3-Omni speech output uses the
    * continuous-batching backend, which is the default on CPU and GPU (NPU is not
-   * supported for speech output).
+   * supported for speech output). LFM3-Omni speech output uses SDPA, which the pipeline
+   * selects unless ATTENTION_BACKEND is set; with PA it returns text only.
    */
   constructor(modelPath: string, device: string, properties: OmniPipelineProperties) {
     this.modelPath = modelPath;

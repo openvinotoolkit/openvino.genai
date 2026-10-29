@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRForcedAligner', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTX2Audio', 'AutoencoderKLLTX2Video', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GGUFTokenizer', 'Gemma3TextEncoder', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTX2TextConnectors', 'LTX2VideoTransformer3DModel', 'LTX2Vocoder', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'Qwen3VLForConditionalGeneration', 'QwenImage21Transformer2DModel', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
+__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRForcedAligner', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTX2Audio', 'AutoencoderKLLTX2Video', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GGUFTokenizer', 'Gemma3TextEncoder', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTX2TextConnectors', 'LTX2VideoTransformer3DModel', 'LTX2Vocoder', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'Qwen3VLForConditionalGeneration', 'QwenImage21Transformer2DModel', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'SpeechOutputMode', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
 class ASRDecodedResultChunk:
     """
     
@@ -3321,10 +3321,12 @@ class OmniDecodedResults(VLMDecodedResults):
 class OmniPipeline:
     """
     
-        OmniPipeline — Qwen3-Omni text + speech pipeline.
+        OmniPipeline — text + speech pipeline (Qwen3-Omni, LFM3-Omni).
     
-        Composes a VLM pipeline (text generation with hidden-state collection) with a Qwen3-Omni
-        speech pipeline (Talker + CodePredictor + Code2Wav). Each `generate` call takes two
+        For Qwen3-Omni, composes a VLM pipeline (text generation with hidden-state collection) with
+        a Qwen3-Omni speech pipeline (Talker + CodePredictor + Code2Wav). LFM3-Omni has no separate
+        talker: its language model emits text and speech frames in one stream, so speech is decoded
+        inside the VLM (SDPA backend) and get_talker() returns None. Each `generate` call takes two
         configs: a `GenerationConfig text_config` (thinker) and an `OmniTalkerSpeechConfig
         talker_speech_config` (talker + speech). Speech generation is gated per-call by
         `talker_speech_config.return_audio`.
@@ -3332,13 +3334,15 @@ class OmniPipeline:
         Two construction paths:
     
           - Path-based: OmniPipeline(models_path, device, **properties) loads VLM and speech
-            models from a single directory.
+            models from a single directory. For LFM3-Omni it sets ATTENTION_BACKEND=SDPA unless
+            given: speech output needs SDPA, and a PA pipeline returns text only.
     
           - DI: OmniPipeline(vlm_pipeline, talker) reuses an externally-loaded VLMPipeline
             and a TalkerBase subclass for independent device choices or custom backends.
     
-        Both ctors enforce that the loaded model is Qwen3-Omni capable (model_type == QWEN3_OMNI
-        and enable_audio_output) — non-Omni models throw at construction time.
+        The DI ctor enforces that the loaded model is Qwen3-Omni capable (model_type == QWEN3_OMNI
+        and enable_audio_output); the path ctor also accepts LFM3-Omni. Other models throw at
+        construction time.
     """
     @typing.overload
     def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
@@ -3417,7 +3421,8 @@ class OmniPipeline:
         """
                         Return the underlying TalkerBase. Speaker enumeration and embedding retrieval
                         live here: pipe.get_talker().list_speakers(),
-                        pipe.get_talker().get_speaker_embedding(name).
+                        pipe.get_talker().get_speaker_embedding(name). None for LFM3-Omni, which has no
+                        separate talker.
         """
     def get_vlm(self) -> VLMPipelineBase:
         """
@@ -3452,14 +3457,19 @@ class OmniTalkerSpeechConfig:
     
         OmniTalkerSpeechConfig
     
-        Standalone speech-side generation config for the Qwen3-Omni talker. Does NOT inherit
-        from GenerationConfig — the thinker text decode is steered by a separate
-        GenerationConfig argument to OmniPipeline.generate. This struct only carries fields
-        the talker actually consumes:
+        Speech-side generation config of OmniPipeline. Qwen3-Omni speaks with a separate talker
+        after the thinker text decode. LFM3-Omni emits text and speech frames in one stream: its
+        frames are sampled by a depth decoder, which the cp_* fields control, and the talker_*
+        fields and speaker are rejected. Does NOT inherit from GenerationConfig — the text decode
+        is steered by a separate GenerationConfig argument to OmniPipeline.generate:
     
         :param return_audio: Enable speech output. Default True. Set False to short-circuit
             the talker and produce text only.
         :type return_audio: bool
+    
+        :param output_mode: Order of text and speech, for models that emit both in one stream
+            (LFM3-Omni). Models with a separate talker (Qwen3-Omni) accept only the default.
+        :type output_mode: SpeechOutputMode
     
         :param speaker: Speaker identity — either a name (str) looked up in
             `talker_config.speaker_id`, or an explicit embedding tensor
@@ -3478,10 +3488,12 @@ class OmniTalkerSpeechConfig:
         :param max_new_tokens: Cap on talker AR steps. Independent of
             `text_config.max_new_tokens` (which caps the thinker text decode). The talker
             pipeline takes the min of this value and the model's
-            `talker_config.talker_max_new_tokens`.
+            `talker_config.talker_max_new_tokens`. For LFM3-Omni it caps the speech frames, and
+            generation stops when either this cap or `text_config.max_new_tokens` is reached.
         :type max_new_tokens: int
     
-        :param rng_seed: RNG seed for deterministic talker + CodePredictor sampling.
+        :param rng_seed: RNG seed for deterministic talker + CodePredictor sampling
+            (LFM3-Omni: depth decoder and sampled text).
         :type rng_seed: int
     
         :param talker_temperature, talker_top_k, talker_repetition_penalty: Talker sampling
@@ -3491,10 +3503,17 @@ class OmniTalkerSpeechConfig:
         :type talker_repetition_penalty: float | None
     
         :param cp_temperature, cp_top_k: CodePredictor sampling
-            overrides. Same semantics as talker_*.
+            overrides. Same semantics as talker_*. LFM3-Omni: depth decoder sampling, with the
+            audio_temperature and audio_top_k checkpoint defaults.
         :type cp_temperature: float | None
         :type cp_top_k: int | None
+    
+        :param cp_repetition_penalty: Depth decoder repetition penalty over the codes each codebook
+            emitted in the last audio_repetition_window frames. LFM3-Omni only; None = checkpoint
+            default audio_repetition_penalty.
+        :type cp_repetition_penalty: float | None
     """
+    output_mode: SpeechOutputMode
     return_audio: bool
     @typing.overload
     def __init__(self) -> None:
@@ -3509,6 +3528,12 @@ class OmniTalkerSpeechConfig:
         ...
     @audio_chunk_frames.setter
     def audio_chunk_frames(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def cp_repetition_penalty(self) -> float | None:
+        ...
+    @cp_repetition_penalty.setter
+    def cp_repetition_penalty(self, arg0: typing.SupportsFloat | None) -> None:
         ...
     @property
     def cp_temperature(self) -> float | None:
@@ -4786,6 +4811,45 @@ class SpeechGenerationPerfMetrics(PerfMetrics):
     @property
     def throughput(self) -> MeanStdPair:
         ...
+class SpeechOutputMode:
+    """
+    Order of text and speech in the answer of a model that emits both in one token stream (LFM3-Omni).
+    
+    Members:
+    
+      INTERLEAVED : Text and speech alternate in short blocks, so speech starts early.
+    
+      SPEECH_ONLY : The answer is speech only, for example text-to-speech.
+    """
+    INTERLEAVED: typing.ClassVar[SpeechOutputMode]  # value = <SpeechOutputMode.INTERLEAVED: 0>
+    SPEECH_ONLY: typing.ClassVar[SpeechOutputMode]  # value = <SpeechOutputMode.SPEECH_ONLY: 1>
+    __members__: typing.ClassVar[dict[str, SpeechOutputMode]]  # value = {'INTERLEAVED': <SpeechOutputMode.INTERLEAVED: 0>, 'SPEECH_ONLY': <SpeechOutputMode.SPEECH_ONLY: 1>}
+    def __eq__(self, other: typing.Any) -> bool:
+        ...
+    def __getstate__(self) -> int:
+        ...
+    def __hash__(self) -> int:
+        ...
+    def __index__(self) -> int:
+        ...
+    def __init__(self, value: typing.SupportsInt) -> None:
+        ...
+    def __int__(self) -> int:
+        ...
+    def __ne__(self, other: typing.Any) -> bool:
+        ...
+    def __repr__(self) -> str:
+        ...
+    def __setstate__(self, state: typing.SupportsInt) -> None:
+        ...
+    def __str__(self) -> str:
+        ...
+    @property
+    def name(self) -> str:
+        ...
+    @property
+    def value(self) -> int:
+        ...
 class StopCriteria:
     """
     
@@ -5389,9 +5453,10 @@ class TalkerBase:
                                 Run speech generation against a VLM result, configured by keyword arguments.
         
                                 Property-bag form of generate(). Recognized kwargs are the OmniTalkerSpeechConfig
-                                fields (return_audio, speaker, speaker_embedding, audio_chunk_frames,
+                                fields (return_audio, output_mode, speaker, speaker_embedding, audio_chunk_frames,
                                 max_new_tokens, rng_seed, talker_temperature, talker_top_k,
-                                talker_repetition_penalty, cp_temperature, cp_top_k), plus speech_streamer.
+                                talker_repetition_penalty, cp_temperature, cp_top_k, cp_repetition_penalty),
+                                plus speech_streamer.
                                 Unrecognized keys raise. Fields not given fall back to get_speech_config().
         
                                 :return: TalkerResults

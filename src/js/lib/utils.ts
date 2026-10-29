@@ -29,6 +29,18 @@ export enum StopCriteria {
   NEVER,
 }
 
+/**
+ * Order of text and speech in the answer of a model that emits both in one token stream (LFM3-Omni).
+ *
+ * @note This is a preview API and is subject to change in future releases.
+ */
+export enum SpeechOutputMode {
+  /** Text and speech alternate in short blocks, so speech starts early. */
+  INTERLEAVED,
+  /** The answer is speech only, for example text-to-speech. */
+  SPEECH_ONLY,
+}
+
 /** Unsigned integer value represented as JS `number` whenever possible; if the value is too large for `number`, `bigint` is used.
  *
  * For size_t-like fields this corresponds to a maximum of `2^32 - 1` on 32-bit systems
@@ -595,16 +607,24 @@ export type OmniPipelineProperties = {
 } & Record<string, unknown>;
 
 /**
- * Speech-side generation config for the Qwen3-Omni talker.
+ * Speech-side generation config of OmniPipeline.
  *
- * Controls the speech output stack (Talker + CodePredictor + Code2Wav). Standalone config:
- * the thinker text decode is steered by a separate {@link GenerationConfig} passed as `textConfig`.
+ * Qwen3-Omni speaks with a separate talker (Talker + CodePredictor + Code2Wav) after the thinker
+ * text decode. LFM3-Omni emits text and speech frames in one stream: its frames are sampled by a
+ * depth decoder, which the `cp_*` fields control, and the `talker_*` fields and `speaker` are
+ * rejected. Standalone config: the text decode is steered by a separate {@link GenerationConfig}
+ * passed as `textConfig`.
  *
  * @note This is a preview API and is subject to change in future releases.
  */
 export type OmniTalkerSpeechConfig = {
   /** Enable speech output. Defaults to true; set false to produce text only. */
   return_audio?: boolean;
+  /**
+   * Order of text and speech, for models that emit both in one stream (LFM3-Omni).
+   * Models with a separate talker (Qwen3-Omni) accept only the default, INTERLEAVED.
+   */
+  output_mode?: SpeechOutputMode;
   /**
    * Speaker identity: either a name looked up in the model config, or an explicit
    * embedding tensor (`[1, 1, talker_hidden_size]`, f32). Default selects the model's default speaker.
@@ -615,9 +635,12 @@ export type OmniTalkerSpeechConfig = {
    * Each frame is 80ms of audio at 24 kHz (1920 samples).
    */
   audio_chunk_frames?: Uint;
-  /** Cap on talker autoregressive steps. Independent of `textConfig.max_new_tokens`. */
+  /**
+   * Cap on talker autoregressive steps. Independent of `textConfig.max_new_tokens`.
+   * For LFM3-Omni it caps the speech frames, and generation stops when either cap is reached.
+   */
   max_new_tokens?: Uint;
-  /** RNG seed for talker + CodePredictor sampling. */
+  /** RNG seed for talker + CodePredictor sampling (LFM3-Omni: depth decoder and sampled text). */
   rng_seed?: Uint;
   /** Talker sampling temperature override (must be > 0 when set). */
   talker_temperature?: number;
@@ -625,10 +648,18 @@ export type OmniTalkerSpeechConfig = {
   talker_top_k?: Uint;
   /** Talker repetition penalty override (must be > 0 when set; 1.0 = no penalty). */
   talker_repetition_penalty?: number;
-  /** CodePredictor sampling temperature override (must be > 0 when set). */
+  /**
+   * CodePredictor sampling temperature override (must be > 0 when set).
+   * LFM3-Omni: depth decoder temperature, checkpoint default `audio_temperature`.
+   */
   cp_temperature?: number;
-  /** CodePredictor top-k override (must be >= 1 when set). */
+  /** CodePredictor top-k override (must be >= 1 when set). LFM3-Omni: checkpoint default `audio_top_k`. */
   cp_top_k?: Uint;
+  /**
+   * Depth decoder repetition penalty over the codes each codebook emitted in the last
+   * `audio_repetition_window` frames (must be > 0 when set; 1.0 = no penalty). LFM3-Omni only.
+   */
+  cp_repetition_penalty?: number;
 };
 
 /**

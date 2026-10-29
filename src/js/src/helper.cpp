@@ -800,6 +800,16 @@ ov::genai::OmniTalkerSpeechConfig js_to_cpp<ov::genai::OmniTalkerSpeechConfig>(c
         OPENVINO_ASSERT(field.IsBoolean(), "talkerSpeechConfig.return_audio must be a boolean.");
         config.return_audio = field.ToBoolean().Value();
     }
+    if (const Napi::Value field = object.Get("output_mode"); !field.IsUndefined() && !field.IsNull()) {
+        OPENVINO_ASSERT(field.IsNumber(), "talkerSpeechConfig.output_mode must be a SpeechOutputMode value.");
+        const int mode = field.As<Napi::Number>().Int32Value();
+        OPENVINO_ASSERT(mode == static_cast<int>(ov::genai::SpeechOutputMode::INTERLEAVED) ||
+                            mode == static_cast<int>(ov::genai::SpeechOutputMode::SPEECH_ONLY),
+                        "Invalid talkerSpeechConfig.output_mode: ",
+                        mode,
+                        ". Expected 0 (INTERLEAVED) or 1 (SPEECH_ONLY).");
+        config.output_mode = static_cast<ov::genai::SpeechOutputMode>(mode);
+    }
     if (const Napi::Value field = object.Get("speaker"); !field.IsUndefined() && !field.IsNull()) {
         if (field.IsString()) {
             config.speaker = js_to_cpp<std::string>(env, field);
@@ -830,6 +840,9 @@ ov::genai::OmniTalkerSpeechConfig js_to_cpp<ov::genai::OmniTalkerSpeechConfig>(c
     }
     if (const Napi::Value field = object.Get("cp_top_k"); !field.IsUndefined() && !field.IsNull()) {
         config.cp_top_k = js_to_cpp<size_t>(env, field);
+    }
+    if (const Napi::Value field = object.Get("cp_repetition_penalty"); !field.IsUndefined() && !field.IsNull()) {
+        config.cp_repetition_penalty = js_to_cpp<float>(env, field);
     }
     return config;
 }
