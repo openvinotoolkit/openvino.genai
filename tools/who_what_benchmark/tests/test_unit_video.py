@@ -212,3 +212,46 @@ def test_video_decode_cli_options_reach_evaluator(monkeypatch, model_type, cli_o
 
     assert (evaluator.kwargs["decode_timestep"], evaluator.kwargs["decode_noise_scale"]) == expected_values
     assert evaluator.kwargs["test_data"] == dataset_rows
+
+
+@pytest.mark.parametrize("model_type", ["text-to-video", "image-to-video"])
+@pytest.mark.parametrize(
+    ("cli_options", "dataset_values", "expected_values"),
+    [
+        ([], {}, (None, None)),
+        (["--decode-timestep", "0.2", "--decode-noise-scale", "0.3"], {}, (0.2, 0.3)),
+        (
+            ["--decode-timestep", "0.2", "--decode-noise-scale", "0.3"],
+            {"decode_timestep": [0.4], "decode_noise_scale": [0.5]},
+            (0.4, 0.5),
+        ),
+    ],
+    ids=["defaults", "explicit-cli", "dataset-overrides-cli"],
+)
+def test_video_decode_cli_options_reach_generation(
+    monkeypatch, tmp_path, model_type, cli_options, dataset_values, expected_values
+):
+    calls = []
+
+    def generate_video(_model, **kwargs):
+        calls.append(kwargs)
+        return []
+
+    dataset_rows = {"prompt": ["test prompt"], **dataset_values}
+    if model_type == "image-to-video":
+        dataset_rows["images"] = [Image.new("RGB", (32, 32))]
+
+    monkeypatch.setattr(
+        sys, "argv", ["wwb", "--model-type", model_type, "--genai", "--gt-data", str(tmp_path / "gt.csv"), *cli_options]
+    )
+    monkeypatch.setattr(wwb, "load_prompts", lambda _args: dataset_rows)
+    monkeypatch.setattr(wwb, "genai_gen_text2video", generate_video)
+    monkeypatch.setattr(wwb, "genai_gen_image2video", generate_video)
+    monkeypatch.setattr("whowhatbench.text2video_evaluator.VideoSimilarity", lambda: None)
+    monkeypatch.setattr("whowhatbench.text2video_evaluator.export_to_video", lambda *_args: None)
+    monkeypatch.setattr("whowhatbench.image2video_evaluator.export_to_video", lambda *_args: None)
+
+    wwb.create_evaluator(object(), wwb.parse_args())
+
+    assert len(calls) == 1
+    assert (calls[0]["decode_timestep"], calls[0]["decode_noise_scale"]) == expected_values
