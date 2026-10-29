@@ -15,7 +15,10 @@ namespace ov::genai {
 
 class Qwen3ASRDecoder {
 public:
-    Qwen3ASRDecoder(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties);
+    Qwen3ASRDecoder(const std::filesystem::path& models_path,
+                    const std::string& device,
+                    const ov::AnyMap& properties,
+                    const size_t npuw_qwen3_asr_max_encoder_len);
 
     EncodedResults generate(const ov::Tensor& input_ids,
                             const ov::Tensor& encoder_hidden_state,

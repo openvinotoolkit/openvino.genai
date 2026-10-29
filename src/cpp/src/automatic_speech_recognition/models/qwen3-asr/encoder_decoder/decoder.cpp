@@ -4,23 +4,79 @@
 #include "decoder.hpp"
 
 #include <algorithm>
-#include <cstring>
 #include <map>
 
 #include "openvino/genai/generation_handle.hpp"
 #include "sequence_group.hpp"
 #include "utils.hpp"
 
+namespace {
+
+constexpr size_t QWEN3_ASR_TEXT_TOKEN_BUDGET = 128;
+constexpr size_t QWEN3_ASR_PROMPT_LEN_ALIGNMENT = 64;
+
+size_t align_up(const size_t value, const size_t alignment) {
+    OPENVINO_ASSERT(alignment > 0, "alignment must be > 0");
+    return ((value + alignment - 1) / alignment) * alignment;
+}
+
+// Reshape encoder_hidden_states for NPU compilation.
+// Keep dim0 fixed to 1 and leave dim1 dynamic.
+void set_encoder_hidden_states_batch_dim_to_one(std::shared_ptr<ov::Model> model) {
+    if (!ov::genai::utils::has_input(model, "encoder_hidden_states")) {
+        return;
+    }
+    ov::PartialShape new_shape = model->input("encoder_hidden_states").get_partial_shape();
+    OPENVINO_ASSERT(new_shape.rank().is_static() && new_shape.rank().get_length() >= 2,
+                    "Unexpected rank for 'encoder_hidden_states' input.");
+
+    new_shape[0] = 1;
+    new_shape[1] = ov::Dimension::dynamic();
+    std::cout << "[INFO] Qwen3ASRDecoder: reshape encoder_hidden_states to [" << new_shape[0] << "," << new_shape[1]
+              << ",...]" << std::endl;
+    model->reshape({{"encoder_hidden_states", new_shape}});
+}
+
+}  // namespace
+
 namespace ov::genai {
 
 Qwen3ASRDecoder::Qwen3ASRDecoder(const std::filesystem::path& models_path,
                                  const std::string& device,
-                                 const ov::AnyMap& properties) {
+                                 const ov::AnyMap& properties,
+                                 const size_t npuw_qwen3_asr_max_encoder_len) {
     ov::Core core = utils::singleton_core();
-    ov::CompiledModel compiled_model =
-        core.compile_model(models_path / "openvino_decoder_model.xml", device, properties);
-    ov::genai::utils::print_compiled_model_properties(compiled_model, "qwen3-asr decoder model");
-    m_request = compiled_model.create_infer_request();
+
+    if (device == "NPU") {
+        ov::AnyMap npu_properties = properties;
+        auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, std::as_const(npu_properties));
+
+        auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
+
+        // Set batch dim from encoder compiled output; seq_len (dim 1) remains dynamic and is handled by NPUW.
+        set_encoder_hidden_states_batch_dim_to_one(model);
+
+        OPENVINO_ASSERT(npuw_qwen3_asr_max_encoder_len > 0,
+                        "NPUW_QWEN3_ASR_MAX_ENCODER_LEN must be > 0, got ",
+                        npuw_qwen3_asr_max_encoder_len);
+        npu_properties["NPUW_QWEN3_ASR_MAX_ENCODER_LEN"] = static_cast<int64_t>(npuw_qwen3_asr_max_encoder_len);
+        if (npu_properties.count("MAX_PROMPT_LEN") == 0) {
+            const size_t max_prompt_len =
+                align_up(npuw_qwen3_asr_max_encoder_len + QWEN3_ASR_TEXT_TOKEN_BUDGET, QWEN3_ASR_PROMPT_LEN_ALIGNMENT);
+            npu_properties["MAX_PROMPT_LEN"] = static_cast<int64_t>(max_prompt_len);
+        }
+
+        utils::KVDesc kv_desc;
+        ov::CompiledModel compiled_model;
+        std::tie(compiled_model, kv_desc) = utils::compile_decoder_for_npu_qwen3_asr(model, npu_properties, kv_pos);
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "qwen3-asr decoder model");
+        m_request = compiled_model.create_infer_request();
+    } else {
+        ov::CompiledModel compiled_model =
+            core.compile_model(models_path / "openvino_decoder_model.xml", device, properties);
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "qwen3-asr decoder model");
+        m_request = compiled_model.create_infer_request();
+    }
 }
 
 void Qwen3ASRDecoder::set_seed(size_t seed) {
@@ -188,7 +244,6 @@ EncodedResults Qwen3ASRDecoder::generate(const ov::Tensor& input_ids,
         asr_raw_metrics.decode_inference_durations.emplace_back(infer_ms);
 
         logits = m_request.get_tensor("logits");
-
         const auto sample_start = std::chrono::steady_clock::now();
         m_sampler.sample(active_sequence_groups, logits);
         raw_metrics.m_sampling_durations.emplace_back(

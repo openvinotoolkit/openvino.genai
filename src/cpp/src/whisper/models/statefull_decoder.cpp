@@ -33,7 +33,8 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
     auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, std::as_const(properties));
 
     m_has_cache_position = utils::has_input(model, "cache_position");
-
+    std::cout << "[INFO] WhisperStatefullDecoder: cache_position input is " << (m_has_cache_position ? "present" : "not present")
+              << std::endl;
     ov::CompiledModel compiled_model;
     if (device == "NPU") {
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
@@ -41,6 +42,7 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
         reshape_hidden_states_to_static(model, lhs_shape);
 
         utils::KVDesc kv_desc;
+        std::cout << "[INFO] WhisperStatefullDecoder: compiling decoder for NPU" << std::endl;
         std::tie(compiled_model, kv_desc) = utils::compile_decoder_for_npu(model, properties, kv_pos, true);
     } else {
         if (m_decompose_cross_attention_spda_ops) {
