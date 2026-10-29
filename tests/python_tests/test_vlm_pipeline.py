@@ -440,15 +440,6 @@ def is_optimum_intel_version_for_videochat_flash_qwen():
     return "videochat_flash_qwen" in MODEL_TYPE_TO_CLS_MAPPING
 
 
-def get_auto_processor_trust_remote_code(model_id: str) -> bool:
-    """
-    tiny-random-minicpmv47 model has "auto_map" in "processor_config.json" pointing to custom files,
-    which don't exist on HF, so saving model with "trust_remote_code=True" leads to error.
-    Ticket to update and align tiny-random-minicpmv47 - CVS-198487
-    """
-    return False if "minicpmv47" in model_id else True
-
-
 def _get_ov_model(model_id: str) -> str:
     _maybe_skip_unsupported_model_export(model_id)
 
@@ -463,11 +454,10 @@ def _get_ov_model(model_id: str) -> str:
     def convert_to_temp(temp_dir: Path) -> None:
         model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
         align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
-        trust_remote_code = get_auto_processor_trust_remote_code(model_id)
         processor = retry_request(
             lambda: transformers.AutoProcessor.from_pretrained(
                 model_cached,
-                trust_remote_code=trust_remote_code,
+                trust_remote_code=True,
                 **align_with_optimum_cli,
             )
         )
@@ -2113,11 +2103,10 @@ def test_model_tags_representation(
         messages = [{"role": "user", "content": f"{ov_pipe_model.get_media_tag(modality_type)(0)}{prompt}"}]
         templated_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     else:
-        trust_remote_code = get_auto_processor_trust_remote_code(model_id)
         processor = retry_request(
             lambda: transformers.AutoProcessor.from_pretrained(
                 model_cached,
-                trust_remote_code=trust_remote_code,
+                trust_remote_code=True,
                 **align_with_optimum_cli,
             )
         )
@@ -2595,8 +2584,7 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video, audio=N
         logger.debug("video shape: %s", video.shape if video is not None else None)
         inputs = preprocess_inputs(prompt, None, processor, tokenizer, config=optimum_model.config, video=video)
     else:
-        trust_remote_code = get_auto_processor_trust_remote_code(ov_pipe_model.model_id)
-        processor = transformers.AutoProcessor.from_pretrained(model_path, trust_remote_code=trust_remote_code)
+        processor = transformers.AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
         # Gemma3 input_ids has two bos tokens when running with optimum: one in chat template + "add_bos_token" is set to True in tokenizer_config.json
         if optimum_model.config.model_type == "gemma3":
             processor.tokenizer.add_bos_token = False
