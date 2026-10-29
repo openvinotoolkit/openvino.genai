@@ -67,6 +67,11 @@ auto asr_decoded_results_docstring = R"(
     perf_metrics:       performance metrics with tpot, ttft, etc. of type ov::genai::ASRPerfMetrics.
     chunks:             optional chunks of resulting sequences with timestamps
     words:              optional chunks of resulting words with timestamps
+    metadata:           optional model-specific metadata for each transcription.
+                        Models without metadata support leave this unset (None in Python).
+                        When present, metadata[i] corresponds to texts[i]. Each map holds
+                        model-defined key/value metadata and may be empty when no metadata
+                        is predicted.
 )";
 
 auto asr_decoded_result_chunk_docstring = R"(
@@ -169,6 +174,12 @@ auto asr_generation_config_docstring = R"(
 
     :param context: System prompt context prepended to Qwen3-ASR transcription requests.
     :type context: Optional[str]
+
+    SenseVoiceSmall parameters:
+
+    :param use_itn: Whether to enable inverse text normalization for SenseVoiceSmall.
+                    Defaults to False (`woitn`); when True, the `withitn` mode is used.
+    :type use_itn: bool
 
     For generic generation parameters (max_length, max_new_tokens, num_beams, temperature, etc.)
     see GenerationConfig documentation.
@@ -273,6 +284,7 @@ void init_asr_pipeline(py::module_& m) {
         .def_readwrite("initial_prompt", &ASRGenerationConfig::initial_prompt)
         .def_readwrite("hotwords", &ASRGenerationConfig::hotwords)
         .def_readwrite("context", &ASRGenerationConfig::context)
+        .def_readwrite("use_itn", &ASRGenerationConfig::use_itn)
         .def("update_generation_config", [](ASRGenerationConfig& config, const py::kwargs& kwargs) {
             config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
         });
@@ -324,6 +336,18 @@ void init_asr_pipeline(py::module_& m) {
         .def_readonly("languages", &ASRDecodedResults::languages)
         .def_readonly("chunks", &ASRDecodedResults::chunks)
         .def_readonly("words", &ASRDecodedResults::words)
+        .def_property_readonly("metadata",
+                               [](const ASRDecodedResults& dr)
+                                   -> py::typing::Optional<py::typing::List<py::typing::Dict<py::str, py::object>>> {
+                                   if (!dr.metadata.has_value()) {
+                                       return py::none();
+                                   }
+                                   py::list metadata;
+                                   for (const auto& entry : dr.metadata.value()) {
+                                       metadata.append(pyutils::any_map_to_py_object(entry));
+                                   }
+                                   return metadata;
+                               })
         .def_readonly("perf_metrics", &ASRDecodedResults::perf_metrics)
         .def("__repr__", [](const ASRDecodedResults& dr) -> py::str {
             auto valid_utf8_strings = pyutils::handle_utf8((std::vector<std::string>)dr);

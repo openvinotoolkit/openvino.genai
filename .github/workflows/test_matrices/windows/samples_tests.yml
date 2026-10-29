@@ -14,19 +14,21 @@
   components:
     - automatic_speech_recognition_samples
 
-- name: dreamlike_anime_1_0
-  marker: dreamlike_anime_1_0
-  cmd: tests/python_tests/samples
-  runner: aks-win-8-cores-32gb-test
-  components:
-    - Image_generation_samples
+# Test timed out on Windows. Ticket: 198295
+# - name: dreamlike_anime_1_0
+#   marker: dreamlike_anime_1_0
+#   cmd: tests/python_tests/samples
+#   runner: aks-win-8-cores-32gb-test
+#   components:
+#     - Image_generation_samples
 
-- name: LCM_Dreamshaper_v7_int8_ov
-  marker: LCM_Dreamshaper_v7_int8_ov
-  cmd: tests/python_tests/samples
-  runner: aks-win-8-cores-16gb-test
-  components:
-    - Image_generation_samples
+# Test timed out on Windows. Ticket: 198295
+# - name: LCM_Dreamshaper_v7_int8_ov
+#   marker: LCM_Dreamshaper_v7_int8_ov
+#   cmd: tests/python_tests/samples
+#   runner: aks-win-8-cores-16gb-test
+#   components:
+#     - Image_generation_samples
 
 - name: tiny_random_latent_consistency
   marker: tiny_random_latent_consistency
@@ -99,3 +101,12 @@
   runner: aks-win-16-cores-32gb-test
   components:
     - LLM_samples
+
+- name: VLM audio
+  marker: vlm_audio
+    # optimum-intel commit with gemma4 audio inputs support
+  extra_cmd: pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@00131a8967a21cd7bea3fe59413fb35b537d57af"
+  cmd: tests/python_tests/samples
+  runner: aks-win-4-cores-8gb-test
+  components:
+    - VLM_samples
