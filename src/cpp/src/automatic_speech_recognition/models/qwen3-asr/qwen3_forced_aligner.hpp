@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-#include "encoder.hpp"
+#include "encoder_decoder/encoder.hpp"
 #include "forced_aligner_config.hpp"
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 #include "openvino/genai/tokenizer.hpp"

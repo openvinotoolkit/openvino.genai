@@ -1154,6 +1154,85 @@ Napi::Value cpp_to_js<std::vector<double>, Napi::Value>(const Napi::Env& env, co
 }
 
 template <>
+Napi::Value cpp_to_js<ov::Any, Napi::Value>(const Napi::Env& env, const ov::Any& value) {
+    if (value.empty()) {
+        return env.Null();
+    }
+    if (value.is<std::string>()) {
+        return Napi::String::New(env, value.as<std::string>());
+    }
+    if (value.is<bool>()) {
+        return Napi::Boolean::New(env, value.as<bool>());
+    }
+    if (value.is<int>()) {
+        return Napi::Number::New(env, value.as<int>());
+    }
+    if (value.is<int64_t>()) {
+        return cpp_to_js<int64_t, Napi::Value>(env, value.as<int64_t>());
+    }
+    if (value.is<size_t>()) {
+        return cpp_to_js<size_t, Napi::Value>(env, value.as<size_t>());
+    }
+    if (value.is<float>()) {
+        return Napi::Number::New(env, value.as<float>());
+    }
+    if (value.is<double>()) {
+        return Napi::Number::New(env, value.as<double>());
+    }
+    if (value.is<ov::AnyMap>()) {
+        return cpp_to_js<ov::AnyMap, Napi::Value>(env, value.as<ov::AnyMap>());
+    }
+    if (value.is<std::vector<std::string>>()) {
+        return cpp_to_js<std::vector<std::string>, Napi::Value>(env, value.as<std::vector<std::string>>());
+    }
+    if (value.is<std::vector<int64_t>>()) {
+        const auto& vec = value.as<std::vector<int64_t>>();
+        auto js_array = Napi::Array::New(env, vec.size());
+        for (size_t i = 0; i < vec.size(); ++i) {
+            js_array[i] = cpp_to_js<int64_t, Napi::Value>(env, vec[i]);
+        }
+        return js_array;
+    }
+    if (value.is<std::vector<double>>()) {
+        return cpp_to_js<std::vector<double>, Napi::Value>(env, value.as<std::vector<double>>());
+    }
+    if (value.is<std::vector<float>>()) {
+        return cpp_to_js<std::vector<float>, Napi::Value>(env, value.as<std::vector<float>>());
+    }
+    if (value.is<std::vector<ov::Any>>()) {
+        const auto& vec = value.as<std::vector<ov::Any>>();
+        auto js_array = Napi::Array::New(env, vec.size());
+        for (size_t i = 0; i < vec.size(); ++i) {
+            js_array[i] = cpp_to_js<ov::Any, Napi::Value>(env, vec[i]);
+        }
+        return js_array;
+    }
+    OPENVINO_THROW("Cannot convert ov::Any to a JS value: unsupported stored type '", value.type_info().name(), "'");
+}
+
+template <>
+Napi::Value cpp_to_js<ov::AnyMap, Napi::Value>(const Napi::Env& env, const ov::AnyMap& value) {
+    auto js_object = Napi::Object::New(env);
+    for (const auto& [key, item] : value) {
+        js_object.DefineProperty(Napi::PropertyDescriptor::Value(
+            Napi::String::New(env, key),
+            cpp_to_js<ov::Any, Napi::Value>(env, item),
+            static_cast<napi_property_attributes>(napi_writable | napi_enumerable | napi_configurable)));
+    }
+    return js_object;
+}
+
+template <>
+Napi::Value cpp_to_js<std::vector<ov::AnyMap>, Napi::Value>(const Napi::Env& env,
+                                                            const std::vector<ov::AnyMap>& value) {
+    auto js_array = Napi::Array::New(env, value.size());
+    for (size_t i = 0; i < value.size(); ++i) {
+        js_array[i] = cpp_to_js<ov::AnyMap, Napi::Value>(env, value[i]);
+    }
+    return js_array;
+}
+
+template <>
 Napi::Value cpp_to_js<std::vector<size_t>, Napi::Value>(const Napi::Env& env, const std::vector<size_t>& value) {
     auto js_array = Napi::Array::New(env, value.size());
     for (auto i = 0; i < value.size(); i++) {
@@ -1929,6 +2008,9 @@ Napi::Object to_asr_decoded_result(const Napi::Env& env, const ov::genai::ASRDec
     }
     if (results.words.has_value()) {
         obj.Set("words", to_nested_chunks(results.words.value()));
+    }
+    if (results.metadata.has_value()) {
+        obj.Set("metadata", cpp_to_js<std::vector<ov::AnyMap>, Napi::Value>(env, results.metadata.value()));
     }
     return obj;
 }

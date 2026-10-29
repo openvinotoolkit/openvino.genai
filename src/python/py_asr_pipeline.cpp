@@ -67,6 +67,11 @@ auto asr_decoded_results_docstring = R"(
     perf_metrics:       performance metrics with tpot, ttft, etc. of type ov::genai::ASRPerfMetrics.
     chunks:             optional chunks of resulting sequences with timestamps
     words:              optional chunks of resulting words with timestamps
+    metadata:           optional model-specific metadata for each transcription.
+                        Models without metadata support leave this unset (None in Python).
+                        When present, metadata[i] corresponds to texts[i]. Each map holds
+                        model-defined key/value metadata and may be empty when no metadata
+                        is predicted.
 )";
 
 auto asr_decoded_result_chunk_docstring = R"(
@@ -331,6 +336,18 @@ void init_asr_pipeline(py::module_& m) {
         .def_readonly("languages", &ASRDecodedResults::languages)
         .def_readonly("chunks", &ASRDecodedResults::chunks)
         .def_readonly("words", &ASRDecodedResults::words)
+        .def_property_readonly("metadata",
+                               [](const ASRDecodedResults& dr)
+                                   -> py::typing::Optional<py::typing::List<py::typing::Dict<py::str, py::object>>> {
+                                   if (!dr.metadata.has_value()) {
+                                       return py::none();
+                                   }
+                                   py::list metadata;
+                                   for (const auto& entry : dr.metadata.value()) {
+                                       metadata.append(pyutils::any_map_to_py_object(entry));
+                                   }
+                                   return metadata;
+                               })
         .def_readonly("perf_metrics", &ASRDecodedResults::perf_metrics)
         .def("__repr__", [](const ASRDecodedResults& dr) -> py::str {
             auto valid_utf8_strings = pyutils::handle_utf8((std::vector<std::string>)dr);

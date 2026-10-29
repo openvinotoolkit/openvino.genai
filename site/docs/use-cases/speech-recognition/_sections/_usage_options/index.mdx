@@ -261,6 +261,56 @@ SenseVoiceSmall does not currently generate segment-level or word-level timestam
 For supported languages, word-level timestamps can be generated separately using `ASRForcedAligner`: first transcribe the audio with SenseVoiceSmall, then pass the audio and transcription to the standalone aligner. See [Word-level Timestamps Prediction](#word-level-timestamps-prediction) for details.
 :::
 
+#### Emotion and Event Metadata
+
+SenseVoiceSmall reports recognized `emotion` and `event` tags through `ASRDecodedResults.metadata`. This optional field is part of the generic ASR API, where `metadata[i]` corresponds to `texts[i]`. The detected language is available separately through `languages`.
+
+An entry may be empty or omit a key when the corresponding tag is not recognized. ASR models that do not provide metadata leave `metadata` unset.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        result = pipe.generate(raw_speech)
+
+        if result.metadata:
+            metadata = result.metadata[0]
+            for key in ("emotion", "event"):
+                if key in metadata:
+                    print(f"{key}: {metadata[key]}")
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        auto result = pipe.generate(raw_speech);
+
+        if (result.metadata && !result.metadata->empty()) {
+            const auto& metadata = result.metadata->front();
+            if (auto it = metadata.find("emotion"); it != metadata.end()) {
+                std::cout << "emotion: " << it->second.as<std::string>() << "\n";
+            }
+            if (auto it = metadata.find("event"); it != metadata.end()) {
+                std::cout << "event: " << it->second.as<std::string>() << "\n";
+            }
+        }
+        ```
+    </TabItemCpp>
+    <TabItemJS>
+        ```javascript
+        const result = await pipeline.generate(rawSpeech);
+
+        const metadata = result.metadata?.[0];
+        if (metadata) {
+          if (metadata.emotion !== undefined) {
+            console.log("emotion:", metadata.emotion);
+          }
+          if (metadata.event !== undefined) {
+            console.log("event:", metadata.event);
+          }
+        }
+        ```
+    </TabItemJS>
+</LanguageTabs>
+
 ### Whisper-specific Features
 
 :::info
@@ -467,6 +517,14 @@ Construct the `ASRForcedAligner` and pass the instance into `ASRPipeline`. The A
 </LanguageTabs>
 
 When word timestamps are enabled for Qwen3-ASR, audio is processed in chunks of approximately 180 seconds. This can change chunk boundaries and therefore the transcription compared with plain transcription.
+
+Qwen3-ASR streaming supports only audio that fits a single chunk: up to approximately 1200 seconds, or 180 seconds with word timestamps enabled.
+For longer audio, `generate()` throws an exception when a streamer is passed. Call `generate()` without a streamer instead.
+
+Qwen3-ASR models exported with a separate audio encoder (`openvino_audio_encoder_model.xml`) run with the `PA` attention backend by default.
+For such models, audio longer than a single chunk is split into chunks, and all chunks are transcribed together as a single batch.
+Batching reduces the total transcription time, but peak memory consumption grows with the audio duration.
+On memory-constrained devices, split long audio into shorter parts and call `generate()` for each part.
 
 The forced aligner is also available as a standalone `ASRForcedAligner` class, usable independently of `ASRPipeline`.
 

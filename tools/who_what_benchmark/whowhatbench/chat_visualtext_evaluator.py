@@ -30,6 +30,7 @@ class VisualTextChatInput(TypedDict):
 
 
 full_chat_types = [
+    "lfm3_vl",
     "qwen2_vl",
     "qwen2_5_vl",
     "llava",

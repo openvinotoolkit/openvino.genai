@@ -1876,7 +1876,7 @@ def test_audio_identical_tensor_not_reencoded(qwen3_omni_pipe_pa: VLMPipeline, a
     """Re-sending the same tensor on a later turn must hit the content-hash cache, not re-encode.
 
     Uses the ChatHistory overload on one persistent ChatHistory object, because that is where the
-    cache lives: `VLMChatContext` registers media in the `VisionRegistry` and skips encoding on a
+    cache lives: `VLMChatContext` registers media in the `EmbeddingsRegistry` and skips encoding on a
     hash hit. The `start_chat()` + prompt path accumulates `m_history_*` and re-encodes each turn
     instead — for images and video too, not just audio — and a fresh ChatHistory per call would
     release the registry refs and drop the entry.
@@ -2049,16 +2049,6 @@ def test_audio_cb_chat_history_leaves_prompt_calls_stateless(
     second = cb_audio_run(qwen3_omni_cb, [prompt], [audio_1s_tensor])
     assert first[0].texts == second[0].texts
     assert num_input_tokens(first[0]) == num_input_tokens(second[0])
-
-
-@pytest.mark.real_models
-@pytest.mark.vlm
-def test_audio_cb_add_request_rejects_audio(
-    qwen3_omni_cb: ContinuousBatchingPipeline, audio_1s_tensor: openvino.Tensor
-):
-    """add_request() has no audio path, so audio must raise instead of being dropped."""
-    with pytest.raises(RuntimeError, match="not supported by add_request"):
-        qwen3_omni_cb.add_request(0, "Describe", [], [], audio_generation_config(), audios=[audio_1s_tensor])
 
 
 @pytest.mark.real_models

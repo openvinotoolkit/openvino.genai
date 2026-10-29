@@ -383,6 +383,11 @@ private:
     protected:
         IInputsEmbedder(
             const VLMConfig& vlm_config,
+            const Tokenizer& tokenizer,
+            EmbeddingsModel::Ptr embedding);
+
+        IInputsEmbedder(
+            const VLMConfig& vlm_config,
             const std::filesystem::path& model_dir,
             const Tokenizer& tokenizer,
             const std::string& device,
@@ -472,6 +477,7 @@ private:
     std::shared_ptr<IInputsEmbedder> m_impl;
 
     friend class InputsEmbedderMiniCPM;
+    friend class InputsEmbedderMiniCPMV4_6;
     friend class InputsEmbedderLLaVA;
     friend class InputsEmbedderNanoLLaVA;
     friend class InputsEmbedderLLaVANext;
@@ -483,6 +489,7 @@ private:
     friend class InputsEmbedderQwen3VL;
     friend class InputsEmbedderQwen3_5;
     friend class InputsEmbedderQwen3Omni;
+    friend class InputsEmbedderQwen3ASR;
     friend class InputsEmbedderGemma3;
     friend class InputsEmbedderGemma3n;
     friend class InputsEmbedderGemma4;
@@ -490,6 +497,7 @@ private:
     friend class InputsEmbedderVideoChatFlashQwen;
     friend class InputsEmbedderMuseGlimmer;
     friend class InputsEmbedderMiniCPMv4_7;
+    friend class InputsEmbedderLFM3VL;
 };
 
 /// @brief Universal-tag pattern for a modality. A switch, not a ternary on IMAGE: a ternary would
