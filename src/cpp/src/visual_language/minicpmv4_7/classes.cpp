@@ -4,12 +4,13 @@
 #include "visual_language/minicpmv4_7/classes.hpp"
 
 #include <algorithm>
-#include <cmath>
 #include <numeric>
 #include <optional>
 
 #include "utils.hpp"
 #include "visual_language/clip.hpp"
+#include "visual_language/minicpmv4_x_utils.hpp"
+#include "visual_language/vlm_utils.hpp"
 
 namespace ov::genai {
 
@@ -20,88 +21,6 @@ const std::string NATIVE_VIDEO_TAG = "<video>./</video>";
 
 size_t calc_vision_downsample_factor(const size_t window_kernel_size, const size_t merge_kernel_size) {
     return window_kernel_size * merge_kernel_size;
-}
-
-int ensure_divide(const double length, const int divisor) {
-    return std::max(static_cast<int>(std::round(length / divisor)) * divisor, divisor);
-}
-
-// Picks the size for resizing a crop (thumbnail or slice). Keeps aspect ratio and targets
-// model's preferred resolution, ensuring that result can be evenly divided into patches.
-ImageSize find_best_resize(
-    const double height,
-    const double width,
-    const int scale_resolution,
-    const int patch_size,
-    const bool allow_upscale
-) {
-    double new_height = height;
-    double new_width = width;
-    if (height * width > static_cast<double>(scale_resolution) * scale_resolution || allow_upscale) {
-        const double aspect_ratio = width / height;
-        new_height = scale_resolution / std::sqrt(aspect_ratio);
-        new_width = new_height * aspect_ratio;
-    }
-    const int factor = patch_size * 4;
-    return {
-        static_cast<size_t>(ensure_divide(new_height, factor)),
-        static_cast<size_t>(ensure_divide(new_width, factor))};
-}
-
-// Calculates slices grid, zeroed (no slices) if image is too small for slicing
-SlicesGrid get_slices_grid(const int height, const int width, const int max_slice_nums, const int scale_resolution) {
-    const double log_ratio = std::log(static_cast<double>(width) / height);
-    const double ratio =
-        static_cast<double>(width) * height / (static_cast<double>(scale_resolution) * scale_resolution);
-    const int multiple = std::min(static_cast<int>(std::ceil(ratio)), max_slice_nums);
-    if (multiple <= 1) {
-        return {};
-    }
-
-    SlicesGrid best_grid{1, 1};
-    double min_error = std::numeric_limits<double>::infinity();
-    for (int num_slices : {multiple - 1, multiple, multiple + 1}) {
-        if (num_slices == 1 || num_slices > max_slice_nums) {
-            continue;
-        }
-        for (int num_rows = 1; num_rows <= num_slices; ++num_rows) {
-            if (num_slices % num_rows != 0) {
-                continue;
-            }
-            const int num_cols = num_slices / num_rows;
-            const double error = std::abs(log_ratio - std::log(static_cast<double>(num_cols) / num_rows));
-            if (error < min_error) {
-                best_grid = {static_cast<size_t>(num_rows), static_cast<size_t>(num_cols)};
-                min_error = error;
-            } else if (error == min_error && static_cast<size_t>(num_rows) > best_grid.rows) {
-                best_grid = {static_cast<size_t>(num_rows), static_cast<size_t>(num_cols)};
-            }
-        }
-    }
-    return best_grid;
-}
-
-// Picks the size for resizing original image before it is split into slices grid.
-ImageSize get_refine_size(
-    const int height,
-    const int width,
-    const SlicesGrid& grid,
-    const int scale_resolution,
-    const int patch_size
-) {
-    const int grid_rows = static_cast<int>(grid.rows);
-    const int grid_cols = static_cast<int>(grid.cols);
-    const int refine_height = ensure_divide(height, grid_rows);
-    const int refine_width = ensure_divide(width, grid_cols);
-    const bool allow_upscale = true;
-    const ImageSize best = find_best_resize(
-        static_cast<double>(refine_height) / grid_rows,
-        static_cast<double>(refine_width) / grid_cols,
-        scale_resolution,
-        patch_size,
-        allow_upscale
-    );
-    return {best.height * grid.rows, best.width * grid.cols};
 }
 
 // Splits a resized image into slices of size (slice_height, slice_width), row-major.
@@ -155,10 +74,10 @@ SlicedImage slice_image(const clip_image_u8& source, const ProcessorConfig& conf
     const int height = source.ny;
     const int width = source.nx;
 
-    const SlicesGrid slices_grid = get_slices_grid(height, width, max_slice_nums, scale_resolution);
+    const SlicesGrid slices_grid = minicpmv4_x_utils::get_slices_grid(height, width, max_slice_nums, scale_resolution);
 
     const bool allow_upscale = !slices_grid.has_slices();
-    const ImageSize thumbnail_size = find_best_resize(height, width, scale_resolution, patch_size, allow_upscale);
+    const ImageSize thumbnail_size = minicpmv4_x_utils::find_best_resize(height, width, scale_resolution, patch_size, 4, allow_upscale);
     clip_image_u8 thumbnail;
     bicubic_resize(source, thumbnail, static_cast<int>(thumbnail_size.width), static_cast<int>(thumbnail_size.height));
 
@@ -167,7 +86,7 @@ SlicedImage slice_image(const clip_image_u8& source, const ProcessorConfig& conf
     result.crop_sizes.push_back({thumbnail_size.height / patch_side, thumbnail_size.width / patch_side});
 
     if (slices_grid.has_slices()) {
-        const ImageSize refine_size = get_refine_size(height, width, slices_grid, scale_resolution, patch_size);
+        const ImageSize refine_size = minicpmv4_x_utils::get_refine_size(height, width, slices_grid, scale_resolution, patch_size, 4);
         clip_image_u8 refine_img;
         bicubic_resize(source, refine_img, static_cast<int>(refine_size.width), static_cast<int>(refine_size.height));
         const int slice_h = static_cast<int>(refine_size.height / slices_grid.rows);
