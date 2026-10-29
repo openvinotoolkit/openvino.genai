@@ -80,15 +80,19 @@ public:
 
     void set_hidden_states(const std::string& tensor_name, const ov::Tensor& tensor);
 
+    /// @brief Whether an exported input exists, before or after compilation.
+    bool has_input(const std::string& name);
+
     /// @brief Computes the RoPE (cos, sin) transformer inputs on the host from the positions and binds them. The
-    /// rotary angles (up to ~1.6e4 rad) cannot be resolved in f16, so they are never computed in the graph.
+    /// rotary angles (up to ~1.6e4 rad) cannot be resolved in f16. Legacy exports receive coordinates
+    /// directly and retain their internal RoPE computation.
     /// @param video_coords [B, 3, video_sequence_length, 2] patch boundaries (see prepare_video_coords)
     /// @param audio_coords [B, 1, audio_num_frames, 2] patch boundaries (see prepare_audio_coords)
     void set_rope_coords(const ov::Tensor& video_coords, const ov::Tensor& audio_coords);
 
     /// @brief Builds the 'timestep' input matching the compiled model and runs joint video + audio denoising.
-    /// Legacy exports take a rank-1 [B] timestep, current ones a rank-2 per-token [B, S] timestep, which is fed as
-    /// [B, 1] since every token shares the same timestep here.
+    /// Rank-1 exports receive [B]. Rank-2 exports receive [B, S] for legacy internal RoPE, or [B, 1] for
+    /// external RoPE, where the model broadcasts the shared timestep over all tokens.
     /// @param isolate_modalities Turns off audio-to-video and video-to-audio cross attention for this pass
     /// (LTX-2.3 modality isolation guidance). Requires a 'cross_modality_gate' input.
     /// @param stg_blocks Transformer block indices to perturb for this pass (LTX-2.3 Spatio-Temporal
@@ -128,6 +132,7 @@ private:
     bool m_has_audio_timestep = false;
     bool m_has_cross_modality_gate = false;
     bool m_has_stg_perturbation_mask = false;
+    bool m_external_rope = false;
     size_t m_num_stg_blocks = 0;
 };
 

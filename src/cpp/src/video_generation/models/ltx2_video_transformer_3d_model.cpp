@@ -16,15 +16,6 @@ using namespace ov::genai;
 
 namespace {
 
-bool has_exact_input(const ov::CompiledModel& compiled_model, const std::string& name) {
-    for (const auto& input : compiled_model.inputs()) {
-        if (input.get_names().count(name)) {
-            return true;
-        }
-    }
-    return false;
-}
-
 // One rotary module of diffusers' LTX2VideoTransformer3DModel and the transformer inputs it feeds when the
 // export takes RoPE as precomputed (cos, sin), see optimum-intel's LTX2_ROPE_INPUTS
 enum class RopeModule { Video, Audio, VideoCrossAttn, AudioCrossAttn };
@@ -105,10 +96,10 @@ std::pair<ov::Tensor, ov::Tensor> compute_rope(const LTX2VideoTransformer3DModel
     for (size_t k = 0; k < steps; ++k) {
         const double position = steps > 1 ? static_cast<double>(k) / static_cast<double>(steps - 1) : 0.0;
         if (config.rope_double_precision) {
-            freqs[k] = static_cast<float>(std::pow(config.rope_theta, position) * M_PI / 2.0);
+            freqs[k] = static_cast<float>(std::pow(config.rope_theta, position) * video_generation_utils::PI / 2.0);
         } else {
             const float pow_index = std::pow(static_cast<float>(config.rope_theta), static_cast<float>(position));
-            freqs[k] = pow_index * static_cast<float>(M_PI) / 2.0f;
+            freqs[k] = pow_index * static_cast<float>(video_generation_utils::PI) / 2.0f;
         }
     }
 
@@ -248,15 +239,26 @@ const LTX2VideoTransformer3DModel::Config& LTX2VideoTransformer3DModel::get_conf
 LTX2VideoTransformer3DModel& LTX2VideoTransformer3DModel::compile(const std::string& device,
                                                                   const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
+    size_t rotary_inputs = 0;
+    for (const auto& input : kRopeInputs) {
+        rotary_inputs += has_input(input.cos_name);
+        rotary_inputs += has_input(input.sin_name);
+    }
+    const bool video_coords = has_input("video_coords");
+    const bool audio_coords = has_input("audio_coords");
+    OPENVINO_ASSERT((rotary_inputs == 8 && !video_coords && !audio_coords) ||
+                        (rotary_inputs == 0 && video_coords && audio_coords),
+                    "LTX2 transformer requires all eight external rotary inputs or both legacy coordinate inputs");
+    m_external_rope = rotary_inputs != 0;
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LTX2 Video Transformer 3D model");
     m_request = compiled_model.create_infer_request();
     const auto& input_shape = compiled_model.input("hidden_states").get_partial_shape();
     m_expected_batch_size = input_shape[0].is_static() ? input_shape[0].get_length() : 0;
     m_timestep_rank = compiled_model.input("timestep").get_partial_shape().rank().get_length();
-    m_has_audio_timestep = has_exact_input(compiled_model, "audio_timestep");
-    m_has_cross_modality_gate = has_exact_input(compiled_model, "cross_modality_gate");
-    m_has_stg_perturbation_mask = has_exact_input(compiled_model, "stg_perturbation_mask");
+    m_has_audio_timestep = has_input("audio_timestep");
+    m_has_cross_modality_gate = has_input("cross_modality_gate");
+    m_has_stg_perturbation_mask = has_input("stg_perturbation_mask");
     if (m_has_stg_perturbation_mask) {
         // One mask entry per transformer block; fall back to the config if the export leaves it dynamic
         const auto& mask_shape = compiled_model.input("stg_perturbation_mask").get_partial_shape();
@@ -280,8 +282,26 @@ size_t LTX2VideoTransformer3DModel::get_expected_batch_size() const {
     return m_expected_batch_size;
 }
 
+bool LTX2VideoTransformer3DModel::has_input(const std::string& name) {
+    if (m_model) {
+        return utils::has_input(m_model, name);
+    }
+    OPENVINO_ASSERT(m_request, "Transformer model must be loaded first");
+    for (const auto& input : m_request.get_compiled_model().inputs()) {
+        if (input.get_names().count(name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void LTX2VideoTransformer3DModel::set_rope_coords(const ov::Tensor& video_coords, const ov::Tensor& audio_coords) {
     OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
+    if (!m_external_rope) {
+        set_hidden_states("video_coords", video_coords);
+        set_hidden_states("audio_coords", audio_coords);
+        return;
+    }
     for (const auto& input : kRopeInputs) {
         auto [cos, sin] =
             compute_rope(m_config, input.module, is_video_rope(input.module) ? video_coords : audio_coords);
@@ -316,15 +336,13 @@ std::pair<ov::Tensor, ov::Tensor> LTX2VideoTransformer3DModel::infer(const ov::T
     const ov::Shape& latent_shape = video_latent.get_shape();
     OPENVINO_ASSERT(latent_shape.size() == 3, "Packed latents must be rank-3 [B, S, C], got rank ", latent_shape.size());
 
-    // Legacy exports take a rank-1 [B] timestep, current ones a rank-2 per-token [B, S] timestep. This pipeline
-    // denoises every token at the same level, so a [B, 1] timestep is fed, which the model broadcasts over the
-    // tokens: the AdaLN modulation is then computed once per sample instead of for every token, which saves
-    // ~9 GiB of GPU memory for LTX-2.3 at 640x480x17.
+    // External-RoPE exports broadcast [B, 1] modulation across tokens. Internal-RoPE exports retain their
+    // original [B, S] contract, since their graph may reshape the modulation to the full sequence length.
     OPENVINO_ASSERT(m_timestep_rank == 1 || m_timestep_rank == 2,
                     "LTX2 transformer expects a rank-1 or rank-2 'timestep' input, got rank ", m_timestep_rank);
     ov::Shape timestep_shape{latent_shape[0]};
     if (m_timestep_rank == 2) {
-        timestep_shape = {latent_shape[0], 1};
+        timestep_shape = {latent_shape[0], m_external_rope ? 1 : latent_shape[1]};
     }
     ov::Tensor timestep_tensor(ov::element::f32, timestep_shape);
     std::fill_n(timestep_tensor.data<float>(), timestep_tensor.get_size(), timestep);
@@ -404,13 +422,17 @@ LTX2VideoTransformer3DModel& LTX2VideoTransformer3DModel::reshape(int64_t batch_
             OPENVINO_ASSERT(timestep_rank == 1 || timestep_rank == 2,
                             "LTX2 transformer expects a rank-1 or rank-2 'timestep' input, got rank ", timestep_rank);
             if (timestep_rank == 2) {
-                // One timestep per sample, broadcast over the tokens (see infer)
-                name_to_shape[input_name] = {batch_size, 1};
+                name_to_shape[input_name] = {
+                    batch_size, utils::has_input(m_model, "video_rotary_cos") ? 1 : video_sequence_length};
             } else {
                 name_to_shape[input_name] = {batch_size};
             }
         } else if (input_name == "audio_timestep") {
             name_to_shape[input_name] = {batch_size};
+        } else if (input_name == "video_coords") {
+            name_to_shape[input_name] = {batch_size, 3, video_sequence_length, 2};
+        } else if (input_name == "audio_coords") {
+            name_to_shape[input_name] = {batch_size, 1, audio_num_frames, 2};
         } else if (const auto rope_input = std::find_if(std::begin(kRopeInputs),
                                                         std::end(kRopeInputs),
                                                         [&](const RopeInput& rope) {

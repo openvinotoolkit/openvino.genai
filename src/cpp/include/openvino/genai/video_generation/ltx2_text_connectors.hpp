@@ -52,7 +52,7 @@ public:
     LTX2TextConnectors& reshape(int batch_size);
 
     /// @brief Projects text encoder hidden states into per-modality embeddings for the transformer. Each
-    /// connector's RoPE (cos, sin) is computed here on the host, since f16 cannot resolve the rotary angles.
+    /// connector's external RoPE (cos, sin) is computed here on the host. Legacy exports compute it internally.
     Output infer(const ov::Tensor& text_encoder_hidden_states, const ov::Tensor& attention_mask);
 
 private:
@@ -68,6 +68,7 @@ private:
     double m_rope_theta = 10000.0;
     bool m_rope_double_precision = true;
     std::string m_rope_type = "interleaved";
+    bool m_external_rope = false;
 
     // Port of diffusers' LTX2RotaryPosEmbed1d.forward: the (cos, sin) pair of one connector
     std::pair<ov::Tensor, ov::Tensor> compute_connector_rope(const ConnectorRope& rope,

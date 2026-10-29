@@ -84,10 +84,10 @@ std::pair<ov::Tensor, ov::Tensor> LTX2TextConnectors::compute_connector_rope(con
     for (size_t k = 0; k < steps; ++k) {
         const double position = steps > 1 ? static_cast<double>(k) / static_cast<double>(steps - 1) : 0.0;
         if (m_rope_double_precision) {
-            freqs[k] = static_cast<float>(std::pow(m_rope_theta, position) * M_PI / 2.0);
+            freqs[k] = static_cast<float>(std::pow(m_rope_theta, position) * video_generation_utils::PI / 2.0);
         } else {
             freqs[k] = std::pow(static_cast<float>(m_rope_theta), static_cast<float>(position)) *
-                       static_cast<float>(M_PI) / 2.0f;
+                       static_cast<float>(video_generation_utils::PI) / 2.0f;
         }
     }
     auto angle = [&](size_t t, size_t k) {
@@ -146,6 +146,14 @@ std::pair<ov::Tensor, ov::Tensor> LTX2TextConnectors::compute_connector_rope(con
 
 LTX2TextConnectors& LTX2TextConnectors::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
+    size_t rotary_inputs = 0;
+    for (const auto& rope : m_connector_ropes) {
+        rotary_inputs += utils::has_input(m_model, rope.name + "_rotary_cos");
+        rotary_inputs += utils::has_input(m_model, rope.name + "_rotary_sin");
+    }
+    OPENVINO_ASSERT(rotary_inputs == 0 || rotary_inputs == 2 * m_connector_ropes.size(),
+                    "LTX2 connectors require complete external rotary input pairs for both modalities, or none");
+    m_external_rope = rotary_inputs != 0;
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LTX2 text connectors model");
     m_request = compiled_model.create_infer_request();
@@ -166,10 +174,12 @@ LTX2TextConnectors::Output LTX2TextConnectors::infer(const ov::Tensor& text_enco
     OPENVINO_ASSERT(hidden_shape.size() == 3,
                     "Text encoder hidden states must be rank-3 [B, L, C], got rank ",
                     hidden_shape.size());
-    for (const auto& rope : m_connector_ropes) {
-        auto [cos, sin] = compute_connector_rope(rope, hidden_shape[0], hidden_shape[1]);
-        m_request.set_tensor(rope.name + "_rotary_cos", cos);
-        m_request.set_tensor(rope.name + "_rotary_sin", sin);
+    if (m_external_rope) {
+        for (const auto& rope : m_connector_ropes) {
+            auto [cos, sin] = compute_connector_rope(rope, hidden_shape[0], hidden_shape[1]);
+            m_request.set_tensor(rope.name + "_rotary_cos", cos);
+            m_request.set_tensor(rope.name + "_rotary_sin", sin);
+        }
     }
     m_request.infer();
 

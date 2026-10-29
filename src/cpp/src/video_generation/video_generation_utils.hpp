@@ -22,6 +22,8 @@
 
 namespace ov::genai::video_generation_utils {
 
+inline constexpr double PI = 3.14159265358979323846;
+
 inline std::shared_ptr<IScheduler> cast_scheduler(std::shared_ptr<Scheduler>&& scheduler) {
     auto casted = std::dynamic_pointer_cast<IScheduler>(std::move(scheduler));
     OPENVINO_ASSERT(casted != nullptr, "Passed incorrect scheduler type");

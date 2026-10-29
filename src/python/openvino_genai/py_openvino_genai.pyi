@@ -3161,6 +3161,15 @@ class LTX2VideoTransformer3DModel:
                         tensor_name (str): Name of the tensor input.
                         tensor (ov.Tensor): Tensor to set.
         """
+    def set_rope_coords(self, video_coords: openvino._pyopenvino.Tensor, audio_coords: openvino._pyopenvino.Tensor) -> None:
+        """
+        Initializes positional inputs from f32 patch boundaries.
+        video_coords: [B, 3, video_sequence_length, 2].
+        audio_coords: [B, 1, audio_sequence_length, 2].
+        Computes external RoPE or binds coordinates for legacy exports.
+        """
+    def has_input(self, name: str) -> bool:
+        """Returns whether the export has an input with this exact name."""
 class LTX2Vocoder:
     """
     LTX2Vocoder class converting mel spectrograms to waveforms.
