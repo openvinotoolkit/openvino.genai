@@ -209,7 +209,8 @@ public:
     * @param scheduler_config
     * @param tokenizer manually initialized ov::genai::Tokenizer
     * @param device optional device
-    * @param properties optional properties
+    * @param properties optional properties. For VLMs, vision_cache_capacity_bytes enables bounded
+    * retention of unreferenced image/video encodings across requests; zero (default) disables retention.
     */
     ContinuousBatchingPipeline(
         const std::filesystem::path& models_path,

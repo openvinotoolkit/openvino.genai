@@ -424,7 +424,7 @@ ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string&
     for (const auto& property : properties) {
         // Ignore MODEL_PROPERTIES as they are used only within this function
         // to construct final properties map for a given model.
-        if (property.first == PER_MODEL_PROPERTIES) {
+        if (property.first == PER_MODEL_PROPERTIES || property.first == "vision_cache_capacity_bytes") {
             continue;
         }
         // When a concrete device is known, DEVICE_PROPERTIES[device] is

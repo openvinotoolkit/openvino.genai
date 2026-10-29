@@ -4,6 +4,8 @@
 #pragma once
 
 #include "visual_language/vision_encoder.hpp"
+#include <functional>
+#include <list>
 #include <optional>
 
 namespace ov::genai {
@@ -12,7 +14,15 @@ using VisionID = uint64_t;
 
 class VisionRegistry {
 public:
-    VisionRegistry() = default;
+    explicit VisionRegistry(size_t capacity_bytes = 0) : m_capacity_bytes(capacity_bytes) {}
+
+    void set_capacity(size_t capacity_bytes);
+
+    EncodedImage encode_image(const ov::Tensor& image,
+                              const std::function<EncodedImage(const ov::Tensor&)>& encode);
+    EncodedVideo encode_video(const ov::Tensor& video,
+                              const VideoMetadata& metadata,
+                              const std::function<EncodedVideo(const ov::Tensor&, const VideoMetadata&)>& encode);
 
     VisionRegistry(const VisionRegistry&) = delete;
     VisionRegistry& operator=(const VisionRegistry&) = delete;
@@ -22,7 +32,7 @@ public:
     ~VisionRegistry() = default;
 
     VisionID register_image(const ov::Tensor& image);
-    VisionID register_video(const ov::Tensor& video);
+    VisionID register_video(const ov::Tensor& video, const VideoMetadata& metadata = {});
     VisionID register_audio(const ov::Tensor& audio);
 
     std::vector<VisionID> register_images(const std::vector<ov::Tensor>& images);
@@ -58,6 +68,10 @@ private:
         std::optional<EncodedVideo> encoded_video;
         std::optional<EncodedAudio> encoded_audio;
         std::atomic<size_t> ref_count{0};
+        VideoMetadata metadata;
+        VisionID content_hash = 0;
+        size_t retained_bytes = 0;
+        std::optional<std::list<VisionID>::iterator> idle_position;
         
         VisionEntry(ModalityType t, ov::Tensor tensor);
         VisionEntry(VisionEntry&& other) noexcept;
@@ -70,10 +84,26 @@ private:
     };
 
     std::unordered_map<VisionID, VisionEntry> m_entries;
+    std::unordered_map<VisionID, std::vector<VisionID>> m_hash_buckets;
+    std::list<VisionID> m_idle_entries;
+    size_t m_capacity_bytes = 0;
+    size_t m_idle_bytes = 0;
+    VisionID m_next_id = 0;
 
     mutable std::mutex m_mutex;
+    std::mutex m_encoding_mutex;
 
-    VisionID register_vision(const ov::Tensor& tensor, ModalityType type);
+    struct ScopedReference {
+        VisionRegistry& registry;
+        VisionID id;
+        ~ScopedReference() { registry.release_ref(id); }
+    };
+
+    VisionID register_vision(const ov::Tensor& tensor, ModalityType type, const VideoMetadata& metadata = {});
+    void pin(VisionEntry& entry);
+    void erase_entry(VisionID id);
+    void evict_idle_entries();
+    static size_t entry_bytes(const VisionEntry& entry);
 
     static VisionID compute_hash(const ov::Tensor& tensor);
 };

@@ -117,7 +117,7 @@ private:
         m_sampler.set_tokenizer(m_tokenizer);
         m_sampler.set_seed(m_generation_config.rng_seed);
 
-        m_vision_registry = std::make_shared<VisionRegistry>();
+        m_vision_registry = m_inputs_embedder->get_vision_registry();
 
         // NPU does not support history, so use full chat history on each chat iteration.
         // Linear attention forces full KV cache reset, need to provide all image/video embeddings.

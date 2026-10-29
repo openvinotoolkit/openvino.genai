@@ -51,6 +51,17 @@ TEST(TestGetModelProperties, excludes_per_model_meta_key_from_globals) {
     EXPECT_EQ(result.at("CACHE_DIR").as<std::string>(), "/tmp");
 }
 
+TEST(TestGetModelProperties, excludes_vision_cache_capacity_from_plugin_properties) {
+    const ov::AnyMap properties = {
+        ov::genai::vision_cache_capacity_bytes(1024),
+        {"NUM_STREAMS", std::string("2")},
+    };
+    const auto result = get_model_properties(properties, "vision_embeddings", "CPU");
+    EXPECT_EQ(result.count(ov::genai::vision_cache_capacity_bytes.name()), 0u);
+    EXPECT_EQ(result.at("NUM_STREAMS").as<std::string>(), "2");
+    EXPECT_EQ(properties.count(ov::genai::vision_cache_capacity_bytes.name()), 1u);
+}
+
 TEST(TestGetModelProperties, per_model_overrides_global) {
     ov::AnyMap main_props = {
         {"NUM_STREAMS", std::string("2")},

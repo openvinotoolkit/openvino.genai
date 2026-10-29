@@ -601,7 +601,9 @@ An input image without explicit slicing metadata counts as one slice.)")
             VLMPipeline class constructor.
             models_path (os.PathLike): Path to the folder with exported model files.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
-            kwargs: Device properties
+            kwargs: Device properties and vision_cache_capacity_bytes (non-negative int, default 0).
+                The cache retains unreferenced image/video tensor payloads across requests up to this byte budget.
+                Active histories and requests can retain additional memory beyond the budget.
         )")
 
         .def(py::init([](
@@ -629,7 +631,9 @@ An input image without explicit slicing metadata counts as one slice.)")
             config_dir_path (os.PathLike): Path to folder with model configs.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
             generation_config (GenerationConfig | None): Device properties.
-            kwargs: Device properties
+            kwargs: Device properties and vision_cache_capacity_bytes (non-negative int, default 0).
+                The cache retains unreferenced image/video tensor payloads across requests up to this byte budget.
+                Active histories and requests can retain additional memory beyond the budget.
         )")
 
         .def("start_chat", [](ov::genai::VLMPipeline& pipe, const std::string& system_message) {

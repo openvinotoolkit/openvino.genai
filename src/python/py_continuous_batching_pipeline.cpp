@@ -461,7 +461,12 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def_readonly("max_cache_usage", &PipelineMetrics::max_cache_usage)
             .def_readonly("la_peak_pool_blocks", &PipelineMetrics::la_peak_pool_blocks);
 
-    py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline", "This class is used for generation with LLMs with continuous batchig")
+    py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline", R"(
+        Generation with continuous batching for language and visual-language models.
+        For VLMs, constructor properties may include vision_cache_capacity_bytes (non-negative int, default 0).
+        This limits retained unreferenced image/video tensor payloads across generate() and add_request() calls.
+        Active histories and requests can retain additional memory beyond this budget.
+    )")
         .def(py::init([](const std::filesystem::path& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config,
                          const std::map<std::string, py::object>& tokenizer_plugin_config, const std::map<std::string, py::object>& inputs_embedder_plugin_config) {
                  ScopedVar env_manager(pyutils::ov_tokenizers_module_path());

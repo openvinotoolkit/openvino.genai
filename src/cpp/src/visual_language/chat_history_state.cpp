@@ -48,14 +48,17 @@ std::vector<size_t> ChatHistoryInternalState::register_images(const std::vector<
 /**
  * @brief Video variant of `register_images()`.
  */
-std::vector<size_t> ChatHistoryInternalState::register_videos(const std::vector<ov::Tensor>& videos) {
+std::vector<size_t> ChatHistoryInternalState::register_videos(const std::vector<ov::Tensor>& videos,
+                                                           const std::vector<VideoMetadata>& metadata) {
+    OPENVINO_ASSERT(metadata.empty() || metadata.size() == videos.size(),
+                    "Number of videos and videos metadata must match if metadata provided.");
     auto vision_registry = get_vision_registry();
     
     std::vector<size_t> indices;
     indices.reserve(videos.size());
     
-    for (const auto& video : videos) {
-        VisionID id = vision_registry->register_video(video);
+    for (size_t index = 0; index < videos.size(); ++index) {
+        VisionID id = vision_registry->register_video(videos[index], metadata.empty() ? VideoMetadata{} : metadata[index]);
         size_t global_idx = m_video_index_to_id.size();
         m_video_index_to_id.push_back(id);
         indices.push_back(global_idx);
