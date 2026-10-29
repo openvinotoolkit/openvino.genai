@@ -122,12 +122,18 @@ LFM3OmniSpeechEngine::ModelConfig LFM3OmniSpeechEngine::read_model_config(
     }
 
     const auto codec_json = read_json(config_dir_path / "audio_tokenizer" / "config.json");
+    size_t frame_stack = 6;
     size_t hop_length = 320;
     size_t win_length = 1280;
-    read_json_param(codec_json, "frame_samples", config.frame_samples);
+    read_json_param(codec_json, "stft_frame_stack", frame_stack);
     read_json_param(codec_json, "stft_hop_length", hop_length);
     read_json_param(codec_json, "stft_win_length", win_length);
-    OPENVINO_ASSERT(win_length >= hop_length && config.frame_samples > 0, "LFM3-Omni codec config is inconsistent");
+    // Each codec frame is repeated frame_stack times before the ISTFT, one hop each.
+    config.frame_samples = frame_stack * hop_length;
+    size_t frame_samples = config.frame_samples;
+    read_json_param(codec_json, "frame_samples", frame_samples);
+    OPENVINO_ASSERT(win_length >= hop_length && frame_samples == config.frame_samples,
+                    "LFM3-Omni codec config is inconsistent");
     // The exported decoder trims (win_length - hop_length) / 2 samples on each side of the overlap-add.
     config.decode_lookahead_samples = (win_length - hop_length) / 2;
     return config;
