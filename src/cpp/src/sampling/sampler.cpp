@@ -980,10 +980,12 @@ Token Sampler::_greedy_sample(const Logits& logits, size_t top_logprobs) const {
 }
 
 // Candidate i of m_vector is drawn with probability values[i] / total: exp(logit - max_logit) when expf is
-// deferred, the stored probability otherwise, and uniform if every candidate is masked (-inf / NaN).
+// deferred, the stored probability otherwise, and uniform if every candidate is masked (-inf / NaN). The total is
+// summed in double, since top-p or min-p without top-k can keep most of the vocabulary and a float sum drops weights
+// smaller than half an ulp of the sum so far.
 struct CandidateWeights {
     std::vector<float> values;
-    float total = 0.0f;
+    double total = 0.0;
     float max_logit = 0.0f;
     bool fallback_uniform = false;
 };
@@ -1010,10 +1012,10 @@ static CandidateWeights candidate_weights(const Logits& logits) {
     // Defensive fallback: should not occur in practice (at least one non-masked token is always
     // guaranteed), but if all logits happen to be -inf/NaN, sample uniformly over the K candidates
     // so generation can continue rather than aborting.
-    result.fallback_uniform = !(result.total > 0.0f && std::isfinite(result.total));
+    result.fallback_uniform = !(result.total > 0.0 && std::isfinite(result.total));
     if (result.fallback_uniform) {
         std::fill(result.values.begin(), result.values.end(), 1.0f);
-        result.total = static_cast<float>(logits.m_size);
+        result.total = static_cast<double>(logits.m_size);
     }
     return result;
 }
@@ -1033,11 +1035,12 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
         const CandidateWeights weights = candidate_weights(logits);
         // log_sum_cum = log(Σ exp(v[i])) = log(total) + max_logit (log-sum-exp identity).
         // In the fallback case max_logit may be -inf, so use 0 to keep log_sum_cum finite.
-        const float log_sum_cum = logf(weights.total) + (weights.fallback_uniform ? 0.0f : weights.max_logit);
+        const float log_sum_cum = static_cast<float>(std::log(weights.total)) +
+                                  (weights.fallback_uniform ? 0.0f : weights.max_logit);
 
         for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
-            const float r = weights.total * u(rng_engine);
-            float sum_run = 0.0f;
+            const double r = weights.total * u(rng_engine);
+            double sum_run = 0.0;
             size_t sampled_idx = logits.m_size - 1;
             for (size_t i = 0; i < logits.m_size; ++i) {
                 sum_run += weights.values[i];
@@ -1057,7 +1060,8 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
         // --- Normalised probability path (top_p active, deferring not possible) ---
         // Pre-compute total weight once: TopP truncates without renormalizing, so Σ probs may be < 1.
         // Scaling r by total_weight ensures uniform sampling within the actual probability mass (Fix 1).
-        float total_weight = 0.0f;
+        // The sums are in double, as in candidate_weights.
+        double total_weight = 0.0;
         if (logits.is_vector_initialized()) {
             for (size_t i = 0; i < logits.m_size; ++i)
                 total_weight += logits.m_vector[i].m_log_prob;
@@ -1068,7 +1072,7 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
         // Defensive fallback: should not occur in practice (at least one non-masked token is
         // always guaranteed), but recover gracefully by sampling uniformly if all probabilities
         // are zero or NaN rather than aborting generation.
-        if (!(total_weight > 0.0f && std::isfinite(total_weight))) {
+        if (!(total_weight > 0.0 && std::isfinite(total_weight))) {
             std::uniform_int_distribution<size_t> uniform_idx(0, logits.m_size - 1);
             const float uniform_log_prob = std::log(1.0f / logits.m_size);
             for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
@@ -1086,10 +1090,10 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
         // distribution p_i / total_weight.  The stored log-prob must reflect the same
         // distribution: log(p_i / total_weight) = log(p_i) - log(total_weight).
         // When total_weight == 1 (no TopP truncation) log_total_weight == 0, no-op.
-        const float log_total_weight = std::log(total_weight);
+        const float log_total_weight = static_cast<float>(std::log(total_weight));
         for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
-            const float r = total_weight * u(rng_engine);
-            float sum_cum = 0.0f;
+            const double r = total_weight * u(rng_engine);
+            double sum_cum = 0.0;
             if (logits.is_vector_initialized()) {
                 size_t sampled_idx = logits.m_size - 1;  // fallback for floating-point rounding
                 for (size_t i = 0; i < logits.m_size; ++i) {
@@ -1442,12 +1446,6 @@ float dense_probability(const Logits& logits, size_t token_id, double row_sum) {
                          : 1.0f / static_cast<float>(logits.m_size);
 }
 
-// Normalizer of the candidates, summed in double like dense_row_sum: top-p or min-p without top-k can keep most of
-// the vocabulary.
-double candidate_sum(const CandidateWeights& weights) {
-    return std::accumulate(weights.values.begin(), weights.values.end(), 0.0);
-}
-
 // The distribution _multinomial_sample draws from: sparse over the candidates when the logit processor selected
 // them, otherwise dense over the whole row.
 DraftProposal sampling_distribution(const Logits& logits) {
@@ -1456,11 +1454,10 @@ DraftProposal sampling_distribution(const Logits& logits) {
     distribution.probabilities.resize(logits.m_size);
     if (logits.is_vector_initialized()) {
         const CandidateWeights weights = candidate_weights(logits);
-        const double total = candidate_sum(weights);
         distribution.token_ids.resize(logits.m_size);
         for (size_t i = 0; i < logits.m_size; ++i) {
             distribution.token_ids[i] = logits.m_vector[i].m_index;
-            distribution.probabilities[i] = static_cast<float>(weights.values[i] / total);
+            distribution.probabilities[i] = static_cast<float>(weights.values[i] / weights.total);
         }
         return distribution;
     }
@@ -1497,7 +1494,7 @@ float detail::sampling_probability(const Logits& logits, int64_t token_id) {
         const CandidateWeights weights = candidate_weights(logits);
         for (size_t i = 0; i < logits.m_size; ++i) {
             if (logits.m_vector[i].m_index == token_id) {
-                return static_cast<float>(weights.values[i] / candidate_sum(weights));
+                return static_cast<float>(weights.values[i] / weights.total);
             }
         }
         return 0.0f;
