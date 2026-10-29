@@ -35,12 +35,19 @@ std::vector<ov::Tensor> split_hidden_states(const std::vector<ov::Tensor>& per_s
     return per_token;
 }
 
+void reject_model_without_talker(const VLMConfig& vlm_config) {
+    OPENVINO_ASSERT(vlm_config.model_type != VLMModelType::LFM3_OMNI,
+                    "Talker: LFM3-Omni has no separate talker, it speaks in the language model stream. "
+                    "Use OmniPipeline(models_path, device, properties).");
+}
+
 }  // namespace
 
 class Talker::Impl {
 public:
     Impl(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap& properties) {
         VLMConfig vlm_config(model_dir / "config.json");
+        reject_model_without_talker(vlm_config);
         m_speech = std::make_unique<Qwen3OmniSpeechPipeline>(model_dir, vlm_config, device, properties);
 
         OPENVINO_ASSERT(m_speech->is_available(),
@@ -53,6 +60,7 @@ public:
          const std::map<std::string, std::string>& device_mapping,
          const ov::AnyMap& properties) {
         VLMConfig vlm_config(config_dir_path / "config.json");
+        reject_model_without_talker(vlm_config);
         m_speech = std::make_unique<Qwen3OmniSpeechPipeline>(models_map,
                                                              vlm_config,
                                                              config_dir_path,

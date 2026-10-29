@@ -18,6 +18,7 @@
 #include "visual_language/continuous_batching_adapter.hpp"
 #include "visual_language/embedding_model.hpp"
 #include "visual_language/inputs_embedder.hpp"
+#include "visual_language/lfm3_omni/speech_engine.hpp"
 #include "visual_language/pipeline_base.hpp"
 #include "visual_language/vision_registry.hpp"
 #include "visual_language/vlm_chat_context.hpp"
@@ -97,6 +98,9 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
 
     std::string m_system_message;
     std::shared_ptr<VisionRegistry> m_vision_registry;
+
+    // LFM3-Omni speaks in the language model stream: the engine replaces the text decode loop.
+    std::unique_ptr<LFM3OmniSpeechEngine> m_speech_engine;
 private:
     void finalize_initialization(
         const std::shared_ptr<ov::Model>& language_model,
@@ -199,6 +203,9 @@ private:
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, properties_copy);
 
         finalize_initialization(language_model, kv_pos);
+        if (m_vlm_config.model_type == VLMModelType::LFM3_OMNI && !m_is_npu) {
+            m_speech_engine = std::make_unique<LFM3OmniSpeechEngine>(models_dir, m_language, m_embedding, device, properties_copy);
+        }
     }
 
     void initialize_from_model_and_map(
@@ -246,6 +253,10 @@ private:
             m_adapter_controller->apply(m_language);
         }
         finalize_initialization(language_model, kv_pos);
+        if (m_vlm_config.model_type == VLMModelType::LFM3_OMNI) {
+            m_speech_engine = std::make_unique<LFM3OmniSpeechEngine>(
+                models_map, config_dir_path, m_language, m_embedding, device, properties_copy);
+        }
     }
 public:
     VLMPipelineImpl(
@@ -979,6 +990,10 @@ private:
 
         auto per_layer_callback = m_inputs_embedder->get_per_layer_embeddings_callback();
 
+        if (m_pending_speech_config) {
+            return decode_with_speech(unified_prompt, inputs_embeds, new_atten_mask, generation_config, streamer, cache_state);
+        }
+
         if (m_sampler.get_seed() != generation_config.rng_seed) {
             m_sampler.set_seed(generation_config.rng_seed);
         }
@@ -1003,6 +1018,57 @@ private:
             lm_extra_inputs,
             std::move(per_layer_callback)
         );
+    }
+
+    bool supports_speech_in_stream() const override {
+        return m_speech_engine != nullptr;
+    }
+
+    utils::GenerationFinishInfo decode_with_speech(const std::string& unified_prompt,
+                                                   const ov::Tensor& inputs_embeds,
+                                                   const ov::Tensor& attention_mask,
+                                                   const GenerationConfig& generation_config,
+                                                   const StreamerVariant& streamer,
+                                                   utils::CacheState& cache_state) {
+        // A prompt that already ends with a mode marker keeps it. The embedder appends the chat template
+        // itself outside chat mode, and the template always ends with the assistant header.
+        int64_t last_prompt_token = -1;
+        if (m_is_chat_conversation || !generation_config.apply_chat_template) {
+            const ov::Tensor prompt_ids = m_tokenizer.encode(unified_prompt, ov::genai::add_special_tokens(false)).input_ids;
+            if (prompt_ids.get_size() > 0) {
+                last_prompt_token = prompt_ids.data<const int64_t>()[prompt_ids.get_size() - 1];
+            }
+        }
+        const OmniTalkerSpeechConfig& speech_config = *m_pending_speech_config;
+        LFM3SpeechRequest request;
+        request.mode = speech_config.output_mode;
+        request.text_config = generation_config;
+        request.audio_temperature = speech_config.cp_temperature;
+        request.audio_top_k = speech_config.cp_top_k;
+        request.audio_repetition_penalty = speech_config.cp_repetition_penalty;
+        request.max_audio_frames = speech_config.max_new_tokens;
+        request.audio_chunk_frames = speech_config.audio_chunk_frames;
+        request.rng_seed = speech_config.rng_seed;
+        // The waveform reaches the caller through the speech streamer only.
+        const LFM3SpeechResult speech = m_speech_engine->generate(inputs_embeds,
+                                                                  attention_mask,
+                                                                  last_prompt_token,
+                                                                  request,
+                                                                  utils::create_streamer(streamer, m_tokenizer),
+                                                                  m_pending_speech_streamer);
+        // The language model has consumed every slot but the last sampled one.
+        if (speech.slot_tokens.size() > 1) {
+            ov::Tensor consumed(ov::element::i64, {1, speech.slot_tokens.size() - 1});
+            std::copy_n(speech.slot_tokens.begin(), consumed.get_size(), consumed.data<int64_t>());
+            cache_state.add_inputs(consumed);
+        }
+        utils::GenerationFinishInfo finish_info;
+        finish_info.results.tokens = {speech.text_tokens};
+        finish_info.results.scores = {0.0f};
+        finish_info.results.finish_reasons = {speech.finish_reason};
+        finish_info.results.perf_metrics.raw_metrics = speech.raw_perf_metrics;
+        finish_info.streaming_finish_status = speech.status;
+        return finish_info;
     }
 };
 

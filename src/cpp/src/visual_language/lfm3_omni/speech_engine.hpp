@@ -11,6 +11,9 @@
 
 #include "circular_buffer_queue.hpp"
 #include "openvino/genai/generation_config.hpp"
+#include "openvino/genai/omni/speech_streamer_base.hpp"
+#include "openvino/genai/omni/talker_speech_config.hpp"
+#include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "utils.hpp"
@@ -18,12 +21,9 @@
 
 namespace ov::genai {
 
-/// @brief Order of text and speech in an LFM3-Omni answer. The model marks it with the last prompt token.
-enum class LFM3OutputMode { INTERLEAVED, SPEECH_ONLY };
-
 /// @brief Per-call settings of LFM3OmniSpeechEngine::generate.
 struct LFM3SpeechRequest {
-    LFM3OutputMode mode = LFM3OutputMode::INTERLEAVED;
+    SpeechOutputMode mode = SpeechOutputMode::INTERLEAVED;
     /// @brief Text decode: do_sample, temperature, top_k, top_p, min_p, repetition_penalty, max_new_tokens, stop ids.
     GenerationConfig text_config;
     /// @brief Speech frame sampling; unset values fall back to generation_config.json.
@@ -31,6 +31,8 @@ struct LFM3SpeechRequest {
     std::optional<size_t> audio_top_k;
     std::optional<float> audio_repetition_penalty;
     size_t max_audio_frames = std::numeric_limits<size_t>::max();
+    /// @brief Speech frames decoded per streamed chunk.
+    size_t audio_chunk_frames = 4;
     size_t rng_seed = 0;
 };
 
@@ -41,9 +43,12 @@ struct LFM3SpeechResult {
     std::vector<int64_t> slot_tokens;
     /// @brief Speech frames [1, num_codebooks, num_frames], i64; the end-of-audio frames are dropped.
     ov::Tensor audio_codes;
-    /// @brief 24 kHz waveform [1, num_samples], f32; empty when no frame was generated.
+    /// @brief 24 kHz waveform [1, 1, num_samples], f32; empty when no frame was generated.
     ov::Tensor waveform;
     GenerationStatus status = GenerationStatus::RUNNING;
+    GenerationFinishReason finish_reason = GenerationFinishReason::STOP;
+    /// @brief Decode timings in the layout of the text pipelines: one new token time per generated slot.
+    RawPerfMetrics raw_perf_metrics;
 };
 
 /// @brief Interleaved text and speech decode of LFM3-Omni. The language model emits text tokens and speech frames
@@ -67,11 +72,13 @@ public:
     /// @param inputs_embeds Prompt embeddings [1, seq_len, hidden_size].
     /// @param attention_mask Ones over the cached history and the prompt, [1, history + seq_len].
     /// @param last_prompt_token Last prompt token id; a marker already in place is not appended again.
+    /// @param speech_streamer Receives the waveform in chunks of request.audio_chunk_frames frames, [1, 1, samples].
     LFM3SpeechResult generate(const ov::Tensor& inputs_embeds,
                               const ov::Tensor& attention_mask,
                               int64_t last_prompt_token,
                               const LFM3SpeechRequest& request,
-                              const std::shared_ptr<StreamerBase>& streamer);
+                              const std::shared_ptr<StreamerBase>& streamer,
+                              const OmniSpeechStreamerVariant& speech_streamer);
 
 private:
     struct ModelConfig {
@@ -92,6 +99,10 @@ private:
         std::optional<float> audio_repetition_penalty;
         size_t audio_repetition_window = 64;
         size_t text_repetition_window = 32;
+        /// @brief Codec output samples per speech frame.
+        size_t frame_samples = 1920;
+        /// @brief Samples at the end of a decode that still change when later frames arrive: the ISTFT overlap.
+        size_t decode_lookahead_samples = 480;
     };
 
     struct Sampling {
@@ -119,7 +130,8 @@ private:
                    const Sampling& sampling,
                    const std::vector<int64_t>& history,
                    const std::vector<int64_t>& suppress);
-    ov::Tensor decode_audio(const ov::Tensor& audio_codes);
+    /// @brief Waveform [1, (end - begin) * frame_samples] of frames [begin, end).
+    ov::Tensor decode_frames(const std::vector<std::vector<int64_t>>& frames, size_t begin, size_t end);
 
     ModelConfig m_config;
     ov::InferRequest& m_language;

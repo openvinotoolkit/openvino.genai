@@ -4,6 +4,7 @@
 #include "visual_language/lfm3_omni/speech_engine.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <deque>
@@ -14,6 +15,7 @@
 #include <set>
 
 #include "json_utils.hpp"
+#include "omni/speech_streamer_utils.hpp"
 
 namespace ov::genai {
 
@@ -24,9 +26,14 @@ using RequestQueue = CircularBufferQueue<ov::InferRequest>;
 std::unique_ptr<RequestQueue> compile(const std::shared_ptr<ov::Model>& model,
                                       const std::string& name,
                                       const std::string& device,
-                                      const ov::AnyMap& properties) {
-    auto compiled =
-        utils::singleton_core().compile_model(model, device, utils::get_model_properties(properties, name, device));
+                                      const ov::AnyMap& properties,
+                                      const ov::AnyMap& defaults = {}) {
+    ov::AnyMap model_properties = utils::get_model_properties(properties, name, device);
+    // emplace keeps the values the caller set.
+    for (const auto& [key, value] : defaults) {
+        model_properties.emplace(key, value);
+    }
+    auto compiled = utils::singleton_core().compile_model(model, device, model_properties);
     ov::genai::utils::print_compiled_model_properties(compiled, ("LFM3-Omni " + name + " model").c_str());
     return std::make_unique<RequestQueue>(compiled.get_property(ov::optimal_number_of_infer_requests),
                                           [&compiled]() -> ov::InferRequest {
@@ -61,6 +68,14 @@ void softmax(std::vector<float>& scores) {
 }
 
 constexpr float NEG_INF = -std::numeric_limits<float>::infinity();
+
+// Left context of a re-decoded streaming chunk. The codec decoder reaches about 20 frames back: three sliding-window
+// attention layers of 30 steps and five convolutions of 7 taps, at 6 steps per frame.
+constexpr size_t STREAM_CONTEXT_FRAMES = 24;
+
+// Dynamic activation quantization makes the codec output depend on how many frames are decoded together, so a
+// re-decoded streaming chunk would not match the one-shot waveform.
+const ov::AnyMap AUDIO_DECODER_DEFAULTS{ov::hint::dynamic_quantization_group_size(0)};
 
 }  // namespace
 
@@ -105,6 +120,16 @@ LFM3OmniSpeechEngine::ModelConfig LFM3OmniSpeechEngine::read_model_config(
         read_json_param(generation_json, "audio_repetition_window", config.audio_repetition_window);
         read_json_param(generation_json, "text_repetition_window", config.text_repetition_window);
     }
+
+    const auto codec_json = read_json(config_dir_path / "audio_tokenizer" / "config.json");
+    size_t hop_length = 320;
+    size_t win_length = 1280;
+    read_json_param(codec_json, "frame_samples", config.frame_samples);
+    read_json_param(codec_json, "stft_hop_length", hop_length);
+    read_json_param(codec_json, "stft_win_length", win_length);
+    OPENVINO_ASSERT(win_length >= hop_length && config.frame_samples > 0, "LFM3-Omni codec config is inconsistent");
+    // The exported decoder trims (win_length - hop_length) / 2 samples on each side of the overlap-add.
+    config.decode_lookahead_samples = (win_length - hop_length) / 2;
     return config;
 }
 
@@ -124,7 +149,8 @@ LFM3OmniSpeechEngine::LFM3OmniSpeechEngine(const std::filesystem::path& models_d
                                      device,
                                      properties);
     m_audio_decoder =
-        compile(core.read_model(models_dir / "openvino_audio_decoder_model.xml"), "audio_decoder", device, properties);
+        compile(core.read_model(models_dir / "openvino_audio_decoder_model.xml"), "audio_decoder", device, properties,
+                AUDIO_DECODER_DEFAULTS);
 }
 
 LFM3OmniSpeechEngine::LFM3OmniSpeechEngine(const ModelsMap& models_map,
@@ -142,7 +168,7 @@ LFM3OmniSpeechEngine::LFM3OmniSpeechEngine(const ModelsMap& models_map,
     };
     m_depth_decoder = compile(read("depth_decoder"), "depth_decoder", device, properties);
     m_audio_out_embeddings = compile(read("audio_out_embeddings"), "audio_out_embeddings", device, properties);
-    m_audio_decoder = compile(read("audio_decoder"), "audio_decoder", device, properties);
+    m_audio_decoder = compile(read("audio_decoder"), "audio_decoder", device, properties, AUDIO_DECODER_DEFAULTS);
 }
 
 LFM3OmniSpeechEngine::StepOutput LFM3OmniSpeechEngine::language_step(const ov::Tensor& inputs_embeds,
@@ -299,12 +325,24 @@ std::vector<int64_t> LFM3OmniSpeechEngine::sample_frame(const ov::Tensor& hidden
     return codes;
 }
 
-ov::Tensor LFM3OmniSpeechEngine::decode_audio(const ov::Tensor& audio_codes) {
+ov::Tensor LFM3OmniSpeechEngine::decode_frames(const std::vector<std::vector<int64_t>>& frames,
+                                               size_t begin,
+                                               size_t end) {
+    const size_t num_frames = end - begin;
+    ov::Tensor audio_codes(ov::element::i64, {1, m_config.num_codebooks, num_frames});
+    int64_t* codes = audio_codes.data<int64_t>();
+    for (size_t frame = 0; frame < num_frames; ++frame) {
+        for (size_t codebook = 0; codebook < m_config.num_codebooks; ++codebook) {
+            codes[codebook * num_frames + frame] = frames[begin + frame][codebook];
+        }
+    }
     CircularBufferQueueElementGuard<ov::InferRequest> guard(m_audio_decoder.get());
     ov::InferRequest& request = guard.get();
     request.set_tensor("audio_codes", audio_codes);
     request.infer();
     const ov::Tensor audio = request.get_tensor("audio_values");
+    OPENVINO_ASSERT(audio.get_shape() == ov::Shape({1, num_frames * m_config.frame_samples}),
+                    "LFM3-Omni audio decoder must return ", m_config.frame_samples, " samples per frame");
     return copy_tensor(audio, audio.get_shape());
 }
 
@@ -312,10 +350,12 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
                                                 const ov::Tensor& attention_mask,
                                                 int64_t last_prompt_token,
                                                 const LFM3SpeechRequest& request,
-                                                const std::shared_ptr<StreamerBase>& streamer) {
+                                                const std::shared_ptr<StreamerBase>& streamer,
+                                                const OmniSpeechStreamerVariant& speech_streamer) {
     const GenerationConfig& text_config = request.text_config;
     OPENVINO_ASSERT(text_config.num_beams == 1 && text_config.num_return_sequences == 1,
                     "LFM3-Omni speech output supports one greedy or sampled continuation");
+    OPENVINO_ASSERT(request.audio_chunk_frames > 0, "LFM3-Omni audio_chunk_frames must be at least 1");
     m_rng.seed(static_cast<std::mt19937::result_type>(request.rng_seed));
 
     Sampling text_sampling;
@@ -340,7 +380,7 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
     }
 
     enum class Mode { TEXT, AUDIO, INTERLEAVED };
-    Mode mode = request.mode == LFM3OutputMode::INTERLEAVED ? Mode::INTERLEAVED : Mode::AUDIO;
+    Mode mode = request.mode == SpeechOutputMode::INTERLEAVED ? Mode::INTERLEAVED : Mode::AUDIO;
     LFM3SpeechResult result;
 
     // Speech always follows its marker in training: append it unless the prompt already ends with one.
@@ -363,9 +403,39 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
     size_t attention_length = attention_mask.get_shape().at(1) + (has_marker ? 0 : 1);
     const size_t max_text_tokens = text_config.get_max_new_tokens(attention_length);
 
-    StepOutput step = language_step(prompt_embeds, attention_length);
+    RawPerfMetrics& raw_perf = result.raw_perf_metrics;
+    raw_perf.m_inference_durations = {MicroSeconds(0.0f)};
+    auto timed_step = [&](const ov::Tensor& embeds, size_t length) {
+        const auto start = std::chrono::steady_clock::now();
+        StepOutput output = language_step(embeds, length);
+        const float duration = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start);
+        raw_perf.m_inference_durations[0] += MicroSeconds(duration);
+        raw_perf.m_token_infer_durations.emplace_back(duration);
+        return output;
+    };
+    StepOutput step = timed_step(prompt_embeds, attention_length);
 
     std::vector<std::vector<int64_t>> frames;
+    const bool streaming = is_speech_streamer_active(speech_streamer);
+    SpeechStreamerGuard speech_guard(speech_streamer, streaming);
+    std::vector<float> streamed;
+    // Streams the samples that frames [0, end) fix for good. The codec decoder is causal, but the ISTFT overlap
+    // changes the last decode_lookahead_samples until the next frame arrives. Each chunk is decoded again with
+    // STREAM_CONTEXT_FRAMES frames of left context, which covers the decoder's receptive field.
+    auto stream_up_to = [&](size_t end, bool final) {
+        const size_t limit = end * m_config.frame_samples - (final ? 0 : m_config.decode_lookahead_samples);
+        if (limit <= streamed.size()) {
+            return StreamingStatus::RUNNING;
+        }
+        const size_t first = streamed.size() / m_config.frame_samples;
+        const size_t begin = first > STREAM_CONTEXT_FRAMES ? first - STREAM_CONTEXT_FRAMES : 0;
+        const ov::Tensor audio = decode_frames(frames, begin, end);
+        const float* new_samples = audio.data<const float>() + (streamed.size() - begin * m_config.frame_samples);
+        ov::Tensor chunk(ov::element::f32, {1, 1, limit - streamed.size()});
+        std::copy_n(new_samples, chunk.get_size(), chunk.data<float>());
+        streamed.insert(streamed.end(), new_samples, new_samples + chunk.get_size());
+        return invoke_speech_streamer(speech_streamer, chunk);
+    };
     std::deque<int64_t> text_history;
     std::deque<std::vector<int64_t>> audio_history;
     size_t slots_left = m_config.interleaved_n_text;
@@ -393,10 +463,20 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
                     audio_history.pop_front();
                 }
                 frames.push_back(codes);
+                if (streaming && frames.size() % request.audio_chunk_frames == 0) {
+                    const StreamingStatus status = stream_up_to(frames.size(), false);
+                    if (status != StreamingStatus::RUNNING) {
+                        result.status = status == StreamingStatus::STOP ? GenerationStatus::STOP : GenerationStatus::CANCEL;
+                        finished = true;
+                    }
+                }
             }
             result.slot_tokens.push_back(m_config.audio_out_token_id);
             next_embeds = embed_frame(codes);
-            finished = frames.size() >= request.max_audio_frames;
+            if (!finished && frames.size() >= request.max_audio_frames) {
+                result.finish_reason = GenerationFinishReason::LENGTH;
+                finished = true;
+            }
         } else {
             const std::vector<int64_t> history(text_history.begin(), text_history.end());
             const int64_t token = sample(step.logits, text_sampling, history, m_config.placeholder_token_ids);
@@ -435,15 +515,20 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
                 text_done = false;
             }
             next_embeds = embed_token(token);
-            finished = finished || result.text_tokens.size() >= max_text_tokens;
+            if (!finished && result.text_tokens.size() >= max_text_tokens) {
+                result.finish_reason = GenerationFinishReason::LENGTH;
+                finished = true;
+            }
         }
+        raw_perf.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
+        raw_perf.m_batch_sizes.emplace_back(1);
         if (interleaving && !text_done && --slots_left == 0) {
             speaking = !speaking;
             slots_left = speaking ? m_config.interleaved_n_audio : m_config.interleaved_n_text;
         }
         if (!finished) {
             // The last sampled slot needs no hidden state, so its decode step is skipped.
-            step = language_step(next_embeds, ++attention_length);
+            step = timed_step(next_embeds, ++attention_length);
         }
     }
     if (streamer) {
@@ -451,7 +536,11 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
     }
     if (result.status == GenerationStatus::RUNNING) {
         result.status = GenerationStatus::FINISHED;
+        if (streaming && !frames.empty()) {
+            stream_up_to(frames.size(), true);
+        }
     }
+    speech_guard.end();
 
     result.audio_codes = ov::Tensor(ov::element::i64, {1, m_config.num_codebooks, frames.size()});
     int64_t* codes = result.audio_codes.data<int64_t>();
@@ -460,8 +549,12 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
             codes[codebook * frames.size() + frame] = frames[frame][codebook];
         }
     }
-    if (!frames.empty()) {
-        result.waveform = decode_audio(result.audio_codes);
+    if (streaming && !streamed.empty()) {
+        result.waveform = ov::Tensor(ov::element::f32, {1, 1, streamed.size()});
+        std::copy(streamed.begin(), streamed.end(), result.waveform.data<float>());
+    } else if (!streaming && !frames.empty()) {
+        const ov::Tensor audio = decode_frames(frames, 0, frames.size());
+        result.waveform = copy_tensor(audio, {1, 1, audio.get_size()});
     }
     return result;
 }

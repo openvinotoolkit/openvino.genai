@@ -3,10 +3,12 @@
 
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "openvino/genai/omni/speech_streamer_base.hpp"
+#include "openvino/genai/omni/talker_speech_config.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/runtime/tensor.hpp"
 
@@ -26,13 +28,26 @@ protected:
     // Audio streamer extracted from AnyMap, forwarded to speech pipeline
     OmniSpeechStreamerVariant m_pending_speech_streamer = std::monostate{};
 
-    // RAII guard to reset the audio streamer on scope exit (exception-safe)
+    // Speech config extracted from AnyMap: speech is decoded in the language model stream (LFM3-Omni)
+    std::optional<OmniTalkerSpeechConfig> m_pending_speech_config;
+
+    // RAII guard to reset the audio streamer and speech config on scope exit (exception-safe)
     struct AudioStreamerGuard {
         OmniSpeechStreamerVariant& streamer_ref;
+        std::optional<OmniTalkerSpeechConfig>& speech_config_ref;
         ~AudioStreamerGuard() {
             streamer_ref = std::monostate{};
+            speech_config_ref.reset();
         }
     };
+
+    /// @brief True when the language model emits speech frames itself and this backend decodes them.
+    virtual bool supports_speech_in_stream() const {
+        return false;
+    }
+
+    /// @brief Reads talker_speech_config and speech_streamer from AnyMap into the pending members.
+    void extract_speech_properties(const ov::AnyMap& config_map);
 
     GenerationConfig resolve_generation_config(const ov::AnyMap& config_map);
 
