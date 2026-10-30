@@ -42,7 +42,7 @@ constexpr const char* TALKER_NAME = "openvino_talker_model.xml";  // 4D float at
 constexpr const char* CODE_PREDICTOR_NAME = "openvino_code_predictor_model.xml";
 constexpr const char* CODEC_ENCODER_NAME = "openvino_codec_encoder.xml";
 
-// Constants used for NPU-only decoder chunking.
+// Constants used for static-window decoder chunking (NPU/GPU).
 constexpr int64_t DECODER_CHUNK_SIZE = 231;      // effective (non-overlapping) codes fed per chunk
 constexpr int64_t DECODER_LEFT_CONTEXT = 25;     // prior-chunk codes prepended for continuity
 constexpr int64_t DECODER_WINDOW_LEN = DECODER_CHUNK_SIZE + DECODER_LEFT_CONTEXT;  // static decoder window
@@ -411,15 +411,18 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
     m_talker_code_predictor_embedding.set_tensor("input_ids", m_pred_emb_ids);
     m_talker_code_predictor_embedding.set_tensor("step", m_pred_emb_step);
     {
-        // On accelerators that require static shapes (e.g. NPU) the decoder is reshaped
-        // to a fixed [1, num_quantizers, DECODER_WINDOW_LEN] window and decode_speech_tokenizer
-        // drives it through overlapping padded chunks. CPU/GPU keep the model dynamic and
-        // decode_speech_tokenizer feeds it the whole code sequence in a single call, exactly
-        // like optimum-intel/native HF.
+        // On NPU (static shapes required) and GPU the decoder is reshaped to a fixed
+        // [1, num_quantizers, DECODER_WINDOW_LEN] window and decode_speech_tokenizer drives it
+        // through overlapping padded chunks. A dynamic decoder on GPU has to build new convolution
+        // primitives for every new code length (seconds per utterance), whereas the fixed window
+        // is compiled once. CPU keeps the model dynamic and decode_speech_tokenizer feeds it the
+        // whole code sequence in a single call, exactly like optimum-intel/native HF.
         auto [decoder_device, decoder_properties] =
             resolve_component_target(device, base_properties, roles::SPEECH_TOKENIZER_DECODER);
         const auto decoder_path = models_path / CODEC_DECODER_NAME;
-        if (decoder_device.find("NPU") != std::string::npos) {
+        const bool use_static_decoder = decoder_device.find("NPU") != std::string::npos ||
+                                        decoder_device.find("GPU") != std::string::npos;
+        if (use_static_decoder) {
             auto decoder_model = ov::genai::utils::singleton_core().read_model(decoder_path);
             const ov::PartialShape static_codes{1,
                                                 static_cast<int64_t>(m_decoder_num_quantizers),
@@ -1528,7 +1531,7 @@ std::vector<float> Qwen3TTSImpl::decode_speech_tokenizer(const std::vector<int64
     if (!m_decoder_static) {
         // Dynamic model: feed the whole [1, num_quantizers, num_frames] sequence in one shot
         // and take the whole output, exactly like optimum-intel/native HF. The chunked,
-        // padded-window, offset-trimmed path below exists only for the NPU static decoder.
+        // padded-window, offset-trimmed path below is used by the static (NPU/GPU) decoder.
         ov::Tensor audio_codes(ov::element::i64, ov::Shape{1, m_decoder_num_quantizers, num_frames});
         int64_t* dst = audio_codes.data<int64_t>();
         for (size_t t = 0; t < num_frames; ++t) {

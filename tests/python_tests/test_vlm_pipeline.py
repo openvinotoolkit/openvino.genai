@@ -165,6 +165,7 @@ else:
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
+MODEL_MINICPMV4_6 = "optimum-intel-internal-testing/tiny-random-minicpmv4_6"
 MODEL_QWEN35_MTP = "optimum-intel-internal-testing/tiny-random-qwen3.5-mtp"
 MODEL_DEEPSEEK_OCR2 = "optimum-intel-internal-testing/tiny-random-deepseek-ocr-2"
 
@@ -194,6 +195,7 @@ else:
         "optimum-intel-internal-testing/tiny-random-phi3-vision",
         "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
         "qnguyen3/nanoLLaVA",
+        MODEL_MINICPMV4_6,
         MODEL_DEEPSEEK_OCR2,
         *VIDEO_MODEL_IDS,
     ]
@@ -227,6 +229,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-muse-glimmer": lambda idx: "<|image|>",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
+    MODEL_MINICPMV4_6: lambda idx: "<|image_pad|>",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
 }
 
@@ -249,6 +252,7 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
 RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-gemma3": 32,
     "qnguyen3/nanoLLaVA": 384,
+    MODEL_MINICPMV4_6: 448,
     "optimum-intel-internal-testing/tiny-random-llava-next-video": 336,
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": 448,
     "optimum-intel-internal-testing/tiny-random-qwen2vl": 336,
@@ -364,6 +368,10 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
     if model_id == MODEL_DEEPSEEK_OCR2 and is_transformers_version("<", "5.11.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of DeepSeek-OCR-2. Minimum required is 5.11.0."
+        )
+    if model_id == MODEL_MINICPMV4_6 and is_transformers_version("<", "5.7.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of MiniCPM-V-4.6. Minimum required is 5.7.0."
         )
     if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
         pytest.skip("ValueError: The current version of optimum-intel does not support videochat_flash_qwen")
@@ -3687,9 +3695,12 @@ def test_vlm_eagle3_chat_with_videos(
         "What did you see across both inputs?",
     ]
 
-    def run_two_round_chat(pipe: VLMPipeline, generation_config: GenerationConfig) -> list[str]:
+    def run_two_round_chat(
+        pipe: VLMPipeline, generation_config: GenerationConfig
+    ) -> tuple[list[str], list[object | None]]:
         history = ChatHistory()
         results = []
+        extended_perf_metrics = []
 
         for round_idx, prompt in enumerate(prompts):
             history.append({"role": "user", "content": prompt})
@@ -3703,13 +3714,14 @@ def test_vlm_eagle3_chat_with_videos(
                 **generate_kwargs,
             )
             results.append(result.texts[0].strip())
+            extended_perf_metrics.append(result.extended_perf_metrics)
             history.append({"role": "assistant", "content": result.texts[0]})
 
-        return results
+        return results, extended_perf_metrics
 
     ov_pipe = VLMPipeline(model_path, "CPU")
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
-    results_without_draft = run_two_round_chat(ov_pipe, generation_config)
+    results_without_draft, _ = run_two_round_chat(ov_pipe, generation_config)
 
     ov_draft = draft_model(draft_model_path, "CPU")
     ov_pipe_with_draft = VLMPipeline(
@@ -3721,8 +3733,30 @@ def test_vlm_eagle3_chat_with_videos(
     generation_config_with_draft_tree = _setup_generation_config(
         ov_pipe_with_draft, max_new_tokens=20, tree_search=True, do_sample=False
     )
-    results_with_draft = run_two_round_chat(ov_pipe_with_draft, generation_config_with_draft)
-    results_with_draft_tree = run_two_round_chat(ov_pipe_with_draft, generation_config_with_draft_tree)
+    results_with_draft, metrics_with_draft = run_two_round_chat(ov_pipe_with_draft, generation_config_with_draft)
+    results_with_draft_tree, metrics_with_draft_tree = run_two_round_chat(
+        ov_pipe_with_draft, generation_config_with_draft_tree
+    )
+    generation_config_without_drafting = _setup_generation_config(
+        ov_pipe_with_draft, max_new_tokens=20, do_sample=False
+    )
+    generation_config_without_drafting.num_assistant_tokens = 0
+    results_without_drafting, metrics_without_drafting = run_two_round_chat(
+        ov_pipe_with_draft, generation_config_without_drafting
+    )
+
+    for metrics_list in (metrics_with_draft, metrics_with_draft_tree):
+        for metrics in metrics_list:
+            assert metrics is not None
+            assert metrics.draft_model_metrics is not None
+            assert metrics.draft_model_metrics.get_num_generated_tokens() > 0
+
+    for round_idx, metrics in enumerate(metrics_without_drafting):
+        assert metrics is not None
+        draft_tokens = metrics.draft_model_metrics.get_num_generated_tokens()
+        assert draft_tokens == 0, (
+            f"Chat round {round_idx + 1} generated {draft_tokens} draft tokens with drafting disabled."
+        )
 
     assert results_without_draft[0] == results_with_draft[0], (
         "First mixed-modality chat turn should be the same when Eagle3 draft model is enabled and disabled."
@@ -3735,6 +3769,57 @@ def test_vlm_eagle3_chat_with_videos(
     )
     assert results_without_draft[1] == results_with_draft_tree[1], (
         "Second mixed-modality chat turn should be the same when Eagle3 draft model and tree search are enabled and disabled."
+    )
+    assert results_without_draft == results_without_drafting, (
+        "Mixed-modality chat results should be the same when drafting is disabled with num_assistant_tokens=0."
+    )
+
+
+def test_vlm_eagle3_prefix_cache_image_identity(cat_tensor: openvino.Tensor):
+    # Two same-sized images with different content share one text prompt. With prefix caching the Eagle3
+    # draft cache identity is bound to the main model's image-aware prefix hash, so the repeated second-image
+    # request must restore the second image's draft blocks rather than the first image's. Draft quality only
+    # affects acceptance, so the main model's validated greedy output must match the no-draft reference here.
+    # The repeated request must also reuse a nonzero aligned prefix, which fails if the draft pipeline never
+    # publishes its completed prompt blocks (alignment would then rewind the main prefix to zero).
+    model_path, draft_model_path = _get_vlm_eagle3_model_paths()
+
+    image_a = cat_tensor
+    image_b = openvino.Tensor(255 - cat_tensor.data)
+    prompt = PROMPTS[2]
+
+    reference = VLMPipeline(model_path, "CPU")
+    reference_config = _setup_generation_config(reference, max_new_tokens=20, do_sample=False)
+    expected_a = reference.generate(prompt, images=[image_a], generation_config=reference_config).texts[0].strip()
+    expected_b = reference.generate(prompt, images=[image_b], generation_config=reference_config).texts[0].strip()
+
+    scheduler = SchedulerConfig()
+    scheduler.enable_prefix_caching = True
+    scheduler.max_num_seqs = 1
+    scheduler.num_kv_blocks = 128
+    draft_scheduler = SchedulerConfig()
+    draft_scheduler.enable_prefix_caching = True
+    draft_scheduler.num_kv_blocks = 128
+    ov_draft = draft_model(draft_model_path, "CPU", scheduler_config=draft_scheduler)
+    pipe = VLMPipeline(model_path, "CPU", scheduler_config=scheduler, draft_model=ov_draft)
+    config = _setup_generation_config(pipe, max_new_tokens=20, do_sample=False)
+
+    # Prime both image caches, then repeat the second image to trigger the potential cross-image draft reuse.
+    prefix_hits = []
+    for image, expected in [(image_a, expected_a), (image_b, expected_b), (image_b, expected_b)]:
+        result = pipe.generate(prompt, images=[image], generation_config=config)
+        assert result.texts[0].strip() == expected, (
+            "Eagle3 speculative output with prefix caching must match the no-draft reference across images."
+        )
+        assert result.extended_perf_metrics.draft_model_metrics.get_num_generated_tokens() > 0, (
+            "Draft model must stay active across the cross-image prefix-cache sequence."
+        )
+        prefix_hits.append(result.perf_metrics.get_num_prefix_cache_hit_tokens())
+
+    assert prefix_hits[0] == 0, f"First request must not reuse any prefix on a cold cache, got {prefix_hits[0]}."
+    assert prefix_hits[2] > 0, (
+        f"Repeated request must restore a nonzero aligned prefix, got {prefix_hits[2]}; "
+        "the draft pipeline likely did not publish its completed prompt blocks."
     )
 
 
