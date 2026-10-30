@@ -25,16 +25,21 @@ if(NOT TARGET dr_libs)
     FetchContent_MakeAvailable(dr_libs)
 endif()
 
-add_executable(automatic_speech_recognition automatic_speech_recognition.cpp ../speech_generation/audio_utils.cpp)
-target_link_libraries(automatic_speech_recognition PRIVATE openvino::genai)
-target_include_directories(automatic_speech_recognition PRIVATE "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
-set_target_properties(automatic_speech_recognition PROPERTIES
+foreach(sample IN ITEMS
+    automatic_speech_recognition
+    forced_aligner_timestamps_generation
+)
+    add_executable(${sample} ${sample}.cpp ../speech_generation/audio_utils.cpp)
+    target_link_libraries(${sample} PRIVATE openvino::genai)
+    target_include_directories(${sample} PRIVATE "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
+    set_target_properties(${sample} PROPERTIES
 
-    # Ensure out of box LC_RPATH on macOS with SIP
-    INSTALL_RPATH_USE_LINK_PATH ON)
-target_compile_features(automatic_speech_recognition PRIVATE cxx_std_17)
+        # Ensure out of box LC_RPATH on macOS with SIP
+        INSTALL_RPATH_USE_LINK_PATH ON)
+    target_compile_features(${sample} PRIVATE cxx_std_17)
 
-install(TARGETS automatic_speech_recognition
-    RUNTIME DESTINATION samples_bin/
-    COMPONENT samples_bin
-    EXCLUDE_FROM_ALL)
+    install(TARGETS ${sample}
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
+endforeach()
