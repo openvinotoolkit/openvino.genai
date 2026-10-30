@@ -58,7 +58,7 @@ Qwen3ASRPipelineBase::Qwen3ASRPipelineBase(const std::filesystem::path& models_p
 ASRDecodedResults Qwen3ASRPipelineBase::generate(const AudiosView& audios,
                                                  const std::optional<ASRGenerationConfig>& generation_config,
                                                  const std::shared_ptr<StreamerBase> streamer) {
-    const std::vector<float>& audio = get_single_audio(audios);
+    get_single_audio(audios);
     const auto start_time = std::chrono::steady_clock::now();
 
     const ASRGenerationConfig config = resolve_generation_config(generation_config);
@@ -69,7 +69,7 @@ ASRDecodedResults Qwen3ASRPipelineBase::generate(const AudiosView& audios,
 
     const size_t max_chunk_sec = config.word_timestamps ? MAX_TIMESTAMPED_ASR_INPUT_SECONDS : MAX_ASR_INPUT_SECONDS;
     const std::vector<AudioChunk> chunks =
-        split_audio_into_chunks({audio}, m_feature_extractor.sampling_rate, max_chunk_sec);
+        split_audio_into_chunks(audios, m_feature_extractor.sampling_rate, max_chunk_sec);
     OPENVINO_ASSERT(!streamer || chunks.size() == 1,
                     "Qwen3-ASR streaming supports audio up to ",
                     max_chunk_sec,
