@@ -7,6 +7,7 @@ from transformers import (
 from .vlm_inputs_preprocessor import VLMInputsPreprocessor
 from typing import TYPE_CHECKING, Optional, Union, Any
 import torch
+from PIL import Image as PILImage
 
 if TYPE_CHECKING:
     from PIL.Image import Image
@@ -36,17 +37,34 @@ class MiniCPMVInputsPreprocessor(VLMInputsPreprocessor):
     ):
         if processor is None:
             raise ValueError("Processor is required.")
-        if video is not None:
-            raise ValueError("Video input is not supported")
         if audio is not None:
             raise ValueError("Audio input is not supported")
 
         self.update_images(image)
         im_suffix = ""
+        media = []
+        temporal_ids = []
         if image is not None:
             if not isinstance(image, list):
                 image = [image]
-            im_suffix = "(<image>./</image>)" * len(image) + "\n"
+            media.extend(image)
+            temporal_ids.extend([[-1] for _ in image])
+
+        if video is not None:
+            video_frames = list(video)
+            if not video_frames:
+                raise ValueError("Video input must contain at least one frame.")
+            media.extend(
+                frame if isinstance(frame, PILImage.Image) else PILImage.fromarray(np.asarray(frame))
+                for frame in video_frames
+            )
+            temporal_ids.extend(
+                list(range(group_start, min(group_start + 6, len(video_frames))))
+                for group_start in range(0, len(video_frames), 6)
+            )
+
+        if media:
+            im_suffix = "(<image>./</image>)" * len(media) + "\n"
 
         apply_chat_template_func = None
         if getattr(processor, "chat_template", None) is not None:
@@ -74,7 +92,17 @@ class MiniCPMVInputsPreprocessor(VLMInputsPreprocessor):
                     else text
                 )
 
-        inputs = processor(prompt, [self.images] if self.images is None else self.images, return_tensors="pt")
+        if video is not None:
+            inputs = processor(
+                prompt,
+                media,
+                temporal_ids=temporal_ids,
+                max_slice_nums=1,
+                use_image_id=False,
+                return_tensors="pt",
+            )
+        else:
+            inputs = processor(prompt, [self.images] if self.images is None else self.images, return_tensors="pt")
         inputs.pop("image_sizes", None)
         return inputs
 
