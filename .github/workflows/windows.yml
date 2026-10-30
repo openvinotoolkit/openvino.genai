@@ -22,7 +22,7 @@ env:
   CMAKE_CXX_COMPILER_LAUNCHER: ccache
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
-  HF_HOME: C:/mount/caches/huggingface/win
+  HF_HOME: ${{ runner.temp }}/hf-home
   HF_TOKEN_PATH: "C:\\mount\\secrets\\huggingface\\token-primary"
   OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win/b53e4e21/
   OPENVINO_LOG_LEVEL: 1  # Windows fails with out of memory because of too verbose logging
@@ -76,7 +76,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-medium
+    runs-on: aks-linux-medium-st
     container:
       image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
       volumes:
@@ -510,7 +510,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-medium
+    runs-on: aks-linux-medium-st
     container:
       image: openvinogithubactions.azurecr.io/library/python:3.12-slim
       volumes:

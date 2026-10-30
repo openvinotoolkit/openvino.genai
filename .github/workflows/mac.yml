@@ -21,7 +21,7 @@ env:
   TARGET_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
   BASE_PRODUCT_TYPE: public_macos_arm64
   CCACHE_MAXSIZE: 500Mi
-  HF_HOME: ~/.cache/hf
+  HF_HOME: ${{ runner.temp }}/hf-home
   OV_CACHE: ~/.cache/ov_cache/mac/
   CLEANUP_CACHE: 1
   OPENVINO_LOG_LEVEL: 1
@@ -71,7 +71,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-medium
+    runs-on: aks-linux-medium-st
     container:
       image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
       volumes:
@@ -481,7 +481,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
-      HF_HOME: ${{ github.workspace }}/hf_cache
+      HF_HOME: ${{ runner.temp }}/hf-home
 
     steps:
       - name: Clone openvino.genai
