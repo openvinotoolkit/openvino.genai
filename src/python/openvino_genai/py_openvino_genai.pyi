@@ -6059,7 +6059,11 @@ class TextRerankPipeline:
                 If 'True', model input tensors are padded to the maximum length.
             padding_side (str, optional):
                 Side to use for padding "left" or "right"
+            instruction (str, optional):
+                Instruction for instruction-following rerankers (e.g. Qwen3). When unset, a default
+                web-search retrieval instruction is used. Ignored by cross-encoder rerankers.
         """
+        instruction: str | None
         pad_to_max_length: bool | None
         padding_side: str | None
         @typing.overload

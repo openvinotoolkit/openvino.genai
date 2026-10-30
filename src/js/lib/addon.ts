@@ -153,6 +153,8 @@ export type TextRerankPipelineConfig = {
   pad_to_max_length?: boolean;
   /** Side to use for padding "left" or "right". */
   padding_side?: "left" | "right";
+  /** Instruction describing the reranking task for instruction-following models (e.g. Qwen3 rerankers). */
+  instruction?: string;
 };
 
 export interface TextRerankPipeline {

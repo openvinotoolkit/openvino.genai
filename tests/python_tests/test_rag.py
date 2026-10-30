@@ -22,7 +22,12 @@ import torch.nn.functional as F
 from transformers import AutoModel, AutoProcessor
 from utils.constants import NPUW_CPU_PROPERTIES
 from utils.ov_genai_pipelines import should_skip_npuw_tests
-from utils.qwen3_reranker_utils import qwen3_reranker_format_queries, qwen3_reranker_format_document
+from utils.qwen3_reranker_utils import (
+    qwen3_reranker_format_queries,
+    qwen3_reranker_format_document,
+    qwen3_reranker_format_document_no_suffix,
+    QWEN3_RERANKER_SUFFIX,
+)
 from samples.conftest import TEST_FILES
 
 EMBEDDINGS_TEST_MODELS = [
@@ -645,6 +650,7 @@ def run_qwen3_rerank_optimum(
         concatenated,
         padding=True,
         truncation=True,
+        padding_side="left",
         return_tensors="pt",
     )
     logits = model(**inputs).logits
@@ -653,6 +659,50 @@ def run_qwen3_rerank_optimum(
     if logits.shape[1] == 1:
         scores = logits.squeeze().sigmoid()
     # original postprocessing
+    else:
+        token_false_id = tokenizer.convert_tokens_to_ids("no")
+        token_true_id = tokenizer.convert_tokens_to_ids("yes")
+        batch_scores = logits[:, -1, :]
+        true_vector = batch_scores[:, token_true_id]
+        false_vector = batch_scores[:, token_false_id]
+        batch_scores = torch.stack([false_vector, true_vector], dim=1)
+        batch_scores = torch.nn.functional.log_softmax(batch_scores, dim=1)
+        scores = batch_scores[:, 1].exp()
+
+    with_ids = list(enumerate(scores.tolist()))
+    sorted_by_score = sorted(with_ids, key=lambda x: x[1], reverse=True)
+    return sorted_by_score[: config.top_n]
+
+
+def run_qwen3_rerank_optimum_reserve_append(
+    model,
+    tokenizer,
+    query: str,
+    documents: list[str],
+    config: TextRerankPipeline.Config,
+):
+    # Mirror GenAI's encode_qwen3: reserve the suffix budget, truncate the content, then append the suffix.
+    formatted_query = qwen3_reranker_format_queries(query, config.instruction)
+    pairs = [formatted_query + qwen3_reranker_format_document_no_suffix(doc) for doc in documents]
+    suffix_ids = tokenizer(QWEN3_RERANKER_SUFFIX, add_special_tokens=False).input_ids
+
+    content_max_length = config.max_length - len(suffix_ids) if config.max_length is not None else None
+    encoded = tokenizer(pairs, padding=False, truncation=True, max_length=content_max_length)
+    for ids, mask in zip(encoded["input_ids"], encoded["attention_mask"]):
+        ids.extend(suffix_ids)
+        mask.extend([1] * len(suffix_ids))
+
+    if config.pad_to_max_length and config.max_length is not None:
+        inputs = tokenizer.pad(
+            encoded, padding="max_length", max_length=config.max_length, return_tensors="pt", padding_side="left"
+        )
+    else:
+        inputs = tokenizer.pad(encoded, padding=True, return_tensors="pt", padding_side="left")
+
+    logits = model(**inputs).logits
+
+    if logits.shape[1] == 1:
+        scores = logits.squeeze(-1).sigmoid()
     else:
         token_false_id = tokenizer.convert_tokens_to_ids("no")
         token_true_id = tokenizer.convert_tokens_to_ids("yes")
@@ -1193,7 +1243,17 @@ def test_rerank_documents(rerank_model, dataset_documents, query, config):
 # aligned with https://huggingface.co/tomaarsen/Qwen3-Reranker-0.6B-seq-cls#updated-transformers-usage
 @pytest.mark.parametrize("rerank_model", [QWEN3_RERANK_SEQ_CLS], indirect=True)
 @pytest.mark.parametrize("query", ["Which planet is known as the Red Planet?"])
-@pytest.mark.parametrize("task", ["Given a web search query, retrieve relevant passages that answer the query"])
+@pytest.mark.parametrize(
+    "task",
+    [
+        "Given a web search query, retrieve relevant passages that answer the query",
+        "Given a question about planets, retrieve the passage that answers it",
+    ],
+    ids=[
+        "task=default",
+        "task=custom",
+    ],
+)
 @pytest.mark.parametrize(
     "documents",
     [
@@ -1216,6 +1276,9 @@ def test_rerank_documents(rerank_model, dataset_documents, query, config):
 )
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
 def test_qwen3_seq_cls_rerank_documents(rerank_model: OVConvertedModelSchema, query, task, documents, config):
+    # The reference applies the prompt template by hand; TextRerankPipeline applies it internally
+    # using config.instruction, so both sides build the same prompt.
+    config.instruction = task
     formatted_query = qwen3_reranker_format_queries(query, task)
     formatted_documents = [qwen3_reranker_format_document(doc) for doc in documents]
 
@@ -1228,8 +1291,8 @@ def test_qwen3_seq_cls_rerank_documents(rerank_model: OVConvertedModelSchema, qu
     )
     genai_result = run_text_rerank_genai(
         rerank_model.models_path,
-        formatted_query,
-        formatted_documents,
+        query,
+        documents,
         config,
     )
 
@@ -1238,7 +1301,6 @@ def test_qwen3_seq_cls_rerank_documents(rerank_model: OVConvertedModelSchema, qu
 
 @pytest.mark.parametrize("llm_model", [QWEN3_RERANK], indirect=True)
 @pytest.mark.parametrize("query", ["Which planet is known as the Red Planet?"])
-@pytest.mark.parametrize("task", ["Given a web search query, retrieve relevant passages that answer the query"])
 @pytest.mark.parametrize(
     "documents",
     [
@@ -1251,22 +1313,28 @@ def test_qwen3_seq_cls_rerank_documents(rerank_model: OVConvertedModelSchema, qu
     ],
 )
 @pytest.mark.skipif(**should_skip_npuw_tests())
-def test_qwen3_rerank_npu(llm_model: OVConvertedModelSchema, query, task, documents):
+def test_qwen3_rerank_npu(llm_model: OVConvertedModelSchema, query, documents):
     config = TextRerankPipeline.Config(top_n=4, padding_side="left")
-    formatted_query = qwen3_reranker_format_queries(query, task)
-    formatted_documents = [qwen3_reranker_format_document(doc) for doc in documents]
 
-    cpu_result = run_text_rerank_genai(llm_model.models_path, formatted_query, formatted_documents, config)
-    npu_result = run_text_rerank_genai(
-        llm_model.models_path, formatted_query, formatted_documents, config, "NPU", NPUW_CPU_PROPERTIES
-    )
+    cpu_result = run_text_rerank_genai(llm_model.models_path, query, documents, config)
+    npu_result = run_text_rerank_genai(llm_model.models_path, query, documents, config, "NPU", NPUW_CPU_PROPERTIES)
 
     assert_rerank_results(cpu_result, npu_result, score_diff_max=1e-3)
 
 
 @pytest.mark.parametrize("llm_model", [QWEN3_RERANK], indirect=True)
 @pytest.mark.parametrize("query", ["Which planet is known as the Red Planet?"])
-@pytest.mark.parametrize("task", ["Given a web search query, retrieve relevant passages that answer the query"])
+@pytest.mark.parametrize(
+    "task",
+    [
+        "Given a web search query, retrieve relevant passages that answer the query",
+        "Given a question about planets, retrieve the passage that answers it",
+    ],
+    ids=[
+        "task=default",
+        "task=custom",
+    ],
+)
 @pytest.mark.parametrize(
     "documents",
     [
@@ -1296,6 +1364,9 @@ def test_qwen3_rerank_npu(llm_model: OVConvertedModelSchema, query, task, docume
 )
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
 def test_qwen3_rerank_documents(llm_model: OVConvertedModelSchema, query, task, documents, config):
+    # The reference applies the prompt template by hand; TextRerankPipeline applies it internally
+    # using config.instruction, so both sides build the same prompt.
+    config.instruction = task
     formatted_query = qwen3_reranker_format_queries(query, task)
     formatted_documents = [qwen3_reranker_format_document(doc) for doc in documents]
 
@@ -1308,9 +1379,98 @@ def test_qwen3_rerank_documents(llm_model: OVConvertedModelSchema, query, task, 
     )
     genai_result = run_text_rerank_genai(
         llm_model.models_path,
-        formatted_query,
-        formatted_documents,
+        query,
+        documents,
         config,
     )
 
     assert_rerank_results(opt_result, genai_result)
+
+
+# All documents exceed the small explicit max_length and must be truncated; the test only targets the
+# > max_length case, so the reference and GenAI have to agree on what survives truncation.
+QWEN3_TRUNCATION_DOCUMENTS = [
+    "Venus is often called Earth's twin because of its similar size and proximity. " * 20,
+    "Mars, known for its reddish appearance, is often referred to as the Red Planet. " * 20,
+    "Jupiter, the largest planet in our solar system, has a prominent red spot that has lasted for centuries. " * 15,
+]
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        TextRerankPipeline.Config(top_n=5, max_length=128, padding_side="left"),
+        TextRerankPipeline.Config(top_n=5, max_length=128, pad_to_max_length=True, padding_side="left"),
+    ],
+    ids=[
+        "max_length=128",
+        "max_length=128, pad_to_max_length",
+    ],
+)
+@pytest.mark.parametrize("query", ["Which planet is known as the Red Planet?"])
+@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
+@pytest.mark.parametrize("llm_model", [QWEN3_RERANK], indirect=True)
+def test_qwen3_rerank_truncation(llm_model: OVConvertedModelSchema, query, config):
+    opt_result = run_qwen3_rerank_optimum_reserve_append(
+        llm_model.opt_model,
+        llm_model.hf_tokenizer,
+        query,
+        QWEN3_TRUNCATION_DOCUMENTS,
+        config,
+    )
+    genai_result = run_text_rerank_genai(llm_model.models_path, query, QWEN3_TRUNCATION_DOCUMENTS, config)
+
+    assert_rerank_results(opt_result, genai_result)
+
+
+# The seq-cls variant shares the same is_qwen3 template and reserve-and-append truncation; only the
+# output head differs (sigmoid on [batch, 1] instead of last-token yes/no softmax), so this covers
+# truncation through the sigmoid postprocessing path.
+@pytest.mark.parametrize(
+    "config",
+    [
+        TextRerankPipeline.Config(top_n=5, max_length=128, padding_side="left"),
+        TextRerankPipeline.Config(top_n=5, max_length=128, pad_to_max_length=True, padding_side="left"),
+    ],
+    ids=[
+        "max_length=128",
+        "max_length=128, pad_to_max_length",
+    ],
+)
+@pytest.mark.parametrize("query", ["Which planet is known as the Red Planet?"])
+@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
+@pytest.mark.parametrize("rerank_model", [QWEN3_RERANK_SEQ_CLS], indirect=True)
+def test_qwen3_seq_cls_rerank_truncation(rerank_model: OVConvertedModelSchema, query, config):
+    config.instruction = "Given a web search query, retrieve relevant passages that answer the query"
+    opt_result = run_qwen3_rerank_optimum_reserve_append(
+        rerank_model.opt_model,
+        rerank_model.hf_tokenizer,
+        query,
+        QWEN3_TRUNCATION_DOCUMENTS,
+        config,
+    )
+    genai_result = run_text_rerank_genai(rerank_model.models_path, query, QWEN3_TRUNCATION_DOCUMENTS, config)
+
+    assert_rerank_results(opt_result, genai_result)
+
+
+# max_length too small to hold the suffix, pad_to_max_length without a limit, and a non-left padding side
+# all violate encode_qwen3's preconditions and must be rejected at rerank() time.
+QWEN3_INVALID_CONFIGS = [
+    TextRerankPipeline.Config(top_n=4, max_length=4),
+    TextRerankPipeline.Config(top_n=4, pad_to_max_length=True),
+    TextRerankPipeline.Config(top_n=4, padding_side="right"),
+]
+QWEN3_INVALID_CONFIG_IDS = [
+    "max_length<=suffix",
+    "pad_to_max_length without max_length",
+    "padding_side=right",
+]
+
+
+@pytest.mark.parametrize("config", QWEN3_INVALID_CONFIGS, ids=QWEN3_INVALID_CONFIG_IDS)
+@pytest.mark.parametrize("query", ["Which planet is known as the Red Planet?"])
+@pytest.mark.parametrize("llm_model", [QWEN3_RERANK], indirect=True)
+def test_qwen3_rerank_invalid_config(llm_model: OVConvertedModelSchema, query, config):
+    with pytest.raises(RuntimeError):
+        run_text_rerank_genai(llm_model.models_path, query, QWEN3_TRUNCATION_DOCUMENTS, config)

@@ -126,16 +126,32 @@ class RerankingEvaluator(BaseEvaluator):
         task = "Given a web search query, retrieve relevant passages that answer the query"
 
         qwen3_query = f"{prefix}<Instruct>: {task}\n<Query>: {query}\n"
-        qwen3_passages = [f"<Document>: {doc}{suffix}" for doc in passages]
-        return qwen3_query, qwen3_passages
+        # Suffix is added by default_gen_answer (in the string when nothing is truncated, at the token
+        # level after truncation), mirroring GenAI's rerank(), so it is omitted from the content here.
+        qwen3_passages = [f"<Document>: {doc}" for doc in passages]
+        return qwen3_query, qwen3_passages, suffix
 
     def _generate_data(self, model, gen_answer_fn=None, result_dir="reference"):
         def default_gen_answer(model, tokenizer, query, passages):
             # post/pre processing for qwen models added according to transformers Qwen3-Embedding-0.6B model card:
             # https://huggingface.co/Qwen/Qwen3-Reranker-0.6B#transformers-usage
             if is_qwen3(model.config):
+                # Reference backends need the Qwen3 template applied by hand; the GenAI path applies it in rerank().
+                query, passages, suffix = self._apply_qwen3_template(query, passages)
                 pairs = [f"{query}{passage}" for passage in passages]
-                input_data = tokenizer(pairs, padding=True, truncation=True, max_length=DEFAULT_MAX_LENGTH_QWEN, return_tensors="pt", padding_side="left")
+                # Keep the suffix in the prompt string and tokenize in a single pass when the content fits; only
+                # reserve the suffix budget and re-append it at the token level when truncation is needed. Mirrors GenAI.
+                suffix_ids = tokenizer(suffix, add_special_tokens=False).input_ids
+                full_pairs = [f"{pair}{suffix}" for pair in pairs]
+                encoded = tokenizer(full_pairs, padding=False, truncation=True, max_length=DEFAULT_MAX_LENGTH_QWEN + 1)
+                if max(len(ids) for ids in encoded["input_ids"]) > DEFAULT_MAX_LENGTH_QWEN:
+                    encoded = tokenizer(
+                        pairs, padding=False, truncation=True, max_length=DEFAULT_MAX_LENGTH_QWEN - len(suffix_ids)
+                    )
+                    for ids, mask in zip(encoded["input_ids"], encoded["attention_mask"]):
+                        ids.extend(suffix_ids)
+                        mask.extend([1] * len(suffix_ids))
+                input_data = tokenizer.pad(encoded, padding=True, return_tensors="pt", padding_side="left")
             else:
                 tokenizer_kwargs = {"truncation": True, "padding": True, "max_length": DEFAULT_MAX_LENGTH}
                 inputs = [query] * len(passages)
@@ -181,11 +197,8 @@ class RerankingEvaluator(BaseEvaluator):
         if not os.path.exists(result_dir):
             os.makedirs(result_dir)
         for i, data in tqdm(enumerate(inputs), total=len(inputs), desc="Evaluate pipeline"):
-            query = data[0]
-            documents = data[1]
-            if is_qwen3(model.config):
-                query, documents = self._apply_qwen3_template(data[0], data[1])
-            result = gen_answer_fn(model, self.tokenizer, query, documents)
+            # Pass raw query/documents; each backend applies its own formatting (GenAI inside rerank()).
+            result = gen_answer_fn(model, self.tokenizer, data[0], data[1])
 
             queries.append(data[0])
             passages.append(data[1])

@@ -38,7 +38,9 @@ def build_qwen3_query(input_text: str) -> str:
 
 
 def build_qwen3_documents(texts: list) -> list:
-    return [f"{doc}{QWEN3_RERANKER_SUFFIX}" for doc in texts]
+    # Suffix is added by tokenize_qwen3 (in the string when nothing is truncated, at the token level
+    # after truncation), mirroring GenAI's rerank(), so it is omitted from the content here.
+    return list(texts)
 
 
 def build_qwen3_pairs(input_text: str, texts: list) -> list:
@@ -47,9 +49,17 @@ def build_qwen3_pairs(input_text: str, texts: list) -> list:
 
 
 def tokenize_qwen3(tokenizer, pairs: list, max_length: int):
-    return tokenizer(
-        pairs, padding=True, truncation=True, max_length=max_length, return_tensors="pt", padding_side="left"
-    )
+    # Keep the suffix in the prompt string and tokenize in a single pass when the content fits; only reserve
+    # the suffix budget and re-append it at the token level when truncation is needed. Mirrors GenAI's encode_qwen3.
+    suffix_ids = tokenizer(QWEN3_RERANKER_SUFFIX, add_special_tokens=False).input_ids
+    full_pairs = [f"{pair}{QWEN3_RERANKER_SUFFIX}" for pair in pairs]
+    encoded = tokenizer(full_pairs, padding=False, truncation=True, max_length=max_length + 1)
+    if max(len(ids) for ids in encoded["input_ids"]) > max_length:
+        encoded = tokenizer(pairs, padding=False, truncation=True, max_length=max_length - len(suffix_ids))
+        for ids, mask in zip(encoded["input_ids"], encoded["attention_mask"]):
+            ids.extend(suffix_ids)
+            mask.extend([1] * len(suffix_ids))
+    return tokenizer.pad(encoded, padding=True, return_tensors="pt", padding_side="left")
 
 
 class TextRerankerOptimum(CommonPipeline):
@@ -255,10 +265,8 @@ class TextRerankerGenAI(CommonPipeline):
 
         self._is_qwen3 = UseCaseTextReranker.is_qwen3(model_config)
 
-        if self._is_qwen3:
-            self.text_processed = build_qwen3_documents(self.texts)
-        else:
-            self.text_processed = self.texts
+        # TextRerankPipeline applies the Qwen3 prompt template itself, so pass the documents unchanged.
+        self.text_processed = self.texts
 
     def tokenize_qwen(self, input_text: str):
         pairs = build_qwen3_pairs(input_text, self.texts)
@@ -361,12 +369,12 @@ class TextRerankerGenAI(CommonPipeline):
         return iter_data, []
 
     def run(self, input_text: str, iter_num: int, prompt_index: int, proc_id: int, bench_hook: object | None) -> tuple[dict, list]:
+        # Tokenized only to report input size, the pipeline does its own tokenization.
         if self._is_qwen3:
             tokenized_input = self.tokenize_qwen(input_text)
-            query = build_qwen3_query(input_text)
         else:
             tokenized_input = self.tokenize(input_text)
-            query = input_text
+        query = input_text
         input_token_size = tokenized_input[0].numel() * len(self.texts)
         self.print_batch_size_info(iter_num, input_token_size)
 

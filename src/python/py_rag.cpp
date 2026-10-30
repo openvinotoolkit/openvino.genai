@@ -61,6 +61,9 @@ Attributes:
         If 'True', model input tensors are padded to the maximum length.
     padding_side (str, optional):
         Side to use for padding "left" or "right"
+    instruction (str, optional):
+        Instruction for instruction-following rerankers (e.g. Qwen3). When unset, a default
+        web-search retrieval instruction is used. Ignored by cross-encoder rerankers.
 )";
 
 const auto embedding_pipeline_docstring = R"(
@@ -310,7 +313,8 @@ kwargs: Plugin and/or config properties
         .def_readwrite("top_n", &ov::genai::TextRerankPipeline::Config::top_n)
         .def_readwrite("max_length", &ov::genai::TextRerankPipeline::Config::max_length)
         .def_readwrite("pad_to_max_length", &ov::genai::TextRerankPipeline::Config::pad_to_max_length)
-        .def_readwrite("padding_side", &ov::genai::TextRerankPipeline::Config::padding_side);
+        .def_readwrite("padding_side", &ov::genai::TextRerankPipeline::Config::padding_side)
+        .def_readwrite("instruction", &ov::genai::TextRerankPipeline::Config::instruction);
 
     text_rerank_pipeline.def(
         py::init([](const std::filesystem::path& models_path,
