@@ -116,3 +116,21 @@ TEST(TokenizerChatTemplate, InvalidTemplateStillReportsAnError) {
     auto tokenizer = template_tokenizer("{% if missing is undefined %}{{ unknown_function() }}{% endif %}");
     EXPECT_THROW(tokenizer->apply_chat_template(chat_history(), false, "", std::nullopt, std::nullopt), ov::Exception);
 }
+
+TEST(TokenizerChatTemplate, UndefinedFallbackPreservesNestedDictionaries) {
+    auto tokenizer = template_tokenizer("{{ {'outer': {}} is undefined }}");
+    EXPECT_EQ(tokenizer->apply_chat_template(chat_history(), false, "", std::nullopt, std::nullopt), "False");
+}
+
+TEST(TokenizerChatTemplate, FallbackReportsBothRenderingErrors) {
+    auto tokenizer = template_tokenizer("{% if missing is undefined %}{{ unknown_function() }}{% endif %}");
+    try {
+        tokenizer->apply_chat_template(chat_history(), false, "", std::nullopt, std::nullopt);
+        FAIL() << "Expected rendering to fail";
+    } catch (const ov::Exception& error) {
+        const std::string message = error.what();
+        EXPECT_NE(message.find("Minja's error:"), std::string::npos);
+        EXPECT_NE(message.find("Minja's retry error:"), std::string::npos);
+        EXPECT_NE(message.find("unknown_function"), std::string::npos);
+    }
+}

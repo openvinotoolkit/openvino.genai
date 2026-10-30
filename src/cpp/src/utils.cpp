@@ -1348,6 +1348,7 @@ std::string rewrite_template_expressions(const std::string& chat_template, Rewri
         const size_t expression_start = block_start + 2;
         size_t expression_end = expression_start;
         char quote = 0;
+        std::string closing_brackets;
         for (; expression_end + 1 < chat_template.size(); ++expression_end) {
             const char ch = chat_template[expression_end];
             if (quote) {
@@ -1357,8 +1358,13 @@ std::string rewrite_template_expressions(const std::string& chat_template, Rewri
                     quote = 0;
             } else if (ch == '\'' || ch == '"') {
                 quote = ch;
-            } else if (ch == (block_type == '{' ? '}' : '%') && chat_template[expression_end + 1] == '}') {
+            } else if (closing_brackets.empty() && ch == (block_type == '{' ? '}' : '%') &&
+                       chat_template[expression_end + 1] == '}') {
                 break;
+            } else if (ch == '{' || ch == '[' || ch == '(') {
+                closing_brackets += ch == '{' ? '}' : ch == '[' ? ']' : ')';
+            } else if (!closing_brackets.empty() && ch == closing_brackets.back()) {
+                closing_brackets.pop_back();
             }
         }
         if (expression_end + 1 >= chat_template.size()) {
