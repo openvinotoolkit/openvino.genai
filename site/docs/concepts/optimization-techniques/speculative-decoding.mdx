@@ -357,7 +357,9 @@ DSpark also corrects every drafted token with a lightweight Markov head that dep
 
 ### Model Preparation
 
-Export the target and the DSpark(DFlash) draft with `optimum-cli`. The draft runs with the target's tokenizer, and its Markov head is exported next to the draft backbone:
+Export the target and the DSpark(DFlash) draft with `optimum-cli`.
+Exporting the draft needs an optimum-intel build that includes [huggingface/optimum-intel#2062](https://github.com/huggingface/optimum-intel/pull/2062); released versions cannot export the Markov head yet.
+The draft runs with the target's tokenizer, and its Markov head is exported next to the draft backbone:
 
 ```sh
 optimum-cli export openvino --model <target> --weight-format int8 target-ov
