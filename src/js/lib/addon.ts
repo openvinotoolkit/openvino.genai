@@ -35,6 +35,9 @@ import {
   OmniPipelineProperties,
   OmniTalkerSpeechConfig,
   VideoMetadata,
+  VideoGenerationConfig,
+  Text2VideoPipelineProperties,
+  VideoGenerationResult,
 } from "./utils.js";
 import {
   VLMPerfMetrics,
@@ -390,6 +393,28 @@ export interface InpaintingPipeline {
   setGenerationConfig(config: ImageGenerationConfig): void;
 }
 
+export interface Text2VideoPipeline {
+  new (): Text2VideoPipeline;
+  init(
+    modelPath: string,
+    device: string,
+    properties: Text2VideoPipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    prompt: string,
+    properties: VideoGenerationConfig,
+    streamer: ImageGenerationCallback | undefined,
+    callback: (err: Error | null, result: VideoGenerationResult) => void,
+  ): void;
+  decode(
+    latent: Tensor,
+    callback: (err: Error | null, result: VideoGenerationResult) => void,
+  ): void;
+  getGenerationConfig(): VideoGenerationConfig;
+  setGenerationConfig(config: VideoGenerationConfig): void;
+}
+
 export interface Text2SpeechPipeline {
   new (): Text2SpeechPipeline;
   init(
@@ -427,6 +452,7 @@ interface OpenVINOGenAIAddon {
   Image2ImagePipeline: Image2ImagePipeline;
   InpaintingPipeline: InpaintingPipeline;
   Text2SpeechPipeline: Text2SpeechPipeline;
+  Text2VideoPipeline: Text2VideoPipeline;
   ChatHistory: IChatHistory;
   Tokenizer: ITokenizer;
   ReasoningParser: IReasoningParser;
@@ -468,6 +494,7 @@ export const {
   Image2ImagePipeline,
   InpaintingPipeline,
   Text2SpeechPipeline,
+  Text2VideoPipeline,
   ChatHistory,
   Tokenizer,
   ReasoningParser,
