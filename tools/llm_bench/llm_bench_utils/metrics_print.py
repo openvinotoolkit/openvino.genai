@@ -273,11 +273,11 @@ def print_unicode(text, on_error="Unable print", loglevel="info", max_output=sys
         log_fn(output_text)
     except (UnicodeError, UnicodeEncodeError, UnicodeDecodeError):
         try:
-            utf8_text = text.encode(encoding="utf-8", errors="replace").decode()
-            if len(utf8_text) > max_output:
-                output_text = utf8_text[:max_output] + f" ... [truncated to {max_output}]"
+            text = text.encode("ascii", errors="backslashreplace").decode("ascii")
+            if len(text) > max_output:
+                output_text = text[:max_output] + f" ... [truncated to {max_output}]"
             else:
-                output_text = utf8_text
+                output_text = text
             log_fn(output_text)
         except Exception:
             log.warning(on_error)

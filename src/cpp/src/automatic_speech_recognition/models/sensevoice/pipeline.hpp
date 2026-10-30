@@ -9,6 +9,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "automatic_speech_recognition/pipeline_base.hpp"
 #include "config.hpp"
@@ -21,7 +22,7 @@ class SenseVoiceSmall : public ASRPipelineImplBase {
 public:
     SenseVoiceSmall(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties);
 
-    ASRDecodedResults generate(const AudioInputs& audio_inputs,
+    ASRDecodedResults generate(const AudiosView& audios,
                                const std::optional<ASRGenerationConfig>& generation_config,
                                const std::shared_ptr<StreamerBase> streamer = nullptr) override;
 

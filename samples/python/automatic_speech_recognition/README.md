@@ -152,6 +152,32 @@ result = pipe.generate(raw_speech, initial_prompt="Polychrome")
 #  He has gone and gone for good answered Polychrome who...
 ```
 
+## Continuous batching with Qwen3-ASR
+
+Qwen3-ASR model supports `ContinuousBatchingPipeline` API. The model's chat template is designed for transcription: it discards user text and assistant turns, so questions about earlier audio, translation instructions, and multi-turn audio conversations are not supported.
+
+```python
+import librosa
+import openvino as ov
+import openvino_genai as genai
+
+wav_file_paths = ["audio_1.wav", "audio_2.wav"]
+pipe = genai.ContinuousBatchingPipeline(model_dir, genai.SchedulerConfig(), "CPU")
+config = genai.GenerationConfig()
+handles = []
+for request_id, path in enumerate(wav_file_paths):
+    samples, _ = librosa.load(path, sr=16000)
+    handle = pipe.add_request(
+        request_id, "", images=[], videos=[], audios=[ov.Tensor(samples)],
+        generation_config=config,
+    )
+    handles.append(handle)
+while pipe.has_non_finished_requests():
+    pipe.step()
+for handle in handles:
+    print(pipe.get_tokenizer().decode(handle.read_all()[0].generated_ids))
+```
+
 ### Troubleshooting
 
 #### Empty or rubbish output
