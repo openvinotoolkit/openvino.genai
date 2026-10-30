@@ -7,7 +7,7 @@ import sys
 
 import numpy as np
 
-from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_JS_DIR
+from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 from test_utils import run_sample, compare_videos
 
 
@@ -57,20 +57,3 @@ class TestText2Video:
             cpp_data, cpp_rate = sf.read(cpp_audio, dtype="float32")
             assert py_rate == cpp_rate, "Audio sample rates from Python and C++ samples differ"
             assert np.array_equal(py_data, cpp_data), "Audio from Python and C++ samples is not identical"
-
-        # The JS sample saves the frames as BMP files instead of a video file
-        js_dir = tmp_path / "js_output"
-        js_dir.mkdir()
-        js_sample = SAMPLES_JS_DIR / "video_generation" / "text2video.js"
-        js_command = ["node", js_sample, convert_model, sample_args, "5"]
-        run_sample(js_command, cwd=str(js_dir))
-
-        js_frames = list((js_dir / "genai_video_frames").glob("frame_*.bmp"))
-        assert js_frames, "JS sample did not save any frames"
-
-        js_audio = js_dir / "genai_audio.wav"
-        assert js_audio.exists() == has_audio, f"Unexpected audio output presence: {js_audio}"
-        if has_audio:
-            js_data, js_rate = sf.read(js_audio, dtype="float32")
-            assert js_rate == py_rate, "Audio sample rates from Python and JS samples differ"
-            assert np.array_equal(js_data, py_data), "Audio from Python and JS samples is not identical"

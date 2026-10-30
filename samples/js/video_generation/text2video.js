@@ -1,21 +1,19 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-import { basename, join } from "node:path";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { basename } from "node:path";
 import yargs from "yargs/yargs";
 import { hideBin } from "yargs/helpers";
-import { encode } from "node-wav";
-import { addon as ov } from "openvino-node";
 import { Text2VideoPipeline } from "openvino-genai-node";
-import { saveAsBMP } from "../image_utils.js";
+import { saveVideo } from "../video_utils.js";
+import { saveAudio } from "../wav_utils.js";
 
 async function main() {
   const argv = await yargs(hideBin(process.argv))
     .scriptName(basename(process.argv[1]))
     .command(
       "$0 <model_dir> <prompt> [num_frames]",
-      "Run Text2Video pipeline and save the generated frames as BMP files and the audio as a WAV file",
+      "Run Text2Video pipeline and save the generated video as an AVI file and the audio as a WAV file",
       (yargsBuilder) =>
         yargsBuilder
           .positional("model_dir", {
@@ -41,6 +39,8 @@ async function main() {
   const device = "CPU"; // GPU can be used as well
   const pipeline = await Text2VideoPipeline(argv.model_dir, device);
 
+  const frameRate = 25;
+
   function callback(step, numSteps) {
     console.log(`Generation step ${step + 1} / ${numSteps}`);
     return false;
@@ -53,42 +53,19 @@ async function main() {
     num_frames: argv.num_frames,
     num_inference_steps: 25,
     num_videos_per_prompt: 1,
-    frame_rate: 25,
-    guidance_scale: 3,
     callback,
+    frame_rate: frameRate,
+    guidance_scale: 3,
   });
 
-  // The video tensor has shape [num_videos, num_frames, H, W, 3]; save each frame of the first video
-  const [, numFrames, height, width, channels] = video.getShape();
-  const frameSize = height * width * channels;
-  const outputDir = "genai_video_frames";
-  // Start from an empty directory, so frames of a previous run don't end up in the video
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-  for (let i = 0; i < numFrames; i++) {
-    // slice() copies the frame, a Tensor can't be created from a view with a nonzero byteOffset
-    const frameData = video.data.slice(i * frameSize, (i + 1) * frameSize);
-    const frame = new ov.Tensor("u8", [1, height, width, channels], frameData);
-    await saveAsBMP(join(outputDir, `frame_${String(i).padStart(3, "0")}.bmp`), frame);
-  }
-  console.log(`Saved ${numFrames} frames to ${outputDir}`);
-
-  // Models that generate audio (LTX-2) return it as a separate track. To combine the frames and the audio
-  // into one video file:
-  //   ffmpeg -framerate 25 -i genai_video_frames/frame_%03d.bmp -i genai_audio.wav genai_video.mp4
+  saveVideo("genai_video.avi", video, frameRate);
+  // Models that generate audio (LTX-2) return it as a separate track. To combine both into one file:
+  //   ffmpeg -i genai_video.avi -i genai_audio.wav genai_video.mp4
   if (audioSampleRate) {
-    // The audio tensor has shape [num_videos, channels, samples]; save the track of the first video
-    const [, numChannels, numSamples] = audio.getShape();
-    const channelData = Array.from({ length: numChannels }, (_, c) =>
-      audio.data.subarray(c * numSamples, (c + 1) * numSamples),
-    );
-    await writeFile("genai_audio.wav", encode(channelData, { sampleRate: audioSampleRate, float: true }));
-    console.log(
-      `Saved genai_audio.wav (${numSamples} samples, ${numChannels} channels @ ${audioSampleRate} Hz)`,
-    );
+    await saveAudio("genai_audio.wav", audio, audioSampleRate);
   }
 
-  console.log("Performance metrics:");
+  console.log("\nPerformance metrics:");
   console.log(`  Load time: ${perfMetrics.getLoadTime().toFixed(2)} ms`);
   console.log(`  Generate duration: ${perfMetrics.getGenerateDuration().toFixed(2)} ms`);
   console.log(`  Transformer duration: ${perfMetrics.getTransformerInferDuration().mean.toFixed(2)} ms`);

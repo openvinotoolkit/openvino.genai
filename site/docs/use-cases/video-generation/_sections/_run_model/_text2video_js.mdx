@@ -1,31 +1,26 @@
 import CodeBlock from '@theme/CodeBlock';
 
 <CodeBlock language="javascript" showLineNumbers>
-{`import { mkdir, writeFile } from 'node:fs/promises';
-import bmp from 'bmp-js';
+{`import cv from '@u4/opencv4nodejs';
 import { Text2VideoPipeline } from 'openvino-genai-node';
 
 const pipeline = await Text2VideoPipeline(modelPath, '${props.device || 'CPU'}');
 const { video } = await pipeline.generate(prompt);
 
-// Save the frames of the first video as BMP files
+// Save the first video as an AVI file with MJPG-encoded frames
 const [, numFrames, height, width] = video.getShape();
 const frameSize = height * width * 3;
-await mkdir('frames', { recursive: true });
+const videoData = video.data;
+const fourcc = cv.VideoWriter.fourcc('MJPG');
+const writer = new cv.VideoWriter('genai_video.avi', fourcc, 25, new cv.Size(width, height));
 
 for (let f = 0; f < numFrames; f++) {
-  const rgb = video.data.subarray(f * frameSize, (f + 1) * frameSize);
-  const abgr = Buffer.allocUnsafe(width * height * 4);
-
-  for (let src = 0, dst = 0; src < rgb.length; src += 3, dst += 4) {
-    abgr[dst] = 255;              // A
-    abgr[dst + 1] = rgb[src + 2]; // B
-    abgr[dst + 2] = rgb[src + 1]; // G
-    abgr[dst + 3] = rgb[src];     // R
-  }
-
-  const bmpData = bmp.encode({ width, height, data: abgr });
-  await writeFile(\`frames/frame_\${String(f).padStart(3, '0')}.bmp\`, bmpData.data);
+  const offset = videoData.byteOffset + f * frameSize;
+  const rgbData = Buffer.from(videoData.buffer, offset, frameSize);
+  const frame = new cv.Mat(rgbData, height, width, cv.CV_8UC3);
+  writer.write(frame.cvtColor(cv.COLOR_RGB2BGR)); // OpenCV expects frames in BGR order
 }
+
+writer.release();
 `}
 </CodeBlock>

@@ -3,7 +3,7 @@
 This directory contains a JavaScript sample that shows how to generate a video from a text prompt with LTX-Video and LTX-2 family models via the `openvino-genai-node` package. The sample doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU.
 
 Sample files:
- - [`text2video.js`](./text2video.js) demonstrates basic usage of the `Text2VideoPipeline` (text-to-video) with a step callback, and saves every generated frame as a BMP file using `bmp-js`. For models that generate audio (LTX-2 family), it also saves the audio track as a WAV file using `node-wav`.
+ - [`text2video.js`](./text2video.js) demonstrates basic usage of the `Text2VideoPipeline` (text-to-video) with a step callback, and saves the generated video as an AVI file using [`@u4/opencv4nodejs`](https://www.npmjs.com/package/@u4/opencv4nodejs). For models that generate audio (LTX-2 family), it also saves the audio track as a WAV file using `node-wav`.
 
 Users can change the sample code and play with the following generation parameters:
 
@@ -45,20 +45,16 @@ npm install
 
 If you use the master branch, you may need to [build openvino-genai-node from source](../../../src/js/README.md#build-bindings) first.
 
+The sample writes the video with the native `@u4/opencv4nodejs` addon, which has to be compiled against an OpenCV 4.6 installation. Build it by following the [environment setup steps](../rag/README.md#3-image-and-video-embedding-sample-image_video_embeddingjs) of the RAG samples, and keep the `OPENCV_*` and `OPENCV4NODEJS_DISABLE_AUTOBUILD` variables exported when you run the sample.
+
 ### Run the text-to-video sample:
 
 ```bash
 node video_generation/text2video.js ltx_video_ov/INT8 "A woman with long brown hair smiles at another woman with long blonde hair" 25
 ```
 
-The optional last argument is the number of frames to generate (161 by default). The frames are saved as `frame_000.bmp`, `frame_001.bmp`, and so on in the `genai_video_frames` directory. To combine them into a video, you can use a tool such as `ffmpeg`:
+The optional last argument is the number of frames to generate (161 by default). The video is saved as `genai_video.avi`. For models that generate audio (LTX-2 family), the sample also writes `genai_audio.wav`. To combine both into one file:
 
 ```bash
-ffmpeg -framerate 25 -i genai_video_frames/frame_%03d.bmp genai_video.mp4
-```
-
-For models that generate audio (LTX-2 family), the sample also writes `genai_audio.wav`. To combine the frames and the audio into one file:
-
-```bash
-ffmpeg -framerate 25 -i genai_video_frames/frame_%03d.bmp -i genai_audio.wav genai_video.mp4
+ffmpeg -i genai_video.avi -i genai_audio.wav genai_video.mp4
 ```
