@@ -52,6 +52,7 @@ from optimum.intel.utils.import_utils import is_optimum_version
 from huggingface_hub import snapshot_download
 from openvino_genai import (
     VLMPipeline,
+    Tokenizer,
     GenerationConfig,
     SchedulerConfig,
     ContinuousBatchingPipeline,
@@ -4040,3 +4041,33 @@ def test_qwen3_omni_audio_rejected_on_audio_token_id_mismatch(tmp_path: Path) ->
     audio = openvino.Tensor(np.zeros(16000, dtype=np.float32))
     with pytest.raises(RuntimeError, match="does not encode <\\|audio_pad\\|> as the single token"):
         pipe.generate("Describe", audios=[audio], generation_config=GenerationConfig(max_new_tokens=1))
+
+
+@pytest.mark.parametrize("chat_api", ["start_chat", "ChatHistory"])
+@pytest.mark.transformers_lower_v5(
+    reason="CVS-186059: Gemma3 export fails with an eltwise shape mismatch with Transformers 5.0"
+)
+def test_gemma3_pa_chat_does_not_duplicate_bos(chat_api):
+    model_dir = _get_ov_model("optimum-intel-internal-testing/tiny-random-gemma3")
+    prompt = "Hello"
+    tokenizer = Tokenizer(model_dir)
+    templated = tokenizer.apply_chat_template(ChatHistory([{"role": "user", "content": prompt}]), True)
+    expected_ids = tokenizer.encode(templated, add_special_tokens=False).input_ids.data.flatten().tolist()
+    extra_ids = tokenizer.encode(templated, add_special_tokens=True).input_ids.data.flatten().tolist()
+    assert expected_ids[0] == tokenizer.get_bos_token_id()
+    assert extra_ids == [tokenizer.get_bos_token_id(), *expected_ids]
+
+    input_counts = []
+    for backend in ["SDPA", "PA"]:
+        pipeline = VLMPipeline(model_dir, "CPU", ATTENTION_BACKEND=backend)
+        config = GenerationConfig(max_new_tokens=2, do_sample=False, ignore_eos=True)
+        if chat_api == "start_chat":
+            pipeline.start_chat()
+            try:
+                result = pipeline.generate(prompt, generation_config=config)
+            finally:
+                pipeline.finish_chat()
+        else:
+            result = pipeline.generate(ChatHistory([{"role": "user", "content": prompt}]), generation_config=config)
+        input_counts.append(result.perf_metrics.get_num_input_tokens())
+    assert input_counts == [len(expected_ids), len(expected_ids)]

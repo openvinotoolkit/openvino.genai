@@ -9,7 +9,9 @@
 
 - name: ASR (Qwen3-ASR)
   cmd: |-
-    python -m pip install transformers==4.57.6 qwen-asr==0.0.6
+    python -m pip install transformers==4.57.6 nagisa==0.2.11 soynlp==0.0.493 accelerate==1.12.0 qwen-omni-utils librosa soundfile sox flask pytz
+    # TODO(CVS-198293): Drop manual dependencies and the commit pin when Qwen supports a Gradio release with Pillow 13.
+    python -m pip install --no-deps qwen-asr==0.0.6 "gradio @ git+https://github.com/gradio-app/gradio.git@d6972ed9d1185634cea083e0263839543d5ceb8d"
     python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "qwen3-asr" -m "not qwen3_asr_split_export"
     python -m pytest -v ./tests/python_tests/test_asr_forced_aligner.py
   timeout: 60
@@ -100,7 +102,10 @@
 
 - name: WWB ASR tests (FunASR, Qwen3-ASR)
   cmd: |-
-    python -m pip install transformers==4.57.6 "whowhatbench[funasr]" qwen-asr==0.0.6
+    python -m pip install transformers==4.57.6 "whowhatbench[funasr]"
+    python -m pip install nagisa==0.2.11 soynlp==0.0.493 accelerate==1.12.0 qwen-omni-utils librosa soundfile sox flask pytz
+    # TODO(CVS-198293): Drop manual dependencies and the commit pin when Qwen supports a Gradio release with Pillow 13.
+    python -m pip install --no-deps qwen-asr==0.0.6 "gradio @ git+https://github.com/gradio-app/gradio.git@d6972ed9d1185634cea083e0263839543d5ceb8d"
     python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_speech_recognition.py -k "funasr or qwen3_asr"
   timeout: 120
   components:
