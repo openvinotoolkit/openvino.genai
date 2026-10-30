@@ -22,6 +22,8 @@ class StatefulLLMPipeline final : public LLMPipelineImplBase {
     ChatHistory m_history;
     std::vector<int64_t> m_tokenized_chat_history;
     ov::genai::utils::GenerationChatInputsType m_chat_input_type = ov::genai::utils::GenerationChatInputsType::UNDEF;
+    // generate(ChatHistory) entered chat mode without start_chat(), so the next non-ChatHistory generate() ends it
+    bool m_chat_started_by_history = false;
     // Finish reason of last generation for chat scenario
     ov::genai::GenerationStatus m_chat_generation_finish_status = ov::genai::GenerationStatus::RUNNING;
     // if True, full history will be used as prompt on each chat generation
