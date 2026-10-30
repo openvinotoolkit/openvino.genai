@@ -121,13 +121,11 @@ def test_stop_strings_facebook_opt(
 @pytest.mark.parametrize("include_stop_str_in_output", [True, False])
 @pytest.mark.parametrize("pipeline_type", MAIN_PIPELINE_TYPES)
 def test_stop_strings_in_first_validation_window(
-    model_facebook_opt_125m: OVConvertedModelSchema,
-    include_stop_str_in_output: bool,
-    pipeline_type
+    model_facebook_opt_125m: OVConvertedModelSchema, include_stop_str_in_output: bool, pipeline_type
 ):
     # The repetition lets prompt lookup accept its first window, and the long stop string makes the window checked
     # for stop strings longer than the generated sequence.
-    prompts = [ "OpenVINO is a toolkit. OpenVINO is a toolkit. OpenVINO is a toolkit. OpenVINO" ]
+    prompts = ["OpenVINO is a toolkit. OpenVINO is a toolkit. OpenVINO is a toolkit. OpenVINO"]
     generation_config = {
         "max_new_tokens": 30,
         "stop_strings": {"toolkit", "software toolkit developed by"},
