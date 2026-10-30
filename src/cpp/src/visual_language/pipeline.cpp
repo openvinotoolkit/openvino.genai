@@ -648,7 +648,7 @@ public:
                                processed_chat_data.audio_encoding_durations.begin(),
                                processed_chat_data.audio_encoding_durations.end());
 
-        const auto history_state = ChatHistoryInternalState::get_or_create(history, m_vision_registry);
+        const auto history_state = ChatHistoryInternalState::get_or_create(history, m_embeddings_registry);
         bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history ||
                                 m_active_history.lock() != history_state ||
                                 m_inputs_embedder->get_cache_state().get_state().empty();

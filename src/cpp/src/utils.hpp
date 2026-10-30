@@ -473,10 +473,6 @@ ov::genai::GenerationConfig get_multinomial_config();
  */
 void patch_chat_template_multiline_strings(Tokenizer& tokenizer);
 
-std::string join_multiline_string_literals(const std::string& chat_template);
-
-std::string replace_is_undefined_tests(const std::string& chat_template);
-
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

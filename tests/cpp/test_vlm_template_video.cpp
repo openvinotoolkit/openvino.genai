@@ -13,24 +13,10 @@
 
 #include "openvino/opsets/opset13.hpp"
 #include "openvino/pass/serialize.hpp"
-#include "tokenizer/tokenizer_impl.hpp"
 #include "visual_language/muse_glimmer/classes.hpp"
 #include "visual_language/vlm_chat_context.hpp"
 
 namespace {
-
-ov::genai::ChatHistory chat_history() {
-    return {{{"role", "user"}, {"content", "hello"}}};
-}
-
-std::unique_ptr<ov::genai::Tokenizer::TokenizerImpl> template_tokenizer(const std::string& chat_template) {
-    auto tokenizer = std::make_unique<ov::genai::Tokenizer::TokenizerImpl>();
-    tokenizer->m_bos_token = "<bos>";
-    tokenizer->m_eos_token = "<eos>";
-    tokenizer->m_pad_token = "<pad>";
-    tokenizer->set_chat_template(chat_template);
-    return tokenizer;
-}
 
 std::pair<std::string, ov::Tensor> serialize_model(const std::shared_ptr<ov::Model>& model) {
     std::ostringstream xml, weights;
@@ -136,115 +122,6 @@ protected:
 
 }  // namespace
 
-TEST(VLMChatTemplate, UnsupportedUndefinedTestIsRetried) {
-    auto tokenizer =
-        template_tokenizer("{% if missing is undefined %}{{ bos_token }}{{ messages[0].content }}{% endif %}");
-    EXPECT_EQ(tokenizer->apply_chat_template(chat_history(), false, "", std::nullopt, std::nullopt), "<bos>hello");
-    EXPECT_EQ(tokenizer->get_chat_template(),
-              "{% if missing is undefined %}{{ bos_token }}{{ messages[0].content }}{% endif %}");
-}
-
-TEST(VLMChatTemplate, AdjacentMultilineLiteralsAreRetried) {
-    auto tokenizer = template_tokenizer("{{ \"first\"\n    \"second\" }}{{ messages[0].content }}");
-    EXPECT_EQ(tokenizer->apply_chat_template(chat_history(), false, "", std::nullopt, std::nullopt),
-              "firstsecondhello");
-}
-
-TEST(VLMChatTemplate, FallbackUsesExplicitContextAndTools) {
-    auto tokenizer = template_tokenizer("{{ bos_token }}{{ eos_token }}{{ pad_token }}");
-    auto history = chat_history();
-    history.set_extra_context({{"bos_token", "history"}, {"label", "old"}});
-    history.set_tools(ov::genai::JsonContainer::from_json_string(R"([{"name":"history"}])"));
-    const auto tools = ov::genai::JsonContainer::from_json_string(R"([{"name":"explicit"}])");
-    const ov::genai::JsonContainer context{{"bos_token", "override"}, {"label", "new"}};
-    EXPECT_EQ(tokenizer->apply_chat_template(
-                  history,
-                  true,
-                  "{% if missing is undefined %}{{ bos_token }}{{ eos_token }}{{ pad_token }}"
-                  "{{ label }}{{ tools[0].name }}{{ add_generation_prompt }}{{ \"one\"\n\"two\" }}{% endif %}",
-                  tools,
-                  context),
-              "override<eos><pad>newexplicitTrueonetwo");
-}
-
-TEST(VLMChatTemplate, SuccessfulRenderingPreservesLiteralText) {
-    auto tokenizer = template_tokenizer("{{ \"missing is undefined\" }}|{{ messages[0].content }}");
-    EXPECT_EQ(tokenizer->apply_chat_template(chat_history(), false, "", std::nullopt, std::nullopt),
-              "missing is undefined|hello");
-}
-
-TEST(VLMChatTemplate, FallbackPreservesUndefinedTextInsideAndOutsideExpressions) {
-    auto tokenizer = template_tokenizer("x is undefined|{% if missing is undefined %}{{ \"x is undefined\" }}"
-                                        "{{ \"one is undefined\"\n\"two\" }}{% endif %}");
-    EXPECT_EQ(tokenizer->apply_chat_template(chat_history(), false, "", std::nullopt, std::nullopt),
-              "x is undefined|x is undefinedone is undefinedtwo");
-}
-
-TEST(VLMChatTemplate, FallbackPreservesComments) {
-    auto tokenizer = template_tokenizer("{# {{ x is undefined }} #}{% if missing is undefined %}ok{% endif %}");
-    EXPECT_EQ(tokenizer->apply_chat_template(chat_history(), false, "", std::nullopt, std::nullopt), "ok");
-}
-
-TEST(VLMChatTemplate, UndefinedRewritePreservesRawBlocks) {
-    EXPECT_EQ(ov::genai::utils::replace_is_undefined_tests(
-                  "{% raw %}{{ x is undefined }}{% endraw %}{% if missing is undefined %}ok{% endif %}"),
-              "{% raw %}{{ x is undefined }}{% endraw %}{% if missing is not defined %}ok{% endif %}");
-}
-
-TEST(VLMChatTemplate, FallbackPreservesMultilineQuotesOutsideExpressions) {
-    auto tokenizer = template_tokenizer("\"line one\"\n\"line two\"|{% if missing is undefined %}ok{% endif %}");
-    EXPECT_EQ(tokenizer->apply_chat_template(chat_history(), false, "", std::nullopt, std::nullopt),
-              "\"line one\"\n\"line two\"|ok");
-}
-
-TEST(VLMChatTemplate, LiteralJoinPreservesRawBlocks) {
-    EXPECT_EQ(ov::genai::utils::join_multiline_string_literals(
-                  "{% raw %}\"line one\"\n\"line two\"{% endraw %}{{ \"joined\"\n\"literal\" }}"),
-              "{% raw %}\"line one\"\n\"line two\"{% endraw %}{{ \"joinedliteral\" }}");
-}
-
-TEST(VLMChatTemplate, UndefinedRewriteMatchesOnlyCompleteTestName) {
-    EXPECT_EQ(ov::genai::utils::replace_is_undefined_tests(
-                  "{{ x is undefined_value }}{{ (x is undefined) }}{{ message.content is undefined }}"),
-              "{{ x is undefined_value }}{{ (x is not defined) }}{{ message.content is not defined }}");
-}
-
-TEST(VLMChatTemplate, UndefinedFallbackPreservesIndexedOperands) {
-    for (const std::string operand : {"messages[0].missing", "messages[0][\"missing\"]", "messages[0]['missing']"}) {
-        auto tokenizer = template_tokenizer("{% if " + operand + " is undefined %}missing{% endif %}");
-        EXPECT_EQ(tokenizer->apply_chat_template(chat_history(), false, "", std::nullopt, std::nullopt), "missing");
-    }
-}
-
-TEST(VLMChatTemplate, UndefinedFallbackDoesNotTreatPresentValuesAsMissing) {
-    auto tokenizer = template_tokenizer(
-        "{% if messages[0].content is undefined %}missing{% else %}{{ messages[0].content }}{% endif %}");
-    EXPECT_EQ(tokenizer->apply_chat_template(chat_history(), false, "", std::nullopt, std::nullopt), "hello");
-}
-
-TEST(VLMChatTemplate, InvalidTemplateStillReportsAnError) {
-    auto tokenizer = template_tokenizer("{% if missing is undefined %}{{ unknown_function() }}{% endif %}");
-    EXPECT_THROW(tokenizer->apply_chat_template(chat_history(), false, "", std::nullopt, std::nullopt), ov::Exception);
-}
-
-TEST(VLMChatTemplate, UndefinedFallbackPreservesNestedDictionaries) {
-    auto tokenizer = template_tokenizer("{{ {'outer': {}} is undefined }}");
-    EXPECT_EQ(tokenizer->apply_chat_template(chat_history(), false, "", std::nullopt, std::nullopt), "False");
-}
-
-TEST(VLMChatTemplate, FallbackReportsBothRenderingErrors) {
-    auto tokenizer = template_tokenizer("{% if missing is undefined %}{{ unknown_function() }}{% endif %}");
-    try {
-        tokenizer->apply_chat_template(chat_history(), false, "", std::nullopt, std::nullopt);
-        FAIL() << "Expected rendering to fail";
-    } catch (const ov::Exception& error) {
-        const std::string message = error.what();
-        EXPECT_NE(message.find("Minja's error:"), std::string::npos);
-        EXPECT_NE(message.find("Minja's retry error:"), std::string::npos);
-        EXPECT_NE(message.find("unknown_function"), std::string::npos);
-    }
-}
-
 TEST_F(MuseGlimmerVideo, SamplingEnabledKeepsExistingSelection) {
     auto encoder = embedder(true);
     ov::genai::VideoMetadata metadata;
@@ -303,7 +180,7 @@ TEST_F(MuseGlimmerVideo, SamplingDisabledRejectsIncompleteTemporalGroups) {
 TEST_F(MuseGlimmerVideo, EditedHistoryRollbackRetainsOnlyMatchingPrefix) {
     auto configured = embedder(false);
     ov::genai::InputsEmbedder inputs(models, ov::genai::Tokenizer{}, config_dir, "CPU", {});
-    auto registry = std::make_shared<ov::genai::VisionRegistry>();
+    auto registry = std::make_shared<ov::genai::EmbeddingsRegistry>();
     ov::genai::ChatHistory history{{{"role", "system"}, {"content", "unchanged"}},
                                    {{"role", "user"}, {"content", "<|video|> original"}}};
     {
@@ -316,7 +193,7 @@ TEST_F(MuseGlimmerVideo, EditedHistoryRollbackRetainsOnlyMatchingPrefix) {
     ASSERT_EQ(state->get_messages_metadata().size(), 2);
     ASSERT_EQ(state->get_base_video_index(), 1);
     ASSERT_EQ(registry->size(), 1);
-    const auto original_id = state->get_video_vision_id(0);
+    const auto original_id = state->get_video_embedding_id(0);
     history.get_messages()[1]["content"] = "<|video|> edited";
     auto replacement = video();
     std::fill_n(replacement.data<uint8_t>(), replacement.get_size(), 100);
@@ -325,7 +202,7 @@ TEST_F(MuseGlimmerVideo, EditedHistoryRollbackRetainsOnlyMatchingPrefix) {
     metadata.fps = 8.0f;
     const auto processed = edited.process({}, {replacement}, {metadata});
     EXPECT_TRUE(processed.needs_kv_cache_reset);
-    const auto replacement_id = state->get_video_vision_id(0);
+    const auto replacement_id = state->get_video_embedding_id(0);
     EXPECT_FALSE(registry->contains(original_id));
     edited.rollback();
     ASSERT_EQ(state->get_messages_metadata().size(), 1);
