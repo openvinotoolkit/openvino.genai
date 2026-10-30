@@ -34,6 +34,15 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::prepare_inputs_emb
 std::unordered_map<std::string, ov::Tensor>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::prepare_lm_extra_inputs(
     std::unordered_map<std::string, ov::Tensor> lm_extra_inputs) const {
+    // The generated tokens of a request compute their n-gram embeddings (Qwen4Exp) from the n-gram history at the end
+    // of its prompt.
+    if (m_inputs_embedder) {
+        if (const ov::Tensor ngram_history = m_inputs_embedder->get_ngram_history()) {
+            ov::Tensor request_ngram_history(ngram_history.get_element_type(), ngram_history.get_shape());
+            ngram_history.copy_to(request_ngram_history);
+            lm_extra_inputs["ngram_history"] = request_ngram_history;
+        }
+    }
     return lm_extra_inputs;
 }
 
