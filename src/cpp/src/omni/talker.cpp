@@ -88,7 +88,7 @@ public:
     TalkerResults generate(const VLMDecodedResults& vlm_result,
                           const OmniTalkerSpeechConfig& talker_speech_config,
                           const OmniSpeechStreamerVariant& speech_streamer) {
-        if (has_in_stream_speech_fields(talker_speech_config)) {
+        if (has_in_stream_speech_fields(talker_speech_config) && is_speech_streamer_active(speech_streamer)) {
             // The speech pipeline has not installed its streamer guard yet, so the rejected call ends the stream.
             end_speech_streamer(speech_streamer);
         }
