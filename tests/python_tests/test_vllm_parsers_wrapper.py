@@ -3,7 +3,6 @@
 
 from typing import Optional
 from transformers import AutoTokenizer
-from huggingface_hub import snapshot_download
 import pytest
 from openvino_genai import (
     Tokenizer,
@@ -11,6 +10,7 @@ from openvino_genai import (
     TextParserStreamer,
 )
 import json
+from utils.network import cached_snapshot_download
 
 
 def compare_dicts(dict1, dict2, skip_keys: Optional[list[str]] = None) -> bool:
@@ -48,7 +48,7 @@ def test_final_parser_llama_32_json():
     except ImportError:
         pytest.skip("No vLLM package in the environment")
 
-    model_cached = snapshot_download("gpt2")  # required to avoid HF rate limits
+    model_cached = cached_snapshot_download("gpt2")
     parser = Llama3JsonToolParser(AutoTokenizer.from_pretrained(model_cached))
     res_vllm = parser.extract_tool_calls(model_output, None).model_dump_json()
 
@@ -65,7 +65,7 @@ def test_final_parser_deepseek():
     except ImportError:
         pytest.skip("No vLLM package in the environment")
 
-    model_cached = snapshot_download("deepseek-ai/DeepSeek-V3.1")  # required to avoid HF rate limits
+    model_cached = cached_snapshot_download("deepseek-ai/DeepSeek-V3.1")
     parser = DeepSeekR1ReasoningParser(AutoTokenizer.from_pretrained(model_cached))
     reasoning, content = parser.extract_reasoning(model_output, None)
     message_vllm = {

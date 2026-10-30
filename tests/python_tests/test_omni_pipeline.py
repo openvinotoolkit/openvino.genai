@@ -58,7 +58,6 @@ import openvino as ov
 import openvino_tokenizers
 import pytest
 import transformers
-from huggingface_hub import snapshot_download
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from optimum.utils.import_utils import is_transformers_version
 
@@ -75,7 +74,7 @@ from openvino_genai import (
 from utils.atomic_download import AtomicDownloadManager
 from utils.constants import get_ov_cache_converted_models_dir
 from utils.media_tags import ModalityType, get_universal_tag
-from utils.network import retry_request
+from utils.network import cached_snapshot_download
 
 OMNI_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
 
@@ -650,7 +649,7 @@ class TestOmniPipelineDependencyInjection:
 def _export_tiny_omni_model(target_dir: Path) -> None:
     """Export the tiny Qwen3-Omni checkpoint to OpenVINO IR under ``target_dir``."""
     # Only the download needs retrying; both from_pretrained() calls below read the local path it returns.
-    model_cached = retry_request(lambda: snapshot_download(OMNI_MODEL_ID))
+    model_cached = cached_snapshot_download(OMNI_MODEL_ID)
     align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
     processor = transformers.AutoProcessor.from_pretrained(
         model_cached,

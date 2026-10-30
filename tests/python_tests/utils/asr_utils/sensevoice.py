@@ -3,11 +3,10 @@ import os
 import pathlib
 
 import pytest
-from huggingface_hub import snapshot_download
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 
 from utils.atomic_download import AtomicDownloadManager
-from utils.network import retry_request
+from utils.network import cached_snapshot_download, retry_request
 
 SENSEVOICE_SMALL_TINY_MODEL_ID = "optimum-intel-internal-testing/tiny-random-sense-voice-small"
 SENSEVOICE_MODEL_IDS = (SENSEVOICE_SMALL_TINY_MODEL_ID,)
@@ -57,7 +56,7 @@ def save_model(model_id: str, tmp_path: pathlib.Path):
     manager = AtomicDownloadManager(tmp_path)
 
     def save_to_temp(temp_path: pathlib.Path) -> None:
-        source = model_id if pathlib.Path(model_id).exists() else retry_request(lambda: snapshot_download(model_id))
+        source = model_id if pathlib.Path(model_id).exists() else cached_snapshot_download(model_id)
         model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(source, export=True))
         model.save_pretrained(temp_path)
 

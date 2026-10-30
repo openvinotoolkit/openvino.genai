@@ -1,8 +1,11 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import functools
 import time
 import logging
+from typing import Any
+from huggingface_hub import snapshot_download
 from huggingface_hub.utils import HfHubHTTPError
 from subprocess import CalledProcessError # nosec B404
 from requests.exceptions import RequestException
@@ -48,3 +51,22 @@ def retry_request(func, retries=7):
                 time.sleep(timeout)
             else:
                 raise
+
+
+@functools.lru_cache(maxsize=None)
+def _snapshot_download_once(repo_id: str, frozen_kwargs: tuple[tuple[str, Any], ...]) -> str:
+    kwargs = {key: list(value) if isinstance(value, tuple) else value for key, value in frozen_kwargs}
+    return retry_request(lambda: snapshot_download(repo_id, **kwargs))
+
+
+def cached_snapshot_download(repo_id: str, **kwargs: Any) -> str:
+    """
+    snapshot_download() memoized per process.
+
+    Every snapshot_download() call queries the Hub API even when all files are already in HF_HOME,
+    so tests resolve each (repo_id, kwargs) combination once per session to avoid HF rate limits.
+    """
+    frozen_kwargs = tuple(
+        sorted((key, tuple(value) if isinstance(value, list) else value) for key, value in kwargs.items())
+    )
+    return _snapshot_download_once(repo_id, frozen_kwargs)

@@ -15,7 +15,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
-from huggingface_hub import snapshot_download
 from optimum.intel import OVModelForCausalLM
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
@@ -30,7 +29,7 @@ from utils.hugging_face import (
     generation_config_to_hf,
     run_hugging_face,
 )
-from utils.network import retry_request
+from utils.network import cached_snapshot_download
 from utils.ov_genai_pipelines import (
     GGUF_PIPELINE_TYPES,
     PipelineType,
@@ -103,19 +102,11 @@ class TinyGGUFModel:
 @pytest.fixture(scope="module", params=TINY_GGUF_MODELS)
 def tiny_gguf_model(request, tmp_path_factory):
     gguf_repo, gguf_revision, filename, hf_repo, hf_revision = request.param
-    gguf_dir = retry_request(
-        lambda: snapshot_download(
-            gguf_repo,
-            revision=gguf_revision,
-            allow_patterns=[filename],
-        )
-    )
-    hf_dir = retry_request(
-        lambda: snapshot_download(
-            hf_repo,
-            revision=hf_revision,
-            allow_patterns=["*.json", "tokenizer.model", "*.txt"],
-        )
+    gguf_dir = cached_snapshot_download(gguf_repo, revision=gguf_revision, allow_patterns=[filename])
+    hf_dir = cached_snapshot_download(
+        hf_repo,
+        revision=hf_revision,
+        allow_patterns=["*.json", "tokenizer.model", "*.txt"],
     )
     # Use the source configuration/tokenizer: HF's GGUF loader omits some configuration
     # fields (e.g. Qwen3 head_dim) and does not reconstruct all SentencePiece tokenizers.
