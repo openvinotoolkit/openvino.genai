@@ -373,7 +373,7 @@ def tiny_gguf_vlm_model(request, llama_reference_tools, tmp_path_factory):
             "video",
             id="muse-glimmer-video",
             marks=pytest.mark.xfail(
-                reason="Requires https://github.com/openvinotoolkit/openvino.genai/pull/4689",
+                reason="Muse Glimmer video processing does not honor do_sample_frames=False.",
                 raises=RuntimeError,
                 strict=True,
             ),

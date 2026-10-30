@@ -201,7 +201,7 @@ TEST(GGUFTokenizer, MetadataRejectsModelsWithoutTokenizerInfo) {
 }
 
 TEST(GGUFTokenizer, ChatTemplateSupportsUndefinedAndAdjacentStringLiterals) {
-    GTEST_SKIP() << "Requires https://github.com/openvinotoolkit/openvino.genai/pull/4775";
+    GTEST_SKIP() << "Chat-template rendering does not handle 'is undefined' tests or adjacent multiline string literals.";
     auto config = sentencepiece_config();
     config.config["chat_template"] =
         std::string("{% if enable_thinking is undefined %}{{ \"first\"\n  \"second\" }}{% endif %}"
