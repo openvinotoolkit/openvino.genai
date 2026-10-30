@@ -1550,14 +1550,12 @@ struct AdapterControllerImpl {
 
     struct AppliedInferRequest {
         ov::InferRequest request;
-        // An alpha-only change does not force a full upload, so track the alphas separately.
+        // An alpha-only change does not force a full upload, so track the alphas separately
         bool alphas_applied;
     };
     // Infer requests whose state already holds the current adapters. A single flag is not enough because a model can
     // be served by a pool of infer requests (VLM), and a pipeline may recreate them; a request missing here was never
-    // initialized and needs a full upload. The registry is capped at the pool size the plugin asks for and evicts in
-    // FIFO order: keeping retired requests would hold their inference buffers alive, while an evicted entry only
-    // costs one extra full upload.
+    // initialized and needs a full upload
     std::vector<AppliedInferRequest> applied_infer_requests;
     size_t max_applied_infer_requests = 0;
     InferRequestSignatureCache lora_state_evaluators;

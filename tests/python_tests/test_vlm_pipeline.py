@@ -4022,14 +4022,16 @@ def test_vlm_vision_lora_switched_per_generate(backend: str, cat_tensor: openvin
     config = GenerationConfig(max_new_tokens=DEFAULT_MAX_NEW_TOKENS, do_sample=False)
     adapter = Adapter(str(adapter_path))
     pipe = VLMPipeline(
-        models_path, "CPU", ATTENTION_BACKEND=backend,
+        models_path,
+        "CPU",
+        ATTENTION_BACKEND=backend,
         adapters=AdapterConfig(adapter, 1.0, AdapterConfig.Mode.MODE_DYNAMIC),
     )
 
     adapted = pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=config).texts[0]
-    disabled = pipe.generate(
-        PROMPTS[0], images=[cat_tensor], generation_config=config, adapters=AdapterConfig()
-    ).texts[0]
+    disabled = pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=config, adapters=AdapterConfig()).texts[
+        0
+    ]
     other_alpha = pipe.generate(
         PROMPTS[0], images=[cat_tensor], generation_config=config, adapters=AdapterConfig(adapter, 2.0)
     ).texts[0]
