@@ -101,6 +101,7 @@ invalid_configs = [
     # beam search
     dict(max_new_tokens=1, num_beams=2, num_return_sequences=3), # 'num_beams' must be >= 'num_return_sequences'
     dict(max_new_tokens=1, num_beams=3, num_beam_groups=2), # 'num_beams' must be divisible by 'num_beam_groups'
+    dict(max_new_tokens=1, num_beams=2, num_beam_groups=0), # 'num_beam_groups' must be greater than 0
     dict(max_new_tokens=1, num_beams=3, do_sample=True), # 'beam sample is not supported
     dict(max_new_tokens=1, num_beams=3, no_repeat_ngram_size=0), # invalid 'no_repeat_ngram_size'
     dict(max_new_tokens=1, num_beams=4, num_beam_groups=2, diversity_penalty=0.0), # 'diversity_penalty' should not be a default value
@@ -125,6 +126,14 @@ def test_invalid_generation_configs_throws(generation_config_kwargs):
     config = GenerationConfig()
     config.update_generation_config(**generation_config_kwargs)
     with pytest.raises(RuntimeError):
+        config.validate()
+
+
+@pytest.mark.parametrize("num_beams", [2, 4])
+def test_zero_num_beam_groups_throws(num_beams):
+    # num_beam_groups is a divisor of num_beams, so 0 must be rejected before any division
+    config = GenerationConfig(max_new_tokens=1, num_beams=num_beams, num_beam_groups=0)
+    with pytest.raises(RuntimeError, match="'num_beam_groups' must be greater than 0"):
         config.validate()
 
 
