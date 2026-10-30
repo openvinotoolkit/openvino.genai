@@ -3796,6 +3796,52 @@ def test_vlm_dflash_batched_requests_on_linear_attention_target_match_main_only(
     assert results[0].extended_perf_metrics.get_num_draft_tokens() > 0
 
 
+def _run_vlm_add_request(pipe, prompt, images, config) -> list[int]:
+    handle = pipe.add_request(0, prompt, images=images, generation_config=config)
+    while pipe.has_non_finished_requests():
+        pipe.step()
+    assert handle.get_status() == GenerationStatus.FINISHED
+    return list(handle.read_all()[0].generated_ids)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=RuntimeError,
+    reason="VLM add_request and generate(ChatHistory) keep prompt token IDs only when the request config already "
+    "assists generation, so DFlash prefix caching rejects requests with num_assistant_tokens unset or 0",
+)
+@pytest.mark.parametrize("num_assistant_tokens", [None, 0], ids=["unset", "zero"])
+def test_vlm_dflash_prefix_caching_without_explicit_assistant_tokens(cat_tensor, num_assistant_tokens):
+    # With num_assistant_tokens unset DFlash drafts with its default, with 0 the target runs alone; both
+    # requests need prompt token IDs for prefix caching on embedding inputs.
+    model_path, draft_model_path = _get_vlm_dflash_model_paths()
+    properties = {"INFERENCE_PRECISION_HINT": openvino.Type.f32, "KV_CACHE_PRECISION": openvino.Type.f32}
+    config = GenerationConfig(max_new_tokens=20, do_sample=False, ignore_eos=True)
+    if num_assistant_tokens is not None:
+        config.num_assistant_tokens = num_assistant_tokens
+    history = ChatHistory()
+    history.append({"role": "user", "content": PROMPTS[2]})
+
+    def run(pipe):
+        generated_ids = _run_vlm_add_request(pipe, PROMPTS[2], [cat_tensor], config)
+        chat_text = pipe.generate([history], images=[[cat_tensor]], generation_config=[config])[0].texts[0]
+        return generated_ids, chat_text
+
+    no_prefix_config = SchedulerConfig()
+    no_prefix_config.enable_prefix_caching = False
+    reference = run(ContinuousBatchingPipeline(model_path, no_prefix_config, "CPU", properties))
+    prefix_config = SchedulerConfig()
+    prefix_config.enable_prefix_caching = True
+    pipe = ContinuousBatchingPipeline(
+        model_path,
+        prefix_config,
+        "CPU",
+        {**properties, "draft_model": draft_model(draft_model_path, "CPU", **properties)},
+    )
+
+    assert run(pipe) == reference
+
+
 def test_vlm_eagle3_chat_with_videos(
     cat_tensor: openvino.Tensor,
     synthetic_video_32x32_tensor: openvino.Tensor,
