@@ -1307,11 +1307,9 @@ ov::genai::GenerationConfig get_multinomial_config() {
     return multinomial_config;
 }
 
-void patch_chat_template_multiline_strings(Tokenizer& tokenizer) {
-    std::string chat_template = tokenizer.get_chat_template();
+std::string patch_chat_template_multiline_strings(const std::string& chat_template) {
     const std::regex multiline_string_concatenation{R"("[ \t]*\r?\n[ \t]*")"};
-    chat_template = std::regex_replace(chat_template, multiline_string_concatenation, "");
-    tokenizer.set_chat_template(chat_template);
+    return std::regex_replace(chat_template, multiline_string_concatenation, "");
 }
 
 }  // namespace utils

@@ -55,6 +55,13 @@ std::string remap_template(const std::string& chat_template) {
     return chat_template;
 }
 
+// Single place defining transform order: common remap first, then model-specific patch.
+std::string remap_and_patch_template(const std::string& chat_template,
+                                     const std::function<std::string(const std::string&)>& patcher) {
+    std::string result = remap_template(chat_template);
+    return patcher ? patcher(result) : result;
+}
+
 void parse_chat_template_from_file(const std::filesystem::path& path, std::string& value) {
     if (!std::filesystem::exists(path)) {
         return;
@@ -840,7 +847,8 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
         std::lock_guard<std::mutex> lock(m_chat_template_mutex);
         chat_tpl = m_chat_template;
     } else {
-        chat_tpl = remap_template(chat_template);
+        std::lock_guard<std::mutex> lock(m_chat_template_mutex);
+        chat_tpl = remap_and_patch_template(chat_template, m_chat_template_patcher);
     }
 
     auto resolved_tools = tools.value_or(history.get_tools());
@@ -885,11 +893,16 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
 }
 
 void Tokenizer::TokenizerImpl::set_chat_template(const std::string& chat_template) {
-    auto remapped_chat_template = remap_template(chat_template);
-
     std::lock_guard<std::mutex> lock(m_chat_template_mutex);
+    m_chat_template = remap_and_patch_template(chat_template, m_chat_template_patcher);
     m_original_chat_template = chat_template;
-    m_chat_template = std::move(remapped_chat_template);
+    m_minja_chat_template_cache.clear();
+}
+
+void Tokenizer::TokenizerImpl::set_chat_template_patcher(std::function<std::string(const std::string&)> patcher) {
+    std::lock_guard<std::mutex> lock(m_chat_template_mutex);
+    m_chat_template_patcher = std::move(patcher);
+    m_chat_template = remap_and_patch_template(m_chat_template, m_chat_template_patcher);
     m_minja_chat_template_cache.clear();
 }
 

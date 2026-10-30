@@ -8,6 +8,7 @@
 #include <initializer_list>
 #include <filesystem>
 #include <optional>
+#include <functional>
 
 #include "openvino/runtime/tensor.hpp"
 #include "openvino/genai/visibility.hpp"
@@ -329,6 +330,7 @@ private:
     friend class GGUFTokenizer;
     friend class StructuredOutputConfig;
     friend class Sampler;
+    friend void set_chat_template_patcher(Tokenizer&, std::function<std::string(const std::string&)>);
     std::shared_ptr<TokenizerImpl> m_pimpl;
 };
 
