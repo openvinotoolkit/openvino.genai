@@ -5,6 +5,7 @@ import { LLMPipeline } from "../dist/addon.js";
 
 import assert from "node:assert";
 import { describe, it, before } from "node:test";
+import { promisify } from "node:util";
 
 const { LLM_PATH } = process.env;
 
@@ -25,6 +26,18 @@ describe("LLMPipeline", () => {
       }
       done();
     });
+  });
+
+  it("rejects overlapping initialization and becomes ready afterwards", async () => {
+    const nativePipeline = new LLMPipeline();
+    const init = promisify(nativePipeline.init.bind(nativePipeline));
+    const initializing = init(LLM_PATH, "CPU", {});
+    try {
+      await assert.rejects(init(LLM_PATH, "CPU", {}), /Pipeline is already initializing/);
+    } finally {
+      await initializing;
+    }
+    assert.ok(nativePipeline.getGenerationConfig());
   });
 
   it("should generate string result", (_, done) => {

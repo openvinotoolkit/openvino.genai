@@ -3,10 +3,9 @@
 
 #pragma once
 
-#include <atomic>
-
 #include <napi.h>
 
+#include "include/base/pipeline_state.hpp"
 #include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
 
 class Text2SpeechPipelineWrapper : public Napi::ObjectWrap<Text2SpeechPipelineWrapper> {
@@ -20,6 +19,5 @@ public:
 
 private:
     std::shared_ptr<ov::genai::Text2SpeechPipeline> pipe = nullptr;
-    std::shared_ptr<std::atomic<bool>> is_initializing = std::make_shared<std::atomic<bool>>(false);
-    std::shared_ptr<std::atomic<bool>> is_generating = std::make_shared<std::atomic<bool>>(false);
+    std::shared_ptr<PipelineState> state = std::make_shared<PipelineState>();
 };

@@ -118,7 +118,7 @@ describe("Text2ImagePipeline methods", { skip: os.platform() === "darwin" }, () 
     assert.ok(result.data.length > 0);
   });
 
-  it("callback receives a latent tensor that can be decoded", async () => {
+  it("allows decode but rejects another generation inside the step callback", async () => {
     let decoded;
     await pipeline.generate("a tiny robot", {
       width: 64,
@@ -128,12 +128,30 @@ describe("Text2ImagePipeline methods", { skip: os.platform() === "darwin" }, () 
         assert.ok(latent, "callback should receive a latent tensor");
         assert.strictEqual(typeof latent.getShape, "function");
         decoded = await pipeline.decode(latent);
+        await assert.rejects(
+          pipeline.generate("another tiny robot"),
+          /generate\(\) cannot run while another generate\(\) or decode\(\) is in progress/,
+        );
         return false;
       },
     });
     assert.deepStrictEqual(decoded.getShape(), [1, 64, 64, 3]);
     assert.ok(decoded.data instanceof Uint8Array);
     assert.ok(decoded.data.length > 0);
+  });
+
+  it("propagates an async step callback error", async () => {
+    await assert.rejects(
+      pipeline.generate("a tiny robot", {
+        width: 64,
+        height: 64,
+        num_inference_steps: 2,
+        callback: async () => {
+          throw new Error("step callback failure");
+        },
+      }),
+      /step callback failure/,
+    );
   });
 
   it("decode(latent) returns an image tensor", async () => {
