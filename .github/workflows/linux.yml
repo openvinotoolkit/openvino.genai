@@ -187,7 +187,9 @@ jobs:
           # Need to remove the default Python 3.11 in /venv from the Path so that CMake uses the correct one from newly created venv$py_version
           export PATH=${PATH/:\/venv\/bin/}
 
-          for py_version in "3.11" "3.12" "3.13"
+          # No "3.14t": deadsnakes' python3.14-nogil package has no -dev headers, so CMake can't find
+          # Python3 Development.Module for it. The 3.14t wheel is still built in genai_build_genai_wheel.
+          for py_version in "3.11" "3.12" "3.13" "3.14"
           do
             rm -rf ${{ env.BUILD_DIR }}/CMakeCache.txt
 
@@ -314,7 +316,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.11', '3.12', '3.13']
+        python-version: ['3.11', '3.12', '3.13', '3.14', '3.14t']
     defaults:
       run:
         shell: bash
@@ -365,15 +367,34 @@ jobs:
         run: |
           python_exec_path=$(python${{ matrix.python-version }} -c "import sys; print(sys.executable)")
 
+          # The image's pip (24.0) predates free-threaded wheel tag support (needs packaging>=24.1),
+          # so it can silently accept a GIL-built wheel for the free-threaded interpreter.
+          if [[ "${{ matrix.python-version }}" == *t ]]; then
+            $python_exec_path -m pip install --upgrade "pip>=24.1"
+          fi
+
           # Install build requirements read from pyproject so the list isn't duplicated here; --no-build-isolation skips pip's auto build-deps and a stable OpenVINO path keeps sccache warm.
           mapfile -t build_reqs < <(python3.11 -c "import sys, tomllib; print('\n'.join(tomllib.load(open(sys.argv[1], 'rb'))['build-system']['requires']))" "${{ env.SRC_DIR }}/pyproject.toml")
           $python_exec_path -m pip install "${build_reqs[@]}" ${{ needs.openvino_download.outputs.ov_wheel_source }}
 
+          # Free-threaded interpreters ship without the GIL, so the bindings must be built accordingly.
+          # py-build-cmake only reads the `local`, `cross` and `override` config settings, any other
+          # key (`cmake.args`, ...) is silently ignored, hence the `override=` form below.
+          # sccache launchers come from the CMAKE_<LANG>_COMPILER_LAUNCHER env vars.
+          gil_option="ON"
+          if [[ "${{ matrix.python-version }}" == *t ]]; then
+            gil_option="OFF"
+          fi
+
           $python_exec_path -m pip wheel -v --no-deps --no-build-isolation --wheel-dir ${{ env.WHEELS_DIR }} \
               --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
-              --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_C_COMPILER_LAUNCHER=sccache" \
+              --config-settings=override=cmake.options.ENABLE_GIL_PYTHON_API="$gil_option" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}
+
+          # Downstream tests run on Python 3.11 only, so make sure the wheel loads in its own interpreter
+          $python_exec_path -m pip install --no-deps ${{ env.WHEELS_DIR }}/openvino_genai-*.whl
+          $python_exec_path -c "import openvino_genai; print(openvino_genai.__version__)"
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
       - name: Show sccache stats
