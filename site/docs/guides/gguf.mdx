@@ -73,3 +73,43 @@ print(pipe.generate(history, max_new_tokens=64))
 ```
 
 Chat requires a suitable template in the GGUF metadata. See [Tokenization](./tokenization.mdx) for configuring the tokenizer and [Streaming](./streaming.mdx) for streamer behavior.
+
+## Generate with images, video, or audio
+
+Pass a matching language GGUF and projector GGUF to `VLMPipeline` on CPU. This route uses the
+OpenVINO GGUF frontend and reuses the image processing, embedding assembly, and generation code
+used for Optimum Intel exports.
+
+```python
+import numpy as np
+from PIL import Image
+import openvino as ov
+import openvino_genai as genai
+
+pipe = genai.VLMPipeline(
+    "model.gguf", "CPU", mmproj_path="mmproj.gguf"
+)
+image = ov.Tensor(np.asarray(Image.open("image.jpg").convert("RGB"))[None])
+print(pipe.generate("Describe the image.", images=[image], max_new_tokens=64))
+```
+
+In C++, pass `ov::genai::mmproj_path("mmproj.gguf")` to the `VLMPipeline` constructor.
+The existing image, video, audio, and chat APIs apply.
+
+| Language architecture | Matching projector | Media |
+| --- | --- | --- |
+| Gemma3 | `gemma3` | Images |
+| Gemma4 | `gemma4v` or `gemma4uv` | Images, video; audio when present in the projector |
+| Qwen3.5 / Qwen3.5 MoE | `qwen3vl_merger` | Images, video |
+| Muse Glimmer | `muse-glimmer` | Images, video |
+
+Other language/projector pairs are rejected.
+The supported pairs still depend on the OpenVINO frontend version. Paged attention is selected
+using the existing backend rules; request `ATTENTION_BACKEND="SDPA"` explicitly when needed.
+
+## Load models with extensions
+
+Pass `extensions` to the pipeline constructor to load GGUF frontend extensions. `LLMPipeline`
+and `ContinuousBatchingPipeline` require `GGUF_READER="FRONTEND"`; `VLMPipeline` registers the
+same extensions on its language and projector frontends. See [Extensions](./extensions.mdx#use-extensions-with-the-gguf-frontend)
+for Python and C++ examples and the supported extension types.

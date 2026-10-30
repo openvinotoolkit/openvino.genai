@@ -23,6 +23,7 @@
 #include "openvino/genai/cache_eviction.hpp"
 
 namespace ov::genai {
+class InputsEmbedder;
 
 class ContinuousBatchingAdapter;
 
@@ -165,6 +166,14 @@ protected:
     ContinuousBatchingPipeline() = default;
 
 private:
+    ContinuousBatchingPipeline(const std::shared_ptr<ov::Model>& language_model,
+                               const std::shared_ptr<InputsEmbedder>& embedder,
+                               const Tokenizer& tokenizer,
+                               const SchedulerConfig& scheduler_config,
+                               const std::string& device,
+                               const ov::AnyMap& properties,
+                               const GenerationConfig& generation_config);
+
     // Uses preloaded language model to avoid redundant read_model() during pipeline initialization.
     ContinuousBatchingPipeline(const std::shared_ptr<ov::Model>& language_model,
                                const ModelsMap& models_map,

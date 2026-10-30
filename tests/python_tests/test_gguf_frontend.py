@@ -7,6 +7,8 @@ See README.md, "GGUF Frontend Tests", for the steps, CI runtime and model-covera
 """
 
 import gc
+import json
+import os
 import shutil
 import sys
 from dataclasses import dataclass
@@ -21,6 +23,8 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 import openvino as ov
 import openvino_genai as genai
+
+from test_gguf_generated import llama_reference_tools
 
 from utils.comparation import compare_generation_results
 from utils.constants import extra_generate_kwargs, get_default_llm_properties
@@ -88,6 +92,16 @@ TINY_GGUF_MODELS = [
         id="gemma3",
     ),
 ]
+
+
+TINY_GGUF_VLM_MODELS = {
+    "gemma3": ("gemma3", "0cc4c5a822bbc68aeb312fd789046463ca301d14"),
+    "gemma4": ("gemma4", "422d12880b72b92b1547ac7ce2e1a4865f6bec6c"),
+    "gemma4-unified": ("gemma4-unified-it", "becd0eb532fcbccb96576e32eab0dd304e4e4c47"),
+    "qwen35": ("qwen3.5", "aa8ac4a953c6081e0afaa34bd95cefd9c852ddbf"),
+    "qwen35moe": ("qwen3.5-moe", "3061bafacf5a42fc57e620dc54ab19fae19ad594"),
+    "muse-glimmer": ("muse-glimmer", "cb70af191bbbf704a47b7d24dd5287d97dd60103"),
+}
 
 
 def reference_properties():
@@ -304,3 +318,170 @@ def test_tiny_gguf_saved_ir(tiny_gguf_model, pipeline_type, tmp_path):
     del pipeline
     reloaded = create_ov_pipeline(tmp_path, pipeline_type=pipeline_type, ov_config=reference_properties())
     assert reloaded.generate(prompt, config) == expected
+
+
+@pytest.fixture(scope="module")
+def tiny_gguf_vlm_model(request, llama_reference_tools, tmp_path_factory):
+    from test_gguf_generated import run_reference_command
+
+    family = getattr(request, "param", "gemma3")
+    name, revision = TINY_GGUF_VLM_MODELS[family]
+    repo = "optimum-intel-internal-testing/tiny-random-" + name
+    source = Path(retry_request(lambda: snapshot_download(repo, revision=revision)))
+    build = llama_reference_tools[0].parent.parent
+    converter = build / "_deps" / "llama_cpp-src" / "convert_hf_to_gguf.py"
+    directory = Path.home() / "gguf_models" / "genai_vlm_tests" / family
+    directory.mkdir(parents=True, exist_ok=True)
+    if family.startswith("qwen35") or family == "gemma4-unified":
+        fixture_source = tmp_path_factory.mktemp(family)
+        config = json.loads((source / "config.json").read_text(encoding="utf-8"))
+        if family.startswith("qwen35"):
+            # The production mRoPE default exceeds the tiny model's rotary width.
+            config["text_config"]["rope_parameters"]["mrope_section"] = [1, 1, 0]
+        else:
+            config["text_config"]["expert_intermediate_size"] = None
+        for path in source.iterdir():
+            if path.name != "config.json":
+                shutil.copy2(path, fixture_source / path.name)
+        (fixture_source / "config.json").write_text(json.dumps(config), encoding="utf-8")
+        source = fixture_source
+    language, projector = directory / "model.gguf", directory / "mmproj.gguf"
+    language_options = ["--no-mtp"] if family.startswith("qwen35") else []
+    converter_env = os.environ.copy()
+    converter_env["PYTHONPATH"] = str(converter.parent)
+    for output, options in [(language, language_options), (projector, ["--mmproj"])]:
+        run_reference_command(
+            [sys.executable, str(converter), str(source), "--outfile", str(output), "--outtype", "f32", *options],
+            timeout=300,
+            env=converter_env,
+        )
+    return language, projector
+
+
+@pytest.mark.parametrize(
+    "tiny_gguf_vlm_model,media",
+    [
+        pytest.param(family, media, id=f"{family}-{media}")
+        for family in TINY_GGUF_VLM_MODELS
+        if family != "gemma3"
+        for media in (["image", "video", "audio"] if family.startswith("gemma4") else ["image", "video"])
+        if (family, media) != ("muse-glimmer", "video")
+    ]
+    + [
+        pytest.param(
+            "muse-glimmer",
+            "video",
+            id="muse-glimmer-video",
+            marks=pytest.mark.xfail(
+                reason="Muse Glimmer video processing does not honor do_sample_frames=False.",
+                raises=RuntimeError,
+                strict=True,
+            ),
+        )
+    ],
+    indirect=["tiny_gguf_vlm_model"],
+)
+@pytest.mark.parametrize("backend", ["SDPA", "PA"])
+def test_gguf_vlm_projector_layouts(tiny_gguf_vlm_model, backend, media):
+    language, projector = tiny_gguf_vlm_model
+    pipeline = genai.VLMPipeline(
+        language, "CPU", mmproj_path=str(projector), ATTENTION_BACKEND=backend, **reference_properties()
+    )
+    image = np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8)
+    inputs = {"images": [ov.Tensor(image)]}
+    if media == "video":
+        metadata = genai.VideoMetadata()
+        metadata.fps = 2.0
+        inputs = {"videos": [ov.Tensor(np.repeat(image, 4, axis=0))], "videos_metadata": [metadata]}
+    elif media == "audio":
+        inputs = {"audios": [ov.Tensor(np.zeros(16000, dtype=np.float32))]}
+    options = {"max_new_tokens": 2, "do_sample": False, "ignore_eos": True}
+    result = pipeline.generate("Describe.", **inputs, **options)
+    assert result.perf_metrics.get_num_generated_tokens() == 2
+    assert result.perf_metrics.get_num_input_tokens() > 0
+    assert pipeline.generate("Describe.", **inputs, **options).texts == result.texts
+
+
+def test_gguf_vlm_attention_backends_and_images(tiny_gguf_vlm_model):
+    language, projector = tiny_gguf_vlm_model
+    properties = reference_properties()
+    pipelines = [
+        genai.VLMPipeline(language, "CPU", mmproj_path=str(projector), ATTENTION_BACKEND=backend, **properties)
+        for backend in ["SDPA", "PA"]
+    ]
+    image = ov.Tensor(np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8))
+    config = {"max_new_tokens": 8, "do_sample": False, "ignore_eos": True}
+    for images in [[image], [image, image]]:
+        results = [pipe.generate("Describe the image.", images=images, **config) for pipe in pipelines]
+        assert results[0].texts == results[1].texts
+        for pipe, result in zip(pipelines, results):
+            assert pipe.generate("Describe the image.", images=images, **config).texts == result.texts
+
+
+@pytest.mark.parametrize("chat_api", ["start_chat", "ChatHistory"])
+def test_gguf_vlm_attention_backends_and_chat(tiny_gguf_vlm_model, chat_api):
+    language, projector = tiny_gguf_vlm_model
+    pipelines = [
+        genai.VLMPipeline(
+            language, "CPU", mmproj_path=str(projector), ATTENTION_BACKEND=backend, **reference_properties()
+        )
+        for backend in ["SDPA", "PA"]
+    ]
+    image = ov.Tensor(np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8))
+    config = {"max_new_tokens": 8, "do_sample": False, "ignore_eos": True}
+    histories = [genai.ChatHistory(), genai.ChatHistory()]
+    if chat_api == "start_chat":
+        for pipe in pipelines:
+            pipe.start_chat()
+    try:
+        for prompt in ["Describe the image.", "What else can you see?"]:
+            if chat_api == "start_chat":
+                results = [pipe.generate(prompt, images=[image], **config) for pipe in pipelines]
+            else:
+                for history in histories:
+                    history.append({"role": "user", "content": prompt})
+                results = [
+                    pipe.generate(history, images=[image], **config) for pipe, history in zip(pipelines, histories)
+                ]
+            assert results[0].perf_metrics.get_num_input_tokens() == results[1].perf_metrics.get_num_input_tokens()
+            assert results[0].texts == results[1].texts
+            if chat_api == "ChatHistory":
+                for history, result in zip(histories, results):
+                    history.append({"role": "assistant", "content": result.texts[0]})
+    finally:
+        if chat_api == "start_chat":
+            for pipe in pipelines:
+                pipe.finish_chat()
+
+
+def test_gguf_vlm_requires_projector_and_cpu(tiny_gguf_vlm_model):
+    language, projector = tiny_gguf_vlm_model
+    with pytest.raises(RuntimeError, match="mmproj_path"):
+        genai.VLMPipeline(language, "CPU")
+    with pytest.raises(RuntimeError, match="CPU"):
+        genai.VLMPipeline(language, "GPU", mmproj_path=str(projector))
+
+
+@pytest.mark.parametrize("option", ["prompt_lookup", "adapters_sdpa", "adapters_pa"])
+def test_gguf_vlm_language_properties(tiny_gguf_vlm_model, option):
+    language, projector = tiny_gguf_vlm_model
+    properties = reference_properties()
+    properties["ATTENTION_BACKEND"] = "SDPA" if option == "adapters_sdpa" else "PA"
+    baseline = genai.VLMPipeline(language, "CPU", mmproj_path=str(projector), **properties)
+    properties["adapters"] = genai.AdapterConfig()
+    if option == "prompt_lookup":
+        properties["prompt_lookup"] = True
+    pipe = genai.VLMPipeline(language, "CPU", mmproj_path=str(projector), **properties)
+    defaults = pipe.get_generation_config()
+    assert defaults.eos_token_id == baseline.get_generation_config().eos_token_id
+    assert defaults.stop_token_ids == baseline.get_generation_config().stop_token_ids
+    assert defaults.adapters is not None
+    image = ov.Tensor(np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8))
+    config = {"max_new_tokens": 8, "do_sample": False, "ignore_eos": True}
+    if option == "prompt_lookup":
+        config["num_assistant_tokens"] = 3
+        config["max_ngram_size"] = 3
+    assert (
+        pipe.generate("Describe the image.", images=[image], **config).texts
+        == baseline.generate("Describe the image.", images=[image], **config).texts
+    )

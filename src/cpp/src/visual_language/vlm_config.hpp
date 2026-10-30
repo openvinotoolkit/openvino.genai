@@ -5,6 +5,7 @@
 
 #include <filesystem>
 #include <map>
+#include <nlohmann/json_fwd.hpp>
 
 #include <openvino/runtime/properties.hpp>
 
@@ -107,6 +108,8 @@ public:
 
     /// @brief A string token denoting start of vision embeddings for gemma3-4b-it model.
     std::string start_of_image = "<start_of_image>";
+    size_t position_ids_offset = 1;
+    std::string image_separator = "\n\n";
     /// @brief A placeholder for image embeddings in text for gemma3-4b-it model.
     std::string image_soft_token = "<image_soft_token>";
     /// @brief A string token denoting end of vision embeddings for gemma3-4b-it model.
@@ -193,6 +196,7 @@ public:
     /// Keys in the file must match the VLMConfig's members.
     /// @param json_path A path to a file to extract the values from.
     explicit VLMConfig(const std::filesystem::path& config_path);
+    explicit VLMConfig(const nlohmann::json& parsed);
     /// @brief Default copy constructor.
     /// @param A config to copy from.
     VLMConfig(const VLMConfig&) = default;
