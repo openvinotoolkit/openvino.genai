@@ -800,11 +800,11 @@ void VisionEncoderVideoChatFlashQwen::initialize_preprocess_queue(const std::str
     // and compile it on the caller-requested device. The bicubic Interpolate inside the
     // graph is tagged with ov::disable_conversion so the GPU plugin keeps just that
     // single op in f32 (see comment in build_frame_preprocess_model); the rest of the
-    // graph still runs at the device's default precision and the caller's `properties`
-    // are forwarded unchanged.
+    // graph still runs at the device's default precision.
     auto preprocess_model = build_frame_preprocess_model(
         m_processor_config.image_mean, m_processor_config.image_std);
-    auto compiled_preprocess = utils::singleton_core().compile_model(preprocess_model, device, properties);
+    auto compiled_preprocess = utils::singleton_core().compile_model(
+        preprocess_model, device, utils::get_model_properties(properties, "vision_embeddings", device));
     m_ireq_queue_preprocess = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_preprocess.get_property(ov::optimal_number_of_infer_requests),
         [&compiled_preprocess]() -> ov::InferRequest {
