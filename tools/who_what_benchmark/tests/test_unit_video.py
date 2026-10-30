@@ -1,0 +1,180 @@
+# Copyright (C) 2023-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+import sys
+
+import pytest
+from PIL import Image
+from whowhatbench import wwb
+from whowhatbench.image2video_evaluator import Image2VideoEvaluator
+from whowhatbench.text2video_evaluator import Text2VideoEvaluator
+
+
+def _configure_evaluator(evaluator, test_data):
+    evaluator.test_data = test_data
+    evaluator.num_samples = None
+    evaluator.num_inference_steps = 1
+    evaluator.num_frames = 9
+    evaluator.frame_rate = 25
+    evaluator.seed = 42
+    evaluator.decode_timestep = 0.4
+    evaluator.decode_noise_scale = 0.7
+    evaluator.is_genai = False
+    evaluator.empty_adapters = False
+
+
+def test_text2video_missing_optional_columns_use_defaults(monkeypatch, tmp_path):
+    evaluator = Text2VideoEvaluator.__new__(Text2VideoEvaluator)
+    _configure_evaluator(
+        evaluator,
+        {
+            "prompt": ["minimal dataset"],
+            "decode_timestep": [0.2],
+            "decode_noise_scale": [0.3],
+        },
+    )
+    calls = []
+
+    def generate_video(_model, **kwargs):
+        calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr("whowhatbench.text2video_evaluator.export_to_video", lambda *_args: None)
+    result = evaluator._generate_data(None, generate_video, str(tmp_path))
+
+    assert result[["negative_prompt", "width", "height", "guidance_scale"]].to_dict("records") == [
+        {
+            "negative_prompt": "",
+            "width": Text2VideoEvaluator.DEF_WIDTH,
+            "height": Text2VideoEvaluator.DEF_HEIGHT,
+            "guidance_scale": Text2VideoEvaluator.DEF_GUIDANCE_SCALE,
+        }
+    ]
+    actual_generation_values = [
+        (
+            call["negative_prompt"],
+            call["width"],
+            call["height"],
+            call["guidance_scale"],
+            call["guidance_rescale"],
+        )
+        for call in calls
+    ]
+    assert actual_generation_values == [
+        (
+            "",
+            Text2VideoEvaluator.DEF_WIDTH,
+            Text2VideoEvaluator.DEF_HEIGHT,
+            Text2VideoEvaluator.DEF_GUIDANCE_SCALE,
+            Text2VideoEvaluator.DEF_GUIDANCE_RESCALE,
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    ("evaluator_class", "evaluator_module", "include_images"),
+    [
+        (Text2VideoEvaluator, "text2video_evaluator", False),
+        (Image2VideoEvaluator, "image2video_evaluator", True),
+    ],
+    ids=["text-to-video", "image-to-video"],
+)
+def test_video_decode_parameters_treat_nan_as_missing_and_preserve_zero(
+    monkeypatch, tmp_path, evaluator_class, evaluator_module, include_images
+):
+    evaluator = evaluator_class.__new__(evaluator_class)
+    test_data = {
+        "prompt": ["missing timestep", "missing noise scale"],
+        "negative_prompt": ["", ""],
+        "width": [32, 32],
+        "height": [32, 32],
+        "guidance_scale": [1.0, 1.0],
+        "decode_timestep": [float("nan"), 0.0],
+        "decode_noise_scale": [0.0, float("nan")],
+    }
+    if include_images:
+        test_data["images"] = [Image.new("RGB", (32, 32)), Image.new("RGB", (32, 32))]
+        evaluator.image_dir = None
+    _configure_evaluator(evaluator, test_data)
+    calls = []
+
+    def generate_video(_model, **kwargs):
+        calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr(f"whowhatbench.{evaluator_module}.export_to_video", lambda *_args: None)
+    evaluator._generate_data(None, generate_video, str(tmp_path))
+
+    assert [(call["decode_timestep"], call["decode_noise_scale"]) for call in calls] == [
+        (0.4, 0.0),
+        (0.0, 0.7),
+    ]
+
+
+def test_load_prompts_preserves_video_dataset_columns(monkeypatch):
+    class Dataset:
+        @staticmethod
+        def to_dict():
+            return {
+                "caption": ["prompt"],
+                "decode_timestep": [0.2],
+                "decode_noise_scale": [0.3],
+            }
+
+    class Args:
+        dataset = "video-dataset"
+        split = "test"
+        dataset_field = "caption"
+        model_type = "text-to-video"
+
+    monkeypatch.setattr("whowhatbench.wwb.load_dataset", lambda **_kwargs: Dataset())
+
+    assert wwb.load_prompts(Args()) == {
+        "prompt": ["prompt"],
+        "decode_timestep": [0.2],
+        "decode_noise_scale": [0.3],
+    }
+
+
+@pytest.mark.parametrize("model_type", ["text-to-video", "image-to-video"])
+@pytest.mark.parametrize(
+    ("cli_options", "dataset_values", "expected_values"),
+    [
+        ([], {}, (None, None)),
+        (["--decode-timestep", "0.2", "--decode-noise-scale", "0.3"], {}, (0.2, 0.3)),
+        (
+            ["--decode-timestep", "0.2", "--decode-noise-scale", "0.3"],
+            {"decode_timestep": [0.4], "decode_noise_scale": [0.5]},
+            (0.4, 0.5),
+        ),
+    ],
+    ids=["defaults", "explicit-cli", "dataset-overrides-cli"],
+)
+def test_video_decode_cli_options_reach_generation(
+    monkeypatch, tmp_path, model_type, cli_options, dataset_values, expected_values
+):
+    calls = []
+
+    def generate_video(_model, **kwargs):
+        calls.append(kwargs)
+        return []
+
+    dataset_rows = {"prompt": ["test prompt"], **dataset_values}
+    if model_type == "image-to-video":
+        dataset_rows["images"] = [Image.new("RGB", (32, 32))]
+
+    monkeypatch.setattr(
+        sys, "argv", ["wwb", "--model-type", model_type, "--genai", "--gt-data", str(tmp_path / "gt.csv"), *cli_options]
+    )
+    monkeypatch.setattr(wwb, "load_prompts", lambda _args: dataset_rows)
+    monkeypatch.setattr(wwb, "genai_gen_text2video", generate_video)
+    monkeypatch.setattr(wwb, "genai_gen_image2video", generate_video)
+    monkeypatch.setattr("whowhatbench.text2video_evaluator.VideoSimilarity", lambda: None)
+    monkeypatch.setattr("whowhatbench.text2video_evaluator.export_to_video", lambda *_args: None)
+    monkeypatch.setattr("whowhatbench.image2video_evaluator.export_to_video", lambda *_args: None)
+
+    evaluator = wwb.create_evaluator(object(), wwb.parse_args())
+
+    assert evaluator.test_data == dataset_rows
+    assert len(calls) == 1
+    assert (calls[0]["decode_timestep"], calls[0]["decode_noise_scale"]) == expected_values

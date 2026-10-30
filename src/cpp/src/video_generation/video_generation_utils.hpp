@@ -18,9 +18,26 @@
 #include "openvino/op/divide.hpp"
 #include "openvino/op/multiply.hpp"
 
+#include "image_generation/numpy_utils.hpp"
 #include "image_generation/schedulers/ischeduler.hpp"
 
 namespace ov::genai::video_generation_utils {
+
+inline ov::Tensor repeat_per_video(const ov::Tensor& input, size_t num_videos_per_prompt) {
+    if (num_videos_per_prompt == 1) {
+        return input;
+    }
+    ov::Shape repeated_shape = input.get_shape();
+    const size_t batch_size = repeated_shape[0];
+    repeated_shape[0] *= num_videos_per_prompt;
+    ov::Tensor repeated(input.get_element_type(), repeated_shape);
+    for (size_t batch = 0; batch < batch_size; ++batch) {
+        for (size_t video = 0; video < num_videos_per_prompt; ++video) {
+            numpy_utils::batch_copy(input, repeated, batch, batch * num_videos_per_prompt + video);
+        }
+    }
+    return repeated;
+}
 
 inline std::shared_ptr<IScheduler> cast_scheduler(std::shared_ptr<Scheduler>&& scheduler) {
     auto casted = std::dynamic_pointer_cast<IScheduler>(std::move(scheduler));
@@ -118,6 +135,11 @@ inline ov::Tensor unpack_latents(const ov::Tensor& latents,
     const ov::Shape in_shape = latents.get_shape();
     OPENVINO_ASSERT(in_shape.size() == 3, "unpack_latents expects [B, S, D] input shape");
     const size_t batch_size = in_shape.at(0), sequence_length = in_shape.at(1), feature_dimensions = in_shape.at(2);
+    OPENVINO_ASSERT(num_frames > 0 && height > 0 && width > 0, "Unpack dimensions must be positive");
+    OPENVINO_ASSERT(sequence_length % num_frames == 0 &&
+                        (sequence_length / num_frames) % height == 0 &&
+                        sequence_length / num_frames / height == width,
+                    "Packed latent sequence length S must equal num_frames * height * width");
 
     const size_t patch_volume = patch_size_t * patch_size * patch_size;
     OPENVINO_ASSERT(feature_dimensions % patch_volume == 0, "D must be divisible by patch_size_t * patch_size * patch_size");
