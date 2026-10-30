@@ -191,7 +191,8 @@ InputsEmbedderMistral3::InputsEmbedderMistral3(
     : IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {
     m_skip_duplicate_bos = true;
     auto compiled_model = utils::singleton_core().compile_model(
-        model_dir / "openvino_multi_modal_projector_model.xml", device, device_config);
+        model_dir / "openvino_multi_modal_projector_model.xml", device,
+        utils::get_model_properties(device_config, "multi_modal_projector", device));
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM multi-modal projector model");
     m_ireq_queue_multi_modal_projector = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -212,7 +213,8 @@ InputsEmbedderMistral3::InputsEmbedderMistral3(
     const auto& projector_model = utils::get_model_weights_pair(models_map, "multi_modal_projector").first;
     const auto& projector_weights = utils::get_model_weights_pair(models_map, "multi_modal_projector").second;
     auto compiled_model = utils::singleton_core().compile_model(
-        projector_model, projector_weights, device, device_config);
+        projector_model, projector_weights, device,
+        utils::get_model_properties(device_config, "multi_modal_projector", device));
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM multi-modal projector model");
     m_ireq_queue_multi_modal_projector = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
