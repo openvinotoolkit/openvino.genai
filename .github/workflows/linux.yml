@@ -768,7 +768,12 @@ jobs:
       matrix:
         build-type: [Release]
     needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_wheels, genai_build_genai_wheel ]
-    if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench || fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
+    if: >-
+      ${{
+        fromJSON(needs.smart_ci.outputs.affected_components).llm_bench ||
+        fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching ||
+        fromJSON(needs.smart_ci.outputs.affected_components).image_generation
+      }}
     timeout-minutes: 90
     defaults:
       run:
@@ -819,6 +824,76 @@ jobs:
           requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt;${{ env.SRC_DIR }}/tools/llm_bench/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
+      - name: Convert Qwen Image 2.1 model for clone gtest
+        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).image_generation }}
+        run: |
+          model_id="optimum-intel-internal-testing/tiny-random-qwen-image-2.1"
+          transformers_version="5.0.0"
+          optimum_intel_ref="main"
+          optimum_intel_package="git+https://github.com/huggingface/optimum-intel.git@${optimum_intel_ref}#egg=optimum-intel"
+          cache_identity="model_id=${model_id};revision=default-unpinned;transformers=${transformers_version};optimum_intel_ref=${optimum_intel_ref};export=optimum-cli export openvino -m ${model_id} --trust-remote-code --weight-format fp16"
+          model_base_dir="${{ env.HF_HOME }}/ov_test_models"
+          model_dir="${model_base_dir}/tiny-random-qwen-image-2.1"
+
+          fixture_files_are_complete() {
+            local fixture_dir="$1"
+            local relative_path
+            local required_files=(
+              "model_index.json"
+              "scheduler/scheduler_config.json"
+              "transformer/config.json"
+              "transformer/openvino_model.xml"
+              "transformer/openvino_model.bin"
+              "text_encoder/config.json"
+              "text_encoder/openvino_model.xml"
+              "text_encoder/openvino_model.bin"
+              "vision_encoder/config.json"
+              "vision_encoder/openvino_model.xml"
+              "vision_encoder/openvino_model.bin"
+              "text_encoder_i2i/openvino_model.xml"
+              "text_encoder_i2i/openvino_model.bin"
+              "vae_encoder/openvino_model.xml"
+              "vae_encoder/openvino_model.bin"
+              "vae_decoder/config.json"
+              "vae_decoder/openvino_model.xml"
+              "vae_decoder/openvino_model.bin"
+            )
+
+            for relative_path in "${required_files[@]}"; do
+              [[ -s "${fixture_dir}/${relative_path}" ]] || return 1
+            done
+
+            python -c 'import json, sys; model_index = json.load(open(sys.argv[1])); assert model_index["text_encoder"][1] == "Qwen3VLForConditionalGeneration"; assert model_index["vae"][1] == "AutoencoderKLQwenImage21"; assert model_index["transformer"][1] == "QwenImage21Transformer2DModel"' "${fixture_dir}/model_index.json" >/dev/null 2>&1 || return 1
+            [[ -s "${fixture_dir}/processor/openvino_tokenizer.xml" && -s "${fixture_dir}/processor/openvino_tokenizer.bin" ]] ||
+              [[ -s "${fixture_dir}/tokenizer/openvino_tokenizer.xml" && -s "${fixture_dir}/tokenizer/openvino_tokenizer.bin" ]]
+          }
+
+          fixture_is_complete() {
+            local fixture_dir="$1"
+            local marker="${fixture_dir}/.openvino_export_identity"
+            [[ -f "${marker}" ]] && [[ "$(cat "${marker}")" == "${cache_identity}" ]] &&
+              fixture_files_are_complete "${fixture_dir}"
+          }
+
+          if ! fixture_is_complete "${model_dir}"; then
+            mkdir -p "${model_base_dir}"
+            rm -f "${model_dir}/.openvino_export_identity"
+            temp_model_dir="$(mktemp -d "${model_base_dir}/.tiny-random-qwen-image-2.1.XXXXXX")"
+            trap 'rm -rf "${temp_model_dir}"' EXIT
+            export_venv="${RUNNER_TEMP}/qwen-image21-export-venv"
+            python -m venv --system-site-packages "${export_venv}"
+            "${export_venv}/bin/python" -m pip install "transformers==${transformers_version}" "optimum==2.3.0"
+            "${export_venv}/bin/python" -m pip install --no-deps "${optimum_intel_package}"
+            "${export_venv}/bin/optimum-cli" export openvino -m "${model_id}" --trust-remote-code --weight-format fp16 "${temp_model_dir}"
+            fixture_files_are_complete "${temp_model_dir}"
+            rm -rf "${model_dir}"
+            mv "${temp_model_dir}" "${model_dir}"
+            fixture_files_are_complete "${model_dir}"
+            printf '%s\n' "${cache_identity}" > "${model_dir}/.openvino_export_identity.tmp"
+            mv "${model_dir}/.openvino_export_identity.tmp" "${model_dir}/.openvino_export_identity"
+            trap - EXIT
+          fi
+
       - name: Convert models for cache types gtests
         if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
         run: |
@@ -841,6 +916,16 @@ jobs:
         env:
           TEST_MODELS_BASE_DIR: "${{ env.HF_HOME }}/ov_test_models"
           CACHE_TYPES_CSV: "${{ env.INSTALL_DIR }}/tests/data/cache_types_models.csv"
+          OPENVINO_TOKENIZERS_PATH_GENAI: "${{ env.INSTALL_DIR }}/runtime/lib/intel64/libopenvino_tokenizers.so"
+
+      - name: Run Qwen Image 2.1 clone regression test
+        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).image_generation }}
+        run: |
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+          chmod +x ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
+          ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching --gtest_filter="QwenImage21PipelineCloneTest.*"
+        env:
+          TEST_MODELS_BASE_DIR: "${{ env.HF_HOME }}/ov_test_models"
           OPENVINO_TOKENIZERS_PATH_GENAI: "${{ env.INSTALL_DIR }}/runtime/lib/intel64/libopenvino_tokenizers.so"
 
       - name: Test Continuous Batching Tools
