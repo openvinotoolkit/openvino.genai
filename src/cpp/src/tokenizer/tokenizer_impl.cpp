@@ -3,7 +3,9 @@
 
 #include "tokenizer/tokenizer_impl.hpp"
 
+#include <algorithm>
 #include <iostream>
+#include <limits>
 #include <utility>
 
 #include "add_second_input_pass.hpp"
@@ -194,7 +196,7 @@ void Tokenizer::TokenizerImpl::set_state_if_necessary(CircularBufferQueueElement
     // in order to get the same behavior in C++ when arguments are not specified.
     std::optional<bool> add_special_tokens_flag = true;
     std::optional<bool> skip_special_tokens_flag = true;
-    std::optional<int32_t> max_length_val;
+    std::optional<size_t> max_length_val;
     std::optional<bool> pad_to_max_length_val = false;
     std::optional<bool> truncation_val = false;
     std::optional<std::string> padding_side_val = std::nullopt;
@@ -227,7 +229,15 @@ void Tokenizer::TokenizerImpl::set_state_if_necessary(CircularBufferQueueElement
         } else if (name == skip_special_tokens.name()) {
             set_state_value(state, skip_special_tokens_flag, state_flags);
         } else if (name == MAX_LENGTH_VAR_ID) {
-            set_state_value(state, max_length_val, state_flags);
+            // The tokenizer keeps max_length as int32, so clamp instead of letting a larger value wrap.
+            // The ceiling matches the disabled-truncation value in make_tokenizer_stateful.cpp,
+            // because values closer to int32 max break Truncate.
+            constexpr size_t max_length_limit = std::numeric_limits<int32_t>::max() - 64;
+            std::optional<int32_t> max_length_i32;
+            if (max_length_val.has_value()) {
+                max_length_i32 = static_cast<int32_t>(std::min(*max_length_val, max_length_limit));
+            }
+            set_state_value(state, max_length_i32, state_flags);
         } else if (name == PAD_TO_MAX_LENGTH_VAR_ID) {
             set_state_value(state, pad_to_max_length_val, state_flags);
         } else if (name == TRUNCATION_VAR_ID) {
