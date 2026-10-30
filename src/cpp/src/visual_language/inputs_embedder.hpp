@@ -27,6 +27,13 @@ const static std::regex UNIVERSAL_IMAGE_PATTERN{R"(<ov_genai_image_(\d+)>)"};
 const static std::regex UNIVERSAL_VIDEO_PATTERN{R"(<ov_genai_video_(\d+)>)"};
 const static std::regex UNIVERSAL_AUDIO_PATTERN{R"(<ov_genai_audio_(\d+)>)"};
 
+// Explicit add_special_tokens settings override these defaults.
+enum class PromptFormatting {
+    Raw,              // Skip templating; add special tokens by default outside chat.
+    NeedsTemplate,    // Apply the template; omit extra special tokens by default.
+    AlreadyTemplated  // Skip templating and extra special tokens by default.
+};
+
 struct NormalizedPrompt {
     std::string unified_prompt;
     std::vector<size_t> images_sequence;
@@ -123,8 +130,7 @@ public:
     // gets last pruned prompt after vision token pruning
     std::string get_last_pruned_prompt(const std::string& original_prompt) const;
 
-    // set the apply_chat_template flag, which determines whether chat template should be applied for non-chat scenarios
-    void set_apply_chat_template_status(bool apply_chat_template);
+    void set_prompt_formatting(PromptFormatting prompt_formatting);
 
     // finishes chat and clears a chat history
     void finish_chat();
@@ -185,9 +191,7 @@ private:
         // True if chat mode is activated to save conversation
         // history between generate() calls.
         bool m_is_chat_conversation = false;
-        // Chat history
-        // True if chat template should be applied for non-chat scenario
-        bool m_apply_chat_template = true;
+        PromptFormatting m_prompt_formatting = PromptFormatting::NeedsTemplate;
         // Finish reason of last generation for chat scenario
         ov::genai::GenerationStatus m_chat_generation_finish_status = ov::genai::GenerationStatus::RUNNING;
         // reflection of tokens contained in the kv cache
@@ -296,8 +300,8 @@ private:
             return m_cache_state;
         }
 
-        void set_apply_chat_template_status(bool apply_chat_template) {
-            m_apply_chat_template = apply_chat_template;
+        void set_prompt_formatting(PromptFormatting prompt_formatting) {
+            m_prompt_formatting = prompt_formatting;
         }
 
         /**
@@ -465,6 +469,7 @@ private:
     std::shared_ptr<IInputsEmbedder> m_impl;
 
     friend class InputsEmbedderMiniCPM;
+    friend class InputsEmbedderMiniCPMV4_6;
     friend class InputsEmbedderLLaVA;
     friend class InputsEmbedderNanoLLaVA;
     friend class InputsEmbedderLLaVANext;
