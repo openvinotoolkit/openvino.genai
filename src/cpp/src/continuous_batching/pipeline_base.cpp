@@ -28,6 +28,15 @@ std::unordered_map<std::string, ov::Tensor> deep_copy_tensors_map(
 
 namespace ov::genai {
 
+void ContinuousBatchingPipeline::IContinuousBatchingPipeline::prepare_inputs_embedder(
+    const GenerationConfig&) const {}
+
+std::unordered_map<std::string, ov::Tensor>
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::prepare_lm_extra_inputs(
+    std::unordered_map<std::string, ov::Tensor> lm_extra_inputs) const {
+    return lm_extra_inputs;
+}
+
 GenerationConfig ContinuousBatchingPipeline::IContinuousBatchingPipeline::get_config() const {
     return m_generation_config;
 }
@@ -415,10 +424,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
         PerfMetrics::emplace_duration(vlm_perf_metrics[0].raw_metrics.chat_template_durations, template_start);
 
-        m_inputs_embedder->set_apply_chat_template_status(false);
+        m_inputs_embedder->set_prompt_formatting(PromptFormatting::AlreadyTemplated);
 
         size_t cache_size_before = prepare_prompt_ids(prompt, sampling_params[0]);
 
+        prepare_inputs_embedder(sampling_params[0]);
         input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(
             templated_history,
             m_history_images,
@@ -436,7 +446,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[0].get_shape()[1], 0));
 
-        lm_extra_inputs_list.push_back(m_inputs_embedder->get_lm_extra_inputs());
+        lm_extra_inputs_list.push_back(
+            prepare_lm_extra_inputs(m_inputs_embedder->get_lm_extra_inputs()));
 
         PerfMetrics::emplace_duration(vlm_perf_metrics[0].vlm_raw_metrics.prepare_embeddings_durations, start_get_inputs_embeds);
     } else {
@@ -467,10 +478,12 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             auto [unified_prompt, image_sequence, video_sequence, audio_sequence] =
                 m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, m_audio_id, encoded_images, encoded_videos, encoded_audios);
 
-            m_inputs_embedder->set_apply_chat_template_status(sampling_params[i].apply_chat_template);
+            m_inputs_embedder->set_prompt_formatting(
+                sampling_params[i].apply_chat_template ? PromptFormatting::NeedsTemplate : PromptFormatting::Raw);
 
             size_t cache_size_before = prepare_prompt_ids(prompt, sampling_params[i]);
 
+            prepare_inputs_embedder(sampling_params[i]);
             input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(
                 unified_prompt,
                 encoded_images,
@@ -488,7 +501,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
             position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[i].get_shape()[1], 0));
 
-            lm_extra_inputs_list.push_back(deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs()));
+            lm_extra_inputs_list.push_back(
+                prepare_lm_extra_inputs(deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs())));
 
             PerfMetrics::emplace_duration(vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations, start_get_inputs_embeds);
         }
@@ -672,7 +686,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
 
-        VLMChatContext chat_context(histories[i], m_vision_registry, *m_inputs_embedder);
+        VLMChatContext chat_context(histories[i], m_embeddings_registry, *m_inputs_embedder);
         chat_contexts.push_back(std::move(chat_context));
 
         // Audio goes through the chat context so it is registered, content-hashed and reused
@@ -697,13 +711,14 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         );
         PerfMetrics::emplace_duration(vlm_perf_metrics[i].raw_metrics.chat_template_durations, template_start);
 
-        m_inputs_embedder->set_apply_chat_template_status(false);
+        m_inputs_embedder->set_prompt_formatting(PromptFormatting::AlreadyTemplated);
 
         // Snapshot the embedder's token cache so the newly added prompt slice can be recovered
         // after tokenization (used by the Omni Talker via original_prompt_ids_list).
         const size_t cache_size_before =
             capture_prompt_ids ? m_inputs_embedder->get_cache_state().get_state().size() : 0;
 
+        prepare_inputs_embedder(sampling_params[i]);
         input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(
             templated_history,
             processed_chat_data.encoded_images,
@@ -729,7 +744,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[i].get_shape()[1], 0));
 
-        lm_extra_inputs_list.push_back(deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs()));
+        lm_extra_inputs_list.push_back(
+            prepare_lm_extra_inputs(deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs())));
 
         PerfMetrics::emplace_duration(vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations, start_get_inputs_embeds);
     }
@@ -815,6 +831,18 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
     const std::vector<VideoMetadata>& videos_metadata,
     GenerationConfig sampling_params
 ) {
+    return add_request(request_id, prompt, images, videos, videos_metadata, {}, sampling_params);
+}
+
+GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
+    uint64_t request_id,
+    const std::string& prompt,
+    const std::vector<ov::Tensor>& images,
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<VideoMetadata>& videos_metadata,
+    const std::vector<ov::Tensor>& audios,
+    GenerationConfig sampling_params
+) {
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
     ov::genai::VLMPerfMetrics metrics;
     ov::Tensor inputs;
@@ -823,7 +851,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         const auto start_get_inputs_embeds = std::chrono::steady_clock::now();
-        m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
+        m_inputs_embedder->set_prompt_formatting(
+            sampling_params.apply_chat_template ? PromptFormatting::NeedsTemplate : PromptFormatting::Raw);
         
         const auto vision_encoding_start = std::chrono::steady_clock::now();
         const auto encoded_images = m_inputs_embedder->encode_images(images);
@@ -832,22 +861,30 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
 
         vlm_utils::update_image_slice_counts(metrics, encoded_images);
 
-        // add_request() takes no audio. Normalizing with none still rejects an <ov_genai_audio_N> tag,
-        // which would otherwise reach the model as plain text.
-        const auto [unified_prompt, image_sequence, video_sequence, unused_audio_sequence] =
-            m_inputs_embedder->normalize_prompt(prompt, 0, 0, 0, encoded_images, encoded_videos, {});
+        const auto audio_encoding_start = std::chrono::steady_clock::now();
+        const auto encoded_audios = m_inputs_embedder->encode_audios(audios);
+        if (!audios.empty()) {
+            PerfMetrics::emplace_duration(metrics.vlm_raw_metrics.audio_encoding_durations, audio_encoding_start);
+        }
+
+        const auto [unified_prompt, image_sequence, video_sequence, audio_sequence] =
+            m_inputs_embedder->normalize_prompt(prompt, 0, 0, 0, encoded_images, encoded_videos, encoded_audios);
         const bool capture_prompt_ids = sampling_params.is_prompt_lookup() || sampling_params.is_assisting_generation();
         const size_t cache_size_before =
             capture_prompt_ids ? m_inputs_embedder->get_cache_state().get_state().size() : 0;
 
+        prepare_inputs_embedder(sampling_params);
         inputs = m_inputs_embedder->get_inputs_embeds(
             unified_prompt,
             encoded_images,
             encoded_videos,
+            encoded_audios,
             metrics,
             true,
             image_sequence,
-            video_sequence
+            video_sequence,
+            audio_sequence,
+            {}
         );
 
         if (capture_prompt_ids) {
@@ -866,7 +903,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
             inputs,
             sampling_params,
             prompt_ids,
-            m_inputs_embedder->get_lm_extra_inputs()
+            prepare_lm_extra_inputs(m_inputs_embedder->get_lm_extra_inputs())
         );
         handle->m_generation_stream->set_vlm_perf_metrics(std::move(metrics));
     }

@@ -14,6 +14,8 @@ namespace ov::genai {
 
 enum class VLMModelType {
     MINICPM,
+    MINICPMV4_6,
+    MINICPM_OCR,
     LLAVA,
     NANOLLAVA,
     LLAVA_NEXT,
@@ -32,10 +34,12 @@ enum class VLMModelType {
     GEMMA4_UNIFIED,
     VIDEOCHAT_FLASH_QWEN,
     QWEN3_OMNI,
+    QWEN3_ASR,
     DEEPSEEK_OCR2,
     MUSE_GLIMMER,
     MINICPMV4_7,
     MISTRAL3,
+    LFM3_VL,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to
