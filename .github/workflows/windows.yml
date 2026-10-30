@@ -90,7 +90,7 @@ jobs:
       with:
         platform: windows
         commit_packages_to_provide: wheels,openvino_node_npm_package.zip
-        revision: latest_available_commit
+        revision: d302464e8cb96e3bc980a586d3af76912bc53aba
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
         # event_name: pull_request
