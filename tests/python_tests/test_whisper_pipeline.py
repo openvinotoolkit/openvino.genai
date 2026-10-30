@@ -251,7 +251,7 @@ def run_genai(
     genai_config.max_new_tokens = config.max_new_tokens
     genai_config.return_timestamps = config.return_timestamps
     genai_config.task = config.task
-    genai_config.language = f"<|{config.language}|>" if config.language else None
+    genai_config.language = config.language
     genai_config.do_sample = config.do_sample
     genai_config.top_p = config.top_p
     genai_config.num_beams = config.num_beams
