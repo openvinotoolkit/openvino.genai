@@ -5,6 +5,7 @@ import os
 import gc
 import pytest
 import math
+import random
 import sys
 import threading
 import numpy as np
@@ -519,6 +520,82 @@ def test_preemption(model_facebook_opt_125m: OVConvertedModelSchema, params):
         scheduler_config=scheduler_params,
         generation_config=generation_config
     )
+
+
+def get_hybrid_prefix_caching_scheduler_config(num_kv_blocks: int, cache_interval_multiplier: int) -> SchedulerConfig:
+    scheduler_config = SchedulerConfig()
+    scheduler_config.num_kv_blocks = num_kv_blocks
+    scheduler_config.num_linear_attention_blocks = 64
+    scheduler_config.cache_interval_multiplier = cache_interval_multiplier
+    scheduler_config.enable_prefix_caching = True
+    scheduler_config.dynamic_split_fuse = True
+    scheduler_config.max_num_batched_tokens = 256
+    scheduler_config.max_num_seqs = 16
+    return scheduler_config
+
+
+HYBRID_PREEMPTION_MODELS_LIST = [
+    pytest.param(model_id, marks=pytest.mark.skip(reason="CVS-195736: LFM2 conversion fails in CI"))
+    if model_id == "optimum-intel-internal-testing/tiny-random-lfm2"
+    else model_id
+    for model_id in LINEAR_ATTENTION_MODELS_LIST
+]
+
+
+@pytest.mark.transformers_dependent(
+    reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
+)
+@pytest.mark.parametrize("llm_model", HYBRID_PREEMPTION_MODELS_LIST, indirect=True)
+def test_hybrid_prefix_caching_preemption_matches_unconstrained_cache(llm_model: OVConvertedModelSchema):
+    prompts = ["What is OpenVINO?", "Why is the Sun yellow?", "Tell me something about Canada", "1+1="]
+    generation_configs = [GenerationConfig(max_new_tokens=64, ignore_eos=True, do_sample=False)] * len(prompts)
+
+    reference_pipe = ContinuousBatchingPipeline(
+        llm_model.models_path, get_hybrid_prefix_caching_scheduler_config(256, 1), "CPU"
+    )
+    reference = reference_pipe.generate(prompts, generation_configs)
+
+    # A smaller interval gives preempted victims checkpoints to rewind to instead of recomputing from scratch.
+    constrained_pipe = ContinuousBatchingPipeline(
+        llm_model.models_path, get_hybrid_prefix_caching_scheduler_config(4, 1), "CPU"
+    )
+    constrained = constrained_pipe.generate(prompts, generation_configs)
+
+    assert constrained_pipe.get_metrics().max_cache_usage >= 99.0, "KV pool was not under pressure"
+    for ref, res in zip(reference, constrained):
+        assert res.m_generation_ids == ref.m_generation_ids
+
+
+@pytest.mark.transformers_dependent(
+    reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
+)
+@pytest.mark.parametrize("llm_model", HYBRID_PREEMPTION_MODELS_LIST, indirect=True)
+def test_hybrid_prefix_caching_preemption_with_cancellations_does_not_raise(llm_model: OVConvertedModelSchema):
+    # Deterministic add_request / step / cancel workload from model_server#4428.
+    pipe = ContinuousBatchingPipeline(llm_model.models_path, get_hybrid_prefix_caching_scheduler_config(16, 64), "CPU")
+    base_prompt = "Explain the history of distributed systems and consensus algorithms such as Paxos and Raft. "
+    prompt_pool = [base_prompt * n for n in (1, 2, 4, 8)]
+
+    rng = random.Random(1000)  # nosec B311 - reproducible test schedule, not security-sensitive
+    # Handles must stay alive: dropping one stops its request.
+    handles, cancel_at = {}, {}
+    next_id = step = 0
+    for _ in range(3):
+        for _ in range(12):
+            config = GenerationConfig(min_new_tokens=32, max_new_tokens=rng.randint(64, 192))
+            handles[next_id] = pipe.add_request(next_id, rng.choice(prompt_pool), config)
+            if rng.random() < 0.75:
+                cancel_at[next_id] = step + rng.randint(5, 60)
+            next_id += 1
+        while pipe.has_non_finished_requests():
+            pipe.step()
+            step += 1
+            for request_id in [rid for rid, at in cancel_at.items() if step >= at]:
+                handles[request_id].cancel()
+                del cancel_at[request_id]
+
+    assert pipe.get_metrics().max_cache_usage >= 99.0, "KV pool was not under pressure"
+
 
 multinomial_params = RandomSamplingTestStruct(
     generation_config=[
@@ -1097,6 +1174,65 @@ def test_qwen35_mtp_matches_main_only(qwen35_mtp_model_path: Path):
     mtp_result = mtp_pipe.generate([prompt], [generation_config])
 
     assert mtp_result[0].m_generation_ids == main_only_texts
+
+
+# After preemption, pending tokens must be replayed before MTP can enter its atomic verification window.
+# Currently step() raises instead, failing the batch rather than replaying and continuing generation.
+@pytest.mark.skip(reason="Hybrid MTP verification rejects preempted requests with pending tokens to replay, CVS-198275")
+def test_qwen35_mtp_preemption_replays_before_verification(qwen35_mtp_model_path: Path):
+    scheduler = get_hybrid_prefix_caching_scheduler_config(64, 64)
+    draft_scheduler = SchedulerConfig()
+    draft_scheduler.num_kv_blocks = 128
+    draft_scheduler.enable_prefix_caching = True
+    pipe = ContinuousBatchingPipeline(
+        qwen35_mtp_model_path,
+        scheduler,
+        "CPU",
+        {"draft_model": draft_model(qwen35_mtp_model_path, "CPU", scheduler_config=draft_scheduler)},
+    )
+
+    prompt_pool = [
+        "Explain in detail the history of distributed systems and consensus algorithms, covering "
+        "Paxos, Raft, and Byzantine fault tolerance. " * count
+        for count in (2, 4, 6, 8, 10)
+    ]
+    rng = random.Random(1000)  # nosec B311 - reproducible test schedule, not security-sensitive
+    handles, prompts, configs, cancel_at = {}, {}, {}, {}
+    cancelled_ids = set()
+    for request_id in range(12):
+        prompts[request_id] = rng.choice(prompt_pool)
+        configs[request_id] = GenerationConfig(
+            min_new_tokens=100, max_new_tokens=rng.randint(200, 600), num_assistant_tokens=4
+        )
+        handles[request_id] = pipe.add_request(request_id, prompts[request_id], configs[request_id])
+        if rng.random() < 0.75:
+            cancel_at[request_id] = rng.randint(5, 60)
+
+    for step in range(1000):
+        if not pipe.has_non_finished_requests():
+            break
+        pipe.step()
+        for request_id, cancel_step in list(cancel_at.items()):
+            if step + 1 >= cancel_step:
+                handles[request_id].cancel()
+                cancelled_ids.add(request_id)
+                del cancel_at[request_id]
+    else:
+        pytest.fail("MTP requests did not finish within 1000 steps")
+
+    assert pipe.get_metrics().max_cache_usage >= 99.0, "Cache was not under pressure"
+    surviving_ids = [request_id for request_id in handles if request_id not in cancelled_ids]
+    assert surviving_ids
+    assert all(handles[request_id].get_status() == GenerationStatus.FINISHED for request_id in surviving_ids)
+    survivor_id = surviving_ids[0]
+    output_ids = handles[survivor_id].read_all()[0].generated_ids
+
+    reference_scheduler = get_hybrid_prefix_caching_scheduler_config(256, 64)
+    reference = ContinuousBatchingPipeline(qwen35_mtp_model_path, reference_scheduler, "CPU")
+    reference_handle = reference.add_request(survivor_id, prompts[survivor_id], configs[survivor_id])
+    while reference.has_non_finished_requests():
+        reference.step()
+    assert output_ids == reference_handle.read_all()[0].generated_ids
 
 
 def test_qwen35_mtp_extended_perf_metrics(qwen35_mtp_model_path: Path):
