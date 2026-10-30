@@ -21,13 +21,12 @@ namespace ov::genai {
 
 namespace {
 
-using RequestQueue = CircularBufferQueue<ov::InferRequest>;
-
-std::unique_ptr<RequestQueue> compile(const std::shared_ptr<ov::Model>& model,
-                                      const std::string& name,
-                                      const std::string& device,
-                                      const ov::AnyMap& properties,
-                                      const ov::AnyMap& defaults = {}) {
+// One request per submodel: the engine decodes one stream at a time, on the single language model request it borrows.
+ov::InferRequest compile(const std::shared_ptr<ov::Model>& model,
+                         const std::string& name,
+                         const std::string& device,
+                         const ov::AnyMap& properties,
+                         const ov::AnyMap& defaults = {}) {
     ov::AnyMap model_properties = utils::get_model_properties(properties, name, device);
     // emplace keeps the values the caller set.
     for (const auto& [key, value] : defaults) {
@@ -35,10 +34,7 @@ std::unique_ptr<RequestQueue> compile(const std::shared_ptr<ov::Model>& model,
     }
     auto compiled = utils::singleton_core().compile_model(model, device, model_properties);
     ov::genai::utils::print_compiled_model_properties(compiled, ("LFM3-Omni " + name + " model").c_str());
-    return std::make_unique<RequestQueue>(compiled.get_property(ov::optimal_number_of_infer_requests),
-                                          [&compiled]() -> ov::InferRequest {
-                                              return compiled.create_infer_request();
-                                          });
+    return compiled.create_infer_request();
 }
 
 nlohmann::json read_json(const std::filesystem::path& path) {
@@ -161,7 +157,7 @@ LFM3OmniSpeechEngine::ModelConfig LFM3OmniSpeechEngine::read_model_config(
                     "LFM3-Omni generation_config.json audio_temperature must be >= 0");
     OPENVINO_ASSERT(!config.audio_top_k || *config.audio_top_k >= 1,
                     "LFM3-Omni generation_config.json audio_top_k must be >= 1");
-    OPENVINO_ASSERT(!config.audio_repetition_penalty || *config.audio_repetition_penalty > 0.0f,
+    OPENVINO_ASSERT(config.audio_repetition_penalty > 0.0f,
                     "LFM3-Omni generation_config.json audio_repetition_penalty must be > 0");
 
     const auto codec_json = read_json(config_dir_path / "audio_tokenizer" / "config.json");
@@ -185,25 +181,32 @@ LFM3OmniSpeechEngine::ModelConfig LFM3OmniSpeechEngine::read_model_config(
     return config;
 }
 
+LFM3OmniSpeechEngine::SubModels LFM3OmniSpeechEngine::read_submodels(const std::filesystem::path& models_dir) {
+    auto read = [&models_dir](const std::string& name) {
+        return utils::singleton_core().read_model(models_dir / ("openvino_" + name + "_model.xml"));
+    };
+    return {read("depth_decoder"), read("audio_out_embeddings"), read("audio_decoder")};
+}
+
+LFM3OmniSpeechEngine::SubModels LFM3OmniSpeechEngine::read_submodels(const ModelsMap& models_map) {
+    auto read = [&models_map](const std::string& key) {
+        const auto& [model, weights] = utils::get_model_weights_pair(models_map, key);
+        return utils::singleton_core().read_model(model, weights);
+    };
+    return {read("depth_decoder"), read("audio_out_embeddings"), read("audio_decoder")};
+}
+
 LFM3OmniSpeechEngine::LFM3OmniSpeechEngine(const std::filesystem::path& models_dir,
                                            ov::InferRequest& language,
                                            EmbeddingsModel::Ptr embedding,
                                            const std::string& device,
                                            const ov::AnyMap& properties)
-    : m_config(read_model_config(models_dir)),
-      m_language(language),
-      m_embedding(std::move(embedding)) {
-    auto& core = utils::singleton_core();
-    m_depth_decoder =
-        compile(core.read_model(models_dir / "openvino_depth_decoder_model.xml"), "depth_decoder", device, properties);
-    m_audio_out_embeddings = compile(core.read_model(models_dir / "openvino_audio_out_embeddings_model.xml"),
-                                     "audio_out_embeddings",
-                                     device,
-                                     properties);
-    m_audio_decoder =
-        compile(core.read_model(models_dir / "openvino_audio_decoder_model.xml"), "audio_decoder", device, properties,
-                AUDIO_DECODER_DEFAULTS);
-}
+    : LFM3OmniSpeechEngine(read_model_config(models_dir),
+                           read_submodels(models_dir),
+                           language,
+                           std::move(embedding),
+                           device,
+                           properties) {}
 
 LFM3OmniSpeechEngine::LFM3OmniSpeechEngine(const ModelsMap& models_map,
                                            const std::filesystem::path& config_dir_path,
@@ -211,27 +214,36 @@ LFM3OmniSpeechEngine::LFM3OmniSpeechEngine(const ModelsMap& models_map,
                                            EmbeddingsModel::Ptr embedding,
                                            const std::string& device,
                                            const ov::AnyMap& properties)
-    : m_config(read_model_config(config_dir_path)),
+    : LFM3OmniSpeechEngine(read_model_config(config_dir_path),
+                           read_submodels(models_map),
+                           language,
+                           std::move(embedding),
+                           device,
+                           properties) {}
+
+LFM3OmniSpeechEngine::LFM3OmniSpeechEngine(ModelConfig config,
+                                           const SubModels& submodels,
+                                           ov::InferRequest& language,
+                                           EmbeddingsModel::Ptr embedding,
+                                           const std::string& device,
+                                           const ov::AnyMap& properties)
+    : m_config(std::move(config)),
       m_language(language),
-      m_embedding(std::move(embedding)) {
-    auto read = [&models_map](const std::string& key) {
-        const auto& [model, weights] = utils::get_model_weights_pair(models_map, key);
-        return utils::singleton_core().read_model(model, weights);
-    };
-    m_depth_decoder = compile(read("depth_decoder"), "depth_decoder", device, properties);
-    m_audio_out_embeddings = compile(read("audio_out_embeddings"), "audio_out_embeddings", device, properties);
-    m_audio_decoder = compile(read("audio_decoder"), "audio_decoder", device, properties, AUDIO_DECODER_DEFAULTS);
+      m_embedding(std::move(embedding)),
+      m_depth_decoder(compile(submodels.depth_decoder, "depth_decoder", device, properties)),
+      m_audio_out_embeddings(compile(submodels.audio_out_embeddings, "audio_out_embeddings", device, properties)),
+      m_audio_decoder(compile(submodels.audio_decoder, "audio_decoder", device, properties, AUDIO_DECODER_DEFAULTS)) {
+    m_beam_idx.data<int32_t>()[0] = 0;
 }
 
 LFM3OmniSpeechEngine::StepOutput LFM3OmniSpeechEngine::language_step(const ov::Tensor& inputs_embeds,
                                                                       size_t attention_length) {
-    ov::Tensor attention_mask(ov::element::i64, {1, attention_length});
-    std::fill_n(attention_mask.data<int64_t>(), attention_length, 1);
-    ov::Tensor beam_idx(ov::element::i32, {1});
-    beam_idx.data<int32_t>()[0] = 0;
+    // set_shape keeps the allocation while the mask fits, so the decode loop does not allocate per step.
+    m_attention_mask.set_shape({1, attention_length});
+    std::fill_n(m_attention_mask.data<int64_t>(), attention_length, 1);
     m_language.set_tensor("inputs_embeds", inputs_embeds);
-    m_language.set_tensor("attention_mask", attention_mask);
-    m_language.set_tensor("beam_idx", beam_idx);
+    m_language.set_tensor("attention_mask", m_attention_mask);
+    m_language.set_tensor("beam_idx", m_beam_idx);
     m_language.infer();
 
     const ov::Tensor logits = m_language.get_tensor("logits");
@@ -262,11 +274,9 @@ ov::Tensor LFM3OmniSpeechEngine::embed_token(int64_t token_id) {
 ov::Tensor LFM3OmniSpeechEngine::embed_frame(const std::vector<int64_t>& codes) {
     ov::Tensor codes_tensor(ov::element::i64, {1, codes.size()});
     std::copy(codes.begin(), codes.end(), codes_tensor.data<int64_t>());
-    CircularBufferQueueElementGuard<ov::InferRequest> guard(m_audio_out_embeddings.get());
-    ov::InferRequest& request = guard.get();
-    request.set_tensor("codes", codes_tensor);
-    request.infer();
-    const ov::Tensor embeds = request.get_tensor("inputs_embeds");
+    m_audio_out_embeddings.set_tensor("codes", codes_tensor);
+    m_audio_out_embeddings.infer();
+    const ov::Tensor embeds = m_audio_out_embeddings.get_tensor("inputs_embeds");
     return copy_tensor(embeds, {1, 1, embeds.get_shape().at(1)});
 }
 
@@ -359,13 +369,11 @@ std::vector<int64_t> LFM3OmniSpeechEngine::sample_frame(const ov::Tensor& hidden
     size_t revealed = 0;
     for (size_t pass_size : m_config.maskgit_schedule) {
         std::copy(codes.begin(), codes.end(), codes_tensor.data<int64_t>());
-        CircularBufferQueueElementGuard<ov::InferRequest> guard(m_depth_decoder.get());
-        ov::InferRequest& request = guard.get();
-        request.set_tensor("hidden_states", hidden_state);
-        request.set_tensor("codes", codes_tensor);
-        request.set_tensor("masked", masked);
-        request.infer();
-        const ov::Tensor logits = request.get_tensor("logits");
+        m_depth_decoder.set_tensor("hidden_states", hidden_state);
+        m_depth_decoder.set_tensor("codes", codes_tensor);
+        m_depth_decoder.set_tensor("masked", masked);
+        m_depth_decoder.infer();
+        const ov::Tensor logits = m_depth_decoder.get_tensor("logits");
         const size_t codebook_size = m_config.codebook_size;
         OPENVINO_ASSERT(logits.get_shape() == ov::Shape({1, num_codebooks, codebook_size}),
                         "LFM3-Omni depth decoder must return logits [1, ", num_codebooks, ", ", codebook_size, "]");
@@ -394,11 +402,9 @@ ov::Tensor LFM3OmniSpeechEngine::decode_frames(const std::vector<std::vector<int
             codes[codebook * num_frames + frame] = frames[begin + frame][codebook];
         }
     }
-    CircularBufferQueueElementGuard<ov::InferRequest> guard(m_audio_decoder.get());
-    ov::InferRequest& request = guard.get();
-    request.set_tensor("audio_codes", audio_codes);
-    request.infer();
-    const ov::Tensor audio = request.get_tensor("audio_values");
+    m_audio_decoder.set_tensor("audio_codes", audio_codes);
+    m_audio_decoder.infer();
+    const ov::Tensor audio = m_audio_decoder.get_tensor("audio_values");
     OPENVINO_ASSERT(audio.get_shape() == ov::Shape({1, num_frames * m_config.frame_samples}),
                     "LFM3-Omni audio decoder must return ", m_config.frame_samples, " samples per frame");
     return copy_tensor(audio, audio.get_shape());
@@ -429,16 +435,15 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
     Sampling audio_sampling;
     audio_sampling.temperature = request.audio_temperature ? request.audio_temperature : m_config.audio_temperature;
     audio_sampling.top_k = request.audio_top_k ? request.audio_top_k : m_config.audio_top_k;
-    audio_sampling.repetition_penalty =
-        request.audio_repetition_penalty.value_or(m_config.audio_repetition_penalty.value_or(1.0f));
+    audio_sampling.repetition_penalty = request.audio_repetition_penalty.value_or(m_config.audio_repetition_penalty);
 
     std::set<int64_t> stop_token_ids = text_config.stop_token_ids;
     if (text_config.eos_token_id >= 0) {
         stop_token_ids.insert(text_config.eos_token_id);
     }
 
-    enum class Mode { TEXT, AUDIO, INTERLEAVED };
-    Mode mode = request.mode == SpeechOutputMode::INTERLEAVED ? Mode::INTERLEAVED : Mode::AUDIO;
+    enum class Mode { TEXT, SPEECH, INTERLEAVED };
+    Mode mode = request.mode == SpeechOutputMode::INTERLEAVED ? Mode::INTERLEAVED : Mode::SPEECH;
     LFM3SpeechResult result;
 
     // Speech always follows its marker in training: append it unless the prompt already ends with one.
@@ -504,7 +509,7 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
     while (!finished) {
         const bool interleaving = mode == Mode::INTERLEAVED;
         ov::Tensor next_embeds;
-        if (mode == Mode::AUDIO || (interleaving && speaking)) {
+        if (mode == Mode::SPEECH || (interleaving && speaking)) {
             std::vector<std::vector<int64_t>> codebook_history(m_config.num_codebooks);
             for (const auto& frame : audio_history) {
                 for (size_t codebook = 0; codebook < m_config.num_codebooks; ++codebook) {
@@ -567,7 +572,7 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
             } else if (stop_token_ids.count(token)) {
                 finished = true;
             } else if (!interleaving && token == m_config.audio_start_token_id) {
-                mode = Mode::AUDIO;
+                mode = Mode::SPEECH;
             } else if (!interleaving && token == m_config.mixed_start_token_id) {
                 mode = Mode::INTERLEAVED;
                 slots_left = m_config.interleaved_n_text;

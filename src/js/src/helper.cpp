@@ -400,6 +400,21 @@ ov::genai::StopCriteria js_to_cpp<ov::genai::StopCriteria>(const Napi::Env& env,
 }
 
 template <>
+ov::genai::SpeechOutputMode js_to_cpp<ov::genai::SpeechOutputMode>(const Napi::Env& env, const Napi::Value& value) {
+    OPENVINO_ASSERT(value.IsNumber(), "talkerSpeechConfig.output_mode must be a SpeechOutputMode value.");
+    const int mode = value.As<Napi::Number>().Int32Value();
+    switch (mode) {
+    case static_cast<int>(ov::genai::SpeechOutputMode::INTERLEAVED):
+        return ov::genai::SpeechOutputMode::INTERLEAVED;
+    case static_cast<int>(ov::genai::SpeechOutputMode::SPEECH_ONLY):
+        return ov::genai::SpeechOutputMode::SPEECH_ONLY;
+    default:
+        OPENVINO_THROW("Invalid talkerSpeechConfig.output_mode: " + std::to_string(mode) +
+                       ". Expected 0 (INTERLEAVED) or 1 (SPEECH_ONLY).");
+    }
+}
+
+template <>
 std::vector<std::string> js_to_cpp<std::vector<std::string>>(const Napi::Env& env, const Napi::Value& value) {
     if (value.IsArray()) {
         auto array = value.As<Napi::Array>();
@@ -801,14 +816,7 @@ ov::genai::OmniTalkerSpeechConfig js_to_cpp<ov::genai::OmniTalkerSpeechConfig>(c
         config.return_audio = field.ToBoolean().Value();
     }
     if (const Napi::Value field = object.Get("output_mode"); !field.IsUndefined() && !field.IsNull()) {
-        OPENVINO_ASSERT(field.IsNumber(), "talkerSpeechConfig.output_mode must be a SpeechOutputMode value.");
-        const int mode = field.As<Napi::Number>().Int32Value();
-        OPENVINO_ASSERT(mode == static_cast<int>(ov::genai::SpeechOutputMode::INTERLEAVED) ||
-                            mode == static_cast<int>(ov::genai::SpeechOutputMode::SPEECH_ONLY),
-                        "Invalid talkerSpeechConfig.output_mode: ",
-                        mode,
-                        ". Expected 0 (INTERLEAVED) or 1 (SPEECH_ONLY).");
-        config.output_mode = static_cast<ov::genai::SpeechOutputMode>(mode);
+        config.output_mode = js_to_cpp<ov::genai::SpeechOutputMode>(env, field);
     }
     if (const Napi::Value field = object.Get("speaker"); !field.IsUndefined() && !field.IsNull()) {
         if (field.IsString()) {

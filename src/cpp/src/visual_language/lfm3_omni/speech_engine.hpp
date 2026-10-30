@@ -102,7 +102,7 @@ private:
         std::vector<int64_t> placeholder_token_ids;
         std::optional<float> audio_temperature;
         std::optional<size_t> audio_top_k;
-        std::optional<float> audio_repetition_penalty;
+        float audio_repetition_penalty = 1.0f;
         size_t audio_repetition_window = 64;
         size_t text_repetition_window = 32;
         /// @brief Codec output samples per speech frame.
@@ -120,6 +120,22 @@ private:
     };
 
     static ModelConfig read_model_config(const std::filesystem::path& config_dir_path);
+
+    struct SubModels {
+        std::shared_ptr<ov::Model> depth_decoder;
+        std::shared_ptr<ov::Model> audio_out_embeddings;
+        std::shared_ptr<ov::Model> audio_decoder;
+    };
+
+    static SubModels read_submodels(const std::filesystem::path& models_dir);
+    static SubModels read_submodels(const ModelsMap& models_map);
+
+    LFM3OmniSpeechEngine(ModelConfig config,
+                         const SubModels& submodels,
+                         ov::InferRequest& language,
+                         EmbeddingsModel::Ptr embedding,
+                         const std::string& device,
+                         const ov::AnyMap& properties);
 
     struct StepOutput {
         std::vector<float> logits;
@@ -143,9 +159,11 @@ private:
     ModelConfig m_config;
     ov::InferRequest& m_language;
     EmbeddingsModel::Ptr m_embedding;
-    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_depth_decoder;
-    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_audio_out_embeddings;
-    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_audio_decoder;
+    ov::InferRequest m_depth_decoder;
+    ov::InferRequest m_audio_out_embeddings;
+    ov::InferRequest m_audio_decoder;
+    ov::Tensor m_attention_mask{ov::element::i64, {1, 0}};
+    ov::Tensor m_beam_idx{ov::element::i32, {1}};
     // Text and speech draw from separate generators, seeded by text_config.rng_seed and the speech rng_seed.
     std::mt19937 m_text_rng;
     std::mt19937 m_audio_rng;

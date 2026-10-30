@@ -3418,7 +3418,7 @@ class OmniPipeline:
             :param videos_metadata: metadata for each video (fps, frames_indices). Must be empty or have the same length as videos.
             :type videos_metadata: list[VideoMetadata]
         """
-    def get_talker(self) -> TalkerBase:
+    def get_talker(self) -> openvino_genai.py_openvino_genai.TalkerBase | None:
         """
                         Return the underlying TalkerBase. Speaker enumeration and embedding retrieval
                         live here: pipe.get_talker().list_speakers(),
@@ -3478,12 +3478,15 @@ class OmniTalkerSpeechConfig:
         :type speaker: str | openvino.Tensor
     
         :param audio_chunk_frames: Number of codec frames accumulated before streaming each
-            audio chunk. Must be >= 1. At steady state each frame decodes to 1920 samples (80ms at
-            24 kHz), but the code2wav vocoder trims its convolutional warmup from the first frame of
-            every decode call, so a chunk of N frames yields 1920*N - 555 samples, not 1920*N. This
-            is a property of the vocoder graph, not a miscount. Larger chunks amortize the fixed
-            warmup cost; very small chunks (e.g. 1) also risk audible seams between independently
-            decoded chunks in streaming mode.
+            audio chunk. Must be >= 1. For Qwen3-Omni, each frame decodes to 1920 samples (80ms at
+            24 kHz) at steady state, but the code2wav vocoder trims its convolutional warmup from the
+            first frame of every decode call, so a chunk of N frames yields 1920*N - 555 samples, not
+            1920*N. This is a property of the vocoder graph, not a miscount. Larger chunks amortize
+            the fixed warmup cost; very small chunks (e.g. 1) also risk audible seams between
+            independently decoded chunks in streaming mode. For LFM3-Omni, a frame is
+            `stft_frame_stack * stft_hop_length` samples of the codec config (1920 for LFM3-Omni-2B).
+            The ISTFT overlap at the end of each chunk is held back until the next chunk, and the
+            last chunk flushes it, so all chunks together give exactly one frame of samples per frame.
         :type audio_chunk_frames: int
     
         :param max_new_tokens: Cap on talker AR steps. Independent of
@@ -5480,7 +5483,8 @@ class TalkerPerfMetrics:
     
             Parameters:
             num_generated_samples:  number of audio samples generated (waveform length).
-            generation_time_ms:     total speech generation time in milliseconds.
+            generation_time_ms:     total speech generation time in milliseconds. LFM3-Omni decodes
+                                    text and speech in one loop, so its value is the whole generate() call.
             
     """
     def __init__(self) -> None:

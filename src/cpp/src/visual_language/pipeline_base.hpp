@@ -31,11 +31,11 @@ protected:
     // Speech config extracted from AnyMap: speech is decoded in the language model stream (LFM3-Omni)
     std::optional<OmniTalkerSpeechConfig> m_pending_speech_config;
 
-    // RAII guard to reset the audio streamer and speech config on scope exit (exception-safe)
-    struct AudioStreamerGuard {
+    // RAII guard to reset the speech streamer and speech config on scope exit (exception-safe)
+    struct SpeechPropertiesGuard {
         OmniSpeechStreamerVariant& streamer_ref;
         std::optional<OmniTalkerSpeechConfig>& speech_config_ref;
-        ~AudioStreamerGuard() {
+        ~SpeechPropertiesGuard() {
             streamer_ref = std::monostate{};
             speech_config_ref.reset();
         }

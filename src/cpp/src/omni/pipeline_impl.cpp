@@ -76,8 +76,7 @@ OmniPipeline::OmniPipelineImpl::OmniPipelineImpl(const std::shared_ptr<VLMPipeli
     assert_omni_capable();
 }
 
-OmniPipeline::OmniPipelineImpl::OmniPipelineImpl(const std::shared_ptr<VLMPipelineBase>& vlm) :
-    m_vlm{vlm}, m_speech_in_stream{true} {
+OmniPipeline::OmniPipelineImpl::OmniPipelineImpl(const std::shared_ptr<VLMPipelineBase>& vlm) : m_vlm{vlm} {
     OPENVINO_ASSERT(m_vlm, "OmniPipeline: VLM pointer is null");
 }
 
@@ -143,7 +142,7 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const std::string& p
                     "OmniPipeline: videos_metadata size (", videos_metadata.size(),
                     ") must match videos size (", videos.size(), ") or be empty");
 
-    if (talker_speech_config.return_audio && m_speech_in_stream) {
+    if (talker_speech_config.return_audio && !m_talker) {
         return generate_speech_in_stream(
             [&](const ov::AnyMap& properties) {
                 return m_vlm->generate(prompt, properties);
@@ -186,7 +185,7 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const ChatHistory& h
                     "OmniPipeline: videos_metadata size (", videos_metadata.size(),
                     ") must match videos size (", videos.size(), ") or be empty");
 
-    if (talker_speech_config.return_audio && m_speech_in_stream) {
+    if (talker_speech_config.return_audio && !m_talker) {
         return generate_speech_in_stream(
             [&](const ov::AnyMap& properties) {
                 return m_vlm->generate(history, properties);

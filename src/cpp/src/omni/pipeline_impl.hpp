@@ -88,8 +88,8 @@ private:
                                                  const OmniSpeechStreamerVariant& speech_streamer);
 
     std::shared_ptr<VLMPipelineBase> m_vlm;
+    /// Null when the VLM decodes speech in its language model stream (LFM3-Omni).
     std::shared_ptr<TalkerBase> m_talker;
-    bool m_speech_in_stream = false;
     OmniTalkerSpeechConfig m_default_talker_speech_config;
 };
 
