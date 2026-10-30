@@ -1022,8 +1022,11 @@ private:
         );
     }
 
-    bool supports_speech_in_stream() const override {
-        return m_speech_engine != nullptr;
+    void check_speech_in_stream(const OmniTalkerSpeechConfig& speech_config) const override {
+        if (!m_speech_engine) {
+            VLMBackend::check_speech_in_stream(speech_config);
+        }
+        LFM3SpeechRequest::validate(speech_config);
     }
 
     utils::GenerationFinishInfo decode_with_speech(const std::string& unified_prompt,
@@ -1041,21 +1044,11 @@ private:
                 last_prompt_token = prompt_ids.data<const int64_t>()[prompt_ids.get_size() - 1];
             }
         }
-        const OmniTalkerSpeechConfig& speech_config = *m_pending_speech_config;
-        LFM3SpeechRequest request;
-        request.mode = speech_config.output_mode;
-        request.text_config = generation_config;
-        request.audio_temperature = speech_config.cp_temperature;
-        request.audio_top_k = speech_config.cp_top_k;
-        request.audio_repetition_penalty = speech_config.cp_repetition_penalty;
-        request.max_audio_frames = speech_config.max_new_tokens;
-        request.audio_chunk_frames = speech_config.audio_chunk_frames;
-        request.rng_seed = speech_config.rng_seed;
         // The waveform reaches the caller through the speech streamer only.
         const LFM3SpeechResult speech = m_speech_engine->generate(inputs_embeds,
                                                                   attention_mask,
                                                                   last_prompt_token,
-                                                                  request,
+                                                                  LFM3SpeechRequest(*m_pending_speech_config, generation_config),
                                                                   utils::create_streamer(streamer, m_tokenizer),
                                                                   m_pending_speech_streamer);
         // The language model has consumed every slot but the last sampled one.

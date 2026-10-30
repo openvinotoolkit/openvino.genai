@@ -75,9 +75,6 @@ private:
     /// @brief Reject non-Omni-capable models early, before any inference work.
     void assert_omni_capable() const;
 
-    /// @brief Reject speech fields the loaded model does not have.
-    void validate_speech_fields(const OmniTalkerSpeechConfig& talker_speech_config) const;
-
     /// @brief Speech decoded by the VLM: talker_speech_config goes through its AnyMap generate(), and the
     /// waveform comes back through the speech streamer.
     OmniDecodedResults generate_speech_in_stream(const std::function<VLMDecodedResults(const ov::AnyMap&)>& generate,

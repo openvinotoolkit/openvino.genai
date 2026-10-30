@@ -4,6 +4,7 @@
 #pragma once
 
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <random>
@@ -21,30 +22,34 @@
 
 namespace ov::genai {
 
-/// @brief Per-call settings of LFM3OmniSpeechEngine::generate.
+/// @brief Per-call settings of LFM3OmniSpeechEngine::generate, checked against what the engine implements.
 struct LFM3SpeechRequest {
-    SpeechOutputMode mode = SpeechOutputMode::INTERLEAVED;
-    /// @brief Text decode: do_sample, temperature, top_k, top_p, min_p, repetition_penalty, max_new_tokens, stop ids.
+    /// @throws ov::Exception for speech fields LFM3-Omni has no use for and text fields the engine does not implement.
+    LFM3SpeechRequest(const OmniTalkerSpeechConfig& speech_config, const GenerationConfig& text_config);
+
+    /// @brief Rejects speaker selection and the talker_* fields: LFM3-Omni has no separate talker.
+    static void validate(const OmniTalkerSpeechConfig& speech_config);
+
+    SpeechOutputMode mode;
+    /// @brief Text decode: do_sample, temperature, top_k, top_p, min_p, repetition_penalty, rng_seed, stop ids, and
+    /// max_new_tokens, which caps every generated slot, speech frames included.
     GenerationConfig text_config;
     /// @brief Speech frame sampling; unset values fall back to generation_config.json.
     std::optional<float> audio_temperature;
     std::optional<size_t> audio_top_k;
     std::optional<float> audio_repetition_penalty;
-    size_t max_audio_frames = std::numeric_limits<size_t>::max();
+    size_t max_audio_frames;
     /// @brief Speech frames decoded per streamed chunk.
-    size_t audio_chunk_frames = 4;
-    size_t rng_seed = 0;
+    size_t audio_chunk_frames;
+    size_t audio_rng_seed;
 };
 
 struct LFM3SpeechResult {
     /// @brief Generated text tokens, without the <|audio_out|> slot of each speech frame.
     std::vector<int64_t> text_tokens;
-    /// @brief Every generated slot in order, with <|audio_out|> standing for each speech frame.
+    /// @brief Every token added to the context after the prompt: the appended mode marker, if any, then each generated
+    /// slot, with <|audio_out|> standing for each speech frame.
     std::vector<int64_t> slot_tokens;
-    /// @brief Speech frames [1, num_codebooks, num_frames], i64; the end-of-audio frames are dropped.
-    ov::Tensor audio_codes;
-    /// @brief 24 kHz waveform [1, 1, num_samples], f32; empty when no frame was generated.
-    ov::Tensor waveform;
     GenerationStatus status = GenerationStatus::RUNNING;
     GenerationFinishReason finish_reason = GenerationFinishReason::STOP;
     /// @brief Decode timings in the layout of the text pipelines: one new token time per generated slot.
@@ -72,7 +77,8 @@ public:
     /// @param inputs_embeds Prompt embeddings [1, seq_len, hidden_size].
     /// @param attention_mask Ones over the cached history and the prompt, [1, history + seq_len].
     /// @param last_prompt_token Last prompt token id; a marker already in place is not appended again.
-    /// @param speech_streamer Receives the waveform in chunks of request.audio_chunk_frames frames, [1, 1, samples].
+    /// @param speech_streamer Receives the 24 kHz waveform in chunks of request.audio_chunk_frames frames,
+    /// [1, 1, samples]; the only output of the speech, so it must be set.
     LFM3SpeechResult generate(const ov::Tensor& inputs_embeds,
                               const ov::Tensor& attention_mask,
                               int64_t last_prompt_token,
@@ -126,10 +132,11 @@ private:
     std::vector<int64_t> sample_frame(const ov::Tensor& hidden_state,
                                       const Sampling& sampling,
                                       const std::vector<std::vector<int64_t>>& history);
-    int64_t sample(std::vector<float>& scores,
-                   const Sampling& sampling,
-                   const std::vector<int64_t>& history,
-                   const std::vector<int64_t>& suppress);
+    static int64_t sample(std::vector<float>& scores,
+                          const Sampling& sampling,
+                          const std::vector<int64_t>& history,
+                          const std::vector<int64_t>& suppress,
+                          std::mt19937& rng);
     /// @brief Waveform [1, (end - begin) * frame_samples] of frames [begin, end).
     ov::Tensor decode_frames(const std::vector<std::vector<int64_t>>& frames, size_t begin, size_t end);
 
@@ -139,7 +146,9 @@ private:
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_depth_decoder;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_audio_out_embeddings;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_audio_decoder;
-    std::mt19937 m_rng;
+    // Text and speech draw from separate generators, seeded by text_config.rng_seed and the speech rng_seed.
+    std::mt19937 m_text_rng;
+    std::mt19937 m_audio_rng;
 };
 
 }  // namespace ov::genai

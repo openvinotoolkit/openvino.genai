@@ -72,12 +72,12 @@ auto omni_talker_speech_config_docstring = R"(
     :param max_new_tokens: Cap on talker AR steps. Independent of
         `text_config.max_new_tokens` (which caps the thinker text decode). The talker
         pipeline takes the min of this value and the model's
-        `talker_config.talker_max_new_tokens`. For LFM3-Omni it caps the speech frames, and
-        generation stops when either this cap or `text_config.max_new_tokens` is reached.
+        `talker_config.talker_max_new_tokens`. For LFM3-Omni it caps the speech frames, while
+        `text_config.max_new_tokens` caps every generated slot, text tokens and speech frames together.
     :type max_new_tokens: int
 
     :param rng_seed: RNG seed for deterministic talker + CodePredictor sampling
-        (LFM3-Omni: depth decoder and sampled text).
+        (LFM3-Omni: the depth decoder; sampled text uses `text_config.rng_seed`).
     :type rng_seed: int
 
     :param talker_temperature, talker_top_k, talker_repetition_penalty: Talker sampling
@@ -113,7 +113,8 @@ auto omni_pipeline_docstring = R"(
 
       - Path-based: OmniPipeline(models_path, device, **properties) loads VLM and speech
         models from a single directory. For LFM3-Omni it sets ATTENTION_BACKEND=SDPA unless
-        given: speech output needs SDPA, and a PA pipeline returns text only.
+        given: speech output needs SDPA. With PA, generate() supports text output only and raises unless
+        return_audio is False.
 
       - DI: OmniPipeline(vlm_pipeline, talker) reuses an externally-loaded VLMPipeline
         and a TalkerBase subclass for independent device choices or custom backends.

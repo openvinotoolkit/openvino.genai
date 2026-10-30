@@ -110,12 +110,10 @@ void fill_video_metadata(EncodedVideo& encoded_video,
                     "Invalid number of frames (" + std::to_string(num_frames) + ") for video sampling.");
 
     video_metadata.frames_indices.reserve(num_frames);
+    // np.linspace(0, total - 1, n).round() of the transformers processors: i * step, then halves rounded to even.
+    const double step = static_cast<double>(total_num_frames - 1) / static_cast<double>(num_frames - 1);
     for (size_t i = 0; i < num_frames; ++i) {
-        // nearbyint rounds halves to even, as the linspace(...).round() of the transformers processors.
-        size_t frame_idx = static_cast<size_t>(std::nearbyint(
-            static_cast<double>(i) * static_cast<double>(total_num_frames - 1) / static_cast<double>(num_frames - 1)
-        ));
-        video_metadata.frames_indices.push_back(frame_idx);
+        video_metadata.frames_indices.push_back(static_cast<size_t>(std::nearbyint(static_cast<double>(i) * step)));
     }
 }
 

@@ -637,10 +637,11 @@ export type OmniTalkerSpeechConfig = {
   audio_chunk_frames?: Uint;
   /**
    * Cap on talker autoregressive steps. Independent of `textConfig.max_new_tokens`.
-   * For LFM3-Omni it caps the speech frames, and generation stops when either cap is reached.
+   * For LFM3-Omni it caps the speech frames, while `textConfig.max_new_tokens` caps every generated slot,
+   * text tokens and speech frames together.
    */
   max_new_tokens?: Uint;
-  /** RNG seed for talker + CodePredictor sampling (LFM3-Omni: depth decoder and sampled text). */
+  /** RNG seed for talker + CodePredictor sampling (LFM3-Omni: the depth decoder; text uses `textConfig.rng_seed`). */
   rng_seed?: Uint;
   /** Talker sampling temperature override (must be > 0 when set). */
   talker_temperature?: number;

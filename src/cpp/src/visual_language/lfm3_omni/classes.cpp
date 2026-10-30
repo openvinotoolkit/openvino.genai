@@ -33,6 +33,9 @@ AudioEncoderLFM3::FeatureConfig AudioEncoderLFM3::read_feature_config(const std:
     read_json_param(section, "normalization_offset", normalization_offset);
     read_json_param(section, "normalization_divisor", normalization_divisor);
 
+    OPENVINO_ASSERT(config.feature_size > 0 && config.n_fft > 0 && config.hop_length > 0,
+                    "LFM3-Omni feature_extractor needs positive feature_size, n_fft and hop_length, got ",
+                    config.feature_size, ", ", config.n_fft, ", ", config.hop_length);
     // Audio input is 16 kHz by API contract, and WhisperFeatureExtractor fixes the window and (x + 4) / 4.
     OPENVINO_ASSERT(config.sampling_rate == 16000, "LFM3-Omni audio features expect sampling_rate 16000, got ",
                     config.sampling_rate);
@@ -118,6 +121,11 @@ std::vector<EncodedAudio> InputsEmbedderLFM3Omni::encode_audios(const std::vecto
     std::vector<EncodedAudio> encoded_audios;
     encoded_audios.reserve(audios.size());
     for (const ov::Tensor& audio : audios) {
+        // An empty audio keeps its index as a zero-token entry, so later indices do not shift.
+        if (audio.get_size() == 0) {
+            encoded_audios.push_back({ov::Tensor(), 0});
+            continue;
+        }
         ov::Tensor features = m_audio_encoder->encode(audio);
         const size_t num_audio_tokens = features.get_shape()[0];
         encoded_audios.push_back({std::move(features), num_audio_tokens});

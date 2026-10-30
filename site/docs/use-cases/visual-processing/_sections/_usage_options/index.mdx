@@ -102,7 +102,9 @@ Untagged media is prepended in the order images, videos, audio, followed by the 
 
 LFM3-Omni has no separate talker: its language model emits text and speech in one token stream. `OmniPipeline` decodes
 that stream with the SDPA backend, which it selects unless `ATTENTION_BACKEND` is set. With `ATTENTION_BACKEND="PA"`
-it returns text only. `OmniTalkerSpeechConfig.output_mode` sets the order of text and speech:
+it supports text output only: `generate()` throws unless `return_audio` is false. `text_config.max_new_tokens` caps
+every generated slot, text tokens and speech frames together. `OmniTalkerSpeechConfig.output_mode` sets the order of
+text and speech:
 `SpeechOutputMode.INTERLEAVED` (default) alternates short blocks of text and speech, `SpeechOutputMode.SPEECH_ONLY`
 answers with speech only. The voice and the language are set in the system prompt, as the model card describes, for
 example `Perform TTS in American English using a female voice.` The `cp_temperature`, `cp_top_k` and

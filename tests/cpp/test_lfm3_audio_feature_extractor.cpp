@@ -4,6 +4,8 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <utility>
+#include <vector>
 
 #include "openvino/core/except.hpp"
 #include "whisper/feature_extractor.hpp"
@@ -11,6 +13,7 @@
 namespace {
 
 constexpr float LOG_FLOOR = -12.0f;
+constexpr double PI = 3.14159265358979323846;
 
 ov::genai::WhisperFeatureExtractor make_lfm3_extractor() {
     // LFM3-Omni processor_config.json feature_extractor values.
@@ -20,7 +23,7 @@ ov::genai::WhisperFeatureExtractor make_lfm3_extractor() {
 std::vector<float> make_sine_wave(size_t samples) {
     std::vector<float> audio(samples);
     for (size_t sample = 0; sample < samples; ++sample) {
-        audio[sample] = static_cast<float>(0.5 * std::sin(2.0 * M_PI * 440.0 * static_cast<double>(sample) / 16000.0));
+        audio[sample] = static_cast<float>(0.5 * std::sin(2.0 * PI * 440.0 * static_cast<double>(sample) / 16000.0));
     }
     return audio;
 }

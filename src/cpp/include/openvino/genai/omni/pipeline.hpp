@@ -63,7 +63,7 @@ public:
     /// constructing a `VLMPipeline(models_path, device, properties)` plus a
     /// `Talker(models_path, device, properties)` and passing them to the DI ctor.
     /// For LFM3-Omni it loads the VLM only, with ATTENTION_BACKEND=SDPA unless set: speech output
-    /// needs SDPA, and a PA pipeline returns text only.
+    /// needs SDPA. With PA, generate() supports text output only and throws unless return_audio is false.
     OmniPipeline(const std::filesystem::path& models_path,
                  const std::string& device,
                  const ov::AnyMap& properties = {});

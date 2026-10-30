@@ -310,6 +310,9 @@ ov::Tensor InputsEmbedderLFM3VL::get_inputs_embeds(const std::string& prompt,
 
     size_t num_audio_tokens = 0;
     for (size_t audio_id : audios_sequence) {
+        if (audios.at(audio_id).num_audio_tokens == 0) {
+            continue;
+        }
         const auto& features = audios.at(audio_id).audio_features;
         OPENVINO_ASSERT(features.get_element_type() == ov::element::f32 && features.get_shape().size() == 2 &&
                             features.get_shape()[1] == hidden_size,

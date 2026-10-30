@@ -5,7 +5,6 @@
 
 #include <chrono>
 #include <utility>
-#include <variant>
 
 #include "omni/speech_streamer_utils.hpp"
 #include "openvino/core/except.hpp"
@@ -68,24 +67,6 @@ private:
 };
 
 }  // namespace
-
-void OmniPipeline::OmniPipelineImpl::validate_speech_fields(const OmniTalkerSpeechConfig& config) const {
-    if (!config.return_audio) {
-        return;
-    }
-    if (m_speech_in_stream) {
-        const auto* speaker = std::get_if<std::string>(&config.speaker);
-        OPENVINO_ASSERT(speaker && speaker->empty(),
-                        "OmniPipeline: LFM3-Omni has no speaker selection; describe the voice in the system prompt");
-        OPENVINO_ASSERT(!config.talker_temperature && !config.talker_top_k && !config.talker_repetition_penalty,
-                        "OmniPipeline: LFM3-Omni has no separate talker; use the cp_* fields for speech sampling");
-    } else {
-        OPENVINO_ASSERT(config.output_mode == SpeechOutputMode::INTERLEAVED,
-                        "OmniPipeline: output_mode applies to models that emit text and speech in one stream (LFM3-Omni)");
-        OPENVINO_ASSERT(!config.cp_repetition_penalty,
-                        "OmniPipeline: cp_repetition_penalty applies to LFM3-Omni only");
-    }
-}
 
 OmniPipeline::OmniPipelineImpl::OmniPipelineImpl(const std::shared_ptr<VLMPipelineBase>& vlm,
                                                   const std::shared_ptr<TalkerBase>& talker) :
@@ -156,7 +137,6 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const std::string& p
                                                              const StreamerVariant& streamer,
                                                              const OmniSpeechStreamerVariant& speech_streamer) {
     validate_omni_talker_speech_config(talker_speech_config);
-    validate_speech_fields(talker_speech_config);
     enforce_text_config_compatible_with_audio(text_config, talker_speech_config);
 
     OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
@@ -200,7 +180,6 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const ChatHistory& h
                                                              const StreamerVariant& streamer,
                                                              const OmniSpeechStreamerVariant& speech_streamer) {
     validate_omni_talker_speech_config(talker_speech_config);
-    validate_speech_fields(talker_speech_config);
     enforce_text_config_compatible_with_audio(text_config, talker_speech_config);
 
     OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),

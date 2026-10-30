@@ -41,10 +41,9 @@ protected:
         }
     };
 
-    /// @brief True when the language model emits speech frames itself and this backend decodes them.
-    virtual bool supports_speech_in_stream() const {
-        return false;
-    }
+    /// @brief Throws unless the language model emits speech frames itself, this backend decodes them, and the
+    /// config fits the model.
+    virtual void check_speech_in_stream(const OmniTalkerSpeechConfig& speech_config) const;
 
     /// @brief Reads talker_speech_config and speech_streamer from AnyMap into the pending members.
     void extract_speech_properties(const ov::AnyMap& config_map);

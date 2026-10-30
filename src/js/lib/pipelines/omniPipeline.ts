@@ -66,7 +66,8 @@ export class OmniPipeline {
    * @param properties - Device and pipeline properties. Qwen3-Omni speech output uses the
    * continuous-batching backend, which is the default on CPU and GPU (NPU is not
    * supported for speech output). LFM3-Omni speech output uses SDPA, which the pipeline
-   * selects unless ATTENTION_BACKEND is set; with PA it returns text only.
+   * selects unless ATTENTION_BACKEND is set. With PA, generate() supports text output only and rejects
+   * unless return_audio is false.
    */
   constructor(modelPath: string, device: string, properties: OmniPipelineProperties) {
     this.modelPath = modelPath;

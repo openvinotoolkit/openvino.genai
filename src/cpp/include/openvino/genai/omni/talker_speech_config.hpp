@@ -88,11 +88,12 @@ struct OPENVINO_GENAI_EXPORTS OmniTalkerSpeechConfig {
     std::size_t audio_chunk_frames = 4;
 
     /// @brief Cap on talker AR steps. Independent of `text_config.max_new_tokens`
-    /// (which caps the thinker text decode). For LFM3-Omni it caps the speech frames, and
-    /// generation stops when either this cap or `text_config.max_new_tokens` is reached.
+    /// (which caps the thinker text decode). For LFM3-Omni it caps the speech frames, while
+    /// `text_config.max_new_tokens` caps every generated slot, text tokens and speech frames together.
     std::size_t max_new_tokens = std::numeric_limits<std::size_t>::max();
 
-    /// @brief RNG seed for talker + CodePredictor sampling (LFM3-Omni: depth decoder and sampled text).
+    /// @brief RNG seed for talker + CodePredictor sampling (LFM3-Omni: the depth decoder; sampled text uses
+    /// `text_config.rng_seed`).
     std::size_t rng_seed = 0;
 
     // Qwen3-Omni speech generation has two AR stages:
