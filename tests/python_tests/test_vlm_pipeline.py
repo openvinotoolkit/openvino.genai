@@ -4043,6 +4043,68 @@ def test_qwen3_omni_audio_rejected_on_audio_token_id_mismatch(tmp_path: Path) ->
         pipe.generate("Describe", audios=[audio], generation_config=GenerationConfig(max_new_tokens=1))
 
 
+@pytest.fixture
+def gemma3_chat_model(tmp_path):
+    source = Path(_get_ov_model("optimum-intel-internal-testing/tiny-random-gemma3"))
+    for path in source.iterdir():
+        if path.name != "preprocessor_config.json":
+            target = tmp_path / path.name
+            try:
+                target.symlink_to(path, target_is_directory=path.is_dir())
+            except OSError:
+                if path.is_dir():
+                    shutil.copytree(path, target)
+                else:
+                    shutil.copy2(path, target)
+    config_path = source / "preprocessor_config.json"
+    if config_path.exists():
+        shutil.copy2(config_path, tmp_path / config_path.name)
+    else:
+        processor = json.loads((source / "processor_config.json").read_text(encoding="utf-8"))["image_processor"]
+        (tmp_path / config_path.name).write_text(json.dumps(processor), encoding="utf-8")
+    return tmp_path
+
+
+def test_vlm_sdpa_switching_chat_histories_replays_media(gemma3_chat_model):
+    model_dir = gemma3_chat_model
+    pipeline = VLMPipeline(model_dir, "CPU", ATTENTION_BACKEND="SDPA")
+    image = openvino.Tensor(np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8))
+    config = GenerationConfig(max_new_tokens=2, do_sample=False, ignore_eos=True)
+    history = ChatHistory([{"role": "user", "content": "Describe the image."}])
+    first = pipeline.generate(history, images=[image], generation_config=config)
+    history.append({"role": "assistant", "content": first.texts[0]})
+    history.append({"role": "user", "content": "What else can you see?"})
+    expected = pipeline.generate(history, generation_config=config)
+    pipeline.generate(ChatHistory([{"role": "user", "content": "Hello"}]), generation_config=config)
+    actual = pipeline.generate(history, generation_config=config)
+    assert actual.texts == expected.texts
+    assert actual.perf_metrics.get_num_input_tokens() == expected.perf_metrics.get_num_input_tokens()
+
+
+def test_vlm_sdpa_switch_cancel_retry_replays_media(gemma3_chat_model):
+    pipeline = VLMPipeline(gemma3_chat_model, "CPU", ATTENTION_BACKEND="SDPA")
+    image = openvino.Tensor(np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8))
+    config = GenerationConfig(max_new_tokens=16, do_sample=False, ignore_eos=True)
+    history = ChatHistory([{"role": "user", "content": "Describe the image."}])
+    first = pipeline.generate(history, images=[image], generation_config=config)
+    history.append({"role": "assistant", "content": first.texts[0]})
+    history.append({"role": "user", "content": "What else can you see?"})
+    expected = pipeline.generate(history, generation_config=config)
+    pipeline.generate(ChatHistory([{"role": "user", "content": "Hello"}]), generation_config=config)
+    chunks = []
+
+    def cancel(chunk):
+        chunks.append(chunk)
+        return StreamingStatus.CANCEL
+
+    cancelled = pipeline.generate(history, generation_config=config, streamer=cancel)
+    assert chunks
+    assert cancelled.perf_metrics.get_num_generated_tokens() < config.max_new_tokens
+    actual = pipeline.generate(history, generation_config=config)
+    assert actual.texts == expected.texts
+    assert actual.perf_metrics.get_num_input_tokens() == expected.perf_metrics.get_num_input_tokens()
+
+
 @pytest.mark.parametrize("chat_api", ["start_chat", "ChatHistory"])
 @pytest.mark.transformers_lower_v5(
     reason="CVS-186059: Gemma3 export fails with an eltwise shape mismatch with Transformers 5.0"
