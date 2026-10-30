@@ -485,6 +485,88 @@ def test_empty_audio_keeps_its_index(vlm_pipe: ov_genai.VLMPipeline, media: Medi
     assert first == tokens("<ov_genai_audio_1><ov_genai_audio_0> What is it?", [audio, empty])
 
 
+def test_speech_only_first_frame_follows_the_prompt(omni_pipe: ov_genai.OmniPipeline) -> None:
+    # The first frame comes from the prefill hidden state, which must be the one of the last prompt position.
+    def first_frame(prompt: str) -> np.ndarray:
+        config = _speech_config(1, output_mode=ov_genai.SpeechOutputMode.SPEECH_ONLY)
+        return _waveform(omni_pipe.generate(prompt, text_config=_text_config(1000), talker_speech_config=config))
+
+    assert not np.array_equal(first_frame(PROMPT), first_frame("Say something else."))
+
+
+def test_top_k_zero_disables_top_k(omni_pipe: ov_genai.OmniPipeline) -> None:
+    def text_tokens(**fields) -> list[int]:
+        config = _text_config(1000)
+        config.do_sample = True
+        config.rng_seed = 7
+        for name, value in fields.items():
+            setattr(config, name, value)
+        collector = TokenCollector()
+        omni_pipe.generate(PROMPT, text_config=config, talker_speech_config=_speech_config(2), streamer=collector)
+        return collector.tokens
+
+    assert text_tokens(top_k=0) == text_tokens()
+
+
+def test_rejects_echo(omni_pipe: ov_genai.OmniPipeline) -> None:
+    config = _text_config(4)
+    config.echo = True
+    with pytest.raises(RuntimeError, match="echo"):
+        omni_pipe.generate(PROMPT, text_config=config, talker_speech_config=_speech_config(4))
+
+
+class FailingStreamer(ov_genai.StreamerBase):
+    def write(self, token: int | list[int]) -> ov_genai.StreamingStatus:
+        raise ValueError("streamer failure")
+
+    def end(self) -> None:
+        pass
+
+
+class EndCounter(ov_genai.OmniSpeechStreamerBase):
+    def __init__(self) -> None:
+        super().__init__()
+        self.ends = 0
+
+    def write(self, chunk: ov.Tensor) -> ov_genai.StreamingStatus:
+        return ov_genai.StreamingStatus.RUNNING
+
+    def end(self) -> None:
+        self.ends += 1
+
+
+@pytest.mark.parametrize(
+    "fields, streamer, error",
+    [
+        ({}, None, None),
+        ({"speaker": "Ethan"}, None, "no speaker selection"),
+        ({}, "failing", "streamer failure"),
+    ],
+    ids=["finished", "rejected_config", "failing_text_streamer"],
+)
+def test_speech_streamer_end_is_called_once(
+    omni_pipe: ov_genai.OmniPipeline, fields: dict, streamer: str | None, error: str | None
+) -> None:
+    counter = EndCounter()
+    kwargs = {"streamer": FailingStreamer()} if streamer == "failing" else {}
+
+    def run() -> None:
+        omni_pipe.generate(
+            PROMPT,
+            text_config=_text_config(1000),
+            talker_speech_config=_speech_config(2, **fields),
+            speech_streamer=counter,
+            **kwargs,
+        )
+
+    if error is None:
+        run()
+    else:
+        with pytest.raises(Exception, match=error):
+            run()
+    assert counter.ends == 1
+
+
 def test_text_only_returns_no_speech(omni_pipe: ov_genai.OmniPipeline) -> None:
     result = omni_pipe.generate(
         PROMPT, text_config=_text_config(TEXT_TOKENS), talker_speech_config=_speech_config(4, return_audio=False)
@@ -521,14 +603,6 @@ def test_paged_attention_returns_text_only(omni_pa_pipe: ov_genai.OmniPipeline) 
     assert result.texts[0]
     with pytest.raises(RuntimeError, match="ATTENTION_BACKEND=SDPA"):
         omni_pa_pipe.generate(PROMPT, text_config=_text_config(4), talker_speech_config=_speech_config(4))
-
-
-class FailingStreamer(ov_genai.StreamerBase):
-    def write(self, token: int | list[int]) -> ov_genai.StreamingStatus:
-        raise ValueError("streamer failure")
-
-    def end(self) -> None:
-        pass
 
 
 def test_speech_decode_recovers_after_failed_call(omni_pipe: ov_genai.OmniPipeline) -> None:

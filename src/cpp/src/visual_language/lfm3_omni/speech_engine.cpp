@@ -103,9 +103,9 @@ LFM3SpeechRequest::LFM3SpeechRequest(const OmniTalkerSpeechConfig& speech_config
     OPENVINO_ASSERT(text_config.stop_strings.empty() && !text_config.ignore_eos && text_config.min_new_tokens == 0 &&
                         text_config.presence_penalty == 0.0f && text_config.frequency_penalty == 0.0f &&
                         text_config.no_repeat_ngram_size == std::numeric_limits<size_t>::max() &&
-                        text_config.logprobs == 0 && !text_config.structured_output_config,
+                        text_config.logprobs == 0 && !text_config.structured_output_config && !text_config.echo,
                     "LFM3-Omni speech output does not implement stop_strings, ignore_eos, min_new_tokens, presence or "
-                    "frequency penalties, no_repeat_ngram_size, logprobs or structured output");
+                    "frequency penalties, no_repeat_ngram_size, logprobs, structured output or echo");
 }
 
 LFM3OmniSpeechEngine::ModelConfig LFM3OmniSpeechEngine::read_model_config(
@@ -250,11 +250,13 @@ LFM3OmniSpeechEngine::StepOutput LFM3OmniSpeechEngine::language_step(const ov::T
     const ov::Tensor hidden_states = m_language.get_tensor("hidden_states");
     OPENVINO_ASSERT(logits.get_element_type() == ov::element::f32 && hidden_states.get_element_type() == ov::element::f32,
                     "LFM3-Omni language model must output f32 logits and hidden_states");
-    const size_t seq_len = logits.get_shape().at(1);
+    // Slice-before-matmul cuts logits to the last position, while hidden_states keeps every prompt position.
+    const size_t logits_len = logits.get_shape().at(1);
+    const size_t hidden_len = hidden_states.get_shape().at(1);
     const size_t vocab_size = logits.get_shape().at(2);
     const size_t hidden_size = hidden_states.get_shape().at(2);
-    const float* last_logits = logits.data<const float>() + (seq_len - 1) * vocab_size;
-    const float* last_hidden = hidden_states.data<const float>() + (seq_len - 1) * hidden_size;
+    const float* last_logits = logits.data<const float>() + (logits_len - 1) * vocab_size;
+    const float* last_hidden = hidden_states.data<const float>() + (hidden_len - 1) * hidden_size;
 
     StepOutput output;
     output.logits.assign(last_logits, last_logits + vocab_size);
@@ -419,13 +421,16 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
     const GenerationConfig& text_config = request.text_config;
     OPENVINO_ASSERT(is_speech_streamer_active(speech_streamer),
                     "LFM3-Omni speech output needs a speech streamer: it is the only output of the waveform");
+    // Created before any step that can throw: end() is due even if generation fails.
+    SpeechStreamerGuard speech_guard(speech_streamer, true);
     m_text_rng.seed(static_cast<std::mt19937::result_type>(text_config.rng_seed));
     m_audio_rng.seed(static_cast<std::mt19937::result_type>(request.audio_rng_seed));
 
     Sampling text_sampling;
     if (text_config.do_sample) {
         text_sampling.temperature = text_config.temperature;
-        if (text_config.top_k != std::numeric_limits<size_t>::max()) {
+        // As in the continuous batching sampler, 0 and the max value both mean no top-k filter.
+        if (text_config.top_k > 0 && text_config.top_k != std::numeric_limits<size_t>::max()) {
             text_sampling.top_k = text_config.top_k;
         }
         text_sampling.top_p = text_config.top_p;
@@ -481,7 +486,6 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
     StepOutput step = timed_step(prompt_embeds, attention_length);
 
     std::vector<std::vector<int64_t>> frames;
-    SpeechStreamerGuard speech_guard(speech_streamer, true);
     size_t streamed_samples = 0;
     // Streams the samples that frames [0, end) fix for good. The codec decoder is causal, but the ISTFT overlap
     // changes the last decode_lookahead_samples until the next frame arrives. Each chunk is decoded again with
@@ -604,7 +608,13 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
     }
     // STOP keeps what was generated, so the held-back samples are flushed; CANCEL drops them.
     if (result.status != GenerationStatus::CANCEL && !frames.empty()) {
-        stream_up_to(frames.size(), true);
+        // With fewer frames than audio_chunk_frames the flush is the only callback, so its status counts too.
+        const StreamingStatus status = stream_up_to(frames.size(), true);
+        if (status == StreamingStatus::STOP) {
+            result.status = GenerationStatus::STOP;
+        } else if (status == StreamingStatus::CANCEL) {
+            result.status = GenerationStatus::CANCEL;
+        }
     }
     speech_guard.end();
     return result;
