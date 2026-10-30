@@ -11,10 +11,11 @@ There are also Jupyter notebooks for some samples. You can find links to them in
 4. [Support and Contribution](#support-and-contribution)
 
 ## Download and convert the model and tokenizers
-The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 Install [../../export-requirements.txt](../../export-requirements.txt) if model conversion is required.
 ```sh
-pip install --upgrade-strategy eager -r ../../export-requirements.txt
+pip install -r ../../export-requirements.txt
+# Some newer models may require the latest Optimum Intel:
+# pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
 optimum-cli export openvino --model <model> <output_folder>
 ```
 If a converted model in OpenVINO IR format is already available in the collection of [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) on Hugging Face, it can be downloaded directly via hf.
@@ -70,7 +71,7 @@ Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai
 
 Install [../../deployment-requirements.txt](../../deployment-requirements.txt) to run samples
 ```sh
-pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
+pip install -r ../../deployment-requirements.txt
 ```
 
 ### 1. Chat Sample (`chat_sample`)
