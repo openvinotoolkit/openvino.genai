@@ -124,9 +124,6 @@ public:
     // finishes chat and clears a chat history
     void finish_chat();
 
-    virtual ov::Tensor get_draft_inputs_embeds() const {
-        return {};
-    }
     // set CDPruner setting
     virtual void set_vision_token_pruning_config(size_t pruning_ratio, float relevance_weight);
     virtual NormalizedPrompt normalize_prompt(

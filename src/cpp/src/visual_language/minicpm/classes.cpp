@@ -642,6 +642,8 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& unified_p
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
     ov::Tensor inputs_embeds = get_text_embedding(req, encoded_input, metrics);
+    // make a copy of inputs_embeds to avoid data corruption when the infer request is used by another thread
+    set_cached_text_embeds(inputs_embeds);
 
     OPENVINO_ASSERT(
         m_vlm_config.hidden_size == inputs_embeds.get_shape().at(2),
