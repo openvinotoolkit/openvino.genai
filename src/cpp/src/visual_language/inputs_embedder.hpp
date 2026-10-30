@@ -187,6 +187,8 @@ private:
         bool m_add_special_tokens = true;
         // True, if m_add_special_tokens was set, otherwise default behaviour is used
         bool m_add_special_tokens_is_set = false;
+        // True if a non-chat prompt that already starts with the BOS token must be tokenized without adding another BOS
+        bool m_skip_duplicate_bos = false;
         // position ids
         ov::Tensor m_position_ids;
         int64_t m_rope_delta = 0;

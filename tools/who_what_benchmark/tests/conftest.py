@@ -71,6 +71,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "optimum-intel-internal-testing/tiny-random-llava",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
     },
+    "tiny-random-mistral3": {
+        "name": "optimum-intel-internal-testing/tiny-random-mistral3",
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
+    },
     "Qwen2-VL-2B-Instruct": {
         "name": "Qwen/Qwen2-VL-2B-Instruct",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],

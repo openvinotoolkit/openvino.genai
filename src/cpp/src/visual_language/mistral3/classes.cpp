@@ -3,7 +3,6 @@
 
 #include "visual_language/mistral3/classes.hpp"
 #include "visual_language/clip.hpp"
-#include "continuous_batching/timer.hpp"
 #include "utils.hpp"
 
 #include <algorithm>
@@ -26,11 +25,10 @@ constexpr size_t SPATIAL_MERGE_SIZE = 2;
 /// 2. Resize directly to the target using bicubic interpolation.
 /// 3. Normalize with CLIP mean/std.
 /// Returns a float32 tensor in CHW layout together with the resulting patch grid size.
-std::pair<ov::Tensor, ImageSize> preprocess_image_mistral3(const ov::Tensor& image,
-                                                           const ProcessorConfig& config,
-                                                           size_t patch_size) {
-    OPENVINO_ASSERT(config.longest_edge > 0, "longest_edge must be positive");
+std::pair<ov::Tensor, ImageSize> preprocess_image_mistral3(const ov::Tensor& image, const ProcessorConfig& config) {
+    const size_t patch_size = config.patch_size;
     OPENVINO_ASSERT(patch_size > 0, "patch_size must be positive");
+    OPENVINO_ASSERT(config.longest_edge > 0, "longest_edge must be positive");
     clip_image_u8 input_image = tensor_to_clip_image_u8(image);
 
     const int orig_w = input_image.nx;
@@ -172,14 +170,14 @@ EncodedImage VisionEncoderMistral3::encode(const ov::Tensor& image, const ov::An
 
     const ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
 
-    auto [pixel_values, grid_size] = preprocess_image_mistral3(image, config, config.patch_size);
+    auto [pixel_values, grid_size] = preprocess_image_mistral3(image, config);
 
     encoder.set_tensor("pixel_values", pixel_values);
     encoder.infer();
 
     const ov::Tensor& infer_output = encoder.get_output_tensor();
     ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
-    std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
+    infer_output.copy_to(image_features);
 
     return {std::move(image_features), grid_size};
 }
@@ -191,6 +189,7 @@ InputsEmbedderMistral3::InputsEmbedderMistral3(
     const std::string& device,
     const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {
+    m_skip_duplicate_bos = true;
     auto compiled_model = utils::singleton_core().compile_model(
         model_dir / "openvino_multi_modal_projector_model.xml", device, device_config);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM multi-modal projector model");
@@ -209,6 +208,7 @@ InputsEmbedderMistral3::InputsEmbedderMistral3(
     const std::string& device,
     const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
+    m_skip_duplicate_bos = true;
     const auto& projector_model = utils::get_model_weights_pair(models_map, "multi_modal_projector").first;
     const auto& projector_weights = utils::get_model_weights_pair(models_map, "multi_modal_projector").second;
     auto compiled_model = utils::singleton_core().compile_model(
@@ -249,7 +249,7 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderMistral3::encode_images(const
 
         const ov::Tensor& proj_output = projector.get_output_tensor();
         ov::Tensor projected(proj_output.get_element_type(), proj_output.get_shape());
-        std::memcpy(projected.data(), proj_output.data(), proj_output.get_byte_size());
+        proj_output.copy_to(projected);
 
         const size_t h_merged = grid_size.height / SPATIAL_MERGE_SIZE;
         const size_t w_merged = grid_size.width / SPATIAL_MERGE_SIZE;
@@ -257,7 +257,6 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderMistral3::encode_images(const
         EncodedImage result;
         result.resized_source = std::move(projected);
         result.resized_source_size = {h_merged, w_merged};
-        result.num_image_tokens = h_merged * w_merged;
         encoded_images.push_back(std::move(result));
     }
 
@@ -299,21 +298,6 @@ NormalizedPrompt InputsEmbedderMistral3::normalize_prompt(
     }
 
     return {std::move(unified_prompt), std::move(images_sequence), {}};
-}
-
-ov::Tensor InputsEmbedderMistral3::apply_chat_template_tokenize(const std::string& prompt, VLMPerfMetrics& metrics) {
-    const std::string bos_token = m_tokenizer.get_bos_token();
-    // The chat template already emits the BOS token. Ticket to address globally: 192386
-    if (!m_is_chat_conversation && !m_apply_chat_template && !bos_token.empty() &&
-        prompt.compare(0, bos_token.size(), bos_token) == 0) {
-        ManualTimer encode_timer("Encode");
-        encode_timer.start();
-        ov::Tensor input_ids = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false)).input_ids;
-        encode_timer.end();
-        metrics.raw_metrics.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());
-        return input_ids;
-    }
-    return IInputsEmbedder::apply_chat_template_tokenize(prompt, metrics);
 }
 
 void InputsEmbedderMistral3::encode_image_token_id() {
