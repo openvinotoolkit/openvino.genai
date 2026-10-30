@@ -1308,8 +1308,10 @@ size_t Sampler::verify_draft_tree(Sequence::Ptr& sequence,
             }
         }
 
-        // Sample from the target model at this tree depth.
+        // Sample from the target model at this tree depth. min_new_tokens is evaluated against the tokens generated
+        // before the window and the depths accepted so far.
         auto logit_vector = _get_logit_vector(sequence_group_logits, 0, logit_idx);
+        logit_processor.update_generated_len(generated_len - num_tokens_to_validate + accepted_steps - 1);
         logit_processor.apply(logit_vector);
         Token sampled_token = _greedy_sample(logit_vector, 0);
         int64_t pred_token = sampled_token.m_index;
@@ -1396,6 +1398,7 @@ size_t Sampler::verify_draft_tree(Sequence::Ptr& sequence,
     if (!bonus_token.has_value()) {
         // All draft tokens accepted; sample one extra token from the target model.
         auto logit_vector = _get_logit_vector(sequence_group_logits, 0, logit_idx);
+        logit_processor.update_generated_len(sequence->get_generated_len());
         logit_processor.apply(logit_vector);
         bonus_token = _greedy_sample(logit_vector, 0);
     }

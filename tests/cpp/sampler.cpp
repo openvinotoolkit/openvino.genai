@@ -779,6 +779,56 @@ TEST(SamplerValidationMode, keeps_min_new_tokens_mask_after_rejection) {
     EXPECT_FALSE(sequence->has_finished());
 }
 
+namespace {
+// Drafts three candidates as a single EAGLE3 tree path below the main model's token 0.
+SequenceGroup::Ptr make_tree_validation_group(size_t min_new_tokens, const std::vector<int64_t>& candidates) {
+    GenerationConfig config;
+    config.max_new_tokens = 30;
+    config.min_new_tokens = min_new_tokens;
+    config.stop_token_ids = {4};
+    config.tree_depth = 3;
+    config.branching_factor = 1;
+    config.num_assistant_tokens = 3;
+    auto group = make_validation_group(config, candidates);
+    TreeMetaData tree_metadata;
+    tree_metadata.retrieve_indices = {{0, 1, 2, 3}};
+    group->get_sequences().front()->set_tree_metadata(tree_metadata);
+    return group;
+}
+}  // namespace
+
+// min_new_tokens = 2 masks the stop token for the first two generated tokens only, so the stop candidate at the
+// third tree depth, the fourth generated token, must be accepted.
+TEST(SamplerValidationMode, lifts_min_new_tokens_mask_inside_tree_window) {
+    auto group = make_tree_validation_group(2, {1, 2, 4});
+    std::vector<float> logits = {
+        0, 5.f, 0, 0, 0,
+        0, 0, 5.f, 0, 0,
+        1.f, 0, 0, 0, 5.f,
+        5.f, 0, 0, 0, 0,
+    };
+    Sampler sampler;
+    sampler.sample({group}, ov::Tensor(ov::element::f32, ov::Shape{4, 1, 5}, logits.data()), true);
+
+    EXPECT_EQ(group->get_sequences().front()->get_generated_ids(), (TokenIds{0, 1, 2, 4}));
+}
+
+// min_new_tokens = 4 masks the stop token for the first four generated tokens only, so the bonus token after three
+// accepted tree candidates may be the stop token.
+TEST(SamplerValidationMode, lifts_min_new_tokens_mask_for_tree_bonus_token) {
+    auto group = make_tree_validation_group(4, {1, 2, 3});
+    std::vector<float> logits = {
+        0, 5.f, 0, 0, 0,
+        0, 0, 5.f, 0, 0,
+        0, 0, 0, 5.f, 0,
+        1.f, 0, 0, 0, 5.f,
+    };
+    Sampler sampler;
+    sampler.sample({group}, ov::Tensor(ov::element::f32, ov::Shape{4, 1, 5}, logits.data()), true);
+
+    EXPECT_EQ(group->get_sequences().front()->get_generated_ids(), (TokenIds{0, 1, 2, 3, 4}));
+}
+
 // Accepted candidates report the main model's log-probabilities, and the sequence score must follow them.
 TEST(SamplerValidationMode, accepted_candidates_update_sequence_score) {
     auto config = ov::genai::utils::get_greedy_config();
