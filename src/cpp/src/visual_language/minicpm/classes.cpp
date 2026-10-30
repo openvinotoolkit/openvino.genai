@@ -4,6 +4,8 @@
 
 #include "visual_language/minicpm/classes.hpp"
 
+#include <limits>
+
 #include "visual_language/clip.hpp"
 
 #include "utils.hpp"
@@ -733,7 +735,13 @@ ov::Tensor VisionEncoderMiniCPM::resample(const ov::Tensor& encoded_image, const
             std::fill_n(pos_embed_data + flat * bs * embed_len + i * embed_len, embed_len, 0.0f);
         }
         std::fill_n(mask_data + i * pad_to_max, patch_len, 0.0f);
-        std::fill_n(mask_data + i * pad_to_max + patch_len, pad_to_max - patch_len, 1.0f);
+        // The resampler IR adds key_padding_mask to the attention scores before softmax
+        // (see additive Add -> Softmax in openvino_resampler_model). Padded key positions must
+        // therefore be masked with -inf so they contribute zero attention weight, matching the
+        // reference optimum-intel behavior (bool mask converted to float with -inf at pad). Using
+        // a finite value (e.g. 1.0) would leave padded positions partially attended and corrupt
+        // the resampled embeddings whenever slices require padding (pad_to_max > patch_len).
+        std::fill_n(mask_data + i * pad_to_max + patch_len, pad_to_max - patch_len, -std::numeric_limits<float>::infinity());
     }
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_resampler.get());
     ov::InferRequest& resampler = infer_request_guard.get();
