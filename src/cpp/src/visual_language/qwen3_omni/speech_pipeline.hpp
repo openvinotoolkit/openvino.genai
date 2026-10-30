@@ -4,13 +4,13 @@
 #pragma once
 
 #include <filesystem>
-#include <list>
 #include <map>
 #include <random>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+#include "openvino/genai/common_types.hpp"
 #include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/omni/talker.hpp"
 #include "openvino/genai/omni/talker_speech_config.hpp"
@@ -52,10 +52,9 @@ struct Qwen3OmniSpeechConfig {
     std::vector<int64_t> talker_suppress_tokens;
 
     // CodePredictor sampling parameters (defaults match reference Qwen3-Omni;
-    // overridable via generation_config.json keys: cp_temperature, cp_top_k, cp_repetition_penalty)
+    // overridable via generation_config.json keys: cp_temperature, cp_top_k)
     float cp_temperature = 1.0f;
     size_t cp_top_k = 50;
-    float cp_repetition_penalty = 1.0f;
 
     /// @brief Initialize from VLMConfig.
     static Qwen3OmniSpeechConfig from_vlm_config(const VLMConfig& config);
@@ -70,6 +69,21 @@ public:
                             const std::string& device,
                             const ov::AnyMap& properties);
 
+    /// @brief Construct from in-memory model IRs (blob deployment / per-submodel device placement).
+    /// @param models_map Model name -> (IR string, weights tensor). Keys: "text_embeddings",
+    ///                    "talker", "talker_text_embeddings", "talker_projections",
+    ///                    "code_predictor", "code2wav".
+    /// @param config Parsed VLM config (codec/token IDs, speaker_ids) from config.json.
+    /// @param config_dir_path Directory holding generation_config.json (optional sampling defaults).
+    /// @param device_mapping Submodel name -> device. Missing entries fall back to `default_device`.
+    /// @param default_device Device used for submodels absent from `device_mapping`.
+    Qwen3OmniSpeechPipeline(const ModelsMap& models_map,
+                            const VLMConfig& config,
+                            const std::filesystem::path& config_dir_path,
+                            const std::map<std::string, std::string>& device_mapping,
+                            const std::string& default_device,
+                            const ov::AnyMap& properties);
+
     /// @brief Check if all speech models were loaded successfully.
     bool is_available() const {
         return m_talker_available;
@@ -78,7 +92,7 @@ public:
     /// @brief Generate speech from thinker generation results.
     /// @param full_token_ids All token IDs from the full sequence (prompt + generated).
     /// @param all_intermediate_hidden_states Accumulated layer-14 hidden states [one tensor per step].
-    /// @param audio_streamer Callback or OmniSpeechStreamerBase for streaming (monostate = batch mode).
+    /// @param speech_streamer Callback or OmniSpeechStreamerBase for streaming (monostate = batch mode).
     /// @param talker_speech_config Speech generation knobs. Reads `audio_chunk_frames`, `speaker`
     ///                              (variant: name or embedding tensor), `max_new_tokens`, `rng_seed`,
     ///                              and the `talker_*` / `cp_*` optional sampling overrides. Unset
@@ -89,7 +103,7 @@ public:
     ///       ov::InferRequests across talker and CodePredictor sampling.
     TalkerResults generate_speech(const std::vector<int64_t>& full_token_ids,
                                  const std::vector<ov::Tensor>& all_intermediate_hidden_states,
-                                 const OmniSpeechStreamerVariant& audio_streamer,
+                                 const OmniSpeechStreamerVariant& speech_streamer,
                                  const OmniTalkerSpeechConfig& talker_speech_config);
 
     /// @brief Return precomputed speaker embedding for the named speaker. Throws if the model
@@ -114,12 +128,6 @@ private:
     ov::InferRequest m_talker_projections;  // dual-output: text_projection + hidden_projection
     ov::InferRequest m_code_predictor;
     ov::InferRequest m_code2wav;
-
-    // LRU cache for talker token embeddings to avoid redundant inference.
-    // Bounded to kMaxEmbeddingCacheSize entries; evicts least recently used on overflow.
-    static constexpr size_t kMaxEmbeddingCacheSize = 256;
-    std::list<std::pair<int64_t, ov::Tensor>> m_embedding_lru_list;
-    std::unordered_map<int64_t, std::list<std::pair<int64_t, ov::Tensor>>::iterator> m_embedding_lru_map;
 
     // Pre-allocated scratch buffers reused across generate_speech() calls
     std::vector<float> m_talker_buf;
@@ -150,6 +158,12 @@ private:
     std::vector<size_t> m_sample_indices;
     std::vector<size_t> m_sample_topk_indices;
     std::vector<float> m_sample_topk_probs;
+
+    /// @brief Post-load initialization shared by both constructors. Validates submodel IO,
+    /// detects hidden/vocab sizes, loads generation params from generation_config.json (if
+    /// present under `config_dir`), and precomputes constant embeddings. Requires the six
+    /// InferRequest members to already be populated.
+    void initialize(const std::filesystem::path& config_dir);
 
     /// @brief Resolve speaker name to codec token ID.
     int64_t resolve_speaker_id(const std::string& speaker) const;

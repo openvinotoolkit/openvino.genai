@@ -3,18 +3,25 @@
 //
 
 #include <gtest/gtest.h>
+#include <algorithm>
+#include <chrono>
+#include <future>
 #include <numeric>
 #include <set>
 #include "openvino/runtime/core.hpp"
+#include "openvino/op/constant.hpp"
+#include "openvino/op/parameter.hpp"
 #include "openvino/op/concat.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "sequence_group.hpp"
 #include "continuous_batching/scheduler.hpp"
+#include "continuous_batching/pipeline_impl.hpp"
 #include "continuous_batching/cache/cache_orchestrator.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
 #include "continuous_batching/cache/linear_attention_cache_manager.hpp"
 #include "helper.hpp"
+#include "scheduler_test_utils.hpp"
 #include "utils.hpp"
 
 using namespace ov::genai;
@@ -26,7 +33,6 @@ void clear_finished_sequences(std::vector<SequenceGroup::Ptr>& requests) {
     requests.erase(new_end, requests.end());
 }
 
-static constexpr size_t TEST_BLOCK_SIZE = 4;
 static constexpr size_t TEST_NUM_DECODER_LAYERS = 12;
 static constexpr size_t TEST_DEFAULT_CACHE_INTERVAL = TEST_BLOCK_SIZE * DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL_MULTIPLIER;
 static constexpr size_t TEST_CUSTOM_CACHE_INTERVAL_MULTIPLIER = 16;
@@ -36,7 +42,7 @@ size_t get_test_cache_interval(const SchedulerConfig& scheduler_config, size_t k
     return scheduler_config.get_cache_interval(kv_block_size);
 }
 
-std::shared_ptr<CacheOrchestrator> init_cache_orchestrator(SchedulerConfig scheduler_config, size_t block_size = TEST_BLOCK_SIZE, size_t num_layers = 1) {
+std::shared_ptr<CacheOrchestrator> init_cache_orchestrator(SchedulerConfig scheduler_config, size_t block_size, size_t num_layers) {
     ov::Core core = ov::Core();
     ov::InferRequest request = core.compile_model(get_dummy_model(core, TEST_NUM_DECODER_LAYERS)).create_infer_request();
     auto cache_manager = std::make_unique<KVCacheManager>(request);
@@ -46,10 +52,12 @@ std::shared_ptr<CacheOrchestrator> init_cache_orchestrator(SchedulerConfig sched
     return orchestrator;
 }
 
+// cap_la_pool mirrors an explicitly configured LA block ceiling.
 std::shared_ptr<CacheOrchestrator> init_hybrid_cache_orchestrator(SchedulerConfig scheduler_config,
-                                                                   size_t kv_block_size = TEST_BLOCK_SIZE,
-                                                                   size_t kv_num_layers = 1,
-                                                                   size_t la_num_layers = 1) {
+                                                                   size_t kv_block_size,
+                                                                   size_t kv_num_layers,
+                                                                   size_t la_num_layers,
+                                                                   bool cap_la_pool) {
     ov::Core core = ov::Core();
     ov::InferRequest request = core.compile_model(get_dummy_hybrid_model(core, kv_num_layers, la_num_layers)).create_infer_request();
 
@@ -72,11 +80,15 @@ std::shared_ptr<CacheOrchestrator> init_hybrid_cache_orchestrator(SchedulerConfi
         const size_t num_la_blocks = scheduler_config.num_linear_attention_blocks > 0
                                          ? scheduler_config.num_linear_attention_blocks
                                          : (scheduler_config.num_kv_blocks > 0 ? scheduler_config.max_num_seqs : 0);
+        // One live row per sequence, mirroring CacheOrchestrator::register_linear_attention_cache.
+        // One latest row per sequence; speculative scratch is borrowed per step.
         la_block_manager = std::make_unique<BlockManager>(num_la_blocks,
                                                           false,
                                                           1,
                                                           1,  // one logical block table for all LA layers
-                                                          1);
+                                                          /*fixed_blocks_per_sequence=*/1,
+                                                          /*restore_latest_prefix_block_only=*/false,
+                                                          /*max_total_blocks=*/cap_la_pool ? num_la_blocks : 0);
     }
 
     auto orchestrator = std::make_shared<CacheOrchestrator>();
@@ -87,6 +99,7 @@ std::shared_ptr<CacheOrchestrator> init_hybrid_cache_orchestrator(SchedulerConfi
                                       std::move(la_block_manager));
     return orchestrator;
 }
+
 
 std::shared_ptr<CacheOrchestrator> init_linear_attention_cache_orchestrator(SchedulerConfig scheduler_config,
                                                                             size_t la_num_layers = 1) {
@@ -141,7 +154,7 @@ ov::Tensor embeds_matrix_to_tensor(std::vector<std::vector<float>> vec) {
 }
 
 TEST(TestScheduler, adaptive_rkv_zero_size_is_not_marked_available) {
-    Scheduler::Output output;
+    ContinuousBatchingScheduler::Output output;
     const uint64_t seq_id = 42;
 
     EXPECT_FALSE(output.has_adaptive_rkv_evictable_size(seq_id));
@@ -161,18 +174,18 @@ TEST(TestScheduler, adaptive_rkv_zero_size_is_not_marked_available) {
 }
 
 TEST(TestScheduler, output_keeps_shared_kv_global_data_alive) {
-    Scheduler::Output output;
-    auto mutable_global_data = std::make_shared<Scheduler::KVPagedAttentionGlobalData>();
+    ContinuousBatchingScheduler::Output output;
+    auto mutable_global_data = std::make_shared<ContinuousBatchingScheduler::KVPagedAttentionGlobalData>();
     mutable_global_data->xattention_block_size = 17;
     mutable_global_data->xattention_stride = 5;
     mutable_global_data->adaptive_rkv_start_size = 3;
 
-    std::shared_ptr<const Scheduler::KVPagedAttentionGlobalData> global_data = mutable_global_data;
+    std::shared_ptr<const ContinuousBatchingScheduler::KVPagedAttentionGlobalData> global_data = mutable_global_data;
     output.set_kv_paged_attention_global_data(global_data);
     mutable_global_data.reset();
     global_data.reset();
 
-    const Scheduler::KVPagedAttentionGlobalData& output_global_data = output.get_kv_paged_attention_global_data();
+    const ContinuousBatchingScheduler::KVPagedAttentionGlobalData& output_global_data = output.get_kv_paged_attention_global_data();
     EXPECT_EQ(output_global_data.xattention_block_size, 17);
     EXPECT_EQ(output_global_data.xattention_stride, 5);
     EXPECT_EQ(output_global_data.adaptive_rkv_start_size, 3);
@@ -202,7 +215,7 @@ TEST(TestScheduler, general_test) {
         std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2, sequence_group3};
 
         // schedule 3 sequence groups that use 6 kv blocks
-        Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+        ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
         auto out1 = scheduler.schedule(requests);
 
         std::vector<uint64_t> ref_ids = {0, 1, 2};
@@ -295,7 +308,7 @@ TEST(TestScheduler, hybrid_output_fills_linear_attention_block_table_in_prompt_a
                                                        TEST_BLOCK_SIZE,
                                                        /*kv_num_layers=*/1,
                                                        /*la_num_layers=*/3);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     auto prompt_out = scheduler.schedule(requests);
 
     EXPECT_EQ(orchestrator->get_cache_manager(CacheType::LINEAR_ATTENTION_CACHE).get_num_layers(), 3);
@@ -336,6 +349,73 @@ TEST(TestScheduler, hybrid_output_fills_linear_attention_block_table_in_prompt_a
     }
 }
 
+TEST(TestScheduler, hybrid_prefix_linear_attention_verify_retains_next_window_headroom) {
+    for (const size_t accepted_depth : {1u, 2u, 3u, 4u}) {
+        SCOPED_TRACE(accepted_depth);
+        constexpr size_t num_tokens_to_validate = 3;
+        SchedulerConfig scheduler_config;
+        scheduler_config.max_num_batched_tokens = 32;
+        scheduler_config.num_kv_blocks = 32;
+        scheduler_config.num_linear_attention_blocks = 6;
+        scheduler_config.cache_interval_multiplier = 1;
+        scheduler_config.enable_prefix_caching = true;
+        scheduler_config.dynamic_split_fuse = false;
+        scheduler_config.max_num_seqs = 4;
+
+        std::vector<uint64_t> tokens = {0, 1, 2, 3};
+        SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(
+            0,
+            ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+            utils::get_greedy_config());
+        const uint64_t seq_id = sequence_group->get_running_sequences()[0]->get_id();
+        std::vector<SequenceGroup::Ptr> requests = {sequence_group};
+
+        auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
+        ContinuousBatchingScheduler scheduler(orchestrator, scheduler_config);
+        std::ignore = scheduler.schedule(requests);
+        sequence_group->finish_iteration();
+        scheduler.publish_completed_blocks(sequence_group->get_running_sequences()[0], 0, tokens.size());
+        sequence_group->get_running_sequences()[0]->append_token(42, 0.9f);
+        sequence_group->update_processed_tokens_num(tokens.size());
+        sequence_group->set_num_validated_tokens(num_tokens_to_validate);
+        auto& la_block_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+        const size_t block_table_size_before = orchestrator->get_linear_attention_block_table(seq_id).size();
+        auto output = scheduler.schedule(requests);
+        ASSERT_EQ(output.m_total_num_scheduled_tokens, 4u);
+        const auto& paging = output.get_linear_attention_paging_data(seq_id);
+        ASSERT_TRUE(paging.is_speculative);
+        ASSERT_EQ(paging.block_indices.size(), 5u);
+        EXPECT_EQ(orchestrator->get_linear_attention_block_table(seq_id).size(), block_table_size_before);
+        auto& kv_manager = orchestrator->get_block_manager(CacheType::KV_CACHE);
+        EXPECT_FALSE(kv_manager.get_block_tables(seq_id).front().back()->has_published_hash());
+        auto& lease = output.m_linear_attention_scratch_leases.at(seq_id);
+        const size_t accepted_row = lease->commit(accepted_depth);
+        EXPECT_EQ(accepted_row, static_cast<size_t>(paging.block_indices[accepted_depth]));
+        output.m_linear_attention_scratch_leases.clear();
+        sequence_group->update_processed_tokens_num(4 + accepted_depth);
+        sequence_group->clear_scheduled_tokens();
+        for (size_t token = 1; token < accepted_depth; ++token) {
+            sequence_group->get_sequences().front()->append_token(42, 0.9f);
+        }
+        scheduler.publish_completed_blocks(sequence_group->get_sequences().front(), 4, 4 + accepted_depth);
+        EXPECT_FALSE(la_block_manager.has_temporary_blocks(seq_id));
+        EXPECT_EQ(la_block_manager.get_num_sequences_with_temporary_blocks(), 0u);
+        EXPECT_EQ(la_block_manager.num_free_blocks(), 1u);
+        auto competitor = std::make_shared<SequenceGroup>(
+            1, std::vector<int64_t>{7, 8, 9, 10}, utils::get_greedy_config());
+        competitor->schedule_tokens(4);
+        la_block_manager.append_slots(competitor);
+        EXPECT_EQ(la_block_manager.num_free_blocks(), 0u);
+        ASSERT_TRUE(orchestrator->can_reserve_linear_attention_temporary_blocks(seq_id, 4));
+        auto next = orchestrator->prepare_linear_attention_scratch(seq_id, 4);
+        EXPECT_EQ(next.block_indices().size(), 4u);
+        next.abort();
+        la_block_manager.free_sequence(competitor->get_sequences().front()->get_id());
+        scheduler.free_sequence(seq_id);
+        EXPECT_EQ(la_block_manager.num_free_blocks(), 6u);
+    }
+}
+
 TEST(TestScheduler, hybrid_non_prefix_linear_attention_returns_aliased_read_write_blocks) {
     SchedulerConfig scheduler_config;
     scheduler_config.max_num_batched_tokens = 32;
@@ -354,7 +434,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_returns_aliased_read_writ
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
     ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
@@ -364,6 +444,138 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_returns_aliased_read_writ
     EXPECT_EQ(paging_data.cache_interval, 0);
     EXPECT_EQ(paging_data.past_length, 0);
     EXPECT_EQ(orchestrator->get_linear_attention_block_table(seq_id).size(), 1);
+    EXPECT_EQ(orchestrator->get_linear_attention_latest_row(seq_id),
+              orchestrator->get_linear_attention_block_table(seq_id).at(0)->get_index());
+    EXPECT_FALSE(orchestrator->is_linear_attention_latest_row_shared(seq_id));
+
+    for (auto& req : requests) {
+        for (auto& seq : req->get_sequences()) {
+            scheduler.free_sequence(seq->get_id());
+        }
+    }
+}
+
+TEST(TestScheduler, hybrid_non_prefix_linear_attention_speculative_window_is_atomic_or_deferred_under_megabatch_pressure) {
+    // The megabatch fits one full validation window; the second must defer rather than run partially.
+    constexpr size_t N = 3;
+    constexpr size_t WINDOW = N + 1;  // 4
+    SchedulerConfig scheduler_config;
+    // Budget fits one full window (4) plus a partial second (2) -- never the full second window.
+    scheduler_config.max_num_batched_tokens = WINDOW + (WINDOW - 2);  // 6
+    scheduler_config.num_kv_blocks = 32;
+    scheduler_config.num_linear_attention_blocks = 16;
+    scheduler_config.enable_prefix_caching = false;
+    scheduler_config.dynamic_split_fuse = false;
+    scheduler_config.max_num_seqs = 4;
+
+    std::vector<uint64_t> tokens = {0, 1, 2, 3};
+    SequenceGroup::Ptr seq_group_a = std::make_shared<SequenceGroup>(
+        0,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    SequenceGroup::Ptr seq_group_b = std::make_shared<SequenceGroup>(
+        1,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    const auto seq_id_a = seq_group_a->get_running_sequences()[0]->get_id();
+    const auto seq_id_b = seq_group_b->get_running_sequences()[0]->get_id();
+    std::vector<SequenceGroup::Ptr> requests = {seq_group_a, seq_group_b};
+
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config,
+                                                       TEST_BLOCK_SIZE,
+                                                       /*kv_num_layers=*/1,
+                                                       /*la_num_layers=*/1);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
+    // Two latest rows plus one concurrent window.
+    scheduler.ensure_linear_attention_pool_blocks(2 + (1 + N));
+
+    // Process both prompts before testing validation-window scheduling.
+    while (seq_group_a->get_num_processed_tokens() < tokens.size() ||
+           seq_group_b->get_num_processed_tokens() < tokens.size()) {
+        std::ignore = scheduler.schedule(requests);
+        for (auto& req : requests) {
+            if (req->is_scheduled()) {
+                req->finish_iteration();
+            }
+        }
+    }
+
+    for (auto& req : requests) {
+        req->get_running_sequences()[0]->append_token(42, 0.9f);
+        req->update_processed_tokens_num(tokens.size());
+        req->set_num_validated_tokens(N);
+    }
+
+    const size_t latest_row_b = orchestrator->get_linear_attention_latest_row(seq_id_b);
+
+    auto out1 = scheduler.schedule(requests);
+    ASSERT_TRUE(out1.has_linear_attention_paging_data(seq_id_a));
+    EXPECT_EQ(out1.get_linear_attention_paging_data(seq_id_a).block_indices.size(), N + 2);
+    EXPECT_TRUE(out1.get_linear_attention_paging_data(seq_id_a).is_speculative);
+    EXPECT_EQ(seq_group_a->get_num_scheduled_tokens(), WINDOW);
+
+    EXPECT_EQ(seq_group_b->get_num_scheduled_tokens(), 0u);
+    EXPECT_FALSE(out1.has_linear_attention_paging_data(seq_id_b));
+    EXPECT_EQ(out1.m_scheduled_sequence_groups_ids, std::vector<uint64_t>({0}));
+
+    scheduler.release_linear_attention_checkpoints(seq_id_a);
+    seq_group_a->finish_iteration();
+
+    auto out2 = scheduler.schedule(requests);
+    ASSERT_TRUE(out2.has_linear_attention_paging_data(seq_id_b));
+    const auto& paging_b = out2.get_linear_attention_paging_data(seq_id_b);
+    ASSERT_EQ(paging_b.block_indices.size(), N + 2);
+    EXPECT_EQ(seq_group_b->get_num_scheduled_tokens(), WINDOW);
+    EXPECT_EQ(static_cast<size_t>(paging_b.block_indices[0]), latest_row_b);
+    std::set<int32_t> seen_b = {paging_b.block_indices[0]};
+    for (size_t i = 1; i < paging_b.block_indices.size(); ++i) {
+        EXPECT_TRUE(seen_b.insert(paging_b.block_indices[i]).second) << "duplicate borrowed row " << i;
+    }
+    EXPECT_EQ(paging_b.cache_interval, 1);
+    EXPECT_TRUE(paging_b.is_speculative);
+
+    scheduler.release_linear_attention_checkpoints(seq_id_b);
+    for (auto& req : requests) {
+        for (auto& seq : req->get_sequences()) {
+            scheduler.free_sequence(seq->get_id());
+        }
+    }
+}
+
+TEST(TestScheduler, hybrid_non_prefix_linear_attention_speculative_window_too_large_for_megabatch_asserts) {
+    // A validation window that can never fit the megabatch must fail instead of deferring forever.
+    constexpr size_t N = 5;  // window N+1 = 6 > max_num_batched_tokens
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = N;  // strictly less than N+1
+    scheduler_config.num_kv_blocks = 32;
+    scheduler_config.num_linear_attention_blocks = 16;
+    scheduler_config.enable_prefix_caching = false;
+    scheduler_config.dynamic_split_fuse = false;
+    scheduler_config.max_num_seqs = 4;
+
+    std::vector<uint64_t> tokens = {0, 1, 2, 3};
+    SequenceGroup::Ptr seq_group = std::make_shared<SequenceGroup>(
+        0,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    const auto seq_id = seq_group->get_running_sequences()[0]->get_id();
+    std::vector<SequenceGroup::Ptr> requests = {seq_group};
+
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config,
+                                                       TEST_BLOCK_SIZE,
+                                                       /*kv_num_layers=*/1,
+                                                       /*la_num_layers=*/1);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
+    scheduler.ensure_linear_attention_pool_blocks(1 + (1 + N));
+
+    std::ignore = scheduler.schedule(requests);
+    seq_group->finish_iteration();
+
+    seq_group->get_running_sequences()[0]->append_token(42, 0.9f);
+    seq_group->update_processed_tokens_num(tokens.size());
+    seq_group->set_num_validated_tokens(N);
+
+    EXPECT_THROW(std::ignore = scheduler.schedule(requests), ov::Exception);
 
     for (auto& req : requests) {
         for (auto& seq : req->get_sequences()) {
@@ -395,7 +607,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_uses_full_preemption_for_
     std::vector<SequenceGroup::Ptr> requests = {seq_group1, seq_group2};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     auto prompt_out = scheduler.schedule(requests);
 
     EXPECT_EQ(prompt_out.m_scheduled_sequence_groups_ids.size(), 2);
@@ -443,7 +655,7 @@ TEST(TestScheduler, hybrid_admission_when_la_pool_is_bottleneck) {
     std::vector<SequenceGroup::Ptr> requests = {seq_group1, seq_group2};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
     EXPECT_EQ(out.m_scheduled_sequence_groups_ids.size(), 1);
@@ -475,7 +687,7 @@ TEST(TestScheduler, hybrid_initialize_cache_grows_fixed_size_by_total_concurrent
     std::vector<SequenceGroup::Ptr> requests = {seq_group1, seq_group2};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
 
     EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_block_count(), 0);
     std::ignore = scheduler.schedule(requests);
@@ -506,7 +718,7 @@ TEST(TestScheduler, initialize_cache_uses_sequence_aware_block_rounding) {
     }
 
     auto orchestrator = init_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
 
     std::ignore = scheduler.schedule(requests);
 
@@ -532,7 +744,7 @@ TEST(TestScheduler, dynamic_alloc_reserves_full_capacity_for_later_larger_prompt
     scheduler_config.max_num_seqs = 8;
 
     auto orchestrator = init_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
 
     // Round 1: a small prompt sizes the cache for itself.
     std::vector<int64_t> small_tokens = {0, 1, 2, 3};
@@ -577,7 +789,7 @@ TEST(TestScheduler, dynamic_alloc_reserves_capacity_for_new_prompt_on_top_of_run
     scheduler_config.max_num_seqs = 8;
 
     auto orchestrator = init_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
 
     // Round 1: a small sequence is prefilled and advanced into the generate phase (running).
     std::vector<int64_t> small_tokens = {0, 1, 2, 3};
@@ -634,7 +846,7 @@ TEST(TestScheduler, linear_attention_only_initializes_fixed_size_capacity) {
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
     auto orchestrator = init_linear_attention_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
 
     EXPECT_FALSE(orchestrator->has_token_capacity());
     auto out = scheduler.schedule(requests);
@@ -662,7 +874,7 @@ TEST(TestScheduler, hybrid_runtime_arrival_beyond_initial_fixed_capacity_schedul
     auto seq_id1 = seq_group1->get_running_sequences()[0]->get_id();
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
 
     std::vector<SequenceGroup::Ptr> requests = {seq_group1};
     std::ignore = scheduler.schedule(requests);
@@ -714,7 +926,7 @@ TEST(TestScheduler, hybrid_prefix_caching_prefill_requires_read_and_interval_wri
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
     ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
@@ -753,7 +965,7 @@ TEST(TestScheduler, hybrid_prefix_caching_prefill_uses_scheduler_config_cache_in
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
     ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
@@ -790,7 +1002,7 @@ TEST(TestScheduler, hybrid_prefix_caching_reuses_active_complete_linear_attentio
     const auto producer_seq_id = producer_group->get_running_sequences()[0]->get_id();
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     std::vector<SequenceGroup::Ptr> producer_requests = {producer_group};
     std::ignore = scheduler.schedule(producer_requests);
     producer_group->finish_iteration();
@@ -808,6 +1020,9 @@ TEST(TestScheduler, hybrid_prefix_caching_reuses_active_complete_linear_attentio
     scheduler.restore_cached_blocks(consumer_group);
     ASSERT_EQ(orchestrator->get_linear_attention_block_table(consumer_seq_id).size(), 1);
     EXPECT_EQ(orchestrator->get_linear_attention_block_table(consumer_seq_id).at(0)->get_index(), shared_checkpoint_idx);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE)
+                  .get_linear_attention_live_state(consumer_seq_id).endpoint,
+              producer_tokens.size());
     EXPECT_EQ(consumer_group->get_num_processed_tokens(), producer_tokens.size());
 
     std::vector<SequenceGroup::Ptr> consumer_requests = {consumer_group};
@@ -830,6 +1045,68 @@ TEST(TestScheduler, hybrid_prefix_caching_reuses_active_complete_linear_attentio
     scheduler.free_sequence(consumer_seq_id);
 }
 
+TEST(TestScheduler, hybrid_prefix_caching_restored_exact_checkpoint_writes_private_successor) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 16;
+    scheduler_config.num_kv_blocks = 32;
+    scheduler_config.num_linear_attention_blocks = 8;
+    scheduler_config.cache_interval_multiplier = 1;
+    scheduler_config.enable_prefix_caching = true;
+    scheduler_config.dynamic_split_fuse = false;
+    scheduler_config.max_num_seqs = 4;
+
+    std::vector<uint64_t> producer_tokens(12);
+    std::iota(producer_tokens.begin(), producer_tokens.end(), 0);
+    SequenceGroup::Ptr producer_group = std::make_shared<SequenceGroup>(
+        0,
+        ov::Tensor(ov::element::i64, {producer_tokens.size()}, producer_tokens.data()),
+        utils::get_greedy_config());
+
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
+    std::vector<SequenceGroup::Ptr> producer_requests = {producer_group};
+    std::ignore = scheduler.schedule(producer_requests);
+    producer_group->finish_iteration();
+    const uint64_t producer_seq_id = producer_group->get_running_sequences()[0]->get_id();
+    const int canonical_checkpoint =
+        orchestrator->get_linear_attention_block_table(producer_seq_id).back()->get_index();
+
+    std::vector<uint64_t> consumer_tokens(14);
+    std::iota(consumer_tokens.begin(), consumer_tokens.end(), 0);
+    SequenceGroup::Ptr consumer_group = std::make_shared<SequenceGroup>(
+        1,
+        ov::Tensor(ov::element::i64, {consumer_tokens.size()}, consumer_tokens.data()),
+        utils::get_greedy_config());
+    scheduler.restore_cached_blocks(consumer_group);
+    const uint64_t consumer_seq_id = consumer_group->get_running_sequences()[0]->get_id();
+    EXPECT_EQ(consumer_group->get_num_processed_tokens(), 12);
+
+    std::vector<SequenceGroup::Ptr> consumer_requests = {consumer_group};
+    const auto out = scheduler.schedule(consumer_requests);
+    EXPECT_EQ(out.m_total_num_scheduled_tokens, 2);
+    ASSERT_TRUE(out.has_linear_attention_paging_data(consumer_seq_id));
+    const auto& paging_data = out.get_linear_attention_paging_data(consumer_seq_id);
+    ASSERT_EQ(paging_data.block_indices.size(), 2);
+    EXPECT_EQ(paging_data.block_indices[0], canonical_checkpoint);
+    EXPECT_NE(paging_data.block_indices[0], paging_data.block_indices[1]);
+
+    SequenceGroup::Ptr restore_group = std::make_shared<SequenceGroup>(
+        2,
+        ov::Tensor(ov::element::i64, {producer_tokens.size()}, producer_tokens.data()),
+        utils::get_greedy_config());
+    scheduler.restore_cached_blocks(restore_group);
+    EXPECT_EQ(restore_group->get_num_processed_tokens(), 8);
+    EXPECT_EQ(orchestrator->get_linear_attention_block_table(
+                  restore_group->get_running_sequences()[0]->get_id()).back()->get_index(),
+              orchestrator->get_linear_attention_block_table(producer_seq_id).at(1)->get_index());
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE)
+                  .get_linear_attention_live_state(restore_group->get_running_sequences()[0]->get_id()).endpoint, 8u);
+
+    scheduler.free_sequence(producer_seq_id);
+    scheduler.free_sequence(consumer_seq_id);
+    scheduler.free_sequence(restore_group->get_running_sequences()[0]->get_id());
+}
+
 TEST(TestScheduler, hybrid_prefix_caching_reuses_active_incomplete_linear_attention_checkpoint_with_cow) {
     SchedulerConfig scheduler_config;
     scheduler_config.max_num_batched_tokens = 16;
@@ -848,15 +1125,24 @@ TEST(TestScheduler, hybrid_prefix_caching_reuses_active_incomplete_linear_attent
     const auto producer_seq_id = producer_group->get_running_sequences()[0]->get_id();
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     std::vector<SequenceGroup::Ptr> producer_requests = {producer_group};
-    std::ignore = scheduler.schedule(producer_requests);
+    const ContinuousBatchingScheduler::Output producer_output = scheduler.schedule(producer_requests);
     producer_group->finish_iteration();
+    const Sequence::Ptr producer_sequence = producer_group->get_running_sequences()[0];
+    scheduler.publish_completed_blocks(
+        producer_sequence,
+        producer_output.get_linear_attention_paging_data(producer_seq_id).num_processed_tokens_before,
+        producer_group->get_num_processed_tokens());
 
     ASSERT_EQ(orchestrator->get_linear_attention_block_table(producer_seq_id).size(), 2);
     const auto complete_checkpoint_idx = orchestrator->get_linear_attention_block_table(producer_seq_id).at(0)->get_index();
     const auto incomplete_checkpoint_idx = orchestrator->get_linear_attention_block_table(producer_seq_id).at(1)->get_index();
+    EXPECT_EQ(orchestrator->get_linear_attention_latest_row(producer_seq_id), incomplete_checkpoint_idx);
+    EXPECT_NE(orchestrator->get_linear_attention_latest_row(producer_seq_id), complete_checkpoint_idx);
+    EXPECT_FALSE(orchestrator->is_linear_attention_latest_row_shared(producer_seq_id));
 
+    tokens.push_back(6);
     SequenceGroup::Ptr consumer_group = std::make_shared<SequenceGroup>(
         1,
         ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
@@ -867,7 +1153,12 @@ TEST(TestScheduler, hybrid_prefix_caching_reuses_active_incomplete_linear_attent
     ASSERT_EQ(orchestrator->get_linear_attention_block_table(consumer_seq_id).size(), 1);
     EXPECT_EQ(orchestrator->get_linear_attention_block_table(consumer_seq_id).at(0)->get_index(), incomplete_checkpoint_idx);
     EXPECT_EQ(orchestrator->get_linear_attention_block_table_logical_start(consumer_seq_id), 1);
+    EXPECT_EQ(orchestrator->get_linear_attention_latest_row(consumer_seq_id), incomplete_checkpoint_idx);
+    EXPECT_TRUE(orchestrator->is_linear_attention_latest_row_shared(producer_seq_id));
+    EXPECT_TRUE(orchestrator->is_linear_attention_latest_row_shared(consumer_seq_id));
     EXPECT_EQ(consumer_group->get_num_processed_tokens(), tokens.size() - 1);
+    const size_t free_rows_before =
+        orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).num_free_blocks();
 
     std::vector<SequenceGroup::Ptr> consumer_requests = {consumer_group};
     auto out = scheduler.schedule(consumer_requests);
@@ -881,13 +1172,246 @@ TEST(TestScheduler, hybrid_prefix_caching_reuses_active_incomplete_linear_attent
     EXPECT_NE(paging_data.block_indices[0], incomplete_checkpoint_idx);
     EXPECT_EQ(paging_data.block_indices[0], paging_data.block_indices[1]);
     ASSERT_EQ(orchestrator->get_linear_attention_block_table(consumer_seq_id).size(), 1);
-    EXPECT_NE(orchestrator->get_linear_attention_block_table(consumer_seq_id).at(0)->get_index(), incomplete_checkpoint_idx);
+    const auto consumer_write_row_idx =
+        orchestrator->get_linear_attention_block_table(consumer_seq_id).at(0)->get_index();
+    EXPECT_NE(consumer_write_row_idx, incomplete_checkpoint_idx);
+    EXPECT_EQ(orchestrator->get_linear_attention_latest_row(consumer_seq_id), consumer_write_row_idx);
+    EXPECT_FALSE(orchestrator->is_linear_attention_latest_row_shared(consumer_seq_id));
     EXPECT_EQ(orchestrator->get_linear_attention_block_table_logical_start(consumer_seq_id), 1);
     EXPECT_EQ(orchestrator->get_linear_attention_block_table(producer_seq_id).at(0)->get_index(), complete_checkpoint_idx);
     EXPECT_EQ(orchestrator->get_linear_attention_block_table(producer_seq_id).at(1)->get_index(), incomplete_checkpoint_idx);
+    EXPECT_EQ(orchestrator->get_linear_attention_latest_row(producer_seq_id), incomplete_checkpoint_idx);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).num_free_blocks(),
+              free_rows_before - 1);
 
     scheduler.free_sequence(producer_seq_id);
     scheduler.free_sequence(consumer_seq_id);
+}
+
+TEST(TestScheduler, hybrid_prefix_caching_republishes_cow_only_after_accepted_boundary) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 16;
+    scheduler_config.num_kv_blocks = 16;
+    scheduler_config.num_linear_attention_blocks = 16;
+    scheduler_config.cache_interval_multiplier = 1;
+    scheduler_config.enable_prefix_caching = true;
+    scheduler_config.dynamic_split_fuse = false;
+    scheduler_config.max_num_seqs = 4;
+
+    std::vector<uint64_t> source_tokens = {0, 1, 2, 3, 4, 5};
+    SequenceGroup::Ptr producer_group = std::make_shared<SequenceGroup>(
+        0,
+        ov::Tensor(ov::element::i64, {source_tokens.size()}, source_tokens.data()),
+        utils::get_greedy_config());
+    const uint64_t producer_seq_id = producer_group->get_running_sequences()[0]->get_id();
+
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
+    ContinuousBatchingScheduler scheduler(orchestrator, scheduler_config);
+    std::vector<SequenceGroup::Ptr> producer_requests = {producer_group};
+    std::ignore = scheduler.schedule(producer_requests);
+    producer_group->finish_iteration();
+
+    std::vector<uint64_t> completed_tokens = {0, 1, 2, 3, 4, 5, 6, 7};
+    SequenceGroup::Ptr consumer_group = std::make_shared<SequenceGroup>(
+        1,
+        ov::Tensor(ov::element::i64, {completed_tokens.size()}, completed_tokens.data()),
+        utils::get_greedy_config());
+    const Sequence::Ptr consumer_sequence = consumer_group->get_running_sequences()[0];
+    const uint64_t consumer_seq_id = consumer_sequence->get_id();
+    scheduler.restore_cached_blocks(consumer_group);
+    ASSERT_EQ(consumer_group->get_num_processed_tokens(), source_tokens.size());
+
+    std::vector<SequenceGroup::Ptr> consumer_requests = {consumer_group};
+    const ContinuousBatchingScheduler::Output output = scheduler.schedule(consumer_requests);
+    ASSERT_EQ(output.m_total_num_scheduled_tokens, 2);
+    ASSERT_TRUE(output.has_linear_attention_paging_data(consumer_seq_id));
+    const auto& paging_data = output.get_linear_attention_paging_data(consumer_seq_id);
+    ASSERT_FALSE(paging_data.is_speculative);
+    EXPECT_EQ(paging_data.num_processed_tokens_before, source_tokens.size());
+
+    const CacheBlock::Ptr cow_row =
+        orchestrator->get_linear_attention_block_table(consumer_seq_id).back();
+    ASSERT_FALSE(cow_row->has_published_hash());
+    orchestrator->publish_completed_blocks(consumer_sequence,
+                                           paging_data.num_processed_tokens_before,
+                                           consumer_group->get_num_processed_tokens());
+    EXPECT_FALSE(cow_row->has_published_hash());
+
+    consumer_group->finish_iteration();
+    ASSERT_EQ(consumer_group->get_num_processed_tokens(), completed_tokens.size());
+    orchestrator->publish_completed_blocks(consumer_sequence,
+                                           paging_data.num_processed_tokens_before,
+                                           consumer_group->get_num_processed_tokens());
+    EXPECT_TRUE(cow_row->has_published_hash());
+
+    scheduler.free_sequence(producer_seq_id);
+    scheduler.free_sequence(consumer_seq_id);
+
+    SequenceGroup::Ptr restored_group = std::make_shared<SequenceGroup>(
+        2,
+        ov::Tensor(ov::element::i64, {completed_tokens.size()}, completed_tokens.data()),
+        utils::get_greedy_config());
+    const uint64_t restored_seq_id = restored_group->get_running_sequences()[0]->get_id();
+    ASSERT_TRUE(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE)
+                    .restore_cached_blocks(restored_group));
+    ASSERT_EQ(restored_group->get_num_processed_tokens(), completed_tokens.size() - 1);
+    EXPECT_EQ(orchestrator->get_linear_attention_block_table(restored_seq_id).back()->get_index(),
+              cow_row->get_index());
+    scheduler.free_sequence(restored_seq_id);
+}
+
+TEST(TestScheduler, hybrid_prefix_caching_republishes_cow_when_prefill_crosses_boundary) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 16;
+    scheduler_config.num_kv_blocks = 16;
+    scheduler_config.num_linear_attention_blocks = 16;
+    scheduler_config.cache_interval_multiplier = 2;
+    scheduler_config.enable_prefix_caching = true;
+    scheduler_config.dynamic_split_fuse = false;
+    scheduler_config.max_num_seqs = 4;
+
+    std::vector<uint64_t> source_tokens = {0, 1, 2, 3, 4, 5};
+    SequenceGroup::Ptr producer_group = std::make_shared<SequenceGroup>(
+        0,
+        ov::Tensor(ov::element::i64, {source_tokens.size()}, source_tokens.data()),
+        utils::get_greedy_config());
+    const uint64_t producer_seq_id = producer_group->get_running_sequences()[0]->get_id();
+
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
+    ContinuousBatchingScheduler scheduler(orchestrator, scheduler_config);
+    std::vector<SequenceGroup::Ptr> producer_requests = {producer_group};
+    std::ignore = scheduler.schedule(producer_requests);
+    producer_group->finish_iteration();
+
+    std::vector<uint64_t> consumer_tokens = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+    SequenceGroup::Ptr consumer_group = std::make_shared<SequenceGroup>(
+        1,
+        ov::Tensor(ov::element::i64, {consumer_tokens.size()}, consumer_tokens.data()),
+        utils::get_greedy_config());
+    const Sequence::Ptr consumer_sequence = consumer_group->get_running_sequences()[0];
+    const uint64_t consumer_seq_id = consumer_sequence->get_id();
+    scheduler.restore_cached_blocks(consumer_group);
+    ASSERT_EQ(consumer_group->get_num_processed_tokens(), source_tokens.size());
+
+    std::vector<SequenceGroup::Ptr> consumer_requests = {consumer_group};
+    const ContinuousBatchingScheduler::Output output = scheduler.schedule(consumer_requests);
+    ASSERT_EQ(output.m_total_num_scheduled_tokens, consumer_tokens.size() - source_tokens.size());
+    const auto& paging_data = output.get_linear_attention_paging_data(consumer_seq_id);
+    ASSERT_FALSE(paging_data.is_speculative);
+    EXPECT_EQ(paging_data.num_processed_tokens_before, source_tokens.size());
+    ASSERT_EQ(orchestrator->get_linear_attention_block_table(consumer_seq_id).size(), 2);
+    const CacheBlock::Ptr completed_cow_row =
+        orchestrator->get_linear_attention_block_table(consumer_seq_id).front();
+    const CacheBlock::Ptr completed_kv_cow_row =
+        orchestrator->get_block_manager(CacheType::KV_CACHE).get_block_tables(consumer_seq_id)[0][1];
+    ASSERT_FALSE(completed_cow_row->has_published_hash());
+    ASSERT_FALSE(completed_kv_cow_row->has_published_hash());
+
+    consumer_group->finish_iteration();
+    scheduler.publish_completed_blocks(consumer_sequence,
+                                       paging_data.num_processed_tokens_before,
+                                       consumer_group->get_num_processed_tokens());
+    EXPECT_TRUE(completed_cow_row->has_published_hash());
+    EXPECT_TRUE(completed_kv_cow_row->has_published_hash());
+
+    scheduler.free_sequence(producer_seq_id);
+    scheduler.free_sequence(consumer_seq_id);
+
+    std::vector<uint64_t> boundary_tokens(8);
+    std::iota(boundary_tokens.begin(), boundary_tokens.end(), 0);
+    SequenceGroup::Ptr restored_group = std::make_shared<SequenceGroup>(
+        2,
+        ov::Tensor(ov::element::i64, {boundary_tokens.size()}, boundary_tokens.data()),
+        utils::get_greedy_config());
+    const uint64_t restored_seq_id = restored_group->get_running_sequences()[0]->get_id();
+    ASSERT_TRUE(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE)
+                    .restore_cached_blocks(restored_group));
+    EXPECT_EQ(orchestrator->get_linear_attention_block_table(restored_seq_id).back()->get_index(),
+              completed_cow_row->get_index());
+    scheduler.free_sequence(restored_seq_id);
+}
+
+TEST(TestScheduler, hybrid_prefix_caching_default_prefill_cows_active_incomplete_linear_attention_checkpoint) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 16;
+    scheduler_config.num_kv_blocks = 16;
+    scheduler_config.num_linear_attention_blocks = 16;
+    scheduler_config.cache_interval_multiplier = 1;
+    scheduler_config.enable_prefix_caching = true;
+    scheduler_config.max_num_seqs = 4;
+    ASSERT_TRUE(scheduler_config.dynamic_split_fuse);
+
+    std::vector<uint64_t> tokens = {0, 1, 2, 3, 4, 5};
+    SequenceGroup::Ptr producer_group = std::make_shared<SequenceGroup>(
+        0,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    const auto producer_seq_id = producer_group->get_running_sequences()[0]->get_id();
+
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
+    std::vector<SequenceGroup::Ptr> producer_requests = {producer_group};
+    std::ignore = scheduler.schedule(producer_requests);
+    producer_group->finish_iteration();
+
+    ASSERT_EQ(orchestrator->get_linear_attention_block_table(producer_seq_id).size(), 2);
+    const auto incomplete_checkpoint_idx =
+        orchestrator->get_linear_attention_block_table(producer_seq_id).at(1)->get_index();
+
+    tokens.push_back(6);
+    SequenceGroup::Ptr consumer_group = std::make_shared<SequenceGroup>(
+        1,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    const auto consumer_seq_id = consumer_group->get_running_sequences()[0]->get_id();
+
+    scheduler.restore_cached_blocks(consumer_group);
+    ASSERT_EQ(orchestrator->get_linear_attention_block_table(consumer_seq_id).size(), 1);
+    EXPECT_EQ(orchestrator->get_linear_attention_block_table(consumer_seq_id).at(0)->get_index(),
+              incomplete_checkpoint_idx);
+    EXPECT_TRUE(orchestrator->is_linear_attention_latest_row_shared(consumer_seq_id));
+    const size_t free_rows_before =
+        orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).num_free_blocks();
+
+    std::vector<SequenceGroup::Ptr> consumer_requests = {consumer_group};
+    auto out = scheduler.schedule(consumer_requests);
+
+    EXPECT_EQ(out.m_total_num_scheduled_tokens, 1);
+    ASSERT_TRUE(out.has_linear_attention_paging_data(consumer_seq_id));
+    const auto& paging_data = out.get_linear_attention_paging_data(consumer_seq_id);
+    ASSERT_EQ(paging_data.block_indices.size(), 2);
+    EXPECT_EQ(paging_data.past_length, tokens.size() - 1);
+    EXPECT_NE(paging_data.block_indices[0], incomplete_checkpoint_idx);
+    EXPECT_EQ(paging_data.block_indices[0], paging_data.block_indices[1]);
+    ASSERT_EQ(orchestrator->get_linear_attention_block_table(consumer_seq_id).size(), 1);
+    EXPECT_NE(orchestrator->get_linear_attention_block_table(consumer_seq_id).at(0)->get_index(),
+              incomplete_checkpoint_idx);
+    EXPECT_FALSE(orchestrator->is_linear_attention_latest_row_shared(consumer_seq_id));
+    EXPECT_FALSE(orchestrator->get_linear_attention_block_table(consumer_seq_id).at(0)->has_published_hash());
+    EXPECT_EQ(orchestrator->get_linear_attention_block_table(producer_seq_id).at(1)->get_index(),
+              incomplete_checkpoint_idx);
+    EXPECT_TRUE(orchestrator->get_linear_attention_block_table(producer_seq_id).at(1)->has_published_hash());
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).num_free_blocks(),
+              free_rows_before - 1);
+
+    const size_t unpublished_consumer_row =
+        orchestrator->get_linear_attention_block_table(consumer_seq_id).at(0)->get_index();
+    scheduler.free_sequence(consumer_seq_id);
+
+    SequenceGroup::Ptr second_consumer_group = std::make_shared<SequenceGroup>(
+        2,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    const auto second_consumer_seq_id = second_consumer_group->get_running_sequences()[0]->get_id();
+    scheduler.restore_cached_blocks(second_consumer_group);
+    ASSERT_EQ(orchestrator->get_linear_attention_block_table(second_consumer_seq_id).size(), 1);
+    EXPECT_EQ(orchestrator->get_linear_attention_block_table(second_consumer_seq_id).at(0)->get_index(),
+              incomplete_checkpoint_idx);
+    EXPECT_NE(orchestrator->get_linear_attention_block_table(second_consumer_seq_id).at(0)->get_index(),
+              unpublished_consumer_row);
+
+    scheduler.free_sequence(producer_seq_id);
+    scheduler.free_sequence(second_consumer_seq_id);
 }
 
 TEST(TestScheduler, hybrid_prefix_caching_restore_uses_minimum_common_prefix_across_cache_types) {
@@ -908,7 +1432,7 @@ TEST(TestScheduler, hybrid_prefix_caching_restore_uses_minimum_common_prefix_acr
     const auto first_seq_id = first_group->get_running_sequences()[0]->get_id();
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     std::vector<SequenceGroup::Ptr> first_requests = {first_group};
     std::ignore = scheduler.schedule(first_requests);
     first_group->finish_iteration();
@@ -958,7 +1482,7 @@ TEST(TestScheduler, hybrid_prefix_caching_prefill_exactly_interval_uses_single_w
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
     ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
@@ -996,7 +1520,7 @@ TEST(TestScheduler, hybrid_prefix_caching_prefill_interval_plus_one_uses_next_wr
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
     ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
@@ -1035,7 +1559,7 @@ TEST(TestScheduler, hybrid_prefix_caching_chunked_prefill_crossing_interval_adds
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     auto first_out = scheduler.schedule(requests);
 
     ASSERT_TRUE(first_out.has_linear_attention_paging_data(seq_id));
@@ -1063,7 +1587,7 @@ TEST(TestScheduler, hybrid_prefix_caching_chunked_prefill_crossing_interval_adds
     }
 }
 
-TEST(TestScheduler, hybrid_prefix_caching_generation_multiple_tokens_crossing_interval_adds_write_block) {
+TEST(TestScheduler, direct_scheduler_rejects_non_greedy_prefix_verification) {
     SchedulerConfig scheduler_config;
     scheduler_config.max_num_batched_tokens = 8;
     scheduler_config.num_kv_blocks = 64;
@@ -1073,16 +1597,17 @@ TEST(TestScheduler, hybrid_prefix_caching_generation_multiple_tokens_crossing_in
     scheduler_config.dynamic_split_fuse = true;
     scheduler_config.max_num_seqs = 4;
 
+    auto generation_config = utils::get_greedy_config();
+    generation_config.do_sample = true;
     std::vector<uint64_t> tokens = {0, 1, 2, 3};
     SequenceGroup::Ptr seq_group = std::make_shared<SequenceGroup>(
         0,
         ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-        utils::get_greedy_config());
-    const auto seq_id = seq_group->get_running_sequences()[0]->get_id();
+        generation_config);
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
 
     std::ignore = scheduler.schedule(requests);
     seq_group->finish_iteration();
@@ -1094,17 +1619,7 @@ TEST(TestScheduler, hybrid_prefix_caching_generation_multiple_tokens_crossing_in
     seq_group->update_processed_tokens_num(62);
     seq_group->set_num_validated_tokens(2);
 
-    auto out = scheduler.schedule(requests);
-
-    ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
-    const auto& paging_data = out.get_linear_attention_paging_data(seq_id);
-    ASSERT_EQ(paging_data.block_indices.size(), 3);
-    EXPECT_EQ(seq_group->get_num_scheduled_tokens(), 3);
-    EXPECT_EQ(paging_data.past_length, 62);
-    EXPECT_EQ(paging_data.cache_interval, TEST_CUSTOM_CACHE_INTERVAL);
-    EXPECT_EQ(paging_data.block_indices[0], paging_data.block_indices[1]);
-    EXPECT_NE(paging_data.block_indices[1], paging_data.block_indices[2]);
-    EXPECT_EQ(orchestrator->get_linear_attention_block_table(seq_id).size(), 2);
+    EXPECT_THROW(std::ignore = scheduler.schedule(requests), ov::Exception);
 
     for (auto& req : requests) {
         for (auto& seq : req->get_sequences()) {
@@ -1132,7 +1647,7 @@ TEST(TestScheduler, hybrid_prefix_caching_cache_interval_multiplier_one_allocate
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
     ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
@@ -1171,7 +1686,7 @@ TEST(TestScheduler, hybrid_prefix_caching_dynamic_allocation_honors_custom_cache
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
     ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
@@ -1297,6 +1812,114 @@ TEST(TestScheduler, hybrid_create_explicit_kv_blocks_derives_paged_linear_attent
               expected_la_blocks);
 }
 
+TEST(TestScheduler, hybrid_create_prefix_linear_attention_explicit_ceiling_bounds_every_growth_path) {
+    HybridCreateContext context = create_hybrid_create_context();
+    const auto get_available_memory = [](const std::string&, size_t) {
+        return std::numeric_limits<size_t>::max();
+    };
+    constexpr size_t budget = 4;
+    SchedulerConfig config;
+    config.num_kv_blocks = 64;
+    config.num_linear_attention_blocks = budget;
+    config.enable_prefix_caching = true;
+    config.cache_interval_multiplier = 1;
+    auto orchestrator = CacheOrchestrator::create(context.request, config, get_available_memory);
+    auto& manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+
+    ASSERT_EQ(config.num_linear_attention_blocks, budget);
+    ASSERT_EQ(manager.get_max_total_block_count(), budget);
+    EXPECT_FALSE(manager.can_increase_block_count_to(budget + 1));
+    EXPECT_FALSE(manager.increase_block_count_up_to(budget + 1));
+    EXPECT_FALSE(manager.grow_capacity_by_tokens(context.kv_block_size * 16));
+    manager.ensure_sequence_token_capacity({{context.kv_block_size * 16, 0}});
+    EXPECT_THROW(manager.increase_block_count(budget + 1), ov::Exception);
+    EXPECT_EQ(manager.get_total_block_count(), budget);
+    EXPECT_EQ(manager.num_free_blocks(), budget);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_block_count(), 64u);
+}
+
+TEST(TestScheduler, hybrid_prefix_linear_attention_ceiling_defers_without_unrelated_kv_growth) {
+    for (const bool dynamic_split_fuse : {false, true}) {
+        SCOPED_TRACE(dynamic_split_fuse);
+        HybridCreateContext context = create_hybrid_create_context();
+        const auto get_available_memory = [](const std::string&, size_t) {
+            return std::numeric_limits<size_t>::max();
+        };
+        SchedulerConfig config;
+        config.num_linear_attention_blocks = 1;
+        config.enable_prefix_caching = true;
+        config.dynamic_split_fuse = dynamic_split_fuse;
+        config.cache_interval_multiplier = 1;
+        config.max_num_batched_tokens = context.kv_block_size;
+        config.max_num_seqs = 2;
+        auto orchestrator = CacheOrchestrator::create(context.request, config, get_available_memory);
+        ContinuousBatchingScheduler scheduler(orchestrator, config);
+        auto& la_manager = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+        auto& kv_manager = orchestrator->get_block_manager(CacheType::KV_CACHE);
+        TokenIds producer_tokens(context.kv_block_size, 1);
+        auto producer = std::make_shared<SequenceGroup>(0, producer_tokens, utils::get_greedy_config());
+        const auto producer_sequence = producer->get_sequences().front();
+        const uint64_t producer_id = producer_sequence->get_id();
+        std::vector<SequenceGroup::Ptr> requests{producer};
+        const auto producer_output = scheduler.schedule(requests);
+        ASSERT_EQ(producer_output.m_total_num_scheduled_tokens, producer_tokens.size());
+        producer->finish_iteration();
+        scheduler.publish_completed_blocks(producer_sequence, 0, producer_tokens.size());
+        const auto published = la_manager.get_block_table(producer_id, 0).front();
+        const auto published_hash = published->get_hash();
+        const size_t references_before = published->get_references_count();
+        const size_t kv_blocks_before = kv_manager.get_total_block_count();
+        auto consumer = std::make_shared<SequenceGroup>(
+            1, TokenIds(context.kv_block_size, 2), utils::get_greedy_config());
+        const uint64_t consumer_id = consumer->get_sequences().front()->get_id();
+        requests = {consumer};
+
+        const auto deferred = scheduler.schedule(requests);
+        EXPECT_EQ(deferred.m_total_num_scheduled_tokens, 0u);
+        EXPECT_EQ(consumer->get_num_processed_tokens(), 0u);
+        EXPECT_EQ(consumer->get_num_scheduled_tokens(), 0u);
+        EXPECT_FALSE(la_manager.has_block_table(consumer_id));
+        EXPECT_EQ(la_manager.get_total_block_count(), 1u);
+        EXPECT_EQ(la_manager.num_free_blocks(), 0u);
+        EXPECT_EQ(kv_manager.get_total_block_count(), kv_blocks_before);
+        EXPECT_EQ(published->get_references_count(), references_before);
+        EXPECT_EQ(published->get_hash(), published_hash);
+        EXPECT_EQ(la_manager.get_block_table(producer_id, 0).front(), published);
+
+        scheduler.free_sequence(producer_id);
+        const auto resumed = scheduler.schedule(requests);
+        EXPECT_EQ(resumed.m_total_num_scheduled_tokens, consumer->get_prompt_len());
+        EXPECT_EQ(la_manager.get_total_block_count(), 1u);
+        EXPECT_EQ(kv_manager.get_total_block_count(), kv_blocks_before);
+        scheduler.free_sequence(consumer_id);
+    }
+}
+
+TEST(TestScheduler, hybrid_prefix_linear_attention_ceiling_allows_partial_prefill) {
+    HybridCreateContext context = create_hybrid_create_context();
+    const auto get_available_memory = [](const std::string&, size_t) {
+        return std::numeric_limits<size_t>::max();
+    };
+    SchedulerConfig config;
+    config.num_linear_attention_blocks = 1;
+    config.enable_prefix_caching = true;
+    config.dynamic_split_fuse = true;
+    config.cache_interval_multiplier = 1;
+    config.max_num_batched_tokens = 2 * context.kv_block_size;
+    config.max_num_seqs = 1;
+    auto orchestrator = CacheOrchestrator::create(context.request, config, get_available_memory);
+    ContinuousBatchingScheduler scheduler(orchestrator, config);
+    auto group = std::make_shared<SequenceGroup>(
+        0, TokenIds(2 * context.kv_block_size, 1), utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> requests{group};
+    const auto output = scheduler.schedule(requests);
+    EXPECT_EQ(output.m_total_num_scheduled_tokens, context.kv_block_size);
+    EXPECT_EQ(group->get_num_processed_tokens(), 0u);
+    EXPECT_EQ(group->get_num_scheduled_tokens(), context.kv_block_size);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_block_count(), 1u);
+    scheduler.free_sequence(group->get_sequences().front()->get_id());
+}
+
 TEST(TestScheduler, hybrid_create_cache_size_budget_reserves_fixed_linear_attention_bytes_before_kv_blocks) {
     HybridCreateContext context = create_hybrid_create_context();
     auto get_available_memory = [](const std::string&, size_t) {
@@ -1420,7 +2043,7 @@ TEST(TestScheduler, hybrid_prefix_caching_generation_finishing_interval_reuses_s
     const auto seq_id = seq_group->get_running_sequences()[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
-    Scheduler scheduler = Scheduler(init_hybrid_cache_orchestrator(scheduler_config), scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_hybrid_cache_orchestrator(scheduler_config), scheduler_config);
 
     // Prime cache/tables with prompt scheduling.
     std::ignore = scheduler.schedule(requests);
@@ -1434,6 +2057,7 @@ TEST(TestScheduler, hybrid_prefix_caching_generation_finishing_interval_reuses_s
     }
 
     // processed=31, scheduled=1 stores the 32-token checkpoint in the current block.
+    running_sequence->append_token(TEST_DEFAULT_CACHE_INTERVAL - 1, 0.9f);
     seq_group->update_processed_tokens_num(TEST_DEFAULT_CACHE_INTERVAL - 1);
     auto out = scheduler.schedule(requests);
 
@@ -1471,7 +2095,7 @@ TEST(TestScheduler, hybrid_prefix_caching_generation_after_completed_interval_sw
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
-    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(orchestrator, scheduler_config);
 
     std::ignore = scheduler.schedule(requests);
     for (auto& req : requests) {
@@ -1518,7 +2142,7 @@ TEST(TestScheduler, hybrid_prefix_caching_generation_inside_interval_reuses_same
     const auto seq_id = seq_group->get_running_sequences()[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
-    Scheduler scheduler = Scheduler(init_hybrid_cache_orchestrator(scheduler_config), scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_hybrid_cache_orchestrator(scheduler_config), scheduler_config);
 
     // Prime cache/tables with prompt scheduling.
     std::ignore = scheduler.schedule(requests);
@@ -1586,7 +2210,7 @@ TEST_P(AppendSlotsSchedulerTest, test_append_slots_considers_all_sequences) {
     auto idx1 = (*sequence_group2)[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
 
-    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
     auto out1 = scheduler.schedule(requests);
 
     std::vector<uint64_t> ref_ids = {0, 1};
@@ -1660,7 +2284,7 @@ TEST_P(PartialPreemptionSchedulerTest, test_partial_preemption) {
 
 
     // schedule 2 sequence groups that use 5 kv blocks
-    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
     auto out0 = scheduler.schedule(requests);
 
     for (auto seq: requests) {
@@ -1732,6 +2356,61 @@ TEST_P(PartialPreemptionSchedulerTest, test_partial_preemption) {
     }
 }
 
+TEST(TestScheduler, ActiveScratchLeaseDefersCachePressureWithoutPreemptingVictim) {
+    SchedulerConfig scheduler_config = get_scheduler_config(32, 6, false, 5);
+    scheduler_config.num_linear_attention_blocks = 4;
+    scheduler_config.cache_interval_multiplier = 1;
+
+    std::vector<uint64_t> victim_tokens = {0, 1, 2, 3, 4, 5, 6, 7};
+    std::vector<uint64_t> target_tokens = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    auto target = std::make_shared<SequenceGroup>(0,
+        ov::Tensor(ov::element::i64, {target_tokens.size()}, target_tokens.data()),
+        utils::get_greedy_config());
+    auto victim = std::make_shared<SequenceGroup>(1,
+        ov::Tensor(ov::element::i64, {victim_tokens.size()}, victim_tokens.data()),
+        utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> requests = {target, victim};
+
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
+    ContinuousBatchingScheduler scheduler(orchestrator, scheduler_config);
+    ContinuousBatchingScheduler::Output prompt_output = scheduler.schedule(requests);
+    for (const auto& sequence_group : requests) {
+        sequence_group->finish_iteration();
+    }
+    ContinuousBatchingScheduler::Output generation_output = scheduler.schedule(requests);
+    for (const auto& sequence_group : requests) {
+        sequence_group->get_running_sequences().front()->append_token(16, 0.9f);
+        sequence_group->finish_iteration();
+    }
+
+    const uint64_t victim_id = victim->get_running_sequences().front()->get_id();
+    const auto victim_table_before = scheduler.get_kv_block_tables(*victim->get_running_sequences().front());
+    const size_t victim_processed_before = victim->get_num_processed_tokens();
+    const size_t free_before = orchestrator->get_block_manager(CacheType::KV_CACHE).num_free_blocks();
+    ContinuousBatchingScheduler::Output lease_owner;
+    lease_owner.m_linear_attention_scratch_leases.emplace(
+        victim_id,
+        std::make_unique<CacheOrchestrator::LinearAttentionScratchLease>(
+            orchestrator->prepare_linear_attention_scratch(victim_id, 1)));
+    victim->set_num_validated_tokens(1);
+
+    ContinuousBatchingScheduler::Output pressured_output;
+    ASSERT_NO_THROW(pressured_output = scheduler.schedule(requests));
+    EXPECT_EQ(pressured_output.m_total_num_scheduled_tokens, 0u);
+    EXPECT_TRUE(pressured_output.m_scheduled_sequence_groups_ids.empty());
+    EXPECT_EQ(target->get_num_scheduled_tokens(), 0u);
+    EXPECT_EQ(victim->get_num_scheduled_tokens(), 0u);
+    EXPECT_EQ(victim->get_num_processed_tokens(), victim_processed_before);
+    EXPECT_EQ(scheduler.get_kv_block_tables(*victim->get_running_sequences().front()), victim_table_before);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).num_free_blocks(), free_before);
+    EXPECT_TRUE(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).has_temporary_blocks(victim_id));
+
+    lease_owner.m_linear_attention_scratch_leases.clear();
+    for (const auto& sequence_group : requests) {
+        scheduler.free_sequence(sequence_group->get_running_sequences().front()->get_id());
+    }
+}
+
 INSTANTIATE_TEST_SUITE_P(VariousSchedulerConfigs, PartialPreemptionSchedulerTest ,
                          ::testing::ValuesIn(PARTIAL_PREEMPTION_TEST_CASES));
 
@@ -1751,7 +2430,7 @@ TEST(TestScheduler, test_partial_preemption_beam_search) {
         std::vector<SequenceGroup::Ptr> requests = {sequence_group};
         EXPECT_NO_THROW(requests[0]->get_running_sequences()[0]->get_sequence_group_ptr());
 
-        Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+        ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
         auto out = scheduler.schedule(requests);
         for (auto sequence: sequence_group->get_not_finished_sequences()) {
             sequence->append_token(token, 0.7);
@@ -1867,7 +2546,7 @@ TEST(TestScheduler, test_partially_preempted_prompt) {
         std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
 
         // schedule 2 sequence groups that use all available 2*3 kv blocks, we used all available kv-blocks.
-        Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+        ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
         auto out1 = scheduler.schedule(requests);
 
         for (auto seq: requests) {
@@ -1967,7 +2646,7 @@ TEST(TestScheduler, prefix_caching_test) {
         std::vector<uint64_t> prompt_tokens = {0,1,2,3,4,5,6,7};
         std::vector<uint64_t> histrory_tokens = {};
         // schedule prompt
-        Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+        ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
 
         size_t chat_iterations = 10;
 
@@ -2035,7 +2714,7 @@ TEST(TestScheduler, prefix_caching_test_two_identical_sequences) {
         std::vector<uint64_t> prompt_tokens = {0,1,2,3,4,5,6,7};
         std::vector<uint64_t> histrory_tokens = {};
         // schedule prompt
-        Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+        ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
 
         size_t chat_iterations = 10;
 
@@ -2105,7 +2784,7 @@ TEST(TestScheduler, prefix_caching_with_max_new_tokens_equal_1) {
     for (auto scheduler_config: configs) {
         std::vector<uint64_t> prompt_tokens = {0,1,2,3,4,5,6,7};
         // schedule prompt
-        Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config, 32), scheduler_config);
+        ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config, 32), scheduler_config);
 
         size_t chat_iterations = 2;
 
@@ -2163,7 +2842,7 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed) {
 
     // schedule 2 sequence groups that use all available 2*3 kv blocks, we used all available kv-blocks.
     const bool can_use_partial_preemption = false;
-    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config, can_use_partial_preemption);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config, can_use_partial_preemption);
     auto out1 = scheduler.schedule(requests);
 
     for (auto req : requests)
@@ -2246,7 +2925,7 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed2) {
 
     // schedule 2 sequence groups that use all available 2*3 kv blocks, we used all available kv-blocks.
     const bool can_use_partial_preemption = false;
-    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config, can_use_partial_preemption);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config, can_use_partial_preemption);
     scheduler.schedule(requests);
     for (auto req: requests)
         req->finish_iteration();
@@ -2331,7 +3010,7 @@ std::vector<size_t> _get_indices(const std::vector<CacheBlock::Ptr>& block_table
     return retval;
 }
 
-Scheduler::Output _schedule_one_mock_generation_token_for_each_sequence_group(Scheduler& scheduler, std::vector<SequenceGroup::Ptr>& requests) {
+ContinuousBatchingScheduler::Output _schedule_one_mock_generation_token_for_each_sequence_group(ContinuousBatchingScheduler& scheduler, std::vector<SequenceGroup::Ptr>& requests) {
     auto out = scheduler.schedule(requests);
     for (auto& req : requests) {
         std::vector<Sequence::Ptr> running_sequences = req->get_running_sequences();
@@ -2366,7 +3045,7 @@ TEST(TestScheduler, FullyPreemptsCacheEvictedSequences) {
     auto idx2 = (*sequence_group2)[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
 
-    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config, 2), scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config, 2), scheduler_config);
     // prompt phase - schedules 1 block for seq 1, 5 blocks for seq 2
     auto out = scheduler.schedule(requests);
 
@@ -2458,7 +3137,7 @@ TEST(TestScheduler, prefix_caching_embeddings_test) {
         }
         std::vector<std::vector<float>> histrory_embeddings = {};
         // schedule prompt
-        Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+        ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
 
         size_t chat_iterations = 10;
 
@@ -2540,7 +3219,7 @@ TEST(TestScheduler, expected_num_scheduled_tokens_overrides_default_schedule) {
         utils::get_greedy_config());
     std::vector<SequenceGroup::Ptr> requests = {sequence_group};
 
-    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
 
     scheduler.set_expected_num_scheduled_tokens(request_id, 5);
     EXPECT_EQ(scheduler.get_expected_num_scheduled_tokens(request_id), 5);
@@ -2550,13 +3229,12 @@ TEST(TestScheduler, expected_num_scheduled_tokens_overrides_default_schedule) {
     EXPECT_FALSE(out.m_scheduled_sequence_groups_ids.empty());
 
     // Release scheduled sequences and acknowledge the iteration so that
-    // Scheduler / BlockManager state is consistent at destruction time.
+    // ContinuousBatchingScheduler / BlockManager state is consistent at destruction time.
     for (auto& seq : sequence_group->get_sequences()) {
         scheduler.free_sequence(seq->get_id());
     }
     sequence_group->finish_iteration();
 }
-
 TEST(TestScheduler, expected_num_scheduled_tokens_does_not_override_if_greater_than_available) {
     SchedulerConfig scheduler_config;
     scheduler_config.max_num_batched_tokens = 8;
@@ -2572,7 +3250,7 @@ TEST(TestScheduler, expected_num_scheduled_tokens_does_not_override_if_greater_t
         utils::get_greedy_config());
     std::vector<SequenceGroup::Ptr> requests = {sequence_group};
 
-    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
 
     // Available tokens for the request are 12; expected value above it must be ignored.
     scheduler.set_expected_num_scheduled_tokens(request_id, 13);
@@ -2603,7 +3281,7 @@ TEST(TestScheduler, clear_expected_num_scheduled_tokens_restores_default_schedul
         utils::get_greedy_config());
     std::vector<SequenceGroup::Ptr> requests = {sequence_group};
 
-    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
 
     scheduler.set_expected_num_scheduled_tokens(request_id, 5);
     auto out1 = scheduler.schedule(requests);

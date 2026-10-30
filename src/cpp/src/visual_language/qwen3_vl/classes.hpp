@@ -23,6 +23,7 @@ class InputsEmbedderQwen3VL : public InputsEmbedderQwen2VL {
 public:
     InputsEmbedderQwen3VL(const VLMConfig& vlm_config,
                           const std::filesystem::path& model_dir,
+                          const Tokenizer& tokenizer,
                           const std::string& device,
                           const ov::AnyMap device_config);
 
@@ -120,5 +121,7 @@ protected:
 void fill_video_metadata(EncodedVideo& encoded_video,
                          size_t total_num_frames,
                          const VideoProcessorConfig& video_config);
+
+std::vector<float> calculate_video_timestamps(const VideoMetadata& video_metadata, size_t temporal_patch_size);
 
 }  // namespace ov::genai

@@ -22,9 +22,9 @@ User Input (ChatHistory + images/videos + optional video metadata)
      ▼
  VLMChatContext::process()
     ├── Synchronize ChatHistoryInternalState with the provided history
-    ├── Register new images/videos in VisionRegistry and assign vision IDs
-    ├── InputsEmbedder::encode_images()/encode_videos() for uncached vision inputs
-    │     └── VisionEncoder::encode()/encode_frames() → cache EncodedImage/EncodedVideo embeddings in VisionRegistry
+    ├── Register new images/videos/audios in EmbeddingsRegistry and assign embedding IDs
+    ├── InputsEmbedder::encode_images()/encode_videos()/encode_audios() for uncached media inputs
+    │     └── VisionEncoder::encode()/encode_frames() or AudioEncoderQwen3Omni::encode() → cache EncodedImage/EncodedVideo/EncodedAudio embeddings in EmbeddingsRegistry
     ├── Normalize user messages with InputsEmbedder::normalize_prompt()
     │     └── Convert multipart content and model-specific vision placeholders
     ├── Build normalized_history
@@ -40,7 +40,7 @@ User Input (ChatHistory + images/videos + optional video metadata)
   └── PA/CB: use full-history vision inputs for the batch request
      │
      ▼
- InputsEmbedder::get_inputs_embeds() or get_inputs_embeds_with_token_type_ids()
+ InputsEmbedder::get_inputs_embeds()
   ├── Tokenize templated text
   ├── EmbeddingsModel::infer()         ← text token → embedding lookup
   └── Merge vision + text embeddings   ← model-specific merge logic
@@ -63,7 +63,7 @@ User Input (ChatHistory + images/videos + optional video metadata)
 
 For `ChatHistory` input, the chat template is applied after `VLMChatContext::process()` has produced a normalized history and before `InputsEmbedder::get_inputs_embeds()` tokenizes text and merges embeddings. This ordering is used in both SDPA and PA/CB paths. It matters because the template must see model-normalized message content, while embedding merge still needs the resolved vision sequences from the same processing step.
 
-`VisionRegistry` assigns vision IDs to input images/videos, keeps copied original tensors for lookup and lifetime management (`register_vision()` copies with `tensor.copy_to()`), and caches the encoded `EncodedImage` / `EncodedVideo` embeddings after vision encoding. For the `ChatHistory` API, image/video encoding happens in `VLMChatContext::process()` through `InputsEmbedder::encode_images()` / `encode_videos()`. `InputsEmbedder::get_inputs_embeds()` receives already encoded image/video embeddings, not raw image/video tensors.
+`EmbeddingsRegistry` assigns embedding IDs (content hashes) to input images, videos and audios, keeps copied original tensors for lookup and lifetime management (`register_media()` copies with `tensor.copy_to()`), and caches the encoded `EncodedImage` / `EncodedVideo` / `EncodedAudio` embeddings after encoding. For the `ChatHistory` API, media encoding happens in `VLMChatContext::process()` through `InputsEmbedder::encode_images()` / `encode_videos()` / `encode_audios()`. `InputsEmbedder::get_inputs_embeds()` receives already encoded embeddings, not raw media tensors.
 
 ## Source Layout
 
@@ -74,7 +74,7 @@ All VLM sources are under `src/cpp/src/visual_language/`:
 | `pipeline.cpp`, `pipeline_base.hpp` | Public `VLMPipeline` and internal `VLMPipelineBase` / `VLMPipelineImpl` |
 | `inputs_embedder.hpp/.cpp` | `InputsEmbedder` (public) and `IInputsEmbedder` (model-specific interface) |
 | `vision_encoder.hpp/.cpp` | `VisionEncoder` base class and factory |
-| `vision_registry.hpp` | `VisionRegistry` — keeps copied original image/video tensors and caches encoded vision embeddings by ID |
+| `embeddings_registry.hpp` | `EmbeddingsRegistry` — keeps copied original image/video/audio tensors and caches their encoded embeddings by ID |
 | `vlm_config.hpp` | `VLMConfig` — loaded from `config.json`, includes `VLMModelType` enum |
 | `processor_config.hpp` | `ProcessorConfig` — image preprocessing params |
 | `video_processor_config.hpp` | `VideoProcessorConfig` — video preprocessing params |
@@ -173,16 +173,6 @@ public:
 
     // Complete image/video overload; default implementation falls back to the image-only method
     virtual ov::Tensor get_inputs_embeds(
-        const std::string& prompt,
-        const std::vector<EncodedImage>& images,
-        const std::vector<EncodedVideo>& videos,
-        VLMPerfMetrics& metrics,
-        bool recalculate_merged_embeddings = true,
-        const std::vector<size_t>& image_sequence = {},
-        const std::vector<size_t>& video_sequence = {},
-        const std::vector<std::pair<size_t, size_t>>& history_vision_count = {});
-
-    virtual std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(
         const std::string& prompt,
         const std::vector<EncodedImage>& images,
         const std::vector<EncodedVideo>& videos,
@@ -485,7 +475,7 @@ To discover the current set, inspect:
 | **Pimpl** | `VLMPipeline` → `VLMPipelineBase` → `VLMPipelineImpl` | Hide implementation from public API |
 | **Strategy** | `IInputsEmbedder` subclasses | Each model implements its own embedding merge strategy |
 | **Adapter** | `VLMContinuousBatchingAdapter` | Adapts VLM single-request API to batch `ContinuousBatchingPipeline` |
-| **Registry** | `VisionRegistry` | Keep copied original vision tensors and cache encoded vision embeddings, avoid re-encoding |
+| **Registry** | `EmbeddingsRegistry` | Keep copied original media tensors and cache their encoded embeddings, avoid re-encoding |
 
 ## Maintaining This Document
 

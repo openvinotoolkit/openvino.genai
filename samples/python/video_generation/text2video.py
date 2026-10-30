@@ -4,13 +4,14 @@
 
 import argparse
 import openvino_genai
-from video_utils import save_video
+from video_utils import save_audio, save_video
 
 
 def main():
     parser = argparse.ArgumentParser(description="Generate video from text prompt using OpenVINO GenAI")
     parser.add_argument("model_dir", help="Path to the model directory")
     parser.add_argument("prompt", help="Text prompt for video generation")
+    parser.add_argument("num_frames", type=int, nargs="?", default=161, help="Number of frames to generate")
     args = parser.parse_args()
 
     pipe = openvino_genai.Text2VideoPipeline(args.model_dir, "CPU")  # GPU can be used as well
@@ -26,7 +27,7 @@ def main():
         negative_prompt="worst quality, inconsistent motion, blurry, jittery, distorted",
         height=480,
         width=704,
-        num_frames=161,
+        num_frames=args.num_frames,
         num_inference_steps=25,
         num_videos_per_prompt=1,
         callback=callback,
@@ -35,6 +36,11 @@ def main():
     )
 
     save_video("genai_video.avi", output.video, frame_rate)
+    # TODO: Combine audio and video into one file inside GenAI for LTX-2, so users don't need ffmpeg.
+    # Models that generate audio (LTX-2) return it as a separate track. To combine both into one file:
+    #   ffmpeg -i genai_video.avi -i genai_audio.wav genai_video.mp4
+    if output.audio_sample_rate:
+        save_audio("genai_audio.wav", output.audio, output.audio_sample_rate)
 
     print(f"\nPerformance metrics:")
     print(f"  Load time: {output.perf_metrics.get_load_time():.2f} ms")

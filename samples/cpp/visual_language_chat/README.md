@@ -6,6 +6,7 @@ This example showcases inference of Visual language models (VLMs). The applicati
 The following are sample files:
  - [`visual_language_chat.cpp`](./visual_language_chat.cpp) demonstrates basic usage of the VLM pipeline which supports accelerated inference using prompt lookup decoding.
  - [`video_to_text_chat.cpp`](./video_to_text_chat.cpp) demonstrates video to text usage of the VLM pipeline.
+ - [`audio_to_text_chat.cpp`](./audio_to_text_chat.cpp) demonstrates audio to text chat with an audio-capable VLM.
  - [`benchmark_vlm.cpp`](./benchmark_vlm.cpp) shows how to benchmark a VLM in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text and calculating various performance metrics.
  - [`visual_language_lora.cpp`](./visual_language_lora.cpp) demonstrates how to apply one or more LoRA adapters to a VLM at runtime.
 
@@ -31,7 +32,7 @@ Follow [Get Started with Samples](https://docs.openvino.ai/2026/get-started/lear
 
 Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is recommended to run larger models on a dGPU with 32GB+ RAM. For example, the model `llava-hf/llava-v1.6-mistral-7b-hf` can benefit from being run on a dGPU. Modify the source code to change the device for inference to the `GPU`.
 
-Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#visual-language-models-vlms) for more details.
+Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#vision-language-models-vlms) for more details.
 
 ## Run image-to-text sample with LoRA adapters:
 
@@ -73,7 +74,15 @@ A model that supports video input is required to run this sample, for example `l
 
 `video_to_text_chat ./LLaVA-NeXT-Video-7B-hf/ sample_demo_1.mp4`
 
-Supported models with video input are listed in [this section](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt).
+Supported models with video input are listed in [this section](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-media-tags-in-prompt).
+
+## Run audio-to-text chat sample:
+
+Export an audio-capable VLM, such as `google/gemma-4-E2B-it`, using the export command above with the corresponding model ID. The sample requires 16 kHz WAV audio.
+
+You can use 16 kHz example audio file: https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
+
+`audio_to_text_chat ./gemma-4-E2B-it/ how_are_you_doing_today.wav`
 
 ## Run benchmark:
 
@@ -84,6 +93,8 @@ benchmark_vlm [OPTIONS]
 ### Options
 
 - `-m, --model` (default: ''): Path to the model and tokenizers base directory.
+- `-D, --draft_model` (default: `""`): Path to the draft model and tokenizers base directory. Not supported with `-d NPU`.
+- `-a, --num_assistant_tokens` (default: `5`): Number of assistant tokens used for speculative decoding when `--draft_model` is provided.
 - `-p, --prompt` (default: ''): The prompt to generate text. If without `-p, --prompt` and `-F, --prompt_file`, the default prompt is `"What is on the image?"`
 - `-F, --prompt_file` Read prompt from file.
 - `-i, --image` (default: `image.jpg`): Path to image. Can be a single image or a directory of images.

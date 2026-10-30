@@ -14,6 +14,8 @@ namespace ov::genai {
 
 enum class VLMModelType {
     MINICPM,
+    MINICPMV4_6,
+    MINICPM_OCR,
     LLAVA,
     NANOLLAVA,
     LLAVA_NEXT,
@@ -32,6 +34,11 @@ enum class VLMModelType {
     GEMMA4_UNIFIED,
     VIDEOCHAT_FLASH_QWEN,
     QWEN3_OMNI,
+    QWEN3_ASR,
+    DEEPSEEK_OCR2,
+    MUSE_GLIMMER,
+    MINICPMV4_7,
+    LFM3_VL,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to
@@ -109,11 +116,22 @@ public:
     std::string boi_token = "<|image>";
     /// @brief A placeholder for image embeddings in text for Gemma4 model.
     std::string image_token = "<|image|>";
+    /// @brief A placeholder for video embeddings in text for Gemma4 model.
+    std::string video_token = "<|video|>";
     /// @brief A string token denoting end of image embeddings for Gemma4 model.
     std::string eoi_token = "<image|>";
+    /// @brief A string token denoting start of audio embeddings for Gemma4 model.
+    std::string boa_token = "<|audio>";
+    /// @brief A placeholder for audio embeddings in text for Gemma4 model.
+    std::string audio_token = "<|audio|>";
+    /// @brief A string token denoting end of audio embeddings for Gemma4 model.
+    std::string eoa_token = "<audio|>";
 
     /// @brief Hidden size of Gemma4 per-layer embedding input used during inference.
     size_t hidden_size_per_layer_input = 0;
+
+    /// @brief Learnable separator appended after DeepSeek-OCR-2 image features.
+    std::vector<float> view_separator;
 
     /// @brief Selects bidirectional attention scope for Gemma4 (e.g. "vision" enables
     /// bidirectional masking for image tokens which requires `token_type_ids` as an LM input).
@@ -121,6 +139,14 @@ public:
 
     /// @brief A string token denoting start of video embeddings
     std::string video_start = "<video>";
+
+    // MiniCPM-V 4.7 specific config
+    /// @brief Image size for num_patches_per_side calculation in vision embeddings.
+    size_t vision_config_image_size = 980;
+    /// @brief Window kernel size for ViT window attention merge.
+    size_t vision_config_window_kernel_size = 2;
+    /// @brief Merge kernel size for downsample MLP merge.
+    size_t merge_kernel_size = 2;
 
     // Qwen3-VL specific config
     /// @brief Number of position embeddings in vision encoder for Qwen3-VL model.

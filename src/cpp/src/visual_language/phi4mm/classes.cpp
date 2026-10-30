@@ -770,9 +770,10 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
 InputsEmbedderPhi4MM::InputsEmbedderPhi4MM(
     const VLMConfig& vlm_config,
     const std::filesystem::path& model_dir,
+    const Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap device_config
-) : IInputsEmbedder(vlm_config, model_dir, device, device_config) {}
+) : IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {}
 
 
 InputsEmbedderPhi4MM::InputsEmbedderPhi4MM(
@@ -846,7 +847,7 @@ ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(
     ov::Tensor inputs_embeds = vlm_utils::build_inputs_embeds_from_text_and_visual_chunks(
         tokens,
         [&](const ov::Tensor& text_chunk) {
-            return m_embedding->infer(req, text_chunk);
+            return get_text_embedding(req, text_chunk, metrics);
         },
         images_features_proj,
         base_id,

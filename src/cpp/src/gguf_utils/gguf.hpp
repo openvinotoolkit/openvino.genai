@@ -15,20 +15,27 @@
 #include <variant>
 
 #include "openvino/openvino.hpp"
+#include "gguf_metadata.hpp"
 
 extern "C" {
 #include <gguflib.h>
 }
-
-using GGUFMetaData =
-    std::variant<std::monostate, float, int, ov::Tensor, std::string, std::vector<std::string>, std::vector<int32_t>>;
 
 using GGUFLoad = std::tuple<std::unordered_map<std::string, GGUFMetaData>,
                             std::unordered_map<std::string, ov::Tensor>,
                             std::unordered_map<std::string, gguf_tensor_type>>;
 
 template <typename... Args>
-std::string format(std::string fmt, Args... args);
+std::string format(std::string fmt, Args... args) {
+    size_t bufferSize = 1000;
+    char* buffer = new char[bufferSize];
+    int n = sprintf(buffer, fmt.c_str(), args...);
+    OPENVINO_ASSERT(n >= 0 && n < (int)bufferSize - 1);
+
+    std::string fmtStr(buffer);
+    delete[] buffer;
+    return fmtStr;
+}
 
 ov::Shape get_shape(const gguf_tensor& tensor);
 
@@ -42,3 +49,6 @@ std::tuple<std::map<std::string, GGUFMetaData>,
 load_gguf(const std::string& file);
 
 GGUFLoad get_gguf_data(const std::string& file);
+
+// Load only GGUF metadata KV pairs, skipping weight tensors.
+std::unordered_map<std::string, GGUFMetaData> get_gguf_metadata(const std::string& file);

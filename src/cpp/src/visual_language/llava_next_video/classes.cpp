@@ -419,7 +419,7 @@ EncodedImage VisionEncoderLLaVANextVideo::encode(const ov::Tensor& image, const 
 
 NormalizedPrompt InputsEmbedderLLaVANextVideo::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     std::string image_token = m_vlm_config.im_start;
-    auto [unified_prompt, images_sequence] = normalize(prompt, image_token, image_token, base_id, images.size(), VisionType::IMAGE);
+    auto [unified_prompt, images_sequence] = normalize(prompt, image_token, image_token, base_id, images.size(), ModalityType::IMAGE);
     size_t searched_pos = 0;
     for (size_t new_image_id : images_sequence) {
         const EncodedImage& encoded_image = images.at(new_image_id - base_id);
@@ -440,9 +440,10 @@ NormalizedPrompt InputsEmbedderLLaVANextVideo::normalize_prompt(const std::strin
 InputsEmbedderLLaVANextVideo::InputsEmbedderLLaVANextVideo(
     const VLMConfig& vlm_config,
     const std::filesystem::path& model_dir,
+    const Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap device_config) :
-    InputsEmbedderLLaVANext(vlm_config, model_dir, device, device_config) { }
+    InputsEmbedderLLaVANext(vlm_config, model_dir, tokenizer, device, device_config) { }
 
 InputsEmbedderLLaVANextVideo::InputsEmbedderLLaVANextVideo(
     const VLMConfig& vlm_config,
@@ -488,7 +489,7 @@ ov::Tensor InputsEmbedderLLaVANextVideo::get_inputs_embeds(
     ov::Tensor input_ids = get_encoded_input_ids(prompt, metrics);
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
-    ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
+    ov::Tensor text_embeds = get_text_embedding(req, input_ids, metrics);
 
     if (image_embeds.empty() && video_embeds.empty()) {
         ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
@@ -621,7 +622,7 @@ NormalizedPrompt InputsEmbedderLLaVANextVideo::normalize_prompt(const std::strin
     const std::vector<EncodedVideo>& videos) const
 {
     std::string video_token = m_vlm_config.video_start;
-    auto [unified_prompt, video_sequence] = normalize(prompt, video_token, video_token, base_video_id, videos.size(), VisionType::VIDEO);
+    auto [unified_prompt, video_sequence] = normalize(prompt, video_token, video_token, base_video_id, videos.size(), ModalityType::VIDEO);
     size_t searched_pos = 0;
     for (size_t new_image_id : video_sequence) {
         const EncodedVideo& encoded_video = videos.at(new_image_id - base_video_id);

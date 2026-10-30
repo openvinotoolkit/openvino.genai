@@ -3,12 +3,33 @@
 
 #include <algorithm>
 
+#include "continuous_batching/pipeline_base.hpp"
 #include "eagle3_strategy.hpp"
 #include "openvino/pass/pa_kv_reorder_fusion.hpp"
 #include "speculative_decoding/eagle3_model_transforms.hpp"
-#include "logger.hpp"
 
 namespace ov::genai {
+namespace {
+
+constexpr char kDraftEmbeddingsExtraInputName[] = "__ov_genai_internal_draft_embeddings";
+
+ov::Tensor extract_draft_embeddings(std::optional<std::unordered_map<std::string, ov::Tensor>>& lm_extra_inputs) {
+    if (!lm_extra_inputs.has_value()) {
+        return {};
+    }
+
+    auto it = lm_extra_inputs->find(kDraftEmbeddingsExtraInputName);
+    if (it == lm_extra_inputs->end()) {
+        return {};
+    }
+
+    ov::Tensor draft_embeddings = it->second;
+    lm_extra_inputs->erase(it);
+    return draft_embeddings;
+}
+
+}  // namespace
+
 KVUpdateWrapper::KVUpdateWrapper(const ov::genai::ModelDesc& kv_model_desc) {
     m_compiled_model =
             utils::singleton_core().compile_model(kv_model_desc.model, kv_model_desc.device, kv_model_desc.properties);
@@ -26,7 +47,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     if (main_model_desc.inputs_embedder) {
         m_inputs_embedder = main_model_desc.inputs_embedder;
         m_model_input_type = ModelInputType::EMBEDDINGS;
-        m_vision_registry = std::make_shared<VisionRegistry>();
+        m_embeddings_registry = std::make_shared<EmbeddingsRegistry>();
     }
 
     auto main_model = main_model_desc.model;
@@ -92,23 +113,27 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     ov::genai::ModelDesc kv_model_desc;
     kv_model_desc.model = kv_model;
     kv_model_desc.device = std::move(main_device);
-    // only kv cache information is needed for kv update model
+    // as of now, only kv cache information is needed for kv update model
     if (main_model_desc.properties.count(ov::hint::kv_cache_precision.name()) > 0) {
-        kv_model_desc.properties[ov::hint::kv_cache_precision.name()] = main_model_desc.properties.at(ov::hint::kv_cache_precision.name());
+        kv_model_desc.properties[ov::hint::kv_cache_precision.name()] =
+            main_model_desc.properties.at(ov::hint::kv_cache_precision.name());
     } else {
-        GENAI_INFO("kv cache precision not specified in main model properties. leave to plugin for default precision.");
+        GENAI_INFO("kv cache precision not specified in main model properties. Leave to the plugin for default precision.");
     }
 
-    auto kv_cache_precision =
+    // Read the runtime KV cache precision from the compiled main model's key_cache input port: plugins may resolve the
+    // actual cache precision independently of that hint (e.g. CPU promoting to bf16 when kv cache precision hint is
+    // fp16, GPU promoting to i8 when kv cache precision hint is u8, and for GPU, when the hint is u4, the kv data are
+    // packed as uint8 and be reinterpreted to u4 inside plugin), and the reorder model must match the precision of the
+    // tensors actually bound by the runtime.
+    const auto rt_kv_cache_precision = m_main_pipeline->get_kv_cache_element_type();
+    const auto kv_cache_precision =
         m_main_pipeline->get_model_property(ov::hint::kv_cache_precision.name()).as<ov::element::Type>();
     // transformation for kv update model: u4 KV cache is stored as u8 internally,
     // so the reorder pass operates on u8 while the original precision is preserved in rt_info.
     kv_model->set_rt_info(kv_cache_precision, "auxiliary_kv_cache_precision");
-    if (kv_cache_precision == ov::element::u4) {
-        kv_cache_precision = ov::element::u8;
-    }
-    ov::pass::PaKVReorderFusion(kv_cache_precision).run_on_model(kv_model);
-    // add rt_info for real kv precision into kv_model
+    ov::pass::PaKVReorderFusion(rt_kv_cache_precision).run_on_model(kv_model);
+
     m_kv_update_wrapper = std::make_shared<KVUpdateWrapper>(kv_model_desc);
 
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
@@ -182,7 +207,22 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::align_request_pair_processe
     // These values represent the processed-prefix lengths after each pipeline
     // independently restores cached prompt prefix blocks.
     const size_t main_processed = main_request->get_num_processed_tokens();
-    const size_t draft_processed = draft_request->get_num_processed_tokens();
+    size_t draft_processed = draft_request->get_num_processed_tokens();
+
+    if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        // The draft (embeddings) restore was deferred so its cache identity can be bound to the main
+        // model's image-aware hash here. The draft input is the main sequence shifted by one token, so a
+        // draft prefix of length L maps to the main prefix of length L + 1. This prevents reusing draft
+        // blocks cached for a prompt with identical text but a different image.
+        auto draft_pipeline = std::static_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_draft_pipeline);
+        draft_processed = draft_pipeline->restore_draft_prefix_with_identity(
+            request_id,
+            main_processed,
+            [main_request](size_t length, size_t block_size) {
+                return main_request->get_sequences().front()->get_hash(length + 1, block_size);
+            });
+    }
+
     const size_t common_restored_prefix = std::min(main_processed, draft_processed);
 
     // Enforce a shared processed prefix to keep main/draft cache states coherent.
@@ -207,6 +247,35 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::align_request_pair_processe
                         ", target_processed_tokens=",
                         aligned_draft_processed);
     }
+
+    // Report the aligned prefix both pipelines actually restart from, overriding each pipeline's
+    // independent pre-alignment restore count.
+    main_request->set_num_prefix_cache_hit_tokens(common_restored_prefix);
+    draft_request->set_num_prefix_cache_hit_tokens(common_restored_prefix);
+}
+
+void ContinuousBatchingPipeline::Eagle3DecodingImpl::validate_awaiting_requests(
+    const std::vector<SequenceGroup::Ptr>& main_awaiting_requests,
+    const std::vector<SequenceGroup::Ptr>& draft_awaiting_requests) const {
+    size_t expected_draft_requests = 0;
+
+    for (const auto& request : main_awaiting_requests) {
+        OPENVINO_ASSERT(request, "Eagle3 main awaiting request pointer is null.");
+
+        const auto& sampling_params = request->get_sampling_parameters();
+        const bool is_main_only =
+            sampling_params.num_assistant_tokens.has_value() && sampling_params.num_assistant_tokens.value() == 0;
+        if (!is_main_only) {
+            ++expected_draft_requests;
+        }
+    }
+
+    OPENVINO_ASSERT(draft_awaiting_requests.size() == expected_draft_requests,
+                    "Eagle3 awaiting request mismatch: draft queue size is ",
+                    draft_awaiting_requests.size(),
+                    ", but expected ",
+                    expected_draft_requests,
+                    " (number of main requests with speculative decoding enabled).");
 }
 
 ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_embeddings(const ov::Tensor& original_input_embeddings) {
@@ -233,27 +302,62 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::update_eagle_pipeline_param
     m_draft_eagle_pipeline->set_d2t_for_draft_decoding(d2t_tensor);
 }
 
+std::unordered_map<std::string, ov::Tensor>
+ContinuousBatchingPipeline::Eagle3DecodingImpl::prepare_lm_extra_inputs(
+    std::unordered_map<std::string, ov::Tensor> lm_extra_inputs) const {
+    auto prepared_inputs = IContinuousBatchingPipeline::prepare_lm_extra_inputs(std::move(lm_extra_inputs));
+    if (m_inputs_embedder) {
+        // Preserve each request's text embeddings before the embedder reuses its cache.
+        const ov::Tensor cached_text_embeds = m_inputs_embedder->get_cached_text_embeds();
+        if (cached_text_embeds) {
+            ov::Tensor cached_text_embeds_copy(cached_text_embeds.get_element_type(), cached_text_embeds.get_shape());
+            cached_text_embeds.copy_to(cached_text_embeds_copy);
+            prepared_inputs[kDraftEmbeddingsExtraInputName] = std::move(cached_text_embeds_copy);
+        }
+    }
+    return prepared_inputs;
+}
+
+void ContinuousBatchingPipeline::Eagle3DecodingImpl::prepare_inputs_embedder(
+    const GenerationConfig& sampling_params) const {
+    if (m_inputs_embedder) {
+        const bool drafting_disabled = sampling_params.num_assistant_tokens.has_value() &&
+                                       sampling_params.num_assistant_tokens.value() == 0;
+        m_inputs_embedder->set_cached_text_embeds_enabled(!drafting_disabled);
+    }
+}
+
 GenerationHandle
 ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
                                                                  const ov::Tensor& input_ids,
                                                                  const ov::genai::GenerationConfig& sampling_params,
-                                                                 std::optional<ov::Tensor> token_type_ids,
                                                                  std::optional<ov::Tensor> prompt_ids,
                                                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+    if (sampling_params.num_assistant_tokens.has_value() && sampling_params.num_assistant_tokens.value() == 0) {
+        // No speculative draft for this request: run only the main model.
+        extract_draft_embeddings(lm_extra_inputs);
+        return m_main_pipeline->add_request(request_id,
+                                            input_ids,
+                                            sampling_params,
+                                            prompt_ids,
+                                            lm_extra_inputs);
+    }
+
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
+
+    // Extract draft-only embeddings that were staged in lm_extra_inputs and remove
+    // them so the main pipeline receives only its regular auxiliary inputs.
+    ov::Tensor draft_embeddings = extract_draft_embeddings(lm_extra_inputs);
     // remove first token from input_ids to create the draft model input
     // refer to: https://github.com/SafeAILab/EAGLE/blob/main/eagle/model/cnets.py#L617
-    ov::Tensor draft_input = create_draft_input(input_ids);
-    std::optional<ov::Tensor> draft_token_type_ids = token_type_ids;
+    ov::Tensor draft_input = create_draft_input(draft_embeddings ? draft_embeddings : input_ids);
     std::optional<ov::Tensor> draft_prompt_ids = prompt_ids;
     ov::Tensor main_position_ids;
     std::optional<int64_t> main_rope_delta;
-    if (draft_token_type_ids.has_value()) {
-        draft_token_type_ids = trim_first_token_sequence_tensor(*draft_token_type_ids, "token_type_ids");
-    }
+
     if (draft_prompt_ids.has_value()) {
         draft_prompt_ids = trim_first_token_sequence_tensor(*draft_prompt_ids, "prompt_ids");
     }
@@ -266,13 +370,17 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     }
     // The speculative draft path only uses language-model inputs. Multimodal auxiliary inputs such as
     // deepstack/visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
-    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input, draft_sampling_params, draft_token_type_ids, draft_prompt_ids)});
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input, draft_sampling_params, draft_prompt_ids)});
     // Restore main position_ids/rope_delta before adding to the main pipeline.
     if (m_model_input_type == ModelInputType::EMBEDDINGS && m_inputs_embedder && main_position_ids.get_size() > 0) {
         m_inputs_embedder->set_position_ids(main_position_ids);
         m_inputs_embedder->set_rope_delta(main_rope_delta.value_or(compute_rope_delta(main_position_ids)));
     }
-    auto main_generation = m_main_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids, prompt_ids, lm_extra_inputs);
+    auto main_generation = m_main_pipeline->add_request(request_id,
+                                                        input_ids,
+                                                        sampling_params,
+                                                        prompt_ids,
+                                                        lm_extra_inputs);
     align_request_pair_processed_prefix(request_id);
     return main_generation;
 }
@@ -286,6 +394,11 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     }
 
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+
+    if (sampling_params.num_assistant_tokens.has_value() && sampling_params.num_assistant_tokens.value() == 0) {
+        return m_main_pipeline->add_request(request_id, prompt, sampling_params);
+    }
+
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
@@ -303,7 +416,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
     const std::vector<ov::Tensor>& input_ids,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer,
-    const std::optional<std::vector<ov::Tensor>>& token_type_ids,
     const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids,
     const std::optional<std::vector<ov::Tensor>>& prompt_ids,
     const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list
@@ -312,19 +424,13 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
     strategy.prepare_request = [this](size_t,
                                       const ov::Tensor& in_ids,
                                       GenerationConfig& main_cfg,
-                                      GenerationConfig& draft_cfg,
-                                      ov::Tensor& main_in,
-                                      ov::Tensor& draft_in) {
+                                      ov::Tensor& main_in) {
         OPENVINO_ASSERT(main_cfg.assistant_confidence_threshold == 0.f,
                         "Eagle3 only supports num_assistant_tokens (assistant_confidence_threshold must be 0.f)");
-        if (main_cfg.num_assistant_tokens == 0) {
+        if (!main_cfg.num_assistant_tokens.has_value()) {
             main_cfg.num_assistant_tokens = m_main_pipeline->default_num_assistant_tokens;
-            draft_cfg.num_assistant_tokens = main_cfg.num_assistant_tokens;
         }
-        draft_cfg.ignore_eos = true;
-        draft_cfg.stop_strings = {};
         main_in = in_ids;
-        draft_in = create_draft_input(in_ids);
     };
 
     strategy.check_streaming = [](const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr,
@@ -342,20 +448,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
         return PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start);
     };
 
-    return generate_common(this, input_ids, sampling_params, streamer, token_type_ids, position_ids, prompt_ids, lm_extra_inputs_list, strategy);
-}
-
-int64_t ContinuousBatchingPipeline::Eagle3DecodingImpl::compute_rope_delta(const ov::Tensor& position_ids) {
-    const ov::Shape shape = position_ids.get_shape();
-    OPENVINO_ASSERT(shape.size() == 2 || shape.size() == 3,
-                    "Expected position_ids rank 2 or 3 when computing rope_delta.");
-
-    const size_t seq_axis = shape.size() == 3 ? 2 : 1;
-    OPENVINO_ASSERT(shape[seq_axis] > 0, "position_ids sequence length must be greater than 0.");
-
-    const int64_t* data = position_ids.data<const int64_t>();
-    const int64_t max_position_id = *std::max_element(data, data + position_ids.get_size());
-    return max_position_id + 1 - static_cast<int64_t>(shape[seq_axis]);
+    return generate_common(this, input_ids, sampling_params, streamer, position_ids, prompt_ids, lm_extra_inputs_list, strategy);
 }
 
 ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::trim_first_token_sequence_tensor(const ov::Tensor& tensor,

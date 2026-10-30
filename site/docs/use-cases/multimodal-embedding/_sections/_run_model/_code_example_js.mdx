@@ -1,0 +1,21 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="javascript" showLineNumbers>
+{`import { EmbeddingPipeline } from "openvino-genai-node";
+import { readImages } from "./image_utils.js";
+import { readVideo } from "./video_utils.js";
+
+const pipeline = await EmbeddingPipeline(models_path, "${props.device || 'CPU'}");
+
+// Embed a text query
+const queryEmbedding = await pipeline.embed("a photo of a cat");
+
+// Embed images (each image is an ov.Tensor of shape [H, W, 3], uint8)
+const images = await readImages("path/to/images");
+const imageEmbedding = await pipeline.embed("", { images });
+
+// Embed a video (video is an ov.Tensor of shape [F, H, W, 3], uint8)
+const { videoTensor, videoMetadata } = readVideo("path/to/video.mp4", 8);
+const videoEmbedding = await pipeline.embed("", { videos: [videoTensor], videosMetadata: [videoMetadata] });
+`}
+</CodeBlock>

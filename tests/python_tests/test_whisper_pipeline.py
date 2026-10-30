@@ -1,6 +1,7 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import enum
+import platform
 import sys
 import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
 
@@ -10,13 +11,11 @@ patch_pyav_for_servercore.install_av_stub_module_for_windows()
 import openvino_genai as ov_genai
 import functools
 import pytest
-import openvino_tokenizers
 import openvino
 import datasets
 from transformers import AutoProcessor, AutoTokenizer
 from transformers.pipelines.automatic_speech_recognition import AutomaticSpeechRecognitionPipeline
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
-from huggingface_hub import snapshot_download
 import gc
 import json
 import typing
@@ -24,20 +23,34 @@ import numpy as np
 import pathlib
 import importlib.metadata as metadata
 from packaging.version import parse
-from utils.constants import get_ov_cache_converted_models_dir, extra_generate_kwargs
+from utils.constants import get_ov_cache_converted_models_dir, extra_generate_kwargs, get_default_llm_properties
 
 from utils.network import retry_request
 from utils.atomic_download import AtomicDownloadManager
 from typing import Any, Literal
 from difflib import SequenceMatcher
 
-from utils.dataset_utils import load_dataset_via_snapshot
-from utils.qwen3_asr import Qwen3ASROptimumPipeline, skip_if_qwen3_asr_package_is_unavailable
+from utils.dataset_utils import load_dataset_via_snapshot, load_parquet_dataset_via_snapshot
+from utils.asr_utils.fun_asr import FUN_ASR_MODEL_ID, FunASROptimumPipeline, skip_if_fun_asr_package_is_unavailable
+from utils.asr_utils.qwen3_asr import (
+    QWEN3_ASR_MODEL_ID,
+    Qwen3ASROptimumPipeline,
+    save_model,
+    skip_if_qwen3_asr_package_is_unavailable,
+)
+from utils.asr_utils.sensevoice import (
+    SENSEVOICE_MODEL_IDS,
+    SENSEVOICE_SMALL_TINY_MODEL_ID,
+    SenseVoiceOptimumPipeline,
+    save_model as save_sensevoice_model,
+    skip_if_sensevoice_package_is_unavailable,
+)
 
 
 class PipelineType(enum.Enum):
     WHISPER = "whisper"
     ASR = "asr"
+    CONTINUOUS_BATCHING = "continuous_batching"
 
 
 def get_pipeline_cls(pipeline_type: PipelineType):
@@ -87,46 +100,82 @@ def get_whisper_models_list(tiny_only=False):
     return [(model_id, prefix / model_id.split("/")[1]) for model_id in model_ids]
 
 
-QWEN3_ASR_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-asr"
-
-
 # used whisper models are relatively small
 # cache them in memory to speedup tests
 @functools.lru_cache()
-def read_asr_model(params, word_timestamps=False, pipeline_type=PipelineType.WHISPER):
+def read_asr_model(params, word_timestamps=False, pipeline_type=PipelineType.WHISPER, attention_backend=None):
     model_id, path = params
     if model_id == QWEN3_ASR_MODEL_ID:
         skip_if_qwen3_asr_package_is_unavailable()
+    elif model_id == FUN_ASR_MODEL_ID:
+        skip_if_fun_asr_package_is_unavailable()
+    elif model_id in SENSEVOICE_MODEL_IDS:
+        skip_if_sensevoice_package_is_unavailable()
 
     manager = AtomicDownloadManager(path)
-    if not manager.is_complete() and not (path / "openvino_encoder_model.xml").exists():
-        save_model(model_id=model_id, tmp_path=path)
 
-    opt_model = retry_request(
-        lambda: OVModelForSpeechSeq2Seq.from_pretrained(
-            path,
-            trust_remote_code=True,
-            compile=False,
-            device="CPU",
-            load_in_8bit=False,
-            local_files_only=True,
-        )
-    )
+    expected_model_file = "openvino_model.xml" if model_id in SENSEVOICE_MODEL_IDS else "openvino_encoder_model.xml"
+    if not manager.is_complete() and not (path / expected_model_file).exists():
+        if model_id in SENSEVOICE_MODEL_IDS:
+            save_sensevoice_model(model_id=model_id, tmp_path=path)
+        else:
+            save_model(model_id=model_id, tmp_path=path)
 
-    processor = retry_request(
-        lambda: AutoProcessor.from_pretrained(
-            path,
-            trust_remote_code=True,
-            local_files_only=True,
+    opt_model = None
+    if model_id not in SENSEVOICE_MODEL_IDS:
+        opt_model = retry_request(
+            lambda: OVModelForSpeechSeq2Seq.from_pretrained(
+                path,
+                trust_remote_code=True,
+                compile=False,
+                device="CPU",
+                load_in_8bit=False,
+                local_files_only=True,
+            )
         )
-    )
 
     if model_id == QWEN3_ASR_MODEL_ID:
+        processor = retry_request(
+            lambda: AutoProcessor.from_pretrained(
+                path,
+                trust_remote_code=True,
+                local_files_only=True,
+            )
+        )
         hf_pipe = Qwen3ASROptimumPipeline(
             model=opt_model,
             processor=processor,
         )
+    elif model_id == FUN_ASR_MODEL_ID:
+        # processor cannot be loaded for FunASR
+        # so processor loading removed from common path
+        # consider create model specific save/load functions.
+        hf_pipe = FunASROptimumPipeline(
+            model=opt_model,
+            tokenizer=retry_request(
+                lambda: AutoTokenizer.from_pretrained(
+                    model_id,
+                    subfolder="Qwen3-0.6B",
+                    trust_remote_code=True,
+                )
+            ),
+        )
+    elif model_id in SENSEVOICE_MODEL_IDS:
+        sensevoice_model = retry_request(
+            lambda: OVModelForSpeechSeq2Seq.from_pretrained(
+                path,
+                local_files_only=True,
+            )
+        )
+        hf_pipe = SenseVoiceOptimumPipeline(sensevoice_model)
     else:
+        processor = retry_request(
+            lambda: AutoProcessor.from_pretrained(
+                path,
+                trust_remote_code=True,
+                local_files_only=True,
+            )
+        )
         hf_pipe = AutomaticSpeechRecognitionPipeline(
             model=opt_model,
             tokenizer=processor.tokenizer,
@@ -136,51 +185,23 @@ def read_asr_model(params, word_timestamps=False, pipeline_type=PipelineType.WHI
     properties = {}
     if word_timestamps:
         properties["word_timestamps"] = True
-    pipeline_cls = get_pipeline_cls(pipeline_type)
+    if attention_backend:
+        properties["ATTENTION_BACKEND"] = attention_backend
+    if pipeline_type == PipelineType.CONTINUOUS_BATCHING:
+        assert (path / "openvino_audio_encoder_model.xml").is_file(), "Continuous batching requires a split ASR export"
+        genai_pipe = ov_genai.ContinuousBatchingPipeline(
+            path, ov_genai.SchedulerConfig(), "CPU", get_default_llm_properties()
+        )
+    else:
+        pipeline_cls = get_pipeline_cls(pipeline_type)
+        genai_pipe = pipeline_cls(path, "CPU", **properties, ENABLE_MMAP=False)
 
     return (
         model_id,
         path,
         hf_pipe,
-        pipeline_cls(path, "CPU", **properties, ENABLE_MMAP=False),
+        genai_pipe,
     )
-
-
-def save_model(model_id: str, tmp_path: pathlib.Path):
-    manager = AtomicDownloadManager(tmp_path)
-
-    def save_to_temp(temp_path: pathlib.Path) -> None:
-        model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
-        tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True))
-        ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
-            tokenizer,
-            with_detokenizer=True,
-            clean_up_tokenization_spaces=False,
-        )
-
-        openvino.save_model(ov_tokenizer, temp_path / "openvino_tokenizer.xml")
-        openvino.save_model(ov_detokenizer, temp_path / "openvino_detokenizer.xml")
-
-        tokenizer.save_pretrained(temp_path)
-
-        opt_model = retry_request(
-            lambda: OVModelForSpeechSeq2Seq.from_pretrained(
-                model_cached,
-                export=True,
-                trust_remote_code=True,
-                compile=False,
-                device="CPU",
-                load_in_8bit=False,
-            )
-        )
-        opt_model.generation_config.save_pretrained(temp_path)
-        opt_model.config.save_pretrained(temp_path)
-        opt_model.save_pretrained(temp_path)
-
-        processor = retry_request(lambda: AutoProcessor.from_pretrained(model_cached, trust_remote_code=True))
-        processor.save_pretrained(temp_path)
-
-    manager.execute(save_to_temp)
 
 
 def run_huggingface(
@@ -264,14 +285,12 @@ def get_audio_dataset(long_form: bool) -> list:
 @functools.lru_cache(16)
 def get_multilingual_audio_dataset(language: Literal["de", "fr", "es"]) -> list:
     mls_config = {"de": "german", "fr": "french", "es": "spanish"}
-    # dataset is too big (450gb) for snapshot download
-    ds = retry_request(
-        lambda: datasets.load_dataset(
-            "facebook/multilingual_librispeech",
-            mls_config[language],
-            split="test",
-            streaming=True,
-        )
+    # the whole dataset is too big (450gb) for snapshot download, so only the test split of the language is fetched
+    ds = load_parquet_dataset_via_snapshot(
+        "facebook/multilingual_librispeech",
+        {"test": f"{mls_config[language]}/test-*"},
+        split="test",
+        streaming=True,
     )
     ds = typing.cast(datasets.IterableDataset, ds)
     ds = ds.cast_column("audio", datasets.Audio(sampling_rate=16000))
@@ -356,6 +375,7 @@ MODEL_PIPELINE_PAIRS = [
     ("openai/whisper-tiny", PipelineType.ASR),
     ("distil-whisper/distil-small.en", PipelineType.ASR),
     (QWEN3_ASR_MODEL_ID, PipelineType.ASR),
+    (FUN_ASR_MODEL_ID, PipelineType.ASR),
     # test backward compatibility for tiny model only
     ("openai/whisper-tiny", PipelineType.WHISPER),
 ]
@@ -368,9 +388,38 @@ def get_model_pipeline_pair_id(model_pipeline_pair):
 
 def get_model_pipeline_pair_params(model_pipeline_pairs=MODEL_PIPELINE_PAIRS):
     return [
-        pytest.param(model_pipeline_pair, id=get_model_pipeline_pair_id(model_pipeline_pair))
+        pytest.param(
+            model_pipeline_pair,
+            id=get_model_pipeline_pair_id(model_pipeline_pair),
+            marks=[pytest.mark.sensevoice] if model_pipeline_pair[0] in SENSEVOICE_MODEL_IDS else [],
+        )
         for model_pipeline_pair in model_pipeline_pairs
     ]
+
+
+def make_deterministic_audio(num_samples: int) -> np.ndarray:
+    return (0.1 * np.random.default_rng(num_samples).standard_normal(num_samples)).astype(np.float32)
+
+
+# ASRPipeline runs Qwen3-ASR split export through ContinuousBatchingPipeline for PA and VLMPipeline for SDPA.
+QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS = [
+    pytest.param(
+        (QWEN3_ASR_MODEL_ID, PipelineType.ASR, {"attention_backend": "PA"}),
+        id=f"{get_model_pipeline_pair_id((QWEN3_ASR_MODEL_ID, PipelineType.ASR))}-split-PA",
+        marks=[
+            pytest.mark.qwen3_asr_split_export,
+            pytest.mark.skipif(
+                sys.platform == "darwin" and platform.machine() == "arm64",
+                reason="PagedAttention requires SVE on ARM and is unavailable on macOS arm64.",
+            ),
+        ],
+    ),
+    pytest.param(
+        (QWEN3_ASR_MODEL_ID, PipelineType.ASR, {"attention_backend": "SDPA"}),
+        id=f"{get_model_pipeline_pair_id((QWEN3_ASR_MODEL_ID, PipelineType.ASR))}-split-SDPA",
+        marks=pytest.mark.qwen3_asr_split_export,
+    ),
+]
 
 
 @pytest.fixture
@@ -378,9 +427,52 @@ def pipelines_fixture(request):
     model_id, pipeline_type = request.param[:2]
     options = request.param[2] if len(request.param) > 2 else {}
     model_name = model_id.split("/")[-1]
+    if request.node.get_closest_marker("qwen3_asr_split_export"):
+        # Keep split and legacy exports in separate converted-model caches.
+        model_name += "-split"
     model_path = get_ov_cache_converted_models_dir() / model_name
     model_id, _, hf_pipe, genai_pipe = read_asr_model((model_id, model_path), pipeline_type=pipeline_type, **options)
     return hf_pipe, genai_pipe, model_id, pipeline_type
+
+
+@pytest.mark.qwen3_asr_split_export
+@pytest.mark.skipif(
+    sys.platform == "darwin" and platform.machine() == "arm64",
+    reason="PagedAttention requires SVE on ARM and is unavailable on macOS arm64.",
+)
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params([(QWEN3_ASR_MODEL_ID, PipelineType.CONTINUOUS_BATCHING)]),
+    indirect=True,
+)
+@pytest.mark.parametrize(
+    "audios",
+    [
+        # 137 and 261 mel frames (hop length 160) end with partial chunks.
+        pytest.param([make_deterministic_audio(num_samples) for num_samples in (21920, 41760)], id="short-first"),
+        pytest.param([make_deterministic_audio(num_samples) for num_samples in (41760, 21920)], id="long-first"),
+    ],
+)
+def test_qwen3_asr_cb_add_request_matches_optimum(pipelines_fixture, audios):
+    optimum_pipe, pipe, _, _ = pipelines_fixture
+    config = ov_genai.GenerationConfig(max_new_tokens=16, do_sample=False)
+    expected_ids = [
+        optimum_pipe.generate_ids(audio, max_new_tokens=16, do_sample=False)[0].tolist() for audio in audios
+    ]
+    handles = [
+        pipe.add_request(request_id, "", [], [], [openvino.Tensor(audio)], config)
+        for request_id, audio in enumerate(audios)
+    ]
+
+    while pipe.has_non_finished_requests():
+        pipe.step()
+
+    for handle, expected in zip(handles, expected_ids, strict=True):
+        results = handle.read_all()
+        assert len(results) == 1
+        assert expected
+        assert results[0].generated_ids == expected
+    assert not pipe.has_non_finished_requests()
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
@@ -459,22 +551,27 @@ def test_max_new_tokens(model_descr, sample_from_dataset, pipeline_type):
 @pytest.mark.transformers_lower_v5(reason="CVS-185784")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("language", ["fr", "de"])
-def test_language_mode(model_descr, language, pipeline_type):
+@pytest.mark.parametrize("language_format", ["plain", "wrapped"])
+def test_language_mode(model_descr, language, language_format, pipeline_type):
     model_id, path, hf_pipe, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
     sample = get_multilingual_audio_dataset(language)[0]
+
+    # Derive the config value to exercise both accepted API forms; the plain
+    # `language` still selects the dataset.
+    language_value = language if language_format == "plain" else f"<|{language}|>"
 
     config_cls = get_config_cls(pipeline_type)
     config = config_cls(max_new_tokens=30, language=language)
 
     expected = run_huggingface(hf_pipe, sample, config)
 
-    genai_result = genai_pipe.generate(sample, max_new_tokens=30, language=f"<|{language}|>")
+    genai_result = genai_pipe.generate(sample, max_new_tokens=30, language=language_value)
 
     compare_results(expected, genai_result)
 
     genai_config = genai_pipe.get_generation_config()
     genai_config.max_new_tokens = 30
-    genai_config.language = f"<|{language}|>"
+    genai_config.language = language_value
     genai_result = genai_pipe.generate(sample, genai_config)
 
     compare_results(expected, genai_result)
@@ -581,16 +678,19 @@ def test_language_detection(model_descr, sample_from_multilingual_dataset, langu
             ("openai/whisper-tiny", PipelineType.ASR),
             ("openai/whisper-tiny", PipelineType.WHISPER),
             (QWEN3_ASR_MODEL_ID, PipelineType.ASR),
+            (FUN_ASR_MODEL_ID, PipelineType.ASR),
+            (SENSEVOICE_SMALL_TINY_MODEL_ID, PipelineType.ASR),
         ]
-    ),
+    )
+    + QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS,
     indirect=True,
 )
 @pytest.mark.parametrize("sample_from_multilingual_dataset", ["fr"], indirect=True)
-def test_forced_language(pipelines_fixture, sample_from_multilingual_dataset):
+def test_forced_language(sample_from_multilingual_dataset, pipelines_fixture):
     _, genai_pipe, model_id, _ = pipelines_fixture
 
-    config = {"language": "<|en|>"}
-    if model_id == QWEN3_ASR_MODEL_ID:
+    config = {"language": "en"}
+    if model_id in (QWEN3_ASR_MODEL_ID, FUN_ASR_MODEL_ID):
         # tiny random model used for Qwen3-ASR testing. It was not trained to autodetect language.
         # Internal streamer suppresses language autodetection prefix, so if language is not forced all output is suppressed
         # also max_new_tokens have to be set as model cannot generate eos token
@@ -598,8 +698,28 @@ def test_forced_language(pipelines_fixture, sample_from_multilingual_dataset):
 
     genai_result = genai_pipe.generate(sample_from_multilingual_dataset, **config)
     detected_language = genai_result.languages[0] if hasattr(genai_result, "languages") else genai_result.language
-    expected_language = "en" if model_id != QWEN3_ASR_MODEL_ID else "English"
+    expected_language = "en" if model_id not in (QWEN3_ASR_MODEL_ID, FUN_ASR_MODEL_ID) else "English"
     assert detected_language == expected_language
+
+    if model_id == SENSEVOICE_SMALL_TINY_MODEL_ID:
+        assert genai_result.metadata is not None
+        assert len(genai_result.metadata) == len(genai_result.texts)
+        assert isinstance(genai_result.metadata[0], dict)
+
+
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params([(SENSEVOICE_SMALL_TINY_MODEL_ID, PipelineType.ASR)]),
+    indirect=True,
+)
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+def test_sensevoice_use_itn_changes_transcription(sample_from_dataset, pipelines_fixture):
+    _, genai_pipe, _, _ = pipelines_fixture
+
+    text_without_itn = genai_pipe.generate(sample_from_dataset, use_itn=False).texts[0]
+    text_with_itn = genai_pipe.generate(sample_from_dataset, use_itn=True).texts[0]
+
+    assert text_without_itn != text_with_itn
 
 
 @pytest.mark.transformers_lower_v5(reason="CVS-185784")
@@ -657,15 +777,16 @@ def test_return_timestamps_max_new_tokens_short_form(model_descr, sample_from_da
             ("openai/whisper-tiny", PipelineType.ASR),
             ("openai/whisper-tiny", PipelineType.WHISPER),
             (QWEN3_ASR_MODEL_ID, PipelineType.ASR),
+            (FUN_ASR_MODEL_ID, PipelineType.ASR),
         ]
-    ),
+    )
+    + QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS,
     indirect=True,
 )
 @pytest.mark.parametrize(
     "sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=10, long_form=True)], indirect=True
 )
-@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
-def test_longform_audio(pipelines_fixture, sample_from_dataset):
+def test_longform_audio(sample_from_dataset, pipelines_fixture):
     hf_pipe, genai_pipe, model_id, pipeline_type = pipelines_fixture
 
     streamer_result = []
@@ -673,7 +794,7 @@ def test_longform_audio(pipelines_fixture, sample_from_dataset):
     config_cls = get_config_cls(pipeline_type)
 
     config = {}
-    if model_id == QWEN3_ASR_MODEL_ID:
+    if model_id in (QWEN3_ASR_MODEL_ID, FUN_ASR_MODEL_ID):
         # tiny random model used for Qwen3-ASR testing.
         # it cannot predict language so we have to force it to prevent streamer autodetection prefix suppression
         # also max_new_tokens have to be set as model cannot stop at eos token
@@ -826,14 +947,15 @@ def test_longform_audio_with_word_level_timestamps(model_descr, sample_from_data
     "sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, long_form=True)], indirect=True
 )
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
-def test_beam_search(model_descr, sample_from_dataset, pipeline_type):
-    # use only 30 seconds of audio due to beam search results wrong with enabled timestamps
-    # ticket: 167239
+@pytest.mark.parametrize("return_timestamps", [False, True])
+def test_beam_search(model_descr, sample_from_dataset, pipeline_type, return_timestamps):
+    # Cut to 30 seconds to keep this regression focused and limit CI cost.
     sample_from_dataset = sample_from_dataset[: 30 * 16000]
     _, _, hf_pipe, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
     config_cls = get_config_cls(pipeline_type)
     generation_config = config_cls(
         num_beams=2,
+        return_timestamps=return_timestamps,
     )
 
     genai_result = run_genai(genai_pipe, sample_from_dataset, generation_config)
@@ -848,6 +970,8 @@ def test_initial_prompt_hotwords(model_descr, sample_from_dataset, pipeline_type
     model_id, path, hf_pipe, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
 
     result = genai_pipe.generate(sample_from_dataset)
+    if pipeline_type == PipelineType.ASR:
+        assert result.metadata is None
     assert "Kwilter" not in result.texts[0]
     assert "Quilter" in result.texts[0]
 
@@ -908,16 +1032,20 @@ def test_random_sampling(model_descr, sample_from_dataset, pipeline_type):
             ("openai/whisper-tiny", PipelineType.ASR, {"word_timestamps": True}),
             ("openai/whisper-tiny", PipelineType.WHISPER, {"word_timestamps": True}),
             (QWEN3_ASR_MODEL_ID, PipelineType.ASR),
+            (FUN_ASR_MODEL_ID, PipelineType.ASR),
         ]
-    ),
+    )
+    + QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS,
     indirect=True,
 )
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
-def test_perf_metrics(pipelines_fixture, sample_from_dataset):
+def test_perf_metrics(sample_from_dataset, pipelines_fixture, request):
     _, genai_pipe, model_id, pipeline_type = pipelines_fixture
+    # Qwen3-ASR split export extracts mel features inside the audio encoding stage.
+    has_features_extraction = request.node.get_closest_marker("qwen3_asr_split_export") is None
 
-    if model_id == QWEN3_ASR_MODEL_ID:
+    if model_id in (QWEN3_ASR_MODEL_ID, FUN_ASR_MODEL_ID):
         generate_kwargs = {"language": "English", "max_new_tokens": 200}
     else:
         generate_kwargs = {"return_timestamps": True, "word_timestamps": True}
@@ -940,13 +1068,14 @@ def test_perf_metrics(pipelines_fixture, sample_from_dataset):
     assert perf_metrics.get_throughput().mean > 0
     assert perf_metrics.get_inference_duration().mean > 0
     assert perf_metrics.get_generate_duration().mean > 0
-    if model_id == QWEN3_ASR_MODEL_ID:
+    if model_id in (QWEN3_ASR_MODEL_ID, FUN_ASR_MODEL_ID):
         assert perf_metrics.get_tokenization_duration().mean > 0
     else:
         assert perf_metrics.get_tokenization_duration().mean == 0
     assert perf_metrics.get_detokenization_duration().mean > 0
-    assert perf_metrics.get_features_extraction_duration().mean > 0
-    if model_id != QWEN3_ASR_MODEL_ID:
+    if has_features_extraction:
+        assert perf_metrics.get_features_extraction_duration().mean > 0
+    if model_id not in (QWEN3_ASR_MODEL_ID, FUN_ASR_MODEL_ID):
         assert perf_metrics.get_word_level_timestamps_processing_duration().mean > 0
     assert perf_metrics.get_encode_inference_duration().mean > 0
     assert perf_metrics.get_decode_inference_duration().mean > 0
@@ -955,12 +1084,15 @@ def test_perf_metrics(pipelines_fixture, sample_from_dataset):
     # assert that calculating statistics manually from the raw counters we get the same results as from PerfMetrics
     raw_metrics = get_raw_metrics(perf_metrics, pipeline_type)
 
-    raw_dur = np.array(raw_metrics.features_extraction_durations) / 1000
-    mean_dur, std_dur = perf_metrics.get_features_extraction_duration()
-    assert np.allclose(mean_dur, np.mean(raw_dur))
-    assert np.allclose(std_dur, np.std(raw_dur))
+    if has_features_extraction:
+        raw_dur = np.array(raw_metrics.features_extraction_durations) / 1000
+        mean_dur, std_dur = perf_metrics.get_features_extraction_duration()
+        assert np.allclose(mean_dur, np.mean(raw_dur))
+        assert np.allclose(std_dur, np.std(raw_dur))
+    else:
+        assert len(raw_metrics.features_extraction_durations) == 0
 
-    if model_id != QWEN3_ASR_MODEL_ID:
+    if model_id not in (QWEN3_ASR_MODEL_ID, FUN_ASR_MODEL_ID):
         assert len(raw_metrics.word_level_timestamps_processing_durations) == 1
         word_ts_raw_dur = np.array(raw_metrics.word_level_timestamps_processing_durations) / 1000
         mean_dur, std_dur = perf_metrics.get_word_level_timestamps_processing_duration()
@@ -1038,15 +1170,31 @@ def streamer_for_test(request):
         return streamer_bool_callback, ResultHandler(texts)
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
-@pytest.mark.xfail(sys.platform == "darwin", reason="Ticket - 182134", raises=AssertionError)
-def test_streamers(model_descr, sample_from_dataset, streamer_for_test, pipeline_type):
-    _, _, _, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params(
+        [
+            ("openai/whisper-tiny", PipelineType.ASR),
+            ("openai/whisper-tiny", PipelineType.WHISPER),
+            (QWEN3_ASR_MODEL_ID, PipelineType.ASR),
+            (FUN_ASR_MODEL_ID, PipelineType.ASR),
+            (SENSEVOICE_SMALL_TINY_MODEL_ID, PipelineType.ASR),
+        ]
+    )
+    + QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS,
+    indirect=True,
+)
+def test_streamers(sample_from_dataset, pipelines_fixture, streamer_for_test):
+    _, genai_pipe, model_id, _ = pipelines_fixture
+
+    generate_kwargs = {}
+    if model_id in (QWEN3_ASR_MODEL_ID, FUN_ASR_MODEL_ID):
+        generate_kwargs = {"language": "English", "max_new_tokens": 30}
 
     streamer, result_handler = streamer_for_test
 
-    result = genai_pipe.generate(sample_from_dataset, streamer=streamer)
+    result = genai_pipe.generate(sample_from_dataset, streamer=streamer, **generate_kwargs)
 
     expected = result.texts[0]
 
@@ -1054,22 +1202,65 @@ def test_streamers(model_descr, sample_from_dataset, streamer_for_test, pipeline
     result_handler.reset()
 
     config = genai_pipe.get_generation_config()
-    genai_pipe.generate(sample_from_dataset, config, streamer)
+    genai_pipe.generate(sample_from_dataset, config, streamer=streamer, **generate_kwargs)
 
     assert expected == result_handler.decode(genai_pipe.get_tokenizer())
     result_handler.reset()
 
-    genai_pipe.generate(sample_from_dataset, config, streamer=streamer)
+    genai_pipe.generate(sample_from_dataset, config, streamer=streamer, **generate_kwargs)
 
     assert expected == result_handler.decode(genai_pipe.get_tokenizer())
     result_handler.reset()
 
-    genai_pipe.generate(sample_from_dataset, generation_config=config, streamer=streamer)
+    genai_pipe.generate(sample_from_dataset, generation_config=config, streamer=streamer, **generate_kwargs)
 
     assert expected == result_handler.decode(genai_pipe.get_tokenizer())
     result_handler.reset()
 
-    genai_pipe.generate(sample_from_dataset, return_timestamps=True, streamer=streamer)
+    genai_pipe.generate(sample_from_dataset, return_timestamps=True, streamer=streamer, **generate_kwargs)
 
     assert expected == result_handler.decode(genai_pipe.get_tokenizer())
     result_handler.reset()
+
+
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params([(QWEN3_ASR_MODEL_ID, PipelineType.ASR)]) + QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS,
+    indirect=True,
+)
+def test_qwen3_asr_streamer_rejects_multi_chunk_audio(pipelines_fixture):
+    _, genai_pipe, _, _ = pipelines_fixture
+    audio = np.zeros(1210 * 16000, dtype=np.float32)
+
+    with pytest.raises(RuntimeError, match="Qwen3-ASR streaming supports audio up to 1200 seconds"):
+        genai_pipe.generate(audio, language="English", max_new_tokens=1, streamer=lambda subword: False)
+
+
+@pytest.mark.parametrize("pipelines_fixture", QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS, indirect=True)
+def test_qwen3_asr_split_multi_chunk_audio(pipelines_fixture):
+    _, genai_pipe, _, _ = pipelines_fixture
+    audio = make_deterministic_audio(1210 * 16000)
+
+    results = [genai_pipe.generate(audio, language="English", max_new_tokens=4) for _ in range(2)]
+
+    # Repeated calls must not leak state or metrics between generate() calls.
+    assert results[0].texts == results[1].texts
+    for result in results:
+        assert len(result.texts) == 1
+        asr_raw_metrics = result.perf_metrics.asr_raw_metrics
+        assert len(asr_raw_metrics.encode_inference_durations) == 2
+        assert len(asr_raw_metrics.decode_inference_durations) > 0
+        assert result.perf_metrics.get_inference_duration().mean > 0
+
+
+@pytest.mark.parametrize("model_id", ["openai/whisper-tiny", QWEN3_ASR_MODEL_ID])
+def test_attention_backend_without_paged_attention(model_id):
+    _, path, _, _ = read_asr_model(
+        (model_id, get_ov_cache_converted_models_dir() / model_id.split("/")[-1]), pipeline_type=PipelineType.ASR
+    )
+
+    ov_genai.ASRPipeline(path, "CPU", ATTENTION_BACKEND="SDPA")
+    with pytest.raises(RuntimeError, match="attention backend is supported only for Qwen3-ASR split export"):
+        ov_genai.ASRPipeline(path, "CPU", ATTENTION_BACKEND="PA")
+    with pytest.raises(RuntimeError, match="Attention backend must be either 'PA' or 'SDPA'"):
+        ov_genai.ASRPipeline(path, "CPU", ATTENTION_BACKEND="SDPA_BACKEND")

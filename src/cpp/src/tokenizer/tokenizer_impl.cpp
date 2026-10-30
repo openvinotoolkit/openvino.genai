@@ -3,11 +3,13 @@
 
 #include "tokenizer/tokenizer_impl.hpp"
 
+#include <iostream>
 #include <utility>
 
 #include "add_second_input_pass.hpp"
-#include "sampling/structured_output/structured_output_controller.hpp"
+#include "gguf_utils/gguf_utils.hpp"
 #include "openvino/genai/version.hpp"
+#include "sampling/structured_output/structured_output_controller.hpp"
 
 namespace ov {
 namespace genai {
@@ -180,7 +182,7 @@ void Tokenizer::TokenizerImpl::set_state_value(ov::VariableState& state, std::op
     }
 }
 
-void Tokenizer::TokenizerImpl::set_state_if_necessary(CircularBufferQueueElementGuard<ov::InferRequest>& infer_request_guard, const ov::AnyMap& params) {
+void Tokenizer::TokenizerImpl::set_state_if_necessary(CircularBufferQueueElementGuard<InferRequestWithState>& infer_request_guard, const ov::AnyMap& params) {
     if (m_older_than_24_5) {
         // Changing add_special_tokens at runtime was introduced in
         // 24.5. Older tokenizers still allow manipulating their
@@ -215,7 +217,7 @@ void Tokenizer::TokenizerImpl::set_state_if_necessary(CircularBufferQueueElement
         pad_right = (*padding_side_val == "right") ? true : false;
     }
 
-    ov::AnyMap& state_flags = m_request_to_state_flags[&infer_request_guard.get()];
+    ov::AnyMap& state_flags = infer_request_guard.get().state_flags;
 
     for (auto& state : infer_request_guard.get().query_state()) {
         auto name = state.get_name();
@@ -250,6 +252,8 @@ void filter_properties(ov::AnyMap& properties) {
         ov::hint::performance_mode.name(),
         ov::hint::num_requests.name(),
         ov::hint::enable_cpu_pinning.name(),
+        ov::num_streams.name(),
+        ov::inference_num_threads.name(),
         ov::hint::execution_mode.name(),
         ov::hint::compiled_blob.name(),
         ov::hint::enable_hyper_threading.name(),
@@ -287,8 +291,9 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
 
     std::shared_ptr<ov::Model> ov_tokenizer = nullptr;
     std::shared_ptr<ov::Model> ov_detokenizer = nullptr;
-    auto [filtered_properties, enable_save_ov_model] = utils::extract_gguf_properties(properties);
-    
+    const auto gguf_props = gguf_utils::extract_gguf_properties(properties);
+    const ov::AnyMap& filtered_properties = gguf_props.rest;
+
     if (ov::genai::is_gguf_model(models_path)) {
         std::map<std::string, GGUFMetaData> tokenizer_config{};
         std::tie(ov_tokenizer, ov_detokenizer, tokenizer_config) =
@@ -303,9 +308,19 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
         if (auto val = get_if_exist<ov::Tensor>(tokenizer_config, "eos_token_id")) {
             m_eos_token_id = static_cast<int64_t>((*val).data<uint32_t>()[0]);
         }
+        // SentencePiece decoding omits CONTROL pieces even when special-token filtering is
+        // disabled. Read their spelling from the vocabulary so chat templates receive BOS/EOS.
+        if (auto vocabulary = get_if_exist<std::vector<std::string>>(tokenizer_config, "tokens")) {
+            const auto piece = [&](int64_t id) {
+                return id >= 0 && static_cast<size_t>(id) < vocabulary->size() ? vocabulary->at(id) : std::string{};
+            };
+            m_pad_token = piece(m_pad_token_id);
+            m_bos_token = piece(m_bos_token_id);
+            m_eos_token = piece(m_eos_token_id);
+        }
         if (auto val = get_if_exist<std::string>(tokenizer_config, "chat_template")) {
             m_chat_template = *val;
-        }         
+        }
         if (!m_chat_template.empty()) {
             m_original_chat_template = m_chat_template;
             m_chat_template = patch_gguf_chat_template(m_chat_template);
@@ -313,7 +328,7 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
         ov_tokenizer->set_rt_info(ov::genai::get_version().buildNumber, "openvino_genai_version");
         ov_detokenizer->set_rt_info(ov::genai::get_version().buildNumber, "openvino_genai_version");
 
-        if (enable_save_ov_model){
+        if (gguf_props.enable_save_ov_model){
             std::filesystem::path gguf_model_path(models_path);
             std::filesystem::path save_ov_tokenizer_path = gguf_model_path.parent_path() / "openvino_tokenizer.xml";
             std::filesystem::path save_ov_detokenizer_path = gguf_model_path.parent_path() / "openvino_detokenizer.xml";
@@ -321,11 +336,17 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
             ov_tokenizer->set_rt_info(m_bos_token_id, "bos_token_id");
             ov_tokenizer->set_rt_info(m_eos_token_id, "eos_token_id");
             ov_tokenizer->set_rt_info(m_chat_template, "chat_template");
+            ov_tokenizer->set_rt_info(m_pad_token, "pad_token");
+            ov_tokenizer->set_rt_info(m_bos_token, "bos_token");
+            ov_tokenizer->set_rt_info(m_eos_token, "eos_token");
 
             ov_detokenizer->set_rt_info(m_pad_token_id, "pad_token_id");
             ov_detokenizer->set_rt_info(m_bos_token_id, "bos_token_id");
             ov_detokenizer->set_rt_info(m_eos_token_id, "eos_token_id");
             ov_detokenizer->set_rt_info(m_chat_template, "chat_template");
+            ov_detokenizer->set_rt_info(m_pad_token, "pad_token");
+            ov_detokenizer->set_rt_info(m_bos_token, "bos_token");
+            ov_detokenizer->set_rt_info(m_eos_token, "eos_token");
 
             ov::genai::utils::save_openvino_model(ov_tokenizer, save_ov_tokenizer_path.string(), false);
             ov::genai::utils::save_openvino_model(ov_detokenizer, save_ov_detokenizer_path.string(), false);
@@ -410,10 +431,10 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
         ov::CompiledModel tokenizer = core.compile_model(ov_tokenizer, device, properties);
         ov::genai::utils::print_compiled_model_properties(tokenizer, "OV Tokenizer");
 
-        m_ireq_queue_tokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        m_ireq_queue_tokenizer = std::make_unique<CircularBufferQueue<InferRequestWithState>>(
             tokenizer.get_property(ov::optimal_number_of_infer_requests),
-            [&tokenizer]() -> ov::InferRequest {
-                return tokenizer.create_infer_request();
+            [&tokenizer]() -> InferRequestWithState {
+                return InferRequestWithState{tokenizer.create_infer_request()};
             });
 
         const ov::AnyMap& rt_info = ov_tokenizer->get_rt_info();
@@ -461,10 +482,10 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
         ov::CompiledModel detokenizer = core.compile_model(ov_detokenizer, device, properties);
         ov::genai::utils::print_compiled_model_properties(detokenizer, "OV Detokenizer");
 
-        m_ireq_queue_detokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        m_ireq_queue_detokenizer = std::make_unique<CircularBufferQueue<InferRequestWithState>>(
             detokenizer.get_property(ov::optimal_number_of_infer_requests),
-            [&detokenizer]() -> ov::InferRequest {
-                return detokenizer.create_infer_request();
+            [&detokenizer]() -> InferRequestWithState {
+                return InferRequestWithState{detokenizer.create_infer_request()};
             });
 
         // Unset/-1 token causes exception in SentencePiece detokenization.
@@ -625,7 +646,7 @@ TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::string& prompt, cons
     OPENVINO_ASSERT(m_ireq_queue_tokenizer, "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
                                             "Tokenizer::encode is not available");
 
-    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(m_ireq_queue_tokenizer.get());
+    CircularBufferQueueElementGuard<InferRequestWithState> infer_request_guard(m_ireq_queue_tokenizer.get());
     set_state_if_necessary(infer_request_guard, tokenization_params);
     size_t batch_size = 1;
     // When the model has more than one input, calling set_input_tensor without specifying an index may fail.
@@ -669,7 +690,7 @@ TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::vector<std::string>&
 
     TokenizedInputs result;
     {
-        CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_tokenizer.get());
+        CircularBufferQueueElementGuard<InferRequestWithState> infer_request_guard(this->m_ireq_queue_tokenizer.get());
         set_state_if_necessary(infer_request_guard, tokenization_params);
         infer_request_guard.get().set_input_tensor(0, ov::Tensor{ov::element::string, {prompts_1.size()}, const_cast<std::string*>(prompts_1.data())});
         infer_request_guard.get().set_input_tensor(1, ov::Tensor{ov::element::string, {prompts_2.size()}, const_cast<std::string*>(prompts_2.data())});
@@ -701,7 +722,7 @@ TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::vector<std::string>&
 
     TokenizedInputs unpadded;
     {
-        CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_tokenizer.get());
+        CircularBufferQueueElementGuard<InferRequestWithState> infer_request_guard(this->m_ireq_queue_tokenizer.get());
         set_state_if_necessary(infer_request_guard, tokenization_params);
         // When the model has more than one input, calling set_input_tensor without specifying an index may fail.
         // If the model has two inputs, explicitly set the first input while leaving the second input tensor empty.
@@ -737,7 +758,7 @@ TokenizedInputs Tokenizer::TokenizerImpl::get_copied_results(ov::Tensor input_id
 std::string Tokenizer::TokenizerImpl::decode(const std::vector<int64_t>& tokens, const ov::AnyMap& detokenization_params) {
     OPENVINO_ASSERT(m_ireq_queue_detokenizer, "Detokenizer model has not been provided. Tokenizer::decode is not available");
 
-    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_detokenizer.get());
+    CircularBufferQueueElementGuard<InferRequestWithState> infer_request_guard(this->m_ireq_queue_detokenizer.get());
     set_state_if_necessary(infer_request_guard, detokenization_params);
     size_t batch_size = 1;
     infer_request_guard.get().set_input_tensor(ov::Tensor{ov::element::i64, {batch_size, tokens.size()}, const_cast<int64_t*>(tokens.data())});
@@ -750,7 +771,7 @@ std::vector<std::string> Tokenizer::TokenizerImpl::decode(const ov::Tensor& toke
     OPENVINO_ASSERT(tokens.get_element_type() == ov::element::i64, "tokens tensor element type should be an i64");
     OPENVINO_ASSERT(tokens.get_shape().size() == 2, "tokens tensor should of rank 2 with shape [batch_size, seq_len]");
 
-    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_detokenizer.get());
+    CircularBufferQueueElementGuard<InferRequestWithState> infer_request_guard(this->m_ireq_queue_detokenizer.get());
     set_state_if_necessary(infer_request_guard, detokenization_params);
     infer_request_guard.get().set_input_tensor(tokens);
     infer_request_guard.get().infer();
@@ -778,7 +799,7 @@ std::vector<std::string> Tokenizer::TokenizerImpl::decode(const std::vector<std:
         std::fill(tokens_data + i * max_len + line_len, tokens_data + (i + 1) * max_len, m_pad_token_id);
     }
 
-    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_detokenizer.get());
+    CircularBufferQueueElementGuard<InferRequestWithState> infer_request_guard(this->m_ireq_queue_detokenizer.get());
     set_state_if_necessary(infer_request_guard, detokenization_params);
     infer_request_guard.get().set_input_tensor(tokens);
     infer_request_guard.get().infer();

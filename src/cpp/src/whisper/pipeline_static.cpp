@@ -265,9 +265,7 @@ ov::genai::SotTokensResult prepare_sot_tokens(ov::Tensor& encoder_hidden_state,
     std::string language;
     if (config.language.has_value()) {
         language = *config.language;
-        if (config.lang_to_id.count(language)) {
-            language_token_id = config.lang_to_id.at(language);
-        }
+        language_token_id = ov::genai::utils::get_or_throw_token_id_by_language(config.lang_to_id, language);
     } else {
         language_token_id = detect_language(encoder_hidden_state, decoder, config, raw_metrics);
         language = ov::genai::utils::find_language_by_token_id(config.lang_to_id, language_token_id);
@@ -289,6 +287,10 @@ void stream_generated_tokens(const std::shared_ptr<ov::genai::StreamerBase> stre
     }
 
     std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
+    if (token.empty()) {
+        // Empty terminator pushed by notify_handle_final()/notify_handle_oom() to unblock readers.
+        return;
+    }
 
     auto streaming_status = streamer_ptr->write(token.begin()->second.generated_ids);
     if (streaming_status == ov::genai::StreamingStatus::CANCEL) {
@@ -327,6 +329,7 @@ std::pair<ov::genai::EncodedResults, bool> full_decode(ov::Tensor& encoder_hidde
         raw_metrics.m_sampling_durations.emplace_back(
             ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
     }
+    sequence_group->notify_handle();
     stream_generated_tokens(streamer, handle, return_timestamps);
 
     prepare_decoder_with_past(models.decoder_with_past, models.decoder, init_ids.size());
@@ -352,6 +355,7 @@ std::pair<ov::genai::EncodedResults, bool> full_decode(ov::Tensor& encoder_hidde
             raw_metrics.m_sampling_durations.emplace_back(
                 ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
         }
+        sequence_group->notify_handle();
         stream_generated_tokens(streamer, handle, return_timestamps);
     }
 
@@ -1169,7 +1173,7 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
     const bool return_timestamps = config.return_timestamps || !is_shortform;
 
     WhisperDecodedResults result;
-    std::vector<int64_t> sot_tokens;
+    SotTokensResult sot_result;
     std::vector<int64_t> output_tokens;
     std::vector<Segment> segments;
 
@@ -1197,13 +1201,12 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
                                                 perf_metrics.whisper_raw_metrics);
 
         // prepare sot_tokens just once for whole input
-        if (sot_tokens.empty()) {
-            auto sot_result = prepare_sot_tokens(hidden_state_tensor, m_models.decoder, config, raw_metrics);
-            sot_tokens = std::move(sot_result.tokens);
+        if (sot_result.tokens.empty()) {
+            sot_result = prepare_sot_tokens(hidden_state_tensor, m_models.decoder, config, raw_metrics);
             result.language = sot_result.language;
         }
 
-        std::vector<int64_t> chunk_sot_tokens = sot_tokens;
+        std::vector<int64_t> chunk_sot_tokens = sot_result.tokens;
         
         if (!return_timestamps) {
             chunk_sot_tokens.push_back(config.no_timestamps_token_id);
@@ -1262,7 +1265,7 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
                 std::min(m_feature_extractor.nb_max_frames, input_features.n_active_frames - chunk_offset);
 
             const auto word_timestamps_processing_start = std::chrono::steady_clock::now();
-            const auto word_timestamps = add_word_level_timestamps(sot_tokens,
+            const auto word_timestamps = add_word_level_timestamps(sot_result,
                                                                    chunk_output_tokens,
                                                                    m_tokenizer,
                                                                    m_models.decoder,

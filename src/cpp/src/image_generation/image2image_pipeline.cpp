@@ -12,6 +12,9 @@
 #include "image_generation/stable_diffusion_3_pipeline.hpp"
 #include "image_generation/flux_pipeline.hpp"
 #include "image_generation/flux2_klein_pipeline.hpp"
+#include "image_generation/qwen_image_pipeline.hpp"
+#include "image_generation/qwen_image21_pipeline.hpp"
+#include "image_generation/zimage_pipeline.hpp"
 
 #include "utils.hpp"
 
@@ -32,6 +35,12 @@ Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir) 
         m_impl = std::make_shared<Flux2KleinPipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
     } else if (class_name == "StableDiffusion3Pipeline") {
         m_impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
+    } else if (class_name == "QwenImagePipeline") {
+        m_impl = std::make_shared<QwenImagePipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
+    } else if (class_name == "QwenImage21Pipeline") {
+        m_impl = std::make_shared<QwenImage21Pipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
+    } else if (class_name == "ZImagePipeline") {
+        m_impl = std::make_shared<ZImagePipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
     } else {
         OPENVINO_THROW("Unsupported image to image generation pipeline '", class_name, "'");
     }
@@ -52,6 +61,12 @@ Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir, 
         m_impl = std::make_shared<Flux2KleinPipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
     } else if (class_name == "StableDiffusion3Pipeline") {
         m_impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
+    } else if (class_name == "QwenImagePipeline") {
+        m_impl = std::make_shared<QwenImagePipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
+    } else if (class_name == "QwenImage21Pipeline") {
+        m_impl = std::make_shared<QwenImage21Pipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
+    } else if (class_name == "ZImagePipeline") {
+        m_impl = std::make_shared<ZImagePipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
     } else {
         OPENVINO_THROW("Unsupported image to image generation pipeline '", class_name, "'");
     }
@@ -70,6 +85,8 @@ Image2ImagePipeline::Image2ImagePipeline(const InpaintingPipeline& pipe) {
         m_impl = std::make_shared<Flux2KleinPipeline>(PipelineType::IMAGE_2_IMAGE, *flux2_klein);
     } else if (auto stable_diffusion_3 = std::dynamic_pointer_cast<StableDiffusion3Pipeline>(pipe.m_impl); stable_diffusion_3 != nullptr) {
         m_impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::IMAGE_2_IMAGE, *stable_diffusion_3);
+    } else if (auto qwen_image = std::dynamic_pointer_cast<QwenImagePipeline>(pipe.m_impl); qwen_image != nullptr) {
+        m_impl = std::make_shared<QwenImagePipeline>(PipelineType::IMAGE_2_IMAGE, *qwen_image);
     } else {
         OPENVINO_THROW("Cannot convert specified InpaintingPipeline to Image2ImagePipeline");
     }
@@ -202,12 +219,26 @@ ov::Tensor Image2ImagePipeline::generate(const std::string& positive_prompt, ov:
     return m_impl->generate(positive_prompt, initial_image, {}, properties);
 }
 
+ov::Tensor Image2ImagePipeline::generate(const std::string& positive_prompt, const std::vector<ov::Tensor>& initial_images, const ov::AnyMap& properties) {
+    OPENVINO_ASSERT(!initial_images.empty(), "Initial images cannot be empty when passed to Image2ImagePipeline::generate");
+    for (const ov::Tensor& initial_image : initial_images) {
+        OPENVINO_ASSERT(initial_image, "Initial image cannot be empty when passed to Image2ImagePipeline::generate");
+    }
+    return m_impl->generate(positive_prompt, initial_images, properties);
+}
+
 ov::Tensor Image2ImagePipeline::decode(const ov::Tensor latent) {
     return m_impl->decode(latent);
 }
 
 ImageGenerationPerfMetrics Image2ImagePipeline::get_performance_metrics() {
     return m_impl->get_performance_metrics();
+}
+
+void Image2ImagePipeline::export_model(const std::filesystem::path& export_path) {
+    OPENVINO_ASSERT(std::dynamic_pointer_cast<StableDiffusionXLPipeline>(m_impl),
+                     "Blob export is supported only for Stable Diffusion XL pipelines");
+    m_impl->export_model(export_path);
 }
 
 Image2ImagePipeline Image2ImagePipeline::clone() {

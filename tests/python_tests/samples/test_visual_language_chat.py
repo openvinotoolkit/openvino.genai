@@ -114,3 +114,39 @@ class TestVisualLanguageChat:
         # Unskip testcase for Qwen2-VL-2B-Instruct once the difference in image conversion between Python and JavaScript is fixed. CVS-187058
         if "Qwen2-VL-2B-Instruct" not in convert_model:
             assert py_result_lookup.stdout == js_stdout_lookup, f"JS results should match"
+
+    @pytest.mark.vlm
+    @pytest.mark.samples
+    @pytest.mark.eagle3_decoding
+    @pytest.mark.parametrize(
+        "convert_model, convert_draft_model, download_test_content, questions",
+        [
+            pytest.param(
+                "tiny-random-qwen3-vl-layer10",
+                "tiny-random-qwen3-vl-eagle3",
+                "images/image.png",
+                "What is unusual on this image?\nGo on.",
+            ),
+        ],
+        indirect=["convert_model", "convert_draft_model", "download_test_content"],
+    )
+    def test_sample_visual_language_chat_eagle3(
+        self, convert_model, convert_draft_model, download_test_content, questions
+    ):
+        cpp_sample = SAMPLES_CPP_DIR / "visual_language_chat"
+        cpp_command = [cpp_sample, convert_model, download_test_content, "CPU", "false", convert_draft_model]
+        cpp_result = run_sample(cpp_command, questions)
+
+        py_script = SAMPLES_PY_DIR / "visual_language_chat/visual_language_chat.py"
+        py_command = [
+            sys.executable,
+            py_script,
+            convert_model,
+            download_test_content,
+            "CPU",
+            "false",
+            convert_draft_model,
+        ]
+        py_result = run_sample(py_command, questions)
+
+        assert py_result.stdout == cpp_result.stdout, f"Results should match"

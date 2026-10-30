@@ -1,0 +1,145 @@
+# -*- coding: utf-8 -*-
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+import re
+import time
+
+
+class FunASROptimumPipeline:
+    SAMPLE_RATE = 16000
+
+    def __init__(self, model, tokenizer):
+        self.model = model
+        self.tokenizer = tokenizer
+
+    def __call__(self, sample, **kwargs):
+        generate_kwargs = kwargs.get("generate_kwargs", {})
+        language = generate_kwargs.get("language", "中文")
+        max_new_tokens = generate_kwargs.get("max_new_tokens", 1000)
+
+        start = time.perf_counter()
+        inputs = self.model.preprocess_input(sample, sampling_rate=self.SAMPLE_RATE, language=language)
+        preprocess_time = time.perf_counter() - start
+
+        start = time.perf_counter()
+        output_ids = self.model.generate(**inputs, max_new_tokens=max_new_tokens)
+        generation_time = time.perf_counter() - start
+
+        start = time.perf_counter()
+        prompt_length = inputs["decoder_input_ids"].shape[1]
+        text = self.tokenizer.batch_decode(output_ids[:, prompt_length:], skip_special_tokens=True)[0]
+        detokenization_time = time.perf_counter() - start
+        return {
+            "text": text,
+            "perf_metrics": {
+                "preprocess_time": preprocess_time * 1000,
+                "generation_time": generation_time,
+                "detokenization_time": detokenization_time * 1000,
+            },
+        }
+
+
+class Qwen3ASROptimumPipeline:
+    """Benchmark current split and legacy encoder/decoder Qwen3-ASR exports."""
+
+    SAMPLE_RATE = 16000
+
+    def __init__(self, model, processor):
+        self.model = model
+        self.processor = processor
+
+    def prepare_generation_inputs(self, inputs):
+        # The split model reads EOS and pad IDs from its exported generation_config.json.
+        if hasattr(self.model, "audio_encoder"):
+            return inputs
+        generation_inputs = {
+            "input_features": inputs["input_features"],
+            "decoder_input_ids": inputs["input_ids"],
+            "attention_mask": inputs["feature_attention_mask"],
+            "decoder_start_token_id": self.model.config.decoder_start_token_id,
+        }
+        # Legacy encoder/decoder exports may lack generation_config.json.
+        if self.model.generation_config.eos_token_id is None:
+            tokenizer = self.processor.tokenizer
+            generation_inputs["eos_token_id"] = [tokenizer.pad_token_id, tokenizer.eos_token_id]
+        if self.model.generation_config.pad_token_id is None:
+            generation_inputs["pad_token_id"] = self.processor.tokenizer.pad_token_id
+        return generation_inputs
+
+    def preprocess(self, sample, **kwargs):
+        start = time.perf_counter()
+        generate_kwargs = kwargs.get("generate_kwargs", {})
+        language = generate_kwargs.get("language") or kwargs.get("language")
+
+        messages = [
+            {"role": "system", "content": ""},
+            {"role": "user", "content": [{"type": "audio", "audio": ""}]},
+        ]
+        text_prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+        if language:
+            text_prompt += f"language {language}<asr_text>"
+
+        inputs = self.processor(text=text_prompt, audio=sample, sampling_rate=self.SAMPLE_RATE, return_tensors="pt")
+        end = time.perf_counter()
+        return inputs, end - start, language
+
+    def generate(self, sample, **kwargs):
+        max_new_tokens = kwargs.get("max_new_tokens", 1000)
+        generate_kwargs = kwargs.get("generate_kwargs", {})
+        max_new_tokens = generate_kwargs.get("max_new_tokens", max_new_tokens)
+
+        inputs, preprocess_time, language = self.preprocess(sample, **kwargs)
+
+        start_gen = time.perf_counter()
+        generation_inputs = self.prepare_generation_inputs(inputs)
+        output_ids = self.model.generate(**generation_inputs, max_new_tokens=max_new_tokens, do_sample=False)
+        output_ids = getattr(output_ids, "sequences", output_ids)
+        end_gen = time.perf_counter()
+        generation_time = end_gen - start_gen
+
+        start_detok = time.perf_counter()
+        prompt_len = inputs["input_ids"].shape[1]
+        generated_only = output_ids[:, prompt_len:]
+        full_text = self.processor.batch_decode(generated_only, skip_special_tokens=False)[0]
+        parsed_output = self.parse_asr_output(full_text)
+        end_detok = time.perf_counter()
+        detokenization_time = end_detok - start_detok
+
+        return {
+            "text": parsed_output["text"],
+            "language": language if language else parsed_output["language"],
+            "perf_metrics": {
+                "preprocess_time": preprocess_time * 1000,
+                "generation_time": generation_time,
+                "detokenization_time": detokenization_time * 1000,
+            },
+        }
+
+    def parse_asr_output(self, raw_text):
+        # Automatic: "language English<asr_text>Hello<|im_end|>"
+        # Forced language: "Hello<|im_end|>" (no <asr_text> in the generated suffix).
+        language_match = re.search(r"<\|([a-z]{2,3})\|>", raw_text)
+        text_match = re.search(r"<asr_text>(.*?)(?:<\||$)", raw_text.replace("<|asr_text|>", "<asr_text>"))
+
+        text = text_match.group(1) if text_match else re.split(r"<\|(?:im_end|endoftext)\|>", raw_text, maxsplit=1)[0]
+        return {
+            "language": language_match.group(1) if language_match else None,
+            "text": text.strip(),
+        }
+
+    def __call__(self, sample, **kwargs):
+        return self.generate(sample, **kwargs)
+
+    @staticmethod
+    def init_model(model_type):
+        if model_type == "qwen3-asr":
+            try:
+                # qwen_asr must be imported to register the model with AutoConfig/AutoModel
+                from qwen_asr import Qwen3ASRModel  # noqa: F401
+                from qwen_asr.core.transformers_backend import Qwen3ASRProcessor  # noqa: F401
+            except ImportError as exc:
+                raise ImportError(
+                    "The 'qwen-asr' package is required for Qwen3-ASR inference. "
+                    "Please install it using 'pip install qwen-asr'."
+                ) from exc

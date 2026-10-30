@@ -23,6 +23,8 @@ import {
   LLMPipelineProperties,
   WhisperGenerationConfig,
   WhisperPipelineProperties,
+  ASRGenerationConfig,
+  ASRPipelineProperties,
   SpeechGenerationConfig,
   ImageGenerationConfig,
   ImageGenerationCallback,
@@ -30,20 +32,35 @@ import {
   Image2ImagePipelineProperties,
   InpaintingPipelineProperties,
   Text2SpeechPipelineProperties,
+  OmniPipelineProperties,
+  OmniTalkerSpeechConfig,
+  VideoMetadata,
 } from "./utils.js";
 import {
   VLMPerfMetrics,
   PerfMetrics,
   WhisperPerfMetrics,
+  ASRPerfMetrics,
   ImageGenerationPerfMetrics,
   Text2SpeechPerfMetrics,
 } from "./perfMetrics.js";
-import type { WhisperDecodedResultChunk, WhisperWordTiming } from "./decodedResults.js";
+import type {
+  ASRDecodedResultChunk,
+  WhisperDecodedResultChunk,
+  WhisperWordTiming,
+  OmniSpeechResult,
+} from "./decodedResults.js";
 
 export type EmbeddingResult = Float32Array | Int8Array | Uint8Array;
 export type EmbeddingResults = Float32Array[] | Int8Array[] | Uint8Array[];
 export type TextRerankResult = [index: number, score: number];
 export type TextRerankResults = TextRerankResult[];
+/**
+ * Result of an embedding computation produced by {@link EmbeddingPipelineWrapper}.
+ */
+export type EmbedResult = {
+  embeddings: Tensor;
+};
 /**
  * Pooling strategy
  */
@@ -52,6 +69,8 @@ export enum PoolingType {
   CLS,
   /** The average of all token embeddings */
   MEAN,
+  /** Last token embeddings */
+  LAST_TOKEN,
 }
 export type TextEmbeddingConfig = {
   /** Maximum length of tokens passed to the embedding model */
@@ -93,6 +112,30 @@ export interface TextEmbeddingPipelineWrapper {
   ): void;
   embedQuerySync(text: string): EmbeddingResult;
   embedDocumentsSync(documents: string[]): EmbeddingResults;
+}
+
+/**
+ * Plugin and configuration properties accepted by the {@link EmbeddingPipelineWrapper} constructor.
+ * Includes {@link TextEmbeddingConfig} fields (e.g. pooling_type, normalize) and plugin properties (e.g. CACHE_DIR).
+ */
+export type EmbeddingPipelineProperties = TextEmbeddingConfig & Record<string, unknown>;
+
+export interface EmbeddingPipelineWrapper {
+  new (): EmbeddingPipelineWrapper;
+  init(
+    modelPath: string,
+    device: string,
+    properties: EmbeddingPipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  embed(
+    text: string | string[],
+    images: Tensor[],
+    videos: Tensor[],
+    videosMetadata: VideoMetadata[],
+    properties: object,
+    callback: (err: Error | null, value: EmbedResult) => void,
+  ): void;
 }
 
 /**
@@ -186,6 +229,36 @@ export interface WhisperPipeline {
   setGenerationConfig(config: WhisperGenerationConfig): void;
 }
 
+export interface ASRPipeline {
+  new (): ASRPipeline;
+  init(
+    modelPath: string,
+    device: string,
+    properties: ASRPipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    rawSpeech: Float32Array | number[],
+    generationConfig: ASRGenerationConfig,
+    streamer: ((chunk: string) => StreamingStatus) | undefined,
+    callback: (
+      err: Error | null,
+      result: {
+        texts: string[];
+        scores: number[];
+        languages: string[];
+        perfMetrics: ASRPerfMetrics;
+        chunks?: ASRDecodedResultChunk[][];
+        words?: ASRDecodedResultChunk[][];
+        metadata?: Array<Record<string, unknown>>;
+      },
+    ) => void,
+  ): void;
+  getTokenizer(): ITokenizer;
+  getGenerationConfig(): Partial<ASRGenerationConfig>;
+  setGenerationConfig(config: ASRGenerationConfig): void;
+}
+
 export interface VLMPipeline {
   new (): VLMPipeline;
   init(
@@ -217,6 +290,41 @@ export interface VLMPipeline {
   setChatTemplate(template: string): void;
   setGenerationConfig(config: GenerationConfig): void;
   getGenerationConfig(): GenerationConfig;
+}
+
+/**
+ * Native binding interface used by the high-level Omni pipeline wrapper.
+ */
+export interface OmniPipeline {
+  new (): OmniPipeline;
+  init(
+    modelPath: string,
+    device: string,
+    ovProperties: OmniPipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    inputs: string | IChatHistory,
+    images: Tensor[] | undefined,
+    videos: Tensor[] | undefined,
+    videosMetadata: VideoMetadata[] | undefined,
+    audios: Tensor[] | undefined,
+    streamer: ((chunk: string) => StreamingStatus) | undefined,
+    speechStreamer: ((audioChunk: Tensor) => StreamingStatus) | undefined,
+    textConfig: GenerationConfig | undefined,
+    talkerSpeechConfig: OmniTalkerSpeechConfig | undefined,
+    callback: (
+      err: Error | null,
+      result: {
+        texts: string[];
+        scores: number[];
+        perfMetrics: VLMPerfMetrics;
+        parsed: Record<string, unknown>[];
+        finishReasons: GenerationFinishReason[];
+        speechResult: OmniSpeechResult;
+      },
+    ) => void,
+  ): void;
 }
 
 export interface Text2ImagePipeline {
@@ -309,9 +417,12 @@ export interface Text2SpeechPipeline {
 interface OpenVINOGenAIAddon {
   TextRerankPipeline: TextRerankPipeline;
   TextEmbeddingPipeline: TextEmbeddingPipelineWrapper;
+  EmbeddingPipeline: EmbeddingPipelineWrapper;
   LLMPipeline: LLMPipeline;
   VLMPipeline: VLMPipeline;
+  OmniPipeline: OmniPipeline;
   WhisperPipeline: WhisperPipeline;
+  ASRPipeline: ASRPipeline;
   Text2ImagePipeline: Text2ImagePipeline;
   Image2ImagePipeline: Image2ImagePipeline;
   InpaintingPipeline: InpaintingPipeline;
@@ -346,10 +457,13 @@ addon.setOpenvinoAddon(ovAddon);
 
 export const {
   TextEmbeddingPipeline,
+  EmbeddingPipeline,
   TextRerankPipeline,
   LLMPipeline,
   VLMPipeline,
+  OmniPipeline,
   WhisperPipeline,
+  ASRPipeline,
   Text2ImagePipeline,
   Image2ImagePipeline,
   InpaintingPipeline,

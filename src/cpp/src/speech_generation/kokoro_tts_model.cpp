@@ -11,7 +11,6 @@
 #include <cstdlib>
 #include <fstream>
 #include <locale>
-#include <map>
 #include <numeric>
 #include <optional>
 #include <sstream>
@@ -285,8 +284,7 @@ void set_default_property(ov::AnyMap& config, const std::string& key, const ov::
     }
 }
 
-ov::CompiledModel compile_kokoro_model(ov::Core& core,
-                                       const std::filesystem::path& model_path,
+ov::CompiledModel compile_kokoro_model(const std::filesystem::path& model_path,
                                        const std::string& device,
                                        const ov::AnyMap& properties,
                                        const bool npu_requested,
@@ -298,33 +296,12 @@ ov::CompiledModel compile_kokoro_model(ov::Core& core,
     }
 
     if (!npu_requested) {
-        return core.compile_model(model_path, device, compile_properties);
+        return ov::genai::utils::singleton_core().compile_model(model_path, device, compile_properties);
     }
 
-    // In the case of NPU, set some NPUW properties, and reshape to static.
-
-    set_default_property(compile_properties, "NPU_USE_NPUW", std::string{"YES"});
-    set_default_property(compile_properties, "NPUW_DEVICES", std::string{"NPU,CPU"});
-    set_default_property(compile_properties, "NPUW_KOKORO", std::string{"YES"});
-
-    auto model = core.read_model(model_path, {}, compile_properties);
-
-    std::map<std::string, ov::PartialShape> static_shapes;
-    if (model->inputs().size() >= 1) {
-        static_shapes.emplace(model->input(0).get_any_name(), ov::PartialShape{1, static_cast<int64_t>(static_input_ids_length)});
-    }
-    if (model->inputs().size() >= 2) {
-        static_shapes.emplace(model->input(1).get_any_name(), ov::PartialShape{1, 256});
-    }
-    if (model->inputs().size() >= 3) {
-        static_shapes.emplace(model->input(2).get_any_name(), ov::PartialShape{1});
-    }
-
-    if (!static_shapes.empty()) {
-        model->reshape(static_shapes);
-    }
-
-    return core.compile_model(model, device, compile_properties);
+    return ov::genai::utils::compile_kokoro_for_npu_speech_generation(model_path,
+                                                                      compile_properties,
+                                                                      static_input_ids_length);
 }
 
 double sum_tensor_prefix_as_double(const ov::Tensor& tensor, const size_t count) {
@@ -351,6 +328,10 @@ std::string normalize_language_variant(const std::string& language) {
     std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](unsigned char c) {
         return static_cast<char>(std::tolower(c));
     });
+
+    if (normalized.empty()) {
+        return "en-us";
+    }
 
     if (normalized == "a" || normalized == "en" || normalized == "en-us") {
         return "en-us";
@@ -879,7 +860,6 @@ KokoroTTSImpl::KokoroTTSImpl(const std::filesystem::path& models_path,
                              const std::string& device,
                              const ov::AnyMap& properties) {
     m_models_path = models_path;
-    ov::Core core = ov::genai::utils::singleton_core();
     const bool npu_requested = device == "NPU";
 
     m_runtime = std::make_shared<KokoroRuntime>(models_path);
@@ -889,8 +869,7 @@ KokoroTTSImpl::KokoroTTSImpl(const std::filesystem::path& models_path,
         m_static_input_ids_length = m_runtime->context_length();
     }
 
-    auto compiled = compile_kokoro_model(core,
-                                         models_path / "openvino_model.xml",
+    auto compiled = compile_kokoro_model(models_path / "openvino_model.xml",
                                          device,
                                          properties,
                                          npu_requested,
@@ -999,16 +978,29 @@ Text2SpeechDecodedResults KokoroTTSImpl::synthesize_from_phoneme_chunks(
 
     const auto& vocab = m_runtime->vocab();
     const uint32_t context_length = m_runtime->context_length();
+    const size_t max_input_phoneme_length = std::min<size_t>(
+        generation_config.max_phoneme_length,
+        context_length > 2 ? static_cast<size_t>(context_length - 2) : static_cast<size_t>(0));
+    OPENVINO_ASSERT(max_input_phoneme_length > 0,
+                    "Kokoro context length must be greater than 2 to include BOS/EOS and at least one token");
 
     for (const auto& phoneme_chunks : all_phoneme_chunks) {
         std::vector<float> merged_audio;
 
         for (const auto& phonemes : phoneme_chunks) {
+            auto codepoints = from_utf8(phonemes);
+            const size_t uncapped_phoneme_length = codepoints.size();
+            if (uncapped_phoneme_length > max_input_phoneme_length) {
+                GENAI_WARN("Kokoro phoneme chunk length %zu exceeds limit %zu. Truncating to fit model input.",
+                           uncapped_phoneme_length,
+                           max_input_phoneme_length);
+                codepoints.resize(max_input_phoneme_length);
+            }
+
             std::vector<int64_t> token_ids;
-            token_ids.reserve(phonemes.size() + 2);
+            token_ids.reserve(codepoints.size() + 2);
             token_ids.push_back(0);
 
-            const auto codepoints = from_utf8(phonemes);
             for (char32_t cp : codepoints) {
                 const std::string key = to_utf8(cp);
                 auto it = vocab.find(key);

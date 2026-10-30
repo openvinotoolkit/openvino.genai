@@ -5,7 +5,6 @@ import sys
 import pytest
 from dataclasses import dataclass
 from pathlib import Path
-import datasets
 from tqdm import tqdm
 
 from openvino_genai import ContinuousBatchingPipeline, GenerationConfig, CacheEvictionConfig, AggregationMode
@@ -15,7 +14,7 @@ from utils.constants import get_default_llm_properties
 from utils.hugging_face import download_and_convert_model
 from data.test_dataset import get_test_dataset
 from kv_cache_eviction_utils import get_scheduler_config
-from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
+from utils.longbench import dataset2maxlen, evaluate, load_longbench_subset, preprocess_prompt, post_process_pred
 from optimum.intel.utils.import_utils import is_transformers_version
 
 
@@ -128,7 +127,6 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, apply
 
     evaluator = whowhatbench.Evaluator(base_model=model_cb_noopt, tokenizer=tokenizer, test_data=data_dict,
                                        generation_config=generation_config,
-                                       generation_config_base=generation_config,
                                        max_new_tokens=test_struct.max_new_tokens, seqs_per_request=seqs_per_request)
 
     _, all_metrics = evaluator.score(model_cb_opt)
@@ -280,7 +278,7 @@ def test_optimized_generation_longbench(test_struct):
     generation_config.num_return_sequences = 1
     generation_config.max_new_tokens = max_new_tokens
 
-    data = datasets.load_dataset("zai-org/LongBench", subset, split="test[:16]", revision="8cbd1")
+    data = load_longbench_subset(subset, split="test[:16]")
     with tqdm(total=len(data)) as progress_bar:
         batch = []
         answers = []

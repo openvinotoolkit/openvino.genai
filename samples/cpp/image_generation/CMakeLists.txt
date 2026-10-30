@@ -54,22 +54,6 @@ set_target_properties(denoising_process PROPERTIES
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
 
-# Windows: when OpenCV was built from source via FetchContent, deploy the
-# component DLLs next to denoising_process.exe in samples_bin/. The Windows
-# loader has no rpath, and install/samples_bin/ is not on PATH at runtime
-# unless the user puts it there. Skipped when find_package found a system
-# OpenCV, since those installs ship their own runtime path.
-get_property(_ov_genai_opencv_fetched GLOBAL PROPERTY OV_GENAI_FETCHED_OPENCV)
-if(WIN32 AND _ov_genai_opencv_fetched)
-    install(FILES "$<TARGET_FILE:opencv_core>"
-                  "$<TARGET_FILE:opencv_imgproc>"
-                  "$<TARGET_FILE:opencv_imgcodecs>"
-                  "$<TARGET_FILE:opencv_videoio>"
-            DESTINATION samples_bin/
-            COMPONENT samples_bin
-            EXCLUDE_FROM_ALL)
-endif()
-
 install(TARGETS denoising_process
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
