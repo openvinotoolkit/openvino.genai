@@ -9,6 +9,8 @@ from .registry import register_evaluator
 
 @register_evaluator("multi-image-to-image")
 class MultiImage2ImageEvaluator(Image2ImageEvaluator):
+    DEFAULT_NUM_INFERENCE_STEPS = 2
+
     def _prepare_default_data(self):
         default_dataset = datasets.load_dataset(
             "OmniGen2/OmniContext",
