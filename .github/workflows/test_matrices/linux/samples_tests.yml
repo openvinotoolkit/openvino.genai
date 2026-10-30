@@ -3,35 +3,35 @@
 - name: LLM
   marker: llm and not transformers_lower_v5
   cmd: tests/python_tests/samples
-  runner: aks-linux-4-cores-16gb
+  runner: aks-linux-4-cores-16gb-st
   components:
     - LLM_samples
 
 - name: Automatic Speech Recognition
   marker: automatic_speech_recognition
   cmd: tests/python_tests/samples
-  runner: aks-linux-4-cores-16gb
+  runner: aks-linux-4-cores-16gb-st
   components:
     - automatic_speech_recognition_samples
 
 - name: dreamlike_anime_1_0
   marker: dreamlike_anime_1_0
   cmd: tests/python_tests/samples
-  runner: aks-linux-8-cores-32gb
+  runner: aks-linux-8-cores-32gb-st
   components:
     - Image_generation_samples
 
 - name: LCM_Dreamshaper_v7_int8_ov
   marker: LCM_Dreamshaper_v7_int8_ov
   cmd: tests/python_tests/samples
-  runner: aks-linux-4-cores-16gb
+  runner: aks-linux-4-cores-16gb-st
   components:
     - Image_generation_samples
 
 - name: tiny_random_latent_consistency
   marker: tiny_random_latent_consistency
   cmd: tests/python_tests/samples
-  runner: aks-linux-4-cores-16gb
+  runner: aks-linux-4-cores-16gb-st
   components:
     - Image_generation_samples
 
@@ -39,7 +39,7 @@
 # - name: VLM
 #   marker: vlm
 #   cmd: tests/python_tests/samples
-#   runner: aks-linux-8-cores-32gb
+#   runner: aks-linux-8-cores-32gb-st
 #   components:
 #     - VLM_samples
 
@@ -48,21 +48,21 @@
   # optimum-intel commit with gemma4 audio inputs support
   extra_cmd: pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@00131a8967a21cd7bea3fe59413fb35b537d57af"
   cmd: tests/python_tests/samples
-  runner: aks-linux-4-cores-16gb
+  runner: aks-linux-4-cores-16gb-st
   components:
     - VLM_samples
 
 - name: Rag
   marker: rag
   cmd: tests/python_tests/samples
-  runner: aks-linux-4-cores-16gb
+  runner: aks-linux-4-cores-16gb-st
   components:
     - RAG_samples
 
 - name: Speech generation
   marker: speech_generation and not qwen3_tts
   cmd: tests/python_tests/samples
-  runner: aks-linux-4-cores-16gb
+  runner: aks-linux-4-cores-16gb-st
   components:
     - Speech_generation_samples
 
@@ -74,7 +74,7 @@
     python -m pip install --no-deps qwen-tts==0.1.1 "gradio @ git+https://github.com/gradio-app/gradio.git@d6972ed9d1185634cea083e0263839543d5ceb8d"
   marker: speech_generation and qwen3_tts
   cmd: tests/python_tests/samples
-  runner: aks-linux-4-cores-16gb
+  runner: aks-linux-4-cores-16gb-st
   components:
     - Speech_generation_samples
 
@@ -83,7 +83,7 @@
   extra_cmd: python -m pip install -U "optimum-intel @ https://github.com/huggingface/optimum-intel/archive/a741933e8f55cf90368c19ec4b7f0a4d98c26519.tar.gz"
   marker: video_generation
   cmd: tests/python_tests/samples
-  runner: aks-linux-4-cores-16gb
+  runner: aks-linux-4-cores-16gb-st
   components:
     - Video_generation_samples
 
@@ -92,14 +92,14 @@
   extra_cmd: python -m pip install transformers==5.0.0
   marker: qwen3_vl
   cmd: tests/python_tests/samples
-  runner: aks-linux-4-cores-16gb
+  runner: aks-linux-4-cores-16gb-st
   components:
     - VLM_samples
 
 - name: Qwen3-Omni
   marker: qwen3_omni
   cmd: tests/python_tests/samples
-  runner: aks-linux-4-cores-16gb
+  runner: aks-linux-4-cores-16gb-st
   components:
     - VLM_samples
 
@@ -107,7 +107,7 @@
   extra_cmd: python -m pip install transformers==4.57.6
   marker: eagle3_decoding
   cmd: tests/python_tests/samples
-  runner: aks-linux-4-cores-16gb
+  runner: aks-linux-4-cores-16gb-st
   components:
     - speculative_decoding
 
@@ -115,6 +115,6 @@
   extra_cmd: python -m pip install transformers==4.57.6 diffusers==0.37.1
   marker: llm and (transformers_dependent or transformers_lower_v5)
   cmd: tests/python_tests/samples
-  runner: aks-linux-4-cores-16gb
+  runner: aks-linux-4-cores-16gb-st
   components:
     - LLM_samples
