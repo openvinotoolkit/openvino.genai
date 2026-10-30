@@ -155,6 +155,10 @@ class LTX2Pipeline : public VideoPipeline {
     std::shared_ptr<AutoencoderKLLTX2Video> m_vae;
     std::shared_ptr<AutoencoderKLLTX2Audio> m_audio_vae;
     std::shared_ptr<LTX2Vocoder> m_vocoder;
+    std::string m_deferred_text_encode_device;
+    std::string m_deferred_denoise_device;
+    std::string m_deferred_vae_device;
+    ov::AnyMap m_deferred_properties;
 
     size_t m_latent_num_frames = 0;
     size_t m_latent_height = 0;
@@ -192,54 +196,59 @@ class LTX2Pipeline : public VideoPipeline {
                                                      const std::string& negative_prompt,
                                                      const VideoGenerationConfig& generation_config,
                                                      bool do_classifier_free_guidance) {
+        auto text_encoder = m_text_encoder;
+        if (!m_deferred_text_encode_device.empty()) {
+            text_encoder = m_text_encoder->clone();
+            text_encoder->compile(m_deferred_text_encode_device, m_deferred_properties);
+        }
         auto infer_start = std::chrono::steady_clock::now();
-        ov::Tensor prompt_embeds = m_text_encoder->infer(positive_prompt,
+        ov::Tensor prompt_embeds = text_encoder->infer(positive_prompt,
                                                          negative_prompt,
                                                          do_classifier_free_guidance,
                                                          generation_config.max_sequence_length);
         auto infer_end = std::chrono::steady_clock::now();
         m_perf_metrics.encoder_inference_duration["text_encoder"] = Ms{infer_end - infer_start}.count();
 
-        ov::Tensor prompt_attention_mask = m_text_encoder->get_prompt_attention_mask();
+        ov::Tensor prompt_attention_mask = text_encoder->get_prompt_attention_mask();
         prompt_embeds = repeat_per_video(prompt_embeds, generation_config.num_videos_per_prompt);
         prompt_attention_mask = repeat_per_video(prompt_attention_mask, generation_config.num_videos_per_prompt);
 
+        // The output tensors own their storage independently of the compiled encoder.
+        text_encoder.reset();
+        auto connectors = m_connectors;
+        if (!m_deferred_text_encode_device.empty()) {
+            connectors = std::make_shared<LTX2TextConnectors>(m_connectors->clone());
+            connectors->compile(m_deferred_text_encode_device, m_deferred_properties);
+        }
         infer_start = std::chrono::steady_clock::now();
-        LTX2TextConnectors::Output connected = m_connectors->infer(prompt_embeds, prompt_attention_mask);
+        LTX2TextConnectors::Output connected = connectors->infer(prompt_embeds, prompt_attention_mask);
         infer_end = std::chrono::steady_clock::now();
         m_perf_metrics.encoder_inference_duration["connectors"] = Ms{infer_end - infer_start}.count();
 
         return connected;
     }
 
-    // Text conditioning and positional coords for one transformer pass, all at batch N
+    ov::Tensor decode_video(const ov::Tensor& latent) {
+        auto vae = m_vae;
+        if (!m_deferred_vae_device.empty()) {
+            vae = std::make_shared<AutoencoderKLLTX2Video>(m_vae->clone());
+            vae->compile(m_deferred_vae_device, m_deferred_properties);
+        }
+        return vae->decode(latent);
+    }
+
+    // Text conditioning for one transformer pass, all at batch N
     struct PassConditioning {
         ov::Tensor video_text_embedding;
         ov::Tensor audio_text_embedding;
         ov::Tensor connector_attention_mask;
-        ov::Tensor video_coords;
-        ov::Tensor audio_coords;
     };
 
-    void bind_conditioning(const PassConditioning& conditioning) {
-        m_transformer->set_hidden_states("encoder_hidden_states", conditioning.video_text_embedding);
-        m_transformer->set_hidden_states("audio_encoder_hidden_states", conditioning.audio_text_embedding);
-        m_transformer->set_hidden_states("encoder_attention_mask", conditioning.connector_attention_mask);
-        m_transformer->set_hidden_states("audio_encoder_attention_mask", conditioning.connector_attention_mask);
-        m_transformer->set_hidden_states("video_coords", conditioning.video_coords);
-        m_transformer->set_hidden_states("audio_coords", conditioning.audio_coords);
-    }
-
-    void set_micro_conditions(size_t audio_num_frames, float frame_rate) {
-        using video_generation_utils::make_i64_scalar;
-        m_transformer->set_hidden_states("num_frames", make_i64_scalar(m_latent_num_frames));
-        m_transformer->set_hidden_states("height", make_i64_scalar(m_latent_height));
-        m_transformer->set_hidden_states("width", make_i64_scalar(m_latent_width));
-        m_transformer->set_hidden_states("audio_num_frames", make_i64_scalar(audio_num_frames));
-
-        ov::Tensor fps(ov::element::f32, {});
-        fps.data<float>()[0] = frame_rate;
-        m_transformer->set_hidden_states("fps", fps);
+    void bind_conditioning(LTX2VideoTransformer3DModel& transformer, const PassConditioning& conditioning) {
+        transformer.set_hidden_states("encoder_hidden_states", conditioning.video_text_embedding);
+        transformer.set_hidden_states("audio_encoder_hidden_states", conditioning.audio_text_embedding);
+        transformer.set_hidden_states("encoder_attention_mask", conditioning.connector_attention_mask);
+        transformer.set_hidden_states("audio_encoder_attention_mask", conditioning.connector_attention_mask);
     }
 
     // Per-dimension [start, end) patch boundaries in pixel space; temporal axis in seconds (see
@@ -491,6 +500,31 @@ public:
         check_inputs(merged_generation_config);
         OPENVINO_ASSERT(merged_generation_config.generator, "Generator must not be null");
 
+        const auto& transformer_config = m_transformer->get_config();
+        const size_t num_videos_per_prompt = merged_generation_config.num_videos_per_prompt;
+        const float frame_rate =
+            merged_generation_config.frame_rate.value_or(m_default_config->frame_rate.value());
+
+        m_latent_num_frames =
+            (merged_generation_config.num_frames - 1) / m_vae->get_config().temporal_compression_ratio + 1;
+        m_latent_height = merged_generation_config.height / m_vae->get_config().spatial_compression_ratio;
+        m_latent_width = merged_generation_config.width / m_vae->get_config().spatial_compression_ratio;
+
+        const size_t audio_num_frames = audio_num_frames_for(merged_generation_config);
+        const size_t latent_mel_bins =
+            m_audio_vae->get_config().mel_bins / m_audio_vae->get_config().mel_compression_ratio;
+
+        LTX2TextConnectors::Output connected = compute_hidden_states(positive_prompt,
+                                                                     merged_generation_config.negative_prompt.value_or(""),
+                                                                     merged_generation_config,
+                                                                     use_classifier_free_guidance);
+
+        auto transformer = m_transformer;
+        if (!m_deferred_denoise_device.empty()) {
+            transformer = std::make_shared<LTX2VideoTransformer3DModel>(m_transformer->clone());
+            transformer->compile(m_deferred_denoise_device, m_deferred_properties);
+        }
+
         const float guidance_rescale = *merged_generation_config.guidance_rescale;
         const float audio_guidance_rescale =
             merged_generation_config.audio_guidance_rescale.value_or(guidance_rescale);
@@ -502,15 +536,15 @@ public:
         const float audio_modality_scale = merged_generation_config.audio_modality_scale.value_or(modality_scale);
         const bool stg_requested = do_spatio_temporal_guidance(merged_generation_config);
         const bool modality_isolation_requested = do_modality_isolation_guidance(merged_generation_config);
-        const bool use_spatio_temporal_guidance = m_transformer->has_stg_perturbation_mask() && stg_requested;
-        const bool use_modality_isolation_guidance = m_transformer->has_cross_modality_gate() && modality_isolation_requested;
+        const bool use_spatio_temporal_guidance = transformer->has_stg_perturbation_mask() && stg_requested;
+        const bool use_modality_isolation_guidance = transformer->has_cross_modality_gate() && modality_isolation_requested;
         // Warn rather than assert, so exports predating these inputs keep working
-        if (stg_requested && !m_transformer->has_stg_perturbation_mask()) {
+        if (stg_requested && !transformer->has_stg_perturbation_mask()) {
             GENAI_WARN("'stg_scale' / 'audio_stg_scale' request Spatio-Temporal Guidance, but this "
                        "transformer has no 'stg_perturbation_mask' input and the pass is skipped. Re-export "
                        "the model with LTX-2.3 support, or set both scales to 0 to silence this.");
         }
-        if (modality_isolation_requested && !m_transformer->has_cross_modality_gate()) {
+        if (modality_isolation_requested && !transformer->has_cross_modality_gate()) {
             GENAI_WARN("'modality_scale' / 'audio_modality_scale' request modality isolation guidance, but "
                        "this transformer has no 'cross_modality_gate' input and the pass is skipped. "
                        "Re-export the model with LTX-2.3 support, or set both scales to 1.0 to silence this.");
@@ -530,35 +564,29 @@ public:
             callback_ptr->start();
         }
 
-        const auto& transformer_config = m_transformer->get_config();
-        const size_t num_videos_per_prompt = merged_generation_config.num_videos_per_prompt;
-        const float frame_rate =
-            merged_generation_config.frame_rate.value_or(m_default_config->frame_rate.value());
-
-        m_latent_num_frames =
-            (merged_generation_config.num_frames - 1) / m_vae->get_config().temporal_compression_ratio + 1;
-        m_latent_height = merged_generation_config.height / m_vae->get_config().spatial_compression_ratio;
-        m_latent_width = merged_generation_config.width / m_vae->get_config().spatial_compression_ratio;
-
-        const size_t audio_num_frames = audio_num_frames_for(merged_generation_config);
-        const size_t latent_mel_bins =
-            m_audio_vae->get_config().mel_bins / m_audio_vae->get_config().mel_compression_ratio;
-
-        LTX2TextConnectors::Output connected = compute_hidden_states(positive_prompt,
-                                                                     merged_generation_config.negative_prompt.value_or(""),
-                                                                     merged_generation_config,
-                                                                     use_classifier_free_guidance);
-        set_micro_conditions(audio_num_frames, frame_rate);
-
-        // Every pass runs at batch N, CFG included, so the transformer keeps a static batch
-        const ov::Tensor video_coords = prepare_video_coords(num_videos_per_prompt, frame_rate);
-        const ov::Tensor audio_coords = prepare_audio_coords(num_videos_per_prompt, audio_num_frames);
+        // Every pass runs at batch N, CFG included, so the transformer keeps a static batch. The positions
+        // are the same for every pass, so RoPE is bound once for the whole generation.
+        transformer->set_rope_coords(prepare_video_coords(num_videos_per_prompt, frame_rate),
+                                     prepare_audio_coords(num_videos_per_prompt, audio_num_frames));
+        for (const auto& condition : std::map<std::string, size_t>{
+                 {"num_frames", m_latent_num_frames},
+                 {"height", m_latent_height},
+                 {"width", m_latent_width},
+                 {"audio_num_frames", audio_num_frames}}) {
+            if (transformer->has_input(condition.first)) {
+                transformer->set_hidden_states(condition.first,
+                                                video_generation_utils::make_i64_scalar(condition.second));
+            }
+        }
+        if (transformer->has_input("fps")) {
+            ov::Tensor fps(ov::element::f32, {});
+            fps.data<float>()[0] = frame_rate;
+            transformer->set_hidden_states("fps", fps);
+        }
         auto conditioning_half = [&](size_t half_index) {
             return PassConditioning{cfg_half(connected.video_text_embedding, num_videos_per_prompt, half_index),
                                     cfg_half(connected.audio_text_embedding, num_videos_per_prompt, half_index),
-                                    cfg_half(connected.connector_attention_mask, num_videos_per_prompt, half_index),
-                                    video_coords,
-                                    audio_coords};
+                                    cfg_half(connected.connector_attention_mask, num_videos_per_prompt, half_index)};
         };
         PassConditioning unconditional_conditioning;
         PassConditioning conditional_conditioning;
@@ -568,11 +596,9 @@ public:
         } else {
             conditional_conditioning = {connected.video_text_embedding,
                                         connected.audio_text_embedding,
-                                        connected.connector_attention_mask,
-                                        video_coords,
-                                        audio_coords};
+                                        connected.connector_attention_mask};
         }
-        bind_conditioning(conditional_conditioning);
+        bind_conditioning(*transformer, conditional_conditioning);
 
         ov::Shape video_noise_shape{num_videos_per_prompt,
                                     transformer_config.in_channels,
@@ -662,7 +688,7 @@ public:
 
         auto run_pass = [&](float t, bool isolate_modalities, const std::vector<int64_t>& blocks) {
             const auto pass_start = std::chrono::steady_clock::now();
-            auto predictions = m_transformer->infer(latent, audio_latent, t, isolate_modalities, blocks);
+            auto predictions = transformer->infer(latent, audio_latent, t, isolate_modalities, blocks);
             const auto pass_duration =
                 ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - pass_start);
             m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(pass_duration));
@@ -681,9 +707,9 @@ public:
             const float sigma = t / m_scheduler_config.num_train_timesteps;
 
             if (use_classifier_free_guidance) {
-                bind_conditioning(unconditional_conditioning);
+                bind_conditioning(*transformer, unconditional_conditioning);
                 run_and_keep(t, /* isolate_modalities */ false, {}, video_pred_uncond, audio_pred_uncond);
-                bind_conditioning(conditional_conditioning);
+                bind_conditioning(*transformer, conditional_conditioning);
             }
             auto [noise_pred_video, noise_pred_audio] = run_pass(t, /* isolate_modalities */ false, {});
 
@@ -763,19 +789,33 @@ public:
             callback_ptr->end();
         }
 
+        transformer.reset();
         latent = postprocess_latents(latent);
 
         OPENVINO_ASSERT(!m_vae->get_config().timestep_conditioning,
                         "Parameter 'timestep_conditioning' is not currently supported by AutoencoderKLLTX2Video. Please, contact OpenVINO GenAI developers.");
 
         const auto decode_start = std::chrono::steady_clock::now();
-        ov::Tensor video = m_vae->decode(latent);
+        ov::Tensor video = decode_video(latent);
 
         denormalize_audio_latents(audio_latent);
         ov::Tensor audio_latent_unpacked =
             unpack_audio_latents(audio_latent, m_audio_vae->get_config().latent_channels, latent_mel_bins);
-        ov::Tensor mel_spectrogram = m_audio_vae->decode(audio_latent_unpacked);
-        ov::Tensor audio = m_vocoder->infer(mel_spectrogram);
+        auto audio_vae = m_audio_vae;
+        if (!m_deferred_vae_device.empty()) {
+            audio_vae = std::make_shared<AutoencoderKLLTX2Audio>(m_audio_vae->clone());
+            audio_vae->compile(m_deferred_vae_device, m_deferred_properties);
+        }
+        ov::Tensor mel_spectrogram = audio_vae->decode(audio_latent_unpacked);
+        audio_vae.reset();
+
+        auto vocoder = m_vocoder;
+        if (!m_deferred_vae_device.empty()) {
+            vocoder = std::make_shared<LTX2Vocoder>(m_vocoder->clone());
+            vocoder->compile(m_deferred_vae_device, m_deferred_properties);
+        }
+        ov::Tensor audio = vocoder->infer(mel_spectrogram);
+        vocoder.reset();
 
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
@@ -794,7 +834,7 @@ public:
         ov::Tensor postprocessed = postprocess_latents(latent);
 
         const auto decode_start = std::chrono::steady_clock::now();
-        ov::Tensor video = m_vae->decode(postprocessed);
+        ov::Tensor video = decode_video(postprocessed);
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
@@ -824,16 +864,34 @@ public:
                  const std::string& denoise_device,
                  const std::string& vae_device,
                  const ov::AnyMap& properties) override {
+        OPENVINO_ASSERT(!m_is_compiled, "LTX2Pipeline has already been compiled");
         std::optional<AdapterConfig> adapters;
         auto filtered_properties = extract_adapters_from_properties(properties, &adapters);
         OPENVINO_ASSERT(!adapters || adapters->get_adapters().empty(),
                         "LoRA adapters are not supported for LTX2 pipelines");
-        m_text_encoder->compile(text_encode_device, *filtered_properties);
-        m_connectors->compile(text_encode_device, *filtered_properties);
-        m_transformer->compile(denoise_device, *filtered_properties);
-        m_vae->compile(vae_device, *filtered_properties);
-        m_audio_vae->compile(vae_device, *filtered_properties);
-        m_vocoder->compile(vae_device, *filtered_properties);
+        const auto is_gpu = [](const std::string& device) {
+            return device == "GPU" || device.rfind("GPU.", 0) == 0;
+        };
+        // Keep reshaped host models as reusable templates; GPU requests live only for their stage.
+        if (is_gpu(text_encode_device)) {
+            m_deferred_text_encode_device = text_encode_device;
+        } else {
+            m_text_encoder->compile(text_encode_device, *filtered_properties);
+            m_connectors->compile(text_encode_device, *filtered_properties);
+        }
+        if (is_gpu(denoise_device)) {
+            m_deferred_denoise_device = denoise_device;
+        } else {
+            m_transformer->compile(denoise_device, *filtered_properties);
+        }
+        if (is_gpu(vae_device)) {
+            m_deferred_vae_device = vae_device;
+        } else {
+            m_vae->compile(vae_device, *filtered_properties);
+            m_audio_vae->compile(vae_device, *filtered_properties);
+            m_vocoder->compile(vae_device, *filtered_properties);
+        }
+        m_deferred_properties = *filtered_properties;
         m_is_compiled = true;
         m_compiled_batch_size_multiplier = m_reshape_batch_size_multiplier;
     }

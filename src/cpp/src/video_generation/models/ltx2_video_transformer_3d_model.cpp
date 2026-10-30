@@ -16,13 +16,157 @@ using namespace ov::genai;
 
 namespace {
 
-bool has_exact_input(const ov::CompiledModel& compiled_model, const std::string& name) {
-    for (const auto& input : compiled_model.inputs()) {
-        if (input.get_names().count(name)) {
-            return true;
+// One rotary module of diffusers' LTX2VideoTransformer3DModel and the transformer inputs it feeds when the
+// export takes RoPE as precomputed (cos, sin), see optimum-intel's LTX2_ROPE_INPUTS
+enum class RopeModule { Video, Audio, VideoCrossAttn, AudioCrossAttn };
+
+struct RopeInput {
+    RopeModule module;
+    const char* cos_name;
+    const char* sin_name;
+};
+
+constexpr RopeInput kRopeInputs[] = {
+    {RopeModule::Video, "video_rotary_cos", "video_rotary_sin"},
+    {RopeModule::Audio, "audio_rotary_cos", "audio_rotary_sin"},
+    {RopeModule::VideoCrossAttn, "video_cross_attn_rotary_cos", "video_cross_attn_rotary_sin"},
+    {RopeModule::AudioCrossAttn, "audio_cross_attn_rotary_cos", "audio_cross_attn_rotary_sin"},
+};
+
+bool is_video_rope(RopeModule module) {
+    return module == RopeModule::Video || module == RopeModule::VideoCrossAttn;
+}
+
+// Port of LTX2AudioVideoRotaryPosEmbed.forward (diffusers v0.40.0, transformer_ltx2.py). The cross-attention
+// modules see only the first (temporal) coordinate, as the transformer passes them `coords[:, 0:1]`. The
+// angle arithmetic follows the reference in fp32 (fp64 for the frequency grid when 'rope_double_precision'),
+// so the only difference from PyTorch is the last ulp of cos/sin.
+std::pair<ov::Tensor, ov::Tensor> compute_rope(const LTX2VideoTransformer3DModel::Config& config,
+                                               RopeModule module,
+                                               const ov::Tensor& coords) {
+    const ov::Shape& coords_shape = coords.get_shape();
+    OPENVINO_ASSERT(coords_shape.size() == 4 && coords_shape[3] == 2,
+                    "RoPE coords must be [B, num_pos_dims, num_patches, 2], got ",
+                    coords_shape);
+    OPENVINO_ASSERT(coords.get_element_type() == ov::element::f32, "RoPE coords must be f32");
+
+    const bool cross_attn = module == RopeModule::VideoCrossAttn || module == RopeModule::AudioCrossAttn;
+    const bool video_modality = is_video_rope(module);
+    const size_t batch = coords_shape[0];
+    const size_t coords_dims = coords_shape[1];
+    const size_t num_patches = coords_shape[2];
+    const size_t num_pos_dims = cross_attn ? 1 : coords_dims;
+    OPENVINO_ASSERT(num_pos_dims == (video_modality && !cross_attn ? 3u : 1u),
+                    "Unexpected number of RoPE coordinate dimensions: ",
+                    coords_dims);
+
+    size_t dim = 0;
+    size_t num_heads = 0;
+    int64_t base_num_frames = 0;
+    switch (module) {
+    case RopeModule::Video:
+        dim = config.num_attention_heads * config.attention_head_dim;
+        num_heads = config.num_attention_heads;
+        base_num_frames = config.pos_embed_max_pos;
+        break;
+    case RopeModule::Audio:
+        dim = config.audio_num_attention_heads * config.audio_attention_head_dim;
+        num_heads = config.audio_num_attention_heads;
+        base_num_frames = config.audio_pos_embed_max_pos;
+        break;
+    case RopeModule::VideoCrossAttn:
+        dim = config.audio_cross_attention_dim;
+        num_heads = config.num_attention_heads;
+        base_num_frames = std::max(config.pos_embed_max_pos, config.audio_pos_embed_max_pos);
+        break;
+    case RopeModule::AudioCrossAttn:
+        dim = config.audio_cross_attention_dim;
+        num_heads = config.audio_num_attention_heads;
+        base_num_frames = std::max(config.pos_embed_max_pos, config.audio_pos_embed_max_pos);
+        break;
+    }
+    const float max_positions[3] = {static_cast<float>(base_num_frames),
+                                    static_cast<float>(config.base_height),
+                                    static_cast<float>(config.base_width)};
+
+    // 1D frequency grid: theta ** linspace(0, 1, steps) * pi / 2, cast to fp32
+    const size_t num_rope_elems = num_pos_dims * 2;
+    const size_t steps = dim / num_rope_elems;
+    std::vector<float> freqs(steps);
+    for (size_t k = 0; k < steps; ++k) {
+        const double position = steps > 1 ? static_cast<double>(k) / static_cast<double>(steps - 1) : 0.0;
+        if (config.rope_double_precision) {
+            freqs[k] = static_cast<float>(std::pow(config.rope_theta, position) * video_generation_utils::PI / 2.0);
+        } else {
+            const float pow_index = std::pow(static_cast<float>(config.rope_theta), static_cast<float>(position));
+            freqs[k] = pow_index * static_cast<float>(video_generation_utils::PI) / 2.0f;
         }
     }
-    return false;
+
+    // Angles laid out as the reference's transpose(-1, -2).flatten(2): index k * num_pos_dims + i
+    const size_t num_freqs = steps * num_pos_dims;
+    const float* coords_data = coords.data<const float>();
+    auto angle = [&](size_t b, size_t t, size_t freq_index) {
+        const size_t k = freq_index / num_pos_dims;
+        const size_t i = freq_index % num_pos_dims;
+        const float* bounds = coords_data + ((b * coords_dims + i) * num_patches + t) * 2;
+        const float midpoint = (bounds[0] + bounds[1]) / 2.0f;
+        const float grid = midpoint / max_positions[i];
+        return (grid * 2.0f - 1.0f) * freqs[k];
+    };
+
+    ov::Tensor cos_tensor, sin_tensor;
+    if (config.rope_type == "split") {
+        // [B, H, T, D / 2 / H], front-padded with cos = 1, sin = 0 up to D / 2
+        const size_t half_dim = dim / 2;
+        OPENVINO_ASSERT(half_dim % num_heads == 0, "RoPE dim ", dim, " does not split over ", num_heads, " heads");
+        OPENVINO_ASSERT(half_dim >= num_freqs, "RoPE dim ", dim, " is too small for ", num_freqs, " frequencies");
+        const size_t pad = half_dim - num_freqs;
+        const size_t head_dim = half_dim / num_heads;
+        cos_tensor = ov::Tensor(ov::element::f32, {batch, num_heads, num_patches, head_dim});
+        sin_tensor = ov::Tensor(ov::element::f32, {batch, num_heads, num_patches, head_dim});
+        float* cos_data = cos_tensor.data<float>();
+        float* sin_data = sin_tensor.data<float>();
+        for (size_t b = 0; b < batch; ++b) {
+            for (size_t t = 0; t < num_patches; ++t) {
+                for (size_t j = 0; j < half_dim; ++j) {
+                    const size_t h = j / head_dim;
+                    const size_t d = j % head_dim;
+                    const size_t out = ((b * num_heads + h) * num_patches + t) * head_dim + d;
+                    if (j < pad) {
+                        cos_data[out] = 1.0f;
+                        sin_data[out] = 0.0f;
+                    } else {
+                        const double a = angle(b, t, j - pad);
+                        cos_data[out] = static_cast<float>(std::cos(a));
+                        sin_data[out] = static_cast<float>(std::sin(a));
+                    }
+                }
+            }
+        }
+    } else {
+        OPENVINO_ASSERT(config.rope_type == "interleaved", "Unsupported 'rope_type': ", config.rope_type);
+        // [B, T, D], each frequency repeated twice, front-padded with cos = 1, sin = 0
+        const size_t pad = dim % num_rope_elems;
+        cos_tensor = ov::Tensor(ov::element::f32, {batch, num_patches, dim});
+        sin_tensor = ov::Tensor(ov::element::f32, {batch, num_patches, dim});
+        float* cos_data = cos_tensor.data<float>();
+        float* sin_data = sin_tensor.data<float>();
+        for (size_t b = 0; b < batch; ++b) {
+            for (size_t t = 0; t < num_patches; ++t) {
+                float* cos_row = cos_data + (b * num_patches + t) * dim;
+                float* sin_row = sin_data + (b * num_patches + t) * dim;
+                std::fill_n(cos_row, pad, 1.0f);
+                std::fill_n(sin_row, pad, 0.0f);
+                for (size_t f = 0; f < num_freqs; ++f) {
+                    const double a = angle(b, t, f);
+                    cos_row[pad + 2 * f] = cos_row[pad + 2 * f + 1] = static_cast<float>(std::cos(a));
+                    sin_row[pad + 2 * f] = sin_row[pad + 2 * f + 1] = static_cast<float>(std::sin(a));
+                }
+            }
+        }
+    }
+    return {cos_tensor, sin_tensor};
 }
 
 }  // namespace
@@ -45,6 +189,18 @@ LTX2VideoTransformer3DModel::Config::Config(const std::filesystem::path& config_
     read_json_param(data, "audio_hop_length", audio_hop_length);
     read_json_param(data, "num_layers", num_layers);
     read_json_param(data, "perturbed_attn", perturbed_attn);
+    read_json_param(data, "num_attention_heads", num_attention_heads);
+    read_json_param(data, "attention_head_dim", attention_head_dim);
+    read_json_param(data, "audio_num_attention_heads", audio_num_attention_heads);
+    read_json_param(data, "audio_attention_head_dim", audio_attention_head_dim);
+    read_json_param(data, "audio_cross_attention_dim", audio_cross_attention_dim);
+    read_json_param(data, "pos_embed_max_pos", pos_embed_max_pos);
+    read_json_param(data, "audio_pos_embed_max_pos", audio_pos_embed_max_pos);
+    read_json_param(data, "base_height", base_height);
+    read_json_param(data, "base_width", base_width);
+    read_json_param(data, "rope_theta", rope_theta);
+    read_json_param(data, "rope_double_precision", rope_double_precision);
+    read_json_param(data, "rope_type", rope_type);
 }
 
 LTX2VideoTransformer3DModel::LTX2VideoTransformer3DModel(const std::filesystem::path& root_dir)
@@ -83,15 +239,26 @@ const LTX2VideoTransformer3DModel::Config& LTX2VideoTransformer3DModel::get_conf
 LTX2VideoTransformer3DModel& LTX2VideoTransformer3DModel::compile(const std::string& device,
                                                                   const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
+    size_t rotary_inputs = 0;
+    for (const auto& input : kRopeInputs) {
+        rotary_inputs += has_input(input.cos_name);
+        rotary_inputs += has_input(input.sin_name);
+    }
+    const bool video_coords = has_input("video_coords");
+    const bool audio_coords = has_input("audio_coords");
+    OPENVINO_ASSERT((rotary_inputs == 8 && !video_coords && !audio_coords) ||
+                        (rotary_inputs == 0 && video_coords && audio_coords),
+                    "LTX2 transformer requires all eight external rotary inputs or both legacy coordinate inputs");
+    m_external_rope = rotary_inputs != 0;
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LTX2 Video Transformer 3D model");
     m_request = compiled_model.create_infer_request();
     const auto& input_shape = compiled_model.input("hidden_states").get_partial_shape();
     m_expected_batch_size = input_shape[0].is_static() ? input_shape[0].get_length() : 0;
     m_timestep_rank = compiled_model.input("timestep").get_partial_shape().rank().get_length();
-    m_has_audio_timestep = has_exact_input(compiled_model, "audio_timestep");
-    m_has_cross_modality_gate = has_exact_input(compiled_model, "cross_modality_gate");
-    m_has_stg_perturbation_mask = has_exact_input(compiled_model, "stg_perturbation_mask");
+    m_has_audio_timestep = has_input("audio_timestep");
+    m_has_cross_modality_gate = has_input("cross_modality_gate");
+    m_has_stg_perturbation_mask = has_input("stg_perturbation_mask");
     if (m_has_stg_perturbation_mask) {
         // One mask entry per transformer block; fall back to the config if the export leaves it dynamic
         const auto& mask_shape = compiled_model.input("stg_perturbation_mask").get_partial_shape();
@@ -113,6 +280,34 @@ void LTX2VideoTransformer3DModel::set_hidden_states(const std::string& tensor_na
 
 size_t LTX2VideoTransformer3DModel::get_expected_batch_size() const {
     return m_expected_batch_size;
+}
+
+bool LTX2VideoTransformer3DModel::has_input(const std::string& name) {
+    if (m_model) {
+        return utils::has_input(m_model, name);
+    }
+    OPENVINO_ASSERT(m_request, "Transformer model must be loaded first");
+    for (const auto& input : m_request.get_compiled_model().inputs()) {
+        if (input.get_names().count(name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void LTX2VideoTransformer3DModel::set_rope_coords(const ov::Tensor& video_coords, const ov::Tensor& audio_coords) {
+    OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
+    if (!m_external_rope) {
+        set_hidden_states("video_coords", video_coords);
+        set_hidden_states("audio_coords", audio_coords);
+        return;
+    }
+    for (const auto& input : kRopeInputs) {
+        auto [cos, sin] =
+            compute_rope(m_config, input.module, is_video_rope(input.module) ? video_coords : audio_coords);
+        m_request.set_tensor(input.cos_name, cos);
+        m_request.set_tensor(input.sin_name, sin);
+    }
 }
 
 size_t LTX2VideoTransformer3DModel::get_timestep_rank() {
@@ -141,12 +336,13 @@ std::pair<ov::Tensor, ov::Tensor> LTX2VideoTransformer3DModel::infer(const ov::T
     const ov::Shape& latent_shape = video_latent.get_shape();
     OPENVINO_ASSERT(latent_shape.size() == 3, "Packed latents must be rank-3 [B, S, C], got rank ", latent_shape.size());
 
-    // Legacy exports take a rank-1 [B] timestep, current ones a rank-2 [B, S] per-token timestep
+    // External-RoPE exports broadcast [B, 1] modulation across tokens. Internal-RoPE exports retain their
+    // original [B, S] contract, since their graph may reshape the modulation to the full sequence length.
     OPENVINO_ASSERT(m_timestep_rank == 1 || m_timestep_rank == 2,
                     "LTX2 transformer expects a rank-1 or rank-2 'timestep' input, got rank ", m_timestep_rank);
     ov::Shape timestep_shape{latent_shape[0]};
     if (m_timestep_rank == 2) {
-        timestep_shape = {latent_shape[0], latent_shape[1]};
+        timestep_shape = {latent_shape[0], m_external_rope ? 1 : latent_shape[1]};
     }
     ov::Tensor timestep_tensor(ov::element::f32, timestep_shape);
     std::fill_n(timestep_tensor.data<float>(), timestep_tensor.get_size(), timestep);
@@ -226,7 +422,8 @@ LTX2VideoTransformer3DModel& LTX2VideoTransformer3DModel::reshape(int64_t batch_
             OPENVINO_ASSERT(timestep_rank == 1 || timestep_rank == 2,
                             "LTX2 transformer expects a rank-1 or rank-2 'timestep' input, got rank ", timestep_rank);
             if (timestep_rank == 2) {
-                name_to_shape[input_name] = {batch_size, video_sequence_length};
+                name_to_shape[input_name] = {
+                    batch_size, utils::has_input(m_model, "video_rotary_cos") ? 1 : video_sequence_length};
             } else {
                 name_to_shape[input_name] = {batch_size};
             }
@@ -236,6 +433,18 @@ LTX2VideoTransformer3DModel& LTX2VideoTransformer3DModel::reshape(int64_t batch_
             name_to_shape[input_name] = {batch_size, 3, video_sequence_length, 2};
         } else if (input_name == "audio_coords") {
             name_to_shape[input_name] = {batch_size, 1, audio_num_frames, 2};
+        } else if (const auto rope_input = std::find_if(std::begin(kRopeInputs),
+                                                        std::end(kRopeInputs),
+                                                        [&](const RopeInput& rope) {
+                                                            return input_name == rope.cos_name ||
+                                                                   input_name == rope.sin_name;
+                                                        });
+                   rope_input != std::end(kRopeInputs)) {
+            // "split" is [B, H, T, D'] and "interleaved" [B, T, D]; the head and rotary dims stay as exported
+            auto& shape = name_to_shape[input_name];
+            const size_t sequence_axis = shape.rank().get_length() == 4 ? 2 : 1;
+            shape[0] = batch_size;
+            shape[sequence_axis] = is_video_rope(rope_input->module) ? video_sequence_length : audio_num_frames;
         } else if (input_name == "encoder_hidden_states" || input_name == "audio_encoder_hidden_states") {
             // The connector output sequence length is model-internal, keep it dynamic
             name_to_shape[input_name] = {batch_size, -1, name_to_shape[input_name][2]};
