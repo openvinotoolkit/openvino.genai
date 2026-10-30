@@ -419,11 +419,6 @@ def test_gguf_vlm_attention_backends_and_images(tiny_gguf_vlm_model):
 
 
 @pytest.mark.parametrize("chat_api", ["start_chat", "ChatHistory"])
-@pytest.mark.xfail(
-    reason="Requires https://github.com/openvinotoolkit/openvino.genai/pull/4687",
-    raises=AssertionError,
-    strict=True,
-)
 def test_gguf_vlm_attention_backends_and_chat(tiny_gguf_vlm_model, chat_api):
     language, projector = tiny_gguf_vlm_model
     pipelines = [

@@ -201,7 +201,7 @@ TEST(GGUFTokenizer, MetadataRejectsModelsWithoutTokenizerInfo) {
 }
 
 TEST(GGUFTokenizer, ChatTemplateSupportsUndefinedAndAdjacentStringLiterals) {
-    GTEST_SKIP() << "Requires https://github.com/openvinotoolkit/openvino.genai/pull/4689";
+    GTEST_SKIP() << "Requires https://github.com/openvinotoolkit/openvino.genai/pull/4775";
     auto config = sentencepiece_config();
     config.config["chat_template"] =
         std::string("{% if enable_thinking is undefined %}{{ \"first\"\n  \"second\" }}{% endif %}"
@@ -298,15 +298,13 @@ TEST(GGUFMultimodal, PreformattedChatDoesNotDuplicateSpecialTokens) {
     const std::vector<int64_t> expected{1, 4, 9, 5};
     EXPECT_EQ(encode("a"), expected);
     embedder.finish_chat();
-    GTEST_SKIP() << "Requires https://github.com/openvinotoolkit/openvino.genai/pull/4687; "
-                    "restore the preformatted-prompt setter argument when re-enabling";
-    embedder.set_apply_chat_template_status(false);
+    embedder.set_prompt_formatting(PromptFormatting::AlreadyTemplated);
     EXPECT_EQ(encode(tokenizer.apply_chat_template({{{"role", "user"}, {"content", "a"}}}, true)), expected);
     embedder.finish_chat();
-    embedder.set_apply_chat_template_status(false);
+    embedder.set_prompt_formatting(PromptFormatting::Raw);
     EXPECT_EQ(encode("a"), (std::vector<int64_t>{1, 9}));
     embedder.finish_chat();
-    embedder.set_apply_chat_template_status(true);
+    embedder.set_prompt_formatting(PromptFormatting::NeedsTemplate);
     EXPECT_EQ(encode("a"), expected);
 }
 
