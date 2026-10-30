@@ -161,6 +161,13 @@ public:
 
     bool has_non_finished_requests() override;
 
+    void save_state(uint64_t request_id, const std::string& path, const CacheOffloadConfig& store_config = {}) override;
+
+    GenerationHandle restore_state(uint64_t request_id,
+                                   const std::string& path,
+                                   const ov::genai::GenerationConfig& sampling_params,
+                                   const CacheOffloadConfig& store_config = {}) override;
+
     virtual void generate_candidates_for_prompt_lookup();
 
     virtual bool supports_embedding_prefix_verification() const {

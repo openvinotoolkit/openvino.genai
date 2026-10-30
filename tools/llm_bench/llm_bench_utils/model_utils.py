@@ -276,6 +276,9 @@ def analyze_args(args):
     if args.cb_config:
         cb_config = get_config(args.cb_config)
     model_args["cb_config"] = cb_config
+    model_args["session_snapshot_save"] = args.session_snapshot_save
+    model_args["session_snapshot_save_steps"] = args.session_snapshot_save_steps
+    model_args["session_snapshot_restore"] = args.session_snapshot_restore
     model_args['draft_model'] = args.draft_model
     model_args['draft_device'] = args.draft_device
     model_args["draft_ov_config"] = {}

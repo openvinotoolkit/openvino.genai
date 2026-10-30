@@ -155,6 +155,7 @@ from .py_openvino_genai import (
     GenerationStatus,
     SchedulerConfig,
     CacheEvictionConfig,
+    CacheOffloadConfig,
     AggregationMode,
     SparseAttentionMode,
     SparseAttentionConfig,

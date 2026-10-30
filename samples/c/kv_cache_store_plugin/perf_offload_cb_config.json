@@ -1,0 +1,16 @@
+{
+  "num_kv_blocks": 120,
+  "max_num_batched_tokens": 4096,
+  "max_num_seqs": 1,
+  "dynamic_split_fuse": true,
+  "enable_prefix_caching": true,
+  "use_cache_offload": true,
+  "cache_offload_config": {
+    "capacity_bytes": 1073741824,
+    "linear_attention_capacity_bytes": 4294967296,
+    "buffer_slots": 256,
+    "store_library_path": "REPLACE_WITH_PATH_TO_YOUR_PLUGIN",
+    "store_provider_name": "sample-in-memory",
+    "allow_untrusted_store_plugin": true
+  }
+}
