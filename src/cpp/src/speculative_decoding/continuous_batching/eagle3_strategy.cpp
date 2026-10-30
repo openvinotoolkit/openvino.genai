@@ -333,9 +333,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
                                             lm_extra_inputs);
     }
 
-    auto draft_sampling_params = sampling_params;
-    draft_sampling_params.ignore_eos = true;
-    draft_sampling_params.stop_strings = {};
+    const auto draft_sampling_params = make_draft_sampling_params(sampling_params);
 
     // Extract draft-only embeddings that were staged in lm_extra_inputs and remove
     // them so the main pipeline receives only its regular auxiliary inputs.
@@ -388,9 +386,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
         return m_main_pipeline->add_request(request_id, prompt, sampling_params);
     }
 
-    auto draft_sampling_params = sampling_params;
-    draft_sampling_params.ignore_eos = true;
-    draft_sampling_params.stop_strings = {};
+    const auto draft_sampling_params = make_draft_sampling_params(sampling_params);
     // remove first token from input_ids to create draft_input_ids
     // add_special_tokens is false for better compression rate
     auto input_ids = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false)).input_ids;
@@ -427,8 +423,9 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
                                   const std::vector<GenerationConfig>& sampling_params) {
         OPENVINO_ASSERT(!streamer_ptr->has_callback() ||
                         (input_ids.size() == 1 &&
-                         (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_tree_search())),
-                        "Eagle3 streaming only supports batch size=1 with greedy or tree search");
+                         (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial() ||
+                          sampling_params[0].is_tree_search())),
+                        "Eagle3 streaming only supports batch size=1 with greedy, multinomial or tree search");
     };
     strategy.start_timer = [](){
         return std::chrono::steady_clock::now();
