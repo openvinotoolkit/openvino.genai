@@ -143,21 +143,27 @@ void text2video_perform_inference_thread(Text2VideoTsfnContext* context) {
             report_error(combined_error);
         } else {
             auto final_result = std::make_shared<ov::genai::VideoGenerationResult>(std::move(result));
-            auto final_callback_error = std::make_shared<std::string>();
 
-            napi_status status = context->callback_tsfn.BlockingCall(
-                [final_result, final_callback_error](Napi::Env env, Napi::Function js_callback) {
+            // BlockingCall() returns once the call is queued, so a conversion error is reported from the call itself
+            napi_status status =
+                context->callback_tsfn.BlockingCall([final_result](Napi::Env env, Napi::Function js_callback) {
                     try {
                         js_callback.Call(
                             {env.Null(), cpp_to_js<ov::genai::VideoGenerationResult, Napi::Value>(env, *final_result)});
                     } catch (const std::exception& err) {
-                        *final_callback_error = "The final callback failed. Details:\n" + std::string(err.what());
+                        const std::string message =
+                            "text2video_perform_inference_thread error. The final callback failed. Details:\n" +
+                            std::string(err.what());
+                        try {
+                            js_callback.Call({Napi::Error::New(env, message).Value(), env.Null()});
+                        } catch (const std::exception& callback_error) {
+                            std::cerr << message << "\nFailed to report the callback error:\n"
+                                      << callback_error.what() << std::endl;
+                        }
                     }
                 });
             if (status != napi_ok) {
                 report_error("The final BlockingCall failed with status " + std::to_string(static_cast<int>(status)));
-            } else if (!final_callback_error->empty()) {
-                report_error(*final_callback_error);
             }
         }
     } catch (const std::exception& ex) {
