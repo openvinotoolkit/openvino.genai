@@ -37,11 +37,11 @@ TEST(LFM3AudioFeatureExtractor, MatchesTransformersReference) {
     const auto value = [&features](size_t mel_bin, size_t frame) {
         return features.data[mel_bin * features.n_frames + frame];
     };
-    // Lfm3OmniFeatureExtractor output for the same input.
-    EXPECT_NEAR(value(0, 0), -2.0f, 1e-4f);
-    EXPECT_NEAR(value(20, 5), 1.2873930931f, 1e-4f);
-    EXPECT_NEAR(value(64, 98), 0.0320116282f, 1e-4f);
-    EXPECT_NEAR(value(127, 98), -0.4634793997f, 1e-4f);
+    // Lfm3OmniFeatureExtractor output for the same input, before the (x + 4) / 4 normalization.
+    EXPECT_NEAR(value(0, 0), -12.0f, 4e-4f);
+    EXPECT_NEAR(value(20, 5), 1.1495723724f, 4e-4f);
+    EXPECT_NEAR(value(64, 98), -3.8719534872f, 4e-4f);
+    EXPECT_NEAR(value(127, 98), -5.8539175988f, 4e-4f);
 }
 
 class LFM3AudioFeatureFrames : public ::testing::TestWithParam<std::pair<size_t, size_t>> {};
@@ -51,7 +51,7 @@ TEST_P(LFM3AudioFeatureFrames, ZeroPadsTheLastWindow) {
     const auto features = make_lfm3_extractor().extract_uncentered(std::vector<float>(samples, 0.0f), LOG_FLOOR);
     EXPECT_EQ(features.n_frames, expected_frames);
     for (float value : features.data) {
-        EXPECT_FLOAT_EQ(value, (LOG_FLOOR + 4.0f) / 4.0f);
+        EXPECT_FLOAT_EQ(value, LOG_FLOOR);
     }
 }
 
@@ -62,6 +62,19 @@ INSTANTIATE_TEST_SUITE_P(WindowEdges,
                                            std::make_pair(401, 2),
                                            std::make_pair(560, 2),
                                            std::make_pair(561, 3)));
+
+TEST(LFM3AudioFeatureExtractor, LastWindowMatchesExplicitZeroPadding) {
+    // 401 samples need two frames; the second window reads 241 real samples and 159 zeros.
+    const auto extractor = make_lfm3_extractor();
+    const auto audio = make_sine_wave(401);
+    auto padded = audio;
+    padded.resize(560, 0.0f);
+    const auto features = extractor.extract_uncentered(audio, LOG_FLOOR);
+    const auto reference = extractor.extract_uncentered(padded, LOG_FLOOR);
+    ASSERT_EQ(features.n_frames, 2u);
+    ASSERT_EQ(reference.n_frames, 2u);
+    EXPECT_EQ(features.data, reference.data);
+}
 
 TEST(LFM3AudioFeatureExtractor, RejectsEmptyAudio) {
     EXPECT_THROW(make_lfm3_extractor().extract_uncentered({}, LOG_FLOOR), ov::Exception);

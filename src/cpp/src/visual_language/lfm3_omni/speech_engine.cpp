@@ -270,6 +270,9 @@ ov::Tensor LFM3OmniSpeechEngine::embed_frame(const std::vector<int64_t>& codes) 
     return copy_tensor(embeds, {1, 1, embeds.get_shape().at(1)});
 }
 
+// Not the continuous batching Sampler transforms: those keep the penalty history in a map shared across steps, while
+// LFM3-Omni penalizes only the last text_repetition_window text tokens and audio_repetition_window frames of each
+// codebook, with the transformers processor order below.
 int64_t LFM3OmniSpeechEngine::sample(std::vector<float>& scores,
                                      const Sampling& sampling,
                                      const std::vector<int64_t>& history,

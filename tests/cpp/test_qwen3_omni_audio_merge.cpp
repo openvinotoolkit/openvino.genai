@@ -8,10 +8,11 @@
 #include <vector>
 
 #include "visual_language/qwen3_omni/classes.hpp"
+#include "visual_language/vlm_utils.hpp"
 
 using ov::genai::EncodedAudio;
 using ov::genai::qwen3_omni::expand_audio_tags;
-using ov::genai::qwen3_omni::merge_audio_embeddings;
+using ov::genai::vlm_utils::merge_audio_embeddings;
 
 namespace {
 

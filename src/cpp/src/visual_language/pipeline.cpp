@@ -984,6 +984,18 @@ private:
         ov::Tensor new_atten_mask = ov::Tensor{ov::element::i64, { 1, history_size + inputs_embeds_size }};
         std::fill_n(new_atten_mask.data<int64_t>(), new_atten_mask.get_size(), 1);
 
+        if (m_pending_speech_config) {
+            // Only a raw prompt can end with a mode marker: a chat template always ends with the assistant header.
+            const bool raw_prompt = !m_is_chat_conversation && !generation_config.apply_chat_template;
+            const int64_t last_prompt_token = raw_prompt && !tokenized_history.empty() ? tokenized_history.back() : -1;
+            return decode_with_speech(inputs_embeds,
+                                      new_atten_mask,
+                                      last_prompt_token,
+                                      generation_config,
+                                      streamer_ptr,
+                                      cache_state);
+        }
+
         ov::Tensor position_ids;
         std::optional<int64_t> rope_delta;
         std::tie(position_ids, rope_delta) = m_inputs_embedder->get_position_ids(inputs_embeds_size, history_size);
@@ -991,10 +1003,6 @@ private:
         const auto& lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
 
         auto per_layer_callback = m_inputs_embedder->get_per_layer_embeddings_callback();
-
-        if (m_pending_speech_config) {
-            return decode_with_speech(unified_prompt, inputs_embeds, new_atten_mask, generation_config, streamer, cache_state);
-        }
 
         if (m_sampler.get_seed() != generation_config.rng_seed) {
             m_sampler.set_seed(generation_config.rng_seed);
@@ -1029,28 +1037,20 @@ private:
         LFM3SpeechRequest::validate(speech_config);
     }
 
-    utils::GenerationFinishInfo decode_with_speech(const std::string& unified_prompt,
-                                                   const ov::Tensor& inputs_embeds,
+    utils::GenerationFinishInfo decode_with_speech(const ov::Tensor& inputs_embeds,
                                                    const ov::Tensor& attention_mask,
+                                                   int64_t last_prompt_token,
                                                    const GenerationConfig& generation_config,
-                                                   const StreamerVariant& streamer,
+                                                   const std::shared_ptr<StreamerBase>& streamer,
                                                    utils::CacheState& cache_state) {
-        // A prompt that already ends with a mode marker keeps it. The embedder appends the chat template
-        // itself outside chat mode, and the template always ends with the assistant header.
-        int64_t last_prompt_token = -1;
-        if (m_is_chat_conversation || !generation_config.apply_chat_template) {
-            const ov::Tensor prompt_ids = m_tokenizer.encode(unified_prompt, ov::genai::add_special_tokens(false)).input_ids;
-            if (prompt_ids.get_size() > 0) {
-                last_prompt_token = prompt_ids.data<const int64_t>()[prompt_ids.get_size() - 1];
-            }
-        }
         // The waveform reaches the caller through the speech streamer only.
-        const LFM3SpeechResult speech = m_speech_engine->generate(inputs_embeds,
-                                                                  attention_mask,
-                                                                  last_prompt_token,
-                                                                  LFM3SpeechRequest(*m_pending_speech_config, generation_config),
-                                                                  utils::create_streamer(streamer, m_tokenizer),
-                                                                  m_pending_speech_streamer);
+        const LFM3SpeechResult speech =
+            m_speech_engine->generate(inputs_embeds,
+                                      attention_mask,
+                                      last_prompt_token,
+                                      LFM3SpeechRequest(*m_pending_speech_config, generation_config),
+                                      streamer,
+                                      m_pending_speech_streamer);
         // The language model has consumed every slot but the last sampled one.
         if (speech.slot_tokens.size() > 1) {
             ov::Tensor consumed(ov::element::i64, {1, speech.slot_tokens.size() - 1});
@@ -1068,10 +1068,10 @@ private:
 };
 
 bool requires_sdpa(const std::filesystem::path& models_dir) {
-    // Force models to use SDPA backend by default until PA is supported. Example:
-    // auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    // vlm_config.model_type == VLMModelType::GEMMA3;
-    return false;
+    // Force models to use SDPA backend by default until PA is supported. An explicit PA request still gets PA.
+    // LFM3-Omni speech output is decoded in the stateful language model loop, which only SDPA provides.
+    const auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
+    return vlm_config.model_type == VLMModelType::LFM3_OMNI;
 }
 
 VLMPipeline::VLMPipeline(

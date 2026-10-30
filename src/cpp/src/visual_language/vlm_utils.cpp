@@ -124,4 +124,110 @@ std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::
     return chunks;
 }
 
+void merge_audio_embeddings(ov::Tensor& input_embeds,
+                            const std::vector<int64_t>& input_ids,
+                            const std::vector<EncodedAudio>& audios,
+                            const std::vector<size_t>& audios_sequence,
+                            int64_t audio_token_id) {
+    if (audios_sequence.empty()) {
+        return;
+    }
+    OPENVINO_ASSERT(audio_token_id >= 0,
+                    "Audio was provided but config.json defines no audio_token_id, so the audio placeholders "
+                    "cannot be located. Re-export the model.");
+
+    // Checked up front because the zero-token skip loops below index audios before the
+    // per-run checks would catch a bad index.
+    for (size_t audio_id : audios_sequence) {
+        OPENVINO_ASSERT(audio_id < audios.size(),
+                        "Audio index ",
+                        audio_id,
+                        " is out of range for ",
+                        audios.size(),
+                        " provided audios. The sequence must be rebased to this turn's audios.");
+    }
+
+    const auto& shape = input_embeds.get_shape();
+    const auto seq_len = shape[1];
+    const auto hidden_size = shape[2];
+
+    OPENVINO_ASSERT(input_ids.size() >= seq_len,
+                    "input_ids size (",
+                    input_ids.size(),
+                    ") must be >= embedding seq_len (",
+                    seq_len,
+                    "). Ensure input_ids are not from a stale or re-tokenized source.");
+
+    auto* embed_data = input_embeds.data<float>();
+    const size_t bytes_per_token = hidden_size * sizeof(float);
+
+    size_t run_index = 0;
+    for (size_t i = 0; i < seq_len;) {
+        if (input_ids[i] != audio_token_id) {
+            i++;
+            continue;
+        }
+
+        size_t run_end = i;
+        while (run_end < seq_len && input_ids[run_end] == audio_token_id) {
+            run_end++;
+        }
+        const size_t run_length = run_end - i;
+
+        // A zero-token audio expands to start+end with no pads, so it contributes no run. Skip
+        // over those entries or run k stops lining up with audios_sequence[k].
+        while (run_index < audios_sequence.size() && audios[audios_sequence[run_index]].num_audio_tokens == 0) {
+            run_index++;
+        }
+
+        OPENVINO_ASSERT(run_index < audios_sequence.size(),
+                        "Found more audio placeholder runs in the prompt than provided audios (",
+                        audios_sequence.size(),
+                        "). A literal audio marker in user text would do this.");
+
+        const auto& audio = audios[audios_sequence[run_index]];
+
+        OPENVINO_ASSERT(run_length == audio.num_audio_tokens,
+                        "Audio placeholder run ",
+                        run_index,
+                        " holds ",
+                        run_length,
+                        " tokens but audio ",
+                        audios_sequence[run_index],
+                        " encodes to ",
+                        audio.num_audio_tokens,
+                        ". The prompt expansion and the encoder disagree - this is an internal "
+                        "inconsistency, please report it with the prompt that triggered it.");
+
+        const auto audio_hidden_size = audio.audio_features.get_shape()[1];
+        OPENVINO_ASSERT(audio_hidden_size == hidden_size,
+                        "Audio embedding hidden_size (",
+                        audio_hidden_size,
+                        ") must match input embedding hidden_size (",
+                        hidden_size,
+                        "). Check that audio encoder output dimension matches the language model.");
+
+        const auto* audio_data = audio.audio_features.data<const float>();
+        for (size_t t = 0; t < run_length; t++) {
+            std::memcpy(embed_data + (i + t) * hidden_size, audio_data + t * hidden_size, bytes_per_token);
+        }
+
+        run_index++;
+        i = run_end;
+    }
+
+    // Trailing zero-token audios also have no run, so consume them before the final check.
+    while (run_index < audios_sequence.size() && audios[audios_sequence[run_index]].num_audio_tokens == 0) {
+        run_index++;
+    }
+
+    OPENVINO_ASSERT(run_index == audios_sequence.size(),
+                    "Placed ",
+                    run_index,
+                    " of ",
+                    audios_sequence.size(),
+                    " audios: the prompt has fewer audio placeholder runs than tags resolved. This is an "
+                    "internal inconsistency, please report it with the prompt that triggered it.");
+}
+
 }  // namespace ov::genai::vlm_utils

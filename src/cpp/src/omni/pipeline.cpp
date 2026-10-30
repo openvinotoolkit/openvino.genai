@@ -26,21 +26,16 @@ std::pair<std::string, Any> speech_streamer(OmniSpeechStreamerVariant func) {
 
 OmniPipeline::OmniPipeline(const std::filesystem::path& models_path,
                            const std::string& device,
-                           const ov::AnyMap& properties) {
-    const auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_path, "config.json");
-    if (vlm_config.model_type != VLMModelType::LFM3_OMNI) {
-        m_pimpl = std::make_unique<OmniPipelineImpl>(std::make_shared<VLMPipeline>(models_path, device, properties),
-                                                     std::make_shared<Talker>(models_path, device, properties));
-        return;
-    }
-    // LFM3-Omni decodes speech in the stateful language model loop, so SDPA is its default backend.
-    // A caller that asks for PA keeps it and gets text output only.
-    ov::AnyMap vlm_properties = properties;
-    if (!utils::explicitly_requires_paged_attention(properties)) {
-        vlm_properties.emplace("ATTENTION_BACKEND", SDPA_BACKEND);
-    }
-    m_pimpl = std::make_unique<OmniPipelineImpl>(std::make_shared<VLMPipeline>(models_path, device, vlm_properties));
-}
+                           const ov::AnyMap& properties)
+    : m_pimpl([&] {
+          auto vlm = std::make_shared<VLMPipeline>(models_path, device, properties);
+          // LFM3-Omni speaks in the language model stream and has no separate talker.
+          const auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_path, "config.json");
+          if (vlm_config.model_type == VLMModelType::LFM3_OMNI) {
+              return std::make_unique<OmniPipelineImpl>(vlm);
+          }
+          return std::make_unique<OmniPipelineImpl>(vlm, std::make_shared<Talker>(models_path, device, properties));
+      }()) {}
 
 OmniPipeline::OmniPipeline(const std::shared_ptr<VLMPipelineBase>& vlm,
                            const std::shared_ptr<TalkerBase>& talker)

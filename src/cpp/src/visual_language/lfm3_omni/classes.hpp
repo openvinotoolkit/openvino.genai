@@ -31,6 +31,8 @@ private:
         size_t n_fft = 400;
         size_t hop_length = 160;
         float log_floor = -12.0f;
+        float normalization_offset = 4.0f;
+        float normalization_divisor = 4.0f;
     };
 
     static FeatureConfig read_feature_config(const std::filesystem::path& config_dir_path);
@@ -42,6 +44,8 @@ private:
 
     WhisperFeatureExtractor m_feature_extractor;
     float m_log_floor;
+    float m_normalization_offset;
+    float m_normalization_divisor;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue;
 };
 
@@ -71,6 +75,19 @@ public:
                                       const std::vector<EncodedImage>& images,
                                       const std::vector<EncodedVideo>& videos,
                                       const std::vector<EncodedAudio>& audios) const override;
+
+    using InputsEmbedderLFM3VL::get_inputs_embeds;
+
+    ov::Tensor get_inputs_embeds(const std::string& prompt,
+                                 const std::vector<EncodedImage>& images,
+                                 const std::vector<EncodedVideo>& videos,
+                                 const std::vector<EncodedAudio>& audios,
+                                 VLMPerfMetrics& metrics,
+                                 bool recalculate_merged_embeddings,
+                                 const std::vector<size_t>& image_sequence,
+                                 const std::vector<size_t>& videos_sequence,
+                                 const std::vector<size_t>& audios_sequence,
+                                 const std::vector<std::pair<size_t, size_t>>& history_vision_count) override;
 
 private:
     std::unique_ptr<AudioEncoderLFM3> m_audio_encoder;

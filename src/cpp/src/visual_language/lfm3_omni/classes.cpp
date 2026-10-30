@@ -3,11 +3,13 @@
 
 #include "visual_language/lfm3_omni/classes.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <nlohmann/json.hpp>
 
 #include "json_utils.hpp"
 #include "utils.hpp"
+#include "visual_language/vlm_utils.hpp"
 
 namespace ov::genai {
 
@@ -22,26 +24,23 @@ AudioEncoderLFM3::FeatureConfig AudioEncoderLFM3::read_feature_config(const std:
     using utils::read_json_param;
     FeatureConfig config;
     size_t win_length = config.n_fft;
-    float normalization_offset = 4.0f;
-    float normalization_divisor = 4.0f;
     read_json_param(section, "feature_size", config.feature_size);
     read_json_param(section, "sampling_rate", config.sampling_rate);
     read_json_param(section, "n_fft", config.n_fft);
     read_json_param(section, "hop_length", config.hop_length);
     read_json_param(section, "log_floor", config.log_floor);
     read_json_param(section, "win_length", win_length);
-    read_json_param(section, "normalization_offset", normalization_offset);
-    read_json_param(section, "normalization_divisor", normalization_divisor);
+    read_json_param(section, "normalization_offset", config.normalization_offset);
+    read_json_param(section, "normalization_divisor", config.normalization_divisor);
 
     OPENVINO_ASSERT(config.feature_size > 0 && config.n_fft > 0 && config.hop_length > 0,
                     "LFM3-Omni feature_extractor needs positive feature_size, n_fft and hop_length, got ",
                     config.feature_size, ", ", config.n_fft, ", ", config.hop_length);
-    // Audio input is 16 kHz by API contract, and WhisperFeatureExtractor fixes the window and (x + 4) / 4.
+    // Audio input is 16 kHz by API contract, and WhisperFeatureExtractor uses an n_fft long Hann window.
     OPENVINO_ASSERT(config.sampling_rate == 16000, "LFM3-Omni audio features expect sampling_rate 16000, got ",
                     config.sampling_rate);
     OPENVINO_ASSERT(win_length == config.n_fft, "LFM3-Omni audio features expect win_length == n_fft");
-    OPENVINO_ASSERT(normalization_offset == 4.0f && normalization_divisor == 4.0f,
-                    "LFM3-Omni audio features expect normalization_offset and normalization_divisor of 4");
+    OPENVINO_ASSERT(config.normalization_divisor != 0.0f, "LFM3-Omni normalization_divisor must not be 0");
     return config;
 }
 
@@ -56,7 +55,9 @@ AudioEncoderLFM3::AudioEncoderLFM3(const std::shared_ptr<ov::Model>& model,
                                    const std::string& device,
                                    const ov::AnyMap& properties)
     : m_feature_extractor(config.feature_size, config.sampling_rate, config.n_fft, config.hop_length),
-      m_log_floor(config.log_floor) {
+      m_log_floor(config.log_floor),
+      m_normalization_offset(config.normalization_offset),
+      m_normalization_divisor(config.normalization_divisor) {
     auto compiled = utils::singleton_core().compile_model(model, device,
                                                           utils::get_model_properties(properties, "audio_encoder", device));
     ov::genai::utils::print_compiled_model_properties(compiled, "VLM audio encoder model");
@@ -76,7 +77,9 @@ ov::Tensor AudioEncoderLFM3::encode(const ov::Tensor& audio) {
         m_feature_extractor.extract_uncentered(std::vector<float>(samples, samples + audio.get_size()), m_log_floor);
     // The flattened [feature_size, n_frames] layout is the encoder's [1, num_mel_bins, num_frames] input.
     ov::Tensor input_features(ov::element::f32, {1, features.feature_size, features.n_frames});
-    std::copy(features.data.begin(), features.data.end(), input_features.data<float>());
+    std::transform(features.data.begin(), features.data.end(), input_features.data<float>(), [this](float value) {
+        return (value + m_normalization_offset) / m_normalization_divisor;
+    });
 
     CircularBufferQueueElementGuard<ov::InferRequest> guard(m_ireq_queue.get());
     ov::InferRequest& request = guard.get();
@@ -160,6 +163,34 @@ NormalizedPrompt InputsEmbedderLFM3Omni::normalize_prompt(const std::string& pro
     auto result = InputsEmbedderLFM3VL::normalize_prompt(unified_prompt, base_image_id, base_video_id, images, videos);
     result.audios_sequence = std::move(audios_sequence);
     return result;
+}
+
+ov::Tensor InputsEmbedderLFM3Omni::get_inputs_embeds(
+    const std::string& prompt,
+    const std::vector<EncodedImage>& images,
+    const std::vector<EncodedVideo>& videos,
+    const std::vector<EncodedAudio>& audios,
+    VLMPerfMetrics& metrics,
+    bool recalculate_merged_embeddings,
+    const std::vector<size_t>& image_sequence,
+    const std::vector<size_t>& videos_sequence,
+    const std::vector<size_t>& audios_sequence,
+    const std::vector<std::pair<size_t, size_t>>& history_vision_count) {
+    ov::Tensor inputs_embeds = InputsEmbedderLFM3VL::get_inputs_embeds(prompt,
+                                                                       images,
+                                                                       videos,
+                                                                       metrics,
+                                                                       recalculate_merged_embeddings,
+                                                                       image_sequence,
+                                                                       videos_sequence,
+                                                                       history_vision_count);
+    const int64_t* ids = m_last_input_ids.data<const int64_t>();
+    vlm_utils::merge_audio_embeddings(inputs_embeds,
+                                      std::vector<int64_t>(ids, ids + m_last_input_ids.get_size()),
+                                      audios,
+                                      audios_sequence,
+                                      m_vlm_config.audio_token_id);
+    return inputs_embeds;
 }
 
 }  // namespace ov::genai
