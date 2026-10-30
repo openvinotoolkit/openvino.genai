@@ -12,6 +12,7 @@ import llm_bench_utils.model_utils as model_utils
 import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.gen_output_data as gen_output_data
 import llm_bench_utils.parse_json_data as parse_json_data
+from llm_bench_utils.config_class import is_vlm_speech_model
 from llm_bench_utils.hook_forward_whisper import ASRHook
 
 FW_UTILS = {"pt": llm_bench_utils.pt_utils, "ov": llm_bench_utils.ov_utils}
@@ -185,8 +186,8 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         asr_hook.clear_statistics()
 
 
-def run_omni_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, mem_consumption, speech_file_list):
-    # Qwen3-Omni treats audio as another VLM modality; reuse the visual-language path.
+def run_vlm_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, mem_consumption, speech_file_list):
+    # Multimodal models treat audio as another VLM modality; reuse the visual-language path.
     from task.visual_language_generation import run_visual_language_generation_benchmark
 
     # Keep the speech default; the VLM path would otherwise cap output at 512 tokens.
@@ -206,8 +207,8 @@ def run_omni_speech_2_txt_benchmark(model_path, framework, device, args, num_ite
 
 def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
     speech_file_list = get_speech_files(args)
-    if args.get("is_omni_model", False):
-        return run_omni_speech_2_txt_benchmark(
+    if is_vlm_speech_model(args["use_case"].model_type):
+        return run_vlm_speech_2_txt_benchmark(
             model_path, framework, device, args, num_iters, mem_consumption, speech_file_list
         )
     iter_data_list = []

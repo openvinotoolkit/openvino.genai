@@ -924,6 +924,36 @@ class TestBenchmarkLLM:
         run_sample(benchmark_py_command)
 
     @pytest.mark.samples
+    @pytest.mark.llm_bench_vlm_audio
+    @pytest.mark.parametrize("download_test_content", ["how_are_you_doing_today.wav"], indirect=True)
+    @pytest.mark.parametrize(
+        "convert_model",
+        ["tiny-random-gemma4", "tiny-random-gemma4-unified-it"],
+        indirect=True,
+    )
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "-ic", "4", "--task", "speech_to_text", "--optimum"],
+            ["-d", "cpu", "-n", "1", "-ic", "4", "--task", "speech_to_text", "--genai"],
+        ],
+    )
+    def test_python_tool_llm_benchmark_gemma4_speech_to_text(self, download_test_content, convert_model, sample_args):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "--media",
+            download_test_content,
+            "--prompt",
+            "Transcribe this audio.",
+        ] + sample_args
+        result = run_sample(benchmark_py_command)
+        assert "Input audio nums: 1" in result.stdout
+
+    @pytest.mark.samples
     @pytest.mark.transformers_higher_v5_1
     @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-omni"], indirect=True)
     @pytest.mark.parametrize(
