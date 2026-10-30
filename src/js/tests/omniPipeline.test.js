@@ -167,6 +167,16 @@ describe("OmniPipeline", { skip: os.platform() === "darwin" }, () => {
     });
   }
 
+  it("should reject a non-integer output_mode", async () => {
+    await assert.rejects(
+      pipeline.generate("Hi", {
+        textConfig: { max_new_tokens: 4 },
+        talkerSpeechConfig: { ...deterministicSpeechConfig, output_mode: 0.5 },
+      }),
+      /Invalid talkerSpeechConfig.output_mode: 0.5/,
+    );
+  });
+
   it("should generate with ChatHistory", async () => {
     const history = new ChatHistory();
     history.push({ role: "user", content: "Hello" });

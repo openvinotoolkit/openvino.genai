@@ -421,8 +421,6 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
     const GenerationConfig& text_config = request.text_config;
     OPENVINO_ASSERT(is_speech_streamer_active(speech_streamer),
                     "LFM3-Omni speech output needs a speech streamer: it is the only output of the waveform");
-    // Created before any step that can throw: end() is due even if generation fails.
-    SpeechStreamerGuard speech_guard(speech_streamer, true);
     m_text_rng.seed(static_cast<std::mt19937::result_type>(text_config.rng_seed));
     m_audio_rng.seed(static_cast<std::mt19937::result_type>(request.audio_rng_seed));
 
@@ -563,6 +561,11 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
                 } else if (status == StreamingStatus::CANCEL) {
                     result.status = GenerationStatus::CANCEL;
                     finished = true;
+                } else if (status == StreamingStatus::TOOL_CALL_STOP) {
+                    // As in the text pipelines: a tool call parser ends the turn with the TOOL_CALL reason.
+                    result.status = GenerationStatus::STOP;
+                    result.finish_reason = GenerationFinishReason::TOOL_CALL;
+                    finished = true;
                 }
             }
             if (token == m_config.text_end_token_id) {
@@ -616,7 +619,6 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
             result.status = GenerationStatus::CANCEL;
         }
     }
-    speech_guard.end();
     return result;
 }
 

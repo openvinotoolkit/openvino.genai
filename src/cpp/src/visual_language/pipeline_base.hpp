@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "omni/speech_streamer_utils.hpp"
 #include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/omni/talker_speech_config.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
@@ -25,17 +26,19 @@ class VLMPipeline::VLMBackend : public ov::genai::VLMPipelineBase {
 protected:
     VLMBackend();
 
-    // Audio streamer extracted from AnyMap, forwarded to speech pipeline
+    // Speech streamer extracted from AnyMap when speech output is requested, forwarded to the speech decoder
     OmniSpeechStreamerVariant m_pending_speech_streamer = std::monostate{};
 
     // Speech config extracted from AnyMap: speech is decoded in the language model stream (LFM3-Omni)
     std::optional<OmniTalkerSpeechConfig> m_pending_speech_config;
 
-    // RAII guard to reset the speech streamer and speech config on scope exit (exception-safe)
+    // RAII guard that ends the pending speech streamer exactly once, also when generate() throws, then resets the
+    // speech streamer and speech config. The speech decoder only writes chunks; this guard owns end().
     struct SpeechPropertiesGuard {
         OmniSpeechStreamerVariant& streamer_ref;
         std::optional<OmniTalkerSpeechConfig>& speech_config_ref;
         ~SpeechPropertiesGuard() {
+            { SpeechStreamerGuard end_guard(streamer_ref, is_speech_streamer_active(streamer_ref)); }
             streamer_ref = std::monostate{};
             speech_config_ref.reset();
         }
@@ -45,7 +48,8 @@ protected:
     /// config fits the model.
     virtual void check_speech_in_stream(const OmniTalkerSpeechConfig& speech_config) const;
 
-    /// @brief Reads talker_speech_config and speech_streamer from AnyMap into the pending members.
+    /// @brief Reads talker_speech_config and, when it requests audio, speech_streamer from AnyMap into the pending
+    /// members. The streamer is stored before validation, so a rejected config still ends it.
     void extract_speech_properties(const ov::AnyMap& config_map);
 
     GenerationConfig resolve_generation_config(const ov::AnyMap& config_map);

@@ -402,16 +402,16 @@ ov::genai::StopCriteria js_to_cpp<ov::genai::StopCriteria>(const Napi::Env& env,
 template <>
 ov::genai::SpeechOutputMode js_to_cpp<ov::genai::SpeechOutputMode>(const Napi::Env& env, const Napi::Value& value) {
     OPENVINO_ASSERT(value.IsNumber(), "talkerSpeechConfig.output_mode must be a SpeechOutputMode value.");
-    const int mode = value.As<Napi::Number>().Int32Value();
-    switch (mode) {
-    case static_cast<int>(ov::genai::SpeechOutputMode::INTERLEAVED):
+    // Compared as a double: Int32Value() would turn 0.5, 1.5 or NaN into a valid mode.
+    const double mode = value.As<Napi::Number>().DoubleValue();
+    if (mode == static_cast<double>(ov::genai::SpeechOutputMode::INTERLEAVED)) {
         return ov::genai::SpeechOutputMode::INTERLEAVED;
-    case static_cast<int>(ov::genai::SpeechOutputMode::SPEECH_ONLY):
-        return ov::genai::SpeechOutputMode::SPEECH_ONLY;
-    default:
-        OPENVINO_THROW("Invalid talkerSpeechConfig.output_mode: " + std::to_string(mode) +
-                       ". Expected 0 (INTERLEAVED) or 1 (SPEECH_ONLY).");
     }
+    if (mode == static_cast<double>(ov::genai::SpeechOutputMode::SPEECH_ONLY)) {
+        return ov::genai::SpeechOutputMode::SPEECH_ONLY;
+    }
+    OPENVINO_THROW("Invalid talkerSpeechConfig.output_mode: " + value.ToString().Utf8Value() +
+                   ". Expected 0 (INTERLEAVED) or 1 (SPEECH_ONLY).");
 }
 
 template <>

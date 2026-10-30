@@ -4,6 +4,7 @@
 #include "openvino/genai/omni/talker.hpp"
 
 #include "openvino/core/except.hpp"
+#include "omni/speech_streamer_utils.hpp"
 #include "omni/talker_speech_config_utils.hpp"
 #include "utils.hpp"
 #include "visual_language/qwen3_omni/speech_pipeline.hpp"
@@ -39,6 +40,10 @@ void reject_model_without_talker(const VLMConfig& vlm_config) {
     OPENVINO_ASSERT(vlm_config.model_type != VLMModelType::LFM3_OMNI,
                     "Talker: LFM3-Omni has no separate talker, it speaks in the language model stream. "
                     "Use OmniPipeline(models_path, device, properties).");
+}
+
+bool has_in_stream_speech_fields(const OmniTalkerSpeechConfig& config) {
+    return config.output_mode != SpeechOutputMode::INTERLEAVED || config.cp_repetition_penalty.has_value();
 }
 
 void reject_in_stream_speech_fields(const OmniTalkerSpeechConfig& config) {
@@ -83,6 +88,10 @@ public:
     TalkerResults generate(const VLMDecodedResults& vlm_result,
                           const OmniTalkerSpeechConfig& talker_speech_config,
                           const OmniSpeechStreamerVariant& speech_streamer) {
+        if (has_in_stream_speech_fields(talker_speech_config)) {
+            // The speech pipeline has not installed its streamer guard yet, so the rejected call ends the stream.
+            end_speech_streamer(speech_streamer);
+        }
         reject_in_stream_speech_fields(talker_speech_config);
         OPENVINO_ASSERT(!vlm_result.intermediate_hidden_states.empty(),
                         "Talker: intermediate hidden states missing on VLMDecodedResults; the VLM must run "

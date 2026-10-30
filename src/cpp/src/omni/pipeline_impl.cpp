@@ -45,10 +45,8 @@ public:
         return m_active ? invoke_speech_streamer(m_streamer, audio_chunk) : StreamingStatus::RUNNING;
     }
 
-    // Called by the speech engine and by the guard in generate_speech_in_stream(); forwards only the first call.
     void end() override {
         if (m_active) {
-            m_active = false;
             end_speech_streamer(m_streamer);
         }
     }
@@ -93,9 +91,6 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate_speech_in_stream(
     const StreamerVariant& streamer,
     const OmniSpeechStreamerVariant& speech_streamer) {
     const auto collector = std::make_shared<CollectingSpeechStreamer>(speech_streamer);
-    const OmniSpeechStreamerVariant collector_variant = std::shared_ptr<OmniSpeechStreamerBase>(collector);
-    // The speech streamer gets end() even if validation, encoding or prefill throws before decoding starts.
-    SpeechStreamerGuard collector_guard(collector_variant, true);
     const auto start_time = std::chrono::steady_clock::now();
     VLMDecodedResults vlm_result = generate(ov::AnyMap{
         ov::genai::images(images),
@@ -105,7 +100,7 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate_speech_in_stream(
         ov::genai::generation_config(text_config),
         ov::genai::streamer(streamer),
         ov::genai::talker_speech_config(talker_speech_config),
-        ov::genai::speech_streamer(std::get<std::shared_ptr<OmniSpeechStreamerBase>>(collector_variant)),
+        ov::genai::speech_streamer(std::shared_ptr<OmniSpeechStreamerBase>(collector)),
     });
     OmniDecodedResults omni_result;
     static_cast<VLMDecodedResults&>(omni_result) = std::move(vlm_result);

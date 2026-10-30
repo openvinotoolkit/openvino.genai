@@ -984,6 +984,9 @@ void validate_vlm_model_properties(const ov::AnyMap& properties) {
         "multi_modal_projector",
         "audio_encoder",
         "language_model",
+        "depth_decoder",
+        "audio_out_embeddings",
+        "audio_decoder",
     };
     const auto it = properties.find(PER_MODEL_PROPERTIES);
     if (it == properties.end()) {
