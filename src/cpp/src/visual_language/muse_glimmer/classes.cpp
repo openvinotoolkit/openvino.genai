@@ -470,7 +470,7 @@ ov::Tensor InputsEmbedderMuseGlimmer::get_inputs_embeds(
 ov::Tensor InputsEmbedderMuseGlimmer::apply_chat_template_tokenize(const std::string& prompt, VLMPerfMetrics& metrics) {
     const std::string bos_token = m_tokenizer.get_bos_token();
     // ticket to addess globally: 192386
-    if (!m_is_chat_conversation && !m_apply_chat_template && !bos_token.empty() &&
+    if (!m_is_chat_conversation && m_prompt_formatting != PromptFormatting::NeedsTemplate && !bos_token.empty() &&
         prompt.compare(0, bos_token.size(), bos_token) == 0) {
         ManualTimer encode_timer("Encode");
         encode_timer.start();
