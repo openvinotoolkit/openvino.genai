@@ -26,7 +26,9 @@
 
 - name: ASR (Qwen3-ASR)
   cmd: |-
-    python -m pip install transformers==4.57.6 qwen-asr==0.0.6
+    python -m pip install transformers==4.57.6 nagisa==0.2.11 soynlp==0.0.493 accelerate==1.12.0 qwen-omni-utils librosa soundfile sox flask pytz
+    # TODO(CVS-198293): Drop manual dependencies and the commit pin when Qwen supports a Gradio release with Pillow 13.
+    python -m pip install --no-deps qwen-asr==0.0.6 "gradio @ git+https://github.com/gradio-app/gradio.git@d6972ed9d1185634cea083e0263839543d5ceb8d"
     python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "qwen3-asr" -m "not qwen3_asr_split_export"
     python -m pytest -v ./tests/python_tests/test_asr_forced_aligner.py
     python -m pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@d304fb56602d878547c3d416e875c02cfd5e5479"
@@ -138,9 +140,10 @@
 
 - name: Qwen3 TTS
   cmd: |-
-    python -m pip install transformers==4.57.3
+    python -m pip install transformers==4.57.3 accelerate==1.12.0 librosa torchaudio soundfile sox onnxruntime einops
     python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@c46fb912366bc9d25b8395621d885a457369228d#egg=optimum-intel"
-    python -m pip install qwen-tts
+    # TODO(CVS-198293): Drop manual dependencies and the commit pin when Qwen supports a Gradio release with Pillow 13.
+    python -m pip install --no-deps qwen-tts==0.1.1 "gradio @ git+https://github.com/gradio-app/gradio.git@d6972ed9d1185634cea083e0263839543d5ceb8d"
     python -m pytest -s -v tests/python_tests/test_qwen3_tts_pipeline.py --override-ini cache_dir=/mount/caches/pytest/
   timeout: 90
   components:
@@ -217,7 +220,10 @@
 
 - name: WWB ASR tests (FunASR, Qwen3-ASR)
   cmd: |-
-    python -m pip install transformers==4.57.6 "whowhatbench[funasr]" qwen-asr==0.0.6
+    python -m pip install transformers==4.57.6 "whowhatbench[funasr]"
+    python -m pip install nagisa==0.2.11 soynlp==0.0.493 accelerate==1.12.0 qwen-omni-utils librosa soundfile sox flask pytz
+    # TODO(CVS-198293): Drop manual dependencies and the commit pin when Qwen supports a Gradio release with Pillow 13.
+    python -m pip install --no-deps qwen-asr==0.0.6 "gradio @ git+https://github.com/gradio-app/gradio.git@d6972ed9d1185634cea083e0263839543d5ceb8d"
     python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_speech_recognition.py -k "funasr or qwen3_asr"
   timeout: 120
   components:
@@ -225,9 +231,10 @@
 
 - name: WWB TTS tests (Qwen3)
   cmd: |-
-    python -m pip install transformers==4.57.3
+    python -m pip install transformers==4.57.3 accelerate==1.12.0 librosa torchaudio soundfile sox onnxruntime einops
     python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@c46fb912366bc9d25b8395621d885a457369228d#egg=optimum-intel"
-    python -m pip install qwen-tts
+    # TODO(CVS-198293): Drop manual dependencies and the commit pin when Qwen supports a Gradio release with Pillow 13.
+    python -m pip install --no-deps qwen-tts==0.1.1 "gradio @ git+https://github.com/gradio-app/gradio.git@d6972ed9d1185634cea083e0263839543d5ceb8d"
     python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_speechgen_qwen3.py
   timeout: 60
   components:
