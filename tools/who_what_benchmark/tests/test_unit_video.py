@@ -23,35 +23,6 @@ def _configure_evaluator(evaluator, test_data):
     evaluator.empty_adapters = False
 
 
-def _common_test_data():
-    return {
-        "prompt": ["dataset values"],
-        "negative_prompt": [""],
-        "width": [32],
-        "height": [32],
-        "guidance_scale": [1.0],
-        "decode_timestep": [0.0],
-        "decode_noise_scale": [1.0],
-    }
-
-
-def test_text2video_decode_parameters_use_dataset_values_with_cli_fallback(monkeypatch, tmp_path):
-    evaluator = Text2VideoEvaluator.__new__(Text2VideoEvaluator)
-    _configure_evaluator(evaluator, _common_test_data())
-    calls = []
-
-    def generate_video(_model, **kwargs):
-        calls.append(kwargs)
-        return []
-
-    monkeypatch.setattr("whowhatbench.text2video_evaluator.export_to_video", lambda *_args: None)
-    evaluator._generate_data(None, generate_video, str(tmp_path))
-
-    assert [(call["decode_timestep"], call["decode_noise_scale"]) for call in calls] == [
-        (0.0, 1.0),
-    ]
-
-
 def test_text2video_missing_optional_columns_use_defaults(monkeypatch, tmp_path):
     evaluator = Text2VideoEvaluator.__new__(Text2VideoEvaluator)
     _configure_evaluator(
@@ -97,28 +68,6 @@ def test_text2video_missing_optional_columns_use_defaults(monkeypatch, tmp_path)
             Text2VideoEvaluator.DEF_GUIDANCE_SCALE,
             Text2VideoEvaluator.DEF_GUIDANCE_RESCALE,
         )
-    ]
-
-
-def test_image2video_decode_parameters_fall_back_when_dataset_columns_are_missing(monkeypatch, tmp_path):
-    evaluator = Image2VideoEvaluator.__new__(Image2VideoEvaluator)
-    test_data = _common_test_data()
-    del test_data["decode_timestep"]
-    del test_data["decode_noise_scale"]
-    test_data["images"] = [Image.new("RGB", (32, 32))]
-    _configure_evaluator(evaluator, test_data)
-    evaluator.image_dir = None
-    calls = []
-
-    def generate_video(_model, **kwargs):
-        calls.append(kwargs)
-        return []
-
-    monkeypatch.setattr("whowhatbench.image2video_evaluator.export_to_video", lambda *_args: None)
-    evaluator._generate_data(None, generate_video, str(tmp_path))
-
-    assert [(call["decode_timestep"], call["decode_noise_scale"]) for call in calls] == [
-        (0.4, 0.7),
     ]
 
 
@@ -189,33 +138,6 @@ def test_load_prompts_preserves_video_dataset_columns(monkeypatch):
 
 @pytest.mark.parametrize("model_type", ["text-to-video", "image-to-video"])
 @pytest.mark.parametrize(
-    ("cli_options", "expected_values"),
-    [
-        ([], (None, None)),
-        (["--decode-timestep", "0.2", "--decode-noise-scale", "0.3"], (0.2, 0.3)),
-    ],
-    ids=["defaults", "explicit"],
-)
-def test_video_decode_cli_options_reach_evaluator(monkeypatch, model_type, cli_options, expected_values):
-    class CapturingEvaluator:
-        def __init__(self, **kwargs):
-            self.kwargs = kwargs
-
-    monkeypatch.setattr(sys, "argv", ["wwb", "--model-type", model_type, *cli_options])
-    monkeypatch.setitem(wwb.EVALUATOR_REGISTRY, model_type, CapturingEvaluator)
-    dataset_rows = {"prompt": ["test prompt"], "decode_timestep": [0.4], "decode_noise_scale": [0.5]}
-    if model_type == "image-to-video":
-        dataset_rows["images"] = ["frame.png"]
-    monkeypatch.setattr(wwb, "load_prompts", lambda _args: dataset_rows)
-
-    evaluator = wwb.create_evaluator(None, wwb.parse_args())
-
-    assert (evaluator.kwargs["decode_timestep"], evaluator.kwargs["decode_noise_scale"]) == expected_values
-    assert evaluator.kwargs["test_data"] == dataset_rows
-
-
-@pytest.mark.parametrize("model_type", ["text-to-video", "image-to-video"])
-@pytest.mark.parametrize(
     ("cli_options", "dataset_values", "expected_values"),
     [
         ([], {}, (None, None)),
@@ -251,7 +173,8 @@ def test_video_decode_cli_options_reach_generation(
     monkeypatch.setattr("whowhatbench.text2video_evaluator.export_to_video", lambda *_args: None)
     monkeypatch.setattr("whowhatbench.image2video_evaluator.export_to_video", lambda *_args: None)
 
-    wwb.create_evaluator(object(), wwb.parse_args())
+    evaluator = wwb.create_evaluator(object(), wwb.parse_args())
 
+    assert evaluator.test_data == dataset_rows
     assert len(calls) == 1
     assert (calls[0]["decode_timestep"], calls[0]["decode_noise_scale"]) == expected_values
