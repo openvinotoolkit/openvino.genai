@@ -461,12 +461,15 @@ public:
         m_reshape_batch_size_multiplier = batch_size_multiplier;
         const size_t audio_num_frames = audio_num_frames_for(generation_config);
         m_text_encoder->reshape(batch_size_multiplier, generation_config.max_sequence_length);
-        m_connectors->reshape(generation_config.num_videos_per_prompt * batch_size_multiplier);
+        // The text encoder is fixed to max_sequence_length above; pass it on so the whole pipeline is static
+        m_connectors->reshape(generation_config.num_videos_per_prompt * batch_size_multiplier,
+                              generation_config.max_sequence_length);
         m_transformer->reshape(generation_config.num_videos_per_prompt,
                                generation_config.num_frames,
                                generation_config.height,
                                generation_config.width,
-                               audio_num_frames);
+                               audio_num_frames,
+                               generation_config.max_sequence_length);
         m_vae->reshape(generation_config.num_videos_per_prompt,
                        generation_config.num_frames,
                        generation_config.height,

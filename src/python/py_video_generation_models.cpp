@@ -332,6 +332,7 @@ void init_ltx2_video_transformer_3d_model(py::module_& m) {
              py::arg("height"),
              py::arg("width"),
              py::arg("audio_num_frames"),
+             py::arg("text_seq_len") = -1,
              R"(
                 Reshapes the model for specific input dimensions.
                 batch_size (int): Batch size.
@@ -339,6 +340,7 @@ void init_ltx2_video_transformer_3d_model(py::module_& m) {
                 height (int): Video height.
                 width (int): Video width.
                 audio_num_frames (int): Number of audio latent frames.
+                text_seq_len (int): Text embedding sequence length; -1 keeps the model's own dimension.
             )")
         .def("set_hidden_states",
              &ov::genai::LTX2VideoTransformer3DModel::set_hidden_states,
@@ -579,9 +581,11 @@ void init_ltx2_text_connectors(py::module_& m) {
         .def("reshape",
              &ov::genai::LTX2TextConnectors::reshape,
              py::arg("batch_size"),
+             py::arg("seq_len") = -1,
              R"(
                 Reshapes the model for a specific batch size.
                 batch_size (int): Batch size.
+                seq_len (int): Text sequence length; -1 keeps the model's own dimension.
             )")
         .def("infer",
              [](ov::genai::LTX2TextConnectors& self,
