@@ -466,6 +466,7 @@ jobs:
 
       - name: Build genai wheel
         run: |
+          $buildArgsOverride = 'override=cmake.build_args={"="=["--parallel","' + $env:NUMBER_OF_PROCESSORS + '","--target","py_openvino_genai_stub"]}'
           $pythonCommand = "py -${{ matrix.python-version }} -c `"import sys; print(f'{sys.executable}')`""
           $pythonExecutablePath = & cmd /c $pythonCommand
 
@@ -477,6 +478,7 @@ jobs:
           & $pythonExecutablePath -m pip wheel -v --no-deps --no-build-isolation --wheel-dir ${{ env.WHEELS_DIR }} `
             --config-settings=override=cmake.generator='Ninja' `
             --config-settings=override=cmake.build_path='${{ env.BUILD_DIR }}/genai' `
+            --config-settings $buildArgsOverride `
             --config-settings='override=wheel.build_tag="${{ github.run_number }}"' `
             ${{ needs.openvino_download.outputs.ov_wheel_source }} `
             ${{ env.SRC_DIR }}
