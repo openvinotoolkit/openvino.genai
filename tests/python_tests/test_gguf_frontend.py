@@ -9,28 +9,22 @@ See README.md, "GGUF Frontend Tests", for the steps, CI runtime and model-covera
 import gc
 import shutil
 import sys
-from dataclasses import dataclass
-from pathlib import Path
 
 import numpy as np
 import pytest
 import torch
-from huggingface_hub import snapshot_download
-from optimum.intel import OVModelForCausalLM
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 import openvino as ov
 import openvino_genai as genai
 
+from data.models import TINY_GGUF_MODELS
+from utils.gguf import load_tiny_gguf_model, reference_properties
 from utils.comparation import compare_generation_results
-from utils.constants import extra_generate_kwargs, get_default_llm_properties
+from utils.constants import extra_generate_kwargs
 from utils.hugging_face import (
-    OVConvertedModelSchema,
-    convert_models,
     generation_config_to_hf,
     run_hugging_face,
 )
-from utils.network import retry_request
 from utils.ov_genai_pipelines import (
     GGUF_PIPELINE_TYPES,
     PipelineType,
@@ -44,115 +38,11 @@ pytestmark = [
     pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065"),
 ]
 
-# Pinned GGUFs (1.8 / 25.5 / 4.9 / 47.2 MB) and their source tokenizer/configuration.
-# The HF model is reconstructed from the GGUF weights, not independently downloaded weights.
-TINY_GGUF_MODELS = [
-    pytest.param(
-        (
-            "aladar/llama-2-tiny-random-GGUF",
-            "8d5321916486e1d33c46b16990e8da6567785769",
-            "llama-2-tiny-random.gguf",
-            "yujiepan/llama-2-tiny-random",
-            "74bb065d6381fdf9fcde5896cb32267ba2c0ee0a",
-        ),
-        id="llama",
-    ),
-    pytest.param(
-        (
-            "mradermacher/tiny-random-qwen3-GGUF",
-            "058102830a84bb976597f4d8462bafe0ea319358",
-            "tiny-random-qwen3.f16.gguf",
-            "snake7gun/tiny-random-qwen3",
-            "add6406ed2f82988fd5194e343572194f71b6f61",
-        ),
-        id="qwen3",
-    ),
-    pytest.param(
-        (
-            "mradermacher/tiny-random-Phi3ForCausalLM-GGUF",
-            "ff12230de1587e824688cc6afef2af22dc2b7807",
-            "tiny-random-Phi3ForCausalLM.f16.gguf",
-            "Xenova/tiny-random-Phi3ForCausalLM",
-            "bac53a980e9402513e0a5f8433656b4f845c1b9b",
-        ),
-        id="phi3",
-    ),
-    pytest.param(
-        (
-            "ggml-org/tinygemma3-GGUF",
-            "c287502cd9e278dac8eed805c112cce5d0081e0b",
-            "tinygemma3-Q8_0.gguf",
-            "ngxson/tinygemma3_cifar",
-            "da67f59d2195a0095711f1494f8ee5823cf54591",
-        ),
-        id="gemma3",
-    ),
-]
-
-
-def reference_properties():
-    return {**get_default_llm_properties(), "DYNAMIC_QUANTIZATION_GROUP_SIZE": 0}
-
-
-@dataclass
-class TinyGGUFModel:
-    gguf_path: Path
-    reference: OVConvertedModelSchema
-
-
 @pytest.fixture(scope="module", params=TINY_GGUF_MODELS)
 def tiny_gguf_model(request, tmp_path_factory):
-    gguf_repo, gguf_revision, filename, hf_repo, hf_revision = request.param
-    gguf_dir = retry_request(
-        lambda: snapshot_download(
-            gguf_repo,
-            revision=gguf_revision,
-            allow_patterns=[filename],
-        )
-    )
-    hf_dir = retry_request(
-        lambda: snapshot_download(
-            hf_repo,
-            revision=hf_revision,
-            allow_patterns=["*.json", "tokenizer.model", "*.txt"],
-        )
-    )
-    # Use the source configuration/tokenizer: HF's GGUF loader omits some configuration
-    # fields (e.g. Qwen3 head_dim) and does not reconstruct all SentencePiece tokenizers.
-    config = AutoConfig.from_pretrained(hf_dir).get_text_config()
-    hf_tokenizer = AutoTokenizer.from_pretrained(hf_dir)
-    if hf_tokenizer.pad_token_id is None:
-        hf_tokenizer.pad_token = hf_tokenizer.eos_token
-    hf_model, loading_info = AutoModelForCausalLM.from_pretrained(
-        gguf_dir,
-        gguf_file=filename,
-        config=config,
-        torch_dtype=torch.float32,
-        output_loading_info=True,
-    )
-    assert not loading_info["missing_keys"], loading_info
-    assert not loading_info["unexpected_keys"], loading_info
-    assert not loading_info["mismatched_keys"], loading_info
-    hf_model.eval()
-    hf_model.generation_config.pad_token_id = hf_tokenizer.pad_token_id
-    reference_dir = tmp_path_factory.mktemp("gguf_optimum_reference")
-    hf_model.save_pretrained(reference_dir)
-    hf_tokenizer.save_pretrained(reference_dir)
-    del hf_model
-    gc.collect()
-
-    opt_model = OVModelForCausalLM.from_pretrained(
-        reference_dir,
-        export=True,
-        load_in_8bit=False,
-        ov_config=reference_properties(),
-    )
-    convert_models(opt_model, hf_tokenizer, reference_dir)
-    yield TinyGGUFModel(
-        Path(gguf_dir) / filename,
-        OVConvertedModelSchema(hf_repo, opt_model, hf_tokenizer, reference_dir),
-    )
-    del opt_model
+    model = load_tiny_gguf_model(request.param, tmp_path_factory)
+    yield model
+    del model
     gc.collect()
 
 
