@@ -732,7 +732,10 @@ jobs:
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
       - name: Tests
-        run: ${{ matrix.test.cmd }}
+        run: |
+          # Fail on the first native command with a non-zero exit code, not only on the last one.
+          $PSNativeCommandUseErrorActionPreference = $true
+          ${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
 
   genai_misaki_parity:
@@ -863,6 +866,8 @@ jobs:
         run: |
           # Required for C++ samples. `env.PATH: "%PATH%"` is not expanded by GHA, produces `PATH: "%PATH%"` literally. Expansion required for `pip install git+https`. If `PATH` not expanded correctly `git` is not found and installation fails.
           $env:PATH = "${{ env.INSTALL_DIR }}/runtime/bin/intel64/${{ matrix.build-type }};${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/bin;$env:PATH"
+          # Fail on the first native command with a non-zero exit code, not only on the last one.
+          $PSNativeCommandUseErrorActionPreference = $true
           ${{ matrix.test.extra_cmd }}
           python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
         env:
