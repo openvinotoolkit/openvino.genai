@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <future>
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
@@ -60,6 +61,17 @@ std::vector<EncodedGenerationResult> generate_common(
     if (lm_extra_inputs_list.has_value()) {
         OPENVINO_ASSERT(lm_extra_inputs_list->size() == input_ids.size(),
                         "lm_extra_inputs_list size must match input_ids size.");
+    }
+
+    const auto max_tokens = self->get_max_request_tokens();
+    for (size_t rid = 0; rid < input_ids.size(); ++rid) {
+        const size_t prompt_len = input_ids[rid].get_shape().size() > 1 ? input_ids[rid].get_shape()[1] : input_ids[rid].get_size();
+        OPENVINO_ASSERT(!max_tokens.has_value() || prompt_len < *max_tokens,
+                        "The requested prompt length (",
+                        prompt_len,
+                        " tokens) exceeds the maximum token capacity supported by the current cache configuration (",
+                        *max_tokens,
+                        " tokens). Increase cache_size / num_kv_blocks, reduce prompt length, or raise cache_interval_multiplier for hybrid models.");
     }
 
     std::vector<GenerationHandle> main_generations;
@@ -215,6 +227,18 @@ public:
 
     std::optional<AdapterConfig> get_pipeline_adapters() const override {
         return m_main_pipeline->get_pipeline_adapters();
+    }
+
+    std::optional<size_t> get_max_request_tokens() const override {
+        if (!m_main_pipeline && !m_draft_pipeline) {
+            return std::nullopt;
+        }
+        auto main_cap = m_main_pipeline ? m_main_pipeline->get_max_request_tokens() : std::nullopt;
+        auto draft_cap = m_draft_pipeline ? m_draft_pipeline->get_max_request_tokens() : std::nullopt;
+        if (main_cap.has_value() && draft_cap.has_value()) {
+            return std::min(*main_cap, *draft_cap);
+        }
+        return main_cap.has_value() ? main_cap : draft_cap;
     }
 
     bool has_non_finished_requests() override;
