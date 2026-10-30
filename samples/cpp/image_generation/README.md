@@ -33,12 +33,12 @@ Users can change the sample code and play with the following generation paramete
 
 ## Download and convert the models and tokenizers
 
-The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
-
 It's not required to install [../../export-requirements.txt](../../export-requirements.txt) for deployment if the model has already been exported.
 
 ```sh
-pip install --upgrade-strategy eager -r ../../requirements.txt
+pip install -r ../../requirements.txt
+# Some newer models may require the latest Optimum Intel:
+# pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
 optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 dreamlike_anime_1_0_ov/FP16
 ```
 

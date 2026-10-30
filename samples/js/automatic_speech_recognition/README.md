@@ -6,12 +6,12 @@ This example showcases inference of speech recognition models. The application d
 
 ## Download and convert the model and tokenizers
 
-The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
-
 It's not required to install [../../export-requirements.txt](../../export-requirements.txt) for deployment if the model has already been exported.
 
 ```sh
-pip install --upgrade-strategy eager -r <GENAI_ROOT_DIR>/samples/requirements.txt
+pip install -r <GENAI_ROOT_DIR>/samples/requirements.txt
+# Some newer models may require the latest Optimum Intel:
+# pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
 optimum-cli export openvino --trust-remote-code --model openai/whisper-base whisper-base
 ```
 

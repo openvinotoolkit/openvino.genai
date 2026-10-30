@@ -30,10 +30,11 @@ Windows PowerShell
 ```
 
 ## Download and convert the model and tokenizers
-The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 Install [../../export-requirements.txt](../../export-requirements.txt) if model conversion is required.
 ```sh
-pip install --upgrade-strategy eager -r ../../export-requirements.txt
+pip install -r ../../export-requirements.txt
+# Some newer models may require the latest Optimum Intel:
+# pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
 optimum-cli export openvino --model <model> <output_folder>
 ```
 If a converted model in OpenVINO IR format is available in the [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) collection on Hugging Face, you can download it directly via hf.
