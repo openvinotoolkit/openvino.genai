@@ -1,6 +1,7 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import errno
 import logging
 import shutil
 import uuid
@@ -42,19 +43,18 @@ class AtomicDownloadManager:
             return
 
         logger.info(f"Moving temp to final location: {self.temp_path} -> {self.final_path}")
-        try:
-            self.temp_path.rename(self.final_path)
-        except Exception:
-            logger.warning(f"Rename failed, falling back to shutil.move")
-            if self.final_path.exists():
-                logger.info(f"Destination created by another process during rename attempt: {self.final_path}")
-                self._cleanup_temp()
-                return
+        for attempt in range(3):
             try:
-                shutil.move(str(self.temp_path), str(self.final_path))
-            except Exception:
-                logger.exception("Error during move - assuming it was created successfully by another process")
-                self._cleanup_temp()
+                self.temp_path.rename(self.final_path)
+                return
+            except OSError as error:
+                if self.final_path.exists():
+                    logger.info(f"Destination created by another process during rename attempt: {self.final_path}")
+                    self._cleanup_temp()
+                    return
+                if error.errno not in (errno.EIO, errno.EINTR, errno.ESTALE) or attempt == 2:
+                    raise
+                logger.warning("Cache rename failed; retrying publication: %s", error)
 
     def _cleanup_temp(self) -> None:
         if self.temp_path.exists():
