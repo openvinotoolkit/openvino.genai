@@ -32,6 +32,12 @@ public:
         std::optional<std::string> padding_side;
 
         /**
+         * @brief Instruction for instruction-following rerankers (e.g. Qwen3). When unset, a default
+         * web-search retrieval instruction is used. Ignored by cross-encoder rerankers.
+         */
+        std::optional<std::string> instruction;
+
+        /**
          * @brief Constructs text rerank pipeline configuration
          */
         Config() = default;
@@ -112,6 +118,11 @@ private:
  * @brief Number of documents to return after reranking sorted by score
  */
 static constexpr ov::Property<size_t> top_n{"top_n"};
+
+/**
+ * @brief Instruction used by instruction-following rerankers (e.g. Qwen3)
+ */
+static constexpr ov::Property<std::string> instruction{"instruction"};
 
 }  // namespace genai
 }  // namespace ov
