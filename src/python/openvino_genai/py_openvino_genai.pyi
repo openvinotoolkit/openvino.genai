@@ -326,22 +326,27 @@ class ASRPipeline:
                         Only supported for Qwen3-ASR. Required when requesting
                         generate(..., word_timestamps=True).
         """
-    def generate(self, audio_inputs: collections.abc.Sequence[typing.SupportsFloat], generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> ASRDecodedResults:
+    def generate(self, audio_inputs: collections.abc.Sequence[typing.SupportsFloat] | collections.abc.Sequence[collections.abc.Sequence[typing.SupportsFloat]], generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> ASRDecodedResults:
         """
-            High level generate that receives raw speech as a vector of floats and returns decoded output.
+            High level generate that receives raw speech as a single audio input or a batch of audio inputs and returns decoded output.
+            The generation configuration applies to all audio inputs. Batch results are returned in input order.
+            Batches must be non-empty. Models without batching support accept at most one audio input per call,
+            either directly or as a batch of one.
         
-            :param audio_inputs: inputs in the form of list of floats. Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
-            :type audio_inputs: list[float]
+            :param audio_inputs: a single audio input as a list of floats, or a non-empty list of such lists for a batch.
+                                 Each audio input is required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
+            :type audio_inputs: list[float] | list[list[float]]
         
             :param generation_config: generation_config
             :type generation_config: ASRGenerationConfig
         
-            :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped.
-                             Streamer supported for short-form audio (< 30 seconds) with `return_timestamps=False` only
-            :type : Callable[[str], bool], ov.genai.StreamerBase
+            :param streamer: streamer either as a callback or as a StreamerBase instance.
+                             The callback receives decoded text and may return None or an integer StreamingStatus value.
+                             Handling of stop statuses depends on the model. Streaming is not supported for batches larger than one.
+            :type streamer: Callable[[str], int | None] | StreamerBase | None
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to ASRGenerationConfig fields.
-            :type : dict
+            :type kwargs: dict
         
             :return: return results in decoded form
             :rtype: ASRDecodedResults
