@@ -1,6 +1,7 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import enum
+import platform
 import sys
 import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
 
