@@ -56,7 +56,7 @@ def _load_ref_audio(file_path):
 def _write_audio_and_perf(result, output_file_path):
     assert len(result.speeches) == 1, "Expected only one waveform for the requested input text"
     speech_data = np.array(result.speeches[0].data).reshape(-1)
-    sf.write(output_file_path, speech_data, samplerate=result.output_sample_rate)
+    sf.write(output_file_path, speech_data, samplerate=result.output_sample_rate, subtype="FLOAT")
     print(f'[Info] Text successfully converted to audio file "{output_file_path}".')
 
     perf_metrics = result.perf_metrics
@@ -93,6 +93,7 @@ def _build_parser():
     base.add_argument("--language", default="", help="Optional language (for example: english). Omit for auto.")
     base.add_argument("--device", default="CPU", help="Device to run the model on (default: CPU)")
     base.add_argument("--max_new_tokens", type=int, default=None, help="Optional cap for generated tokens")
+    base.add_argument("--seed", type=int, default=None, help="Optional RNG seed for deterministic generation")
     base.add_argument("--output_wav_path", default="output_audio.wav", help="Output WAV path")
 
     customvoice = subparsers.add_parser("customvoice", help="Qwen3-TTS CustomVoice generation")
@@ -103,6 +104,7 @@ def _build_parser():
     customvoice.add_argument("--instruct", default="", help="Optional natural-language style instruction")
     customvoice.add_argument("--device", default="CPU", help="Device to run the model on (default: CPU)")
     customvoice.add_argument("--max_new_tokens", type=int, default=None, help="Optional cap for generated tokens")
+    customvoice.add_argument("--seed", type=int, default=None, help="Optional RNG seed for deterministic generation")
     customvoice.add_argument("--output_wav_path", default="output_audio.wav", help="Output WAV path")
 
     voice_design = subparsers.add_parser("voice-design", help="Qwen3-TTS VoiceDesign generation")
@@ -112,6 +114,7 @@ def _build_parser():
     voice_design.add_argument("--language", default="", help="Optional language (for example: english). Omit for auto.")
     voice_design.add_argument("--device", default="CPU", help="Device to run the model on (default: CPU)")
     voice_design.add_argument("--max_new_tokens", type=int, default=None, help="Optional cap for generated tokens")
+    voice_design.add_argument("--seed", type=int, default=None, help="Optional RNG seed for deterministic generation")
     voice_design.add_argument("--output_wav_path", default="output_audio.wav", help="Output WAV path")
 
     return parser
@@ -140,6 +143,8 @@ def _run_base(args):
         generation_properties["ref_codec_ids"] = _load_reference_codes(args.ref_codec_ids_file_path)
     if args.max_new_tokens is not None:
         generation_properties["max_new_tokens"] = args.max_new_tokens
+    if args.seed is not None:
+        generation_properties["rng_seed"] = args.seed
 
     icl_mode = bool(args.ref_text.strip())
     print(f"[Info] Qwen3-TTS Base voice clone ({'ICL' if icl_mode else 'x-vector'} mode).")
@@ -180,6 +185,8 @@ def _run_customvoice(args):
         generation_properties["instruct"] = args.instruct
     if args.max_new_tokens is not None:
         generation_properties["max_new_tokens"] = args.max_new_tokens
+    if args.seed is not None:
+        generation_properties["rng_seed"] = args.seed
 
     result = pipe.generate(args.text, None, **generation_properties)
     _write_audio_and_perf(result, args.output_wav_path)
@@ -196,6 +203,8 @@ def _run_voice_design(args):
         generation_properties["language"] = args.language
     if args.max_new_tokens is not None:
         generation_properties["max_new_tokens"] = args.max_new_tokens
+    if args.seed is not None:
+        generation_properties["rng_seed"] = args.seed
 
     result = pipe.generate(args.text, None, **generation_properties)
     _write_audio_and_perf(result, args.output_wav_path)
