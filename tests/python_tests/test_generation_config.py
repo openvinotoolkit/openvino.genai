@@ -140,6 +140,36 @@ def test_invalid_fields_assinment_rises(fields):
         config.validate()
 
 
+unsigned_fields = [
+    "max_new_tokens",
+    "max_length",
+    "min_new_tokens",
+    "logprobs",
+    "num_beam_groups",
+    "num_beams",
+    "num_return_sequences",
+    "no_repeat_ngram_size",
+    "top_k",
+    "rng_seed",
+    "pruning_ratio",
+    "num_assistant_tokens",
+    "max_ngram_size",
+    "branching_factor",
+    "tree_depth",
+]
+
+
+@pytest.mark.parametrize("value", [-1, "-1", -1.0])
+@pytest.mark.parametrize("field", unsigned_fields)
+def test_negative_value_for_unsigned_field_throws(field, value):
+    # kwargs must not wrap a negative value to SIZE_MAX, whatever its Python type
+    with pytest.raises(RuntimeError, match=f"'{field}' must be non-negative"):
+        GenerationConfig(**{field: value})
+    config = GenerationConfig()
+    with pytest.raises(RuntimeError, match=f"'{field}' must be non-negative"):
+        config.update_generation_config(**{field: value})
+
+
 # Whisper lang_to_id uses the wrapped key format from converted-model
 # generation_config.json files.
 WHISPER_LANG_TO_ID = {"<|en|>": 50259, "<|fr|>": 50265, "<|de|>": 50261}

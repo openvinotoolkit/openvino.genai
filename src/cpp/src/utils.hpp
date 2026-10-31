@@ -94,7 +94,14 @@ void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T&
             }
         }
         else {
-            param = it->second.as<typename OmitOptional<T>::value>();
+            using Value = typename OmitOptional<T>::value;
+            if constexpr (std::is_integral_v<Value> && std::is_unsigned_v<Value> && !std::is_same_v<Value, bool>) {
+                const ov::Any& value = it->second;
+                // Signed ints, floats and strings such as "-1" would otherwise wrap to a huge unsigned value
+                const bool is_negative = !value.is<Value>() && value.as<double>() < 0;
+                OPENVINO_ASSERT(!is_negative, "'", name, "' must be non-negative, but got ", value.as<std::string>());
+            }
+            param = it->second.as<Value>();
         }
     }
 }
