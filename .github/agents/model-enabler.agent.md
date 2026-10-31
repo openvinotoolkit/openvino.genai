@@ -1,6 +1,6 @@
 ---
 description: "Enable a new model for OpenVINO GenAI. Use when: validating a new HuggingFace model, checking model support, running model-checker, updating supported-models docs, model enablement workflow, enabling a model with optimum-intel."
-tools: [read, edit, search, execute, todo]
+tools: [read, edit, search, execute, todo, agent]
 argument-hint: "<model_id> <task>  e.g. google/gemma-3-4b-it image-text-to-text"
 ---
 
