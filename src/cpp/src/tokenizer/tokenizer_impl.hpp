@@ -87,6 +87,7 @@ public:
                                     const std::optional<JsonContainer>& extra_context) const;
 
     void set_chat_template(const std::string& chat_template);
+    void set_chat_template_patcher(std::function<std::string(const std::string&)> patcher);
     std::string get_chat_template() const;
     std::string get_original_chat_template() const;
     std::shared_ptr<StructuredOutputController> get_structured_output_controller(std::optional<int> vocab_size = std::nullopt);
@@ -95,6 +96,8 @@ private:
     std::shared_ptr<const minja::chat_template> get_cached_minja_chat_template(const std::string& chat_template) const;
 
     mutable std::mutex m_chat_template_mutex;
+    // Applied to every template set afterwards; must be stateless (tokenizer may outlive the registrant).
+    std::function<std::string(const std::string&)> m_chat_template_patcher;
     mutable std::unordered_map<std::string, std::shared_ptr<const minja::chat_template>> m_minja_chat_template_cache;
 };
 

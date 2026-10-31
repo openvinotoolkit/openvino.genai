@@ -156,6 +156,10 @@ void Tokenizer::set_chat_template(const std::string& chat_template) {
     m_pimpl->set_chat_template(chat_template);
 }
 
+void set_chat_template_patcher(Tokenizer& tokenizer, std::function<std::string(const std::string&)> patcher) {
+    tokenizer.m_pimpl->set_chat_template_patcher(std::move(patcher));
+}
+
 Vocab Tokenizer::get_vocab() const {
     const auto& vocab_vector = get_vocab_vector();
 
