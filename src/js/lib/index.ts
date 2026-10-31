@@ -16,6 +16,7 @@ import { Text2ImagePipeline as Text2Image } from "./pipelines/text2ImagePipeline
 import { Image2ImagePipeline as Image2Image } from "./pipelines/image2ImagePipeline.js";
 import { InpaintingPipeline as Inpainting } from "./pipelines/inpaintingPipeline.js";
 import { Text2SpeechPipeline as Text2Speech } from "./pipelines/text2SpeechPipeline.js";
+import { Text2VideoPipeline as Text2Video } from "./pipelines/text2VideoPipeline.js";
 import {
   LLMPipelineProperties,
   VLMPipelineProperties,
@@ -26,6 +27,7 @@ import {
   Image2ImagePipelineProperties,
   InpaintingPipelineProperties,
   Text2SpeechPipelineProperties,
+  Text2VideoPipelineProperties,
 } from "./utils.js";
 import { EmbeddingPipelineProperties } from "./addon.js";
 
@@ -174,6 +176,17 @@ class PipelineFactory {
 
     return pipeline;
   }
+
+  static async Text2VideoPipeline(
+    modelPath: string,
+    device: string = "CPU",
+    properties: Text2VideoPipelineProperties = {},
+  ) {
+    const pipeline = new Text2Video(modelPath, device, properties);
+    await pipeline.init();
+
+    return pipeline;
+  }
 }
 
 export const {
@@ -189,6 +202,7 @@ export const {
   Image2ImagePipeline,
   InpaintingPipeline,
   Text2SpeechPipeline,
+  Text2VideoPipeline,
 } = PipelineFactory;
 export {
   DecodedResults,
@@ -213,6 +227,7 @@ export {
   ImageGenerationPerfMetrics,
   Text2ImagePerfMetrics,
   Text2SpeechPerfMetrics,
+  VideoGenerationPerfMetrics,
 } from "./perfMetrics.js";
 export * from "./utils.js";
 export * from "./addon.js";

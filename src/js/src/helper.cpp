@@ -4,6 +4,7 @@
 #include "include/helper.hpp"
 
 #include <cmath>
+#include <limits>
 #include <typeindex>
 
 #include "include/addon.hpp"
@@ -885,6 +886,150 @@ ov::genai::ImageGenerationConfig js_to_cpp<ov::genai::ImageGenerationConfig>(con
     return config;
 }
 
+namespace {
+// Optional fields of the generation configs accept null to unset them
+template <typename T>
+std::optional<T> js_to_optional(const Napi::Env& env, const Napi::Value& value) {
+    if (value.IsNull()) {
+        return std::nullopt;
+    }
+    return js_to_cpp<T>(env, value);
+}
+
+// Unset optional fields of the generation configs are undefined in JS
+template <typename T>
+Napi::Value optional_to_js(const Napi::Env& env, const std::optional<T>& value) {
+    if (!value.has_value()) {
+        return env.Undefined();
+    }
+    return cpp_to_js<T, Napi::Value>(env, *value);
+}
+}  // namespace
+
+void update_video_generation_config(const Napi::Env& env,
+                                    const Napi::Value& value,
+                                    ov::genai::VideoGenerationConfig& config) {
+    using Config = ov::genai::VideoGenerationConfig;
+    using Setter = void (*)(const Napi::Env&, const Napi::Value&, Config&);
+    static const std::map<std::string, Setter> setters = {
+        {"negative_prompt",
+         [](const Napi::Env& env, const Napi::Value& v, Config& c) {
+             c.negative_prompt = js_to_optional<std::string>(env, v);
+         }},
+        {"num_videos_per_prompt",
+         [](const Napi::Env& env, const Napi::Value& v, Config& c) {
+             c.num_videos_per_prompt = js_to_cpp<size_t>(env, v);
+         }},
+        {"guidance_scale",
+         [](const Napi::Env& env, const Napi::Value& v, Config& c) {
+             c.guidance_scale = js_to_cpp<float>(env, v);
+         }},
+        {"height",
+         [](const Napi::Env& env, const Napi::Value& v, Config& c) {
+             c.height = js_to_cpp<int64_t>(env, v);
+         }},
+        {"width",
+         [](const Napi::Env& env, const Napi::Value& v, Config& c) {
+             c.width = js_to_cpp<int64_t>(env, v);
+         }},
+        {"num_inference_steps",
+         [](const Napi::Env& env, const Napi::Value& v, Config& c) {
+             c.num_inference_steps = js_to_cpp<int64_t>(env, v);
+         }},
+        {"max_sequence_length",
+         [](const Napi::Env& env, const Napi::Value& v, Config& c) {
+             const auto value = js_to_cpp<int64_t>(env, v);
+             OPENVINO_ASSERT(value >= std::numeric_limits<int>::min() && value <= std::numeric_limits<int>::max(),
+                             "The value is out of the int range.");
+             c.max_sequence_length = static_cast<int>(value);
+         }},
+        {"guidance_rescale",
+         [](const Napi::Env& env, const Napi::Value& v, Config& c) {
+             c.guidance_rescale = js_to_optional<float>(env, v);
+         }},
+        {"num_frames",
+         [](const Napi::Env& env, const Napi::Value& v, Config& c) {
+             c.num_frames = js_to_cpp<size_t>(env, v);
+         }},
+        {"frame_rate",
+         [](const Napi::Env& env, const Napi::Value& v, Config& c) {
+             c.frame_rate = js_to_optional<float>(env, v);
+         }},
+        {"audio_guidance_scale",
+         [](const Napi::Env& env, const Napi::Value& v, Config& c) {
+             c.audio_guidance_scale = js_to_optional<float>(env, v);
+         }},
+        {"stg_scale",
+         [](const Napi::Env& env, const Napi::Value& v, Config& c) {
+             c.stg_scale = js_to_optional<float>(env, v);
+         }},
+        {"audio_stg_scale",
+         [](const Napi::Env& env, const Napi::Value& v, Config& c) {
+             c.audio_stg_scale = js_to_optional<float>(env, v);
+         }},
+        {"modality_scale",
+         [](const Napi::Env& env, const Napi::Value& v, Config& c) {
+             c.modality_scale = js_to_optional<float>(env, v);
+         }},
+        {"audio_modality_scale",
+         [](const Napi::Env& env, const Napi::Value& v, Config& c) {
+             c.audio_modality_scale = js_to_optional<float>(env, v);
+         }},
+        {"audio_guidance_rescale",
+         [](const Napi::Env& env, const Napi::Value& v, Config& c) {
+             c.audio_guidance_rescale = js_to_optional<float>(env, v);
+         }},
+        {"spatio_temporal_guidance_blocks",
+         [](const Napi::Env& env, const Napi::Value& v, Config& c) {
+             c.spatio_temporal_guidance_blocks = js_to_optional<std::vector<int64_t>>(env, v);
+         }},
+    };
+
+    OPENVINO_ASSERT(value.IsObject() && !value.IsArray(), "VideoGenerationConfig must be an object.");
+    const auto object = value.As<Napi::Object>();
+    const auto keys = object.GetPropertyNames();
+    for (uint32_t i = 0; i < keys.Length(); ++i) {
+        const std::string key = keys.Get(i).As<Napi::String>().Utf8Value();
+        const auto setter = setters.find(key);
+        OPENVINO_ASSERT(setter != setters.end(), "Unsupported VideoGenerationConfig property: ", key);
+        const Napi::Value field = object.Get(key);
+        // Undefined fields keep their current value
+        if (field.IsUndefined()) {
+            continue;
+        }
+        try {
+            setter->second(env, field, config);
+        } catch (const std::exception& ex) {
+            OPENVINO_THROW("Invalid value for VideoGenerationConfig.", key, ". ", ex.what());
+        }
+    }
+}
+
+ov::AnyMap to_generation_properties(const ov::genai::VideoGenerationConfig& config) {
+    const auto optional_value = [](const auto& value) {
+        return value ? ov::Any(*value) : ov::Any();
+    };
+    return {
+        {"negative_prompt", optional_value(config.negative_prompt)},
+        {"num_videos_per_prompt", config.num_videos_per_prompt},
+        {"guidance_scale", config.guidance_scale},
+        {"height", config.height},
+        {"width", config.width},
+        {"num_inference_steps", config.num_inference_steps},
+        {"max_sequence_length", config.max_sequence_length},
+        {"guidance_rescale", optional_value(config.guidance_rescale)},
+        {"num_frames", config.num_frames},
+        {"frame_rate", optional_value(config.frame_rate)},
+        {"audio_guidance_scale", optional_value(config.audio_guidance_scale)},
+        {"stg_scale", optional_value(config.stg_scale)},
+        {"audio_stg_scale", optional_value(config.audio_stg_scale)},
+        {"modality_scale", optional_value(config.modality_scale)},
+        {"audio_modality_scale", optional_value(config.audio_modality_scale)},
+        {"audio_guidance_rescale", optional_value(config.audio_guidance_rescale)},
+        {"spatio_temporal_guidance_blocks", optional_value(config.spatio_temporal_guidance_blocks)},
+    };
+}
+
 template <>
 std::vector<ov::Tensor> js_to_cpp<std::vector<ov::Tensor>>(const Napi::Env& env, const Napi::Value& value) {
     std::vector<ov::Tensor> tensors;
@@ -1241,6 +1386,15 @@ Napi::Value cpp_to_js<std::vector<size_t>, Napi::Value>(const Napi::Env& env, co
     auto js_array = Napi::Array::New(env, value.size());
     for (auto i = 0; i < value.size(); i++) {
         js_array[i] = Napi::Number::New(env, value[i]);
+    }
+    return js_array;
+}
+
+template <>
+Napi::Value cpp_to_js<std::vector<int64_t>, Napi::Value>(const Napi::Env& env, const std::vector<int64_t>& value) {
+    auto js_array = Napi::Array::New(env, value.size());
+    for (uint32_t i = 0; i < value.size(); i++) {
+        js_array[i] = cpp_to_js<int64_t, Napi::Value>(env, value[i]);
     }
     return js_array;
 }
@@ -1801,6 +1955,47 @@ Napi::Value cpp_to_js<ov::genai::ImageGenerationPerfMetrics, Napi::Value>(
     const Napi::Env& env,
     const ov::genai::ImageGenerationPerfMetrics& metrics) {
     return Text2ImagePerfMetricsWrapper::wrap(env, metrics);
+}
+
+template <>
+Napi::Value cpp_to_js<ov::genai::VideoGenerationConfig, Napi::Value>(const Napi::Env& env,
+                                                                     const ov::genai::VideoGenerationConfig& config) {
+    Napi::Object obj = Napi::Object::New(env);
+
+    obj.Set("negative_prompt", cpp_to_js<std::optional<std::string>, Napi::Value>(env, config.negative_prompt));
+    obj.Set("num_videos_per_prompt", cpp_to_js<size_t, Napi::Value>(env, config.num_videos_per_prompt));
+    obj.Set("guidance_scale", cpp_to_js<float, Napi::Value>(env, config.guidance_scale));
+    obj.Set("height", cpp_to_js<int64_t, Napi::Value>(env, config.height));
+    obj.Set("width", cpp_to_js<int64_t, Napi::Value>(env, config.width));
+    obj.Set("num_inference_steps", cpp_to_js<int64_t, Napi::Value>(env, config.num_inference_steps));
+    obj.Set("max_sequence_length",
+            cpp_to_js<int64_t, Napi::Value>(env, static_cast<int64_t>(config.max_sequence_length)));
+    obj.Set("guidance_rescale", optional_to_js(env, config.guidance_rescale));
+    obj.Set("num_frames", cpp_to_js<size_t, Napi::Value>(env, config.num_frames));
+    obj.Set("frame_rate", optional_to_js(env, config.frame_rate));
+    obj.Set("audio_guidance_scale", optional_to_js(env, config.audio_guidance_scale));
+    obj.Set("stg_scale", optional_to_js(env, config.stg_scale));
+    obj.Set("audio_stg_scale", optional_to_js(env, config.audio_stg_scale));
+    obj.Set("modality_scale", optional_to_js(env, config.modality_scale));
+    obj.Set("audio_modality_scale", optional_to_js(env, config.audio_modality_scale));
+    obj.Set("audio_guidance_rescale", optional_to_js(env, config.audio_guidance_rescale));
+    obj.Set("spatio_temporal_guidance_blocks", optional_to_js(env, config.spatio_temporal_guidance_blocks));
+
+    return obj;
+}
+
+template <>
+Napi::Value cpp_to_js<ov::genai::VideoGenerationResult, Napi::Value>(const Napi::Env& env,
+                                                                     const ov::genai::VideoGenerationResult& result) {
+    Napi::Object obj = Napi::Object::New(env);
+    obj.Set("video", cpp_to_js<ov::Tensor, Napi::Value>(env, result.video));
+    // VideoGenerationPerfMetrics adds nothing to ImageGenerationPerfMetrics, so the image wrapper is reused
+    obj.Set("perfMetrics", cpp_to_js<ov::genai::ImageGenerationPerfMetrics, Napi::Value>(env, result.performance_stat));
+    // Models without audio return an empty audio tensor
+    const bool has_audio = result.audio && result.audio.get_size() > 0;
+    obj.Set("audio", has_audio ? cpp_to_js<ov::Tensor, Napi::Value>(env, result.audio) : env.Undefined());
+    obj.Set("audioSampleRate", Napi::Number::New(env, result.audio_sample_rate));
+    return obj;
 }
 
 bool is_napi_value_int(const Napi::Env& env, const Napi::Value& num) {

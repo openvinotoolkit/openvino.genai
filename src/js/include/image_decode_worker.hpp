@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <memory>
+#include <type_traits>
 #include <utility>
 
 #include <napi.h>
@@ -14,6 +15,10 @@
 
 template <typename PipelineType>
 class ImageDecodeWorker : public Napi::AsyncWorker {
+    // ov::Tensor for the image pipelines, ov::genai::VideoGenerationResult for Text2VideoPipeline.
+    using DecodeResult =
+        std::decay_t<decltype(std::declval<PipelineType&>().decode(std::declval<const ov::Tensor&>()))>;
+
 public:
     ImageDecodeWorker(Napi::Function& callback,
                       std::shared_ptr<PipelineType> pipe,
@@ -26,12 +31,12 @@ public:
     ~ImageDecodeWorker() override = default;
 
     void Execute() override {
-        m_image = m_pipe->decode(m_latent);
+        m_result = m_pipe->decode(m_latent);
     }
 
     void OnOK() override {
         m_is_busy->store(false);
-        Callback().Call({Env().Null(), cpp_to_js<ov::Tensor, Napi::Value>(Env(), m_image)});
+        Callback().Call({Env().Null(), cpp_to_js<DecodeResult, Napi::Value>(Env(), m_result)});
     }
 
     void OnError(const Napi::Error& e) override {
@@ -42,6 +47,6 @@ public:
 private:
     std::shared_ptr<PipelineType> m_pipe;
     ov::Tensor m_latent;
-    ov::Tensor m_image;
+    DecodeResult m_result;
     std::shared_ptr<std::atomic<bool>> m_is_busy;
 };
