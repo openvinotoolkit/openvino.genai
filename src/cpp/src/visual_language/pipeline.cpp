@@ -451,7 +451,8 @@ public:
                 vlm_utils::rebase_media_sequence(audio_sequence, m_audio_id);
             }
         } else {
-            m_inputs_embedder->set_apply_chat_template_status(generation_config.apply_chat_template);
+            m_inputs_embedder->set_prompt_formatting(
+                generation_config.apply_chat_template ? PromptFormatting::NeedsTemplate : PromptFormatting::Raw);
         }
 
         auto finish_info = prepare_inputs_and_generate(

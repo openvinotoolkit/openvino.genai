@@ -220,6 +220,82 @@ Leave `frames_indices` empty to apply model-specific sampling (e.g. for Qwen3-VL
 
 Refer to the video-to-text [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/visual_language_chat/video_to_text_chat.py) and [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/visual_language_chat/video_to_text_chat.cpp) samples for more details.
 
+### Speech Output Streaming
+
+For models with audio output, such as Qwen3-Omni, `OmniPipeline` returns speech together with the text. Pass a speech streamer to receive the audio in chunks while it is generated. Each chunk is a `[1, 1, N]` f32 tensor with PCM samples at 24 kHz.
+
+Two `OmniTalkerSpeechConfig` fields control the chunks:
+
+- `audio_chunk_frames` - the number of codec frames in each chunk. The default is 4. For Qwen3-Omni, one frame is 80 ms of audio, so the first chunk is about 297 ms and later chunks are 320 ms. The first chunk is shorter because the vocoder trims its warmup once per utterance. Smaller values lower the time to first audio, but cost more vocoder time per second of audio and can fall behind real time.
+- `audio_chunk_left_context_frames` - the number of earlier frames the vocoder decodes together with each chunk, so the chunk starts with the same history as a non-streamed decode. The default is 25. Larger values give smoother seams between chunks, but cost more vocoder time. 0 decodes every chunk on its own: each chunk then loses the warmup samples, so the streamed audio is shorter than the non-streamed audio.
+
+Without a speech streamer, both fields have no effect and the whole audio is returned in `speech_result.waveforms`.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        import openvino_genai as ov_genai
+
+        pipe = ov_genai.OmniPipeline(model_path, "CPU")
+
+        text_config = ov_genai.GenerationConfig()
+        text_config.max_new_tokens = 100
+
+        speech_config = ov_genai.OmniTalkerSpeechConfig(model_path)
+        speech_config.audio_chunk_frames = 4
+        speech_config.audio_chunk_left_context_frames = 25
+
+        def speech_streamer(chunk):
+            # Play or save the chunk here
+            return ov_genai.StreamingStatus.RUNNING
+
+        result = pipe.generate(prompt, images=images, text_config=text_config,
+                               talker_speech_config=speech_config, speech_streamer=speech_streamer)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        int main() {
+            ov::genai::OmniPipeline pipe(model_path, "CPU");
+
+            ov::genai::GenerationConfig text_config;
+            text_config.max_new_tokens = 100;
+
+            ov::genai::OmniTalkerSpeechConfig speech_config(model_path);
+            speech_config.audio_chunk_frames = 4;
+            speech_config.audio_chunk_left_context_frames = 25;
+
+            auto speech_streamer = [](const ov::Tensor& chunk) {
+                // Play or save the chunk here
+                return ov::genai::StreamingStatus::RUNNING;
+            };
+
+            auto result = pipe.generate(prompt, images, text_config, speech_config, std::monostate{}, speech_streamer);
+        }
+        ```
+    </TabItemCpp>
+    <TabItemJS>
+        ```javascript
+        import { OmniPipeline, StreamingStatus } from 'openvino-genai-node';
+
+        const pipe = await OmniPipeline(modelPath, "CPU");
+
+        const result = await pipe.generate(prompt, {
+            images: images,
+            textConfig: { max_new_tokens: 100 },
+            talkerSpeechConfig: {
+                audio_chunk_frames: 4,
+                audio_chunk_left_context_frames: 25
+            },
+            speechStreamer: (chunk) => {
+                // Play or save the chunk here
+                return StreamingStatus.RUNNING;
+            }
+        });
+        ```
+    </TabItemJS>
+</LanguageTabs>
+
 ### Working with LoRA Adapters
 
 For Vision Language Models (VLMs), LoRA adapters can customize the generated text by applying adapters to the language-model (LLM) part.
