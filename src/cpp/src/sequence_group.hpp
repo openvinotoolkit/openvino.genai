@@ -61,6 +61,9 @@ class Sequence {
 
     TokenIds m_generated_ids;
     LogProbs m_generated_log_probs;
+    // Per-position logprobs of GenerationConfig::logprob_token_ids; parallel to m_generated_log_probs
+    // when the sampling path supports them (greedy/multinomial, no speculative decoding).
+    std::vector<std::vector<std::pair<int64_t, float>>> m_requested_token_logprobs;
     uint64_t m_grouped_id;
     uint64_t m_id = _get_next_global_sequence_id();
     ov::Tensor m_hidden_state = ov::Tensor();
@@ -99,6 +102,7 @@ class Sequence {
     Sequence(const Sequence& seq, const uint64_t id) :
         m_generated_ids(seq.m_generated_ids),
         m_generated_log_probs(seq.m_generated_log_probs),
+        m_requested_token_logprobs(seq.m_requested_token_logprobs),
         m_grouped_id(id),
         m_hidden_state(seq.m_hidden_state),
         m_accumulate_hidden_states(seq.m_accumulate_hidden_states),
@@ -178,6 +182,10 @@ public:
         m_generated_ids.push_back(token_id);
     }
 
+    void append_requested_token_logprobs(std::vector<std::pair<int64_t, float>>&& requested_token_logprobs) {
+        m_requested_token_logprobs.push_back(std::move(requested_token_logprobs));
+    }
+
     void update_hidden_state(const ov::Tensor& tensor) {
         m_hidden_state = tensor;
     }
@@ -231,6 +239,9 @@ public:
             m_cumulative_log_prob -= m_generated_log_probs.back();
             m_generated_log_probs.pop_back();
             m_generated_ids.pop_back();
+            if (!m_requested_token_logprobs.empty()) {
+                m_requested_token_logprobs.pop_back();
+            }
         }
         if (m_type == SequenceGroupType::EMBEDDINGS) {
             const size_t tokens_to_remove = static_cast<size_t>(n);
@@ -265,6 +276,12 @@ public:
                 output.generated_ids = std::move(token_id);
                 output.generated_log_probs = std::move(log_probs);
                 output.finish_reason = get_finish_reason();
+                // The entry is only populated when the sampling path supports requested-token logprobs
+                // and the window aligns with the generated positions.
+                if (offset_back <= m_requested_token_logprobs.size()) {
+                    output.requested_token_logprobs.assign(m_requested_token_logprobs.begin() + offset,
+                                                           m_requested_token_logprobs.begin() + offset_back);
+                }
             }
         }
         return output;
@@ -276,6 +293,10 @@ public:
 
     const TokenIds & get_generated_ids() const {
         return m_generated_ids;
+    }
+
+    const std::vector<std::vector<std::pair<int64_t, float>>> & get_requested_token_logprobs() const {
+        return m_requested_token_logprobs;
     }
 
     const LogProbs & get_generated_log_probs() const {
