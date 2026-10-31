@@ -1664,6 +1664,70 @@ def test_vlm_npu_no_exception(ov_npu_pipe_model: VlmModelInfo, cat_tensor):
     ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
 
 
+@pytest.mark.transformers_dependent(reason="Qwen2.5-VL export requires transformers<=5.0 with pinned optimum-intel")
+@pytest.mark.skipif(
+    is_transformers_version(">", "5.0.0"),
+    reason="Qwen2.5-VL export requires transformers<=5.0 with pinned optimum-intel",
+)
+def test_vlm_recovery_after_streaming_validation_error():
+    models_path = _get_ov_model("optimum-intel-internal-testing/tiny-random-qwen2.5-vl")
+    pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND="SDPA")
+    image = openvino.Tensor(np.zeros((336, 336, 3), dtype=np.uint8))
+    prompt = "Describe the image."
+    generation_config = _setup_generation_config(pipe, max_new_tokens=8, do_sample=False, ignore_eos=True)
+    baseline = pipe.generate(prompt, image=image, generation_config=generation_config)
+
+    failed_prompt = "word " * 1024
+    assert pipe.get_tokenizer().encode(failed_prompt).input_ids.size > baseline.perf_metrics.get_num_input_tokens()
+    failed_config = _setup_generation_config(pipe, max_new_tokens=8, do_sample=False)
+    failed_config.num_beams = 2
+    failed_config.num_return_sequences = 1
+
+    for _ in range(2):
+        # Streaming validation happens after embeddings have populated the token cache.
+        with pytest.raises(RuntimeError, match="Currently streaming is possible only with batch size=1"):
+            pipe.generate(failed_prompt, image=image, generation_config=failed_config, streamer=lambda _: False)
+
+        for _ in range(2):
+            recovered = pipe.generate(prompt, image=image, generation_config=generation_config)
+            assert recovered.texts == baseline.texts
+            assert recovered.perf_metrics.get_num_input_tokens() == baseline.perf_metrics.get_num_input_tokens()
+
+
+@pytest.mark.transformers_dependent(reason="Qwen2.5-VL export requires transformers<=5.0 with pinned optimum-intel")
+@pytest.mark.skipif(
+    is_transformers_version(">", "5.0.0"),
+    reason="Qwen2.5-VL export requires transformers<=5.0 with pinned optimum-intel",
+)
+@pytest.mark.skipif(**should_skip_npuw_tests())
+def test_vlm_npu_recovery_after_prompt_length_error():
+    models_path = _get_ov_model("optimum-intel-internal-testing/tiny-random-qwen2.5-vl")
+    max_prompt_len = 2048
+    properties = {
+        "DEVICE_PROPERTIES": {
+            "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": max_prompt_len}
+        }
+    }
+    pipe = VLMPipeline(models_path, "NPU", config=properties)
+    image = openvino.Tensor(np.zeros((336, 336, 3), dtype=np.uint8))
+    prompt = "Describe the image."
+    generation_config = _setup_generation_config(pipe, max_new_tokens=8, do_sample=False, ignore_eos=True)
+    baseline = pipe.generate(prompt, image=image, generation_config=generation_config)
+
+    failed_prompt = "word " * (2 * max_prompt_len)
+    assert pipe.get_tokenizer().encode(failed_prompt).input_ids.size > max_prompt_len
+    failed_config = _setup_generation_config(pipe, max_new_tokens=8, do_sample=False)
+
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match="VLM pipeline on NPU may only process input embeddings up to"):
+            pipe.generate(failed_prompt, image=image, generation_config=failed_config)
+
+        for _ in range(2):
+            recovered = pipe.generate(prompt, image=image, generation_config=generation_config)
+            assert recovered.texts == baseline.texts
+            assert recovered.perf_metrics.get_num_input_tokens() == baseline.perf_metrics.get_num_input_tokens()
+
+
 @pytest.fixture(
     scope="module",
     params=[
