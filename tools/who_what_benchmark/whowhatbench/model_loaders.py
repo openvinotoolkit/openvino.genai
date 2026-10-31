@@ -1354,7 +1354,7 @@ def load_model(
     ):
         sanitized_kwargs["model_type"] = model_type
         return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
-    elif model_type == "image-to-image":
+    elif model_type in ("image-to-image", "multi-image-to-image"):
         return load_imagetext2image_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "image-inpainting":
         return load_inpainting_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)

@@ -112,6 +112,47 @@ wwb --base-model SimianLuo/LCM_Dreamshaper_v7 --gt-data lcm_test/gt.csv --model-
 wwb --target-model sd-lcm-int8 --gt-data lcm_test/gt.csv --model-type text-to-image --genai
 ```
 
+### Compare Multiple-image-to-image models
+
+Use `--model-type multi-image-to-image` for models such as Qwen-Image 2.1 that condition generation on several ordered images. The default dataset is [OmniGen2/OmniContext](https://huggingface.co/datasets/OmniGen2/OmniContext) (Apache-2.0); WWB streams its `train` split, keeps only records with exactly two `input_images`, and evaluates 3 samples by default.
+
+```sh
+# Export an INT4 OpenVINO model for the GenAI run
+optimum-cli export openvino --model Qwen/Qwen-Image-2.1 --task image-to-image --library diffusers --weight-format int4 qwen-image-2.1-ov
+
+# Collect reference images with Diffusers
+wwb --base-model Qwen/Qwen-Image-2.1 --gt-data multi_i2i_test/gt.csv --model-type multi-image-to-image --hf
+
+# Evaluate the converted OpenVINO GenAI model
+wwb --target-model qwen-image-2.1-ov --gt-data multi_i2i_test/gt.csv --model-type multi-image-to-image --genai
+```
+
+Qwen-Image 2.1 requires a Diffusers version that provides `QwenImage21Pipeline`.
+
+Multi-image-to-image generation defaults to `256 x 256`. Pass `--image-size <N>` to override it and generate
+`N x N` images.
+
+To use local images, pass a JSON or JSONL manifest through `--dataset` and their directory through `--image-dir`:
+
+```json
+[
+  {
+    "prompts": "Place the object from Picture 1 into the scene from Picture 2.",
+    "images": ["object.png", "scene.png"]
+  }
+]
+```
+
+```sh
+# Collect references from the custom manifest
+wwb --base-model Qwen/Qwen-Image-2.1 --gt-data multi_i2i_test/gt.csv --model-type multi-image-to-image --dataset manifest.json --image-dir path/to/images --hf
+
+# Evaluate the target model with the same manifest and conditioning images
+wwb --target-model qwen-image-2.1-ov --gt-data multi_i2i_test/gt.csv --model-type multi-image-to-image --dataset manifest.json --image-dir path/to/images --genai
+```
+
+The manifest may use `input_images`, `images`, or `image` for the conditioning-image field. Image order is preserved and determines the model's Picture 1, Picture 2, ... numbering.
+
 ### Compare Text-to-image models with LoRA
 ```sh
 # Export FP16 model to OpenVINO

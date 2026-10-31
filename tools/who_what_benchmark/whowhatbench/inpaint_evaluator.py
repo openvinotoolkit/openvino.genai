@@ -121,6 +121,8 @@ class InpaintingEvaluator(Text2ImageEvaluator):
             with patched_parquet(parquet_generate_tables):
                 data = pd.DataFrame.from_dict(prepare_default_data(self.num_samples))
 
+        if self.num_samples is not None:
+            data = data.iloc[: self.num_samples]
         prompts = data["prompts"]
         images = data["images"]
         masks = data["masks"]
