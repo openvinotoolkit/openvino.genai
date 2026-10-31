@@ -17,14 +17,44 @@ import math
 import cv2
 
 
+def _get_text_to_speech_prompts_from_json(output_data_list, prompt_file_list):
+    text_list = []
+    for json_data in output_data_list:
+        if not isinstance(json_data, dict):
+            raise RuntimeError("== text_to_speech prompt data must be a JSON object ==")
+        if "prompt" not in json_data or json_data["prompt"] == "":
+            raise RuntimeError("== key word 'prompt' does not exist or should not be empty string ==")
+
+        prompt_data = {"prompt": json_data["prompt"]}
+        for param in [
+            "speech_language",
+            "speech_voice",
+            "speech_instruct",
+            "speech_ref_audio",
+            "speech_ref_text",
+        ]:
+            if param in json_data:
+                prompt_data[param] = json_data[param]
+
+        if "speech_ref_audio" in prompt_data and prompt_file_list:
+            prompt_data["speech_ref_audio"] = resolve_media_file_path(
+                prompt_data["speech_ref_audio"], prompt_file_list[0]
+            )
+        text_list.append(prompt_data)
+    return text_list
+
+
 def get_text_prompt(args):
     text_list = []
     output_data_list, is_json_data = get_param_from_file(args, 'prompt')
     if is_json_data is True:
-        text_param_list = parse_text_json_data(output_data_list)
-        if len(text_param_list) > 0:
-            for text in text_param_list:
-                text_list.append(text)
+        if args.get("task") == "text_to_speech":
+            text_list.extend(_get_text_to_speech_prompts_from_json(output_data_list, args.get("prompt_file")))
+        else:
+            text_param_list = parse_text_json_data(output_data_list)
+            if len(text_param_list) > 0:
+                for text in text_param_list:
+                    text_list.append(text)
     else:
         text_list.append(output_data_list[0])
     return text_list

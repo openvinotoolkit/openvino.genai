@@ -3,17 +3,36 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
+import io
 import logging as log
 from pathlib import Path
+from urllib.parse import urlparse
+from urllib.request import urlopen
+
+import llm_bench_utils.gen_output_data as gen_output_data
+import llm_bench_utils.metrics_print as metrics_print
 import numpy as np
+import soundfile as sf
 
 SPEECHT5_SPEAKER_EMB_SHAPE = (1, 512)
 KOKORO_SPEAKER_EMB_SHAPE = (510, 1, 256)
 DEFAULT_KOKORO_VOICE = "af_heart"
 KOKORO_SAMPLE_RATE = 24000
 OMNI_TTS_SAMPLE_RATE = 24000
+QWEN3_TTS_SAMPLE_RATE = 24000
 DEFAULT_TTS_SAMPLE_RATE = 16000
 DEFAULT_OMNI_SPEAKER = "Ethan"
+DEFAULT_QWEN3_CUSTOM_VOICE_SPEAKER = "Ryan"
+DEFAULT_QWEN3_VOICE_DESIGN_INSTRUCT = (
+    "Male, 17 years old, tenor range, gaining confidence - deeper breath support now, "
+    "though vowels still tighten when nervous"
+)
+DEFAULT_QWEN3_BASE_REF_AUDIO_URL = "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-TTS-Repo/clone.wav"
+DEFAULT_QWEN3_BASE_REF_TEXT = (
+    "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you."
+)
+QWEN3_TTS_VARIANTS = {"base", "custom_voice", "voice_design"}
+_REFERENCE_AUDIO_CACHE = {}
 
 
 def is_kokoro_model_id(model_id_or_path):
@@ -93,9 +112,106 @@ def resolve_kokoro_speaker_embedding(model_path, speech_voice="", speaker_embedd
 def get_tts_sample_rate(args):
     if args.get("is_omni_model", False):
         return OMNI_TTS_SAMPLE_RATE
+    if args.get("is_qwen3_tts_model", False):
+        return QWEN3_TTS_SAMPLE_RATE
     if args.get("is_kokoro_model", False):
         return KOKORO_SAMPLE_RATE
     return DEFAULT_TTS_SAMPLE_RATE
+
+
+def get_qwen3_tts_variant(model_id_or_path):
+    model_path = Path(str(model_id_or_path))
+    if model_path.name.endswith("xml"):
+        model_path = model_path.parents[2]
+
+    config_path = model_path / "config.json"
+    config = None
+    if config_path.is_file():
+        try:
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+    else:
+        model_id = str(model_id_or_path)
+        if "/" not in model_id:
+            return None
+        try:
+            from huggingface_hub import hf_hub_download
+
+            remote_config_path = hf_hub_download(repo_id=model_id, filename="config.json")
+            config = json.loads(Path(remote_config_path).read_text(encoding="utf-8"))
+        except Exception:
+            return None
+
+    if config.get("model_type") != "qwen3_tts":
+        return None
+
+    variant = str(config.get("tts_model_type", "")).strip().lower()
+    if variant in QWEN3_TTS_VARIANTS:
+        return variant
+    return None
+
+
+def validate_reference_audio_source(ref_audio_path):
+    ref_audio = str(ref_audio_path).strip()
+    parsed = urlparse(ref_audio)
+
+    if parsed.scheme in {"http", "https"}:
+        if not parsed.netloc:
+            raise RuntimeError(f"Invalid Qwen3 reference audio URL: '{ref_audio}'")
+        return
+
+    if parsed.scheme and not Path(ref_audio).drive:
+        raise RuntimeError(
+            f"Unsupported Qwen3 reference audio URL scheme: '{parsed.scheme}'. "
+            "Only local paths and http/https URLs are supported."
+        )
+
+    if not Path(ref_audio).exists():
+        raise RuntimeError(f"Incorrect speech reference audio path: {ref_audio}")
+
+
+def load_reference_audio(ref_audio_path, expected_sample_rate=None, audio_label="reference audio"):
+    ref_audio = str(ref_audio_path).strip()
+    if ref_audio in _REFERENCE_AUDIO_CACHE:
+        waveform, sample_rate = _REFERENCE_AUDIO_CACHE[ref_audio]
+        if expected_sample_rate is not None and int(sample_rate) != int(expected_sample_rate):
+            raise RuntimeError(
+                f"{audio_label} strict check failed: reference audio sample rate must be {int(expected_sample_rate)} Hz, "
+                f"got {int(sample_rate)} Hz for '{ref_audio}'."
+            )
+        return waveform, sample_rate
+
+    validate_reference_audio_source(ref_audio)
+    parsed = urlparse(ref_audio)
+
+    if parsed.scheme in {"http", "https"}:
+        log.info("Downloading %s from URL: %s", audio_label, ref_audio)
+        with urlopen(ref_audio, timeout=30) as response:  # nosec B310
+            audio_data, sample_rate = sf.read(io.BytesIO(response.read()), dtype="float32", always_2d=False)
+    else:
+        audio_data, sample_rate = sf.read(ref_audio, dtype="float32", always_2d=False)
+
+    if expected_sample_rate is not None and int(sample_rate) != int(expected_sample_rate):
+        raise RuntimeError(
+            f"{audio_label} strict check failed: reference audio sample rate must be {int(expected_sample_rate)} Hz, "
+            f"got {int(sample_rate)} Hz for '{ref_audio}'."
+        )
+
+    waveform = np.asarray(audio_data, dtype=np.float32)
+    if waveform.ndim > 1:
+        waveform = np.mean(waveform, axis=-1, dtype=np.float32)
+    resolved = (waveform.reshape(-1), int(sample_rate))
+    _REFERENCE_AUDIO_CACHE[ref_audio] = resolved
+    return resolved
+
+
+def load_qwen3_reference_audio(ref_audio_path):
+    return load_reference_audio(
+        ref_audio_path,
+        expected_sample_rate=QWEN3_TTS_SAMPLE_RATE,
+        audio_label="Qwen3 Base reference audio",
+    )
 
 
 def extract_audio_array(output):
@@ -205,3 +321,62 @@ def kokoro_generate_from_preprocessed(model, preprocessed_input, args):
         return extract_audio_array(generation_result)
 
     raise RuntimeError("Kokoro model wrapper must provide generate_from_preprocessed")
+
+
+def _build_tts_audio_metrics(out_size, sample_rate, generation_time):
+    output_duration_s = (out_size / sample_rate) if sample_rate > 0 else 0
+    rtf = (generation_time / output_duration_s) if output_duration_s > 0 else -1
+    return {
+        "samples": int(out_size),
+        "duration_s": output_duration_s,
+        "sample_rate": int(sample_rate),
+        "rtf": rtf,
+    }
+
+
+def _record_tts_iter(
+    num,
+    args,
+    iter_data_list,
+    md5_list,
+    prompt_index,
+    result_md5_list,
+    in_size,
+    out_size,
+    generation_time,
+    tokenization_kwargs,
+    memory_metrics,
+    sample_rate,
+):
+    iter_data = gen_output_data.gen_iterate_data(
+        iter_idx=num,
+        in_size=in_size,
+        out_size=out_size,
+        gen_time=generation_time,
+        res_md5=result_md5_list,
+        prompt_idx=prompt_index,
+        **tokenization_kwargs,
+        **memory_metrics,
+    )
+    tts_audio_metrics = _build_tts_audio_metrics(out_size, sample_rate, generation_time)
+    iter_data["tts_output_duration_s"] = tts_audio_metrics["duration_s"]
+    iter_data["tts_sample_rate"] = tts_audio_metrics["sample_rate"]
+    iter_data["tts_rtf"] = tts_audio_metrics["rtf"]
+    iter_data_list.append(iter_data)
+    metrics_print.print_metrics(
+        iter_num=num,
+        iter_data=iter_data,
+        warm_up=(num == 0),
+        **tokenization_kwargs,
+        batch_size=args["batch_size"],
+        prompt_idx=prompt_index,
+        tts_audio=tts_audio_metrics,
+    )
+    md5_list[num][prompt_index] = result_md5_list
+    if num > 0:
+        prev_md5 = md5_list[num - 1][prompt_index]
+        if result_md5_list != prev_md5:
+            log.warning(
+                f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
+                f"is different from md5 of the {num - 1} iteration {prev_md5}"
+            )
