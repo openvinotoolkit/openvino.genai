@@ -163,11 +163,14 @@ public:
      *                              cache_size when it is zero.
      * @param get_available_memory  Returns available device memory in bytes given the device
      *                              string and number of cache tensors across all cache types.
+     * @param hidden_state_bytes_per_token  Bytes the pipeline's HiddenStateCache keeps per KV token.
+     *                              They share the cache_size budget with KV. 0 when there is no such cache.
      */
     static std::shared_ptr<CacheOrchestrator> create(
             ov::InferRequest& infer_request,
             SchedulerConfig& config,
-            std::function<size_t(const std::string&, size_t)> get_available_memory) {
+            std::function<size_t(const std::string&, size_t)> get_available_memory,
+            size_t hidden_state_bytes_per_token = 0) {
         config.validate();
 
         auto orchestrator = std::make_shared<CacheOrchestrator>();
@@ -187,7 +190,8 @@ public:
         // Only an explicitly requested count is a hard ceiling.
         const size_t requested_num_la_blocks = config.num_linear_attention_blocks;
 
-        auto [num_kv_blocks, num_la_blocks] = normalize_block_counts(kv_mgr.get(), la_mgr.get(), config, cache_interval, total_available_memory);
+        auto [num_kv_blocks, num_la_blocks] = normalize_block_counts(
+            kv_mgr.get(), la_mgr.get(), config, cache_interval, total_available_memory, hidden_state_bytes_per_token);
         config.num_kv_blocks = num_kv_blocks;
         config.num_linear_attention_blocks = num_la_blocks;
 
@@ -1026,6 +1030,8 @@ private:
     /**
      * @brief Compute the number of KV and LA blocks to allocate, honouring the memory budget
      *        expressed either as cache_size (GiB) or explicit block counts in config.
+     *        Each KV block also pays for the hidden states of its tokens, because the
+     *        HiddenStateCache holds as many tokens as the KV cache.
      *        Returns a tuple of (num_kv_blocks, num_la_blocks).
      */
     static std::tuple<size_t, size_t>
@@ -1033,16 +1039,18 @@ private:
                           const LinearAttentionCacheManager* la_manager,
                           const SchedulerConfig& config,
                           size_t cache_interval,
-                          size_t total_available_memory) {
+                          size_t total_available_memory,
+                          size_t hidden_state_bytes_per_token) {
         const size_t kv_block_size = kv_manager ? kv_manager->get_block_size() : 0;
-        const size_t kv_block_size_in_bytes = kv_manager ? kv_manager->get_block_size_in_bytes() : 0;
+        const size_t kv_block_budget_bytes =
+            kv_manager ? kv_manager->get_block_size_in_bytes() + kv_block_size * hidden_state_bytes_per_token : 0;
         const size_t la_block_size_in_bytes = la_manager ? la_manager->get_block_size_in_bytes() : 0;
 
         auto bytes_for_token_target = [&](size_t token_target) {
             size_t total_bytes = 0;
             if (kv_manager) {
                 const size_t kv_blocks = (token_target + kv_block_size - 1) / kv_block_size;
-                total_bytes += kv_blocks * kv_block_size_in_bytes;
+                total_bytes += kv_blocks * kv_block_budget_bytes;
             }
             if (la_manager && config.enable_prefix_caching) {
                 const size_t la_blocks = (token_target + cache_interval - 1) / cache_interval;
@@ -1071,13 +1079,13 @@ private:
                 OPENVINO_ASSERT(reserved_la_bytes <= budget_in_bytes,
                                 "Requested linear attention cache allocation exceeds the configured cache size.");
                 if (kv_manager) {
-                    normalized_num_kv_blocks = (budget_in_bytes - reserved_la_bytes) / kv_block_size_in_bytes;
+                    normalized_num_kv_blocks = (budget_in_bytes - reserved_la_bytes) / kv_block_budget_bytes;
                 }
             } else {
                 size_t low = 0;
                 size_t high = 0;
                 if (kv_manager) {
-                    high = (budget_in_bytes / kv_block_size_in_bytes) * kv_block_size;
+                    high = (budget_in_bytes / kv_block_budget_bytes) * kv_block_size;
                 } else if (la_manager) {
                     high = (budget_in_bytes / la_block_size_in_bytes) * cache_interval;
                 }
@@ -1106,7 +1114,7 @@ private:
 
             size_t total_requested_bytes = 0;
             if (kv_manager) {
-                total_requested_bytes += normalized_num_kv_blocks * kv_block_size_in_bytes;
+                total_requested_bytes += normalized_num_kv_blocks * kv_block_budget_bytes;
             }
             if (la_manager) {
                 total_requested_bytes += normalized_num_la_blocks * la_block_size_in_bytes;
