@@ -10,6 +10,8 @@
 #include <numeric>
 #include <type_traits>
 
+#include "openvino/core/preprocess/pre_post_process.hpp"
+
 #include "json_utils.hpp"
 #include "lora/helper.hpp"
 #include "utils.hpp"
@@ -440,6 +442,11 @@ Qwen3VLForConditionalGeneration& Qwen3VLForConditionalGeneration::compile(const 
     }
 
     if (m_vision_model) {
+        ov::preprocess::PrePostProcessor preprocessor(m_vision_model);
+        preprocessor.input("bilinear_indices").tensor().set_element_type(ov::element::i32);
+        preprocessor.input("bilinear_indices").preprocess().convert_element_type();
+        m_vision_model = preprocessor.build();
+
         ov::CompiledModel compiled_vision =
             utils::singleton_core().compile_model(m_vision_model, device, *filtered_properties);
         ov::genai::utils::print_compiled_model_properties(compiled_vision, "QwenImage 2.1 vision encoder model");
