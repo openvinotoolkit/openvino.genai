@@ -1,0 +1,13 @@
+{
+  "test_vlm_pipeline.py::test_vlm_pipeline_start_chat_vs_chat_history[combination of generations with text input and text + image input, empty image first-optimum-intel-internal-testing/tiny-random-lfm2-vl/PA/True]": true,
+  "test_vlm_pipeline.py::test_vlm_pipeline_start_chat_vs_chat_history[generation with text input only-optimum-intel-internal-testing/tiny-random-lfm2-vl/PA/True]": true,
+  "test_vlm_pipeline.py::test_vlm_pipeline_chat_streamer_cancel_second_generate[cat_tensor - one image-optimum-intel-internal-testing/tiny-random-lfm2-vl/PA/False]": true,
+  "test_vlm_pipeline.py::test_vlm_pipeline_match_optimum_with_resolutions[optimum-intel-internal-testing/tiny-random-lfm2-vl/PA/CPP/text-only]": true,
+  "test_vlm_pipeline.py::test_vlm_pipeline_match_optimum_with_resolutions[optimum-intel-internal-testing/tiny-random-lfm2-vl/PA/CPP/image-100x77]": true,
+  "test_vlm_pipeline.py::test_vlm_pipeline_match_optimum_with_resolutions[optimum-intel-internal-testing/tiny-random-lfm2-vl/PA/CPP/image-999x666]": true,
+  "test_vlm_pipeline.py::test_vlm_pipeline_match_optimum_with_resolutions[optimum-intel-internal-testing/tiny-random-lfm2-vl/PA/CPP/image-1920x1080]": true,
+  "test_vlm_pipeline.py::test_vlm_pipeline_match_optimum_with_resolutions[optimum-intel-internal-testing/tiny-random-lfm2-vl/SDPA/CPP/text-only]": true,
+  "test_vlm_pipeline.py::test_vlm_pipeline_match_optimum_with_resolutions[optimum-intel-internal-testing/tiny-random-lfm2-vl/SDPA/CPP/image-100x77]": true,
+  "test_vlm_pipeline.py::test_vlm_pipeline_match_optimum_with_resolutions[optimum-intel-internal-testing/tiny-random-lfm2-vl/SDPA/CPP/image-999x666]": true,
+  "test_vlm_pipeline.py::test_vlm_pipeline_match_optimum_with_resolutions[optimum-intel-internal-testing/tiny-random-lfm2-vl/SDPA/CPP/image-1920x1080]": true
+}
