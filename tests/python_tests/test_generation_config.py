@@ -64,7 +64,11 @@ configs = [
     dict(max_new_tokens=1, length_penalty=2), # requiring beam search
     # assistant generation
     dict(max_new_tokens=1, assistant_confidence_threshold=0.5),
+    dict(max_new_tokens=1, num_assistant_tokens=0),
     dict(max_new_tokens=1, num_assistant_tokens=2),
+    dict(max_new_tokens=1, num_assistant_tokens=100),
+    dict(max_new_tokens=1, num_assistant_tokens=100, max_ngram_size=2),
+    dict(max_new_tokens=1, num_assistant_tokens=100, branching_factor=2, tree_depth=1),
     dict(max_new_tokens=1, num_assistant_tokens=2, max_ngram_size=2), # prompt lookup
     dict(max_new_tokens=1, apply_chat_template=True),
     dict(max_new_tokens=1, apply_chat_template=False),
@@ -176,6 +180,30 @@ def test_whisper_language_validate_rejects_unknown():
     config.language = "unknown"
     with pytest.raises(RuntimeError):
         config.validate()
+
+
+@pytest.mark.parametrize("num_assistant_tokens", [101, 1094795585, 2**63 - 1])
+@pytest.mark.parametrize("assistant_config", [{}, {"max_ngram_size": 2}, {"branching_factor": 2, "tree_depth": 1}])
+@pytest.mark.parametrize("config_source", ["kwargs", "update", "assignment", "json"])
+def test_num_assistant_tokens_upper_bound(tmp_path, num_assistant_tokens, assistant_config, config_source):
+    fields = dict(max_new_tokens=1, num_assistant_tokens=num_assistant_tokens, **assistant_config)
+    if config_source == "kwargs":
+        config = GenerationConfig(**fields)
+    elif config_source == "update":
+        config = GenerationConfig()
+        config.update_generation_config(**fields)
+    elif config_source == "assignment":
+        config = GenerationConfig()
+        for key, value in fields.items():
+            setattr(config, key, value)
+    else:
+        config_path = tmp_path / "generation_config.json"
+        config_path.write_text(json.dumps(fields), encoding="utf-8")
+        config = GenerationConfig(config_path)
+
+    with pytest.raises(RuntimeError, match="'num_assistant_tokens' must be less than or equal to 100"):
+        config.validate()
+    assert config.num_assistant_tokens == num_assistant_tokens
 
 
 def test_num_assistant_tokens_zero_and_tree_search_validation():
