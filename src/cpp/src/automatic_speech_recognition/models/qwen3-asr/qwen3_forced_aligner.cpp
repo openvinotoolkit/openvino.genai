@@ -283,7 +283,7 @@ Qwen3ForcedAligner::Qwen3ForcedAligner(const std::filesystem::path& models_path,
       m_tokenizer{models_path},
       m_embedder{create_inputs_embedder(models_path, m_tokenizer, device, properties)},
       m_language_model{create_language_model_request(models_path, m_config.classify_num, device, properties)} {
-    m_embedder.set_apply_chat_template_status(false);
+    m_embedder.set_prompt_formatting(PromptFormatting::AlreadyTemplated);
     for (const std::string& language : m_config.support_languages) {
         const std::string canonical = normalize_alignment_language(language);
         if (!canonical.empty()) {
