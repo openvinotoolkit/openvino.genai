@@ -21,6 +21,7 @@
 - name: ASR (Fun-ASR)
   cmd: |-
     python -m pip install transformers==4.57.6 funasr==1.4.1
+    python -m pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@0100bb36ea09fe8613008ee74cb796dc5e1c379d"
     python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "fun-asr"
   timeout: 60
   components:
