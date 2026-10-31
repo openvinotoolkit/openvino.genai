@@ -12,6 +12,7 @@
 #include <nlohmann/json.hpp>
 #include <numeric>
 #include <random>
+#include <set>
 
 #include "json_utils.hpp"
 #include "logger.hpp"
@@ -455,7 +456,9 @@ int64_t Qwen3OmniSpeechPipeline::sample_top_k(const float* logits,
 
     // Apply repetition penalty to previously generated tokens
     if (repetition_penalty != 1.0f && !generated_tokens.empty()) {
-        for (auto token_id : generated_tokens) {
+        // Each unique id is penalized once, however often it repeats, matching RepetitionPenaltyTransform
+        const std::set<int64_t> unique_generated_tokens(generated_tokens.begin(), generated_tokens.end());
+        for (auto token_id : unique_generated_tokens) {
             if (token_id < 0 || static_cast<size_t>(token_id) >= vocab_size)
                 continue;
             if (m_sample_scaled[token_id] >= 0.0f) {

@@ -1045,6 +1045,20 @@ class TestOmniPipelineRealModel:
 
         _extract_assert_single_waveform(result)
 
+    def test_talker_repetition_penalty_applies_once_per_unique_code(self, omni_pipe: ov_genai.OmniPipeline) -> None:
+        """A repeated codec token is penalized once, not once per occurrence in the history.
+
+        A penalty far below 1 divides a positive logit by 1e-30: once stays finite, but a second
+        division for a repeated code overflows to inf and turns the top-k softmax into NaN. The
+        boost makes the talker keep resampling the same code, so repeats are guaranteed.
+        """
+        speech_config = _talker_speech_config(return_audio=True, max_new_tokens=32)
+        speech_config.talker_repetition_penalty = 1e-30
+
+        result = omni_pipe.generate("Describe this.", text_config=_text_config(), talker_speech_config=speech_config)
+
+        _extract_assert_single_waveform(result)
+
     def test_matches_optimum_text(self, omni_pipe: ov_genai.OmniPipeline, optimum_reference: OptimumReference) -> None:
         """Greedy decode must produce the same token ids as optimum-intel for a text-only prompt.
 
