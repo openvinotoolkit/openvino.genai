@@ -6,6 +6,7 @@ The applications don't have many configuration options to encourage the reader t
  - [`text2video.cpp`](./text2video.cpp) demonstrates basic text to video generation.
  - [`image2video.cpp`](./image2video.cpp) demonstrates image-conditioned video generation.
  - [`taylorseer_text2video.cpp`](./taylorseer_text2video.cpp) demonstrates text to video generation with TaylorSeer caching optimization for improved performance. LTX-Video model is supported only.
+ - [`heterogeneous_text2video.cpp`](./heterogeneous_text2video.cpp) demonstrates running each stage of the text to video pipeline (text encoder, denoiser, VAE decoder) on a different device.
 
 ## Table of Contents
 1. [Download and Convert the Model](#download-and-convert-the-model)
@@ -192,6 +193,27 @@ The TaylorSeer configuration parameters can be adjusted in the source code:
 - `disable_cache_after_step`: Disable caching after this step (default: -2, meaning 2 steps before the end)
 
 For more details about TaylorSeer, see the [diffusion caching documentation](../../../site/docs/concepts/optimization-techniques/diffusion-caching.md).
+
+### Heterogeneous Text to Video Sample (`heterogeneous_text2video.cpp`)
+
+- **Description:**
+  Run LTX-Video with a separate device for the text encoder, denoiser (transformer), and VAE decoder. Each device defaults to CPU. Use devices supported by your exported model and OpenVINO installation.
+
+- **Run Command:**
+  ```bash
+  ./heterogeneous_text2video model_dir prompt [text_encoder_device] [denoiser_device] [vae_decoder_device] [num_frames]
+  ```
+
+  Example:
+  ```bash
+  ./heterogeneous_text2video ./ltx_video_ov/FP32 "A cat walks through grass in the morning." CPU GPU CPU 9
+  ```
+
+The example runs the text encoder and VAE decoder on CPU and the denoiser on GPU, generating nine frames. To specify a frame count, supply all three device arguments first. The default frame count is 161.
+
+The sample uses a resolution of 704 x 480, a frame rate of 25 fps, 25 inference steps, and guidance scale 3.0, matching the basic text to video sample. It constructs a `CppStdGenerator` with seed 42 and passes it through the `generator` property to initialize the random state explicitly.
+
+The sample writes `video_0.avi` in the current directory.
 
 ## Troubleshooting
 

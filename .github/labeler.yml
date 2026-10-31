@@ -156,6 +156,7 @@
 - 'samples/cpp/video_generation/**/*'
 - 'samples/python/video_generation/**/*'
 - 'tests/python_tests/samples/test_text2video.py'
+- 'tests/python_tests/samples/test_heterogeneous_text2video.py'
 - 'tests/python_tests/samples/test_lora_text2video.py'
 - 'tests/python_tests/samples/test_taylorseer.py'
 
