@@ -120,6 +120,11 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
 }
 
 void GenerationConfig::set_eos_token_id(size_t tokenizer_eos_token_id) {
+    // Callers forward a default of -1 (converted to size_t) when neither the tokenizer
+    // nor the config defines EOS; do not turn that into a stop token.
+    if (static_cast<int64_t>(tokenizer_eos_token_id) < 0) {
+        return;
+    }
     eos_token_id = tokenizer_eos_token_id;
     stop_token_ids.insert(eos_token_id);
 }
