@@ -40,7 +40,7 @@ void update_npu_properties(const std::filesystem::path& models_dir, ov::AnyMap& 
 
 void npu_auto_default_properties(ov::AnyMap& device_properties) {
     auto auto_properties = utils::pop_or_default<ov::AnyMap>(device_properties, "AUTO", {});
-    auto_properties.insert(ov::device::priorities("CPU"));
+    auto_properties.insert(ov::device::priorities("GPU,CPU"));
     auto_properties.insert(ov::intel_auto::enable_startup_fallback(false));
 
     device_properties["AUTO"] = auto_properties;
