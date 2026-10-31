@@ -267,6 +267,30 @@ python qwen3_tts.py base qwen3_tts_base_ov "Hello again." --speaker_embedding_fi
 
 For Qwen3-TTS Base examples above, output is 24 kHz WAV.
 
+### Sampling and reproducible output
+
+All three `qwen3_tts.py` subcommands accept the same sampling options:
+
+| Option | Meaning |
+| --- | --- |
+| `--do_sample {true,false}` | Sample the talker's codec tokens (`true`) or always take the most likely one (`false`). |
+| `--subtalker_dosample {true,false}` | The same for the subtalker, which predicts the remaining codec groups of each frame. |
+| `--rng_seed N` | Seed for sampling. The same non-zero seed repeats the output. `0` or no option picks a random seed on every run. |
+
+An option that is not given keeps the value from the model's `generation_config.json`. Qwen3-TTS models ship with sampling enabled and no fixed seed, so **by default the output differs on every run**, including its length.
+
+For a repeatable output, disable sampling in both the talker and the subtalker:
+```
+python qwen3_tts.py base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path clone.wav --do_sample false --subtalker_dosample false
+```
+
+Or keep sampling and fix the seed:
+```
+python qwen3_tts.py base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path clone.wav --rng_seed 12345
+```
+
+Disabling only one of the two still leaves the other random. Repeatable output is expected for the same model, device, inputs and software versions, not across different devices or weight precisions.
+
 Refer to [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#speech-generation-models) for model details.
 
 # Text-to-speech API usage
