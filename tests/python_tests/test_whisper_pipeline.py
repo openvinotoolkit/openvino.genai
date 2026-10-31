@@ -34,6 +34,8 @@ from utils.dataset_utils import load_dataset_via_snapshot, load_parquet_dataset_
 from utils.asr_utils.fun_asr import FUN_ASR_MODEL_ID, FunASROptimumPipeline, skip_if_fun_asr_package_is_unavailable
 from utils.asr_utils.qwen3_asr import (
     QWEN3_ASR_MODEL_ID,
+    QWEN3_ASR_SPLIT_EXPORT_SUFFIX,
+    SKIP_IF_PAGED_ATTENTION_UNAVAILABLE,
     Qwen3ASROptimumPipeline,
     save_model,
     skip_if_qwen3_asr_package_is_unavailable,
@@ -405,18 +407,12 @@ def make_deterministic_audio(num_samples: int) -> np.ndarray:
 QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS = [
     pytest.param(
         (QWEN3_ASR_MODEL_ID, PipelineType.ASR, {"attention_backend": "PA"}),
-        id=f"{get_model_pipeline_pair_id((QWEN3_ASR_MODEL_ID, PipelineType.ASR))}-split-PA",
-        marks=[
-            pytest.mark.qwen3_asr_split_export,
-            pytest.mark.skipif(
-                sys.platform == "darwin" and platform.machine() == "arm64",
-                reason="PagedAttention requires SVE on ARM and is unavailable on macOS arm64.",
-            ),
-        ],
+        id=f"{get_model_pipeline_pair_id((QWEN3_ASR_MODEL_ID, PipelineType.ASR))}{QWEN3_ASR_SPLIT_EXPORT_SUFFIX}-PA",
+        marks=[pytest.mark.qwen3_asr_split_export, SKIP_IF_PAGED_ATTENTION_UNAVAILABLE],
     ),
     pytest.param(
         (QWEN3_ASR_MODEL_ID, PipelineType.ASR, {"attention_backend": "SDPA"}),
-        id=f"{get_model_pipeline_pair_id((QWEN3_ASR_MODEL_ID, PipelineType.ASR))}-split-SDPA",
+        id=f"{get_model_pipeline_pair_id((QWEN3_ASR_MODEL_ID, PipelineType.ASR))}{QWEN3_ASR_SPLIT_EXPORT_SUFFIX}-SDPA",
         marks=pytest.mark.qwen3_asr_split_export,
     ),
 ]
@@ -428,18 +424,14 @@ def pipelines_fixture(request):
     options = request.param[2] if len(request.param) > 2 else {}
     model_name = model_id.split("/")[-1]
     if request.node.get_closest_marker("qwen3_asr_split_export"):
-        # Keep split and legacy exports in separate converted-model caches.
-        model_name += "-split"
+        model_name += QWEN3_ASR_SPLIT_EXPORT_SUFFIX
     model_path = get_ov_cache_converted_models_dir() / model_name
     model_id, _, hf_pipe, genai_pipe = read_asr_model((model_id, model_path), pipeline_type=pipeline_type, **options)
     return hf_pipe, genai_pipe, model_id, pipeline_type
 
 
 @pytest.mark.qwen3_asr_split_export
-@pytest.mark.skipif(
-    sys.platform == "darwin" and platform.machine() == "arm64",
-    reason="PagedAttention requires SVE on ARM and is unavailable on macOS arm64.",
-)
+@SKIP_IF_PAGED_ATTENTION_UNAVAILABLE
 @pytest.mark.parametrize(
     "pipelines_fixture",
     get_model_pipeline_pair_params([(QWEN3_ASR_MODEL_ID, PipelineType.CONTINUOUS_BATCHING)]),
