@@ -38,6 +38,7 @@ enum class VLMModelType {
     DEEPSEEK_OCR2,
     MUSE_GLIMMER,
     MINICPMV4_7,
+    MISTRAL3,
     LFM3_VL,
 };
 

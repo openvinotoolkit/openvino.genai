@@ -13,7 +13,6 @@
 #include <tuple>
 #include <vector>
 
-#include "continuous_batching/timer.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "utils.hpp"
 #include "visual_language/clip.hpp"
@@ -278,7 +277,9 @@ InputsEmbedderMuseGlimmer::InputsEmbedderMuseGlimmer(const VLMConfig& vlm_config
                                                      const Tokenizer& tokenizer,
                                                      const std::string& device,
                                                      const ov::AnyMap device_config)
-    : IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {}
+    : IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {
+    m_skip_duplicate_bos = true;
+}
 
 InputsEmbedderMuseGlimmer::InputsEmbedderMuseGlimmer(const VLMConfig& vlm_config,
                                                      const ModelsMap& models_map,
@@ -286,7 +287,9 @@ InputsEmbedderMuseGlimmer::InputsEmbedderMuseGlimmer(const VLMConfig& vlm_config
                                                      const std::filesystem::path& config_dir_path,
                                                      const std::string& device,
                                                      const ov::AnyMap device_config)
-    : IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
+    : IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
+    m_skip_duplicate_bos = true;
+}
 
 std::vector<EncodedImage> InputsEmbedderMuseGlimmer::encode_images(const std::vector<ov::Tensor>& images) {
     std::vector<EncodedImage> embeds;
@@ -454,21 +457,6 @@ ov::Tensor InputsEmbedderMuseGlimmer::get_inputs_embeds(
     }
 
     return inputs_embeds;
-}
-
-ov::Tensor InputsEmbedderMuseGlimmer::apply_chat_template_tokenize(const std::string& prompt, VLMPerfMetrics& metrics) {
-    const std::string bos_token = m_tokenizer.get_bos_token();
-    // ticket to addess globally: 192386
-    if (!m_is_chat_conversation && m_prompt_formatting != PromptFormatting::NeedsTemplate && !bos_token.empty() &&
-        prompt.compare(0, bos_token.size(), bos_token) == 0) {
-        ManualTimer encode_timer("Encode");
-        encode_timer.start();
-        ov::Tensor input_ids = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false)).input_ids;
-        encode_timer.end();
-        metrics.raw_metrics.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());
-        return input_ids;
-    }
-    return IInputsEmbedder::apply_chat_template_tokenize(prompt, metrics);
 }
 
 void InputsEmbedderMuseGlimmer::encode_vision_token_ids() {
