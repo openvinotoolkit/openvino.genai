@@ -8,6 +8,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <vector>
 
 namespace ov::genai {
 
@@ -58,6 +59,13 @@ public:
 
     /// @return The device on which the cache resides (e.g. "CPU", "GPU").
     virtual std::string get_device() const = 0;
+
+    /// @return Every device the cache is spread over. A cache living on one
+    ///         device answers with just that one; a tensor-parallel cache is
+    ///         split across several, and its memory budget is their sum.
+    virtual std::vector<std::string> get_devices() const {
+        return {get_device()};
+    }
 
     /// @return Size in bytes of a single block across all layers.
     virtual size_t get_block_size_in_bytes() const = 0;
