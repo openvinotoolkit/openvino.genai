@@ -359,6 +359,15 @@ INSTANTIATE_TEST_SUITE_P(VariousInputs,
                          EOSPenaltyTransformTest,
                          testing::ValuesIn(EOS_PENALTY_TRANSFORM_TEST_CASES));
 
+TEST(EOSPenaltyTransformValidationTest, ThrowsForOutOfVocabularyStopTokenIds) {
+    float input[]{1.0f, 2.0f, 3.0f};
+    Logits logits(input, EOSPenaltyTransformTestStruct::size);
+    EOSPenaltyTransform transform({static_cast<int64_t>(EOSPenaltyTransformTestStruct::size)},
+                                  std::numeric_limits<size_t>::max());
+
+    EXPECT_THROW(transform.apply(logits), ov::Exception);
+}
+
 // ---------------------------------------------------------------------------
 // Tests for the deferred-expf code path (TopKFilter + TemperatureLogitTransform
 // with defer_expf=true).  The deferred path keeps raw logits in m_vector and
