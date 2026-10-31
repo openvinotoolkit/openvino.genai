@@ -18,7 +18,7 @@ class MultiImage2ImageEvaluator(Image2ImageEvaluator):
             split="train",
             streaming=True,
         )
-        default_dataset = default_dataset.filter(lambda example: len(example["input_images"]) >= 2).take(
+        default_dataset = default_dataset.filter(lambda example: len(example["input_images"]) == 2).take(
             3 if self.num_samples is None else self.num_samples
         )
         return default_dataset.map(

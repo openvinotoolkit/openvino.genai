@@ -114,7 +114,7 @@ wwb --target-model sd-lcm-int8 --gt-data lcm_test/gt.csv --model-type text-to-im
 
 ### Compare Multiple-image-to-image models
 
-Use `--model-type multi-image-to-image` for models such as Qwen-Image 2.1 that condition generation on several ordered images. The default dataset is [OmniGen2/OmniContext](https://huggingface.co/datasets/OmniGen2/OmniContext) (Apache-2.0); WWB streams its `train` split, keeps records with at least two `input_images`, and evaluates 10 samples by default.
+Use `--model-type multi-image-to-image` for models such as Qwen-Image 2.1 that condition generation on several ordered images. The default dataset is [OmniGen2/OmniContext](https://huggingface.co/datasets/OmniGen2/OmniContext) (Apache-2.0); WWB streams its `train` split, keeps only records with exactly two `input_images`, and evaluates 3 samples by default.
 
 ```sh
 # Export an INT4 OpenVINO model for the GenAI run
