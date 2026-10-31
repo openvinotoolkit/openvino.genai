@@ -24,6 +24,26 @@ std::unordered_map<std::string, ov::Tensor> deep_copy_tensors_map(
     return dst;
 }
 
+std::vector<ov::genai::GenerationResult> to_generation_results(
+    std::vector<ov::genai::VLMDecodedResults>&& vlm_results,
+    const std::vector<ov::genai::GenerationStatus>& statuses) {
+    OPENVINO_ASSERT(vlm_results.size() == statuses.size(),
+                    "Number of VLM results must match the number of generation statuses.");
+    std::vector<ov::genai::GenerationResult> results;
+    results.reserve(vlm_results.size());
+    for (size_t i = 0; i < vlm_results.size(); ++i) {
+        ov::genai::GenerationResult result;
+        result.m_generation_ids = std::move(vlm_results[i].texts);
+        result.m_scores = std::move(vlm_results[i].scores);
+        result.m_finish_reasons = std::move(vlm_results[i].finish_reasons);
+        result.m_status = statuses[i];
+        result.perf_metrics = std::move(vlm_results[i].perf_metrics);
+        result.extended_perf_metrics = std::move(vlm_results[i].extended_perf_metrics);
+        results.push_back(std::move(result));
+    }
+    return results;
+}
+
 }  // namespace
 
 namespace ov::genai {
@@ -89,19 +109,11 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPip
     if (m_model_input_type == ModelInputType::EMBEDDINGS) {
         // TODO: remove this code and within model runner add check: if sequence group type is tokens,
         // but embedding model is available => compute embeddings first, then pass to LLM
-        std::vector<std::vector<ov::Tensor>> images(prompts.size());
-        auto results_vlm = generate(prompts, images, sampling_params, streamer);
-        std::vector<GenerationResult> results;
-        for (auto& vlm_result : results_vlm) {
-            GenerationResult result;
-            result.m_generation_ids = std::move(vlm_result.texts);
-            result.m_scores = std::move(vlm_result.scores);
-            result.m_finish_reasons = std::move(vlm_result.finish_reasons);
-            result.perf_metrics = std::move(vlm_result.perf_metrics);
-            result.extended_perf_metrics = std::move(vlm_result.extended_perf_metrics);
-            results.push_back(result);
-        }
-        return results;
+        const std::vector<std::vector<ov::Tensor>> no_media(prompts.size());
+        const std::vector<std::vector<VideoMetadata>> no_videos_metadata(prompts.size());
+        auto [vlm_results, statuses] =
+            generate_vlm(prompts, no_media, no_media, no_videos_metadata, no_media, sampling_params, streamer);
+        return to_generation_results(std::move(vlm_results), statuses);
     }
     std::vector<ov::Tensor> input_ids;
     auto start_time = std::chrono::steady_clock::now();
@@ -214,19 +226,11 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPip
     if (m_model_input_type == ModelInputType::EMBEDDINGS) {
         // TODO: remove this code and within model runner add check: if sequence group type is tokens,
         // but embedding model is available => compute embeddings first, then pass to LLM
-        std::vector<std::vector<ov::Tensor>> images(histories.size());
-        auto results_vlm = generate(histories, images, sampling_params, streamer);
-        std::vector<GenerationResult> results;
-        for (auto& vlm_result : results_vlm) {
-            GenerationResult result;
-            result.m_generation_ids = std::move(vlm_result.texts);
-            result.m_scores = std::move(vlm_result.scores);
-            result.m_finish_reasons = std::move(vlm_result.finish_reasons);
-            result.perf_metrics = std::move(vlm_result.perf_metrics);
-            result.extended_perf_metrics = std::move(vlm_result.extended_perf_metrics);
-            results.push_back(result);
-        }
-        return results;
+        const std::vector<std::vector<ov::Tensor>> no_media(histories.size());
+        const std::vector<std::vector<VideoMetadata>> no_videos_metadata(histories.size());
+        auto [vlm_results, statuses] =
+            generate_vlm(histories, no_media, no_media, no_videos_metadata, no_media, sampling_params, streamer);
+        return to_generation_results(std::move(vlm_results), statuses);
     }
 
     auto start_time = std::chrono::steady_clock::now();
@@ -327,6 +331,19 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
 std::vector<VLMDecodedResults>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+             const std::vector<std::string>& prompts,
+             const std::vector<std::vector<ov::Tensor>>& images_vector,
+             const std::vector<std::vector<ov::Tensor>>& videos_vector,
+             const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
+             const std::vector<std::vector<ov::Tensor>>& audios_vector,
+             const std::vector<GenerationConfig>& sampling_params,
+             const StreamerVariant& streamer) {
+    return generate_vlm(prompts, images_vector, videos_vector, videos_metadata_vector, audios_vector,
+                        sampling_params, streamer).results;
+}
+
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::VLMGenerationOutput
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate_vlm(
              const std::vector<std::string>& prompts,
              const std::vector<std::vector<ov::Tensor>>& images_vector,
              const std::vector<std::vector<ov::Tensor>>& videos_vector,
@@ -508,6 +525,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         }
     }
     std::vector<VLMDecodedResults> results;
+    std::vector<GenerationStatus> statuses;
+    statuses.reserve(prompts.size());
     std::vector<EncodedGenerationResult> encoded_results = generate(input_embeds_list,
                                                                     sampling_params,
                                                                     streamer,
@@ -547,6 +566,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         }
 
         results.emplace_back(gen_result);
+        statuses.push_back(result.m_status);
     }
     if (m_is_chat_conversation) {
         m_inputs_embedder->update_chat_history(results[0].texts[0], encoded_results[0].m_status);
@@ -570,7 +590,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             m_history_vision_count.pop_back();
         }
     }
-    return results;
+    return {std::move(results), std::move(statuses)};
 }
 
 std::vector<VLMDecodedResults>
@@ -636,6 +656,20 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
 std::vector<VLMDecodedResults>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+    const std::vector<ChatHistory>& histories,
+    const std::vector<std::vector<ov::Tensor>>& images_vector,
+    const std::vector<std::vector<ov::Tensor>>& videos_vector,
+    const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
+    const std::vector<std::vector<ov::Tensor>>& audios_vector,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer
+) {
+    return generate_vlm(histories, images_vector, videos_vector, videos_metadata_vector, audios_vector,
+                        sampling_params, streamer).results;
+}
+
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::VLMGenerationOutput
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate_vlm(
     const std::vector<ChatHistory>& histories,
     const std::vector<std::vector<ov::Tensor>>& images_vector,
     const std::vector<std::vector<ov::Tensor>>& videos_vector,
@@ -758,6 +792,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                                                                     lm_extra_inputs_list);
     std::vector<VLMDecodedResults> results;
     results.reserve(encoded_results.size());
+    std::vector<GenerationStatus> statuses;
+    statuses.reserve(encoded_results.size());
 
     for (size_t i = 0; i < encoded_results.size(); ++i) {
         utils::assert_request_was_scheduled(encoded_results.at(i).m_status, encoded_results.at(i).m_request_id);
@@ -792,6 +828,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         }
 
         results.emplace_back(gen_result);
+        statuses.push_back(result.m_status);
 
         m_inputs_embedder->update_chat_history(results[i].texts[0], encoded_results[i].m_status);
 
@@ -800,7 +837,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         }
     }
 
-    return results;
+    return {std::move(results), std::move(statuses)};
 }
 
 GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(

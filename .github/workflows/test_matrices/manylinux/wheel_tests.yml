@@ -279,7 +279,7 @@
   cmd: |-
     python -m pip install git+https://github.com/openvino-agent/optimum-intel.git@support_mtp
     python -m pip install transformers==5.8.0
-    python -m pytest -v ./tests/python_tests/test_stateful_speculative_decoding.py -k "gemma4_mtp"
+    python -m pytest -v ./tests/python_tests/test_stateful_speculative_decoding.py ./tests/python_tests/test_continuous_batching.py -k "gemma4_mtp"
   timeout: 90
   components:
     - speculative_decoding

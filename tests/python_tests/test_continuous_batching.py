@@ -18,6 +18,7 @@ import openvino.properties.hint as hints
 from openvino_genai import (
     ContinuousBatchingPipeline,
     LLMPipeline,
+    VLMPipeline,
     GenerationConfig,
     SchedulerConfig,
     draft_model,
@@ -39,6 +40,7 @@ from utils.hugging_face import (
     OVConvertedModelSchema,
     download_and_convert_model,
     export_with_optimum_cli,
+    generate_and_save_gemma4_mtp_assistant_model,
     run_hugging_face,
     sanitize_model_id,
 )
@@ -1097,6 +1099,194 @@ def test_qwen35_mtp_matches_main_only(qwen35_mtp_model_path: Path):
     mtp_result = mtp_pipe.generate([prompt], [generation_config])
 
     assert mtp_result[0].m_generation_ids == main_only_texts
+
+
+@pytest.fixture(scope="module")
+def gemma4_mtp_vlm_model_path() -> Path:
+    from optimum import intel
+
+    if not hasattr(intel, "OVAssistantForCausalLM"):
+        pytest.skip("Gemma4 MTP assistant export requires optimum.intel.OVAssistantForCausalLM")
+
+    model_id = "optimum-intel-internal-testing/tiny-random-gemma4"
+    model_path = get_ov_cache_converted_models_dir() / f"{sanitize_model_id(model_id)}_image-text-to-text"
+    manager = AtomicDownloadManager(model_path)
+    manager.execute(
+        lambda temp_path: export_with_optimum_cli(
+            model_id,
+            "image-text-to-text",
+            temp_path,
+            trust_remote_code=False,
+        )
+    )
+    return model_path
+
+
+def test_gemma4_mtp_pa_matches_main_only(gemma4_mtp_vlm_model_path: Path):
+    assistant_path = generate_and_save_gemma4_mtp_assistant_model(gemma4_mtp_vlm_model_path)
+    config = GenerationConfig(do_sample=False, max_new_tokens=12, num_assistant_tokens=3, ignore_eos=True)
+    prompts = ["OpenVINO is", "The sky is"]
+
+    baseline = ContinuousBatchingPipeline(gemma4_mtp_vlm_model_path, SchedulerConfig(), "CPU")
+    expected = baseline.generate(prompts, [config] * len(prompts))
+    del baseline
+
+    pipeline = ContinuousBatchingPipeline(
+        gemma4_mtp_vlm_model_path,
+        SchedulerConfig(),
+        "CPU",
+        {"draft_model": draft_model(assistant_path, "CPU")},
+    )
+    actual = pipeline.generate(prompts, [config] * len(prompts))
+    assert [r.m_generation_ids for r in actual] == [r.m_generation_ids for r in expected]
+    assert all(r.extended_perf_metrics is not None for r in actual)
+
+
+def test_gemma4_mtp_pa_encoded_matches_string_input(gemma4_mtp_vlm_model_path: Path):
+    assistant_path = generate_and_save_gemma4_mtp_assistant_model(gemma4_mtp_vlm_model_path)
+    config = GenerationConfig(
+        do_sample=False, max_new_tokens=12, num_assistant_tokens=3, ignore_eos=True, apply_chat_template=False
+    )
+    prompts = ["OpenVINO is", "The sky is"]
+
+    pipeline = ContinuousBatchingPipeline(
+        gemma4_mtp_vlm_model_path,
+        SchedulerConfig(),
+        "CPU",
+        {"draft_model": draft_model(assistant_path, "CPU")},
+    )
+    tokenizer = pipeline.get_tokenizer()
+    expected = pipeline.generate(prompts, [config] * len(prompts))
+    input_ids = [tokenizer.encode(prompt).input_ids for prompt in prompts]
+    actual = pipeline.generate(input_ids, [config] * len(prompts))
+    assert [tokenizer.decode(r.m_generation_ids) for r in actual] == [r.m_generation_ids for r in expected]
+
+
+def test_gemma4_mtp_pa_counts_final_round_acceptance(gemma4_mtp_vlm_model_path: Path):
+    assistant_path = generate_and_save_gemma4_mtp_assistant_model(gemma4_mtp_vlm_model_path)
+    config = GenerationConfig(do_sample=False, max_new_tokens=5, num_assistant_tokens=3, ignore_eos=True)
+
+    pipeline = ContinuousBatchingPipeline(
+        gemma4_mtp_vlm_model_path,
+        SchedulerConfig(),
+        "CPU",
+        {"draft_model": draft_model(assistant_path, "CPU")},
+    )
+    result = pipeline.generate(["OpenVINO is"], [config])[0]
+    metrics = result.extended_perf_metrics
+    main_steps = len(metrics.main_model_metrics.raw_metrics.m_durations)
+    # Every target step emits one token plus the draft tokens it accepted, including the finishing step.
+    assert main_steps + metrics.get_num_accepted_tokens() == config.max_new_tokens
+
+
+@pytest.mark.parametrize("dynamic_split_fuse", [True, False])
+def test_gemma4_mtp_pa_constrained_batch_budget(gemma4_mtp_vlm_model_path: Path, dynamic_split_fuse: bool):
+    assistant_path = generate_and_save_gemma4_mtp_assistant_model(gemma4_mtp_vlm_model_path)
+    configs = [
+        GenerationConfig(
+            do_sample=False, max_new_tokens=count, num_assistant_tokens=3, ignore_eos=True, apply_chat_template=False
+        )
+        for count in (6, 14, 9)
+    ]
+    # Prompts must fit max_num_batched_tokens for the non-split-fuse scheduler.
+    prompts = ["Hello", "The", "Sky"]
+    scheduler_config = SchedulerConfig()
+    # A single 1 + 3 token verification window fills the whole batch.
+    scheduler_config.max_num_batched_tokens = 4
+    scheduler_config.max_num_seqs = 2
+    scheduler_config.dynamic_split_fuse = dynamic_split_fuse
+    properties = {"KV_CACHE_PRECISION": "f16"}
+
+    baseline = ContinuousBatchingPipeline(gemma4_mtp_vlm_model_path, scheduler_config, "CPU", properties)
+    expected = [result.m_generation_ids for result in baseline.generate(prompts, configs)]
+    del baseline
+
+    pipeline = ContinuousBatchingPipeline(
+        gemma4_mtp_vlm_model_path,
+        scheduler_config,
+        "CPU",
+        {**properties, "draft_model": draft_model(assistant_path, "CPU")},
+    )
+    results = pipeline.generate(prompts, configs)
+    assert [result.m_generation_ids for result in results] == expected
+    assert results[0].extended_perf_metrics.get_num_draft_tokens() > 0
+
+
+def test_gemma4_mtp_pa_shared_cache_across_blocks(gemma4_mtp_vlm_model_path: Path):
+    assistant_path = generate_and_save_gemma4_mtp_assistant_model(gemma4_mtp_vlm_model_path)
+    config = GenerationConfig(do_sample=False, max_new_tokens=40, num_assistant_tokens=3, ignore_eos=True)
+    cache_properties = {"KV_CACHE_PRECISION": "f16"}
+
+    baseline = ContinuousBatchingPipeline(
+        gemma4_mtp_vlm_model_path,
+        SchedulerConfig(),
+        "CPU",
+        cache_properties,
+    )
+    expected = baseline.generate(["OpenVINO is"], [config])[0].m_generation_ids
+    del baseline
+
+    pipeline = ContinuousBatchingPipeline(
+        gemma4_mtp_vlm_model_path,
+        SchedulerConfig(),
+        "CPU",
+        {**cache_properties, "draft_model": draft_model(assistant_path, "CPU")},
+    )
+    for _ in range(2):
+        actual = pipeline.generate(["OpenVINO is"], [config])[0].m_generation_ids
+        assert actual == expected
+
+
+def test_gemma4_mtp_pa_batched_draft_matches_separate_requests(gemma4_mtp_vlm_model_path: Path):
+    assistant_path = generate_and_save_gemma4_mtp_assistant_model(gemma4_mtp_vlm_model_path)
+    prompts = ["OpenVINO is", "The sky is", "Explain cache sharing."]
+    configs = [
+        GenerationConfig(do_sample=False, max_new_tokens=count, num_assistant_tokens=3, ignore_eos=True)
+        for count in (40, 12, 32)
+    ]
+    properties = {"KV_CACHE_PRECISION": "f16"}
+
+    pipeline = ContinuousBatchingPipeline(
+        gemma4_mtp_vlm_model_path,
+        SchedulerConfig(),
+        "CPU",
+        {**properties, "draft_model": draft_model(assistant_path, "CPU")},
+    )
+    batched = pipeline.generate(prompts, configs)
+    del pipeline
+    metrics = batched[0].extended_perf_metrics
+    assert metrics.get_num_draft_tokens() > 0
+    assert len(metrics.draft_model_metrics.raw_metrics.m_durations) < metrics.get_num_draft_tokens()
+
+    for prompt, config, result in zip(prompts, configs, batched):
+        separate = ContinuousBatchingPipeline(
+            gemma4_mtp_vlm_model_path,
+            SchedulerConfig(),
+            "CPU",
+            {**properties, "draft_model": draft_model(assistant_path, "CPU")},
+        )
+        actual = separate.generate([prompt], [config])[0].m_generation_ids
+        assert result.m_generation_ids == actual
+
+
+def test_gemma4_mtp_pa_image_matches_main_only(gemma4_mtp_vlm_model_path: Path):
+    assistant_path = generate_and_save_gemma4_mtp_assistant_model(gemma4_mtp_vlm_model_path)
+    image = ov.Tensor(np.zeros((64, 64, 3), dtype=np.uint8))
+    config = GenerationConfig(do_sample=False, max_new_tokens=12, num_assistant_tokens=3, ignore_eos=True)
+    prompt = "Describe this picture."
+
+    baseline = VLMPipeline(gemma4_mtp_vlm_model_path, "CPU", ATTENTION_BACKEND="PA")
+    expected = baseline.generate(prompt, images=[image], generation_config=config).texts
+    del baseline
+
+    pipeline = VLMPipeline(
+        gemma4_mtp_vlm_model_path,
+        "CPU",
+        ATTENTION_BACKEND="PA",
+        draft_model=draft_model(assistant_path, "CPU"),
+    )
+    actual = pipeline.generate(prompt, images=[image], generation_config=config).texts
+    assert actual == expected
 
 
 def test_qwen35_mtp_extended_perf_metrics(qwen35_mtp_model_path: Path):

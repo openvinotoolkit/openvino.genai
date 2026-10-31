@@ -81,6 +81,9 @@ public:
     // returns per-layer embeddings callback, or nullptr if not available
     std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback();
 
+    // computes text input embeddings for token IDs and refreshes LM extra inputs derived from them
+    ov::Tensor get_inputs_embeds_from_ids(const ov::Tensor& input_ids, ov::genai::VLMPerfMetrics& metrics);
+
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
     std::vector<ov::genai::EncodedVideo> encode_videos(
@@ -222,6 +225,8 @@ private:
         virtual std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback() {
             return nullptr;
         }
+
+        virtual ov::Tensor get_inputs_embeds_from_ids(const ov::Tensor& input_ids, ov::genai::VLMPerfMetrics& metrics);
 
         virtual std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 

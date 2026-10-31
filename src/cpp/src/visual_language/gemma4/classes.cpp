@@ -688,15 +688,7 @@ ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(
 
     ov::Tensor input_ids = get_encoded_input_ids(prompt, metrics);
 
-    encode_vision_token_ids();
-
-    if (has_per_layer_embeddings()) {
-        m_lm_extra_inputs["per_layer_inputs"] = get_per_layer_embeddings(input_ids);
-    }
-
-    if (has_token_type_ids()) {
-        m_lm_extra_inputs["token_type_ids"] = get_token_type_ids(input_ids);
-    }
+    update_lm_extra_inputs(input_ids);
 
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
@@ -770,6 +762,24 @@ void InputsEmbedderGemma4::encode_vision_token_ids() {
 
 const std::unordered_map<std::string, ov::Tensor>& InputsEmbedderGemma4::get_lm_extra_inputs() const {
     return m_lm_extra_inputs;
+}
+
+void InputsEmbedderGemma4::update_lm_extra_inputs(const ov::Tensor& input_ids) {
+    encode_vision_token_ids();
+
+    if (has_per_layer_embeddings()) {
+        m_lm_extra_inputs["per_layer_inputs"] = get_per_layer_embeddings(input_ids);
+    }
+
+    if (has_token_type_ids()) {
+        m_lm_extra_inputs["token_type_ids"] = get_token_type_ids(input_ids);
+    }
+}
+
+ov::Tensor InputsEmbedderGemma4::get_inputs_embeds_from_ids(const ov::Tensor& input_ids,
+                                                            ov::genai::VLMPerfMetrics& metrics) {
+    update_lm_extra_inputs(input_ids);
+    return IInputsEmbedder::get_inputs_embeds_from_ids(input_ids, metrics);
 }
 
 void InputsEmbedderGemma4::patch_chat_template() {
