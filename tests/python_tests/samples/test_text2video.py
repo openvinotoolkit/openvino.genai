@@ -16,6 +16,57 @@ class TestText2Video:
 
     @pytest.mark.samples
     @pytest.mark.video_generation
+    @pytest.mark.parametrize("convert_model", ["tiny-random-ltx2.3"], indirect=True)
+    @pytest.mark.parametrize("static_shapes", [False, True])
+    def test_sample_heterogeneous_ltx2_3(self, convert_model, static_shapes, tmp_path):
+        import cv2
+        import soundfile as sf
+
+        command = [
+            sys.executable,
+            SAMPLES_PY_DIR / "video_generation/heterogeneous_ltx2_3_text2video.py",
+            convert_model,
+            self.PROMPT,
+            "CPU",
+            "CPU",
+            "CPU",
+            "--inference-precision",
+            "f32",
+            "--width",
+            "32",
+            "--height",
+            "32",
+            "--num-frames",
+            "9",
+            "--num-inference-steps",
+            "2",
+            "--cache-dir",
+            str(tmp_path / "cache"),
+        ]
+        if static_shapes:
+            command.append("--reshape")
+        run_sample(command, cwd=str(tmp_path))
+
+        capture = cv2.VideoCapture(str(tmp_path / "genai_video.avi"))
+        try:
+            assert capture.isOpened()
+            frames = []
+            while True:
+                ok, frame = capture.read()
+                if not ok:
+                    break
+                frames.append(frame)
+            assert len(frames) == 9
+            assert all(frame.shape == (32, 32, 3) for frame in frames)
+        finally:
+            capture.release()
+        audio, sample_rate = sf.read(tmp_path / "genai_audio.wav", dtype="float32", always_2d=True)
+        assert sample_rate > 0
+        assert audio.shape[0] > 0 and audio.shape[1] == 2
+        assert np.isfinite(audio).all()
+
+    @pytest.mark.samples
+    @pytest.mark.video_generation
     @pytest.mark.parametrize(
         "convert_model, sample_args, has_audio",
         [
