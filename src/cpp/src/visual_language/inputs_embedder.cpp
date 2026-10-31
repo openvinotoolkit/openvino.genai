@@ -30,6 +30,7 @@
 #include "visual_language/videochat_flash/classes.hpp"
 #include "visual_language/muse_glimmer/classes.hpp"
 #include "visual_language/minicpmv4_7/classes.hpp"
+#include "visual_language/lfm3_omni/classes.hpp"
 #include "visual_language/lfm3_vl/classes.hpp"
 
 #include "continuous_batching/timer.hpp"
@@ -358,6 +359,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderMiniCPMV4_6>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LFM3_VL) {
         m_impl = std::make_shared<InputsEmbedderLFM3VL>(vlm_config, model_dir, tokenizer, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::LFM3_OMNI) {
+        m_impl = std::make_shared<InputsEmbedderLFM3Omni>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA) {
         m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::NANOLLAVA) {
@@ -419,6 +422,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
         m_impl = std::make_shared<InputsEmbedderMiniCPMV4_6>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LFM3_VL) {
         m_impl = std::make_shared<InputsEmbedderLFM3VL>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::LFM3_OMNI) {
+        m_impl = std::make_shared<InputsEmbedderLFM3Omni>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA) {
         m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::NANOLLAVA) {

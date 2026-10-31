@@ -43,6 +43,16 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'LFM3Omni',
+    models: [
+      {
+        name: 'LFM3-Omni',
+        links: ['https://huggingface.co/LiquidAI/LFM3-Omni-2B'],
+        notesLink: '#lfm3-omni-notes',
+      },
+    ],
+  },
+  {
     architecture: 'LLaVA',
     models: [
       {

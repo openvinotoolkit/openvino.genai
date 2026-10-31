@@ -26,11 +26,13 @@
 namespace ov::genai {
 
 /**
- * @brief Public Qwen3-Omni pipeline supporting text + speech outputs.
+ * @brief Public omni pipeline supporting text + speech outputs (Qwen3-Omni, LFM3-Omni).
  *
- * OmniPipeline composes a VLM pipeline (text generation with hidden-state collection)
- * with a Qwen3-Omni speech pipeline (Talker + CodePredictor + Code2Wav). Each call to
- * `generate` takes two configs:
+ * For Qwen3-Omni, OmniPipeline composes a VLM pipeline (text generation with hidden-state
+ * collection) with a Qwen3-Omni speech pipeline (Talker + CodePredictor + Code2Wav). LFM3-Omni
+ * has no separate talker: its language model emits text and speech frames in one stream, so
+ * speech is decoded inside the VLM (SDPA backend) and `get_talker()` returns nullptr.
+ * Each call to `generate` takes two configs:
  *
  *   - `GenerationConfig text_config`     — drives the thinker text decode
  *     (max_new_tokens, do_sample, temperature, top_p, top_k, repetition_penalty,
@@ -48,8 +50,9 @@ namespace ov::genai {
  *   - Pure-DI: takes pre-built VLM and talker components for independent device choices
  *              or a custom TalkerBase subclass.
  *
- * Both ctors enforce that the loaded model is Qwen3-Omni capable (model_type == QWEN3_OMNI
- * and enable_audio_output) — non-Omni models throw at construction time.
+ * The DI ctor enforces that the loaded model is Qwen3-Omni capable (model_type == QWEN3_OMNI
+ * and enable_audio_output); the path ctor also accepts LFM3-Omni. Other models throw at
+ * construction time.
  *
  * @note This is a preview API and is subject to change.
  */
@@ -59,6 +62,8 @@ public:
     /// `models_path`, both compiled to `device` with the same `properties`. Equivalent to
     /// constructing a `VLMPipeline(models_path, device, properties)` plus a
     /// `Talker(models_path, device, properties)` and passing them to the DI ctor.
+    /// For LFM3-Omni it loads the VLM only, with ATTENTION_BACKEND=SDPA unless set: speech output
+    /// needs SDPA. With PA, generate() supports text output only and throws unless return_audio is false.
     OmniPipeline(const std::filesystem::path& models_path,
                  const std::string& device,
                  const ov::AnyMap& properties = {});
@@ -195,6 +200,7 @@ public:
 
     /// @brief Return the underlying TalkerBase. Speaker enumeration and embedding retrieval
     /// live here: `get_talker()->list_speakers()`, `get_talker()->get_speaker_embedding(name)`.
+    /// nullptr for LFM3-Omni, which has no separate talker.
     std::shared_ptr<TalkerBase> get_talker() const;
 
 private:

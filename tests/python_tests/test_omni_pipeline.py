@@ -982,6 +982,51 @@ class TestOmniPipelineRealModel:
 
         _extract_assert_single_waveform(result)
 
+    @pytest.mark.parametrize(
+        "field, value, message",
+        [
+            ("output_mode", ov_genai.SpeechOutputMode.SPEECH_ONLY, "output_mode applies to models"),
+            ("cp_repetition_penalty", 1.2, "cp_repetition_penalty applies to LFM3-Omni only"),
+            ("cp_repetition_penalty", 0.0, "cp_repetition_penalty must be > 0"),
+        ],
+    )
+    def test_rejects_in_stream_speech_fields(
+        self, omni_pipe: ov_genai.OmniPipeline, field: str, value: object, message: str
+    ) -> None:
+        """Fields of the LFM3-Omni in-stream speech decoder have no meaning for a separate talker."""
+        config = _talker_speech_config(return_audio=True)
+        setattr(config, field, value)
+        with pytest.raises(RuntimeError, match=message):
+            omni_pipe.generate("Describe this.", text_config=_text_config(2), talker_speech_config=config)
+
+    @pytest.mark.parametrize(
+        "field, value", [("output_mode", ov_genai.SpeechOutputMode.SPEECH_ONLY), ("cp_repetition_penalty", 1.2)]
+    )
+    def test_in_stream_field_rejection_ends_speech_streamer(
+        self, omni_pipe: ov_genai.OmniPipeline, field: str, value: object
+    ) -> None:
+        """The rejected call still ends the speech streamer, as OmniSpeechStreamerBase promises."""
+
+        class EndCounter(ov_genai.OmniSpeechStreamerBase):
+            def __init__(self) -> None:
+                super().__init__()
+                self.ends = 0
+
+            def write(self, chunk: openvino.Tensor) -> ov_genai.StreamingStatus:
+                return ov_genai.StreamingStatus.RUNNING
+
+            def end(self) -> None:
+                self.ends += 1
+
+        config = _talker_speech_config(return_audio=True)
+        setattr(config, field, value)
+        counter = EndCounter()
+        with pytest.raises(RuntimeError, match=field):
+            omni_pipe.generate(
+                "Describe this.", text_config=_text_config(2), talker_speech_config=config, speech_streamer=counter
+            )
+        assert counter.ends == 1
+
     def test_matches_optimum_text(self, omni_pipe: ov_genai.OmniPipeline, optimum_reference: OptimumReference) -> None:
         """Greedy decode must produce the same token ids as optimum-intel for a text-only prompt.
 

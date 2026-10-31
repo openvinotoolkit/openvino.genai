@@ -41,6 +41,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"muse_glimmer", VLMModelType::MUSE_GLIMMER},
         {"minicpmv4_7", VLMModelType::MINICPMV4_7},
         {"lfm3_vl", VLMModelType::LFM3_VL},
+        {"lfm3_omni", VLMModelType::LFM3_OMNI},
     };
 
     auto it = model_types_map.find(value);

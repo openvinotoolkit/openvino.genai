@@ -18,6 +18,7 @@
 #include "visual_language/continuous_batching_adapter.hpp"
 #include "visual_language/embedding_model.hpp"
 #include "visual_language/inputs_embedder.hpp"
+#include "visual_language/lfm3_omni/speech_engine.hpp"
 #include "visual_language/pipeline_base.hpp"
 #include "visual_language/embeddings_registry.hpp"
 #include "visual_language/vlm_chat_context.hpp"
@@ -97,6 +98,9 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
 
     std::string m_system_message;
     std::shared_ptr<EmbeddingsRegistry> m_embeddings_registry;
+
+    // LFM3-Omni speaks in the language model stream: the engine replaces the text decode loop.
+    std::unique_ptr<LFM3OmniSpeechEngine> m_speech_engine;
 private:
     void finalize_initialization(
         const std::shared_ptr<ov::Model>& language_model,
@@ -199,6 +203,9 @@ private:
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, properties_copy);
 
         finalize_initialization(language_model, kv_pos);
+        if (m_vlm_config.model_type == VLMModelType::LFM3_OMNI && !m_is_npu) {
+            m_speech_engine = std::make_unique<LFM3OmniSpeechEngine>(models_dir, m_language, m_embedding, device, properties_copy);
+        }
     }
 
     void initialize_from_model_and_map(
@@ -246,6 +253,10 @@ private:
             m_adapter_controller->apply(m_language);
         }
         finalize_initialization(language_model, kv_pos);
+        if (m_vlm_config.model_type == VLMModelType::LFM3_OMNI) {
+            m_speech_engine = std::make_unique<LFM3OmniSpeechEngine>(
+                models_map, config_dir_path, m_language, m_embedding, device, properties_copy);
+        }
     }
 public:
     VLMPipelineImpl(
@@ -360,6 +371,8 @@ public:
         if (!m_is_chat_conversation) {
             reset_language_state();
             m_language.get_tensor("attention_mask").set_shape({1, 0});
+            // A call that threw after tokenization skipped the reset at its end.
+            m_inputs_embedder->get_cache_state().reset_state();
         }
 
         setup_generation_config(generation_config);
@@ -972,6 +985,18 @@ private:
         ov::Tensor new_atten_mask = ov::Tensor{ov::element::i64, { 1, history_size + inputs_embeds_size }};
         std::fill_n(new_atten_mask.data<int64_t>(), new_atten_mask.get_size(), 1);
 
+        if (m_pending_speech_config) {
+            // Only a raw prompt can end with a mode marker: a chat template always ends with the assistant header.
+            const bool raw_prompt = !m_is_chat_conversation && !generation_config.apply_chat_template;
+            const int64_t last_prompt_token = raw_prompt && !tokenized_history.empty() ? tokenized_history.back() : -1;
+            return decode_with_speech(inputs_embeds,
+                                      new_atten_mask,
+                                      last_prompt_token,
+                                      generation_config,
+                                      streamer_ptr,
+                                      cache_state);
+        }
+
         ov::Tensor position_ids;
         std::optional<int64_t> rope_delta;
         std::tie(position_ids, rope_delta) = m_inputs_embedder->get_position_ids(inputs_embeds_size, history_size);
@@ -1005,13 +1030,49 @@ private:
             std::move(per_layer_callback)
         );
     }
+
+    void check_speech_in_stream(const OmniTalkerSpeechConfig& speech_config) const override {
+        if (!m_speech_engine) {
+            VLMBackend::check_speech_in_stream(speech_config);
+        }
+        LFM3SpeechRequest::validate(speech_config);
+    }
+
+    utils::GenerationFinishInfo decode_with_speech(const ov::Tensor& inputs_embeds,
+                                                   const ov::Tensor& attention_mask,
+                                                   int64_t last_prompt_token,
+                                                   const GenerationConfig& generation_config,
+                                                   const std::shared_ptr<StreamerBase>& streamer,
+                                                   utils::CacheState& cache_state) {
+        // The waveform reaches the caller through the speech streamer only.
+        const LFM3SpeechResult speech =
+            m_speech_engine->generate(inputs_embeds,
+                                      attention_mask,
+                                      last_prompt_token,
+                                      LFM3SpeechRequest(*m_pending_speech_config, generation_config),
+                                      streamer,
+                                      m_pending_speech_streamer);
+        // The language model has consumed every slot but the last sampled one.
+        if (speech.slot_tokens.size() > 1) {
+            ov::Tensor consumed(ov::element::i64, {1, speech.slot_tokens.size() - 1});
+            std::copy_n(speech.slot_tokens.begin(), consumed.get_size(), consumed.data<int64_t>());
+            cache_state.add_inputs(consumed);
+        }
+        utils::GenerationFinishInfo finish_info;
+        finish_info.results.tokens = {speech.text_tokens};
+        finish_info.results.scores = {0.0f};
+        finish_info.results.finish_reasons = {speech.finish_reason};
+        finish_info.results.perf_metrics.raw_metrics = speech.raw_perf_metrics;
+        finish_info.streaming_finish_status = speech.status;
+        return finish_info;
+    }
 };
 
 bool requires_sdpa(const std::filesystem::path& models_dir) {
-    // Force models to use SDPA backend by default until PA is supported. Example:
-    // auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    // vlm_config.model_type == VLMModelType::GEMMA3;
-    return false;
+    // Force models to use SDPA backend by default until PA is supported. An explicit PA request still gets PA.
+    // LFM3-Omni speech output is decoded in the stateful language model loop, which only SDPA provides.
+    const auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
+    return vlm_config.model_type == VLMModelType::LFM3_OMNI;
 }
 
 VLMPipeline::VLMPipeline(
