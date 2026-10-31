@@ -29,30 +29,29 @@ Follow these rules when writing, modifying, or reviewing code in this repository
 11. Keep the public API small. Flag new public getters, setters, flags or env vars that the change doesn't need.
 12. Give a new pipeline, config or overload the same shape as its siblings: an optional config argument is `std::optional<...Config>` with the default `std::nullopt`, properties map to Python kwargs, and a `ChatHistory` argument is named `history`.
 13. Don't use deprecated APIs in new code, tests or samples. For example, use `generate()` with `ChatHistory` instead of `start_chat()` and `finish_chat()`. Tests of the deprecation itself may call the deprecated API.
-14. Don't remove or rename public API in `src/cpp/include` or the bindings in one step. Deprecate it first (`OPENVINO_DEPRECATED` in C++, `PyErr_WarnEx(PyExc_DeprecationWarning, ...)` in the Python bindings) and link a ticket for its removal.
-15. Don't flag ABI breaks: ABI stability isn't required. Source compatibility is: flag public API in `src/cpp/include` or the bindings that is removed, renamed or loses a default argument without the deprecation step above.
+14. Keep source compatibility: don't remove or rename public API in `src/cpp/include` or the bindings, or drop a default argument, in one step. Deprecate it first (`OPENVINO_DEPRECATED` in C++, `PyErr_WarnEx(PyExc_DeprecationWarning, ...)` in the Python bindings) and link a ticket for its removal. ABI stability isn't required, so don't flag ABI breaks.
 
 ### Comments and files
 
-16. Write comments about the current code. When a comment refers to other code, name the function. Avoid vague references such as "upstream" or "the two".
-17. Avoid ambiguous words like "some" or "capable".
-18. Point permalinks to a commit, not a branch.
-19. Start new source files with the copyright header and the current year, for example `Copyright (C) 2026 Intel Corporation` and `SPDX-License-Identifier: Apache-2.0`.
-20. Don't commit one-off scripts (repro, debug, local conversion) that CI, tests and docs don't use.
-21. Make removals complete: no stale docs, empty config sections or leftover initializers. The PR description says why the code was removed.
+15. Write comments about the current code. When a comment refers to other code, name the function. Avoid vague references such as "upstream" or "the two".
+16. Avoid ambiguous words like "some" or "capable".
+17. Point permalinks to a commit, not a branch.
+18. Start new source files with the copyright header and the current year, for example `Copyright (C) 2026 Intel Corporation` and `SPDX-License-Identifier: Apache-2.0`.
+19. Don't commit one-off scripts (repro, debug, local conversion) that CI, tests and docs don't use.
+20. Make removals complete: no stale docs, empty config sections or leftover initializers. The PR description says why the code was removed.
 
 ### Tests and components
 
-22. Add tests for new features and bug fixes: Python tests in `tests/python_tests`, JS tests in `src/js/tests`. C++ tests are optional. Documentation, CI, sample-only and xfail-only changes don't need new tests. Don't ask for tests of test utilities or of tokenizer behavior.
-23. For a new model architecture, add a `tiny-random` model to the functional and sample tests. If no such model exists yet, a follow-up with a linked ticket is fine.
-24. Add a new component to `.github/labeler.yml`, `.github/components.yml` and `.github/CODEOWNERS` when a new use case is introduced.
+21. Add tests for new features and bug fixes: Python tests in `tests/python_tests`, JS tests in `src/js/tests`. C++ tests are optional. Documentation, CI, sample-only and xfail-only changes don't need new tests. Don't ask for tests of test utilities or of tokenizer behavior.
+22. For a new model architecture, add a `tiny-random` model to the functional and sample tests. If no such model exists yet, a follow-up with a linked ticket is fine.
+23. Add a new component to `.github/labeler.yml`, `.github/components.yml` and `.github/CODEOWNERS` when a new use case is introduced.
 
 ## Code Review Instructions for PRs
 
 When performing a code review on a Pull Request, additionally follow this protocol:
 
-25. PR description must be aligned with [./pull_request_template.md](./pull_request_template.md) and its checklist must be filled out. If not, request the author to update the description and checklist before proceeding with the review. Individual items can be marked as N/A in the checklist.
-26. If the documentation is updated, PR description MUST include a link to the corresponding documentation deployed on the fork.
-27. PR description must be up to date and include all information about the changes.
-28. If a PR aims to improve accuracy or performance, the PR description must include corresponding metrics. Performance-oriented PRs require both accuracy and performance metrics.
-29. A PR has one purpose. Flag hunks unrelated to it: reformatting, edits to unrelated comments, submodule bumps, extra features.
+24. PR description must be aligned with [./pull_request_template.md](./pull_request_template.md) and its checklist must be filled out. If not, request the author to update the description and checklist before proceeding with the review. Individual items can be marked as N/A in the checklist.
+25. If the documentation is updated, PR description MUST include a link to the corresponding documentation deployed on the fork.
+26. PR description must be up to date and include all information about the changes.
+27. If a PR aims to improve accuracy or performance, the PR description must include corresponding metrics. Performance-oriented PRs require both accuracy and performance metrics.
+28. A PR has one purpose. Flag hunks unrelated to it: reformatting, edits to unrelated comments, submodule bumps, extra features.
