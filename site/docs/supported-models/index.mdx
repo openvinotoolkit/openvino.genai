@@ -52,6 +52,19 @@ Models should belong to the same family and have the same tokenizers.
 
 <ImageGenerationModelsTable />
 
+:::warning Image Generation Models Notes
+#### Qwen-Image-2.1 {#qwen-image-2_1-notes}
+
+The model requires `optimum-intel` built from the master branch, `diffusers==0.41.0` and `transformers==5.15.1` for the export with `optimum-cli`:
+
+```bash
+pip install diffusers==0.41.0 transformers==5.15.1
+pip install git+https://github.com/huggingface/optimum-intel.git
+```
+
+`diffusers==0.41.0` imports the LTX2 pipeline, which requires `Gemma4UnifiedForConditionalGeneration` from `transformers`.
+:::
+
 ## Video Generation Models
 
 <VideoGenerationModelsTable />
