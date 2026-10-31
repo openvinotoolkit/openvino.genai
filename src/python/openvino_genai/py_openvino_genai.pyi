@@ -1373,6 +1373,10 @@ class ContinuousBatchingPipeline:
         ...
     def get_config(self) -> GenerationConfig:
         ...
+    def get_max_request_tokens(self) -> int | None:
+        """
+        Returns the maximum token capacity that a single request can consume under the current cache configuration, or None if dynamically allocated.
+        """
     def get_metrics(self) -> PipelineMetrics:
         ...
     def get_tokenizer(self) -> Tokenizer:
@@ -3026,6 +3030,10 @@ class LLMPipeline:
         """
     def get_generation_config(self) -> GenerationConfig:
         ...
+    def get_max_request_tokens(self) -> int | None:
+        """
+        Returns the maximum token capacity that a single request can consume under the current cache configuration, or None if dynamically allocated or not configured.
+        """
     def get_tokenizer(self) -> Tokenizer:
         ...
     def set_generation_config(self, config: GenerationConfig) -> None:
@@ -6851,6 +6859,10 @@ class VLMPipeline(VLMPipelineBase):
         """
     def get_generation_config(self) -> GenerationConfig:
         ...
+    def get_max_request_tokens(self) -> int | None:
+        """
+        Returns the maximum token capacity that a single request can consume under the current cache configuration, or None if dynamically allocated or not configured.
+        """
     def get_tokenizer(self) -> Tokenizer:
         ...
     def set_chat_template(self, chat_template: str) -> None:

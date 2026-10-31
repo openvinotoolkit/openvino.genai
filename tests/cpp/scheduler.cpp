@@ -3302,3 +3302,135 @@ TEST(TestScheduler, clear_expected_num_scheduled_tokens_restores_default_schedul
     }
     sequence_group->finish_iteration();
 }
+
+class ContinuousBatchingImplTestHelper : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
+public:
+    ContinuousBatchingImplTestHelper(std::shared_ptr<ContinuousBatchingScheduler> scheduler) {
+        m_scheduler = scheduler;
+    }
+};
+
+TEST(TestScheduler, SchedulerExposesMaxRequestTokens) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.num_kv_blocks = 8;
+    scheduler_config.enable_prefix_caching = false;
+
+    auto orchestrator = init_cache_orchestrator(scheduler_config, TEST_BLOCK_SIZE);
+    ContinuousBatchingScheduler scheduler(orchestrator, scheduler_config);
+
+    const auto max_tokens = scheduler.get_max_request_tokens();
+    ASSERT_TRUE(max_tokens.has_value());
+    EXPECT_EQ(*max_tokens, 8 * TEST_BLOCK_SIZE);
+}
+
+TEST(TestScheduler, DynamicSchedulerReturnsNulloptMaxRequestTokens) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.num_kv_blocks = 0;
+    scheduler_config.cache_size = 0;
+
+    auto orchestrator = init_cache_orchestrator(scheduler_config, TEST_BLOCK_SIZE);
+    ContinuousBatchingScheduler scheduler(orchestrator, scheduler_config);
+
+    EXPECT_FALSE(scheduler.get_max_request_tokens().has_value());
+}
+
+TEST(TestScheduler, PromptLengthAtCapacityBoundary) {
+    SchedulerConfig scheduler_config;
+    constexpr size_t num_kv_blocks = 8;
+    scheduler_config.num_kv_blocks = num_kv_blocks;
+    scheduler_config.enable_prefix_caching = false;
+
+    auto orchestrator = init_cache_orchestrator(scheduler_config, TEST_BLOCK_SIZE);
+    auto scheduler = std::make_shared<ContinuousBatchingScheduler>(orchestrator, scheduler_config);
+
+    ContinuousBatchingImplTestHelper pipeline(scheduler);
+
+    const auto max_tokens = pipeline.get_max_request_tokens();
+    ASSERT_TRUE(max_tokens.has_value());
+    const size_t capacity = *max_tokens;
+    EXPECT_EQ(capacity, num_kv_blocks * TEST_BLOCK_SIZE);
+
+    GenerationConfig config = utils::get_greedy_config();
+
+    // Case A: Prompt length equal to capacity - 1 fits and leaves room for decoding
+    std::vector<int64_t> tokens_fitting(capacity - 1, 1);
+    ov::Tensor input_fitting(ov::element::i64, {1, capacity - 1}, tokens_fitting.data());
+    EXPECT_NO_THROW(pipeline.add_request(1, input_fitting, config));
+
+    // Case B1: Prompt length equal to exact cache token capacity is rejected before prefill
+    // (exact capacity leaves 0 free slots for generation, leading to decode starvation)
+    std::vector<int64_t> tokens_at_capacity(capacity, 1);
+    ov::Tensor input_at_capacity(ov::element::i64, {1, capacity}, tokens_at_capacity.data());
+    try {
+        pipeline.add_request(2, input_at_capacity, config);
+        FAIL() << "Expected ov::Exception for prompt length equal to capacity";
+    } catch (const ov::Exception& e) {
+        const std::string message(e.what());
+        EXPECT_NE(message.find("exceeds the maximum token capacity"), std::string::npos) << message;
+        EXPECT_NE(message.find(std::to_string(capacity)), std::string::npos) << message;
+    }
+
+    // Case B2: Prompt length exceeding capacity by 1 token is rejected before prefill with descriptive error
+    std::vector<int64_t> tokens_over_capacity(capacity + 1, 1);
+    ov::Tensor input_over_capacity(ov::element::i64, {1, capacity + 1}, tokens_over_capacity.data());
+    try {
+        pipeline.add_request(3, input_over_capacity, config);
+        FAIL() << "Expected ov::Exception for prompt length exceeding capacity";
+    } catch (const ov::Exception& e) {
+        const std::string message(e.what());
+        EXPECT_NE(message.find("exceeds the maximum token capacity"), std::string::npos) << message;
+        EXPECT_NE(message.find(std::to_string(capacity + 1)), std::string::npos) << message;
+        EXPECT_NE(message.find(std::to_string(capacity)), std::string::npos) << message;
+    }
+
+    // Case C: Dynamic allocation has no fixed limit and accepts requests without capacity rejection
+    SchedulerConfig dynamic_config;
+    dynamic_config.num_kv_blocks = 0;
+    dynamic_config.cache_size = 0;
+
+    auto dynamic_orchestrator = init_cache_orchestrator(dynamic_config, TEST_BLOCK_SIZE);
+    auto dynamic_scheduler = std::make_shared<ContinuousBatchingScheduler>(dynamic_orchestrator, dynamic_config);
+
+    ContinuousBatchingImplTestHelper dynamic_pipeline(dynamic_scheduler);
+    EXPECT_FALSE(dynamic_pipeline.get_max_request_tokens().has_value());
+
+    std::vector<int64_t> long_tokens(capacity + 10, 1);
+    ov::Tensor dynamic_input(ov::element::i64, {1, long_tokens.size()}, long_tokens.data());
+    EXPECT_NO_THROW(dynamic_pipeline.add_request(4, dynamic_input, config));
+}
+
+TEST(TestScheduler, BatchedGenerateExceedingCapacityLeavesPipelineClean) {
+    SchedulerConfig scheduler_config;
+    constexpr size_t num_kv_blocks = 8;
+    scheduler_config.num_kv_blocks = num_kv_blocks;
+    scheduler_config.enable_prefix_caching = false;
+
+    auto orchestrator = init_cache_orchestrator(scheduler_config, TEST_BLOCK_SIZE);
+    auto scheduler = std::make_shared<ContinuousBatchingScheduler>(orchestrator, scheduler_config);
+
+    ContinuousBatchingImplTestHelper pipeline(scheduler);
+    const auto max_tokens = pipeline.get_max_request_tokens();
+    ASSERT_TRUE(max_tokens.has_value());
+    const size_t capacity = *max_tokens;
+
+    GenerationConfig config = utils::get_greedy_config();
+
+    // Prepare a batch where prompt 0 fits, but prompt 1 equals capacity (which cannot fit generation)
+    std::vector<int64_t> tokens_fitting(capacity - 1, 1);
+    ov::Tensor input_fitting(ov::element::i64, {1, capacity - 1}, tokens_fitting.data());
+
+    std::vector<int64_t> tokens_exceeding(capacity, 1);
+    ov::Tensor input_exceeding(ov::element::i64, {1, capacity}, tokens_exceeding.data());
+
+    std::vector<ov::Tensor> batch_inputs = {input_fitting, input_exceeding};
+    std::vector<GenerationConfig> batch_configs = {config, config};
+
+    // Calling generate should throw an exception due to input_exceeding
+    EXPECT_THROW(pipeline.generate(batch_inputs, batch_configs, {}), ov::Exception);
+
+    // Verify that the pipeline has no pending / awaiting requests leaked from prompt 0
+    EXPECT_FALSE(pipeline.has_non_finished_requests());
+
+    // Subsequent valid call succeeds without hitting "already in running state"
+    EXPECT_NO_THROW(pipeline.add_request(10, input_fitting, config));
+}

@@ -331,10 +331,17 @@ public:
         m_cache_orchestrator(std::move(cache_orchestrator)),
         m_snapkv_window_size(snapkv_window_size),
         m_is_validation_mode_enabled(is_validation_mode_enabled) {
+        if (m_config.cache_size == 0 && m_config.num_kv_blocks == 0 && m_cache_orchestrator) {
+            m_cache_orchestrator->set_dynamic_allocation(true);
+        }
     }
 
     void release() {
         m_cache_orchestrator.reset();
+    }
+
+    std::optional<size_t> get_max_request_tokens() const {
+        return m_cache_orchestrator ? m_cache_orchestrator->get_max_request_tokens() : std::nullopt;
     }
 
     Output schedule(std::vector<SequenceGroup::Ptr>& sequence_groups) {
