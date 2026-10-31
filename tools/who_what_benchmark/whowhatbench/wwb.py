@@ -195,7 +195,9 @@ def parse_args():
         help="Dataset source. For non-agent model types, this is passed to datasets.load_dataset "
         "as path,name (for example wikitext,wikitext-2-v1) and must follow Hugging Face datasets semantics. "
         "For text-agent and visual-text-agent, this should be a local .json/.jsonl file with "
-        "messages/tools records. If not provided, built-in defaults are used.",
+        "messages/tools records. For visual-text model types, a local .csv file with 'prompts', "
+        "'images' and 'videos' columns is also accepted (media paths resolved relative to the CSV). "
+        "If not provided, built-in defaults are used.",
     )
     parser.add_argument(
         "--dataset-field",
@@ -673,6 +675,7 @@ def load_prompts(args):
     path, separator, name = args.dataset.partition(",")
     candidate_path = Path(path).expanduser()
     is_json_dataset_file = path.lower().endswith((".json", ".jsonl"))
+    is_csv_dataset_file = path.lower().endswith(".csv")
     looks_like_local_path = (
         candidate_path.is_absolute() or path.startswith(("./", "../", "~/")) or candidate_path.exists()
     )
@@ -682,6 +685,8 @@ def load_prompts(args):
             "--model-type text-agent or --model-type visual-text-agent. "
             "For non-agent model types, pass a Hugging Face dataset id/path[,name] instead."
         )
+    if is_csv_dataset_file and looks_like_local_path:
+        return load_visual_text_csv_prompts(args, candidate_path)
     if not separator:
         name = None
     data = load_dataset(path=path, name=name, split=dataset_split)
@@ -690,6 +695,83 @@ def load_prompts(args):
     prompts = {"prompts": list(res)}
     logger.info("Prompts source path %s name %s split %s: count=%d", path, name, dataset_split, len(res))
     return prompts
+
+
+def load_visual_text_csv_prompts(args, csv_path):
+    """Load a local CSV dataset for visual-text model types.
+
+    The CSV must contain a ``prompts`` column and may contain ``images`` and
+    ``videos`` columns with paths to the corresponding media. Relative media
+    paths are resolved deterministically against the directory containing the
+    CSV file. Returns a dict with ``prompts``/``images``/``videos`` lists ready
+    for the visual-text evaluators. This keeps ``--dataset`` usable offline and
+    for domain-specific inputs (e.g. document/OCR images) without relying on the
+    remote default dataset. The behaviour is generic and not tied to any
+    particular model id.
+    """
+    from transformers.image_utils import load_image
+
+    visual_text_types = {
+        "visual-text",
+        "visual-text-chat",
+        "visual-text-only",
+        "visual-video-text",
+    }
+    if args.model_type not in visual_text_types:
+        raise ValueError(
+            "--dataset points to a local .csv file, which is supported only for "
+            f"visual-text model types ({', '.join(sorted(visual_text_types))}). "
+            f"Got --model-type {args.model_type}."
+        )
+
+    csv_path = Path(csv_path).expanduser().resolve()
+    base_dir = csv_path.parent
+    df = pd.read_csv(csv_path, keep_default_na=False)
+
+    if "prompts" not in df.columns:
+        raise ValueError(
+            f"Local visual-text CSV dataset {csv_path} must contain a 'prompts' column. "
+            f"Found columns: {list(df.columns)}."
+        )
+
+    if args.num_samples is not None:
+        df = df.head(args.num_samples)
+
+    def resolve_media(value):
+        if value is None:
+            return None
+        text = str(value).strip()
+        if text == "":
+            return None
+        candidate = Path(text).expanduser()
+        if not candidate.is_absolute():
+            candidate = (base_dir / candidate)
+        return str(candidate)
+
+    prompts = [str(p) for p in df["prompts"].tolist()]
+    n = len(prompts)
+
+    if "images" in df.columns:
+        images = []
+        for value in df["images"].tolist():
+            resolved = resolve_media(value)
+            images.append(load_image(resolved) if resolved is not None else None)
+    else:
+        images = [None] * n
+
+    if "videos" in df.columns:
+        videos = [resolve_media(value) for value in df["videos"].tolist()]
+    else:
+        videos = [None] * n
+
+    logger.info(
+        "Visual-text prompts loaded from local CSV %s: count=%d (images=%d, videos=%d)",
+        csv_path,
+        n,
+        sum(1 for x in images if x is not None),
+        sum(1 for x in videos if x is not None),
+    )
+    return {"prompts": prompts, "images": images, "videos": videos}
 
 
 def load_agent_dataset(args):
