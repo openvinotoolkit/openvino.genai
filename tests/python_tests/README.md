@@ -43,6 +43,34 @@ List of currently supported models can be found in tests/python_tests/data/model
 
 ## GGUF Frontend Tests
 
+The shared LLM feature tests also accept the pinned tiny GGUF models:
+
+```sh
+python -m pip install transformers==5.0.0
+python -m pytest tests/python_tests/test_llm_pipeline.py --gguf -m gguf_frontend -v -rx
+```
+
+The Linux and manylinux GGUF precommit jobs run this command. `--gguf` adds GGUF
+cases to the existing model lists, so new tests using `MODELS_LIST` also exercise
+the frontend without copying the test body. Input, batching, callbacks, streamers,
+configuration validation, sampling reproducibility and performance metrics run on
+all four models; chat tests additionally use the tiny Phi-3 model.
+The fixture reconstructs the Optimum reference from the exact GGUF weights.
+The pipeline helper explicitly selects `GGUF_READER="FRONTEND"` and disables CPU
+dynamic activation quantization for these reference comparisons.
+
+Known gaps are strict, exception-specific xfails: GGUF draft-model loading,
+SentencePiece vocabulary for structured output, Llama trailing whitespace, and
+specific Qwen3/Phi-3 text or chat reference mismatches. These cases still execute;
+an unexpected pass fails the job so the marker must be removed when support lands.
+The two Llama empty-prompt beam/streamer tests use `run=False` because the native
+pipeline crashes; they remain collected as xfails. Run them individually with
+`--runxfail` to reproduce. Unexpected failures remain failures. Tests tied to a particular checkpoint's
+output, IR configuration files, NPU behavior, or another modality need a matching
+GGUF fixture before they can join this matrix. New format-independent LLM features
+should use the shared model lists and add a scoped xfail only for a confirmed gap.
+
+
 The Linux precommit GGUF jobs include a tiny-model suite comparing the frontend with
 the regular Optimum export path:
 
@@ -158,7 +186,7 @@ When adding a new architecture or fixing its integration:
    Run every applicable SDPA, PA, automatic and continuous-batching case against the
    independent llama.cpp reference; include dense/MoE variants where applicable.
 3. For tokenizer or end-to-end integration coverage, add a small GGUF to
-   `test_gguf_frontend.py:TINY_GGUF_MODELS`, pin both the GGUF repository and the matching
+   `data/models.py:TINY_GGUF_MODELS`, pin both the GGUF repository and the matching
    source tokenizer/configuration revision, and confirm the reference model is rebuilt
    from the same GGUF weights. This runs the tokenizer, generation, streaming and saved-IR
    checks above. Prefer small fixtures that keep precommit downloads and runtime bounded.

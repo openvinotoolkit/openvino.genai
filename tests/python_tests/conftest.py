@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import sys
 import gc
 import pytest
 import shutil
@@ -66,10 +67,12 @@ def pytest_make_parametrize_id(config, val, argname):
 
 def pytest_addoption(parser):
     parser.addoption("--model_ids", help="Select models to run")
+    parser.addoption("--gguf", action="store_true", help="Include frontend GGUF models in shared LLM tests")
 
 
 def pytest_configure(config: pytest.Config):
     pytest.selected_model_ids = config.getoption("--model_ids", default=None)
+    pytest.include_gguf = config.getoption("--gguf")
 
 
 IMAGE_GEN_MODELS = {
@@ -195,3 +198,70 @@ def run_gc_after_test():
     """
     yield
     gc.collect()
+
+
+def pytest_collection_modifyitems(items):
+    from openvino_genai import GenerationConfig
+    from data.models import GGUFModelDescription
+    from utils.ov_genai_pipelines import PipelineType, is_generation_available
+
+    for item in items:
+        callspec = getattr(item, "callspec", None)
+        if callspec is None:
+            continue
+        model = callspec.params.get("llm_model")
+        if not isinstance(model, GGUFModelDescription):
+            continue
+        item.add_marker(
+            pytest.mark.skipif(
+                sys.platform in {"darwin", "win32"},
+                reason="GGUF frontend integration: CVS-168882 (macOS), CVS-174065 (Windows)",
+            )
+        )
+        pipeline_type = callspec.params.get("pipeline_type", PipelineType.AUTO)
+        generation_config_dict = callspec.params.get("generation_config_dict")
+        if generation_config_dict is not None and not is_generation_available(
+            GenerationConfig(**generation_config_dict), pipeline_type
+        ):
+            item.add_marker(
+                pytest.mark.skip(reason="Beam search is unsupported by speculative and prompt lookup decoding")
+            )
+            continue
+        test_name = item.originalname
+        reason = None
+        raises = AssertionError
+        run = True
+        if pipeline_type == PipelineType.SPECULATIVE_DECODING:
+            reason = "draft_model(path) expects an IR directory and cannot load a GGUF file"
+            raises = RuntimeError
+        elif (
+            test_name == "test_perf_metrics_with_structured_output"
+            and model.gguf_repo != "mradermacher/tiny-random-qwen3-GGUF"
+        ):
+            reason = "GGUF SentencePiece tokenizer does not expose the full vocabulary required by structured output"
+            raises = RuntimeError
+        elif model.gguf_repo == "aladar/llama-2-tiny-random-GGUF":
+            if test_name in {"test_streamer_kwargs_batch_throws", "test_operator_with_streamer_kwargs_batch_throws"}:
+                reason = "Llama GGUF empty prompt with beam search and a streamer crashes the native pipeline"
+                run = False
+            elif test_name == "test_batch_string_inputs" and any(
+                prompt.endswith(" ") for prompt in callspec.params["prompts"]
+            ):
+                reason = "GGUF Llama tokenizer drops trailing whitespace preserved by the HF reference"
+        elif model.gguf_repo == "mradermacher/tiny-random-qwen3-GGUF" and test_name == "test_batch_string_inputs":
+            if callspec.params["prompts"] in [
+                ["table is made", "They sky is blue because", "Difference between Jupiter and Mars is that"],
+                ["Alan Turing was a", "return 0", "你好！ 你好嗎？"],
+                ["table is made", "table is made [force left pad tokens]"],
+            ]:
+                reason = "Tiny Qwen3 GGUF batched generation differs from the exact-weight Optimum reference"
+        elif model.gguf_repo == "mradermacher/tiny-random-Phi3ForCausalLM-GGUF":
+            if test_name in {
+                "test_string_inputs",
+                "test_batch_string_inputs",
+                "test_chat_scenario",
+                "test_chat_scenario_callback_cancel",
+            }:
+                reason = "Tiny Phi-3 GGUF text/chat generation differs from the exact-weight Optimum reference"
+        if reason:
+            item.add_marker(pytest.mark.xfail(reason=reason, strict=True, raises=raises, run=run))
