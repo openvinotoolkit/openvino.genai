@@ -3,6 +3,8 @@
 
 #include "whisper/whisper_utils.hpp"
 
+#include <algorithm>
+
 namespace {
 
 template <typename T>
@@ -22,7 +24,9 @@ namespace ov {
 namespace genai {
 namespace utils {
 
-void infer_with_perf_metrics(ov::InferRequest& request, ov::genai::RawPerfMetrics& raw_metrics) {
+void infer_with_perf_metrics(ov::InferRequest& request,
+                             ov::genai::RawPerfMetrics& raw_metrics,
+                             std::vector<ov::genai::MicroSeconds>& extra_durations) {
     const auto infer_start = std::chrono::steady_clock::now();
     request.infer();
     const auto infer_end = std::chrono::steady_clock::now();
@@ -31,6 +35,7 @@ void infer_with_perf_metrics(ov::InferRequest& request, ov::genai::RawPerfMetric
     raw_metrics.m_token_infer_durations.emplace_back(infer_ms);
     raw_metrics.m_new_token_times.emplace_back(infer_end);
     raw_metrics.m_batch_sizes.emplace_back(1);
+    extra_durations.emplace_back(infer_ms);
 }
 
 void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
@@ -39,6 +44,15 @@ void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
     filter_by_ranges(raw_metrics.m_token_infer_durations, offset, ranges);
     filter_by_ranges(raw_metrics.m_new_token_times, offset, ranges);
     filter_by_ranges(raw_metrics.m_batch_sizes, offset, ranges);
+}
+
+void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
+                                ov::genai::WhisperRawPerfMetrics& whisper_raw_metrics,
+                                size_t offset,
+                                std::vector<std::pair<size_t, size_t>>& ranges) {
+    filter_non_segment_metrics(raw_metrics, offset, ranges);
+    filter_by_ranges(raw_metrics.m_sampling_durations, offset, ranges);
+    filter_by_ranges(whisper_raw_metrics.decode_inference_durations, offset, ranges);
 }
 
 int64_t argmax(const ov::Tensor& logits, const size_t batch_idx) {
@@ -55,6 +69,73 @@ int64_t argmax(const ov::Tensor& logits, const size_t batch_idx) {
     float max_logit = logits_data[out_token];
 
     return out_token;
+}
+
+ov::genai::WhisperGenerationConfig prepare_per_generate_config(
+    const ov::genai::WhisperGenerationConfig& base_config,
+    const ov::genai::OptionalWhisperGenerationConfig& per_generate_config) {
+    if (!per_generate_config.has_value()) {
+        base_config.validate();
+        return base_config;
+    }
+
+    ov::genai::WhisperGenerationConfig result_config = *per_generate_config;
+
+    // If stop_token_ids were not provided, take value from base_config
+    if (result_config.stop_token_ids.empty()) {
+        result_config.stop_token_ids = base_config.stop_token_ids;
+    }
+
+    // If eos_token_id was not provided, take value from base_config
+    if (result_config.eos_token_id == -1) {
+        result_config.set_eos_token_id(base_config.eos_token_id);
+    }
+
+    // default constructed WhisperGenerationConfig has no lang_to_id map
+    if (result_config.lang_to_id.empty()) {
+        result_config.lang_to_id = base_config.lang_to_id;
+    }
+
+    result_config.validate();
+    return result_config;
+}
+
+std::string find_language_by_token_id(const std::map<std::string, int64_t>& lang_to_id, int64_t token_id) {
+    for (const auto& [language, id] : lang_to_id) {
+        if (id == token_id) {
+            return language;
+        }
+    }
+
+    OPENVINO_THROW("Language token id ", token_id, " not found in lang_to_id map.");
+}
+
+int64_t get_or_throw_token_id_by_language(const std::map<std::string, int64_t>& lang_to_id,
+                                          const std::string& language) {
+    // Normalize plain language codes to the wrapped form used by lang_to_id.
+    constexpr size_t delimiter_size = 2;
+    const bool is_wrapped = language.size() > 2 * delimiter_size &&
+                            language.compare(0, delimiter_size, "<|") == 0 &&
+                            language.compare(language.size() - delimiter_size, delimiter_size, "|>") == 0;
+
+    const std::string wrapped_language = is_wrapped ? language : "<|" + language + "|>";
+
+    const auto it = lang_to_id.find(wrapped_language);
+    OPENVINO_ASSERT(it != lang_to_id.end(), "'language' ", language, " must be provided in 'lang_to_id' map.");
+
+    return it->second;
+}
+
+std::string to_unescaped_language(const std::string& language) {
+    // "<|en|>" -> "en"
+    std::string result = language;
+    result.erase(std::remove_if(result.begin(),
+                                result.end(),
+                                [](char c) {
+                                    return c == '|' || c == '<' || c == '>';
+                                }),
+                 result.end());
+    return result;
 }
 
 }  // namespace utils

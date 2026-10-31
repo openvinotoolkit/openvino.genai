@@ -1,4 +1,5 @@
 import CodeExampleCPP from './_code_example_cpp.mdx';
+import CodeExampleC from './_code_example_c.mdx';
 import CodeExamplePython from './_code_example_python.mdx';
 import CodeExampleJS from './_code_example_js.mdx';
 
@@ -7,6 +8,7 @@ import CodeExampleJS from './_code_example_js.mdx';
 
 The [`Text2SpeechPipeline`](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.Text2SpeechPipeline.html) is the main object for generating speech from text.
 It automatically loads the TTS model and vocoder from the converted model directory.
+The output sample rate is model-dependent and is returned in the generation result.
 
 <LanguageTabs>
     <TabItemPython>
@@ -29,6 +31,16 @@ It automatically loads the TTS model and vocoder from the converted model direct
             </TabItem>
         </Tabs>
     </TabItemCpp>
+    <TabItemC>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <CodeExampleC device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <CodeExampleC device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemC>
     <TabItemJS>
         <Tabs groupId="device">
             <TabItem label="CPU" value="cpu">
@@ -48,12 +60,12 @@ Use CPU or GPU as devices without any other code change.
 ## Additional Usage Options
 
 :::tip
-Check out [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/speech_generation/text2speech.py), [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/speech_generation/text2speech.cpp), and [Node.js](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/js/speech_generation/text2speech.js) speech generation samples.
+Check out the [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/speech_generation/text2speech.py), [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/speech_generation/text2speech.cpp), [C](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/c/speech_generation/README.md), and [Node.js](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/js/speech_generation/text2speech.js) speech generation samples. The C sample writes a WAV file; the C example above writes raw float32 samples.
 :::
 
 ### Use Speaker Embedding File
 
-To generate speech using the SpeechT5 TTS model, you can specify a target voice by providing a speaker embedding file.
+To generate speech using the SpeechT5 model, you can specify a target voice by providing a speaker embedding file.
 
 This file must contain 512 32-bit floating-point values that represent the voice characteristics of the target speaker. The model will use these characteristics to synthesize the input text in the specified voice.
 
@@ -80,7 +92,7 @@ python create_speaker_embedding.py
         result = pipeline.generate("Hello OpenVINO GenAI", speaker_embedding)
 
         speech = result.speeches[0]
-        sf.write("output_audio.wav", speech.data[0], samplerate=16000)
+        sf.write("output_audio.wav", speech.data[0], samplerate=result.output_sample_rate)
         ```
     </TabItemPython>
     <TabItemCpp>
@@ -104,6 +116,11 @@ python create_speaker_embedding.py
         }
         ```
     </TabItemCpp>
+    <TabItemC>
+        ```bash
+        text2speech_c MODEL_DIR "Hello OpenVINO GenAI" SPEAKER_EMBEDDING.bin output_audio.wav --device CPU
+        ```
+    </TabItemC>
     <TabItemJS>
         ```javascript
         import { writeFile } from 'node:fs/promises';
@@ -119,8 +136,19 @@ python create_speaker_embedding.py
             { speakerEmbedding },
         );
 
-        const wavData = encode([result.speeches[0].data], { sampleRate: 16000 });
+        const sampleRate = Number(result.outputSampleRate ?? result.output_sample_rate ?? 16000);
+        const wavData = encode([result.speeches[0].data], { sampleRate });
         await writeFile("output_audio.wav", wavData);
         ```
     </TabItemJS>
 </LanguageTabs>
+
+### Performance Metrics
+
+`Text2SpeechPipeline` returns `Text2SpeechDecodedResults` with a `perf_metrics` field of type `SpeechGenerationPerfMetrics`, which extends [`PerfMetrics`](/docs/guides/performance-metrics).
+
+In addition to common metrics, `SpeechGenerationPerfMetrics` provides:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `num_generated_samples` | integer | Number of audio samples generated |

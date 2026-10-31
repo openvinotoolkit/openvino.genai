@@ -50,7 +50,27 @@ It can be initialized from the path, in-memory IR representation or obtained fro
     </TabItemJS>
 </LanguageTabs>
 
-`Tokenizer` has `encode()` and `decode()` methods which support the following arguments: `add_special_tokens`, `skip_special_tokens`, `pad_to_max_length`, `max_length`.
+`Tokenizer` has `encode()` and `decode()` methods that support the following arguments: `add_special_tokens`, `skip_special_tokens`, `pad_to_max_length`, `max_length`.
+The `Tokenizer` can also be tuned for concurrent execution. Below are examples of how to configure these options.
+
+#### Configure tokenizer streams for concurrent execution
+
+`Tokenizer` constructors accept OpenVINO compile properties. For workloads that run tokenization from multiple threads, you can increase the number of tokenizer streams to improve throughput.
+
+Pass OpenVINO properties when constructing `Tokenizer`:
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        import openvino_genai as ov_genai
+        # Configure multiple streams for concurrent encode/decode calls.
+        tokenizer = ov_genai.Tokenizer(models_path, **{"NUM_STREAMS": 4,"INFERENCE_NUM_THREADS": 16})
+        ```
+    </TabItemPython>
+</LanguageTabs>
+
+Choose the stream count based on CPU resources and expected parallel tokenization load.
+
 
 #### Example - disable adding special tokens:
 

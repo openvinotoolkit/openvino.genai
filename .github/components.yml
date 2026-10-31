@@ -6,9 +6,10 @@ tokenizers:
 
 tests_dependencies:
   revalidate:
-    - whisper
+    - automatic_speech_recognition
     - continuous_batching
     - visual_language
+    - omni
     - LLM
     - GGUF
     - tokenizers
@@ -22,7 +23,7 @@ tests_dependencies:
 samples_dependencies:
   revalidate:
     - LLM_samples
-    - Whisper_samples
+    - automatic_speech_recognition_samples
     - Image_generation_samples
     - Video_generation_samples
     - VLM_samples
@@ -39,24 +40,24 @@ text_streamer:
     - LLM
     - visual_language
     - sampling
-    - whisper
+    - automatic_speech_recognition
     - speculative_decoding
     - prompt_lookup
     - continuous_batching
     - LLM_samples
-    - Whisper_samples
+    - automatic_speech_recognition_samples
     - VLM_samples
 
 sampling:
   revalidate:
     - LLM
     - visual_language
-    - whisper
+    - automatic_speech_recognition
     - continuous_batching
     - speculative_decoding
     - prompt_lookup
     - LLM_samples
-    - Whisper_samples
+    - automatic_speech_recognition_samples
     - VLM_samples
     - llm_bench
     - WWB
@@ -82,12 +83,17 @@ LLM:
 visual_language:
   revalidate:
     - VLM_samples
+    - omni
     - llm_bench
     - WWB
 
-whisper:
+omni:
   revalidate:
-    - Whisper_samples
+    - llm_bench
+
+automatic_speech_recognition:
+  revalidate:
+    - automatic_speech_recognition_samples
     - llm_bench
     - WWB
 
@@ -110,11 +116,13 @@ RAG:
 speech_generation:
   revalidate:
     - Speech_generation_samples
+    - omni
 
 continuous_batching:
   revalidate:
     - LLM
     - visual_language
+    - omni
     - speculative_decoding
     - prompt_lookup
     - sampling
@@ -140,7 +148,7 @@ prompt_lookup:
 LLM_samples:
   revalidate: []
 
-Whisper_samples:
+automatic_speech_recognition_samples:
   revalidate: []
 
 Image_generation_samples:

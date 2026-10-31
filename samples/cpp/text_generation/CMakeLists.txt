@@ -43,8 +43,8 @@ if(POLICY CMP0135)
 endif()
 
 FetchContent_Declare(cxxopts
-    URL https://github.com/jarro2783/cxxopts/archive/refs/tags/v3.1.1.tar.gz
-    URL_HASH SHA256=523175f792eb0ff04f9e653c90746c12655f10cb70f1d5e6d6d9491420298a08)
+    URL https://github.com/jarro2783/cxxopts/archive/refs/tags/v3.3.1.tar.gz
+    URL_HASH SHA256=3bfc70542c521d4b55a46429d808178916a579b28d048bd8c727ee76c39e2072)
 FetchContent_MakeAvailable(cxxopts)
 
 add_executable(benchmark_genai benchmark_genai.cpp read_prompt_from_file.cpp)

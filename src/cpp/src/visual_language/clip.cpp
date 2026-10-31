@@ -46,6 +46,20 @@ static inline double pillow_bilinear_filter(double x) {
     return 0.0;
 }
 
+// Pillow's Lanczos kernel with radius 3.
+static inline double pillow_lanczos_filter(double x) {
+    x = std::abs(x);
+    if (x == 0.0) {
+        return 1.0;
+    }
+    if (x < 3.0) {
+        constexpr double PI = 3.14159265358979323846;
+        const double pi_x = PI * x;
+        return std::sin(pi_x) * std::sin(pi_x / 3.0) / (pi_x * pi_x / 3.0);
+    }
+    return 0.0;
+}
+
 struct Coeffs1D {
     int outSize = 0;
     int ksize = 0;
@@ -261,6 +275,10 @@ void bicubic_resize(const clip_image_u8& img, clip_image_u8& dst, int target_wid
 
 void bilinear_resize(const clip_image_u8& img, clip_image_u8& dst, int target_width, int target_height) {
     resize_pillow_like(img, dst, target_width, target_height, 1.0, pillow_bilinear_filter);
+}
+
+void lanczos_resize(const clip_image_u8& img, clip_image_u8& dst, int target_width, int target_height) {
+    resize_pillow_like(img, dst, target_width, target_height, 3.0, pillow_lanczos_filter);
 }
 
 // llava-1.6 type of resize_and_pad (black by default)

@@ -42,3 +42,6 @@ install(TARGETS ${TARGET_NAME} EXPORT OpenVINOGenAITargets
         ARCHIVE DESTINATION ${ARCHIVE_DESTINATION} COMPONENT core_c_genai_dev
         RUNTIME DESTINATION ${RUNTIME_DESTINATION} COMPONENT core_c_genai
         INCLUDES DESTINATION runtime/include)
+if(OpenVINODeveloperPackage_FOUND AND COMMAND ov_install_pdb)
+    ov_install_pdb(${TARGET_NAME})
+endif()

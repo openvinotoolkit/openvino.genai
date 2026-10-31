@@ -75,27 +75,32 @@ public:
             }
 
             if (sampling_params.is_multinomial()) {
-                // Order: top_k → temperature → top_p
+                // Order: top_k → temperature → min_p → top_p
                 //
                 // top_k first: temperature scaling only changes magnitude, we would pick same K tokens
                 // regardless of temperature and if we filter top_k first, temperature scaling runs on smaller vector
                 //
-                // top_p: by the time it runs, m_vector holds normalised probabilities from temperature transform
+                // min_p / top_p: by the time they run, m_vector holds normalised probabilities from temperature transform
 
                 const bool top_k_active = (sampling_params.top_k > 0 &&
                                            sampling_params.top_k < std::numeric_limits<size_t>::max());
                 if (top_k_active) {
                     m_logit_transformers.push_back(std::make_shared<LogitTransformers::TopKFilter>(sampling_params.top_k));
                 }
-                // Defer expf to the draw step (fused CDF scan) only when BOTH conditions hold:
+                // Defer expf to the draw step (fused CDF scan) only when ALL conditions hold:
                 //   1. top_k > 0: TopKFilter already populated m_vector with K candidates
                 //      in arbitrary order (not sorted).
                 //   2. top_p == 1.0: TopPFilter will NOT run (it requires normalised probs).
+                //   3. min_p == 0.0: MinPFilter will NOT run (it also requires normalised probs).
                 // When deferred, TemperatureLogitTransform only scales logits by 1/T;
                 // expf and CDF scan are fused in _multinomial_sample.
-                const bool defer_expf = top_k_active && (sampling_params.top_p == 1.0f);
+                const bool min_p_active = (sampling_params.min_p > 0.0f);
+                const bool defer_expf = top_k_active && (sampling_params.top_p == 1.0f) && !min_p_active;
                 m_logit_transformers.push_back(std::make_shared<LogitTransformers::TemperatureLogitTransform>(
                     sampling_params.temperature, defer_expf));
+                if (min_p_active) {
+                    m_logit_transformers.push_back(std::make_shared<LogitTransformers::MinPFilter>(sampling_params.min_p));
+                }
                 if (sampling_params.top_p != 1.0f) {
                     m_logit_transformers.push_back(std::make_shared<LogitTransformers::TopPFilter>(sampling_params.top_p));
                 }

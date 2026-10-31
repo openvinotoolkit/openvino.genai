@@ -1,61 +1,89 @@
 # OpenVINO GenAI Copilot Instructions
 
-## Context & Persona
-
-You are the OpenVINO GenAI expert. Your mission is to ensure that all code aligns with the OpenVINO GenAI existing code and guidelines. The focus should be on high-performance inference. You are deeply familiar with the ov::, ov::genai:: namespaces, generative models and pipelines architectures.
-
-## Expertise Areas
-
-1. Model Architecture Knowledge:
-   - Understanding of attention mechanisms, KV-cache optimization, and sampling strategies
-   - Understanding of transformer-based models and diffusion models
-2. OpenVINO Expertise:
-   - Proficient with OpenVINO libraries, especially ov::genai components
-   - Familiar with OpenVINO performance optimization techniques
-3. C++ Proficiency:
-   - Strong C++17 skills
-   - Familiar with best practices in memory management, concurrency, and template programming
+OpenVINO GenAI is a C++17 library (`ov::genai`, public headers in `src/cpp/include`) with Python (pybind11, `src/python`), C (`src/c`) and JS (`src/js`) bindings. When reviewing, comment only on issues a maintainer would ask to fix. Skip formatting that linters already check.
 
 ## General Coding Guidelines
 
-Follow these rules when writing, modifying, or reviewing code in this repository:
+Follow these rules when writing, modifying, or reviewing code in this repository. Rules are grouped by topic.
 
-1. Follow C++ Core Guidelines strictly.
-2. Performance: avoid `dynamic_cast` in hot paths (inference loops). Use `static_cast` or redesign if the type is known.
-3. Avoid copies: large data structures (like tensors) must be passed by reference or moved, not copied.
-4. Pass non-fundamental values by `const` reference wherever possible.
-5. Exceptions: use `OPENVINO_ASSERT(condition, ...)` for checks instead of `if` + `OPENVINO_THROW(...)` or `throw`.
-6. Avoid redundant inline comments next to `OPENVINO_ASSERT()` and `OPENVINO_THROW()`; the error message argument must be clear and self-explanatory.
-7. Formatting & Safety:
-   - No `using namespace std;`.
-   - No `auto` for primitive types where it obscures readability.
-   - Use `const` and `constexpr` wherever possible.
-8. Follow constructors and member initializer lists style instead of direct assignments in the constructor body.
-9. When initial container values are known upfront, prefer initializer-list / brace-initialization over constructing an empty container and immediately inserting values.
-10. Make sure the function names are descriptive.
-11. Check for variables with different names but similar meaning or aliasing.
-12. Avoid duplicate code. Ensure that common functionality is extracted into reusable functions or utilities.
-13. Avoid pronouns in comments and names to make the statements concise.
-14. Unused functions and constructors aren't allowed except for in `debug_utils.hpp`.
-15. `debug_utils.hpp` must never be included.
-16. Assumptions on the user's behalf aren't allowed. For example, the implementation shouldn't adjust config values silently or with a warning; it should throw an exception instead.
-17. Extend sample and functional tests with `tiny-random` model when a new model architecture is added.
-18. When factoring out a function, ensure the implementation doesn't change.
-19. Samples:
-    - Avoid adding new samples unless there is a strong, clearly justified reason.
-    - Keep command‑line arguments in samples minimal. Prefer hardcoding values.
-    - Ensure new samples have corresponding tests.
+### Correctness
+
+1. Don't adjust config values silently or with a warning. Throw an exception instead.
+2. Use `OPENVINO_ASSERT(condition, ...)` for checks instead of `if` + `OPENVINO_THROW(...)` or `throw`. Use `OPENVINO_THROW(...)` only when the exception is unconditional.
+3. In checks on user input, the error message names the wrong value and the expected one. Don't add a comment that repeats the message.
+4. Don't remove an existing exception or error path, and don't turn it into a warning or a no-op. This doesn't apply to a PR that supports a case the check used to reject and tests that case.
+5. Don't add try/catch blocks just to be safe. Catch only an exception that is expected and handled. Catch-all blocks at the C and JS binding boundaries, which turn exceptions into status codes or JS errors, are expected.
+6. An output `ov::Tensor` from `InferRequest::get_tensor()` is a view into the request's buffer, and the next `infer()` on that request overwrites it. Flag such a tensor that is kept (in a member, a cache or chat history) and read after the next `infer()` without a deep copy of its data. Copying the `ov::Tensor` handle still shares the buffer. Reusing an input tensor from `get_tensor()` is fine.
+7. `tensor.data<T>()` checks the element type internally, so don't ask for an assert on `get_element_type()` before it.
+8. When you move code into a new function, keep its behavior the same.
+
+### Public API and bindings
+
+9. When the public C++ API in `src/cpp/include` changes, make the same change in the Python bindings in `src/python`: overloads, constructors (including `std::filesystem::path`), argument names, defaults, getters and setters. `.pyi` stubs are enforced by tests, so no review comments needed. Check `src/c` and `src/js` if they wrap the changed API.
+10. Give new public APIs docstrings in the C++ header and the Python binding, and documentation in `site/docs`.
+11. Use model-neutral public names: `Talker`, not `Qwen3OmniTalker`.
+12. Use the same base name for related public entities across layers, for example enum/class `VisionPreprocess` and env var `VISION_PREPROCESS`. Flag two public names for the same thing.
+13. Keep the public API small. Flag new public getters, setters, flags or env vars that the change doesn't need.
+14. Don't use deprecated APIs in new code, tests or samples. For example, use `generate()` with `ChatHistory` instead of `start_chat()` and `finish_chat()`.
+15. Don't flag ABI breaks: ABI stability isn't required. Source compatibility is: flag public API in `src/cpp/include` or the bindings that is removed, renamed or loses a default argument.
+
+### C++
+
+16. Don't deep-copy tensor data or large containers without need (rule 6 is the exception). Pass `ov::Tensor` and other non-trivial objects by `const&`. Take an argument that is moved from as `&&`. A by-value `ov::Tensor` shares its data, so don't call it a deep copy.
+17. Avoid `dynamic_cast` in hot paths (inference loops). Use `static_cast` or redesign if the type is known.
+18. Don't write `using namespace std;`. Don't use `auto` for primitive types where it hides the type. Use `const` and `constexpr` wherever possible.
+19. Initialize members in the constructor's member initializer list, not in its body. When initial container values are known, use brace-initialization instead of inserting into an empty container.
+20. Add a comment to every `const_cast` that says why the write is safe.
+21. Don't add unused non-public functions or constructors, except in `debug_utils.hpp`. Don't add a parameter that no caller or override uses.
+22. Flag a new non-public, non-`void` function whose return value no caller uses. Public API in `src/cpp/include` and the bindings has callers outside the repository.
+23. Never include `debug_utils.hpp`.
+24. Before adding a helper, search the repository for an existing one. Extract code that the change repeats.
+25. Don't limit the code to a specific device unless the feature needs it.
+26. Report an algorithmic branch choice (log or warning) once, not in every place that sees it.
+
+### Comments and files
+
+27. Write comments about the current code. When a comment refers to other code, name the function. Avoid vague references such as "upstream" or "the two".
+28. Avoid ambiguous words like "some" or "capable".
+29. Point permalinks to a commit, not a branch.
+30. Start new source files with the copyright header and the current year, for example `Copyright (C) 2026 Intel Corporation` and `SPDX-License-Identifier: Apache-2.0`.
+31. Don't commit one-off scripts (repro, debug, local conversion) that CI, tests and docs don't use.
+32. Make removals complete: no stale docs, empty config sections or leftover initializers. The PR description says why the code was removed.
+
+### Tests and CI
+
+33. Add tests for new features and bug fixes: Python tests in `tests/python_tests`, JS tests in `src/js/tests`. C++ tests are optional. Documentation, CI, sample-only and xfail-only changes don't need new tests. Don't ask for tests of test utilities or of tokenizer behavior.
+34. Flag new tests that never run in CI. GitHub Actions runs tests only on CPU, and on NPU through NPUW with CPU fallback. So tests that need GPU or real NPU hardware never run, and neither do tests that depend on env vars or models that `.github/workflows` never enables. Tests marked `real_models` or `nightly` are excluded from CI on purpose; don't flag them.
+35. For a new model architecture, add a `tiny-random` model to the functional and sample tests. If no such model exists yet, a follow-up with a linked ticket is fine.
+36. Repeated runs and greedy decoding on CPU are reproducible. Compare their results with exact equality and an exact `max_new_tokens`. Use a tolerance only for real floats and for sampled outputs compared with a reference.
+37. Test each new option to show its effect: the output changes, or for a performance option, the output stays the same and the option is applied.
+38. Use `pytest.mark.parametrize` instead of near-duplicate tests.
+39. Link a ticket (CVS-### or a GitHub issue) in every skip and xfail.
+40. Keep tests cheap: a small `max_new_tokens` and pipelines in module-scoped fixtures. Put a new test suite in its own file instead of growing large files such as `test_vlm_pipeline.py`.
+41. Add a new test file to every matching file in `.github/workflows/test_matrices`: `wheel_tests.yml` or `samples_tests.yml` in each OS folder that has one.
+42. Make workflow `-m` filters match the pytest markers of the tests they should run.
+43. Pin new dependencies in `tests/python_tests/requirements.txt` to an exact version or commit, never `*`.
+44. When a dependency release breaks something, exclude that version with `!=` instead of adding a new upper cap. Dependabot updates the existing `<=` caps in `tools/`, `samples/` and the repository root; don't flag them. A new dependency in `tools/` may use the same `>=x,<=y` form.
+45. Add a new component to `.github/labeler.yml`, `.github/components.yml` and `.github/CODEOWNERS` when a new use case is introduced.
+
+### Samples and docs
+
+46. Avoid adding new samples unless there is a strong, clearly justified reason.
+47. Add tests for new samples.
+48. Keep command-line arguments minimal: required inputs are positional, and other values are hardcoded with a comment. An optional `device` argument and the optional flags that sibling samples already use are allowed.
+49. Update the C++ and Python versions of a sample, its README and the docs examples together.
+50. Samples are minimal demos. Don't ask them to handle edge cases such as malformed input, integer overflow in argument parsing or platform-specific file APIs.
+
+### Build
+
+51. Use all available cores for building code from source.
 
 ## Code Review Instructions for PRs
 
 When performing a code review on a Pull Request, additionally follow this protocol:
 
-1. PR description must be aligned with [./pull_request_template.md](./pull_request_template.md) and its checklist must be filled out. If not, request the author to update the description and checklist before proceeding with the review.
-2. If the documentation is updated, PR description must include a link to the corresponding documentation deployed on the fork.
-3. PR description must be up to date and include all information about the changes.
-4. Include C++ Core Guidelines references in review comments.
-5. Python Bindings: if C++ APIs are changed, check if the corresponding Python pybind11 wrappers in src/python need updates.
-6. Documentation: ensure that any new public APIs have docstrings in C++ headers and Python bindings. Ensure that new public APIs have documentation updated in /site.
-7. Test Coverage: ensure that new features or changes have corresponding tests.
-8. Verify that the result of every newly introduced function is used in at least one call site except for `void` functions.
-9. Helper scripts shouldn't be committed.
+52. PR description must be aligned with [./pull_request_template.md](./pull_request_template.md) and its checklist must be filled out. If not, request the author to update the description and checklist before proceeding with the review. Individual items can be marked as N/A in the checklist.
+53. If the documentation is updated, PR description MUST include a link to the corresponding documentation deployed on the fork.
+54. PR description must be up to date and include all information about the changes.
+55. If a PR aims to improve accuracy or performance, the PR description must include corresponding metrics. Performance-oriented PRs require both accuracy and performance metrics.
+56. A PR has one purpose. Flag hunks unrelated to it: reformatting, edits to unrelated comments, submodule bumps, extra features.

@@ -4,12 +4,12 @@ import CodeExampleJS from './_code_example_js.mdx';
 
 ## Run Model Using OpenVINO GenAI
 
-OpenVINO GenAI introduces the [`WhisperPipeline`](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.WhisperPipeline.html) pipeline for inference of speech recognition Whisper models.
+OpenVINO GenAI introduces the [`ASRPipeline`](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.ASRPipeline.html) pipeline for automatic speech recognition models (ASR).
 You can construct it straight away from the folder with the converted model.
 It will automatically load the model, tokenizer, detokenizer and default generation configuration.
 
 :::info
-`WhisperPipeline` expects normalized audio files in WAV format at sampling rate of 16 kHz as input.
+`ASRPipeline` expects normalized audio files in WAV format at sampling rate of 16 kHz as input.
 :::
 
 <LanguageTabs>

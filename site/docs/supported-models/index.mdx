@@ -2,17 +2,24 @@ import ImageGenerationModelsTable from './_components/image-generation-models-ta
 import VideoGenerationModelsTable from './_components/video-generation-models-table';
 import LLMModelsTable from './_components/llm-models-table';
 import VLMModelsTable from './_components/vlm-models-table';
-import WhisperModelsTable from './_components/whisper-models-table';
-import TextEmbeddingsModelsTable from './_components/text-embeddings-models-table';
+import SpeechRecognitionModelsTable from './_components/speech-recognition-models-table';
+import EmbeddingModelsTable from './_components/embedding-models-table';
 import SpeechGenerationModelsTable from './_components/speech-generation-models-table';
 import TextRerankModelsTable from './_components/text-rerank-models-table';
-
 
 # Supported Models
 
 :::info Models Compatibility
 Other models with similar architectures may also work successfully even if not explicitly validated.
 Consider testing any unlisted models to verify compatibility with your specific use case.
+:::
+
+:::note Optimum Intel version
+Recently added models may require a newer `optimum-intel` version than the latest PyPI release. If an export fails for a newly supported model, install the latest version from GitHub:
+
+```bash
+pip install git+https://github.com/huggingface/optimum-intel.git
+```
 :::
 
 ## Large Language Models (LLMs)
@@ -49,7 +56,7 @@ Models should belong to the same family and have the same tokenizers.
 
 <VideoGenerationModelsTable />
 
-## Visual Language Models (VLMs)
+## Vision Language Models (VLMs)
 
 :::tip LoRA Support
 VLM pipeline supports LoRA adapters applied to the language-model (LLM) part.
@@ -71,6 +78,22 @@ pip install timm einops
 1. `openbmb/MiniCPM-o-2_6` doesn't support `transformers>=4.52` which is required for `optimum-cli` export.
 2. `--task image-text-to-text` is required for `optimum-cli export openvino --trust-remote-code` because `image-text-to-text` isn't `MiniCPM-o-2_6`'s native task.
 
+#### LFM3-VL {#lfm3-vl-notes}
+
+The model requires `transformers>=5.20` for the export with `optimum-cli` and `--trust-remote-code` argument.
+
+#### MiniCPM-V-4_5 {#minicpm-v-4_5-notes}
+
+The model requires `transformers<5.0` for the export with `optimum-cli`.
+
+#### MiniCPM-V-4.6 {#minicpmv4_6-notes}
+
+The model requires `transformers>=5.7.0` and an Optimum Intel version with `minicpmv4_6` export support.
+
+#### MiniCPM-V-4.7 {#minicpmv4_7-notes}
+
+The model requires `transformers>=5.18.0` for the export with `optimum-cli`.
+
 #### phi3_v {#phi3_v-notes}
 
 Models' configs aren't consistent. It's required to override the default `eos_token_id` with the one from a tokenizer:
@@ -87,22 +110,60 @@ Apply https://huggingface.co/microsoft/Phi-4-multimodal-instruct/discussions/78/
 2. Visual history is not preserved across rounds, so multi-turn interactions have limited visual context.
 3. If the number of input frames is not divisible by `mm_local_num_frames` (as defined in `config.json`), additional frames will be automatically padded by duplicating the last frame. For example, if there are 10 frames and `mm_local_num_frames = 4`, it will be padded to 12 frames.
 
+#### DeepSeek-OCR-2 {#deepseek-ocr-2-notes}
+
+1. Accepts exactly one image per request; text-only / multi-image input is not supported.
+2. The model has no built-in chat template. A template is only applied if one is explicitly set on the tokenizer via `pipe.get_tokenizer().set_chat_template(...)`.
+3. The model requires `transformers==5.11.0` for the export with `optimum-cli`.
+
+#### Gemma 4 {#gemma4-notes}
+
+Gemma 4 supports text, image, video, and audio inputs. Audio tensors must contain mono 16 kHz float32 WAV samples.
+
+The `google/gemma-4-12B-it` model requires `transformers==5.10.0` for the export with `optimum-cli`.
+
 #### Qwen3-VL {#qwen3_vl-notes}
 
 The model requires `transformers>=4.57` for the export with `optimum-cli`.
+
+#### Qwen3.5, Qwen3.6, Qwen3.8 {#qwen3_5-notes}
+
+The model requires `transformers==5.2` for the export with `optimum-cli`.
 
 #### nanoLLaVA {#nanollava-notes}
 
 The model requires `transformers>=4.48` for the export with `optimum-cli`.
 :::
 
-## Speech Recognition Models (Whisper-based)
+## Speech Recognition Models
 
 :::info LoRA Support
 Speech recognition pipeline does **not** support LoRA adapters.
 :::
 
-<WhisperModelsTable />
+<SpeechRecognitionModelsTable />
+
+:::warning Speech Recognition Models Notes
+Qwen3-ASR models require the `qwen-asr` package for export with `optimum-cli`:
+
+```bash
+pip install qwen-asr
+```
+
+Fun-ASR models require the `funasr` package and trusted remote code during export:
+
+```bash
+pip install funasr
+optimum-cli export openvino --trust-remote-code -m FunAudioLLM/Fun-ASR-Nano-2512 fun-asr-nano
+```
+
+SenseVoiceSmall models require the `funasr` package and trusted remote code during export:
+
+```bash
+pip install funasr
+optimum-cli export openvino -m FunAudioLLM/SenseVoiceSmall sensevoice-small --trust-remote-code
+```
+:::
 
 ## Speech Generation Models
 
@@ -112,15 +173,25 @@ Speech generation pipeline does **not** support LoRA adapters.
 
 <SpeechGenerationModelsTable />
 
-## Text Embeddings Models
+:::warning Speech Generation Models Notes
+Qwen3-TTS models require the `qwen-tts` package, as well as `transformers==4.57.3`, `torch==2.11.0`, `torchaudio==2.11.0` for export with `optimum-cli`:
 
-:::info LoRA Support
-Text embeddings pipeline does **not** support LoRA adapters.
+```bash
+pip install qwen-tts transformers==4.57.3 torch==2.11.0 torchaudio==2.11.0
+```
 :::
 
-<TextEmbeddingsModelsTable />
+## Embedding Models
 
-:::warning Text Embeddings Models Notes
+Embedding models are used with the `EmbeddingPipeline`, which supports both text-only and multimodal (text, image, and video) embedding models.
+
+:::info LoRA Support
+The embedding pipeline does **not** support LoRA adapters.
+:::
+
+<EmbeddingModelsTable />
+
+:::warning Embedding Models Notes
 Qwen3 Embedding models require `--task feature-extraction` during the conversion with `optimum-cli`.
 :::
 

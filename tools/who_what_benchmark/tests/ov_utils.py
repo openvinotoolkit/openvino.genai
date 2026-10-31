@@ -65,6 +65,7 @@ def get_ov_cache_dir(temp_dir=TemporaryDirectory()):
     if "OV_CACHE" in os.environ:
         date_subfolder = datetime.now().strftime("%Y%m%d")
         ov_cache = os.path.join(os.environ["OV_CACHE"], date_subfolder)
+
         try:
             optimum_intel_version = metadata.version("optimum-intel")
             transformers_version = metadata.version("transformers")
@@ -73,7 +74,7 @@ def get_ov_cache_dir(temp_dir=TemporaryDirectory()):
             )
         except metadata.PackageNotFoundError:
             pass
-        ov_cache_path = Path(ov_cache)
+        ov_cache_path = Path(ov_cache).expanduser().resolve()
         ov_cache_path.mkdir(parents=True, exist_ok=True)
         return ov_cache_path
     else:
@@ -136,6 +137,15 @@ class AtomicDownloadManager:
                 logger.exception("Could not clean up temp directory")
 
 
+def get_hf_cli_command() -> str:
+    # huggingface_hub < 1.0 supports huggingface-cli, huggingface_hub >= 1.0 use hf
+    version = metadata.version("huggingface_hub")
+    major = int(version.split(".", 1)[0])
+    if major >= 1:
+        return "hf"
+    return "huggingface-cli"
+
+
 def download_hf_files_to_cache(repo_id: str, cache_dir: Path, filenames: list[str]) -> Path:
     """Download a set of files from a Hugging Face repo into a local cache directory.
 
@@ -157,7 +167,7 @@ def download_hf_files_to_cache(repo_id: str, cache_dir: Path, filenames: list[st
     def download_to_local_dir(local_dir: Path) -> None:
         for filename in filenames:
             command = [
-                "huggingface-cli",
+                get_hf_cli_command(),
                 "download",
                 repo_id,
                 filename,
@@ -166,7 +176,7 @@ def download_hf_files_to_cache(repo_id: str, cache_dir: Path, filenames: list[st
             ]
 
             def _run_download() -> None:
-                subprocess.run(command, check=True, text=True, capture_output=True)
+                subprocess.run(command, check=True, text=True, encoding="utf-8", capture_output=True)
 
             retry_request(_run_download)
 

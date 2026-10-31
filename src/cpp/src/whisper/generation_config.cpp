@@ -9,6 +9,7 @@
 #include "json_utils.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "utils.hpp"
+#include "whisper/whisper_utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -73,9 +74,17 @@ void WhisperGenerationConfig::update_generation_config(const ov::AnyMap& config_
 void WhisperGenerationConfig::validate() const {
     GenerationConfig::validate();
 
+    if (is_multilingual) {
+        OPENVINO_ASSERT(!lang_to_id.empty(),
+                        "'lang_to_id' map must be provided for multilingual models.\n"
+                        "'lang_to_id' map can be provided as custom std::map<std::string, int64_t>\n"
+                        "Or initialized from generation_config.json: \n"
+                        "ov::genai::WhisperGenerationConfig config = pipeline.get_generation_config();\n"
+                        "ov::genai::WhisperGenerationConfig config{models_path / \"generation_config.json\"};");
+    }
+
     if (is_multilingual && language.has_value()) {
-        OPENVINO_ASSERT(lang_to_id.count(*language),
-                        "'language' " + *language + " must be provided in generation_config.json 'lang_to_id' map.");
+        utils::get_or_throw_token_id_by_language(lang_to_id, *language);
     }
 
     if (is_multilingual && task.has_value()) {

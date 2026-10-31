@@ -61,6 +61,12 @@ public:
         return rand_tensor;
     }
 
+    ov::Tensor mean() const {
+        ov::Tensor result(m_mean.get_element_type(), m_mean.get_shape());
+        m_mean.copy_to(result);
+        return result;
+    }
+
 private:
     ov::Tensor m_parameters;
     ov::Tensor m_mean, m_std;
@@ -147,8 +153,18 @@ AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_encoder_path,
                              const std::filesystem::path& vae_decoder_path,
                              const std::string& device,
                              const ov::AnyMap& properties)
-    : AutoencoderKL(vae_encoder_path, vae_decoder_path) {
-    compile(device, *extract_adapters_from_properties(properties));
+    : m_config(vae_decoder_path / "config.json") {
+    const auto [properties_without_blob, blob_path] = utils::extract_export_properties(properties);
+
+    if (blob_path.has_value()) {
+        import_model(*blob_path, device, properties_without_blob);
+        return;
+    }
+
+    m_decoder_model = utils::singleton_core().read_model(vae_decoder_path / "openvino_model.xml");
+    merge_vae_image_post_processing();
+    m_encoder_model = utils::singleton_core().read_model(vae_encoder_path / "openvino_model.xml");
+    compile(device, *extract_adapters_from_properties(properties_without_blob));
 }
 
 AutoencoderKL::AutoencoderKL(const std::string& vae_decoder_model,
@@ -191,6 +207,23 @@ AutoencoderKL::AutoencoderKL(const std::string& vae_encoder_model,
                     vae_decoder_weights,
                     vae_decoder_config) {
     compile(device, *extract_adapters_from_properties(properties));
+}
+
+AutoencoderKL::AutoencoderKL(const Tensor& vae_decoder_blob_tensor,
+                             const Config& vae_decoder_config,
+                             const std::string& device,
+                             const ov::AnyMap& properties)
+    : m_config(vae_decoder_config) {
+    import_model(vae_decoder_blob_tensor, device, properties);
+}
+
+AutoencoderKL::AutoencoderKL(const Tensor& vae_encoder_blob_tensor,
+                             const Tensor& vae_decoder_blob_tensor,
+                             const Config& vae_decoder_config,
+                             const std::string& device,
+                             const ov::AnyMap& properties)
+    : m_config(vae_decoder_config) {
+    import_model(vae_encoder_blob_tensor, vae_decoder_blob_tensor, device, properties);
 }
 
 AutoencoderKL::AutoencoderKL(const AutoencoderKL& rhs) = default;
@@ -308,6 +341,37 @@ ov::Tensor AutoencoderKL::encode(ov::Tensor image, std::shared_ptr<Generator> ge
     return latent;
 }
 
+ov::Tensor AutoencoderKL::encode(ov::Tensor image) {
+    OPENVINO_ASSERT(m_encoder_request || m_encoder_model, "AutoencoderKL is created without 'VAE encoder' capability. Please, pass extra argument to constructor to create 'VAE encoder'");
+    OPENVINO_ASSERT(m_encoder_request, "VAE encoder model must be compiled first. Cannot infer non-compiled model");
+
+    m_encoder_request.set_input_tensor(image);
+    m_encoder_request.infer();
+
+    ov::Tensor output = m_encoder_request.get_output_tensor(), latent;
+
+    ov::CompiledModel compiled_model = m_encoder_request.get_compiled_model();
+    auto outputs = compiled_model.outputs();
+    OPENVINO_ASSERT(outputs.size() == 1, "AutoencoderKL encoder model is expected to have a single output");
+
+    const std::string output_name = outputs[0].get_any_name();
+    if (output_name == "latent_sample") {
+        latent = output;
+    } else if (output_name == "latent_parameters") {
+        latent = DiagonalGaussianDistribution(output).mean();
+    } else {
+        OPENVINO_THROW("Unexpected output name for AutoencoderKL encoder '", output_name, "'");
+    }
+
+    // apply shift and scaling factor
+    float * latent_data = latent.data<float>();
+    for (size_t i = 0; i < latent.get_size(); ++i) {
+        latent_data[i] = (latent_data[i] - m_config.shift_factor) * m_config.scaling_factor;
+    }
+
+    return latent;
+}
+
 const AutoencoderKL::Config& AutoencoderKL::get_config() const {
     return m_config;
 }
@@ -365,6 +429,23 @@ void AutoencoderKL::import_model(const std::filesystem::path& blob_path, const s
         ov::genai::utils::print_compiled_model_properties(encoder_compiled_model, "Auto encoder KL encoder model");
         m_encoder_request = encoder_compiled_model.create_infer_request();
     }
+}
+
+void AutoencoderKL::import_model(const ov::Tensor& vae_decoder_blob_tensor, const std::string& device, const ov::AnyMap& properties) {
+    OPENVINO_ASSERT(!m_decoder_request, "Model has been already compiled. Cannot re-compile already compiled model");
+    auto decoder_compiled_model = utils::import_model(vae_decoder_blob_tensor, device, properties);
+    ov::genai::utils::print_compiled_model_properties(decoder_compiled_model, "Auto encoder KL decoder model");
+    m_decoder_request = decoder_compiled_model.create_infer_request();
+}
+
+void AutoencoderKL::import_model(const ov::Tensor& vae_encoder_blob_tensor, const ov::Tensor& vae_decoder_blob_tensor, const std::string& device, const ov::AnyMap& properties) {
+    OPENVINO_ASSERT(!m_encoder_request && !m_decoder_request, "Model has been already compiled. Cannot re-compile already compiled model");
+
+    import_model(vae_decoder_blob_tensor, device, properties);
+
+    auto encoder_compiled_model = utils::import_model(vae_encoder_blob_tensor, device, properties);
+    ov::genai::utils::print_compiled_model_properties(encoder_compiled_model, "Auto encoder KL encoder model");
+    m_encoder_request = encoder_compiled_model.create_infer_request();
 }
 
 } // namespace genai

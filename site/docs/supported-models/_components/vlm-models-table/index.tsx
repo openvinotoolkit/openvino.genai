@@ -22,9 +22,16 @@ export default function VLMModelsTable(): React.JSX.Element {
         </td>
         <LinksCell links={models[0].links} />
       </tr>
-      {models.slice(1).map(({ name, links }) => (
+      {models.slice(1).map(({ name, links, notesLink }) => (
         <tr key={name}>
-          <td>{name}</td>
+          <td>
+            {name}
+            {notesLink && (
+              <>
+                &nbsp;(<Link href={notesLink}>Notes</Link>)
+              </>
+            )}
+          </td>
           <LinksCell links={links} />
         </tr>
       ))}

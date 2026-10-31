@@ -17,15 +17,8 @@ def get_models_list() -> tuple[str, ...]:
 
 CHAT_MODELS_LIST = ("Qwen/Qwen2-0.5B-Instruct",)
 
-
-LINEAR_ATTENTION_MODELS_LIST = (
-    "optimum-intel-internal-testing/tiny-random-lfm2",
-    # "optimum-intel-internal-testing/tiny-mamba",  # beam_idx is not connected
-    # "optimum-intel-internal-testing/tiny-random-zamba2",  # no chat template
-    "optimum-intel-internal-testing/tiny-random-granitemoehybrid",
-)
-
-if is_transformers_version(">=", "4.57"):
+LINEAR_ATTENTION_MODELS_LIST = ("optimum-intel-internal-testing/tiny-random-lfm2",)
+if is_transformers_version(">=", "4.57.0") and is_transformers_version("<=", "4.57.6"):
     LINEAR_ATTENTION_MODELS_LIST += ("optimum-intel-internal-testing/tiny-random-qwen3-next",)
 
 
@@ -39,7 +32,10 @@ GGUF_MODEL_LIST = (
     {
         "gguf_model_id": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
         "gguf_filename": "qwen2.5-0.5b-instruct-q4_0.gguf",
-        "dynamic_quantization_group_size": None,
+        # Disable CPU dynamic activation quantization for exact-token comparison with HF.
+        # Leaving this unset uses the plugin default, which can change Qwen's greedy tokens.
+        # This is a reference-test setting for both readers, not a change to runtime defaults.
+        "dynamic_quantization_group_size": "0",
     },
     pytest.param(
         {

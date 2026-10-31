@@ -3,7 +3,51 @@
 
 #pragma once
 
+const std::string qwen3_asr_chat_template = R"qwen3asr({%- set ns = namespace(system_text="") -%}
+{%- for m in messages -%}
+  {%- if m.role == 'system' -%}
+    {%- if m.content is string -%}
+      {%- set ns.system_text = ns.system_text + m.content -%}
+    {%- else -%}
+      {%- for c in m.content -%}
+        {%- if c.type == 'text' and (c.text is defined) -%}
+          {%- set ns.system_text = ns.system_text + c.text -%}
+        {%- endif -%}
+      {%- endfor -%}
+    {%- endif -%}
+  {%- endif -%}
+{%- endfor -%}
+
+{%- set ns2 = namespace(audio_tokens="") -%}
+{%- for m in messages -%}
+  {%- if m.content is not string -%}
+    {%- for c in m.content -%}
+      {%- if c.type == 'audio' or ('audio' in c) or ('audio_url' in c) -%}
+        {%- set ns2.audio_tokens = ns2.audio_tokens + "<|audio_start|><|audio_pad|><|audio_end|>" -%}
+      {%- endif -%}
+    {%- endfor -%}
+  {%- endif -%}
+{%- endfor -%}
+
+{{- '<|im_start|>system\n' + (ns.system_text if ns.system_text is string else '') + '<|im_end|>\n' -}}
+{{- '<|im_start|>user\n' + ns2.audio_tokens + '<|im_end|>\n' -}}
+{%- if add_generation_prompt -%}
+{{- '<|im_start|>assistant\n' -}}
+{%- endif -%})qwen3asr";
+
 const std::pair<std::string, std::string> chat_template_fallback_map[] = {
+{
+    // Qwen3-ASR: preserve audio prompts while allowing minja to infer tool-call syntax.
+    qwen3_asr_chat_template,
+    qwen3_asr_chat_template + R"qwen3asr(
+{%- for m in messages -%}
+  {%- if m.role == 'assistant' and m.tool_calls is defined -%}
+    {%- for tc in m.tool_calls -%}
+{{- '<|im_start|>assistant\n' + tc.function.name + ' ' + (tc.function.arguments if tc.function.arguments is string else tc.function.arguments|tojson) + '<|im_end|>\n' -}}
+    {%- endfor -%}
+  {%- endif -%}
+{%- endfor -%})qwen3asr"
+},
 {
     // THUDM/chatglm3-6b
     "{% for message in messages %}{% if loop.first %}[gMASK]sop<|{{ message['role'] }}|>\n {{ message['content'] }}{% else %}<|{{ message['role'] }}|>\n {{ message['content'] }}{% endif %}{% endfor %}{% if add_generation_prompt %}<|assistant|>{% endif %}",
@@ -13,9 +57,5 @@ const std::pair<std::string, std::string> chat_template_fallback_map[] = {
     // Qwen/Qwen2-VL-2B, Qwen/Qwen2-VL-7B
     "{% if messages is string %}{{ messages }}{% else %}{% for content in messages %}{% if content['type'] == 'image' or 'image' in content or 'image_url' in content %}<|vision_start|><|image_pad|><|vision_end|>{% elif content['type'] == 'video' or 'video' in content %}<|vision_start|><|video_pad|><|vision_end|>{% elif 'text' in content %}{{ content['text'] }}{% endif %}{% endfor %}{% endif %}",
     "{% for message in messages %}{{ message['content'] }}{% endfor %}"
-}, {
-    // gemma3-4b-it (tokenizer_config.json)
-    "{{ bos_token }}\n{%- if messages[0]['role'] == 'system' -%}\n    {%- if messages[0]['content'] is string -%}\n        {%- set first_user_prefix = messages[0]['content'] + '\n\n' -%}\n    {%- else -%}\n        {%- set first_user_prefix = messages[0]['content'][0]['text'] + '\n\n' -%}\n    {%- endif -%}\n    {%- set loop_messages = messages[1:] -%}\n{%- else -%}\n    {%- set first_user_prefix = \"\" -%}\n    {%- set loop_messages = messages -%}\n{%- endif -%}\n{%- for message in loop_messages -%}\n    {%- if (message['role'] == 'user') != (loop.index0 % 2 == 0) -%}\n        {{ raise_exception(\"Conversation roles must alternate user/assistant/user/assistant/...\") }}\n    {%- endif -%}\n    {%- if (message['role'] == 'assistant') -%}\n        {%- set role = \"model\" -%}\n    {%- else -%}\n        {%- set role = message['role'] -%}\n    {%- endif -%}\n    {{ '<start_of_turn>' + role + '\n' + (first_user_prefix if loop.first else \"\") }}\n    {%- if message['content'] is string -%}\n        {{ message['content'] | trim }}\n    {%- elif message['content'] is iterable -%}\n        {%- for item in message['content'] -%}\n            {%- if item['type'] == 'image' -%}\n                {{ '<start_of_image>' }}\n            {%- elif item['type'] == 'text' -%}\n                {{ item['text'] | trim }}\n            {%- endif -%}\n        {%- endfor -%}\n    {%- else -%}\n        {{ raise_exception(\"Invalid content type\") }}\n    {%- endif -%}\n    {{ '<end_of_turn>\n' }}\n{%- endfor -%}\n{%- if add_generation_prompt -%}\n    {{'<start_of_turn>model\n'}}\n{%- endif -%}\n",
-    "{{ bos_token }}\n{%- if messages[0]['role'] == 'system' -%}\n{%- if messages[0]['content'] is string -%}\n{%- set first_user_prefix = messages[0]['content'] + '\n\n' -%}\n{%- else -%}\n{%- set first_user_prefix = messages[0]['content'][0]['text'] + '\n\n' -%}\n{%- endif -%}\n{%- set loop_messages = messages[1:] -%}\n{%- else -%}\n{%- set first_user_prefix = \"\" -%}\n{%- set loop_messages = messages -%}\n{%- endif -%}\n{%- for message in loop_messages -%}\n{%- if (message['role'] == 'user') != (loop.index0 % 2 == 0) -%}\n{{ raise_exception(\"Conversation roles must alternate user/assistant/user/assistant/...\") }}\n{%- endif -%}\n{%- if (message['role'] == 'assistant') -%}\n{%- set role = \"model\" -%}\n{%- else -%}\n{%- set role = message['role'] -%}\n{%- endif -%}\n{{ '<start_of_turn>' + role + '\n' + (first_user_prefix if loop.first else \"\") }}\n{%- if message['content'] is string -%}\n{{ message['content'] }}\n{%- elif message['content'] is iterable -%}\n{%- for item in message['content'] -%}\n{%- if item['type'] == 'image' -%}\n{{ '<start_of_image>' }}\n{%- elif item['type'] == 'text' -%}\n{{ item['text'] | trim }}\n{%- endif -%}\n{%- endfor -%}\n{%- else -%}\n{{ raise_exception(\"Invalid content type\") }}\n{%- endif -%}\n{{ '<end_of_turn>\n' }}\n{%- endfor -%}\n{%- if add_generation_prompt -%}\n{{'<start_of_turn>model\n'}}\n{%- endif -%}\n",
 },
 };

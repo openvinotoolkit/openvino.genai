@@ -16,6 +16,7 @@ from .py_openvino_genai import (
     RawPerfMetrics,
     PerfMetrics,
     StreamerBase,
+    OmniSpeechStreamerBase,
     get_version,
     StreamingStatus,
     TextStreamer,
@@ -42,6 +43,21 @@ __version__ = get_version()
 
 from .py_openvino_genai import (
     VLMPipeline,
+    VLMPipelineBase,
+    VLMDecodedResults,
+    VideoMetadata,
+)
+
+# Omni pipeline (Qwen3-Omni text + speech)
+
+from .py_openvino_genai import (
+    OmniDecodedResults,
+    OmniPipeline,
+    OmniTalkerSpeechConfig,
+    Talker,
+    TalkerBase,
+    TalkerPerfMetrics,
+    TalkerResults,
 )
 
 # LLM pipeline
@@ -66,10 +82,17 @@ from .py_openvino_genai import (
 from .py_openvino_genai import ChatHistory
 
 # Tokenizers
-from .py_openvino_genai import TokenizedInputs, Tokenizer
+from .py_openvino_genai import GGUFTokenizer, TokenizedInputs, Tokenizer
 
-# Whisper
+# ASR pipeline
 from .py_openvino_genai import (
+    ASRDecodedResultChunk,
+    ASRDecodedResults,
+    ASRForcedAligner,
+    ASRGenerationConfig,
+    ASRPerfMetrics,
+    ASRPipeline,
+    ASRRawPerfMetrics,
     WhisperGenerationConfig,
     WhisperPipeline,
     WhisperRawPerfMetrics,
@@ -81,9 +104,17 @@ from .py_openvino_genai import (
 from .py_openvino_genai import (
     CLIPTextModel,
     CLIPTextModelWithProjection,
+    Gemma3TextEncoder,
+    Qwen3TextEncoder,
+    Qwen2_5_VLForConditionalGeneration,
+    Qwen3VLForConditionalGeneration,
+    QwenImageTransformer2DModel,
+    QwenImage21Transformer2DModel,
     T5EncoderModel,
     UNet2DConditionModel,
+    Flux2Transformer2DModel,
     FluxTransformer2DModel,
+    ZImageTransformer2DModel,
     SD3Transformer2DModel,
     AutoencoderKL,
     Text2ImagePipeline,
@@ -103,6 +134,12 @@ from .py_openvino_genai import (
 from .py_openvino_genai import (
     LTXVideoTransformer3DModel,
     AutoencoderKLLTXVideo,
+    LTX2VideoTransformer3DModel,
+    AutoencoderKLLTX2Video,
+    AutoencoderKLLTX2Audio,
+    LTX2TextConnectors,
+    LTX2Vocoder,
+    Image2VideoPipeline,
     Text2VideoPipeline,
     VideoGenerationConfig,
     VideoGenerationResult,
@@ -113,6 +150,7 @@ from .py_openvino_genai import (
 from .py_openvino_genai import (
     ContinuousBatchingPipeline,
     GenerationFinishReason,
+    GenerationHandle,
     GenerationResult,
     GenerationStatus,
     SchedulerConfig,
@@ -125,7 +163,7 @@ from .py_openvino_genai import (
 )
 
 # RAG
-from .py_openvino_genai import TextEmbeddingPipeline, TextRerankPipeline
+from .py_openvino_genai import EmbedResult, EmbeddingPipeline, TextEmbeddingPipeline, TextRerankPipeline
 
 # Speech generation
 from .py_openvino_genai import (

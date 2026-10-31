@@ -14,11 +14,13 @@ from transformers.generation.streamers import BaseStreamer
 from transformers.utils import ModelOutput
 from transformers.generation.configuration_utils import GenerationConfig
 import llm_bench_utils.hook_greedy_search as hook_greedy
+from dataclasses import dataclass
 
 
 logger = log.getLogger(__name__)
 
 
+@dataclass
 class GenerateDecoderOnlyOutput(ModelOutput):
     sequences: torch.LongTensor = None
     scores: Optional[tuple[torch.FloatTensor]] = None
@@ -28,6 +30,7 @@ class GenerateDecoderOnlyOutput(ModelOutput):
     past_key_values: Optional[tuple[tuple[tuple[torch.FloatTensor]]]] = None
 
 
+@dataclass
 class GenerateEncoderDecoderOutput(ModelOutput):
     sequences: torch.LongTensor = None
     scores: Optional[tuple[torch.FloatTensor]] = None
@@ -54,6 +57,35 @@ ALL_CACHE_NAMES = [
 
 # Transformers version: v5.3.0, v5.4.0, v5.5.0, v5.5.1, v5.5.2, v5.5.3
 # Add the function of collecting latency
+
+
+# for gemma-4 with optimum-intel
+# https://github.com/huggingface/transformers/blob/v5.3.0/src/transformers/generation/utils.py#L1713
+def new_get_initial_cache_position(self, seq_length, device, model_kwargs):
+    """Calculates `cache_position` for the pre-fill stage based on `input_ids` and optionally past length"""
+    # `torch.compile`-friendly `torch.arange` from a shape -- the lines below are equivalent to `torch.arange`
+    if "cache_position" in model_kwargs and model_kwargs["cache_position"] is not None:
+        return model_kwargs
+
+    if "inputs_embeds" in model_kwargs and not self.config.is_encoder_decoder:
+        inputs_embeds = model_kwargs["inputs_embeds"]
+        seq_length, device = inputs_embeds.shape[1], inputs_embeds.device
+    elif "decoder_inputs_embeds" in model_kwargs and self.config.is_encoder_decoder:
+        decoder_inputs_embeds = model_kwargs["decoder_inputs_embeds"]
+        seq_length, device = decoder_inputs_embeds.shape[1], decoder_inputs_embeds.device
+
+    past_length = 0
+    if (cache := model_kwargs.get("past_key_values")) is not None:
+        # Support for BC tuple cache format
+        if isinstance(cache, tuple):
+            past_length = cache[0][0].shape[2]
+        elif hasattr(cache, "get_seq_length"):
+            past_length = cache.get_seq_length()
+
+    cache_position = torch.ones(seq_length + past_length, dtype=torch.int64, device=device).cumsum(0) - 1
+    model_kwargs["cache_position"] = cache_position
+
+    return model_kwargs
 
 
 # https://github.com/huggingface/transformers/blob/v5.3.0/src/transformers/generation/utils.py#L3727
@@ -99,7 +131,7 @@ def new_prefill(
     if generation_config.prefill_chunk_size is None:
         # The cache is already taken into account in `_get_initial_cache_position`, so the length is only the new tokens if we slice
         effective_input_length = next_sequence_length if next_sequence_length is not None else input_ids.shape[1]
-        model_kwargs = self._get_initial_cache_position(effective_input_length, input_ids.device, model_kwargs)
+        model_kwargs = new_get_initial_cache_position(self, effective_input_length, input_ids.device, model_kwargs)
         model_inputs = self.prepare_inputs_for_generation(
             input_ids,
             next_sequence_length=next_sequence_length,
@@ -294,12 +326,14 @@ def new_sample(
                 )
 
         # token selection
+        tic_sample = time.perf_counter()
         if do_sample:
             probs = nn.functional.softmax(next_token_scores, dim=-1)
             # TODO (joao): this OP throws "skipping cudagraphs due to ['incompatible ops']", find solution
             next_tokens = torch.multinomial(probs, num_samples=1).squeeze(1)
         else:
             next_tokens = torch.argmax(next_token_scores, dim=-1)
+        hook_greedy.tm_sample_list.append(time.perf_counter() - tic_sample)
 
         # finished sentences should have their next token be a padding token
         if has_eos_stopping_criteria:
@@ -312,8 +346,8 @@ def new_sample(
 
         unfinished_sequences = unfinished_sequences & ~stopping_criteria(input_ids, scores)
         this_peer_finished = unfinished_sequences.max() == 0
-
         hook_greedy.tm_list.append(time.perf_counter() - tic)
+
         # This is needed to properly delete outputs.logits which may be very large for first iteration
         # Otherwise a reference to outputs is kept which keeps the logits alive in the next iteration
         del outputs

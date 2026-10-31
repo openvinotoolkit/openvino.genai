@@ -30,14 +30,15 @@ ChatHistoryWrap::ChatHistoryWrap(const Napi::CallbackInfo& info)
         if (info.Length() == 0 || info[0].IsUndefined()) {
             m_chat_history = ov::genai::ChatHistory();
         } else {
-            m_chat_history = ov::genai::ChatHistory(js_to_cpp<ov::genai::JsonContainer>(env, info[0]));
+            m_chat_history = ov::genai::ChatHistory(
+                js_to_cpp<ov::genai::JsonContainer>(env, info[0]));
         }
     } catch (const std::exception& e) {
         Napi::Error::New(env, e.what()).ThrowAsJavaScriptException();
     }
 }
 
-ov::genai::ChatHistory& ChatHistoryWrap::get_value() {
+ov::genai::ChatHistory ChatHistoryWrap::get_value() {
     return m_chat_history;
 }
 

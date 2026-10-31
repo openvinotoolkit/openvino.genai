@@ -13,18 +13,6 @@
 // https://github.com/antirez/gguf-tools/blob/af7d88d808a7608a33723fba067036202910acb3/gguflib.h#L102-L108
 constexpr int gguf_array_header_size = 12;
 
-template <typename... Args>
-std::string format(std::string fmt, Args... args) {
-    size_t bufferSize = 1000;
-    char* buffer = new char[bufferSize];
-    int n = sprintf(buffer, fmt.c_str(), args...);
-    assert(n >= 0 && n < (int)bufferSize - 1);
-
-    std::string fmtStr(buffer);
-    delete[] buffer;
-    return fmtStr;
-}
-
 std::optional<uint32_t> dtype_to_gguf_tensor_type(const ov::element::Type& dtype) {
     switch (dtype) {
     case ov::element::f64:
@@ -356,6 +344,13 @@ GGUFLoad get_gguf_data(const std::string& file) {
         load_arrays(ctx.get(), arrays, qtype);
         return {metadata, arrays, qtype};
     }
+}
+
+std::unordered_map<std::string, GGUFMetaData> get_gguf_metadata(const std::string& file) {
+    check_file(file);
+    std::unique_ptr<gguf_ctx, decltype(&gguf_close)> ctx(gguf_open(file.data()), gguf_close);
+    OPENVINO_ASSERT(ctx, "Failed to open '", file, "' with gguf_open");
+    return load_metadata(ctx.get());
 }
 
 float metadata_to_float(const std::unordered_map<std::string, GGUFMetaData>& metadata, const std::string& key) {

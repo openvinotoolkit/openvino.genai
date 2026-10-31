@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { Parser } from "./parsers.js";
+import type { Tensor } from "openvino-node";
 
 export enum StreamingStatus {
   RUNNING,
@@ -380,7 +381,7 @@ export type GenerationConfig = GenericGenerationConfig &
 
 /** Generation config for WhisperPipeline. Extends GenerationConfig with Whisper-specific options. */
 export type WhisperGenerationConfig = GenerationConfig & {
-  /** Language token for generation (e.g. "<|en|>"). For multilingual models only. */
+  /** Language for generation: a plain code (e.g. "en") or the wrapped token form (e.g. "<|en|>"). For multilingual models only. */
   language?: string;
   /** Task: "translate" or "transcribe". For multilingual models only. */
   task?: string;
@@ -460,6 +461,18 @@ export type WhisperGenerationConfig = GenerationConfig & {
   suppress_tokens?: Uint[];
 };
 
+/**
+ * Generation config for ASRPipeline. Extends the Whisper generation config with
+ * Qwen3-ASR-specific options. Whisper-specific fields are ignored by Qwen3-ASR models
+ * and vice versa.
+ */
+export type ASRGenerationConfig = WhisperGenerationConfig & {
+  /** Context passed as a previous transcription to steer spelling or style. Supported by Qwen3-ASR models only. */
+  context?: string;
+  /** If true, apply inverse text normalization (ITN). Only honored by SenseVoiceSmall. */
+  use_itn?: boolean;
+};
+
 /** Generation config for Text2SpeechPipeline. Extends GenerationConfig with speech-specific options. */
 export type SpeechGenerationConfig = GenerationConfig & {
   /** Minimum ratio of output length to input text length; prevents output that's too short. */
@@ -507,4 +520,136 @@ export type WhisperPipelineProperties = {
   schedulerConfig?: SchedulerConfig;
 } & Record<string, unknown>;
 
+export type ASRPipelineProperties = {
+  schedulerConfig?: SchedulerConfig;
+} & Record<string, unknown>;
+
+export type ImageGenerationConfig = {
+  /** Additional prompt for the second text encoder. */
+  prompt_2?: string;
+  /** Additional prompt for the third text encoder. */
+  prompt_3?: string;
+  /** Negative prompt for the primary text encoder. */
+  negative_prompt?: string;
+  /** Negative prompt for the second text encoder. */
+  negative_prompt_2?: string;
+  /** Negative prompt for the third text encoder. */
+  negative_prompt_3?: string;
+  /** Number of images to generate for a single prompt. */
+  num_images_per_prompt?: Uint;
+  /** Seed for the default random generator. */
+  rng_seed?: Uint;
+  /** Guidance scale used during denoising. */
+  guidance_scale?: number;
+  /** Output image height in pixels. */
+  height?: number;
+  /** Output image width in pixels. */
+  width?: number;
+  /** Number of denoising steps. */
+  num_inference_steps?: Uint;
+  /** Maximum sequence length for T5-based text encoders. */
+  max_sequence_length?: number;
+  /** Strength parameter for img2img/inpainting-compatible configs. */
+  strength?: number;
+};
+
+export type Text2ImagePipelineProperties = Record<string, unknown>;
+
+export type Image2ImagePipelineProperties = Record<string, unknown>;
+
+export type InpaintingPipelineProperties = Record<string, unknown>;
+
+/**
+ * Callback for image generation, called once per denoising step.
+ *
+ * The callback may be synchronous or asynchronous. When it returns a Promise,
+ * generation waits for it to settle before the next step, so an in-callback
+ * `await pipeline.decode(latent)` completes without blocking the event loop.
+ *
+ * @param step       Current step index (0-based).
+ * @param numSteps   Total number of denoising steps.
+ * @param latent     Current latent image. Pass it to `pipeline.decode(latent)` to obtain the intermediate image.
+ * @returns `true` to stop generation early, `false` to continue (optionally wrapped in a Promise).
+ */
+export type ImageGenerationCallback = (
+  step: number,
+  numSteps: number,
+  latent: Tensor,
+) => boolean | Promise<boolean>;
+/**
+ * Callback for text-to-image generation, called once per denoising step.
+ *
+ * @deprecated Use `ImageGenerationCallback` instead, as text-to-image pipelines now support the same callback signature as other image generation pipelines.
+ */
+export type Text2ImageCallback = ImageGenerationCallback;
+
 export type Text2SpeechPipelineProperties = Record<string, unknown>;
+
+/**
+ * Device and scheduler properties for OmniPipeline initialization.
+ *
+ * @note This is a preview API and is subject to change in future releases.
+ */
+export type OmniPipelineProperties = {
+  schedulerConfig?: SchedulerConfig;
+} & Record<string, unknown>;
+
+/**
+ * Speech-side generation config for the Qwen3-Omni talker.
+ *
+ * Controls the speech output stack (Talker + CodePredictor + Code2Wav). Standalone config:
+ * the thinker text decode is steered by a separate {@link GenerationConfig} passed as `textConfig`.
+ *
+ * @note This is a preview API and is subject to change in future releases.
+ */
+export type OmniTalkerSpeechConfig = {
+  /** Enable speech output. Defaults to true; set false to produce text only. */
+  return_audio?: boolean;
+  /**
+   * Speaker identity: either a name looked up in the model config, or an explicit
+   * embedding tensor (`[1, 1, talker_hidden_size]`, f32). Default selects the model's default speaker.
+   */
+  speaker?: string | Tensor;
+  /**
+   * Number of codec frames accumulated before streaming each audio chunk. Must be >= 1.
+   * For the standard Qwen3-Omni each frame is 80ms of audio at 24 kHz (1920 samples), and the
+   * first chunk is 555 samples shorter because the vocoder trims its warmup once per utterance.
+   */
+  audio_chunk_frames?: Uint;
+  /**
+   * Number of earlier codec frames the vocoder decodes together with each streamed chunk, so the
+   * chunk starts with the history a non-streamed decode would see. 0 decodes every chunk on its
+   * own. Larger values give smoother seams but cost more vocoder work. Must be <= 4096. Default 25.
+   */
+  audio_chunk_left_context_frames?: Uint;
+  /** Cap on talker autoregressive steps. Independent of `textConfig.max_new_tokens`. */
+  max_new_tokens?: Uint;
+  /** RNG seed for talker + CodePredictor sampling. */
+  rng_seed?: Uint;
+  /** Talker sampling temperature override (must be > 0 when set). */
+  talker_temperature?: number;
+  /** Talker top-k override (must be >= 1 when set). */
+  talker_top_k?: Uint;
+  /** Talker repetition penalty override (must be > 0 when set; 1.0 = no penalty). */
+  talker_repetition_penalty?: number;
+  /** CodePredictor sampling temperature override (must be > 0 when set). */
+  cp_temperature?: number;
+  /** CodePredictor top-k override (must be >= 1 when set). */
+  cp_top_k?: Uint;
+};
+
+/**
+ * Metadata describing the original video source. Controls video frame sampling before encoding.
+ *
+ * @note This is a preview API and is subject to change in future releases.
+ */
+export type VideoMetadata = {
+  /** Frame rate of the original video in frames per second. 0 (default) means unknown. */
+  fps?: number;
+  /**
+   * Indices of frames to sample from the provided video tensor.
+   * When omitted or empty, model-specific sampling is applied if defined, otherwise all frames are processed.
+   * When non-empty, only the specified frames are extracted and model-specific sampling logic is skipped.
+   */
+  frames_indices?: Uint[];
+};

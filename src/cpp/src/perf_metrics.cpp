@@ -21,12 +21,12 @@ ov::genai::MeanStdPair calc_mean_and_std(const std::vector<ov::genai::MicroSecon
         });
     mean /= durations.size();
     
-    double sum_square_durations = std::accumulate(durations.begin(), durations.end(), 0.0,
-        [](const double& acc, const ov::genai::MicroSeconds& duration) -> double {
-            auto d = duration.count() / 1000.0;
-            return acc + d * d;
+    const double sum_squared_deviations = std::accumulate(durations.begin(), durations.end(), 0.0,
+        [mean](const double& acc, const ov::genai::MicroSeconds& duration) -> double {
+            const double deviation = duration.count() / 1000.0 - mean;
+            return acc + deviation * deviation;
         });
-    double std = std::sqrt(sum_square_durations / durations.size() - mean * mean);
+    const double std = std::sqrt(sum_squared_deviations / durations.size());
     return {static_cast<float>(mean), static_cast<float>(std)};
 }
 
@@ -53,6 +53,11 @@ size_t PerfMetrics::get_num_generated_tokens() {
 size_t PerfMetrics::get_num_input_tokens() {
     evaluate_statistics();
     return num_input_tokens;
+}
+
+size_t PerfMetrics::get_num_prefix_cache_hit_tokens() {
+    evaluate_statistics();
+    return num_prefix_cache_hit_tokens;
 }
 
 MeanStdPair PerfMetrics::get_ttft() {
@@ -90,9 +95,19 @@ MeanStdPair PerfMetrics::get_detokenization_duration() {
     return detokenization_duration;
 }
 
+MeanStdPair PerfMetrics::get_chat_template_duration() {
+    evaluate_statistics();
+    return chat_template_duration;
+}
+
 MeanStdPair PerfMetrics::get_inference_duration() {
     evaluate_statistics();
     return inference_duration;
+}
+
+MeanStdPair PerfMetrics::get_sampling_duration() {
+    evaluate_statistics();
+    return sampling_duration;
 }
 
 std::map<std::string, float> PerfMetrics::get_grammar_compiler_init_times() {
@@ -107,6 +122,14 @@ SummaryStats PerfMetrics::get_grammar_compile_time() {
 
 float PerfMetrics::get_microsec(std::chrono::steady_clock::duration duration) {
     return std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
+}
+
+void PerfMetrics::emplace_duration(
+    std::vector<MicroSeconds>& target_durations,
+    const TimePoint& start_time,
+    const TimePoint& end_time
+) {
+    target_durations.emplace_back(get_microsec(end_time - start_time));
 }
 
 void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
@@ -153,10 +176,16 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
     generate_duration = calc_mean_and_std(raw_metrics.generate_durations);
     tokenization_duration = calc_mean_and_std(raw_metrics.tokenization_durations);
     detokenization_duration = calc_mean_and_std(raw_metrics.detokenization_durations);
+    chat_template_duration = calc_mean_and_std(raw_metrics.chat_template_durations);
     inference_duration = calc_mean_and_std(raw_metrics.m_inference_durations);
+    sampling_duration = calc_mean_and_std(raw_metrics.m_sampling_durations);
 
     // tokens per second
-    throughput = {1000.0f / tpot.mean, (tpot.std * 1000.0f) / (tpot.mean * tpot.mean)};
+    if (tpot.mean > 0.0f) {
+        throughput = {1000.0f / tpot.mean, (tpot.std * 1000.0f) / (tpot.mean * tpot.mean)};
+    } else {
+        throughput = {-1.0f, -1.0f};
+    }
     m_evaluated = true;
 }
 
@@ -185,17 +214,20 @@ PerfMetrics PerfMetrics::operator+(const PerfMetrics& right) const {
     auto& new_token_infer_durations = res.raw_metrics.m_token_infer_durations;
     auto& new_batch_sizes = res.raw_metrics.m_batch_sizes;
     auto& new_times_to_first_token = res.raw_metrics.m_times_to_first_token;
+    auto& new_chat_template_durations = res.raw_metrics.chat_template_durations;
     auto& right_inference_durations = right.raw_metrics.m_inference_durations;
     auto& right_token_infer_durations = right.raw_metrics.m_token_infer_durations;
     auto& right_durations = right.raw_metrics.m_durations;
     auto& right_batch_sizes = right.raw_metrics.m_batch_sizes;
     auto& right_times_to_first_token = right.raw_metrics.m_times_to_first_token;
-
+    auto& right_chat_template_durations = right.raw_metrics.chat_template_durations;
+    
     new_durations.insert(new_durations.end(), right_durations.begin(), right_durations.end());
     new_inference_durations.insert(new_inference_durations.end(), right_inference_durations.begin(), right_inference_durations.end());
     new_token_infer_durations.insert(new_token_infer_durations.end(), right_token_infer_durations.begin(), right_token_infer_durations.end());
     new_times_to_first_token.insert(new_times_to_first_token.end(), right_times_to_first_token.begin(), right_times_to_first_token.end());
     new_batch_sizes.insert(new_batch_sizes.end(), right_batch_sizes.begin(), right_batch_sizes.end());
+    new_chat_template_durations.insert(new_chat_template_durations.end(), right_chat_template_durations.begin(), right_chat_template_durations.end());
 
     // Concatenate tokenization/detokenization and total generation times.
     auto& new_tok_durations = res.raw_metrics.tokenization_durations;
@@ -209,12 +241,19 @@ PerfMetrics PerfMetrics::operator+(const PerfMetrics& right) const {
     new_detok_durations.insert(new_detok_durations.end(), right_detok_durations.begin(), right_detok_durations.end());
     new_gen_durations.insert(new_gen_durations.end(), right_gen_durations.begin(), right_gen_durations.end());
 
+    // Concatenate sampling durations.
+    auto& new_sampling_durations = res.raw_metrics.m_sampling_durations;
+    new_sampling_durations.insert(new_sampling_durations.end(),
+                                  right.raw_metrics.m_sampling_durations.begin(),
+                                  right.raw_metrics.m_sampling_durations.end());
+
     // Concatenate structured output compilation times.
     auto& new_grammar_compile_times = res.raw_metrics.m_grammar_compile_times;
     new_grammar_compile_times.insert(new_grammar_compile_times.end(), right.raw_metrics.m_grammar_compile_times.begin(), right.raw_metrics.m_grammar_compile_times.end());
 
     res.num_generated_tokens += right.num_generated_tokens;
     res.num_input_tokens += right.num_input_tokens;
+    res.num_prefix_cache_hit_tokens += right.num_prefix_cache_hit_tokens;
     res.m_evaluated = false;
     return res;
 }

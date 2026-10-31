@@ -1,59 +1,292 @@
-# Text-to-speech pipeline sample
+# Text-to-speech C++ samples
 
-This example demonstrates how to use the openvino_genai.Text2SpeechPipeline in Python to convert input text into speech.
-You can specify a target voice using a speaker embedding vector that captures the desired voice characteristics.
-Additionally, you can choose the inference device (e.g., CPU, GPU) to control where the model runs.
+This folder contains C++ examples for `ov::genai::Text2SpeechPipeline`.
 
-## Download and convert the model and tokenizers
+## Supported Models
 
-The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
+- **SpeechT5**
+	- Requires exported SpeechT5 model and vocoder.
+	- Usually uses a speaker embedding file.
+- **Kokoro**
+	- Uses a Kokoro model directory.
+	- Uses a speaker embedding file and language options.
+	- End-to-end Kokoro language support includes:
+		- `en-us` (English, United States)
+		- `en-gb` (English, United Kingdom)
+		- `es` (Spanish)
+		- `fr-fr` (French, France)
+		- `hi` (Hindi)
+		- `it` (Italian)
+		- `pt-br` (Portuguese, Brazil)
+	- Not yet supported for end-to-end text generation in this flow: `ja` (Japanese), `zh` (Chinese/Mandarin).
+- **Qwen3-TTS**
+	- Three model variants are covered by one sample with subcommands:
+		- `qwen3_tts customvoice`: built-in speaker identities, with optional style `instruct`.
+		- `qwen3_tts voice-design`: create a brand-new voice from a natural-language `instruct` description.
+		- `qwen3_tts base`: clone a voice from a short reference recording (x-vector and ICL modes).
+	- See the [Qwen3-TTS samples](#qwen3-tts-samples) section below for setup and run commands.
 
-Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model.
+## SpeechT5 setup
+
+Install export tools and export SpeechT5 with vocoder:
 
 ```sh
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
 optimum-cli export openvino --model microsoft/speecht5_tts --model-kwargs "{\"vocoder\": \"microsoft/speecht5_hifigan\"}" speecht5_tts
 ```
 
-**Note:** Currently, text-to-speech in OpenVINO GenAI supports the `SpeechT5 TTS` model.
-When exporting the model, you must specify a vocoder using the `--model-kwargs` option in JSON format.
+Create a speaker embedding file (SpeechT5-specific):
 
-## Prepare speaker embedding file
+`python ../../python/speech_generation/create_speaker_embedding.py`
 
-To generate speech using the SpeechT5 TTS model, you can specify a target voice by providing a speaker embedding file.
-This file must contain 512 32-bit floating-point values that represent the voice characteristics of the target speaker.
-The model will use these characteristics to synthesize the input text in the specified voice.
-
-If no speaker embedding is provided, the model will default to a built-in speaker for speech generation.
-
-You can generate a speaker embedding using
-the [`create_speaker_embedding.py`](../../python/speech_generation/create_speaker_embedding.py) script.
-This script records 5 seconds of audio from your microphone and extracts a speaker embedding vector from the recording.
-
-To run the script:
-
-```
-python create_speaker_embedding.py
+## Kokoro setup
+```sh
+pip install --upgrade-strategy eager -r ../../export-requirements.txt
+pip install kokoro
+optimum-cli export openvino -m hexgrad/Kokoro-82M ov_Kokoro-82M --trust-remote-code
 ```
 
-## Run Text-to-speech sample
+> **Note:**
+> After export is complete, you will find the available speaker embedding `.bin` files in `ov_Kokoro-82M/voices`.
 
-Follow [Get Started with Samples](https://docs.openvino.ai/2026/get-started/learn-openvino/openvino-samples/get-started-demos.html)
-to run the sample.
+## Use of `espeak-ng` within the Kokoro Pipeline
 
-`text-to-speech speecht5_tts "Hello OpenVINO GenAI" speaker_embedding.bin`
+Within the Kokoro Text-to-Speech pipeline, `espeak-ng` is an external dependency used for the grapheme-to-phoneme (G2P) stage. Its role varies depending on the selected language:
 
-It generates `output_audio.wav` file containing the phrase `Hello OpenVINO GenAI` spoken in the target voice.
+- **English (`en-us`, `en-gb`)**:
+	`espeak-ng` is used as a fallback for words that are not found in the built-in dictionary.
+	See the `kokoro_phonemize_fallback` sample for an example of using an OpenVINO-based fallback model to avoid relying on `espeak-ng` for English.
 
-Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#speech-generation-models) for more details.
+- **Non-English (`es`, `fr-fr`, `hi`, `it`, `pt-br`)**:
+	`espeak-ng` serves as the primary G2P (phonemization) engine. As such, it must be installed to enable end-to-end text-to-speech generation for these languages.
 
-# Text-to-speech pipeline usage
+> **Note:**
+> `espeak-ng` is licensed under GPLv3 and must be installed separately. OpenVINO GenAI detects its presence automatically at runtime.
+
+To install `espeak-ng`, follow the official guide:
+https://github.com/espeak-ng/espeak-ng/blob/master/docs/guide.md
+
+## Run samples
+
+### 1) `text2speech`
+
+SpeechT5:
+```
+text2speech speecht5_tts "Hello from OpenVINO GenAI" speaker_embedding.bin
+```
+
+Kokoro:
+```
+text2speech ov_Kokoro-82M "Hello, and welcome to speech generation using OpenVINO GenAI." ov_Kokoro-82M/voices/af_heart.bin --language en-us
+```
+
+Kokoro (non-English):
+```
+text2speech ov_Kokoro-82M "Hola y bienvenidos a la generación de voz utilizando OpenVINO GenAI." ov_Kokoro-82M/voices/ef_dora.bin --language es
+```
+
+Text2speech with speed control:
+```
+text2speech ov_Kokoro-82M "Hello from OpenVINO GenAI with a faster speaking rate." ov_Kokoro-82M/voices/af_heart.bin --language en-us --speed 1.15
+```
+
+> **Note:** `text2speech` targets SpeechT5 and Kokoro. Qwen3-TTS is covered by
+> `qwen3_tts` — see the [Qwen3-TTS samples](#qwen3-tts-samples) section.
+
+### 2) `kokoro_phonemize_fallback` (Kokoro only)
+
+This sample demonstrates how to use an OpenVINO-based fallback model for phonemization, allowing you to avoid relying on `espeak-ng` when working with English languages.
+
+**Why use a fallback model instead of `espeak-ng`?**
+
+While `espeak-ng` provides robust phonemization, using an OpenVINO-based fallback model avoids the need for external dependencies and consideration of their associated licensing requirements, enabling a more self-contained and uniformly licensed deployment.
+
+#### Export OV fallback models:
+
+US:
+```
+optimum-cli export openvino --model PeterReid/graphemes_to_phonemes_en_us --task text2text-generation graphemes_to_phonemes_en_us-ov
+```
+
+GB:
+```
+optimum-cli export openvino --model PeterReid/graphemes_to_phonemes_en_gb --task text2text-generation graphemes_to_phonemes_en_gb-ov
+```
+
+#### Run using fallback models:
+
+US model + `en-us`:
+```
+kokoro_phonemize_fallback ov_Kokoro-82M "Vellorin traded copperchimes for rainmint at Candlehaven." --speaker_embedding_file_path ov_Kokoro-82M/voices/af_heart.bin --language en-us --phonemize_fallback_model_dir graphemes_to_phonemes_en_us-ov
+```
+
+GB model + `en-gb`:
+```
+kokoro_phonemize_fallback ov_Kokoro-82M "Vellorin traded copperchimes for rainmint at Candlehaven." --speaker_embedding_file_path ov_Kokoro-82M/voices/bf_emma.bin --language en-gb --phonemize_fallback_model_dir graphemes_to_phonemes_en_gb-ov
+```
+
+To run with default `espeak-ng` fallback:
+```
+kokoro_phonemize_fallback ov_Kokoro-82M "Vellorin traded copperchimes for rainmint at Candlehaven." --speaker_embedding_file_path ov_Kokoro-82M/voices/af_heart.bin --language en-us
+```
+
+Set `--language` to match the fallback model variant (`en-us` with `..._en_us-ov`, `en-gb` with `..._en_gb-ov`).
+OpenVINO fallback models above are an English-only feature (`en-us` / `en-gb`). For non-English Kokoro languages, phonemization is handled directly by `espeak-ng` as the primary G2P path (this fallback-model feature is not used).
+
+## Qwen3-TTS samples
+
+Qwen3-TTS ships as three model variants, and this folder provides one unified sample:
+
+| Sample | Subcommand | Model variant | What it showcases |
+| --- | --- | --- | --- |
+| `qwen3_tts` | `customvoice` | CustomVoice | Built-in speaker identities, optional style `instruct` |
+| `qwen3_tts` | `voice-design` | VoiceDesign | A new voice created from a natural-language `instruct` description |
+| `qwen3_tts` | `base` | Base | Voice cloning from reference audio (x-vector and ICL modes) |
+
+### Qwen3-TTS setup
+
+Convert a Qwen3-TTS model to OpenVINO (choose the variant matching the sample you want to run), for example:
+
+```sh
+pip install qwen-tts transformers==4.57.3 torch==2.11.0 torchaudio==2.11.0
+pip install --upgrade-strategy eager -r ../../export-requirements.txt
+optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice --trust-remote-code qwen3_tts_customvoice_ov
+optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign --trust-remote-code qwen3_tts_voicedesign_ov
+optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-0.6B-Base --trust-remote-code qwen3_tts_base_ov
+```
+
+Use `--language` to set the language. The supported languages are: ["Auto", "Chinese", "English", "Japanese", "Korean", "German", "French", "Russian", "Portuguese", "Spanish", and "Italian"]. "Auto" will be used by default if not specified.
+
+### 3) `qwen3_tts customvoice`
+
+Speak with one of the model's built-in speakers.
+
+```
+qwen3_tts customvoice qwen3_tts_customvoice_ov "Hello from Qwen3 CustomVoice." --speaker ryan
+```
+
+`--instruct` is optional and steers tone/emotion/pace.
+Note: Only supported in 1.7B variant of CustomVoice -- `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`
+
+```
+qwen3_tts customvoice qwen3_tts_customvoice_ov "Hello from Qwen3 CustomVoice." --speaker ryan --instruct "Speak in a calm, professional tone."
+```
+
+For `Qwen3-TTS-12Hz-1.7B/0.6B-CustomVoice` models, the supported speaker list and speaker descriptions are provided below. We recommend using each speaker's native language for the best quality. Of course, each speaker can speak any language supported by the model.
+
+| Speaker | Voice Description | Native language |
+| --- | --- | --- |
+| Vivian | Bright, slightly edgy young female voice. | Chinese |
+| Serena | Warm, gentle young female voice. | Chinese |
+| Uncle_Fu | Seasoned male voice with a low, mellow timbre. | Chinese |
+| Dylan | Youthful Beijing male voice with a clear, natural timbre. | Chinese (Beijing Dialect) |
+| Eric | Lively Chengdu male voice with a slightly husky brightness. | Chinese (Sichuan Dialect) |
+| Ryan | Dynamic male voice with strong rhythmic drive. | English |
+| Aiden | Sunny American male voice with a clear midrange. | English |
+| Ono_Anna | Playful Japanese female voice with a light, nimble timbre. | Japanese |
+| Sohee | Warm Korean female voice with rich emotion. | Korean |
+
+### 4) `qwen3_tts voice-design`
+
+Design a new voice purely from a natural-language description. There is no speaker list; `--instruct` is required.
+
+```
+qwen3_tts voice-design qwen3_tts_voicedesign_ov "H-hey! You dropped your... uh... calculus notebook? I mean, I think it's yours? Maybe?" --instruct "Male, 17 years old, tenor range, gaining confidence - deeper breath support now, though vowels still tighten when nervous"
+```
+
+### 5) `qwen3_tts base`
+
+Clone a voice from a short reference recording.
+
+You can download this 24 kHz reference audio file to use for following examples:
+https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-TTS-Repo/clone.wav
+
+Save this file locally as clone.wav, then pass it via `--ref_audio_wav_path`.
+
+Note: The reference audio must be 24 kHz.
+
+Two modes are selected automatically from the inputs:
+
+- **x-vector mode** (fast, identity only): provide reference audio (or a pre-saved speaker embedding). `--ref_text` is not required.
+- **ICL mode** (higher fidelity): additionally provide the reference transcript via `--ref_text`.
+
+`--ref_text` is the transcript for the reference recording given in `--ref_audio_wav_path`.
+
+If you're using the example audio file given above, then `--ref_text` should be set to: "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you."
+
+
+Clone directly from reference audio (x-vector mode):
+```
+qwen3_tts base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path clone.wav
+```
+
+Clone from reference audio + transcript (ICL mode):
+```
+qwen3_tts base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path clone.wav --ref_text "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you."
+```
+
+#### Reusing a reference prompt (save once, reuse many times)
+
+Extracting the speaker embedding and reference codes from audio is the expensive part of cloning. To avoid
+recomputing them on every run, clone once from reference audio and save the artifacts that `generate(...)`
+returns on the result (`speaker_embedding` and `ref_codec_ids`):
+
+For x-vector mode: Save speaker embedding:
+```
+qwen3_tts base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path clone.wav --save_speaker_embedding_file_path qwen_speaker_embedding.bin
+```
+
+For ICL mode: Save speaker embedding & ref codec ids:
+```
+qwen3_tts base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path clone.wav --ref_text "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you." --save_speaker_embedding_file_path qwen_speaker_embedding.bin --save_ref_codec_ids_file_path qwen_ref_code.bin
+```
+
+For x-vector mode: Reuse the saved speaker embedding (ref-audio not needed anymore):
+```
+qwen3_tts base qwen3_tts_base_ov "Hello again." --speaker_embedding_file_path qwen_speaker_embedding.bin
+```
+
+For ICL mode: Reuse saved embedding + reference codes (ref-audio not needed anymore):
+Note: `--ref_text` is still required here.
+```
+qwen3_tts base qwen3_tts_base_ov "Hello again." --speaker_embedding_file_path qwen_speaker_embedding.bin --ref_codec_ids_file_path qwen_ref_code.bin --ref_text "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you."
+```
+
+The saved files use simple flat-binary layouts owned by this sample (the speaker embedding is raw
+float32; the reference codes carry a small shape header).
+
+For Qwen3-TTS Base examples above, output is 24 kHz WAV.
+
+Refer to [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#speech-generation-models) for model details.
+
+# Text-to-speech API usage
 
 ```c++
 #include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
 
 ov::genai::Text2SpeechPipeline pipe(models_path, device);
+
 gen_speech = pipe.generate(prompt, speaker_embedding);
+
+// Kokoro generation with an application-prepared embedding tensor
+gen_speech = pipe.generate(prompt,
+                           speaker_embedding,
+                           ov::AnyMap{{"language", "en-us"}});
+
+// Qwen3 CustomVoice generation (no external embedding required)
+gen_speech = pipe.generate(prompt,
+                           ov::Tensor(),
+                           ov::AnyMap{{"speaker", "ryan"}, {"language", "english"}});
+
+// Qwen3 VoiceDesign generation (no external embedding required)
+gen_speech = pipe.generate(prompt,
+                           ov::Tensor(),
+                           ov::AnyMap{{"language", "english"}, {"instruct", "A warm, deep male narrator voice"}});
+
+// Qwen3 Base voice clone from an application-prepared speaker embedding tensor
+gen_speech = pipe.generate(prompt,
+                           speaker_embedding,
+                           ov::AnyMap{{"language", "english"}});
 
 auto speech = gen_speech.speeches[0];
 // speech tensor contains the waveform of the spoken phrase

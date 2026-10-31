@@ -17,18 +17,47 @@ Install [../../export-requirements.txt](../../export-requirements.txt) if model 
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
 optimum-cli export openvino --model <model> <output_folder>
 ```
-If a converted model in OpenVINO IR format is already available in the collection of [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) on Hugging Face, it can be downloaded directly via huggingface-cli.
+If a converted model in OpenVINO IR format is already available in the collection of [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) on Hugging Face, it can be downloaded directly via hf.
 ```sh
 pip install huggingface-hub
-huggingface-cli download <model> --local-dir <output_folder>
+hf download <model> --local-dir <output_folder>
 ```
 
 ### Using GGUF models
 
 To run any samples with a GGUF model, simply provide the path to the .gguf file via the `<MODEL_DIR>` parameter.
 
-This capability is currently available in preview mode and supports a limited set of topologies, including SmolLM and Qwen2.5. For other models
-and architectures, we still recommend converting the model to the IR format using the `optimum-intel` tool.
+The default legacy reader handles `llama`, `qwen2`, and `qwen3`, and ignores some metadata,
+such as `rope_freqs.weight`. The OpenVINO GGUF frontend supports more architectures and is
+expected to provide better model quality, but is in preview and may have limitations.
+
+Prefer models quantized in `Q4_0` or `Q8_0` format for better performance and accuracy. Their quantization layouts are closest to those used by OpenVINO.
+
+Select the frontend when constructing the pipeline:
+
+```cpp
+#include <iostream>
+#include <openvino/genai/gguf.hpp>
+#include <openvino/genai/llm_pipeline.hpp>
+
+int main() {
+    ov::genai::LLMPipeline pipe(
+        "model.gguf", "CPU", ov::genai::gguf_reader("FRONTEND"));
+    ov::genai::GenerationConfig config;
+    config.max_new_tokens = 64;
+    std::cout << pipe.generate("Explain why the sky is blue.", config);
+}
+```
+
+With a compatible OpenVINO build, GenAI attempts paged attention by default and falls back to
+SDPA if conversion fails. An explicit `scheduler_config` requests continuous batching and
+reports conversion errors. Mamba2 and dense Nemotron-H GGUFs currently require SDPA.
+See [Run GGUF models](https://openvinotoolkit.github.io/openvino.genai/docs/guides/gguf) for model format recommendations, examples, and limitations.
+
+> [!NOTE]
+> The `GGUF_READER` property selects which reader converts the file. It defaults to
+> `"LEGACY"`, the hand-written reader described above; passing `ov::genai::gguf_reader("FRONTEND")`
+> (C++) or `GGUF_READER="FRONTEND"` (Python) uses the OpenVINO GGUF frontend instead.
 
 ## Sample Descriptions
 ### Common information
@@ -129,6 +158,26 @@ Recommended models: meta-llama/Llama-2-13b-hf as main model and TinyLlama/TinyLl
   ```bash
   ./speculative_decoding_lm <MODEL_DIR> <DRAFT_MODEL_DIR> "<PROMPT>"
   ```
+- **Speculative decoding configuration:** the following `ov::genai::GenerationConfig` fields control how the draft model proposes candidate tokens. They are passed to `pipe.generate(..., config)` after constructing `LLMPipeline` with `ov::genai::draft_model(...)`.
+
+  | Field | Default | Backends | Meaning |
+  |---|---|---|---|
+  | `num_assistant_tokens` | `5` | ContinuousBatching, Stateful | Number of candidate tokens drafted per iteration. ContinuousBatching uses the value as-is; the Stateful backend uses it as an initial value and adapts it based on the recent acceptance rate. |
+  | `assistant_confidence_threshold` | unset | ContinuousBatching only (non-EAGLE) | When set, the draft model keeps proposing tokens while the candidate probability is above this threshold instead of using a fixed `num_assistant_tokens`. Mutually exclusive with `num_assistant_tokens`. **Not supported in EAGLE mode** — EAGLE always drafts a fixed `num_assistant_tokens` candidates per iteration. |
+  | `branching_factor` | `1` | ContinuousBatching (EAGLE only) | Number of candidate tokens to consider at each tree level when running tree-based speculative decoding. |
+  | `tree_depth` | `0` | ContinuousBatching (EAGLE only) | Depth of the candidate token tree. Tree drafting requires `num_assistant_tokens >= tree_depth`. |
+
+  The sample prints accepted, rejected, and total draft candidate tokens. Draft generated tokens count tokens sampled by the draft pipeline. Draft candidate tokens count the subset offered to the main model for validation and are used as the denominator for acceptance rate.
+
+  Example:
+  ```cpp
+  ov::genai::GenerationConfig config;
+  config.max_new_tokens = 100;
+  config.num_assistant_tokens = 4;
+  // config.assistant_confidence_threshold = 0.4f; // alternative to num_assistant_tokens (FastDraft CB only, not supported in EAGLE)
+  // config.branching_factor = 8;                  // EAGLE tree drafting
+  // config.tree_depth = 3;
+  ```
 
 ### 7. LoRA Greedy Causal LM (`lora_greedy_causal_lm`)
 - **Description:**
@@ -178,10 +227,10 @@ For more information on how performance metrics are calculated please follow [pe
   ```
   #### Options
 - `-m, --model`: Path to the model and tokenizers base directory.
-- `-p, --prompt` (default: ''): The prompt to generate text. If without `-p` and `--pf`, the default prompt is `"The Sky is blue because"`
-- `--pf, --prompt_file` Read prompt from file.
-- `--nw, --num_warmup` (default: `1`): Number of warmup iterations.
-- `--mt, --max_new_tokens` (default: `20`): Maximal number of new tokens.
+- `-p, --prompt` (default: ''): The prompt to generate text. If without `-p` and `-F`, the default prompt is `"The Sky is blue because"`
+- `-F, --prompt_file` Read prompt from file.
+- `-N, --num_warmup` (default: `1`): Number of warmup iterations.
+- `-M, --max_new_tokens` (default: `20`): Maximal number of new tokens.
 - `-n, --num_iter` (default: `3`): Number of iterations.
 - `-d, --device` (default: `"CPU"`): Device to run the model on.
 

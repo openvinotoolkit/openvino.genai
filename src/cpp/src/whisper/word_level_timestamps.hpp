@@ -13,7 +13,7 @@
 
 namespace ov::genai {
 
-std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const std::vector<int64_t>& sot_tokens,
+std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const SotTokensResult& sot_result,
                                                                     const std::vector<int64_t>& text_tokens,
                                                                     ov::genai::Tokenizer& tokenizer,
                                                                     std::shared_ptr<ov::genai::WhisperDecoder> decoder,
@@ -22,7 +22,7 @@ std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const std::v
                                                                     const size_t n_frames,
                                                                     const float chunk_time_offset);
 
-std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const std::vector<int64_t>& sot_tokens,
+std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const SotTokensResult& sot_result,
                                                                     const std::vector<int64_t>& input_tokens,
                                                                     ov::genai::Tokenizer& tokenizer,
                                                                     ov::InferRequest& decoder,

@@ -72,9 +72,7 @@ describe("Use parsers from js", () => {
       };
 
       parser.parse(message);
-      // CVS-178738 The ReasoningParser incorrectly works with expect_open_tag=False
-      // Should be strictEqual but currently not working
-      assert.notStrictEqual(message.reasoning_content, "Thinking");
+      assert.strictEqual(message.reasoning_content, "Thinking");
     });
 
     it("should keep original content when keepOriginalContent is true", () => {
@@ -124,9 +122,7 @@ describe("Use parsers from js", () => {
       content: `${reasoning}</think> After`,
     };
     deepSeekParser.parse(message);
-    // CVS-178737 DeepSeekR1ReasoningParser does not extract reasoning content correctly
-    // Should be strictEqual but currently not working
-    assert.notStrictEqual(message.reasoning_content, reasoning);
+    assert.strictEqual(message.reasoning_content, reasoning);
   });
 
   it("Phi4ReasoningParser should work", () => {

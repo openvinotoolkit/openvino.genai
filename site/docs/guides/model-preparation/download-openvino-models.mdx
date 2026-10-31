@@ -19,7 +19,7 @@ The simplest way to download models is using the `huggingface_hub` package:
     ```
 2. Download the model, specifying model id (e.g. [`OpenVINO/phi-2-fp16-ov`](https://huggingface.co/OpenVINO/phi-2-fp16-ov)) and output directory `model_path`:
     ```bash
-    huggingface-cli download "OpenVINO/phi-2-fp16-ov" --local-dir model_path
+    hf download "OpenVINO/phi-2-fp16-ov" --local-dir model_path
     ```
     :::info
     The `-ov` suffix in model id usually defines OpenVINO pre-converted model.

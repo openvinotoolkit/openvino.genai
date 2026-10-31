@@ -63,8 +63,14 @@ export class VLMPipeline {
    * Start a chat session with an optional system message.
    * @param systemMessage - Optional system message to initialize chat context.
    * @returns Resolves when chat session is started.
+   * @deprecated startChat() / finishChat() API is deprecated and will be removed in the next major release.
+   * Please, use generate() with ChatHistory argument.
    */
   async startChat(systemMessage: string = "") {
+    console.warn(
+      "DEPRECATION WARNING: startChat() / finishChat() API is deprecated and will be removed in the next major release.",
+      "Please, use generate() with ChatHistory argument.",
+    );
     if (!this.pipeline) throw new Error("Pipeline is not initialized");
 
     const startChatPromise = util.promisify(this.pipeline.startChat.bind(this.pipeline));
@@ -75,8 +81,14 @@ export class VLMPipeline {
   /**
    * Finish the current chat session and clear chat-related state.
    * @returns Resolves when chat session is finished.
+   * @deprecated startChat() / finishChat() API is deprecated and will be removed in the next major release.
+   * Please, use generate() with ChatHistory argument.
    */
   async finishChat() {
+    console.warn(
+      "DEPRECATION WARNING: startChat() / finishChat() API is deprecated and will be removed in the next major release.",
+      "Please, use generate() with ChatHistory argument.",
+    );
     if (!this.pipeline) throw new Error("Pipeline is not initialized");
 
     const finishChatPromise = util.promisify(this.pipeline.finishChat.bind(this.pipeline));

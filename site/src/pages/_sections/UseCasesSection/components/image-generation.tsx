@@ -1,10 +1,11 @@
 import Button from '@site/src/components/Button';
-import { LanguageTabs, TabItemCpp, TabItemPython } from '@site/src/components/LanguageTabs';
+import { LanguageTabs, TabItemCpp, TabItemPython, TabItemJS } from '@site/src/components/LanguageTabs';
 
 import UseCaseCard from './UseCaseCard';
 
 import CodeExampleCpp from '@site/docs/use-cases/image-generation/_sections/_run_model/_text2image_cpp.mdx';
 import CodeExamplePython from '@site/docs/use-cases/image-generation/_sections/_run_model/_text2image_python.mdx';
+import CodeExampleJS from '@site/docs/use-cases/image-generation/_sections/_run_model/_text2image_js.mdx';
 
 export const ImageGeneration = () => (
   <UseCaseCard>
@@ -30,6 +31,9 @@ export const ImageGeneration = () => (
         <TabItemCpp>
           <CodeExampleCpp />
         </TabItemCpp>
+        <TabItemJS>
+          <CodeExampleJS />
+        </TabItemJS>
       </LanguageTabs>
     </UseCaseCard.Code>
     <UseCaseCard.Actions>

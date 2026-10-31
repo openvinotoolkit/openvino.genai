@@ -69,6 +69,15 @@ UNet2DConditionModel::UNet2DConditionModel(const std::string& model,
     compile(device, properties);
 }
 
+UNet2DConditionModel::UNet2DConditionModel(const Tensor& blob_tensor,
+                                           const Config& config,
+                                           const size_t vae_scale_factor,
+                                           const std::string& device,
+                                           const ov::AnyMap& properties) :
+    m_config(config), m_vae_scale_factor(vae_scale_factor) {
+    import_model(blob_tensor, device, properties);
+}
+
 UNet2DConditionModel::UNet2DConditionModel(const UNet2DConditionModel&) = default;
 
 UNet2DConditionModel UNet2DConditionModel::clone() {
@@ -133,6 +142,18 @@ void UNet2DConditionModel::import_model(const std::filesystem::path& blob_path, 
     }
 
     m_impl->import_model(blob_path, device, properties);
+}
+
+void UNet2DConditionModel::import_model(const ov::Tensor& blob_tensor, const std::string& device, const ov::AnyMap& properties) {
+    OPENVINO_ASSERT(!m_impl, "Model has been already compiled. Cannot re-compile already compiled model");
+
+    if (device == "NPU") {
+        m_impl = std::make_shared<UNet2DConditionModel::UNetInferenceStaticBS1>();
+    } else {
+        m_impl = std::make_shared<UNet2DConditionModel::UNetInferenceDynamic>();
+    }
+
+    m_impl->import_model(blob_tensor, device, properties);
 }
 
 void UNet2DConditionModel::set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) {

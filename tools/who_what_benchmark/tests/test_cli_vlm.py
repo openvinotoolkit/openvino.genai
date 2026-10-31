@@ -5,6 +5,9 @@ import pytest
 import logging
 import sys
 
+from transformers import __version__ as transformers_version
+from packaging.version import Version
+
 from conftest import convert_model, run_wwb
 from test_cli_image import get_similarity
 
@@ -16,8 +19,6 @@ logger = logging.getLogger(__name__)
 def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path):
     if sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
-    if sys.platform == "win32":
-        pytest.xfail("Ticket 178790")
 
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = convert_model(model_id)
@@ -103,8 +104,6 @@ def run_test_with_lora(
 ):
     if sys.platform == "darwin":
         pytest.xfail("Ticket 173169")
-    if sys.platform == "win32":
-        pytest.xfail("Ticket 178790")
 
     gt_file = tmp_path / "gt.csv"
     model_path = convert_model(model_id)
@@ -197,6 +196,31 @@ def test_vlm_chat(model_id, model_type, tmp_path):
     run_test(model_id, model_type, None, None, tmp_path)
 
 
+@pytest.mark.parametrize(
+    ("model_id", "model_type"),
+    [
+        ("optimum-intel-internal-testing/tiny-random-llava", "visual-text-only"),
+    ],
+)
+def test_vlm_text_only(model_id, model_type, tmp_path):
+    run_test(model_id, model_type, None, None, tmp_path)
+
+
+@pytest.mark.transformers_higher_v5_1
+@pytest.mark.skipif(
+    Version(transformers_version) < Version("5.1"),
+    reason="transformers 5.0.x reads an unset use_sliding_window in the Qwen3-Omni talker config; fixed in 5.1",
+)
+@pytest.mark.parametrize(
+    ("model_id", "model_type"),
+    [
+        ("optimum-intel-internal-testing/tiny-random-qwen3-omni", "visual-text"),
+    ],
+)
+def test_vlm_qwen3_omni(model_id, model_type, tmp_path):
+    run_test(model_id, model_type, None, None, tmp_path)
+
+
 @pytest.mark.nanollava
 @pytest.mark.parametrize(
     ("model_id", "model_type", "optimum_threshold", "genai_threshold"),
@@ -208,13 +232,31 @@ def test_vlm_nanollava(model_id, model_type, optimum_threshold, genai_threshold,
     run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path)
 
 
-@pytest.mark.parametrize(
-    ("model_id", "model_type"),
-    [
-        ("optimum-intel-internal-testing/tiny-random-qwen2vl", "visual-video-text"),
+if Version(transformers_version) < Version("5.0.0"):
+    # llava_next_video is not supported yet by optimum-intel 423b423 with transformers 5.0
+    # videochat_flash_qwen is incompatible with transformers >= 5.0.0
+    VISUAL_VIDEO_TEXT_MODELS = [
         ("optimum-intel-internal-testing/tiny-random-llava-next-video", "visual-video-text"),
-    ],
+        pytest.param(
+            "optimum-intel-internal-testing/tiny-videochat-flash-qwen",
+            "visual-video-text",
+            marks=pytest.mark.xfail(
+                sys.platform == "win32",
+                reason="PyAV DLL load failure on Windows. Ticket CVS-183222",
+                run=False,
+            ),
+        ),
+    ]
+else:
+    VISUAL_VIDEO_TEXT_MODELS = [
+        ("optimum-intel-internal-testing/tiny-random-qwen2vl", "visual-video-text"),
+    ]
+
+
+@pytest.mark.transformers_dependent(
+    reason="llava_next_video is not supported yet by optimum-intel 423b423 with transformers 5.0"
 )
+@pytest.mark.parametrize(("model_id", "model_type"), VISUAL_VIDEO_TEXT_MODELS)
 def test_vlm_video(model_id, model_type, tmp_path):
     run_test(model_id, model_type, 0.8, 0.8, tmp_path)
 

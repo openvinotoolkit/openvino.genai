@@ -53,7 +53,8 @@ export class LLMPipeline {
    * Start a chat session with an optional system message.
    * @param systemMessage - Optional system message to initialize chat context.
    * @returns Resolves when chat session is started.
-   * @deprecated startChat is deprecated and will be removed in future releases. Please, use generate() with ChatHistory argument.
+   * @deprecated startChat() / finishChat() API is deprecated and will be removed in the next major release.
+   * Please, use generate() with ChatHistory argument.
    */
   async startChat(systemMessage: string = "") {
     console.warn(
@@ -71,7 +72,8 @@ export class LLMPipeline {
   /**
    * Finish the current chat session and clear chat-related state.
    * @returns Resolves when chat session is finished.
-   * @deprecated finishChat is deprecated and will be removed in future releases. Please, use generate() with ChatHistory argument.
+   * @deprecated startChat() / finishChat() API is deprecated and will be removed in the next major release.
+   * Please, use generate() with ChatHistory argument.
    */
   async finishChat() {
     console.warn(

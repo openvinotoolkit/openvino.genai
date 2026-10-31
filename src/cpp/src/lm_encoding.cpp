@@ -2,10 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <algorithm>
-#include <cmath>
-#include <iostream>
 #include <numeric>
-#include <random>
 #include <vector>
 
 #include "utils.hpp"
@@ -32,18 +29,35 @@ void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention
 }
 
 void update_3d_position_ids(ov::Tensor&& position_ids, const ov::Tensor& attention_mask, const int64_t rope_delta) {
+    constexpr size_t thw_dim_size = 3;
+    constexpr size_t text_thw_dim_size = 4;
+    
     const size_t batch_size = attention_mask.get_shape().at(0);
     const size_t sequence_length = attention_mask.get_shape().at(1);
-    const size_t thw_dim_size = 3;
+    const size_t dim_0_size = position_ids.get_shape().at(0);
 
-    position_ids.set_shape({thw_dim_size, batch_size, 1});
+    OPENVINO_ASSERT(dim_0_size == thw_dim_size || dim_0_size == text_thw_dim_size,
+        "Unsupported first dimension in 3D position ids: ", dim_0_size);
+
+    position_ids.set_shape({dim_0_size, batch_size, 1});
     int64_t* position_ids_data = position_ids.data<int64_t>();
 
-    int64_t pos_id = static_cast<int64_t>(sequence_length) - 1 + rope_delta;
+    const int64_t vision_position_id = static_cast<int64_t>(sequence_length) - 1 + rope_delta;
 
-    for (size_t batch = 0; batch < batch_size; batch++) {
-        for (size_t dim = 0; dim < thw_dim_size; ++dim) {
-            position_ids_data[dim * batch_size + batch] = pos_id;
+    // For THW-only layout, all dims use vision_position_id.
+    // For text + THW layout (e.g. Qwen3.5), text position id (without rope_delta) is prepended to dim 0.
+    const size_t vision_dim_idx = (dim_0_size == text_thw_dim_size) ? 1 : 0;
+
+    if (dim_0_size == text_thw_dim_size) {
+        const int64_t text_position_id = static_cast<int64_t>(sequence_length) - 1;
+        for (size_t batch = 0; batch < batch_size; ++batch) {
+            position_ids_data[batch] = text_position_id;
+        }
+    }
+
+    for (size_t dim = vision_dim_idx; dim < dim_0_size; ++dim) {
+        for (size_t batch = 0; batch < batch_size; ++batch) {
+            position_ids_data[dim * batch_size + batch] = vision_position_id;
         }
     }
 }
@@ -80,13 +94,13 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     Sampler& sampler,
     std::vector<SequenceGroup::Ptr> sequence_groups,
     std::optional<ov::Tensor> position_ids,
-    std::optional<ov::Tensor> token_type_ids,
     utils::CacheState& cache_state,
     EmbeddingsModel::Ptr m_embedding,
     std::optional<int64_t> rope_delta,
     const size_t max_kv_cache_size,
     const bool use_intermediate_remote_tensor,
-    const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs
+    const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs,
+    std::function<ov::Tensor(const ov::Tensor& new_input_ids)> per_layer_embeddings_callback
 ) {
     std::vector<GenerationHandle> generations;
     for (SequenceGroup::Ptr sequence_group : sequence_groups) {
@@ -141,8 +155,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 
     if (m_embedding) {
         m_llm.set_tensor("inputs_embeds", input_ids);
-        if (token_type_ids.has_value())
-            m_llm.set_tensor("token_type_ids", *token_type_ids);
+
         // Set extra inputs for LLM if any
         for (const auto& [name, tensor] : lm_extra_inputs) {
             m_llm.set_tensor(name, tensor);
@@ -181,7 +194,12 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     for (size_t i = 0; i < sequence_groups.size(); i++)
         beam_offets.insert({sequence_groups.at(i)->get_request_id(), i});
 
+    const auto sample_start = std::chrono::steady_clock::now();
     SamplerOutput sampler_output = sampler.sample(sequence_groups, logits);
+    raw_perf_counters.m_sampling_durations.emplace_back(
+        PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
+    for (auto& sg : sequence_groups)
+        sg->notify_handle();
     free_non_running_requests(); // handle sampler output
 
     raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
@@ -242,15 +260,9 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
             EmbeddingsRequest& req = embeddings_request_guard.get();
             const ov::Tensor& embed_prompt_tensor = m_embedding->infer(req, new_input_ids, use_intermediate_remote_tensor);
             m_llm.set_tensor("inputs_embeds", embed_prompt_tensor);
-            if (token_type_ids.has_value()) {
-                ov::Tensor new_token_type_ids(ov::element::i64, {total_num_tokens, 1});
-                int64_t* token_type_data = new_token_type_ids.data<int64_t>();
-                std::fill(token_type_data, token_type_data + total_num_tokens, 0);
-                m_llm.set_tensor("token_type_ids", new_token_type_ids);
-            }
+
             // Update extra inputs for LLM if any
             for (const auto& [name, tensor] : lm_extra_inputs) {
-                // TODO Consider moving token_type_ids input to lm_extra_inputs
                 if (name == "deepstack_visual_embeds") {
                     ov::Shape new_shape = tensor.get_shape();
                     new_shape[1] = 1;
@@ -261,6 +273,12 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
                     ov::Tensor new_visual_pos_masks{tensor.get_element_type(), {batch_size, 1}};
                     std::fill_n(new_visual_pos_masks.data<bool>(), new_visual_pos_masks.get_size(), false);
                     m_llm.set_tensor(name, new_visual_pos_masks);
+                } else if (name == "per_layer_inputs" && per_layer_embeddings_callback) {
+                    m_llm.set_tensor(name, per_layer_embeddings_callback(new_input_ids));
+                } else if (name == "token_type_ids") {
+                    ov::Tensor new_token_type_ids(tensor.get_element_type(), {total_num_tokens, 1});
+                    std::fill_n(new_token_type_ids.data<int64_t>(), new_token_type_ids.get_size(), 0);
+                    m_llm.set_tensor(name, new_token_type_ids);
                 }
             }
         } else {
@@ -298,7 +316,12 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
         raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
 
+        const auto sample_start = std::chrono::steady_clock::now();
         sampler_output = sampler.sample(active_sequence_groups, m_llm.get_tensor("logits"));
+        raw_perf_counters.m_sampling_durations.emplace_back(
+            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
+        for (auto& sg : active_sequence_groups)
+            sg->notify_handle();
         free_non_running_requests(); // handle sampler output
 
         raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());

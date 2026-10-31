@@ -30,35 +30,41 @@ namespace {
 auto raw_perf_metrics_docstring = R"(
     Structure with raw performance metrics for each generation before any statistics are calculated.
 
-    :param generate_durations: Durations for each generate call in milliseconds.
+    :param generate_durations: Durations for each generate call in microseconds.
     :type generate_durations: list[float]
 
-    :param tokenization_durations: Durations for the tokenization process in milliseconds.
+    :param tokenization_durations: Durations for the tokenization process in microseconds.
     :type tokenization_durations: list[float]
 
-    :param detokenization_durations: Durations for the detokenization process in milliseconds.
+    :param detokenization_durations: Durations for the detokenization process in microseconds.
     :type detokenization_durations: list[float]
 
-    :param m_times_to_first_token: Times to the first token for each call in milliseconds.
+    :param chat_template_durations: Durations for the chat template application in microseconds.
+    :type chat_template_durations: list[float]
+
+    :param m_times_to_first_token: Times to the first token for each call in microseconds.
     :type m_times_to_first_token: list[float]
 
-    :param m_new_token_times: Timestamps of generation every token or batch of tokens in milliseconds.
+    :param m_new_token_times: Timestamps of generation every token or batch of tokens in microseconds.
     :type m_new_token_times: list[double]
 
-    :param token_infer_durations : Inference time for each token in milliseconds.
-    :type batch_sizes: list[float]
+    :param token_infer_durations : Inference time for each token in microseconds.
+    :type token_infer_durations: list[float]
 
     :param m_batch_sizes: Batch sizes for each generate call.
     :type m_batch_sizes: list[int]
 
-    :param m_durations: Total durations for each generate call in milliseconds.
+    :param m_durations: Total durations for each generate call in microseconds.
     :type m_durations: list[float]
 
-    :param inference_durations : Total inference duration for each generate call in milliseconds.
-    :type batch_sizes: list[float]
+    :param inference_durations : Total inference duration for each generate call in microseconds.
+    :type inference_durations: list[float]
 
-    :param grammar_compile_times: Time to compile the grammar in milliseconds.
+    :param grammar_compile_times: Time to compile the grammar in microseconds.
     :type grammar_compile_times: list[float]
+
+    :param sampling_durations: Time spent in the sampler per sampling step in microseconds. One entry per sampler.sample() call.
+    :type sampling_durations: list[float]
 )";
 
 auto perf_metrics_docstring = R"(
@@ -72,12 +78,14 @@ auto perf_metrics_docstring = R"(
     - Inference duration, ms
     - Tokenization duration, ms
     - Detokenization duration, ms
+    - Chat template application duration, ms
     - Throughput, tokens/s
 
     Additional metrics include:
     - Load time, ms
     - Number of generated tokens
     - Number of tokens in the input prompt
+    - Number of input tokens reused from the prefix cache
     - Time to initialize grammar compiler for each backend, ms
     - Time to compile grammar, ms
 
@@ -92,6 +100,9 @@ auto perf_metrics_docstring = R"(
 
     :param get_num_input_tokens: Returns the number of tokens in the input prompt.
     :type get_num_input_tokens: int
+
+    :param get_num_prefix_cache_hit_tokens: Returns the number of input tokens reused from the prefix cache.
+    :type get_num_prefix_cache_hit_tokens: int
 
     :param get_ttft: Returns the mean and standard deviation of TTFT in milliseconds.
     :type get_ttft: MeanStdPair
@@ -117,11 +128,17 @@ auto perf_metrics_docstring = R"(
     :param get_detokenization_duration: Returns the mean and standard deviation of detokenization durations in milliseconds.
     :type get_detokenization_duration: MeanStdPair
 
+    :param get_chat_template_duration: Returns the mean and standard deviation of chat template application durations in milliseconds.
+    :type get_chat_template_duration: MeanStdPair
+
     :param get_grammar_compiler_init_times: Returns a map with the time to initialize the grammar compiler for each backend in milliseconds.
     :type get_grammar_compiler_init_times: dict[str, float]
 
     :param get_grammar_compile_time: Returns the mean, standard deviation, min, and max of grammar compile times in milliseconds.
     :type get_grammar_compile_time: SummaryStats
+
+    :param get_sampling_duration: Returns the mean and standard deviation of time spent in the sampler per sampling step in milliseconds.
+    :type get_sampling_duration: MeanStdPair
 
     :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
     :type raw_metrics: RawPerfMetrics
@@ -163,6 +180,24 @@ auto sd_per_models_perf_metrics_docstring = R"(
 
     :param get_num_accepted_tokens: total number of tokens, which was generated by draft model and accepted by main model
     :type get_num_accepted_tokens: int
+
+    :param get_num_draft_tokens: total number of draft candidate tokens offered for validation
+    :type get_num_draft_tokens: int
+
+    :param get_num_draft_processed_tokens: total draft-model execution work in generated/processed tokens
+    :type get_num_draft_processed_tokens: int
+
+    :param get_num_rejected_tokens: total number of draft candidate tokens rejected by main model
+    :type get_num_rejected_tokens: int
+
+    :param get_draft_acceptance_rate: accepted draft candidate tokens divided by draft candidate tokens
+    :type get_draft_acceptance_rate: float
+
+    :param get_draft_processed_to_candidate_ratio: draft-model execution tokens divided by draft candidate tokens
+    :type get_draft_processed_to_candidate_ratio: float
+
+    :param get_draft_to_main_inference_duration_ratio: draft-model inference duration divided by main-model inference duration
+    :type get_draft_to_main_inference_duration_ratio: float
 )";
 
 } // namespace
@@ -178,6 +213,9 @@ void init_perf_metrics(py::module_& m) {
         })
         .def_property_readonly("detokenization_durations", [](const RawPerfMetrics &rw) { 
             return common_utils::get_ms(rw, &RawPerfMetrics::detokenization_durations); 
+        })
+        .def_property_readonly("chat_template_durations", [](const RawPerfMetrics &rw) { 
+            return common_utils::get_ms(rw, &RawPerfMetrics::chat_template_durations); 
         })
         .def_property_readonly("m_times_to_first_token", [](const RawPerfMetrics &rw) {
             return common_utils::get_ms(rw, &RawPerfMetrics::m_times_to_first_token);
@@ -197,6 +235,9 @@ void init_perf_metrics(py::module_& m) {
         })
         .def_property_readonly("grammar_compile_times", [](const RawPerfMetrics &rw) {
             return common_utils::get_ms(rw, &RawPerfMetrics::m_grammar_compile_times);
+        })
+        .def_property_readonly("sampling_durations", [](const RawPerfMetrics &rw) {
+            return common_utils::get_ms(rw, &RawPerfMetrics::m_sampling_durations);
         });
 
     py::class_<SummaryStats>(m, "SummaryStats")
@@ -224,6 +265,7 @@ void init_perf_metrics(py::module_& m) {
         .def("get_grammar_compile_time", &PerfMetrics::get_grammar_compile_time)
         .def("get_num_generated_tokens", &PerfMetrics::get_num_generated_tokens)
         .def("get_num_input_tokens", &PerfMetrics::get_num_input_tokens)
+        .def("get_num_prefix_cache_hit_tokens", &PerfMetrics::get_num_prefix_cache_hit_tokens)
         .def("get_ttft", &PerfMetrics::get_ttft)
         .def("get_tpot", &PerfMetrics::get_tpot)
         .def("get_ipot", &PerfMetrics::get_ipot)
@@ -232,6 +274,8 @@ void init_perf_metrics(py::module_& m) {
         .def("get_inference_duration", &PerfMetrics::get_inference_duration)
         .def("get_tokenization_duration", &PerfMetrics::get_tokenization_duration)
         .def("get_detokenization_duration", &PerfMetrics::get_detokenization_duration)
+        .def("get_chat_template_duration", &PerfMetrics::get_chat_template_duration)
+        .def("get_sampling_duration", &PerfMetrics::get_sampling_duration)
         .def("__add__", &PerfMetrics::operator+, py::arg("metrics"))
         .def("__iadd__", &PerfMetrics::operator+=, py::arg("right"))
         .def_readonly("raw_metrics", &PerfMetrics::raw_metrics);
@@ -241,6 +285,7 @@ void init_perf_metrics(py::module_& m) {
         .def("get_load_time", &ExtendedPerfMetrics::get_load_time)
         .def("get_num_generated_tokens", &ExtendedPerfMetrics::get_num_generated_tokens)
         .def("get_num_input_tokens", &ExtendedPerfMetrics::get_num_input_tokens)
+        .def("get_num_prefix_cache_hit_tokens", &ExtendedPerfMetrics::get_num_prefix_cache_hit_tokens)
         .def("get_ttft", &ExtendedPerfMetrics::get_ttft)
         .def("get_tpot", &ExtendedPerfMetrics::get_tpot)
         .def("get_ipot", &ExtendedPerfMetrics::get_ipot)
@@ -249,16 +294,28 @@ void init_perf_metrics(py::module_& m) {
         .def("get_inference_duration", &ExtendedPerfMetrics::get_inference_duration)
         .def("get_tokenization_duration", &ExtendedPerfMetrics::get_tokenization_duration)
         .def("get_detokenization_duration", &ExtendedPerfMetrics::get_detokenization_duration)
+        .def("get_chat_template_duration", &ExtendedPerfMetrics::get_chat_template_duration)
+        .def("get_sampling_duration", &ExtendedPerfMetrics::get_sampling_duration)
         .def("__add__", &ExtendedPerfMetrics::operator+, py::arg("metrics"))
         .def("__iadd__", &ExtendedPerfMetrics::operator+=, py::arg("right"))
         .def_readonly("raw_metrics", &ExtendedPerfMetrics::raw_metrics);
 
     py::class_<SDPerfMetrics, ExtendedPerfMetrics, std::shared_ptr<SDPerfMetrics>>(m, "SDPerfMetrics", sd_perf_metrics_docstring)
         .def("get_ttst", &SDPerfMetrics::get_ttst)
-        .def("get_latency", &SDPerfMetrics::get_latency);
+        .def("get_latency", &SDPerfMetrics::get_latency)
+        .def("__add__", &SDPerfMetrics::operator+, py::arg("metrics"))
+        .def("__iadd__", &SDPerfMetrics::operator+=, py::arg("right"));
 
     py::class_<SDPerModelsPerfMetrics, SDPerfMetrics, std::shared_ptr<SDPerModelsPerfMetrics>>(m, "SDPerModelsPerfMetrics", sd_per_models_perf_metrics_docstring)
+        .def("__add__", &SDPerModelsPerfMetrics::operator+, py::arg("metrics"))
+        .def("__iadd__", &SDPerModelsPerfMetrics::operator+=, py::arg("right"))
         .def("get_num_accepted_tokens", &SDPerModelsPerfMetrics::get_num_accepted_tokens)
+        .def("get_num_draft_tokens", &SDPerModelsPerfMetrics::get_num_draft_tokens)
+        .def("get_num_draft_processed_tokens", &SDPerModelsPerfMetrics::get_num_draft_processed_tokens)
+        .def("get_num_rejected_tokens", &SDPerModelsPerfMetrics::get_num_rejected_tokens)
+        .def("get_draft_acceptance_rate", &SDPerModelsPerfMetrics::get_draft_acceptance_rate)
+        .def("get_draft_processed_to_candidate_ratio", &SDPerModelsPerfMetrics::get_draft_processed_to_candidate_ratio)
+        .def("get_draft_to_main_inference_duration_ratio", &SDPerModelsPerfMetrics::get_draft_to_main_inference_duration_ratio)
         .def_readonly("main_model_metrics", &SDPerModelsPerfMetrics::main_model_metrics)
         .def_readonly("draft_model_metrics", &SDPerModelsPerfMetrics::draft_model_metrics);
 }

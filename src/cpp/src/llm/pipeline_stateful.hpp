@@ -27,7 +27,6 @@ class StatefulLLMPipeline final : public LLMPipelineImplBase {
     // if True, full history will be used as prompt on each chat generation
     bool m_use_full_chat_history = false;
     size_t m_max_prompt_len = std::numeric_limits<size_t>::max();
-    size_t m_max_kv_cache_size = std::numeric_limits<size_t>::max();
     bool m_is_npu = false;
     // include reflection of tokens contained in the kv cache and amount of tokens, which are needed to trim from kv cache on the next step of chat
     utils::CacheState m_cache_state;
@@ -86,7 +85,9 @@ public:
         TokenizedInputs encoded_input,
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer,
-        std::chrono::steady_clock::time_point start_time
+        std::chrono::steady_clock::time_point start_time,
+        std::chrono::steady_clock::time_point tokenization_start_time,
+        std::optional<float> chat_template_duration_us = std::nullopt
     );
 
     void start_chat(const std::string& system_message) override;

@@ -24,8 +24,14 @@ struct Segment {
     std::vector<int64_t> m_tokens;
 };
 
+struct SotTokensResult {
+    std::vector<int64_t> tokens;
+    std::string language;  // language string, e.g. "en"
+};
+
 struct WhisperGenerateResult {
     std::vector<int64_t> output_tokens;
+    std::string language;
     std::optional<std::vector<Segment>> segments = std::nullopt;
     std::optional<std::vector<WhisperWordTiming>> words = std::nullopt;
     WhisperPerfMetrics perf_metrics;

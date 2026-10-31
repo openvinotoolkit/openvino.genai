@@ -5,6 +5,8 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <mutex>
+#include <unordered_map>
 
 #include "minja/minja.hpp"
 #include "minja/chat-template.hpp"
@@ -29,9 +31,13 @@ ov::Core get_core_singleton();
 class StructuredOutputController;
 class Tokenizer::TokenizerImpl {
 public:
-    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_tokenizer;
-    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_detokenizer;
-    std::unordered_map<ov::InferRequest*, ov::AnyMap> m_request_to_state_flags;
+    struct InferRequestWithState : ov::InferRequest {
+        explicit InferRequestWithState(ov::InferRequest&& infer_request) : ov::InferRequest(std::move(infer_request)) {}
+        ov::AnyMap state_flags;
+    };
+
+    std::unique_ptr<CircularBufferQueue<InferRequestWithState>> m_ireq_queue_tokenizer;
+    std::unique_ptr<CircularBufferQueue<InferRequestWithState>> m_ireq_queue_detokenizer;
     std::shared_ptr<void> m_shared_object_ov_tokenizers = nullptr;
     bool is_paired_input = false;
     bool m_older_than_24_5 = false;
@@ -49,8 +55,9 @@ public:
     template <typename T>
     void set_state_value(ov::VariableState& state, std::optional<T> value, ov::AnyMap& state_flags);
 
-    void set_state_if_necessary(CircularBufferQueueElementGuard<ov::InferRequest>& infer_request_guard, const ov::AnyMap& params);
+    void set_state_if_necessary(CircularBufferQueueElementGuard<InferRequestWithState>& infer_request_guard, const ov::AnyMap& params);
 
+    TokenizerImpl() = default;
     TokenizerImpl(const std::filesystem::path& models_path, const ov::AnyMap& properties);
     TokenizerImpl(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties);
 
@@ -83,6 +90,12 @@ public:
     std::string get_chat_template() const;
     std::string get_original_chat_template() const;
     std::shared_ptr<StructuredOutputController> get_structured_output_controller(std::optional<int> vocab_size = std::nullopt);
+
+private:
+    std::shared_ptr<const minja::chat_template> get_cached_minja_chat_template(const std::string& chat_template) const;
+
+    mutable std::mutex m_chat_template_mutex;
+    mutable std::unordered_map<std::string, std::shared_ptr<const minja::chat_template>> m_minja_chat_template_cache;
 };
 
 }  // namespace genai

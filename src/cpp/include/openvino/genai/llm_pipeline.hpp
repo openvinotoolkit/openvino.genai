@@ -12,6 +12,7 @@
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "openvino/genai/gguf.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/scheduler_config.hpp"
@@ -332,8 +333,9 @@ public:
     * @brief start chat with keeping history in kv cache.
     * Turns on keeping KV cache between generate calls.
     * In case if beam search is used, KV cache is kept for the generated sequence with maximal scores.
-    *
     * @param system_message optional system message.
+    * @deprecated start_chat() / finish_chat() API is deprecated and will be removed in the next major release.
+    * Please, use generate() with ChatHistory argument.
     */
     OPENVINO_DEPRECATED(
         "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
@@ -343,6 +345,8 @@ public:
     /**
     * @brief finish chat and clear kv cache.
     * Turns off keeping KV cache between generate calls.
+    * @deprecated start_chat() / finish_chat() API is deprecated and will be removed in the next major release.
+    * Please, use generate() with ChatHistory argument.
     */
     OPENVINO_DEPRECATED(
         "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "

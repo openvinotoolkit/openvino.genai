@@ -4,6 +4,7 @@ Examples in this folder showcase inference of text to image models like Stable D
 
 There are several sample files:
  - [`text2image.py`](./text2image.py) demonstrates basic usage of the text to image pipeline
+ - [`denoising_process.py`](./denoising_process.py) demonstrates how to use the callback latent argument with `Text2ImagePipeline.decode()` to render an intermediate image per inference step and save the denoising trajectory as a video
  - [`lora_text2image.py`](./lora_text2image.py) shows how to apply LoRA adapters to the pipeline
  - [`taylorseer_text2image.py`](./taylorseer_text2image.py) demonstrates text to image generation with TaylorSeer caching optimization for improved performance. Flux and StableDiffusion3 models are supported.
  - [`heterogeneous_stable_diffusion.py`](./heterogeneous_stable_diffusion.py) shows how to assemble a heterogeneous text2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
@@ -89,6 +90,20 @@ image = pipe.generate(
    callback = callback
 )
 ```
+
+## Visualize the text-to-image denoising trajectory as a video
+
+The `denoising_process.py` sample demonstrates how to capture the latent at every denoising step from the generation callback, decode it with `Text2ImagePipeline.decode()`, and write the full denoising trajectory as a video. It reuses the `save_video` helper from `samples/python/video_generation/`.
+
+The usage of this sample is:
+
+`python denoising_process.py <MODEL_DIR> '<PROMPT>'`
+
+For example:
+
+`python denoising_process.py ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting'`
+
+The sample writes `denoising_process.avi` in the current working directory. Each video frame is the decoded image of the latent after a single denoising step, so the last frame approximates the final generated image.
 
 ## Run with optional LoRA adapters
 
@@ -216,6 +231,10 @@ And then run the sample:
 
 `python image2image.py ./dreamlike_anime_1_0_ov/FP16 'cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k' cat.png`
 
+Models conditioned on a set of reference images, such as Qwen-Image 2.1, accept several images. They are referred to as `Picture 1`, `Picture 2` and so on in the prompt:
+
+`python image2image.py ./qwen-image-2.1-ov 'Put the cat from Picture 2 next to the capybara from Picture 1' capybara.png cat.png`
+
 The resulting image is:
 
    ![](./../../cpp/image_generation/imageimage.bmp)
@@ -332,7 +351,7 @@ else:
 
 ## Export and import compiled models
 
-`openvino_genai.Image2ImagePipeline` supports exporting and importing compiled models to and from a specified directory. This API can significantly reduce model load time, especially for large models like UNet. Only the Stable Diffusion XL model is supported.
+`openvino_genai.Text2ImagePipeline`, `openvino_genai.Image2ImagePipeline`, and `openvino_genai.InpaintingPipeline` support exporting and importing compiled models to and from a specified directory. This API can significantly reduce model load time, especially for large models like UNet. Currently, only the Stable Diffusion XL model is supported.
 
 ```python
 # export models

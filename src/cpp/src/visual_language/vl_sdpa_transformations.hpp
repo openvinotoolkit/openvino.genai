@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <string>
 #include <vector>
 
 #include "openvino/core/any.hpp"
@@ -18,6 +19,8 @@ namespace utils {
  * @param model Pointer to the ov::Model representing one of the supported VLM architectures.
  */
 void request_vl_sdpa_transformations(std::shared_ptr<ov::Model> model);
+
+bool has_vl_sdpa_input(const ov::CompiledModel& compiled_model, const std::string& input_name);
 
 bool check_vl_sdpa_transformations(const ov::CompiledModel& compiled_model);
 

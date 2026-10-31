@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "vlm_config.hpp"
-#include "json_utils.hpp"
 
 #include <fstream>
+
+#include "json_utils.hpp"
 
 namespace ov::genai {
 
@@ -14,6 +15,8 @@ VLMModelType to_vlm_model_type(const std::string& value) {
     static const std::unordered_map<std::string, VLMModelType> model_types_map = {
         {"minicpmv", VLMModelType::MINICPM},
         {"minicpmo", VLMModelType::MINICPM},
+        {"minicpmv4_6", VLMModelType::MINICPMV4_6},
+        {"minicpm_ocr", VLMModelType::MINICPM_OCR},
         {"llava", VLMModelType::LLAVA},
         {"llava-qwen2", VLMModelType::NANOLLAVA},
         {"llava_next", VLMModelType::LLAVA_NEXT},
@@ -24,8 +27,20 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"qwen2_vl", VLMModelType::QWEN2_VL},
         {"qwen2_5_vl", VLMModelType::QWEN2_5_VL},
         {"qwen3_vl", VLMModelType::QWEN3_VL},
+        {"qwen3_5", VLMModelType::QWEN3_5},
+        {"qwen3_5_moe", VLMModelType::QWEN3_5_MOE},
         {"gemma3", VLMModelType::GEMMA3},
+        {"gemma3n", VLMModelType::GEMMA3N},
+        {"gemma4", VLMModelType::GEMMA4},
+        {"gemma4_unified", VLMModelType::GEMMA4_UNIFIED},
         {"videochat_flash_qwen", VLMModelType::VIDEOCHAT_FLASH_QWEN},
+        {"qwen3_omni", VLMModelType::QWEN3_OMNI},
+        {"qwen3_omni_moe", VLMModelType::QWEN3_OMNI},
+        {"qwen3_asr", VLMModelType::QWEN3_ASR},
+        {"deepseek_ocr2", VLMModelType::DEEPSEEK_OCR2},
+        {"muse_glimmer", VLMModelType::MUSE_GLIMMER},
+        {"minicpmv4_7", VLMModelType::MINICPMV4_7},
+        {"lfm3_vl", VLMModelType::LFM3_VL},
     };
 
     auto it = model_types_map.find(value);
@@ -41,7 +56,7 @@ void assert_size(size_t size, VLMModelType model_type) {
     }
 }
 
-} // namespace
+}  // namespace
 
 VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     std::ifstream stream(json_path);
@@ -54,7 +69,6 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     read_json_param(parsed, "query_num", query_num);
     read_json_param(parsed, "use_image_id", use_image_id);
 
-    // Setting llava_next specific config params
     read_json_param(parsed, "image_newline", image_newline);
     read_json_param(parsed, "vision_config.patch_size", vision_config_patch_size);
 
@@ -75,6 +89,76 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     // Qwen3-VL
     read_json_param(parsed, "vision_config.num_position_embeddings", vision_config_num_position_embeddings);
     read_json_param(parsed, "vision_config.deepstack_visual_indexes", vision_config_deepstack_visual_indexes);
+
+    // gemma4
+    read_json_param(parsed, "text_config.hidden_size_per_layer_input", hidden_size_per_layer_input);
+    read_json_param(parsed, "audio_token_id", audio_token_id);
+
+    // For gemma3 `text_config.use_bidirectional_attention` can be absent or boolean
+    if (parsed.contains("text_config") && parsed.at("text_config").contains("use_bidirectional_attention") &&
+        parsed.at("text_config").at("use_bidirectional_attention").is_string()) {
+        read_json_param(parsed, "text_config.use_bidirectional_attention", use_bidirectional_attention);
+    }
+
+    // DeepSeek-OCR-2
+    read_json_param(parsed, "view_separator", view_separator);
+    read_json_param(parsed, "image_token_id", image_token_id);
+    read_json_param(parsed, "video_token_id", video_token_id);
+
+    // MiniCPM-V 4.6 / OCR / 4.7
+    if (model_type == VLMModelType::MINICPMV4_6 || model_type == VLMModelType::MINICPM_OCR ||
+        model_type == VLMModelType::MINICPMV4_7) {
+        read_json_param(parsed, "vision_config.image_size", vision_config_image_size);
+        std::vector<size_t> window_kernel_size_vec;
+        read_json_param(parsed, "vision_config.window_kernel_size", window_kernel_size_vec);
+        if (!window_kernel_size_vec.empty()) {
+            vision_config_window_kernel_size = window_kernel_size_vec.front();
+        }
+        std::vector<size_t> merge_kernel_size_vec;
+        read_json_param(parsed, "merge_kernel_size", merge_kernel_size_vec);
+        if (!merge_kernel_size_vec.empty()) {
+            merge_kernel_size = merge_kernel_size_vec.front();
+        }
+    }
+
+    // Qwen3-Omni: vision/audio configs are nested under thinker_config
+    if (model_type == VLMModelType::QWEN3_OMNI || model_type == VLMModelType::QWEN3_ASR) {
+        read_json_param(parsed, "thinker_config.text_config.hidden_size", hidden_size);
+        read_json_param(parsed, "thinker_config.audio_config.num_mel_bins", audio_config_num_mel_bins);
+        read_json_param(parsed, "thinker_config.audio_config.n_window", audio_config_n_window);
+        read_json_param(parsed, "thinker_config.audio_config.n_window_infer", audio_config_n_window_infer);
+        read_json_param(parsed, "thinker_config.audio_token_id", audio_token_id);
+    }
+
+    // Qwen3-Omni: vision/audio configs are nested under thinker_config
+    if (model_type == VLMModelType::QWEN3_OMNI) {
+        read_json_param(parsed, "thinker_config.vision_config.num_position_embeddings", vision_config_num_position_embeddings);
+        read_json_param(parsed, "thinker_config.vision_config.deepstack_visual_indexes", vision_config_deepstack_visual_indexes);
+        read_json_param(parsed, "enable_audio_output", enable_audio_output);
+        read_json_param(parsed, "tts_bos_token_id", tts_bos_token_id);
+        read_json_param(parsed, "tts_eos_token_id", tts_eos_token_id);
+        read_json_param(parsed, "tts_pad_token_id", tts_pad_token_id);
+        read_json_param(parsed, "im_start_token_id", im_start_token_id);
+        read_json_param(parsed, "system_token_id", system_token_id);
+        read_json_param(parsed, "user_token_id", user_token_id);
+        read_json_param(parsed, "assistant_token_id", assistant_token_id);
+        read_json_param(parsed, "thinker_config.image_token_id", image_token_id);
+        read_json_param(parsed, "thinker_config.video_token_id", video_token_id);
+        read_json_param(parsed, "talker_config.num_code_groups", talker_num_code_groups);
+        read_json_param(parsed, "code2wav_config.upsample_rates", code2wav_config_upsample_rates);
+        read_json_param(parsed, "code2wav_config.upsampling_ratios", code2wav_config_upsampling_ratios);
+        read_json_param(parsed, "talker_config.codec_bos_id", talker_codec_bos_id);
+        read_json_param(parsed, "talker_config.codec_eos_token_id", talker_codec_eos_token_id);
+        read_json_param(parsed, "talker_config.codec_pad_id", talker_codec_pad_id);
+        read_json_param(parsed, "talker_config.codec_nothink_id", talker_codec_nothink_id);
+        read_json_param(parsed, "talker_config.codec_think_bos_id", talker_codec_think_bos_id);
+        read_json_param(parsed, "talker_config.codec_think_eos_id", talker_codec_think_eos_id);
+        if (parsed.contains("talker_config") && parsed["talker_config"].contains("speaker_id")) {
+            for (auto& [key, val] : parsed["talker_config"]["speaker_id"].items()) {
+                speaker_ids[key] = val.get<int64_t>();
+            }
+        }
+    }
 }
 
-} // namespace ov::genai
+}  // namespace ov::genai

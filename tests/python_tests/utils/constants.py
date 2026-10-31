@@ -5,8 +5,11 @@ import openvino.properties.hint as hints
 import openvino.properties as props
 import openvino as ov
 import os
+import pytest
+import sys
 from importlib import metadata
 from datetime import datetime
+from transformers import GenerationConfig as HFGenerationConfig
 from optimum.intel.openvino.utils import TemporaryDirectory
 from pathlib import Path
 
@@ -18,15 +21,35 @@ def get_default_llm_properties():
     }
 
 
-def extra_generate_kwargs():
+def group_beam_search_generate_kwargs() -> dict:
+    from optimum.intel.utils.import_utils import is_transformers_version
+
+    # transformers 4.57 moved group beam search into a custom_generate Hub repo and builds the path of
+    # the sibling module it imports with the platform separator, so the fetch 404s on Windows
+    if sys.platform == "win32" and is_transformers_version(">=", "4.57") and is_transformers_version("<", "5.0"):
+        pytest.skip("HF reference for group beam search cannot be loaded on Windows with transformers 4.57")
+
+    return {"trust_remote_code": True}
+
+
+def extra_generate_kwargs(generation_config: HFGenerationConfig = None):
     from optimum.intel.utils.import_utils import is_transformers_version
     additional_args = {}
-    if is_transformers_version(">=", "4.51"):
+    if is_transformers_version(">=", "4.51") and is_transformers_version("<", "5.0"):
         additional_args["use_model_defaults"] = False
+
+    if is_transformers_version(">=", "4.51") and (
+        generation_config is not None
+        and generation_config.num_beam_groups is not None
+        and generation_config.num_beam_groups > 1
+    ):
+        additional_args.update(group_beam_search_generate_kwargs())
+        additional_args["do_sample"] = False
 
     return additional_args
 
 
+OV_MODEL_INDEX = "model_index.json"
 OV_MODEL_FILENAME = "openvino_model.xml"
 OV_TOKENIZER_FILENAME = "openvino_tokenizer.xml"
 OV_DETOKENIZER_FILENAME = "openvino_detokenizer.xml"
@@ -40,7 +63,8 @@ def get_disabled_mmap_ov_config():
 def get_ov_cache_dir(temp_dir=TemporaryDirectory()):
     if "OV_CACHE" in os.environ:
         date_subfolder = datetime.now().strftime("%Y%m%d")
-        ov_cache = os.path.join(os.environ["OV_CACHE"], date_subfolder)
+        ov_cache_root = os.path.abspath(os.path.expanduser(os.environ["OV_CACHE"]))
+        ov_cache = os.path.join(ov_cache_root, date_subfolder)
         try:
             optimum_intel_version = metadata.version("optimum-intel")
             transformers_version = metadata.version("transformers")

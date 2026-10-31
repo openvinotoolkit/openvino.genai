@@ -32,7 +32,12 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     // note that ignore_eos is not present in HF GenerationConfig
     read_json_param(data, "ignore_eos", ignore_eos);
     read_json_param(data, "min_new_tokens", min_new_tokens);
-    read_json_param(data, "stop_strings", stop_strings);
+    // HF allows stop_strings to be a single string or a list of strings
+    if (data.contains("stop_strings") && data["stop_strings"].is_string()) {
+        stop_strings.insert(data["stop_strings"].get<std::string>());
+    } else {
+        read_json_param(data, "stop_strings", stop_strings);
+    }
     // note that include_stop_str_in_output is not present in HF GenerationConfig
     read_json_param(data, "include_stop_str_in_output", include_stop_str_in_output);
     // note that stop_token_ids is not present in HF GenerationConfig, but some generation_config.json define
@@ -86,11 +91,28 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     read_json_param(data, "temperature", temperature);
     read_json_param(data, "top_p", top_p);
     read_json_param(data, "top_k", top_k);
+    read_json_param(data, "min_p", min_p);
 
     // assistant generation
     read_json_param(data, "assistant_confidence_threshold", assistant_confidence_threshold);
-    read_json_param(data, "num_assistant_tokens", num_assistant_tokens);
+    if (data.contains("num_assistant_tokens")) {
+        const auto& num_assistant_tokens_json = data["num_assistant_tokens"];
+        if (num_assistant_tokens_json.is_null()) {
+            num_assistant_tokens = std::nullopt;
+        } else {
+            OPENVINO_ASSERT(num_assistant_tokens_json.is_number_integer(),
+                            "Invalid generation_config.json: num_assistant_tokens must be an integer or null, got ",
+                            num_assistant_tokens_json.type_name());
+            size_t num_assistant_tokens_value = 0;
+            read_json_param(data, "num_assistant_tokens", num_assistant_tokens_value);
+            num_assistant_tokens = num_assistant_tokens_value;
+        }
+    }
     read_json_param(data, "max_ngram_size", max_ngram_size);
+
+    // tree search
+    read_json_param(data, "branching_factor", branching_factor);
+    read_json_param(data, "tree_depth", tree_depth);
 
     // append EOS to stop_token_ids
     if (eos_token_id != -1)
@@ -114,7 +136,7 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "stop_strings", stop_strings);
     read_anymap_param(properties, "include_stop_str_in_output", include_stop_str_in_output);
     read_anymap_param(properties, "stop_token_ids", stop_token_ids);
-    if (eos_token_id > 0) {
+    if (eos_token_id != -1) {
         set_eos_token_id(eos_token_id);
     }
 
@@ -124,6 +146,7 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "num_return_sequences", num_return_sequences);
     read_anymap_param(properties, "adapters", adapters);
     read_anymap_param(properties, "apply_chat_template", apply_chat_template);
+    read_anymap_param(properties, "return_omni_outputs", return_omni_outputs);
 
     // penalties
     read_anymap_param(properties, "frequency_penalty", frequency_penalty);
@@ -143,6 +166,7 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "temperature", temperature);
     read_anymap_param(properties, "top_p", top_p);
     read_anymap_param(properties, "top_k", top_k);
+    read_anymap_param(properties, "min_p", min_p);
     // TODO: add support of 'generator' property similar to Image generation
     read_anymap_param(properties, "rng_seed", rng_seed);
 
@@ -158,6 +182,10 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     // CDPruner
     read_anymap_param(properties, "pruning_ratio", pruning_ratio);
     read_anymap_param(properties, "relevance_weight", relevance_weight);
+
+    // tree search
+    read_anymap_param(properties, "branching_factor", branching_factor);
+    read_anymap_param(properties, "tree_depth", tree_depth);
 }
 
 
@@ -251,20 +279,23 @@ size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {
 }
 
 bool GenerationConfig::is_greedy_decoding() const {
-    return !do_sample && !is_beam_search();
+    return !do_sample && !is_beam_search() && !is_tree_search();
 }
 
 bool GenerationConfig::is_beam_search() const {
     return num_beams > 1;
 }
 
+bool GenerationConfig::is_tree_search() const {
+    return tree_depth > 0;
+}
+
 bool GenerationConfig::is_multinomial() const {
     return do_sample;
 }
 
-
 bool GenerationConfig::is_assisting_generation() const {
-    return assistant_confidence_threshold > 0 || num_assistant_tokens > 0;
+    return assistant_confidence_threshold > 0 || (num_assistant_tokens.has_value() && num_assistant_tokens.value() > 0);
 }
 
 bool GenerationConfig::is_structured_output_generation() const {
@@ -272,7 +303,7 @@ bool GenerationConfig::is_structured_output_generation() const {
 }
 
 bool GenerationConfig::is_prompt_lookup() const {
-    return max_ngram_size > 0 && num_assistant_tokens > 0;
+    return max_ngram_size > 0 && num_assistant_tokens.has_value() && num_assistant_tokens.value() > 0;
 }
 
 void GenerationConfig::validate() const {
@@ -316,6 +347,7 @@ void GenerationConfig::validate() const {
     if (is_multinomial()) {
         OPENVINO_ASSERT(top_p > 0 && top_p <= 1.0f, "When 'do_sample' is true, top_p must be a positive float > 0.0 and <= 1.0, but got ", top_p);
         OPENVINO_ASSERT(temperature > 0, "When 'do_sample' is true, temperature must be a strictly positive float, but got ", temperature);
+        OPENVINO_ASSERT(min_p >= 0.0f && min_p < 1.0f, "When 'do_sample' is true, min_p must be in [0.0, 1.0), but got ", min_p);
     } else {
         // parameters requiring multinomial
         // OPENVINO_ASSERT(top_k == std::numeric_limits<size_t>::max(), "When 'do_sample' is false, top_k must be max of size_t, but got ", top_k);
@@ -346,14 +378,40 @@ void GenerationConfig::validate() const {
         // OPENVINO_ASSERT(length_penalty == 1.0f, "'length_penalty' is set to ", length_penalty, " (default is 1.0f), which is supported only by beam search sampling");
     }
 
+    // tree search (EAGLE)
+    if (is_tree_search()) {
+        OPENVINO_ASSERT(!do_sample,
+                        "Tree search (EAGLE) is incompatible with do_sample=true; "
+                        "set tree_depth=0 or do_sample=false");
+        OPENVINO_ASSERT(num_beams == 1,
+                        "Tree search (EAGLE) is incompatible with beam search; "
+                        "set tree_depth=0 or num_beams=1");
+        OPENVINO_ASSERT(branching_factor > 0,
+                        "'branching_factor' must be > 0 when tree search is enabled, but got ",
+                        branching_factor);
+        OPENVINO_ASSERT(num_assistant_tokens.has_value(),
+                        "'num_assistant_tokens' must be set when tree search is enabled.");
+        OPENVINO_ASSERT(
+            num_assistant_tokens.value() > 0,
+            "'num_assistant_tokens' must be > 0 when tree search is enabled, but got ",
+            num_assistant_tokens.value());
+        OPENVINO_ASSERT(num_assistant_tokens.value() >= tree_depth,
+                        "'num_assistant_tokens' (",
+                        num_assistant_tokens.value(),
+                        ") must be >= 'tree_depth' (",
+                        tree_depth,
+                        ") to allow at least one node per draft layer");
+    }
+
     // assistant generation
 
     if (is_assisting_generation()) {
         OPENVINO_ASSERT(!is_beam_search() && num_return_sequences == 1, "Beam search and parallel sampling are not compatible with assistant generation");
-        OPENVINO_ASSERT(assistant_confidence_threshold == 0.0f || num_assistant_tokens == 0, "Parameters `assistant_confidence_threshold` and `num_assistant_tokens` are mutually exclusive in `GenerationConfig`");
+        OPENVINO_ASSERT(assistant_confidence_threshold == 0.0f || !num_assistant_tokens.has_value() || num_assistant_tokens.value() == 0,
+                        "Parameters `assistant_confidence_threshold` and `num_assistant_tokens` are mutually exclusive in `GenerationConfig`");
     }
 
-    if (num_assistant_tokens == 0) {
+    if (!num_assistant_tokens.has_value() || num_assistant_tokens.value() == 0) {
         OPENVINO_ASSERT(max_ngram_size == 0, "'max_ngram_size' should be set to default value 0 when prompt lookup is disabled");
     }
 

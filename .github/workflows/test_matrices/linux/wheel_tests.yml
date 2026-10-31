@@ -1,0 +1,439 @@
+# Test matrix for the genai_tests_wheel job.
+# Each entry runs when any of its `components` is affected (has `.test`).
+- name: ASR
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -m "not transformers_lower_v5"
+  timeout: 45
+  components:
+    - automatic_speech_recognition
+
+- name: ASR static with Transformers 5.0
+  cmd: |-
+    # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194253.
+    python -m pip install transformers==5.0.0
+    python -m pytest -v ./tests/python_tests/test_whisper_pipeline_static.py -m "not transformers_lower_v5"
+  timeout: 45
+  components:
+    - automatic_speech_recognition
+
+- name: ASR Transformers under 5.0
+  cmd: |-
+    python -m pip install transformers==4.57.6
+    python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -m "transformers_lower_v5"
+  timeout: 45
+  components:
+    - automatic_speech_recognition
+
+- name: ASR (Qwen3-ASR)
+  cmd: |-
+    python -m pip install transformers==4.57.6 nagisa==0.2.11 soynlp==0.0.493 accelerate==1.12.0 qwen-omni-utils librosa soundfile sox flask pytz
+    # TODO(CVS-198293): Drop manual dependencies and the commit pin when Qwen supports a Gradio release with Pillow 13.
+    python -m pip install --no-deps qwen-asr==0.0.6 "gradio @ git+https://github.com/gradio-app/gradio.git@d6972ed9d1185634cea083e0263839543d5ceb8d"
+    python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "qwen3-asr" -m "not qwen3_asr_split_export"
+    python -m pytest -v ./tests/python_tests/test_asr_forced_aligner.py
+    python -m pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@d304fb56602d878547c3d416e875c02cfd5e5479"
+    python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "qwen3-asr" -m qwen3_asr_split_export
+  timeout: 20
+  components:
+    - automatic_speech_recognition
+
+- name: ASR (Fun-ASR)
+  cmd: |-
+    python -m pip install transformers==4.57.6 funasr==1.4.1
+    python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "fun-asr"
+  timeout: 20
+  components:
+    - automatic_speech_recognition
+
+- name: ASR (SenseVoice)
+  cmd: |-
+    python -m pip install transformers==4.57.6 funasr==1.4.1
+    python -m pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@8ea11468f26fa491e8068d63548b31f4dfb6ac6f"
+    GENAI_REQUIRE_SENSEVOICE=1 python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -m sensevoice
+  timeout: 20
+  components:
+    - automatic_speech_recognition
+
+- name: Cacheopt E2E (Part 1)
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_1.py
+  timeout: 180
+  components:
+    - continuous_batching
+
+- name: Cacheopt E2E (Part 2)
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_2.py
+  timeout: 360
+  components:
+    - continuous_batching
+
+- name: Cacheopt E2E (xattention)
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_sparse_prefill.py
+  timeout: 180
+  components:
+    - continuous_batching
+
+- name: LLM
+  cmd: |-
+    # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
+    python -m pip install transformers==5.0.0
+    # lfm2 conversion fails in CI: CVS-195736
+    python -m pytest -v ./tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_structured_output.py tests/python_tests/test_image_generation.py tests/python_tests/test_image_generation_multi_call.py -m "not transformers_lower_v5" -k "not qwen-image-2.1 and not lfm2" --override-ini cache_dir=/mount/caches/pytest/
+  timeout: 90
+  components:
+    - LLM
+    - Image_generation
+
+- name: Image generation (Qwen-Image 2.1)
+  cmd: |-
+    # Qwen-Image 2.1 export is only available in optimum-intel master.
+    python -m pip install transformers==5.0.0
+    python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@main#egg=optimum-intel"
+    python -m pytest -v ./tests/python_tests/test_image_generation.py -k "qwen-image-2.1" --override-ini cache_dir=/mount/caches/pytest/
+  timeout: 45
+  components:
+    - Image_generation
+
+- name: VLM (match_optimum_with_resolutions)
+  cmd: |-
+    # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
+    python -m pip install transformers==5.0.0
+    python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -k "test_vlm_pipeline_match_optimum_with_resolutions and not qwen3.5" --override-ini cache_dir=/mount/caches/pytest/
+  timeout: 90
+  components:
+    - visual_language
+
+- name: VLM
+  cmd: |-
+    # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
+    python -m pip install transformers==5.0.0
+    python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -k "not test_vlm_pipeline_match_optimum_with_resolutions and not videochat and not qwen3-vl and not qwen3.5 and not qwen35 and not eagle3" -m "not transformers_lower_v5" --override-ini cache_dir=/mount/caches/pytest/
+  timeout: 90
+  components:
+    - visual_language
+
+- name: Omni
+  cmd: |-
+    python -m pip install transformers==5.1.0
+    python -m pytest -v ./tests/python_tests/test_omni_pipeline.py ./tests/python_tests/test_omni_speech_streaming.py --override-ini cache_dir=/mount/caches/pytest/
+  timeout: 90
+  components:
+    - omni
+
+- name: Video Generation
+  cmd: |-
+    # LTX-2.3 export support landed after the optimum-intel pin in tests/python_tests/requirements.txt
+    python -m pip install -U "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@a741933e8f55cf90368c19ec4b7f0a4d98c26519"
+    python -m pytest -v ./tests/python_tests/test_video_generation.py --override-ini cache_dir=/mount/caches/pytest/
+  timeout: 60
+  components:
+    - video_generation
+
+- name: Kokoro TTS
+  cmd: |-
+    python -m pytest -s -v tests/python_tests/test_kokoro_pipeline.py
+  timeout: 60
+  components:
+    - speech_generation
+
+- name: Qwen3 TTS
+  cmd: |-
+    python -m pip install transformers==4.57.3 accelerate==1.12.0 librosa torchaudio soundfile sox onnxruntime einops
+    python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@c46fb912366bc9d25b8395621d885a457369228d#egg=optimum-intel"
+    # TODO(CVS-198293): Drop manual dependencies and the commit pin when Qwen supports a Gradio release with Pillow 13.
+    python -m pip install --no-deps qwen-tts==0.1.1 "gradio @ git+https://github.com/gradio-app/gradio.git@d6972ed9d1185634cea083e0263839543d5ceb8d"
+    python -m pytest -s -v tests/python_tests/test_qwen3_tts_pipeline.py --override-ini cache_dir=/mount/caches/pytest/
+  timeout: 90
+  components:
+    - speech_generation
+
+- name: Misaki C++ Parity
+  cmd: |-
+    rm -rf ./build_misaki_cpp_ci
+    unset CMAKE_CXX_COMPILER_LAUNCHER
+    unset CMAKE_C_COMPILER_LAUNCHER
+    cmake -S ./src/cpp/src/speech_generation/misaki_cpp -B ./build_misaki_cpp_ci -DMISAKI_CPP_BUILD_PYTHON_BINDINGS=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER:STRING= -DCMAKE_C_COMPILER_LAUNCHER:STRING=
+    cmake --build ./build_misaki_cpp_ci --target misaki_cpp_py --parallel
+    export PYTHONPATH="./build_misaki_cpp_ci:./build_misaki_cpp_ci/Release:${PYTHONPATH}"
+    python -m pytest -s -v src/cpp/src/speech_generation/misaki_cpp/tests/test_misaki_cpp_parity.py
+  timeout: 30
+  components:
+    - speech_generation
+
+- name: GGUF Reader tests
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_gguf_reader.py
+  timeout: 60
+  components:
+    - GGUF
+    - LLM
+
+- name: GGUF Frontend tiny models
+  cmd: |-
+    # Match the regular LLM job: Optimum's Gemma-3 exporter requires Transformers <=5.0.
+    # The generated GGUF reference build requires CMake >=3.24.
+    python -m pip install transformers==5.0.0 cmake==3.26.4
+    python -m pytest -v ./tests/python_tests/test_gguf_frontend.py ./tests/python_tests/test_gguf_generated.py
+  timeout: 30
+  components:
+    - GGUF
+    - LLM
+
+- name: Tokenizer tests
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_tokenizer.py
+  timeout: 60
+  components:
+    - tokenizers
+
+- name: API tests
+  cmd: |-
+    # lfm2 conversion fails in CI: CVS-195736
+    python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "not eagle3 and not qwen35_mtp and not transformers_lower_v5 and not lfm2" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py
+  timeout: 60
+  components:
+    - continuous_batching
+    - sampling
+    - text_streamer
+
+- name: Rag tests
+  cmd: |-
+    # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
+    python -m pip install transformers==5.0.0
+    python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@f48d93fddff8c91e198389c47a6d5974789b67f4#egg=optimum-intel"
+    python -m pytest -v ./tests/python_tests/test_rag.py
+  timeout: 35
+  components:
+    - RAG
+
+- name: WWB tests
+  cmd: |-
+    # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
+    python -m pip install transformers==5.0.0
+    python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
+    python -m pytest -v ./tools/who_what_benchmark/tests --ignore=./tools/who_what_benchmark/tests/test_cli_image.py --ignore=./tools/who_what_benchmark/tests/test_cli_vlm.py --ignore=./tools/who_what_benchmark/tests/test_cli_videos.py --ignore=./tools/who_what_benchmark/tests/test_cli_speech_recognition.py --ignore=./tools/who_what_benchmark/tests/test_cli_speechgen_qwen3.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
+  timeout: 120
+  components:
+    - WWB
+
+- name: WWB ASR tests (FunASR, Qwen3-ASR)
+  cmd: |-
+    python -m pip install transformers==4.57.6 "whowhatbench[funasr]"
+    python -m pip install nagisa==0.2.11 soynlp==0.0.493 accelerate==1.12.0 qwen-omni-utils librosa soundfile sox flask pytz
+    # TODO(CVS-198293): Drop manual dependencies and the commit pin when Qwen supports a Gradio release with Pillow 13.
+    python -m pip install --no-deps qwen-asr==0.0.6 "gradio @ git+https://github.com/gradio-app/gradio.git@d6972ed9d1185634cea083e0263839543d5ceb8d"
+    python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_speech_recognition.py -k "funasr or qwen3_asr"
+  timeout: 120
+  components:
+    - WWB
+
+- name: WWB TTS tests (Qwen3)
+  cmd: |-
+    python -m pip install transformers==4.57.3 accelerate==1.12.0 librosa torchaudio soundfile sox onnxruntime einops
+    python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@c46fb912366bc9d25b8395621d885a457369228d#egg=optimum-intel"
+    # TODO(CVS-198293): Drop manual dependencies and the commit pin when Qwen supports a Gradio release with Pillow 13.
+    python -m pip install --no-deps qwen-tts==0.1.1 "gradio @ git+https://github.com/gradio-app/gradio.git@d6972ed9d1185634cea083e0263839543d5ceb8d"
+    python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_speechgen_qwen3.py
+  timeout: 60
+  components:
+    - WWB
+
+- name: WWB tests (image, VLM, video)
+  cmd: |-
+    # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
+    python -m pip install transformers==5.0.0
+    python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_image.py ./tools/who_what_benchmark/tests/test_cli_vlm.py ./tools/who_what_benchmark/tests/test_cli_videos.py -m "not nanollava and not transformers_lower_v5 and not transformers_higher_v5_1" -k "not videochat"
+  timeout: 120
+  components:
+    - WWB
+
+- name: WWB tests with transformers 5.1
+  cmd: |-
+    python -m pip install transformers==5.1.0
+    python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_vlm.py -m "transformers_higher_v5_1"
+  timeout: 60
+  components:
+    - WWB
+
+- name: WWB tests with transformers under 5.0
+  cmd: |-
+    python -m pip install transformers==4.57.6
+    python -m pytest -v ./tools/who_what_benchmark/tests -m "transformers_dependent or transformers_lower_v5" -k "not videochat"
+  timeout: 120
+  components:
+    - WWB
+
+- name: EAGLE3 speculative decoding tests
+  cmd: |-
+    python -m pip install transformers==4.57.6
+    python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "eagle3"
+  timeout: 90
+  components:
+    - speculative_decoding
+
+- name: Gemma4 MTP speculative decoding tests
+  cmd: |-
+    python -m pip install git+https://github.com/openvino-agent/optimum-intel.git@support_mtp
+    python -m pip install transformers==5.8.0
+    python -m pytest -v ./tests/python_tests/test_stateful_speculative_decoding.py -k "gemma4_mtp"
+  timeout: 90
+  components:
+    - speculative_decoding
+
+- name: Qwen3.5 MTP speculative decoding tests
+  cmd: |-
+    python -m pip install transformers==5.2.0
+    python -m pip install -U "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@ffc8870cae17baccf8d45e2e0891e2eb99a9ede3"
+    python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "qwen35_mtp"
+  timeout: 90
+  components:
+    - speculative_decoding
+
+- name: WWB tests (nanollava)
+  cmd: |-
+    # optimum intel commit compatible with transformers 4.48
+    python -m pip install "git+https://github.com/huggingface/optimum-intel.git@140e49a68718ab0025a3b5f02864b9ca9f009558#egg=optimum-intel"
+    # Newer optimum commits require huggingface-hub>=1.31, which is incompatible with transformers 4.48.
+    python -m pip install --force-reinstall --no-deps "optimum @ git+https://github.com/huggingface/optimum.git@52367da7f2d227d82db26d0de10f44c297b8c1eb"
+    python -m pip install transformers==4.48.0 diffusers==0.35.2
+    python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava
+  timeout: 90
+  components:
+    - WWB
+
+- name: WWB tests (videochat)
+  cmd: |-
+    python -m pip install transformers==4.57.6
+    python -m pytest -v ./tools/who_what_benchmark/tests -k "videochat"
+  timeout: 90
+  components:
+    - WWB
+
+- name: VLM (MiniCPM-o-2_6)
+  cmd: |-
+    python -m pip install transformers==4.51.3 diffusers==0.37.1
+    python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "MiniCPM-o-2_6"
+  timeout: 60
+  components:
+    - visual_language
+
+- name: VLM (videochat)
+  cmd: |-
+    python -m pip install transformers==4.57.6
+    python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "videochat"
+  timeout: 90
+  components:
+    - visual_language
+
+- name: VLM (qwen3-vl)
+  cmd: |-
+    python -m pip install transformers==4.57.6
+    python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3-vl or eagle3"
+  timeout: 60
+  components:
+    - visual_language
+
+- name: LLM (qwen3-next)
+  cmd: |-
+    python -m pip install transformers==4.57.6
+    python -m pytest -s -v tests/python_tests/test_llm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3-next"
+  timeout: 60
+  components:
+    - LLM
+
+- name: VLM (qwen3.5)
+  cmd: |-
+    python -m pip install transformers==5.2.0
+    python -m pip install -U "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@ffc8870cae17baccf8d45e2e0891e2eb99a9ede3"
+    OPENVINO_LOG_LEVEL=5 python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3.5 or qwen35"
+  timeout: 60
+  components:
+    - visual_language
+
+- name: VLM (gemma3n)
+  cmd: |-
+    python -m pip install transformers==4.57.0
+    pip show transformers optimum-intel openvino_tokenizers openvino_genai
+    python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma3n"
+  timeout: 60
+  components:
+    - visual_language
+
+# TODO: Include this job in the main VLM test suite once optimum-intel commit includes gemma4 audio inputs support.
+- name: VLM (gemma4)
+  cmd: |-
+    python -m pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@00131a8967a21cd7bea3fe59413fb35b537d57af"
+    pip show transformers optimum-intel openvino_tokenizers openvino_genai
+    python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma4 and not gemma4-unified"
+  timeout: 60
+  components:
+    - visual_language
+
+- name: VLM (gemma4-unified)
+  cmd: |-
+    python -m pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@00131a8967a21cd7bea3fe59413fb35b537d57af"
+    python -m pip install transformers==5.10.0
+    pip show transformers optimum-intel openvino_tokenizers openvino_genai
+    python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma4-unified"
+  timeout: 60
+  components:
+    - visual_language
+
+- name: VLM (deepseek-ocr-2)
+  cmd: |-
+    python -m pip install transformers==5.11.0
+    pip show transformers optimum-intel openvino_tokenizers openvino_genai
+    python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "deepseek-ocr-2"
+  timeout: 60
+  components:
+    - visual_language
+
+- name: VLM (MiniCPM-v-4_5)
+  cmd: |-
+    # MiniCPM-v-4_5 tests run only with transformers ~=4.0 and latest optimum-intel
+    python -m pip install transformers~=4.0
+    python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@main#egg=optimum-intel"
+    python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py -k "minicpm-v-4_5" --override-ini cache_dir=/mount/caches/pytest/
+  timeout: 15
+  components:
+    - visual_language
+
+- name: VLM (MiniCPM-V-4.7)
+  cmd: |-
+    python -m pip install transformers==5.18.0
+    # optimum-intel commit SHA from main branch where MiniCPM-V-4.7 support was added, will be included in the next release after v2.2.0
+    python -m pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@6e6bc79e206dffbd79370914bfa417fa0e7b0129"
+    python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py -k "minicpmv47" --override-ini cache_dir=/mount/caches/pytest/
+  timeout: 15
+  components:
+    - visual_language
+
+- name: LLM with transformers under 5.0
+  cmd: |-
+    python -m pip install transformers==4.57.6 diffusers==0.37.1
+    # lfm2 conversion fails in CI: CVS-195736
+    python -m pytest -v ./tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_structured_output.py tests/python_tests/test_image_generation.py tests/python_tests/test_image_generation_multi_call.py -m "transformers_lower_v5 or transformers_dependent" -k "not lfm2" --override-ini cache_dir=/mount/caches/pytest/
+  timeout: 90
+  components:
+    - LLM
+    - Image_generation
+
+- name: VLM with transformers under 5.0
+  cmd: |-
+    python -m pip install transformers==4.57.6 diffusers==0.37.1
+    python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -m "transformers_lower_v5 or transformers_dependent" -k "not minicpm-v-4_5" --override-ini cache_dir=/mount/caches/pytest/
+  timeout: 90
+  components:
+    - visual_language
+
+- name: API tests transformers under 5.0
+  cmd: |-
+    python -m pip install transformers==4.57.6 diffusers==0.37.1
+    python -m pytest -v ./tests/python_tests/test_continuous_batching.py -m "transformers_lower_v5 or transformers_dependent" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py
+  timeout: 60
+  components:
+    - continuous_batching
+    - sampling
+    - text_streamer
