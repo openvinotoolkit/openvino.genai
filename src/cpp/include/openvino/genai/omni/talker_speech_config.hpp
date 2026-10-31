@@ -17,13 +17,27 @@ namespace ov {
 namespace genai {
 
 /**
- * @brief Speech-side generation config for the Qwen3-Omni talker (and future omni
- * models with a similar two-stage thinker + talker architecture).
+ * @brief Order of text and speech in the answer of a model that emits both in one token stream (LFM3-Omni).
  *
- * Standalone POD struct — does NOT inherit from GenerationConfig. The thinker text
- * decode is steered by a separate `GenerationConfig text_config` argument to
- * OmniPipeline::generate; this struct only carries fields the talker actually
- * consumes.
+ * @note This is a preview API and is subject to change.
+ */
+enum class SpeechOutputMode {
+    /// Text and speech alternate in short blocks, so speech starts early.
+    INTERLEAVED,
+    /// The answer is speech only, for example text-to-speech.
+    SPEECH_ONLY,
+};
+
+/**
+ * @brief Speech-side generation config of OmniPipeline.
+ *
+ * Qwen3-Omni speaks with a separate talker after the thinker text decode. LFM3-Omni emits text and
+ * speech frames in one stream: its frames are sampled by a depth decoder, which the `cp_*` fields
+ * control, and the `talker_*` fields and `speaker` are rejected.
+ *
+ * Standalone POD struct — does NOT inherit from GenerationConfig. The text decode is steered by a
+ * separate `GenerationConfig text_config` argument to OmniPipeline::generate; this struct only
+ * carries speech fields.
  *
  * @note This is a preview API and is subject to change.
  */
@@ -46,6 +60,10 @@ struct OPENVINO_GENAI_EXPORTS OmniTalkerSpeechConfig {
     /// the talker and produce text only.
     bool return_audio = true;
 
+    /// @brief Order of text and speech, for models that emit both in one stream (LFM3-Omni).
+    /// Models with a separate talker (Qwen3-Omni) accept only the default.
+    SpeechOutputMode output_mode = SpeechOutputMode::INTERLEAVED;
+
     /// @brief Speaker identity: either a name (std::string) looked up in
     /// `talker_config.speaker_id`, or an explicit embedding tensor
     /// (`[1, 1, talker_hidden_size]`, f32). Default is empty string which
@@ -55,7 +73,7 @@ struct OPENVINO_GENAI_EXPORTS OmniTalkerSpeechConfig {
     std::variant<std::string, ov::Tensor> speaker;
 
     /// @brief Number of codec frames accumulated before streaming each audio chunk.
-    /// Must be >= 1. At steady state each frame decodes to 1920 samples (80ms at 24 kHz),
+    /// Must be >= 1. For Qwen3-Omni, each frame decodes to 1920 samples (80ms at 24 kHz) at steady state,
     /// but the code2wav vocoder trims its convolutional warmup from the first frame of every
     /// decode call, so a chunk of N frames yields 1920*N - 555 samples, not 1920*N. This is a
     /// property of the vocoder graph, not a miscount. Larger chunks amortize the fixed warmup
@@ -67,13 +85,19 @@ struct OPENVINO_GENAI_EXPORTS OmniTalkerSpeechConfig {
     /// yields only ~57ms of audio (warmup trim dominates), so `audio_chunk_frames = 1` runs at
     /// ~1.36x real time (falls behind); 4 frames yield ~74ms/frame and reach ~1.04x (keeps up).
     /// Smaller values lower time-to-first-audio at the cost of falling behind real time.
+    ///
+    /// For LFM3-Omni, a frame is `stft_frame_stack * stft_hop_length` samples of the codec config (1920 for
+    /// LFM3-Omni-2B). The ISTFT overlap at the end of each chunk is held back until the next chunk, and the
+    /// last chunk flushes it, so all chunks together give exactly one frame of samples per frame.
     std::size_t audio_chunk_frames = 4;
 
     /// @brief Cap on talker AR steps. Independent of `text_config.max_new_tokens`
-    /// (which caps the thinker text decode).
+    /// (which caps the thinker text decode). For LFM3-Omni it caps the speech frames, while
+    /// `text_config.max_new_tokens` caps every generated slot, text tokens and speech frames together.
     std::size_t max_new_tokens = std::numeric_limits<std::size_t>::max();
 
-    /// @brief RNG seed for talker + CodePredictor sampling.
+    /// @brief RNG seed for talker + CodePredictor sampling (LFM3-Omni: the depth decoder; sampled text uses
+    /// `text_config.rng_seed`).
     std::size_t rng_seed = 0;
 
     // Qwen3-Omni speech generation has two AR stages:
@@ -94,13 +118,22 @@ struct OPENVINO_GENAI_EXPORTS OmniTalkerSpeechConfig {
     /// Checkpoint default from `generation_config.json -> talker_repetition_penalty` if present.
     std::optional<float> talker_repetition_penalty;
 
+    // LFM3-Omni samples every codebook of a speech frame with its depth decoder, which the cp_* fields
+    // control; its checkpoint defaults are the audio_* keys of generation_config.json.
+
     /// @brief CodePredictor sampling temperature override (must be > 0 when set).
-    /// Checkpoint default from `generation_config.json -> cp_temperature` if present.
+    /// Checkpoint default from `generation_config.json -> cp_temperature` (LFM3-Omni: `audio_temperature`)
+    /// if present.
     std::optional<float> cp_temperature;
 
     /// @brief CodePredictor top-k override (must be >= 1 when set).
-    /// Checkpoint default from `generation_config.json -> cp_top_k` if present.
+    /// Checkpoint default from `generation_config.json -> cp_top_k` (LFM3-Omni: `audio_top_k`) if present.
     std::optional<std::size_t> cp_top_k;
+
+    /// @brief Depth decoder repetition penalty over the codes each codebook emitted in the last
+    /// `audio_repetition_window` frames (must be > 0 when set; 1.0 = no penalty). LFM3-Omni only;
+    /// checkpoint default from `generation_config.json -> audio_repetition_penalty` if present.
+    std::optional<float> cp_repetition_penalty;
 };
 
 }  // namespace genai
