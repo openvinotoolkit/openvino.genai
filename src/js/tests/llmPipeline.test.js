@@ -79,6 +79,31 @@ describe("General LLM test", () => {
       assert.strictEqual(typeof result.texts[0], "string");
     });
 
+    it("propagates a streamer error and allows the next generation", async () => {
+      await assert.rejects(
+        pipeline.generate("Hello", { max_new_tokens: 4 }, () => {
+          throw new Error("streamer failure");
+        }),
+        /streamer failure/,
+      );
+
+      const result = await pipeline.generate("Hello", { max_new_tokens: 1 });
+      assert.strictEqual(result.texts.length, 1);
+    });
+
+    it("blocks config access during generation and restores it afterwards", async () => {
+      const config = pipeline.getGenerationConfig();
+      let callbackCalled = false;
+      await pipeline.generate("Hello", { max_new_tokens: 4 }, () => {
+        callbackCalled = true;
+        assert.throws(() => pipeline.getGenerationConfig(), /Pipeline is busy/);
+        assert.throws(() => pipeline.setGenerationConfig(config), /Pipeline is busy/);
+      });
+      assert.ok(callbackCalled);
+      pipeline.setGenerationConfig(config);
+      assert.deepStrictEqual(pipeline.getGenerationConfig(), config);
+    });
+
     it("should include tokenizer", async () => {
       const tokenizer = pipeline.getTokenizer();
       assert.strictEqual(typeof tokenizer, "object");
@@ -120,6 +145,13 @@ describe("General LLM test", () => {
         name: "Error",
         message: "Streamer must be a function",
       });
+    });
+
+    it("rejects an async text streamer", async () => {
+      await assert.rejects(
+        pipeline.generate("Hello", { max_new_tokens: 4 }, async () => {}),
+        /Callback must return synchronously/,
+      );
     });
 
     it("should throw an error if options specified but not an object", async () => {

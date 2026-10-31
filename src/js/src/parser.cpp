@@ -3,34 +3,26 @@
 
 #include "include/parser.hpp"
 
-#include <future>
-
 #include "include/addon.hpp"
 #include "include/helper.hpp"
 
-JSParser::JSParser(Napi::Env env, Napi::Object jsParser) {
-    js_parser_ref = Napi::Persistent(jsParser);
-    Napi::Function js_parse_fn = jsParser.Get("parse").As<Napi::Function>();
-    parser_tsfn = Napi::ThreadSafeFunction::New(env,
-                                                js_parse_fn,        // js callback
-                                                "js_parser_parse",  // resource name
-                                                0,                  // unlimited queue
-                                                1                   // initialThreadCount
-    );
-};
+JSParser::JSParser(Napi::Env env, Napi::Object jsParser)
+    : parser_callback(env, jsParser.Get("parse").As<Napi::Function>(), "js_parser_parse", false, {}, jsParser) {}
 
 void JSParser::parse(ov::genai::JsonContainer& message) {
-    std::promise<ov::genai::JsonContainer> promise;
-    parser_tsfn.BlockingCall([&message, &promise, this](Napi::Env env, Napi::Function js_parse_fn) {
-        auto js_message = cpp_to_js<ov::genai::JsonContainer, Napi::Value>(env, message);
-        js_parse_fn.Call(js_parser_ref.Value(), {js_message});
-        promise.set_value(js_to_cpp<ov::genai::JsonContainer>(env, js_message));
-    });
-    message = promise.get_future().get();
+    message = parser_callback.call_and_wait<ov::genai::JsonContainer>(
+        [this, &message](Napi::Env env, Napi::Function parse) {
+            auto js_message = cpp_to_js<ov::genai::JsonContainer, Napi::Value>(env, message);
+            auto result = call_js_callback(parse, {js_message}, parser_callback.receiver());
+            return result.IsPromise() ? result : js_message;
+        },
+        [](const Napi::Value& value) {
+            return js_to_cpp<ov::genai::JsonContainer>(value.Env(), value);
+        });
 }
 
-Napi::Object JSParser::get_js_object(Napi::Env env) const {
-    return js_parser_ref.Value();
+Napi::Object JSParser::get_js_object(Napi::Env) const {
+    return parser_callback.receiver();
 }
 
 void parse_with_parser(const Napi::CallbackInfo& info, std::shared_ptr<ov::genai::Parser> parser) {
