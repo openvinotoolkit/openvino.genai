@@ -37,6 +37,8 @@ SD_GENERATION_CONFIG_SUPPORTED_KEYS = {
     "tree_depth": int,
 }
 
+DEFAULT_MULTI_IMAGE_TO_IMAGE_SIZE = 256
+
 
 def _validate_sd_config_value(key, value, expected_type):
     """Validate a value from --sd-generation-config. Reject bool/str for numeric keys."""
@@ -298,9 +300,10 @@ def parse_args():
     )
     parser.add_argument(
         "--image-size",
-        type=int,
+        type=positive_integer,
         default=None,
-        help="Text-to-image specific parameter that defines the image resolution.",
+        help="Defines a square image resolution for text-to-image and multi-image-to-image. "
+        f"For multi-image-to-image, the default is {DEFAULT_MULTI_IMAGE_TO_IMAGE_SIZE}.",
     )
     parser.add_argument(
         "--num-inference-steps",
@@ -954,6 +957,10 @@ def genai_gen_image2image(model, prompt, image, num_inference_steps, generator=N
     }
     if not multiple_images:
         kwargs["strength"] = 0.8
+    resolution = getattr(model, "resolution", None)
+    if resolution is not None and resolution[0] is not None:
+        kwargs["width"] = resolution[1]
+        kwargs["height"] = resolution[0]
     image_tensor = model.generate(prompt, **kwargs)
     return Image.fromarray(image_tensor.data[0])
 
@@ -1399,6 +1406,10 @@ def create_evaluator(base_model, args):
                 long_prompt=(not args.short_prompt),
             )
         elif task in ("image-to-image", "multi-image-to-image"):
+            resolution = None
+            if task == "multi-image-to-image":
+                image_size = args.image_size if args.image_size is not None else DEFAULT_MULTI_IMAGE_TO_IMAGE_SIZE
+                resolution = (image_size, image_size)
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -1409,6 +1420,7 @@ def create_evaluator(base_model, args):
                 is_genai=args.genai,
                 seed=args.seed,
                 image_dir=args.image_dir,
+                resolution=resolution,
             )
         elif task == "image-inpainting":
             return EvaluatorCLS(
