@@ -15,11 +15,10 @@ The applications don't have many configuration options to encourage the reader t
 
 ## Download and Convert the Model
 
-The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 Install [../../export-requirements.txt](../../export-requirements.txt) if model conversion is required.
 
 ```sh
-pip install --upgrade-strategy eager -r ../../export-requirements.txt
+pip install -r ../../export-requirements.txt
 ```
 
 ### For Text-to-Video
@@ -32,10 +31,11 @@ optimum-cli export openvino --model Lightricks/LTX-Video --task text-to-video --
 
 ### For Image-to-Video
 
-The image-to-video pipeline requires a model exported with optimum-intel from the `main` branch:
+Export the model for the image-to-video pipeline:
 
 ```sh
-pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
+# Some newer models may require the latest Optimum Intel:
+# pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
 optimum-cli export openvino --model Lightricks/LTX-Video --weight-format fp32 ltx_video_ov_i2v/FP32
 ```
 
@@ -67,7 +67,7 @@ GPUs usually provide better performance compared to CPUs. Modify the source code
 
 Install [../../deployment-requirements.txt](../../deployment-requirements.txt) to run samples:
 ```sh
-pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
+pip install -r ../../deployment-requirements.txt
 ```
 
 ### Text to Video Sample (`text2video.py`)
@@ -97,9 +97,9 @@ pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
 ### Image to Video Sample (`image2video.py`)
 
 - **Description:**
-  Image-conditioned video generation using an image-to-video model. This sample demonstrates how to generate videos from a conditioning image and a text prompt using the OpenVINO GenAI Image2VideoPipeline. The generated video's first frame is anchored to the input image. Requires an LTX-Video model exported with optimum-intel from the `main` branch.
+  Image-conditioned video generation using an image-to-video model. This sample demonstrates how to generate videos from a conditioning image and a text prompt using the OpenVINO GenAI Image2VideoPipeline. The generated video's first frame is anchored to the input image. Requires an LTX-Video model exported with optimum-intel.
 
-  Recommended models: Lightricks/LTX-Video (exported with optimum-intel from the `main` branch)
+  Recommended models: Lightricks/LTX-Video
 
 - **Main Feature:** Generate videos that continue naturally from an input image, guided by a text prompt.
 

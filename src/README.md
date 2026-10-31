@@ -38,7 +38,9 @@ If you want to try OpenVINO GenAI with different dependencies versions (**not** 
     cd openvino.genai
     # Install python dependencies
     python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-    python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
+    python -m pip install -r ./samples/requirements.txt
+    # Some newer models may require the latest Optimum Intel:
+    # pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
     ```
 
 2. A model in OpenVINO IR format
