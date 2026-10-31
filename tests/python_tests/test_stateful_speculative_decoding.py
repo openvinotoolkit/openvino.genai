@@ -367,6 +367,16 @@ def test_gemma4_mtp_perf_metrics(gemma4_mtp_pipeline, gemma4_mtp_model_input):
     )
 
 
+def test_gemma4_mtp_logprob_token_ids_rejected(gemma4_mtp_pipeline, gemma4_mtp_model_input):
+    _, prompt = gemma4_mtp_model_input
+    # logprob_token_ids must be rejected at config resolution: the base validate() runs before the
+    # speculative defaults set num_assistant_tokens, so it cannot catch the option on its own, and the
+    # result builder never fills the field. The request must fail before any generation happens.
+    generation_config = ov_genai.GenerationConfig(max_new_tokens=4, logprob_token_ids=[100, 200])
+    with pytest.raises(Exception, match="logprob_token_ids"):
+        gemma4_mtp_pipeline.generate(prompt, generation_config=generation_config)
+
+
 # Eagle3 specific tests
 eagle3_models_and_input = [
     (

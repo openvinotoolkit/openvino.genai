@@ -52,6 +52,12 @@ public:
 
     void multistep();
 
+    // Requested-token logprobs are collected by the sampler of a plain autoregressive pipeline; the
+    // speculative candidate-verification path never fills GenerationOutput::requested_token_logprobs.
+    bool supports_requested_token_logprobs(const GenerationConfig&) const override {
+        return false;
+    }
+
     void fail_pipeline(std::exception_ptr error) noexcept {
         _fail_pipeline(std::move(error));
     }

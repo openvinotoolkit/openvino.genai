@@ -282,6 +282,11 @@ StatefulGemma4MTPLLMPipeline::~StatefulGemma4MTPLLMPipeline() {
 
 GenerationConfig StatefulGemma4MTPLLMPipeline::resolve_generation_config(OptionalGenerationConfig generation_config) {
     GenerationConfig config = StatefulSpeculativePipelineBase::resolve_generation_config(generation_config);
+    // The base validate() runs before the speculative defaults below set num_assistant_tokens, so it
+    // cannot catch logprob_token_ids here; the result builder never fills the field, so reject.
+    OPENVINO_ASSERT(config.logprob_token_ids.empty(),
+                    "logprob_token_ids is not supported by stateful Gemma4-MTP speculative decoding; "
+                    "use a non-speculative pipeline or ContinuousBatchingPipeline");
     if (!config.num_assistant_tokens.has_value() || config.num_assistant_tokens.value() == 0) {
         config.num_assistant_tokens = m_generation_config.num_assistant_tokens;
     }
