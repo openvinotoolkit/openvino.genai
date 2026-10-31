@@ -103,6 +103,8 @@ export interface Tokenizer {
    * @param chatTemplate - optional custom chat template to use instead of the default
    * @param tools - optional array of tool definitions for function calling
    * @param extraContext - optional extra context object for custom template variables
+   * @param applyPolyfills - whether to emulate features unsupported by the chat template (system role, tools,
+   * tool calls, tool responses) by rewriting the messages before rendering. Defaults to true.
    * @returns formatted prompt string
    */
   applyChatTemplate(
@@ -111,6 +113,7 @@ export interface Tokenizer {
     chatTemplate?: string,
     tools?: Record<string, unknown>[],
     extraContext?: Record<string, unknown>,
+    applyPolyfills?: boolean,
   ): string;
 
   /**

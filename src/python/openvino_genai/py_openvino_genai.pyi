@@ -6164,9 +6164,20 @@ class Tokenizer:
     @typing.overload
     def __init__(self, tokenizer_model: str, tokenizer_weights: openvino._pyopenvino.Tensor, detokenizer_model: str, detokenizer_weights: openvino._pyopenvino.Tensor, **kwargs) -> None:
         ...
-    def apply_chat_template(self, history: openvino_genai.py_openvino_genai.ChatHistory | collections.abc.Sequence[dict], add_generation_prompt: bool, chat_template: str = '', tools: collections.abc.Sequence[dict] | None = None, extra_context: dict | None = None) -> str:
+    def apply_chat_template(self, history: openvino_genai.py_openvino_genai.ChatHistory | collections.abc.Sequence[dict], add_generation_prompt: bool, chat_template: str = '', tools: collections.abc.Sequence[dict] | None = None, extra_context: dict | None = None, apply_polyfills: bool = True) -> str:
         """
         Applies a chat template to format chat history into a prompt string.
+        Args:
+         'history' - chat history as a ChatHistory object or a list of message dicts.
+         'add_generation_prompt' - whether to append the prompt that starts the assistant reply.
+         'chat_template' - custom chat template. If empty (default), the tokenizer chat template is used.
+         'tools' - list of tool definitions. If provided, overrides tools from the chat history. Default is None.
+         'extra_context' - dict with additional template variables. If provided, overrides extra_context from the chat history. Default is None.
+         'apply_polyfills' - whether to emulate features that the chat template doesn't support by rewriting the messages before rendering. Default is True.
+            When True, depending on the detected template capabilities minja will apply necessary polyfills to the chat history before rendering the template.
+            When False, the messages are passed to the template unchanged, so content the template doesn't handle may be dropped from the prompt.
+        Returns:
+         A string with the formatted chat history.
         """
     @typing.overload
     def decode(self, tokens: collections.abc.Sequence[typing.SupportsInt], skip_special_tokens: bool = True) -> str:

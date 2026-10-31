@@ -257,16 +257,38 @@ public:
      * @param chat_template An optional custom chat template string, if not specified will be taken from the tokenizer.
      * @param tools An optional JSON-like array of tool definitions to be used in the chat template. If provided, overrides tools from chat history.
      * @param extra_context An optional JSON-like object with additional variables to be used in the chat template. If provided, overrides extra_context from chat history.
+     * @param properties AnyMap with chat template parameters, e.g. {{"apply_polyfills", false}}. Supported properties:
+     *   - ov::genai::apply_polyfills: whether to emulate features unsupported by the chat template (system role, tools,
+     *     tool calls, tool responses) by rewriting the messages before rendering. Defaults to true.
      * @return A string with the formatted and concatenated prompts from the chat history.
-     * @throws Exception if the chat template was unable to parse the input history.
+     * @throws Exception if the chat template was unable to parse the input history or properties contain an unsupported key.
      */
     std::string apply_chat_template(
         const ChatHistory& history,
         bool add_generation_prompt,
         const std::string& chat_template = {},
         const std::optional<JsonContainer>& tools = std::nullopt,
-        const std::optional<JsonContainer>& extra_context = std::nullopt
+        const std::optional<JsonContainer>& extra_context = std::nullopt,
+        const ov::AnyMap& properties = {}
     ) const;
+
+    /**
+     * @brief Applies the tokenizer chat template to format chat history into a prompt string.
+     * Tools and extra_context are taken from the chat history.
+     *
+     * @param history Chat history containing the conversation messages and optional tools/extra_context.
+     * @param add_generation_prompt Whether to add an ending that indicates the start of generation.
+     * @param properties Chat template parameters, e.g. ov::genai::apply_polyfills(false).
+     * @return A string with the formatted and concatenated prompts from the chat history.
+     */
+    template <typename... Properties>
+    util::EnableIfAllStringAny<std::string, Properties...> apply_chat_template(
+        const ChatHistory& history,
+        bool add_generation_prompt,
+        Properties&&... properties
+    ) const {
+        return apply_chat_template(history, add_generation_prompt, {}, std::nullopt, std::nullopt, AnyMap{std::forward<Properties>(properties)...});
+    }
 
     /// @brief Override a chat_template read from tokenizer_config.json.
     /// @param chat_template The new template to override with.
@@ -338,6 +360,7 @@ static constexpr ov::Property<bool> skip_special_tokens{"skip_special_tokens"};
 static constexpr ov::Property<bool> pad_to_max_length{"pad_to_max_length"};
 static constexpr ov::Property<bool> truncation{"truncation"};
 static constexpr ov::Property<std::string> padding_side{"padding_side"};
+static constexpr ov::Property<bool> apply_polyfills{"apply_polyfills"};
 
 }  // namespace genai
 }  // namespace ov
