@@ -32,9 +32,16 @@ public:
                                        const std::optional<ASRGenerationConfig>& generation_config,
                                        const std::shared_ptr<StreamerBase> streamer) = 0;
 
-    virtual void set_generation_config(const ASRGenerationConfig& config) {
-        m_generation_config = config;
-        m_generation_config.validate();
+    virtual void set_generation_config(const ASRGenerationConfig& incoming_config) {
+        ASRGenerationConfig config = incoming_config;
+        if (config.stop_token_ids.empty()) {
+            config.stop_token_ids = m_generation_config.stop_token_ids;
+        }
+        if (config.eos_token_id == -1) {
+            config.set_eos_token_id(m_generation_config.eos_token_id);
+        }
+        config.validate();
+        m_generation_config = std::move(config);
     }
 
     virtual ~ASRPipelineImplBase() = default;

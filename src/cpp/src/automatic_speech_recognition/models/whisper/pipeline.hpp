@@ -17,9 +17,11 @@ public:
         : ASRPipelineImplBase(models_path),
           m_whisper_pipeline(models_path, device, properties) {}
 
-    void set_generation_config(const ASRGenerationConfig& config) override {
-        ASRPipelineImplBase::set_generation_config(config);
+    void set_generation_config(const ASRGenerationConfig& incoming_config) override {
+        ASRGenerationConfig config = incoming_config;
+        config.validate();
         m_whisper_pipeline.set_generation_config(to_whisper_config(config));
+        m_generation_config = std::move(config);
     }
 
     ASRDecodedResults generate(const AudiosView& audios,
