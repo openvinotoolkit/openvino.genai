@@ -342,7 +342,7 @@ def run_text_generation(
         bench_hook.clear_time_infer_list()
 
 
-def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_data, batch_size, prefix):
+def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_data, batch_size, prefix, session_snapshot_restore=None):
     import openvino_genai
     import openvino as ov
     cb_pipeline = isinstance(model, openvino_genai.ContinuousBatchingPipeline)
@@ -352,6 +352,18 @@ def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_d
 
     log.info("%s Text generation start: %s", prefix, datetime.datetime.now().isoformat())
     start = time.perf_counter()
+    if session_snapshot_restore is not None:
+        # The prompt was never tokenized/prefilled: the whole token history and cache state come
+        # from the snapshot. This is the "process restart" case save_state()/restore_state() target.
+        handle = model.restore_state(1, session_snapshot_restore, gen_config[0])
+        while model.has_non_finished_requests():
+            model.step()
+        end = time.perf_counter()
+        log.info("%s Text generation end: %s", prefix, datetime.datetime.now().isoformat())
+        outputs = handle.read_all()
+        generated_tokens = np.array([outputs[0].generated_ids])
+        perf_metrics = handle.get_perf_metrics()
+        return generated_tokens, perf_metrics, end - start
     if streaming:
         text_print_streamer = get_genai_chunk_streamer()(model.get_tokenizer(), tokens_len)
 
@@ -392,6 +404,37 @@ def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_d
 
     perf_metrics = generation_result[0].perf_metrics if cb_pipeline else generation_result.perf_metrics
     return generated_tokens, perf_metrics, end - start
+
+
+def genai_session_snapshot_save(model, gen_config, prompt_text, steps, path, prefix):
+    """Drives the request for `steps` continuous-batching steps (expected to cover prefill plus a
+    couple of decode steps) and saves it via save_state(), instead of running a full, measurable
+    generation. save_state() requires the request to still be RUNNING (a finished request's cache
+    is freed immediately), so the request is deliberately left unfinished here.
+
+    Uses the string-prompt add_request() overload (not pre-tokenized ids) so the pipeline routes
+    natively-multimodal/hybrid models (e.g. Qwen3.5) through their embeddings path correctly;
+    add_request() with a raw token-id Tensor skips that routing and raises "Tensor was not
+    initialized" for such models."""
+    import openvino_genai
+
+    request_id = 1
+    log.info("%s Session snapshot save start: %s", prefix, datetime.datetime.now().isoformat())
+    start = time.perf_counter()
+    handle = model.add_request(request_id, prompt_text, gen_config)
+    for _ in range(steps):
+        if handle.get_status() != openvino_genai.GenerationStatus.RUNNING:
+            break
+        model.step()
+    if handle.get_status() != openvino_genai.GenerationStatus.RUNNING:
+        raise RuntimeError(
+            f"the request finished naturally within {steps} steps; increase --infer_count "
+            "or decrease --session_snapshot_save_steps so there is still a request to save"
+        )
+    model.save_state(request_id, path)
+    elapsed = time.perf_counter() - start
+    log.info("%s Session snapshot save end: %s", prefix, datetime.datetime.now().isoformat())
+    log.info(f"{prefix} Saved session snapshot to '{path}' after {steps} steps in {elapsed:.2f}s")
 
 
 # ===== GenAI Utils =====
@@ -525,10 +568,24 @@ def run_text_generation_genai(
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args["infer_count"] is None else args["infer_count"]
     gen_config = genai_generation_config_setup(model, max_gen_tokens, args)
 
+    # ===== Session snapshot save (utility run, not a measurable generation) =====
+    if args.get("session_snapshot_save"):
+        save_gen_config = genai_generation_config_setup(
+            model, max_gen_tokens * args["session_snapshot_save_steps"] + max_gen_tokens, args
+        )
+        genai_session_snapshot_save(
+            model, save_gen_config, input_text_list[0], args["session_snapshot_save_steps"], args["session_snapshot_save"], prefix
+        )
+        return
+
     # ===== Generate =====
     mem_consumption.start(num)
+    if args.get("session_snapshot_restore"):
+        log.warning("--session_snapshot_restore is set: the prompt text/file is ignored, the request's token "
+                    "history comes entirely from the snapshot")
     generated_tokens, perf_metrics, generation_time = genai_generate(
-        streaming, model, tokens_len, gen_config, args["empty_lora"], input_data, args["batch_size"], prefix
+        streaming, model, tokens_len, gen_config, args["empty_lora"], input_data, args["batch_size"], prefix,
+        session_snapshot_restore=args.get("session_snapshot_restore")
     )
     memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 

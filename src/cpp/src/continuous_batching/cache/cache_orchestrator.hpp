@@ -21,7 +21,10 @@
 #include "continuous_batching/cache/i_cache_manager.hpp"
 #include "continuous_batching/cache/block_manager.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
+#include "continuous_batching/cache/kv_cache_offload_cache.hpp"
 #include "continuous_batching/cache/linear_attention_cache_manager.hpp"
+#include "continuous_batching/cache/linear_attention_offload_cache.hpp"
+#include "continuous_batching/cache/store_registry.hpp"
 #include "logger.hpp"
 
 namespace ov::genai {
@@ -154,6 +157,12 @@ public:
 
     CacheOrchestrator() = default;
 
+    ~CacheOrchestrator() {
+        // The offload caches are registered as observers on their block managers, so detach before either is gone.
+        detach_kv_offload_cache();
+        detach_la_offload_cache();
+    }
+
     /**
      * @brief Detect model cache types, create managers and block managers, normalize config,
      *        and return a fully populated CacheOrchestrator.
@@ -191,6 +200,16 @@ public:
         config.num_kv_blocks = num_kv_blocks;
         config.num_linear_attention_blocks = num_la_blocks;
 
+        GENAI_INFO("[KV_TRACE] orchestrator kv_cache=%s linear_cache=%s cache_tensors=%zu device=%s kv_blocks=%zu linear_blocks=%zu cache_interval=%zu prefix=%s",
+               kv_mgr ? "true" : "false",
+               la_mgr ? "true" : "false",
+               num_cache_tensors,
+               allocation_device.c_str(),
+               num_kv_blocks,
+               num_la_blocks,
+               cache_interval,
+               config.enable_prefix_caching ? "true" : "false");
+
         if (kv_mgr) {
             orchestrator->register_kv_cache(std::move(kv_mgr), config);
         }
@@ -201,7 +220,158 @@ public:
 
         OPENVINO_ASSERT(orchestrator->has_registered_types(), "No supported cache types detected in the model");
 
+        if (config.use_cache_offload) {
+            orchestrator->enable_kv_cache_offload(config.cache_offload_config, allocation_device);
+            if (config.cache_offload_config.linear_attention_capacity_bytes > 0 &&
+                orchestrator->m_cache_managers.count(CacheType::LINEAR_ATTENTION_CACHE) > 0) {
+                orchestrator->enable_linear_attention_cache_offload(config.cache_offload_config, allocation_device);
+            }
+        }
+
         return orchestrator;
+    }
+
+    /**
+     * @brief Creates the disk offload cache for KV blocks and attaches it to the KV block manager.
+     */
+    void enable_kv_cache_offload(const CacheOffloadConfig& offload_config, const std::string& device) {
+        auto cache_mgr_it = m_cache_managers.find(CacheType::KV_CACHE);
+        OPENVINO_ASSERT(cache_mgr_it != m_cache_managers.end(),
+                        "KV cache offload requires a model with KV cache inputs");
+
+        auto& kv_manager = static_cast<KVCacheManager&>(*cache_mgr_it->second);
+        auto store = open_kv_cache_store(kv_manager.get_block_layout(),
+                                         offload_config,
+                                         device,
+                                         "kv",
+                                         m_block_managers.at(CacheType::KV_CACHE)->get_block_size());
+        GENAI_INFO("[KV_TRACE] kv_cache_offload slot_bytes=%zu capacity_blocks=%zu",
+                   store->get_block_size(),
+                   store->get_capacity_blocks());
+
+        m_kv_offload_cache = std::make_unique<KVCacheOffloadCache>(kv_manager,
+                                                                   std::move(store),
+                                                                   offload_config.buffer_slots);
+        m_block_managers.at(CacheType::KV_CACHE)->set_overwritten_block_observer(m_kv_offload_cache.get());
+    }
+
+    /// @return The KV disk offload cache, or nullptr when offload is disabled.
+    KVCacheOffloadCache* get_kv_offload_cache() const {
+        return m_kv_offload_cache.get();
+    }
+
+    /**
+     * @brief Creates the disk offload cache for linear attention state blocks and attaches it to the
+     * linear attention block manager. Separate file/cache from the KV one, since the slot sizes differ.
+     */
+    void enable_linear_attention_cache_offload(const CacheOffloadConfig& offload_config, const std::string& device) {
+        auto cache_mgr_it = m_cache_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
+        OPENVINO_ASSERT(cache_mgr_it != m_cache_managers.end(),
+                        "Linear attention cache offload requires a model with linear attention cache inputs");
+
+        auto& la_manager = static_cast<LinearAttentionCacheManager&>(*cache_mgr_it->second);
+        CacheOffloadConfig la_backend_config = offload_config;
+        la_backend_config.capacity_bytes = offload_config.linear_attention_capacity_bytes;
+        // The LA block manager's block size is the checkpoint interval in tokens.
+        auto store = open_kv_cache_store(la_manager.get_block_layout(),
+                                         la_backend_config,
+                                         device,
+                                         "la",
+                                         m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->get_block_size());
+        GENAI_INFO("[KV_TRACE] la_cache_offload slot_bytes=%zu capacity_blocks=%zu",
+                   store->get_block_size(),
+                   store->get_capacity_blocks());
+
+        m_la_offload_cache = std::make_unique<LinearAttentionOffloadCache>(la_manager,
+                                                                           std::move(store),
+                                                                           offload_config.buffer_slots);
+        m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->set_overwritten_block_observer(m_la_offload_cache.get());
+    }
+
+    /// @return The linear attention disk offload cache, or nullptr when offload is disabled.
+    LinearAttentionOffloadCache* get_la_offload_cache() const {
+        return m_la_offload_cache.get();
+    }
+
+    /**
+     * @brief Allocates fresh physical blocks for `sequence` sized to its full (already-known)
+     * token count and writes previously-saved cache bytes directly into them, then marks the
+     * sequence group as fully processed so the Scheduler treats it as ready to decode the next
+     * token instead of re-running prefill. Used by SessionSnapshot::load() restore.
+     *
+     * @param blocks_per_type KV: one entry per logical block, in token order. Linear attention
+     *                        (if present): exactly one entry (the latest checkpoint).
+     * @param allow_cache_growth Whether the KV pool may grow to fit the snapshot. False when the user
+     *                        configured a fixed budget (num_kv_blocks / cache_size): a snapshot that
+     *                        does not fit is then rejected instead of silently exceeding that budget.
+     */
+    void inject_sequence_cache_state(Sequence::Ptr sequence,
+                                     SequenceGroup::Ptr seq_group,
+                                     const std::map<CacheType, std::vector<std::vector<uint8_t>>>& blocks_per_type,
+                                     bool allow_cache_growth) {
+        const size_t full_length = seq_group->get_prompt_len();
+        OPENVINO_ASSERT(full_length > 0, "Session snapshot token history must not be empty");
+        // Bypasses the Scheduler, so dynamic cache allocation (num_kv_blocks == 0) would otherwise
+        // never grow the pool before allocate_tokens() below requires it; mirrors what
+        // Scheduler::_initialize_cache()/_try_increase_cache() do for normally-arriving requests.
+        if (allow_cache_growth) {
+            ensure_sequence_token_capacity({{full_length, 1}});
+        }
+        ensure_sequence_capacity(seq_group);
+        // Checked before anything is allocated so that a rejected snapshot leaves the cache untouched.
+        OPENVINO_ASSERT(can_allocate_tokens(seq_group, full_length - 1),
+                        "The session snapshot (", full_length, " tokens) does not fit in the configured cache "
+                        "budget (num_kv_blocks / cache_size); restore it into a pipeline with a larger budget");
+        // Allocate for full_length - 1, not full_length: the very last saved token was only ever
+        // sampled as an output, never fed through a forward pass as an input, so (same invariant as
+        // the update_processed_tokens_num(full_length - 1) call below) its own KV has never been
+        // computed/written and SessionSnapshot::save() never allocated/captured a block for it. At a
+        // block-size boundary (full_length - 1 exactly fills the last saved block), eagerly asking
+        // for `full_length` here would allocate one block more than was actually saved, tripping the
+        // block_table.size() == kv_blocks.size() check below. The next ordinary generation step
+        // grows the table by one more block the same way organic prefill does, once that token is
+        // actually re-threaded through the model.
+        allocate_tokens(sequence, seq_group, full_length - 1, full_length - 1);
+        // Growing the logical block count above does not resize the physical cache tensors;
+        // Scheduler::schedule() normally does this every step via the same call.
+        allocate_cache_if_needed();
+
+        const uint64_t seq_id = sequence->get_id();
+        {
+            auto& kv_manager = static_cast<KVCacheManager&>(get_cache_manager(CacheType::KV_CACHE));
+            const auto& kv_blocks = blocks_per_type.at(CacheType::KV_CACHE);
+            const auto& block_table = get_block_manager(CacheType::KV_CACHE).get_block_tables(seq_id)[0];
+            OPENVINO_ASSERT(block_table.size() == kv_blocks.size(),
+                            "Session snapshot KV block count does not match the freshly allocated block table: ",
+                            "allocated=", block_table.size(), " saved=", kv_blocks.size(), " full_length=", full_length);
+            for (size_t i = 0; i < block_table.size(); ++i) {
+                kv_manager.write_block(static_cast<size_t>(block_table[i]->get_index()), kv_blocks[i]);
+            }
+        }
+
+        if (has_linear_attention_cache()) {
+            auto it = blocks_per_type.find(CacheType::LINEAR_ATTENTION_CACHE);
+            OPENVINO_ASSERT(it != blocks_per_type.end(),
+                            "Session snapshot has no linear attention cache payload, but the current model has "
+                            "linear attention cache inputs");
+            auto& la_manager = static_cast<LinearAttentionCacheManager&>(get_cache_manager(CacheType::LINEAR_ATTENTION_CACHE));
+            const auto& la_block_table = get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_block_tables(seq_id)[0];
+            OPENVINO_ASSERT(!la_block_table.empty(), "No linear attention block allocated for the restored sequence");
+            la_manager.write_block(static_cast<size_t>(la_block_table.back()->get_index()), it->second.at(0));
+            // Allocation leaves the live-state handle on the first row at endpoint 0, but the restored
+            // state sits in the last row, so point the handle at it for later speculative scratch prep.
+            get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).advance_linear_attention_live_state(seq_id, full_length - 1);
+        }
+
+        // Mark all but the LAST token as processed, not the full length: the invariant the rest of
+        // the pipeline relies on is that "processed tokens == prompt length" is reached in the very
+        // same step that also samples the first generated token (normal prefill's last chunk both
+        // computes attention for the final prompt token and samples the next one). Marking the full
+        // length processed here - with no sampling having happened yet for this brand-new Sequence -
+        // would desynchronize get_context_len() from the sequence's actual m_generated_ids size on
+        // the next step (see Sequence::_make_hash's bookkeeping), so instead leave the last cached
+        // token to be (cheaply) re-threaded through one ordinary prompt-completion step.
+        seq_group->update_processed_tokens_num(full_length - 1);
     }
 
     /**
@@ -239,7 +409,14 @@ public:
 
     void allocate_cache_if_needed() {
         for (auto& [type, block_mgr] : m_block_managers) {
-            m_cache_managers.at(type)->allocate_cache_if_needed(block_mgr->get_total_block_count());
+            const size_t requested_blocks = block_mgr->get_total_block_count();
+            if (m_cache_managers.at(type)->get_num_allocated_blocks() < requested_blocks) {
+                GENAI_INFO("[KV_TRACE] allocate_cache_if_needed type=%d blocks=%zu free_blocks=%zu",
+                           static_cast<int>(type),
+                           requested_blocks,
+                           block_mgr->num_free_blocks());
+                m_cache_managers.at(type)->allocate_cache_if_needed(requested_blocks);
+            }
         }
         for (auto& [type, block_indices] : m_pending_zero_blocks) {
             m_cache_managers.at(type)->zero_blocks(block_indices);
@@ -249,6 +426,9 @@ public:
 
     void copy_blocks(const std::map<CacheType, std::map<size_t, std::list<size_t>>>& per_type_copy_map) {
         for (const auto& [type, copy_map] : per_type_copy_map) {
+            GENAI_INFO("[KV_TRACE] copy_blocks type=%d source_blocks=%zu",
+                       static_cast<int>(type),
+                       copy_map.size());
             m_cache_managers.at(type)->copy_blocks(copy_map);
         }
     }
@@ -410,6 +590,17 @@ public:
         OPENVINO_ASSERT(m_block_managers.size() == (kv_it != m_block_managers.end()) +
                               (la_it != m_block_managers.end()),
                 "Prefix restore supports only KV and linear-attention caches");
+
+        // Refill the in-memory prefix cache from disk first, so the restore below sees those blocks as cached.
+        if (m_kv_offload_cache != nullptr && kv_it != m_block_managers.end()) {
+            KVCacheOffloadCache::ScopedReclamationPause keep_entries(*m_kv_offload_cache);
+            kv_it->second->warm_prefix_cache(sequence_group, *m_kv_offload_cache);
+        }
+        if (m_la_offload_cache != nullptr && la_it != m_block_managers.end()) {
+            LinearAttentionOffloadCache::ScopedReclamationPause keep_entries(*m_la_offload_cache);
+            la_it->second->warm_prefix_cache(sequence_group, *m_la_offload_cache);
+        }
+
         if (kv_it != m_block_managers.end() && la_it != m_block_managers.end()) {
             auto& kv_block_mgr = *kv_it->second;
             auto& la_block_mgr = *la_it->second;
@@ -798,6 +989,10 @@ public:
         return *m_cache_managers.at(type);
     }
 
+    ICacheManager& get_cache_manager(CacheType type) {
+        return *m_cache_managers.at(type);
+    }
+
     BlockManager& get_block_manager(CacheType type) {
         return *m_block_managers.at(type);
     }
@@ -1174,8 +1369,32 @@ private:
 
     std::map<CacheType, std::unique_ptr<ICacheManager>> m_cache_managers;
     std::map<CacheType, std::unique_ptr<BlockManager>> m_block_managers;
+    std::unique_ptr<KVCacheOffloadCache> m_kv_offload_cache;
+    std::unique_ptr<LinearAttentionOffloadCache> m_la_offload_cache;
     bool m_use_per_layer_kv_block_indices = false;
     std::map<CacheType, std::set<size_t>> m_pending_zero_blocks;
+
+    void detach_kv_offload_cache() {
+        if (m_kv_offload_cache == nullptr) {
+            return;
+        }
+        auto it = m_block_managers.find(CacheType::KV_CACHE);
+        if (it != m_block_managers.end()) {
+            it->second->set_overwritten_block_observer(nullptr);
+        }
+        m_kv_offload_cache.reset();
+    }
+
+    void detach_la_offload_cache() {
+        if (m_la_offload_cache == nullptr) {
+            return;
+        }
+        auto it = m_block_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
+        if (it != m_block_managers.end()) {
+            it->second->set_overwritten_block_observer(nullptr);
+        }
+        m_la_offload_cache.reset();
+    }
 
     // Linear-attention pool footprint high-water mark.
     size_t m_linear_attention_pool_blocks_high_water = 0;

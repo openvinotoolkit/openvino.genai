@@ -493,6 +493,23 @@ public:
         return m_config;
     }
 
+    /// @return The underlying cache orchestrator, used by session snapshot save/restore.
+    CacheOrchestrator& get_cache_orchestrator() {
+        return *m_cache_orchestrator;
+    }
+
+    /// Whether the cache grows on demand: only when no fixed budget (num_kv_blocks / cache_size) was configured.
+    bool is_cache_budget_dynamic() const {
+        return m_config.num_kv_blocks == 0 && m_config.cache_size == 0;
+    }
+
+    /// Session snapshot restore sizes the cache itself, so schedule() never reaches _initialize_cache();
+    /// without this a dynamically-sized cache would not grow for the next generated token and the request
+    /// would be dropped. A fixed budget keeps its fixed-size behaviour.
+    void enable_dynamic_memory_allocation_after_restore() {
+        m_dynamic_memory_allocation = m_dynamic_memory_allocation || is_cache_budget_dynamic();
+    }
+
     void publish_completed_blocks(const Sequence::Ptr& sequence,
                                   size_t processed_before,
                                   size_t processed_after) {

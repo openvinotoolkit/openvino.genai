@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import sys
+import os
 import argparse
 import openvino_genai as ov_genai
 from PIL import Image
@@ -147,7 +148,7 @@ def main():
     else:
         # Setting SchedulerConfig triggers ContinuousBatching pipeline usage.
         scheduler_config = ov_genai.SchedulerConfig()
-        scheduler_config.enable_prefix_caching = False
+        scheduler_config.enable_prefix_caching = os.getenv("OPENVINO_ENABLE_PREFIX_CACHING", "0") == "1"
         scheduler_config.max_num_batched_tokens = sys.maxsize
         properties["scheduler_config"] = scheduler_config
         pipe = ov_genai.VLMPipeline(models_path, device, **properties)
