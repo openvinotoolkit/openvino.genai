@@ -95,6 +95,8 @@ TINY_GGUF_MODELS = [
 
 
 TINY_GGUF_VLM_MODELS = {
+    "llava": ("llava", "47d46b90eb00e2190d510b59ccd0b649e590d5be"),
+    "internvl2": ("internvl2", "e86ef3972133e0a0a77c337c3bde74ad9726f2c2"),
     "gemma3": ("gemma3", "0cc4c5a822bbc68aeb312fd789046463ca301d14"),
     "gemma4": ("gemma4", "422d12880b72b92b1547ac7ce2e1a4865f6bec6c"),
     "gemma4-unified": ("gemma4-unified-it", "becd0eb532fcbccb96576e32eab0dd304e4e4c47"),
@@ -348,13 +350,85 @@ def tiny_gguf_vlm_model(request, llama_reference_tools, tmp_path_factory):
     language, projector = directory / "model.gguf", directory / "mmproj.gguf"
     language_options = ["--no-mtp"] if family.startswith("qwen35") else []
     converter_env = os.environ.copy()
-    converter_env["PYTHONPATH"] = str(converter.parent)
+    converter_env["PYTHONPATH"] = os.pathsep.join([str(converter.parent / "gguf-py"), str(converter.parent)])
     for output, options in [(language, language_options), (projector, ["--mmproj"])]:
-        run_reference_command(
-            [sys.executable, str(converter), str(source), "--outfile", str(output), "--outtype", "f32", *options],
-            timeout=300,
-            env=converter_env,
-        )
+        if family == "llava" and output == projector:
+            from safetensors.torch import load_file, save_file
+            from transformers import CLIPVisionConfig
+
+            fixture_source = tmp_path_factory.mktemp("llava_vision")
+            config = json.loads((source / "config.json").read_text(encoding="utf-8"))
+            vision_config = CLIPVisionConfig(**config["vision_config"]).to_dict()
+            vision_config["vision_feature_layer"] = config["vision_feature_layer"]
+            (fixture_source / "config.json").write_text(json.dumps(vision_config), encoding="utf-8")
+            weights = load_file(source / "model.safetensors")
+            vision_prefix = "vision_tower."
+            save_file(
+                {
+                    name.removeprefix(vision_prefix): weight
+                    for name, weight in weights.items()
+                    if name.startswith(vision_prefix)
+                },
+                fixture_source / "model.safetensors",
+            )
+            projector_weights = fixture_source / "projector.bin"
+            torch.save(
+                {name: weight for name, weight in weights.items() if name.startswith("multi_modal_projector.")},
+                projector_weights,
+            )
+            del weights
+            legacy_converter = converter.parent / "tools/mtmd/legacy-models/convert_image_encoder_to_gguf.py"
+            run_reference_command(
+                [
+                    sys.executable,
+                    str(legacy_converter),
+                    "--model-dir",
+                    str(fixture_source),
+                    "--clip-model-is-vision",
+                    "--llava-projector",
+                    str(projector_weights),
+                    "--output-dir",
+                    str(directory),
+                    "--use-f32",
+                ],
+                timeout=300,
+                env=converter_env,
+            )
+            (directory / "mmproj-model-f32.gguf").replace(projector)
+            continue
+        command = [sys.executable, str(converter), str(source), "--outfile", str(output), "--outtype", "f32", *options]
+        if family == "internvl2" and output == projector:
+            # Tiny InternVL has two vision blocks, but its MLP uses stage 3.
+            wrapper = tmp_path_factory.mktemp("internvl_converter") / "convert.py"
+            wrapper.write_text(
+                "import gguf\n"
+                "import runpy\n"
+                "import sys\n\n"
+                "original = gguf.get_tensor_name_map\n"
+                "def tensor_name_map(arch, n_blocks):\n"
+                "    if arch == gguf.MODEL_ARCH.MMPROJ:\n"
+                "        n_blocks = max(n_blocks, 4)\n"
+                "    return original(arch, n_blocks)\n"
+                "gguf.get_tensor_name_map = tensor_name_map\n"
+                "converter = sys.argv.pop(1)\n"
+                "sys.argv[0] = converter\n"
+                "runpy.run_path(converter, run_name='__main__')\n",
+                encoding="utf-8",
+            )
+            command.insert(1, str(wrapper))
+        run_reference_command(command, timeout=300, env=converter_env)
+        if family == "llava" and output == language:
+            from gguf import GGUFReader, TokenType
+
+            tokenizer = AutoTokenizer.from_pretrained(source)
+            assert tokenizer.unk_token_id is not None
+            reader = GGUFReader(language, mode="r+")
+            assert reader.fields["tokenizer.ggml.unknown_token_id"].contents() == tokenizer.unk_token_id
+            assert reader.fields["tokenizer.ggml.tokens"].contents(tokenizer.unk_token_id) == tokenizer.unk_token
+            # The pinned converter marks the source UNK as CONTROL.
+            types = reader.fields["tokenizer.ggml.token_type"]
+            types.parts[types.data[tokenizer.unk_token_id]][0] = int(TokenType.UNKNOWN)
+            reader.data.flush()
     return language, projector
 
 
@@ -363,7 +437,7 @@ def tiny_gguf_vlm_model(request, llama_reference_tools, tmp_path_factory):
     [
         pytest.param(family, media, id=f"{family}-{media}")
         for family in TINY_GGUF_VLM_MODELS
-        if family != "gemma3"
+        if family not in {"gemma3", "llava", "internvl2"}
         for media in (["image", "video", "audio"] if family.startswith("gemma4") else ["image", "video"])
         if (family, media) != ("muse-glimmer", "video")
     ]
@@ -416,6 +490,129 @@ def test_gguf_vlm_attention_backends_and_images(tiny_gguf_vlm_model):
         assert results[0].texts == results[1].texts
         for pipe, result in zip(pipelines, results):
             assert pipe.generate("Describe the image.", images=images, **config).texts == result.texts
+
+
+@pytest.mark.parametrize("tiny_gguf_vlm_model", ["llava", "internvl2"], indirect=True)
+def test_gguf_vlm_clip_attention_backends_and_images(tiny_gguf_vlm_model):
+    language, projector = tiny_gguf_vlm_model
+    pipelines = [
+        genai.VLMPipeline(
+            language,
+            "CPU",
+            mmproj_path=str(projector),
+            GGUF_READER="FRONTEND",
+            ATTENTION_BACKEND=backend,
+            **reference_properties(),
+        )
+        for backend in ["SDPA", "PA"]
+    ]
+    pixels = np.random.default_rng(0).integers(0, 256, (1, 24, 24, 3), dtype=np.uint8)
+    images = [ov.Tensor(pixels), ov.Tensor(np.flip(pixels, axis=2).copy())]
+    options = {"max_new_tokens": 4, "do_sample": False, "ignore_eos": True, "apply_chat_template": False}
+    previous_input_count = 0
+    for media in [images[:1], images]:
+        prompt = "Describe the images."
+        if language.parent.name == "llava":
+            prompt = "USER: " + "<image>\n" * len(media) + "Describe the images. ASSISTANT:"
+        results = [pipe.generate(prompt, images=media, **options) for pipe in pipelines]
+        assert results[0].texts == results[1].texts
+        input_count = results[0].perf_metrics.get_num_input_tokens()
+        assert input_count == results[1].perf_metrics.get_num_input_tokens()
+        assert input_count > previous_input_count
+        previous_input_count = input_count
+        for pipe, result in zip(pipelines, results):
+            assert result.perf_metrics.get_num_generated_tokens() == 4
+            repeated = pipe.generate(prompt, images=media, **options)
+            assert repeated.texts == result.texts
+            assert repeated.perf_metrics.get_num_input_tokens() == input_count
+
+
+@pytest.mark.parametrize("tiny_gguf_vlm_model", ["llava"], indirect=True)
+def test_gguf_llava_preformatted_prompt(tiny_gguf_vlm_model):
+    language, projector = tiny_gguf_vlm_model
+    pipelines = [
+        genai.VLMPipeline(
+            language,
+            "CPU",
+            mmproj_path=str(projector),
+            GGUF_READER="FRONTEND",
+            ATTENTION_BACKEND=backend,
+            **reference_properties(),
+        )
+        for backend in ["SDPA", "PA"]
+    ]
+    name, revision = TINY_GGUF_VLM_MODELS["llava"]
+    source = retry_request(
+        lambda: snapshot_download(
+            "optimum-intel-internal-testing/tiny-random-" + name,
+            revision=revision,
+            allow_patterns=["*.json", "tokenizer.model"],
+        )
+    )
+    tokenizer = AutoTokenizer.from_pretrained(source)
+    config = json.loads((Path(source) / "config.json").read_text(encoding="utf-8"))
+    prefix, suffix = "USER: ", "\nDescribe. ASSISTANT:"
+    expected_count = (
+        len(tokenizer.encode(prefix, add_special_tokens=True))
+        + config["image_seq_length"]
+        + len(tokenizer.encode(suffix, add_special_tokens=False))
+    )
+    image = ov.Tensor(np.random.default_rng(0).integers(0, 256, (1, 24, 24, 3), dtype=np.uint8))
+    prompt = prefix + "<image>Describe. ASSISTANT:"
+    options = {"max_new_tokens": 4, "do_sample": False, "ignore_eos": True, "apply_chat_template": False}
+    results = [pipe.generate(prompt, images=[image], **options) for pipe in pipelines]
+    assert results[0].texts == results[1].texts
+    for pipe, result in zip(pipelines, results):
+        assert result.perf_metrics.get_num_input_tokens() == expected_count
+        assert result.perf_metrics.get_num_generated_tokens() == 4
+        repeated = pipe.generate(prompt, images=[image], **options)
+        assert repeated.texts == result.texts
+        assert repeated.perf_metrics.get_num_input_tokens() == expected_count
+
+
+@pytest.mark.parametrize("tiny_gguf_vlm_model", ["internvl2"], indirect=True)
+def test_gguf_internvl_missing_eos_metadata(tiny_gguf_vlm_model):
+    from gguf import GGUFReader, GGUFWriter
+
+    language, projector = tiny_gguf_vlm_model
+    reader = GGUFReader(language)
+    without_eos = language.with_name("model-without-eos.gguf")
+    writer = GGUFWriter(without_eos, reader.fields["general.architecture"].contents(), endianess=reader.endianess)
+    for name, field in reader.fields.items():
+        if name.startswith("GGUF.") or name in {"general.architecture", "tokenizer.ggml.eos_token_id"}:
+            continue
+        writer.add_key_value(name, field.contents(), field.types[0], field.types[1] if len(field.types) > 1 else None)
+    for tensor in reader.tensors:
+        writer.add_tensor(tensor.name, tensor.data, raw_dtype=tensor.tensor_type, tensor_endianess=reader.endianess)
+    writer.write_header_to_file()
+    writer.write_kv_data_to_file()
+    writer.write_tensors_to_file()
+    writer.close()
+    assert "tokenizer.ggml.eos_token_id" not in GGUFReader(without_eos).fields
+    pipeline = genai.VLMPipeline(
+        without_eos,
+        "CPU",
+        mmproj_path=str(projector),
+        GGUF_READER="FRONTEND",
+        ATTENTION_BACKEND="SDPA",
+        **reference_properties(),
+    )
+    tokenizer = pipeline.get_tokenizer()
+    eos_id = tokenizer.get_eos_token_id()
+    assert eos_id in pipeline.get_generation_config().stop_token_ids
+    assert tokenizer.get_eos_token() == reader.fields["tokenizer.ggml.tokens"].contents(eos_id)
+    assert {151643, 151645}.issubset(pipeline.get_generation_config().stop_token_ids)
+    image = ov.Tensor(np.random.default_rng(0).integers(0, 256, (1, 24, 24, 3), dtype=np.uint8))
+    result = pipeline.generate("Describe.", images=[image], max_new_tokens=2, do_sample=False, ignore_eos=True)
+    assert result.perf_metrics.get_num_input_tokens() > 49
+    assert result.perf_metrics.get_num_generated_tokens() == 2
+
+
+@pytest.mark.parametrize("reader", ["LEGACY", "INVALID"])
+def test_gguf_vlm_rejects_incompatible_reader(tiny_gguf_vlm_model, reader):
+    language, projector = tiny_gguf_vlm_model
+    with pytest.raises(RuntimeError, match="GGUF.*reader|GGUF_READER"):
+        genai.VLMPipeline(language, "CPU", mmproj_path=str(projector), GGUF_READER=reader)
 
 
 @pytest.mark.parametrize("chat_api", ["start_chat", "ChatHistory"])

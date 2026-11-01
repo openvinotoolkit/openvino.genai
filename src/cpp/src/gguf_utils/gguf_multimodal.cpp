@@ -10,6 +10,7 @@
 #include "gguf_clip_adapter.hpp"
 #include "gguf_frontend_extensions.hpp"
 #include "gguf_tokenizer.hpp"
+#include "gguf_utils.hpp"
 #include "openvino/core/graph_util.hpp"
 #include "openvino/frontend/gguf/adapt_mmproj_to_genai.hpp"
 #include "openvino/frontend/gguf/extension/genai.hpp"
@@ -234,8 +235,11 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     OPENVINO_ASSERT(it != properties.end(), "A language GGUF requires mmproj_path for VLMPipeline");
     const auto mmproj = it->second.as<std::string>();
     properties.erase(it);
-    auto [filtered_properties, enable_save_ov_model] = utils::extract_gguf_properties(properties);
-    properties = std::move(filtered_properties);
+    auto gguf_properties = gguf_utils::extract_gguf_properties(properties);
+    OPENVINO_ASSERT(!gguf_properties.legacy_reader.value_or(false),
+                    "GGUF multimodal generation requires GGUF_READER=FRONTEND");
+    const auto enable_save_ov_model = gguf_properties.enable_save_ov_model;
+    properties = std::move(gguf_properties.rest);
     utils::clear_false_prompt_lookup_from_config(properties);
     utils::validate_vlm_model_properties(properties);
 
@@ -244,7 +248,11 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     gguf::FrontEnd frontend;
     const auto extensions = utils::extract_extensions(properties);
     for (const auto& extension : extensions) {
-        std::visit([](const auto& value) { utils::singleton_core().add_extension(value); }, extension);
+        std::visit(
+            [](const auto& value) {
+                utils::singleton_core().add_extension(value);
+            },
+            extension);
     }
     auto genai = register_gguf_extensions(frontend, extensions, gguf::GenAIExtension::InputMode::EMBEDS_TO_LOGITS);
     result.language = frontend.convert(frontend.load(language.string()));
@@ -267,8 +275,8 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     }
     if (projector == "internvl" && !tokenizer_metadata.count("eos_token_id")) {
         OPENVINO_ASSERT(!result.stop_token_ids.empty(), "GGUF InternVL requires an EOS or end-of-generation token");
-        ov::Tensor eos(ov::element::i32, {});
-        eos.data<int32_t>()[0] = static_cast<int32_t>(*result.stop_token_ids.begin());
+        ov::Tensor eos(ov::element::u32, {});
+        eos.data<uint32_t>()[0] = static_cast<uint32_t>(*result.stop_token_ids.begin());
         tokenizer_metadata["eos_token_id"] = eos;
     }
     result.tokenizer = GGUFTokenizer(GGUFTokenizerParameters(std::move(tokenizer_metadata)), properties);
