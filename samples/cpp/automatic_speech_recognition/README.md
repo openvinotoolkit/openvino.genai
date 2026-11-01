@@ -119,6 +119,36 @@ result = pipeline.generate(raw_speech, ov::genai::initial_prompt("Polychrome"));
 //  He has gone and gone for good answered Polychrome who...
 ```
 
+## Continuous batching with Qwen3-ASR
+
+Qwen3-ASR model supports `ContinuousBatchingPipeline` API. The model's chat template is designed for transcription: it discards user text and assistant turns, so questions about earlier audio, translation instructions, and multi-turn audio conversations are not supported.
+
+```cpp
+ov::genai::ContinuousBatchingPipeline pipe(model_dir, ov::genai::SchedulerConfig{}, "CPU");
+const std::vector<std::string> wav_file_paths = {"audio_1.wav", "audio_2.wav"};
+auto config = pipe.get_config();
+std::vector<ov::genai::GenerationHandle> handles;
+
+for (const auto& path : wav_file_paths) {
+    auto waveform = utils::audio::read_wav(path);
+    ov::Tensor audio(ov::element::f32, {waveform.size()});
+    std::copy(waveform.begin(), waveform.end(), audio.data<float>());
+
+    const std::vector<ov::Tensor> audios{audio};
+    auto handle = pipe.add_request(handles.size(), "", ov::genai::audios(audios),
+                                   ov::genai::generation_config(config));
+    handles.push_back(handle);
+}
+
+while (pipe.has_non_finished_requests()) {
+    pipe.step();
+}
+
+for (const auto& handle : handles) {
+    std::cout << pipe.get_tokenizer().decode(handle->read_all().front().generated_ids) << '\n';
+}
+```
+
 ### Troubleshooting
 
 #### Empty or rubbish output

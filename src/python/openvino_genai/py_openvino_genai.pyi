@@ -44,6 +44,11 @@ class ASRDecodedResults:
         perf_metrics:       performance metrics with tpot, ttft, etc. of type ov::genai::ASRPerfMetrics.
         chunks:             optional chunks of resulting sequences with timestamps
         words:              optional chunks of resulting words with timestamps
+        metadata:           optional model-specific metadata for each transcription.
+                            Models without metadata support leave this unset (None in Python).
+                            When present, metadata[i] corresponds to texts[i]. Each map holds
+                            model-defined key/value metadata and may be empty when no metadata
+                            is predicted.
     """
     def __repr__(self) -> str:
         ...
@@ -52,6 +57,9 @@ class ASRDecodedResults:
         ...
     @property
     def languages(self) -> list[str]:
+        ...
+    @property
+    def metadata(self) -> list[dict[str, typing.Any]] | None:
         ...
     @property
     def perf_metrics(self) -> ASRPerfMetrics:
@@ -318,22 +326,27 @@ class ASRPipeline:
                         Only supported for Qwen3-ASR. Required when requesting
                         generate(..., word_timestamps=True).
         """
-    def generate(self, audio_inputs: collections.abc.Sequence[typing.SupportsFloat], generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> ASRDecodedResults:
+    def generate(self, audio_inputs: collections.abc.Sequence[typing.SupportsFloat] | collections.abc.Sequence[collections.abc.Sequence[typing.SupportsFloat]], generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> ASRDecodedResults:
         """
-            High level generate that receives raw speech as a vector of floats and returns decoded output.
+            High level generate that receives raw speech as a single audio input or a batch of audio inputs and returns decoded output.
+            The generation configuration applies to all audio inputs. Batch results are returned in input order.
+            Batches must be non-empty. Models without batching support accept at most one audio input per call,
+            either directly or as a batch of one.
         
-            :param audio_inputs: inputs in the form of list of floats. Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
-            :type audio_inputs: list[float]
+            :param audio_inputs: a single audio input as a list of floats, or a non-empty list of such lists for a batch.
+                                 Each audio input is required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
+            :type audio_inputs: list[float] | list[list[float]]
         
             :param generation_config: generation_config
             :type generation_config: ASRGenerationConfig
         
-            :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped.
-                             Streamer supported for short-form audio (< 30 seconds) with `return_timestamps=False` only
-            :type : Callable[[str], bool], ov.genai.StreamerBase
+            :param streamer: streamer either as a callback or as a StreamerBase instance.
+                             The callback receives decoded text and may return None or an integer StreamingStatus value.
+                             Handling of stop statuses depends on the model. Streaming is not supported for batches larger than one.
+            :type streamer: Callable[[str], int | None] | StreamerBase | None
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to ASRGenerationConfig fields.
-            :type : dict
+            :type kwargs: dict
         
             :return: return results in decoded form
             :rtype: ASRDecodedResults
@@ -1304,6 +1317,9 @@ class ContinuousBatchingPipeline:
         ...
     @typing.overload
     def __init__(self, models_path: os.PathLike | str | bytes, tokenizer: Tokenizer, scheduler_config: SchedulerConfig, device: str, **kwargs) -> None:
+        ...
+    @typing.overload
+    def add_request(self, request_id: typing.SupportsInt, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], audios: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, **kwargs) -> GenerationHandle:
         ...
     @typing.overload
     def add_request(self, request_id: typing.SupportsInt, input_ids: openvino._pyopenvino.Tensor, generation_config: GenerationConfig) -> GenerationHandle:
@@ -3458,13 +3474,29 @@ class OmniTalkerSpeechConfig:
         :type speaker: str | openvino.Tensor
     
         :param audio_chunk_frames: Number of codec frames accumulated before streaming each
-            audio chunk. Must be >= 1. At steady state each frame decodes to 1920 samples (80ms at
-            24 kHz), but the code2wav vocoder trims its convolutional warmup from the first frame of
-            every decode call, so a chunk of N frames yields 1920*N - 555 samples, not 1920*N. This
-            is a property of the vocoder graph, not a miscount. Larger chunks amortize the fixed
-            warmup cost; very small chunks (e.g. 1) also risk audible seams between independently
-            decoded chunks in streaming mode.
+            audio chunk. Must be >= 1. Each frame decodes to S samples, the product of the
+            checkpoint's code2wav `upsample_rates` and `upsampling_ratios`. The code2wav vocoder trims
+            its convolutional warmup of W samples once per utterance, so the first chunk of N frames
+            yields S*N - W samples and every later chunk yields S*N. Streamed audio has the same length
+            as non-streamed audio. This holds while `audio_chunk_left_context_frames` > 0. For the
+            standard Qwen3-Omni, S = 1920 (80ms at 24 kHz) and W = 555, so the default first chunk is
+            about 297ms and later chunks are 320ms. Every chunk after the first is decoded
+            together with up to `audio_chunk_left_context_frames` earlier frames, so the vocoder sees
+            their history. That context is decoded again for each chunk, so smaller chunks lower
+            time-to-first-audio but spend more vocoder time per second of audio and can fall behind
+            real time.
         :type audio_chunk_frames: int
+    
+        :param audio_chunk_left_context_frames: Number of earlier codec frames the code2wav vocoder
+            decodes together with each streamed chunk. Their samples are dropped from the output; they
+            only give the chunk's first samples the history a non-streamed decode would see. The first
+            chunk has no history, so the value is capped by the number of frames already streamed.
+            0 decodes every chunk on its own: each chunk then loses the code2wav warmup samples, so
+            streamed audio is shorter than non-streamed audio. Larger values give smoother seams
+            between chunks but cost more vocoder work per chunk. Default is 25, the
+            `left_context_size` of transformers `Qwen3OmniMoeCode2Wav.chunked_decode`. Must be
+            <= 4096. Ignored when no speech streamer is set.
+        :type audio_chunk_left_context_frames: int
     
         :param max_new_tokens: Cap on talker AR steps. Independent of
             `text_config.max_new_tokens` (which caps the thinker text decode). The talker
@@ -3500,6 +3532,12 @@ class OmniTalkerSpeechConfig:
         ...
     @audio_chunk_frames.setter
     def audio_chunk_frames(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def audio_chunk_left_context_frames(self) -> int:
+        ...
+    @audio_chunk_left_context_frames.setter
+    def audio_chunk_left_context_frames(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
     def cp_temperature(self) -> float | None:
@@ -5381,8 +5419,9 @@ class TalkerBase:
         
                                 Property-bag form of generate(). Recognized kwargs are the OmniTalkerSpeechConfig
                                 fields (return_audio, speaker, speaker_embedding, audio_chunk_frames,
-                                max_new_tokens, rng_seed, talker_temperature, talker_top_k,
-                                talker_repetition_penalty, cp_temperature, cp_top_k), plus speech_streamer.
+                                audio_chunk_left_context_frames, max_new_tokens, rng_seed, talker_temperature,
+                                talker_top_k, talker_repetition_penalty, cp_temperature, cp_top_k), plus
+                                speech_streamer.
                                 Unrecognized keys raise. Fields not given fall back to get_speech_config().
         
                                 :return: TalkerResults
@@ -6483,8 +6522,10 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
-                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
+            :param audio_chunk_frames: number of codec frames per streaming chunk. Must be >= 1. The default 4 gives
+                a first chunk of about 297ms and later chunks of 320ms with the standard Qwen3-Omni.
+                Smaller values lower time-to-first-audio but spend more vocoder time per second of audio and can run
+                slower than real time.
                 Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -6525,8 +6566,10 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
-                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
+            :param audio_chunk_frames: number of codec frames per streaming chunk. Must be >= 1. The default 4 gives
+                a first chunk of about 297ms and later chunks of 320ms with the standard Qwen3-Omni.
+                Smaller values lower time-to-first-audio but spend more vocoder time per second of audio and can run
+                slower than real time.
                 Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -6567,8 +6610,10 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
-                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
+            :param audio_chunk_frames: number of codec frames per streaming chunk. Must be >= 1. The default 4 gives
+                a first chunk of about 297ms and later chunks of 320ms with the standard Qwen3-Omni.
+                Smaller values lower time-to-first-audio but spend more vocoder time per second of audio and can run
+                slower than real time.
                 Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -6609,8 +6654,10 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
-                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
+            :param audio_chunk_frames: number of codec frames per streaming chunk. Must be >= 1. The default 4 gives
+                a first chunk of about 297ms and later chunks of 320ms with the standard Qwen3-Omni.
+                Smaller values lower time-to-first-audio but spend more vocoder time per second of audio and can run
+                slower than real time.
                 Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -6677,8 +6724,10 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
-                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
+            :param audio_chunk_frames: number of codec frames per streaming chunk. Must be >= 1. The default 4 gives
+                a first chunk of about 297ms and later chunks of 320ms with the standard Qwen3-Omni.
+                Smaller values lower time-to-first-audio but spend more vocoder time per second of audio and can run
+                slower than real time.
                 Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -6719,8 +6768,10 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
-                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
+            :param audio_chunk_frames: number of codec frames per streaming chunk. Must be >= 1. The default 4 gives
+                a first chunk of about 297ms and later chunks of 320ms with the standard Qwen3-Omni.
+                Smaller values lower time-to-first-audio but spend more vocoder time per second of audio and can run
+                slower than real time.
                 Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -6761,8 +6812,10 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
-                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
+            :param audio_chunk_frames: number of codec frames per streaming chunk. Must be >= 1. The default 4 gives
+                a first chunk of about 297ms and later chunks of 320ms with the standard Qwen3-Omni.
+                Smaller values lower time-to-first-audio but spend more vocoder time per second of audio and can run
+                slower than real time.
                 Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
