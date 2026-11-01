@@ -751,12 +751,18 @@ class DFlashStrategyTest : public testing::Test, public ov::genai::ContinuousBat
 protected:
     class StrategyInstance : public DFlashDecodingImpl {
     public:
+        explicit StrategyInstance(ov::genai::ModelInputType input_type = ov::genai::ModelInputType::TOKENS) {
+            m_model_input_type = input_type;
+        }
         using DFlashDecodingImpl::make_draft_generation_config;
+        using DFlashDecodingImpl::validate_request_config;
     };
 
-    static void expect_rejected(const ov::genai::GenerationConfig& config, const std::string& expected_message) {
+    static void expect_rejected(const ov::genai::GenerationConfig& config,
+                                const std::string& expected_message,
+                                ov::genai::ModelInputType input_type = ov::genai::ModelInputType::TOKENS) {
         // Unsupported configurations must be rejected before add_request touches the pipelines.
-        StrategyInstance strategy;
+        StrategyInstance strategy(input_type);
         try {
             strategy.add_request(0, ov::Tensor{}, config);
             FAIL() << "Expected the DFlash request to be rejected";
@@ -780,6 +786,18 @@ TEST_F(DFlashStrategyTest, RejectsUnsupportedRequests) {
         make_unsupported(config);
         expect_rejected(config, expected_message);
     }
+}
+
+TEST_F(DFlashStrategyTest, ValidatesVlmRequests) {
+    // The target runs these modes as it does without a draft.
+    auto config = ov::genai::utils::get_greedy_config();
+    config.pruning_ratio = 1;
+    config.echo = true;
+    config.logprobs = 1;
+    EXPECT_NO_THROW(StrategyInstance(ov::genai::ModelInputType::EMBEDDINGS).validate_request_config(config));
+
+    config.return_omni_outputs = true;
+    expect_rejected(config, "Omni intermediate outputs", ov::genai::ModelInputType::EMBEDDINGS);
 }
 
 TEST_F(DFlashStrategyTest, DraftConfigOnlyProposesCandidates) {
