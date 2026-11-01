@@ -115,6 +115,9 @@ InputsEmbedder::InputsEmbedder(const VLMModels& models,
     case VLMModelType::INTERNVL_CHAT:
         m_impl = std::make_shared<InputsEmbedderInternVLChat>(models, tokenizer, device, properties);
         break;
+    case VLMModelType::LFM3_VL:
+        m_impl = std::make_shared<InputsEmbedderLFM3VL>(models, tokenizer, device, properties);
+        break;
     case VLMModelType::GEMMA3:
         m_impl = std::make_shared<InputsEmbedderGemma3>(models, tokenizer, device, properties);
         break;

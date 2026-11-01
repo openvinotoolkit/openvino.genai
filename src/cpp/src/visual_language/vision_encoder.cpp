@@ -250,6 +250,8 @@ VisionEncoder::Ptr VisionEncoder::create(const VLMModels& models,
         return std::make_shared<VisionEncoderLLaVA>(models, device, properties);
     case VLMModelType::INTERNVL_CHAT:
         return std::make_shared<VisionEncoderInternVLChat>(models, device, properties);
+    case VLMModelType::LFM3_VL:
+        return std::make_shared<VisionEncoderLFM3VL>(models, device, properties);
     case VLMModelType::GEMMA3:
         return std::make_shared<VisionEncoderGemma3>(models, device, properties);
     case VLMModelType::GEMMA4:

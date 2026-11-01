@@ -126,6 +126,12 @@ EncodedVideo VisionEncoderLFM3VL::encode_frames_with_config(const std::vector<ov
     return result;
 }
 
+InputsEmbedderLFM3VL::InputsEmbedderLFM3VL(const VLMModels& models,
+                                           const Tokenizer& tokenizer,
+                                           const std::string& device,
+                                           const ov::AnyMap& properties)
+    : IInputsEmbedder(models, tokenizer, device, properties) {}
+
 InputsEmbedderLFM3VL::InputsEmbedderLFM3VL(const VLMConfig& vlm_config,
                                          const std::filesystem::path& model_dir,
                                          const Tokenizer& tokenizer,
