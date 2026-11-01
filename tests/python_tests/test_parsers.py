@@ -1,6 +1,8 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
+import gc
 import json
+import weakref
 from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
 from utils.ov_genai_pipelines import create_ov_pipeline, PipelineType
 import pytest
@@ -807,6 +809,65 @@ def test_streamer_error_in_generate_is_raised_to_caller(model_id):
 
     # the pipeline is still usable after the failed generations
     assert pipe.generate(['Please say "hello"'], max_new_tokens=16, streamer=Write(tokenizer, [])).texts
+
+
+@pytest.mark.parametrize("model_id", ["katuni4ka/tiny-random-phi3"])
+@pytest.mark.parametrize(
+    "attach", ["attribute", "constructor", "update_generation_config", "set_generation_config", "generate_kwargs"]
+)
+def test_custom_parser_in_generation_config_outlives_python_references(model_id, attach):
+    # The config, not the caller, owns the parser: it must still work after Python drops its own references.
+    models_path = download_and_convert_model(model_id, padding_side="left").models_path
+    pipe = create_ov_pipeline(models_path)
+
+    class UpperParser(Parser):
+        def parse(self, msg: dict):
+            msg["content"] = msg["content"].upper()
+
+    def make_config():
+        if attach == "generate_kwargs":
+            return None
+        if attach == "constructor":
+            return GenerationConfig(max_new_tokens=8, parsers=[UpperParser()])
+        config = GenerationConfig(max_new_tokens=8)
+        if attach == "update_generation_config":
+            config.update_generation_config(parsers=[UpperParser()])
+        else:
+            config.parsers = [UpperParser()]
+        return config
+
+    config = make_config()
+    gc.collect()
+    if attach == "generate_kwargs":
+        res = pipe.generate(['Please say "hello"'], max_new_tokens=8, parsers=[UpperParser()])
+    elif attach == "set_generation_config":
+        pipe.set_generation_config(config)
+        del config
+        gc.collect()
+        res = pipe.generate(['Please say "hello"'])
+    else:
+        res = pipe.generate(['Please say "hello"'], config)
+
+    assert res.parsed[0]["content"] == res.texts[0].upper()
+
+
+def test_custom_parser_is_released_with_generation_config():
+    # Keeping the parser alive for the config must not keep it alive after the config is gone.
+    class UpperParser(Parser):
+        def parse(self, msg: dict):
+            msg["content"] = msg["content"].upper()
+
+    parser = UpperParser()
+    parser_ref = weakref.ref(parser)
+    config = GenerationConfig(max_new_tokens=8)
+    config.parsers = [parser]
+    del parser
+    gc.collect()
+    assert parser_ref() is not None
+
+    del config
+    gc.collect()
+    assert parser_ref() is None
 
 
 @pytest.mark.parametrize("model_id", ["katuni4ka/tiny-random-phi3"])

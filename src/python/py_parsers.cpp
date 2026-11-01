@@ -31,7 +31,9 @@ namespace pyutils = ov::genai::pybind::utils;
 
 namespace {
 
-class ConstructableParser: public Parser {
+// trampoline_self_life_support with the py::smart_holder below keeps a Python subclass alive while C++ holds it,
+// e.g. in GenerationConfig::parsers after the Python list is gone.
+class ConstructableParser: public Parser, public py::trampoline_self_life_support {
 public:
     void parse(JsonContainer& msg) override {
         py::gil_scoped_acquire acquire;
@@ -153,7 +155,7 @@ public:
 } // namespace
 
 void init_parsers(py::module_& m) {
-    py::class_<Parser, ConstructableParser, std::shared_ptr<Parser>>(m, "Parser")
+    py::class_<Parser, ConstructableParser, py::smart_holder>(m, "Parser")
         .def(py::init<>())
         .def("parse",
             [](Parser& self, py::dict& message) {
@@ -165,23 +167,23 @@ void init_parsers(py::module_& m) {
             py::arg("message"),
             "Parse is called with the full text. Returns a dict with parsed content.");
 
-    py::class_<ReasoningParser, std::shared_ptr<ReasoningParser>, Parser>(m, "ReasoningParser")
+    py::class_<ReasoningParser, py::smart_holder, Parser>(m, "ReasoningParser")
         .def(py::init<bool, bool, const std::string&, const std::string&>(),
                 py::arg("expect_open_tag") = true,
                 py::arg("keep_original_content") = true,
                 py::arg("open_tag") = "<think>",
                 py::arg("close_tag") = "</think>");
 
-    py::class_<DeepSeekR1ReasoningParser, std::shared_ptr<DeepSeekR1ReasoningParser>, ReasoningParser>(m, "DeepSeekR1ReasoningParser")
+    py::class_<DeepSeekR1ReasoningParser, py::smart_holder, ReasoningParser>(m, "DeepSeekR1ReasoningParser")
         .def(py::init<>());
     
-    py::class_<Phi4ReasoningParser, std::shared_ptr<Phi4ReasoningParser>, ReasoningParser>(m, "Phi4ReasoningParser")
+    py::class_<Phi4ReasoningParser, py::smart_holder, ReasoningParser>(m, "Phi4ReasoningParser")
         .def(py::init<>());
     
-    py::class_<Llama3JsonToolParser, std::shared_ptr<Llama3JsonToolParser>, Parser>(m, "Llama3JsonToolParser")
+    py::class_<Llama3JsonToolParser, py::smart_holder, Parser>(m, "Llama3JsonToolParser")
         .def(py::init<>());
 
-    py::class_<Llama3PythonicToolParser, std::shared_ptr<Llama3PythonicToolParser>, Parser>(m, "Llama3PythonicToolParser")
+    py::class_<Llama3PythonicToolParser, py::smart_holder, Parser>(m, "Llama3PythonicToolParser")
         .def(py::init<>());
     
     py::class_<IncrementalParser, ConstructableIncrementalParser, std::shared_ptr<IncrementalParser>>(m, "IncrementalParser")
@@ -214,6 +216,6 @@ void init_parsers(py::module_& m) {
     py::class_<DeepSeekR1ReasoningIncrementalParser, std::shared_ptr<DeepSeekR1ReasoningIncrementalParser>, IncrementalParser>(m, "DeepSeekR1ReasoningIncrementalParser")
         .def(py::init<>());
 
-    py::class_<VLLMParserWrapper, std::shared_ptr<VLLMParserWrapper>, Parser>(m, "VLLMParserWrapper")
+    py::class_<VLLMParserWrapper, py::smart_holder, Parser>(m, "VLLMParserWrapper")
         .def(py::init<py::object>(), py::arg("py_parser"), "Wraps a vLLM parser to be used out of the box in Python.");
 }
