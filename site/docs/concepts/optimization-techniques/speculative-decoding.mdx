@@ -15,16 +15,17 @@ Tokens that the target would have produced anyway are accepted; the first diverg
 Because validation is parallel over the candidate length, each accepted draft token replaces a sequential decode step of the target model with (a fraction of) one batched step.
 When acceptance is high, this yields end-to-end speedups on memory-bandwidth-bound decoding without changing the model output distribution in theory (the standard verification scheme is statistically equivalent to sampling from the target).
 
-OpenVINO GenAI implements three drafting strategies. They differ only in *how candidates are produced* — the target-side validation step is shared.
+OpenVINO GenAI implements several drafting strategies. They differ in *how candidates are produced* — the target-side validation step is shared.
 
 | Strategy | Drafter | Best For | Continuous Batching (CPU/GPU) | Stateful (NPU) |
 |---|---|---|---|---|
 | [Speculative Decoding (Fast Draft)](#speculative-decoding-fast-draft) | Smaller off-the-shelf LLM | General-purpose, robust speedup without retraining | ✓ | ✓ |
 | [Prompt Lookup Decoding](#prompt-lookup-decoding) | N-gram match against the prompt | Output copies large spans of the input (RAG, summarization, code editing) | ✓ | ✗ |
 | [EAGLE3](#eagle3) | Custom draft head trained on the target's hidden states | Highest acceptance rate; also supports [tree drafting](#tree-drafting) | ✓ | ✓ |
+| Gemma4 MTP | Gemma4 assistant conditioned on the target's shared attention keys, values and hidden states | Greedy generation with a compatible Gemma4 VLM and assistant | ✓ | ✗ |
 
 :::info
-All three strategies are available through the `LLMPipeline` Python and C++ APIs.
+These strategies are available through the `LLMPipeline` Python and C++ APIs.
 Prompt Lookup Decoding and EAGLE3 are additionally supported in `VLMPipeline` (e.g. Qwen3-VL).
 
 The Continuous Batching backend supports multi-request batching; the Stateful backend is single-request.
@@ -51,6 +52,27 @@ granularity and memory-budget guidance.
 
 With MTP drafting, the main and draft models must use the same `enable_prefix_caching` setting.
 The pipeline restores both models to a common reusable prefix before processing a request.
+Gemma4 MTP is an exception: its assistant has no KV cache, so prefix caching and cache eviction
+must be disabled for the target while the assistant reads the target's paged KV cache.
+
+## Gemma4 MTP with Paged Attention
+
+For a compatible decomposed Gemma4 VLM export (`openvino_language_model.xml` and
+`openvino_text_embeddings_model.xml`), pass its Gemma4 assistant export as `draft_model`
+and select `ATTENTION_BACKEND="PA"` in `LLMPipeline`, or pass the same draft model
+to `VLMPipeline` for image inputs or `ContinuousBatchingPipeline` for direct
+multi-request serving. The target uses paged attention and supports
+multiple concurrent requests; the cacheless assistant also uses paged attention,
+reading the target's paged key/value cache through read-only PA cache inputs
+without maintaining its own KV state. The target and assistant must use the
+same execution device and compatible cache layouts. Both models must have the same text hidden size
+and tokenizer. Only greedy decoding with a fixed positive `num_assistant_tokens`
+is supported.
+With quantized target caches, multi-token verification may not be numerically
+identical to target-only sequential decoding; use an f16 cache when exact
+greedy agreement is required.
+Set `SchedulerConfig.max_num_batched_tokens` above `num_assistant_tokens` so the
+target can verify a complete candidate window in one scheduling step.
 
 ## Speculative Decoding (Fast Draft)
 

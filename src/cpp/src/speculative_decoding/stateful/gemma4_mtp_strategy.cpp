@@ -75,6 +75,7 @@ bool is_gemma4_mtp_model_pair(const std::shared_ptr<ov::Model>& target_model,
 Gemma4MTPTargetWrapper::Gemma4MTPTargetWrapper(const ModelDesc& model_desc)
     : m_device(model_desc.device),
       m_properties(model_desc.properties) {
+        m_properties.erase("mtp_mode");
     OPENVINO_ASSERT(model_desc.model, "Target model must not be null");
     m_kv_axes_pos = utils::get_kv_axes_pos(model_desc.model);
     m_cache_types = utils::get_cache_types(*model_desc.model);
@@ -195,6 +196,7 @@ void Gemma4MTPTargetWrapper::crop_state_to_length(size_t target_length) {
 Gemma4MTPAssistantWrapper::Gemma4MTPAssistantWrapper(const ModelDesc& model_desc)
     : m_device(model_desc.device),
       m_properties(model_desc.properties) {
+        m_properties.erase("mtp_mode");
     
     OPENVINO_ASSERT(model_desc.model, "Assistant model must not be null");
     OPENVINO_ASSERT(!m_device.empty(), "Assistant device must not be empty.");

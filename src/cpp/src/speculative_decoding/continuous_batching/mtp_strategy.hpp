@@ -3,6 +3,9 @@
 
 #pragma once
 
+#include <array>
+#include <map>
+
 #include "fast_draft_strategy.hpp"
 #include "visual_language/inputs_embedder.hpp"
 
@@ -50,5 +53,68 @@ protected:
     static GenerationConfig make_draft_generation_config(const GenerationConfig& config);
     void enable_mtp_hidden_state_pairing();
     void align_request_pair_processed_prefix(uint64_t request_id) override;
+};
+
+class ContinuousBatchingPipeline::Gemma4MtpDecodingImpl : public ContinuousBatchingPipeline::SpeculativeDecodingImpl {
+public:
+    template <class Impl>
+    friend std::vector<EncodedGenerationResult> generate_common(
+        Impl*, const std::vector<ov::Tensor>&, const std::vector<GenerationConfig>&,
+        const StreamerVariant&,
+        std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>,
+        std::optional<std::vector<ov::Tensor>>,
+        const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>&,
+        GenerateStrategy&);
+
+    Gemma4MtpDecodingImpl(const ModelDesc& main_model_desc,
+                          const ModelDesc& draft_model_desc,
+                          const std::shared_ptr<InputsEmbedder>& inputs_embedder);
+
+    // Accepts token IDs [1, seq_len] or input embeddings [1, seq_len, hidden_size].
+    GenerationHandle add_request(uint64_t request_id, const ov::Tensor& input,
+                                 const GenerationConfig& config,
+                                 std::optional<ov::Tensor> prompt_ids = std::nullopt,
+                                 std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs = std::nullopt) override;
+    GenerationHandle add_request(uint64_t request_id, const std::string& prompt,
+                                 const GenerationConfig& config) override;
+    std::vector<EncodedGenerationResult> generate(
+        const std::vector<ov::Tensor>& inputs, const std::vector<GenerationConfig>& configs,
+        const StreamerVariant& streamer,
+        const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt,
+        const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
+        const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs = std::nullopt) override;
+    void step() override;
+
+protected:
+    void drop_requests();
+    bool is_requests_empty();
+    std::vector<SequenceGroup::Ptr> get_awaiting_requests();
+
+private:
+    struct RequestState {
+        // Keeps the verification result readable after the main pipeline frees a finished request.
+        SequenceGroup::Ptr main_group;
+        ov::Tensor hidden_state;
+        size_t prompt_length = 0;
+        // Generated tokens confirmed by the main model.
+        size_t verified_length = 0;
+        // Draft candidates inserted into main_group and awaiting verification.
+        size_t pending_drafts = 0;
+    };
+
+    // Must be called under m_embeddings_mutex.
+    GenerationHandle add_embeds_request(uint64_t request_id, const ov::Tensor& embeds,
+                                        const GenerationConfig& config, const ov::Tensor& prompt_ids);
+    void accept_verified_tokens(const std::map<uint64_t, size_t>& processed_before, const GeneratedRequests& generated);
+    std::map<uint64_t, std::vector<int64_t>> draft_tokens(const GeneratedRequests& requests);
+
+    std::map<uint64_t, RequestState> m_requests;
+    std::map<uint64_t, GenerationConfig> m_request_configs;
+    ov::InferRequest m_draft_request;
+    std::array<std::string, 4> m_draft_cache_names;
+    std::array<size_t, 2> m_main_cache_layers;
+    EmbeddingsModel::Ptr m_embedding;
+    size_t m_default_num_assistant_tokens;
+    size_t m_max_num_batched_tokens;
 };
 }  // namespace ov::genai
