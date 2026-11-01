@@ -514,6 +514,78 @@ TEST(SamplerValidationMode, gen_phase) {
     EXPECT_EQ(output.acceptance_by_sequence.at(sequence_id).accepted_depth, 4u);
 }
 
+namespace {
+// Greedy request with prompt [0, 1, 2, 3, 4], processed prompt, next token 0 and the given candidates to validate.
+SequenceGroup::Ptr make_validation_window(const std::vector<int64_t>& candidates) {
+    const std::vector<int64_t> prompt{0, 1, 2, 3, 4};
+    auto sequence_group = std::make_shared<SequenceGroup>(0, prompt, ov::genai::utils::get_greedy_config());
+    Sequence::Ptr sequence = sequence_group->get_sequences().front();
+    sequence->append_token(0, 1.f);
+    sequence_group->update_processed_tokens_num(prompt.size());
+    for (const int64_t token_id : candidates) {
+        sequence->append_token(token_id, 1.f);
+    }
+    sequence_group->set_num_validated_tokens(candidates.size());
+    return sequence_group;
+}
+}  // namespace
+
+TEST(SamplerValidationMode, split_window_validates_candidate_after_last_scheduled_row) {
+    auto sequence_group = make_validation_window({1, 2, 3});
+    // The token budget leaves the last candidate unscheduled; the row before it still validates it.
+    sequence_group->schedule_tokens(3);
+    std::vector<float> logits{
+        0, 1.f, 0, 0, 0,
+        0, 0, 1.f, 0, 0,
+        0, 0, 0, 1.f, 0,
+    };
+    ov::Tensor validation_logits(ov::element::f32, ov::Shape{3, 1, 5}, logits.data());
+
+    Sampler sampler;
+    sampler.sample({sequence_group}, validation_logits, true);
+
+    EXPECT_EQ(sequence_group->get_sequences().front()->get_generated_ids(), TokenIds({0, 1, 2, 3}));
+    EXPECT_EQ(sequence_group->get_num_processed_tokens(), 8u);
+    EXPECT_EQ(sequence_group->get_num_tokens_to_validate(), 0u);
+    EXPECT_EQ(sequence_group->get_num_available_tokens_for_batching(), 1u);
+}
+
+TEST(SamplerValidationMode, split_window_leaves_unvalidated_candidates_for_next_step) {
+    auto sequence_group = make_validation_window({1, 2, 3});
+    sequence_group->schedule_tokens(2);
+    std::vector<float> logits{
+        0, 1.f, 0, 0, 0,
+        0, 0, 1.f, 0, 0,
+    };
+    ov::Tensor validation_logits(ov::element::f32, ov::Shape{2, 1, 5}, logits.data());
+
+    Sampler sampler;
+    sampler.sample({sequence_group}, validation_logits, true);
+
+    EXPECT_EQ(sequence_group->get_sequences().front()->get_generated_ids(), TokenIds({0, 1, 2, 3}));
+    EXPECT_EQ(sequence_group->get_num_processed_tokens(), 7u);
+    EXPECT_EQ(sequence_group->get_num_tokens_to_validate(), 1u);
+    EXPECT_EQ(sequence_group->get_num_available_tokens_for_batching(), 2u);
+}
+
+TEST(SamplerValidationMode, rejection_in_split_window_leaves_nothing_to_validate) {
+    auto sequence_group = make_validation_window({1, 4, 3});
+    sequence_group->schedule_tokens(2);
+    std::vector<float> logits{
+        0, 1.f, 0, 0, 0,
+        0, 0, 1.f, 0, 0,
+    };
+    ov::Tensor validation_logits(ov::element::f32, ov::Shape{2, 1, 5}, logits.data());
+
+    Sampler sampler;
+    sampler.sample({sequence_group}, validation_logits, true);
+
+    EXPECT_EQ(sequence_group->get_sequences().front()->get_generated_ids(), TokenIds({0, 1, 2}));
+    EXPECT_EQ(sequence_group->get_num_processed_tokens(), 7u);
+    EXPECT_EQ(sequence_group->get_num_tokens_to_validate(), 0u);
+    EXPECT_EQ(sequence_group->get_num_available_tokens_for_batching(), 1u);
+}
+
 TEST(SamplerValidationMode, terminal_stop_token_preserves_acceptance_result) {
     auto sampling_config = ov::genai::utils::get_greedy_config();
     sampling_config.stop_token_ids = {2};

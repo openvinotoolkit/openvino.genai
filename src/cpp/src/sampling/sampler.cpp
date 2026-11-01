@@ -1711,9 +1711,11 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
     const std::pair<size_t, std::set<std::string>>& stop_strings = ctx.stop_strings;
     std::mt19937& rng_engine = ctx.rng_engine;
 
+    // A window that the token budget split validates one candidate per scheduled row and leaves the remaining
+    // candidates for the next step.
     if (num_tokens_to_process > output_seq_len - 1) {
         auto delta = num_tokens_to_process - (output_seq_len - 1);
-        assisting_pipeline_info.updated_validation_len = std::max(assisting_pipeline_info.updated_validation_len, delta);
+        assisting_pipeline_info.updated_validation_len = std::max(assisting_pipeline_info.updated_validation_len, delta - 1);
         num_tokens_to_process -= delta;
     }
 
@@ -1768,7 +1770,8 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                 Token sampled_token;
                 bool is_generate_n_tokens = false;
                 // flag to add sampled token to generated sequence or extend logit processors only
-                bool is_extend_sequence = logit_token_offset == 0 || !is_validation_passed;
+                bool is_extend_sequence =
+                    (logit_token_offset == 0 && generated_seq_token_offset == 0) || !is_validation_passed;
                 if (is_speculative_sampling && !is_extend_sequence) {
                     const size_t candidate_index = generated_and_verified_len;
                     const auto verdict =
@@ -2117,7 +2120,8 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
             auto& logit_processor = get_logit_processor(sequence_group->get_request_id());
             logit_processor.update_generated_len(assisting_pipeline_info.min_generated_len);
         }
-        if (assisting_pipeline_info.updated_validation_len) {
+        // A rejection removes the candidates that a split window left unvalidated.
+        if (assisting_pipeline_info.updated_validation_len && !assisting_pipeline_info.max_removed_tokens_per_request) {
             sequence_group->set_num_validated_tokens(assisting_pipeline_info.updated_validation_len);
         }
     }
