@@ -879,7 +879,9 @@ def run_vlm_pipeline(
         return False
 
     if generation_config is None:
-        generation_config = _setup_generation_config(ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup)
+        generation_config = _setup_generation_config(
+            ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup
+        )
 
     res = ov_pipe.generate(
         prompt,
@@ -1251,7 +1253,9 @@ def run_vlm_start_chat_vs_chat_history(
     ov_pipe = ov_pipe_model.pipeline
 
     if generation_config is None:
-        generation_config = _setup_generation_config(ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup)
+        generation_config = _setup_generation_config(
+            ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup
+        )
 
     prompts_with_images = [
         (PROMPTS[0], iteration_images[0]),
