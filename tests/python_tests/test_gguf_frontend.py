@@ -571,6 +571,68 @@ def test_gguf_llava_preformatted_prompt(tiny_gguf_vlm_model):
 
 
 @pytest.mark.parametrize("tiny_gguf_vlm_model", ["llava"], indirect=True)
+@pytest.mark.parametrize("backend", ["SDPA", "PA"])
+@pytest.mark.parametrize(
+    "metadata_key,value,supported",
+    [
+        ("mm_patch_merge_type", "spatial_unpad", False),
+        ("mm_patch_merge_type", "spatial", False),
+        ("image_grid_pinpoints", [30, 60, 60, 30], False),
+        ("image_crop_resolution", 30, False),
+        ("image_split_resolution", 30, False),
+        ("image_aspect_ratio", "anyres", False),
+        ("image_aspect_ratio", "anyres_max_9", False),
+        ("image_aspect_ratio", "unknown", False),
+        ("mm_patch_merge_type", "flat", True),
+        ("image_aspect_ratio", "square", True),
+        ("image_aspect_ratio", "pad", True),
+    ],
+)
+def test_gguf_llava_projector_variant(tiny_gguf_vlm_model, backend, metadata_key, value, supported):
+    from gguf import GGUFReader, GGUFWriter
+
+    language, projector = tiny_gguf_vlm_model
+    reader = GGUFReader(projector)
+    modified = projector.with_name(
+        f"mmproj-{backend}-{metadata_key}-{value if isinstance(value, str) else 'numeric'}.gguf"
+    )
+    writer = GGUFWriter(modified, reader.fields["general.architecture"].contents(), endianess=reader.endianess)
+    key = "clip.vision." + metadata_key
+    for name, field in reader.fields.items():
+        if name.startswith("GGUF.") or name in {"general.architecture", key}:
+            continue
+        writer.add_key_value(name, field.contents(), field.types[0], field.types[1] if len(field.types) > 1 else None)
+    if isinstance(value, str):
+        writer.add_string(key, value)
+    elif isinstance(value, list):
+        writer.add_array(key, value)
+    else:
+        writer.add_uint32(key, value)
+    for tensor in reader.tensors:
+        writer.add_tensor(tensor.name, tensor.data, raw_dtype=tensor.tensor_type, tensor_endianess=reader.endianess)
+    writer.write_header_to_file()
+    writer.write_kv_data_to_file()
+    writer.write_tensors_to_file()
+    writer.close()
+    options = dict(mmproj_path=str(modified), ATTENTION_BACKEND=backend, **reference_properties())
+    if not supported:
+        with pytest.raises(RuntimeError, match="Unsupported GGUF LLaVA variant.*LLaVA Next"):
+            genai.VLMPipeline(language, "CPU", **options)
+        return
+    pipeline = genai.VLMPipeline(language, "CPU", **options)
+    image = ov.Tensor(np.random.default_rng(0).integers(0, 256, (1, 24, 24, 3), dtype=np.uint8))
+    result = pipeline.generate(
+        "USER: <image>Describe. ASSISTANT:",
+        images=[image],
+        max_new_tokens=2,
+        do_sample=False,
+        ignore_eos=True,
+        apply_chat_template=False,
+    )
+    assert result.perf_metrics.get_num_generated_tokens() == 2
+
+
+@pytest.mark.parametrize("tiny_gguf_vlm_model", ["llava"], indirect=True)
 @pytest.mark.parametrize("metadata_case", ["fallback", "out-of-range", "missing"])
 def test_gguf_llava_unknown_token_metadata(tiny_gguf_vlm_model, metadata_case):
     from gguf import GGUFReader, GGUFWriter, TokenType

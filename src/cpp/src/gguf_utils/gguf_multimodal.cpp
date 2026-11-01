@@ -267,6 +267,16 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     const auto projector = meta.text("vision.projector");
     int64_t image_padding_id = -1;
     if (projector == "mlp") {
+        const auto aspect_ratio =
+            meta.has("clip.vision.image_aspect_ratio") ? meta.text("clip.vision.image_aspect_ratio") : "square";
+        OPENVINO_ASSERT(!meta.has("clip.vision.image_grid_pinpoints") &&
+                            !meta.has("clip.vision.image_crop_resolution") &&
+                            !meta.has("clip.vision.image_split_resolution") &&
+                            (!meta.has("clip.vision.mm_patch_merge_type") ||
+                             meta.text("clip.vision.mm_patch_merge_type") == "flat") &&
+                            (aspect_ratio == "square" || aspect_ratio == "pad"),
+                        "Unsupported GGUF LLaVA variant: only fixed-resolution LLaVA 1.5 is supported; "
+                        "LLaVA Next and any-resolution image inputs are not supported");
         if (const auto it = tokenizer_metadata.find("unknown_token_id"); it != tokenizer_metadata.end()) {
             const auto unknown = it->second.as<ov::Tensor>();
             OPENVINO_ASSERT(unknown.get_element_type() == ov::element::u32 && unknown.get_size() == 1,
