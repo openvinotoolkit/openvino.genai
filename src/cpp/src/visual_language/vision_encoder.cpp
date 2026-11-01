@@ -246,6 +246,10 @@ VisionEncoder::Ptr VisionEncoder::create(const VLMModels& models,
                                          const std::string& device,
                                          const ov::AnyMap& properties) {
     switch (models.config.model_type) {
+    case VLMModelType::LLAVA:
+        return std::make_shared<VisionEncoderLLaVA>(models, device, properties);
+    case VLMModelType::INTERNVL_CHAT:
+        return std::make_shared<VisionEncoderInternVLChat>(models, device, properties);
     case VLMModelType::GEMMA3:
         return std::make_shared<VisionEncoderGemma3>(models, device, properties);
     case VLMModelType::GEMMA4:

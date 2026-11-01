@@ -102,6 +102,12 @@ The existing image, video, audio, and chat APIs apply.
 | Gemma4 | `gemma4v` or `gemma4uv` | Images, video; audio when present in the projector |
 | Qwen3.5 / Qwen3.5 MoE | `qwen3vl_merger` | Images, video |
 | Muse Glimmer | `muse-glimmer` | Images, video |
+| LLaVA 1.5 | `mlp` | Images |
+| InternVL | `internvl` | Images |
+
+LLaVA 1.5 and InternVL use the existing native frontend vision graphs. LLaVA Next and
+MiniCPM-V are not included in these additional projector routes. For a LLaVA checkpoint without
+a chat template, provide its formatted prompt and set `apply_chat_template=False` when generating.
 
 Other language/projector pairs are rejected.
 The supported pairs still depend on the OpenVINO frontend version. Paged attention is selected

@@ -109,6 +109,12 @@ InputsEmbedder::InputsEmbedder(const VLMModels& models,
                                const std::string& device,
                                const ov::AnyMap& properties) {
     switch (models.config.model_type) {
+    case VLMModelType::LLAVA:
+        m_impl = std::make_shared<InputsEmbedderLLaVA>(models, tokenizer, device, properties);
+        break;
+    case VLMModelType::INTERNVL_CHAT:
+        m_impl = std::make_shared<InputsEmbedderInternVLChat>(models, tokenizer, device, properties);
+        break;
     case VLMModelType::GEMMA3:
         m_impl = std::make_shared<InputsEmbedderGemma3>(models, tokenizer, device, properties);
         break;

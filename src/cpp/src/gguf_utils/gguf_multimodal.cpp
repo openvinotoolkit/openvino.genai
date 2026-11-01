@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 #include <sstream>
 
+#include "gguf_clip_adapter.hpp"
 #include "gguf_frontend_extensions.hpp"
 #include "gguf_tokenizer.hpp"
 #include "openvino/core/graph_util.hpp"
@@ -69,6 +70,16 @@ Configs gguf_configs(const std::string& architecture,
     c.image["patch_size"] = patch;
     c.image["image_mean"] = meta.floats("clip.vision.image_mean");
     c.image["image_std"] = meta.floats("clip.vision.image_std");
+    if (projector == "mlp" || projector == "internvl") {
+        const auto size = meta.integer("clip.vision.image_size");
+        OPENVINO_ASSERT(size > 0 && patch > 0 && size % patch == 0,
+                        "GGUF LLaVA and InternVL image size must be a positive patch multiple");
+        c.config["model_type"] = projector == "mlp" ? "llava" : "internvl_chat";
+        c.image["crop_size"] = {{"height", size}, {"width", size}};
+        c.image["size"]["shortest_edge"] = size;
+        c.video = c.image;
+        return c;
+    }
     if (architecture == "gemma3") {
         const auto size = meta.integer("clip.vision.image_size");
         c.config["model_type"] = "gemma3";
@@ -240,17 +251,32 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     result.language->set_rt_info(ov::element::f16, {"runtime_options", ov::hint::kv_cache_precision.name()});
     auto tokenizer_metadata = take_gguf_tokenizer_metadata(result.language);
     result.stop_token_ids = gguf_stop_token_ids(tokenizer_metadata);
-    result.tokenizer = GGUFTokenizer(GGUFTokenizerParameters(std::move(tokenizer_metadata)), properties);
     gguf::FrontEnd projector_frontend;
     register_gguf_extensions(projector_frontend, extensions);
     auto combined = projector_frontend.convert(projector_frontend.load(mmproj));
     const MmprojMetadata meta(combined);
     const auto architecture = result.language->get_rt_info<std::string>("gguf_architecture");
     const auto projector = meta.text("vision.projector");
+    int64_t image_padding_id = -1;
+    if (projector == "mlp") {
+        const auto token_types = tokenizer_metadata.at("token_type").as<ov::Tensor>();
+        const auto end = token_types.data<const int32_t>() + token_types.get_size();
+        const auto unknown = std::find(token_types.data<const int32_t>(), end, 2);
+        OPENVINO_ASSERT(unknown != end, "GGUF LLaVA requires an unknown token for image padding");
+        image_padding_id = unknown - token_types.data<const int32_t>();
+    }
+    if (projector == "internvl" && !tokenizer_metadata.count("eos_token_id")) {
+        OPENVINO_ASSERT(!result.stop_token_ids.empty(), "GGUF InternVL requires an EOS or end-of-generation token");
+        ov::Tensor eos(ov::element::i32, {});
+        eos.data<int32_t>()[0] = static_cast<int32_t>(*result.stop_token_ids.begin());
+        tokenizer_metadata["eos_token_id"] = eos;
+    }
+    result.tokenizer = GGUFTokenizer(GGUFTokenizerParameters(std::move(tokenizer_metadata)), properties);
+    const bool clip = projector == "mlp" || projector == "internvl";
     const bool gemma4 = architecture == "gemma4" && (projector == "gemma4v" || projector == "gemma4uv");
     OPENVINO_ASSERT((architecture == "gemma3" && projector == "gemma3") ||
                         ((architecture == "qwen35" || architecture == "qwen35moe") && projector == "qwen3vl_merger") ||
-                        (architecture == "muse-glimmer" && projector == "muse-glimmer") || gemma4,
+                        (architecture == "muse-glimmer" && projector == "muse-glimmer") || gemma4 || clip,
                     "Unsupported GGUF language/projector pair: ",
                     architecture,
                     " / ",
@@ -259,7 +285,9 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     auto& vlm = result.vlm;
     using Adapter = gguf::pass::AdaptMmprojToGenAI;
     Adapter vision_adapter(Adapter::Modality::VISION, Adapter::Layout::VISION_ENCODERS);
-    {
+    if (clip) {
+        vlm.models["vision_embeddings"] = adapt_gguf_clip_encoder(combined);
+    } else {
         auto vision = combined->clone();
         vision_adapter.run_on_model(vision);
         vlm.models = vision_adapter.get_vision_models();
@@ -281,6 +309,10 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     validate_gguf_multimodal_dimensions(result.language, vlm);
     const auto configs = gguf_configs(architecture, projector, meta, result);
     vlm.config = VLMConfig(configs.config);
+    if (projector == "mlp") {
+        OPENVINO_ASSERT(image_padding_id >= 0, "GGUF LLaVA requires a vocabulary padding token");
+        vlm.config.image_token_id = image_padding_id;
+    }
     if (vlm.find("audio_embeddings")) {
         const auto token = result.tokenizer.encode(vlm.config.audio_token, add_special_tokens(false)).input_ids;
         OPENVINO_ASSERT(token.get_size() == 1, "GGUF Gemma4 requires a single audio placeholder token");
