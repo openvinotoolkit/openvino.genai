@@ -36,7 +36,7 @@ LTX2TextConnectors LTX2TextConnectors::clone() {
     return cloned;
 }
 
-LTX2TextConnectors& LTX2TextConnectors::reshape(const int batch_size) {
+LTX2TextConnectors& LTX2TextConnectors::reshape(const int batch_size, const int64_t seq_len) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
 
     std::map<std::string, ov::PartialShape> name_to_shape;
@@ -44,6 +44,9 @@ LTX2TextConnectors& LTX2TextConnectors::reshape(const int batch_size) {
         std::string input_name = input.get_any_name();
         name_to_shape[input_name] = input.get_partial_shape();
         name_to_shape[input_name][0] = batch_size;
+        // text_encoder_hidden_states [B, S, F] and attention_mask [B, S]
+        if (seq_len > 0 && name_to_shape[input_name].rank().is_static() && name_to_shape[input_name].size() >= 2)
+            name_to_shape[input_name][1] = seq_len;
     }
 
     m_model->reshape(name_to_shape);

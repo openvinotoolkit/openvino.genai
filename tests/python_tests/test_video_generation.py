@@ -4,6 +4,7 @@
 import json
 import os
 import pytest
+import shutil
 import subprocess  # nosec B404
 import sys
 import logging
@@ -940,3 +941,182 @@ class TestImage2VideoPipeline:
         image = self._make_image()
         result = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS, adapters=adapter_config)
         assert result.video is not None
+
+
+# LTX2 text sequence length: LTX2TextConnectors.reshape(batch, seq_len) and
+# LTX2VideoTransformer3DModel.reshape(batch, frames, height, width, audio_frames, text_seq_len).
+# Omitted or -1 keeps the model's own text dimension; a positive value makes it static for every text input.
+LTX2_TEXT_INPUTS = {
+    "connectors": ("text_encoder_hidden_states", "attention_mask"),
+    "transformer": (
+        "encoder_hidden_states",
+        "audio_encoder_hidden_states",
+        "encoder_attention_mask",
+        "audio_encoder_attention_mask",
+    ),
+}
+TRANSFORMER_FRAMES, TRANSFORMER_SIZE, TRANSFORMER_AUDIO_FRAMES = 9, 32, 4
+LTX2_MODELS = [LTX2_MODEL_ID, LTX2_3_MODEL_ID]
+DEFAULT_TEXT_LEN_ARGS = pytest.mark.parametrize("default_args", [(), (-1,)], ids=["omitted", "minus_one"])
+
+
+def _ir_inputs(model_dir, component):
+    model = ov.Core().read_model(str(Path(model_dir) / component / "openvino_model.xml"))
+    return {model_input.get_any_name(): model_input for model_input in model.inputs}
+
+
+def _static_text_axis_copy(model_dir, component, text_len, dst):
+    """Copy of a component whose text-length axis is static, to check that reshape() never makes it dynamic again."""
+    src = Path(model_dir) / component
+    shutil.copytree(src, dst, ignore=shutil.ignore_patterns("openvino_model.*"))
+    model = ov.Core().read_model(str(src / "openvino_model.xml"))
+    shapes = {}
+    for name in LTX2_TEXT_INPUTS[component]:
+        shape = model.input(name).get_partial_shape()
+        shape[1] = ov.Dimension(text_len)
+        shapes[name] = shape
+    model.reshape(shapes)
+    ov.save_model(model, str(dst / "openvino_model.xml"))
+    return str(dst)
+
+
+def _tensor(value, dtype=np.float32):
+    return ov.Tensor(np.array(value, dtype=dtype, order="C"))  # keeps 0-d scalars 0-d
+
+
+def _infer_connectors(connectors, inputs, embeddings_len, mask_len):
+    channels = inputs["text_encoder_hidden_states"].get_partial_shape()[2].get_length()
+    mask_dtype = inputs["attention_mask"].get_element_type().to_dtype()
+    return connectors.infer(
+        _tensor(np.ones((1, embeddings_len, channels))), _tensor(np.ones((1, mask_len)), mask_dtype)
+    )
+
+
+def _infer_transformer(transformer, model_dir, text_len, wrong_text_input=None):
+    """One forward pass with every text input of length text_len, except `wrong_text_input` (one longer)."""
+    ir = _ir_inputs(model_dir, "transformer")
+    config = transformer.get_config()
+    spatial = config.vae_scale_factors[1] * config.patch_size
+    latent_frames = ((TRANSFORMER_FRAMES - 1) // config.vae_scale_factors[0] + 1) // config.patch_size_t
+    latent_height = latent_width = TRANSFORMER_SIZE // spatial
+    video_len = latent_frames * latent_height * latent_width
+    audio_len = TRANSFORMER_AUDIO_FRAMES
+
+    for name in LTX2_TEXT_INPUTS["transformer"]:
+        length = text_len + 1 if name == wrong_text_input else text_len
+        shape = (1, length)
+        if name.endswith("hidden_states"):
+            shape += (ir[name].get_partial_shape()[2].get_length(),)
+        transformer.set_hidden_states(name, _tensor(np.ones(shape), ir[name].get_element_type().to_dtype()))
+    transformer.set_hidden_states("video_coords", _tensor(np.zeros((1, 3, video_len, 2))))
+    transformer.set_hidden_states("audio_coords", _tensor(np.zeros((1, 1, audio_len, 2))))
+    for name, value in (
+        ("num_frames", latent_frames),
+        ("height", latent_height),
+        ("width", latent_width),
+        ("audio_num_frames", audio_len),
+    ):
+        transformer.set_hidden_states(name, _tensor(value, np.int64))
+    transformer.set_hidden_states("fps", _tensor(24.0))
+    if "cross_modality_gate" in ir:
+        transformer.set_hidden_states("cross_modality_gate", _tensor(1.0))
+    if "stg_perturbation_mask" in ir:
+        transformer.set_hidden_states("stg_perturbation_mask", _tensor(np.ones(1)))
+    video = _tensor(np.zeros((1, video_len, ir["hidden_states"].get_partial_shape()[2].get_length())))
+    audio = _tensor(np.zeros((1, audio_len, ir["audio_hidden_states"].get_partial_shape()[2].get_length())))
+    return transformer.infer(video, audio, 500.0)
+
+
+def _compiled_connectors(path, *reshape_args):
+    connectors = ov_genai.LTX2TextConnectors(path)
+    connectors.reshape(1, *reshape_args)
+    connectors.compile("CPU")
+    return connectors
+
+
+def _compiled_transformer(path, *reshape_args):
+    transformer = ov_genai.LTX2VideoTransformer3DModel(path)
+    transformer.reshape(
+        1, TRANSFORMER_FRAMES, TRANSFORMER_SIZE, TRANSFORMER_SIZE, TRANSFORMER_AUDIO_FRAMES, *reshape_args
+    )
+    transformer.compile("CPU")
+    return transformer
+
+
+def _rejected_by_static_axis():
+    """The compiled model's own input check, which only a static axis triggers. A dynamic axis still fails on a wrong
+    length (the graph itself needs consistent lengths), but deeper inside, so the message tells the two apart."""
+    return pytest.raises(RuntimeError, match=r"(?s)input tensor.*incompatible")
+
+
+# A compiled model rejects a tensor of another length exactly when that axis is static, so accepting or rejecting
+# a second length pins the reshaped dimension without reading it back. Every "rejected" check is paired with an
+# "accepts" check of the expected length, so a rejection can only come from the text axis.
+@pytest.mark.parametrize("video_generation_model", LTX2_MODELS, indirect=True)
+class TestLTX2TextSequenceLength:
+    @DEFAULT_TEXT_LEN_ARGS
+    def test_connectors_default_keeps_dynamic_text_axis(self, video_generation_model, default_args):
+        path = str(Path(video_generation_model) / "connectors")
+        inputs = _ir_inputs(video_generation_model, "connectors")
+        connectors = _compiled_connectors(path, *default_args)
+
+        for length in (48, 40):
+            _infer_connectors(connectors, inputs, length, length)
+
+    @DEFAULT_TEXT_LEN_ARGS
+    def test_connectors_default_keeps_static_text_axis(self, video_generation_model, default_args, tmp_path):
+        path = _static_text_axis_copy(video_generation_model, "connectors", 64, tmp_path / "connectors")
+        inputs = _ir_inputs(video_generation_model, "connectors")
+        connectors = _compiled_connectors(path, *default_args)
+
+        _infer_connectors(connectors, inputs, 64, 64)
+        for embeddings_len, mask_len in ((48, 48), (48, 64), (64, 48)):
+            with _rejected_by_static_axis():
+                _infer_connectors(connectors, inputs, embeddings_len, mask_len)
+
+    @pytest.mark.parametrize("static_source", [False, True], ids=["dynamic_model", "static_model"])
+    def test_connectors_explicit_length_reshapes_embeddings_and_mask(
+        self, video_generation_model, static_source, tmp_path
+    ):
+        path = str(Path(video_generation_model) / "connectors")
+        if static_source:
+            path = _static_text_axis_copy(video_generation_model, "connectors", 64, tmp_path / "connectors")
+        inputs = _ir_inputs(video_generation_model, "connectors")
+        connectors = _compiled_connectors(path, 48)
+
+        _infer_connectors(connectors, inputs, 48, 48)
+        other = 64 if static_source else 40  # the model's own length when static: an explicit value must override it
+        for embeddings_len, mask_len in ((other, other), (other, 48), (48, other)):
+            with _rejected_by_static_axis():
+                _infer_connectors(connectors, inputs, embeddings_len, mask_len)
+
+    @DEFAULT_TEXT_LEN_ARGS
+    def test_transformer_default_keeps_dynamic_text_axis(self, video_generation_model, default_args):
+        transformer = _compiled_transformer(str(Path(video_generation_model) / "transformer"), *default_args)
+
+        for length in (24, 16):
+            _infer_transformer(transformer, video_generation_model, length)
+
+    @DEFAULT_TEXT_LEN_ARGS
+    def test_transformer_default_keeps_static_text_axis(self, video_generation_model, default_args, tmp_path):
+        path = _static_text_axis_copy(video_generation_model, "transformer", 32, tmp_path / "transformer")
+        transformer = _compiled_transformer(path, *default_args)
+
+        _infer_transformer(transformer, video_generation_model, 32)
+        for name in LTX2_TEXT_INPUTS["transformer"]:
+            with _rejected_by_static_axis():
+                _infer_transformer(transformer, video_generation_model, 32, wrong_text_input=name)
+
+    @pytest.mark.parametrize("static_source", [False, True], ids=["dynamic_model", "static_model"])
+    def test_transformer_explicit_length_reshapes_embeddings_and_masks(
+        self, video_generation_model, static_source, tmp_path
+    ):
+        path = str(Path(video_generation_model) / "transformer")
+        if static_source:
+            path = _static_text_axis_copy(video_generation_model, "transformer", 32, tmp_path / "transformer")
+        transformer = _compiled_transformer(path, 24)
+
+        _infer_transformer(transformer, video_generation_model, 24)
+        for name in LTX2_TEXT_INPUTS["transformer"]:
+            with _rejected_by_static_axis():
+                _infer_transformer(transformer, video_generation_model, 24, wrong_text_input=name)

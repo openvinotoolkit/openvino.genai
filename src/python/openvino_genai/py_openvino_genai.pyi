@@ -3063,10 +3063,11 @@ class LTX2TextConnectors:
                         attention_mask (ov.Tensor): Prompt attention mask.
                         Returns: Tuple of video text embedding, audio text embedding and connector attention mask.
         """
-    def reshape(self, batch_size: typing.SupportsInt) -> LTX2TextConnectors:
+    def reshape(self, batch_size: typing.SupportsInt, seq_len: typing.SupportsInt = -1) -> LTX2TextConnectors:
         """
                         Reshapes the model for a specific batch size.
                         batch_size (int): Batch size.
+                        seq_len (int): Text sequence length; -1 keeps the model's own dimension.
         """
 class LTX2VideoTransformer3DModel:
     """
@@ -3151,7 +3152,7 @@ class LTX2VideoTransformer3DModel:
                             (LTX-2.3 Spatio-Temporal Guidance). Out-of-range indices are ignored.
                         Returns: Tuple of video and audio velocity predictions.
         """
-    def reshape(self, batch_size: typing.SupportsInt, num_frames: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, audio_num_frames: typing.SupportsInt) -> LTX2VideoTransformer3DModel:
+    def reshape(self, batch_size: typing.SupportsInt, num_frames: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, audio_num_frames: typing.SupportsInt, text_seq_len: typing.SupportsInt = -1) -> LTX2VideoTransformer3DModel:
         """
                         Reshapes the model for specific input dimensions.
                         batch_size (int): Batch size.
@@ -3159,6 +3160,7 @@ class LTX2VideoTransformer3DModel:
                         height (int): Video height.
                         width (int): Video width.
                         audio_num_frames (int): Number of audio latent frames.
+                        text_seq_len (int): Text embedding sequence length; -1 keeps the model's own dimension.
         """
     def set_hidden_states(self, tensor_name: str, tensor: openvino._pyopenvino.Tensor) -> None:
         """
