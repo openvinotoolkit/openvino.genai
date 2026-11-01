@@ -1510,6 +1510,22 @@ def test_dflash_rejects_prefix_caching_mismatch(dflash_model_paths):
         )
 
 
+def test_dflash_draft_runs_on_paged_attention_only(dflash_model_paths):
+    target_path, draft_path = dflash_model_paths
+    config = _dflash_config()
+    reference = _main_only_ids(target_path, DFLASH_PROMPTS[:1], config)
+
+    def dflash_pipeline(attention_backend: str):
+        draft = draft_model(draft_path, "CPU", ATTENTION_BACKEND=attention_backend, **DFLASH_PARITY_PROPERTIES)
+        return ContinuousBatchingPipeline(
+            target_path, SchedulerConfig(), "CPU", {**DFLASH_PARITY_PROPERTIES, "draft_model": draft}
+        )
+
+    assert [dflash_pipeline("PA").generate(DFLASH_PROMPTS[:1], [config])[0].m_generation_ids] == reference
+    with pytest.raises(RuntimeError, match="PagedAttention only"):
+        dflash_pipeline("SDPA")
+
+
 def test_dflash_preemption_completes_all_requests(dflash_model_paths):
     # Both models preempt requests; the draft waits for a recomputing target and leaves a request whose
     # window was preempted to the target.

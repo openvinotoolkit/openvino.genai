@@ -65,6 +65,16 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     OPENVINO_ASSERT(!main_model_desc.scheduler_config.use_cache_eviction &&
                         !draft_model_desc.scheduler_config.use_cache_eviction,
                     "DFlash speculative decoding does not support cache eviction.");
+    const std::string draft_device = draft_model_desc.device.empty() ? main_model_desc.device : draft_model_desc.device;
+    // PagedAttention is the only DFlash draft backend.
+    auto [draft_properties, draft_attention_backend] = utils::extract_attention_backend(
+        draft_model_desc.properties.empty() ? main_model_desc.properties : draft_model_desc.properties);
+    OPENVINO_ASSERT(draft_attention_backend == PA_BACKEND,
+                    "DFlash drafts run on PagedAttention only; the draft ATTENTION_BACKEND must be '",
+                    PA_BACKEND,
+                    "', got '",
+                    draft_attention_backend,
+                    "'.");
     if (main_model_desc.inputs_embedder) {
         m_inputs_embedder = main_model_desc.inputs_embedder;
         m_model_input_type = ModelInputType::EMBEDDINGS;
@@ -111,9 +121,6 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
 
     m_tokenizer = main_model_desc.tokenizer;
     m_generation_config = main_model_desc.generation_config;
-    const std::string draft_device = draft_model_desc.device.empty() ? main_model_desc.device : draft_model_desc.device;
-    const ov::AnyMap draft_properties =
-        draft_model_desc.properties.empty() ? main_model_desc.properties : draft_model_desc.properties;
 
     if (m_inputs_embedder) {
         m_main_pipeline = std::make_shared<ContinuousBatchingForDFlashDecodingImpl>(main_model,
