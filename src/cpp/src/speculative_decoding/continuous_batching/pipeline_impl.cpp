@@ -427,7 +427,8 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                                                            target.token_ids,
                                                            target.log_probs,
                                                            logit_processor,
-                                                           is_update_logit_processor);
+                                                           is_update_logit_processor,
+                                                           {});
     if (is_update_logit_processor) {
         logit_processor.update_generated_len(sequence->get_generated_len());
     }
