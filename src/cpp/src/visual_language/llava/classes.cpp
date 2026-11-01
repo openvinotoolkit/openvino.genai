@@ -61,6 +61,14 @@ EncodedImage VisionEncoderLLaVA::encode( const ov::Tensor& image, const ov::AnyM
     return {std::move(image_features), resized_source_size};
 }
 
+InputsEmbedderLLaVA::InputsEmbedderLLaVA(const VLMModels& models,
+                                         const Tokenizer& tokenizer,
+                                         const std::string& device,
+                                         const ov::AnyMap& properties)
+    : IInputsEmbedder(models, tokenizer, device, properties) {
+    m_gguf = true;
+}
+
 InputsEmbedderLLaVA::InputsEmbedderLLaVA(
     const VLMConfig& vlm_config,
     const std::filesystem::path& model_dir,
@@ -130,12 +138,57 @@ ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& unified_pro
         return inputs_embeds;
     }
     auto start_tokenizer_time = std::chrono::steady_clock::now();
-    ov::Tensor encoded_image_token = m_tokenizer.encode(m_vlm_config.im_start, ov::genai::add_special_tokens(false)).input_ids;
+    ov::Tensor encoded_image_token;
+    if (!m_gguf)
+        encoded_image_token = m_tokenizer.encode(m_vlm_config.im_start, ov::genai::add_special_tokens(false)).input_ids;
     auto end_tokenizer_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
     metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
-    int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
+    int64_t image_token_id =
+        m_gguf ? m_vlm_config.image_token_id : encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
     return utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
+}
+
+ov::Tensor InputsEmbedderLLaVA::apply_chat_template_tokenize(const std::string& prompt, VLMPerfMetrics& metrics) {
+    if (!m_gguf || prompt.find(m_vlm_config.im_start) == std::string::npos)
+        return IInputsEmbedder::apply_chat_template_tokenize(prompt, metrics);
+
+    std::string rendered = prompt;
+    if (!m_is_chat_conversation && m_prompt_formatting == PromptFormatting::NeedsTemplate) {
+        const auto start = std::chrono::steady_clock::now();
+        rendered = m_tokenizer.apply_chat_template({{{"role", "user"}, {"content", prompt}}}, true);
+        metrics.raw_metrics.chat_template_durations.emplace_back(
+            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start));
+    }
+    const bool add_special = m_add_special_tokens_is_set
+                                 ? m_add_special_tokens
+                                 : !m_is_chat_conversation && m_prompt_formatting == PromptFormatting::Raw;
+    const auto start = std::chrono::steady_clock::now();
+    std::vector<int64_t> tokens;
+    const auto& marker = m_vlm_config.im_start;
+    size_t offset = 0;
+    bool first = true;
+    while (true) {
+        const auto next = rendered.find(marker, offset);
+        const auto text = rendered.substr(offset, next == std::string::npos ? next : next - offset);
+        if (!text.empty() || first) {
+            const auto encoded = m_tokenizer.encode(text, add_special_tokens(first && add_special)).input_ids;
+            tokens.insert(tokens.end(),
+                          encoded.data<const int64_t>(),
+                          encoded.data<const int64_t>() + encoded.get_size());
+        }
+        first = false;
+        if (next == std::string::npos)
+            break;
+        // Insert image slots directly; the marker is not a vocabulary token.
+        tokens.push_back(m_vlm_config.image_token_id);
+        offset = next + marker.size();
+    }
+    ov::Tensor ids(ov::element::i64, {1, tokens.size()});
+    std::copy(tokens.begin(), tokens.end(), ids.data<int64_t>());
+    metrics.raw_metrics.tokenization_durations.emplace_back(
+        PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start));
+    return ids;
 }
 
 } // namespace ov::genai

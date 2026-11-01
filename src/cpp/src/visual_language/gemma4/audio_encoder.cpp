@@ -100,7 +100,8 @@ public:
                                 const std::filesystem::path& config_dir_path,
                                 const std::string& device,
                                 const ov::AnyMap& properties)
-        : m_feature_extractor(config_dir_path),
+        : m_feature_extractor(config_dir_path.empty() ? Gemma4AudioFeatureExtractor()
+                                                    : Gemma4AudioFeatureExtractor(config_dir_path)),
           m_ireq_queue(compile_audio_model(model, device, properties)) {}
 
     ov::Tensor encode(const ov::Tensor& audio) override {
@@ -154,6 +155,13 @@ std::unique_ptr<AudioEncoderGemma4> create_audio_encoder(const std::shared_ptr<o
 }
 
 }  // namespace
+
+std::unique_ptr<AudioEncoderGemma4> AudioEncoderGemma4::create(const std::shared_ptr<ov::Model>& model,
+                                                               VLMModelType model_type,
+                                                               const std::string& device,
+                                                               const ov::AnyMap& properties) {
+    return create_audio_encoder(model, model_type, {}, device, properties);
+}
 
 std::unique_ptr<AudioEncoderGemma4> AudioEncoderGemma4::create(const std::filesystem::path& model_dir,
                                                                VLMModelType model_type,

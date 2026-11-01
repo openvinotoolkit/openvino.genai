@@ -15,6 +15,19 @@ class ov::genai::VLMPipeline::VLMContinuousBatchingAdapter : public ov::genai::V
 public:
     ContinuousBatchingPipeline m_impl;
 
+    VLMContinuousBatchingAdapter(const std::shared_ptr<ov::Model>& language_model,
+                                 const std::shared_ptr<InputsEmbedder>& embedder,
+                                 const Tokenizer& tokenizer,
+                                 const VLMConfig& config,
+                                 const SchedulerConfig& scheduler_config,
+                                 const std::string& device,
+                                 const ov::AnyMap& properties,
+                                 const GenerationConfig& generation_config)
+        : m_impl{language_model, embedder, tokenizer, scheduler_config, device, properties, generation_config},
+          m_vlm_config(config) {
+        set_attention_backend(PA_BACKEND);
+    }
+
     VLMContinuousBatchingAdapter(const std::filesystem::path& models_dir,
                                  const SchedulerConfig& scheduler_config,
                                  const std::string& device,

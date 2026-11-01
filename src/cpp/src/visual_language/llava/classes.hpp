@@ -21,6 +21,11 @@ public:
 
 class InputsEmbedderLLaVA : public InputsEmbedder::IInputsEmbedder {
 public:
+    InputsEmbedderLLaVA(const VLMModels& models,
+                        const Tokenizer& tokenizer,
+                        const std::string& device,
+                        const ov::AnyMap& properties);
+
     InputsEmbedderLLaVA(
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,
@@ -46,6 +51,10 @@ public:
         const std::vector<EncodedImage>& images
     ) const override;
 protected:
+    ov::Tensor apply_chat_template_tokenize(const std::string& prompt, VLMPerfMetrics& metrics) override;
+
+    bool m_gguf = false;
+
     ov::Tensor merge_text_and_image_embeddings_llava(
         const ov::Tensor& input_ids,
         ov::Tensor& text_embeds,

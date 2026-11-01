@@ -59,14 +59,28 @@ EmbeddingsModel::EmbeddingsModel(const std::string& model,
                                  const ov::Tensor& weights,
                                  const float scale_emb,
                                  const std::string& device,
-                                 const ov::AnyMap& properties) {
-    ov::Core core = utils::singleton_core();
-    std::shared_ptr<ov::Model> m_model = core.read_model(model, weights);
-    // apply embedding postprocessing step by merging them into the model
-    merge_postprocess(m_model, scale_emb);
+                                 const ov::AnyMap& properties)
+{
+    compile(utils::singleton_core().read_model(model, weights), scale_emb, device, properties);
+}
 
-    ov::CompiledModel compiled_model = core.compile_model(
-        m_model, device, utils::get_model_properties(properties, "text_embeddings", device));
+EmbeddingsModel::EmbeddingsModel(const std::shared_ptr<ov::Model>& model,
+                                 const float scale_emb,
+                                 const std::string& device,
+                                 const ov::AnyMap& properties) {
+    compile(model->clone(), scale_emb, device, properties);
+}
+
+void EmbeddingsModel::compile(const std::shared_ptr<ov::Model>& model,
+                              const float scale_emb,
+                              const std::string& device,
+                              const ov::AnyMap& properties) {
+    merge_postprocess(model, scale_emb);
+
+    ov::CompiledModel compiled_model =
+        utils::singleton_core().compile_model(model,
+                                              device,
+                                              utils::get_model_properties(properties, "text_embeddings", device));
     m_embeddings_requests_queue = init(compiled_model);
 }
 

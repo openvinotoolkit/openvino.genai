@@ -866,11 +866,9 @@ SINGLE_IMAGE_ONLY_MODELS = {
 }
 
 
-@pytest.mark.transformers_dependent(
-    reason="minicpmv, internvl_chat, minicpmo is not supported by transformers>=v5; gemma3, llava-next, llava - CVS-186059"
-)
-@parametrize_all_models
-def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Tensor]):
+def run_vlm_pipeline(
+    ov_pipe_model: VlmModelInfo, test_images: list[openvino.Tensor], *, prompt=PROMPTS[0], generation_config=None
+):
     if ov_pipe_model.model_id in SINGLE_IMAGE_ONLY_MODELS and len(test_images) != 1:
         pytest.skip("Model supports single image input only")
     ov_pipe = ov_pipe_model.pipeline
@@ -880,15 +878,28 @@ def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Te
         result_from_streamer.append(word)
         return False
 
-    generation_config = _setup_generation_config(ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup)
+    if generation_config is None:
+        generation_config = _setup_generation_config(
+            ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup
+        )
 
     res = ov_pipe.generate(
-        PROMPTS[0],
+        prompt,
         images=test_images,
         generation_config=generation_config,
         streamer=streamer,
     )
     assert res.texts[0] == "".join(result_from_streamer)
+
+    return res
+
+
+@pytest.mark.transformers_dependent(
+    reason="minicpmv, internvl_chat, minicpmo is not supported by transformers>=v5; gemma3, llava-next, llava - CVS-186059"
+)
+@parametrize_all_models
+def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Tensor]):
+    run_vlm_pipeline(ov_pipe_model, test_images)
 
 
 @parametrize_one_model_sdpa
@@ -1231,19 +1242,20 @@ def test_vlm_pipeline_chat(
     ov_pipe.finish_chat()
 
 
-@parametrize_all_models
-@pytest.mark.transformers_dependent(
-    reason="minicpmv, internvl_chat, minicpmo is not supported by transformers>=v5; gemma3, llava-next, llava - CVS-186059"
-)
-def test_vlm_pipeline_start_chat_vs_chat_history(
+def run_vlm_start_chat_vs_chat_history(
     ov_pipe_model: VlmModelInfo,
     iteration_images: list[list[PIL.Image]],
+    *,
+    generation_config=None,
 ):
     if ov_pipe_model.model_id in MODELS_WITHOUT_CHAT_TEMPLATE:
         pytest.skip("Model has no chat template")
     ov_pipe = ov_pipe_model.pipeline
 
-    generation_config = _setup_generation_config(ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup)
+    if generation_config is None:
+        generation_config = _setup_generation_config(
+            ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup
+        )
 
     prompts_with_images = [
         (PROMPTS[0], iteration_images[0]),
@@ -1285,6 +1297,19 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
             f"answer_start_chat: {answer_start_chat}\n"
             f"answer_chat_history: {answer_chat_history}"
         )
+
+    return answers_chat_history
+
+
+@parametrize_all_models
+@pytest.mark.transformers_dependent(
+    reason="minicpmv, internvl_chat, minicpmo is not supported by transformers>=v5; gemma3, llava-next, llava - CVS-186059"
+)
+def test_vlm_pipeline_start_chat_vs_chat_history(
+    ov_pipe_model: VlmModelInfo,
+    iteration_images: list[list[PIL.Image]],
+):
+    run_vlm_start_chat_vs_chat_history(ov_pipe_model, iteration_images)
 
 
 @pytest.mark.parametrize(

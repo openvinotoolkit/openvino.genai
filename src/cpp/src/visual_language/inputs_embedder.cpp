@@ -91,6 +91,49 @@ void InputsEmbedder::IInputsEmbedder::finish_chat() {
     m_cache_state.reset_state();
 }
 
+InputsEmbedder::IInputsEmbedder::IInputsEmbedder(const VLMModels& models,
+                                                 const Tokenizer& tokenizer,
+                                                 const std::string& device,
+                                                 const ov::AnyMap& properties)
+    : m_vlm_config(models.config),
+      m_vision_encoder(VisionEncoder::create(models, device, properties)),
+      m_embedding(
+          std::make_shared<EmbeddingsModel>(models.at("text_embeddings"), models.config.scale_emb, device, properties)),
+      m_tokenizer(tokenizer),
+      m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) {
+
+}
+
+InputsEmbedder::InputsEmbedder(const VLMModels& models,
+                               const Tokenizer& tokenizer,
+                               const std::string& device,
+                               const ov::AnyMap& properties) {
+    switch (models.config.model_type) {
+    case VLMModelType::LLAVA:
+        m_impl = std::make_shared<InputsEmbedderLLaVA>(models, tokenizer, device, properties);
+        break;
+    case VLMModelType::INTERNVL_CHAT:
+        m_impl = std::make_shared<InputsEmbedderInternVLChat>(models, tokenizer, device, properties);
+        break;
+    case VLMModelType::GEMMA3:
+        m_impl = std::make_shared<InputsEmbedderGemma3>(models, tokenizer, device, properties);
+        break;
+    case VLMModelType::GEMMA4:
+    case VLMModelType::GEMMA4_UNIFIED:
+        m_impl = std::make_shared<InputsEmbedderGemma4>(models, tokenizer, device, properties);
+        break;
+    case VLMModelType::QWEN3_5:
+    case VLMModelType::QWEN3_5_MOE:
+        m_impl = std::make_shared<InputsEmbedderQwen3_5>(models, tokenizer, device, properties);
+        break;
+    case VLMModelType::MUSE_GLIMMER:
+        m_impl = std::make_shared<InputsEmbedderMuseGlimmer>(models, tokenizer, device, properties);
+        break;
+    default:
+        OPENVINO_THROW("Unsupported in-memory VLM model type");
+    }
+}
+
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(const VLMConfig& vlm_config,
                                                  const Tokenizer& tokenizer,
                                                  EmbeddingsModel::Ptr embedding)
