@@ -418,17 +418,13 @@ def tiny_gguf_vlm_model(request, llama_reference_tools, tmp_path_factory):
             command.insert(1, str(wrapper))
         run_reference_command(command, timeout=300, env=converter_env)
         if family == "llava" and output == language:
-            from gguf import GGUFReader, TokenType
+            from gguf import GGUFReader
 
             tokenizer = AutoTokenizer.from_pretrained(source)
             assert tokenizer.unk_token_id is not None
-            reader = GGUFReader(language, mode="r+")
+            reader = GGUFReader(language)
             assert reader.fields["tokenizer.ggml.unknown_token_id"].contents() == tokenizer.unk_token_id
             assert reader.fields["tokenizer.ggml.tokens"].contents(tokenizer.unk_token_id) == tokenizer.unk_token
-            # The pinned converter marks the source UNK as CONTROL.
-            types = reader.fields["tokenizer.ggml.token_type"]
-            types.parts[types.data[tokenizer.unk_token_id]][0] = int(TokenType.UNKNOWN)
-            reader.data.flush()
     return language, projector
 
 
@@ -568,6 +564,56 @@ def test_gguf_llava_preformatted_prompt(tiny_gguf_vlm_model):
         repeated = pipe.generate(prompt, images=[image], **options)
         assert repeated.texts == result.texts
         assert repeated.perf_metrics.get_num_input_tokens() == expected_count
+
+
+@pytest.mark.parametrize("tiny_gguf_vlm_model", ["llava"], indirect=True)
+@pytest.mark.parametrize("metadata_case", ["fallback", "out-of-range", "missing"])
+def test_gguf_llava_unknown_token_metadata(tiny_gguf_vlm_model, metadata_case):
+    from gguf import GGUFReader, GGUFWriter, TokenType
+
+    language, projector = tiny_gguf_vlm_model
+    reader = GGUFReader(language)
+    modified = language.with_name(f"model-unknown-{metadata_case}.gguf")
+    writer = GGUFWriter(modified, reader.fields["general.architecture"].contents(), endianess=reader.endianess)
+    for name, field in reader.fields.items():
+        if name.startswith("GGUF.") or name in {"general.architecture", "tokenizer.ggml.unknown_token_id"}:
+            continue
+        value = field.contents()
+        if name == "tokenizer.ggml.token_type" and metadata_case == "fallback":
+            value[reader.fields["tokenizer.ggml.unknown_token_id"].contents()] = int(TokenType.UNKNOWN)
+        writer.add_key_value(name, value, field.types[0], field.types[1] if len(field.types) > 1 else None)
+    if metadata_case == "out-of-range":
+        writer.add_unk_token_id(len(reader.fields["tokenizer.ggml.tokens"].contents()))
+    for tensor in reader.tensors:
+        writer.add_tensor(tensor.name, tensor.data, raw_dtype=tensor.tensor_type, tensor_endianess=reader.endianess)
+    writer.write_header_to_file()
+    writer.write_kv_data_to_file()
+    writer.write_tensors_to_file()
+    writer.close()
+    options = dict(
+        mmproj_path=str(projector), GGUF_READER="FRONTEND", ATTENTION_BACKEND="SDPA", **reference_properties()
+    )
+    if metadata_case != "fallback":
+        error = (
+            "unknown_token_id is outside the vocabulary"
+            if metadata_case == "out-of-range"
+            else "requires an unknown token"
+        )
+        with pytest.raises(RuntimeError, match=error):
+            genai.VLMPipeline(modified, "CPU", **options)
+        return
+    pipeline = genai.VLMPipeline(modified, "CPU", **options)
+    image = ov.Tensor(np.random.default_rng(0).integers(0, 256, (1, 24, 24, 3), dtype=np.uint8))
+    result = pipeline.generate(
+        "USER: <image>Describe. ASSISTANT:",
+        images=[image],
+        max_new_tokens=2,
+        do_sample=False,
+        ignore_eos=True,
+        apply_chat_template=False,
+    )
+    assert result.perf_metrics.get_num_input_tokens() > 225
+    assert result.perf_metrics.get_num_generated_tokens() == 2
 
 
 @pytest.mark.parametrize("tiny_gguf_vlm_model", ["internvl2"], indirect=True)

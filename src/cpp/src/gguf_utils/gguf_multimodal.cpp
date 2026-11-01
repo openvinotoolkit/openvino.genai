@@ -267,11 +267,20 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     const auto projector = meta.text("vision.projector");
     int64_t image_padding_id = -1;
     if (projector == "mlp") {
-        const auto token_types = tokenizer_metadata.at("token_type").as<ov::Tensor>();
-        const auto end = token_types.data<const int32_t>() + token_types.get_size();
-        const auto unknown = std::find(token_types.data<const int32_t>(), end, 2);
-        OPENVINO_ASSERT(unknown != end, "GGUF LLaVA requires an unknown token for image padding");
-        image_padding_id = unknown - token_types.data<const int32_t>();
+        if (const auto it = tokenizer_metadata.find("unknown_token_id"); it != tokenizer_metadata.end()) {
+            const auto unknown = it->second.as<ov::Tensor>();
+            OPENVINO_ASSERT(unknown.get_element_type() == ov::element::u32 && unknown.get_size() == 1,
+                            "GGUF LLaVA unknown_token_id must be a single uint32 value");
+            image_padding_id = unknown.data<const uint32_t>()[0];
+            OPENVINO_ASSERT(image_padding_id < tokenizer_metadata.at("tokens").as<std::vector<std::string>>().size(),
+                            "GGUF LLaVA unknown_token_id is outside the vocabulary");
+        } else {
+            const auto token_types = tokenizer_metadata.at("token_type").as<ov::Tensor>();
+            const auto end = token_types.data<const int32_t>() + token_types.get_size();
+            const auto unknown = std::find(token_types.data<const int32_t>(), end, 2);
+            OPENVINO_ASSERT(unknown != end, "GGUF LLaVA requires an unknown token for image padding");
+            image_padding_id = unknown - token_types.data<const int32_t>();
+        }
     }
     if (projector == "internvl" && !tokenizer_metadata.count("eos_token_id")) {
         OPENVINO_ASSERT(!result.stop_token_ids.empty(), "GGUF InternVL requires an EOS or end-of-generation token");
