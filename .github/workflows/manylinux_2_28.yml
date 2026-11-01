@@ -24,7 +24,9 @@ env:
   SCCACHE_SERVER_PORT: 35555
   SCCACHE_CACHE_SIZE: 30G
   SCCACHE_AZURE_KEY_PREFIX: genai/manylinux_2_28
-  HF_HOME: /mount/caches/huggingface/lin
+  HF_ENDPOINT: http://hf-proxy.hf-proxy.svc.cluster.local
+  HF_HUB_DISABLE_XET: "1"
+  HF_HOME: ${{ runner.temp }}/hf-home
   # mount directory leads to issue with load_dataset lock file. It's either cannot be released or there is a deadlock. Ticket: 181288
   HF_DATASETS_CACHE: /tmp/.hf_cache/datasets/
   OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/
@@ -84,7 +86,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-medium
+    runs-on: aks-linux-medium-st
     container:
       image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
       volumes:
@@ -128,7 +130,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-16gb
+    runs-on: aks-linux-4-cores-16gb-st
     container:
       image: openvinogithubactions.azurecr.io/ov_build/manylinux_2_28:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -245,7 +247,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-16gb
+    runs-on: aks-linux-4-cores-16gb-st
     container:
       image: openvinogithubactions.azurecr.io/ov_build/manylinux_2_28:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -304,7 +306,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-8-cores-16gb
+    runs-on: aks-linux-8-cores-16gb-st
     container:
       image: openvinogithubactions.azurecr.io/ov_build/manylinux_2_28:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -386,7 +388,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-16gb
+    runs-on: aks-linux-4-cores-16gb-st
     container:
       image: openvinogithubactions.azurecr.io/ov_build/manylinux_2_28:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -449,7 +451,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-medium
+    runs-on: aks-linux-medium-st
     container:
       image: openvinogithubactions.azurecr.io/library/python:3.12-slim
       volumes:
@@ -546,7 +548,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-8-cores-32gb
+    runs-on: aks-linux-8-cores-32gb-st
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -608,7 +610,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-16gb
+    runs-on: aks-linux-4-cores-16gb-st
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
