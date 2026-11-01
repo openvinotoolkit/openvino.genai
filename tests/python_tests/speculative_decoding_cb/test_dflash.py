@@ -18,12 +18,15 @@ from test_speculative_decoding import (
     MINICPMV47_DSPARK,
     MINICPMV47_DSPARK_MARKOV_STEP,
     PARITY_PROPERTIES,
+    PROMPTS_4,
     QWEN3_DEEPSPEC,
     QWEN3_DFLASH,
     QWEN3_DSPARK,
     QWEN35_DFLASH,
     SCORE_SKIP,
     VLM_TARGET_PAIRS,
+    _greedy_config,
+    _target_ids,
     model_pair,  # noqa: F401
 )
 from test_vlm_pipeline import (
@@ -107,6 +110,23 @@ def test_vlm_prefix_caching_without_explicit_assistant_tokens(model_pair, cat_te
     )
 
     assert run(pipe) == reference
+
+
+@pytest.mark.parametrize("model_pair", [QWEN3_DFLASH], indirect=True)
+def test_draft_runs_on_paged_attention_only(model_pair):
+    config = _greedy_config()
+    prompts = PROMPTS_4[:1]
+    reference = _target_ids(model_pair, prompts, config)
+
+    def pipeline(attention_backend: str):
+        draft = draft_model(model_pair.draft_path, "CPU", ATTENTION_BACKEND=attention_backend, **PARITY_PROPERTIES)
+        return ContinuousBatchingPipeline(
+            model_pair.target_path, SchedulerConfig(), "CPU", {**PARITY_PROPERTIES, "draft_model": draft}
+        )
+
+    assert [pipeline("PA").generate(prompts, [config])[0].m_generation_ids] == reference
+    with pytest.raises(RuntimeError, match="PagedAttention only"):
+        pipeline("SDPA")
 
 
 @pytest.mark.parametrize("model_pair", [QWEN3_DSPARK, MINICPMV47_DSPARK], indirect=True)
