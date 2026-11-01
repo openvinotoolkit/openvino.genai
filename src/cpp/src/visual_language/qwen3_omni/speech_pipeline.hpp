@@ -39,6 +39,8 @@ struct Qwen3OmniSpeechConfig {
     int64_t image_token_id = -1;
     int64_t video_token_id = -1;
     size_t num_code_groups = 16;
+    /// Waveform samples one codec frame decodes to, once past the code2wav warmup.
+    size_t code2wav_samples_per_frame = 1920;
     size_t talker_hidden_size = 1024;
     std::map<std::string, int64_t> speaker_ids;
 
@@ -211,6 +213,17 @@ private:
 
     /// @brief Convert codec codes to waveform.
     ov::Tensor codes_to_wav(const ov::Tensor& codes);
+
+    /// @brief Stack frames [begin, end) of codes into m_stack_codes_buf.
+    /// @return m_stack_codes_buf with shape [1, num_code_groups, end - begin].
+    ov::Tensor stack_codes_range(const std::vector<std::vector<int64_t>>& codes, size_t begin, size_t end);
+
+    /// @brief Convert frames [begin, end) of codes to waveform for one streamed chunk.
+    /// @param left_context_frames Up to this many frames before begin are decoded as context and then dropped.
+    ov::Tensor decode_chunk(const std::vector<std::vector<int64_t>>& codes,
+                            size_t begin,
+                            size_t end,
+                            size_t left_context_frames);
 
     /// @brief Reset talker KV cache state.
     void reset_talker();
