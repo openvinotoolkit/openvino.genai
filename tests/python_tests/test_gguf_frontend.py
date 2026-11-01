@@ -25,6 +25,11 @@ import openvino as ov
 import openvino_genai as genai
 
 from test_gguf_generated import llama_reference_tools
+from test_vlm_pipeline import (
+    VlmModelInfo,
+    run_vlm_pipeline as run_vlm_image_test,
+    run_vlm_start_chat_vs_chat_history as run_vlm_chat_test,
+)
 
 from utils.comparation import compare_generation_results
 from utils.constants import extra_generate_kwargs, get_default_llm_properties
@@ -428,6 +433,20 @@ def tiny_gguf_vlm_model(request, llama_reference_tools, tmp_path_factory):
     return language, projector
 
 
+@pytest.fixture
+def gguf_vlm_pipelines(tiny_gguf_vlm_model):
+    language, projector = tiny_gguf_vlm_model
+    name, _ = TINY_GGUF_VLM_MODELS[language.parent.name]
+    model_id = "optimum-intel-internal-testing/tiny-random-" + name
+    pipelines = []
+    for backend in ["SDPA", "PA"]:
+        pipeline = genai.VLMPipeline(
+            language, "CPU", mmproj_path=str(projector), ATTENTION_BACKEND=backend, **reference_properties()
+        )
+        pipelines.append(VlmModelInfo(model_id, backend, lambda idx: "", lambda idx: "", 24, pipeline, False))
+    return pipelines
+
+
 @pytest.mark.parametrize(
     "tiny_gguf_vlm_model,media",
     [
@@ -472,53 +491,38 @@ def test_gguf_vlm_projector_layouts(tiny_gguf_vlm_model, backend, media):
     assert pipeline.generate("Describe.", **inputs, **options).texts == result.texts
 
 
-def test_gguf_vlm_attention_backends_and_images(tiny_gguf_vlm_model):
-    language, projector = tiny_gguf_vlm_model
-    properties = reference_properties()
-    pipelines = [
-        genai.VLMPipeline(language, "CPU", mmproj_path=str(projector), ATTENTION_BACKEND=backend, **properties)
-        for backend in ["SDPA", "PA"]
-    ]
+def test_gguf_vlm_attention_backends_and_images(gguf_vlm_pipelines):
     image = ov.Tensor(np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8))
-    config = {"max_new_tokens": 8, "do_sample": False, "ignore_eos": True}
+    config = genai.GenerationConfig(max_new_tokens=8, do_sample=False, ignore_eos=True)
     for images in [[image], [image, image]]:
-        results = [pipe.generate("Describe the image.", images=images, **config) for pipe in pipelines]
+        results = [run_vlm_image_test(info, images, generation_config=config) for info in gguf_vlm_pipelines]
         assert results[0].texts == results[1].texts
-        for pipe, result in zip(pipelines, results):
-            assert pipe.generate("Describe the image.", images=images, **config).texts == result.texts
+        assert [run_vlm_image_test(info, images, generation_config=config).texts for info in gguf_vlm_pipelines] == [
+            r.texts for r in results
+        ]
 
 
 @pytest.mark.parametrize("tiny_gguf_vlm_model", ["llava", "internvl2"], indirect=True)
-def test_gguf_vlm_clip_attention_backends_and_images(tiny_gguf_vlm_model):
-    language, projector = tiny_gguf_vlm_model
-    pipelines = [
-        genai.VLMPipeline(
-            language,
-            "CPU",
-            mmproj_path=str(projector),
-            GGUF_READER="FRONTEND",
-            ATTENTION_BACKEND=backend,
-            **reference_properties(),
-        )
-        for backend in ["SDPA", "PA"]
-    ]
+def test_gguf_vlm_clip_attention_backends_and_images(gguf_vlm_pipelines):
     pixels = np.random.default_rng(0).integers(0, 256, (1, 24, 24, 3), dtype=np.uint8)
     images = [ov.Tensor(pixels), ov.Tensor(np.flip(pixels, axis=2).copy())]
-    options = {"max_new_tokens": 4, "do_sample": False, "ignore_eos": True, "apply_chat_template": False}
+    config = genai.GenerationConfig(max_new_tokens=4, do_sample=False, ignore_eos=True, apply_chat_template=False)
     previous_input_count = 0
     for media in [images[:1], images]:
         prompt = "Describe the images."
-        if language.parent.name == "llava":
+        if gguf_vlm_pipelines[0].model_id.endswith("/tiny-random-llava"):
             prompt = "USER: " + "<image>\n" * len(media) + "Describe the images. ASSISTANT:"
-        results = [pipe.generate(prompt, images=media, **options) for pipe in pipelines]
+        results = [
+            run_vlm_image_test(info, media, prompt=prompt, generation_config=config) for info in gguf_vlm_pipelines
+        ]
         assert results[0].texts == results[1].texts
         input_count = results[0].perf_metrics.get_num_input_tokens()
         assert input_count == results[1].perf_metrics.get_num_input_tokens()
         assert input_count > previous_input_count
         previous_input_count = input_count
-        for pipe, result in zip(pipelines, results):
+        for info, result in zip(gguf_vlm_pipelines, results):
             assert result.perf_metrics.get_num_generated_tokens() == 4
-            repeated = pipe.generate(prompt, images=media, **options)
+            repeated = run_vlm_image_test(info, media, prompt=prompt, generation_config=config)
             assert repeated.texts == result.texts
             assert repeated.perf_metrics.get_num_input_tokens() == input_count
 
@@ -661,40 +665,11 @@ def test_gguf_vlm_rejects_incompatible_reader(tiny_gguf_vlm_model, reader):
         genai.VLMPipeline(language, "CPU", mmproj_path=str(projector), GGUF_READER=reader)
 
 
-@pytest.mark.parametrize("chat_api", ["start_chat", "ChatHistory"])
-def test_gguf_vlm_attention_backends_and_chat(tiny_gguf_vlm_model, chat_api):
-    language, projector = tiny_gguf_vlm_model
-    pipelines = [
-        genai.VLMPipeline(
-            language, "CPU", mmproj_path=str(projector), ATTENTION_BACKEND=backend, **reference_properties()
-        )
-        for backend in ["SDPA", "PA"]
-    ]
+def test_gguf_vlm_attention_backends_and_chat(gguf_vlm_pipelines):
     image = ov.Tensor(np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8))
-    config = {"max_new_tokens": 8, "do_sample": False, "ignore_eos": True}
-    histories = [genai.ChatHistory(), genai.ChatHistory()]
-    if chat_api == "start_chat":
-        for pipe in pipelines:
-            pipe.start_chat()
-    try:
-        for prompt in ["Describe the image.", "What else can you see?"]:
-            if chat_api == "start_chat":
-                results = [pipe.generate(prompt, images=[image], **config) for pipe in pipelines]
-            else:
-                for history in histories:
-                    history.append({"role": "user", "content": prompt})
-                results = [
-                    pipe.generate(history, images=[image], **config) for pipe, history in zip(pipelines, histories)
-                ]
-            assert results[0].perf_metrics.get_num_input_tokens() == results[1].perf_metrics.get_num_input_tokens()
-            assert results[0].texts == results[1].texts
-            if chat_api == "ChatHistory":
-                for history, result in zip(histories, results):
-                    history.append({"role": "assistant", "content": result.texts[0]})
-    finally:
-        if chat_api == "start_chat":
-            for pipe in pipelines:
-                pipe.finish_chat()
+    config = genai.GenerationConfig(max_new_tokens=8, do_sample=False, ignore_eos=True)
+    answers = [run_vlm_chat_test(info, [[image], [image]], generation_config=config) for info in gguf_vlm_pipelines]
+    assert answers[0] == answers[1]
 
 
 def test_gguf_vlm_requires_projector_and_cpu(tiny_gguf_vlm_model):

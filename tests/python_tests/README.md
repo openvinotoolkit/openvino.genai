@@ -64,8 +64,9 @@ suite separately retains its model/quantization and native-tokenizer coverage.
 The VLM cases convert pinned tiny Gemma-3, Gemma-4, unified Gemma-4, Qwen3.5,
 Qwen3.5 MoE and Muse Glimmer checkpoints into language/projector GGUF pairs under
 `~/gguf_models/genai_vlm_tests/`. They cover CPU image, video and Gemma-4 audio
-generation with SDPA and PA. Strict xfails track the pending chat and Muse Glimmer
-video fixes linked in the tests.
+generation with SDPA and PA. Image/streaming and chat checks reuse `test_vlm_pipeline.py`
+helpers; these VLM checks cover integration and backend agreement, not Optimum output parity.
+A strict xfail tracks pending Muse Glimmer video handling.
 
 This suite validates GenAI integration rather than standalone frontend translation.
 OpenVINO frontend tests should check graph conversion, operators and metadata handling
