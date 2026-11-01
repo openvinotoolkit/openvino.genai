@@ -3302,3 +3302,73 @@ TEST(TestScheduler, clear_expected_num_scheduled_tokens_restores_default_schedul
     }
     sequence_group->finish_iteration();
 }
+
+// A DFlash draft marks its window [committed rows, window end) for recompute; the scheduler then offers
+// exactly that window, both for a window that crosses the prompt end and after a block is rewound.
+TEST(TestScheduler, dflash_draft_windows_are_scheduled_as_recompute_rows) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.num_kv_blocks = 32;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.max_num_seqs = 4;
+
+    auto make_draft_group = [](uint64_t request_id, size_t prompt_len, size_t generated_len) {
+        std::vector<int64_t> prompt(prompt_len);
+        std::iota(prompt.begin(), prompt.end(), 0);
+        auto group = std::make_shared<SequenceGroup>(request_id,
+                                                     ov::Tensor(ov::element::i64, {prompt_len}, prompt.data()),
+                                                     utils::get_greedy_config());
+        for (size_t i = 0; i < generated_len; ++i) {
+            group->get_running_sequences().front()->append_token(100 + static_cast<int64_t>(i), 0.0f);
+        }
+        return group;
+    };
+    auto set_window = [](const SequenceGroup::Ptr& group, size_t committed_rows, size_t window_rows) {
+        group->update_processed_tokens_num(committed_rows + window_rows);
+        group->preempt_tokens(window_rows);
+    };
+
+    // prompt 8 forwarded together with the seed + 3 mask block
+    auto block_window = make_draft_group(0, 8, 4);
+    set_window(block_window, 0, 12);
+    // the first 4 rows of a 16-token prompt, limited to the rows the target exported
+    auto prefill_window = make_draft_group(1, 16, 0);
+    set_window(prefill_window, 0, 4);
+    auto paused = make_draft_group(2, 8, 1);
+    set_window(paused, 8, 0);
+    paused->pause_generation(true);
+    std::vector<SequenceGroup::Ptr> requests = {block_window, prefill_window, paused};
+
+    ContinuousBatchingScheduler scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    scheduler.set_expected_num_scheduled_tokens(1, 4);
+    auto out = scheduler.schedule(requests);
+
+    EXPECT_EQ(block_window->get_num_scheduled_tokens(), 12);
+    EXPECT_EQ(prefill_window->get_num_scheduled_tokens(), 4);
+    EXPECT_EQ(paused->get_num_scheduled_tokens(), 0);
+    EXPECT_EQ(out.m_total_num_scheduled_tokens, 16);
+    for (const auto& group : requests) {
+        group->finish_iteration();
+    }
+    scheduler.clear_expected_num_scheduled_tokens(1);
+
+    // after validation: 8 committed rows, 2 accepted rows and the next 4-row block (6 generated tokens)
+    block_window->get_running_sequences().front()->append_token(200, 0.0f);
+    block_window->get_running_sequences().front()->append_token(201, 0.0f);
+    set_window(block_window, 8, 6);
+    prefill_window->pause_generation(true);
+    auto rewound = scheduler.schedule(requests);
+
+    EXPECT_EQ(block_window->get_num_processed_tokens(), 8);
+    EXPECT_EQ(block_window->get_num_scheduled_tokens(), 6);
+    EXPECT_EQ(rewound.m_total_num_scheduled_tokens, 6);
+
+    for (const auto& group : requests) {
+        group->finish_iteration();
+        for (const auto& sequence : group->get_sequences()) {
+            if (scheduler.has_block_table(sequence->get_id())) {
+                scheduler.free_sequence(sequence->get_id());
+            }
+        }
+    }
+}

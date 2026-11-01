@@ -25,6 +25,21 @@ struct MtpDraftUpdatePlan {
 // one base token followed by all draft candidates; removed_draft_tokens is the rejected suffix.
 MtpDraftUpdatePlan make_mtp_draft_update_plan(size_t main_hidden_state_len, size_t removed_draft_tokens);
 
+// One DFlash draft window, [target hidden-state rows ; seed + mask block], planned by the draft update and read
+// back by the draft multistep after the forward.
+struct DFlashDraftWindow {
+    size_t committed_rows = 0;  // draft KV rows already built; the window starts here
+    size_t context_rows = 0;    // new target hidden-state rows to forward
+    size_t block_rows = 0;      // seed + mask rows; 0 when there is no block
+    size_t candidate_rows = 0;  // block rows sampled as candidates
+};
+
+// Plans the DFlash draft window of a request whose tokens match the target's. The draft request's processed
+// length is its committed rows, and the target has hidden states up to target_processed_tokens.
+DFlashDraftWindow make_dflash_draft_window(const SequenceGroup& request,
+                                           size_t target_processed_tokens,
+                                           size_t candidate_position_offset);
+
 }  // namespace detail
 
 class ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
@@ -70,6 +85,53 @@ public:
     // Rewinds an awaiting request to an earlier processed-prefix position and synchronizes
     // physical block tables with the updated logical context.
     bool rewind_awaiting_request_prefix(uint64_t request_id, size_t processed_tokens);
+
+    bool is_prefix_caching_enabled() const {
+        return m_scheduler->get_config().enable_prefix_caching;
+    }
+
+    // Returns the awaiting request with the given id, or nullptr if there is none.
+    SequenceGroup::Ptr find_awaiting_request(uint64_t request_id) {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        const auto found = std::find_if(m_awaiting_requests.begin(), m_awaiting_requests.end(),
+                                        [request_id](const SequenceGroup::Ptr& request) {
+                                            return request->get_request_id() == request_id;
+                                        });
+        return found == m_awaiting_requests.end() ? nullptr : *found;
+    }
+
+    void discard_awaiting_request(uint64_t request_id) {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        for (auto request = m_awaiting_requests.begin(); request != m_awaiting_requests.end(); ++request) {
+            if ((*request)->get_request_id() != request_id) {
+                continue;
+            }
+            for (const auto& sequence : (*request)->get_sequences()) {
+                m_scheduler->free_sequence(sequence->get_id());
+            }
+            m_awaiting_requests.erase(request);
+            return;
+        }
+    }
+
+    size_t restore_awaiting_prefix(uint64_t request_id, size_t ceiling) {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        for (const auto& group : m_awaiting_requests) {
+            if (group->get_request_id() != request_id) {
+                continue;
+            }
+            for (const auto& sequence : group->get_sequences()) {
+                m_scheduler->free_sequence(sequence->get_id());
+            }
+            group->update_processed_tokens_num(0);
+            if (m_scheduler->get_config().enable_prefix_caching) {
+                m_scheduler->restore_cached_blocks(group, ceiling);
+            }
+            group->set_num_prefix_cache_hit_tokens(group->get_num_processed_tokens());
+            return group->get_num_processed_tokens();
+        }
+        OPENVINO_THROW("Prefix restore requires an awaiting request: ", request_id);
+    }
 
     UpdateRequestResult init_request_by_candidate(uint64_t request_id, const GeneratedSequences& candidates);
 
@@ -135,6 +197,11 @@ protected:
     }
     bool eagle_mode_enabled = false;
     bool mtp_mode_enabled = false;
+    bool dflash_mode_enabled = false;
+    int64_t m_dflash_mask_token_id = -1;
+    size_t m_dflash_candidate_position_offset = 1;
+    // Windows planned by the DFlash draft update for the next draft forward, by sequence id.
+    std::map<uint64_t, detail::DFlashDraftWindow> m_dflash_draft_windows;
 };
 
 class ContinuousBatchingPipeline::ContinuousBatchingForEagle3DecodingImpl
@@ -263,43 +330,6 @@ class ContinuousBatchingPipeline::ContinuousBatchingForMtpDecodingImpl
 public:
     ContinuousBatchingForMtpDecodingImpl() = default;
 
-    bool is_prefix_caching_enabled() const {
-        return m_scheduler->get_config().enable_prefix_caching;
-    }
-
-    void discard_awaiting_request(uint64_t request_id) {
-        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
-        for (auto request = m_awaiting_requests.begin(); request != m_awaiting_requests.end(); ++request) {
-            if ((*request)->get_request_id() != request_id) {
-                continue;
-            }
-            for (const auto& sequence : (*request)->get_sequences()) {
-                m_scheduler->free_sequence(sequence->get_id());
-            }
-            m_awaiting_requests.erase(request);
-            return;
-        }
-    }
-
-    size_t restore_awaiting_prefix(uint64_t request_id, size_t ceiling) {
-        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
-        for (const auto& group : m_awaiting_requests) {
-            if (group->get_request_id() != request_id) {
-                continue;
-            }
-            for (const auto& sequence : group->get_sequences()) {
-                m_scheduler->free_sequence(sequence->get_id());
-            }
-            group->update_processed_tokens_num(0);
-            if (m_scheduler->get_config().enable_prefix_caching) {
-                m_scheduler->restore_cached_blocks(group, ceiling);
-            }
-            group->set_num_prefix_cache_hit_tokens(group->get_num_processed_tokens());
-            return group->get_num_processed_tokens();
-        }
-        OPENVINO_THROW("MTP prefix restore requires an awaiting request: ", request_id);
-    }
-
     bool supports_embedding_prefix_verification() const override {
         return true;
     }
@@ -348,6 +378,87 @@ protected:
         OPENVINO_ASSERT(!scheduler_config.enable_prefix_caching || is_validation_mode_enabled ||
                     !m_scheduler->has_linear_attention_cache(),
                 "Prefix-enabled MTP draft pipelines with linear-attention state are not supported");
+    }
+};
+
+// Continuous-batching pipeline for both DFlash models. The validating main pipeline publishes its
+// processed length with the exported hidden states. The draft pipeline forwards each request's window
+// once per step; its logic is in ContinuousBatchingForSpeculativeDecodingImpl::update_request and multistep
+// behind dflash_mode_enabled.
+class ContinuousBatchingPipeline::ContinuousBatchingForDFlashDecodingImpl
+    : public ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl {
+public:
+    ContinuousBatchingForDFlashDecodingImpl() = default;
+
+    ContinuousBatchingForDFlashDecodingImpl(const std::shared_ptr<ov::Model>& model,
+                                            const Tokenizer& tokenizer,
+                                            const GenerationConfig& generation_config,
+                                            const SchedulerConfig& scheduler_config,
+                                            const std::string& device,
+                                            const ov::AnyMap& plugin_config,
+                                            bool is_validation_mode_enabled,
+                                            int64_t mask_token_id = -1,
+                                            size_t candidate_position_offset = 1)
+        : ContinuousBatchingForSpeculativeDecodingImpl(model,
+                                                       tokenizer,
+                                                       generation_config,
+                                                       scheduler_config,
+                                                       device,
+                                                       plugin_config,
+                                                       is_validation_mode_enabled) {
+        dflash_mode_enabled = true;
+        if (!is_validation_mode_enabled) {
+            enable_dflash_draft(mask_token_id, candidate_position_offset);
+        }
+    }
+
+    ContinuousBatchingForDFlashDecodingImpl(const std::shared_ptr<ov::Model>& model,
+                                            std::shared_ptr<InputsEmbedder> inputs_embedder,
+                                            const Tokenizer& tokenizer,
+                                            const GenerationConfig& generation_config,
+                                            const SchedulerConfig& scheduler_config,
+                                            const std::string& device,
+                                            const ov::AnyMap& plugin_config,
+                                            bool is_validation_mode_enabled,
+                                            int64_t mask_token_id = -1,
+                                            size_t candidate_position_offset = 1)
+        : ContinuousBatchingForSpeculativeDecodingImpl(model,
+                                                       std::move(inputs_embedder),
+                                                       tokenizer,
+                                                       generation_config,
+                                                       scheduler_config,
+                                                       device,
+                                                       plugin_config,
+                                                       is_validation_mode_enabled) {
+        dflash_mode_enabled = true;
+        if (!is_validation_mode_enabled) {
+            // The draft is a text model: sequential positions instead of the target's M-RoPE positions.
+            m_model_runner->enable_mtp_draft_positions(true);
+            enable_dflash_draft(mask_token_id, candidate_position_offset);
+        }
+    }
+
+    bool supports_embedding_prefix_verification() const override {
+        return true;
+    }
+
+    // Only prompt blocks are published: the draft KV past the prompt holds mask and rewound block rows.
+    // DFlashDecodingImpl restores main and draft to a common prefix after both requests are added.
+    void initialize_prefix_cache(const SequenceGroup::Ptr& group) override {
+        for (const auto& sequence : group->get_sequences()) {
+            sequence->set_prefix_cache_policy(group->get_prompt_len());
+        }
+    }
+
+protected:
+    bool _can_publish_kv_only_completed_blocks() const override {
+        return true;
+    }
+
+    void enable_dflash_draft(int64_t mask_token_id, size_t candidate_position_offset) {
+        m_dflash_mask_token_id = mask_token_id;
+        m_dflash_candidate_position_offset = candidate_position_offset;
+        m_model_runner->enable_dflash_draft(candidate_position_offset);
     }
 };
 }
