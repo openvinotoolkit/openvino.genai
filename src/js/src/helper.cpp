@@ -4,6 +4,7 @@
 #include "include/helper.hpp"
 
 #include <cmath>
+#include <limits>
 #include <typeindex>
 
 #include "include/addon.hpp"
@@ -26,6 +27,17 @@ bool is_external_tensor_object(const Napi::Value& value) {
     Napi::Value marker = obj.Get("__getExternalTensor");
     return marker.IsFunction();
 }
+
+uint32_t js_to_cpp_uint32_checked(const Napi::Env& env, const Napi::Value& value, const char* field_name) {
+    const size_t parsed = js_to_cpp<size_t>(env, value);
+    OPENVINO_ASSERT(parsed <= static_cast<size_t>(std::numeric_limits<uint32_t>::max()),
+                    field_name,
+                    " must be <= ",
+                    std::numeric_limits<uint32_t>::max(),
+                    ".");
+    return static_cast<uint32_t>(parsed);
+}
+
 constexpr const char* JS_SCHEDULER_CONFIG_KEY = "schedulerConfig";
 constexpr const char* CPP_SCHEDULER_CONFIG_KEY = "scheduler_config";
 constexpr const char* POOLING_TYPE_KEY = "pooling_type";
@@ -806,10 +818,10 @@ ov::genai::SpeechGenerationConfig js_to_cpp<ov::genai::SpeechGenerationConfig>(c
     const auto object = value.As<Napi::Object>();
 
     if (const Napi::Value field = object.Get("max_phoneme_length"); !field.IsUndefined() && !field.IsNull()) {
-        config.max_phoneme_length = static_cast<uint32_t>(js_to_cpp<size_t>(env, field));
+        config.max_phoneme_length = js_to_cpp_uint32_checked(env, field, "SpeechGenerationConfig.max_phoneme_length");
     }
     if (const Napi::Value field = object.Get("subtalker_top_k"); !field.IsUndefined() && !field.IsNull()) {
-        config.subtalker_top_k = static_cast<uint32_t>(js_to_cpp<size_t>(env, field));
+        config.subtalker_top_k = js_to_cpp_uint32_checked(env, field, "SpeechGenerationConfig.subtalker_top_k");
     }
     if (const Napi::Value field = object.Get("phonemize_fallback_model_dir"); !field.IsUndefined() && !field.IsNull()) {
         config.phonemize_fallback_model_dir = js_to_cpp<std::filesystem::path>(env, field);
