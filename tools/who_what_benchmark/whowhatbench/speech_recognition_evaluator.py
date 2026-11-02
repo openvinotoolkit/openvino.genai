@@ -186,16 +186,27 @@ class FunASROptimumTranscriber:
 
 
 class FunASRGenAITranscriber:
-    def __init__(self, pipeline: Any, language: str = "") -> None:
+    def __init__(self, pipeline: Any, language: str = "", model_type: str = "") -> None:
         self.pipeline = pipeline
         self.language = language
+        self.is_sense_voice = model_type == "sense_voice"
 
     def transcribe(self, audio, max_new_tokens: int) -> str:
         generation_kwargs = {"max_new_tokens": max_new_tokens}
         if self.language:
             generation_kwargs["language"] = self.language
+        if self.is_sense_voice:
+            generation_kwargs["use_itn"] = False
         result = self.pipeline.generate(np.asarray(audio, dtype=np.float32).tolist(), **generation_kwargs)
-        return result.texts[0].strip()
+        text = result.texts[0].strip()
+        if not self.is_sense_voice:
+            return text
+
+        metadata = result.metadata
+        language = result.languages[0]
+        emotion, event = metadata[0]["emotion"], metadata[0]["event"]
+        # use_itn=False selects <|woitn|>.
+        return f"<|{language}|><|{emotion}|><|{event}|><|woitn|>{text}"
 
 
 def _get_asr_model_type(model_id: str) -> str:
@@ -236,7 +247,7 @@ class ASRGenAITranscriber:
             import openvino_genai
 
             pipeline = openvino_genai.ASRPipeline(str(model_id), device.upper(), **(ov_config or {}))
-            return FunASRGenAITranscriber(pipeline, language or "en")
+            return FunASRGenAITranscriber(pipeline, language or "en", model_type)
         if model_type in AUDIO_VLM_MODEL_TYPES:
             raise ValueError("Gemma4 audio input is not yet supported by the OpenVINO GenAI backend")
 
