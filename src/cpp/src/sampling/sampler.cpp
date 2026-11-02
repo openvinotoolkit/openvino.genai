@@ -1659,7 +1659,8 @@ SequenceGroupSamplingInfo Sampler::_sample_block_from_sequence_group(SequenceGro
                                                                      RequestSamplerContext& context) {
     SequenceGroupSamplingInfo sg_sampling_info;
     const ov::genai::GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
-    OPENVINO_ASSERT(sampling_params.is_greedy_decoding(), "The DFlash draft supports greedy decoding only.");
+    OPENVINO_ASSERT(sampling_params.is_greedy_decoding() || sampling_params.is_multinomial(),
+                    "Block sampling supports greedy and multinomial decoding only.");
     std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
     OPENVINO_ASSERT(running_sequences.size() == 1);
     Sequence::Ptr sequence = running_sequences.front();
@@ -1680,11 +1681,18 @@ SequenceGroupSamplingInfo Sampler::_sample_block_from_sequence_group(SequenceGro
     const size_t num_candidates =
         max_new_tokens - 1 > generated_len ? std::min(num_gathered_rows, max_new_tokens - 1 - generated_len) : 0;
     LogitProcessor& logit_processor = context.logit_processor;
+    const bool is_draft_proposal_needed = m_collect_draft_proposals && sampling_params.is_multinomial();
     for (size_t candidate = 0; candidate < num_candidates; ++candidate) {
         auto logit_vector = _get_logit_vector(sequence_group_logits, 0, num_gathered_rows - 1 - candidate);
         logit_processor.update_generated_len(generated_len + candidate);
         logit_processor.apply(logit_vector);
-        register_new_token(_greedy_sample(logit_vector, sampling_params.logprobs), sequence, logit_processor, true, false);
+        const Token token = sampling_params.is_greedy_decoding()
+                                ? _greedy_sample(logit_vector, sampling_params.logprobs)
+                                : _multinomial_sample(logit_vector, 1, context.rng_engine).front();
+        register_new_token(token, sequence, logit_processor, true, false);
+        if (is_draft_proposal_needed) {
+            sequence->set_draft_proposal(sequence->get_generated_len() - 1, detail::make_draft_proposal(logit_vector));
+        }
     }
     sg_sampling_info.sampler_output.num_generated_tokens = num_candidates;
     return sg_sampling_info;

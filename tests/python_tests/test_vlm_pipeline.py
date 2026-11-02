@@ -3832,6 +3832,21 @@ def test_vlm_dflash_batched_requests_on_linear_attention_target_match_main_only(
     assert results[0].extended_perf_metrics.get_num_draft_tokens() > 0
 
 
+def test_vlm_dflash_sampling_on_linear_attention_target_rejects_prefix_caching(cat_tensor):
+    # With prefix caching, a target with linear-attention state verifies greedy requests only.
+    model_path, draft_model_path = _get_vlm_dflash_model_paths()
+    prefix_config = SchedulerConfig()
+    prefix_config.enable_prefix_caching = True
+    ov_pipe = VLMPipeline(
+        model_path, "CPU", draft_model=draft_model(draft_model_path, "CPU"), scheduler_config=prefix_config
+    )
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=8, do_sample=True)
+    generation_config.num_assistant_tokens = 3
+
+    with pytest.raises(RuntimeError, match="set enable_prefix_caching to false"):
+        ov_pipe.generate(PROMPTS[2], images=[cat_tensor], generation_config=generation_config)
+
+
 def _run_vlm_add_request(pipe, prompt, images, config) -> list[int]:
     handle = pipe.add_request(0, prompt, images=images, generation_config=config)
     while pipe.has_non_finished_requests():

@@ -1449,6 +1449,37 @@ def test_dflash_batched_prompts_with_chunked_prefill_match_main_only(dflash_mode
     assert [result.m_generation_ids for result in results] == reference
 
 
+def test_dflash_sampled_requests_are_reproducible(dflash_model_paths):
+    # The target accepts or replaces every sampled candidate by rejection sampling against the distribution the draft
+    # drew it from; the draws of both follow the request seed.
+    config = _dflash_config()
+    config.do_sample = True
+    config.temperature = 0.8
+    config.top_k = 4
+    config.rng_seed = 3
+
+    def generate():
+        results = _dflash_pipeline(dflash_model_paths).generate(DFLASH_PROMPTS, [config] * len(DFLASH_PROMPTS))
+        assert results[0].extended_perf_metrics.get_num_draft_tokens() > 0
+        return [result.m_generation_ids for result in results]
+
+    assert generate() == generate()
+
+
+def test_dflash_greedy_requests_with_penalties_match_main_only(dflash_model_paths):
+    # Penalties can change the argmax, so the draft applies them to its candidate rows, over the token history it
+    # shares with the target.
+    config = _dflash_config()
+    config.repetition_penalty = 1.3
+    config.presence_penalty = 0.2
+    reference = _main_only_ids(dflash_model_paths[0], DFLASH_PROMPTS, config)
+
+    results = _dflash_pipeline(dflash_model_paths).generate(DFLASH_PROMPTS, [config] * len(DFLASH_PROMPTS))
+
+    assert [result.m_generation_ids for result in results] == reference
+    assert results[0].extended_perf_metrics.get_num_draft_tokens() > 0
+
+
 @pytest.mark.parametrize("dynamic_split_fuse", [True, False])
 def test_dflash_staggered_requests_with_mixed_assistant_tokens(dflash_model_paths, dynamic_split_fuse):
     # num_assistant_tokens=0 runs the request on the target alone
