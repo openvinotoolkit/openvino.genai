@@ -21,6 +21,12 @@ Install [../../export-requirements.txt](../../export-requirements.txt) if model 
 pip install -r ../../export-requirements.txt
 ```
 
+Some newer models may require the latest Optimum Intel. If needed, run:
+
+```sh
+pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
+```
+
 ### For Text-to-Video
 
 ```sh
@@ -34,8 +40,6 @@ optimum-cli export openvino --model Lightricks/LTX-Video --task text-to-video --
 Export the model for the image-to-video pipeline:
 
 ```sh
-# Some newer models may require the latest Optimum Intel:
-# pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
 optimum-cli export openvino --model Lightricks/LTX-Video --weight-format fp32 ltx_video_ov_i2v/FP32
 ```
 

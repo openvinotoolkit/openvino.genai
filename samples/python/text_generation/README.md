@@ -15,8 +15,12 @@ Install [../../export-requirements.txt](../../export-requirements.txt) if model 
 
 ```sh
 pip install -r ../../export-requirements.txt
-# Some newer models may require the latest Optimum Intel:
-# pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
+```
+
+Some newer models may require the latest Optimum Intel. If needed, run:
+
+```sh
+pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
 ```
 
 Then, run the export with Optimum CLI:

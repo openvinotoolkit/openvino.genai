@@ -36,6 +36,12 @@ This folder contains Python examples for `openvino_genai.Text2SpeechPipeline`:
 
     `pip install -r ../../export-requirements.txt`
 
+    Some newer models may require the latest Optimum Intel. If needed, run:
+
+    ```sh
+    pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
+    ```
+
 - Runtime deps:
 
     `pip install -r ../../deployment-requirements.txt`
@@ -54,7 +60,6 @@ Create a speaker embedding file (SpeechT5-specific):
 
 ## Kokoro setup
 ```sh
-pip install -r ../../export-requirements.txt
 pip install kokoro
 optimum-cli export openvino -m hexgrad/Kokoro-82M ov_Kokoro-82M --trust-remote-code
 ```

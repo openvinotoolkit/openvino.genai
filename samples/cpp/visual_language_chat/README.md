@@ -17,8 +17,17 @@ It's not required to install [../../export-requirements.txt](../../export-requir
 
 ```sh
 pip install -r ../../requirements.txt
-# Some newer models may require the latest Optimum Intel:
-# pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
+```
+
+Some newer models may require the latest Optimum Intel. If needed, run:
+
+```sh
+pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
+```
+
+Then, run the export with Optimum CLI:
+
+```sh
 optimum-cli export openvino --model Qwen/Qwen3-VL-2B-Instruct --trust-remote-code Qwen3-VL-2B-Instruct
 ```
 

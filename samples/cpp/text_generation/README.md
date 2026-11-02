@@ -14,8 +14,17 @@ There are also Jupyter notebooks for some samples. You can find links to them in
 Install [../../export-requirements.txt](../../export-requirements.txt) if model conversion is required.
 ```sh
 pip install -r ../../export-requirements.txt
-# Some newer models may require the latest Optimum Intel:
-# pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
+```
+
+Some newer models may require the latest Optimum Intel. If needed, run:
+
+```sh
+pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
+```
+
+Then, run the export with Optimum CLI:
+
+```sh
 optimum-cli export openvino --model <model> <output_folder>
 ```
 If a converted model in OpenVINO IR format is already available in the collection of [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) on Hugging Face, it can be downloaded directly via hf.
