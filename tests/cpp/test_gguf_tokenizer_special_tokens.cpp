@@ -16,6 +16,7 @@
 #include "gguf_utils/gguf_tokenizer.hpp"
 #include "sampling/sampler.hpp"
 #include "visual_language/clip.hpp"
+#include "visual_language/llava/classes.hpp"
 
 namespace {
 ov::genai::GGUFTokenizerParameters sentencepiece_config() {
@@ -307,6 +308,33 @@ TEST(GGUFMultimodal, PreformattedChatDoesNotDuplicateSpecialTokens) {
     embedder.finish_chat();
     embedder.set_prompt_formatting(PromptFormatting::NeedsTemplate);
     EXPECT_EQ(encode("a"), expected);
+}
+
+TEST(GGUFMultimodal, LlavaUnknownTextTokensRemainTextEmbeddings) {
+    using namespace ov::genai;
+    auto tokenizer = GGUFTokenizer(combining_marks_config("gpt2"));
+    auto models = gemma4_models();
+    models.config.model_type = VLMModelType::LLAVA;
+    models.config.image_token_id = 6;
+    InputsEmbedderLLaVA embedder(models, tokenizer, "CPU", {});
+    embedder.set_prompt_formatting(PromptFormatting::Raw);
+    ov::Tensor pixels(ov::element::f32, {1, 2, 4});
+    std::fill_n(pixels.data<float>(), pixels.get_size(), 9.f);
+    const std::vector<EncodedImage> images{{pixels, {1, 2}}};
+    const auto normalized = embedder.normalize_prompt("x<image>x", 0, images);
+    VLMPerfMetrics metrics;
+    const auto merged =
+        embedder.get_inputs_embeds(normalized.unified_prompt, images, metrics, true, normalized.images_sequence);
+    const auto prefix = tokenizer.encode("x", add_special_tokens(true)).input_ids;
+    const auto suffix = tokenizer.encode("\nx", add_special_tokens(false)).input_ids;
+    ASSERT_EQ(prefix.data<const int64_t>()[prefix.get_size() - 1], 6);
+    ASSERT_EQ(suffix.data<const int64_t>()[suffix.get_size() - 1], 6);
+    ASSERT_EQ(merged.get_shape(), (ov::Shape{1, prefix.get_size() + 2 + suffix.get_size(), 4}));
+    for (size_t token = 0; token < merged.get_shape()[1]; ++token) {
+        const float expected = token >= prefix.get_size() && token < prefix.get_size() + 2 ? 9.f : .25f;
+        for (size_t component = 0; component < 4; ++component)
+            EXPECT_FLOAT_EQ(merged.data<const float>()[token * 4 + component], expected);
+    }
 }
 
 TEST(GGUFMultimodal, AudioAdapterReusesGemma4Encoders) {

@@ -33,6 +33,7 @@ from test_vlm_pipeline import (
 
 from utils.comparation import compare_generation_results
 from utils.constants import extra_generate_kwargs, get_default_llm_properties
+from utils.custom_op import get_extension_lib_path
 from utils.hugging_face import (
     OVConvertedModelSchema,
     convert_models,
@@ -487,6 +488,43 @@ def test_gguf_vlm_attention_backends_and_images(gguf_vlm_pipelines):
         assert [run_vlm_image_test(info, images, generation_config=config).texts for info in gguf_vlm_pipelines] == [
             r.texts for r in results
         ]
+
+
+@pytest.mark.parametrize(
+    "pipeline_class,with_tokenizer",
+    [
+        (pipeline, with_tokenizer)
+        for pipeline in [genai.LLMPipeline, genai.ContinuousBatchingPipeline, genai.VLMPipeline]
+        for with_tokenizer in ([False] if pipeline == genai.VLMPipeline else [False, True])
+    ],
+)
+def test_gguf_frontend_extensions(tiny_gguf_vlm_model, pipeline_class, with_tokenizer):
+    language, projector = tiny_gguf_vlm_model
+    args = [str(language)]
+    if with_tokenizer:
+        args.append(genai.Tokenizer(language))
+    if pipeline_class == genai.ContinuousBatchingPipeline:
+        args.append(genai.SchedulerConfig())
+    args.append("CPU")
+    properties = {"GGUF_READER": "FRONTEND", "extensions": [get_extension_lib_path()]}
+    if pipeline_class == genai.VLMPipeline:
+        properties["mmproj_path"] = str(projector)
+    with pytest.raises(RuntimeError, match="GGUF frontend extension was invoked"):
+        if pipeline_class == genai.ContinuousBatchingPipeline and not with_tokenizer:
+            pipeline_class(*args, properties)
+        else:
+            pipeline_class(*args, **properties)
+
+
+def test_gguf_projector_frontend_extensions(tiny_gguf_vlm_model):
+    language, projector = tiny_gguf_vlm_model
+    with pytest.raises(RuntimeError, match="GGUF projector frontend extension was invoked"):
+        genai.VLMPipeline(
+            language,
+            "CPU",
+            mmproj_path=str(projector),
+            extensions=[get_extension_lib_path("openvino_gguf_projector_test_extension")],
+        )
 
 
 @pytest.mark.parametrize("tiny_gguf_vlm_model", ["llava", "internvl2"], indirect=True)

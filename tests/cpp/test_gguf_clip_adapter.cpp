@@ -61,3 +61,22 @@ TEST(GGUFClipAdapter, RejectsUnsupportedNativeInterfacesWithoutChangingSource) {
     EXPECT_EQ(native->get_parameters(), parameters);
     EXPECT_EQ(native->get_results(), results);
 }
+
+TEST(GGUFClipAdapter, ImageSlotsPreserveTextAndTruncatedImageRows) {
+    const std::vector<bool> slots{false, true, true, true, true, false};
+    ov::Tensor first(ov::element::f32, {1, 2, 2}), second(ov::element::f32, {1, 2, 2});
+    for (size_t i = 0; i < 4; ++i) {
+        first.data<float>()[i] = float(i + 1);
+        second.data<float>()[i] = float(i + 5);
+    }
+    const std::vector<float> expected{.25f, .25f, 1, 2, 3, 4, 5, 6, 7, 8, .25f, .25f};
+    for (size_t length : {size_t(6), size_t(4), size_t(2), size_t(1)}) {
+        ov::Tensor text(ov::element::f32, {1, length, 2});
+        std::fill_n(text.data<float>(), text.get_size(), .25f);
+        auto merged = ov::genai::merge_gguf_llava_embeddings(slots, text, {first, second});
+        for (size_t i = 0; i < text.get_size(); ++i) {
+            EXPECT_FLOAT_EQ(merged.data<float>()[i], expected[expected.size() - text.get_size() + i]);
+            EXPECT_FLOAT_EQ(text.data<float>()[i], .25f);
+        }
+    }
+}

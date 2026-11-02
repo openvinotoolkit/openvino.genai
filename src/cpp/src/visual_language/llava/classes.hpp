@@ -54,6 +54,7 @@ protected:
     ov::Tensor apply_chat_template_tokenize(const std::string& prompt, VLMPerfMetrics& metrics) override;
 
     bool m_gguf = false;
+    std::vector<bool> m_gguf_image_slots;
 
     ov::Tensor merge_text_and_image_embeddings_llava(
         const ov::Tensor& input_ids,

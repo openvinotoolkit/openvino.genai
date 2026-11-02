@@ -6,6 +6,9 @@
 #include "visual_language/clip.hpp"
 
 #include "utils.hpp"
+#ifdef ENABLE_GGUF
+#    include "gguf_utils/gguf_clip_adapter.hpp"
+#endif
 
 namespace ov::genai {
 clip_image_f32 preprocess_clip_image_llava(const clip_image_u8& image, const ProcessorConfig& config) {
@@ -137,6 +140,10 @@ ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& unified_pro
         std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
         return inputs_embeds;
     }
+#ifdef ENABLE_GGUF
+    if (m_gguf)
+        return merge_gguf_llava_embeddings(m_gguf_image_slots, text_embeds, image_embeds);
+#endif
     auto start_tokenizer_time = std::chrono::steady_clock::now();
     ov::Tensor encoded_image_token;
     if (!m_gguf)
@@ -150,8 +157,12 @@ ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& unified_pro
 }
 
 ov::Tensor InputsEmbedderLLaVA::apply_chat_template_tokenize(const std::string& prompt, VLMPerfMetrics& metrics) {
-    if (!m_gguf || prompt.find(m_vlm_config.im_start) == std::string::npos)
-        return IInputsEmbedder::apply_chat_template_tokenize(prompt, metrics);
+    if (!m_gguf || prompt.find(m_vlm_config.im_start) == std::string::npos) {
+        auto ids = IInputsEmbedder::apply_chat_template_tokenize(prompt, metrics);
+        if (m_gguf)
+            m_gguf_image_slots.assign(ids.get_size(), false);
+        return ids;
+    }
 
     std::string rendered = prompt;
     if (!m_is_chat_conversation && m_prompt_formatting == PromptFormatting::NeedsTemplate) {
@@ -165,6 +176,7 @@ ov::Tensor InputsEmbedderLLaVA::apply_chat_template_tokenize(const std::string& 
                                  : !m_is_chat_conversation && m_prompt_formatting == PromptFormatting::Raw;
     const auto start = std::chrono::steady_clock::now();
     std::vector<int64_t> tokens;
+    m_gguf_image_slots.clear();
     const auto& marker = m_vlm_config.im_start;
     size_t offset = 0;
     bool first = true;
@@ -176,12 +188,14 @@ ov::Tensor InputsEmbedderLLaVA::apply_chat_template_tokenize(const std::string& 
             tokens.insert(tokens.end(),
                           encoded.data<const int64_t>(),
                           encoded.data<const int64_t>() + encoded.get_size());
+            m_gguf_image_slots.resize(tokens.size(), false);
         }
         first = false;
         if (next == std::string::npos)
             break;
         // Insert image slots directly; the marker is not a vocabulary token.
         tokens.push_back(m_vlm_config.image_token_id);
+        m_gguf_image_slots.push_back(true);
         offset = next + marker.size();
     }
     ov::Tensor ids(ov::element::i64, {1, tokens.size()});
