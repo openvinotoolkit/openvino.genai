@@ -5,20 +5,19 @@
 
 #include <cstddef>
 #include <filesystem>
-#include <memory>
 #include <set>
 #include <string>
 #include <vector>
 
-#include "encoder_decoder/encoder.hpp"
 #include "forced_aligner_config.hpp"
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/runtime/infer_request.hpp"
-#include "whisper/feature_extractor.hpp"
+#include "split/inputs_embedder.hpp"
 
 namespace ov::genai {
 
+/// @brief Qwen3 forced aligner for the audio encoder + text embeddings + language model export.
 class Qwen3ForcedAligner {
 public:
     Qwen3ForcedAligner(const std::filesystem::path& models_path,
@@ -32,13 +31,11 @@ public:
 
 private:
     std::string resolve_language(const std::string& language) const;
-    std::string build_marker_input(const std::vector<std::string>& units, size_t audio_frames) const;
 
-    WhisperFeatureExtractor m_feature_extractor;
-    Tokenizer m_tokenizer;
     Qwen3ForcedAlignerConfig m_config;
-    std::unique_ptr<Qwen3ASREncoder> m_encoder;
-    ov::InferRequest m_decoder;
+    Tokenizer m_tokenizer;
+    InputsEmbedderQwen3ASR m_embedder;
+    ov::InferRequest m_language_model;
 
     std::set<std::string> m_supported_languages;
 };

@@ -13,6 +13,7 @@
     # TODO(CVS-198293): Drop manual dependencies and the commit pin when Qwen supports a Gradio release with Pillow 13.
     python -m pip install --no-deps qwen-asr==0.0.6 "gradio @ git+https://github.com/gradio-app/gradio.git@d6972ed9d1185634cea083e0263839543d5ceb8d"
     python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "qwen3-asr" -m "not qwen3_asr_split_export"
+    python -m pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@d304fb56602d878547c3d416e875c02cfd5e5479"
     python -m pytest -v ./tests/python_tests/test_asr_forced_aligner.py
   timeout: 60
   components:
