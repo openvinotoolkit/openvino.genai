@@ -40,7 +40,12 @@ size_t get_num_samples(const std::vector<ov::genai::AudioChunk>& chunks) {
 namespace ov::genai {
 
 Qwen3ASRPipelineBase::Qwen3ASRPipelineBase(const std::filesystem::path& models_path, const ov::AnyMap& properties)
-    : ASRPipelineImplBase(models_path),
+    : Qwen3ASRPipelineBase(models_path, Tokenizer{models_path}, properties) {}
+
+Qwen3ASRPipelineBase::Qwen3ASRPipelineBase(const std::filesystem::path& models_path,
+                                           const Tokenizer& tokenizer,
+                                           const ov::AnyMap& properties)
+    : ASRPipelineImplBase(models_path, tokenizer),
       m_feature_extractor{models_path / "preprocessor_config.json"},
       m_asr_text_token_id{get_required_token_id(m_tokenizer, "<asr_text>")},
       m_forced_aligner{get_forced_aligner(properties)} {
@@ -50,9 +55,10 @@ Qwen3ASRPipelineBase::Qwen3ASRPipelineBase(const std::filesystem::path& models_p
     m_generation_config.stop_token_ids.insert(151645);
 }
 
-ASRDecodedResults Qwen3ASRPipelineBase::generate(const AudioInputs& audio_inputs,
+ASRDecodedResults Qwen3ASRPipelineBase::generate(const AudiosView& audios,
                                                  const std::optional<ASRGenerationConfig>& generation_config,
                                                  const std::shared_ptr<StreamerBase> streamer) {
+    const std::vector<float>& audio = get_single_audio(audios);
     const auto start_time = std::chrono::steady_clock::now();
 
     const ASRGenerationConfig config = resolve_generation_config(generation_config);
@@ -60,14 +66,6 @@ ASRDecodedResults Qwen3ASRPipelineBase::generate(const AudioInputs& audio_inputs
     ASRDecodedResults results;
     results.perf_metrics.load_time = m_load_time_ms;
     results.perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
-
-    const std::vector<float>& audio = std::visit(
-        ov::genai::utils::overloaded{
-            [](const std::vector<float>& input) -> const std::vector<float>& {
-                return input;
-            },
-        },
-        audio_inputs);
 
     const size_t max_chunk_sec = config.word_timestamps ? MAX_TIMESTAMPED_ASR_INPUT_SECONDS : MAX_ASR_INPUT_SECONDS;
     const std::vector<AudioChunk> chunks =

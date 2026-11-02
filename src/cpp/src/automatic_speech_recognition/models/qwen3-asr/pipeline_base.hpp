@@ -24,12 +24,15 @@ namespace ov::genai {
  */
 class Qwen3ASRPipelineBase : public ASRPipelineImplBase {
 public:
-    ASRDecodedResults generate(const AudioInputs& audio_inputs,
+    ASRDecodedResults generate(const AudiosView& audios,
                                const std::optional<ASRGenerationConfig>& generation_config,
                                const std::shared_ptr<StreamerBase> streamer = nullptr) override;
 
 protected:
     Qwen3ASRPipelineBase(const std::filesystem::path& models_path, const ov::AnyMap& properties);
+    Qwen3ASRPipelineBase(const std::filesystem::path& models_path,
+                         const Tokenizer& tokenizer,
+                         const ov::AnyMap& properties);
 
     /**
      * @brief Transcribe audio chunks. A streamer is passed only for a single chunk.
