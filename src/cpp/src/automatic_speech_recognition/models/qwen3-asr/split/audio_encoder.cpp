@@ -8,6 +8,7 @@
 #include <cstring>
 #include <limits>
 
+#include "automatic_speech_recognition/models/qwen3-asr/audio_chunk.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {
@@ -50,8 +51,11 @@ void AudioEncoderQwen3ASR::validate_audio_input(const ov::Tensor& audio) const {
     }
     OPENVINO_ASSERT(sample_count > m_feature_extractor.n_fft / 2,
                     "Qwen3-ASR audio must contain more than n_fft / 2 samples");
-    OPENVINO_ASSERT(sample_count <= 1200 * m_feature_extractor.sampling_rate,
-                    "Qwen3-ASR audio chunk must not exceed 1200 seconds");
+    constexpr size_t max_audio_seconds = MAX_ASR_INPUT_SECONDS + CHUNK_BOUNDARY_SEARCH_SECONDS;
+    OPENVINO_ASSERT(sample_count <= max_audio_seconds * m_feature_extractor.sampling_rate,
+                    "Qwen3-ASR audio must not exceed ",
+                    max_audio_seconds,
+                    " seconds. Use ASRPipeline to transcribe longer audio.");
     const float* samples = audio.data<const float>();
     OPENVINO_ASSERT(std::all_of(samples,
                                 samples + sample_count,

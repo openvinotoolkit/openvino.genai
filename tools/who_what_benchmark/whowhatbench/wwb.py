@@ -622,6 +622,49 @@ def check_args(args):
 def load_prompts(args):
     if args.dataset is None:
         return None
+    # Allow passing a local CSV file through the same --dataset interface.
+    # This keeps VLM evaluation deterministic and independent of remote dataset
+    # availability. The CSV must contain a "prompts" column and may optionally
+    # contain "images" and "videos" columns (paths or None). Image paths are
+    # resolved relative to the CSV file location when not absolute.
+    dataset_path = Path(args.dataset)
+    if dataset_path.suffix.lower() == ".csv" and dataset_path.is_file():
+        from transformers.image_utils import load_image
+
+        base_dir = dataset_path.resolve().parent
+        df = pd.read_csv(dataset_path)
+        if "prompts" not in df.columns:
+            raise ValueError(
+                f"Local dataset CSV '{dataset_path}' must contain a 'prompts' column, got columns: {list(df.columns)}."
+            )
+
+        def _resolve_media(value):
+            if value is None:
+                return None
+            # pandas represents empty cells as NaN (float)
+            if isinstance(value, float) and pd.isna(value):
+                return None
+            text = str(value).strip()
+            if text == "" or text.lower() == "none":
+                return None
+            path = Path(text)
+            if not path.is_absolute():
+                path = base_dir / path
+            return str(path)
+
+        prompts = list(df["prompts"])
+        if "images" in df.columns:
+            images = [
+                load_image(resolved) if (resolved := _resolve_media(v)) is not None else None for v in df["images"]
+            ]
+        else:
+            images = [None] * len(prompts)
+        if "videos" in df.columns:
+            videos = [_resolve_media(v) for v in df["videos"]]
+        else:
+            videos = [None] * len(prompts)
+
+        return {"prompts": prompts, "images": images, "videos": videos}
 
     dataset_split = "validation"
     if args.split is not None:

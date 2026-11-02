@@ -61,7 +61,7 @@ ContinuousBatchingPipeline::MtpDecodingImpl::MtpDecodingImpl(const ov::genai::Mo
     m_tokenizer = main_model_tokenizer;
     m_inputs_embedder = inputs_embedder;
     m_model_input_type = ModelInputType::EMBEDDINGS;
-    m_vision_registry = std::make_shared<VisionRegistry>();
+    m_embeddings_registry = std::make_shared<EmbeddingsRegistry>();
 
     // PA conversion must precede the MTP lm_head graft.
     bool allow_score_aggregation = true;
@@ -221,7 +221,8 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     std::unordered_map<std::string, ov::Tensor> lm_extra_inputs;
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
-        m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
+        m_inputs_embedder->set_prompt_formatting(
+            sampling_params.apply_chat_template ? PromptFormatting::NeedsTemplate : PromptFormatting::Raw);
         const size_t previous_tokens = m_inputs_embedder->get_cache_state().get_state().size();
         const std::vector<ov::genai::EncodedImage> no_images;
         // add_request() takes no audio. Normalizing with none still rejects an <ov_genai_audio_N> tag,
