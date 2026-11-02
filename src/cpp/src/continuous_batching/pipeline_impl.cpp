@@ -523,13 +523,18 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::restore_sta
             }
             initialize_prefix_cache(restored_group);
             // Like the self-contained format, the restore must be complete: all but the last token have their cache.
-            if (restored_group->get_num_processed_tokens() + 1 != num_positions) {
+            // A snapshot of a lagging speculative draft only guarantees its whole blocks.
+            const size_t computed_len = loaded.kv_entries.empty() ? 0 : loaded.kv_entries.back().content_len;
+            const size_t block_tokens = m_scheduler->get_cache_orchestrator().get_block_size(CacheType::KV_CACHE);
+            const size_t expected_processed =
+                computed_len + 1 == num_positions ? computed_len : computed_len / block_tokens * block_tokens;
+            if (restored_group->get_num_processed_tokens() < expected_processed) {
                 const auto restored_seq_id = restored_group->get_running_sequences()[0]->get_id();
                 if (m_scheduler->has_block_table(restored_seq_id)) {
                     m_scheduler->free_sequence(restored_seq_id);
                 }
                 OPENVINO_THROW("Session snapshot restore recovered only ", restored_group->get_num_processed_tokens(),
-                               " of ", num_positions - 1, " cached positions");
+                               " of ", expected_processed, " cached positions");
             }
             restored_group->set_num_prefix_cache_hit_tokens(restored_group->get_num_processed_tokens());
             m_awaiting_requests.push_back(restored_group);

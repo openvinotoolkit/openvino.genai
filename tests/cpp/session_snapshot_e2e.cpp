@@ -15,6 +15,7 @@
 #include "openvino/genai/cache_eviction.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_config.hpp"
+#include "openvino/genai/llm_pipeline.hpp"
 
 using namespace ov::genai;
 
@@ -863,4 +864,65 @@ TEST(TestSessionSnapshotEndToEnd, PrefixOffloadFormatSaveRefusesWhenTheConfigure
             << error.what();
     }
     EXPECT_FALSE(std::filesystem::exists(snapshot_path)) << "a refused save must not leave a file behind";
+}
+
+// Speculative decoding keeps one pipeline per model, each with its own offload store; both halves are snapshotted.
+// The model doubles as its own draft, which is enough to exercise the main/draft pairing.
+TEST(TestSessionSnapshotEndToEnd, PrefixOffloadFormatSpeculativeDecodingRestoredRequestContinuesIdenticallyToUninterruptedRun) {
+    const char* model_path = std::getenv(MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0') {
+        GTEST_SKIP() << MODEL_PATH_ENV << " is not set, skipping session snapshot end-to-end test.";
+    }
+    ScopedEnv format(SNAPSHOT_FORMAT_ENV, "4");
+
+    const std::string prompt = repeat("The quick brown fox jumps over the lazy dog. ", 10) + " Continue the story:";
+    constexpr size_t TOTAL_NEW_TOKENS = 56;
+    constexpr size_t SAVE_AFTER_TOKENS = 13;
+    const std::string device = session_snapshot_device();
+    auto make_config = [](size_t max_new_tokens) {
+        auto config = make_greedy_config(max_new_tokens);
+        config.num_assistant_tokens = 4;
+        return config;
+    };
+    auto config = make_offload_scheduler_config();
+    config.num_kv_blocks = 0;  // dynamic budget: SD splits a fixed one between the two models
+
+    std::vector<int64_t> baseline_ids;
+    {
+        ContinuousBatchingPipeline pipeline(model_path, config, device, ov::AnyMap{ov::genai::draft_model(model_path, device)});
+        auto handle = pipeline.add_request(90, prompt, make_config(TOTAL_NEW_TOKENS));
+        while (pipeline.has_non_finished_requests()) {
+            pipeline.step();
+        }
+        auto outputs = handle->read_all();
+        ASSERT_FALSE(outputs.empty());
+        baseline_ids = outputs.front().generated_ids;
+    }
+    ASSERT_EQ(baseline_ids.size(), TOTAL_NEW_TOKENS);
+
+    const auto snapshot_path = std::filesystem::temp_directory_path() / "openvino_genai_session_snapshot_v4_sd.bin";
+    ContinuousBatchingPipeline pipeline(model_path, config, device, ov::AnyMap{ov::genai::draft_model(model_path, device)});
+    auto handle = pipeline.add_request(91, prompt, make_config(1000));
+    std::vector<int64_t> generated_so_far;
+    step_until_generated(pipeline, handle, SAVE_AFTER_TOKENS, generated_so_far);
+    ASSERT_GE(generated_so_far.size(), SAVE_AFTER_TOKENS);
+    ASSERT_LT(generated_so_far.size(), TOTAL_NEW_TOKENS);
+    pipeline.save_state(91, snapshot_path.string());
+    handle->stop();
+    while (pipeline.has_non_finished_requests()) {
+        pipeline.step();
+    }
+
+    auto restored = pipeline.restore_state(92, snapshot_path.string(),
+                                           make_config(TOTAL_NEW_TOKENS - generated_so_far.size()));
+    while (pipeline.has_non_finished_requests()) {
+        pipeline.step();
+    }
+    auto outputs = restored->read_all();
+    ASSERT_FALSE(outputs.empty());
+    std::vector<int64_t> stitched_ids = generated_so_far;
+    stitched_ids.insert(stitched_ids.end(), outputs.front().generated_ids.begin(), outputs.front().generated_ids.end());
+    EXPECT_EQ(stitched_ids, baseline_ids) << "resuming a speculative decoding request diverged from the uninterrupted run";
+    std::filesystem::remove(snapshot_path.string() + ".main");
+    std::filesystem::remove(snapshot_path.string() + ".draft");
 }

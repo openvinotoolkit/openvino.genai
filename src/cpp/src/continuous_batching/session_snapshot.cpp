@@ -303,15 +303,18 @@ void save_prefix_offload_format(CacheOrchestrator& orchestrator,
 
     const SnapshotHistory history = capture_history(seq_group, sequence);
     const size_t num_positions = history.num_positions;
-    OPENVINO_ASSERT(seq_group->get_num_processed_tokens() + 1 >= num_positions,
+    OPENVINO_ASSERT(seq_group->get_num_processed_tokens() + 1 >= seq_group->get_prompt_len(),
                     "Session snapshot cannot be saved while the request is still prefilling: ",
-                    seq_group->get_num_processed_tokens(), " of ", num_positions,
-                    " positions have been processed. Step the pipeline until prefill completes first");
+                    seq_group->get_num_processed_tokens(), " of ", seq_group->get_prompt_len(),
+                    " prompt positions have been processed. Step the pipeline until prefill completes first");
 
     auto& kv_manager = static_cast<KVCacheManager&>(orchestrator.get_cache_manager(CacheType::KV_CACHE));
     const size_t block_tokens = orchestrator.get_block_size(CacheType::KV_CACHE);
-    // The last position was only sampled, not forwarded, so its KV does not exist.
-    const size_t computed_len = num_positions - 1;
+    // The last position was only sampled, not forwarded, so its KV does not exist. A speculative draft can lag
+    // further behind; the positions it has not forwarded are recomputed after a restore.
+    const size_t computed_len = std::min<size_t>(num_positions - 1, seq_group->get_num_processed_tokens());
+    OPENVINO_ASSERT(!has_la || computed_len == num_positions - 1,
+                    "Session snapshot of a hybrid model needs every position but the last to be computed");
     const auto indices = logical_block_indices(orchestrator.get_block_manager(CacheType::KV_CACHE), sequence->get_id());
     // get_hash memoizes the sequence's prefix hashes, hence the mutable access.
     const auto mutable_sequence = std::const_pointer_cast<Sequence>(sequence);
