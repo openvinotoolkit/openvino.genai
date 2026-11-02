@@ -833,8 +833,16 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
     bool add_generation_prompt,
     const std::string& chat_template,
     const std::optional<JsonContainer>& tools,
-    const std::optional<JsonContainer>& extra_context
+    const std::optional<JsonContainer>& extra_context,
+    const ov::AnyMap& properties
 ) const {
+    for (const auto& [name, value] : properties) {
+        OPENVINO_ASSERT(name == ov::genai::apply_polyfills.name(),
+                        "Unsupported apply_chat_template property: ", name);
+    }
+    minja::chat_template_options minja_options;
+    ov::genai::utils::read_anymap_param(properties, ov::genai::apply_polyfills.name(), minja_options.apply_polyfills);
+
     std::string chat_tpl;
     if (chat_template.empty()) {
         std::lock_guard<std::mutex> lock(m_chat_template_mutex);
@@ -851,6 +859,8 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
     OPENVINO_ASSERT(resolved_extra_context.is_object(),
                     "Extra context should be an object-like JsonContainer, got: ", resolved_extra_context.type_name());
 
+    auto minja_template = get_cached_minja_chat_template(chat_tpl);
+    
     minja::chat_template_inputs minja_inputs;
     minja_inputs.messages = history.get_messages();
     if (!resolved_tools.empty()) {
@@ -864,35 +874,17 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
     if (!resolved_extra_context.empty()) {
         minja_inputs.extra_context.update(resolved_extra_context);
     }
-    
-    const auto render = [&](const std::string& tpl) {
-        return get_cached_minja_chat_template(tpl)->apply(minja_inputs);
-    };
+
     std::string result;
     try {
-        result = render(chat_tpl);
+        result = minja_template->apply(minja_inputs, minja_options);
     } catch (const std::exception& error) {
-        std::string retry_error;
-        bool retry_succeeded = false;
-        const auto rewritten = utils::join_multiline_string_literals(utils::replace_is_undefined_tests(chat_tpl));
-        if (rewritten != chat_tpl) {
-            try {
-                result = render(rewritten);
-                retry_succeeded = true;
-            } catch (const std::exception& retry) {
-                retry_error = std::string("\nMinja's retry error: ") + retry.what();
-            }
-        }
-        if (!retry_succeeded) {
-            OPENVINO_THROW("Minja failed to apply chat template. Possible solutions are\n"
-                           "* Provide a simplified chat template with set_chat_template().\n"
-                           "* Set apply_chat_template to false in GenerationConfig. "
-                           "It's possible to apply the template manually to your prompt before calling generate. "
-                           "For example: <|user|>\\n{prompt}</s>\\n<|assistant|>\\n\n"
-                           "Minja's error: ",
-                           error.what(),
-                           retry_error);
-        }
+        OPENVINO_THROW("Minja failed to apply chat template. Possible solutions are\n"
+                        "* Provide a simplified chat template with set_chat_template().\n"
+                        "* Set apply_chat_template to false in GenerationConfig. "
+                        "It's possible to apply the template manually to your prompt before calling generate. "
+                        "For example: <|user|>\\n{prompt}</s>\\n<|assistant|>\\n\n"
+                        "Minja's error: ", error.what());
     }
     OPENVINO_ASSERT(!result.empty(), "Applied chat template resulted in an empty string. "
                                      "Please check the chat template or apply template manually to your prompt before calling generate."

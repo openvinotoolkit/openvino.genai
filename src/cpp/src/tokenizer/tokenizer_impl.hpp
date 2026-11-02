@@ -84,7 +84,8 @@ public:
                                     bool add_generation_prompt,
                                     const std::string& chat_template,
                                     const std::optional<JsonContainer>& tools,
-                                    const std::optional<JsonContainer>& extra_context) const;
+                                    const std::optional<JsonContainer>& extra_context,
+                                    const ov::AnyMap& properties) const;
 
     void set_chat_template(const std::string& chat_template);
     std::string get_chat_template() const;
