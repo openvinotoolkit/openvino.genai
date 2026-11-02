@@ -35,7 +35,7 @@ add_executable(tests_cache_allocation_failure allocation_failure/prepared_cache.
 add_subdirectory(custom_op)
 
 if(ENABLE_GGUF)
-    add_dependencies(${TEST_TARGET_NAME} openvino_custom_add_extension)
+    add_dependencies(${TEST_TARGET_NAME} openvino_custom_add_extension openvino_gguf_test_extension)
     target_compile_definitions(${TEST_TARGET_NAME} PRIVATE ENABLE_GGUF)
 endif()
 

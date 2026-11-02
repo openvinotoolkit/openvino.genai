@@ -190,6 +190,28 @@ def test_gguf_frontend_extensions(gguf_extension_model, pipeline_class, with_tok
             pipeline_class(*args, **properties)
 
 
+@pytest.mark.parametrize("pipeline_class", [genai.LLMPipeline, genai.ContinuousBatchingPipeline])
+def test_gguf_frontend_extensions_generation(gguf_extension_model, pipeline_class):
+    args = [str(gguf_extension_model)]
+    if pipeline_class == genai.ContinuousBatchingPipeline:
+        args.append(genai.SchedulerConfig())
+    args.append("CPU")
+    config = genai.GenerationConfig(max_new_tokens=3, ignore_eos=True, do_sample=False, apply_chat_template=False)
+    outputs = []
+    for extensions in ([], [get_extension_lib_path("openvino_gguf_test_extension")]):
+        properties = {**reference_properties(), "GGUF_READER": "FRONTEND", "extensions": extensions}
+        if pipeline_class == genai.ContinuousBatchingPipeline:
+            pipeline = pipeline_class(*args, properties)
+            inputs = pipeline.get_tokenizer().encode("Hello").input_ids
+            outputs.append(pipeline.generate([inputs], [config])[0].m_generation_ids[0])
+        else:
+            pipeline = pipeline_class(*args, **properties, ATTENTION_BACKEND="SDPA")
+            inputs = pipeline.get_tokenizer().encode("Hello").input_ids
+            outputs.append(pipeline.generate(inputs, config).tokens[0])
+    assert len(outputs[0]) == config.max_new_tokens
+    assert outputs[1] == outputs[0]
+
+
 @pytest.fixture(scope="module", params=TINY_GGUF_MODELS)
 def gguf_extension_model(request):
     repo, revision, filename, *_ = request.param

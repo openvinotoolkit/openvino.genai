@@ -111,8 +111,7 @@ def get_extension_model(model_path: str, temp_dir: Path, op_name: str = "MyAdd")
     return extension_path
 
 
-def get_extension_lib_path():
-    extension_name = "openvino_custom_add_extension"
+def get_extension_lib_path(extension_name="openvino_custom_add_extension"):
     if sys.platform == "win32":
         suffixes = [".dll"]
     elif sys.platform == "darwin":
@@ -129,7 +128,9 @@ def get_extension_lib_path():
     if extension_lib_path_env:
         env_path = Path(extension_lib_path_env)
         if env_path.is_file():
-            return env_path
+            if extension_name == "openvino_custom_add_extension" or env_path.name in file_names:
+                return env_path
+            env_path = env_path.parent
         if env_path.exists():
             for file_name in file_names:
                 matches = sorted(env_path.rglob(file_name))
