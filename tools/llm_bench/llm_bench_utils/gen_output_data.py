@@ -2,6 +2,49 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import re
+
+# CJK / kana characters: one word each (these languages don't separate words with spaces).
+_CJK = r"\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff"
+# A word: letters/digits (Unicode-aware, no underscore, no CJK), optionally joined
+# by an apostrophe or hyphen ("don't", "state-of-the-art" -> 1 word).
+_WORD_RE = re.compile(rf"[{_CJK}]|[^\W_{_CJK}]+(?:['’\-][^\W_{_CJK}]+)*")
+
+
+def count_words(text):
+    """Number of words in *text*, as shown by the ``text:<N>w`` reprs.
+
+    Punctuation is not a word, whether attached ("Hello,") or standalone
+    (" - "), and every CJK / kana character counts as one word.
+    """
+    return len(_WORD_RE.findall(text)) if text else 0
+
+
+def text_output_repr(text, text_tokens=None):
+    """Size summary of a generated *text* output, e.g. ``"text:42w/57t"``.
+
+    Mirrors the input-side text repr produced by ``BenchPrompt._repr``
+    (``prompt_repr``) so ``output_repr`` and ``prompt_repr`` read the same way:
+    text as a word count (``w`` suffix, see :func:`count_words`) plus, when
+    known, its token count (``/<M>t`` suffix); media as dimensions (the
+    media-generating tasks pass their own ``output_repr`` such as
+    ``"image:512x512"``). *text_tokens* is the number of tokens the pipeline
+    generated for *text*, reused from the generation result so the output is
+    not tokenized again; ``None`` drops the suffix. Returns ``"empty"`` when the
+    output is empty or whitespace only — e.g. a broken model whose generated
+    tokens all decode to nothing — so it is not mistaken for missing data.
+    Text with no words but some characters (``"..."``) is ``"text:0w/<M>t"``.
+
+    Callers pass the single generated string they also report elsewhere (the
+    first batch element) with its own token count, matching ``prompt_repr``,
+    which likewise describes one item rather than the whole batch — so the
+    token count is not comparable with ``output_size``, which is batch-total.
+    """
+    if not text or not text.strip():
+        return "empty"
+    n = count_words(text)
+    return f"text:{n}w/{text_tokens}t" if text_tokens is not None else f"text:{n}w"
+
 
 def gen_iterate_data(
     iter_idx="",
@@ -21,12 +64,25 @@ def gen_iterate_data(
     tokenization_time=[],
     mm_embeddings_preparation_time="",
     chat_idx="",
+    output_repr="",
+    in_text_tokens="",
 ):
     iter_data = {}
     iter_data["iteration"] = iter_idx
     iter_data["input_size"] = in_size
+    # input_text_tokens: tokenized length of a single prompt as the model
+    # received it (chat template, special and media tokens included), reused
+    # from the pipeline's own tokenization. Not a report column: BenchPrompt
+    # renders it into prompt_repr as "text:<N>w/<M>t".
+    iter_data["input_text_tokens"] = in_text_tokens if in_text_tokens is not None else ""
     iter_data["infer_count"] = infer_count
     iter_data["output_size"] = out_size
+    # output_repr: compact summary of the generated output, symmetric with
+    # prompt_repr. Text tasks pass "text:<N>w/<M>t" words and tokens (via
+    # text_output_repr); media tasks pass their own dimensions string
+    # (e.g. "image:512x512"). "empty" for a generated text with nothing in it;
+    # "" when no output applies.
+    iter_data["output_repr"] = output_repr or ""
     iter_data["generation_time"] = gen_time
     iter_data["latency"] = latency
     iter_data["result_md5"] = res_md5
@@ -63,10 +119,15 @@ def embed_iterate_data(
     max_sys_mem_share="",
     prompt_idx="",
     tokenization_time=[],
+    output_repr="",
+    in_text_tokens="",
 ):
     iter_data = {}
     iter_data["iteration"] = iter_idx
     iter_data["input_size"] = in_size
+    # input_text_tokens: tokenized length of one query-document pair, rendered
+    # into prompt_repr as "text:<N>w/<M>t" (rerankers; empty for embeddings).
+    iter_data["input_text_tokens"] = in_text_tokens if in_text_tokens is not None else ""
     iter_data["infer_count"] = infer_count
     iter_data["generation_time"] = total_time
     iter_data["latency"] = latency
@@ -86,4 +147,8 @@ def embed_iterate_data(
     iter_data["detokenization_time"] = ""
     iter_data["result_md5"] = ""
     iter_data["output_size"] = ""
+    # Empty for embeddings (no generated output); rerankers pass the number of
+    # ranked documents returned, e.g. "docs:2" (the input document count is in
+    # prompt_repr).
+    iter_data["output_repr"] = output_repr or ""
     return iter_data
