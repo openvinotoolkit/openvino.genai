@@ -12,6 +12,7 @@ import numpy as np
 
 from pathlib import Path
 from shutil import rmtree
+from huggingface_hub import snapshot_download
 from optimum.intel.utils.import_utils import is_transformers_version
 
 import openvino as ov
@@ -1357,7 +1358,10 @@ def _get_dflash_model_paths(draft: str) -> tuple[Path, Path]:
     draft_model_path = get_ov_cache_converted_models_dir() / sanitize_model_id(draft_model_id)
     AtomicDownloadManager(draft_model_path).execute(
         lambda temp_path: export_with_optimum_cli(
-            draft_model_id, "text-generation-with-past", temp_path, trust_remote_code=True
+            retry_request(lambda: snapshot_download(draft_model_id)),
+            "text-generation-with-past",
+            temp_path,
+            trust_remote_code=True,
         )
     )
     return download_and_convert_model(DFLASH_TARGET_MODEL_ID).models_path, draft_model_path
