@@ -1298,7 +1298,12 @@ DFLASH_DRAFT_MODEL_IDS = {
     "dflash": "optimum-intel-internal-testing/tiny-random-qwen3-dflash",
     "deepspec": "optimum-intel-internal-testing/tiny-random-qwen3-deepspec-dflash",
 }
-DFLASH_PROMPTS = ["Why is the Sun yellow?", "What's OpenVINO?", "Tell me something about Canada.", "Why is the grass green?"]
+DFLASH_PROMPTS = [
+    "Why is the Sun yellow?",
+    "What's OpenVINO?",
+    "Tell me something about Canada.",
+    "Why is the grass green?",
+]
 # A compressed KV cache lets speculative and autoregressive decoding diverge: a validation window attends to
 # its own rows at full precision, while autoregressive decoding reads them back from the cache.
 DFLASH_PARITY_PROPERTIES = {hints.inference_precision: ov.Type.f32, hints.kv_cache_precision: ov.Type.f32}
@@ -1333,7 +1338,9 @@ def _dflash_pipeline(model_paths: tuple[Path, Path], scheduler_config: Scheduler
 
 
 def _main_only_pipeline(target_path: Path, scheduler_config: SchedulerConfig | None = None):
-    return ContinuousBatchingPipeline(target_path, scheduler_config or SchedulerConfig(), "CPU", DFLASH_PARITY_PROPERTIES)
+    return ContinuousBatchingPipeline(
+        target_path, scheduler_config or SchedulerConfig(), "CPU", DFLASH_PARITY_PROPERTIES
+    )
 
 
 def _main_only_ids(target_path: Path, prompts: list[str], config: GenerationConfig) -> list:
@@ -1405,10 +1412,14 @@ def test_dflash_staggered_requests_with_mixed_assistant_tokens(dflash_model_path
     )
 
     def run_staggered(pipe):
-        handles = [pipe.add_request(request_id, DFLASH_PROMPTS[request_id], configs[request_id]) for request_id in (0, 1)]
+        handles = [
+            pipe.add_request(request_id, DFLASH_PROMPTS[request_id], configs[request_id]) for request_id in (0, 1)
+        ]
         for _ in range(2):
             pipe.step()
-        handles += [pipe.add_request(request_id, DFLASH_PROMPTS[request_id], configs[request_id]) for request_id in (2, 3)]
+        handles += [
+            pipe.add_request(request_id, DFLASH_PROMPTS[request_id], configs[request_id]) for request_id in (2, 3)
+        ]
         while pipe.has_non_finished_requests():
             pipe.step()
         outputs = [handle.read_all() for handle in handles]
@@ -1458,7 +1469,9 @@ def test_dflash_preemption_completes_all_requests(dflash_model_paths):
     # window was preempted to the target.
     config = _dflash_config(max_new_tokens=64)
     reference = _main_only_ids(dflash_model_paths[0], DFLASH_PROMPTS, config)
-    scheduler_config = dict_to_scheduler_config({"num_kv_blocks": 6, "dynamic_split_fuse": True, "max_num_batched_tokens": 256})
+    scheduler_config = dict_to_scheduler_config(
+        {"num_kv_blocks": 6, "dynamic_split_fuse": True, "max_num_batched_tokens": 256}
+    )
 
     results = _dflash_pipeline(dflash_model_paths, scheduler_config).generate(
         DFLASH_PROMPTS, [config] * len(DFLASH_PROMPTS)
