@@ -316,6 +316,19 @@ TEST(SamplerNotificationTest, deferredEchoUsesPreCounterUpdateRange) {
     EXPECT_EQ(outputs.at(0).generated_log_probs, LogProbs({1.0f}));
 }
 
+TEST(SamplerLogitProcessorTest, create_keeps_an_existing_logit_processor) {
+    Sampler sampler;
+    const GenerationConfig config = ov::genai::utils::get_greedy_config();
+    sampler.create_logit_processor(0, config, {1, 2, 3});
+    LogitProcessor& logit_processor = sampler.get_logit_processor(0);
+    logit_processor.update_generated_len(5);
+
+    sampler.create_logit_processor(0, config, {1, 2, 3});
+
+    EXPECT_EQ(&sampler.get_logit_processor(0), &logit_processor);
+    EXPECT_EQ(sampler.get_logit_processor(0).get_generated_len(), 5);
+}
+
 TEST(SamplerStopTokenIdsTest, single_stop_token_match) {
     std::vector<int64_t> generated_tokens = {3, 4, 5, 6, 7, 8, 9};
     std::set<int64_t> stop_token_ids = {9};
