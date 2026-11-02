@@ -1807,8 +1807,16 @@ Napi::Value cpp_to_js<ov::genai::SpeechGenerationConfig, Napi::Value>(
     obj.Set("subtalker_top_p", cpp_to_js<float, Napi::Value>(env, config.subtalker_top_p));
     obj.Set("subtalker_temperature", cpp_to_js<float, Napi::Value>(env, config.subtalker_temperature));
     obj.Set("ref_text", Napi::String::New(env, config.ref_text));
-    obj.Set("ref_audio", env.Undefined());
-    obj.Set("ref_codec_ids", env.Undefined());
+    if (static_cast<bool>(config.ref_audio)) {
+        obj.Set("ref_audio", cpp_to_js<ov::Tensor, Napi::Value>(env, config.ref_audio));
+    } else {
+        obj.Set("ref_audio", env.Undefined());
+    }
+    if (static_cast<bool>(config.ref_codec_ids)) {
+        obj.Set("ref_codec_ids", cpp_to_js<ov::Tensor, Napi::Value>(env, config.ref_codec_ids));
+    } else {
+        obj.Set("ref_codec_ids", env.Undefined());
+    }
     return obj;
 }
 
