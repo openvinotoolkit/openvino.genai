@@ -150,8 +150,9 @@ TEST(TestStoreRegistry, LoadsAndUsesAGenuinelySeparateDynamicallyLoadedPlugin) {
     config.store_provider_name = "file";
     config.allow_untrusted_store_plugin = true;
 
-    auto store = open_required_kv_cache_store_plugin(make_layout(), config, "CPU", "kv");
+    auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv");
     ASSERT_NE(store, nullptr);
+    ASSERT_TRUE(store->is_plugin_backed()) << "the plugin did not load; the registry fell back to the default store";
     expect_store_is_usable(*store);
 }
 
@@ -166,8 +167,9 @@ TEST(TestStoreRegistry, LoadsAndUsesTheStandaloneSampleThirdPartyPlugin) {
     config.store_provider_name = "sample-in-memory";
     config.allow_untrusted_store_plugin = true;
 
-    auto store = open_required_kv_cache_store_plugin(make_layout(), config, "CPU", "kv");
+    auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv");
     ASSERT_NE(store, nullptr);
+    ASSERT_TRUE(store->is_plugin_backed()) << "the plugin did not load; the registry fell back to the default store";
     expect_store_is_usable(*store);
 }
 
@@ -183,10 +185,12 @@ TEST(TestStoreRegistry, SampleThirdPartyPluginKeepsGroupsInSeparateStores) {
     config.store_provider_name = "sample-in-memory";
     config.allow_untrusted_store_plugin = true;
 
-    auto first = open_required_kv_cache_store_plugin(make_layout(), config, "CPU", "namespace_test_first");
-    auto second = open_required_kv_cache_store_plugin(make_layout(), config, "CPU", "namespace_test_second");
+    auto first = open_kv_cache_store(make_layout(), config, "CPU", "namespace_test_first");
+    auto second = open_kv_cache_store(make_layout(), config, "CPU", "namespace_test_second");
     ASSERT_NE(first, nullptr);
     ASSERT_NE(second, nullptr);
+    ASSERT_TRUE(first->is_plugin_backed());
+    ASSERT_TRUE(second->is_plugin_backed());
 
     ASSERT_TRUE(first->write_block(7, make_block(/*seed=*/1)));
     EXPECT_EQ(first->get_num_free_blocks(), NUM_BLOCKS - 1);

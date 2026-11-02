@@ -257,16 +257,6 @@ OvKVCacheStatus provider_open(void* /*self*/,
         out->status = OV_KVCACHE_ERR_INVALID_ARG;
         return out->status;
     }
-    // A session snapshot must outlive the store that wrote it, but this provider's data is a
-    // run-scoped file that disappears with the instance, so refuse instead of reporting a save
-    // that can never be restored.
-    constexpr char snapshot_prefix[] = "session_snapshot_";
-    constexpr size_t snapshot_prefix_len = sizeof(snapshot_prefix) - 1;
-    if (ns != nullptr && ns->bytes != nullptr && ns->len >= snapshot_prefix_len &&
-        std::memcmp(ns->bytes, snapshot_prefix, snapshot_prefix_len) == 0) {
-        out->status = OV_KVCACHE_ERR_UNSUPPORTED;
-        return out->status;
-    }
 
     std::optional<size_t> block_size_bytes;
     std::string device = "CPU";

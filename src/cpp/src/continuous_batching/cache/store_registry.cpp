@@ -219,19 +219,4 @@ std::unique_ptr<IKVCacheStore> open_kv_cache_store(const KVCacheDiskLayout& layo
     return make_default_store(layout, config, device);
 }
 
-std::unique_ptr<IKVCacheStore> open_required_kv_cache_store_plugin(const KVCacheDiskLayout& layout,
-                                                                    const CacheOffloadConfig& config,
-                                                                    const std::string& device,
-                                                                    const std::string& group,
-                                                                    size_t block_tokens) {
-    OPENVINO_ASSERT(config.allow_untrusted_store_plugin && !config.store_library_path.empty(),
-                    "A KV cache store plugin is required here (group '", group,
-                    "') but none is configured: set both allow_untrusted_store_plugin and store_library_path");
-    auto store = try_open_plugin_store(layout, config, device, group, block_tokens);
-    OPENVINO_ASSERT(store != nullptr,
-                    "Failed to open the required KV cache store plugin '", config.store_library_path,
-                    "' for group '", group, "'");
-    return store;
-}
-
 }  // namespace ov::genai

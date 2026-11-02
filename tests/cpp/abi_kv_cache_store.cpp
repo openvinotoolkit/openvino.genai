@@ -133,30 +133,6 @@ TEST(TestAbiFileStoreProvider, KeysDifferingOnlyInTheHighHalfStayDistinct) {
     opened.vtable->destroy(opened.store);
 }
 
-TEST(TestAbiFileStoreProvider, SessionSnapshotNamespacesAreRejectedBecauseTheStoreIsEphemeral) {
-    const OvKVCacheStoreModuleInfo* module_info = get_file_store_provider_module_info();
-    const OvKVCacheStoreProviderDescriptor* provider = module_info->get_provider(0);
-
-    const std::string block_size_str = std::to_string(BLOCK_SIZE);
-    const OvKVCacheProperty properties[] = {{"block_size_bytes", block_size_str.c_str()}};
-    OvKVCacheStoreOpenOptions options{};
-    options.capacity_bytes = BLOCK_SIZE * 4;
-    options.properties = properties;
-    options.property_count = 1;
-
-    const std::string snapshot_group = "session_snapshot_kv:some/path.bin";
-    const OvKVCacheNamespace snapshot_ns{reinterpret_cast<const uint8_t*>(snapshot_group.data()), snapshot_group.size()};
-    OvKVCacheStoreOpenResult rejected{};
-    EXPECT_EQ(provider->vtable->open(provider->self, &snapshot_ns, &options, &rejected), OV_KVCACHE_ERR_UNSUPPORTED);
-    EXPECT_EQ(rejected.store, nullptr);
-
-    const std::string kv_group = "kv";
-    const OvKVCacheNamespace kv_ns{reinterpret_cast<const uint8_t*>(kv_group.data()), kv_group.size()};
-    OvKVCacheStoreOpenResult accepted{};
-    ASSERT_EQ(provider->vtable->open(provider->self, &kv_ns, &options, &accepted), OV_KVCACHE_OK);
-    accepted.vtable->destroy(accepted.store);
-}
-
 namespace {
 std::vector<std::pair<OvKVCacheLogLevel, std::string>> g_captured_logs;
 void capture_log(OvKVCacheLogLevel level, const char* message) {

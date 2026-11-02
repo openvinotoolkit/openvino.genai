@@ -147,13 +147,11 @@ public:
     virtual bool has_non_finished_requests() = 0;
 
     /**
-     * @brief Captures a single, non-beam-search request's full cache state and token history to
-     * `path`, so it can be resumed later via restore_state() without re-running prefill.
-     * Requires exactly one (non-forked) running sequence for the request and
-     * `use_cache_eviction` disabled. Default implementation throws: override in pipeline
-     * variants that support it.
+     * @brief Captures a single, non-beam-search request's state to `path`, so it can be resumed later via
+     * restore_state() without re-running prefill (see ContinuousBatchingPipeline::save_state()). Default
+     * implementation throws: override in pipeline variants that support it.
      */
-    virtual void save_state(uint64_t request_id, const std::string& path, const CacheOffloadConfig& store_config = {}) {
+    virtual void save_state(uint64_t request_id, const std::string& path) {
         OPENVINO_THROW("Session state save/restore is not supported by this pipeline implementation");
     }
 
@@ -165,8 +163,7 @@ public:
      */
     virtual GenerationHandle restore_state(uint64_t request_id,
                                           const std::string& path,
-                                          const GenerationConfig& sampling_params,
-                                          const CacheOffloadConfig& store_config = {}) {
+                                          const GenerationConfig& sampling_params) {
         OPENVINO_THROW("Session state save/restore is not supported by this pipeline implementation");
     }
 

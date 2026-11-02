@@ -227,12 +227,11 @@ public:
     void step() override;
 
     /**
-     * @brief Saves BOTH the main and draft pipelines' cache state and token history for
-     * `request_id` to two files derived from `path` (".main"/".draft" suffixes). Each half reuses
-     * ContinuousBatchingImpl::save_state() unchanged - same single-sequence/no-cache-eviction
-     * requirements apply to both pipelines.
+     * @brief Saves BOTH the main and draft pipelines' state for `request_id` to two files derived from
+     * `path` (".main"/".draft" suffixes): the two sides can hold slightly different histories. Each half reuses
+     * ContinuousBatchingImpl::save_state() unchanged - the same requirements apply to both pipelines.
      */
-    void save_state(uint64_t request_id, const std::string& path, const CacheOffloadConfig& store_config = {}) override;
+    void save_state(uint64_t request_id, const std::string& path) override;
 
     /**
      * @brief Restores a request previously saved via save_state() into both the main and draft
@@ -241,8 +240,7 @@ public:
      */
     GenerationHandle restore_state(uint64_t request_id,
                                    const std::string& path,
-                                   const ov::genai::GenerationConfig& sampling_params,
-                                   const CacheOffloadConfig& store_config = {}) override;
+                                   const ov::genai::GenerationConfig& sampling_params) override;
 
     std::vector<EncodedGenerationResult>
     generate(const std::vector<ov::Tensor>& input_ids,
