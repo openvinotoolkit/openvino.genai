@@ -56,6 +56,16 @@
   components:
     - omni
 
+- name: LFM3-Omni
+  cmd: |-
+    # The LFM3-Omni export is in huggingface/optimum-intel#2087, which is not merged yet. Re-pin when it is.
+    python -m pip install transformers==5.20.2
+    python -m pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@a68683c981a89cf840d33aa5d9dacf7a712c9440"
+    python -m pytest -v ./tests/python_tests/test_lfm3_omni.py
+  timeout: 30
+  components:
+    - omni
+
 - name: GGUF Reader tests
   cmd: |-
     python -m pytest -v ./tests/python_tests/test_gguf_reader.py
