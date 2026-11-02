@@ -353,6 +353,7 @@ public:
     ) override {
         // Local mutable copy: setup_generation_config(...) and downstream callees mutate fields
         // (rng_seed, eos_token_id, ...). The public-base signature is const-ref by contract.
+        m_active_history.reset();
         GenerationConfig generation_config = generation_config_in;
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;
@@ -786,6 +787,7 @@ public:
     }
 
     void start_chat(const std::string& system_message) override {
+        m_active_history.reset();
         m_is_chat_conversation = true;
         m_system_message = system_message;
         m_inputs_embedder->start_chat(m_system_message);

@@ -18,6 +18,15 @@
 
 namespace {
 
+class ConfigEncoder : public ov::genai::VisionEncoder {
+public:
+    explicit ConfigEncoder(const std::filesystem::path& directory) : VisionEncoder(directory, ConfigOnlyTag{}) {}
+
+    ov::genai::EncodedImage encode(const ov::Tensor&, const ov::AnyMap&) override {
+        return {};
+    }
+};
+
 std::pair<std::string, ov::Tensor> serialize_model(const std::shared_ptr<ov::Model>& model) {
     std::ostringstream xml, weights;
     ov::pass::Serialize(xml, weights).run_on_model(model);
@@ -73,9 +82,7 @@ protected:
         models.clear();
     }
 
-    std::unique_ptr<ov::genai::InputsEmbedderMuseGlimmer> embedder(bool sample_frames,
-                                                                   float processor_fps = 2.0f,
-                                                                   size_t num_frames = 2) {
+    void write_processor_config(bool sample_frames, float processor_fps = 2.0f, size_t num_frames = 2) {
         std::ofstream stream(config_dir / "processor_config.json");
         stream << nlohmann::json{
             {"image_processor", {{"patch_size", 1}, {"merge_size", 1}, {"temporal_patch_size", 2}}},
@@ -88,6 +95,12 @@ protected:
               {"fps", processor_fps},
               {"num_frames", num_frames}}}};
         stream.close();
+    }
+
+    std::unique_ptr<ov::genai::InputsEmbedderMuseGlimmer> embedder(bool sample_frames,
+                                                               float processor_fps = 2.0f,
+                                                               size_t num_frames = 2) {
+        write_processor_config(sample_frames, processor_fps, num_frames);
         ov::genai::VLMConfig config;
         config.model_type = ov::genai::VLMModelType::MUSE_GLIMMER;
         return std::make_unique<ov::genai::InputsEmbedderMuseGlimmer>(config,
@@ -132,6 +145,48 @@ TEST_F(MuseGlimmerVideo, SamplingEnabledKeepsExistingSelection) {
     EXPECT_FLOAT_EQ(encoded.front().metadata.fps, 8.0f);
 }
 
+TEST_F(MuseGlimmerVideo, ImageOnlyCombinedConfigKeepsImageAndVideoSettings) {
+    write_processor_config(false);
+    std::ifstream stream(config_dir / "processor_config.json");
+    auto config = nlohmann::json::parse(stream);
+    stream.close();
+    config.erase("video_processor");
+    std::ofstream(config_dir / "processor_config.json") << config;
+    ConfigEncoder encoder(config_dir);
+    EXPECT_EQ(encoder.get_processor_config().patch_size, 1);
+    EXPECT_EQ(encoder.get_video_processor_config().patch_size, 1);
+    EXPECT_EQ(encoder.get_video_processor_config().merge_size, 1);
+}
+
+TEST_F(MuseGlimmerVideo, CombinedConfigKeepsExplicitVideoSettings) {
+    write_processor_config(false);
+    std::ifstream stream(config_dir / "processor_config.json");
+    auto config = nlohmann::json::parse(stream);
+    stream.close();
+    config["video_processor"]["patch_size"] = 3;
+    std::ofstream(config_dir / "processor_config.json") << config;
+    ConfigEncoder encoder(config_dir);
+    EXPECT_EQ(encoder.get_processor_config().patch_size, 1);
+    EXPECT_EQ(encoder.get_video_processor_config().patch_size, 3);
+}
+
+TEST_F(MuseGlimmerVideo, ImageOnlyCombinedConfigKeepsLegacyVideoSettings) {
+    write_processor_config(false);
+    std::ifstream stream(config_dir / "processor_config.json");
+    auto config = nlohmann::json::parse(stream);
+    stream.close();
+    config.erase("video_processor");
+    std::ofstream(config_dir / "processor_config.json") << config;
+    const auto legacy_file = config_dir / "preprocessor_config.json";
+    std::ofstream(legacy_file) << R"({"fps":7})";
+    ConfigEncoder encoder(config_dir);
+    EXPECT_EQ(encoder.get_processor_config().patch_size, 1);
+    EXPECT_FLOAT_EQ(encoder.get_video_processor_config().fps, 7.0f);
+    const std::filesystem::directory_entry legacy_entry(legacy_file);
+    ASSERT_TRUE(legacy_entry.is_regular_file());
+    EXPECT_TRUE(std::filesystem::remove(legacy_entry.path()));
+}
+
 TEST_F(MuseGlimmerVideo, SamplingDisabledPreservesAllFrames) {
     auto encoder = embedder(false);
     ov::genai::VideoMetadata metadata;
@@ -153,9 +208,12 @@ TEST_F(MuseGlimmerVideo, SamplingDisabledPreservesPreselectedFrames) {
     EXPECT_FLOAT_EQ(encoded.front().metadata.fps, 6.0f);
 }
 
-TEST_F(MuseGlimmerVideo, SamplingDisabledRejectsMissingSourceFps) {
+TEST_F(MuseGlimmerVideo, SamplingDisabledDefaultsMissingSourceFps) {
     auto encoder = embedder(false);
-    EXPECT_THROW(encoder->encode_videos({video()}), ov::Exception);
+    const auto encoded = encoder->encode_videos({video()});
+    ASSERT_EQ(encoded.size(), 1);
+    expect_encoded_frames(encoded.front(), {0, 1, 2, 3, 4, 5, 6, 7});
+    EXPECT_FLOAT_EQ(encoded.front().metadata.fps, 2.0f);
 }
 
 TEST_F(MuseGlimmerVideo, SamplingDisabledRejectsInvalidSourceFps) {
@@ -168,17 +226,35 @@ TEST_F(MuseGlimmerVideo, SamplingDisabledRejectsInvalidSourceFps) {
     }
 }
 
-TEST_F(MuseGlimmerVideo, SamplingDisabledRejectsIncompleteTemporalGroups) {
+TEST_F(MuseGlimmerVideo, SamplingDisabledRejectsOutOfRangeFrameIndices) {
     auto encoder = embedder(false);
     ov::genai::VideoMetadata metadata;
     metadata.fps = 8.0f;
-    EXPECT_THROW(encoder->encode_videos({video(3)}, {metadata}), ov::Exception);
-    metadata.frames_indices = {0, 1, 2};
+    metadata.frames_indices = {8, 8};
     EXPECT_THROW(encoder->encode_videos({video()}, {metadata}), ov::Exception);
 }
 
+TEST_F(MuseGlimmerVideo, SamplingDisabledPadsIncompleteTemporalGroups) {
+    auto encoder = embedder(false);
+    ov::genai::VideoMetadata metadata;
+    metadata.fps = 8.0f;
+    for (size_t frames : {1, 3, 9}) {
+        std::vector<size_t> indices;
+        for (size_t frame = 0; frame < frames; ++frame)
+            indices.push_back(frame);
+        indices.push_back(indices.back());
+        const auto encoded = encoder->encode_videos({video(frames)}, {metadata});
+        ASSERT_EQ(encoded.size(), 1);
+        expect_encoded_frames(encoded.front(), indices);
+    }
+    metadata.frames_indices = {0, 1, 2};
+    const auto encoded = encoder->encode_videos({video()}, {metadata});
+    ASSERT_EQ(encoded.size(), 1);
+    expect_encoded_frames(encoded.front(), {0, 1, 2, 2});
+}
+
 TEST_F(MuseGlimmerVideo, EditedHistoryRollbackRetainsOnlyMatchingPrefix) {
-    auto configured = embedder(false);
+    write_processor_config(false);
     ov::genai::InputsEmbedder inputs(models, ov::genai::Tokenizer{}, config_dir, "CPU", {});
     auto registry = std::make_shared<ov::genai::EmbeddingsRegistry>();
     ov::genai::ChatHistory history{{{"role", "system"}, {"content", "unchanged"}},
