@@ -496,6 +496,10 @@ protected:
             m_model_runner->enable_dflash_draft(candidate_position_offset);
         }
 
+        void use_dynamic_split_fuse() {
+            m_dflash_block_may_follow_prompt_rows = true;
+        }
+
         ov::genai::SequenceGroup::Ptr add(uint64_t request_id,
                                           const std::vector<int64_t>& prompt,
                                           size_t num_assistant_tokens,
@@ -619,6 +623,26 @@ TEST_F(DFlashCBPipelineTest, FirstBlockFollowsThePromptRows) {
     // the row of 7 + seed + 3 masks
     ASSERT_EQ(group->get_num_available_tokens_for_batching(), 1 + 4);
     ASSERT_FALSE(group->requires_sampling());
+}
+
+TEST_F(DFlashCBPipelineTest, DynamicSplitFuseDraftsTheFirstBlockWithTheLastPromptRows) {
+    DraftInstance draft;
+    draft.use_dynamic_split_fuse();
+    auto group = draft.add(0, {0, 1, 2, 3, 4, 5, 6, 7}, 3);
+    // the target ran the first prompt chunk, which has no block
+    draft.update_request(0, target_step({}, 4, make_hidden_rows(4, 0.0f)), true);
+    ASSERT_EQ(draft.window(group).block_rows, 0);
+    draft.finish_window(group, {});
+
+    // the second chunk ended the prompt and the target sampled 7
+    draft.update_request(0, target_step({7}, 8, make_hidden_rows(4, 4.0f)), true);
+
+    ASSERT_EQ(generated(group), (std::vector<int64_t>{7, MASK_TOKEN, MASK_TOKEN, MASK_TOKEN}));
+    ASSERT_EQ(draft.window(group).committed_rows, 4);
+    ASSERT_EQ(draft.window(group).context_rows, 4);
+    ASSERT_EQ(draft.window(group).block_rows, 4);
+    // the 4 remaining prompt rows, then seed 7 and 3 masks
+    ASSERT_EQ(group->get_num_available_tokens_for_batching(), 4 + 4);
 }
 
 TEST_F(DFlashCBPipelineTest, DeepSpecBlockStartsCandidatesAtTheSeed) {

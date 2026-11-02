@@ -35,10 +35,12 @@ struct DFlashDraftWindow {
 };
 
 // Plans the DFlash draft window of a request whose tokens match the target's. The draft request's processed
-// length is its committed rows, and the target has hidden states up to target_processed_tokens.
+// length is its committed rows, and the target has hidden states up to target_processed_tokens. With
+// block_may_follow_prompt_rows (dynamic split fuse), the window of the last prompt rows also carries the first block.
 DFlashDraftWindow make_dflash_draft_window(const SequenceGroup& request,
                                            size_t target_processed_tokens,
-                                           size_t candidate_position_offset);
+                                           size_t candidate_position_offset,
+                                           bool block_may_follow_prompt_rows = false);
 
 }  // namespace detail
 
@@ -204,6 +206,8 @@ protected:
     bool dflash_mode_enabled = false;
     int64_t m_dflash_mask_token_id = -1;
     size_t m_dflash_candidate_position_offset = 1;
+    // dynamic split fuse: the window of the last prompt rows carries the first block
+    bool m_dflash_block_may_follow_prompt_rows = false;
     // Windows planned by the DFlash draft update for the next draft forward, by sequence id.
     std::map<uint64_t, detail::DFlashDraftWindow> m_dflash_draft_windows;
 
@@ -469,6 +473,7 @@ protected:
     void enable_dflash_draft(int64_t mask_token_id, size_t candidate_position_offset) {
         m_dflash_mask_token_id = mask_token_id;
         m_dflash_candidate_position_offset = candidate_position_offset;
+        m_dflash_block_may_follow_prompt_rows = m_scheduler->get_config().dynamic_split_fuse;
         m_model_runner->enable_dflash_draft(candidate_position_offset);
         m_sampler->set_block_sampling(candidate_position_offset);
     }
