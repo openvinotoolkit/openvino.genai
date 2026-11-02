@@ -199,6 +199,8 @@ LTX2VideoTransformer3DModel& LTX2VideoTransformer3DModel::reshape(int64_t batch_
                                                                   int64_t audio_num_frames,
                                                                   int64_t text_seq_len) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
+    OPENVINO_ASSERT(text_seq_len == -1 || text_seq_len > 0,
+                    "'text_seq_len' must be -1 or a positive value, got ", text_seq_len);
 
     const int64_t patch_size = m_config.patch_size;
     const int64_t patch_size_t = m_config.patch_size_t;
