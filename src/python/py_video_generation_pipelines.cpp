@@ -35,7 +35,14 @@ void init_video_generation_pipelines(py::module_& m) {
         .def_readwrite("max_sequence_length", &ov::genai::VideoGenerationConfig::max_sequence_length)
         .def_readwrite("taylorseer_config", &ov::genai::VideoGenerationConfig::taylorseer_config)
         .def_readwrite("adapters", &ov::genai::VideoGenerationConfig::adapters)
-        .def_readwrite("audio_guidance_scale", &ov::genai::VideoGenerationConfig::audio_guidance_scale);
+        .def_readwrite("audio_guidance_scale", &ov::genai::VideoGenerationConfig::audio_guidance_scale)
+        .def_readwrite("stg_scale", &ov::genai::VideoGenerationConfig::stg_scale)
+        .def_readwrite("audio_stg_scale", &ov::genai::VideoGenerationConfig::audio_stg_scale)
+        .def_readwrite("modality_scale", &ov::genai::VideoGenerationConfig::modality_scale)
+        .def_readwrite("audio_modality_scale", &ov::genai::VideoGenerationConfig::audio_modality_scale)
+        .def_readwrite("audio_guidance_rescale", &ov::genai::VideoGenerationConfig::audio_guidance_rescale)
+        .def_readwrite("spatio_temporal_guidance_blocks",
+                       &ov::genai::VideoGenerationConfig::spatio_temporal_guidance_blocks);
 
     py::class_<ov::genai::VideoGenerationResult>(m, "VideoGenerationResult")
         .def_readonly("video", &ov::genai::VideoGenerationResult::video)

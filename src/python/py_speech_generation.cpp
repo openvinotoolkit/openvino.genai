@@ -39,12 +39,16 @@ auto speech_generation_config_docstring = R"(
     :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
     :type threshold: float
 
+    Shared parameters:
+    :param language: language selector used by speech backends.
+                     Empty string delegates to backend default handling:
+                     - Kokoro uses "en-us".
+                     - Qwen3-TTS resolves to "auto".
+    :type language: str
+
     Kokoro-specific parameters:
     :param speed: speech speed multiplier.
     :type speed: float
-
-    :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
-    :type language: str
 
     :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
     :type max_phoneme_length: int
@@ -59,6 +63,45 @@ auto speech_generation_config_docstring = R"(
                                          omit this key instead of passing None because kwargs-to-AnyMap
                                          conversion rejects None values.
     :type phonemize_fallback_model_dir: str | None
+
+    Qwen3-TTS-specific parameters:
+    :param speaker: predefined speaker name for Qwen3 CustomVoice variants.
+    :type speaker: str
+
+    :param instruct: optional instruction text that controls speaking style.
+    :type instruct: str
+
+    :param non_streaming_mode: Qwen3 prompt assembly mode.
+                               ``True`` means non-streaming prompt assembly.
+                               ``False`` means streaming-style prompt assembly.
+    :type non_streaming_mode: bool
+
+    :param subtalker_dosample: whether to sample residual code groups with Qwen3 subtalker.
+    :type subtalker_dosample: bool
+
+    :param subtalker_top_k: top-k parameter for Qwen3 subtalker sampling.
+    :type subtalker_top_k: int
+
+    :param subtalker_top_p: top-p parameter for Qwen3 subtalker sampling.
+    :type subtalker_top_p: float
+
+    :param subtalker_temperature: temperature parameter for Qwen3 subtalker sampling.
+    :type subtalker_temperature: float
+
+    Qwen3 Base voice-clone over ``generate``:
+    :param ref_text: reference transcript for ICL mode.
+    :type ref_text: str
+
+    :param ref_audio: reference audio waveform tensor used to internally derive Qwen3 Base clone artifacts.
+                           Expected shape: [T], [1, T], or [1, 1, T].
+                           Expected dtype: float32.
+                           Expected sample rate: 24000 Hz.
+                           OV GenAI does not decode audio files or resample this tensor.
+    :type ref_audio: openvino.Tensor
+
+    :param ref_codec_ids: reference codec ids tensor for ICL mode, shape [T, G] or [1, T, G].
+    :type ref_codec_ids: openvino.Tensor
+
 )";
 
 auto speech_generation_perf_metrics_docstring = R"(
@@ -80,6 +123,16 @@ auto text_to_speech_decoded_results = R"(
 
     :param perf_metrics: performance metrics
     :type perf_metrics: SpeechGenerationPerfMetrics
+
+    :param speaker_embedding: Qwen3-TTS Base voice-clone speaker embedding used for generation.
+                              Persist and pass it back as the ``speaker_embedding`` argument to reuse a
+                              cloned voice without re-encoding reference audio. Empty for other backends.
+    :type speaker_embedding: openvino.Tensor
+
+    :param ref_codec_ids: Qwen3-TTS Base reference codec ids used for ICL-mode cloning.
+                                      Persist and pass it back via the ``ref_codec_ids``
+                                      property to reuse the reference prompt. Empty otherwise.
+    :type ref_codec_ids: openvino.Tensor
 )";
 
 auto text_to_speech_generate_docstring = R"(
@@ -88,30 +141,64 @@ auto text_to_speech_generate_docstring = R"(
     :param text_or_texts: input text(s) for which to generate speech
     :type text_or_texts: str or list[str]
 
-    :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
-                             voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
-                             `Matthijs/cmu-arctic-xvectors` dataset is used by default. Kokoro backend requires callers
-                             to prepare this tensor externally and pass it explicitly.
+    :param speaker_embedding: speaker embedding tensor representing the target voice characteristics.
+                              Behavior depends on backend/model variant:
+                                - SpeechT5: optional. If omitted, a default x-vector is used.
+                                - Kokoro: required.
+                                - Qwen3-TTS Base: optional. Can be provided directly, or derived internally
+                                    from ``ref_audio`` passed via properties.
+                                - Qwen3-TTS CustomVoice: ignored and should not be provided.
+                                - Qwen3-TTS VoiceDesign: ignored and should not be provided.
     :type speaker_embedding: openvino.Tensor or None
 
-    :param properties: speech generation parameters specified as properties
-    :type properties: dict
+    :param generation_config: speech generation configuration override
+    :type generation_config: SpeechGenerationConfig or None
+
+    :param kwargs: arbitrary keyword arguments with keys corresponding to SpeechGenerationConfig fields.
+    :type kwargs: dict
 
     :returns: raw audios of the input texts spoken in the specified speaker's voice;
               sample rate is provided via Text2SpeechDecodedResults.output_sample_rate
     :rtype: Text2SpeechDecodedResults
 )";
 
-SpeechGenerationConfig update_speech_generation_config_from_kwargs(const SpeechGenerationConfig& config,
-                                                                   const py::kwargs& kwargs) {
-    if (kwargs.empty())
-        return config;
+std::optional<SpeechGenerationConfig> update_speech_generation_config_from_kwargs(
+    const std::optional<SpeechGenerationConfig>& config,
+    const py::kwargs& kwargs) {
+    if (!config.has_value() && kwargs.empty())
+        return std::nullopt;
 
-    SpeechGenerationConfig res_config = config;
+    SpeechGenerationConfig res_config;
+    if (config.has_value())
+        res_config = *config;
+
     if (!kwargs.empty())
         res_config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
 
     return res_config;
+}
+
+py::object call_text2speech_common_generate(Text2SpeechPipeline& pipe,
+                                            const std::vector<std::string>& texts,
+                                            py::object speaker_embedding,
+                                            const std::optional<SpeechGenerationConfig>& generation_config,
+                                            const py::kwargs& kwargs) {
+    // TTS config should be initialized from generation_config.json in case of only kwargs provided.
+    // If full config was provided then rely on it as a base config.
+    const std::optional<SpeechGenerationConfig> base_config =
+        generation_config.has_value() ? generation_config : pipe.get_generation_config();
+    const std::optional<SpeechGenerationConfig> updated_config =
+        update_speech_generation_config_from_kwargs(base_config, kwargs);
+    const ov::Tensor speaker_embedding_tensor = speaker_embedding.is_none() ?
+                                                ov::Tensor() :
+                                                speaker_embedding.cast<ov::Tensor>();
+
+    ov::genai::Text2SpeechDecodedResults res;
+    {
+        py::gil_scoped_release rel;
+        res = pipe.generate(texts, speaker_embedding_tensor, updated_config);
+    }
+    return py::cast(res);
 }
 
 }  // namespace
@@ -123,7 +210,7 @@ void init_speech_generation_pipeline(py::module_& m) {
                                                          speech_generation_config_docstring)
         .def(py::init<std::filesystem::path>(), py::arg("json_path"), "path where generation_config.json is stored")
         .def(py::init([](const py::kwargs& kwargs) {
-            return update_speech_generation_config_from_kwargs(SpeechGenerationConfig(), kwargs);
+            return *update_speech_generation_config_from_kwargs(SpeechGenerationConfig(), kwargs);
         }))
         .def_readwrite("speed", &SpeechGenerationConfig::speed)
         .def_readwrite("minlenratio", &SpeechGenerationConfig::minlenratio)
@@ -132,6 +219,16 @@ void init_speech_generation_pipeline(py::module_& m) {
         .def_readwrite("language", &SpeechGenerationConfig::language)
         .def_readwrite("max_phoneme_length", &SpeechGenerationConfig::max_phoneme_length)
         .def_readwrite("phonemize_fallback_model_dir", &SpeechGenerationConfig::phonemize_fallback_model_dir)
+        .def_readwrite("speaker", &SpeechGenerationConfig::speaker)
+        .def_readwrite("instruct", &SpeechGenerationConfig::instruct)
+        .def_readwrite("non_streaming_mode", &SpeechGenerationConfig::non_streaming_mode)
+        .def_readwrite("subtalker_dosample", &SpeechGenerationConfig::subtalker_dosample)
+        .def_readwrite("subtalker_top_k", &SpeechGenerationConfig::subtalker_top_k)
+        .def_readwrite("subtalker_top_p", &SpeechGenerationConfig::subtalker_top_p)
+        .def_readwrite("subtalker_temperature", &SpeechGenerationConfig::subtalker_temperature)
+        .def_readwrite("ref_text", &SpeechGenerationConfig::ref_text)
+        .def_readwrite("ref_audio", &SpeechGenerationConfig::ref_audio)
+        .def_readwrite("ref_codec_ids", &SpeechGenerationConfig::ref_codec_ids)
         .def("update_generation_config", [](ov::genai::SpeechGenerationConfig& config, const py::kwargs& kwargs) {
             config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
         });
@@ -149,7 +246,9 @@ void init_speech_generation_pipeline(py::module_& m) {
         .def(py::init<>())
         .def_readonly("speeches", &Text2SpeechDecodedResults::speeches)
         .def_readonly("output_sample_rate", &Text2SpeechDecodedResults::output_sample_rate)
-        .def_readonly("perf_metrics", &Text2SpeechDecodedResults::perf_metrics);
+        .def_readonly("perf_metrics", &Text2SpeechDecodedResults::perf_metrics)
+        .def_readonly("speaker_embedding", &Text2SpeechDecodedResults::speaker_embedding)
+        .def_readonly("ref_codec_ids", &Text2SpeechDecodedResults::ref_codec_ids);
 
     py::class_<Text2SpeechPipeline>(m, "Text2SpeechPipeline", "Text-to-speech pipeline")
         .def(
@@ -173,24 +272,21 @@ void init_speech_generation_pipeline(py::module_& m) {
             [](Text2SpeechPipeline& pipe,
                const std::string& text,
                py::object speaker_embedding,
+               const std::optional<SpeechGenerationConfig>& generation_config,
                const py::kwargs& kwargs) -> py::typing::Union<ov::genai::Text2SpeechDecodedResults> {
-                ov::genai::Text2SpeechDecodedResults res;
-                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
-                {
-                    py::gil_scoped_release rel;
-                    if (speaker_embedding.is_none()) {
-                        res = pipe.generate(text, ov::Tensor(), properties);
-                    } else {
-                        const ov::Tensor& tensor = speaker_embedding.cast<ov::Tensor>();
-                        res = pipe.generate(text, tensor, properties);
-                    }
-                }
-                return py::cast(res);
+                return call_text2speech_common_generate(
+                    pipe,
+                    std::vector<std::string>{text},
+                    speaker_embedding,
+                    generation_config,
+                    kwargs);
             },
             py::arg("text"),
             "input text for which to generate speech.",
             py::arg("speaker_embedding") = py::none(),
             "vector representing the unique characteristics of a speaker's voice.",
+            py::arg("generation_config") = std::nullopt,
+            "generation_config",
             (text_to_speech_generate_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
 
         .def(
@@ -198,29 +294,22 @@ void init_speech_generation_pipeline(py::module_& m) {
             [](Text2SpeechPipeline& pipe,
                const std::vector<std::string>& texts,
                py::object speaker_embedding,
+               const std::optional<SpeechGenerationConfig>& generation_config,
                const py::kwargs& kwargs) -> py::typing::Union<ov::genai::Text2SpeechDecodedResults> {
-                ov::genai::Text2SpeechDecodedResults res;
-                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
-                {
-                    py::gil_scoped_release rel;
-                    if (speaker_embedding.is_none()) {
-                        res = pipe.generate(texts, ov::Tensor(), properties);
-                    } else {
-                        const ov::Tensor& tensor = speaker_embedding.cast<ov::Tensor>();
-                        res = pipe.generate(texts, tensor, properties);
-                    }
-                }
-                return py::cast(res);
+                return call_text2speech_common_generate(pipe, texts, speaker_embedding, generation_config, kwargs);
             },
             py::arg("texts"),
             "a list of input texts for which to generate speeches.",
             py::arg("speaker_embedding") = py::none(),
             "vector representing the unique characteristics of a speaker's voice.",
+            py::arg("generation_config") = std::nullopt,
+            "generation_config",
             (text_to_speech_generate_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
 
         .def("get_generation_config", &Text2SpeechPipeline::get_generation_config, py::return_value_policy::copy)
         .def("set_generation_config", &Text2SpeechPipeline::set_generation_config, py::arg("config"))
         .def("get_speaker_embedding_shape", &Text2SpeechPipeline::get_speaker_embedding_shape,
              "Get the expected speaker embedding shape for the loaded model. "
-             "SpeechT5: Shape{1, 512}. Kokoro: Shape{510, 1, 256}");
+               "SpeechT5: Shape{1, 512}. Kokoro: Shape{510, 1, 256}. "
+               "Qwen3 Base: Shape{1, 1, D}.");
 }

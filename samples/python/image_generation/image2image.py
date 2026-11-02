@@ -16,26 +16,22 @@ def read_image(path: str) -> openvino.Tensor:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('model_dir')
-    parser.add_argument('prompt')
-    parser.add_argument('image')
+    parser.add_argument("model_dir")
+    parser.add_argument("prompt")
+    parser.add_argument("image", nargs="+")
     args = parser.parse_args()
 
     device = 'CPU'  # GPU can be used as well
     pipe = openvino_genai.Image2ImagePipeline(args.model_dir, device)
 
-    image = read_image(args.image)
+    # Several images can be passed to models conditioned on a set of reference images, such as Qwen-Image 2.1.
+    images = [read_image(path) for path in args.image]
 
     def callback(step, num_steps, latent):
         print(f"Step {step + 1}/{num_steps}")
         return False
 
-    image_tensor = pipe.generate(
-        args.prompt,
-        image,
-        strength=0.8,
-        callback=callback
-    )
+    image_tensor = pipe.generate(args.prompt, images, callback=callback)
 
     image = Image.fromarray(image_tensor.data[0])
     image.save("image.bmp")

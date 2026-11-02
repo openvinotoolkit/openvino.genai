@@ -1,16 +1,16 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "visual_language/vision_registry.hpp"
+#include "visual_language/embeddings_registry.hpp"
 
 #include <cstring>
 
 namespace ov::genai {
 
-VisionRegistry::VisionEntry::VisionEntry(ModalityType t, ov::Tensor tensor)
+EmbeddingsRegistry::EmbeddingEntry::EmbeddingEntry(ModalityType t, ov::Tensor tensor)
     : type(t), original(std::move(tensor)), ref_count(0) {}
 
-VisionRegistry::VisionEntry::VisionEntry(VisionEntry&& other) noexcept
+EmbeddingsRegistry::EmbeddingEntry::EmbeddingEntry(EmbeddingEntry&& other) noexcept
     : type(other.type),
       original(std::move(other.original)),
       encoded_image(std::move(other.encoded_image)),
@@ -18,7 +18,7 @@ VisionRegistry::VisionEntry::VisionEntry(VisionEntry&& other) noexcept
       encoded_audio(std::move(other.encoded_audio)),
       ref_count(other.ref_count.load()) {}
 
-VisionRegistry::VisionEntry& VisionRegistry::VisionEntry::operator=(VisionEntry&& other) noexcept {
+EmbeddingsRegistry::EmbeddingEntry& EmbeddingsRegistry::EmbeddingEntry::operator=(EmbeddingEntry&& other) noexcept {
     if (this != &other) {
         type = other.type;
         original = std::move(other.original);
@@ -68,7 +68,7 @@ bool same_content(const ov::Tensor& lhs, const ov::Tensor& rhs) {
 
 // Hash tensor using FNV-1a algorithm.
 // See: https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
-VisionID VisionRegistry::compute_hash(const ov::Tensor& tensor) {
+EmbeddingID EmbeddingsRegistry::compute_hash(const ov::Tensor& tensor) {
     // FNV-1a parameters (64-bit)
     constexpr uint64_t FNV_OFFSET_BASIS = 0xcbf29ce484222325;
     constexpr uint64_t FNV_PRIME = 0x100000001b3;
@@ -125,7 +125,7 @@ VisionID VisionRegistry::compute_hash(const ov::Tensor& tensor) {
     return hash;
 }
 
-VisionID VisionRegistry::register_vision(const ov::Tensor& tensor, ModalityType type) {
+EmbeddingID EmbeddingsRegistry::register_media(const ov::Tensor& tensor, ModalityType type) {
     const auto pack = [&tensor]() {
         ov::Tensor packed(tensor.get_element_type(), tensor.get_shape());
         tensor.copy_to(packed);
@@ -146,24 +146,24 @@ VisionID VisionRegistry::register_vision(const ov::Tensor& tensor, ModalityType 
     }
     // A packed ROI is already a private copy; a contiguous tensor may be caller memory and needs one.
     ov::Tensor owned_tensor = is_contiguous ? pack() : std::move(content);
-    m_entries.emplace(id, VisionEntry(type, std::move(owned_tensor))).first->second.ref_count++;
+    m_entries.emplace(id, EmbeddingEntry(type, std::move(owned_tensor))).first->second.ref_count++;
     return id;
 }
 
-VisionID VisionRegistry::register_image(const ov::Tensor& image) {
-    return register_vision(image, ModalityType::IMAGE);
+EmbeddingID EmbeddingsRegistry::register_image(const ov::Tensor& image) {
+    return register_media(image, ModalityType::IMAGE);
 }
 
-VisionID VisionRegistry::register_video(const ov::Tensor& video) {
-    return register_vision(video, ModalityType::VIDEO);
+EmbeddingID EmbeddingsRegistry::register_video(const ov::Tensor& video) {
+    return register_media(video, ModalityType::VIDEO);
 }
 
-VisionID VisionRegistry::register_audio(const ov::Tensor& audio) {
-    return register_vision(audio, ModalityType::AUDIO);
+EmbeddingID EmbeddingsRegistry::register_audio(const ov::Tensor& audio) {
+    return register_media(audio, ModalityType::AUDIO);
 }
 
-std::vector<VisionID> VisionRegistry::register_images(const std::vector<ov::Tensor>& images) {
-    std::vector<VisionID> ids;
+std::vector<EmbeddingID> EmbeddingsRegistry::register_images(const std::vector<ov::Tensor>& images) {
+    std::vector<EmbeddingID> ids;
     ids.reserve(images.size());
     for (const auto& img : images) {
         ids.push_back(register_image(img));
@@ -171,8 +171,8 @@ std::vector<VisionID> VisionRegistry::register_images(const std::vector<ov::Tens
     return ids;
 }
 
-std::vector<VisionID> VisionRegistry::register_videos(const std::vector<ov::Tensor>& videos) {
-    std::vector<VisionID> ids;
+std::vector<EmbeddingID> EmbeddingsRegistry::register_videos(const std::vector<ov::Tensor>& videos) {
+    std::vector<EmbeddingID> ids;
     ids.reserve(videos.size());
     for (const auto& vid : videos) {
         ids.push_back(register_video(vid));
@@ -180,8 +180,8 @@ std::vector<VisionID> VisionRegistry::register_videos(const std::vector<ov::Tens
     return ids;
 }
 
-std::vector<VisionID> VisionRegistry::register_audios(const std::vector<ov::Tensor>& audios) {
-    std::vector<VisionID> ids;
+std::vector<EmbeddingID> EmbeddingsRegistry::register_audios(const std::vector<ov::Tensor>& audios) {
+    std::vector<EmbeddingID> ids;
     ids.reserve(audios.size());
     for (const auto& audio : audios) {
         ids.push_back(register_audio(audio));
@@ -189,56 +189,56 @@ std::vector<VisionID> VisionRegistry::register_audios(const std::vector<ov::Tens
     return ids;
 }
 
-void VisionRegistry::add_ref(const VisionID& id) {
+void EmbeddingsRegistry::add_ref(const EmbeddingID& id) {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_entries.find(id);
-    OPENVINO_ASSERT(it != m_entries.end(), "Vision ID not found in VisionRegistry: ", id);
+    OPENVINO_ASSERT(it != m_entries.end(), "Embedding ID not found in EmbeddingsRegistry: ", id);
     it->second.ref_count++;
 }
 
-void VisionRegistry::release_ref(const VisionID& id) {
+void EmbeddingsRegistry::release_ref(const EmbeddingID& id) {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_entries.find(id);
-    OPENVINO_ASSERT(it != m_entries.end(), "Vision ID not found in VisionRegistry: ", id);
+    OPENVINO_ASSERT(it != m_entries.end(), "Embedding ID not found in EmbeddingsRegistry: ", id);
     if (--it->second.ref_count == 0) {
         m_entries.erase(it);
     }
 }
 
-size_t VisionRegistry::size() const {
+size_t EmbeddingsRegistry::size() const {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_entries.size();
 }
 
-bool VisionRegistry::contains(const VisionID& id) const {
+bool EmbeddingsRegistry::contains(const EmbeddingID& id) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_entries.find(id) != m_entries.end();
 }
 
-ModalityType VisionRegistry::get_type(const VisionID& id) const {
+ModalityType EmbeddingsRegistry::get_type(const EmbeddingID& id) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_entries.at(id).type;
 }
 
-const ov::Tensor& VisionRegistry::get_original(const VisionID& id) const {
+const ov::Tensor& EmbeddingsRegistry::get_original(const EmbeddingID& id) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_entries.at(id).original;
 }
 
-void VisionRegistry::set_encoded_image(const VisionID& id, EncodedImage encoded) {
+void EmbeddingsRegistry::set_encoded_image(const EmbeddingID& id, EncodedImage encoded) {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto& entry = m_entries.at(id);
     OPENVINO_ASSERT(entry.type == ModalityType::IMAGE, "Cannot set encoded image for a non-image entry");
     entry.encoded_image = std::move(encoded);
 }
 
-bool VisionRegistry::has_encoded_image(const VisionID& id) const {
+bool EmbeddingsRegistry::has_encoded_image(const EmbeddingID& id) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_entries.find(id);
     return it != m_entries.end() && it->second.encoded_image.has_value();
 }
 
-const EncodedImage& VisionRegistry::get_encoded_image(const VisionID& id) const {
+const EncodedImage& EmbeddingsRegistry::get_encoded_image(const EmbeddingID& id) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     const auto& entry = m_entries.at(id);
     OPENVINO_ASSERT(entry.type == ModalityType::IMAGE, "Cannot get encoded image for a non-image entry");
@@ -247,20 +247,20 @@ const EncodedImage& VisionRegistry::get_encoded_image(const VisionID& id) const 
     return *entry.encoded_image;
 }
 
-void VisionRegistry::set_encoded_video(const VisionID& id, EncodedVideo encoded) {
+void EmbeddingsRegistry::set_encoded_video(const EmbeddingID& id, EncodedVideo encoded) {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto& entry = m_entries.at(id);
     OPENVINO_ASSERT(entry.type == ModalityType::VIDEO, "Cannot set encoded video for a non-video entry");
     entry.encoded_video = std::move(encoded);
 }
 
-bool VisionRegistry::has_encoded_video(const VisionID& id) const {
+bool EmbeddingsRegistry::has_encoded_video(const EmbeddingID& id) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_entries.find(id);
     return it != m_entries.end() && it->second.encoded_video.has_value();
 }
 
-const EncodedVideo& VisionRegistry::get_encoded_video(const VisionID& id) const {
+const EncodedVideo& EmbeddingsRegistry::get_encoded_video(const EmbeddingID& id) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     const auto& entry = m_entries.at(id);
     OPENVINO_ASSERT(entry.type == ModalityType::VIDEO, "Cannot get encoded video for a non-video entry");
@@ -269,20 +269,20 @@ const EncodedVideo& VisionRegistry::get_encoded_video(const VisionID& id) const 
     return *entry.encoded_video;
 }
 
-void VisionRegistry::set_encoded_audio(const VisionID& id, EncodedAudio encoded) {
+void EmbeddingsRegistry::set_encoded_audio(const EmbeddingID& id, EncodedAudio encoded) {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto& entry = m_entries.at(id);
     OPENVINO_ASSERT(entry.type == ModalityType::AUDIO, "Cannot set encoded audio for a non-audio entry");
     entry.encoded_audio = std::move(encoded);
 }
 
-bool VisionRegistry::has_encoded_audio(const VisionID& id) const {
+bool EmbeddingsRegistry::has_encoded_audio(const EmbeddingID& id) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_entries.find(id);
     return it != m_entries.end() && it->second.encoded_audio.has_value();
 }
 
-const EncodedAudio& VisionRegistry::get_encoded_audio(const VisionID& id) const {
+const EncodedAudio& EmbeddingsRegistry::get_encoded_audio(const EmbeddingID& id) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     const auto& entry = m_entries.at(id);
     OPENVINO_ASSERT(entry.type == ModalityType::AUDIO, "Cannot get encoded audio for a non-audio entry");

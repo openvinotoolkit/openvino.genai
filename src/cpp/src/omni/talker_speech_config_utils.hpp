@@ -7,7 +7,9 @@
 #include <vector>
 
 #include "openvino/core/any.hpp"
+#include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/omni/talker_speech_config.hpp"
+#include "openvino/genai/visibility.hpp"
 
 namespace ov {
 namespace genai {
@@ -19,8 +21,8 @@ const std::vector<std::string>& omni_talker_speech_config_keys();
 
 /// @brief Populate fields of `config` from an AnyMap (kwargs-style properties).
 /// Recognized keys: return_audio, speaker, speaker_embedding (legacy alias),
-/// audio_chunk_frames, max_new_tokens, rng_seed, talker_temperature, talker_top_k,
-/// talker_repetition_penalty, cp_temperature, cp_top_k.
+/// audio_chunk_frames, audio_chunk_left_context_frames, max_new_tokens, rng_seed,
+/// talker_temperature, talker_top_k, talker_repetition_penalty, cp_temperature, cp_top_k.
 /// Unrecognized keys are ignored — callers that share the property bag with other
 /// consumers (e.g. OmniPipeline mixes in GenerationConfig keys) rely on this.
 void update_omni_talker_speech_config(OmniTalkerSpeechConfig& config, const ov::AnyMap& properties);
@@ -35,6 +37,17 @@ bool is_omni_talker_speech_config_key(const std::string& key);
 /// checked here — the caller (OmniPipelineImpl) handles those separately.
 /// @throws ov::Exception if config is invalid.
 void validate_omni_talker_speech_config(const OmniTalkerSpeechConfig& config);
+
+/// @brief Resolve a talker property-bag into a typed config plus optional streamer.
+/// Starts from `base` (the caller's default), overlays recognized `properties`, and rejects
+/// unknown keys so typos surface immediately instead of being silently dropped.
+struct ResolvedTalkerProperties {
+    OmniTalkerSpeechConfig config;
+    OmniSpeechStreamerVariant speech_streamer;
+};
+
+OPENVINO_GENAI_EXPORTS
+ResolvedTalkerProperties resolve_talker_properties(const OmniTalkerSpeechConfig& base, const ov::AnyMap& properties);
 
 }  // namespace genai
 }  // namespace ov

@@ -795,6 +795,59 @@ QWEN2_VL_2B = (
 SIMPLIFIED_QWEN2_VL_2B = "{% for message in messages %}{{ message['content'] }}{% endfor %}"
 
 
+QWEN3_ASR_CHAT_TEMPLATE = """{%- set ns = namespace(system_text="") -%}
+{%- for m in messages -%}
+  {%- if m.role == 'system' -%}
+    {%- if m.content is string -%}
+      {%- set ns.system_text = ns.system_text + m.content -%}
+    {%- else -%}
+      {%- for c in m.content -%}
+        {%- if c.type == 'text' and (c.text is defined) -%}
+          {%- set ns.system_text = ns.system_text + c.text -%}
+        {%- endif -%}
+      {%- endfor -%}
+    {%- endif -%}
+  {%- endif -%}
+{%- endfor -%}
+
+{%- set ns2 = namespace(audio_tokens="") -%}
+{%- for m in messages -%}
+  {%- if m.content is not string -%}
+    {%- for c in m.content -%}
+      {%- if c.type == 'audio' or ('audio' in c) or ('audio_url' in c) -%}
+        {%- set ns2.audio_tokens = ns2.audio_tokens + "<|audio_start|><|audio_pad|><|audio_end|>" -%}
+      {%- endif -%}
+    {%- endfor -%}
+  {%- endif -%}
+{%- endfor -%}
+
+{{- '<|im_start|>system\\n' + (ns.system_text if ns.system_text is string else '') + '<|im_end|>\\n' -}}
+{{- '<|im_start|>user\\n' + ns2.audio_tokens + '<|im_end|>\\n' -}}
+{%- if add_generation_prompt -%}
+{{- '<|im_start|>assistant\\n' -}}
+{%- endif -%}"""
+
+
+@pytest.mark.parametrize(
+    "content,expected_content",
+    [
+        ([{"type": "audio"}], "<|audio_start|><|audio_pad|><|audio_end|>"),
+        ("text without audio", ""),
+    ],
+)
+def test_qwen3_asr_chat_template_fallback(tmp_path, capfd, content, expected_content):
+    tokenizer = generate_tokenizer(tmp_path, ChatTemplates(None, QWEN3_ASR_CHAT_TEMPLATE, None, None, None))
+    assert tokenizer.get_original_chat_template() == QWEN3_ASR_CHAT_TEMPLATE
+    assert tokenizer.chat_template != QWEN3_ASR_CHAT_TEMPLATE
+
+    history = ChatHistory([{"role": "system", "content": ""}, {"role": "user", "content": content}])
+    expected = (
+        f"<|im_start|>system\n<|im_end|>\n<|im_start|>user\n{expected_content}<|im_end|>\n<|im_start|>assistant\n"
+    )
+    assert tokenizer.apply_chat_template(history, add_generation_prompt=True) == expected
+    assert "Failed to infer a tool call example" not in capfd.readouterr().err
+
+
 def test_set_special_runtime_template(tmp_path):
     tokenizer = generate_tokenizer(tmp_path, ChatTemplates(None, None, None, None, None))
     tokenizer.chat_template = QWEN2_VL_2B

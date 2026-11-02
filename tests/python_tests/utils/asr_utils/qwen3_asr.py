@@ -53,7 +53,17 @@ class Qwen3ASROptimumPipeline:
     def generate(self, sample, **kwargs):
         generate_kwargs = kwargs.get("generate_kwargs", {})
         language = generate_kwargs.get("language") or kwargs.get("language")
+        generated_only = self.generate_ids(sample, **kwargs)
+        full_text = self.processor.batch_decode(generated_only, skip_special_tokens=False)[0]
+        if language:
+            return {"text": full_text.strip(), "language": language}
 
+        parsed_output = self.parse_asr_output(full_text)
+        return {"text": parsed_output["text"], "language": parsed_output["language"]}
+
+    def generate_ids(self, sample, **kwargs):
+        generate_kwargs = kwargs.get("generate_kwargs", {})
+        language = generate_kwargs.get("language") or kwargs.get("language")
         messages = [
             {"role": "system", "content": ""},
             {"role": "user", "content": [{"type": "audio", "audio": ""}]},
@@ -67,22 +77,21 @@ class Qwen3ASROptimumPipeline:
             "max_new_tokens": kwargs.get("max_new_tokens", 1000),
         }
         config["max_new_tokens"] = generate_kwargs.get("max_new_tokens", config["max_new_tokens"])
+        if "do_sample" in kwargs:
+            config["do_sample"] = kwargs["do_sample"]
 
-        output_ids = self.model.generate(
-            input_features=inputs["input_features"],
-            decoder_input_ids=inputs["input_ids"],
-            eos_token_id=self.EOS_TOKEN_IDS,
-            **config,
-        )
+        if hasattr(self.model, "audio_encoder"):
+            output_ids = self.model.generate(**inputs, **config)
+        else:
+            output_ids = self.model.generate(
+                input_features=inputs["input_features"],
+                decoder_input_ids=inputs["input_ids"],
+                eos_token_id=self.EOS_TOKEN_IDS,
+                **config,
+            )
 
-        prompt_len = inputs["input_ids"].shape[1]
-        generated_only = output_ids[:, prompt_len:]
-        full_text = self.processor.batch_decode(generated_only, skip_special_tokens=False)[0]
-        if language:
-            return {"text": full_text.strip(), "language": language}
-
-        parsed_output = self.parse_asr_output(full_text)
-        return {"text": parsed_output["text"], "language": parsed_output["language"]}
+        output_ids = getattr(output_ids, "sequences", output_ids)
+        return output_ids[:, inputs["input_ids"].shape[1] :]
 
     def parse_asr_output(self, raw_text):
         """Parse the raw ASR output to extract language and transcription text."""

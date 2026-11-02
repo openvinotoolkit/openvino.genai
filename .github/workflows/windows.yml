@@ -861,10 +861,11 @@ jobs:
 
       - name: Test Samples (Python and C++)
         run: |
+          # Required for C++ samples. `env.PATH: "%PATH%"` is not expanded by GHA, produces `PATH: "%PATH%"` literally. Expansion required for `pip install git+https`. If `PATH` not expanded correctly `git` is not found and installation fails.
+          $env:PATH = "${{ env.INSTALL_DIR }}/runtime/bin/intel64/${{ matrix.build-type }};${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/bin;$env:PATH"
           ${{ matrix.test.extra_cmd }}
           python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
         env:
-          PATH: "${{ env.INSTALL_DIR }}/runtime/bin/intel64/${{ matrix.build-type }};${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/bin;%PATH%" # Required for C++ samples
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
           SAMPLES_JS_DIR: "${{ env.SRC_DIR }}/samples/js"
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
@@ -953,7 +954,9 @@ jobs:
   genai_nodejs_tests:
     name: Node.js bindings tests (Node ${{ matrix.nodejs-version }})
     needs: [ smart_ci, openvino_download, genai_build_wheels, genai_build_genai_wheel, genai_build_nodejs ]
-    if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
+    # Tests timed out on Windows. Ticket: 198295
+    # if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
+    if: ${{ false }}
     timeout-minutes: 20
     strategy:
       fail-fast: false

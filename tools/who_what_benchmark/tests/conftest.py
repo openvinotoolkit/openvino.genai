@@ -59,6 +59,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "optimum-intel-internal-testing/tiny-random-fun-asr",
         "convert_args": ["--weight-format", "fp32"],
     },
+    "tiny-random-qwen3-asr": {
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3-asr",
+        "convert_args": ["--task", "automatic-speech-recognition"],
+    },
     "tiny-random-llava-next-video": {
         "name": "optimum-intel-internal-testing/tiny-random-llava-next-video",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
@@ -92,6 +96,18 @@ MODELS: Dict[str, Dict[str, Any]] = {
     "Kokoro-82M": {
         "name": "hexgrad/Kokoro-82M",
         "convert_args": ["--trust-remote-code"],
+    },
+    "Qwen3-TTS-12Hz-1.7B-VoiceDesign": {
+        "name": "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+        "convert_args": ["--trust-remote-code", "--weight-format", "fp32"],
+    },
+    "Qwen3-TTS-12Hz-1.7B-CustomVoice": {
+        "name": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+        "convert_args": ["--trust-remote-code", "--weight-format", "fp32"],
+    },
+    "Qwen3-TTS-12Hz-0.6B-Base": {
+        "name": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+        "convert_args": ["--trust-remote-code", "--weight-format", "fp32"],
     },
     "tiny-random-qwen3-vl-embedding": {
         "name": "optimum-intel-internal-testing/tiny-random-qwen3-vl-embedding",

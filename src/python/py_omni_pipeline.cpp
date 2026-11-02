@@ -56,13 +56,29 @@ auto omni_talker_speech_config_docstring = R"(
     :type speaker: str | openvino.Tensor
 
     :param audio_chunk_frames: Number of codec frames accumulated before streaming each
-        audio chunk. Must be >= 1. At steady state each frame decodes to 1920 samples (80ms at
-        24 kHz), but the code2wav vocoder trims its convolutional warmup from the first frame of
-        every decode call, so a chunk of N frames yields 1920*N - 555 samples, not 1920*N. This
-        is a property of the vocoder graph, not a miscount. Larger chunks amortize the fixed
-        warmup cost; very small chunks (e.g. 1) also risk audible seams between independently
-        decoded chunks in streaming mode.
+        audio chunk. Must be >= 1. Each frame decodes to S samples, the product of the
+        checkpoint's code2wav `upsample_rates` and `upsampling_ratios`. The code2wav vocoder trims
+        its convolutional warmup of W samples once per utterance, so the first chunk of N frames
+        yields S*N - W samples and every later chunk yields S*N. Streamed audio has the same length
+        as non-streamed audio. This holds while `audio_chunk_left_context_frames` > 0. For the
+        standard Qwen3-Omni, S = 1920 (80ms at 24 kHz) and W = 555, so the default first chunk is
+        about 297ms and later chunks are 320ms. Every chunk after the first is decoded
+        together with up to `audio_chunk_left_context_frames` earlier frames, so the vocoder sees
+        their history. That context is decoded again for each chunk, so smaller chunks lower
+        time-to-first-audio but spend more vocoder time per second of audio and can fall behind
+        real time.
     :type audio_chunk_frames: int
+
+    :param audio_chunk_left_context_frames: Number of earlier codec frames the code2wav vocoder
+        decodes together with each streamed chunk. Their samples are dropped from the output; they
+        only give the chunk's first samples the history a non-streamed decode would see. The first
+        chunk has no history, so the value is capped by the number of frames already streamed.
+        0 decodes every chunk on its own: each chunk then loses the code2wav warmup samples, so
+        streamed audio is shorter than non-streamed audio. Larger values give smoother seams
+        between chunks but cost more vocoder work per chunk. Default is 25, the
+        `left_context_size` of transformers `Qwen3OmniMoeCode2Wav.chunked_decode`. Must be
+        <= 4096. Ignored when no speech streamer is set.
+    :type audio_chunk_left_context_frames: int
 
     :param max_new_tokens: Cap on talker AR steps. Independent of
         `text_config.max_new_tokens` (which caps the thinker text decode). The talker
@@ -158,6 +174,51 @@ auto omni_generate_history_docstring = R"(
     :param videos_metadata: metadata for each video (fps, frames_indices). Must be empty or have the same length as videos.
     :type videos_metadata: list[VideoMetadata]
 )";
+
+// Trampoline enabling Python subclasses of TalkerBase (injected via the OmniPipeline DI ctor).
+class PyTalkerBase : public TalkerBase {
+public:
+    using TalkerBase::TalkerBase;
+
+    ov::genai::TalkerResults generate(const VLMDecodedResults& vlm_result,
+                                      const OmniTalkerSpeechConfig& talker_speech_config,
+                                      const ov::genai::OmniSpeechStreamerVariant& speech_streamer) override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(ov::genai::TalkerResults,
+                               TalkerBase,
+                               generate,
+                               vlm_result,
+                               talker_speech_config,
+                               speech_streamer);
+    }
+
+    // Reduce the property bag the same way Talker does, then dispatch through the typed
+    // override, so a Python backend answers both C++ overloads with one Python method.
+    ov::genai::TalkerResults generate(const VLMDecodedResults& vlm_result, const ov::AnyMap& properties) override {
+        auto resolved = ov::genai::resolve_talker_properties(get_speech_config(), properties);
+        return generate(vlm_result, resolved.config, resolved.speech_streamer);
+    }
+
+    OmniTalkerSpeechConfig get_speech_config() const override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(OmniTalkerSpeechConfig, TalkerBase, get_speech_config);
+    }
+
+    void set_speech_config(const OmniTalkerSpeechConfig& config) override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(void, TalkerBase, set_speech_config, config);
+    }
+
+    std::vector<std::string> list_speakers() const override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(std::vector<std::string>, TalkerBase, list_speakers);
+    }
+
+    ov::Tensor get_speaker_embedding(const std::string& name) const override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(ov::Tensor, TalkerBase, get_speaker_embedding, name);
+    }
+};
 
 py::object call_omni_generate(OmniPipeline& pipe,
                               const std::string& prompt,
@@ -265,6 +326,7 @@ void init_omni_pipeline(py::module_& m) {
             "Legacy alias. Reading returns the Tensor if speaker holds one, else None. "
             "Writing sets the Tensor alternative of the speaker variant.")
         .def_readwrite("audio_chunk_frames", &OmniTalkerSpeechConfig::audio_chunk_frames)
+        .def_readwrite("audio_chunk_left_context_frames", &OmniTalkerSpeechConfig::audio_chunk_left_context_frames)
         .def_readwrite("max_new_tokens", &OmniTalkerSpeechConfig::max_new_tokens)
         .def_readwrite("rng_seed", &OmniTalkerSpeechConfig::rng_seed)
         .def_readwrite("talker_temperature", &OmniTalkerSpeechConfig::talker_temperature)
@@ -273,13 +335,17 @@ void init_omni_pipeline(py::module_& m) {
         .def_readwrite("cp_temperature", &OmniTalkerSpeechConfig::cp_temperature)
         .def_readwrite("cp_top_k", &OmniTalkerSpeechConfig::cp_top_k);
 
-    py::class_<TalkerBase, std::shared_ptr<TalkerBase>>(m, "TalkerBase",
+    // PyTalkerBase is the trampoline that lets a Python subclass satisfy the pure virtuals.
+    // generate() is bound further down, once TalkerResults is registered, so its signature
+    // renders as a Python type rather than a raw C++ name.
+    auto talker_base = py::class_<TalkerBase, PyTalkerBase, std::shared_ptr<TalkerBase>>(m, "TalkerBase",
         R"(Abstract speech-output backend for OmniPipeline.
 
         Pure interface with no storage of its own. Subclass to plug a custom talker into
         OmniPipeline; the default implementation is Talker. Subclasses must override
         generate(), get_speech_config(), set_speech_config(), list_speakers(), and
         get_speaker_embedding().)")
+        .def(py::init<>())
         .def("list_speakers", &TalkerBase::list_speakers)
         .def("get_speaker_embedding", &TalkerBase::get_speaker_embedding, py::arg("name"))
         .def("get_speech_config",
@@ -368,6 +434,49 @@ void init_omni_pipeline(py::module_& m) {
         .def_readonly("waveforms", &ov::genai::TalkerResults::waveforms)
         .def_readonly("perf_metrics", &ov::genai::TalkerResults::perf_metrics);
 
+    // Deferred from the TalkerBase registration so OmniTalkerSpeechConfig and TalkerResults render
+    // as Python types in the signature rather than raw C++ names.
+    talker_base.def("generate",
+                    [](TalkerBase& self,
+                       const VLMDecodedResults& vlm_result,
+                       const OmniTalkerSpeechConfig& talker_speech_config,
+                       const ov::genai::OmniSpeechStreamerVariant& speech_streamer) {
+                        ov::genai::TalkerResults res;
+                        {
+                            py::gil_scoped_release rel;
+                            res = self.generate(vlm_result, talker_speech_config, speech_streamer);
+                        }
+                        return res;
+                    },
+                    py::arg("vlm_result"),
+                    py::arg("talker_speech_config"),
+                    py::arg("speech_streamer") = std::monostate{},
+                    "Run speech generation against a VLM result. Override in a subclass. Returns TalkerResults.");
+
+    talker_base.def("generate",
+                    [](TalkerBase& self, const VLMDecodedResults& vlm_result, const py::kwargs& kwargs) {
+                        const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                        ov::genai::TalkerResults res;
+                        {
+                            py::gil_scoped_release rel;
+                            res = self.generate(vlm_result, properties);
+                        }
+                        return res;
+                    },
+                    py::arg("vlm_result"),
+                    R"(
+                        Run speech generation against a VLM result, configured by keyword arguments.
+
+                        Property-bag form of generate(). Recognized kwargs are the OmniTalkerSpeechConfig
+                        fields (return_audio, speaker, speaker_embedding, audio_chunk_frames,
+                        audio_chunk_left_context_frames, max_new_tokens, rng_seed, talker_temperature,
+                        talker_top_k, talker_repetition_penalty, cp_temperature, cp_top_k), plus
+                        speech_streamer.
+                        Unrecognized keys raise. Fields not given fall back to get_speech_config().
+
+                        :return: TalkerResults
+                    )");
+
     py::class_<OmniDecodedResults, VLMDecodedResults>(m, "OmniDecodedResults",
         R"(Omni-specific decoded results including speech outputs.
 
@@ -409,6 +518,10 @@ void init_omni_pipeline(py::module_& m) {
              }),
              py::arg("vlm"),
              py::arg("talker"),
+             // The C++ shared_ptr alone does not keep a Python subclass alive; without its Python
+             // object, the overrides are lost and a call reaches the pure virtual.
+             py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(),
              R"(
                 OmniPipeline dependency-injection constructor.
                 Compose a pre-built VLM (thinker) and Talker (speech) so the two stages can use

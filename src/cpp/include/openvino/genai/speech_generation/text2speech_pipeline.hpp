@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <optional>
+
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
 #include "openvino/genai/speech_generation/speech_generation_perf_metrics.hpp"
@@ -19,6 +21,22 @@ struct Text2SpeechDecodedResults {
     std::vector<ov::Tensor> speeches;
     uint32_t output_sample_rate = 0;
     SpeechGenerationPerfMetrics perf_metrics;
+
+    // Qwen3-TTS Base voice-clone artifacts.
+    //
+    // When a Qwen3 Base voice clone is performed from reference audio, the pipeline extracts these
+    // artifacts internally. They are surfaced here so an application can persist them once and reuse
+    // them across subsequent generations (via the `speaker_embedding` argument and the
+    // `ref_codec_ids` property) to skip the reference-audio encoding step.
+    //
+    // Both tensors are empty for non-Qwen3 backends and for Qwen3 CustomVoice / VoiceDesign.
+
+    // Speaker embedding used for the Qwen3 Base clone (x-vector and ICL modes). Shape: [D].
+    ov::Tensor speaker_embedding;
+
+    // Reference codec ids used for the Qwen3 Base ICL clone. Shape: [T, G].
+    // Empty in x-vector-only mode (no ICL prompt).
+    ov::Tensor ref_codec_ids;
 };
 
 /**
@@ -52,9 +70,25 @@ public:
      * `Text2SpeechDecodedResults::output_sample_rate`
      */
     Text2SpeechDecodedResults generate(const std::string& text,
-                                       const ov::Tensor& speaker_embedding = ov::Tensor(),
-                                       const ov::AnyMap& properties = {}) {
+                                       const ov::Tensor& speaker_embedding,
+                                       const ov::AnyMap& properties) {
         return generate(std::vector<std::string>{text}, speaker_embedding, properties);
+    }
+
+    /**
+     * Generates speeches based on input texts
+     * @param text input text for which to generate speech
+     * @param speaker_embedding Optional speaker embedding tensor representing the unique characteristics of a speaker's
+     * voice. If not provided for SpeechT5 TSS model, the 7306th vector from the validation set of the
+     * `Matthijs/cmu-arctic-xvectors` dataset is used by default.
+     * @param generation_config Optional speech generation configuration override
+     * @returns raw audios of the input texts spoken in the specified speaker's voice; sample rate is provided in
+     * `Text2SpeechDecodedResults::output_sample_rate`
+     */
+    Text2SpeechDecodedResults generate(const std::string& text,
+                                       const ov::Tensor& speaker_embedding = ov::Tensor(),
+                                       const std::optional<SpeechGenerationConfig>& generation_config = std::nullopt) {
+        return generate(std::vector<std::string>{text}, speaker_embedding, generation_config);
     }
 
     /**
@@ -68,10 +102,25 @@ public:
      * `Text2SpeechDecodedResults::output_sample_rate`
      */
     Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
-                                       const ov::Tensor& speaker_embedding = ov::Tensor(),
-                                       const ov::AnyMap& properties = {});
+                                       const ov::Tensor& speaker_embedding,
+                                       const ov::AnyMap& properties);
 
-    template <typename... Properties>
+    /**
+     * Generates speeches based on input texts
+     * @param texts input texts for which to generate speeches
+     * @param speaker_embedding Optional speaker embedding tensor representing the unique characteristics of a speaker's
+     * voice. If not provided for SpeechT5 TSS model, the 7306th vector from the validation set of the
+     * `Matthijs/cmu-arctic-xvectors` dataset is used by default.
+     * @param generation_config Optional speech generation configuration override
+     * @returns raw audios of the input texts spoken in the specified speaker's voice; sample rate is provided in
+     * `Text2SpeechDecodedResults::output_sample_rate`
+     */
+    Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
+                                       const ov::Tensor& speaker_embedding = ov::Tensor(),
+                                       const std::optional<SpeechGenerationConfig>& generation_config = std::nullopt);
+
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
                                        const ov::Tensor& speaker_embedding = ov::Tensor(),
                                        Properties&&... properties) {

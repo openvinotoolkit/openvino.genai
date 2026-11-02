@@ -59,6 +59,15 @@ else()
     set(LIBRARY_DESTINATION runtime/lib/${ARCH_DIR})
     set(ARCHIVE_DESTINATION runtime/lib/${ARCH_DIR})
     set(RUNTIME_DESTINATION runtime/bin/${ARCH_DIR})
+
+    if(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME AND LINUX)
+        # Building the openvino_genai wheel: OpenVINO's own runtime libraries -- including any
+        # frontend openvino_genai links directly, e.g. the GGUF frontend -- live in the separately
+        # installed 'openvino' package's 'libs' directory, not alongside libopenvino_genai.so.
+        # DT_RUNPATH is not transitive, so this has to be set here rather than (or in addition to)
+        # on the pybind extension module in src/python/CMakeLists.txt.
+        set(rpaths "$ORIGIN" "$ORIGIN/../openvino/libs")
+    endif()
 endif()
 
 #

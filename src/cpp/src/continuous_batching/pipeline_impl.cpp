@@ -128,7 +128,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     // Note: set_inputs_embedder also sets the embedding model internally.
     m_model_runner->set_inputs_embedder(inputs_embedder);
     m_model_input_type = ModelInputType::EMBEDDINGS;
-    m_vision_registry = std::make_shared<VisionRegistry>();
+    m_embeddings_registry = std::make_shared<EmbeddingsRegistry>();
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
@@ -657,6 +657,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
         ContinuousBatchingImpl& m_impl;
         const ContinuousBatchingScheduler::Output& m_scheduler_output;
         bool m_armed = true;
+
+        BorrowedLinearAttentionRowsGuard(ContinuousBatchingImpl& impl,
+                                         const ContinuousBatchingScheduler::Output& scheduler_output)
+            : m_impl(impl), m_scheduler_output(scheduler_output) {
+        }
 
         ~BorrowedLinearAttentionRowsGuard() noexcept {
             if (m_armed) {

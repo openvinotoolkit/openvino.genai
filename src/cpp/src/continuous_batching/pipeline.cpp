@@ -21,6 +21,7 @@
 #include "speculative_decoding/dflash_model_transforms.hpp"
 #include "speculative_decoding/mtp_model_transforms.hpp"
 #include "utils.hpp"
+#include "gguf_utils/gguf_utils.hpp"
 #include "model_desc.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/multimodal_inputs.hpp"
@@ -84,7 +85,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     utils::extract_extensions_to_core(properties_without_draft_model);
     auto model = utils::read_model(models_path,
         utils::get_model_properties(properties_without_draft_model, "language_model"));
-    auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
+    auto properties_without_draft_model_without_gguf = gguf_utils::extract_gguf_properties(properties_without_draft_model).rest;
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
     auto tokenizer = ov::genai::Tokenizer(models_path, tokenizer_properties);
     auto generation_config = utils::from_config_json_if_exists(models_path);
@@ -152,7 +153,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
     utils::validate_vlm_model_properties(properties_without_draft_model);
 
     auto model = language_model;
-    auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
+    auto properties_without_draft_model_without_gguf = gguf_utils::extract_gguf_properties(properties_without_draft_model).rest;
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
     auto tokenizer = ov::genai::Tokenizer(models_path, tokenizer_properties);
     auto generation_config = utils::from_config_json_if_exists(models_path);
@@ -220,7 +221,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     utils::extract_extensions_to_core(properties_without_draft_model);
     auto model = utils::read_model(models_path,
         utils::get_model_properties(properties_without_draft_model, "language_model"));
-    auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
+    auto properties_without_draft_model_without_gguf = gguf_utils::extract_gguf_properties(properties_without_draft_model).rest;
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
 
     auto generation_config = utils::from_config_json_if_exists(models_path);
@@ -280,7 +281,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto dflash_rt_info = utils::dflash::extract_dflash_info_from_config(draft_model_descr.properties);
     auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(draft_model_descr.properties, model_config_dir_path);
     auto mtp_rt_info = utils::mtp::extract_mtp_info_from_config(draft_model_descr.properties);
-    auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
+    auto properties_without_draft_model_without_gguf = gguf_utils::extract_gguf_properties(properties_without_draft_model).rest;
     if (!model_config_dir_path.empty()) {
         properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = model_config_dir_path;
     }
@@ -557,6 +558,16 @@ GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, co
     return m_impl->add_request(request_id, prompt, images, videos, sampling_params);
 }
 
+GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id,
+                                                         const std::string& prompt,
+                                                         const std::vector<ov::Tensor>& images,
+                                                         const std::vector<ov::Tensor>& videos,
+                                                         const std::vector<ov::Tensor>& audios,
+                                                         const ov::genai::GenerationConfig& sampling_params) {
+    assert_supported_add_request_lora_modes(m_impl->get_pipeline_adapters(), sampling_params);
+    return m_impl->add_request(request_id, prompt, images, videos, {}, audios, sampling_params);
+}
+
 GenerationHandle ContinuousBatchingPipeline::add_request(
     uint64_t request_id,
     const std::string& prompt,
@@ -569,8 +580,6 @@ GenerationHandle ContinuousBatchingPipeline::add_request(
     assert_supported_add_request_lora_modes(m_impl->get_pipeline_adapters(), generation_config.value());
 
     const auto multimodal_inputs = extract_multimodal_inputs(properties_map);
-    OPENVINO_ASSERT(!multimodal_inputs.audios.has_value() || multimodal_inputs.audios->empty(),
-                    "Audio input is not supported by add_request(). Use generate() with audios_batches instead.");
 
     if (!multimodal_inputs.has_value()) {
         return m_impl->add_request(request_id, prompt, generation_config.value());
@@ -582,6 +591,7 @@ GenerationHandle ContinuousBatchingPipeline::add_request(
         multimodal_inputs.images.value_or(std::vector<ov::Tensor>{}),
         multimodal_inputs.videos.value_or(std::vector<ov::Tensor>{}),
         multimodal_inputs.videos_metadata.value_or(std::vector<VideoMetadata>{}),
+        multimodal_inputs.audios.value_or(std::vector<ov::Tensor>{}),
         generation_config.value()
     );
 }

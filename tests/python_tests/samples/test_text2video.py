@@ -21,6 +21,7 @@ class TestText2Video:
         [
             pytest.param("tiny-random-ltx-video", PROMPT, False),
             pytest.param("tiny-random-ltx2", PROMPT, True),
+            pytest.param("tiny-random-ltx2.3", PROMPT, True),
         ],
         indirect=["convert_model"],
     )
