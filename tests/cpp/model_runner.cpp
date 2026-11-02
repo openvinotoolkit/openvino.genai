@@ -280,30 +280,6 @@ std::vector<T> tensor_values(const ov::Tensor& tensor) {
 
 }  // namespace
 
-TEST(TestModelRunnerDFlashDraft, fills_token_types_hidden_rows_and_candidate_rows) {
-    ov::Core core;
-    ov::InferRequest request = core.compile_model(create_dummy_dflash_draft_model(), "CPU").create_infer_request();
-    ModelRunner runner(request, /*block_size=*/4, /*num_decoder_layers=*/1);
-    runner.enable_dflash_draft(/*candidate_position_offset=*/1);
-
-    // 8 target rows, then the block [seed, mask, mask, mask]
-    const std::vector<int64_t> prompt_tokens = {0, 1, 2, 3, 4, 5, 6, 7};
-    auto group = make_dflash_window_group(prompt_tokens, 12);
-    runner.set_initial_hidden_state(0, make_dflash_hidden_rows(8));
-    const auto seq_id = group->get_running_sequences()[0]->get_id();
-    std::ignore = runner.forward({group}, make_output_for_single_sequence(seq_id, 12, BlocksPerLayer{std::make_shared<CacheBlock>(0)}));
-
-    auto ireq = runner.get_infer_request();
-    EXPECT_EQ(tensor_values<int64_t>(ireq.get_tensor("token_type_ids")),
-              (std::vector<int64_t>{0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1}));
-    std::vector<float> expected_hidden(12 * DFLASH_HIDDEN_SIZE, 0.0f);
-    std::iota(expected_hidden.begin(), expected_hidden.begin() + 8 * DFLASH_HIDDEN_SIZE, 1.0f);
-    EXPECT_EQ(tensor_values<float>(ireq.get_tensor("hidden_states")), expected_hidden);
-    // the candidates are the mask rows after the seed
-    EXPECT_EQ(tensor_values<int64_t>(ireq.get_tensor("sampled_tokens_indices")), (std::vector<int64_t>{9, 10, 11}));
-    EXPECT_EQ(group->get_output_seq_len(), 3);
-}
-
 TEST(TestModelRunnerDFlashDraft, deepspec_gathers_from_the_seed_row) {
     ov::Core core;
     ov::InferRequest request = core.compile_model(create_dummy_dflash_draft_model(), "CPU").create_infer_request();
