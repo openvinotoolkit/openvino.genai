@@ -17,6 +17,15 @@
 #include "include/whisper_pipeline/perf_metrics.hpp"
 
 namespace {
+
+bool is_external_tensor_object(const Napi::Value& value) {
+    if (!value.IsObject()) {
+        return false;
+    }
+    Napi::Object obj = value.As<Napi::Object>();
+    Napi::Value marker = obj.Get("__getExternalTensor");
+    return marker.IsFunction();
+}
 constexpr const char* JS_SCHEDULER_CONFIG_KEY = "schedulerConfig";
 constexpr const char* CPP_SCHEDULER_CONFIG_KEY = "scheduler_config";
 constexpr const char* POOLING_TYPE_KEY = "pooling_type";
@@ -200,6 +209,10 @@ ov::Any js_array_to_any(const Napi::Env& env, const Napi::Array& array) {
 
 template <>
 ov::Any js_to_cpp<ov::Any>(const Napi::Env& env, const Napi::Value& value) {
+    if (is_external_tensor_object(value)) {
+        return ov::Any(js_to_cpp<ov::Tensor>(env, value));
+    }
+
     const auto cpp_type = get_cpp_type(env, value);
     if (cpp_type == typeid(void)) {
         return ov::Any();
@@ -781,8 +794,33 @@ ov::genai::SpeechGenerationConfig js_to_cpp<ov::genai::SpeechGenerationConfig>(c
     if (value.IsUndefined() || value.IsNull()) {
         return config;
     }
+    OPENVINO_ASSERT(value.IsObject(), "SpeechGenerationConfig must be an object.");
+
     ov::AnyMap config_map = js_to_cpp<ov::AnyMap>(env, value);
+    // These fields are handled below with explicit Tensor/path conversions.
+    config_map.erase("ref_audio");
+    config_map.erase("ref_codec_ids");
+    config_map.erase("phonemize_fallback_model_dir");
     config.update_generation_config(config_map);
+
+    const auto object = value.As<Napi::Object>();
+
+    if (const Napi::Value field = object.Get("max_phoneme_length"); !field.IsUndefined() && !field.IsNull()) {
+        config.max_phoneme_length = static_cast<uint32_t>(js_to_cpp<size_t>(env, field));
+    }
+    if (const Napi::Value field = object.Get("subtalker_top_k"); !field.IsUndefined() && !field.IsNull()) {
+        config.subtalker_top_k = static_cast<uint32_t>(js_to_cpp<size_t>(env, field));
+    }
+    if (const Napi::Value field = object.Get("phonemize_fallback_model_dir"); !field.IsUndefined() && !field.IsNull()) {
+        config.phonemize_fallback_model_dir = js_to_cpp<std::filesystem::path>(env, field);
+    }
+    if (const Napi::Value field = object.Get("ref_audio"); !field.IsUndefined() && !field.IsNull()) {
+        config.ref_audio = js_to_cpp<ov::Tensor>(env, field);
+    }
+    if (const Napi::Value field = object.Get("ref_codec_ids"); !field.IsUndefined() && !field.IsNull()) {
+        config.ref_codec_ids = js_to_cpp<ov::Tensor>(env, field);
+    }
+
     return config;
 }
 
@@ -1740,6 +1778,25 @@ Napi::Value cpp_to_js<ov::genai::SpeechGenerationConfig, Napi::Value>(
     obj.Set("minlenratio", cpp_to_js<float, Napi::Value>(env, config.minlenratio));
     obj.Set("maxlenratio", cpp_to_js<float, Napi::Value>(env, config.maxlenratio));
     obj.Set("threshold", cpp_to_js<float, Napi::Value>(env, config.threshold));
+    obj.Set("language", Napi::String::New(env, config.language));
+    obj.Set("speed", cpp_to_js<float, Napi::Value>(env, config.speed));
+    obj.Set("max_phoneme_length", cpp_to_js<size_t, Napi::Value>(env, static_cast<size_t>(config.max_phoneme_length)));
+    if (config.phonemize_fallback_model_dir.has_value()) {
+        obj.Set("phonemize_fallback_model_dir",
+                Napi::String::New(env, config.phonemize_fallback_model_dir.value().u8string()));
+    } else {
+        obj.Set("phonemize_fallback_model_dir", env.Undefined());
+    }
+    obj.Set("speaker", Napi::String::New(env, config.speaker));
+    obj.Set("instruct", Napi::String::New(env, config.instruct));
+    obj.Set("non_streaming_mode", Napi::Boolean::New(env, config.non_streaming_mode));
+    obj.Set("subtalker_dosample", Napi::Boolean::New(env, config.subtalker_dosample));
+    obj.Set("subtalker_top_k", cpp_to_js<size_t, Napi::Value>(env, static_cast<size_t>(config.subtalker_top_k)));
+    obj.Set("subtalker_top_p", cpp_to_js<float, Napi::Value>(env, config.subtalker_top_p));
+    obj.Set("subtalker_temperature", cpp_to_js<float, Napi::Value>(env, config.subtalker_temperature));
+    obj.Set("ref_text", Napi::String::New(env, config.ref_text));
+    obj.Set("ref_audio", env.Undefined());
+    obj.Set("ref_codec_ids", env.Undefined());
     return obj;
 }
 
@@ -2023,6 +2080,17 @@ Napi::Object to_text2speech_decoded_result(const Napi::Env& env,
         speeches[i] = cpp_to_js<ov::Tensor, Napi::Value>(env, results.speeches[i]);
     }
     obj.Set("speeches", speeches);
+    obj.Set("outputSampleRate", cpp_to_js<size_t, Napi::Value>(env, static_cast<size_t>(results.output_sample_rate)));
     obj.Set("perfMetrics", Text2SpeechPerfMetricsWrapper::wrap(env, results.perf_metrics));
+    if (static_cast<bool>(results.speaker_embedding)) {
+        obj.Set("speakerEmbedding", cpp_to_js<ov::Tensor, Napi::Value>(env, results.speaker_embedding));
+    } else {
+        obj.Set("speakerEmbedding", env.Undefined());
+    }
+    if (static_cast<bool>(results.ref_codec_ids)) {
+        obj.Set("refCodecIds", cpp_to_js<ov::Tensor, Napi::Value>(env, results.ref_codec_ids));
+    } else {
+        obj.Set("refCodecIds", env.Undefined());
+    }
     return obj;
 }

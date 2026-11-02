@@ -31,6 +31,8 @@ describe("Text2SpeechPipeline methods", () => {
       "speech.data should be Float32Array",
     );
     assert.ok(result.speeches[0].data.length > 0, "speech.data should not be empty");
+    assert.strictEqual(typeof result.outputSampleRate, "number");
+    assert.ok(result.outputSampleRate > 0, "outputSampleRate should be positive");
   });
 
   it("generate(texts) handles batch of texts", async () => {
@@ -66,6 +68,15 @@ describe("Text2SpeechPipeline methods", () => {
     const updated = pipeline.getGenerationConfig();
     assert.strictEqual(updated.threshold, newThreshold);
     pipeline.setGenerationConfig({ threshold: original.threshold });
+  });
+
+  it("getSpeakerEmbeddingShape() returns model-required shape", () => {
+    const shape = pipeline.getSpeakerEmbeddingShape();
+    assert.ok(Array.isArray(shape));
+    assert.ok(shape.length > 0);
+    for (const dim of shape) {
+      assert.ok(typeof dim === "number" || typeof dim === "bigint");
+    }
   });
 
   it("Text2SpeechPerfMetrics has base getters and TTS-specific ones", async () => {

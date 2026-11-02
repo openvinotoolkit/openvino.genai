@@ -407,11 +407,15 @@ export interface Text2SpeechPipeline {
       result: {
         speeches: Tensor[];
         perfMetrics: Text2SpeechPerfMetrics;
+        outputSampleRate: number;
+        speakerEmbedding?: Tensor;
+        refCodecIds?: Tensor;
       },
     ) => void,
   ): void;
   getGenerationConfig(): SpeechGenerationConfig;
   setGenerationConfig(config: SpeechGenerationConfig): void;
+  getSpeakerEmbeddingShape(): Array<number | bigint>;
 }
 
 interface OpenVINOGenAIAddon {

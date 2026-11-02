@@ -224,14 +224,26 @@ export class ASRDecodedResults extends DecodedResults {
 
 /**
  * Result of Text2SpeechPipeline.generate() with audio tensors and perf metrics.
- * Each element in `speeches` is an audio waveform tensor sampled at 16 kHz.
+ * Use `outputSampleRate` for the emitted waveform sample rate.
  */
 export class Text2SpeechDecodedResults {
-  constructor(speeches: Tensor[], perfMetrics: Text2SpeechPerfMetrics) {
+  constructor(
+    speeches: Tensor[],
+    perfMetrics: Text2SpeechPerfMetrics,
+    outputSampleRate: number,
+    speakerEmbedding?: Tensor,
+    refCodecIds?: Tensor,
+  ) {
     this.speeches = speeches;
     this.perfMetrics = perfMetrics;
+    this.outputSampleRate = outputSampleRate;
+    this.speakerEmbedding = speakerEmbedding;
+    this.refCodecIds = refCodecIds;
   }
 
   speeches: Tensor[];
   perfMetrics: Text2SpeechPerfMetrics;
+  outputSampleRate: number;
+  speakerEmbedding?: Tensor;
+  refCodecIds?: Tensor;
 }
