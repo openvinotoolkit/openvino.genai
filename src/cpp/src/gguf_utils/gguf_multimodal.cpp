@@ -274,9 +274,9 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
                             !meta.has("clip.vision.image_split_resolution") &&
                             (!meta.has("clip.vision.mm_patch_merge_type") ||
                              meta.text("clip.vision.mm_patch_merge_type") == "flat") &&
-                            (aspect_ratio == "square" || aspect_ratio == "pad"),
+                            aspect_ratio == "square",
                         "Unsupported GGUF LLaVA variant: only fixed-resolution LLaVA 1.5 is supported; "
-                        "LLaVA Next and any-resolution image inputs are not supported");
+                        "LLaVA Next, any-resolution image inputs and image padding are not supported");
         if (const auto it = tokenizer_metadata.find("unknown_token_id"); it != tokenizer_metadata.end()) {
             const auto unknown = it->second.as<ov::Tensor>();
             OPENVINO_ASSERT(unknown.get_element_type() == ov::element::u32 && unknown.get_size() == 1,
@@ -300,6 +300,8 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     }
     result.tokenizer = GGUFTokenizer(GGUFTokenizerParameters(std::move(tokenizer_metadata)), properties);
     const bool clip = projector == "mlp" || projector == "internvl";
+    if (clip)
+        validate_gguf_clip_language(result.language);
     const bool gemma4 = architecture == "gemma4" && (projector == "gemma4v" || projector == "gemma4uv");
     OPENVINO_ASSERT((architecture == "gemma3" && projector == "gemma3") ||
                         ((architecture == "qwen35" || architecture == "qwen35moe") && projector == "qwen3vl_merger") ||

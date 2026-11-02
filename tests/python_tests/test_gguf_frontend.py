@@ -572,7 +572,7 @@ def test_gguf_llava_preformatted_prompt(tiny_gguf_vlm_model):
         ("image_aspect_ratio", "unknown", False),
         ("mm_patch_merge_type", "flat", True),
         ("image_aspect_ratio", "square", True),
-        ("image_aspect_ratio", "pad", True),
+        ("image_aspect_ratio", "pad", False),
     ],
 )
 def test_gguf_llava_projector_variant(tiny_gguf_vlm_model, backend, metadata_key, value, supported):
@@ -607,7 +607,7 @@ def test_gguf_llava_projector_variant(tiny_gguf_vlm_model, backend, metadata_key
             genai.VLMPipeline(language, "CPU", **options)
         return
     pipeline = genai.VLMPipeline(language, "CPU", **options)
-    image = ov.Tensor(np.random.default_rng(0).integers(0, 256, (1, 24, 24, 3), dtype=np.uint8))
+    image = ov.Tensor(np.random.default_rng(0).integers(0, 256, (1, 24, 48, 3), dtype=np.uint8))
     result = pipeline.generate(
         "USER: <image>Describe. ASSISTANT:",
         images=[image],

@@ -11,6 +11,7 @@
 #include "visual_language/gemma4/audio_encoder.hpp"
 #include "visual_language/gemma4/audio_feature_extractor.hpp"
 #include "gguf_utils/gguf_multimodal.hpp"
+#include "gguf_utils/gguf_clip_adapter.hpp"
 #include "gguf_utils/gguf_frontend_extensions.hpp"
 #include "gguf_utils/gguf_tokenizer.hpp"
 #include "sampling/sampler.hpp"
@@ -397,6 +398,36 @@ TEST(GGUFMultimodal, PipelineControlsGenAIExtensionMode) {
         EXPECT_NE(selected, supplied);
         EXPECT_NE(selected, nullptr);
     }
+}
+
+TEST(GGUFMultimodal, ClipRequiresCompatibleLanguageInputs) {
+    using namespace ov::opset15;
+    using ov::genai::validate_gguf_clip_language;
+    auto embeds = std::make_shared<Parameter>(ov::element::f32, ov::PartialShape{1, -1, 4});
+    embeds->output(0).set_names({"inputs_embeds"});
+    auto positions = std::make_shared<Parameter>(ov::element::i64, ov::PartialShape{1, -1});
+    positions->output(0).set_names({"position_ids"});
+    auto language = std::make_shared<ov::Model>(ov::OutputVector{embeds}, ov::ParameterVector{embeds, positions});
+    EXPECT_NO_THROW(validate_gguf_clip_language(language));
+    for (const auto& shape : {ov::PartialShape{4, 1, -1}, ov::PartialShape{1, 1, 1, -1}, ov::PartialShape::dynamic()}) {
+        positions->set_partial_shape(shape);
+        positions->validate_and_infer_types();
+        EXPECT_THROW(validate_gguf_clip_language(language), ov::Exception);
+    }
+    positions->set_partial_shape({1, -1});
+    positions->set_element_type(ov::element::f32);
+    positions->validate_and_infer_types();
+    EXPECT_THROW(validate_gguf_clip_language(language), ov::Exception);
+    positions->set_element_type(ov::element::i64);
+    positions->validate_and_infer_types();
+    for (const std::string name : {"token_type_ids", "per_layer_inputs"}) {
+        auto extra = std::make_shared<Parameter>(ov::element::i64, ov::PartialShape{1, -1});
+        extra->output(0).set_names({name});
+        language->add_parameters({extra});
+        EXPECT_THROW(validate_gguf_clip_language(language), ov::Exception);
+        language->remove_parameter(extra);
+    }
+    EXPECT_NO_THROW(validate_gguf_clip_language(language));
 }
 
 TEST(GGUFMultimodal, ProjectorWidthsMustMatchLanguage) {

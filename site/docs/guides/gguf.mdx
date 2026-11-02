@@ -107,7 +107,8 @@ The existing image, video, audio, and chat APIs apply.
 
 LLaVA 1.5 and InternVL use the existing native frontend vision graphs. LLaVA Next and
 MiniCPM-V are not included in these additional projector routes. LLaVA projectors declaring
-image grids, image splitting, spatial patch merging, or any-resolution processing are rejected.
+image grids, image splitting, spatial patch merging, padded or any-resolution processing are rejected.
+Both routes require rank-2 `position_ids` and the standard language embedding interface.
 For a LLaVA checkpoint without
 a chat template, provide its formatted prompt and set `apply_chat_template=False` when generating.
 
