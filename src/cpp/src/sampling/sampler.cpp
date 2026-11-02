@@ -1474,10 +1474,49 @@ process_stop_strings(const std::set<std::string>& stop_strings, Tokenizer& token
     return result;
 }
 
+SequenceGroupSamplingInfo Sampler::_sample_block_from_sequence_group(SequenceGroup::Ptr sequence_group,
+                                                                     ov::Tensor sequence_group_logits,
+                                                                     RequestSamplerContext& context) {
+    SequenceGroupSamplingInfo sg_sampling_info;
+    const ov::genai::GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
+    OPENVINO_ASSERT(sampling_params.is_greedy_decoding(), "The DFlash draft supports greedy decoding only.");
+    std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
+    OPENVINO_ASSERT(running_sequences.size() == 1);
+    Sequence::Ptr sequence = running_sequences.front();
+
+    // A window that stopped before its first candidate row gathers nothing.
+    const size_t num_gathered_rows = sequence_group->get_output_seq_len();
+    if (num_gathered_rows == 0) {
+        return sg_sampling_info;
+    }
+    // Every token after the seed is a placeholder, including those past the rows the scheduler ran.
+    const size_t num_unforwarded_rows =
+        sequence_group->get_prompt_len() + sequence->get_generated_len() - sequence_group->get_context_len();
+    sequence->remove_last_tokens(num_unforwarded_rows + num_gathered_rows + m_block_sampling_start_offset - 1);
+
+    const size_t generated_len = sequence->get_generated_len();
+    const size_t max_new_tokens = sequence_group->get_max_new_tokens();
+    // The target generates one more token after the last candidate it validates.
+    const size_t num_candidates =
+        max_new_tokens - 1 > generated_len ? std::min(num_gathered_rows, max_new_tokens - 1 - generated_len) : 0;
+    LogitProcessor& logit_processor = context.logit_processor;
+    for (size_t candidate = 0; candidate < num_candidates; ++candidate) {
+        auto logit_vector = _get_logit_vector(sequence_group_logits, 0, num_gathered_rows - 1 - candidate);
+        logit_processor.update_generated_len(generated_len + candidate);
+        logit_processor.apply(logit_vector);
+        register_new_token(_greedy_sample(logit_vector, sampling_params.logprobs), sequence, logit_processor, true, false);
+    }
+    sg_sampling_info.sampler_output.num_generated_tokens = num_candidates;
+    return sg_sampling_info;
+}
+
 SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr sequence_group, ov::Tensor sequence_group_logits, 
                                                               RequestSamplerContext& ctx,
                                                               bool is_validation_mode_enabled,
                                                               bool notify_handle) {
+    if (m_block_sampling) {
+        return _sample_block_from_sequence_group(sequence_group, sequence_group_logits, ctx);
+    }
     SequenceGroupSamplingInfo sg_sampling_info;
     // Assistant pipeline info is relevant for speculative and prompt lookup decoding
     AssistingPipelineInfo& assisting_pipeline_info = sg_sampling_info.get_assisting_pipeline_info();

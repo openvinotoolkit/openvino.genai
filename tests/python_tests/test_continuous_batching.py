@@ -1467,6 +1467,8 @@ def test_dflash_small_draft_cache_leaves_requests_to_the_target(dflash_model_pat
 
     results = pipe.generate(DFLASH_PROMPTS, [config] * len(DFLASH_PROMPTS))
 
+    # the target finishes every request whose draft stopped
+    assert [result.m_status for result in results] == [GenerationStatus.FINISHED] * len(DFLASH_PROMPTS)
     assert [result.m_generation_ids for result in results] == reference
 
 

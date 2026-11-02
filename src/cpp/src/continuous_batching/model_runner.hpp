@@ -658,7 +658,7 @@ public:
             size_t output_seq_len = 0;
             const bool echo_output = sequence_group->get_sampling_parameters().echo;
             const bool sampling_is_required = sequence_group->requires_sampling();
-            const size_t tokens_to_sample_per_sequence = 1 + sequence_group->get_num_tokens_to_validate();
+            size_t tokens_to_sample_per_sequence = 1 + sequence_group->get_num_tokens_to_validate();
 
             if (sequence_group_type == SequenceGroupType::EMBEDDINGS 
                 && deepstack_context.have_deepstack_visual_inputs
@@ -757,12 +757,11 @@ public:
                         }
                     }
                 } else if (m_dflash_draft) {
-                    output_seq_len += _fill_dflash_draft_rows(sequence_group->get_request_id(),
-                                                              num_scheduled_tokens,
-                                                              current_token_idx,
-                                                              hidden_state_input,
-                                                              dflash_token_type_ids_data + current_token_idx,
-                                                              gather_indices_values);
+                    tokens_to_sample_per_sequence = _fill_dflash_draft_rows(sequence_group->get_request_id(),
+                                                                            num_scheduled_tokens,
+                                                                            current_token_idx,
+                                                                            hidden_state_input,
+                                                                            dflash_token_type_ids_data + current_token_idx);
                 }
                 for (size_t token_id = 0, position_id = group_position_id; token_id < num_scheduled_tokens; ++token_id, ++position_id, ++gathering_current_index) {
                     // compute token for current sequence
@@ -1153,14 +1152,14 @@ private:
 
     // Fills the rows of one DFlash draft window starting at `first_row`: the request's stored target hidden
     // states go to the leading rows (token type 0) and the rest is the block (token type 1, hidden state
-    // left zero). `token_type_ids_data` points at the window's first row. Appends the block rows after the
-    // first `candidate_position_offset` ones to `gather_indices` and returns their count.
+    // left zero). `token_type_ids_data` points at the window's first row. Returns the number of block rows
+    // after the first `candidate_position_offset` ones; they are the window's last rows, so the gather keeps
+    // them, and a window cut before them has none.
     size_t _fill_dflash_draft_rows(uint64_t request_id,
                                    size_t num_scheduled_tokens,
                                    size_t first_row,
                                    const ov::Tensor& hidden_state_input,
-                                   int64_t* token_type_ids_data,
-                                   std::vector<int64_t>& gather_indices) {
+                                   int64_t* token_type_ids_data) {
         const auto it = m_initial_hidden_states.find(request_id);
         const ov::Tensor target_hidden_states = it != m_initial_hidden_states.end() ? it->second : ov::Tensor{};
         const size_t num_target_rows = target_hidden_states ? target_hidden_states.get_shape()[0] : 0;
@@ -1173,9 +1172,6 @@ private:
             _copy_roi_between_tensors(target_hidden_states, 0, context_rows, hidden_state_input, first_row);
         }
         const size_t first_candidate = context_rows + m_dflash_candidate_position_offset;
-        for (size_t row = first_candidate; row < num_scheduled_tokens; ++row) {
-            gather_indices.push_back(static_cast<int64_t>(first_row + row));
-        }
         return num_scheduled_tokens > first_candidate ? num_scheduled_tokens - first_candidate : 0;
     }
 

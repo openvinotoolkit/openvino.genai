@@ -372,40 +372,51 @@ protected:
         void finish_window(const ov::genai::SequenceGroup::Ptr& group, const std::vector<int64_t>& candidates) {
             const auto planned = window(group);
             auto sequence = group->get_running_sequences().front();
-            sequence->remove_last_tokens(planned.block_rows - 1);
+            if (planned.block_rows > 0) {
+                sequence->remove_last_tokens(planned.block_rows - 1);
+            }
             auto& logit_processor = m_sampler->get_logit_processor(group->get_request_id());
             for (const int64_t token : candidates) {
                 sequence->append_token(token, 0.0f);
                 logit_processor.register_new_generated_token(token);
             }
             group->update_processed_tokens_num(planned.committed_rows + planned.context_rows);
+            group->set_num_validated_tokens(0);
             m_dflash_draft_windows.clear();
         }
 
-        // Leaves the request as the draft multistep does after the scheduler did not run its window whole.
-        void drop_window(const ov::genai::SequenceGroup::Ptr& group) {
+        // Leaves the request as the draft multistep does after the scheduler ran only `forwarded_rows` of its window,
+        // stopping before the first candidate row.
+        void drop_window(const ov::genai::SequenceGroup::Ptr& group, size_t forwarded_rows = 0) {
             const auto planned = window(group);
-            group->get_running_sequences().front()->remove_last_tokens(planned.block_rows - 1);
+            group->update_processed_tokens_num(planned.committed_rows + forwarded_rows);
+            if (planned.block_rows > 0) {
+                group->get_running_sequences().front()->remove_last_tokens(planned.block_rows - 1);
+            }
             group->update_processed_tokens_num(
                 std::min(group->get_num_processed_tokens(), planned.committed_rows + planned.context_rows));
+            group->set_num_validated_tokens(0);
             m_dflash_draft_windows.clear();
         }
 
     private:
         static uint64_t sequence_id(const ov::genai::SequenceGroup::Ptr& group) {
-            return group->get_running_sequences().front()->get_id();
+            return group->get_sequences().front()->get_id();
         }
     };
 
-    // Prompt of 8 tokens processed by the target in one chunk; the target sampled seed 7.
+    // Prompt of 8 tokens processed by the target in one chunk; the target sampled 7, and the draft forwarded the
+    // prompt rows. The target then generated seed 17 alone and exported the row of 7, so the first block follows.
     ov::genai::SequenceGroup::Ptr start_with_block(DraftInstance& draft, size_t num_assistant_tokens = 3) {
         auto group = draft.add(0, {0, 1, 2, 3, 4, 5, 6, 7}, num_assistant_tokens);
         draft.update_request(0, target_step({7}, 8, make_hidden_rows(8, 0.0f)), true);
+        draft.finish_window(group, {});
+        draft.update_request(0, target_step({7, 17}, 9, make_hidden_rows(1, 50.0f)), true);
         return group;
     }
 
     static std::vector<int64_t> generated(const ov::genai::SequenceGroup::Ptr& group) {
-        return group->get_running_sequences().front()->get_generated_ids();
+        return group->get_sequences().front()->get_generated_ids();
     }
 };
 
@@ -425,15 +436,31 @@ TEST_F(DFlashCBPipelineTest, PrefillChunkOffersOnlyTheExportedRows) {
     ASSERT_EQ(draft.window(group).block_rows, 0);
 }
 
-TEST_F(DFlashCBPipelineTest, WindowCrossingThePromptEndIsOneGeneratePhaseWindow) {
+TEST_F(DFlashCBPipelineTest, WindowStartingInThePromptHasNoBlock) {
+    DraftInstance draft;
+    auto group = draft.add(0, {0, 1, 2, 3, 4, 5, 6, 7}, 3);
+
+    // the target processed the whole prompt and sampled 7
+    draft.update_request(0, target_step({7}, 8, make_hidden_rows(8, 0.0f)), true);
+
+    // the window carries only the prompt rows, so it is scheduled in the prompt phase like any prefill chunk
+    ASSERT_EQ(generated(group), (std::vector<int64_t>{7}));
+    ASSERT_EQ(draft.window(group).context_rows, 8);
+    ASSERT_EQ(draft.window(group).block_rows, 0);
+    ASSERT_FALSE(group->can_generate_tokens());
+    ASSERT_EQ(group->get_num_available_tokens_for_batching(), 8);
+}
+
+TEST_F(DFlashCBPipelineTest, FirstBlockFollowsThePromptRows) {
     DraftInstance draft;
     auto group = start_with_block(draft);
 
-    ASSERT_EQ(generated(group), (std::vector<int64_t>{7, MASK_TOKEN, MASK_TOKEN, MASK_TOKEN}));
+    ASSERT_EQ(generated(group), (std::vector<int64_t>{7, 17, MASK_TOKEN, MASK_TOKEN, MASK_TOKEN}));
+    // the window starts at the prompt end, so it is scheduled in the generation phase
     ASSERT_TRUE(group->can_generate_tokens());
-    ASSERT_EQ(group->get_num_processed_tokens(), 0);
-    // 8 context rows + seed + 3 masks
-    ASSERT_EQ(group->get_num_available_tokens_for_batching(), 12);
+    ASSERT_EQ(group->get_num_processed_tokens(), 8);
+    // the row of 7 + seed + 3 masks
+    ASSERT_EQ(group->get_num_available_tokens_for_batching(), 1 + 4);
     ASSERT_FALSE(group->requires_sampling());
 }
 
@@ -441,9 +468,9 @@ TEST_F(DFlashCBPipelineTest, DeepSpecBlockStartsCandidatesAtTheSeed) {
     DraftInstance draft(/*candidate_position_offset=*/0);
     auto group = start_with_block(draft);
 
-    // 8 context rows + seed + 2 masks
-    ASSERT_EQ(group->get_num_available_tokens_for_batching(), 11);
-    ASSERT_EQ(generated(group), (std::vector<int64_t>{7, MASK_TOKEN, MASK_TOKEN}));
+    // the row of 7 + seed + 2 masks
+    ASSERT_EQ(group->get_num_available_tokens_for_batching(), 1 + 3);
+    ASSERT_EQ(generated(group), (std::vector<int64_t>{7, 17, MASK_TOKEN, MASK_TOKEN}));
 }
 
 TEST_F(DFlashCBPipelineTest, PartialRejectionKeepsAcceptedRowsAndRewindsTheBlock) {
@@ -451,15 +478,15 @@ TEST_F(DFlashCBPipelineTest, PartialRejectionKeepsAcceptedRowsAndRewindsTheBlock
     auto group = start_with_block(draft);
     draft.finish_window(group, {20, 21, 22});
 
-    // the target accepted 20, rejected 21 and corrected it to 30; it exported rows for [7, 20, 21, 22]
-    auto result = draft.update_request(0, target_step({7, 20, 30}, 10, make_hidden_rows(4, 100.0f)), true);
+    // the target accepted 20, rejected 21 and corrected it to 30; it exported rows for [17, 20, 21, 22]
+    auto result = draft.update_request(0, target_step({7, 17, 20, 30}, 11, make_hidden_rows(4, 100.0f)), true);
 
     ASSERT_EQ(result.removed_tokens_cnt, 2);
     ASSERT_EQ(result.inserted_tokens_cnt, 1);
-    ASSERT_EQ(generated(group), (std::vector<int64_t>{7, 20, 30, MASK_TOKEN, MASK_TOKEN, MASK_TOKEN}));
-    ASSERT_EQ(group->get_num_processed_tokens(), 8);
+    ASSERT_EQ(generated(group), (std::vector<int64_t>{7, 17, 20, 30, MASK_TOKEN, MASK_TOKEN, MASK_TOKEN}));
+    ASSERT_EQ(group->get_num_processed_tokens(), 9);
     // rows of the seed and the accepted candidate, then the next block
-    ASSERT_EQ(draft.window(group).committed_rows, 8);
+    ASSERT_EQ(draft.window(group).committed_rows, 9);
     ASSERT_EQ(draft.window(group).context_rows, 2);
     ASSERT_EQ(group->get_num_available_tokens_for_batching(), 2 + 4);
 }
@@ -469,7 +496,8 @@ TEST_F(DFlashCBPipelineTest, FullAcceptanceTakesAllValidatedRows) {
     auto group = start_with_block(draft);
     draft.finish_window(group, {20, 21, 22});
 
-    auto result = draft.update_request(0, target_step({7, 20, 21, 22, 23}, 12, make_hidden_rows(4, 100.0f)), true);
+    auto result =
+        draft.update_request(0, target_step({7, 17, 20, 21, 22, 23}, 13, make_hidden_rows(4, 100.0f)), true);
 
     ASSERT_EQ(result.removed_tokens_cnt, 0);
     ASSERT_EQ(result.inserted_tokens_cnt, 1);
@@ -482,10 +510,10 @@ TEST_F(DFlashCBPipelineTest, FullRejectionTakesOnlyTheSeedRow) {
     auto group = start_with_block(draft);
     draft.finish_window(group, {20, 21, 22});
 
-    auto result = draft.update_request(0, target_step({7, 30}, 9, make_hidden_rows(4, 100.0f)), true);
+    auto result = draft.update_request(0, target_step({7, 17, 30}, 10, make_hidden_rows(4, 100.0f)), true);
 
     ASSERT_EQ(result.removed_tokens_cnt, 3);
-    ASSERT_EQ(generated(group), (std::vector<int64_t>{7, 30, MASK_TOKEN, MASK_TOKEN, MASK_TOKEN}));
+    ASSERT_EQ(generated(group), (std::vector<int64_t>{7, 17, 30, MASK_TOKEN, MASK_TOKEN, MASK_TOKEN}));
     ASSERT_EQ(draft.window(group).context_rows, 1);
 }
 
@@ -494,8 +522,8 @@ TEST_F(DFlashCBPipelineTest, DeferredTargetPublishesNoNewRows) {
     auto group = start_with_block(draft);
     draft.finish_window(group, {20, 21, 22});
 
-    // the target did not run the request: it still reports 8 processed positions and stale rows
-    auto result = draft.update_request(0, target_step({7, 20, 21, 22}, 8, make_hidden_rows(8, 0.0f)), true);
+    // the target did not run the request: it still reports 9 processed positions and stale rows
+    auto result = draft.update_request(0, target_step({7, 17, 20, 21, 22}, 9, make_hidden_rows(8, 0.0f)), true);
 
     ASSERT_EQ(result.removed_tokens_cnt, 0);
     ASSERT_FALSE(draft.has_window(group));
@@ -508,13 +536,13 @@ TEST_F(DFlashCBPipelineTest, TargetRecomputeReusesTheCommittedRows) {
     draft.finish_window(group, {20, 21, 22});
 
     // the target was preempted and recomputed positions [0, 4) before validating the candidates
-    draft.update_request(0, target_step({7, 20, 21, 22}, 4, make_hidden_rows(4, 0.0f)), true);
+    draft.update_request(0, target_step({7, 17, 20, 21, 22}, 4, make_hidden_rows(4, 0.0f)), true);
     ASSERT_FALSE(draft.has_window(group));
-    ASSERT_EQ(group->get_num_processed_tokens(), 8);
+    ASSERT_EQ(group->get_num_processed_tokens(), 9);
 
-    // it recomputed [4, 10) and validated the candidates: 20 accepted, 21 corrected to 30
-    draft.update_request(0, target_step({7, 20, 30}, 10, make_hidden_rows(6, 100.0f)), true);
-    ASSERT_EQ(draft.window(group).committed_rows, 8);
+    // it recomputed [4, 11) and validated the candidates: 20 accepted, 21 corrected to 30
+    draft.update_request(0, target_step({7, 17, 20, 30}, 11, make_hidden_rows(7, 100.0f)), true);
+    ASSERT_EQ(draft.window(group).committed_rows, 9);
     ASSERT_EQ(draft.window(group).context_rows, 2);
 }
 
@@ -523,25 +551,54 @@ TEST_F(DFlashCBPipelineTest, MissedWindowLeavesTheRequestToTheTarget) {
     auto group = start_with_block(draft);
     draft.drop_window(group);
 
-    // the target generated 30 alone and exported only the seed row; the prompt rows are gone
-    auto result = draft.update_request(0, target_step({7, 30}, 9, make_hidden_rows(1, 100.0f)), true);
+    // the target generated 30 alone and exported only the seed row; the row of 7 is gone
+    auto result = draft.update_request(0, target_step({7, 17, 30}, 10, make_hidden_rows(1, 100.0f)), true);
 
     ASSERT_EQ(result.inserted_tokens_cnt, 1);
-    ASSERT_EQ(generated(group), (std::vector<int64_t>{7, 30}));
+    ASSERT_EQ(generated(group), (std::vector<int64_t>{7, 17, 30}));
     ASSERT_FALSE(draft.has_window(group));
-    ASSERT_TRUE(group->is_waiting());
-    ASSERT_EQ(group->get_num_processed_tokens(), 0);
+    // the draft request stops, which the speculative step turns into target-only decoding
+    ASSERT_EQ(group->get_generation_stream()->get_status(), ov::genai::GenerationStatus::STOP);
+}
+
+TEST_F(DFlashCBPipelineTest, WindowCutAtTheSeedKeepsDrafting) {
+    DraftInstance draft;
+    auto group = start_with_block(draft);
+    // the scheduler ran the row of 7 and the seed, but no candidate row
+    draft.drop_window(group, /*forwarded_rows=*/2);
+
+    // the target generated 30 alone and exported the seed row, which the draft has not committed
+    draft.update_request(0, target_step({7, 17, 30}, 10, make_hidden_rows(1, 100.0f)), true);
+
+    ASSERT_EQ(group->get_generation_stream()->get_status(), ov::genai::GenerationStatus::RUNNING);
+    ASSERT_EQ(draft.window(group).committed_rows, 9);
+    ASSERT_EQ(draft.window(group).context_rows, 1);
+    ASSERT_EQ(group->get_num_available_tokens_for_batching(), 1 + 4);
+}
+
+TEST_F(DFlashCBPipelineTest, StaleExtraRowsAreReplaced) {
+    DraftInstance draft;
+    auto group = start_with_block(draft);
+    draft.finish_window(group, {20, 21, 22});
+    // a request whose window was deferred keeps the extra rows of its last plan
+    group->set_num_validated_tokens(7);
+
+    draft.update_request(0, target_step({7, 17, 20, 30}, 11, make_hidden_rows(4, 100.0f)), true);
+
+    ASSERT_EQ(group->get_num_available_tokens_for_batching(), 2 + 4);
 }
 
 TEST_F(DFlashCBPipelineTest, NearMaxNewTokensForwardsOnlyTheContext) {
     DraftInstance draft;
-    auto group = draft.add(0, {0, 1, 2, 3}, 3, /*max_new_tokens=*/2);
+    auto group = draft.add(0, {0, 1, 2, 3}, 3, /*max_new_tokens=*/3);
     draft.update_request(0, target_step({3}, 4, make_hidden_rows(4, 0.0f)), true);
+    draft.finish_window(group, {});
+    draft.update_request(0, target_step({3, 9}, 5, make_hidden_rows(1, 0.0f)), true);
 
     // one token left for the target: no block, only the context rows are forwarded
     ASSERT_EQ(draft.window(group).block_rows, 0);
-    ASSERT_EQ(generated(group), (std::vector<int64_t>{3}));
-    ASSERT_EQ(group->get_num_available_tokens_for_batching(), 4);
+    ASSERT_EQ(generated(group), (std::vector<int64_t>{3, 9}));
+    ASSERT_EQ(group->get_num_available_tokens_for_batching(), 1);
 }
 
 TEST_F(DFlashCBPipelineTest, RestoredPrefixIsAlreadyCommitted) {
@@ -643,4 +700,3 @@ TEST_F(DFlashStrategyTest, RejectsADraftWithoutTokenTypeIds) {
         EXPECT_NE(std::string(exception.what()).find("re-export the draft"), std::string::npos) << exception.what();
     }
 }
-

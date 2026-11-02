@@ -249,6 +249,25 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         }
         m_draft_pipeline->sync_generated_embeddings();
 
+        // The main request continues alone when its draft request ended: the draft pipeline ran out of KV cache
+        // (IGNORED, logged here) or stopped the request itself (STOP, logged where it stopped; only a DFlash window
+        // that could not run). A handle is dropped only after its request ended, since dropping it stops the request.
+        for (auto draft_it = m_draft_generations.begin(); draft_it != m_draft_generations.end();) {
+            const uint64_t request_id = draft_it->first;
+            const GenerationStatus draft_status = draft_it->second->get_status();
+            if ((draft_status != GenerationStatus::IGNORED && draft_status != GenerationStatus::STOP) ||
+                !main_generated_requests.count(request_id)) {
+                ++draft_it;
+                continue;
+            }
+            if (draft_status == GenerationStatus::IGNORED) {
+                GENAI_WARN("Request %llu: the draft model ran out of KV cache; continuing without speculative decoding.",
+                           static_cast<unsigned long long>(request_id));
+            }
+            m_draft_pipeline->finish_request(request_id);
+            draft_it = m_draft_generations.erase(draft_it);
+        }
+
         // finish draft request if the generation was completed
         for (const auto& draft_request : draft_generated_requests) {
             auto request_id = draft_request.first;

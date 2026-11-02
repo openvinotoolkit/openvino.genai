@@ -5,7 +5,9 @@
 #include <atomic>
 #include <chrono>
 #include <future>
+#include <numeric>
 #include <stdexcept>
+#include <vector>
 #include "sampling/sampler.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "utils.hpp"
@@ -712,4 +714,97 @@ TEST(SamplerValidationMode, prompt_phase) {
     TokenIds actual = sequence_groups.front()->get_sequences().front()->get_generated_ids(),
              expected{0, 1, 2, 3};
     ASSERT_EQ(sequence_groups.front()->get_sequences().front()->get_generated_ids(), expected);
+}
+
+namespace {
+
+constexpr int64_t DRAFT_MASK_TOKEN = 99;
+constexpr size_t DRAFT_VOCAB_SIZE = 64;
+
+// A DFlash draft request whose window was scheduled from position 0: a prompt of `prompt_len` tokens, then
+// `tokens` (the seed and the mask placeholders). The model runner kept `gathered_rows` candidate rows.
+SequenceGroup::Ptr make_dflash_draft_group(uint64_t request_id,
+                                           size_t prompt_len,
+                                           const TokenIds& tokens,
+                                           size_t scheduled_rows,
+                                           size_t gathered_rows,
+                                           size_t max_new_tokens = 100) {
+    TokenIds prompt(prompt_len);
+    std::iota(prompt.begin(), prompt.end(), 0);
+    GenerationConfig config = utils::get_greedy_config();
+    config.max_new_tokens = max_new_tokens;
+    auto group = std::make_shared<SequenceGroup>(request_id, prompt, config);
+    for (const int64_t token : tokens) {
+        group->get_running_sequences().front()->append_token(token, 0.0f);
+    }
+    group->schedule_tokens(scheduled_rows);
+    group->set_output_seq_len(gathered_rows);
+    return group;
+}
+
+// One logits row per token, whose argmax is that token.
+ov::Tensor make_candidate_logits(const TokenIds& argmax_tokens) {
+    ov::Tensor logits(ov::element::f32, ov::Shape{argmax_tokens.size(), 1, DRAFT_VOCAB_SIZE});
+    std::fill_n(logits.data<float>(), logits.get_size(), 0.0f);
+    for (size_t row = 0; row < argmax_tokens.size(); ++row) {
+        logits.data<float>()[row * DRAFT_VOCAB_SIZE + argmax_tokens[row]] = 1.0f;
+    }
+    return logits;
+}
+
+TokenIds generated_ids(const SequenceGroup::Ptr& group) {
+    return group->get_running_sequences().front()->get_generated_ids();
+}
+
+}  // namespace
+
+TEST(SamplerBlockSampling, replaces_the_placeholders_of_each_request_in_one_call) {
+    Sampler sampler(2);
+    sampler.set_block_sampling(1);
+    // [4 prompt rows ; seed + 3 masks] and [2 prompt rows ; seed + 3 masks]: the 3 mask rows are the candidates
+    auto first = make_dflash_draft_group(0, 4, {7, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN}, 8, 3);
+    auto second = make_dflash_draft_group(1, 2, {5, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN}, 6, 3);
+
+    const auto output = sampler.sample({first, second}, make_candidate_logits({20, 21, 22, 30, 31, 32}), false, false);
+
+    EXPECT_EQ(generated_ids(first), (TokenIds{7, 20, 21, 22}));
+    EXPECT_EQ(generated_ids(second), (TokenIds{5, 30, 31, 32}));
+    EXPECT_EQ(output.num_generated_tokens, 6);
+}
+
+TEST(SamplerBlockSampling, deepspec_candidates_start_at_the_seed_row) {
+    Sampler sampler;
+    sampler.set_block_sampling(0);
+    // [4 prompt rows ; seed + 2 masks]: the seed and the 2 mask rows are the candidates
+    auto group = make_dflash_draft_group(0, 4, {7, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN}, 7, 3);
+
+    sampler.sample({group}, make_candidate_logits({20, 21, 22}), false, false);
+
+    EXPECT_EQ(generated_ids(group), (TokenIds{7, 20, 21, 22}));
+}
+
+TEST(SamplerBlockSampling, keeps_only_the_candidates_the_target_can_validate) {
+    Sampler sampler;
+    sampler.set_block_sampling(1);
+    // 3 new tokens allowed and the seed is the first: the target validates 1 candidate and generates the last token
+    auto group = make_dflash_draft_group(0, 4, {7, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN}, 8, 3,
+                                         /*max_new_tokens=*/3);
+
+    sampler.sample({group}, make_candidate_logits({20, 21, 22}), false, false);
+
+    EXPECT_EQ(generated_ids(group), (TokenIds{7, 20}));
+}
+
+TEST(SamplerBlockSampling, samples_the_forwarded_candidates_of_a_partly_run_window) {
+    Sampler sampler;
+    sampler.set_block_sampling(1);
+    // the scheduler ran the prompt, the seed and the first mask row of the first window
+    auto cut_in_block = make_dflash_draft_group(0, 4, {7, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN}, 6, 1);
+    // and only the prompt and the seed of the second, so it has no candidate row
+    auto cut_at_seed = make_dflash_draft_group(1, 4, {7, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN}, 5, 0);
+
+    sampler.sample({cut_in_block, cut_at_seed}, make_candidate_logits({20}), false, false);
+
+    EXPECT_EQ(generated_ids(cut_in_block), (TokenIds{7, 20}));
+    EXPECT_EQ(generated_ids(cut_at_seed), (TokenIds{7, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN}));
 }
