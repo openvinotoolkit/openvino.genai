@@ -230,7 +230,7 @@ export class Text2SpeechDecodedResults {
   constructor(
     speeches: Tensor[],
     perfMetrics: Text2SpeechPerfMetrics,
-    outputSampleRate: number,
+    outputSampleRate: number = 16000,
     speakerEmbedding?: Tensor,
     refCodecIds?: Tensor,
   ) {
