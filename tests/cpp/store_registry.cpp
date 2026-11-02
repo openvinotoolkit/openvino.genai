@@ -196,3 +196,40 @@ TEST(TestStoreRegistry, SampleThirdPartyPluginKeepsGroupsInSeparateStores) {
     EXPECT_EQ(first->get_num_free_blocks(), NUM_BLOCKS - 1);
     EXPECT_EQ(second->get_num_free_blocks(), NUM_BLOCKS);
 }
+
+// The persistent provider keeps a block in a file under CacheOffloadConfig::path, which is what lets another process
+// read it back; the cross-process round trip itself is checked by verify_session_snapshot.py --phase save/restore.
+TEST(TestStoreRegistry, SamplePersistentProviderKeepsBlocksAsFilesOnDisk) {
+    const std::optional<std::string> library_path = find_sample_plugin_library();
+    if (!library_path.has_value()) {
+        GTEST_SKIP() << "samples/c/kv_cache_store_plugin was not built (requires -DENABLE_SAMPLES=ON)";
+    }
+
+    const auto directory = std::filesystem::temp_directory_path() / "openvino_genai_persistent_store_test";
+    std::filesystem::remove_all(directory);
+    CacheOffloadConfig config = make_config();
+    config.path = directory.string();
+    config.store_library_path = *library_path;
+    config.store_provider_name = "sample-persistent-file";
+    config.allow_untrusted_store_plugin = true;
+
+    {
+        auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv");
+        ASSERT_NE(store, nullptr);
+        ASSERT_TRUE(store->is_plugin_backed()) << "the plugin did not load; the registry fell back to the default store";
+        expect_store_is_usable(*store);
+
+        size_t block_files = 0;
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
+            block_files += entry.is_regular_file() && entry.path().extension() == ".blk" ? 1 : 0;
+        }
+        EXPECT_EQ(block_files, 1u);
+    }
+
+    // Without a directory the provider refuses to open, and the registry falls back to its default store.
+    config.path.clear();
+    auto fallback = open_kv_cache_store(make_layout(), config, "CPU", "kv");
+    ASSERT_NE(fallback, nullptr);
+    EXPECT_FALSE(fallback->is_plugin_backed());
+    std::filesystem::remove_all(directory);
+}

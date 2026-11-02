@@ -15,10 +15,16 @@ evicted blocks to a plain file (`FileKVCacheStore`). This ABI lets a third party
 default with its own storage backend - without linking against `openvino::genai` or any C++ code
 at all - by shipping a shared library that exports one C entry symbol.
 
-This sample implements the **full** ABI surface using nothing but a process-local, in-memory
-linked list protected by a mutex. It is deliberately **not production quality** (no persistence,
-no real I/O, O(n) key lookup, unbounded memory growth) - its only job is to show exactly what a
-vendor plugin needs to implement, and to prove the pattern works end-to-end with a real model.
+This sample implements the **full** ABI surface and exports two providers:
+
+- `sample-in-memory`: a process-local, in-memory linked list protected by a mutex. Deliberately **not production
+  quality** (no persistence, no real I/O, O(n) key lookup, unbounded memory growth) - its only job is to show
+  exactly what a vendor plugin needs to implement, and to prove the pattern works end-to-end with a real model.
+- `sample-persistent-file`: one file per block under `CacheOffloadConfig.path` (set it to a directory), written to a
+  temporary name, synced and renamed. Blocks survive the process, so a session snapshot saved by one process can be
+  restored by another (see `verify_session_snapshot.py --phase save/restore`). Still a reference: no eviction, no
+  locking between processes, and a store reopened with a smaller `capacity_bytes` than the blocks it already holds
+  is rejected by the host.
 
 Key properties demonstrated by this sample:
 - **Zero dependency on genai.** The `.c` file only includes the one ABI header; the CMake target

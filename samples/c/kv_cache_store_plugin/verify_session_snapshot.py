@@ -19,9 +19,17 @@ and exits non-zero on failure or any exception.
 Usage:
     python verify_session_snapshot.py -m <model_dir> --plugin <path to your compiled plugin>
                                        [-d CPU] [--provider <provider name>]
+
+With a plugin that keeps blocks after the process ends (such as this sample's `sample-persistent-file` provider,
+which needs `--store-dir`), the save and the restore can run as two separate OS processes:
+    python verify_session_snapshot.py -m <model_dir> --plugin <plugin> --provider sample-persistent-file \
+        --store-dir <dir> --phase save --state-file <file>
+    python verify_session_snapshot.py -m <model_dir> --plugin <plugin> --provider sample-persistent-file \
+        --store-dir <dir> --phase restore --state-file <file>
 """
 
 import argparse
+import json
 import os
 import sys
 import tempfile
@@ -57,11 +65,13 @@ def make_greedy_config(max_new_tokens: int) -> ov_genai.GenerationConfig:
     return config
 
 
-def make_store_config(plugin_path: str, provider_name: str) -> ov_genai.CacheOffloadConfig:
+def make_store_config(plugin_path: str, provider_name: str, store_dir: str = "") -> ov_genai.CacheOffloadConfig:
     config = ov_genai.CacheOffloadConfig()
     config.store_library_path = plugin_path
     config.store_provider_name = provider_name
     config.allow_untrusted_store_plugin = True
+    if store_dir:
+        config.path = store_dir
     # Snapshot blocks stay in the store (pinned), so it must hold every block of the conversation. A hybrid model's
     # linear-attention checkpoint is large (about 51 MB for Qwen3.5-9B).
     config.capacity_bytes = 2 * 1024 ** 3
@@ -82,8 +92,8 @@ def run_baseline(model: str, device: str) -> list:
     return baseline_ids
 
 
-def run_save_then_restore(model: str, device: str, store_config: ov_genai.CacheOffloadConfig,
-                           snapshot_path: str) -> list:
+def save_request(model: str, device: str, store_config: ov_genai.CacheOffloadConfig, snapshot_path: str) -> list:
+    """Runs a request partway, saves it and returns the tokens generated so far. The pipeline is destroyed on return."""
     already_generated_ids = []
     pipeline = ov_genai.ContinuousBatchingPipeline(model, make_scheduler_config(store_config), device)
     handle = pipeline.add_request(2, PROMPT, make_greedy_config(SPLIT_RUN_BUDGET))
@@ -100,10 +110,14 @@ def run_save_then_restore(model: str, device: str, store_config: ov_genai.CacheO
         "manual stepping already produced as many tokens as the baseline, nothing left to resume")
 
     pipeline.save_state(2, snapshot_path)
-    del pipeline, handle
+    return already_generated_ids
 
-    # Fresh pipeline instance simulates a process restart; restore_state() must find the KV/LA blocks in the plugin
-    # through the same cache_offload_config the saving pipeline used.
+
+def restore_request(model: str, device: str, store_config: ov_genai.CacheOffloadConfig, snapshot_path: str,
+                    already_generated_ids: list) -> list:
+    """Restores the snapshot in a fresh pipeline and returns the tokens generated so far plus the resumed ones."""
+    # restore_state() must find the KV/LA blocks in the plugin through the same cache_offload_config the saving
+    # pipeline used.
     pipeline = ov_genai.ContinuousBatchingPipeline(model, make_scheduler_config(store_config), device)
     remaining_tokens = TOTAL_NEW_TOKENS - len(already_generated_ids)
     handle = pipeline.restore_state(3, snapshot_path, make_greedy_config(remaining_tokens))
@@ -111,9 +125,14 @@ def run_save_then_restore(model: str, device: str, store_config: ov_genai.CacheO
         pipeline.step()
     outputs = handle.read_all()
     assert outputs, "restored run produced no output"
-    resumed_ids = outputs[0].generated_ids
+    return already_generated_ids + outputs[0].generated_ids
 
-    return already_generated_ids + resumed_ids
+
+def run_save_then_restore(model: str, device: str, store_config: ov_genai.CacheOffloadConfig,
+                           snapshot_path: str) -> list:
+    already_generated_ids = save_request(model, device, store_config, snapshot_path)
+    # A fresh pipeline instance simulates a process restart.
+    return restore_request(model, device, store_config, snapshot_path, already_generated_ids)
 
 
 def measure_speedup(model: str, device: str, store_config: ov_genai.CacheOffloadConfig,
@@ -172,11 +191,42 @@ def main() -> int:
     parser.add_argument("--provider", default="", help="Provider name to select (empty = module's first provider)")
     parser.add_argument("--skip-perf", action="store_true",
                         help="Skip the TTFT speedup measurement (which uses a much longer prompt and takes longer)")
+    parser.add_argument("--store-dir", default="",
+                        help="Directory passed to the plugin as CacheOffloadConfig.path (needed by persistent plugins)")
+    parser.add_argument("--phase", choices=["all", "save", "restore"], default="all",
+                        help="'save' and 'restore' run the two halves as separate processes (plugin must persist "
+                             "blocks); 'all' does everything in this process")
+    parser.add_argument("--state-file", default="",
+                        help="With --phase save/restore: where the snapshot and its expected tokens are kept "
+                             "(the snapshot is <state-file>.snapshot, the tokens <state-file>.json)")
     args = parser.parse_args()
+
+    store_config = make_store_config(args.plugin, args.provider, args.store_dir)
+    if args.phase != "all":
+        if not args.state_file:
+            parser.error("--phase save/restore needs --state-file")
+        snapshot_path = args.state_file + ".snapshot"
+        tokens_path = args.state_file + ".json"
+        if args.phase == "save":
+            baseline_ids = run_baseline(args.model, args.device)
+            generated_ids = save_request(args.model, args.device, store_config, snapshot_path)
+            with open(tokens_path, "w", encoding="utf-8") as file:
+                json.dump({"baseline": baseline_ids, "generated": generated_ids}, file)
+            print(f"SAVED: {len(generated_ids)} tokens generated, snapshot at {snapshot_path}")
+            return 0
+        with open(tokens_path, encoding="utf-8") as file:
+            state = json.load(file)
+        stitched_ids = restore_request(args.model, args.device, store_config, snapshot_path, state["generated"])
+        if stitched_ids != state["baseline"]:
+            print("FAIL: the restored continuation diverged from the uninterrupted baseline.")
+            print(f"  baseline: {state['baseline']}")
+            print(f"  stitched: {stitched_ids}")
+            return 1
+        print("PASS: the continuation restored in a separate process matches the baseline token-for-token.")
+        return 0
 
     baseline_ids = run_baseline(args.model, args.device)
 
-    store_config = make_store_config(args.plugin, args.provider)
     snapshot_path = os.path.join(tempfile.gettempdir(), "openvino_genai_plugin_session_snapshot_verify.bin")
     try:
         stitched_ids = run_save_then_restore(args.model, args.device, store_config, snapshot_path)

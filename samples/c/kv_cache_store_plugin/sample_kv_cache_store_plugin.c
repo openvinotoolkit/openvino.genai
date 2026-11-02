@@ -3,12 +3,15 @@
 //
 // Minimal, illustrative third-party KV cache store plugin.
 //
-// Implements the full ABI surface declared in kv_cache_store_provider_abi.h using nothing but a
-// process-local, in-memory linked list - NOT meant for production use (no persistence, no real
-// I/O, naive O(n) key lookup, unbounded memory growth) but enough to show exactly what a vendor
-// plugin needs to implement and how the host drives it. A real plugin would replace the storage
-// in store_read_blocks/store_write_blocks/store_drop_blocks with actual SSD I/O and would track
-// its own capacity/eviction instead of growing forever.
+// Implements the full ABI surface declared in kv_cache_store_provider_abi.h. It exports two providers:
+//   - "sample-in-memory": a process-local, in-memory linked list - NOT meant for production use (no
+//     persistence, no real I/O, naive O(n) key lookup, unbounded memory growth) but enough to show exactly what
+//     a vendor plugin needs to implement and how the host drives it.
+//   - "sample-persistent-file": keeps every block in its own file under `CacheOffloadConfig::path`, so blocks
+//     survive the process. This is what a session snapshot restored in another process needs. It is still a
+//     reference (one file per block, no eviction, no locking across processes), not a production store.
+// A real plugin would replace the storage in store_read_blocks/store_write_blocks/store_drop_blocks with its own
+// I/O and would track its own capacity/eviction instead of growing forever.
 //
 // Build as a shared library (see CMakeLists.txt in this directory) and point a host's
 // `store_library_path` configuration at the resulting .dll/.so; the host discovers it purely
@@ -17,10 +20,13 @@
 
 #include "openvino/genai/c/kv_cache_store_provider_abi.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #if defined(_WIN32)
+#    include <direct.h>
+#    include <io.h>
 #    include <windows.h>
 typedef CRITICAL_SECTION sample_mutex_t;
 static void sample_mutex_init(sample_mutex_t* m) {
@@ -33,7 +39,10 @@ static void sample_mutex_unlock(sample_mutex_t* m) {
     LeaveCriticalSection(m);
 }
 #else
+#    include <dirent.h>
 #    include <pthread.h>
+#    include <sys/stat.h>
+#    include <unistd.h>
 typedef pthread_mutex_t sample_mutex_t;
 static void sample_mutex_init(sample_mutex_t* m) {
     pthread_mutex_init(m, NULL);
@@ -448,8 +457,531 @@ static const OvKVCacheStoreProviderDescriptor g_provider_descriptor = {
     "sample-in-memory",
 };
 
+/* --------------------------------------------------------------------------
+ * "sample-persistent-file" provider: one file per block under `<directory>/ns_<hash of namespace>/`, so blocks
+ * outlive the pipeline and the process. A block file is a fixed header, the key's group, the witness and the
+ * payload; it is written to a temporary name and renamed, so a crash never leaves a half-written block that
+ * looks valid. Opening an existing directory finds the blocks already there.
+ * ----------------------------------------------------------------------- */
+#define PERSISTENT_BLOCK_SUFFIX ".blk"
+
+typedef struct PersistentHeader {
+    char magic[8];
+    uint64_t hash_lo;
+    uint64_t hash_hi;
+    uint64_t group_len;
+    uint64_t witness_len;
+    uint64_t bytes;
+} PersistentHeader;
+
+static const char PERSISTENT_MAGIC[8] = {'O', 'V', 'K', 'V', 'B', 'L', 'K', '1'};
+
+typedef struct PersistentStore {
+    char* dir;
+    sample_mutex_t mutex;
+    uint64_t blocks;
+    uint64_t bytes;
+    struct PersistentStore* next;
+} PersistentStore;
+
+static PersistentStore* g_persistent_stores = NULL;
+
+static uint64_t fnv1a64(const uint8_t* data, size_t size) {
+    uint64_t hash = 1469598103934665603ULL;
+    size_t i;
+    for (i = 0; i < size; ++i) {
+        hash ^= data[i];
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+static int make_one_dir(const char* path) {
+#if defined(_WIN32)
+    return _mkdir(path);
+#else
+    return mkdir(path, 0777);
+#endif
+}
+
+/* Creates `path` and any missing parents, then checks that a file can be created in it. */
+static int make_dirs(const char* path) {
+    size_t length = strlen(path);
+    char* copy = (char*)malloc(length + 1);
+    char* probe;
+    FILE* file;
+    size_t i;
+    int ok = 0;
+    if (copy == NULL) {
+        return 0;
+    }
+    memcpy(copy, path, length + 1);
+    for (i = 1; i < length; ++i) {
+        if (copy[i] == '/' || copy[i] == '\\') {
+            char saved = copy[i];
+            copy[i] = '\0';
+            make_one_dir(copy);
+            copy[i] = saved;
+        }
+    }
+    make_one_dir(copy);
+    free(copy);
+
+    probe = (char*)malloc(length + 8);
+    if (probe == NULL) {
+        return 0;
+    }
+    memcpy(probe, path, length);
+    strcpy(probe + length, "/.probe");
+    file = fopen(probe, "wb");
+    if (file != NULL) {
+        ok = 1;
+        fclose(file);
+        remove(probe);
+    }
+    free(probe);
+    return ok;
+}
+
+static char* block_path(const PersistentStore* store, const OvKVCacheBlockKey* key, const char* suffix) {
+    size_t length = strlen(store->dir) + 1 + 32 + strlen(suffix) + 1;
+    char* path = (char*)malloc(length);
+    if (path != NULL) {
+        snprintf(path, length, "%s/%016llx%016llx%s", store->dir, (unsigned long long)key->hash.hi,
+                 (unsigned long long)key->hash.lo, suffix);
+    }
+    return path;
+}
+
+static int header_matches_key(const PersistentHeader* header, const OvKVCacheBlockKey* key) {
+    return memcmp(header->magic, PERSISTENT_MAGIC, sizeof(PERSISTENT_MAGIC)) == 0 && header->hash_lo == key->hash.lo &&
+           header->hash_hi == key->hash.hi && header->group_len == key->group_len;
+}
+
+/* Opens the block of `key` and leaves the file positioned at the witness; NULL if absent or not this key's. */
+static FILE* open_block(const PersistentStore* store, const OvKVCacheBlockKey* key, PersistentHeader* header) {
+    char* path = block_path(store, key, PERSISTENT_BLOCK_SUFFIX);
+    FILE* file = path != NULL ? fopen(path, "rb") : NULL;
+    free(path);
+    if (file == NULL) {
+        return NULL;
+    }
+    if (fread(header, sizeof(*header), 1, file) == 1 && header_matches_key(header, key)) {
+        char* group = key->group_len > 0 ? (char*)malloc(key->group_len) : NULL;
+        int same = 1;
+        if (key->group_len > 0) {
+            same = group != NULL && fread(group, 1, key->group_len, file) == key->group_len &&
+                   memcmp(group, key->group, key->group_len) == 0;
+        }
+        free(group);
+        if (same) {
+            return file;
+        }
+    }
+    fclose(file);
+    return NULL;
+}
+
+static void sync_file(FILE* file) {
+    fflush(file);
+#if defined(_WIN32)
+    _commit(_fileno(file));
+#else
+    fsync(fileno(file));
+#endif
+}
+
+static void count_block_file(PersistentStore* store, const char* path) {
+    PersistentHeader header;
+    FILE* file = fopen(path, "rb");
+    if (file != NULL) {
+        if (fread(&header, sizeof(header), 1, file) == 1) {
+            ++store->blocks;
+            store->bytes += header.bytes;
+        }
+        fclose(file);
+    }
+}
+
+/* Counts the blocks already on disk, so a store opened in a new process reports them in stats(). */
+static void scan_persistent_store(PersistentStore* store) {
+    size_t buffer_length = strlen(store->dir) + 300;
+    char* path = (char*)malloc(buffer_length);
+    if (path == NULL) {
+        return;
+    }
+#if defined(_WIN32)
+    {
+        WIN32_FIND_DATAA found;
+        HANDLE handle;
+        snprintf(path, buffer_length, "%s/*%s", store->dir, PERSISTENT_BLOCK_SUFFIX);
+        handle = FindFirstFileA(path, &found);
+        if (handle != INVALID_HANDLE_VALUE) {
+            do {
+                snprintf(path, buffer_length, "%s/%s", store->dir, found.cFileName);
+                count_block_file(store, path);
+            } while (FindNextFileA(handle, &found));
+            FindClose(handle);
+        }
+    }
+#else
+    {
+        DIR* directory = opendir(store->dir);
+        struct dirent* entry;
+        size_t suffix_length = strlen(PERSISTENT_BLOCK_SUFFIX);
+        while (directory != NULL && (entry = readdir(directory)) != NULL) {
+            size_t length = strlen(entry->d_name);
+            if (length > suffix_length && strcmp(entry->d_name + length - suffix_length, PERSISTENT_BLOCK_SUFFIX) == 0) {
+                snprintf(path, buffer_length, "%s/%s", store->dir, entry->d_name);
+                count_block_file(store, path);
+            }
+        }
+        if (directory != NULL) {
+            closedir(directory);
+        }
+    }
+#endif
+    free(path);
+}
+
+static void persistent_destroy(void* self) {
+    /* The instance is shared by every open() of the same namespace directory and lives for the process; the files
+     * stay on disk either way. */
+    (void)self;
+}
+
+static OvKVCacheStatus persistent_has_blocks(void* self,
+                                             const OvKVCacheBlockKey* keys,
+                                             uint8_t* out_present,
+                                             size_t count) {
+    PersistentStore* store = (PersistentStore*)self;
+    size_t i;
+    sample_mutex_lock(&store->mutex);
+    for (i = 0; i < count; ++i) {
+        PersistentHeader header;
+        FILE* file = open_block(store, &keys[i], &header);
+        out_present[i] = file != NULL ? 1 : 0;
+        if (file != NULL) {
+            fclose(file);
+        }
+    }
+    sample_mutex_unlock(&store->mutex);
+    return OV_KVCACHE_OK;
+}
+
+static OvKVCacheStatus persistent_read_blocks(void* self,
+                                              const OvKVCacheStoreReadRequest* reqs,
+                                              OvKVCacheStoreReadResult* out,
+                                              size_t count) {
+    PersistentStore* store = (PersistentStore*)self;
+    int any_failed = 0;
+    size_t i;
+    sample_mutex_lock(&store->mutex);
+    for (i = 0; i < count; ++i) {
+        const OvKVCacheStoreReadRequest* req = &reqs[i];
+        OvKVCacheStoreReadResult* result = &out[i];
+        PersistentHeader header;
+        FILE* file;
+        memset(result, 0, sizeof(*result));
+
+        if (req->target.kind != OV_KVCACHE_TARGET_HOST || req->target.base == NULL) {
+            result->status = OV_KVCACHE_ERR_UNSUPPORTED;
+            any_failed = 1;
+            continue;
+        }
+        file = open_block(store, &req->key, &header);
+        if (file == NULL) {
+            result->status = OV_KVCACHE_ERR_NOT_FOUND;
+            any_failed = 1;
+            continue;
+        }
+        if (header.bytes != req->target.bytes) {
+            fclose(file);
+            result->status = OV_KVCACHE_ERR_INTERNAL;
+            any_failed = 1;
+            continue;
+        }
+        if (header.witness_len > 0) {
+            if (req->witness_out.data != NULL) {
+                if (header.witness_len > req->witness_out.capacity) {
+                    fclose(file);
+                    result->status = OV_KVCACHE_ERR_BUFFER_TOO_SMALL;
+                    any_failed = 1;
+                    continue;
+                }
+                if (fread(req->witness_out.data, 1, (size_t)header.witness_len, file) != header.witness_len) {
+                    fclose(file);
+                    result->status = OV_KVCACHE_ERR_IO;
+                    any_failed = 1;
+                    continue;
+                }
+                result->witness.data = req->witness_out.data;
+                result->witness.len = header.witness_len;
+            } else {
+                fseek(file, (long)header.witness_len, SEEK_CUR);
+            }
+        }
+        if (fread(req->target.base, 1, (size_t)header.bytes, file) != header.bytes) {
+            fclose(file);
+            result->status = OV_KVCACHE_ERR_IO;
+            any_failed = 1;
+            continue;
+        }
+        fclose(file);
+        result->status = OV_KVCACHE_OK;
+        result->bytes_read = header.bytes;
+    }
+    sample_mutex_unlock(&store->mutex);
+    return any_failed ? OV_KVCACHE_PARTIAL : OV_KVCACHE_OK;
+}
+
+static OvKVCacheStatus persistent_write_blocks(void* self,
+                                               const OvKVCacheStoreWriteRequest* reqs,
+                                               OvKVCacheStoreWriteResult* out,
+                                               size_t count) {
+    PersistentStore* store = (PersistentStore*)self;
+    int any_failed = 0;
+    size_t i;
+    sample_mutex_lock(&store->mutex);
+    for (i = 0; i < count; ++i) {
+        const OvKVCacheStoreWriteRequest* req = &reqs[i];
+        OvKVCacheStoreWriteResult* result = &out[i];
+        PersistentHeader previous;
+        PersistentHeader header;
+        FILE* existing;
+        FILE* file;
+        char* final_path = block_path(store, &req->key, PERSISTENT_BLOCK_SUFFIX);
+        char* temp_path = block_path(store, &req->key, PERSISTENT_BLOCK_SUFFIX ".tmp");
+        int written = 0;
+        memset(result, 0, sizeof(*result));
+
+        if (final_path == NULL || temp_path == NULL) {
+            free(final_path);
+            free(temp_path);
+            result->status = OV_KVCACHE_ERR_CAPACITY;
+            any_failed = 1;
+            continue;
+        }
+        memcpy(header.magic, PERSISTENT_MAGIC, sizeof(PERSISTENT_MAGIC));
+        header.hash_lo = req->key.hash.lo;
+        header.hash_hi = req->key.hash.hi;
+        header.group_len = req->key.group_len;
+        header.witness_len = req->witness.len;
+        header.bytes = req->bytes;
+
+        file = fopen(temp_path, "wb");
+        if (file != NULL) {
+            written = fwrite(&header, sizeof(header), 1, file) == 1 &&
+                      (req->key.group_len == 0 ||
+                       fwrite(req->key.group, 1, req->key.group_len, file) == req->key.group_len) &&
+                      (req->witness.len == 0 ||
+                       fwrite(req->witness.data, 1, (size_t)req->witness.len, file) == req->witness.len) &&
+                      fwrite(req->source, 1, (size_t)req->bytes, file) == req->bytes;
+            if (written) {
+                /* The host reports a snapshot as saved once this has returned, so the bytes must be on disk. */
+                sync_file(file);
+            }
+            fclose(file);
+        }
+        if (!written) {
+            remove(temp_path);
+            free(final_path);
+            free(temp_path);
+            result->status = OV_KVCACHE_ERR_IO;
+            any_failed = 1;
+            continue;
+        }
+
+        /* Idempotent overwrite: the old block (if any) is replaced, and the counters follow. */
+        existing = open_block(store, &req->key, &previous);
+        if (existing != NULL) {
+            fclose(existing);
+            store->bytes -= previous.bytes;
+        }
+        remove(final_path);
+        if (rename(temp_path, final_path) != 0) {
+            if (existing != NULL) {
+                --store->blocks;  /* the old block is gone too */
+            }
+            remove(temp_path);
+            free(final_path);
+            free(temp_path);
+            result->status = OV_KVCACHE_ERR_IO;
+            any_failed = 1;
+            continue;
+        }
+        if (existing == NULL) {
+            ++store->blocks;
+        }
+        store->bytes += req->bytes;
+        free(final_path);
+        free(temp_path);
+        result->status = OV_KVCACHE_OK;
+        result->bytes_written = req->bytes;
+    }
+    sample_mutex_unlock(&store->mutex);
+    return any_failed ? OV_KVCACHE_PARTIAL : OV_KVCACHE_OK;
+}
+
+static OvKVCacheStatus persistent_drop_blocks(void* self, const OvKVCacheBlockKey* keys, size_t count) {
+    PersistentStore* store = (PersistentStore*)self;
+    size_t i;
+    sample_mutex_lock(&store->mutex);
+    for (i = 0; i < count; ++i) {
+        PersistentHeader header;
+        FILE* file = open_block(store, &keys[i], &header);
+        if (file != NULL) {
+            char* path = block_path(store, &keys[i], PERSISTENT_BLOCK_SUFFIX);
+            fclose(file);
+            if (path != NULL && remove(path) == 0) {
+                --store->blocks;
+                store->bytes -= header.bytes;
+            }
+            free(path);
+        }
+    }
+    sample_mutex_unlock(&store->mutex);
+    return OV_KVCACHE_OK;
+}
+
+static OvKVCacheStatus persistent_flush(void* self) {
+    (void)self; /* write_blocks syncs every block before it returns. */
+    return OV_KVCACHE_OK;
+}
+
+static OvKVCacheStatus persistent_stats(void* self, OvKVCacheStoreStats* out) {
+    PersistentStore* store = (PersistentStore*)self;
+    sample_mutex_lock(&store->mutex);
+    out->blocks = store->blocks;
+    out->bytes = store->bytes;
+    out->chunks = 0;
+    sample_mutex_unlock(&store->mutex);
+    return OV_KVCACHE_OK;
+}
+
+static const OvKVCacheStoreVTable g_persistent_store_vtable = {
+    sizeof(OvKVCacheStoreVTable),
+    0,
+    &persistent_destroy,
+    &persistent_has_blocks,
+    &persistent_read_blocks,
+    &persistent_write_blocks,
+    &persistent_drop_blocks,
+    &persistent_flush,
+    &persistent_stats,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+};
+
+static const char* persistent_provider_name(void* self) {
+    (void)self;
+    return "sample-persistent-file";
+}
+
+static OvKVCacheStatus persistent_provider_open(void* self,
+                                                const OvKVCacheNamespace* ns,
+                                                const OvKVCacheStoreOpenOptions* opts,
+                                                OvKVCacheStoreOpenResult* out) {
+    PersistentStore* store = NULL;
+    PersistentStore* it;
+    char* dir;
+    size_t dir_length;
+    uint64_t ns_hash;
+    const uint8_t* ns_bytes;
+    size_t ns_len;
+    (void)self;
+    if (out == NULL) {
+        return OV_KVCACHE_ERR_INVALID_ARG;
+    }
+    memset(out, 0, sizeof(*out));
+    if (opts == NULL || opts->directory == NULL || opts->directory[0] == '\0') {
+        if (opts != NULL && opts->log != NULL) {
+            opts->log(OV_KVCACHE_LOG_ERROR, "sample-persistent-file: set CacheOffloadConfig.path to a directory");
+        }
+        out->status = OV_KVCACHE_ERR_INVALID_ARG;
+        return out->status;
+    }
+    ns_bytes = (ns != NULL && ns->bytes != NULL) ? ns->bytes : (const uint8_t*)"";
+    ns_len = (ns != NULL && ns->bytes != NULL) ? (size_t)ns->len : 0;
+    ns_hash = fnv1a64(ns_bytes, ns_len);
+
+    dir_length = strlen(opts->directory) + 1 + 3 + 16 + 1;
+    dir = (char*)malloc(dir_length);
+    if (dir == NULL) {
+        out->status = OV_KVCACHE_ERR_CAPACITY;
+        return out->status;
+    }
+    snprintf(dir, dir_length, "%s/ns_%016llx", opts->directory, (unsigned long long)ns_hash);
+
+    ensure_registry_mutex();
+    sample_mutex_lock(&g_registry_mutex);
+    for (it = g_persistent_stores; it != NULL; it = it->next) {
+        if (strcmp(it->dir, dir) == 0) {
+            store = it;
+            break;
+        }
+    }
+    if (store == NULL) {
+        if (!make_dirs(dir)) {
+            sample_mutex_unlock(&g_registry_mutex);
+            free(dir);
+            if (opts->log != NULL) {
+                opts->log(OV_KVCACHE_LOG_ERROR, "sample-persistent-file: cannot create or write the directory");
+            }
+            out->status = OV_KVCACHE_ERR_IO;
+            return out->status;
+        }
+        store = (PersistentStore*)calloc(1, sizeof(PersistentStore));
+        if (store == NULL) {
+            sample_mutex_unlock(&g_registry_mutex);
+            free(dir);
+            out->status = OV_KVCACHE_ERR_CAPACITY;
+            return out->status;
+        }
+        store->dir = dir;
+        dir = NULL;
+        sample_mutex_init(&store->mutex);
+        scan_persistent_store(store);
+        store->next = g_persistent_stores;
+        g_persistent_stores = store;
+    }
+    sample_mutex_unlock(&g_registry_mutex);
+    free(dir);
+
+    if (opts->log != NULL) {
+        opts->log(OV_KVCACHE_LOG_INFO, "sample-persistent-file: opening store");
+    }
+    out->store = store;
+    out->vtable = &g_persistent_store_vtable;
+    out->status = OV_KVCACHE_OK;
+    return out->status;
+}
+
+static const OvKVCacheStoreProviderVTable g_persistent_provider_vtable = {
+    sizeof(OvKVCacheStoreProviderVTable),
+    0,
+    &provider_destroy,
+    &persistent_provider_name,
+    &persistent_provider_open,
+    &provider_purge,
+    &provider_list,
+    NULL,
+};
+
+static const OvKVCacheStoreProviderDescriptor g_persistent_provider_descriptor = {
+    &g_persistent_provider_vtable,
+    NULL,
+    OV_KVCACHE_CAP_KEY_IO | OV_KVCACHE_CAP_EXISTS,
+    "sample-persistent-file",
+};
+
 static const OvKVCacheStoreProviderDescriptor* get_provider(uint32_t index) {
-    return index == 0 ? &g_provider_descriptor : NULL;
+    if (index == 0) {
+        return &g_provider_descriptor;
+    }
+    return index == 1 ? &g_persistent_provider_descriptor : NULL;
 }
 
 /* --------------------------------------------------------------------------
@@ -469,7 +1001,7 @@ static const OvKVCacheStoreModuleInfo g_module_info = {
     SAMPLE_SDK_BUILD_FINGERPRINT,
     "sample-kv-cache-store-plugin",
     "1.0",
-    1,
+    2,
     0,
     &get_provider,
 };

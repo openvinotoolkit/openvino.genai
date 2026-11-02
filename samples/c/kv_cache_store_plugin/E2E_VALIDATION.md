@@ -231,15 +231,28 @@ that interval and still resumes token-for-token.
 
 ## Known limitations of the sample plugin (do not assume your plugin needs to share these)
 
-The sample plugin in this directory is intentionally a minimal, in-memory reference - it has
-**no real persistence**: its data lives in process memory and is gone once the process actually
-exits. `verify_session_snapshot.py`'s "process restart" is simulated with a second
-`ContinuousBatchingPipeline` instance in the *same* process, which is sufficient to validate the
-ABI call sequence and data correctness, but does **not** prove your plugin survives a real process
-restart - that property depends entirely on your own plugin's storage backend actually persisting
-to disk/SSD, which the sample deliberately does not do. If your plugin is disk-backed, you can
-make this test stronger yourself by running the save half and the restore half as two genuinely
-separate OS processes.
+The sample plugin in this directory is intentionally a minimal reference. Its default provider,
+`sample-in-memory`, has **no real persistence**: its data lives in process memory and is gone once the process
+exits, so `verify_session_snapshot.py`'s default "process restart" is simulated with a second
+`ContinuousBatchingPipeline` instance in the *same* process. That validates the ABI call sequence and data
+correctness, but not that your plugin survives a real process restart - that depends on your own storage backend.
+
+The second provider, `sample-persistent-file`, keeps every block as a file under `CacheOffloadConfig.path` and is
+what the real two-process check uses. Run the halves as separate OS processes:
+
+```sh
+python verify_session_snapshot.py -m <model_dir> -d CPU --plugin /path/to/sample_kv_cache_store_plugin.dll \
+    --provider sample-persistent-file --store-dir /tmp/kv_store --phase save --state-file /tmp/kv_state
+# the first process has exited here
+python verify_session_snapshot.py -m <model_dir> -d CPU --plugin /path/to/sample_kv_cache_store_plugin.dll \
+    --provider sample-persistent-file --store-dir /tmp/kv_store --phase restore --state-file /tmp/kv_state
+```
+
+The save half runs the uninterrupted baseline, saves the snapshot and writes the baseline tokens next to it; the
+restore half loads them in a new process and prints `PASS: the continuation restored in a separate process matches
+the baseline token-for-token.` This was run with Qwen3-8B on CPU and with the hybrid Qwen3.5-9B on GPU (the store
+then holds one `ns_*` directory per group, `kv` and `la`). With your own plugin, run the same two commands against
+your storage.
 
 The async I/O (`OV_KVCACHE_CAP_ASYNC_IO`: `read_blocks_async`/`write_blocks_async`/`wait`/`cancel`)
 and `register_host_memory` (`OV_KVCACHE_CAP_REGISTER_HOST_MEMORY`) capabilities are part of the
