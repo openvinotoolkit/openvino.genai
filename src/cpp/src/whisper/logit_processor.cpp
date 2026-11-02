@@ -12,13 +12,16 @@ namespace genai {
 void do_suppress_tokens(ov::Tensor& logits, const size_t batch_idx, const std::vector<int64_t>& suppress_tokens) {
     OPENVINO_ASSERT(logits.get_shape()[0] >= batch_idx, "logits batch size doesn't match the batch number");
 
-    size_t vocab_size = logits.get_shape().back();
+    const size_t vocab_size = logits.get_shape().back();
     size_t batch_offset = batch_idx * logits.get_shape()[1] * vocab_size;
     size_t sequence_offset = (logits.get_shape()[1] - 1) * vocab_size;
     float* logits_data = logits.data<float>() + batch_offset + sequence_offset;
 
-    for (auto supress_token : suppress_tokens) {
-        logits_data[supress_token] = -std::numeric_limits<float>::infinity();
+    for (const int64_t suppress_token : suppress_tokens) {
+        OPENVINO_ASSERT(suppress_token >= 0 && suppress_token < vocab_size,
+                        "'suppress_tokens' value is out of vocabulary range: ",
+                        suppress_token);
+        logits_data[suppress_token] = -std::numeric_limits<float>::infinity();
     }
 }
 
