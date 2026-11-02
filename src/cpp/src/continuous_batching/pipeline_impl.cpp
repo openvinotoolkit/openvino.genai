@@ -17,6 +17,7 @@
 
 #include "continuous_batching/cache/cache_orchestrator.hpp"
 #include "continuous_batching/cache/cache_state_dumper.hpp"
+#include "continuous_batching/cache/model_identity.hpp"
 #include "continuous_batching/paged_attention_transformations.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
 #include "continuous_batching/session_snapshot.hpp"
@@ -167,6 +168,20 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     SchedulerConfig normalized_config = scheduler_config;
     normalized_config.validate();
 
+    // A store plugin may keep blocks across pipelines, so its namespaces need to tell models apart. The in-tree
+    // file store lives and dies with this pipeline and needs no identity.
+    std::string model_identity;
+    const auto& offload_config = normalized_config.cache_offload_config;
+    if (normalized_config.use_cache_offload && offload_config.allow_untrusted_store_plugin &&
+        !offload_config.store_library_path.empty()) {
+        const auto identity_start = std::chrono::steady_clock::now();
+        model_identity = compute_model_identity(model);
+        GENAI_INFO("[KV_TRACE] model_identity=%s computed_in_ms=%lld",
+                   model_identity.c_str(),
+                   static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                              std::chrono::steady_clock::now() - identity_start)
+                                              .count()));
+    }
     // Resolve per-role MODEL_PROPERTIES overlay for the language model and
     // strip the GenAI-only MODEL_PROPERTIES meta key before reaching the OV plugin.
     const auto language_model_properties = utils::get_model_properties(properties, "language_model", device);
@@ -207,7 +222,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
         }
         return get_available_cpu_memory();
     };
-    auto cache_orchestrator = CacheOrchestrator::create(infer_request, normalized_config, get_available_memory);
+    auto cache_orchestrator = CacheOrchestrator::create(infer_request, normalized_config, get_available_memory, model_identity);
     m_num_decoder_layers = cache_orchestrator->get_num_kv_layers();
 
     bool can_use_partial_preemption = true;
@@ -471,6 +486,14 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::restore_sta
                             "Session snapshot linear-attention checkpoint is missing from the prefix-caching offload "
                             "store, so the snapshot cannot be restored");
         }
+        // The snapshot owns these entries from now on: keep opportunistic eviction away from them. They may have
+        // been written by an earlier pipeline, in which case this also makes this instance track them.
+        for (const auto& entry : loaded.kv_entries) {
+            kv_offload->pin(entry.hash);
+        }
+        if (loaded.la_entry) {
+            m_scheduler->get_cache_orchestrator().get_la_offload_cache()->pin(loaded.la_entry->hash);
+        }
         const size_t num_positions =
             loaded.is_embeddings ? loaded.input_embeds.get_shape()[1] : loaded.token_ids.size();
         OPENVINO_ASSERT(sampling_params_copy.max_length > num_positions,
@@ -489,6 +512,15 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::restore_sta
         {
             std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
             _throw_if_failed();
+            if (m_scheduler->is_cache_budget_dynamic()) {
+                // Grow the pools the way the scheduler does for a normally arriving request: the warm-up below needs
+                // free blocks, and a pipeline that has not scheduled anything yet has hardly any.
+                auto& orchestrator = m_scheduler->get_cache_orchestrator();
+                orchestrator.ensure_sequence_token_capacity({{num_positions, 1}});
+                orchestrator.ensure_sequence_capacity(restored_group);
+                // schedule() would otherwise not grow the pools for the next generated token (see the v3 path).
+                m_scheduler->enable_dynamic_memory_allocation_after_restore();
+            }
             initialize_prefix_cache(restored_group);
             // Like the self-contained format, the restore must be complete: all but the last token have their cache.
             if (restored_group->get_num_processed_tokens() + 1 != num_positions) {

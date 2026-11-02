@@ -42,6 +42,10 @@ public:
     size_t get_num_free_blocks() const override;
     void flush() override;
 
+    bool is_plugin_backed() const override {
+        return true;
+    }
+
 private:
     OvKVCacheBlockKey make_key(size_t hash) const;
 

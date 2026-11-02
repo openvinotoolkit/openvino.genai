@@ -384,6 +384,94 @@ TEST(TestLinearAttentionOffloadCache, WarmRestoresASnapshotCheckpointWhenTheProm
     expect_snapshot_checkpoint_is_restored(/*num_tokens=*/8);
 }
 
+namespace {
+
+/// Lets several offload caches see one store, the way pipelines do through a persistent plugin.
+class SharedStore : public IKVCacheStore {
+public:
+    explicit SharedStore(std::shared_ptr<IKVCacheStore> inner) : m_inner(std::move(inner)) {}
+
+    bool has_block(size_t hash) const override {
+        return m_inner->has_block(hash);
+    }
+    bool write_block(size_t hash, const std::vector<uint8_t>& data) override {
+        return m_inner->write_block(hash, data);
+    }
+    bool read_block(size_t hash, std::vector<uint8_t>& data) const override {
+        return m_inner->read_block(hash, data);
+    }
+    void drop_block(size_t hash) override {
+        m_inner->drop_block(hash);
+    }
+    size_t get_block_size() const override {
+        return m_inner->get_block_size();
+    }
+    size_t get_capacity_blocks() const override {
+        return m_inner->get_capacity_blocks();
+    }
+    size_t get_num_free_blocks() const override {
+        return m_inner->get_num_free_blocks();
+    }
+    void flush() override {
+        m_inner->flush();
+    }
+
+private:
+    std::shared_ptr<IKVCacheStore> m_inner;
+};
+
+std::shared_ptr<IKVCacheStore> make_shared_file_store(LaCacheFixture& fixture, size_t num_slots) {
+    auto backend = std::make_unique<KVCacheOffloadManager>(fixture.cache_manager->get_block_layout(),
+                                                           make_offload_config(fixture, num_slots),
+                                                           "CPU");
+    return std::make_shared<FileKVCacheStore>(std::move(backend));
+}
+
+std::unique_ptr<LinearAttentionOffloadCache> make_offload_cache_on(LaCacheFixture& fixture,
+                                                                   std::shared_ptr<IKVCacheStore> store) {
+    return std::make_unique<LinearAttentionOffloadCache>(*fixture.cache_manager,
+                                                         std::make_unique<SharedStore>(std::move(store)),
+                                                         /*max_queued_stores=*/8);
+}
+
+}  // namespace
+
+TEST(TestLinearAttentionOffloadCache, AnotherInstanceServesAndPinsEntriesItNeverWrote) {
+    LaCacheFixture fixture;
+    auto store = make_shared_file_store(fixture, 1);
+    const auto expected = fixture.fill_block(0, /*seed=*/17);
+    {
+        auto first = make_offload_cache_on(fixture, store);
+        ASSERT_TRUE(first->persist(/*hash=*/42, /*block_index=*/0));
+    }
+
+    auto second = make_offload_cache_on(fixture, store);
+    EXPECT_EQ(second->get_num_entries(), 0);
+    EXPECT_TRUE(second->contains(42));
+    EXPECT_FALSE(second->contains(43));
+
+    std::vector<uint8_t> restored;
+    ASSERT_TRUE(second->read(42, restored));
+    EXPECT_EQ(restored, expected);
+    fixture.fill_block(1, /*seed=*/0);
+    ASSERT_TRUE(second->load_into(/*hash=*/42, /*block_index=*/1));
+    EXPECT_EQ(fixture.cache_manager->read_block(1), expected);
+
+    ASSERT_TRUE(second->pin(42));
+    EXPECT_EQ(second->get_num_entries(), 1);
+    // The only slot holds the adopted, pinned entry, so pressure for it cannot reclaim it.
+    second->on_blocks_overwritten(/*hash=*/43, make_block_set(1));
+    second->flush();
+    EXPECT_TRUE(second->contains(42));
+    EXPECT_FALSE(second->contains(43));
+}
+
+TEST(TestLinearAttentionOffloadCache, ReportsWhetherItsStoreIsAPlugin) {
+    LaCacheFixture fixture;
+    auto offload_cache = make_offload_cache(fixture, 1);
+    EXPECT_FALSE(offload_cache->is_plugin_backed());
+}
+
 TEST(TestLinearAttentionOffloadCache, ConcurrentOverwritesNeverEvictAPinnedEntry) {
     LaCacheFixture fixture;
     auto offload_cache = make_offload_cache(fixture, 2);

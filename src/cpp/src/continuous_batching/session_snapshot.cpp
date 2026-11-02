@@ -293,6 +293,13 @@ void save_prefix_offload_format(CacheOrchestrator& orchestrator,
     OPENVINO_ASSERT(!has_la || la_offload != nullptr,
                     "Session snapshot format 4 requires linear-attention cache offload to be enabled "
                     "(cache_offload_config.linear_attention_capacity_bytes)");
+    // A plugin that failed to load leaves the pipeline on the temporary in-process store; the snapshot would then
+    // look saved but lose its blocks as soon as this pipeline ends.
+    OPENVINO_ASSERT(!orchestrator.offload_plugin_requested() ||
+                        (kv_offload->is_plugin_backed() && (!has_la || la_offload->is_plugin_backed())),
+                    "Session snapshot format 4 was asked to keep its blocks in a store plugin, but the plugin did not "
+                    "load and this pipeline fell back to the temporary in-process store, which would lose them when "
+                    "the pipeline ends. Check the plugin path and the 'Falling back to the default file store' warning");
 
     const SnapshotHistory history = capture_history(seq_group, sequence);
     const size_t num_positions = history.num_positions;

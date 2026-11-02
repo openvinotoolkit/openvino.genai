@@ -747,3 +747,120 @@ TEST(TestSessionSnapshotEndToEnd, PrefixOffloadFormatFallsBackToTheSelfContained
     ScopedEnv format(SNAPSHOT_FORMAT_ENV, "4");
     run_round_trip_test(model_path);
 }
+
+namespace {
+
+SchedulerConfig make_plugin_scheduler_config(bool hybrid, const std::string& plugin_path) {
+    auto config = make_offload_scheduler_config(hybrid);
+    config.cache_offload_config.store_library_path = plugin_path;
+    config.cache_offload_config.store_provider_name = "sample-in-memory";
+    config.cache_offload_config.allow_untrusted_store_plugin = true;
+    return config;
+}
+
+}  // namespace
+
+// The sample plugin keeps its blocks in a process-wide registry, so a pipeline created after the first one is gone
+// still finds what the snapshot stored: the situation a persistent plugin provides across processes.
+void run_cross_pipeline_round_trip(const std::string& model_path, const std::string& plugin_path, bool hybrid) {
+    ScopedEnv format(SNAPSHOT_FORMAT_ENV, "4");
+
+    const std::string prompt = repeat("The quick brown fox jumps over the lazy dog. ", 10) + " Continue the story:";
+    constexpr size_t TOTAL_NEW_TOKENS = 40;
+    constexpr size_t SAVE_AFTER_TOKENS = 13;
+    const std::string device = session_snapshot_device();
+    const auto config = make_plugin_scheduler_config(hybrid, plugin_path);
+
+    std::vector<int64_t> baseline_ids;
+    size_t prompt_tokens = 0;
+    {
+        ContinuousBatchingPipeline pipeline(model_path, config, device);
+        auto handle = pipeline.add_request(80, prompt, make_greedy_config(TOTAL_NEW_TOKENS));
+        while (pipeline.has_non_finished_requests()) {
+            pipeline.step();
+        }
+        auto outputs = handle->read_all();
+        ASSERT_FALSE(outputs.empty());
+        baseline_ids = outputs.front().generated_ids;
+        prompt_tokens = handle->get_perf_metrics().num_input_tokens;
+    }
+    ASSERT_EQ(baseline_ids.size(), TOTAL_NEW_TOKENS);
+
+    const auto snapshot_path = std::filesystem::temp_directory_path() / "openvino_genai_session_snapshot_v4_cross.bin";
+    std::vector<int64_t> generated_so_far;
+    {
+        ContinuousBatchingPipeline pipeline(model_path, config, device);
+        auto handle = pipeline.add_request(81, prompt, make_greedy_config(1000));
+        step_until_generated(pipeline, handle, SAVE_AFTER_TOKENS, generated_so_far);
+        ASSERT_EQ(generated_so_far.size(), SAVE_AFTER_TOKENS);
+        pipeline.save_state(81, snapshot_path.string());
+    }  // the saving pipeline, and with it every in-memory cache, is gone
+
+    {
+        ContinuousBatchingPipeline pipeline(model_path, config, device);
+        auto restored = pipeline.restore_state(82, snapshot_path.string(),
+                                               make_greedy_config(TOTAL_NEW_TOKENS - SAVE_AFTER_TOKENS));
+        while (pipeline.has_non_finished_requests()) {
+            pipeline.step();
+        }
+        auto outputs = restored->read_all();
+        ASSERT_FALSE(outputs.empty());
+
+        std::vector<int64_t> stitched_ids = generated_so_far;
+        stitched_ids.insert(stitched_ids.end(), outputs.front().generated_ids.begin(), outputs.front().generated_ids.end());
+        EXPECT_EQ(stitched_ids, baseline_ids) << "restoring in a new pipeline diverged from the uninterrupted baseline";
+        EXPECT_EQ(restored->get_perf_metrics().get_num_prefix_cache_hit_tokens(), prompt_tokens + SAVE_AFTER_TOKENS - 1);
+    }
+    std::filesystem::remove(snapshot_path);
+}
+
+TEST(TestSessionSnapshotEndToEnd, PrefixOffloadFormatRestoresInANewPipelineThroughAPersistentPlugin) {
+    const char* model_path = std::getenv(MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0') {
+        GTEST_SKIP() << MODEL_PATH_ENV << " is not set, skipping session snapshot end-to-end test.";
+    }
+    const auto plugin_path = find_sample_plugin_library();
+    if (!plugin_path.has_value()) {
+        GTEST_SKIP() << "samples/c/kv_cache_store_plugin was not built (requires -DENABLE_SAMPLES=ON)";
+    }
+    run_cross_pipeline_round_trip(model_path, *plugin_path, /*hybrid=*/false);
+}
+
+TEST(TestSessionSnapshotEndToEnd, PrefixOffloadFormatHybridModelRestoresInANewPipelineThroughAPersistentPlugin) {
+    const char* model_path = std::getenv(VLM_MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0') {
+        GTEST_SKIP() << VLM_MODEL_PATH_ENV << " is not set, skipping hybrid session snapshot end-to-end test.";
+    }
+    const auto plugin_path = find_sample_plugin_library();
+    if (!plugin_path.has_value()) {
+        GTEST_SKIP() << "samples/c/kv_cache_store_plugin was not built (requires -DENABLE_SAMPLES=ON)";
+    }
+    run_cross_pipeline_round_trip(model_path, *plugin_path, /*hybrid=*/true);
+}
+
+// If the configured plugin cannot be loaded the pipeline silently uses its temporary store, which would lose the
+// snapshot's blocks: saving must refuse instead of pretending to succeed.
+TEST(TestSessionSnapshotEndToEnd, PrefixOffloadFormatSaveRefusesWhenTheConfiguredPluginDidNotLoad) {
+    const char* model_path = std::getenv(MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0') {
+        GTEST_SKIP() << MODEL_PATH_ENV << " is not set, skipping session snapshot end-to-end test.";
+    }
+    ScopedEnv format(SNAPSHOT_FORMAT_ENV, "4");
+
+    const auto snapshot_path = std::filesystem::temp_directory_path() / "openvino_genai_session_snapshot_v4_noplugin.bin";
+    ContinuousBatchingPipeline pipeline(model_path,
+                                        make_plugin_scheduler_config(/*hybrid=*/false, "this_plugin_does_not_exist.dll"),
+                                        session_snapshot_device());
+    auto handle = pipeline.add_request(83, repeat("The quick brown fox jumps over the lazy dog. ", 10), make_greedy_config(1000));
+    std::vector<int64_t> generated;
+    step_until_generated(pipeline, handle, 5, generated);
+
+    try {
+        pipeline.save_state(83, snapshot_path.string());
+        ADD_FAILURE() << "saving must be refused when the store plugin did not load";
+    } catch (const ov::Exception& error) {
+        EXPECT_NE(std::string(error.what()).find("fell back to the temporary in-process store"), std::string::npos)
+            << error.what();
+    }
+    EXPECT_FALSE(std::filesystem::exists(snapshot_path)) << "a refused save must not leave a file behind";
+}

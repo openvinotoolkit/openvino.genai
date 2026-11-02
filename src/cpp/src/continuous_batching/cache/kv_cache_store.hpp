@@ -50,6 +50,12 @@ public:
     /// Makes everything written so far durable. A synchronous write does not imply persistence for
     /// a buffering backend, so callers that report data as saved must flush first. Throws on failure.
     virtual void flush() {}
+
+    /// Whether blocks live in a third-party plugin that may outlive this pipeline, as opposed to the in-tree
+    /// run-scoped file store.
+    virtual bool is_plugin_backed() const {
+        return false;
+    }
 };
 
 }  // namespace ov::genai

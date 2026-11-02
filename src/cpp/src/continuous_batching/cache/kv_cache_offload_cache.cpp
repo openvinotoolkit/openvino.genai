@@ -185,6 +185,11 @@ void KVCacheOffloadCache::publish(std::size_t hash, bool reclaimed) {
                reclaimed ? "true" : "false");
 }
 
+void KVCacheOffloadCache::adopt_locked(std::size_t hash) {
+    m_insertion_order.push_back(hash);
+    m_entries[hash] = Entry{std::prev(m_insertion_order.end())};
+}
+
 void KVCacheOffloadCache::flush() {
     std::unique_lock<std::mutex> lock(m_mutex);
     m_drained_cv.wait(lock, [this] { return m_queued_stores.empty(); });
@@ -240,6 +245,12 @@ bool KVCacheOffloadCache::persist(std::size_t hash, std::size_t block_index) {
         ++m_pin_counts[hash];
         return true;
     }
+    if (m_store->has_block(hash)) {
+        // Content-addressed: an entry from an earlier pipeline already holds these bytes.
+        adopt_locked(hash);
+        ++m_pin_counts[hash];
+        return true;
+    }
 
     bool reclaimed = false;
     if (m_store->get_num_free_blocks() == 0) {
@@ -261,7 +272,10 @@ bool KVCacheOffloadCache::persist(std::size_t hash, std::size_t block_index) {
 bool KVCacheOffloadCache::pin(std::size_t hash) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_entries.find(hash) == m_entries.end()) {
-        return false;
+        if (!m_store->has_block(hash)) {
+            return false;
+        }
+        adopt_locked(hash);
     }
     ++m_pin_counts[hash];
     return true;
@@ -280,7 +294,16 @@ void KVCacheOffloadCache::unpin(std::size_t hash) {
 
 bool KVCacheOffloadCache::contains(std::size_t hash) const {
     std::lock_guard<std::mutex> lock(m_mutex);
-    return m_entries.find(hash) != m_entries.end() || find_queued(hash) != nullptr;
+    if (m_entries.find(hash) != m_entries.end() || find_queued(hash) != nullptr) {
+        return true;
+    }
+    // The store may hold entries this instance never wrote, e.g. a snapshot taken by an earlier pipeline.
+    try {
+        return m_store->has_block(hash);
+    } catch (const std::exception& error) {
+        GENAI_WARN("KV cache offload store lookup failed for hash %zu: %s", hash, error.what());
+        return false;
+    }
 }
 
 bool KVCacheOffloadCache::load_into(std::size_t hash, std::size_t block_index) {
@@ -296,7 +319,7 @@ bool KVCacheOffloadCache::load_into(std::size_t hash, std::size_t block_index) {
             m_cache_manager.write_block(block_index, queued->data);
         } else {
             auto it = m_entries.find(hash);
-            if (it == m_entries.end()) {
+            if (it == m_entries.end() && !m_store->has_block(hash)) {
                 return false;
             }
             GENAI_INFO("[KV_TRACE] KVCacheOffloadCache load hash=%zu source=disk physical_block=%zu", hash, block_index);
@@ -326,9 +349,6 @@ bool KVCacheOffloadCache::read(std::size_t hash, std::vector<uint8_t>& block_dat
     if (const QueuedStore* queued = find_queued(hash)) {
         block_data = queued->data;
         return true;
-    }
-    if (m_entries.find(hash) == m_entries.end()) {
-        return false;
     }
     return m_store->read_block(hash, block_data);
 }

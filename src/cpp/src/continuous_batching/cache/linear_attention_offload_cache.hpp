@@ -93,6 +93,10 @@ public:
 
     std::size_t get_num_entries() const;
 
+    /// Whether the backing store is a third-party plugin that may outlive this pipeline.
+    bool is_plugin_backed() const {
+        return m_store->is_plugin_backed();
+    }
     std::size_t get_num_free_slots() const {
         return m_store->get_num_free_blocks();
     }
@@ -118,6 +122,9 @@ private:
     const QueuedStore* find_queued(std::size_t hash) const;
 
     void publish(std::size_t hash, bool reclaimed);
+
+    /// Starts tracking an entry that is already in the store, e.g. one written by an earlier pipeline.
+    void adopt_locked(std::size_t hash);
 
     void run_writer();
 
