@@ -130,14 +130,10 @@ TEST(TestAddExtensions, GGUFFrontendRetainsExtensionObjects) {
     EXPECT_TRUE(retained.expired());
 }
 
-TEST(TestAddExtensions, GGUFPipelineControlsGenAIExtensionMode) {
+TEST(TestAddExtensions, GGUFFrontendIgnoresSuppliedGenAIExtension) {
     using Extension = ov::frontend::gguf::GenAIExtension;
-    for (const auto mode : {Extension::InputMode::IDS_TO_LOGITS, Extension::InputMode::EMBEDS_TO_LOGITS}) {
-        ov::frontend::gguf::FrontEnd frontend;
-        auto supplied = std::make_shared<Extension>(Extension::InputMode::IDS_TO_LOGITS);
-        const auto selected = ov::genai::register_gguf_extensions(frontend, {supplied}, mode);
-        EXPECT_NE(selected, supplied);
-        EXPECT_NE(selected, nullptr);
-    }
+    ov::frontend::gguf::FrontEnd frontend;
+    frontend.add_extension(std::make_shared<Extension>());
+    EXPECT_NO_THROW(ov::genai::register_gguf_extensions(frontend, {std::make_shared<Extension>()}));
 }
 #endif

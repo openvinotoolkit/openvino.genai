@@ -146,8 +146,9 @@ std::shared_ptr<ov::Model> create_language_model(
 std::shared_ptr<ov::Model> convert_gguf_with_frontend(const std::string& model_path,
                                                       ov::AnyMap frontend_properties) {
     ov::frontend::gguf::FrontEnd frontend;
+    frontend.add_extension(std::make_shared<ov::frontend::gguf::GenAIExtension>());
     const auto extensions = ov::genai::utils::extract_extensions(frontend_properties);
-    ov::genai::register_gguf_extensions(frontend, extensions, ov::frontend::gguf::GenAIExtension::InputMode::IDS_TO_LOGITS);
+    ov::genai::register_gguf_extensions(frontend, extensions);
     return frontend.convert(frontend.load(model_path));
 }
 
