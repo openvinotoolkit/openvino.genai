@@ -1355,6 +1355,16 @@ def test_dflash_matches_main_only(dflash_model_paths, num_assistant_tokens):
     assert 0 < metrics.draft_model_metrics.get_num_generated_tokens() <= config.max_new_tokens * num_assistant_tokens
 
 
+def test_dflash_echo_only_request_matches_main_only(dflash_model_paths):
+    # max_new_tokens=0 with echo returns the prompt without generating, so there is nothing to draft
+    config = GenerationConfig(max_new_tokens=0, echo=True, num_assistant_tokens=3)
+    reference = _main_only_ids(dflash_model_paths[0], DFLASH_PROMPTS[:1], config)
+
+    result = _dflash_pipeline(dflash_model_paths).generate(DFLASH_PROMPTS[:1], [config])[0]
+
+    assert [result.m_generation_ids] == reference
+
+
 def test_dflash_batched_prompts_with_chunked_prefill_match_main_only(dflash_model_paths):
     config = _dflash_config()
     reference = _main_only_ids(dflash_model_paths[0], DFLASH_PROMPTS, config)

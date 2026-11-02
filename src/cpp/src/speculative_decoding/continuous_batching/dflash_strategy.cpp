@@ -38,6 +38,12 @@ void validate_target_has_no_unmanaged_state(const std::shared_ptr<ov::Model>& mo
                     ". Convert KV, conv, and GatedDeltaNet state to managed paging before enabling DFlash.");
 }
 
+// The target decodes a request alone with num_assistant_tokens == 0, and an echo-only request
+// (max_new_tokens == 0) generates nothing to draft.
+bool has_draft_request(const GenerationConfig& config) {
+    return config.num_assistant_tokens.value_or(0) > 0 && config.max_new_tokens > 0;
+}
+
 }  // namespace
 
 ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
@@ -207,7 +213,7 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::validate_awaiting_requests(
     const std::vector<SequenceGroup::Ptr>& draft_awaiting_requests) const {
     const size_t expected_draft_requests =
         std::count_if(main_awaiting_requests.begin(), main_awaiting_requests.end(), [](const SequenceGroup::Ptr& request) {
-            return request->get_sampling_parameters().num_assistant_tokens.value_or(0) > 0;
+            return has_draft_request(request->get_sampling_parameters());
         });
     OPENVINO_ASSERT(draft_awaiting_requests.size() == expected_draft_requests,
                     "DFlash awaiting request mismatch: draft queue size is ", draft_awaiting_requests.size(),
@@ -230,13 +236,11 @@ GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(
     if (!main_sampling_params.num_assistant_tokens.has_value()) {
         main_sampling_params.num_assistant_tokens = m_main_pipeline->default_num_assistant_tokens;
     }
-    const size_t num_assistant_tokens = main_sampling_params.num_assistant_tokens.value();
 
-    // The draft prompt is the target prompt: draft position t pairs with target hidden state t. With
-    // num_assistant_tokens == 0 the target decodes the request alone. insert_or_assign drops a stale handle
-    // a finished request may leave under the same request_id.
+    // The draft prompt is the target prompt: draft position t pairs with target hidden state t.
+    // insert_or_assign drops a stale handle a finished request may leave under the same request_id.
     try {
-        if (num_assistant_tokens > 0) {
+        if (has_draft_request(main_sampling_params)) {
             m_draft_generations.insert_or_assign(
                 request_id,
                 m_draft_pipeline->add_request(request_id, input_ids, make_draft_generation_config(main_sampling_params), prompt_ids));
