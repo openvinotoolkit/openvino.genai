@@ -454,19 +454,6 @@ def gguf_vlm_pipelines(tiny_gguf_vlm_model):
         for family in TINY_GGUF_VLM_MODELS
         if family not in {"gemma3", "llava", "internvl2"}
         for media in (["image", "video", "audio"] if family.startswith("gemma4") else ["image", "video"])
-        if (family, media) != ("muse-glimmer", "video")
-    ]
-    + [
-        pytest.param(
-            "muse-glimmer",
-            "video",
-            id="muse-glimmer-video",
-            marks=pytest.mark.xfail(
-                reason="Muse Glimmer video processing does not honor do_sample_frames=False.",
-                raises=RuntimeError,
-                strict=True,
-            ),
-        )
     ],
     indirect=["tiny_gguf_vlm_model"],
 )

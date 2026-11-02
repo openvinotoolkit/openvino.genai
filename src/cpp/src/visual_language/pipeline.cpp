@@ -88,6 +88,7 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
 
     // if True, full history will be used as prompt on each chat generation
     bool m_use_full_chat_history = false;
+    std::weak_ptr<ChatHistoryInternalState> m_active_history;
     // It stores encoded images, videos and vision count in case when m_use_full_chat_history is true
     std::vector<ov::genai::EncodedImage> m_encoded_images;
     std::vector<ov::genai::EncodedVideo> m_encoded_videos;
@@ -425,6 +426,7 @@ public:
     ) override {
         // Local mutable copy: setup_generation_config(...) and downstream callees mutate fields
         // (rng_seed, eos_token_id, ...). The public-base signature is const-ref by contract.
+        m_active_history.reset();
         GenerationConfig generation_config = generation_config_in;
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;
@@ -721,11 +723,16 @@ public:
                                processed_chat_data.audio_encoding_durations.begin(),
                                processed_chat_data.audio_encoding_durations.end());
 
-        bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history;
+        const auto history_state = ChatHistoryInternalState::get_or_create(history, m_embeddings_registry);
+        bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history ||
+                                m_active_history.lock() != history_state ||
+                                m_inputs_embedder->get_cache_state().get_state().empty();
+        m_active_history = history_state;
 
         if (use_full_history) {
             reset_language_state();
             m_language.get_tensor("attention_mask").set_shape({1, 0});
+            m_inputs_embedder->get_cache_state().reset_state();
             m_inputs_embedder->start_chat("");
         }
 
@@ -853,6 +860,7 @@ public:
     }
 
     void start_chat(const std::string& system_message) override {
+        m_active_history.reset();
         m_is_chat_conversation = true;
         m_system_message = system_message;
         m_inputs_embedder->start_chat(m_system_message);
@@ -864,6 +872,7 @@ public:
     }
 
     void finish_chat() override {
+        m_active_history.reset();
         m_is_chat_conversation = false;
         m_image_id = 0;
         m_video_id = 0;
