@@ -3677,6 +3677,41 @@ TEST(TestScheduler, dflash_draft_windows_are_scheduled_whole) {
     }
 }
 
+// With dynamic split fuse, the DFlash draft window of the last prompt rows also carries the first block as extra
+// rows: the prompt phase offers them with the rest of the prompt, so the window runs whole and is sampled.
+TEST(TestScheduler, dflash_draft_window_of_the_prompt_end_runs_its_block_with_dynamic_split_fuse) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.num_kv_blocks = 32;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.max_num_seqs = 4;
+
+    std::vector<int64_t> prompt(16);
+    std::iota(prompt.begin(), prompt.end(), 0);
+    auto group = std::make_shared<SequenceGroup>(0,
+                                                 ov::Tensor(ov::element::i64, {prompt.size()}, prompt.data()),
+                                                 utils::get_greedy_config());
+    // the seed the target sampled, then 3 mask placeholders
+    for (int64_t token : {100, 99, 99, 99}) {
+        group->get_running_sequences().front()->append_token(token, 0.0f);
+    }
+    group->set_num_validated_tokens(4);
+    std::vector<SequenceGroup::Ptr> requests = {group};
+
+    ContinuousBatchingScheduler scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    auto out = scheduler.schedule(requests);
+
+    EXPECT_FALSE(group->can_generate_tokens());
+    EXPECT_EQ(group->get_num_scheduled_tokens(), 16 + 4);
+    EXPECT_EQ(out.m_total_num_scheduled_tokens, 16 + 4);
+    EXPECT_TRUE(group->requires_sampling());
+
+    group->finish_iteration();
+    for (const auto& sequence : group->get_sequences()) {
+        scheduler.free_sequence(sequence->get_id());
+    }
+}
+
 namespace {
 SequenceGroup::Ptr make_validating_request(uint64_t request_id) {
     std::vector<int64_t> prompt(TEST_BLOCK_SIZE);

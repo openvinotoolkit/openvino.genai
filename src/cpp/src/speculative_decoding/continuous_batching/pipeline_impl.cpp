@@ -204,7 +204,8 @@ detail::MtpDraftUpdatePlan detail::make_mtp_draft_update_plan(size_t main_hidden
 
 detail::DFlashDraftWindow detail::make_dflash_draft_window(const SequenceGroup& request,
                                                            size_t target_processed_tokens,
-                                                           size_t candidate_position_offset) {
+                                                           size_t candidate_position_offset,
+                                                           bool block_may_follow_prompt_rows) {
     const auto running_sequences = request.get_running_sequences();
     OPENVINO_ASSERT(running_sequences.size() == 1, "DFlash draft supports one sequence per request.");
     DFlashDraftWindow window;
@@ -213,9 +214,10 @@ detail::DFlashDraftWindow detail::make_dflash_draft_window(const SequenceGroup& 
     window.context_rows =
         target_processed_tokens > window.committed_rows ? target_processed_tokens - window.committed_rows : 0;
 
-    // A block follows once the context reaches the token before the seed (the last generated token), and only
-    // after the prompt rows: without dynamic split fuse a step runs either prompt or generation windows, not both.
-    // Near max_new_tokens only the candidates the target can still validate are sampled.
+    // A block follows once the context reaches the token before the seed (the last generated token). Without
+    // dynamic split fuse it also waits for a window after the prompt rows, since a step then runs either prompt or
+    // generation windows; dynamic split fuse schedules the rest of the prompt and the block as one window. Near
+    // max_new_tokens only the candidates the target can still validate are sampled.
     const size_t num_assistant_tokens = request.get_sampling_parameters().num_assistant_tokens.value_or(0);
     const size_t generated_len = running_sequences.front()->get_generated_len();
     const size_t max_new_tokens = request.get_max_new_tokens();
@@ -223,7 +225,8 @@ detail::DFlashDraftWindow detail::make_dflash_draft_window(const SequenceGroup& 
     const bool starts_after_prompt = window.committed_rows >= request.get_prompt_len();
     const bool reaches_seed = generated_len > 0 && window.committed_rows + window.context_rows ==
                                                        request.get_prompt_len() + generated_len - 1;
-    if (num_assistant_tokens > 0 && starts_after_prompt && reaches_seed && remaining_tokens > 1) {
+    if (num_assistant_tokens > 0 && (starts_after_prompt || block_may_follow_prompt_rows) && reaches_seed &&
+        remaining_tokens > 1) {
         window.block_rows = num_assistant_tokens + candidate_position_offset;
         window.candidate_rows = std::min(num_assistant_tokens, remaining_tokens - 1);
     }
@@ -450,8 +453,10 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
     }
 
     // Plan the window. The target's rows end at its processed length.
-    const detail::DFlashDraftWindow window =
-        detail::make_dflash_draft_window(*request, target.num_processed_tokens, m_dflash_candidate_position_offset);
+    const detail::DFlashDraftWindow window = detail::make_dflash_draft_window(*request,
+                                                                              target.num_processed_tokens,
+                                                                              m_dflash_candidate_position_offset,
+                                                                              m_dflash_block_may_follow_prompt_rows);
     const size_t hidden_rows = target.hidden_states ? target.hidden_states.get_shape()[0] : 0;
     // The per-request runner and scheduler inputs are always overwritten, so no earlier request with the
     // same id leaves them behind.
