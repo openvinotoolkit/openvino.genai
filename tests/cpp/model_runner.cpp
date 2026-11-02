@@ -262,8 +262,6 @@ SequenceGroup::Ptr make_dflash_window_group(const std::vector<int64_t>& prompt_t
     for (int64_t token : {7, 99, 99, 99}) {
         group->get_running_sequences()[0]->append_token(token, 0.0f);
     }
-    group->update_processed_tokens_num(window_rows);
-    group->preempt_tokens(window_rows);
     group->schedule_tokens(window_rows);
     return group;
 }

@@ -201,6 +201,12 @@ class Sampler {
                                                         bool is_validation_mode_enabled,
                                                         bool notify_handle);
 
+    // Block sampling of one request: samples one token from each gathered row, in row order, in place of the
+    // request's trailing placeholder tokens.
+    SequenceGroupSamplingInfo _sample_block_from_sequence_group(SequenceGroup::Ptr sequence_group,
+                                                                ov::Tensor sequence_group_logits,
+                                                                RequestSamplerContext& context);
+
     // request ID => beam search tracking information (kept separate — has its own mutex)
     std::map<uint64_t, GroupBeamSearcher> m_beam_search_info;
 
@@ -220,6 +226,10 @@ class Sampler {
     // in target ids requires.
     bool m_d2t_mapping_is_one_to_one = false;
     bool m_collect_draft_proposals = false;
+    bool m_block_sampling = false;
+    // Rows from the row of the last real token (the seed) to the first gathered row: 1 when the gathered rows start
+    // at the first placeholder (DFlash), 0 when they start at the seed (DeepSpec).
+    size_t m_block_sampling_start_offset = 1;
 public:
     Sampler(const Sampler& rhs) = delete;
     Sampler(Sampler&& rhs) = delete;
@@ -256,6 +266,13 @@ public:
     // pipeline needs to verify it.
     void set_collect_draft_proposals(bool collect_draft_proposals) {
         m_collect_draft_proposals = collect_draft_proposals;
+    }
+
+    // Block sampling: each gathered row of a request yields one token, in row order, and the tokens replace the
+    // request's trailing placeholder tokens. Used by the DFlash draft.
+    void set_block_sampling(size_t start_offset) {
+        m_block_sampling = true;
+        m_block_sampling_start_offset = start_offset;
     }
 };
 

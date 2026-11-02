@@ -3600,9 +3600,10 @@ TEST(TestScheduler, clear_expected_num_scheduled_tokens_restores_default_schedul
     sequence_group->finish_iteration();
 }
 
-// A DFlash draft marks its window [committed rows, window end) for recompute; the scheduler then offers
-// exactly that window, both for a window that crosses the prompt end and after a block is rewound.
-TEST(TestScheduler, dflash_draft_windows_are_scheduled_as_recompute_rows) {
+// A DFlash draft asks for the rows of its window [committed rows, window end) past what the request offers by
+// itself as extra rows, and caps a prefill chunk; the scheduler then offers exactly that window, both for the prompt
+// rows and for a block window after them.
+TEST(TestScheduler, dflash_draft_windows_are_scheduled_whole) {
     SchedulerConfig scheduler_config;
     scheduler_config.num_kv_blocks = 32;
     scheduler_config.dynamic_split_fuse = true;
@@ -3621,13 +3622,16 @@ TEST(TestScheduler, dflash_draft_windows_are_scheduled_as_recompute_rows) {
         return group;
     };
     auto set_window = [](const SequenceGroup::Ptr& group, size_t committed_rows, size_t window_rows) {
-        group->update_processed_tokens_num(committed_rows + window_rows);
-        group->preempt_tokens(window_rows);
+        group->update_processed_tokens_num(committed_rows);
+        const size_t base_rows = group->get_num_available_tokens_for_batching();
+        if (window_rows > base_rows) {
+            group->set_num_validated_tokens(window_rows - base_rows);
+        }
     };
 
-    // prompt 8 forwarded together with the seed + 3 mask block
-    auto block_window = make_draft_group(0, 8, 4);
-    set_window(block_window, 0, 12);
+    // the 8 prompt rows of a request whose target sampled the seed
+    auto block_window = make_draft_group(0, 8, 1);
+    set_window(block_window, 0, 8);
     // the first 4 rows of a 16-token prompt, limited to the rows the target exported
     auto prefill_window = make_draft_group(1, 16, 0);
     set_window(prefill_window, 0, 4);
@@ -3640,25 +3644,27 @@ TEST(TestScheduler, dflash_draft_windows_are_scheduled_as_recompute_rows) {
     scheduler.set_expected_num_scheduled_tokens(1, 4);
     auto out = scheduler.schedule(requests);
 
-    EXPECT_EQ(block_window->get_num_scheduled_tokens(), 12);
+    EXPECT_EQ(block_window->get_num_scheduled_tokens(), 8);
     EXPECT_EQ(prefill_window->get_num_scheduled_tokens(), 4);
     EXPECT_EQ(paused->get_num_scheduled_tokens(), 0);
-    EXPECT_EQ(out.m_total_num_scheduled_tokens, 16);
+    EXPECT_EQ(out.m_total_num_scheduled_tokens, 12);
     for (const auto& group : requests) {
         group->finish_iteration();
     }
     scheduler.clear_expected_num_scheduled_tokens(1);
 
-    // after validation: 8 committed rows, 2 accepted rows and the next 4-row block (6 generated tokens)
-    block_window->get_running_sequences().front()->append_token(200, 0.0f);
-    block_window->get_running_sequences().front()->append_token(201, 0.0f);
-    set_window(block_window, 8, 6);
+    // the target generated the next seed: the row of the first seed, then the seed + 3 mask block
+    for (int64_t token : {200, 201, 202, 203}) {
+        block_window->get_running_sequences().front()->append_token(token, 0.0f);
+    }
+    set_window(block_window, 8, 5);
     prefill_window->pause_generation(true);
-    auto rewound = scheduler.schedule(requests);
+    auto block = scheduler.schedule(requests);
 
+    EXPECT_TRUE(block_window->can_generate_tokens());
     EXPECT_EQ(block_window->get_num_processed_tokens(), 8);
-    EXPECT_EQ(block_window->get_num_scheduled_tokens(), 6);
-    EXPECT_EQ(rewound.m_total_num_scheduled_tokens, 6);
+    EXPECT_EQ(block_window->get_num_scheduled_tokens(), 5);
+    EXPECT_EQ(block.m_total_num_scheduled_tokens, 5);
 
     for (const auto& group : requests) {
         group->finish_iteration();
