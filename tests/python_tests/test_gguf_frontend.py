@@ -24,6 +24,7 @@ import openvino_genai as genai
 
 from utils.comparation import compare_generation_results
 from utils.constants import extra_generate_kwargs, get_default_llm_properties
+from utils.custom_op import get_extension_lib_path
 from utils.hugging_face import (
     OVConvertedModelSchema,
     convert_models,
@@ -169,6 +170,31 @@ def gguf_pipeline(tiny_gguf_model, pipeline_type):
         ov_config=reference_properties(),
         gguf_reader="FRONTEND",
     )
+
+
+@pytest.mark.parametrize("pipeline_class", [genai.LLMPipeline, genai.ContinuousBatchingPipeline])
+@pytest.mark.parametrize("with_tokenizer", [False, True])
+def test_gguf_frontend_extensions(gguf_extension_model, pipeline_class, with_tokenizer):
+    args = [str(gguf_extension_model)]
+    if with_tokenizer:
+        args.append(genai.Tokenizer(gguf_extension_model))
+    if pipeline_class == genai.ContinuousBatchingPipeline:
+        args.append(genai.SchedulerConfig())
+    args.append("CPU")
+    properties = {"GGUF_READER": "FRONTEND", "extensions": [get_extension_lib_path()]}
+    with pytest.raises(RuntimeError, match="GGUF frontend extension was invoked"):
+        if pipeline_class == genai.ContinuousBatchingPipeline and not with_tokenizer:
+            pipeline_class(*args, properties)
+        else:
+            pipeline_class(*args, **properties)
+
+
+@pytest.fixture(scope="module", params=TINY_GGUF_MODELS)
+def gguf_extension_model(request):
+    repo, revision, filename, *_ = request.param
+    directory = Path.home() / "gguf_models" / repo.replace("/", "_")
+    snapshot_download(repo, revision=revision, allow_patterns=[filename], local_dir=directory)
+    return directory / filename
 
 
 @pytest.mark.parametrize(

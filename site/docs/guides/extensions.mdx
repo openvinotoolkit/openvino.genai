@@ -113,6 +113,54 @@ You can pass extensions to pipeline constructors in both Python and C++.
     </TabItemCpp>
 </LanguageTabs>
 
+## Use extensions with the GGUF frontend
+
+`LLMPipeline` and `ContinuousBatchingPipeline` register the supplied extensions with
+OpenVINO `Core` and with the GGUF frontend used for conversion. Pass library paths or
+extension objects using the same `extensions` property.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        from pathlib import Path
+        import openvino_genai as genai
+
+        properties = {
+            "GGUF_READER": "FRONTEND",
+            "extensions": [Path("/path/to/libgguf_extension.so")],
+        }
+        llm = genai.LLMPipeline("model.gguf", "CPU", **properties)
+        batching = genai.ContinuousBatchingPipeline(
+            "model.gguf", genai.SchedulerConfig(), "CPU", properties
+        )
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        #include <filesystem>
+        #include <vector>
+        #include <openvino/genai/continuous_batching_pipeline.hpp>
+        #include <openvino/genai/extensions.hpp>
+        #include <openvino/genai/gguf.hpp>
+        #include <openvino/genai/llm_pipeline.hpp>
+
+        void load_pipelines() {
+            const ov::AnyMap properties = {
+                ov::genai::gguf_reader("FRONTEND"),
+                ov::genai::extensions(std::vector<std::filesystem::path>{
+                    "/path/to/libgguf_extension.so"})};
+            ov::genai::LLMPipeline llm("model.gguf", "CPU", properties);
+            ov::genai::ContinuousBatchingPipeline batching(
+                "model.gguf", ov::genai::SchedulerConfig{}, "CPU", properties);
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+Frontend extensions can customize operation conversion or graph transformations.
+Build extension libraries against the OpenVINO version used by GenAI. GenAI supplies
+its own `GenAIExtension` to preserve the pipeline's input/output interface.
+
 ## Notes
 
 - Extensions are loaded into the underlying OpenVINO `Core` before the pipeline loads the model.

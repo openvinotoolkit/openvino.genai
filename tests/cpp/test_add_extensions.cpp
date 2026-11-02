@@ -12,6 +12,11 @@
 #include "openvino/genai/extensions.hpp"
 #include "utils.hpp"
 
+#ifdef ENABLE_GGUF
+#    include "gguf_utils/gguf_frontend_extensions.hpp"
+#    include "openvino/frontend/extension/conversion.hpp"
+#endif
+
 using namespace ov::genai::utils;
 
 namespace {
@@ -106,3 +111,33 @@ TEST(TestAddExtensions, test_extract_extensions_to_core) {
     EXPECT_THROW(extract_extensions_to_core(properties_path), ov::Exception);
     EXPECT_NO_THROW(extract_extensions_to_core(properties_custom_op));
 }
+
+#ifdef ENABLE_GGUF
+TEST(TestAddExtensions, GGUFFrontendRetainsExtensionObjects) {
+    std::weak_ptr<ov::Extension> retained;
+    {
+        ov::frontend::gguf::FrontEnd frontend;
+        auto extension = std::make_shared<ov::frontend::ConversionExtension>(
+            "GGML_OP_TEST",
+            [](const ov::frontend::NodeContext&) -> ov::OutputVector {
+                return {};
+            });
+        retained = extension;
+        ov::genai::register_gguf_extensions(frontend, {extension});
+        extension.reset();
+        EXPECT_FALSE(retained.expired());
+    }
+    EXPECT_TRUE(retained.expired());
+}
+
+TEST(TestAddExtensions, GGUFPipelineControlsGenAIExtensionMode) {
+    using Extension = ov::frontend::gguf::GenAIExtension;
+    for (const auto mode : {Extension::InputMode::IDS_TO_LOGITS, Extension::InputMode::EMBEDS_TO_LOGITS}) {
+        ov::frontend::gguf::FrontEnd frontend;
+        auto supplied = std::make_shared<Extension>(Extension::InputMode::IDS_TO_LOGITS);
+        const auto selected = ov::genai::register_gguf_extensions(frontend, {supplied}, mode);
+        EXPECT_NE(selected, supplied);
+        EXPECT_NE(selected, nullptr);
+    }
+}
+#endif
