@@ -3139,6 +3139,10 @@ class LTX2VideoTransformer3DModel:
         """
     def get_config(self) -> LTX2VideoTransformer3DModel.Config:
         ...
+    def has_input(self, name: str) -> bool:
+        """
+        Returns whether the export has an input with this exact name.
+        """
     def infer(self, video_latent: openvino._pyopenvino.Tensor, audio_latent: openvino._pyopenvino.Tensor, timestep: typing.SupportsFloat, isolate_modalities: bool = False, spatio_temporal_guidance_blocks: collections.abc.Sequence[typing.SupportsInt] = []) -> tuple[openvino._pyopenvino.Tensor, openvino._pyopenvino.Tensor]:
         """
                         Performs joint video and audio inference.
@@ -3165,6 +3169,13 @@ class LTX2VideoTransformer3DModel:
                         Sets a model input tensor by name.
                         tensor_name (str): Name of the tensor input.
                         tensor (ov.Tensor): Tensor to set.
+        """
+    def set_rope_coords(self, video_coords: openvino._pyopenvino.Tensor, audio_coords: openvino._pyopenvino.Tensor) -> None:
+        """
+                        Initializes positional inputs from f32 patch boundaries.
+                        video_coords (ov.Tensor): Shape [B, 3, video_sequence_length, 2].
+                        audio_coords (ov.Tensor): Shape [B, 1, audio_sequence_length, 2].
+                        Computes and binds external RoPE, or binds coordinates for legacy exports.
         """
 class LTX2Vocoder:
     """
