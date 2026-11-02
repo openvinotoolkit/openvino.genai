@@ -3685,7 +3685,10 @@ def _get_vlm_dflash_model_paths() -> tuple[Path, Path]:
     draft_model_path = get_ov_cache_converted_models_dir() / sanitize_model_id(VLM_DFLASH_DRAFT_MODEL_ID)
     AtomicDownloadManager(draft_model_path).execute(
         lambda temp_path: export_with_optimum_cli(
-            VLM_DFLASH_DRAFT_MODEL_ID, "text-generation-with-past", temp_path, trust_remote_code=True
+            retry_request(lambda: snapshot_download(VLM_DFLASH_DRAFT_MODEL_ID)),
+            "text-generation-with-past",
+            temp_path,
+            trust_remote_code=True,
         )
     )
     return Path(_get_ov_model(VLM_DFLASH_MAIN_MODEL_ID)), draft_model_path
