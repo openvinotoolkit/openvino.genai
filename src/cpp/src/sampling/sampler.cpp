@@ -1912,6 +1912,10 @@ LogitProcessor& Sampler::get_logit_processor(uint64_t request_id) {
 
 
 void Sampler::create_logit_processor(uint64_t request_id, const GenerationConfig& sampling_params, const TokenIds& prompt) {
+    // Building a LogitProcessor scans the whole prompt, so a request that already has one keeps it.
+    if (m_request_contexts.count(request_id)) {
+        return;
+    }
     std::shared_ptr<StructuredOutputController> structured_output_controller = nullptr;
     if (m_tokenizer.m_pimpl != nullptr) {
         structured_output_controller = m_tokenizer.m_pimpl->get_structured_output_controller();
