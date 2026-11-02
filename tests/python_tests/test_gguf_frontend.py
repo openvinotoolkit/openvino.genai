@@ -15,7 +15,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
-from huggingface_hub import snapshot_download
+from huggingface_hub import hf_hub_download, snapshot_download
+from huggingface_hub.errors import LocalEntryNotFoundError
 from optimum.intel import OVModelForCausalLM
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
@@ -192,9 +193,14 @@ def test_gguf_frontend_extensions(gguf_extension_model, pipeline_class, with_tok
 @pytest.fixture(scope="module", params=TINY_GGUF_MODELS)
 def gguf_extension_model(request):
     repo, revision, filename, *_ = request.param
-    directory = Path.home() / "gguf_models" / repo.replace("/", "_")
-    snapshot_download(repo, revision=revision, allow_patterns=[filename], local_dir=directory)
-    return directory / filename
+    try:
+        return Path(hf_hub_download(repo, filename, revision=revision, local_files_only=True))
+    except LocalEntryNotFoundError:
+        directory = Path.home() / "gguf_models" / repo.replace("/", "_")
+        snapshot = retry_request(
+            lambda: snapshot_download(repo, revision=revision, allow_patterns=[filename], local_dir=directory)
+        )
+        return Path(snapshot) / filename
 
 
 @pytest.mark.parametrize(
