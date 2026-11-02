@@ -227,7 +227,14 @@ ov::Tensor InputsEmbedderQwen4_Exp::get_ngram_history() const {
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderQwen4_Exp::get_position_ids(
     size_t inputs_embeds_size, size_t
 ) {
-    OPENVINO_ASSERT(m_position_ids.get_shape()[2] == inputs_embeds_size,
+    const size_t sequence_length = m_position_ids.get_shape()[2];
+    if (sequence_length == inputs_embeds_size + 1) {
+        // MTP draft prompt: the embeddings of tokens 1..L-1 at the positions of tokens 0..L-2
+        ov::Tensor draft_positions(ov::element::i64, {4, 1, inputs_embeds_size});
+        ov::Tensor(m_position_ids, {0, 0, 0}, {4, 1, inputs_embeds_size}).copy_to(draft_positions);
+        return {draft_positions, m_rope_delta};
+    }
+    OPENVINO_ASSERT(sequence_length == inputs_embeds_size,
                     "Qwen4Exp prompt positions must match the input embedding sequence.");
     return {m_position_ids, m_rope_delta};
 }
