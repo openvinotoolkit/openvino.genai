@@ -724,6 +724,28 @@ def test_target_and_draft_preemption_complete(model_pair):
     assert outputs == _block_target_outputs(model_pair)
 
 
+@pytest.mark.parametrize("model_pair", [QWEN3_DFLASH], indirect=True)
+def test_sampled_requests_are_reproducible(model_pair):
+    # The target accepts or replaces every sampled candidate by rejection sampling against the distribution the draft
+    # drew it from; the draws of both follow the request seed.
+    config = GenerationConfig(
+        do_sample=True,
+        temperature=0.8,
+        top_k=4,
+        rng_seed=3,
+        max_new_tokens=20,
+        ignore_eos=True,
+        num_assistant_tokens=3,
+    )
+
+    def generate():
+        results = _cb_pipeline(model_pair).generate(PROMPTS_4, [config] * len(PROMPTS_4))
+        assert results[0].extended_perf_metrics.get_num_draft_tokens() > 0
+        return [result.m_generation_ids for result in results]
+
+    assert generate() == generate()
+
+
 @pytest.mark.parametrize("model_pair", PAIRS, indirect=True)
 def test_greedy_requests_with_penalties_match_target(model_pair):
     # Penalties can change the argmax, so the draft draws its candidates with its sampler, over the token history it

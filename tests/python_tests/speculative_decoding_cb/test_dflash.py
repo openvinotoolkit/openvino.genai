@@ -115,6 +115,24 @@ def test_vlm_prefix_caching_without_explicit_assistant_tokens(model_pair, cat_te
     assert run(pipe) == reference
 
 
+@pytest.mark.parametrize("model_pair", [QWEN35_DFLASH], indirect=True)
+def test_vlm_sampling_on_linear_attention_target_rejects_prefix_caching(model_pair, cat_tensor):
+    # With prefix caching, a target with linear-attention state verifies greedy requests only.
+    prefix_config = SchedulerConfig()
+    prefix_config.enable_prefix_caching = True
+    ov_pipe = VLMPipeline(
+        model_pair.target_path,
+        "CPU",
+        draft_model=draft_model(model_pair.draft_path, "CPU"),
+        scheduler_config=prefix_config,
+    )
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=8, do_sample=True)
+    generation_config.num_assistant_tokens = 3
+
+    with pytest.raises(RuntimeError, match="set enable_prefix_caching to false"):
+        ov_pipe.generate(PROMPTS[2], images=[cat_tensor], generation_config=generation_config)
+
+
 @pytest.mark.parametrize("model_pair", [QWEN3_DFLASH], indirect=True)
 def test_draft_runs_on_paged_attention_only(model_pair):
     config = _greedy_config()

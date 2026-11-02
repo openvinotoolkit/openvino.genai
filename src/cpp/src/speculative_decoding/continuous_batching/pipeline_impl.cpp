@@ -445,6 +445,8 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
     if (is_update_logit_processor) {
         logit_processor.update_generated_len(sequence->get_generated_len());
     }
+    // The target has validated the candidates the proposals came with.
+    sequence->clear_draft_proposals();
 
     // Plan the window. It reads the target's rows up to its processed length.
     const detail::DFlashDraftWindow window = detail::make_dflash_draft_window(*request,

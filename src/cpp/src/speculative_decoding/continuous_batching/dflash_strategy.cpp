@@ -180,7 +180,12 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
 }
 
 void ContinuousBatchingPipeline::DFlashDecodingImpl::validate_request_config(const GenerationConfig& config) const {
-    OPENVINO_ASSERT(config.is_greedy_decoding(), "DFlash supports greedy decoding only.");
+    OPENVINO_ASSERT(config.is_greedy_decoding() || config.is_multinomial(),
+                    "DFlash supports greedy and multinomial decoding only.");
+    OPENVINO_ASSERT(config.num_return_sequences == 1,
+                    "DFlash supports one sequence per request; num_return_sequences must be 1, got ",
+                    config.num_return_sequences,
+                    ".");
     OPENVINO_ASSERT(!config.adapters.has_value(),
                     "DFlash does not support adapters until target and draft adapter parity is validated.");
     OPENVINO_ASSERT(config.assistant_confidence_threshold == 0.f,
@@ -191,11 +196,10 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::validate_request_config(con
 
 GenerationConfig ContinuousBatchingPipeline::DFlashDecodingImpl::make_draft_generation_config(
     const GenerationConfig& config) {
-    // The target decides when to stop and what to return; the draft only proposes candidates. ignore_eos
-    // disables the stop tokens; they stay because validate() requires eos_token_id among them.
-    GenerationConfig draft_config = config;
-    draft_config.ignore_eos = true;
-    draft_config.stop_strings.clear();
+    // The target decides when to stop and what to return; the draft only proposes candidates, drawn independently
+    // of the target's draws. ignore_eos disables the stop tokens; they stay because validate() requires
+    // eos_token_id among them.
+    GenerationConfig draft_config = make_draft_sampling_params(config);
     draft_config.include_stop_str_in_output = false;
     draft_config.structured_output_config.reset();
     draft_config.parsers.clear();
@@ -270,6 +274,10 @@ GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(
     if (!main_sampling_params.num_assistant_tokens.has_value()) {
         main_sampling_params.num_assistant_tokens = m_main_pipeline->default_num_assistant_tokens;
     }
+    OPENVINO_ASSERT(!has_draft_request(main_sampling_params) || main_sampling_params.is_greedy_decoding() ||
+                        !m_main_pipeline->is_prefix_caching_enabled() || !m_main_pipeline->has_linear_attention_cache(),
+                    "DFlash speculative decoding of models with linear-attention state supports greedy decoding only "
+                    "when prefix caching is enabled; set enable_prefix_caching to false to use multinomial sampling.");
 
     // The draft prompt is the target prompt: draft position t pairs with target hidden state t.
     // insert_or_assign drops a stale handle a finished request may leave under the same request_id.
