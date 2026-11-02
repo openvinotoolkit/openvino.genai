@@ -329,6 +329,100 @@ TEST(TestSessionSnapshotEndToEnd, SaveRejectsAPipelineWithoutCacheOffload) {
     EXPECT_FALSE(std::filesystem::exists(snapshot_path)) << "a refused save must not leave a file behind";
 }
 
+// Qwen3-8B on CPU: one KV block is 2727936 bytes (the offload store logs it as slot_bytes). The two tests below size
+// the store in blocks, so they only apply to that combination.
+constexpr size_t QWEN3_8B_CPU_KV_BLOCK_BYTES = 2727936;
+
+bool store_sized_in_qwen3_8b_cpu_blocks() {
+    return session_snapshot_device() == "CPU";
+}
+
+// Snapshots address blocks by content hash, so two conversations sharing a long prefix keep that prefix in the store
+// once: both fit in a store that could not hold two private copies.
+TEST(TestSessionSnapshotEndToEnd, SnapshotsOfConversationsSharingAPrefixShareItsBlocks) {
+    const char* model_path = std::getenv(MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0') {
+        GTEST_SKIP() << MODEL_PATH_ENV << " is not set, skipping session snapshot end-to-end test.";
+    }
+    if (!store_sized_in_qwen3_8b_cpu_blocks()) {
+        GTEST_SKIP() << "the store capacity below assumes Qwen3-8B KV blocks on CPU";
+    }
+
+    auto config = make_offload_scheduler_config();
+    config.num_kv_blocks = 0;
+    // Each conversation is about 11 blocks, 10 of them shared: 12 blocks in total, against 22 without sharing.
+    config.cache_offload_config.capacity_bytes = 14 * QWEN3_8B_CPU_KV_BLOCK_BYTES;
+    ContinuousBatchingPipeline pipeline(model_path, config, session_snapshot_device());
+
+    const std::string shared_prefix = repeat("The quick brown fox jumps over the lazy dog. ", 36);
+    const auto first_path = std::filesystem::temp_directory_path() / "openvino_genai_session_snapshot_shared_a.bin";
+    const auto second_path = std::filesystem::temp_directory_path() / "openvino_genai_session_snapshot_shared_b.bin";
+
+    auto first = pipeline.add_request(56, shared_prefix + " Tell a tale of a river.", make_greedy_config(1000));
+    std::vector<int64_t> first_generated;
+    step_until_generated(pipeline, first, 5, first_generated);
+    EXPECT_NO_THROW(pipeline.save_state(56, first_path.string()));
+
+    auto second = pipeline.add_request(57, shared_prefix + " Describe a mountain at night.", make_greedy_config(1000));
+    std::vector<int64_t> second_generated;
+    step_until_generated(pipeline, second, 5, second_generated);
+    EXPECT_NO_THROW(pipeline.save_state(57, second_path.string()))
+        << "the second snapshot must reuse the shared prefix blocks instead of needing a private copy";
+    std::filesystem::remove(first_path);
+    std::filesystem::remove(second_path);
+}
+
+// A store that cannot hold the request's blocks refuses the save, names the setting to raise and leaves no file.
+TEST(TestSessionSnapshotEndToEnd, SaveRejectsWhenTheStoreCannotHoldTheBlocks) {
+    const char* model_path = std::getenv(MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0') {
+        GTEST_SKIP() << MODEL_PATH_ENV << " is not set, skipping session snapshot end-to-end test.";
+    }
+    if (!store_sized_in_qwen3_8b_cpu_blocks()) {
+        GTEST_SKIP() << "the store capacity below assumes Qwen3-8B KV blocks on CPU";
+    }
+
+    auto config = make_offload_scheduler_config();
+    config.num_kv_blocks = 0;
+    config.cache_offload_config.capacity_bytes = 3 * QWEN3_8B_CPU_KV_BLOCK_BYTES;  // the request needs about 11
+    ContinuousBatchingPipeline pipeline(model_path, config, session_snapshot_device());
+    auto handle = pipeline.add_request(58, repeat("The quick brown fox jumps over the lazy dog. ", 36), make_greedy_config(1000));
+    std::vector<int64_t> generated;
+    step_until_generated(pipeline, handle, 5, generated);
+
+    const auto snapshot_path = std::filesystem::temp_directory_path() / "openvino_genai_session_snapshot_full_store.bin";
+    try {
+        pipeline.save_state(58, snapshot_path.string());
+        ADD_FAILURE() << "saving into a store that is too small must be refused";
+    } catch (const ov::Exception& error) {
+        EXPECT_NE(std::string(error.what()).find("capacity_bytes"), std::string::npos) << error.what();
+    }
+    EXPECT_FALSE(std::filesystem::exists(snapshot_path)) << "a refused save must not leave a file behind";
+}
+
+// The snapshot of one model cannot be restored into another: the layouts and the history type differ.
+TEST(TestSessionSnapshotEndToEnd, RestoreRejectsASnapshotOfAnotherModel) {
+    const char* model_path = std::getenv(MODEL_PATH_ENV);
+    const char* other_model_path = std::getenv(VLM_MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0' || other_model_path == nullptr || *other_model_path == '\0') {
+        GTEST_SKIP() << MODEL_PATH_ENV << " and " << VLM_MODEL_PATH_ENV << " are both needed.";
+    }
+
+    const auto snapshot_path = std::filesystem::temp_directory_path() / "openvino_genai_session_snapshot_other_model.bin";
+    {
+        ContinuousBatchingPipeline pipeline(model_path, make_offload_scheduler_config(), session_snapshot_device());
+        auto handle = pipeline.add_request(59, repeat("The quick brown fox jumps over the lazy dog. ", 10), make_greedy_config(1000));
+        std::vector<int64_t> generated;
+        step_until_generated(pipeline, handle, 5, generated);
+        pipeline.save_state(59, snapshot_path.string());
+    }
+
+    ContinuousBatchingPipeline other(other_model_path, make_offload_scheduler_config(/*hybrid=*/true), session_snapshot_device());
+    EXPECT_THROW(other.restore_state(60, snapshot_path.string(), make_greedy_config(5)), ov::Exception);
+    EXPECT_FALSE(other.has_non_finished_requests()) << "a rejected restore must not leave a request behind";
+    std::filesystem::remove(snapshot_path);
+}
+
 TEST(TestSessionSnapshotEndToEnd, SaveRejectsARequestStillInPrefill) {
     const char* model_path = std::getenv(MODEL_PATH_ENV);
     if (model_path == nullptr || *model_path == '\0') {
