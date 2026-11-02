@@ -1398,6 +1398,24 @@ def test_dflash_matches_main_only(dflash_model_paths, num_assistant_tokens):
     assert 0 < metrics.draft_model_metrics.get_num_generated_tokens() <= config.max_new_tokens * num_assistant_tokens
 
 
+def test_dflash_generate_keeps_zero_assistant_tokens(dflash_model_paths):
+    # num_assistant_tokens=0 runs a request on the target alone in generate(), as it does in add_request()
+    target_path = dflash_model_paths[0]
+    pipe = _dflash_pipeline(dflash_model_paths)
+    target_only = _dflash_config(num_assistant_tokens=0)
+
+    result = pipe.generate(DFLASH_PROMPTS[:1], [target_only])[0]
+
+    assert [result.m_generation_ids] == _main_only_ids(target_path, DFLASH_PROMPTS[:1], target_only)
+    assert result.extended_perf_metrics.get_num_draft_tokens() == 0
+
+    configs = [_dflash_config(num_assistant_tokens=3), target_only]
+    main_only = _main_only_pipeline(target_path)
+    reference = [result.m_generation_ids for result in main_only.generate(DFLASH_PROMPTS[:2], configs)]
+
+    assert [result.m_generation_ids for result in pipe.generate(DFLASH_PROMPTS[:2], configs)] == reference
+
+
 def test_dflash_echo_only_request_matches_main_only(dflash_model_paths):
     # max_new_tokens=0 with echo returns the prompt without generating, so there is nothing to draft
     config = GenerationConfig(max_new_tokens=0, echo=True, num_assistant_tokens=3)
