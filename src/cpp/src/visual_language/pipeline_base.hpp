@@ -32,8 +32,8 @@ protected:
     // Speech config extracted from AnyMap: speech is decoded in the language model stream (LFM3-Omni)
     std::optional<OmniTalkerSpeechConfig> m_pending_speech_config;
 
-    // RAII guard that ends the pending speech streamer exactly once, also when generate() throws, then resets the
-    // speech streamer and speech config. The speech decoder only writes chunks; this guard owns end().
+    // RAII guard that ends a pending speech streamer that is still set, also when generate() throws, then resets the
+    // speech streamer and speech config. A successful speech decode takes the streamer and ends it itself.
     struct SpeechPropertiesGuard {
         OmniSpeechStreamerVariant& streamer_ref;
         std::optional<OmniTalkerSpeechConfig>& speech_config_ref;

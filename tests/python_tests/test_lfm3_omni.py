@@ -343,15 +343,22 @@ def test_streamed_chunks_form_the_waveform(
     assert _waveform(result).size == 7 * frame_samples
 
 
-def test_streaming_matches_one_shot_decode(omni_pipe: ov_genai.OmniPipeline) -> None:
-    # More frames than the 24 frames of left context each chunk is decoded with, so later chunks drop the start.
+@pytest.mark.parametrize("left_context_frames", [None, 0], ids=["default", "no_context"])
+def test_streaming_left_context(omni_pipe: ov_genai.OmniPipeline, left_context_frames: int | None) -> None:
+    # More frames than the default left context, so later chunks drop the start.
     max_frames = 30
 
-    def speech(chunk_frames: int) -> np.ndarray:
-        config = _speech_config(max_frames, audio_chunk_frames=chunk_frames, rng_seed=3)
+    def speech(chunk_frames: int, **fields) -> np.ndarray:
+        config = _speech_config(max_frames, audio_chunk_frames=chunk_frames, rng_seed=3, **fields)
         return _waveform(omni_pipe.generate(PROMPT, text_config=_text_config(1000), talker_speech_config=config))
 
-    np.testing.assert_allclose(speech(2), speech(max_frames), atol=1e-5)
+    one_shot = speech(max_frames)
+    if left_context_frames is None:
+        np.testing.assert_allclose(speech(2), one_shot, atol=1e-5)
+    else:
+        streamed = speech(2, audio_chunk_left_context_frames=left_context_frames)
+        assert streamed.size == one_shot.size
+        assert not np.allclose(streamed, one_shot, atol=1e-5)
 
 
 @pytest.mark.parametrize("field, value", [("cp_temperature", 0.5), ("cp_top_k", 4), ("cp_repetition_penalty", 2.0)])
@@ -524,15 +531,18 @@ class FailingStreamer(ov_genai.StreamerBase):
 
 
 class EndCounter(ov_genai.OmniSpeechStreamerBase):
-    def __init__(self) -> None:
+    def __init__(self, fail_end: bool = False) -> None:
         super().__init__()
         self.ends = 0
+        self.fail_end = fail_end
 
     def write(self, chunk: ov.Tensor) -> ov_genai.StreamingStatus:
         return ov_genai.StreamingStatus.RUNNING
 
     def end(self) -> None:
         self.ends += 1
+        if self.fail_end:
+            raise ValueError("speech streamer end failure")
 
 
 @pytest.mark.parametrize(
@@ -541,13 +551,14 @@ class EndCounter(ov_genai.OmniSpeechStreamerBase):
         ({}, None, None),
         ({"speaker": "Ethan"}, None, "no speaker selection"),
         ({}, "failing", "streamer failure"),
+        ({}, "failing_end", "speech streamer end failure"),
     ],
-    ids=["finished", "rejected_config", "failing_text_streamer"],
+    ids=["finished", "rejected_config", "failing_text_streamer", "failing_speech_streamer_end"],
 )
 def test_speech_streamer_end_is_called_once(
     omni_pipe: ov_genai.OmniPipeline, fields: dict, streamer: str | None, error: str | None
 ) -> None:
-    counter = EndCounter()
+    counter = EndCounter(fail_end=streamer == "failing_end")
     kwargs = {"streamer": FailingStreamer()} if streamer == "failing" else {}
 
     def run() -> None:

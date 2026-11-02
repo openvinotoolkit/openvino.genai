@@ -41,6 +41,8 @@ struct LFM3SpeechRequest {
     size_t max_audio_frames;
     /// @brief Speech frames decoded per streamed chunk.
     size_t audio_chunk_frames;
+    /// @brief Earlier frames decoded again with each streamed chunk.
+    size_t audio_chunk_left_context_frames;
     size_t audio_rng_seed;
 };
 

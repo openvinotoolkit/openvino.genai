@@ -65,10 +65,6 @@ void softmax(std::vector<float>& scores) {
 
 constexpr float NEG_INF = -std::numeric_limits<float>::infinity();
 
-// Left context of a re-decoded streaming chunk. The codec decoder reaches about 20 frames back: three sliding-window
-// attention layers of 30 steps and five convolutions of 7 taps, at 6 steps per frame.
-constexpr size_t STREAM_CONTEXT_FRAMES = 24;
-
 // Dynamic activation quantization makes the codec output depend on how many frames are decoded together, so a
 // re-decoded streaming chunk would not match the one-shot waveform.
 const ov::AnyMap AUDIO_DECODER_DEFAULTS{ov::hint::dynamic_quantization_group_size(0)};
@@ -92,6 +88,7 @@ LFM3SpeechRequest::LFM3SpeechRequest(const OmniTalkerSpeechConfig& speech_config
       audio_repetition_penalty(speech_config.cp_repetition_penalty),
       max_audio_frames(speech_config.max_new_tokens),
       audio_chunk_frames(speech_config.audio_chunk_frames),
+      audio_chunk_left_context_frames(speech_config.audio_chunk_left_context_frames),
       audio_rng_seed(speech_config.rng_seed) {
     validate(speech_config);
     OPENVINO_ASSERT(max_audio_frames > 0 && audio_chunk_frames > 0,
@@ -487,14 +484,16 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
     size_t streamed_samples = 0;
     // Streams the samples that frames [0, end) fix for good. The codec decoder is causal, but the ISTFT overlap
     // changes the last decode_lookahead_samples until the next frame arrives. Each chunk is decoded again with
-    // STREAM_CONTEXT_FRAMES frames of left context, which covers the decoder's receptive field.
+    // audio_chunk_left_context_frames frames of left context. The codec decoder reaches about 20 frames back: three
+    // sliding-window attention layers of 30 steps and five convolutions of 7 taps, at 6 steps per frame.
+    const size_t left_context_frames = request.audio_chunk_left_context_frames;
     auto stream_up_to = [&](size_t end, bool final) {
         const size_t limit = end * m_config.frame_samples - (final ? 0 : m_config.decode_lookahead_samples);
         if (limit <= streamed_samples) {
             return StreamingStatus::RUNNING;
         }
         const size_t first = streamed_samples / m_config.frame_samples;
-        const size_t begin = first > STREAM_CONTEXT_FRAMES ? first - STREAM_CONTEXT_FRAMES : 0;
+        const size_t begin = first > left_context_frames ? first - left_context_frames : 0;
         const ov::Tensor audio = decode_frames(frames, begin, end);
         const float* new_samples = audio.data<const float>() + (streamed_samples - begin * m_config.frame_samples);
         ov::Tensor chunk(ov::element::f32, {1, 1, limit - streamed_samples});

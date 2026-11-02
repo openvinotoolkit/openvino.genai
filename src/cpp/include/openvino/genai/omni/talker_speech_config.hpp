@@ -101,6 +101,9 @@ struct OPENVINO_GENAI_EXPORTS OmniTalkerSpeechConfig {
     /// Larger values give smoother seams between chunks but cost more vocoder work per chunk.
     /// Default is 25, the `left_context_size` of transformers `Qwen3OmniMoeCode2Wav.chunked_decode`.
     /// Ignored when no speech streamer is set.
+    ///
+    /// For LFM3-Omni, streamed audio has the non-streamed length for any value. With the default, it also
+    /// has the same samples; smaller values change the samples at the start of each chunk.
     std::size_t audio_chunk_left_context_frames = 25;
 
     /// @brief Cap on talker AR steps. Independent of `text_config.max_new_tokens`

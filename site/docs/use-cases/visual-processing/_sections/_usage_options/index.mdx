@@ -227,7 +227,7 @@ For models with audio output, such as Qwen3-Omni, `OmniPipeline` returns speech 
 Two `OmniTalkerSpeechConfig` fields control the chunks:
 
 - `audio_chunk_frames` - the number of codec frames in each chunk. The default is 4. For Qwen3-Omni, one frame is 80 ms of audio, so the first chunk is about 297 ms and later chunks are 320 ms. The first chunk is shorter because the vocoder trims its warmup once per utterance. Smaller values lower the time to first audio, but cost more vocoder time per second of audio and can fall behind real time.
-- `audio_chunk_left_context_frames` - the number of earlier frames the vocoder decodes together with each chunk, so the chunk starts with the same history as a non-streamed decode. The default is 25. Larger values give smoother seams between chunks, but cost more vocoder time. 0 decodes every chunk on its own: each chunk then loses the warmup samples, so the streamed audio is shorter than the non-streamed audio.
+- `audio_chunk_left_context_frames` - the number of earlier frames the vocoder decodes together with each chunk, so the chunk starts with the same history as a non-streamed decode. The default is 25. Larger values give smoother seams between chunks, but cost more vocoder time. 0 decodes every chunk on its own: each chunk then loses the warmup samples, so the streamed audio is shorter than the non-streamed audio. For LFM3-Omni, the streamed audio has the non-streamed length for any value. With the default, it also has the same samples; smaller values change the samples at the start of each chunk.
 
 Without a speech streamer, both fields have no effect and the whole audio is returned in `speech_result.waveforms`.
 

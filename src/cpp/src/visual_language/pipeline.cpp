@@ -5,6 +5,7 @@
 
 #include <optional>
 #include <random>
+#include <utility>
 
 #include "lm_encoding.hpp"
 #include "lora/helper.hpp"
@@ -1052,6 +1053,12 @@ private:
                                       LFM3SpeechRequest(*m_pending_speech_config, generation_config),
                                       streamer,
                                       m_pending_speech_streamer);
+        // Ended here so an end() failure reaches the caller; SpeechPropertiesGuard swallows it while unwinding.
+        // Taken out first, so the guard does not end it a second time after a failure.
+        const auto speech_streamer = std::exchange(m_pending_speech_streamer, std::monostate{});
+        if (is_speech_streamer_active(speech_streamer)) {
+            end_speech_streamer(speech_streamer);
+        }
         // The language model has consumed every slot but the last sampled one.
         if (speech.slot_tokens.size() > 1) {
             ov::Tensor consumed(ov::element::i64, {1, speech.slot_tokens.size() - 1});

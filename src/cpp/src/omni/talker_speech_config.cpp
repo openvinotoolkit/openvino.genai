@@ -112,6 +112,10 @@ void validate_omni_talker_speech_config(const OmniTalkerSpeechConfig& config) {
                         "[1, 1, talker_hidden_size], got ",
                         shape);
     }
+    OPENVINO_ASSERT(
+        config.output_mode == SpeechOutputMode::INTERLEAVED || config.output_mode == SpeechOutputMode::SPEECH_ONLY,
+        "OmniTalkerSpeechConfig: output_mode must be INTERLEAVED or SPEECH_ONLY, got ",
+        static_cast<int>(config.output_mode));
     if (config.talker_temperature) {
         OPENVINO_ASSERT(*config.talker_temperature > 0.0f,
                         "OmniTalkerSpeechConfig: talker_temperature must be > 0, got ",
