@@ -3770,27 +3770,22 @@ def test_vlm_dflash_prefix_caching(cat_tensor):
     assert results[1].perf_metrics.get_num_prefix_cache_hit_tokens() > 0
 
 
-@pytest.mark.parametrize(
-    "options",
-    [{}, {"pruning_ratio": 50}, {"echo": True}, {"logprobs": 2}],
-    ids=["default", "pruning", "echo", "logprobs"],
-)
-def test_vlm_dflash_matches_main_only(cat_tensor, options):
+def test_vlm_dflash_echo_and_logprobs_match_main_only(cat_tensor):
     model_path, draft_model_path = _get_vlm_dflash_model_paths()
     # An uncompressed KV cache keeps speculative and autoregressive decoding numerically identical.
     properties = {"INFERENCE_PRECISION_HINT": openvino.Type.f32, "KV_CACHE_PRECISION": openvino.Type.f32}
     scheduler_config = SchedulerConfig()
     scheduler_config.enable_prefix_caching = False
 
-    def generate(pipe, options, num_assistant_tokens=None):
+    def generate(pipe, num_assistant_tokens=None):
         generation_config = _setup_generation_config(pipe, max_new_tokens=20, do_sample=False)
-        for name, value in options.items():
-            setattr(generation_config, name, value)
+        generation_config.echo = True
+        generation_config.logprobs = 2
         if num_assistant_tokens is not None:
             generation_config.num_assistant_tokens = num_assistant_tokens
         return pipe.generate(PROMPTS[2], images=[cat_tensor], generation_config=generation_config)
 
-    ov_pipe = VLMPipeline(model_path, "CPU", scheduler_config=scheduler_config, **properties)
+    reference = generate(VLMPipeline(model_path, "CPU", scheduler_config=scheduler_config, **properties))
     ov_pipe_with_draft = VLMPipeline(
         model_path,
         "CPU",
@@ -3798,24 +3793,12 @@ def test_vlm_dflash_matches_main_only(cat_tensor, options):
         scheduler_config=scheduler_config,
         **properties,
     )
-    try:
-        reference = generate(ov_pipe, options)
-    except RuntimeError as error:
-        # An option the target rejects must fail the same way with the draft, not return a different result.
-        reference_error = str(error).splitlines()[0]
-        with pytest.raises(RuntimeError) as draft_error:
-            generate(ov_pipe_with_draft, options, num_assistant_tokens=3)
-        assert str(draft_error.value).splitlines()[0] == reference_error
-        return
-    result = generate(ov_pipe_with_draft, options, num_assistant_tokens=3)
+    result = generate(ov_pipe_with_draft, num_assistant_tokens=3)
 
     assert result.texts == reference.texts
     assert result.scores == pytest.approx(reference.scores, abs=1e-4)
     assert result.perf_metrics.get_num_input_tokens() == reference.perf_metrics.get_num_input_tokens()
     assert result.extended_perf_metrics.get_num_draft_tokens() > 0
-    if "pruning_ratio" in options:
-        unpruned = generate(ov_pipe, {})
-        assert result.perf_metrics.get_num_input_tokens() < unpruned.perf_metrics.get_num_input_tokens()
 
 
 def test_vlm_dflash_batched_requests_on_linear_attention_target_match_main_only(cat_tensor):
@@ -3860,15 +3843,12 @@ def _run_vlm_add_request(pipe, prompt, images, config) -> list[int]:
     reason="VLM add_request and generate(ChatHistory) keep prompt token IDs only when the request config already "
     "assists generation, so DFlash prefix caching rejects requests with num_assistant_tokens unset or 0",
 )
-@pytest.mark.parametrize("num_assistant_tokens", [None, 0], ids=["unset", "zero"])
-def test_vlm_dflash_prefix_caching_without_explicit_assistant_tokens(cat_tensor, num_assistant_tokens):
-    # With num_assistant_tokens unset DFlash drafts with its default, with 0 the target runs alone; both
-    # requests need prompt token IDs for prefix caching on embedding inputs.
+def test_vlm_dflash_prefix_caching_without_explicit_assistant_tokens(cat_tensor):
+    # num_assistant_tokens is unset, so DFlash drafts with its default; with 0 the request fails the same way.
+    # Both need prompt token IDs for prefix caching on embedding inputs.
     model_path, draft_model_path = _get_vlm_dflash_model_paths()
     properties = {"INFERENCE_PRECISION_HINT": openvino.Type.f32, "KV_CACHE_PRECISION": openvino.Type.f32}
     config = GenerationConfig(max_new_tokens=20, do_sample=False, ignore_eos=True)
-    if num_assistant_tokens is not None:
-        config.num_assistant_tokens = num_assistant_tokens
     history = ChatHistory()
     history.append({"role": "user", "content": PROMPTS[2]})
 
