@@ -146,6 +146,8 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
         read_json_param(parsed, "thinker_config.image_token_id", image_token_id);
         read_json_param(parsed, "thinker_config.video_token_id", video_token_id);
         read_json_param(parsed, "talker_config.num_code_groups", talker_num_code_groups);
+        read_json_param(parsed, "code2wav_config.upsample_rates", code2wav_config_upsample_rates);
+        read_json_param(parsed, "code2wav_config.upsampling_ratios", code2wav_config_upsampling_ratios);
         read_json_param(parsed, "talker_config.codec_bos_id", talker_codec_bos_id);
         read_json_param(parsed, "talker_config.codec_eos_token_id", talker_codec_eos_token_id);
         read_json_param(parsed, "talker_config.codec_pad_id", talker_codec_pad_id);

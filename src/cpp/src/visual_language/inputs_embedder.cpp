@@ -137,7 +137,9 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
     m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) { }
 
 ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
-    bool add_special_tokens = m_add_special_tokens_is_set ? m_add_special_tokens : !(m_is_chat_conversation || m_apply_chat_template);
+    const bool add_special_tokens =
+        m_add_special_tokens_is_set ? m_add_special_tokens
+                                   : !m_is_chat_conversation && m_prompt_formatting == PromptFormatting::Raw;
     ManualTimer encode_timer("Encode");
     encode_timer.start();
 
@@ -151,7 +153,7 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const s
         ov::Tensor encoded_input_ids;
         bool apply_template = false;
         TimePoint template_end_time;
-        if (m_apply_chat_template) {
+        if (m_prompt_formatting == PromptFormatting::NeedsTemplate) {
             std::string templated_prompt;
             ChatHistory history({{{"role", "user"}, {"content", prompt}}});
             constexpr bool add_generation_prompt = true;
@@ -215,9 +217,6 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::sample_video_if_needed(
     
     const size_t video_frames_num = video_shape[0];
     
-    OPENVINO_ASSERT(video_metadata.frames_indices.size() <= video_frames_num,
-        "Number of frames to sample cannot be greater than total number of frames in the video.");
-
     if (video_metadata.frames_indices.empty()) {
         return video;
     }
@@ -590,8 +589,8 @@ void InputsEmbedder::update_chat_history(const std::string& decoded_results, con
     m_impl->update_chat_history(decoded_results, generation_finish_status);
 }
 
-void InputsEmbedder::set_apply_chat_template_status(bool apply_chat_template) {
-    m_impl->set_apply_chat_template_status(apply_chat_template);
+void InputsEmbedder::set_prompt_formatting(PromptFormatting prompt_formatting) {
+    m_impl->set_prompt_formatting(prompt_formatting);
 }
 
 void InputsEmbedder::finish_chat() {
