@@ -13,6 +13,7 @@
 #include "visual_language/qwen3_vl/classes.hpp"
 #include "visual_language/qwen3_5/classes.hpp"
 #include "visual_language/qwen3_omni/classes.hpp"
+#include "automatic_speech_recognition/models/qwen3-asr/split/inputs_embedder.hpp"
 #include "visual_language/phi3_vision/classes.hpp"
 #include "visual_language/phi4mm/classes.hpp"
 #include "visual_language/minicpm/classes.hpp"
@@ -21,12 +22,15 @@
 #include "visual_language/llava_next/classes.hpp"
 #include "visual_language/llava_next_video/classes.hpp"
 #include "visual_language/internvl_chat/classes.hpp"
+#include "visual_language/minicpmv4_6/classes.hpp"
 #include "visual_language/gemma3/classes.hpp"
 #include "visual_language/gemma3n/classes.hpp"
 #include "visual_language/gemma4/classes.hpp"
 #include "visual_language/deepseek_ocr2/classes.hpp"
 #include "visual_language/videochat_flash/classes.hpp"
 #include "visual_language/muse_glimmer/classes.hpp"
+#include "visual_language/minicpmv4_7/classes.hpp"
+#include "visual_language/lfm3_vl/classes.hpp"
 
 #include "continuous_batching/timer.hpp"
 #include "utils.hpp"
@@ -56,6 +60,7 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::IInputsEmbedder::g
 
 void InputsEmbedder::IInputsEmbedder::start_chat(const std::string& system_message) {
     m_is_chat_conversation = true;
+    m_cached_text_embeds = ov::Tensor();
     if (!m_cache_state.get_state().empty()) {
         m_cache_state.reset_state();
     }
@@ -82,8 +87,16 @@ void InputsEmbedder::IInputsEmbedder::update_chat_history(const std::string& dec
 
 void InputsEmbedder::IInputsEmbedder::finish_chat() {
     m_is_chat_conversation = false;
+    m_cached_text_embeds = ov::Tensor();
     m_cache_state.reset_state();
 }
+
+InputsEmbedder::IInputsEmbedder::IInputsEmbedder(const VLMConfig& vlm_config,
+                                                 const Tokenizer& tokenizer,
+                                                 EmbeddingsModel::Ptr embedding)
+    : m_vlm_config{vlm_config},
+      m_embedding{std::move(embedding)},
+      m_tokenizer{tokenizer} {}
 
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const VLMConfig& vlm_config,
@@ -123,7 +136,9 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
     m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) { }
 
 ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
-    bool add_special_tokens = m_add_special_tokens_is_set ? m_add_special_tokens : !(m_is_chat_conversation || m_apply_chat_template);
+    const bool add_special_tokens =
+        m_add_special_tokens_is_set ? m_add_special_tokens
+                                   : !m_is_chat_conversation && m_prompt_formatting == PromptFormatting::Raw;
     ManualTimer encode_timer("Encode");
     encode_timer.start();
 
@@ -137,7 +152,7 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const s
         ov::Tensor encoded_input_ids;
         bool apply_template = false;
         TimePoint template_end_time;
-        if (m_apply_chat_template) {
+        if (m_prompt_formatting == PromptFormatting::NeedsTemplate) {
             std::string templated_prompt;
             ChatHistory history({{{"role", "user"}, {"content", prompt}}});
             constexpr bool add_generation_prompt = true;
@@ -201,9 +216,6 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::sample_video_if_needed(
     
     const size_t video_frames_num = video_shape[0];
     
-    OPENVINO_ASSERT(video_metadata.frames_indices.size() <= video_frames_num,
-        "Number of frames to sample cannot be greater than total number of frames in the video.");
-
     if (video_metadata.frames_indices.empty()) {
         return video;
     }
@@ -338,6 +350,11 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
         m_impl = std::make_shared<InputsEmbedderMiniCPM>(vlm_config, model_dir, tokenizer, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::MINICPMV4_6 ||
+               vlm_config.model_type == VLMModelType::MINICPM_OCR) {
+        m_impl = std::make_shared<InputsEmbedderMiniCPMV4_6>(vlm_config, model_dir, tokenizer, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::LFM3_VL) {
+        m_impl = std::make_shared<InputsEmbedderLFM3VL>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA) {
         m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::NANOLLAVA) {
@@ -362,6 +379,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderQwen3_5>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN3_OMNI) {
         m_impl = std::make_shared<InputsEmbedderQwen3Omni>(vlm_config, model_dir, tokenizer, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::QWEN3_ASR) {
+        m_impl = std::make_shared<InputsEmbedderQwen3ASR>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3N) {
@@ -376,6 +395,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderDeepseekOCR2>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::MUSE_GLIMMER) {
         m_impl = std::make_shared<InputsEmbedderMuseGlimmer>(vlm_config, model_dir, tokenizer, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::MINICPMV4_7) {
+        m_impl = std::make_shared<InputsEmbedderMiniCPMv4_7>(vlm_config, model_dir, tokenizer, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
@@ -390,6 +411,11 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
         m_impl = std::make_shared<InputsEmbedderMiniCPM>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::MINICPMV4_6 ||
+               vlm_config.model_type == VLMModelType::MINICPM_OCR) {
+        m_impl = std::make_shared<InputsEmbedderMiniCPMV4_6>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::LFM3_VL) {
+        m_impl = std::make_shared<InputsEmbedderLFM3VL>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA) {
         m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::NANOLLAVA) {
@@ -414,6 +440,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
         m_impl = std::make_shared<InputsEmbedderQwen3_5>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN3_OMNI) {
         m_impl = std::make_shared<InputsEmbedderQwen3Omni>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::QWEN3_ASR) {
+        m_impl = std::make_shared<InputsEmbedderQwen3ASR>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3N) {
@@ -428,6 +456,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
         m_impl = std::make_shared<InputsEmbedderDeepseekOCR2>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::MUSE_GLIMMER) {
         m_impl = std::make_shared<InputsEmbedderMuseGlimmer>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::MINICPMV4_7) {
+        m_impl = std::make_shared<InputsEmbedderMiniCPMv4_7>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
@@ -474,8 +504,31 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedder::encode_videos(
     return m_impl->encode_videos(videos, videos_metadata);
 }
 
-void InputsEmbedder::encode_audios(const std::vector<ov::Tensor>& audios) {
-    m_impl->encode_audios(audios);
+std::vector<EncodedAudio> InputsEmbedder::encode_audios(const std::vector<ov::Tensor>& audios) {
+    return m_impl->encode_audios(audios);
+}
+
+ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(
+    const std::string& prompt,
+    const std::vector<ov::genai::EncodedImage>& images,
+    const std::vector<ov::genai::EncodedVideo>& videos,
+    const std::vector<ov::genai::EncodedAudio>& audios,
+    ov::genai::VLMPerfMetrics& metrics,
+    bool recalculate_merged_embeddings,
+    const std::vector<size_t>& image_sequence,
+    const std::vector<size_t>& videos_sequence,
+    const std::vector<size_t>& audios_sequence,
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
+) {
+    OPENVINO_ASSERT(audios.empty(), "Audio input isn't supported by this model.");
+    return get_inputs_embeds(prompt,
+                             images,
+                             videos,
+                             metrics,
+                             recalculate_merged_embeddings,
+                             image_sequence,
+                             videos_sequence,
+                             history_vision_count);
 }
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
@@ -492,6 +545,14 @@ void InputsEmbedder::set_position_ids(const ov::Tensor& position_ids) {
 
 void InputsEmbedder::set_rope_delta(int64_t rope_delta) {
     m_impl->set_rope_delta(rope_delta);
+}
+
+ov::Tensor InputsEmbedder::get_cached_text_embeds() const {
+    return m_impl->get_cached_text_embeds();
+}
+
+void InputsEmbedder::set_cached_text_embeds_enabled(bool enabled) {
+    m_impl->set_cached_text_embeds_enabled(enabled);
 }
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta) {
@@ -518,8 +579,8 @@ void InputsEmbedder::update_chat_history(const std::string& decoded_results, con
     m_impl->update_chat_history(decoded_results, generation_finish_status);
 }
 
-void InputsEmbedder::set_apply_chat_template_status(bool apply_chat_template) {
-    m_impl->set_apply_chat_template_status(apply_chat_template);
+void InputsEmbedder::set_prompt_formatting(PromptFormatting prompt_formatting) {
+    m_impl->set_prompt_formatting(prompt_formatting);
 }
 
 void InputsEmbedder::finish_chat() {
@@ -552,32 +613,80 @@ NormalizedPrompt InputsEmbedder::normalize_prompt(const std::string& prompt,
     return m_impl->normalize_prompt(prompt, base_image_id, base_video_id, images, videos);
 }
 
+NormalizedPrompt InputsEmbedder::normalize_prompt(const std::string& prompt,
+    size_t base_image_id,
+    size_t base_video_id,
+    size_t base_audio_id,
+    const std::vector<EncodedImage>& images,
+    const std::vector<EncodedVideo>& videos,
+    const std::vector<EncodedAudio>& audios
+) const {
+    return m_impl->normalize_prompt(prompt, base_image_id, base_video_id, base_audio_id, images, videos, audios);
+}
+
+NormalizedPrompt InputsEmbedder::IInputsEmbedder::normalize_prompt(
+    const std::string& prompt,
+    size_t image_base_id,
+    size_t video_base_id,
+    size_t audio_base_id,
+    const std::vector<EncodedImage>& images,
+    const std::vector<EncodedVideo>& videos,
+    const std::vector<EncodedAudio>& audios
+) const {
+    OPENVINO_ASSERT(audios.empty(), "Audio input isn't supported by this model.");
+    return normalize_prompt(prompt, image_base_id, video_base_id, images, videos);
+}
+
+ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt,
+                                             const std::vector<ov::genai::EncodedImage>& images,
+                                             const std::vector<ov::genai::EncodedVideo>& videos,
+                                             const std::vector<ov::genai::EncodedAudio>& audios,
+                                             ov::genai::VLMPerfMetrics& metrics,
+                                             bool recalculate_merged_embeddings,
+                                             const std::vector<size_t>& image_sequence,
+                                             const std::vector<size_t>& videos_sequence,
+                                             const std::vector<size_t>& audios_sequence,
+                                             const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
+    return m_impl->get_inputs_embeds(prompt,
+                                     images,
+                                     videos,
+                                     audios,
+                                     metrics,
+                                     recalculate_merged_embeddings,
+                                     image_sequence,
+                                     videos_sequence,
+                                     audios_sequence,
+                                     history_vision_count);
+}
+
 void verify_ids(const std::vector<size_t>& vision_indices, size_t base_idx, size_t n_visions) {
     for (size_t idx : vision_indices) {
-        OPENVINO_ASSERT(base_idx <= idx, "Referring to older images/videos is not supported.");
-        OPENVINO_ASSERT(idx < base_idx + n_visions, "Missing image/video with index ", idx);
+        OPENVINO_ASSERT(base_idx <= idx, "Referring to older images/videos/audios is not supported.");
+        OPENVINO_ASSERT(idx < base_idx + n_visions,
+                        "Missing image/video/audio with index ", idx, " (", n_visions, " provided)");
     }
 }
 
-std::pair<std::string, std::vector<size_t>> InputsEmbedder::IInputsEmbedder::normalize(
+std::pair<std::string, std::vector<size_t>> normalize_media_tags(
     const std::string& prompt,
     const std::string& native_tag,
     const std::string& automatic_tag,
     size_t base_idx,
     size_t n_visions,
-    VisionType vision_type
-) const {
+    ModalityType modality_type
+) {
     size_t pos = prompt.find(native_tag);
     auto [vision_prompt, vision_sequence] = universal_to_native(
         prompt,
         [&](std::ostream& os, size_t) {
             os << automatic_tag;
         },
-        vision_type
+        modality_type
     );
     if (!vision_sequence.empty()) {
         OPENVINO_ASSERT(pos == std::string::npos,
-            "Prompt cannot mix universal tags (<ov_genai_image_i>/<ov_genai_video_i>) with native vision tags.");
+            "Prompt cannot mix universal tags (<ov_genai_image_i>/<ov_genai_video_i>/<ov_genai_audio_i>)"
+            " with native media tags.");
         verify_ids(vision_sequence, base_idx, n_visions);
         return {std::move(vision_prompt), std::move(vision_sequence)};
     }
@@ -588,7 +697,7 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedder::IInputsEmbedder::nor
     }
     if (!vision_sequence.empty()) {
         OPENVINO_ASSERT(vision_sequence.size() == n_visions,
-            "The number of native vision tags must match the number of provided images/videos"
+            "The number of native media tags must match the number of provided images/videos/audios"
             " because it's ambiguous which input should be ignored.");
         return {std::move(vision_prompt), std::move(vision_sequence)};
     }
@@ -600,6 +709,17 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedder::IInputsEmbedder::nor
     }
     stream << prompt;
     return {stream.str(), std::move(vision_sequence)};
+}
+
+std::pair<std::string, std::vector<size_t>> InputsEmbedder::IInputsEmbedder::normalize(
+    const std::string& prompt,
+    const std::string& native_tag,
+    const std::string& automatic_tag,
+    size_t base_idx,
+    size_t n_visions,
+    ModalityType modality_type
+) const {
+    return normalize_media_tags(prompt, native_tag, automatic_tag, base_idx, n_visions, modality_type);
 }
 
 } // namespace ov::genai

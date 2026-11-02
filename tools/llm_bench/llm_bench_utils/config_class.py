@@ -195,6 +195,7 @@ USE_CASES = {
                 "llava-qwen2",
                 "internvl-chat",
                 "minicpmv",
+                "minicpmv4-7",
                 "phi3-v",
                 "minicpm-v",
                 "minicpmo",

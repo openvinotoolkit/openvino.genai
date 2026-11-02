@@ -249,6 +249,93 @@ class TestKokoroPipeline:
                 f"max_diff={max_diff:.6f}, mean_diff={mean_diff:.6f}"
             )
 
+    def test_generate_generation_config_matches_kwargs(
+        self,
+        tiny_kokoro_ov_path: Path,
+        speaker_embedding_tensor: ov.Tensor,
+    ):
+        """
+        Verify equivalent non-default settings produce identical output when
+        passed via generation_config vs kwargs.
+        """
+        prompt = "Generation config and kwargs should match for same settings."
+
+        pipe0 = ov_genai.Text2SpeechPipeline(str(tiny_kokoro_ov_path), "CPU")
+        pipe1 = ov_genai.Text2SpeechPipeline(str(tiny_kokoro_ov_path), "CPU")
+
+        # Use explicit non-default values to avoid accidentally validating defaults.
+        config = pipe0.get_generation_config()
+        config.language = "en-gb"
+        config.speed = 1.15
+
+        result_from_config = pipe0.generate(prompt, speaker_embedding_tensor, generation_config=config)
+        result_from_kwargs = pipe1.generate(
+            prompt,
+            speaker_embedding_tensor,
+            language="en-gb",
+            speed=1.15,
+        )
+
+        speech_from_config = np.array(result_from_config.speeches[0].data, dtype=np.float32).reshape(-1)
+        speech_from_kwargs = np.array(result_from_kwargs.speeches[0].data, dtype=np.float32).reshape(-1)
+
+        assert result_from_config.output_sample_rate == SAMPLE_RATE
+        assert result_from_kwargs.output_sample_rate == SAMPLE_RATE
+        assert speech_from_config.size > 0
+        assert np.isfinite(speech_from_config).all()
+        assert np.isfinite(speech_from_kwargs).all()
+        assert np.array_equal(speech_from_config, speech_from_kwargs), (
+            "Waveforms should be bit-exact when generation settings are identical "
+            "between generation_config and kwargs paths"
+        )
+
+    def test_generate_kwargs_override_generation_config(
+        self,
+        tiny_kokoro_ov_path: Path,
+        speaker_embedding_tensor: ov.Tensor,
+    ):
+        """
+        Verify kwargs are applied on top of generation_config in Python bindings.
+
+        The binding updates a request-local config with kwargs, so passing
+        generation_config plus kwargs should match passing a pre-updated config.
+        """
+        prompt = "Kwargs should override generation_config for this request."
+
+        pipe0 = ov_genai.Text2SpeechPipeline(str(tiny_kokoro_ov_path), "CPU")
+        pipe1 = ov_genai.Text2SpeechPipeline(str(tiny_kokoro_ov_path), "CPU")
+
+        base_config = pipe0.get_generation_config()
+        base_config.language = "en-us"
+        base_config.speed = 1.0
+
+        expected_config = pipe1.get_generation_config()
+        expected_config.language = "en-gb"
+        expected_config.speed = 1.15
+
+        result_with_override = pipe0.generate(
+            prompt,
+            speaker_embedding_tensor,
+            generation_config=base_config,
+            language="en-gb",
+            speed=1.15,
+        )
+        result_with_expected = pipe1.generate(
+            prompt,
+            speaker_embedding_tensor,
+            generation_config=expected_config,
+        )
+
+        speech_with_override = np.array(result_with_override.speeches[0].data, dtype=np.float32).reshape(-1)
+        speech_with_expected = np.array(result_with_expected.speeches[0].data, dtype=np.float32).reshape(-1)
+
+        assert result_with_override.output_sample_rate == SAMPLE_RATE
+        assert result_with_expected.output_sample_rate == SAMPLE_RATE
+        assert np.array_equal(speech_with_override, speech_with_expected), (
+            "Waveforms should match when kwargs produce the same effective request config "
+            "as an explicitly pre-updated generation_config"
+        )
+
 
 @pytest.mark.speech_generation
 class TestKokoroFallback:

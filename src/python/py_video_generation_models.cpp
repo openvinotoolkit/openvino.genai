@@ -307,9 +307,23 @@ void init_ltx2_video_transformer_3d_model(py::module_& m) {
         .def_readonly("audio_scale_factor", &ov::genai::LTX2VideoTransformer3DModel::Config::audio_scale_factor)
         .def_readonly("causal_offset", &ov::genai::LTX2VideoTransformer3DModel::Config::causal_offset)
         .def_readonly("audio_sampling_rate", &ov::genai::LTX2VideoTransformer3DModel::Config::audio_sampling_rate)
-        .def_readonly("audio_hop_length", &ov::genai::LTX2VideoTransformer3DModel::Config::audio_hop_length);
+        .def_readonly("audio_hop_length", &ov::genai::LTX2VideoTransformer3DModel::Config::audio_hop_length)
+        .def_readonly("num_layers", &ov::genai::LTX2VideoTransformer3DModel::Config::num_layers)
+        .def_readonly("perturbed_attn", &ov::genai::LTX2VideoTransformer3DModel::Config::perturbed_attn);
 
     ltx2_transformer.def("get_config", &ov::genai::LTX2VideoTransformer3DModel::get_config)
+        .def("has_input", &ov::genai::LTX2VideoTransformer3DModel::has_input, py::arg("name"),
+             "Returns whether the export has an input with this exact name.")
+        .def("set_rope_coords",
+             &ov::genai::LTX2VideoTransformer3DModel::set_rope_coords,
+             py::arg("video_coords"),
+             py::arg("audio_coords"),
+             R"(
+                Initializes positional inputs from f32 patch boundaries.
+                video_coords (ov.Tensor): Shape [B, 3, video_sequence_length, 2].
+                audio_coords (ov.Tensor): Shape [B, 1, audio_sequence_length, 2].
+                Computes and binds external RoPE, or binds coordinates for legacy exports.
+            )")
         .def(
             "compile",
             [](ov::genai::LTX2VideoTransformer3DModel& self, const std::string& device, const py::kwargs& kwargs) {
@@ -351,18 +365,30 @@ void init_ltx2_video_transformer_3d_model(py::module_& m) {
              [](ov::genai::LTX2VideoTransformer3DModel& self,
                 const ov::Tensor& video_latent,
                 const ov::Tensor& audio_latent,
-                float timestep) {
+                float timestep,
+                bool isolate_modalities,
+                const std::vector<int64_t>& spatio_temporal_guidance_blocks) {
                  py::gil_scoped_release rel;
-                 return self.infer(video_latent, audio_latent, timestep);
+                 return self.infer(video_latent,
+                                   audio_latent,
+                                   timestep,
+                                   isolate_modalities,
+                                   spatio_temporal_guidance_blocks);
              },
              py::arg("video_latent"),
              py::arg("audio_latent"),
              py::arg("timestep"),
+             py::arg("isolate_modalities") = false,
+             py::arg("spatio_temporal_guidance_blocks") = std::vector<int64_t>{},
              R"(
                 Performs joint video and audio inference.
                 video_latent (ov.Tensor): Packed video latent tensor.
                 audio_latent (ov.Tensor): Packed audio latent tensor.
                 timestep (float): Current timestep.
+                isolate_modalities (bool): Turns off audio-to-video and video-to-audio cross attention
+                    (LTX-2.3 modality isolation guidance).
+                spatio_temporal_guidance_blocks (list[int]): Transformer block indices to perturb
+                    (LTX-2.3 Spatio-Temporal Guidance). Out-of-range indices are ignored.
                 Returns: Tuple of video and audio velocity predictions.
             )");
 }

@@ -18,6 +18,17 @@ namespace ov::genai::dflash_cb {
 
 inline constexpr size_t DEFAULT_NUM_ASSISTANT_TOKENS = 5;
 
+inline void add_draft_assistant_token_headroom(GenerationConfig& draft_config, const GenerationConfig& config) {
+    const size_t assistant_tokens = config.num_assistant_tokens.value();
+    if (config.max_new_tokens != SIZE_MAX) {
+        if (config.max_new_tokens < SIZE_MAX - assistant_tokens) {
+            draft_config.max_new_tokens = config.max_new_tokens + assistant_tokens;
+        }
+    } else if (config.max_length != SIZE_MAX && config.max_length < SIZE_MAX - assistant_tokens) {
+        draft_config.max_length = config.max_length + assistant_tokens;
+    }
+}
+
 inline void copy_tensor_bytes(const ov::Tensor& src, ov::Tensor& dst) {
     OPENVINO_ASSERT(src.get_element_type() == dst.get_element_type(),
                     "DFlash hidden state copy requires matching tensor element types.");

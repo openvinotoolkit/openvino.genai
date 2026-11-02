@@ -51,6 +51,11 @@ inline bool is_stop_token_id_hit_in_sequence_group(SequenceGroup::Ptr sequence_g
 std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx);
 
 struct SamplerOutput {
+    struct AcceptanceResult {
+        size_t accepted_depth = 0;
+        size_t processed_tokens_after = 0;
+    };
+
     // IDs of sequences that need to be dropped
     std::vector<uint64_t> m_dropped_sequences;
     // IDs of sequences that need to be forked (note, the same sequence can be forked multiple times)
@@ -61,6 +66,7 @@ struct SamplerOutput {
     // Number of tokens actually generated for each request in this sampling step.
     // Requests in a chunked-prefill step are present with a zero count.
     std::unordered_map<uint64_t, size_t> num_generated_tokens_per_request;
+    std::unordered_map<uint64_t, AcceptanceResult> acceptance_by_sequence;
 };
 
 struct AssistingPipelineInfo {
@@ -157,7 +163,8 @@ class Sampler {
 
     SequenceGroupSamplingInfo sample_from_sequence_group(SequenceGroup::Ptr sequence_group, ov::Tensor sequence_group_logits,
                                                         RequestSamplerContext& context,
-                                                        bool is_validation_mode_enabled);
+                                                        bool is_validation_mode_enabled,
+                                                        bool notify_handle);
 
     // request ID => beam search tracking information (kept separate — has its own mutex)
     std::map<uint64_t, GroupBeamSearcher> m_beam_search_info;
@@ -180,7 +187,11 @@ public:
     Sampler(size_t num_threads = 1): m_thread_pool(num_threads) {};
     explicit Sampler(const Tokenizer & tokenizer, size_t num_threads = 1) : m_tokenizer(tokenizer), m_thread_pool(num_threads) {};
 
-    SamplerOutput sample(const std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits, bool is_validation_mode_enabled = false);
+    SamplerOutput sample(const std::vector<SequenceGroup::Ptr>& sequence_groups,
+                         ov::Tensor logits,
+                         bool is_validation_mode_enabled = false,
+                         bool notify_handles = true,
+                         bool defer_sequence_group_updates = false);
 
     // Non-CB pipelines required API for seed. The CB path uses per-request engines from m_request_contexts.
     void set_seed(size_t new_seed) { m_default_seed = new_seed; }

@@ -19,7 +19,7 @@ const CarSchema = z.object({
 });
 
 const TransactionSchema = z.object({
-    id: z.number().gte(1000).lte(10_000_000),
+    id: z.number().int().gte(1000).lte(10_000_000),
     amount: z.number(),
     currency: z.enum(["EUR", "PLN", "RUB", "AED", "CHF", "GBP", "USD"]),
 });

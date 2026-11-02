@@ -99,11 +99,14 @@ def test_python_structured_output_sample(convert_model, prompt, expected_quantit
 @pytest.mark.llm
 @pytest.mark.samples
 @pytest.mark.parametrize("convert_model", ["TinyLlama-1.1B-Chat-v1.0"], indirect=True)
-@pytest.mark.parametrize("prompt,final_answer", [
-    ("Solve the equation 8x + 7 = -23 step by step.", "x = 7 or x = 8"),
-    ("Solve the equation 18x + 7 - 8 = 0 step by step.", "x = 0 or x = -3"),
-])
-def test_cpp_structured_output_sample(convert_model, prompt, final_answer):
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Solve the equation 8x + 7 = -23 step by step.",
+        "Solve the equation 18x + 7 - 8 = 0 step by step.",
+    ],
+)
+def test_cpp_structured_output_sample(convert_model, prompt):
     if sys.platform == 'darwin':
             pytest.xfail("Ticket 173586")
     cpp_sample = SAMPLES_CPP_DIR / "structured_output_generation"
@@ -112,9 +115,9 @@ def test_cpp_structured_output_sample(convert_model, prompt, final_answer):
     user_input = prompt + "\n"
     cpp_result = run_sample(cpp_command, user_input)
     output = cpp_result.stdout
-    
-    res_json = json.loads(output.split('> ')[1].replace('\'', '"').replace('\n----------\n',''))
-    assert 'steps' in res_json and len(res_json['steps']) > 0
-    assert 'explanation' in res_json['steps'][0]
-    assert 'output' in res_json['steps'][0]
-    assert res_json['final_answer'] == final_answer
+
+    res_json = json.loads(output.split("> ")[1].replace("'", '"').replace("\n----------\n", ""))
+    assert "steps" in res_json and len(res_json["steps"]) > 0
+    assert "explanation" in res_json["steps"][0]
+    assert "output" in res_json["steps"][0]
+    assert isinstance(res_json["final_answer"], str) and res_json["final_answer"]

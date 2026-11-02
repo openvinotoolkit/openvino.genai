@@ -21,12 +21,15 @@
 #include "visual_language/llava_next/classes.hpp"
 #include "visual_language/llava_next_video/classes.hpp"
 #include "visual_language/internvl_chat/classes.hpp"
+#include "visual_language/minicpmv4_6/classes.hpp"
 #include "visual_language/gemma3/classes.hpp"
 #include "visual_language/gemma3n/classes.hpp"
 #include "visual_language/gemma4/classes.hpp"
 #include "visual_language/deepseek_ocr2/classes.hpp"
 #include "visual_language/videochat_flash/classes.hpp"
 #include "visual_language/muse_glimmer/classes.hpp"
+#include "visual_language/minicpmv4_7/classes.hpp"
+#include "visual_language/lfm3_vl/classes.hpp"
 
 namespace ov::genai {
 
@@ -62,33 +65,31 @@ VisionEncoder::VisionEncoder(
 }
 
 void VisionEncoder::resolve_processor_configs(const std::filesystem::path& config_dir_path) {
-    // TODO Consider using separate class or struct for combined processor_config.json
     const std::string processor_config_filename = "processor_config.json";
     const std::string preprocessor_config_filename = "preprocessor_config.json";
     const std::string video_preprocessor_config_filename = "video_preprocessor_config.json";
 
     const auto processor_config_path = config_dir_path / processor_config_filename;
+    nlohmann::json parsed_processor_config;
     if (std::filesystem::exists(processor_config_path)) {
         std::ifstream stream(processor_config_path);
         OPENVINO_ASSERT(stream.is_open(),
             "Failed to open '", processor_config_path, "' in '", config_dir_path.string(), "'");
-        const auto parsed_processor_config = nlohmann::json::parse(stream);
-
-        if (parsed_processor_config.contains("image_processor") && parsed_processor_config.contains("video_processor")) {
-            m_processor_config = ProcessorConfig(parsed_processor_config.at("image_processor"));
-            m_video_processor_config = VideoProcessorConfig(parsed_processor_config.at("video_processor"));
-            return;
-        }
+        parsed_processor_config = nlohmann::json::parse(stream);
     }
 
-    GENAI_INFO("Combined " + processor_config_filename + " not found in '" + config_dir_path.string() + "' or missing image and video processor keys." +
-        " Falling back to " + preprocessor_config_filename + " and " + video_preprocessor_config_filename + ".");
-
-    m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(config_dir_path, preprocessor_config_filename.c_str());
+    m_processor_config = parsed_processor_config.contains("image_processor")
+        ? ProcessorConfig(parsed_processor_config.at("image_processor"))
+        : utils::from_config_json_if_exists<ProcessorConfig>(config_dir_path, preprocessor_config_filename.c_str());
 
     const auto video_config_path = config_dir_path / video_preprocessor_config_filename;
-    if (std::filesystem::exists(video_config_path)) {
+    if (parsed_processor_config.contains("video_processor")) {
+        m_video_processor_config = VideoProcessorConfig(parsed_processor_config.at("video_processor"));
+    } else if (std::filesystem::exists(video_config_path)) {
         m_video_processor_config = VideoProcessorConfig(video_config_path);
+    } else if (parsed_processor_config.contains("image_processor") &&
+               !std::filesystem::exists(config_dir_path / preprocessor_config_filename)) {
+        m_video_processor_config = VideoProcessorConfig(parsed_processor_config.at("image_processor"));
     } else {
         GENAI_INFO(video_preprocessor_config_filename + " not found in '" + config_dir_path.string() +
             "'. Falling back to " + preprocessor_config_filename + " for video processing configuration.");
@@ -114,6 +115,10 @@ VideoProcessorConfig VisionEncoder::get_video_processor_config() const {
 VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir, const VLMModelType model_type, const std::string& device, const ov::AnyMap properties) {
     if (model_type == VLMModelType::MINICPM) {
         return std::make_shared<VisionEncoderMiniCPM>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::MINICPMV4_6 || model_type == VLMModelType::MINICPM_OCR) {
+        return std::make_shared<VisionEncoderMiniCPMV4_6>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::LFM3_VL) {
+        return std::make_shared<VisionEncoderLFM3VL>(model_dir, device, properties);
     } else if (model_type == VLMModelType::LLAVA) {
         return std::make_shared<VisionEncoderLLaVA>(model_dir, device, properties);
     } else if (model_type == VLMModelType::NANOLLAVA) {
@@ -152,6 +157,8 @@ VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir,
         return std::make_shared<VisionEncoderDeepseekOCR2>(model_dir, device, properties);
     } else if (model_type == VLMModelType::MUSE_GLIMMER) {
         return std::make_shared<VisionEncoderMuseGlimmer>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::MINICPMV4_7) {
+        return std::make_shared<VisionEncoderMiniCPMv4_7>(model_dir, device, properties);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
     }
@@ -165,6 +172,10 @@ VisionEncoder::Ptr VisionEncoder::create(
     const ov::AnyMap device_config) {
     if (model_type == VLMModelType::MINICPM) {
         return std::make_shared<VisionEncoderMiniCPM>(models_map, config_dir_path, device, device_config);
+    } else if (model_type == VLMModelType::MINICPMV4_6 || model_type == VLMModelType::MINICPM_OCR) {
+        return std::make_shared<VisionEncoderMiniCPMV4_6>(models_map, config_dir_path, device, device_config);
+    } else if (model_type == VLMModelType::LFM3_VL) {
+        return std::make_shared<VisionEncoderLFM3VL>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::LLAVA) {
         return std::make_shared<VisionEncoderLLaVA>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::NANOLLAVA) {
@@ -203,6 +214,8 @@ VisionEncoder::Ptr VisionEncoder::create(
         return std::make_shared<VisionEncoderDeepseekOCR2>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::MUSE_GLIMMER) {
         return std::make_shared<VisionEncoderMuseGlimmer>(models_map, config_dir_path, device, device_config);
+    } else if (model_type == VLMModelType::MINICPMV4_7) {
+        return std::make_shared<VisionEncoderMiniCPMv4_7>(models_map, config_dir_path, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
     }

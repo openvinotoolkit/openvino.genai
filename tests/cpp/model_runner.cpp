@@ -46,16 +46,16 @@ std::shared_ptr<ov::Model> create_dummy_la_paging_model() {
     return std::make_shared<ov::Model>(ov::OutputVector{logits}, params);
 }
 
-Scheduler::Output make_output_for_single_sequence(uint64_t seq_id,
+ContinuousBatchingScheduler::Output make_output_for_single_sequence(uint64_t seq_id,
                                                   size_t num_scheduled_tokens,
                                                   const BlocksPerLayer& la_blocks) {
-    Scheduler::Output out;
+    ContinuousBatchingScheduler::Output out;
     out.m_scheduled_sequence_groups_ids = {0};
     out.m_total_num_scheduled_tokens = num_scheduled_tokens;
 
     // ModelRunner expects one KV block table per decoder layer. Use a single layer for tests.
     out.set_kv_block_tables(seq_id, {BlocksPerLayer{std::make_shared<CacheBlock>(0)}});
-    Scheduler::Output::LinearAttentionPagingData paging_data;
+    ContinuousBatchingScheduler::Output::LinearAttentionPagingData paging_data;
     for (const auto& block : la_blocks) {
         paging_data.block_indices.push_back(static_cast<int32_t>(block->get_index()));
     }
@@ -63,17 +63,17 @@ Scheduler::Output make_output_for_single_sequence(uint64_t seq_id,
     return out;
 }
 
-Scheduler::Output make_output_for_sequences(
-    const std::vector<std::pair<uint64_t, Scheduler::Output::LinearAttentionPagingData>>& sequence_blocks,
+ContinuousBatchingScheduler::Output make_output_for_sequences(
+    const std::vector<std::pair<uint64_t, ContinuousBatchingScheduler::Output::LinearAttentionPagingData>>& sequence_blocks,
     size_t total_num_scheduled_tokens) {
-    Scheduler::Output out;
+    ContinuousBatchingScheduler::Output out;
     out.m_total_num_scheduled_tokens = total_num_scheduled_tokens;
 
     for (size_t group_idx = 0; group_idx < sequence_blocks.size(); ++group_idx) {
         const auto& [seq_id, paging_data] = sequence_blocks[group_idx];
         out.m_scheduled_sequence_groups_ids.push_back(group_idx);
         out.set_kv_block_tables(seq_id, {BlocksPerLayer{std::make_shared<CacheBlock>(0)}});
-        Scheduler::Output::LinearAttentionPagingData paging_data_copy = paging_data;
+        ContinuousBatchingScheduler::Output::LinearAttentionPagingData paging_data_copy = paging_data;
         out.set_linear_attention_paging_data(seq_id, std::move(paging_data_copy));
     }
 
@@ -113,7 +113,7 @@ TEST(TestModelRunnerLinearAttentionPaging, prefill_uses_read_plus_interval_write
             std::make_shared<CacheBlock>(10),
             std::make_shared<CacheBlock>(11),
             std::make_shared<CacheBlock>(12)});
-    Scheduler::Output::LinearAttentionPagingData paging_data = out.get_linear_attention_paging_data(seq_id);
+    ContinuousBatchingScheduler::Output::LinearAttentionPagingData paging_data = out.get_linear_attention_paging_data(seq_id);
     paging_data.cache_interval = 128;
     out.set_linear_attention_paging_data(seq_id, std::move(paging_data));
 
@@ -156,7 +156,7 @@ TEST(TestModelRunnerLinearAttentionPaging, generation_within_interval_reuses_wri
         BlocksPerLayer{
             std::make_shared<CacheBlock>(20),
             std::make_shared<CacheBlock>(21)});
-    Scheduler::Output::LinearAttentionPagingData paging_data;
+    ContinuousBatchingScheduler::Output::LinearAttentionPagingData paging_data;
     paging_data.block_indices = {20, 20};
     paging_data.past_length = 4;
     paging_data.cache_interval = 128;
@@ -204,8 +204,8 @@ TEST(TestModelRunnerLinearAttentionPaging, mixed_legacy_and_prefix_modes_can_sha
 
     auto out = make_output_for_sequences(
         {
-            {legacy_sequence->get_id(), Scheduler::Output::LinearAttentionPagingData{{30, 30}, 4, 0}},
-            {prefix_sequence->get_id(), Scheduler::Output::LinearAttentionPagingData{{40, 40}, 4, 128}}
+            {legacy_sequence->get_id(), ContinuousBatchingScheduler::Output::LinearAttentionPagingData{{30, 30}, 4, 0}},
+            {prefix_sequence->get_id(), ContinuousBatchingScheduler::Output::LinearAttentionPagingData{{40, 40}, 4, 128}}
         },
         /*total_num_scheduled_tokens=*/2);
 

@@ -288,7 +288,7 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     if (is_vlm_dflash) {
         m_inputs_embedder = main_model_desc.inputs_embedder;
         m_model_input_type = ModelInputType::EMBEDDINGS;
-        m_vision_registry = std::make_shared<VisionRegistry>();
+        m_embeddings_registry = std::make_shared<EmbeddingsRegistry>();
     }
     const auto draft_embedding_model =
         m_inputs_embedder ? m_inputs_embedder->get_embedding_model() : nullptr;
@@ -412,7 +412,7 @@ GenerationConfig ContinuousBatchingPipeline::DFlashDecodingImpl::make_draft_gene
         draft_config.structured_output_config.reset();
         draft_config.parsers.clear();
     }
-    draft_config.max_new_tokens = config.max_new_tokens + config.num_assistant_tokens.value();
+    dflash_cb::add_draft_assistant_token_headroom(draft_config, config);
     draft_config.num_assistant_tokens = 0;
     return draft_config;
 }

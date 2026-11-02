@@ -260,6 +260,35 @@ TEST_F(PrefixCachingBlockAllocatorTest, HandlesPrefixHashMapAtHashCollisionCorre
     alloc.free(r2_b, cached);
 }
 
+TEST(TestBlockAllocator, UnpublishedEvictionPreservesDuplicateHashRegistration) {
+    ov::genai::BlockAllocator allocator(2, true);
+    std::map<uint64_t, ov::genai::BlocksPerLayer> cached_blocks;
+    constexpr uint64_t hash = 100;
+
+    auto orphaned_victim = allocator.allocate_block(hash, cached_blocks);
+    allocator.free(orphaned_victim, cached_blocks);
+    auto live_blocks = allocator.allocate_block(hash, cached_blocks);
+    ASSERT_EQ(cached_blocks.at(hash), live_blocks.blocks);
+    ASSERT_EQ(allocator.num_overwriteable_blocks(), 1);
+
+    auto allocation = allocator.acquire_unpublished_block(cached_blocks);
+    ASSERT_EQ(allocation.blocks, orphaned_victim.blocks);
+    EXPECT_TRUE(allocation.evicted_hash.has_value());
+    EXPECT_FALSE(allocation.erased_hash.has_value());
+    EXPECT_EQ(cached_blocks.at(hash), live_blocks.blocks);
+    EXPECT_FALSE(allocation.blocks.front()->has_published_hash());
+
+    allocator.rollback_uncached_block(std::move(allocation), cached_blocks);
+    EXPECT_EQ(cached_blocks.at(hash), live_blocks.blocks);
+    EXPECT_EQ(allocator.num_overwriteable_blocks(), 1);
+
+    std::map<uint64_t, ov::genai::BlocksPerLayer> empty_cache;
+    auto restored_victim = allocator.get_cached_block(hash, empty_cache);
+    EXPECT_EQ(restored_victim, orphaned_victim.blocks);
+    allocator.free(restored_victim, cached_blocks);
+    allocator.free(live_blocks, cached_blocks);
+}
+
 TEST(TestBlockAllocator, CalculatesUsagePercentageCorrectly) {
     size_t num_layers = 10;
     size_t initial_num_free_blocks = 10;

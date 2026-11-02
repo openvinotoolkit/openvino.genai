@@ -8,6 +8,7 @@
 #include <pybind11/stl_bind.h>
 
 #include "bindings_utils.hpp"
+#include "openvino/genai/automatic_speech_recognition/forced_aligner.hpp"
 #include "openvino/genai/automatic_speech_recognition/generation_config.hpp"
 #include "openvino/genai/automatic_speech_recognition/perf_metrics.hpp"
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
@@ -17,6 +18,7 @@
 namespace py = pybind11;
 using ov::genai::ASRDecodedResultChunk;
 using ov::genai::ASRDecodedResults;
+using ov::genai::ASRForcedAligner;
 using ov::genai::ASRGenerationConfig;
 using ov::genai::ASRPerfMetrics;
 using ov::genai::ASRPipeline;
@@ -34,20 +36,25 @@ namespace common_utils = ov::genai::common_bindings::utils;
 namespace {
 
 auto asr_generate_docstring = R"(
-    High level generate that receives raw speech as a vector of floats and returns decoded output.
+    High level generate that receives raw speech as a single audio input or a batch of audio inputs and returns decoded output.
+    The generation configuration applies to all audio inputs. Batch results are returned in input order.
+    Batches must be non-empty. Models without batching support accept at most one audio input per call,
+    either directly or as a batch of one.
 
-    :param audio_inputs: inputs in the form of list of floats. Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
-    :type audio_inputs: list[float]
+    :param audio_inputs: a single audio input as a list of floats, or a non-empty list of such lists for a batch.
+                         Each audio input is required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
+    :type audio_inputs: list[float] | list[list[float]]
 
     :param generation_config: generation_config
     :type generation_config: ASRGenerationConfig
 
-    :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped.
-                     Streamer supported for short-form audio (< 30 seconds) with `return_timestamps=False` only
-    :type : Callable[[str], bool], ov.genai.StreamerBase
+    :param streamer: streamer either as a callback or as a StreamerBase instance.
+                     The callback receives decoded text and may return None or an integer StreamingStatus value.
+                     Handling of stop statuses depends on the model. Streaming is not supported for batches larger than one.
+    :type streamer: Callable[[str], int | None] | StreamerBase | None
 
     :param kwargs: arbitrary keyword arguments with keys corresponding to ASRGenerationConfig fields.
-    :type : dict
+    :type kwargs: dict
 
     :return: return results in decoded form
     :rtype: ASRDecodedResults
@@ -65,6 +72,11 @@ auto asr_decoded_results_docstring = R"(
     perf_metrics:       performance metrics with tpot, ttft, etc. of type ov::genai::ASRPerfMetrics.
     chunks:             optional chunks of resulting sequences with timestamps
     words:              optional chunks of resulting words with timestamps
+    metadata:           optional model-specific metadata for each transcription.
+                        Models without metadata support leave this unset (None in Python).
+                        When present, metadata[i] corresponds to texts[i]. Each map holds
+                        model-defined key/value metadata and may be empty when no metadata
+                        is predicted.
 )";
 
 auto asr_decoded_result_chunk_docstring = R"(
@@ -129,8 +141,10 @@ auto asr_generation_config_docstring = R"(
     :type lang_to_id: dict[str, int]
 
     :param word_timestamps: If `true` the pipeline will return word-level timestamps.
-                            When enabled word_timestamps=True property should be passed to ASRPipeline constructor:
-                            ASRPipeline("model_path", "CPU", word_timestamps=True)
+                            For Whisper, word_timestamps=True must also be passed to the
+                            ASRPipeline constructor.
+                            For Qwen3-ASR, ASRPipeline must be constructed with a
+                            pre-configured ASRForcedAligner.
     :type word_timestamps: bool
 
     :param alignment_heads: Encoder attention alignment heads used for word-level timestamps prediction.
@@ -165,6 +179,12 @@ auto asr_generation_config_docstring = R"(
 
     :param context: System prompt context prepended to Qwen3-ASR transcription requests.
     :type context: Optional[str]
+
+    SenseVoiceSmall parameters:
+
+    :param use_itn: Whether to enable inverse text normalization for SenseVoiceSmall.
+                    Defaults to False (`woitn`); when True, the `withitn` mode is used.
+    :type use_itn: bool
 
     For generic generation parameters (max_length, max_new_tokens, num_beams, temperature, etc.)
     see GenerationConfig documentation.
@@ -269,6 +289,7 @@ void init_asr_pipeline(py::module_& m) {
         .def_readwrite("initial_prompt", &ASRGenerationConfig::initial_prompt)
         .def_readwrite("hotwords", &ASRGenerationConfig::hotwords)
         .def_readwrite("context", &ASRGenerationConfig::context)
+        .def_readwrite("use_itn", &ASRGenerationConfig::use_itn)
         .def("update_generation_config", [](ASRGenerationConfig& config, const py::kwargs& kwargs) {
             config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
         });
@@ -320,6 +341,18 @@ void init_asr_pipeline(py::module_& m) {
         .def_readonly("languages", &ASRDecodedResults::languages)
         .def_readonly("chunks", &ASRDecodedResults::chunks)
         .def_readonly("words", &ASRDecodedResults::words)
+        .def_property_readonly("metadata",
+                               [](const ASRDecodedResults& dr)
+                                   -> py::typing::Optional<py::typing::List<py::typing::Dict<py::str, py::object>>> {
+                                   if (!dr.metadata.has_value()) {
+                                       return py::none();
+                                   }
+                                   py::list metadata;
+                                   for (const auto& entry : dr.metadata.value()) {
+                                       metadata.append(pyutils::any_map_to_py_object(entry));
+                                   }
+                                   return metadata;
+                               })
         .def_readonly("perf_metrics", &ASRDecodedResults::perf_metrics)
         .def("__repr__", [](const ASRDecodedResults& dr) -> py::str {
             auto valid_utf8_strings = pyutils::handle_utf8((std::vector<std::string>)dr);
@@ -349,6 +382,11 @@ void init_asr_pipeline(py::module_& m) {
             ASRPipeline class constructor.
             models_path (os.PathLike): Path to the model file.
             device (str): Device to run the model on (e.g., CPU, GPU).
+
+            Constructor keyword arguments include OpenVINO compile properties and:
+            forced_aligner (ASRForcedAligner): Pre-constructed forced aligner instance.
+                Only supported for Qwen3-ASR. Required when requesting
+                generate(..., word_timestamps=True).
         )")
 
         .def(
@@ -361,7 +399,7 @@ void init_asr_pipeline(py::module_& m) {
                 return call_asr_common_generate(pipe, audio_inputs, generation_config, streamer, kwargs);
             },
             py::arg("audio_inputs"),
-            "List of floats representing raw speech audio. "
+            "List of floats representing raw speech audio, or a list of such lists for a batch. "
             "Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.",
             py::arg("generation_config") = std::nullopt,
             "generation_config",
@@ -372,4 +410,53 @@ void init_asr_pipeline(py::module_& m) {
         .def("get_tokenizer", &ASRPipeline::get_tokenizer)
         .def("get_generation_config", &ASRPipeline::get_generation_config, py::return_value_policy::copy)
         .def("set_generation_config", &ASRPipeline::set_generation_config, py::arg("config"));
+
+    py::class_<ASRForcedAligner, std::shared_ptr<ASRForcedAligner>>(
+        m,
+        "ASRForcedAligner",
+        "Standalone forced aligner for word-level timestamps")
+        .def(
+            py::init([](const std::filesystem::path& models_path, const std::string& device, const py::kwargs& kwargs) {
+                ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+                return std::make_unique<ASRForcedAligner>(models_path, device, pyutils::kwargs_to_any_map(kwargs));
+            }),
+            py::arg("models_path"),
+            "folder with the forced-aligner model, tokenizer and configuration files",
+            py::arg("device"),
+            "device on which inference will be done",
+            R"(
+            ASRForcedAligner class constructor.
+            models_path (os.PathLike): Path to the forced-aligner model directory.
+            device (str): Device to run the model on (e.g., CPU, GPU).
+
+            Constructor keyword arguments are OpenVINO compile properties.
+        )")
+
+        .def(
+            "align",
+            [](ASRForcedAligner& aligner,
+               const std::vector<float>& audio,
+               const std::string& transcript,
+               const std::optional<std::string>& language) {
+                ov::AnyMap properties;
+                if (language.has_value()) {
+                    properties = ov::AnyMap{ov::genai::language(*language)};
+                }
+                std::vector<ASRDecodedResultChunk> words;
+                {
+                    py::gil_scoped_release rel;
+                    words = aligner.align(audio, transcript, properties);
+                }
+                return words;
+            },
+            py::arg("audio"),
+            "List of floats representing raw speech audio at the model's sampling rate.",
+            py::arg("transcript"),
+            "Transcript text to align to the audio.",
+            py::arg("language") = std::nullopt,
+            "Language of the transcript. Required by the Qwen3 backend.",
+            R"(
+            Aligns a transcript to audio and returns word-level timestamps relative to the audio start.
+            Returns list[ASRDecodedResultChunk].
+        )");
 }

@@ -540,6 +540,15 @@ export const LLM_MODELS: LLMModelType[] = [
     ],
   },
   {
+    architecture: 'Lfm3ForCausalLM',
+    models: [
+      {
+        name: 'LFM3',
+        links: ['https://huggingface.co/LiquidAI/LFM3-1.7B'],
+      },
+    ],
+  },
+  {
     architecture: 'LlamaForCausalLM',
     models: [
       {
@@ -602,6 +611,17 @@ export const LLM_MODELS: LLMModelType[] = [
         links: ['https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0'],
       },
       {
+        name: 'SmolLM',
+        links: ['https://huggingface.co/HuggingFaceTB/SmolLM-135M'],
+      },
+      {
+        name: 'SmolLM2',
+        links: [
+          'https://huggingface.co/HuggingFaceTB/SmolLM2-135M',
+          'https://huggingface.co/HuggingFaceTB/SmolLM2-360M',
+        ],
+      },
+      {
         name: 'MiniCPM5',
         links: [
           'https://huggingface.co/openbmb/MiniCPM5-1B',
@@ -612,6 +632,12 @@ export const LLM_MODELS: LLMModelType[] = [
         name: 'ALLaM',
         links: [
           'https://huggingface.co/humain-ai/ALLaM-7B-Instruct-preview',
+        ],
+      },
+      {
+        name: 'DeepSeek-Coder',
+        links: [
+          'https://huggingface.co/deepseek-ai/deepseek-coder-1.3b-instruct',
         ],
       },
     ],

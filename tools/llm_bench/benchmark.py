@@ -131,6 +131,14 @@ def get_argparser():
         "--load_config",
         default=None,
         required=False,
+        help="""[DEPRECATED] please, use --ov-config \n
+        Path to JSON file or string in JSON format to load customized OpenVINO Runtime configurations.\n """,
+    )
+    parser.add_argument(
+        "-ov-c",
+        "--ov-config",
+        default=None,
+        required=False,
         help="""Path to JSON file or string in JSON format to load customized OpenVINO Runtime configurations.\n
         Example for OpenVINO: {"INFERENCE_PRECISION_HINT": "f32", "KV_CACHE_PRECISION": "f32", "DYNAMIC_QUANTIZATION_GROUP_SIZE": 0}\n
         Additional option for OpenVINO GenAI: {"ATTENTION_BACKEND": "SDPA"}\n
@@ -285,7 +293,7 @@ def get_argparser():
         "--use_cb",
         action="store_true",
         help="Deprecated, will be removed soon! Continues batching mode is used by default. "
-        'To switch to SPDA mode, please, set up {"ATTENTION_BACKEND": "SDPA"} in --load_config.',
+        'To switch to SPDA mode, please, set up {"ATTENTION_BACKEND": "SDPA"} in --ov-config.',
     )
     parser.add_argument(
         "--cb_config",
@@ -307,6 +315,12 @@ def get_argparser():
         required=False,
         default=None,
         help="Path to file with Continuous Batching Scheduler settings or dict for Speculative decoding of draft model",
+    )
+    parser.add_argument(
+        "--draft-ov-config",
+        default=None,
+        required=False,
+        help="""Path to JSON file or string in JSON format to load customized OpenVINO Runtime configurations for draft model """,
     )
     parser.add_argument(
         "--num_assistant_tokens",

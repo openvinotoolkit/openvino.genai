@@ -12,13 +12,14 @@
 #include <variant>
 #include <vector>
 
+#include "openvino/core/any.hpp"
 #include "openvino/genai/automatic_speech_recognition/generation_config.hpp"
 #include "openvino/genai/automatic_speech_recognition/perf_metrics.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 
 namespace ov::genai {
 
-using AudioInputs = std::variant<std::vector<float>>;
+using AudioInputs = std::variant<std::vector<float>, std::vector<std::vector<float>>>;
 
 /// Time-aligned text chunk — used for both segment-level and word-level timestamps.
 /// For segments: text is the decoded segment, token_ids are the tokens in that segment.
@@ -45,6 +46,15 @@ struct OPENVINO_GENAI_EXPORTS ASRDecodedResults {
 
     std::optional<std::vector<std::vector<ASRDecodedResultChunk>>> chunks = std::nullopt;
     std::optional<std::vector<std::vector<ASRDecodedResultChunk>>> words = std::nullopt;
+
+    /**
+     * @brief Optional model-specific metadata for each transcription.
+     *
+     * Models that do not provide metadata leave this unset.
+     * When present, `metadata[i]` corresponds to `texts[i]`.
+     * Each map contains model-defined key/value metadata and may be empty.
+     */
+    std::optional<std::vector<ov::AnyMap>> metadata = std::nullopt;
 
     operator std::string() const {
         std::stringstream ss;
@@ -73,6 +83,7 @@ struct OPENVINO_GENAI_EXPORTS ASRDecodedResults {
 };
 
 class ASRPipelineImplBase;
+class ASRForcedAligner;
 
 class OPENVINO_GENAI_EXPORTS ASRPipeline {
     std::unique_ptr<ASRPipelineImplBase> m_impl;
@@ -87,6 +98,15 @@ public:
 
     ~ASRPipeline();
 
+    /**
+     * @brief Transcribes a single audio input or a batch of audio inputs.
+     *
+     * Batch results are returned in input order. The generation configuration
+     * applies to all inputs. Models without batching support accept at most
+     * one audio input per call, either directly or as a batch of one.
+     * Batches must be non-empty. Streaming is not supported for batches
+     * larger than one.
+     */
     ASRDecodedResults generate(const AudioInputs& audio_inputs,
                                const std::optional<ASRGenerationConfig>& generation_config = std::nullopt,
                                StreamerVariant streamer = std::monostate());
@@ -103,5 +123,13 @@ public:
     ASRGenerationConfig get_generation_config() const;
     void set_generation_config(const ASRGenerationConfig& config);
 };
+
+/**
+ * @brief Pre-constructed forced aligner used for word-level timestamps.
+ *
+ * Constructor-only property carrying an already-built ASRForcedAligner instance, used when word-level
+ * timestamps are requested. Currently supported only for Qwen3-ASR.
+ */
+static constexpr ov::Property<std::shared_ptr<ASRForcedAligner>> forced_aligner{"forced_aligner"};
 
 }  // namespace ov::genai

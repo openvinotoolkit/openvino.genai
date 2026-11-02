@@ -173,7 +173,6 @@ def analyze_args(args):
     model_args['torch_compile_options'] = args.torch_compile_options
     model_args['torch_compile_input_module'] = args.torch_compile_input_module
     model_args['media'] = args.media
-    model_args["disable_prompt_permutation"] = args.disable_prompt_permutation
     model_args["static_reshape"] = args.static_reshape
     model_args["num_frames"] = args.num_frames
     model_args["frame_rate"] = args.frame_rate
@@ -250,13 +249,16 @@ def analyze_args(args):
     if use_case.task == "code_gen" and not model_args["prompt"] and not model_args["prompt_file"]:
         model_args["prompt"] = "def print_hello_world():"
     model_args["config"] = {}
-    if args.load_config is not None:
-        config = get_config(args.load_config)
+    # load_config was used previously, as part of the argument alignment moving to --ov_config
+    # support both for now
+    ov_config = args.ov_config if args.ov_config is not None else args.load_config
+    if ov_config is not None:
+        config = get_config(ov_config)
         if type(config) is dict and len(config) > 0:
             model_args["config"] = config
     if model_framework == "ov":
         set_default_param_for_ov_config(model_args["config"])
-        if "ATTENTION_BACKEND" not in model_args["config"] and not optimum and args.device != "NPU":
+        if "ATTENTION_BACKEND" not in model_args["config"] and not optimum and args.device.upper() != "NPU":
             if use_case.task in ["text_gen", "text_gen_chat", "visual_text_gen", "visual_text_gen_chat"]:
                 model_args["config"]["ATTENTION_BACKEND"] = PA_ATTENTION_BACKEND
         log.info(f"OV Config={model_args['config']}")
@@ -264,16 +266,24 @@ def analyze_args(args):
         log.info(f"PT Config={model_args['config']}")
     model_args['model_name'] = model_name
 
+    model_args["disable_prompt_permutation"] = args.disable_prompt_permutation
+    # prompt_permutation is designed to bypass the prefix-caching optimization in PA mode
+    # NPU does not support PA
+    if args.device.upper() == "NPU":
+        model_args["disable_prompt_permutation"] = True
+
     cb_config = None
     if args.cb_config:
         cb_config = get_config(args.cb_config)
     model_args["cb_config"] = cb_config
-    if args.draft_model:
-        if (args.draft_device != "NPU" and args.device != "NPU" and model_args['config']['ATTENTION_BACKEND'] != PA_ATTENTION_BACKEND):
-            log.warning("Speculative Decoding is supported only with Paged Attention Backend for non-NPU devices")
-            args.draft_model = None
     model_args['draft_model'] = args.draft_model
     model_args['draft_device'] = args.draft_device
+    model_args["draft_ov_config"] = {}
+    if args.draft_ov_config is not None:
+        draft_ov_config = get_config(args.draft_ov_config)
+        if type(draft_ov_config) is dict and len(draft_ov_config) > 0:
+            set_default_param_for_ov_config(draft_ov_config)
+            model_args["draft_ov_config"] = draft_ov_config
     draft_cb_config = None
     if args.draft_cb_config:
         draft_cb_config = get_config(args.draft_cb_config)
