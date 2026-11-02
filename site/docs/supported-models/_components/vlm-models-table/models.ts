@@ -33,6 +33,16 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'LFM3VL',
+    models: [
+      {
+        name: 'LFM3-VL',
+        links: ['https://huggingface.co/LiquidAI/LFM3-VL-2B'],
+        notesLink: '#lfm3-vl-notes',
+      },
+    ],
+  },
+  {
     architecture: 'LLaVA',
     models: [
       {
@@ -125,6 +135,25 @@ export const VLM_MODELS: VLMModelType[] = [
           'https://huggingface.co/openbmb/MiniCPM-V-4.7-35B-A3B',
         ],
         notesLink: '#minicpmv4_7-notes',
+      },
+    ],
+  },
+  {
+    architecture: 'MiniCPMOcrForConditionalGeneration',
+    models: [
+      {
+        name: 'MiniCPM-OCR-1.0',
+        links: ['https://huggingface.co/openbmb/MiniCPM-OCR-1.0'],
+      },
+    ],
+  },
+  {
+    architecture: 'MiniCPMV4_6ForConditionalGeneration',
+    models: [
+      {
+        name: 'MiniCPM-V-4.6',
+        links: ['https://huggingface.co/openbmb/MiniCPM-V-4.6'],
+        notesLink: '#minicpmv4_6-notes',
       },
     ],
   },

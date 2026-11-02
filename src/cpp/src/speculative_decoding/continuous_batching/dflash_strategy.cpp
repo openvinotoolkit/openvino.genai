@@ -68,7 +68,7 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     if (main_model_desc.inputs_embedder) {
         m_inputs_embedder = main_model_desc.inputs_embedder;
         m_model_input_type = ModelInputType::EMBEDDINGS;
-        m_vision_registry = std::make_shared<VisionRegistry>();
+        m_embeddings_registry = std::make_shared<EmbeddingsRegistry>();
     }
 
     // Detect each draft capability independently from its I/O signature (no RT-info markers) and
@@ -283,14 +283,8 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::DFlashDecodingI
     GenerateStrategy strategy;
     // The configs pass through unchanged: add_request fills an unset num_assistant_tokens with the default and
     // keeps an explicit 0, which runs the request on the target alone.
-    strategy.prepare_request = [](size_t,
-                                  const ov::Tensor& in_ids,
-                                  GenerationConfig&,
-                                  GenerationConfig&,
-                                  ov::Tensor& main_in,
-                                  ov::Tensor& draft_in) {
+    strategy.prepare_request = [](size_t, const ov::Tensor& in_ids, GenerationConfig&, ov::Tensor& main_in) {
         main_in = in_ids;
-        draft_in = in_ids;
     };
     strategy.check_streaming = [](const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr,
                                   const std::vector<ov::Tensor>& input_ids,

@@ -7,6 +7,7 @@
 #include <cmath>
 #include <complex>
 #include <limits>
+#include <random>
 
 #include "openvino/core/except.hpp"
 
@@ -78,6 +79,8 @@ std::vector<float> make_mel_filters() {
 
 namespace ov::genai {
 
+FunASRFeatureExtractor::FunASRFeatureExtractor(float dither) : m_dither(dither) {}
+
 ov::Tensor FunASRFeatureExtractor::extract(const std::vector<float>& audio) const {
     OPENVINO_ASSERT(audio.size() >= 2, "Fun-ASR input audio must contain at least 2 samples");
     const size_t effective_frame_length = std::min(frame_length, audio.size());
@@ -89,17 +92,33 @@ ov::Tensor FunASRFeatureExtractor::extract(const std::vector<float>& audio) cons
     constexpr size_t frequency_bins = fft_size / 2 + 1;
     std::vector<float> fbank(frame_count * mel_bins);
     std::vector<std::complex<float>> spectrum(fft_size);
+
+    std::vector<float> scaled(effective_frame_length);
+    std::mt19937 generator;
+    std::normal_distribution<float> gaussian(0.0f, 1.0f);
+    if (m_dither != 0.0f) {
+        generator.seed(std::random_device{}());
+    }
+
     for (size_t frame = 0; frame < frame_count; ++frame) {
         const size_t offset = frame * frame_shift;
         double mean_sum = 0.0;
         for (size_t sample = 0; sample < effective_frame_length; ++sample) {
-            mean_sum += static_cast<double>(audio[offset + sample]) * PCM16_SCALE;
+            float value = audio[offset + sample] * PCM16_SCALE;
+            if (m_dither == 0.0f) {
+                // Preserve the original double-precision accumulation to avoid intermediate float rounding when dither is disabled.
+                mean_sum += static_cast<double>(audio[offset + sample]) * PCM16_SCALE;
+            } else {
+                value += m_dither * gaussian(generator);
+                mean_sum += static_cast<double>(value);
+            }
+            scaled[sample] = value;
         }
         const float mean = static_cast<float>(mean_sum / static_cast<double>(effective_frame_length));
         std::fill(spectrum.begin(), spectrum.end(), std::complex<float>{});
         for (size_t sample = 0; sample < effective_frame_length; ++sample) {
-            const float current = audio[offset + sample] * PCM16_SCALE - mean;
-            const float previous = sample == 0 ? current : audio[offset + sample - 1] * PCM16_SCALE - mean;
+            const float current = scaled[sample] - mean;
+            const float previous = sample == 0 ? current : scaled[sample - 1] - mean;
             const float window =
                 HAMMING_OFFSET - HAMMING_COSINE_SCALE * std::cos(2.0f * PI * sample / (effective_frame_length - 1));
             spectrum[sample] = (current - PREEMPHASIS_COEFFICIENT * previous) * window;
