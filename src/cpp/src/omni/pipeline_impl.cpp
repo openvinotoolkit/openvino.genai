@@ -37,16 +37,16 @@ class CollectingSpeechStreamer : public OmniSpeechStreamerBase {
 public:
     explicit CollectingSpeechStreamer(const OmniSpeechStreamerVariant& streamer)
         : m_streamer(streamer),
-          m_active(is_speech_streamer_active(streamer)) {}
+          m_is_active(is_speech_streamer_active(streamer)) {}
 
     StreamingStatus write(const ov::Tensor& audio_chunk) override {
         const float* samples = audio_chunk.data<const float>();
         m_samples.insert(m_samples.end(), samples, samples + audio_chunk.get_size());
-        return m_active ? invoke_speech_streamer(m_streamer, audio_chunk) : StreamingStatus::RUNNING;
+        return m_is_active ? invoke_speech_streamer(m_streamer, audio_chunk) : StreamingStatus::RUNNING;
     }
 
     void end() override {
-        if (m_active) {
+        if (m_is_active) {
             end_speech_streamer(m_streamer);
         }
     }
@@ -62,7 +62,7 @@ public:
 
 private:
     const OmniSpeechStreamerVariant& m_streamer;
-    bool m_active;
+    bool m_is_active;
     std::vector<float> m_samples;
 };
 

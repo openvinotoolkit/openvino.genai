@@ -58,7 +58,7 @@ class SpeechStreamerGuard {
 public:
     SpeechStreamerGuard(const OmniSpeechStreamerVariant& streamer, bool active)
         : m_streamer(streamer),
-          m_active(active) {}
+          m_is_active(active) {}
 
     SpeechStreamerGuard(const SpeechStreamerGuard&) = delete;
     SpeechStreamerGuard& operator=(const SpeechStreamerGuard&) = delete;
@@ -75,15 +75,15 @@ public:
     }
 
     void end() {
-        if (m_active) {
-            m_active = false;
+        if (m_is_active) {
+            m_is_active = false;
             end_speech_streamer(m_streamer);
         }
     }
 
 private:
     const OmniSpeechStreamerVariant& m_streamer;
-    bool m_active;
+    bool m_is_active;
 };
 
 }  // namespace ov::genai

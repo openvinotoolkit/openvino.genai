@@ -591,6 +591,18 @@ def test_vlm_pipeline_ends_speech_streamer_on_rejected_config(vlm_pipe: ov_genai
     assert counter.ends == 1
 
 
+def test_vlm_pipeline_text_only_does_not_end_speech_streamer(vlm_pipe: ov_genai.VLMPipeline) -> None:
+    # end() marks the end of speech generation, and a text-only call has none.
+    counter = EndCounter()
+    vlm_pipe.generate(
+        PROMPT,
+        generation_config=_text_config(4),
+        talker_speech_config=_speech_config(2, return_audio=False),
+        speech_streamer=counter,
+    )
+    assert counter.ends == 0
+
+
 def test_tool_call_stop_ends_the_turn(omni_pipe: ov_genai.OmniPipeline) -> None:
     collector = TokenCollector(ov_genai.StreamingStatus.TOOL_CALL_STOP)
     result = omni_pipe.generate(
