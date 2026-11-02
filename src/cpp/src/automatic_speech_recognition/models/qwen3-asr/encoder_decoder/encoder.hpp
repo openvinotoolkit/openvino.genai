@@ -23,6 +23,7 @@ public:
 private:
     InferRequest m_request;
     ov::PartialShape m_last_hidden_state_shape;
+    const bool m_is_npu;
     Qwen3ASRConfig m_model_config;
 
     // The original Qwen3-ASR encoder processes mel spectrograms in chunks of n_window * 2 frames

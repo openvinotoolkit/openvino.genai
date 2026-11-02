@@ -125,7 +125,6 @@ void update_npu_config_qwen3_asr(ov::AnyMap& config,
                                  const ov::genai::utils::KVDesc& kv_desc) {
     update_config(config, {"NPU_USE_NPUW", "YES"});
     update_config(config, {"NPUW_LLM", "YES"});
-    update_config(config, {"NPUW_DUMP_SUBS", "MIN"});
     update_config(config, {"NPUW_QWEN3_ASR", "YES"});
 
     update_config(config, {"NPUW_LLM_BATCH_DIM", kv_pos.batch});
@@ -491,7 +490,37 @@ ov::AnyMap get_model_properties(const ov::AnyMap& properties,
     return result;
 }
 
-std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& properties) {
+std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties) {
+    bool enable_save_ov_model = false;
+    ov::AnyMap properties = external_properties;
+
+    auto it = properties.find(ov::genai::enable_save_ov_model.name());
+    if (it != properties.end()) {
+        enable_save_ov_model = it->second.as<bool>();
+        properties.erase(it);
+    }
+
+    return {properties, enable_save_ov_model};
+}
+
+void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16) {
+    try {
+        auto serialize_start_time = std::chrono::high_resolution_clock::now();
+        ov::save_model(model, save_path, compress_to_fp16);
+        auto serialize_finish_time = std::chrono::high_resolution_clock::now();
+        auto serialize_duration =
+            std::chrono::duration_cast<std::chrono::milliseconds>(serialize_finish_time - serialize_start_time).count();
+        std::stringstream ss;
+        ss << "Save generated OpenVINO model to: " << save_path << " done. Time: " << serialize_duration << " ms";
+        ov::genai::utils::print_gguf_debug_info(ss.str());
+    } catch (const ov::Exception& e) {
+        OPENVINO_THROW("Exception during model serialization ",
+                       e.what(),
+                       ", user can disable it by setting 'ov::genai::enable_save_ov_model' property to false");
+    }
+}
+
+std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir, const ov::AnyMap& properties) {
     const auto gguf_props = gguf_utils::extract_gguf_properties(properties);
     const ov::AnyMap& filtered_properties = gguf_props.rest;
     if (is_gguf_model(model_dir)) {
@@ -669,7 +698,6 @@ ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front
 }
 
 bool env_setup_for_print_debug_info() {
-    return true;
     // Specify the name of the environment variable
     const char* env_var_name = "OPENVINO_LOG_LEVEL";
     const char* env_var_value = std::getenv(env_var_name);

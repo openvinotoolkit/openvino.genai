@@ -606,7 +606,7 @@ def create_ldm_super_resolution_model(model_path, device, memory_data_collector,
     return ov_model, from_pretrained_time
 
 
-def create_genai_speech_2_txt_model(model_path, device, memory_data_collector, processor, **kwargs):
+def create_genai_speech_2_txt_model(model_path, device, memory_data_collector, **kwargs):
     import openvino_genai as ov_genai
 
     ov_config = kwargs["config"]
@@ -620,7 +620,7 @@ def create_genai_speech_2_txt_model(model_path, device, memory_data_collector, p
         memory_data_collector.stop_and_collect_data("compilation")
         memory_data_collector.log_data(compilation=True)
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
-    return genai_pipe, processor, end - start, True
+    return genai_pipe, genai_pipe.get_tokenizer(), end - start, True
 
 
 def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwargs):
@@ -629,14 +629,23 @@ def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwarg
     - device: can be CPU
     - model_type:
     """
-    from optimum.intel.utils.import_utils import is_transformers_version
-
     model_path = Path(model_path)
     if not model_path.exists():
         raise RuntimeError(f"==Failure ==: model path:{model_path} does not exist")
 
     use_case = kwargs['use_case']
     model_class = use_case.ov_cls
+    if kwargs.get("genai", True):
+        if not is_genai_available(log_msg=True):
+            raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
+        if model_class not in [UseCaseSpeech2Text.ov_cls]:
+            raise RuntimeError("OpenVINO GenAI based benchmarking is not available for required model type.")
+
+        log.info("Selected OpenVINO GenAI for benchmarking")
+        return create_genai_speech_2_txt_model(model_path, device, memory_data_collector, **kwargs)
+
+    from optimum.intel.utils.import_utils import is_transformers_version
+
     trust_remote_code = False
 
     # run to avoid fail:
@@ -653,15 +662,6 @@ def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwarg
         except Exception:
             processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
             trust_remote_code = True
-
-    if kwargs.get("genai", True):
-        if not is_genai_available(log_msg=True):
-            raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
-        if model_class not in [UseCaseSpeech2Text.ov_cls]:
-            raise RuntimeError("OpenVINO GenAI based benchmarking is not available for required model type.")
-
-        log.info("Selected OpenVINO GenAI for benchmarking")
-        return create_genai_speech_2_txt_model(model_path, device, memory_data_collector, processor, **kwargs)
 
     log.info("Selected Optimum Intel for benchmarking")
     load_kwargs = {
