@@ -60,6 +60,11 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     OPENVINO_ASSERT(utils::has_input(draft_model, "token_type_ids"),
                     "DFlash draft model has no 'token_type_ids' input. It was exported for the removed stateful "
                     "DFlash draft runner; re-export the draft with the current optimum-intel.");
+    // TODO: support cache eviction. The draft runs with an unlimited max_num_batched_tokens, which sizes the cache
+    // rotation table, and the draft windows were not validated with evicted draft KV.
+    OPENVINO_ASSERT(!main_model_desc.scheduler_config.use_cache_eviction &&
+                        !draft_model_desc.scheduler_config.use_cache_eviction,
+                    "DFlash speculative decoding does not support cache eviction.");
     if (main_model_desc.inputs_embedder) {
         m_inputs_embedder = main_model_desc.inputs_embedder;
         m_model_input_type = ModelInputType::EMBEDDINGS;
