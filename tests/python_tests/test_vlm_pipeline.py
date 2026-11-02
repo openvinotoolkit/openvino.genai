@@ -161,6 +161,7 @@ else:
         "optimum-intel-internal-testing/tiny-random-gemma4-moe",
         "optimum-intel-internal-testing/tiny-random-gemma4-unified-it",
         "optimum-intel-internal-testing/tiny-random-gemma4-31B",
+        "optimum-intel-internal-testing/tiny-random-minicpmv47",
     ]
 
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
@@ -222,6 +223,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
+    "optimum-intel-internal-testing/tiny-random-minicpmv47": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-gemma4": lambda idx: "<|image|>",
@@ -247,6 +249,7 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|video|>",
     "optimum-intel-internal-testing/tiny-random-muse-glimmer": lambda idx: "<|video|>",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
+    "optimum-intel-internal-testing/tiny-random-minicpmv47": lambda idx: "<video>./</video>\n",
 }
 
 
@@ -327,6 +330,10 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
     ):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Maximum supported version is 4.51.3"
+        )
+    if "minicpmv47" in model_id and is_transformers_version("<", "5.18.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum supported version is 5.18.0"
         )
     if "qwen3-vl" in model_id and is_transformers_version("<", "4.57.0"):
         pytest.skip(
@@ -873,7 +880,7 @@ def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Te
         result_from_streamer.append(word)
         return False
 
-    generation_config = _setup_generation_config(ov_pipe, prompt_lookup=ov_pipe_model.prompt_lookup)
+    generation_config = _setup_generation_config(ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup)
 
     res = ov_pipe.generate(
         PROMPTS[0],
@@ -1196,7 +1203,7 @@ def test_vlm_pipeline_chat(
         result_from_streamer.append(word)
         return False
 
-    generation_config = _setup_generation_config(ov_pipe, prompt_lookup=ov_pipe_model.prompt_lookup)
+    generation_config = _setup_generation_config(ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup)
 
     ov_pipe.start_chat(system_message)
 
@@ -2034,6 +2041,7 @@ if is_transformers_version("<", "5.0"):
 else:
     MODELS_TO_TAG += [
         ("optimum-intel-internal-testing/tiny-random-phi3-vision", "PA"),
+        ("optimum-intel-internal-testing/tiny-random-minicpmv47", "PA"),
     ]
 
 
@@ -2714,6 +2722,9 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     "*tiny-videochat-flash-qwen/PA/CPP/text-only": "CVS-183813",
     # deepseek-ocr-2 text-only cases
     "*tiny-random-deepseek-ocr-2/*/text-only": "DeepSeek OCR-2 model requires image input.",
+    # MiniCPM-V-4.7 cases - different images with 32x32 and 176x132 videos (both SDPA and PA)
+    "*tiny-random-minicpmv47/*/CPP/image-*/video-32x32": "CVS-197356",
+    "*tiny-random-minicpmv47/*/CPP/image-*/video-176x132": "CVS-197356",
 }
 
 # For these models, we will add both CPP and GRAPH pre-processing tests.
