@@ -1323,8 +1323,8 @@ size_t quoted_literal_end(const std::string& expression, size_t position) {
 
 template <typename Rewrite>
 std::string rewrite_template_expressions(const std::string& chat_template, Rewrite rewrite) {
-    const std::regex raw_start{R"(\{%[-+]?\s*raw\s*[-+]?%\})"};
-    const std::regex raw_end{R"(\{%[-+]?\s*endraw\s*[-+]?%\})"};
+    static const std::regex raw_start{R"(\{%[-+]?\s*raw\s*[-+]?%\})"};
+    static const std::regex raw_end{R"(\{%[-+]?\s*endraw\s*[-+]?%\})"};
     std::string rewritten;
     size_t position = 0;
     while (position < chat_template.size()) {
@@ -1359,17 +1359,11 @@ std::string rewrite_template_expressions(const std::string& chat_template, Rewri
         }
         const size_t expression_start = block_start + 2;
         size_t expression_end = expression_start;
-        char quote = 0;
         std::string closing_brackets;
         for (; expression_end + 1 < chat_template.size(); ++expression_end) {
             const char ch = chat_template[expression_end];
-            if (quote) {
-                if (ch == '\\')
-                    ++expression_end;
-                else if (ch == quote)
-                    quote = 0;
-            } else if (ch == '\'' || ch == '"') {
-                quote = ch;
+            if (ch == '\'' || ch == '"') {
+                expression_end = quoted_literal_end(chat_template, expression_end) - 1;
             } else if (closing_brackets.empty() && ch == (block_type == '{' ? '}' : '%') &&
                        chat_template[expression_end + 1] == '}') {
                 break;
@@ -1393,41 +1387,7 @@ std::string rewrite_template_expressions(const std::string& chat_template, Rewri
 
 }  // namespace
 
-void patch_chat_template_multiline_strings(Tokenizer& tokenizer) {
-    const std::regex multiline_string_concatenation{R"("[ \t]*\r?\n[ \t]*")"};
-    tokenizer.set_chat_template(std::regex_replace(tokenizer.get_chat_template(), multiline_string_concatenation, ""));
-}
-
-std::string join_multiline_string_literals(const std::string& chat_template) {
-    return rewrite_template_expressions(chat_template, [&](const std::string& expression) {
-        std::string rewritten;
-        size_t position = 0;
-        while (position < expression.size()) {
-            if (expression[position] != '\'' && expression[position] != '"') {
-                rewritten += expression[position++];
-                continue;
-            }
-            size_t end = quoted_literal_end(expression, position);
-            std::string literals = expression.substr(position, end - position);
-            bool joined = false;
-            for (;;) {
-                const size_t next = expression.find_first_not_of(" \t\r\n", end);
-                if (next == std::string::npos || expression.find('\n', end) >= next ||
-                    (expression[next] != '\'' && expression[next] != '"')) {
-                    break;
-                }
-                end = quoted_literal_end(expression, next);
-                literals += " ~ " + expression.substr(next, end - next);
-                joined = true;
-            }
-            rewritten += joined ? "(" + literals + ")" : literals;
-            position = end;
-        }
-        return rewritten;
-    });
-}
-
-std::string replace_is_undefined_tests(const std::string& chat_template) {
+std::string patch_chat_template(const std::string& chat_template) {
     const auto is_word_char = [](char ch) {
         return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_';
     };
@@ -1436,8 +1396,18 @@ std::string replace_is_undefined_tests(const std::string& chat_template) {
         size_t position = 0;
         while (position < expression.size()) {
             if (expression[position] == '\'' || expression[position] == '"') {
-                const size_t end = quoted_literal_end(expression, position);
-                rewritten.append(expression, position, end - position);
+                size_t end = quoted_literal_end(expression, position);
+                std::string literals = expression.substr(position, end - position);
+                bool joined = false;
+                for (;;) {
+                    const size_t next = expression.find_first_not_of(" \t\r\n\f\v", end);
+                    if (next == std::string::npos || (expression[next] != '\'' && expression[next] != '"'))
+                        break;
+                    end = quoted_literal_end(expression, next);
+                    literals += " ~ " + expression.substr(next, end - next);
+                    joined = true;
+                }
+                rewritten += joined ? "(" + literals + ")" : literals;
                 position = end;
                 continue;
             }

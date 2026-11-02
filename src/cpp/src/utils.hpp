@@ -467,15 +467,7 @@ ov::genai::GenerationConfig get_beam_search_config();
 ov::genai::GenerationConfig get_greedy_config();
 ov::genai::GenerationConfig get_multinomial_config();
 
-/**
- * @brief Patches the chat template in the provided Tokenizer and
- * removes any implicit concatenation of adjacent multiline string literals.
- */
-void patch_chat_template_multiline_strings(Tokenizer& tokenizer);
-
-std::string join_multiline_string_literals(const std::string& chat_template);
-
-std::string replace_is_undefined_tests(const std::string& chat_template);
+std::string patch_chat_template(const std::string& chat_template);
 
 }  // namespace utils
 }  // namespace genai

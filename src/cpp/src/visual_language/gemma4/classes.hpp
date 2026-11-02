@@ -142,7 +142,6 @@ private:
 
     void encode_vision_token_ids();
 
-    void patch_chat_template();
 };
 
 }  // namespace ov::genai

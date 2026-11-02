@@ -49,10 +49,10 @@ constexpr char pad_token_key_name[] = "pad_token";
 std::string remap_template(const std::string& chat_template) {
     for (const auto& [known, fallback] : chat_template_fallback_map) {
         if (chat_template == known) {
-            return fallback;
+            return utils::patch_chat_template(fallback);
         }
     }
-    return chat_template;
+    return utils::patch_chat_template(chat_template);
 }
 
 void parse_chat_template_from_file(const std::filesystem::path& path, std::string& value) {
