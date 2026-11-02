@@ -4,6 +4,7 @@
 #include "dflash_strategy.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <limits>
 #include <string>
 #include <vector>
@@ -265,6 +266,34 @@ GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(
         return ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(request_id, prompt, {}, sampling_params);
     }
     return add_request(request_id, m_tokenizer.encode(prompt).input_ids, sampling_params);
+}
+
+std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::DFlashDecodingImpl::generate(
+    const std::vector<ov::Tensor>& input_ids,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer,
+    const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids,
+    const std::optional<std::vector<ov::Tensor>>& prompt_ids,
+    const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list) {
+    GenerateStrategy strategy;
+    // The configs pass through unchanged: add_request fills an unset num_assistant_tokens with the default and
+    // keeps an explicit 0, which runs the request on the target alone.
+    strategy.prepare_request = [](size_t, const ov::Tensor& in_ids, GenerationConfig&, ov::Tensor& main_in) {
+        main_in = in_ids;
+    };
+    strategy.check_streaming = [](const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr,
+                                  const std::vector<ov::Tensor>& input_ids,
+                                  const std::vector<GenerationConfig>&) {
+        OPENVINO_ASSERT(!streamer_ptr->has_callback() || input_ids.size() == 1,
+                        "DFlash streaming only supports batch size=1.");
+    };
+    strategy.start_timer = []() { return std::chrono::steady_clock::now(); };
+    strategy.stop_timer = [](const TimePoint& start) {
+        return PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start);
+    };
+
+    return generate_common(this, input_ids, sampling_params, streamer, position_ids, prompt_ids, lm_extra_inputs_list,
+                           strategy);
 }
 
 }  // namespace ov::genai
