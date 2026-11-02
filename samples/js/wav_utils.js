@@ -6,7 +6,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { decode, encode } from 'node-wav';
 
 function decodeFloat32WavWithDataView(wavBuffer) {
-  const bytes = Uint8Array.from(wavBuffer);
+  const bytes = new Uint8Array(wavBuffer.buffer, wavBuffer.byteOffset, wavBuffer.byteLength);
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
   if (bytes.byteLength < 44) {
