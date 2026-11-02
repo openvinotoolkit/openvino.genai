@@ -116,6 +116,9 @@ SUFFIX = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
 INSTRUCTION = "Given a web search query, retrieve relevant passages that answer the query"
 
 query = f"{PREFIX}<Instruct>: {INSTRUCTION}\n<Query>: {user_query}\n"
+# Each complete query + formatted document must fit the tokenizer's effective max_length.
+# Shorten document content before formatting if needed: automatic truncation can
+# remove the required SUFFIX, even with padding_side="left".
 documents = [f"<Document>: {doc}{SUFFIX}" for doc in user_documents]
 
 config = openvino_genai.TextRerankPipeline.Config(padding_side="left")
