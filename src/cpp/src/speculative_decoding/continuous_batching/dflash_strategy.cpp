@@ -161,11 +161,11 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::validate_request_config(con
 
 GenerationConfig ContinuousBatchingPipeline::DFlashDecodingImpl::make_draft_generation_config(
     const GenerationConfig& config) {
-    // The target decides when to stop and what to return; the draft only proposes candidates.
+    // The target decides when to stop and what to return; the draft only proposes candidates. ignore_eos
+    // disables the stop tokens; they stay because validate() requires eos_token_id among them.
     GenerationConfig draft_config = config;
     draft_config.ignore_eos = true;
     draft_config.stop_strings.clear();
-    draft_config.stop_token_ids.clear();
     draft_config.include_stop_str_in_output = false;
     draft_config.structured_output_config.reset();
     draft_config.parsers.clear();

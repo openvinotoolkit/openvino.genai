@@ -667,13 +667,15 @@ TEST_F(DFlashStrategyTest, DraftConfigOnlyProposesCandidates) {
     config.num_assistant_tokens = 3;
     config.stop_strings = {"stop"};
     config.stop_token_ids = {5};
+    // an explicit EOS that may differ from the pipeline default
+    config.set_eos_token_id(7);
     config.echo = true;
 
     const auto draft_config = StrategyInstance::make_draft_generation_config(config);
 
     EXPECT_TRUE(draft_config.ignore_eos);
     EXPECT_TRUE(draft_config.stop_strings.empty());
-    EXPECT_TRUE(draft_config.stop_token_ids.empty());
+    EXPECT_EQ(draft_config.stop_token_ids, (std::set<int64_t>{5, 7}));
     EXPECT_FALSE(draft_config.echo);
     EXPECT_EQ(draft_config.max_new_tokens, SIZE_MAX - 1);
     EXPECT_NO_THROW(draft_config.validate());
