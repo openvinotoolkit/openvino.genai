@@ -90,7 +90,7 @@ TEST(TokenizerChatTemplate, FallbackPreservesMultilineQuotesOutsideExpressions) 
 TEST(TokenizerChatTemplate, LiteralJoinPreservesRawBlocks) {
     EXPECT_EQ(ov::genai::utils::join_multiline_string_literals(
                   "{% raw %}\"line one\"\n\"line two\"{% endraw %}{{ \"joined\"\n\"literal\" }}"),
-              "{% raw %}\"line one\"\n\"line two\"{% endraw %}{{ \"joinedliteral\" }}");
+              "{% raw %}\"line one\"\n\"line two\"{% endraw %}{{ (\"joined\" ~ \"literal\") }}");
 }
 
 TEST(TokenizerChatTemplate, UndefinedRewriteMatchesOnlyCompleteTestName) {
@@ -132,5 +132,45 @@ TEST(TokenizerChatTemplate, FallbackReportsBothRenderingErrors) {
         EXPECT_NE(message.find("Minja's error:"), std::string::npos);
         EXPECT_NE(message.find("Minja's retry error:"), std::string::npos);
         EXPECT_NE(message.find("unknown_function"), std::string::npos);
+    }
+}
+
+TEST(TokenizerChatTemplate, EmptySuccessfulRetryUsesEmptyOutputDiagnostic) {
+    auto tokenizer = template_tokenizer("{% if messages[0].content is undefined %}missing{% endif %}");
+    try {
+        tokenizer->apply_chat_template(chat_history(), false, "", std::nullopt, std::nullopt);
+        FAIL() << "Expected empty output to be rejected";
+    } catch (const ov::Exception& error) {
+        const std::string message = error.what();
+        EXPECT_NE(message.find("Applied chat template resulted in an empty string"), std::string::npos);
+        EXPECT_EQ(message.find("Minja's error:"), std::string::npos);
+    }
+}
+
+TEST(TokenizerChatTemplate, AdjacentLiteralsPreserveQuotesEscapesAndFilterPrecedence) {
+    for (const std::string expression : {"'first'\n'second'",
+                                         "\"first\"\n'second'",
+                                         "'first'\n\"second\"",
+                                         "\"first\"\n\n\"second\"",
+                                         "'first' \r\n\t\r\n 'second'"}) {
+        auto tokenizer = template_tokenizer("{{ " + expression + " | upper }}");
+        EXPECT_EQ(tokenizer->apply_chat_template(chat_history(), false, "", std::nullopt, std::nullopt), "FIRSTSECOND")
+            << expression;
+    }
+    auto tokenizer = template_tokenizer(R"({{ "a\"b\\"
+ 'c\'d\\'
+ "e" }})");
+    EXPECT_EQ(tokenizer->apply_chat_template(chat_history(), false, "", std::nullopt, std::nullopt), "a\"b\\c'd\\e");
+}
+
+TEST(TokenizerChatTemplate, LongQuotedLiteralsAreScannedWithoutRegexRecursion) {
+    const std::string text(64 * 1024, 'x');
+    for (const char quote : {'\'', '"'}) {
+        const std::string literal = std::string(1, quote) + text + quote;
+        const std::string undefined = "{% if missing is undefined %}{{ " + literal + " }}{% endif %}";
+        EXPECT_EQ(ov::genai::utils::replace_is_undefined_tests(undefined),
+                  "{% if missing is not defined %}{{ " + literal + " }}{% endif %}");
+        EXPECT_EQ(ov::genai::utils::join_multiline_string_literals("{{ " + literal + "\n" + literal + " }}"),
+                  "{{ (" + literal + " ~ " + literal + ") }}");
     }
 }

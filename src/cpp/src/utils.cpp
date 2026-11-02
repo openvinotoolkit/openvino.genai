@@ -1309,6 +1309,18 @@ ov::genai::GenerationConfig get_multinomial_config() {
 
 namespace {
 
+size_t quoted_literal_end(const std::string& expression, size_t position) {
+    const char quote = expression[position++];
+    while (position < expression.size()) {
+        const char ch = expression[position++];
+        if (ch == quote)
+            break;
+        if (ch == '\\' && position < expression.size())
+            ++position;
+    }
+    return position;
+}
+
 template <typename Rewrite>
 std::string rewrite_template_expressions(const std::string& chat_template, Rewrite rewrite) {
     const std::regex raw_start{R"(\{%[-+]?\s*raw\s*[-+]?%\})"};
@@ -1387,42 +1399,61 @@ void patch_chat_template_multiline_strings(Tokenizer& tokenizer) {
 }
 
 std::string join_multiline_string_literals(const std::string& chat_template) {
-    const std::regex quoted_literal{R"re("(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*')re"};
-    const std::regex multiline_gap{R"([ \t]*\r?\n[ \t]*)"};
     return rewrite_template_expressions(chat_template, [&](const std::string& expression) {
         std::string rewritten;
         size_t position = 0;
-        bool previous_double_quote = false;
-        for (auto it = std::sregex_iterator(expression.begin(), expression.end(), quoted_literal);
-             it != std::sregex_iterator(); ++it) {
-            const auto gap = expression.substr(position, it->position() - position);
-            const auto literal = it->str();
-            if (previous_double_quote && literal.front() == '"' && std::regex_match(gap, multiline_gap)) {
-                rewritten.pop_back();
-                rewritten += literal.substr(1);
-            } else {
-                rewritten += gap + literal;
+        while (position < expression.size()) {
+            if (expression[position] != '\'' && expression[position] != '"') {
+                rewritten += expression[position++];
+                continue;
             }
-            previous_double_quote = literal.front() == '"';
-            position = it->position() + it->length();
+            size_t end = quoted_literal_end(expression, position);
+            std::string literals = expression.substr(position, end - position);
+            bool joined = false;
+            for (;;) {
+                const size_t next = expression.find_first_not_of(" \t\r\n", end);
+                if (next == std::string::npos || expression.find('\n', end) >= next ||
+                    (expression[next] != '\'' && expression[next] != '"')) {
+                    break;
+                }
+                end = quoted_literal_end(expression, next);
+                literals += " ~ " + expression.substr(next, end - next);
+                joined = true;
+            }
+            rewritten += joined ? "(" + literals + ")" : literals;
+            position = end;
         }
-        return rewritten + expression.substr(position);
+        return rewritten;
     });
 }
 
 std::string replace_is_undefined_tests(const std::string& chat_template) {
-    const std::regex quoted_literal_or_undefined{
-        R"re("(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|(\bis\s+undefined\b))re"};
+    const auto is_word_char = [](char ch) {
+        return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_';
+    };
     return rewrite_template_expressions(chat_template, [&](const std::string& expression) {
         std::string rewritten;
         size_t position = 0;
-        for (auto it = std::sregex_iterator(expression.begin(), expression.end(), quoted_literal_or_undefined);
-             it != std::sregex_iterator(); ++it) {
-            rewritten.append(expression, position, it->position() - position);
-            rewritten += (*it)[1].matched ? "is not defined" : it->str();
-            position = it->position() + it->length();
+        while (position < expression.size()) {
+            if (expression[position] == '\'' || expression[position] == '"') {
+                const size_t end = quoted_literal_end(expression, position);
+                rewritten.append(expression, position, end - position);
+                position = end;
+                continue;
+            }
+            const size_t test_start = expression.compare(position, 2, "is") == 0
+                                          ? expression.find_first_not_of(" \t\r\n\f\v", position + 2)
+                                          : std::string::npos;
+            if ((position == 0 || !is_word_char(expression[position - 1])) && test_start != std::string::npos &&
+                test_start > position + 2 && expression.compare(test_start, 9, "undefined") == 0 &&
+                (test_start + 9 == expression.size() || !is_word_char(expression[test_start + 9]))) {
+                rewritten += "is not defined";
+                position = test_start + 9;
+            } else {
+                rewritten += expression[position++];
+            }
         }
-        return rewritten + expression.substr(position);
+        return rewritten;
     });
 }
 
