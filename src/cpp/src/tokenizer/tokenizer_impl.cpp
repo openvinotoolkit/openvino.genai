@@ -847,8 +847,12 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
         std::lock_guard<std::mutex> lock(m_chat_template_mutex);
         chat_tpl = m_chat_template;
     } else {
-        std::lock_guard<std::mutex> lock(m_chat_template_mutex);
-        chat_tpl = remap_and_patch_template(chat_template, m_chat_template_patcher);
+        std::function<std::string(const std::string&)> patcher;
+        {
+            std::lock_guard<std::mutex> lock(m_chat_template_mutex);
+            patcher = m_chat_template_patcher;
+        }
+        chat_tpl = remap_and_patch_template(chat_template, patcher);
     }
 
     auto resolved_tools = tools.value_or(history.get_tools());
