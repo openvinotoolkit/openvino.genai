@@ -38,6 +38,7 @@
 #include "openvino/runtime/core.hpp"
 #include "openvino/runtime/properties.hpp"
 #include "model_desc.hpp"
+#include "sampling/candidates_validation.hpp"
 #include "sampling/sampler.hpp"
 #include "sequence_group.hpp"
 #include "speculative_decoding/continuous_batching/dflash_candidate_lattice.hpp"
@@ -492,6 +493,8 @@ protected:
     public:
         explicit DraftInstance(size_t candidate_position_offset = 1) {
             m_sampler = std::make_shared<ov::genai::Sampler>();
+            m_sampler->set_collect_draft_proposals(true);
+            m_sampler->set_block_sampling(candidate_position_offset);
             dflash_mode_enabled = true;
             m_dflash_mask_token_id = MASK_TOKEN;
             m_dflash_candidate_position_offset = candidate_position_offset;
@@ -512,6 +515,12 @@ protected:
             auto config = ov::genai::utils::get_greedy_config();
             config.num_assistant_tokens = num_assistant_tokens;
             config.max_new_tokens = max_new_tokens;
+            return add(request_id, prompt, config);
+        }
+
+        ov::genai::SequenceGroup::Ptr add(uint64_t request_id,
+                                          const std::vector<int64_t>& prompt,
+                                          const ov::genai::GenerationConfig& config) {
             auto group = std::make_shared<ov::genai::SequenceGroup>(request_id, prompt, config);
             group->pause_generation(true);
             m_requests.push_back(group);
@@ -551,6 +560,17 @@ protected:
             m_dflash_draft_windows.clear();
         }
 
+        // Runs the request's whole window, whose gathered candidate rows are `logits`, through the block sampler and
+        // leaves the request as the draft multistep does.
+        void draft_window(const ov::genai::SequenceGroup::Ptr& group, const ov::Tensor& logits) {
+            const auto planned = window(group);
+            group->schedule_tokens(planned.context_rows + planned.block_rows);
+            group->set_output_seq_len(logits.get_shape()[0]);
+            m_sampler->sample({group}, logits, false, false);
+            group->update_processed_tokens_num(planned.committed_rows + planned.context_rows);
+            m_dflash_draft_windows.clear();
+        }
+
         // Leaves the request as the draft multistep does after the scheduler ran only `forwarded_rows` of its window,
         // stopping before the first candidate row.
         void drop_window(const ov::genai::SequenceGroup::Ptr& group, size_t forwarded_rows = 0) {
@@ -574,11 +594,50 @@ protected:
     // Prompt of 8 tokens processed by the target in one chunk; the target sampled 7, and the draft forwarded the
     // prompt rows. The target then generated seed 17 alone and exported the row of 7, so the first block follows.
     ov::genai::SequenceGroup::Ptr start_with_block(DraftInstance& draft, size_t num_assistant_tokens = 3) {
-        auto group = draft.add(0, {0, 1, 2, 3, 4, 5, 6, 7}, num_assistant_tokens);
+        auto config = ov::genai::utils::get_greedy_config();
+        config.num_assistant_tokens = num_assistant_tokens;
+        config.max_new_tokens = 100;
+        return start_with_block(draft, config);
+    }
+
+    ov::genai::SequenceGroup::Ptr start_with_block(DraftInstance& draft, const ov::genai::GenerationConfig& config) {
+        auto group = draft.add(0, {0, 1, 2, 3, 4, 5, 6, 7}, config);
         draft.update_request(0, target_step({7}, 8, make_hidden_rows(8, 0.0f)), true);
         draft.finish_window(group, {});
         draft.update_request(0, target_step({7, 17}, 9, make_hidden_rows(1, 50.0f)), true);
         return group;
+    }
+
+    // Logits whose row r has value v at token t for every (t, v) in rows[r], and 0 elsewhere.
+    static ov::Tensor make_scored_logits(const std::vector<std::vector<std::pair<int64_t, float>>>& rows,
+                                         size_t vocab_size = 128) {
+        ov::Tensor logits(ov::element::f32, {rows.size(), 1, vocab_size});
+        std::fill_n(logits.data<float>(), logits.get_size(), 0.0f);
+        for (size_t row = 0; row < rows.size(); ++row) {
+            for (const auto& [token, value] : rows[row]) {
+                logits.data<float>()[row * vocab_size + token] = value;
+            }
+        }
+        return logits;
+    }
+
+    static ov::genai::GenerationConfig sampled_config(size_t num_assistant_tokens) {
+        ov::genai::GenerationConfig config;
+        config.do_sample = true;
+        config.temperature = 0.8f;
+        config.top_k = 4;
+        config.rng_seed = 3;
+        config.num_assistant_tokens = num_assistant_tokens;
+        config.max_new_tokens = 100;
+        return config;
+    }
+
+    static ov::genai::GenerationConfig penalized_config(size_t num_assistant_tokens) {
+        auto config = ov::genai::utils::get_greedy_config();
+        config.num_assistant_tokens = num_assistant_tokens;
+        config.max_new_tokens = 100;
+        config.repetition_penalty = 2.0f;
+        return config;
     }
 
     static std::vector<int64_t> generated(const ov::genai::SequenceGroup::Ptr& group) {
@@ -826,6 +885,58 @@ TEST_F(DFlashCBPipelineTest, ReusedRequestIdStartsFromAFreshWindow) {
     ASSERT_EQ(draft.window(second).block_rows, 0);
 }
 
+TEST_F(DFlashCBPipelineTest, SampledCandidatesCarryTheirProposals) {
+    DraftInstance draft;
+    auto group = start_with_block(draft, sampled_config(3));
+    draft.draft_window(group, make_scored_logits({{{20, 1.0f}}, {{21, 1.0f}}, {{22, 1.0f}}}));
+
+    const auto sequence = group->get_running_sequences().front();
+    const auto tokens = sequence->get_generated_ids();
+    ASSERT_EQ(tokens.size(), 5);
+    const auto& proposals = sequence->get_draft_proposals();
+    ASSERT_EQ(proposals.size(), 5);
+    // 7 and 17 are the target's tokens
+    ASSERT_FALSE(proposals[0]);
+    ASSERT_FALSE(proposals[1]);
+    for (size_t i = 2; i < tokens.size(); ++i) {
+        ASSERT_TRUE(proposals[i]);
+        ASSERT_NO_THROW(ov::genai::detail::validate_draft_proposal(*proposals[i]));
+        // top_k = 4 keeps four tokens
+        ASSERT_EQ(proposals[i]->token_ids.size(), 4);
+        ASSERT_GT(ov::genai::detail::proposal_probability(*proposals[i], tokens[i]), 0.0f);
+    }
+
+    // the target accepted the first candidate and corrected the second: the proposals are not sent again
+    draft.update_request(0, target_step({7, 17, tokens[2], 200}, 11, make_hidden_rows(4, 100.0f)), true);
+    ASSERT_EQ(generated(group)[3], 200);
+    ASSERT_TRUE(sequence->get_draft_proposals().empty());
+}
+
+TEST_F(DFlashCBPipelineTest, RepetitionPenaltyCountsTheTargetTokens) {
+    DraftInstance draft;
+    auto group = start_with_block(draft, penalized_config(3));
+
+    // the target's seed 17 is penalized below 51 in the first row
+    draft.draft_window(group, make_scored_logits({{{17, 1.0f}, {51, 0.9f}}, {{21, 1.0f}}, {{22, 1.0f}}}));
+
+    ASSERT_EQ(generated(group), (std::vector<int64_t>{7, 17, 51, 21, 22}));
+}
+
+TEST_F(DFlashCBPipelineTest, RejectedCandidatesLeaveThePenaltyHistory) {
+    DraftInstance draft;
+    auto group = start_with_block(draft, penalized_config(3));
+    draft.draft_window(group, make_scored_logits({{{20, 1.0f}}, {{21, 1.0f}}, {{22, 1.0f}}}));
+    ASSERT_EQ(generated(group), (std::vector<int64_t>{7, 17, 20, 21, 22}));
+
+    // the target rejected all three candidates and sampled 30
+    draft.update_request(0, target_step({7, 17, 30}, 10, make_hidden_rows(4, 100.0f)), true);
+    draft.draft_window(group,
+                       make_scored_logits({{{20, 1.0f}, {23, 0.9f}}, {{21, 1.0f}, {24, 0.9f}}, {{30, 1.0f}, {25, 0.9f}}}));
+
+    // 20 and 21 are no longer generated tokens; 30 is
+    ASSERT_EQ(generated(group), (std::vector<int64_t>{7, 17, 30, 20, 21, 25}));
+}
+
 class DFlashStrategyTest : public testing::Test, public ov::genai::ContinuousBatchingPipeline {
 protected:
     class StrategyInstance : public DFlashDecodingImpl {
@@ -853,7 +964,13 @@ protected:
 
 TEST_F(DFlashStrategyTest, RejectsUnsupportedRequests) {
     const std::vector<std::pair<std::function<void(ov::genai::GenerationConfig&)>, std::string>> cases = {
-        {[](ov::genai::GenerationConfig& config) { config.do_sample = true; }, "greedy decoding only"},
+        {[](ov::genai::GenerationConfig& config) { config = ov::genai::utils::get_beam_search_config(); },
+         "greedy and multinomial decoding only"},
+        {[](ov::genai::GenerationConfig& config) {
+             config.do_sample = true;
+             config.num_return_sequences = 2;
+         },
+         "one sequence per request"},
         {[](ov::genai::GenerationConfig& config) { config.assistant_confidence_threshold = 0.5f; },
          "assistant_confidence_threshold must be 0.f"},
         {[](ov::genai::GenerationConfig& config) { config.adapters = ov::genai::AdapterConfig{}; },
@@ -886,15 +1003,25 @@ TEST_F(DFlashStrategyTest, DraftConfigOnlyProposesCandidates) {
     config.stop_token_ids = {5};
     // an explicit EOS that may differ from the pipeline default
     config.set_eos_token_id(7);
+    config.min_new_tokens = 2;
     config.echo = true;
+    config.do_sample = true;
+    config.repetition_penalty = 1.2f;
+    config.rng_seed = 7;
 
     const auto draft_config = StrategyInstance::make_draft_generation_config(config);
 
     EXPECT_TRUE(draft_config.ignore_eos);
     EXPECT_TRUE(draft_config.stop_strings.empty());
     EXPECT_EQ(draft_config.stop_token_ids, (std::set<int64_t>{5, 7}));
+    // the draft suppresses the stop tokens as the target does
+    EXPECT_EQ(draft_config.min_new_tokens, 2);
     EXPECT_FALSE(draft_config.echo);
     EXPECT_EQ(draft_config.max_new_tokens, SIZE_MAX - 1);
+    // the draft samples like the target, from draws independent of the target's
+    EXPECT_TRUE(draft_config.is_multinomial());
+    EXPECT_EQ(draft_config.repetition_penalty, 1.2f);
+    EXPECT_EQ(draft_config.rng_seed, ov::genai::detail::proposal_rng_seed(7));
     EXPECT_NO_THROW(draft_config.validate());
 }
 

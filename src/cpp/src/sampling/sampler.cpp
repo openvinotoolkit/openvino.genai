@@ -1478,7 +1478,8 @@ process_stop_strings(const std::set<std::string>& stop_strings, Tokenizer& token
 
 SampledBlock Sampler::_start_block(const SequenceGroup::Ptr& sequence_group, size_t first_row) {
     const ov::genai::GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
-    OPENVINO_ASSERT(sampling_params.is_greedy_decoding(), "The DFlash draft supports greedy decoding only.");
+    OPENVINO_ASSERT(sampling_params.is_greedy_decoding() || sampling_params.is_multinomial(),
+                    "Block sampling supports greedy and multinomial decoding only.");
     std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
     OPENVINO_ASSERT(running_sequences.size() == 1);
     Sequence::Ptr sequence = running_sequences.front();
@@ -1512,9 +1513,19 @@ int64_t Sampler::_sample_block_token(const Sequence::Ptr& sequence,
     LogitProcessor& logit_processor = context.logit_processor;
     logit_processor.update_generated_len(sequence->get_generated_len());
     logit_processor.apply(logits);
-    const Token token = _greedy_sample(logits, sampling_params.logprobs);
+    std::optional<SamplingDistribution> distribution;
+    Token token;
+    if (sampling_params.is_greedy_decoding()) {
+        token = _greedy_sample(logits, sampling_params.logprobs);
+    } else {
+        distribution.emplace(logits);
+        token = distribution->sample(context.rng_engine);
+    }
     append_sampled_token(token, sequence, logit_processor);
     pause_if_unconfident(token, sequence, logit_processor);
+    if (m_collect_draft_proposals && sampling_params.is_multinomial()) {
+        sequence->set_draft_proposal(sequence->get_generated_len() - 1, detail::make_draft_proposal(*distribution));
+    }
     return token.m_index;
 }
 
