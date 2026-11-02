@@ -6,7 +6,23 @@ import { readFile, writeFile } from 'node:fs/promises';
 
 function toNumber(dim) {
   if (typeof dim === 'bigint') {
+    if (dim < 0n) {
+      throw new Error(`Shape dimension must be non-negative, got ${dim}.`);
+    }
+    if (dim > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new Error(
+        `Shape dimension ${dim} exceeds Number.MAX_SAFE_INTEGER and cannot be represented safely.`,
+      );
+    }
     return Number(dim);
+  }
+  if (!Number.isInteger(dim) || dim < 0) {
+    throw new Error(`Shape dimension must be a non-negative integer, got ${dim}.`);
+  }
+  if (!Number.isSafeInteger(dim)) {
+    throw new Error(
+      `Shape dimension ${dim} exceeds Number.MAX_SAFE_INTEGER and cannot be represented safely.`,
+    );
   }
   return dim;
 }
