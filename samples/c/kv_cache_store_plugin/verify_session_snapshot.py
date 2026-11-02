@@ -6,11 +6,12 @@
 
 Runs the same request three ways:
   1. Start to finish, uninterrupted - the baseline.
-  2. Partway through, call save_state() with your plugin configured, so the KV (and, for hybrid
-     models, linear-attention) block payload is written through your plugin instead of being
-     embedded inline in the snapshot file.
-  3. In a fresh ContinuousBatchingPipeline instance (simulating a process restart), call
-     restore_state() with the same plugin configuration and finish generation.
+  2. Partway through, call save_state() on a pipeline whose SchedulerConfig.cache_offload_config points at
+     your plugin: the request's KV (and, for hybrid models, linear-attention) blocks are written to your plugin
+     through the same prefix-caching offload store used by Scenario 1, and the snapshot file only holds the
+     token history and references to those blocks.
+  3. In a fresh ContinuousBatchingPipeline instance (simulating a process restart) configured the same way,
+     call restore_state() and finish generation.
 
 The stitched token stream from steps 2+3 must match step 1's baseline exactly. Prints PASS/FAIL
 and exits non-zero on failure or any exception.
@@ -35,12 +36,15 @@ NUM_MANUAL_STEPS = 15
 PROMPT = "The quick brown fox jumps over the lazy dog. " * 10 + " Continue the story:"
 
 
-def make_scheduler_config() -> ov_genai.SchedulerConfig:
+def make_scheduler_config(store_config: ov_genai.CacheOffloadConfig = None) -> ov_genai.SchedulerConfig:
     config = ov_genai.SchedulerConfig()
     config.enable_prefix_caching = True
     config.max_num_batched_tokens = 2048
     config.max_num_seqs = 4
     config.dynamic_split_fuse = False
+    if store_config is not None:
+        config.use_cache_offload = True
+        config.cache_offload_config = store_config
     return config
 
 
@@ -58,6 +62,10 @@ def make_store_config(plugin_path: str, provider_name: str) -> ov_genai.CacheOff
     config.store_library_path = plugin_path
     config.store_provider_name = provider_name
     config.allow_untrusted_store_plugin = True
+    # Snapshot blocks stay in the store (pinned), so it must hold every block of the conversation. A hybrid model's
+    # linear-attention checkpoint is large (about 51 MB for Qwen3.5-9B).
+    config.capacity_bytes = 2 * 1024 ** 3
+    config.linear_attention_capacity_bytes = 4 * 1024 ** 3
     return config
 
 
@@ -77,7 +85,7 @@ def run_baseline(model: str, device: str) -> list:
 def run_save_then_restore(model: str, device: str, store_config: ov_genai.CacheOffloadConfig,
                            snapshot_path: str) -> list:
     already_generated_ids = []
-    pipeline = ov_genai.ContinuousBatchingPipeline(model, make_scheduler_config(), device)
+    pipeline = ov_genai.ContinuousBatchingPipeline(model, make_scheduler_config(store_config), device)
     handle = pipeline.add_request(2, PROMPT, make_greedy_config(SPLIT_RUN_BUDGET))
     for _ in range(NUM_MANUAL_STEPS):
         if handle.get_status() != ov_genai.GenerationStatus.RUNNING:
@@ -91,14 +99,14 @@ def run_save_then_restore(model: str, device: str, store_config: ov_genai.CacheO
     assert len(already_generated_ids) < TOTAL_NEW_TOKENS, (
         "manual stepping already produced as many tokens as the baseline, nothing left to resume")
 
-    pipeline.save_state(2, snapshot_path, store_config)
+    pipeline.save_state(2, snapshot_path)
     del pipeline, handle
 
-    # Fresh pipeline instance simulates a process restart; restore_state() must find the KV/LA
-    # block payload through the SAME plugin configuration save_state() was called with.
-    pipeline = ov_genai.ContinuousBatchingPipeline(model, make_scheduler_config(), device)
+    # Fresh pipeline instance simulates a process restart; restore_state() must find the KV/LA blocks in the plugin
+    # through the same cache_offload_config the saving pipeline used.
+    pipeline = ov_genai.ContinuousBatchingPipeline(model, make_scheduler_config(store_config), device)
     remaining_tokens = TOTAL_NEW_TOKENS - len(already_generated_ids)
-    handle = pipeline.restore_state(3, snapshot_path, make_greedy_config(remaining_tokens), store_config)
+    handle = pipeline.restore_state(3, snapshot_path, make_greedy_config(remaining_tokens))
     while pipeline.has_non_finished_requests():
         pipeline.step()
     outputs = handle.read_all()
@@ -111,12 +119,14 @@ def run_save_then_restore(model: str, device: str, store_config: ov_genai.CacheO
 def measure_speedup(model: str, device: str, store_config: ov_genai.CacheOffloadConfig,
                      snapshot_path: str) -> None:
     """Compares TTFT of a full re-prefill against restoring from a snapshot whose KV/linear-
-    attention payload was written through the plugin. Uses a much longer prompt than the
+    attention blocks were stored through the plugin. Uses a much longer prompt than the
     correctness check above - a short prompt's prefill is cheap enough that the gap barely shows;
     this is the same lesson that applies to opportunistic offload (see E2E_VALIDATION.md)."""
     long_prompt = "The quick brown fox jumps over the lazy dog. " * 400
     scheduler_config = make_scheduler_config()
     scheduler_config.max_num_batched_tokens = 8192
+    snapshot_scheduler_config = make_scheduler_config(store_config)
+    snapshot_scheduler_config.max_num_batched_tokens = 8192
 
     pipeline = ov_genai.ContinuousBatchingPipeline(model, scheduler_config, device)
     # Both timings start before the request is submitted/restored and stop after the first token, so
@@ -128,7 +138,7 @@ def measure_speedup(model: str, device: str, store_config: ov_genai.CacheOffload
     baseline_ttft_ms = (time.perf_counter() - start) * 1000
     del pipeline, handle
 
-    pipeline = ov_genai.ContinuousBatchingPipeline(model, scheduler_config, device)
+    pipeline = ov_genai.ContinuousBatchingPipeline(model, snapshot_scheduler_config, device)
     handle = pipeline.add_request(12, long_prompt, make_greedy_config(50))
     for _ in range(5):
         if handle.get_status() != ov_genai.GenerationStatus.RUNNING:
@@ -136,12 +146,12 @@ def measure_speedup(model: str, device: str, store_config: ov_genai.CacheOffload
         pipeline.step()
     assert handle.get_status() == ov_genai.GenerationStatus.RUNNING, (
         "the request finished naturally before it could be interrupted - test setup is invalid")
-    pipeline.save_state(12, snapshot_path, store_config)
+    pipeline.save_state(12, snapshot_path)
     del pipeline, handle
 
-    pipeline = ov_genai.ContinuousBatchingPipeline(model, scheduler_config, device)
+    pipeline = ov_genai.ContinuousBatchingPipeline(model, snapshot_scheduler_config, device)
     start = time.perf_counter()
-    handle = pipeline.restore_state(13, snapshot_path, make_greedy_config(1), store_config)
+    handle = pipeline.restore_state(13, snapshot_path, make_greedy_config(1))
     while pipeline.has_non_finished_requests():
         pipeline.step()
     restore_ttft_ms = (time.perf_counter() - start) * 1000

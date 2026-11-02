@@ -308,7 +308,9 @@ def get_argparser():
         help="Path to write a ContinuousBatchingPipeline session snapshot to. When set, each prompt is "
         "generated for --session_snapshot_save_steps steps (instead of the full --infer_count) and then "
         "saved via save_state(), instead of being benchmarked normally. Forces ContinuousBatchingPipeline "
-        "and requires batch_size=1, num_beams=1. Mutually exclusive with --session_snapshot_restore.",
+        "and requires batch_size=1, num_beams=1 and --cb_config with enable_prefix_caching and use_cache_offload "
+        "(the snapshot keeps its cache blocks in the cache offload store). Mutually exclusive with "
+        "--session_snapshot_restore.",
     )
     parser.add_argument(
         "--session_snapshot_save_steps",
@@ -324,7 +326,9 @@ def get_argparser():
         help="Path to a ContinuousBatchingPipeline session snapshot (written by --session_snapshot_save) to "
         "restore via restore_state() instead of tokenizing/prefilling the prompt from scratch. The prompt "
         "text/file is ignored; the request's token history comes entirely from the snapshot. Forces "
-        "ContinuousBatchingPipeline and requires batch_size=1, num_beams=1. Mutually exclusive with "
+        "ContinuousBatchingPipeline and requires batch_size=1, num_beams=1 and the same --cb_config offload "
+        "settings as --session_snapshot_save; in a new process the store must be a persistent store plugin "
+        "(cache_offload_config.store_library_path) that still holds the blocks. Mutually exclusive with "
         "--session_snapshot_save.",
     )
     parser.add_argument(

@@ -49,7 +49,7 @@ static void sample_mutex_unlock(sample_mutex_t* m) {
 /* --------------------------------------------------------------------------
  * A single stored block: payload + the witness the host asked us to keep verbatim, plus a copy of
  * the key's group so unrelated callers sharing one store instance (e.g. KV cache offload vs.
- * linear-attention offload vs. session snapshot) never collide on a bare hash match.
+ * linear-attention offload) never collide on a bare hash match.
  * ----------------------------------------------------------------------- */
 typedef struct SampleEntry {
     OvKVCacheContentHash hash;

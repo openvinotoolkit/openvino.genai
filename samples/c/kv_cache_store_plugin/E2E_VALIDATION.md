@@ -9,14 +9,15 @@ against the two scenarios this ABI is used for in OpenVINO GenAI:
 1. **Opportunistic KV cache offload** (`SchedulerConfig::use_cache_offload`) - blocks evicted during
    normal generation are written through your plugin and rediscovered later via prefix-cache hash.
 2. **Session snapshot save/restore** (`ContinuousBatchingPipeline::save_state()`/`restore_state()`) -
-   a running request's full KV (and, for hybrid models, linear-attention) cache state is written
-   through your plugin instead of being embedded inline in the snapshot file, so it can be resumed
-   in a fresh process without re-running prefill.
+   a running request's KV (and, for hybrid models, linear-attention) blocks are written to the same
+   offload store as in Scenario 1 and pinned there; the snapshot file only keeps the token history and
+   references to those blocks. The request can be resumed in a fresh pipeline without re-running
+   prefill, as long as your plugin still holds the blocks.
 
 Both scenarios below were run against the standalone sample plugin in this directory
 ([`sample_kv_cache_store_plugin.c`](sample_kv_cache_store_plugin.c)) with **Qwen3.5-9B** (a hybrid
-KV + linear-attention model): Scenario 1 on CPU **and** GPU, Scenario 2 on GPU. Substitute your own
-plugin's path and provider name. GPU's paged-attention blocks hold fewer tokens than CPU's, so the
+KV + linear-attention model): Scenario 1 on CPU **and** GPU, Scenario 2 on GPU (and with Qwen3-8B on
+CPU). Substitute your own plugin's path and provider name. GPU's paged-attention blocks hold fewer tokens than CPU's, so the
 same `num_kv_blocks` lands differently - the GPU value used here is called out in Scenario 1.
 
 ## Prerequisites
@@ -129,7 +130,12 @@ through your plugin will show no speedup on a hybrid model.
 ### What the host expects from your plugin's stores
 
 The host opens **one store instance per group** and passes the group as the `OvKVCacheNamespace`
-(`kv`, `la`, and `session_snapshot_*` for Scenario 2). It sizes each store against its own
+(`kv` for KV blocks and `la` for linear-attention blocks; session snapshots use the same two stores,
+there is no separate snapshot namespace). The group string is an opaque byte string: when a plugin is
+configured the host appends a digest of the model and cache layout (for example `kv:<32 hex digits>`),
+so that stores shared by different models never serve each other's blocks. Treat the namespace as a
+key, do not parse it. `OvKVCacheGroupInfo` (ABI 1.1) tells you each group's `block_bytes` and
+`block_tokens` (for `la`: the checkpoint interval). It sizes each store against its own
 capacity and checks that the store's `stats()` stays within it. Your plugin must therefore keep
 the namespaces apart: if it puts KV and linear-attention blocks in one store, `stats()` reports
 more blocks than the smaller store's capacity and the run fails with `Check 'stats.blocks <=
@@ -139,16 +145,35 @@ same reason.
 
 ## Scenario 2: Session snapshot save/restore
 
-Session snapshot addresses blocks by sequence order, not content hash, so this is a *separate*
-code path from Scenario 1 even when pointed at the same plugin - validating Scenario 1 does not
-imply Scenario 2 also works. Use [`verify_session_snapshot.py`](verify_session_snapshot.py) in
-this directory, which:
+Session snapshot shares Scenario 1's machinery: `save_state()` writes the request's blocks to the
+same offload store (the `kv` and `la` stores of your plugin, keyed by prefix hash) and pins them so
+opportunistic eviction cannot drop them; `restore_state()` re-submits the saved history as an
+ordinary prompt and the regular prefix restore reads the blocks back, recomputing only the last
+position. Consequences for your plugin and configuration:
+
+- The pipeline must be created with `enable_prefix_caching` and `use_cache_offload`, with your plugin in
+  `SchedulerConfig.cache_offload_config`. `save_state()` on a pipeline without offload raises.
+- Snapshot blocks **count against** `capacity_bytes` / `linear_attention_capacity_bytes` and are never
+  evicted while the snapshot is pinned. Size the stores for the number of snapshots you keep: for
+  Qwen3.5-9B a linear-attention checkpoint is about 51 MB. If nothing can be freed, `save_state()` raises
+  with a hint to raise the capacity.
+- If the plugin is configured but fails to load, handshake or open, `save_state()` raises instead of
+  quietly using the temporary in-process store (a snapshot saved there would be lost when the pipeline
+  ends).
+- A restore in a **new** pipeline or process only works if your plugin still holds the blocks, i.e. it
+  persists them and the new pipeline opens the same stores. The snapshot file itself holds only the
+  history - about 8 bytes per token for token-id models, about 16 KB per token for embeddings-routed
+  models such as Qwen3.5 (hidden size 4096, f32) - and is rejected on a model, device or block-size mismatch.
+- Because the snapshot references blocks by content hash, two snapshots that share a prefix share the
+  blocks of that prefix in your store.
+
+Validating Scenario 1 does not guarantee Scenario 2 works (it also needs durable writes and pinned
+entries), so use [`verify_session_snapshot.py`](verify_session_snapshot.py) in this directory, which:
 
 1. Runs a request to completion, uninterrupted, as the baseline.
-2. Runs the same request again, calls `save_state()` partway through with your plugin configured
-   (so the KV/linear-attention block payload is written through your plugin), destroys that
-   pipeline instance, then constructs a **fresh** pipeline instance (simulating a process restart)
-   and calls `restore_state()` with the same plugin configuration to finish generation.
+2. Runs the same request again on a pipeline configured with your plugin, calls `save_state()` partway
+   through, destroys that pipeline instance, then constructs a **fresh** pipeline instance configured the
+   same way (simulating a process restart) and calls `restore_state()` to finish generation.
 3. Asserts the stitched token stream from step 2 matches step 1's baseline exactly.
 
 ```sh
@@ -178,27 +203,31 @@ a full re-prefill baseline - the correctness check above deliberately uses a sho
 fast, which is not representative of the real performance win (same prefix-length caveat as
 Scenario 1).
 
-**Real numbers from this exact script** (Qwen3.5-9B, GPU, sample plugin). Both timings start before
-the request is submitted (baseline) or `restore_state()` is called (restore) and stop at the first
-token, so reading and checking the snapshot and allocating its cache count against the restore:
+**Real numbers from this exact script** (sample plugin). Both timings start before the request is
+submitted (baseline) or `restore_state()` is called (restore) and stop at the first token, so
+reading and checking the snapshot and recomputing the last position count against the restore:
 
-| Device | TTFT without restore (full re-prefill) | TTFT with restore (via your plugin) | Speedup |
-|---|---|---|---|
-| GPU | 3295.89 ms | 766.36 ms | **~4.3x** |
+| Model | Device | TTFT without restore (full re-prefill) | TTFT with restore (via your plugin) | Speedup |
+|---|---|---|---|---|
+| Qwen3.5-9B | GPU | 4308.75 ms | 764.43 ms | **~5.6x** |
+| Qwen3-8B | CPU | 68403.16 ms | 6379.08 ms | **~10.7x** |
 
-The row is the mean of two runs (without restore 3276.57 / 3315.21 ms, with restore 762.54 /
-770.17 ms, i.e. 4.30x / 4.30x). One run prints:
+The GPU row is the mean of two runs (without restore 4425.68 / 4191.82 ms, with restore 763.98 /
+764.88 ms, i.e. 5.79x / 5.48x); the CPU row is a single run. Run-to-run spread of the re-prefill
+baseline is noticeable (an earlier set of runs on the same GPU measured about 3.3 s), while the
+restore time is stable. One run prints:
 
 ```
 PASS: the restored continuation matches the uninterrupted baseline token-for-token.
-PERF: TTFT without session restore (full re-prefill): 3276.57 ms
-PERF: TTFT with session restore (via your plugin):    762.54 ms
-PERF: Speedup: 4.30x
+PERF: TTFT without session restore (full re-prefill): 4425.68 ms
+PERF: TTFT with session restore (via your plugin):    763.98 ms
+PERF: Speedup: 5.79x
 ```
 
-Unlike Scenario 1, this does not depend on prefix-cache hits, so the linear-attention checkpoint
-interval caveat does not apply: the correctness check uses a short prompt far below that interval
-and still resumes token-for-token.
+The speedup comes from skipping prefill, not from a prefix-cache hit on a new request: the snapshot
+records the exact history and the position of its linear-attention checkpoint, so the checkpoint
+interval caveat from Scenario 1 does not apply, and the correctness check uses a short prompt far below
+that interval and still resumes token-for-token.
 
 ## Known limitations of the sample plugin (do not assume your plugin needs to share these)
 

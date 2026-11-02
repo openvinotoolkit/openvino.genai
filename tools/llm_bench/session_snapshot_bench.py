@@ -6,8 +6,12 @@ re-prefill) against restoring it from a session snapshot via ContinuousBatchingP
 save_state()/restore_state(). Mirrors tests/cpp/session_snapshot_e2e.cpp's
 RestoreAvoidsFullPrefillLatency, but exercised through the Python bindings instead of C++.
 
+The snapshot keeps its cache blocks in the prefix-caching offload store, and the restoring pipeline is a new
+instance, so a store plugin that outlives the first pipeline is required (for example
+samples/c/kv_cache_store_plugin).
+
 Usage:
-    python session_snapshot_bench.py -m <model_dir> -d CPU
+    python session_snapshot_bench.py -m <model_dir> -d CPU --plugin <path to the store plugin> --provider <name>
 """
 
 import argparse
@@ -18,12 +22,22 @@ import time
 import openvino_genai as ov_genai
 
 
-def make_scheduler_config() -> ov_genai.SchedulerConfig:
+def make_scheduler_config(plugin_path: str = None, provider: str = "") -> ov_genai.SchedulerConfig:
     config = ov_genai.SchedulerConfig()
     config.enable_prefix_caching = True
     config.max_num_batched_tokens = 8192
     config.max_num_seqs = 4
     config.dynamic_split_fuse = False
+    if plugin_path is not None:
+        config.use_cache_offload = True
+        offload = ov_genai.CacheOffloadConfig()
+        offload.store_library_path = plugin_path
+        offload.store_provider_name = provider
+        offload.allow_untrusted_store_plugin = True
+        # The snapshot's blocks are pinned in the store, so it must hold the whole conversation.
+        offload.capacity_bytes = 2 * 1024 ** 3
+        offload.linear_attention_capacity_bytes = 4 * 1024 ** 3
+        config.cache_offload_config = offload
     return config
 
 
@@ -50,10 +64,11 @@ def measure_baseline_ttft(model_dir: str, device: str, prompt: str) -> float:
     return elapsed_ms
 
 
-def measure_restore_ttft(model_dir: str, device: str, prompt: str, snapshot_path: str) -> float:
+def measure_restore_ttft(model_dir: str, device: str, prompt: str, snapshot_path: str,
+                         plugin_path: str, provider: str) -> float:
     # Save mid-generation (still RUNNING): a finished request's cache is freed immediately, so
     # there is no window to save it afterwards.
-    pipeline = ov_genai.ContinuousBatchingPipeline(model_dir, make_scheduler_config(), device)
+    pipeline = ov_genai.ContinuousBatchingPipeline(model_dir, make_scheduler_config(plugin_path, provider), device)
     request_id = 62
     handle = pipeline.add_request(request_id, prompt, make_greedy_config(50))
     for _ in range(5):
@@ -65,8 +80,8 @@ def measure_restore_ttft(model_dir: str, device: str, prompt: str, snapshot_path
     pipeline.save_state(request_id, snapshot_path)
     del pipeline, handle
 
-    # Simulate a process restart: brand-new pipeline instance restores from disk.
-    pipeline = ov_genai.ContinuousBatchingPipeline(model_dir, make_scheduler_config(), device)
+    # Simulate a process restart: brand-new pipeline instance restores from the store plugin.
+    pipeline = ov_genai.ContinuousBatchingPipeline(model_dir, make_scheduler_config(plugin_path, provider), device)
     # The handle's own TTFT clock starts only after restore_state() has loaded the snapshot, so time
     # the whole restore instead.
     start = time.perf_counter()
@@ -84,6 +99,8 @@ def main():
     parser.add_argument("-m", "--model", required=True, help="Path to an OpenVINO IR model directory")
     parser.add_argument("-d", "--device", default="CPU", help="Inference device (default: CPU)")
     parser.add_argument("--repeats", type=int, default=400, help="Number of times to repeat the filler sentence")
+    parser.add_argument("--plugin", required=True, help="Path to a KV cache store plugin (.dll/.so)")
+    parser.add_argument("--provider", default="", help="Provider name to select (empty = module's first provider)")
     args = parser.parse_args()
 
     prompt = "The quick brown fox jumps over the lazy dog. " * args.repeats
@@ -92,7 +109,7 @@ def main():
 
     snapshot_path = os.path.join(tempfile.gettempdir(), "openvino_genai_session_snapshot_bench.bin")
     try:
-        restore_ttft_ms = measure_restore_ttft(args.model, args.device, prompt, snapshot_path)
+        restore_ttft_ms = measure_restore_ttft(args.model, args.device, prompt, snapshot_path, args.plugin, args.provider)
     finally:
         if os.path.exists(snapshot_path):
             os.remove(snapshot_path)

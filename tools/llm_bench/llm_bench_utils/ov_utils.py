@@ -310,10 +310,13 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_data_colle
     start = time.perf_counter()
     if cb_pipeline_required(kwargs):
         ov_config.pop("ATTENTION_BACKEND", None)
-        if "scheduler_config" not in config:
-            # cb_pipeline_required() can force a ContinuousBatchingPipeline for
-            # --session_snapshot_save/--session_snapshot_restore even without --cb_config.
-            config["scheduler_config"] = get_scheduler_config_genai({})
+        if kwargs.get("session_snapshot_save") is not None or kwargs.get("session_snapshot_restore") is not None:
+            # The snapshot keeps its cache blocks in the prefix-caching offload store.
+            if not (cb_config or {}).get("use_cache_offload", False) or not (cb_config or {}).get("enable_prefix_caching", True):
+                raise RuntimeError(
+                    "--session_snapshot_save/--session_snapshot_restore need --cb_config with "
+                    "enable_prefix_caching and use_cache_offload (plus cache_offload_config)"
+                )
         log.info("Pipeline will be initialized with ContinuousBatchingPipeline")
         llm_pipe = openvino_genai.ContinuousBatchingPipeline(model_path, device=device.upper(), properties=ov_config, **config)
     else:
