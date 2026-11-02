@@ -201,6 +201,13 @@ protected:
     size_t m_dflash_candidate_position_offset = 1;
     // Windows planned by the DFlash draft update for the next draft forward, by sequence id.
     std::map<uint64_t, detail::DFlashDraftWindow> m_dflash_draft_windows;
+
+    // The DFlash draft takes the target's tokens and plans one window for the next draft forward.
+    UpdateRequestResult update_dflash_draft_request(const SequenceGroup::Ptr& request,
+                                                    const GeneratedSequences& candidates,
+                                                    bool is_update_logit_processor);
+    // The DFlash draft forwards each planned window once; the sampler takes the candidates in that step.
+    void dflash_draft_multistep();
 };
 
 class ContinuousBatchingPipeline::ContinuousBatchingForEagle3DecodingImpl
@@ -408,6 +415,7 @@ protected:
         m_dflash_mask_token_id = mask_token_id;
         m_dflash_candidate_position_offset = candidate_position_offset;
         m_model_runner->enable_dflash_draft(candidate_position_offset);
+        m_sampler->set_block_sampling(candidate_position_offset);
     }
 };
 }
