@@ -64,3 +64,9 @@ std::vector<ov::genai::EmbeddingResult> embeddings = pipeline.embed_documents(do
 ov::genai::TextRerankPipeline pipeline(models_path, device, config);
 std::vector<std::pair<size_t, float>> rerank_result = pipeline.rerank(query, documents);
 ```
+
+## Applying a prompt template
+
+Some reranker models (e.g. Qwen3-Reranker) need a chat template applied to the query and each document,
+with `config.padding_side = "left"`. The pipeline only concatenates `query + document`, so apply the
+template yourself here — see the [Python sample README](../../python/rag/README.md#applying-a-prompt-template).
