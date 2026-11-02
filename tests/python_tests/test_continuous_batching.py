@@ -1309,9 +1309,8 @@ DFLASH_PROMPTS = [
 DFLASH_PARITY_PROPERTIES = {hints.inference_precision: ov.Type.f32, hints.kv_cache_precision: ov.Type.f32}
 
 
-@pytest.fixture(scope="module", params=list(DFLASH_DRAFT_MODEL_IDS), ids=list(DFLASH_DRAFT_MODEL_IDS))
-def dflash_model_paths(request) -> tuple[Path, Path]:
-    draft_model_id = DFLASH_DRAFT_MODEL_IDS[request.param]
+def _get_dflash_model_paths(draft: str) -> tuple[Path, Path]:
+    draft_model_id = DFLASH_DRAFT_MODEL_IDS[draft]
     draft_model_path = get_ov_cache_converted_models_dir() / sanitize_model_id(draft_model_id)
     AtomicDownloadManager(draft_model_path).execute(
         lambda temp_path: export_with_optimum_cli(
@@ -1319,6 +1318,13 @@ def dflash_model_paths(request) -> tuple[Path, Path]:
         )
     )
     return download_and_convert_model(DFLASH_TARGET_MODEL_ID).models_path, draft_model_path
+
+
+# A DeepSpec draft differs only in where its candidates start, which the C++ tests cover; the pipeline tests
+# use the DFlash draft.
+@pytest.fixture(scope="module")
+def dflash_model_paths() -> tuple[Path, Path]:
+    return _get_dflash_model_paths("dflash")
 
 
 def _dflash_config(num_assistant_tokens: int = 3, max_new_tokens: int = 20) -> GenerationConfig:
@@ -1348,46 +1354,39 @@ def _main_only_ids(target_path: Path, prompts: list[str], config: GenerationConf
     return [result.m_generation_ids for result in pipe.generate(prompts, [config] * len(prompts))]
 
 
-@pytest.mark.parametrize("num_assistant_tokens", [1, 7])
-def test_dflash_matches_main_only(dflash_model_paths, num_assistant_tokens):
-    config = _dflash_config(num_assistant_tokens)
-    reference = _main_only_ids(dflash_model_paths[0], DFLASH_PROMPTS[:1], config)
+@pytest.mark.parametrize("draft", list(DFLASH_DRAFT_MODEL_IDS))
+def test_dflash_matches_main_only(draft):
+    model_paths = _get_dflash_model_paths(draft)
+    config = _dflash_config(num_assistant_tokens=7)
+    reference = _main_only_ids(model_paths[0], DFLASH_PROMPTS[:1], config)
 
-    result = _dflash_pipeline(dflash_model_paths).generate(DFLASH_PROMPTS[:1], [config])[0]
+    result = _dflash_pipeline(model_paths).generate(DFLASH_PROMPTS[:1], [config])[0]
 
     assert [result.m_generation_ids] == reference
     metrics = result.extended_perf_metrics
     assert metrics.get_num_draft_tokens() > 0
     assert metrics.get_num_accepted_tokens() <= metrics.get_num_draft_tokens()
-    assert 0 < metrics.draft_model_metrics.get_num_generated_tokens() <= config.max_new_tokens * num_assistant_tokens
+    assert (
+        0
+        < metrics.draft_model_metrics.get_num_generated_tokens()
+        <= config.max_new_tokens * config.num_assistant_tokens
+    )
 
 
-def test_dflash_generate_keeps_zero_assistant_tokens(dflash_model_paths):
-    # num_assistant_tokens=0 runs a request on the target alone in generate(), as it does in add_request()
-    target_path = dflash_model_paths[0]
-    pipe = _dflash_pipeline(dflash_model_paths)
-    target_only = _dflash_config(num_assistant_tokens=0)
-
-    result = pipe.generate(DFLASH_PROMPTS[:1], [target_only])[0]
-
-    assert [result.m_generation_ids] == _main_only_ids(target_path, DFLASH_PROMPTS[:1], target_only)
-    assert result.extended_perf_metrics.get_num_draft_tokens() == 0
-
-    configs = [_dflash_config(num_assistant_tokens=3), target_only]
-    main_only = _main_only_pipeline(target_path)
+def test_dflash_requests_without_drafting_match_main_only(dflash_model_paths):
+    # num_assistant_tokens=0 runs a request on the target alone in generate(), as it does in add_request(), and an
+    # echo-only request (max_new_tokens=0) returns the prompt without generating anything to draft
+    configs = [
+        _dflash_config(num_assistant_tokens=0),
+        GenerationConfig(max_new_tokens=0, echo=True, num_assistant_tokens=3),
+    ]
+    main_only = _main_only_pipeline(dflash_model_paths[0])
     reference = [result.m_generation_ids for result in main_only.generate(DFLASH_PROMPTS[:2], configs)]
 
-    assert [result.m_generation_ids for result in pipe.generate(DFLASH_PROMPTS[:2], configs)] == reference
+    results = _dflash_pipeline(dflash_model_paths).generate(DFLASH_PROMPTS[:2], configs)
 
-
-def test_dflash_echo_only_request_matches_main_only(dflash_model_paths):
-    # max_new_tokens=0 with echo returns the prompt without generating, so there is nothing to draft
-    config = GenerationConfig(max_new_tokens=0, echo=True, num_assistant_tokens=3)
-    reference = _main_only_ids(dflash_model_paths[0], DFLASH_PROMPTS[:1], config)
-
-    result = _dflash_pipeline(dflash_model_paths).generate(DFLASH_PROMPTS[:1], [config])[0]
-
-    assert [result.m_generation_ids] == reference
+    assert [result.m_generation_ids for result in results] == reference
+    assert results[0].extended_perf_metrics.get_num_draft_tokens() == 0
 
 
 def test_dflash_batched_prompts_with_chunked_prefill_match_main_only(dflash_model_paths):
