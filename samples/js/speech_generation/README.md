@@ -1,4 +1,4 @@
-# Text-to-speech JavaScript samples
+# Text-to-speech samples (JavaScript)
 
 This folder contains JavaScript examples for `Text2SpeechPipeline` from `openvino-genai-node`:
 
@@ -21,20 +21,13 @@ This folder contains JavaScript examples for `Text2SpeechPipeline` from `openvin
 		- `qwen3_tts.js voice-design`: create a brand-new voice from a natural-language `instruct` description.
 		- `qwen3_tts.js base`: clone a voice from a short reference recording (x-vector and ICL modes).
 
-## Install dependencies
+## Download and convert the model and tokenizers
 
-From `samples/js`:
+The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-```sh
-npm install
-```
-
-If you use the master branch, build and link `openvino-genai-node` from source first:
-[../../../src/js/README.md#build-bindings](../../../src/js/README.md#build-bindings)
+It's not required to install [../../export-requirements.txt](../../export-requirements.txt) for deployment if the model has already been exported.
 
 ## SpeechT5 setup
-
-Install export-time dependencies and export SpeechT5 with vocoder:
 
 ```sh
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
