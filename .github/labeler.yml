@@ -236,6 +236,7 @@
 - 'tools/llm_bench/**/*'
 - '.github/workflows/llm_bench-python.yml'
 - 'tests/python_tests/samples/test_tools_llm_benchmark.py'
+- 'tests/python_tests/test_llm_bench_output_json.py'
 
 'category: WWB':
 - 'tools/who_what_benchmark/**/*'
