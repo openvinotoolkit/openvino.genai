@@ -33,6 +33,17 @@ try:
 except ImportError:
     OVModelForMultimodalLM = None
 
+VLM_SPEECH_MODEL_CLASSES = {
+    "qwen3-omni": OVModelForMultimodalLM,
+    "gemma4": OVModelForVisualCausalLM,
+}
+
+
+def is_vlm_speech_model(model_type):
+    return isinstance(model_type, str) and any(
+        model_type.startswith(model_type_prefix) for model_type_prefix in VLM_SPEECH_MODEL_CLASSES
+    )
+
 try:
     from optimum.intel.openvino import OVPipelineForImage2Video
 except ImportError:
@@ -212,7 +223,10 @@ USE_CASES = {
     ],
     "speech_to_text": [
         UseCaseSpeech2Text(["whisper", "qwen3-asr", "fun-asr"]),
-        UseCaseSpeech2Text(["qwen3-omni"], ov_cls=OVModelForMultimodalLM),
+        *[
+            UseCaseSpeech2Text([model_type_prefix], ov_cls=ov_cls)
+            for model_type_prefix, ov_cls in VLM_SPEECH_MODEL_CLASSES.items()
+        ],
     ],
     "image_cls": [UseCaseImageCls(["vit"])],
     "code_gen": [
