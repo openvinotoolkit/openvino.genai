@@ -19,7 +19,8 @@ Qwen3EncoderDecoderASR::Qwen3EncoderDecoderASR(const std::filesystem::path& mode
     size_t max_encoder_len = 0;
     if (device == "NPU") {
         m_max_asr_input_seconds = 60;
-        max_encoder_len = m_encoder->get_npuw_qwen3_asr_max_encoder_len(m_max_asr_input_seconds,
+        const auto max_chunk_seconds = m_max_asr_input_seconds + CHUNK_BOUNDARY_SEARCH_SECONDS;
+        max_encoder_len = m_encoder->get_npuw_qwen3_asr_max_encoder_len(max_chunk_seconds,
                                                                       m_feature_extractor.sampling_rate,
                                                                       m_feature_extractor.hop_length);
     }

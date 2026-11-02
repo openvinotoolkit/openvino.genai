@@ -5,6 +5,7 @@
 
 #include <cstring>
 #include <iostream>
+#include <set>
 
 #include "openvino/runtime/core.hpp"
 #include "utils.hpp"
@@ -12,6 +13,31 @@
 namespace ov::genai {
 
 namespace {
+
+ov::AnyMap encoder_properties(const ov::AnyMap& properties) {
+    static const std::set<std::string> decoder_options{
+        "MAX_PROMPT_LEN",
+        "MIN_RESPONSE_LEN",
+        "PREFILL_CONFIG",
+        "PREFILL_HINT",
+        "GENERATE_CONFIG",
+        "GENERATE_HINT",
+        "SHARED_HEAD_CONFIG",
+        "BLOB_PATH",
+        "EXPORT_BLOB",
+    };
+    auto result = properties;
+    for (auto it = result.begin(); it != result.end();) {
+        const auto option = it->first.rfind("++", 0) == 0 ? it->first.substr(2) : it->first;
+        if (option == "NPUW_LLM" || option.rfind("NPUW_LLM_", 0) == 0 ||
+            option.rfind("NPUW_QWEN3_ASR", 0) == 0 || decoder_options.count(option)) {
+            it = result.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    return result;
+}
 
 void reshape_to_static_encoder_for_npu(std::shared_ptr<ov::Model> model,
                                        const size_t feature_size,
@@ -40,10 +66,11 @@ void reshape_to_static_encoder_for_npu(std::shared_ptr<ov::Model> model,
 Qwen3ASREncoder::Qwen3ASREncoder(const std::filesystem::path& models_path,
                                  const std::string& device,
                                  const ov::AnyMap& properties)
-    : m_model_config{models_path / "config.json"} {
+    : m_is_npu{device == "NPU"},
+      m_model_config{models_path / "config.json"} {
     ov::Core core = utils::singleton_core();
-    if (device == "NPU") {
-        ov::AnyMap npu_properties = properties;
+    if (m_is_npu) {
+        ov::AnyMap npu_properties = encoder_properties(properties);
 
         const WhisperFeatureExtractor feature_extractor{models_path / "preprocessor_config.json"};
         OPENVINO_ASSERT(feature_extractor.hop_length > 0, "hop_length in preprocessor_config.json must be > 0.");
@@ -95,9 +122,7 @@ ov::Tensor Qwen3ASREncoder::encode(const WhisperFeatures& features) {
     std::cout << "[INFO] Qwen3ASREncoder: input_features shape = " << input_tensor.get_shape() << std::endl;
 
     ov::Tensor chunked_output;
-    const auto execution_devices = m_request.get_compiled_model().get_property(ov::execution_devices);
-    const bool is_npu = !execution_devices.empty() && execution_devices[0] == "NPU";
-    if (is_npu) {
+    if (m_is_npu) {
         const ov::Shape input_shape = input_tensor.get_shape();
         OPENVINO_ASSERT(input_shape.size() == 3, "Unexpected Qwen3-ASR encoder input rank.");
 
@@ -154,7 +179,7 @@ ov::Tensor Qwen3ASREncoder::encode(const WhisperFeatures& features) {
     ov::Tensor output = merge_chunked_encoder_output(chunked_output, remainder_frames);
 
     const ov::Shape reset_shape =
-        is_npu ? ov::Shape{1, input_tensor.get_shape()[1], input_tensor.get_shape()[2]} : ov::Shape{0, 0, 0};
+        m_is_npu ? ov::Shape{1, input_tensor.get_shape()[1], input_tensor.get_shape()[2]} : ov::Shape{0, 0, 0};
     std::cout << "[INFO] Qwen3ASREncoder: resetting input_features with shape = " << reset_shape << std::endl;
     m_request.set_tensor("input_features", ov::Tensor(ov::element::f32, reset_shape));
 

@@ -37,7 +37,6 @@ def read_wav(filepath):
 
 def get_config_for_cache():
     config_cache = dict()
-    return config_cache
     config_cache["CACHE_DIR"] = "asr_cache"
     return config_cache
 
@@ -47,6 +46,7 @@ def main():
     parser.add_argument("model_dir", help="Path to the model directory")
     parser.add_argument("wav_file_path", help="Path to the WAV file")
     parser.add_argument("device", nargs="?", default="CPU", help="Device to run the model on (default: CPU)")
+    parser.add_argument("--perf", action="store_true", help="Print performance metrics in addition to the transcription")
     args = parser.parse_args()
 
     ov_config = dict()
@@ -78,7 +78,8 @@ def main():
     result = pipe.generate(raw_speech, config)
 
     print(result)
-    print_perf_metrics(result)
+    if args.perf:
+        print_perf_metrics(result)
 
     if result.chunks:
         for chunk in result.chunks[0]:

@@ -44,25 +44,33 @@ namespace ov::genai {
 Qwen3ASRDecoder::Qwen3ASRDecoder(const std::filesystem::path& models_path,
                                  const std::string& device,
                                  const ov::AnyMap& properties,
-                                 const size_t npuw_qwen3_asr_max_encoder_len) {
+                                 const std::optional<size_t> npuw_qwen3_asr_max_encoder_len) {
     ov::Core core = utils::singleton_core();
+    const auto model_path = models_path / "openvino_decoder_model.xml";
+    auto model = core.read_model(model_path, {}, properties);
+    OPENVINO_ASSERT(!model->get_variables().empty() && utils::has_input(model, "beam_idx"),
+                    "The ASR decoder '",
+                    model_path.string(),
+                    "' must be a stateful model with KV-cache variables and a 'beam_idx' input. "
+                    "Re-export with '--task automatic-speech-recognition-with-past' and without '--disable-stateful'. "
+                    "Adding 'beam_idx' alone does not provide the missing KV cache.");
 
-    if (device == "NPU") {
+    if (device == "NPU" && npuw_qwen3_asr_max_encoder_len.has_value()) {
+        const auto max_encoder_len = npuw_qwen3_asr_max_encoder_len.value();
         ov::AnyMap npu_properties = properties;
-        auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, std::as_const(npu_properties));
 
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
 
         // Set batch dim from encoder compiled output; seq_len (dim 1) remains dynamic and is handled by NPUW.
         set_encoder_hidden_states_batch_dim_to_one(model);
 
-        OPENVINO_ASSERT(npuw_qwen3_asr_max_encoder_len > 0,
+        OPENVINO_ASSERT(max_encoder_len > 0,
                         "NPUW_QWEN3_ASR_MAX_ENCODER_LEN must be > 0, got ",
-                        npuw_qwen3_asr_max_encoder_len);
-        npu_properties["NPUW_QWEN3_ASR_MAX_ENCODER_LEN"] = static_cast<int64_t>(npuw_qwen3_asr_max_encoder_len);
+                        max_encoder_len);
+        npu_properties["NPUW_QWEN3_ASR_MAX_ENCODER_LEN"] = static_cast<int64_t>(max_encoder_len);
         if (npu_properties.count("MAX_PROMPT_LEN") == 0) {
             const size_t max_prompt_len =
-                align_up(npuw_qwen3_asr_max_encoder_len + QWEN3_ASR_TEXT_TOKEN_BUDGET, QWEN3_ASR_PROMPT_LEN_ALIGNMENT);
+                align_up(max_encoder_len + QWEN3_ASR_TEXT_TOKEN_BUDGET, QWEN3_ASR_PROMPT_LEN_ALIGNMENT);
             npu_properties["MAX_PROMPT_LEN"] = static_cast<int64_t>(max_prompt_len);
         }
 
@@ -72,8 +80,7 @@ Qwen3ASRDecoder::Qwen3ASRDecoder(const std::filesystem::path& models_path,
         ov::genai::utils::print_compiled_model_properties(compiled_model, "qwen3-asr decoder model");
         m_request = compiled_model.create_infer_request();
     } else {
-        ov::CompiledModel compiled_model =
-            core.compile_model(models_path / "openvino_decoder_model.xml", device, properties);
+        ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
         ov::genai::utils::print_compiled_model_properties(compiled_model, "qwen3-asr decoder model");
         m_request = compiled_model.create_infer_request();
     }

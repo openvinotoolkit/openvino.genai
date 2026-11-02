@@ -57,7 +57,14 @@ python recorder.py
 
 Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
 
-`python whisper_speech_recognition.py whisper-base how_are_you_doing_today.wav`
+`python automatic_speech_recognition.py whisper-base how_are_you_doing_today.wav`
+
+An optional third positional argument selects the device. GPU and NPU runs cache compiled models in `asr_cache`.
+Performance diagnostics are opt-in so the default transcription and timestamp output remains consistent with the other language samples:
+
+```sh
+python automatic_speech_recognition.py whisper-base how_are_you_doing_today.wav NPU --perf
+```
 
 Output:
 ```
@@ -157,6 +164,10 @@ result = pipe.generate(raw_speech, initial_prompt="Polychrome")
 ```
 
 ## Continuous batching with Qwen3-ASR
+
+The Qwen3-ASR encoder-decoder export also supports `ASRPipeline` on NPU. It uses nominal 60-second audio chunks;
+the static encoder-state capacity includes the additional five-second low-energy boundary search window.
+The split-export pipeline keeps its existing chunking behavior.
 
 Qwen3-ASR model supports `ContinuousBatchingPipeline` API. The model's chat template is designed for transcription: it discards user text and assistant turns, so questions about earlier audio, translation instructions, and multi-turn audio conversations are not supported.
 
