@@ -5,6 +5,7 @@
 #include "model_desc.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <variant>
 #include <fstream>
 #include <map>
@@ -1309,6 +1310,25 @@ ov::genai::GenerationConfig get_multinomial_config() {
 
 namespace {
 
+constexpr char template_whitespace[] = " \t\r\n\f\v";
+
+size_t raw_tag_end(const std::string& text, size_t position, const std::string& keyword) {
+    if (text.compare(position, 2, "{%") != 0)
+        return std::string::npos;
+    position += 2;
+    if (position < text.size() && (text[position] == '-' || text[position] == '+'))
+        ++position;
+    position = text.find_first_not_of(template_whitespace, position);
+    if (position == std::string::npos || text.compare(position, keyword.size(), keyword) != 0)
+        return std::string::npos;
+    position = text.find_first_not_of(template_whitespace, position + keyword.size());
+    if (position == std::string::npos)
+        return std::string::npos;
+    if (text[position] == '-' || text[position] == '+')
+        ++position;
+    return text.compare(position, 2, "%}") == 0 ? position + 2 : std::string::npos;
+}
+
 size_t quoted_literal_end(const std::string& expression, size_t position) {
     const char quote = expression[position++];
     while (position < expression.size()) {
@@ -1323,8 +1343,6 @@ size_t quoted_literal_end(const std::string& expression, size_t position) {
 
 template <typename Rewrite>
 std::string rewrite_template_expressions(const std::string& chat_template, Rewrite rewrite) {
-    static const std::regex raw_start{R"(\{%[-+]?\s*raw\s*[-+]?%\})"};
-    static const std::regex raw_end{R"(\{%[-+]?\s*endraw\s*[-+]?%\})"};
     std::string rewritten;
     size_t position = 0;
     while (position < chat_template.size()) {
@@ -1341,13 +1359,18 @@ std::string rewrite_template_expressions(const std::string& chat_template, Rewri
             position = end;
             continue;
         }
-        std::match_results<std::string::const_iterator> match;
-        const auto begin = chat_template.cbegin() + block_start;
-        if (block_type == '%' && std::regex_search(begin, chat_template.cend(), match, raw_start,
-                                                  std::regex_constants::match_continuous)) {
-            const auto raw_content = begin + match.length();
-            const bool has_end = std::regex_search(raw_content, chat_template.cend(), match, raw_end);
-            const size_t end = has_end ? std::distance(chat_template.cbegin(), match[0].second) : chat_template.size();
+        const size_t raw_content = block_type == '%' ? raw_tag_end(chat_template, block_start, "raw")
+                                                    : std::string::npos;
+        if (raw_content != std::string::npos) {
+            size_t end = std::string::npos;
+            for (size_t next = chat_template.find("{%", raw_content); next != std::string::npos;
+                 next = chat_template.find("{%", next + 2)) {
+                end = raw_tag_end(chat_template, next, "endraw");
+                if (end != std::string::npos)
+                    break;
+            }
+            if (end == std::string::npos)
+                end = chat_template.size();
             rewritten.append(chat_template, position, end - position);
             position = end;
             continue;
@@ -1400,7 +1423,7 @@ std::string patch_chat_template(const std::string& chat_template) {
                 std::string literals = expression.substr(position, end - position);
                 bool joined = false;
                 for (;;) {
-                    const size_t next = expression.find_first_not_of(" \t\r\n\f\v", end);
+                    const size_t next = expression.find_first_not_of(template_whitespace, end);
                     if (next == std::string::npos || (expression[next] != '\'' && expression[next] != '"'))
                         break;
                     end = quoted_literal_end(expression, next);
@@ -1411,13 +1434,19 @@ std::string patch_chat_template(const std::string& chat_template) {
                 position = end;
                 continue;
             }
-            const size_t test_start = expression.compare(position, 2, "is") == 0
-                                          ? expression.find_first_not_of(" \t\r\n\f\v", position + 2)
-                                          : std::string::npos;
-            if ((position == 0 || !is_word_char(expression[position - 1])) && test_start != std::string::npos &&
-                test_start > position + 2 && expression.compare(test_start, 9, "undefined") == 0 &&
+            size_t test_start = expression.compare(position, 2, "is") == 0
+                                    ? expression.find_first_not_of(template_whitespace, position + 2)
+                                    : std::string::npos;
+            const bool is_test = (position == 0 || !is_word_char(expression[position - 1])) &&
+                                 test_start != std::string::npos && test_start > position + 2;
+            const bool negated = is_test && expression.compare(test_start, 3, "not") == 0 &&
+                                 test_start + 3 < expression.size() &&
+                                 std::isspace(static_cast<unsigned char>(expression[test_start + 3]));
+            if (negated)
+                test_start = expression.find_first_not_of(template_whitespace, test_start + 3);
+            if (is_test && test_start != std::string::npos && expression.compare(test_start, 9, "undefined") == 0 &&
                 (test_start + 9 == expression.size() || !is_word_char(expression[test_start + 9]))) {
-                rewritten += "is not defined";
+                rewritten += negated ? "is defined" : "is not defined";
                 position = test_start + 9;
             } else {
                 rewritten += expression[position++];

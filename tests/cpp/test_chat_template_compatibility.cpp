@@ -80,6 +80,16 @@ TEST(TokenizerChatTemplate, UndefinedTestsRetainMinjaDefinedSemantics) {
     EXPECT_EQ(render(*tokenizer, "", ov::genai::JsonContainer{{"x", false}}), "present");
 }
 
+TEST(TokenizerChatTemplate, NegatedUndefinedTestsArePrepared) {
+    auto tokenizer = template_tokenizer("{% if x is not undefined %}present{% else %}missing{% endif %}");
+    EXPECT_EQ(render(*tokenizer), "missing");
+    EXPECT_EQ(render(*tokenizer, "", ov::genai::JsonContainer{{"x", false}}), "present");
+    EXPECT_EQ(render(*tokenizer, "", ov::genai::JsonContainer::from_json_string(R"({"x":null})")), "missing");
+    EXPECT_EQ(render(*tokenizer, "{% if messages[0]['content'] is\nnot\tundefined %}present{% endif %}"), "present");
+    const std::string unrelated = "{{ x is not undefined_value }}{{ x isnot undefined }}{{ 'is not undefined' }}";
+    EXPECT_EQ(ov::genai::utils::patch_chat_template(unrelated), unrelated);
+}
+
 TEST(TokenizerChatTemplate, AdjacentLiteralsPreserveQuotesEscapesAndFilterPrecedence) {
     for (const std::string expression : {"'first' 'second'", "\"first\"\n'second'", "'first'\n\"second\"",
                                          "\"first\"\n\n\"second\"", "'first' \r\n\t\r\n 'second'",
@@ -114,4 +124,14 @@ TEST(TokenizerChatTemplate, LongQuotedLiteralsAreScannedWithoutRegexRecursion) {
         EXPECT_EQ(ov::genai::utils::patch_chat_template("{{ " + literal + "\n" + literal + " }}"),
                   "{{ (" + literal + " ~ " + literal + ") }}");
     }
+}
+
+TEST(TokenizerChatTemplate, RawTagsWithLongWhitespaceAreScannedIteratively) {
+    const std::string whitespace(64 * 1024, ' ');
+    const std::string raw = "{%+" + whitespace + "raw" + whitespace + "-%}"
+                            "{{ x is not undefined }}{{ 'a'\n'b' }}{% endraw_value %}"
+                            "{%-" + whitespace + "endraw" + whitespace + "+%}";
+    EXPECT_EQ(ov::genai::utils::patch_chat_template(raw + "{{ x is not undefined }}"), raw + "{{ x is defined }}");
+    const std::string unterminated = "{%" + whitespace + "raw %}{{ x is undefined }}";
+    EXPECT_EQ(ov::genai::utils::patch_chat_template(unterminated), unterminated);
 }
