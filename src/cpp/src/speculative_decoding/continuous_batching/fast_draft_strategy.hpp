@@ -111,6 +111,8 @@ std::vector<EncodedGenerationResult> generate_common(
     OPENVINO_ASSERT(self->is_requests_empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
 
     self->perf_metrics().draft_model_metrics.raw_metrics = self->draft_pipeline()->raw_perf_metrics;
+    self->perf_metrics().draft_markov_head_metrics.raw_metrics = self->draft_pipeline()->dflash_markov_head_perf_metrics;
+    self->perf_metrics().draft_sampling_metrics.raw_metrics = self->draft_pipeline()->dflash_sampling_perf_metrics;
     uint64_t generate_duration_us = strategy.stop_timer(t_start);
 
     std::vector<EncodedGenerationResult> results;
@@ -175,8 +177,7 @@ protected:
 
     void reset_generate_metrics() {
         m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
-        m_draft_pipeline->raw_perf_metrics = RawPerfMetrics{};
-        m_draft_pipeline->raw_perf_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
+        m_draft_pipeline->reset_draft_perf_metrics();
     }
 
     static int64_t compute_rope_delta(const ov::Tensor& position_ids);

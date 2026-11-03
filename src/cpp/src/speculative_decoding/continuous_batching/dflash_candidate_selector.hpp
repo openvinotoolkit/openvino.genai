@@ -8,6 +8,7 @@
 #include <optional>
 #include <random>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "openvino/genai/generation_config.hpp"
@@ -55,9 +56,9 @@ public:
         m_draft_request = std::move(draft_request);
     }
 
-    // Microseconds of Markov head inference since the last prepare().
-    float get_inference_duration() const {
-        return m_inference_duration;
+    // Microseconds of Markov head inference since the last call.
+    float take_inference_duration() {
+        return std::exchange(m_inference_duration, 0.0f);
     }
 
     void prepare(const std::vector<SampledBlock>& blocks, const ov::Tensor& logits) override;

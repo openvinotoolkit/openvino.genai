@@ -75,7 +75,6 @@ CandidateSelector::CandidateSelector(const utils::dflash::DFlashRTInfo& rt_info,
 }
 
 void CandidateSelector::prepare(const std::vector<SampledBlock>& blocks, const ov::Tensor& logits) {
-    m_inference_duration = 0.0f;
     m_vocab_size = row_width(logits);
     const size_t num_rows = logits.get_size() / m_vocab_size;
     for (const auto& block : blocks) {

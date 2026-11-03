@@ -209,6 +209,26 @@ def _assert_drafted(models, results):
         assert metrics.get_num_accepted_tokens() == metrics.get_num_draft_tokens()
 
 
+def _assert_draft_steps_report_their_parts(draft, results):
+    # Every draft step reports its backbone forward, its Markov head inferences for a draft with a Markov head, and its
+    # sampling; the rest of the step is scheduling, input preparation and candidate submission.
+    metrics = results[0].extended_perf_metrics
+    parts = [metrics.draft_model_metrics, metrics.draft_sampling_metrics]
+    if DRAFTS[draft][0] == "dflash":
+        assert not metrics.draft_markov_head_metrics.raw_metrics.m_durations
+    else:
+        parts.append(metrics.draft_markov_head_metrics)
+    steps = list(metrics.draft_step_metrics.raw_metrics.m_durations)
+    part_durations = [list(part.raw_metrics.m_durations) for part in parts]
+    assert steps and all(len(durations) == len(steps) for durations in part_durations)
+    for step, *step_parts in zip(steps, *part_durations):
+        # the step is truncated to whole microseconds
+        assert sum(step_parts) <= step + 0.002
+    # every candidate a draft step drafts is submitted to the target
+    submitted = list(metrics.draft_step_metrics.raw_metrics.m_batch_sizes)
+    assert all(list(part.raw_metrics.m_batch_sizes) == submitted for part in parts)
+
+
 @pytest.fixture(scope="module")
 def target_outputs(dflash_models):
     outputs, _ = _generate(_pipeline(dflash_models), _prompts(), _target_config())
@@ -270,15 +290,18 @@ def test_chunked_prefill_matches_target(dflash_models, target_outputs, draft, ma
 
 
 @pytest.mark.parametrize("draft", DRAFTS)
-@pytest.mark.parametrize("num_kv_blocks", [3, 4, 6])
+@pytest.mark.parametrize("num_kv_blocks", [1, 3, 4, 6])
 def test_draft_kv_cache_limit_leaves_requests_to_the_target(dflash_models, target_outputs, draft, num_kv_blocks):
     # The draft KV cache holds num_kv_blocks blocks of 32 tokens, fewer than the three requests need: a request whose
-    # window does not run frees its draft KV, and the target finishes it alone.
+    # window does not run frees its draft KV, and the target finishes it alone. With one block, a draft step can
+    # schedule no row.
     draft_scheduler_config = _scheduler_config(num_kv_blocks=num_kv_blocks)
     pipe = _pipeline(dflash_models, draft, draft_scheduler_config=draft_scheduler_config)
     outputs, results = _generate(pipe, _prompts(), _generation_config())
     assert outputs == target_outputs
     _assert_drafted(dflash_models, results)
+    # a draft step that schedules no row runs no forward and reports no parts
+    _assert_draft_steps_report_their_parts(draft, results)
 
 
 @pytest.mark.parametrize("draft", DRAFTS)
@@ -345,6 +368,12 @@ def test_greedy_requests_with_penalties_match_target(dflash_models, draft):
     outputs, results = _generate(_pipeline(dflash_models, draft), _prompts(), penalized(_generation_config()))
     assert outputs == target
     _assert_drafted(dflash_models, results)
+
+
+@pytest.mark.parametrize("draft", DRAFTS)
+def test_draft_steps_report_their_parts(dflash_models, draft):
+    _, results = _generate(_pipeline(dflash_models, draft), _prompts(), _generation_config())
+    _assert_draft_steps_report_their_parts(draft, results)
 
 
 @pytest.mark.parametrize("variant", VARIANTS)

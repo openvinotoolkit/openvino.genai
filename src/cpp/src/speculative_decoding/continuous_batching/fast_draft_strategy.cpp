@@ -218,6 +218,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
 
         // generate candidates by draft model
         const auto draft_start = std::chrono::steady_clock::now();
+        const size_t num_recorded_draft_steps = m_draft_pipeline->raw_perf_metrics.m_durations.size();
         m_draft_pipeline->multistep();
         const auto draft_end = std::chrono::steady_clock::now();
         m_sd_metrics.draft_duration += PerfMetrics::get_microsec(draft_end - draft_start) / 1e6;
@@ -227,11 +228,22 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         std::map<int64_t, UpdateRequestResult> update_sequence_info;
         // put candidates to model KV cache
         auto draft_generated_requests = m_draft_pipeline->get_generated_requests();
+        size_t num_submitted_candidates = 0;
         for (const auto& candidate : draft_generated_requests) {
             auto update_result = m_main_pipeline->update_request(candidate.first, candidate.second, false);
+            num_submitted_candidates += update_result.inserted_tokens_cnt;
             update_sequence_info.insert({{candidate.first, update_result}});
         }
         m_main_pipeline->sync_generated_embeddings();
+        // only steps the draft pipeline recorded, so that the parts a DFlash draft records line up with its steps
+        if (m_draft_pipeline->raw_perf_metrics.m_durations.size() > num_recorded_draft_steps) {
+            const MicroSeconds draft_step_duration(
+                PerfMetrics::get_microsec(std::chrono::steady_clock::now() - draft_start));
+            auto& draft_step_raw_metrics = m_perf_metrics.draft_step_metrics.raw_metrics;
+            draft_step_raw_metrics.m_durations.push_back(draft_step_duration);
+            draft_step_raw_metrics.m_batch_sizes.push_back(num_submitted_candidates);
+            draft_step_raw_metrics.m_inference_durations[0] += draft_step_duration;
+        }
 
         // to ensure extras steps, if any, are finished before main model generation
         if (m_sync_future.valid()) {

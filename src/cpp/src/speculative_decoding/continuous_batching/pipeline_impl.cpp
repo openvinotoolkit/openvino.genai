@@ -844,11 +844,12 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::pull_a
 
 void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::dflash_draft_multistep() {
     const bool has_windows = !m_dflash_draft_windows.empty();
-    float step_duration = 0.0f;
+    // A step that schedules no row, when the draft KV cache is full, returns before its forward and keeps the previous
+    // step's durations, so it records no parts.
+    bool forwarded = false;
     if (has_windows) {
-        const auto step_start = std::chrono::steady_clock::now();
         step();
-        step_duration = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
+        forwarded = m_pipeline_metrics.scheduled_requests > 0;
     }
 
     size_t num_candidates = 0;
@@ -872,8 +873,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::d
         const size_t first_candidate_row = window.context_rows + m_dflash_candidate_position_offset;
         if (forwarded_rows > first_candidate_row) {
             // The forward reached candidate rows, so the sampler removed every placeholder and appended the
-            // candidates it sampled.
-            num_candidates += std::min(forwarded_rows - first_candidate_row, window.candidate_rows);
+            // candidates it sampled after the seed. A row source can end a block before its last candidate row.
+            const size_t seed_generated_len =
+                window.committed_rows + window.context_rows + 1 - request->get_prompt_len();
+            num_candidates += running_sequences.front()->get_generated_len() - seed_generated_len;
         } else if (window.block_rows > 0) {
             // The sampler did not run, so the mask placeholders are still in the sequence.
             running_sequences.front()->remove_last_tokens(window.block_rows - 1);
@@ -886,10 +889,22 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::d
     // Candidates need embeddings before the next update can remove the rejected ones.
     sync_generated_embeddings();
 
-    if (has_windows) {
-        raw_perf_metrics.m_durations.emplace_back(step_duration);
-        raw_perf_metrics.m_inference_durations[0] += MicroSeconds(get_metrics().inference_duration);
-        raw_perf_metrics.m_batch_sizes.emplace_back(num_candidates);
+    if (forwarded) {
+        const auto record = [num_candidates](RawPerfMetrics& metrics, float duration) {
+            metrics.m_durations.emplace_back(duration);
+            metrics.m_inference_durations[0] += MicroSeconds(duration);
+            metrics.m_batch_sizes.emplace_back(num_candidates);
+        };
+        // The draft forward of step() is the step's backbone, and its sampler call the sampling, which runs the
+        // Markov head. A copy of the pipeline metrics drops the sampling duration.
+        const float markov_head_duration =
+            m_dflash_candidate_selector ? m_dflash_candidate_selector->take_inference_duration() : 0.0f;
+        record(raw_perf_metrics, m_pipeline_metrics.inference_duration);
+        if (m_dflash_candidate_selector && m_dflash_candidate_selector->has_markov_head()) {
+            record(dflash_markov_head_perf_metrics, markov_head_duration);
+        }
+        record(dflash_sampling_perf_metrics,
+               std::max(m_pipeline_metrics.sampling_duration - markov_head_duration, 0.0f));
     }
 }
 

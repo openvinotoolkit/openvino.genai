@@ -87,6 +87,30 @@ TEST(SDPerModelsPerfMetrics, DraftOverheadDiagnostics) {
     EXPECT_FLOAT_EQ(metrics.get_draft_to_main_inference_duration_ratio(), 0.5f);
 }
 
+TEST(SDPerModelsPerfMetrics, DraftStepMetricsAreEvaluatedAndAccumulated) {
+    using Metrics = ov::genai::SDPerModelsPerfMetrics;
+    for (auto part : {&Metrics::draft_step_metrics, &Metrics::draft_markov_head_metrics, &Metrics::draft_sampling_metrics}) {
+        auto make_metrics = [part](float third_step_us) {
+            Metrics metrics;
+            auto& raw_metrics = (metrics.*part).raw_metrics;
+            raw_metrics.m_durations = {ov::genai::MicroSeconds(5000.0f),
+                                       ov::genai::MicroSeconds(4000.0f),
+                                       ov::genai::MicroSeconds(third_step_us)};
+            raw_metrics.m_batch_sizes = {7, 7, 7};
+            raw_metrics.m_inference_durations = {ov::genai::MicroSeconds(9000.0f + third_step_us)};
+            return metrics;
+        };
+
+        auto first = make_metrics(3000.0f);
+        EXPECT_FLOAT_EQ((first.*part).get_latency().mean, 3.0f);
+
+        auto accumulated = make_metrics(3000.0f) + make_metrics(1000.0f);
+        accumulated.evaluate_statistics();
+        EXPECT_EQ((accumulated.*part).raw_metrics.m_durations.size(), 6);
+        EXPECT_FLOAT_EQ((accumulated.*part).get_latency().mean, 2.0f);
+    }
+}
+
 TEST(SDPerModelsPerfMetrics, DraftOverheadDiagnosticsReturnNanWithoutDenominator) {
     ov::genai::SDPerModelsPerfMetrics metrics;
 
