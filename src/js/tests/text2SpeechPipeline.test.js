@@ -33,8 +33,16 @@ describe("Text2SpeechPipeline methods", () => {
     assert.ok(result.speeches[0].data.length > 0, "speech.data should not be empty");
     assert.strictEqual(typeof result.outputSampleRate, "number");
     assert.ok(result.outputSampleRate > 0, "outputSampleRate should be positive");
-    assert.strictEqual(result.speakerEmbedding, undefined, "speakerEmbedding should be undefined by default");
-    assert.strictEqual(result.refCodecIds, undefined, "refCodecIds should be undefined by default");
+    assert.strictEqual(
+      result.speakerEmbedding,
+      undefined,
+      "speakerEmbedding should be undefined by default",
+    );
+    assert.strictEqual(
+      result.refCodecIds,
+      undefined,
+      "refCodecIds should be undefined by default",
+    );
   });
 
   it("generate(texts) handles batch of texts", async () => {

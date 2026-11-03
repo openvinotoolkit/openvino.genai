@@ -820,8 +820,16 @@ class TestTextToSpeechSample:
         ]:
             assert "Text successfully converted to audio file" in result.stdout
 
-        for result in [cpp_xvector_first, py_xvector_first, c_xvector_first, js_xvector_first,
-                       cpp_icl_first, py_icl_first, c_icl_first, js_icl_first]:
+        for result in [
+            cpp_xvector_first,
+            py_xvector_first,
+            c_xvector_first,
+            js_xvector_first,
+            cpp_icl_first,
+            py_icl_first,
+            c_icl_first,
+            js_icl_first,
+        ]:
             assert "Saved speaker embedding" in result.stdout
 
         for result in [cpp_icl_first, py_icl_first, c_icl_first, js_icl_first]:
@@ -851,7 +859,9 @@ class TestTextToSpeechSample:
             js_output=js_xvector_reuse_wav,
         )
         compare_speech_audio(cpp_icl_wav, py_icl_wav, c_icl_wav, 24000, True, js_output=js_icl_wav)
-        compare_speech_audio(cpp_icl_reuse_wav, py_icl_reuse_wav, c_icl_reuse_wav, 24000, True, js_output=js_icl_reuse_wav)
+        compare_speech_audio(
+            cpp_icl_reuse_wav, py_icl_reuse_wav, c_icl_reuse_wav, 24000, True, js_output=js_icl_reuse_wav
+        )
         for original, reused in (
             (cpp_xvector_wav, cpp_xvector_reuse_wav),
             (py_xvector_wav, py_xvector_reuse_wav),
