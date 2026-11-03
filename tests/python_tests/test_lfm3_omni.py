@@ -100,7 +100,8 @@ def frame_samples(lfm3_omni_model_path: Path) -> int:
 
 @pytest.fixture(scope="module")
 def omni_pipe(lfm3_omni_model_path: Path) -> ov_genai.OmniPipeline:
-    return ov_genai.OmniPipeline(lfm3_omni_model_path, "CPU")
+    # ARM CPUs default to f16, where streamed and one-shot speech round differently.
+    return ov_genai.OmniPipeline(lfm3_omni_model_path, "CPU", INFERENCE_PRECISION_HINT="f32")
 
 
 @pytest.fixture(scope="module")
