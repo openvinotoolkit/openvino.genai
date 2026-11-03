@@ -343,22 +343,28 @@ def test_streamed_chunks_form_the_waveform(
     assert _waveform(result).size == 7 * frame_samples
 
 
+def _speech(pipe: ov_genai.OmniPipeline, streamed: bool, **fields) -> np.ndarray:
+    config = _speech_config(30, rng_seed=3, **fields)
+    kwargs = {"speech_streamer": lambda chunk: ov_genai.StreamingStatus.RUNNING} if streamed else {}
+    return _waveform(pipe.generate(PROMPT, text_config=_text_config(1000), talker_speech_config=config, **kwargs))
+
+
 @pytest.mark.parametrize("left_context_frames", [None, 0], ids=["default", "no_context"])
 def test_streaming_left_context(omni_pipe: ov_genai.OmniPipeline, left_context_frames: int | None) -> None:
-    # More frames than the default left context, so later chunks drop the start.
-    max_frames = 30
-
-    def speech(chunk_frames: int, **fields) -> np.ndarray:
-        config = _speech_config(max_frames, audio_chunk_frames=chunk_frames, rng_seed=3, **fields)
-        return _waveform(omni_pipe.generate(PROMPT, text_config=_text_config(1000), talker_speech_config=config))
-
-    one_shot = speech(max_frames)
+    # 30 frames is more than the default left context, so later chunks drop the start.
+    fields = {} if left_context_frames is None else {"audio_chunk_left_context_frames": left_context_frames}
+    streamed = _speech(omni_pipe, True, audio_chunk_frames=2, **fields)
+    one_shot = _speech(omni_pipe, False)
     if left_context_frames is None:
-        np.testing.assert_allclose(speech(2), one_shot, atol=1e-5)
+        np.testing.assert_allclose(streamed, one_shot, atol=1e-5)
     else:
-        streamed = speech(2, audio_chunk_left_context_frames=left_context_frames)
         assert streamed.size == one_shot.size
         assert not np.allclose(streamed, one_shot, atol=1e-5)
+
+
+def test_chunk_settings_do_not_change_unstreamed_speech(omni_pipe: ov_genai.OmniPipeline) -> None:
+    chunked = _speech(omni_pipe, False, audio_chunk_frames=2, audio_chunk_left_context_frames=0)
+    np.testing.assert_array_equal(chunked, _speech(omni_pipe, False))
 
 
 @pytest.mark.parametrize("field, value", [("cp_temperature", 0.5), ("cp_top_k", 4), ("cp_repetition_penalty", 2.0)])

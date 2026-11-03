@@ -1046,13 +1046,14 @@ private:
                                                    const std::shared_ptr<StreamerBase>& streamer,
                                                    utils::CacheState& cache_state) {
         // The waveform reaches the caller through the speech streamer only.
-        const LFM3SpeechResult speech =
-            m_speech_engine->generate(inputs_embeds,
-                                      attention_mask,
-                                      last_prompt_token,
-                                      LFM3SpeechRequest(*m_pending_speech_config, generation_config),
-                                      streamer,
-                                      m_pending_speech_streamer);
+        LFM3SpeechRequest request(*m_pending_speech_config, generation_config);
+        request.stream_chunks = m_pending_stream_speech_chunks;
+        const LFM3SpeechResult speech = m_speech_engine->generate(inputs_embeds,
+                                                                  attention_mask,
+                                                                  last_prompt_token,
+                                                                  request,
+                                                                  streamer,
+                                                                  m_pending_speech_streamer);
         // Ended here so an end() failure reaches the caller; SpeechPropertiesGuard swallows it while unwinding.
         // Taken out first, so the guard does not end it a second time after a failure.
         const auto speech_streamer = std::exchange(m_pending_speech_streamer, std::monostate{});

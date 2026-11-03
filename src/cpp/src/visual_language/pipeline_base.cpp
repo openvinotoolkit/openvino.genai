@@ -35,6 +35,8 @@ void VLMPipeline::VLMBackend::extract_speech_properties(const ov::AnyMap& config
     if (speech_config.return_audio) {
         check_speech_in_stream(speech_config);
         m_pending_speech_config = speech_config;
+        const auto chunks_it = config_map.find(STREAM_SPEECH_CHUNKS_ARG_NAME);
+        m_pending_stream_speech_chunks = chunks_it == config_map.end() || chunks_it->second.as<bool>();
     }
 }
 
@@ -44,7 +46,7 @@ void VLMPipeline::VLMBackend::check_speech_in_stream(const OmniTalkerSpeechConfi
 }
 
 VLMDecodedResults VLMPipeline::VLMBackend::generate(const std::string& prompt, const ov::AnyMap& config_map) {
-    SpeechPropertiesGuard guard{m_pending_speech_streamer, m_pending_speech_config};
+    SpeechPropertiesGuard guard{m_pending_speech_streamer, m_pending_speech_config, m_pending_stream_speech_chunks};
     extract_speech_properties(config_map);
     const auto multimodal_inputs = extract_multimodal_inputs(config_map);
     GenerationConfig config = resolve_generation_config(config_map);
@@ -58,7 +60,7 @@ VLMDecodedResults VLMPipeline::VLMBackend::generate(const std::string& prompt, c
 }
 
 VLMDecodedResults VLMPipeline::VLMBackend::generate(const ChatHistory& history, const ov::AnyMap& config_map) {
-    SpeechPropertiesGuard guard{m_pending_speech_streamer, m_pending_speech_config};
+    SpeechPropertiesGuard guard{m_pending_speech_streamer, m_pending_speech_config, m_pending_stream_speech_chunks};
     extract_speech_properties(config_map);
     const auto multimodal_inputs = extract_multimodal_inputs(config_map);
     GenerationConfig config = resolve_generation_config(config_map);

@@ -32,15 +32,20 @@ protected:
     // Speech config extracted from AnyMap: speech is decoded in the language model stream (LFM3-Omni)
     std::optional<OmniTalkerSpeechConfig> m_pending_speech_config;
 
+    // False when only OmniPipeline collects the waveform: speech is decoded once instead of in streamed chunks
+    bool m_pending_stream_speech_chunks = true;
+
     // RAII guard that ends a pending speech streamer that is still set, also when generate() throws, then resets the
-    // speech streamer and speech config. A successful speech decode takes the streamer and ends it itself.
+    // speech streamer, speech config and chunk flag. A successful speech decode takes the streamer and ends it itself.
     struct SpeechPropertiesGuard {
         OmniSpeechStreamerVariant& streamer_ref;
         std::optional<OmniTalkerSpeechConfig>& speech_config_ref;
+        bool& stream_chunks_ref;
         ~SpeechPropertiesGuard() {
             { SpeechStreamerGuard end_guard(streamer_ref, is_speech_streamer_active(streamer_ref)); }
             streamer_ref = std::monostate{};
             speech_config_ref.reset();
+            stream_chunks_ref = true;
         }
     };
 

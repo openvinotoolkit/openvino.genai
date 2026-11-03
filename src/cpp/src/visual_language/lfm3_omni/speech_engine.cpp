@@ -528,7 +528,7 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
                     audio_history.pop_front();
                 }
                 frames.push_back(codes);
-                if (frames.size() % request.audio_chunk_frames == 0) {
+                if (request.stream_chunks && frames.size() % request.audio_chunk_frames == 0) {
                     const StreamingStatus status = stream_up_to(frames.size(), false);
                     if (status != StreamingStatus::RUNNING) {
                         result.status = status == StreamingStatus::STOP ? GenerationStatus::STOP : GenerationStatus::CANCEL;

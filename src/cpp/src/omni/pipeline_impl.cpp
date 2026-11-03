@@ -101,6 +101,7 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate_speech_in_stream(
         ov::genai::streamer(streamer),
         ov::genai::talker_speech_config(talker_speech_config),
         ov::genai::speech_streamer(std::shared_ptr<OmniSpeechStreamerBase>(collector)),
+        {STREAM_SPEECH_CHUNKS_ARG_NAME, is_speech_streamer_active(speech_streamer)},
     });
     OmniDecodedResults omni_result;
     static_cast<VLMDecodedResults&>(omni_result) = std::move(vlm_result);

@@ -43,6 +43,8 @@ struct LFM3SpeechRequest {
     size_t audio_chunk_frames;
     /// @brief Earlier frames decoded again with each streamed chunk.
     size_t audio_chunk_left_context_frames;
+    /// @brief False when no caller streams the speech: every frame is decoded once at the end.
+    bool stream_chunks = true;
     size_t audio_rng_seed;
 };
 
@@ -79,8 +81,9 @@ public:
     /// @param inputs_embeds Prompt embeddings [1, seq_len, hidden_size].
     /// @param attention_mask Ones over the cached history and the prompt, [1, history + seq_len].
     /// @param last_prompt_token Last prompt token id; a marker already in place is not appended again.
-    /// @param speech_streamer Receives the 24 kHz waveform in chunks of request.audio_chunk_frames frames,
-    /// [1, 1, samples]; the only output of the speech, so it must be set. The caller ends it.
+    /// @param speech_streamer Receives the 24 kHz waveform in chunks of request.audio_chunk_frames frames, or in one
+    /// piece when request.stream_chunks is false, [1, 1, samples]; the only output of the speech, so it must be set.
+    /// The caller ends it.
     LFM3SpeechResult generate(const ov::Tensor& inputs_embeds,
                               const ov::Tensor& attention_mask,
                               int64_t last_prompt_token,
