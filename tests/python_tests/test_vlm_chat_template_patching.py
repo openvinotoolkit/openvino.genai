@@ -8,11 +8,8 @@ from test_vlm_pipeline import MODEL_GEMMA, ov_continuous_batching_pipe, ov_pipe_
 
 
 GEMMA3_TEMPLATE = "[{{ messages[0]['content'] | trim }}]"
-GEMMA3_REVISION = "0cc4c5a822bbc68aeb312fd789046463ca301d14"
 GEMMA4_TEMPLATE = '{{ "first "\n    "second" }}'
-GEMMA4_REVISION = "422d12880b72b92b1547ac7ce2e1a4865f6bec6c"
 QWEN35_TEMPLATE = "{% if enable_thinking is undefined %}default{% else %}explicit{% endif %}"
-QWEN35_REVISION = "aa8ac4a953c6081e0afaa34bd95cefd9c852ddbf"
 QWEN35_MODEL = "optimum-intel-internal-testing/tiny-random-qwen3.5"
 
 GEMMA3_LEGACY_TRANSFORMERS = [
@@ -31,7 +28,7 @@ QWEN35_TRANSFORMERS = pytest.mark.skipif(
 VLM_TEMPLATE_CASES = (
     [
         pytest.param(
-            (MODEL_GEMMA, backend, False, GEMMA3_REVISION),
+            (MODEL_GEMMA, backend, False),
             GEMMA3_TEMPLATE,
             "  hi  ",
             "[  hi  ]",
@@ -42,7 +39,7 @@ VLM_TEMPLATE_CASES = (
     ]
     + [
         pytest.param(
-            ("optimum-intel-internal-testing/tiny-random-gemma4", backend, False, GEMMA4_REVISION),
+            ("optimum-intel-internal-testing/tiny-random-gemma4", backend, False),
             GEMMA4_TEMPLATE,
             "unused",
             "first second",
@@ -52,7 +49,7 @@ VLM_TEMPLATE_CASES = (
     ]
     + [
         pytest.param(
-            (QWEN35_MODEL, backend, False, QWEN35_REVISION),
+            (QWEN35_MODEL, backend, False),
             QWEN35_TEMPLATE,
             "unused",
             "default",
@@ -65,7 +62,7 @@ VLM_TEMPLATE_CASES = (
 
 CB_TEMPLATE_CASES = [
     pytest.param(
-        (MODEL_GEMMA, GEMMA3_REVISION),
+        MODEL_GEMMA,
         GEMMA3_TEMPLATE,
         "  hi  ",
         "[  hi  ]",
@@ -73,7 +70,7 @@ CB_TEMPLATE_CASES = [
         id="gemma3-trim",
     ),
     pytest.param(
-        (QWEN35_MODEL, QWEN35_REVISION),
+        QWEN35_MODEL,
         QWEN35_TEMPLATE,
         "unused",
         "default",

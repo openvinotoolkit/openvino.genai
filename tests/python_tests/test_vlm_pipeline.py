@@ -433,13 +433,11 @@ def is_optimum_intel_version_for_videochat_flash_qwen():
     return "videochat_flash_qwen" in MODEL_TYPE_TO_CLS_MAPPING
 
 
-def _get_ov_model(model_id: str, revision: str | None = None) -> str:
+def _get_ov_model(model_id: str) -> str:
     _maybe_skip_unsupported_model_export(model_id)
 
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
     dir_name = str(model_id).replace(os.sep, "_")
-    if revision is not None:
-        dir_name = f"{dir_name}_{revision}"
     model_dir = ov_cache_converted_dir / dir_name
     manager = AtomicDownloadManager(model_dir)
 
@@ -447,7 +445,7 @@ def _get_ov_model(model_id: str, revision: str | None = None) -> str:
         return model_dir
 
     def convert_to_temp(temp_dir: Path) -> None:
-        model_cached = retry_request(lambda: snapshot_download(model_id, revision=revision))
+        model_cached = retry_request(lambda: snapshot_download(model_id))
         align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
         processor = retry_request(
             lambda: transformers.AutoProcessor.from_pretrained(
@@ -534,20 +532,17 @@ QWEN3_VL_SDPA_XFAIL_REASON = (
 
 @pytest.fixture(scope="module")
 def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
-    if not (2 <= len(request.param) <= 4):
-        raise ValueError("expected request.param must be a tuple of length 2 to 4")
+    if not (2 <= len(request.param) <= 3):
+        raise ValueError("expected request.param must be a tuple of length 2 or 3")
     ov_model, ov_backend = request.param[:2]
     ov_prompt_lookup = False
     preprocess_method = None
-    revision = None
     if len(request.param) == 3:
         third_param = request.param[2]
         if isinstance(third_param, bool):
             ov_prompt_lookup = third_param
         elif isinstance(third_param, str):
             preprocess_method = third_param
-    elif len(request.param) == 4:
-        ov_prompt_lookup, revision = request.param[2:]
 
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
@@ -555,7 +550,7 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     if "qwen3-vl" in ov_model and ov_backend == "SDPA":
         pytest.xfail(QWEN3_VL_SDPA_XFAIL_REASON)
 
-    models_path = _get_ov_model(ov_model, revision)
+    models_path = _get_ov_model(ov_model)
 
     pipeline_properties: dict = {"ATTENTION_BACKEND": ov_backend, "prompt_lookup": ov_prompt_lookup}
     if "qwen3.5" in ov_model and ov_backend == "PA" and ov_prompt_lookup:
@@ -712,9 +707,8 @@ parametrize_one_model_npu = _parametrize_npu_models(
 
 @pytest.fixture(scope="module")
 def ov_continuous_batching_pipe(request: pytest.FixtureRequest) -> ContinuousBatchingPipeline:
-    params = getattr(request, "param", (MODEL_IDS[0], None))
-    model_id, revision = params
-    models_path = _get_ov_model(model_id, revision)
+    model_id = getattr(request, "param", MODEL_IDS[0])
+    models_path = _get_ov_model(model_id)
     return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
 
 
