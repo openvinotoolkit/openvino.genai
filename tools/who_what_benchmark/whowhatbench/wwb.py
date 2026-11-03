@@ -679,7 +679,8 @@ def load_prompts(args):
         if args.model_type in ("text-to-video", "image-to-video"):
             data = df.to_dict(orient="list")
             data["prompt"] = data.pop("prompts")
-            data["images"] = images
+            if "images" in df.columns:
+                data["images"] = images
             data["videos"] = videos
             return data
 

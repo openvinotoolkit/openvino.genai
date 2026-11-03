@@ -712,9 +712,10 @@ class TestVideoGenerationPipelines:
         )
 
         baseline_followup = baseline_pipe.generate("test prompt", **common_kwargs, generator=baseline_generator)
+        baseline_video = np.array(baseline_followup.video.data, copy=True)
         conditioned_followup = baseline_pipe.generate("test prompt", **common_kwargs, generator=conditioned_generator)
 
-        np.testing.assert_array_equal(baseline_followup.video.data, conditioned_followup.video.data)
+        np.testing.assert_array_equal(baseline_video, conditioned_followup.video.data)
 
     @pytest.mark.parametrize(
         "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True

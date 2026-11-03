@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import sys
+from types import SimpleNamespace
 
 import pytest
 from PIL import Image
@@ -109,6 +110,35 @@ def test_video_decode_parameters_treat_nan_as_missing_and_preserve_zero(
         (0.4, 0.0),
         (0.0, 0.7),
     ]
+
+
+@pytest.mark.parametrize("image_column", ["images", "image", None], ids=["images", "image", "image-dir"])
+def test_csv_image2video_conditioning_image_sources(monkeypatch, tmp_path, image_column):
+    image = Image.new("RGB", (32, 32), color=(12, 34, 56))
+    image.save(tmp_path / "0.png")
+    dataset_path = tmp_path / "dataset.csv"
+    if image_column is None:
+        dataset_path.write_text("prompts\ntest prompt\n", encoding="utf-8")
+    else:
+        dataset_path.write_text(f"prompts,{image_column}\ntest prompt,0.png\n", encoding="utf-8")
+
+    test_data = wwb.load_prompts(SimpleNamespace(dataset=str(dataset_path), model_type="image-to-video"))
+    evaluator = Image2VideoEvaluator.__new__(Image2VideoEvaluator)
+    _configure_evaluator(evaluator, test_data)
+    evaluator.image_dir = str(tmp_path)
+    calls = []
+
+    def generate_video(_model, **kwargs):
+        calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr("whowhatbench.image2video_evaluator.export_to_video", lambda *_args: None)
+    evaluator._generate_data(None, generate_video, str(tmp_path / "videos"))
+
+    assert len(calls) == 1
+    assert calls[0]["image"].mode == "RGB"
+    assert calls[0]["image"].size == image.size
+    assert calls[0]["image"].tobytes() == image.tobytes()
 
 
 def test_load_prompts_preserves_video_dataset_columns(monkeypatch):
