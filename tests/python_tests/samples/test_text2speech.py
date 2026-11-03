@@ -928,6 +928,7 @@ class TestTextToSpeechSample:
         indirect=["convert_model"],
     )
     @pytest.mark.parametrize("sample_kind", ["python", "cpp", "c"])
+    @pytest.mark.parametrize("qwen3_reference_audio_wav_path", [1], ids=["mono"], indirect=True)
     def test_sample_qwen3_tts_sampling_options(
         self,
         convert_model,
@@ -972,16 +973,21 @@ class TestTextToSpeechSample:
             assert np.isfinite(audio).all()
             return audio
 
-        greedy_args = ("--do_sample", "false", "--subtalker_dosample", "false")
-        np.testing.assert_array_equal(
-            run_generation("greedy_1", *greedy_args), run_generation("greedy_2", *greedy_args)
-        )
+        def sampling_args(do_sample: str, subtalker_dosample: str, seed: str = "7") -> tuple[str, ...]:
+            return ("--do_sample", do_sample, "--subtalker_dosample", subtalker_dosample, "--seed", seed)
 
-        seeded_args = ("--do_sample", "true", "--subtalker_dosample", "true")
-        seeded_first = run_generation("seed_7_1", *seeded_args, "--seed", "7")
-        np.testing.assert_array_equal(
-            seeded_first, run_generation("seed_7_2", *seeded_args, "--seed", "7")
-        )
+        greedy = run_generation("greedy_1", *sampling_args("false", "false"))
+        np.testing.assert_array_equal(greedy, run_generation("greedy_2", *sampling_args("false", "false")))
+
+        sampled = run_generation("sampled_seed_7_1", *sampling_args("true", "true"))
+        np.testing.assert_array_equal(sampled, run_generation("sampled_seed_7_2", *sampling_args("true", "true")))
+
+        do_sample_only = run_generation("do_sample_only", *sampling_args("true", "false"))
+        assert not np.array_equal(do_sample_only, greedy)
+        subtalker_dosample_only = run_generation("subtalker_dosample_only", *sampling_args("false", "true"))
+        assert not np.array_equal(subtalker_dosample_only, greedy)
+        another_seed = run_generation("sampled_seed_8", *sampling_args("true", "true", seed="8"))
+        assert not np.array_equal(another_seed, sampled)
 
         for invalid_args in (
             ("--do_sample", "maybe"),
