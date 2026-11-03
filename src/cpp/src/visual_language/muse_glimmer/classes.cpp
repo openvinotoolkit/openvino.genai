@@ -158,11 +158,26 @@ MuseGlimmerVisionInputs get_vision_inputs(const std::vector<ov::Tensor>& frames,
 void fill_video_metadata(ov::genai::VideoMetadata& metadata,
                          const size_t total_num_frames,
                          const ov::genai::VideoProcessorConfig& config) {
-    OPENVINO_ASSERT(total_num_frames >= config.temporal_patch_size,
-                    "Muse Glimmer video must contain at least ",
-                    config.temporal_patch_size,
-                    " frames, got ",
-                    total_num_frames);
+    OPENVINO_ASSERT(total_num_frames > 0 && config.temporal_patch_size > 0,
+                    "Muse Glimmer video frame count and temporal_patch_size must be positive.");
+    if (!config.do_sample_frames) {
+        if (metadata.fps == 0.0f) {
+            metadata.fps = config.fps;
+        }
+        OPENVINO_ASSERT(std::isfinite(metadata.fps) && metadata.fps > 0.0f,
+                        "Muse Glimmer unsampled video requires finite positive FPS.");
+        if (metadata.frames_indices.empty()) {
+            metadata.frames_indices.resize(total_num_frames);
+            std::iota(metadata.frames_indices.begin(), metadata.frames_indices.end(), 0);
+        }
+        const size_t remainder = metadata.frames_indices.size() % config.temporal_patch_size;
+        if (remainder != 0) {
+            metadata.frames_indices.insert(metadata.frames_indices.end(),
+                                           config.temporal_patch_size - remainder,
+                                           metadata.frames_indices.back());
+        }
+        return;
+    }
     OPENVINO_ASSERT(config.fps > 0.0f, "Muse Glimmer video processor fps must be positive");
     if (metadata.fps == 0.0f) {
         GENAI_WARN("Muse Glimmer video metadata fps is not set. Assuming the input frames are pre-sampled at fps=" +
@@ -459,7 +474,7 @@ ov::Tensor InputsEmbedderMuseGlimmer::get_inputs_embeds(
 ov::Tensor InputsEmbedderMuseGlimmer::apply_chat_template_tokenize(const std::string& prompt, VLMPerfMetrics& metrics) {
     const std::string bos_token = m_tokenizer.get_bos_token();
     // ticket to addess globally: 192386
-    if (!m_is_chat_conversation && !m_apply_chat_template && !bos_token.empty() &&
+    if (!m_is_chat_conversation && m_prompt_formatting != PromptFormatting::NeedsTemplate && !bos_token.empty() &&
         prompt.compare(0, bos_token.size(), bos_token) == 0) {
         ManualTimer encode_timer("Encode");
         encode_timer.start();
