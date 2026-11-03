@@ -219,6 +219,46 @@ void expose_target_hidden_states(std::shared_ptr<ov::Model>& model,
     add_dflash_hidden_state_result(model, outputs);
 }
 
+void move_fc_from_draft_to_main(const std::shared_ptr<ov::Model>& draft_model,
+                                const std::shared_ptr<ov::Model>& main_model) {
+    OPENVINO_ASSERT(draft_model && main_model, "DFlash FC move requires both target and draft models.");
+    const auto hidden_states =
+        ov::as_type_ptr<ov::op::v0::Parameter>(draft_model->input("hidden_states").get_node_shared_ptr());
+    const auto hidden_result =
+        ov::as_type_ptr<ov::op::v0::Result>(main_model->output(LAST_HIDDEN_STATE_OUTPUT_NAME).get_node_shared_ptr());
+
+    // hidden_states is resized to the FC output width, so the FC data input must be its only consumer.
+    const auto consumers = hidden_states->output(0).get_target_inputs();
+    const auto fc = consumers.size() == 1 && consumers.begin()->get_index() == 0
+                        ? ov::as_type_ptr<ov::op::v0::MatMul>(consumers.begin()->get_node()->shared_from_this())
+                        : nullptr;
+    OPENVINO_ASSERT(fc, "DFlash draft hidden_states must feed only the data input of its hidden-state FC MatMul.");
+    const auto target_width = hidden_result->get_input_partial_shape(0)[2];
+    const auto draft_width = hidden_states->get_partial_shape()[2];
+    OPENVINO_ASSERT(target_width == draft_width,
+                    "DFlash target exports hidden states of width ", target_width,
+                    ", but the draft hidden_states input has width ", draft_width, ".");
+
+    // The weight subgraph moves to the target as is, keeping its decompression markers; once the draft FC
+    // consumers are rewired below, nothing in the draft uses it.
+    auto target_fc = std::make_shared<ov::op::v0::MatMul>(hidden_result->input_value(0),
+                                                          fc->input_value(1),
+                                                          fc->get_transpose_a(),
+                                                          fc->get_transpose_b());
+    target_fc->set_friendly_name("dflash_hidden_state_fc");
+    hidden_result->input(0).replace_source_output(target_fc);
+
+    auto hidden_states_shape = hidden_states->get_partial_shape();
+    hidden_states_shape[2] = fc->get_output_partial_shape(0)[2];
+    hidden_states->set_partial_shape(hidden_states_shape);
+    for (auto fc_consumer : fc->output(0).get_target_inputs()) {
+        fc_consumer.replace_source_output(hidden_states);
+    }
+
+    main_model->validate_nodes_and_infer_types();
+    draft_model->validate_nodes_and_infer_types();
+}
+
 void apply_dflash_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& properties) {
     if (!model->has_rt_info("dflash_mode") || !model->get_rt_info<bool>("dflash_mode")) {
         return;

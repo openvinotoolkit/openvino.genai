@@ -423,7 +423,7 @@ public:
     // rows come from set_initial_hidden_state() and get token type 0; the remaining scheduled rows are the block
     // and get token type 1. The block rows after the first `candidate_position_offset` ones are gathered.
     void enable_dflash_draft(size_t candidate_position_offset) {
-        // the draft's hidden_states input is wider than its embeddings, so it is sized from the model
+        // a token-input draft gives the runner no embedding width, so hidden_states is sized from the model
         m_dflash_hidden_state_size = static_cast<size_t>(
             m_request.get_compiled_model().input("hidden_states").get_partial_shape()[2].get_length());
         m_dflash_draft = true;

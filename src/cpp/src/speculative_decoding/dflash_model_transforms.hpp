@@ -66,6 +66,21 @@ void expose_target_hidden_states(std::shared_ptr<ov::Model>& model,
                                  const std::vector<int32_t>& target_layer_ids);
 
 /**
+ * @brief Moves the draft's hidden-state FC into the target.
+ *
+ * The draft projects the concatenated target hidden states with `MatMul(hidden_states, fc_weight)`.
+ * Running it on the target's `last_hidden_state` makes the hidden states passed to the draft
+ * `in_width / out_width` times smaller. The FC weight subgraph moves to the target with its
+ * decompression chain, the draft FC consumers read `hidden_states` directly, and `hidden_states` is
+ * resized to the projected width. Run after `expose_target_hidden_states`.
+ *
+ * @throws ov::Exception when `hidden_states` does not feed only the data input of an FC MatMul, or when
+ * the target hidden-state width does not match the draft `hidden_states` width.
+ */
+void move_fc_from_draft_to_main(const std::shared_ptr<ov::Model>& draft_model,
+                                const std::shared_ptr<ov::Model>& main_model);
+
+/**
  * @brief Grafts the target lm_head onto the draft model.
  *
  * Clones only the weight side (input(1)) of the target's final lm_head MatMul - including any INT4
