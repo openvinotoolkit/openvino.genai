@@ -81,6 +81,24 @@ public:
     /// @brief Merge kernel size for downsample MLP merge (config.json merge_kernel_size)
     size_t merge_kernel_size = 2;
 
+    // LFM2-VL (Siglip2 NaFlex + SmolVLM-style tiling) specific params
+    /// @brief Projector spatial downsampling factor (pixel unshuffle).
+    size_t downsample_factor = 2;
+    /// @brief Patch size of the Siglip2 vision tower.
+    size_t encoder_patch_size = 16;
+    /// @brief Minimum number of tiles when splitting a large image.
+    size_t min_tiles = 2;
+    /// @brief Maximum number of tiles when splitting a large image.
+    size_t max_tiles = 10;
+    /// @brief Minimum number of image tokens produced per image.
+    size_t min_image_tokens = 64;
+    /// @brief Tolerance factor deciding whether an image is too large for a single tile.
+    float max_pixels_tolerance = 2.0f;
+    /// @brief Whether to append a downscaled thumbnail when splitting into tiles.
+    bool use_thumbnail = true;
+    /// @brief Whether large images are split into a grid of tiles.
+    bool do_image_splitting = true;
+
     /// @brief Default constructor
     ProcessorConfig() = default;
 
