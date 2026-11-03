@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import json
 import platform
+import shutil
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -77,7 +79,10 @@ def _export(target_dir: Path) -> None:
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(processor.tokenizer, with_detokenizer=True)
     ov.save_model(ov_tokenizer, target_dir / "openvino_tokenizer.xml")
     ov.save_model(ov_detokenizer, target_dir / "openvino_detokenizer.xml")
-    processor.save_pretrained(target_dir)
+    # Writing safetensors straight to the CI cache mount fails with EIO, so save locally and copy.
+    with tempfile.TemporaryDirectory() as processor_dir:
+        processor.save_pretrained(processor_dir)
+        shutil.copytree(processor_dir, target_dir, dirs_exist_ok=True)
     model.save_pretrained(target_dir)
 
 
