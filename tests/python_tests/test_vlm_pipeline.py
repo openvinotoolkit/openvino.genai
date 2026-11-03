@@ -4127,3 +4127,42 @@ def test_gemma3_pa_chat_does_not_duplicate_bos(chat_api):
             result = pipeline.generate(ChatHistory([{"role": "user", "content": prompt}]), generation_config=config)
         input_counts.append(result.perf_metrics.get_num_input_tokens())
     assert input_counts == [len(expected_ids), len(expected_ids)]
+
+
+def test_vlm_pipeline_cache_state_reset_does_not_break_sequential_requests(ov_pipe_model: VlmModelInfo, cat_tensor):
+    """
+    CPU smoke test: sequential non-chat generate() calls work correctly.
+
+    This test exercises the cache state reset added at the start of non-chat generate()
+    to ensure it does not break normal sequential generation on CPU.
+
+    NOTE: This test does NOT reproduce the NPU failure from #4708 (oversized image
+    rejection leaving stale embedder state). That failure requires NPU hardware and
+    the NPU-specific max_prompt_len validation path. Full validation of the fix
+    against the original issue requires NPU hardware to trigger the exception path.
+    """
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=16, do_sample=False)
+
+    # First valid request
+    result1 = ov_pipe.generate(
+        PROMPTS[0], images=[cat_tensor], generation_config=generation_config
+    )
+    assert result1.texts[0].strip() != ""
+
+    # Second valid request - exercises the cache state reset at the start of generate()
+    result2 = ov_pipe.generate(
+        PROMPTS[1], images=[cat_tensor], generation_config=generation_config
+    )
+    assert result2.texts[0].strip() != ""
+
+    # Third valid request - verify consistent behavior
+    result3 = ov_pipe.generate(
+        PROMPTS[2], images=[cat_tensor], generation_config=generation_config
+    )
+    assert result3.texts[0].strip() != ""
+
+    # All requests should produce valid (non-empty) responses
+    assert len(result1.texts) == 1
+    assert len(result2.texts) == 1
+    assert len(result3.texts) == 1

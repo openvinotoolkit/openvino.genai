@@ -362,6 +362,9 @@ public:
         if (!m_is_chat_conversation) {
             reset_language_state();
             m_language.get_tensor("attention_mask").set_shape({1, 0});
+            // Reset embedder cache state to recover from any previous failed generate() call
+            // that may have left prompt tokens in the cache state (e.g., oversized image on NPU).
+            m_inputs_embedder->get_cache_state().reset_state();
         }
 
         setup_generation_config(generation_config);
