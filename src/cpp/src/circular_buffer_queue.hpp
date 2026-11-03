@@ -51,8 +51,8 @@ public:
         std::promise<int> idle_promise;
         std::future<int> idle_future = idle_promise.get_future();
         std::unique_lock<std::mutex> lk(m_front_mut);
+        std::unique_lock<std::mutex> queueLock(m_queue_mutex);
         if (m_values[m_front_idx] < 0) {
-            std::unique_lock<std::mutex> queueLock(m_queue_mutex);
             m_promises.push(std::move(idle_promise));
         } else {
             value = m_values[m_front_idx];

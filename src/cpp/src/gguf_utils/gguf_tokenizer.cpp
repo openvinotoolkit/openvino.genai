@@ -348,7 +348,7 @@ std::vector<std::string> split_utf8_chars(const std::string& input) {
 }
 
 std::vector<uint8_t> apply_unicode_to_bytes(const std::string& token) {
-    auto bytes_encoder = unicode_to_bytes();
+    const auto& bytes_encoder = unicode_to_bytes();
 
     std::vector<uint8_t> res{};
     bool return_original = false;
