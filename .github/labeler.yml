@@ -50,6 +50,7 @@
 - 'src/cpp/src/visual_language/qwen3_omni/**/*'
 - 'src/python/py_omni_pipeline.cpp'
 - 'tests/python_tests/test_omni_pipeline.py'
+- 'tests/python_tests/test_omni_speech_streaming.py'
 - 'samples/cpp/omni/**/*'
 - 'samples/python/omni/**/*'
 
