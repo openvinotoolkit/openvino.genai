@@ -71,7 +71,9 @@ sampling:
     - WWB
 
 structured_output_generation:
-  revalidate: []
+  revalidate:
+    - LLM
+    - LLM_samples
 
 LoRA:
   revalidate:
