@@ -20,6 +20,8 @@ cannot export it.
 from __future__ import annotations
 
 import json
+import platform
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -49,6 +51,10 @@ TEXT_TOKENS = 8
 INTERLEAVED_TEXT_SLOTS = 6
 INTERLEAVED_AUDIO_FRAMES = 12
 VIDEO_FPS = 2.0
+SKIP_PA_ON_MACOS_ARM64 = pytest.mark.skipif(
+    sys.platform == "darwin" and platform.machine() == "arm64",
+    reason="CVS-194249: PagedAttention needs SVE on ARM64, which macOS arm64 lacks.",
+)
 
 
 def _lfm3_omni_export_supported() -> bool:
@@ -108,7 +114,7 @@ def omni_pa_pipe(lfm3_omni_model_path: Path) -> ov_genai.OmniPipeline:
     return ov_genai.OmniPipeline(lfm3_omni_model_path, "CPU", ATTENTION_BACKEND="PA")
 
 
-@pytest.fixture(scope="module", params=["SDPA", "PA"])
+@pytest.fixture(scope="module", params=["SDPA", pytest.param("PA", marks=SKIP_PA_ON_MACOS_ARM64)])
 def vlm_pipe(request: pytest.FixtureRequest, lfm3_omni_model_path: Path) -> ov_genai.VLMPipeline:
     return ov_genai.VLMPipeline(lfm3_omni_model_path, "CPU", ATTENTION_BACKEND=request.param)
 
@@ -656,6 +662,7 @@ def test_rejects_talker_construction(lfm3_omni_model_path: Path) -> None:
         ov_genai.Talker(lfm3_omni_model_path, "CPU")
 
 
+@SKIP_PA_ON_MACOS_ARM64
 def test_paged_attention_returns_text_only(omni_pa_pipe: ov_genai.OmniPipeline) -> None:
     result = omni_pa_pipe.generate(
         PROMPT, text_config=_text_config(TEXT_TOKENS), talker_speech_config=_speech_config(4, return_audio=False)
