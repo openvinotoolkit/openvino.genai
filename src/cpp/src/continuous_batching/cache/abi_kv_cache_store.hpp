@@ -33,6 +33,7 @@ public:
     AbiKVCacheStore& operator=(const AbiKVCacheStore&) = delete;
 
     bool has_block(size_t hash) const override;
+    std::vector<bool> has_blocks(const std::vector<size_t>& chain) const override;
     bool write_block(size_t hash, const std::vector<uint8_t>& data) override;
     bool read_block(size_t hash, std::vector<uint8_t>& data) const override;
     void drop_block(size_t hash) override;

@@ -3,6 +3,7 @@
 
 #include "continuous_batching/cache/kv_cache_offload_cache.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <utility>
 
@@ -40,6 +41,8 @@ KVCacheOffloadCache::KVCacheOffloadCache(KVCacheManager& cache_manager,
     OPENVINO_ASSERT(m_max_queued_stores > 0, "KV cache offload needs at least one staging buffer");
     OPENVINO_ASSERT(m_store->get_block_size() == m_cache_manager.get_block_layout().get_slot_size(),
                     "KV cache offload store block size does not match the cache block layout");
+    m_track_chains = m_store->is_plugin_backed();
+    m_max_links = std::max<std::size_t>(65536, 8 * m_store->get_capacity_blocks());
     m_writer = std::thread(&KVCacheOffloadCache::run_writer, this);
 }
 
@@ -109,6 +112,9 @@ void KVCacheOffloadCache::on_blocks_overwritten(std::size_t hash, const BlocksPe
     QueuedStore queued;
     queued.hash = hash;
     queued.reclaimed = reclaimed;
+    if (m_track_chains) {
+        queued.chain = chain_to_locked(hash);
+    }
     try {
         // Copy the contents out now; the block is handed over for overwriting as soon as this returns.
         ScopedTimer timer(m_statistics.store_read_us);
@@ -148,6 +154,10 @@ void KVCacheOffloadCache::run_writer() {
         const auto write_started = std::chrono::steady_clock::now();
         lock.unlock();
         try {
+            if (!front.chain.empty()) {
+                // Every write is preceded by a probe of its chain from block 0, so the store can place the block.
+                m_store->has_blocks(front.chain);
+            }
             stored = m_store->write_block(hash, front.data);
             OPENVINO_ASSERT(stored, "KV cache offload store ran out of capacity after reservation for hash ", hash);
         } catch (const std::exception& error) {
@@ -245,8 +255,8 @@ bool KVCacheOffloadCache::persist(std::size_t hash, std::size_t block_index) {
         ++m_pin_counts[hash];
         return true;
     }
-    if (m_store->has_block(hash)) {
-        // Content-addressed: an entry from an earlier pipeline already holds these bytes.
+    if (m_store_hits.find(hash) != m_store_hits.end()) {
+        // Content-addressed: the latest probe found these bytes in the store, e.g. from an earlier pipeline.
         adopt_locked(hash);
         ++m_pin_counts[hash];
         return true;
@@ -272,7 +282,7 @@ bool KVCacheOffloadCache::persist(std::size_t hash, std::size_t block_index) {
 bool KVCacheOffloadCache::pin(std::size_t hash) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_entries.find(hash) == m_entries.end()) {
-        if (!m_store->has_block(hash)) {
+        if (m_store_hits.find(hash) == m_store_hits.end()) {
             return false;
         }
         adopt_locked(hash);
@@ -294,16 +304,76 @@ void KVCacheOffloadCache::unpin(std::size_t hash) {
 
 bool KVCacheOffloadCache::contains(std::size_t hash) const {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_entries.find(hash) != m_entries.end() || find_queued(hash) != nullptr) {
-        return true;
+    // The store may hold entries this instance never wrote, e.g. a snapshot taken by an earlier pipeline; probe() finds them.
+    return m_entries.find(hash) != m_entries.end() || find_queued(hash) != nullptr ||
+           m_store_hits.find(hash) != m_store_hits.end();
+}
+
+std::vector<bool> KVCacheOffloadCache::probe(const std::vector<std::size_t>& chain) {
+    std::vector<bool> present(chain.size(), false);
+    if (chain.empty()) {
+        return present;
     }
-    // The store may hold entries this instance never wrote, e.g. a snapshot taken by an earlier pipeline.
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<bool> in_store(chain.size(), false);
     try {
-        return m_store->has_block(hash);
+        in_store = m_store->has_blocks(chain);
     } catch (const std::exception& error) {
-        GENAI_WARN("KV cache offload store lookup failed for hash %zu: %s", hash, error.what());
-        return false;
+        GENAI_WARN("KV cache offload store probe failed: %s", error.what());
     }
+    for (std::size_t i = 0; i < chain.size(); ++i) {
+        const bool stored = i < in_store.size() && in_store[i];
+        if (stored) {
+            remember_store_hit_locked(chain[i]);
+        }
+        present[i] = stored || m_entries.find(chain[i]) != m_entries.end() || find_queued(chain[i]) != nullptr;
+        if (m_track_chains) {
+            record_link_locked(chain[i], i > 0 ? chain[i - 1] : 0, i > 0);
+        }
+    }
+    return present;
+}
+
+void KVCacheOffloadCache::on_prefix_link(std::size_t hash, std::size_t parent_hash, bool has_parent) {
+    if (!m_track_chains) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(m_mutex);
+    record_link_locked(hash, parent_hash, has_parent);
+}
+
+void KVCacheOffloadCache::record_link_locked(std::size_t hash, std::size_t parent, bool has_parent) {
+    const auto [it, inserted] = m_links.try_emplace(hash, ChainLink{parent, has_parent});
+    if (!inserted) {
+        it->second = ChainLink{parent, has_parent};
+        return;
+    }
+    m_link_order.push_back(hash);
+    if (m_links.size() > m_max_links) {
+        m_links.erase(m_link_order.front());
+        m_link_order.pop_front();
+    }
+}
+
+std::vector<std::size_t> KVCacheOffloadCache::chain_to_locked(std::size_t hash) const {
+    std::vector<std::size_t> reversed;
+    std::size_t current = hash;
+    for (std::size_t steps = 0; steps <= m_links.size(); ++steps) {
+        reversed.push_back(current);
+        const auto it = m_links.find(current);
+        if (it == m_links.end() || !it->second.has_parent) {
+            break;
+        }
+        current = it->second.parent;
+    }
+    return std::vector<std::size_t>(reversed.rbegin(), reversed.rend());
+}
+
+void KVCacheOffloadCache::remember_store_hit_locked(std::size_t hash) {
+    if (m_store_hits.size() >= m_max_links) {
+        m_store_hits.clear();
+    }
+    m_store_hits.insert(hash);
 }
 
 bool KVCacheOffloadCache::load_into(std::size_t hash, std::size_t block_index) {
@@ -319,15 +389,19 @@ bool KVCacheOffloadCache::load_into(std::size_t hash, std::size_t block_index) {
             m_cache_manager.write_block(block_index, queued->data);
         } else {
             auto it = m_entries.find(hash);
-            if (it == m_entries.end() && !m_store->has_block(hash)) {
+            if (it == m_entries.end() && m_store_hits.find(hash) == m_store_hits.end()) {
                 return false;
             }
             GENAI_INFO("[KV_TRACE] KVCacheOffloadCache load hash=%zu source=disk physical_block=%zu", hash, block_index);
             {
                 ScopedTimer timer(m_statistics.load_disk_us);
-                OPENVINO_ASSERT(m_store->read_block(hash, m_staging),
-                                "KV cache offload index and store are out of sync for hash ",
-                                hash);
+                if (!m_store->read_block(hash, m_staging)) {
+                    m_store_hits.erase(hash);
+                    OPENVINO_ASSERT(it == m_entries.end(),
+                                    "KV cache offload index and store are out of sync for hash ",
+                                    hash);
+                    return false;
+                }
             }
             ScopedTimer timer(m_statistics.load_write_us);
             m_cache_manager.write_block(block_index, m_staging);

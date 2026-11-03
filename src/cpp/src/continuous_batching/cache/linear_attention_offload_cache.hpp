@@ -12,6 +12,7 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "continuous_batching/cache/block_manager.hpp"
@@ -67,7 +68,12 @@ public:
 
     void on_blocks_overwritten(std::size_t hash, const BlocksPerLayer& blocks) override;
 
+    void on_prefix_link(std::size_t hash, std::size_t parent_hash, bool has_parent) override;
+
     bool contains(std::size_t hash) const override;
+
+    /// Asks the store about a whole prefix chain in one call, from block 0 in order; see KVCacheOffloadCache::probe.
+    std::vector<bool> probe(const std::vector<std::size_t>& chain) override;
 
     bool load_into(std::size_t hash, std::size_t block_index) override;
 
@@ -112,8 +118,19 @@ private:
     struct QueuedStore {
         std::size_t hash = 0;
         bool reclaimed = false;
+        // The prefix chain from block 0 up to this block, probed right before the write. Empty when not tracked.
+        std::vector<std::size_t> chain;
         std::vector<uint8_t> data;
     };
+
+    struct ChainLink {
+        std::size_t parent = 0;
+        bool has_parent = false;
+    };
+
+    void record_link_locked(std::size_t hash, std::size_t parent, bool has_parent);
+    std::vector<std::size_t> chain_to_locked(std::size_t hash) const;
+    void remember_store_hit_locked(std::size_t hash);
 
     /// @return Whether an existing entry was dropped to free up room for a new one.
     /// Pinned entries are never dropped.
@@ -132,6 +149,12 @@ private:
     std::unique_ptr<IKVCacheStore> m_store;
     std::unordered_map<std::size_t, Entry> m_entries;
     std::unordered_map<std::size_t, std::size_t> m_pin_counts;
+    // Hashes the latest probes found in the store; the store itself is never asked about a single block.
+    std::unordered_set<std::size_t> m_store_hits;
+    std::unordered_map<std::size_t, ChainLink> m_links;
+    std::deque<std::size_t> m_link_order;
+    std::size_t m_max_links = 0;
+    bool m_track_chains = false;
     // Front is the oldest entry and the first to be replaced when the file is full.
     std::list<std::size_t> m_insertion_order;
     // A store stays queued until it is published, so readers never lose sight of it.

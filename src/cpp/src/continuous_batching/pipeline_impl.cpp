@@ -463,18 +463,22 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::restore_sta
     auto& orchestrator = m_scheduler->get_cache_orchestrator();
     auto* kv_offload = orchestrator.get_kv_offload_cache();
     OPENVINO_ASSERT(kv_offload != nullptr, "Restoring a session snapshot requires KV cache offload to be enabled");
+    // One probe over the whole entry chain, from block 0 in order, instead of a lookup per block.
+    std::vector<size_t> kv_chain;
+    kv_chain.reserve(loaded.kv_entries.size());
     for (const auto& entry : loaded.kv_entries) {
-        OPENVINO_ASSERT(kv_offload->contains(entry.hash),
-                        "Session snapshot block ending at token ", entry.content_len,
+        kv_chain.push_back(entry.hash);
+    }
+    const std::vector<bool> kv_present = kv_offload->probe(kv_chain);
+    for (size_t i = 0; i < loaded.kv_entries.size(); ++i) {
+        OPENVINO_ASSERT(kv_present[i],
+                        "Session snapshot block ending at token ", loaded.kv_entries[i].content_len,
                         " is missing from the prefix-caching offload store, so the snapshot cannot be restored");
     }
     if (loaded.la_entry) {
         auto* la_offload = orchestrator.get_la_offload_cache();
         OPENVINO_ASSERT(la_offload != nullptr,
                         "Restoring a session snapshot of a hybrid model requires linear-attention cache offload");
-        OPENVINO_ASSERT(la_offload->contains(loaded.la_entry->hash),
-                        "Session snapshot linear-attention checkpoint is missing from the prefix-caching offload "
-                        "store, so the snapshot cannot be restored");
     }
     const size_t num_positions = loaded.is_embeddings ? loaded.input_embeds.get_shape()[1] : loaded.token_ids.size();
     OPENVINO_ASSERT(sampling_params_copy.max_length > num_positions,
@@ -490,6 +494,20 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::restore_sta
                                               loaded.rope_delta,
                                               std::nullopt)  // prompt_ids: for detokenization/echo only
             : std::make_shared<SequenceGroup>(request_id, loaded.token_ids, sampling_params_copy);
+
+    if (loaded.la_entry) {
+        // The checkpoint is probed together with its whole chain, from block 0 in order, like the KV blocks.
+        const auto restored_sequence = restored_group->get_not_finished_sequences().front();
+        const size_t la_interval = orchestrator.get_block_size(CacheType::LINEAR_ATTENTION_CACHE);
+        std::vector<size_t> la_chain;
+        for (size_t len = la_interval; len < loaded.la_entry->content_len; len += la_interval) {
+            la_chain.push_back(restored_sequence->get_hash(len, la_interval));
+        }
+        la_chain.push_back(loaded.la_entry->hash);
+        OPENVINO_ASSERT(orchestrator.get_la_offload_cache()->probe(la_chain).back(),
+                        "Session snapshot linear-attention checkpoint is missing from the prefix-caching offload "
+                        "store, so the snapshot cannot be restored");
+    }
 
     // The snapshot owns these entries from now on: keep opportunistic eviction away from them. They may have
     // been written by an earlier pipeline, in which case this also makes this instance track them.

@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "content_hash.hpp"
+#include "logger.hpp"
 #include "openvino/core/except.hpp"
 
 namespace ov::genai {
@@ -36,6 +37,12 @@ AbiKVCacheStore::AbiKVCacheStore(const OvKVCacheStoreVTable* vtable,
 }
 
 AbiKVCacheStore::~AbiKVCacheStore() {
+    // Teardown order of the plugin contract: make everything written durable, then destroy the instance.
+    try {
+        flush();
+    } catch (const std::exception& error) {
+        GENAI_WARN("KV cache store plugin flush before destroy failed: %s", error.what());
+    }
     if (m_vtable->destroy != nullptr) {
         m_vtable->destroy(m_store);
     }
@@ -55,6 +62,21 @@ bool AbiKVCacheStore::has_block(size_t hash) const {
     const OvKVCacheStatus status = m_vtable->has_blocks(m_store, &key, &present, 1);
     OPENVINO_ASSERT(status == OV_KVCACHE_OK, "ABI store has_blocks failed with status ", status);
     return present != 0;
+}
+
+std::vector<bool> AbiKVCacheStore::has_blocks(const std::vector<size_t>& chain) const {
+    if (chain.empty()) {
+        return {};
+    }
+    std::vector<OvKVCacheBlockKey> keys;
+    keys.reserve(chain.size());
+    for (const size_t hash : chain) {
+        keys.push_back(make_key(hash));
+    }
+    std::vector<uint8_t> present(chain.size(), 0);
+    const OvKVCacheStatus status = m_vtable->has_blocks(m_store, keys.data(), present.data(), keys.size());
+    OPENVINO_ASSERT(status == OV_KVCACHE_OK, "ABI store has_blocks failed with status ", status);
+    return std::vector<bool>(present.begin(), present.end());
 }
 
 bool AbiKVCacheStore::write_block(size_t hash, const std::vector<uint8_t>& data) {

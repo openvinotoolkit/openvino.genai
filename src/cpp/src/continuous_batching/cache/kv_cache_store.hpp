@@ -26,6 +26,21 @@ public:
     virtual bool has_block(size_t hash) const = 0;
 
     /**
+     * @brief Probes a whole prefix chain in one call.
+     * @param chain The hashes of the blocks of one prompt from block 0, in order. A plugin numbers the blocks by their
+     * place in this list, so callers must always pass a complete chain and never a bare block.
+     * @return Whether each block of @p chain is stored.
+     */
+    virtual std::vector<bool> has_blocks(const std::vector<size_t>& chain) const {
+        std::vector<bool> present;
+        present.reserve(chain.size());
+        for (const size_t hash : chain) {
+            present.push_back(has_block(hash));
+        }
+        return present;
+    }
+
+    /**
      * @brief Persists @p data under @p hash, replacing any existing entry for the same hash.
      * @return false when the store has no free capacity; the caller must `drop_block` an
      * existing entry and retry.

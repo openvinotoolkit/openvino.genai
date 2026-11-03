@@ -779,6 +779,8 @@ TEST(TestKVCacheOffloadCache, AnotherInstanceServesAndPinsEntriesItNeverWrote) {
 
     auto second = make_offload_cache_on(fixture, store);
     EXPECT_EQ(second->get_num_entries(), 0);
+    // The store is only asked through probe(); contains() answers from what the probes found.
+    EXPECT_EQ(second->probe({42, 43}), (std::vector<bool>{true, false}));
     EXPECT_TRUE(second->contains(42));
     EXPECT_FALSE(second->contains(43));
 
@@ -806,6 +808,7 @@ TEST(TestKVCacheOffloadCache, PersistOfAnEntryOnlyTheStoreHoldsDoesNotRewriteIt)
     fixture.fill_block(1, /*seed=*/200);
 
     auto second = make_offload_cache_on(fixture, store);
+    second->probe({7});
     ASSERT_TRUE(second->persist(/*hash=*/7, /*block_index=*/1));
 
     EXPECT_EQ(second->get_statistics().num_stored, 0);
@@ -818,4 +821,176 @@ TEST(TestKVCacheOffloadCache, ReportsWhetherItsStoreIsAPlugin) {
     CacheFixture fixture;
     auto offload_cache = make_offload_cache(fixture, 1);
     EXPECT_FALSE(offload_cache->is_plugin_backed());
+}
+
+namespace {
+
+/// Records every question and write the host puts to the store, in order.
+class RecordingStore : public IKVCacheStore {
+public:
+    RecordingStore(std::shared_ptr<IKVCacheStore> inner, bool plugin_backed, std::vector<std::string>& events)
+        : m_inner(std::move(inner)),
+          m_plugin_backed(plugin_backed),
+          m_events(events) {}
+
+    bool has_block(size_t hash) const override {
+        m_events.push_back("has_block");
+        return m_inner->has_block(hash);
+    }
+    std::vector<bool> has_blocks(const std::vector<size_t>& chain) const override {
+        std::string event = "has_blocks";
+        for (const size_t hash : chain) {
+            event += " " + std::to_string(hash);
+        }
+        m_events.push_back(event);
+        return m_inner->has_blocks(chain);
+    }
+    bool write_block(size_t hash, const std::vector<uint8_t>& data) override {
+        m_events.push_back("write_block " + std::to_string(hash));
+        return m_inner->write_block(hash, data);
+    }
+    bool read_block(size_t hash, std::vector<uint8_t>& data) const override {
+        m_events.push_back("read_block " + std::to_string(hash));
+        return m_inner->read_block(hash, data);
+    }
+    void drop_block(size_t hash) override {
+        m_inner->drop_block(hash);
+    }
+    size_t get_block_size() const override {
+        return m_inner->get_block_size();
+    }
+    size_t get_capacity_blocks() const override {
+        return m_inner->get_capacity_blocks();
+    }
+    size_t get_num_free_blocks() const override {
+        return m_inner->get_num_free_blocks();
+    }
+    void flush() override {
+        m_events.push_back("flush");
+        m_inner->flush();
+    }
+    bool is_plugin_backed() const override {
+        return m_plugin_backed;
+    }
+
+private:
+    std::shared_ptr<IKVCacheStore> m_inner;
+    bool m_plugin_backed;
+    std::vector<std::string>& m_events;
+};
+
+std::unique_ptr<KVCacheOffloadCache> make_recording_cache(CacheFixture& fixture,
+                                                          bool plugin_backed,
+                                                          std::vector<std::string>& events,
+                                                          size_t num_slots = 4) {
+    return std::make_unique<KVCacheOffloadCache>(
+        *fixture.cache_manager,
+        std::make_unique<RecordingStore>(make_shared_file_store(fixture, num_slots), plugin_backed, events),
+        /*max_queued_stores=*/8);
+}
+
+}  // namespace
+
+TEST(TestKVCacheOffloadCache, PluginStoreWriteIsPrecededByAProbeOfItsChainFromBlockZero) {
+    CacheFixture fixture;
+    std::vector<std::string> events;
+    auto offload_cache = make_recording_cache(fixture, /*plugin_backed=*/true, events);
+    fixture.fill_block(0, /*seed=*/3);
+
+    offload_cache->on_prefix_link(/*hash=*/11, /*parent_hash=*/0, /*has_parent=*/false);
+    offload_cache->on_prefix_link(/*hash=*/22, /*parent_hash=*/11, /*has_parent=*/true);
+    offload_cache->on_prefix_link(/*hash=*/33, /*parent_hash=*/22, /*has_parent=*/true);
+    offload_cache->on_blocks_overwritten(/*hash=*/33, make_block_set(0));
+    offload_cache->flush_durable();
+
+    const std::vector<std::string> expected{"has_blocks 11 22 33", "write_block 33", "flush"};
+    EXPECT_EQ(events, expected);
+}
+
+TEST(TestKVCacheOffloadCache, FileStoreIsNotProbedBeforeWrites) {
+    CacheFixture fixture;
+    std::vector<std::string> events;
+    auto offload_cache = make_recording_cache(fixture, /*plugin_backed=*/false, events);
+    fixture.fill_block(0, /*seed=*/3);
+
+    offload_cache->on_prefix_link(/*hash=*/11, /*parent_hash=*/0, /*has_parent=*/false);
+    offload_cache->on_blocks_overwritten(/*hash=*/11, make_block_set(0));
+    offload_cache->flush_durable();
+
+    const std::vector<std::string> expected{"write_block 11", "flush"};
+    EXPECT_EQ(events, expected);
+}
+
+TEST(TestKVCacheOffloadCache, ProbeReportsEveryBlockOfTheChainInOrderWithOneStoreCall) {
+    CacheFixture fixture;
+    std::vector<std::string> events;
+    auto offload_cache = make_recording_cache(fixture, /*plugin_backed=*/true, events);
+    fixture.fill_block(0, /*seed=*/3);
+    ASSERT_TRUE(offload_cache->persist(/*hash=*/22, /*block_index=*/0));
+    events.clear();
+
+    EXPECT_EQ(offload_cache->probe({11, 22, 33}), (std::vector<bool>{false, true, false}));
+    EXPECT_EQ(events, (std::vector<std::string>{"has_blocks 11 22 33"}));
+}
+
+TEST(TestKVCacheOffloadCache, WarmPrefixCacheStillFindsBlocksThatReachTheSourceAfterTheProbe) {
+    constexpr size_t block_size = 4;
+    constexpr size_t num_blocks = 3;
+    CacheFixture fixture(num_blocks);
+    auto offload_cache = make_offload_cache(fixture, num_blocks);
+    BlockManager block_manager(num_blocks, /*enable_prefix_caching=*/true, block_size, /*num_layers=*/1);
+
+    // Reports nothing at probe time, the way blocks evicted by the walk's own allocations are missed by it.
+    struct BlindProbeSource : IExternalPrefixSource {
+        explicit BlindProbeSource(KVCacheOffloadCache& inner) : m_inner(inner) {}
+        bool contains(size_t hash) const override { return m_inner.contains(hash); }
+        std::vector<bool> probe(const std::vector<size_t>& chain) override { return std::vector<bool>(chain.size(), false); }
+        bool load_into(size_t hash, size_t block_index) override { return m_inner.load_into(hash, block_index); }
+        KVCacheOffloadCache& m_inner;
+    } source(*offload_cache);
+
+    std::vector<int64_t> tokens(num_blocks * block_size + 1);
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        tokens[i] = static_cast<int64_t>(i);
+    }
+    auto consumer = make_group(tokens, /*request_id=*/31);
+    const auto sequence = consumer->get_running_sequences().at(0);
+    for (size_t block = 0; block < num_blocks; ++block) {
+        fixture.fill_block(block, static_cast<uint8_t>(block + 1));
+        ASSERT_TRUE(offload_cache->persist(sequence->get_hash((block + 1) * block_size, block_size), block));
+    }
+
+    EXPECT_EQ(block_manager.warm_prefix_cache(consumer, source), num_blocks);
+}
+
+TEST(TestKVCacheOffloadCache, WarmPrefixCacheProbesTheWholeChainOnceBeforeReading) {
+    constexpr size_t block_size = 4;
+    constexpr size_t num_blocks = 3;
+    CacheFixture fixture(num_blocks);
+    std::vector<std::string> events;
+    auto offload_cache = make_recording_cache(fixture, /*plugin_backed=*/true, events, num_blocks);
+    BlockManager block_manager(num_blocks, /*enable_prefix_caching=*/true, block_size, /*num_layers=*/1);
+
+    std::vector<int64_t> tokens(num_blocks * block_size + 1);
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        tokens[i] = static_cast<int64_t>(i);
+    }
+    auto consumer = make_group(tokens, /*request_id=*/30);
+    const auto sequence = consumer->get_running_sequences().at(0);
+    std::string expected_probe = "has_blocks";
+    for (size_t block = 0; block < num_blocks; ++block) {
+        const size_t hash = sequence->get_hash((block + 1) * block_size, block_size);
+        fixture.fill_block(block, static_cast<uint8_t>(block + 1));
+        ASSERT_TRUE(offload_cache->persist(hash, block));
+        expected_probe += " " + std::to_string(hash);
+    }
+    events.clear();
+
+    EXPECT_EQ(block_manager.warm_prefix_cache(consumer, *offload_cache), num_blocks);
+
+    ASSERT_FALSE(events.empty());
+    EXPECT_EQ(events.front(), expected_probe);
+    for (size_t i = 1; i < events.size(); ++i) {
+        EXPECT_EQ(events[i].rfind("read_block", 0), 0u) << "unexpected store call after the probe: " << events[i];
+    }
 }

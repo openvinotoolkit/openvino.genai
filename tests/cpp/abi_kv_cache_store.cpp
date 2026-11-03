@@ -78,6 +78,15 @@ TEST(TestAbiFileStoreProvider, WriteThenReadRoundTripsBytesThroughTheAbi) {
     EXPECT_EQ(actual, expected);
 }
 
+TEST(TestAbiFileStoreProvider, HasBlocksAnswersForTheWholeChainInOrder) {
+    auto store = open_store(/*num_blocks=*/4);
+    ASSERT_TRUE(store->write_block(1, make_block(1)));
+    ASSERT_TRUE(store->write_block(3, make_block(3)));
+
+    EXPECT_EQ(store->has_blocks({1, 2, 3, 4}), (std::vector<bool>{true, false, true, false}));
+    EXPECT_TRUE(store->has_blocks({}).empty());
+}
+
 TEST(TestAbiFileStoreProvider, ReadReportsMissForUnknownHash) {
     auto store = open_store(/*num_blocks=*/4);
     std::vector<uint8_t> data;

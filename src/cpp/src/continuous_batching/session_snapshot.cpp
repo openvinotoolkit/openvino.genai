@@ -226,10 +226,19 @@ void save_prefix_offload_format(CacheOrchestrator& orchestrator,
     std::vector<size_t> pinned_hashes;
     std::vector<size_t> pinned_la_hashes;
     try {
+        // The store is asked about the whole chain once, from block 0 in order, before any block is written.
+        const size_t num_kv_blocks = (computed_len + block_tokens - 1) / block_tokens;
+        std::vector<size_t> kv_chain;
+        kv_chain.reserve(num_kv_blocks);
+        for (size_t block = 0; block < num_kv_blocks; ++block) {
+            kv_chain.push_back(mutable_sequence->get_hash(std::min((block + 1) * block_tokens, computed_len), block_tokens));
+        }
+        kv_offload->probe(kv_chain);
+
         for (size_t block = 0; block * block_tokens < computed_len; ++block) {
             OPENVINO_ASSERT(block < indices.size(), "Sequence has fewer KV blocks than its computed length needs");
             const size_t content_len = std::min((block + 1) * block_tokens, computed_len);
-            const size_t hash = mutable_sequence->get_hash(content_len, block_tokens);
+            const size_t hash = kv_chain[block];
             OPENVINO_ASSERT(kv_offload->persist(hash, indices[block]),
                             "Session snapshot could not store KV block ", block,
                             " in the prefix-caching offload store: no slot is free and every entry is pinned. "
@@ -248,6 +257,12 @@ void save_prefix_offload_format(CacheOrchestrator& orchestrator,
                 logical_block_indices(orchestrator.get_block_manager(CacheType::LINEAR_ATTENTION_CACHE), sequence->get_id());
             OPENVINO_ASSERT(!la_indices.empty(), "Linear attention cache has no block allocated for this sequence");
             const size_t la_hash = mutable_sequence->get_hash(computed_len, la_interval);
+            std::vector<size_t> la_chain;
+            for (size_t len = la_interval; len < computed_len; len += la_interval) {
+                la_chain.push_back(mutable_sequence->get_hash(len, la_interval));
+            }
+            la_chain.push_back(la_hash);
+            la_offload->probe(la_chain);
             OPENVINO_ASSERT(la_offload->persist(la_hash, la_indices.back()),
                             "Session snapshot could not store the linear-attention checkpoint in the prefix-caching "
                             "offload store: no slot is free and every entry is pinned. "

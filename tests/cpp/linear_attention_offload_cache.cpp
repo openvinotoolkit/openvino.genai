@@ -447,6 +447,8 @@ TEST(TestLinearAttentionOffloadCache, AnotherInstanceServesAndPinsEntriesItNever
 
     auto second = make_offload_cache_on(fixture, store);
     EXPECT_EQ(second->get_num_entries(), 0);
+    // The store is only asked through probe(); contains() answers from what the probes found.
+    EXPECT_EQ(second->probe({42, 43}), (std::vector<bool>{true, false}));
     EXPECT_TRUE(second->contains(42));
     EXPECT_FALSE(second->contains(43));
 

@@ -121,6 +121,20 @@ public:
      * @param blocks The blocks still holding those contents, one per block-table layer.
      */
     virtual void on_blocks_overwritten(size_t hash, const BlocksPerLayer& blocks) = 0;
+
+    /**
+     * @brief Tells where a published block sits in its prompt's chain.
+     * @param hash The prefix hash of the block.
+     * @param parent_hash The prefix hash of the preceding block of the same chain; meaningful when @p has_parent.
+     * @param has_parent False for the first block of a chain.
+     * Lets the observer hand a complete chain from block 0 to the store before it writes a block that was
+     * overwritten long after its predecessors were published.
+     */
+    virtual void on_prefix_link(size_t hash, size_t parent_hash, bool has_parent) {
+        (void)hash;
+        (void)parent_hash;
+        (void)has_parent;
+    }
 };
 
 /**
@@ -133,6 +147,20 @@ public:
     virtual ~IExternalPrefixSource() = default;
 
     virtual bool contains(size_t hash) const = 0;
+
+    /**
+     * @brief Reports which blocks of a prompt's prefix chain are available, in one query.
+     * @param chain The prefix hashes of the prompt's blocks from block 0, in order.
+     * By default this asks contains() for each block.
+     */
+    virtual std::vector<bool> probe(const std::vector<size_t>& chain) {
+        std::vector<bool> present;
+        present.reserve(chain.size());
+        for (const size_t hash : chain) {
+            present.push_back(contains(hash));
+        }
+        return present;
+    }
 
     /**
      * @brief Fills a physical cache block with the contents stored for @p hash.
@@ -985,6 +1013,7 @@ private:
     std::map<uint64_t, LinearAttentionLiveState> m_linear_attention_live_states;
 
     std::mutex m_cached_blocks_map_mutex;
+    IOverwrittenBlockObserver* m_link_observer = nullptr;
 public:
     struct PrefixRestorePlan {
         std::vector<size_t> block_content_lengths;
@@ -1327,6 +1356,7 @@ public:
     void set_overwritten_block_observer(IOverwrittenBlockObserver* observer) {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         m_allocator.set_overwritten_block_observer(observer);
+        m_link_observer = observer;
     }
 
     /**
@@ -2609,6 +2639,7 @@ public:
                         m_prefix_hash_to_cached_blocks[hash] = last_blocks;
                         unregister_cached_hash(prev_hash);
                         register_cached_content_length(hash, content_length);
+                        note_prefix_link(sequence, content_length, hash);
                     }
                 }
             }
@@ -2686,6 +2717,7 @@ public:
             }
             const auto [prepared_it, inserted] = prepared_blocks.emplace(hash, std::move(completed_blocks));
             OPENVINO_ASSERT(inserted, "Crossed cache boundaries must have distinct prefix identities");
+            note_prefix_link(sequence, content_length, hash);
             if (content_length_it == m_cached_hash_to_content_length.end()) {
                 prepared_hash_lengths.emplace(prepared_it->first, content_length);
                 ++prepared_length_counts[content_length];
@@ -2762,6 +2794,30 @@ public:
         const auto& sequence = sequences[0];
         const size_t prompt_len = group->get_prompt_len();
 
+        // Ask the source about the whole chain at once, from block 0 in order, before reading anything: a store
+        // numbers the blocks by their place in this query. The walk below then only looks at the answer.
+        std::vector<size_t> chain_lengths;
+        for (size_t content_len = m_block_size; content_len <= prompt_len; content_len += m_block_size) {
+            chain_lengths.push_back(content_len);
+        }
+        if (prompt_len > 1 && std::find(chain_lengths.begin(), chain_lengths.end(), prompt_len - 1) == chain_lengths.end()) {
+            chain_lengths.push_back(prompt_len - 1);
+            std::sort(chain_lengths.begin(), chain_lengths.end());
+        }
+        std::vector<size_t> chain_hashes;
+        chain_hashes.reserve(chain_lengths.size());
+        for (const size_t content_len : chain_lengths) {
+            chain_hashes.push_back(sequence->get_hash(content_len, m_block_size));
+        }
+        const std::vector<bool> probed = source.probe(chain_hashes);
+        OPENVINO_ASSERT(probed.size() == chain_hashes.size(), "A prefix probe must answer for every block of the chain");
+        std::set<size_t> available;
+        for (size_t i = 0; i < chain_hashes.size(); ++i) {
+            if (probed[i]) {
+                available.insert(chain_hashes[i]);
+            }
+        }
+
         size_t num_restored = 0;
         // Hold every chain block until the walk is over. A warmed block keeps the timestamp it was created
         // with, so releasing it immediately would make it the very next block the allocator overwrites.
@@ -2773,7 +2829,8 @@ public:
                 chain.push_back(m_allocator.get_cached_block(hash, m_prefix_hash_to_cached_blocks));
                 return true;
             }
-            if (!source.contains(hash) || !m_allocator.can_allocate_blocks(1)) {
+            // A block evicted from the device while this walk allocates reaches the source after the probe above.
+            if ((available.find(hash) == available.end() && !source.contains(hash)) || !m_allocator.can_allocate_blocks(1)) {
                 return false;
             }
 
@@ -3007,6 +3064,18 @@ private:
         }
         m_cached_hash_to_content_length[hash] = content_length;
         ++m_cached_content_length_ref_counts[content_length];
+    }
+
+    /// Reports where the block ending at `content_length` sits in the sequence's chain (see on_prefix_link).
+    void note_prefix_link(const Sequence::Ptr& sequence, size_t content_length, uint64_t hash) {
+        if (m_link_observer == nullptr) {
+            return;
+        }
+        const size_t parent_length = (content_length - 1) / m_block_size * m_block_size;
+        const bool has_parent = parent_length > 0;
+        m_link_observer->on_prefix_link(hash,
+                                        has_parent ? sequence->get_hash(parent_length, m_block_size) : 0,
+                                        has_parent);
     }
 
     void unregister_cached_hash(uint64_t hash) {
@@ -3442,6 +3511,7 @@ private:
                     m_prefix_hash_to_cached_blocks[hash] = last_blocks_vec;
                     unregister_cached_hash(prev_hash);
                     register_cached_content_length(hash, content_length);
+                    note_prefix_link(sequence, content_length, hash);
                 }
             }
             for (size_t i = 0; i < num_blocks; ++i) {
@@ -3451,6 +3521,7 @@ private:
                 }
                 auto hash = sequence->get_hash(num_hashed_tokens, m_block_size);
                 auto blocks_for_all_layers = allocate_cached_block(hash, num_hashed_tokens);
+                note_prefix_link(sequence, num_hashed_tokens, hash);
                 for (size_t layer_idx = 0; layer_idx < blocks_for_all_layers.size(); layer_idx++) {
                     m_block_table[sequence_id][layer_idx].push_back(blocks_for_all_layers[layer_idx]);
                 }
