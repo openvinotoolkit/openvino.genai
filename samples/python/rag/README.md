@@ -99,9 +99,11 @@ rerank_result = pipeline.rerank(query, documents)
 
 ## Applying a prompt template
 
-Some reranker models require their chat template to be applied to the query and each document (e.g.
-Qwen3-Reranker). `TextRerankPipeline` concatenates `query + document`, so format them yourself and set
-`padding_side="left"` (these models read the last token):
+Some reranker models require their chat template to be applied to the query and each document.
+`TextRerankPipeline` concatenates `query + document`, so format them yourself and set
+`padding_side="left"` (these models read the last token).
+
+Example for `Qwen/Qwen3-Reranker-0.6B`:
 
 ```python
 import openvino_genai
