@@ -3,6 +3,7 @@
 
 #include "visual_language/mistral3/classes.hpp"
 #include "visual_language/clip.hpp"
+#include "continuous_batching/timer.hpp"
 #include "utils.hpp"
 
 #include <algorithm>
@@ -189,7 +190,6 @@ InputsEmbedderMistral3::InputsEmbedderMistral3(
     const std::string& device,
     const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {
-    m_skip_duplicate_bos = true;
     auto compiled_model = utils::singleton_core().compile_model(
         model_dir / "openvino_multi_modal_projector_model.xml", device,
         utils::get_model_properties(device_config, "multi_modal_projector", device));
@@ -209,7 +209,6 @@ InputsEmbedderMistral3::InputsEmbedderMistral3(
     const std::string& device,
     const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
-    m_skip_duplicate_bos = true;
     const auto& projector_model = utils::get_model_weights_pair(models_map, "multi_modal_projector").first;
     const auto& projector_weights = utils::get_model_weights_pair(models_map, "multi_modal_projector").second;
     auto compiled_model = utils::singleton_core().compile_model(
@@ -300,6 +299,21 @@ NormalizedPrompt InputsEmbedderMistral3::normalize_prompt(
     }
 
     return {std::move(unified_prompt), std::move(images_sequence), {}};
+}
+
+ov::Tensor InputsEmbedderMistral3::apply_chat_template_tokenize(const std::string& prompt, VLMPerfMetrics& metrics) {
+    const std::string bos_token = m_tokenizer.get_bos_token();
+    // ticket to address globally: 192386
+    if (!m_is_chat_conversation && m_prompt_formatting != PromptFormatting::NeedsTemplate && !bos_token.empty() &&
+        prompt.compare(0, bos_token.size(), bos_token) == 0) {
+        ManualTimer encode_timer("Encode");
+        encode_timer.start();
+        ov::Tensor input_ids = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false)).input_ids;
+        encode_timer.end();
+        metrics.raw_metrics.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());
+        return input_ids;
+    }
+    return IInputsEmbedder::apply_chat_template_tokenize(prompt, metrics);
 }
 
 void InputsEmbedderMistral3::encode_image_token_id() {

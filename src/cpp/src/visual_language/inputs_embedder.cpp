@@ -137,17 +137,9 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
     m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) { }
 
 ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
-    bool add_special_tokens = m_add_special_tokens_is_set
-                                  ? m_add_special_tokens
-                                  : !m_is_chat_conversation && m_prompt_formatting == PromptFormatting::Raw;
-    if (m_skip_duplicate_bos && !m_is_chat_conversation && m_prompt_formatting == PromptFormatting::Raw) {
-        const std::string bos_token = m_tokenizer.get_bos_token();
-        // Prompt templated by the caller already starts with BOS; adding special tokens would duplicate it.
-        // Ticket to address globally: 192386
-        if (!bos_token.empty() && prompt.compare(0, bos_token.size(), bos_token) == 0) {
-            add_special_tokens = false;
-        }
-    }
+    const bool add_special_tokens =
+        m_add_special_tokens_is_set ? m_add_special_tokens
+                                   : !m_is_chat_conversation && m_prompt_formatting == PromptFormatting::Raw;
     ManualTimer encode_timer("Encode");
     encode_timer.start();
 
