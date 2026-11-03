@@ -93,6 +93,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
         auto non_adapter_properties = extract_adapters_from_properties(properties_without_draft_model);
+        non_adapter_properties.fork().erase("sampler_num_threads");  // sampler option, not a plugin property
         embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device, non_adapter_properties.fork());
     }
 
@@ -161,6 +162,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
         auto non_adapter_properties = extract_adapters_from_properties(properties_without_draft_model);
+        non_adapter_properties.fork().erase("sampler_num_threads");  // sampler option, not a plugin property
         embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device, non_adapter_properties.fork());
     }
 
@@ -289,6 +291,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     std::shared_ptr<InputsEmbedder> embedder;
     if (!model_config_dir_path.empty() && std::filesystem::exists(model_config_dir_path / "openvino_text_embeddings_model.xml")) {
         auto non_adapter_properties = extract_adapters_from_properties(properties_without_draft_model);
+        non_adapter_properties.fork().erase("sampler_num_threads");  // sampler option, not a plugin property
         embedder = std::make_shared<InputsEmbedder>(model_config_dir_path, device, non_adapter_properties.fork());
     }
 
@@ -302,7 +305,12 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         auto main_model_descr = ov::genai::ModelDesc(language_model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         m_impl = std::make_shared<MtpDecodingImpl>(main_model_descr, draft_model_descr, embedder);
     } else if (draft_model_descr.model != nullptr && (dflash_rt_info.dflash_mode || eagle_rt_info.eagle3_mode)) {
-        auto main_model_descr = ov::genai::ModelDesc(language_model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        ov::genai::ModelDesc main_model_descr;
+        if (embedder) {
+            main_model_descr = ov::genai::ModelDesc(language_model, tokenizer, std::move(embedder), device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        } else {
+            main_model_descr = ov::genai::ModelDesc(language_model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        }
         if (dflash_rt_info.dflash_mode) {
             m_impl = std::make_shared<DFlashDecodingImpl>(main_model_descr, draft_model_descr, dflash_rt_info);
         } else {
@@ -311,6 +319,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     } else if (draft_model_descr.model != nullptr) {
         auto main_model_descr = ov::genai::ModelDesc(language_model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         m_impl = std::make_shared<SpeculativeDecodingImpl>(main_model_descr, draft_model_descr);
+    } else if (embedder) {
+        m_impl = std::make_shared<ContinuousBatchingImpl>(language_model, embedder, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
     } else {
         m_impl = std::make_shared<ContinuousBatchingImpl>(language_model, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
     }

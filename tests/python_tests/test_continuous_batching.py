@@ -1099,6 +1099,46 @@ def test_qwen35_mtp_matches_main_only(qwen35_mtp_model_path: Path):
     assert mtp_result[0].m_generation_ids == main_only_texts
 
 
+
+@pytest.fixture(scope="module")
+def gemma4_dflash_model_paths() -> tuple[Path, Path]:
+    # Gemma 4 is exported as a decomposed VLM (language model + text embeddings model); LLMPipeline runs it text-only.
+    paths = []
+    for model_id, task, trust_remote_code in (
+        ("optimum-intel-internal-testing/tiny-random-gemma4", "image-text-to-text", False),
+        ("optimum-intel-internal-testing/tiny-random-gemma4-dflash", "text-generation-with-past", True),
+    ):
+        model_path = get_ov_cache_converted_models_dir() / f"{sanitize_model_id(model_id)}_{task}"
+        manager = AtomicDownloadManager(model_path)
+        manager.execute(
+            lambda temp_path, model_id=model_id, task=task, trust_remote_code=trust_remote_code: export_with_optimum_cli(
+                model_id, task, temp_path, trust_remote_code=trust_remote_code
+            )
+        )
+        paths.append(model_path)
+    return paths[0], paths[1]
+
+
+def test_dflash_llm_pipeline_decomposed_target_matches_main_only(gemma4_dflash_model_paths: tuple[Path, Path]):
+    main_model_path, draft_model_path = gemma4_dflash_model_paths
+    scheduler_config = SchedulerConfig()
+    scheduler_config.enable_prefix_caching = False
+    generation_config = GenerationConfig(do_sample=False, max_new_tokens=20, ignore_eos=True)
+    prompt = "OpenVINO is"
+
+    main_only_pipe = LLMPipeline(main_model_path, "CPU", scheduler_config=scheduler_config)
+    main_only_text = main_only_pipe.generate([prompt], generation_config).texts[0]
+    del main_only_pipe
+    gc.collect()
+
+    dflash_pipe = LLMPipeline(
+        main_model_path, "CPU", draft_model=draft_model(draft_model_path, "CPU"), scheduler_config=scheduler_config
+    )
+    dflash_text = dflash_pipe.generate([prompt], generation_config).texts[0]
+
+    assert main_only_text
+    assert dflash_text == main_only_text
+
 def test_qwen35_mtp_extended_perf_metrics(qwen35_mtp_model_path: Path):
     mtp_pipe = create_ov_cb_pipeline(
         qwen35_mtp_model_path,
