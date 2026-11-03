@@ -3,6 +3,7 @@
 
 #include "pipeline.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 
@@ -71,8 +72,10 @@ ASRDecodedResults FunASR::generate(const AudiosView& audios,
     results.perf_metrics.raw_metrics.m_inference_durations[0] += MicroSeconds(encoder_infer_ms);
     results.perf_metrics.asr_raw_metrics.encode_inference_durations.emplace_back(encoder_infer_ms);
 
-    auto [prompt, language] =
-        build_input_ids(encoder_hidden_states.get_shape()[1], config, results.perf_metrics.raw_metrics);
+    // Match native FunASR's low-frame-rate mode: use the first ceil(LFR frames / 8) embeddings.
+    const size_t num_audio_tokens =
+        std::min((features.get_shape()[1] + 7) / 8, encoder_hidden_states.get_shape()[1]);
+    auto [prompt, language] = build_input_ids(num_audio_tokens, config, results.perf_metrics.raw_metrics);
 
     const auto encoded_results = m_decoder->generate(prompt,
                                                      encoder_hidden_states,

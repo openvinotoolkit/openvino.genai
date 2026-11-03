@@ -23,6 +23,8 @@
 
 namespace ov::genai::video_generation_utils {
 
+inline constexpr double PI = 3.14159265358979323846;
+
 inline ov::Tensor repeat_per_video(const ov::Tensor& input, size_t num_videos_per_prompt) {
     if (num_videos_per_prompt == 1) {
         return input;
