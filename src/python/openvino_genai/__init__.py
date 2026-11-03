@@ -151,6 +151,7 @@ from .py_openvino_genai import (
 from .py_openvino_genai import (
     ContinuousBatchingPipeline,
     GenerationFinishReason,
+    GenerationHandle,
     GenerationResult,
     GenerationStatus,
     SchedulerConfig,

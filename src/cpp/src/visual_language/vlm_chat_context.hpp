@@ -13,7 +13,7 @@ namespace ov::genai {
  * prepares `ProcessedChatData` for further model inputs processing.
  * 
  * Handles:
- * - Vision registration/encoding via VisionRegistry
+ * - Vision registration/encoding via EmbeddingsRegistry
  * - Chat history synchronization and incremental updates
  * - Chat history content normalization
  * - Vision sequence resolution
@@ -50,7 +50,7 @@ public:
 
     VLMChatContext(
         const ChatHistory& history,
-        const std::shared_ptr<VisionRegistry>& vision_registry,
+        const std::shared_ptr<EmbeddingsRegistry>& embeddings_registry,
         InputsEmbedder& embedder
     );
 
@@ -67,7 +67,7 @@ public:
 
 private:
     const ChatHistory& m_history;
-    const std::shared_ptr<VisionRegistry>& m_vision_registry;
+    const std::shared_ptr<EmbeddingsRegistry>& m_embeddings_registry;
     InputsEmbedder& m_inputs_embedder;
     const std::shared_ptr<ChatHistoryInternalState> m_history_state;
     

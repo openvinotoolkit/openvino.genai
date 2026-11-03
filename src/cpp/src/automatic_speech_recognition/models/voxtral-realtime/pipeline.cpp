@@ -659,13 +659,13 @@ VoxtralASR::VoxtralASR(const std::filesystem::path& models_path,
     : ASRPipelineImplBase(models_path),
       m_runtime{std::make_shared<VoxtralRealtimeRuntime>(models_path, device, properties)} {}
 
-ASRDecodedResults VoxtralASR::generate(const AudioInputs& audio_inputs,
+ASRDecodedResults VoxtralASR::generate(const AudiosView& audios,
                                        const std::optional<ASRGenerationConfig>& generation_config,
                                        const std::shared_ptr<StreamerBase> streamer) {
     OPENVINO_ASSERT(!streamer,
                     "Voxtral uses input streaming; call create_stream() and pass a text callback to ASRStream::generate().");
     auto stream = create_stream(generation_config);
-    stream->push_audio(std::get<std::vector<float>>(audio_inputs));
+    stream->push_audio(get_single_audio(audios));
     stream->end_audio();
     return stream->generate(nullptr);
 }
