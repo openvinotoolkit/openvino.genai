@@ -7,8 +7,10 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -219,6 +221,34 @@ void expose_target_hidden_states(std::shared_ptr<ov::Model>& model,
     add_dflash_hidden_state_result(model, outputs);
 }
 
+namespace {
+
+constexpr const char* DFLASH_DRAFT_FC_WEIGHTS_HASH = "dflash_draft_fc_weights_hash";
+
+// A hash of the values of every Constant the output depends on.
+std::string hash_constant_values(const ov::Output<ov::Node>& output) {
+    size_t seed = 0;
+    std::vector<ov::Node*> pending{output.get_node()};
+    std::unordered_set<ov::Node*> visited;
+    while (!pending.empty()) {
+        auto* node = pending.back();
+        pending.pop_back();
+        if (!visited.insert(node).second) {
+            continue;
+        }
+        if (const auto* constant = ov::as_type<ov::op::v0::Constant>(node)) {
+            const std::string_view bytes(static_cast<const char*>(constant->get_data_ptr()), constant->get_byte_size());
+            seed ^= std::hash<std::string_view>{}(bytes) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        for (const auto& input : node->input_values()) {
+            pending.push_back(input.get_node());
+        }
+    }
+    return std::to_string(seed);
+}
+
+}  // namespace
+
 void move_fc_from_draft_to_main(const std::shared_ptr<ov::Model>& draft_model,
                                 const std::shared_ptr<ov::Model>& main_model) {
     OPENVINO_ASSERT(draft_model && main_model, "DFlash FC move requires both target and draft models.");
@@ -246,6 +276,9 @@ void move_fc_from_draft_to_main(const std::shared_ptr<ov::Model>& draft_model,
                                                           fc->get_transpose_a(),
                                                           fc->get_transpose_b());
     target_fc->set_friendly_name("dflash_hidden_state_fc");
+    // The target compiles with ov::cache_model_path, so its model cache key leaves out weight values but takes plain
+    // rt_info. Without the FC weight hash, drafts of one architecture would share the cached target of the first.
+    target_fc->get_rt_info()[DFLASH_DRAFT_FC_WEIGHTS_HASH] = hash_constant_values(fc->input_value(1));
     hidden_result->input(0).replace_source_output(target_fc);
 
     auto hidden_states_shape = hidden_states->get_partial_shape();

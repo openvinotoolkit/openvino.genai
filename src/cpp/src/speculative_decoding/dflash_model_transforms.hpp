@@ -72,7 +72,8 @@ void expose_target_hidden_states(std::shared_ptr<ov::Model>& model,
  * Running it on the target's `last_hidden_state` makes the hidden states passed to the draft
  * `in_width / out_width` times smaller. The FC weight subgraph moves to the target with its
  * decompression chain, the draft FC consumers read `hidden_states` directly, and `hidden_states` is
- * resized to the projected width. Run after `expose_target_hidden_states`.
+ * resized to the projected width. The target FC carries a hash of the FC weights in its rt_info, which keys the
+ * target's model cache on the draft. Run after `expose_target_hidden_states`.
  *
  * @throws ov::Exception when `hidden_states` does not feed only the data input of an FC MatMul, or when
  * the target hidden-state width does not match the draft `hidden_states` width.
