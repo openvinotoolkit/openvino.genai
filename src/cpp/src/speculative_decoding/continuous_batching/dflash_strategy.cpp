@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <limits>
 #include <string>
 #include <vector>
@@ -55,6 +56,19 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     : m_rt_info(rt_info) {
     OPENVINO_ASSERT(m_rt_info.dflash_mode, "DFlash continuous batching requires dflash_mode=true.");
     OPENVINO_ASSERT(!m_rt_info.target_layer_ids.empty(), "DFlash target_layer_ids cannot be empty.");
+    // An infinite value passes the sign checks, and gives the draft logits NaN or infinite values.
+    OPENVINO_ASSERT(std::isfinite(m_rt_info.input_embedding_scale) && m_rt_info.input_embedding_scale > 0.0f,
+                    "DFlash input_embedding_scale must be positive and finite, got ",
+                    m_rt_info.input_embedding_scale,
+                    ".");
+    OPENVINO_ASSERT(std::isfinite(m_rt_info.output_multiplier) && m_rt_info.output_multiplier > 0.0f,
+                    "DFlash output_multiplier must be positive and finite, got ",
+                    m_rt_info.output_multiplier,
+                    ".");
+    OPENVINO_ASSERT(std::isfinite(m_rt_info.final_logit_softcapping) && m_rt_info.final_logit_softcapping >= 0.0f,
+                    "DFlash final_logit_softcapping must be finite and not negative, got ",
+                    m_rt_info.final_logit_softcapping,
+                    ".");
     auto main_model = main_model_desc.model;
     auto draft_model = draft_model_desc.model;
     OPENVINO_ASSERT(main_model && draft_model, "DFlash requires both target and draft models.");
@@ -72,8 +86,8 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     auto [draft_properties, draft_attention_backend] = utils::extract_attention_backend(
         draft_inherits_target_properties ? main_model_desc.properties : draft_model_desc.properties);
     if (draft_inherits_target_properties) {
-        // The target's model path keys its model cache in place of its weights, so drafts that differ only in their
-        // weights would share a cached blob.
+        // The target's model path keys its model cache in place of its weights, so drafts or Markov heads that differ
+        // only in their weights would share a cached blob.
         draft_properties.erase(ov::cache_model_path.name());
     }
     OPENVINO_ASSERT(draft_attention_backend == PA_BACKEND,
@@ -104,12 +118,18 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     // The VLM draft keeps its external inputs_embeds; the LLM draft gets the target embedding grafted in.
     if (m_inputs_embedder) {
         OPENVINO_ASSERT(needs_embedding_attach, "DFlash VLM draft model must be inputs_embeds-native.");
+        utils::dflash::scale_draft_inputs_embeds(draft_model, m_rt_info.input_embedding_scale);
     } else if (needs_embedding_attach) {
-        utils::dflash::attach_target_embedding_to_draft(main_model, draft_model);
+        utils::dflash::attach_target_embedding_to_draft(main_model, draft_model, m_rt_info.input_embedding_scale);
     }
+    // A gated Markov head scores the candidates from the draft hidden states as well as from its logits.
+    const bool markov_head_reads_hidden_states =
+        m_rt_info.markov_head_computation && utils::has_input(m_rt_info.markov_head_computation, "draft_hidden_states");
     if (needs_lm_head_graft) {
-        utils::dflash::attach_target_lm_head_to_draft(main_model, draft_model);
+        utils::dflash::attach_target_lm_head_to_draft(main_model, draft_model, markov_head_reads_hidden_states);
     }
+    OPENVINO_ASSERT(!markov_head_reads_hidden_states || model_has_output(draft_model, "last_hidden_state"),
+                    "A DFlash draft with a gated Markov head must expose 'last_hidden_state'.");
 
     auto [main_scheduler_config, draft_scheduler_config] = init_speculative_models(main_model_desc, draft_model_desc);
     OPENVINO_ASSERT(main_scheduler_config.enable_prefix_caching == draft_scheduler_config.enable_prefix_caching,
@@ -117,6 +137,9 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     // The draft candidates are read at fixed rows of the gathered logits.
     OPENVINO_ASSERT(utils::has_input(draft_model, "sampled_tokens_indices"),
                     "DFlash draft model has no 'sampled_tokens_indices' input, so its candidate logits cannot be gathered.");
+    if (markov_head_reads_hidden_states) {
+        utils::dflash::gather_last_hidden_state_with_logits(draft_model);
+    }
     validate_target_has_no_unmanaged_state(main_model);
     utils::dflash::expose_target_hidden_states(main_model, retained_hidden_state_locators, m_rt_info.target_layer_ids);
     utils::dflash::move_fc_from_draft_to_main(draft_model, main_model);
@@ -128,11 +151,12 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
 
     m_tokenizer = main_model_desc.tokenizer;
     m_generation_config = main_model_desc.generation_config;
-    std::shared_ptr<dflash_cb::CandidateSelector> candidate_selector;
-    if (m_rt_info.markov_head_computation) {
-        candidate_selector = std::make_shared<dflash_cb::CandidateSelector>(m_rt_info, draft_device, draft_properties);
-        m_rt_info.markov_head_computation.reset();
-    }
+    auto candidate_selector = std::make_shared<dflash_cb::CandidateSelector>(m_rt_info, draft_device, draft_properties);
+    m_rt_info.markov_head_computation.reset();
+    utils::dflash::apply_dflash_gpu_compile_properties(m_rt_info,
+                                                       draft_device,
+                                                       draft_inherits_target_properties,
+                                                       draft_properties);
 
     if (m_inputs_embedder) {
         m_main_pipeline = std::make_shared<ContinuousBatchingForDFlashDecodingImpl>(main_model,
