@@ -200,7 +200,7 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     m_main_pipeline->set_hidden_state_export_needed(true);
 
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
-    m_draft_pipeline->raw_perf_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
+    m_draft_pipeline->reset_draft_perf_metrics();
 }
 
 void ContinuousBatchingPipeline::DFlashDecodingImpl::validate_request_config(const GenerationConfig& config) const {
