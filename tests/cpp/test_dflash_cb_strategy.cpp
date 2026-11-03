@@ -36,6 +36,7 @@
 #include "openvino/op/util/variable.hpp"
 #include "openvino/pass/sdpa_to_paged_attention.hpp"
 #include "openvino/runtime/core.hpp"
+#include "openvino/runtime/properties.hpp"
 #include "model_desc.hpp"
 #include "sampling/sampler.hpp"
 #include "sequence_group.hpp"
@@ -311,9 +312,9 @@ std::shared_ptr<ov::op::v0::Parameter> make_draft_hidden_states(size_t width) {
 }
 
 // f16 [4, in_width] weights behind a Convert, as an exported compressed FC with transpose_b.
-std::shared_ptr<ov::op::v0::Convert> make_fc_weights(size_t in_width) {
+std::shared_ptr<ov::op::v0::Convert> make_fc_weights(size_t in_width, float first_value = -16.0f) {
     std::vector<float> values(4 * in_width);
-    std::iota(values.begin(), values.end(), -16.0f);
+    std::iota(values.begin(), values.end(), first_value);
     auto weights = ov::op::v0::Constant::create(ov::element::f16, ov::Shape{4, in_width}, values);
     return std::make_shared<ov::op::v0::Convert>(weights, ov::element::f32);
 }
@@ -372,6 +373,40 @@ TEST(DFlashModelTransforms, MovesTheDraftFCToTheTargetAndKeepsTheDraftOutputs) {
             }
         }
     }
+}
+
+TEST(DFlashModelTransforms, KeysTheCachedTargetOnTheMovedFCWeights) {
+    // GenAI compiles the target with ov::cache_model_path, which leaves weight values out of the model cache key.
+    const auto cache_dir =
+        std::filesystem::temp_directory_path() /
+        ("dflash_fc_cache_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directories(cache_dir);
+    ov::Core core;
+    const ov::AnyMap properties{{ov::hint::inference_precision.name(), ov::element::f32},
+                                {ov::cache_dir.name(), cache_dir.string()},
+                                {ov::cache_model_path.name(), cache_dir}};
+    std::vector<std::vector<float>> outputs;
+    for (const float first_weight : {-16.0f, 3.0f}) {
+        auto target_model = make_fc_move_target_model();
+        auto draft_model = make_fc_move_draft_model(make_draft_hidden_states(8), make_fc_weights(8, first_weight));
+        ov::genai::utils::dflash::move_fc_from_draft_to_main(draft_model, target_model);
+        auto request = core.compile_model(target_model, "CPU", properties).create_infer_request();
+        ov::Tensor input(ov::element::f32, {1, 1, 4});
+        std::iota(input.data<float>(), input.data<float>() + input.get_size(), -2.0f);
+        request.set_tensor("target_input", input);
+        request.infer();
+        const auto hidden = request.get_tensor("last_hidden_state");
+        outputs.emplace_back(hidden.data<const float>(), hidden.data<const float>() + hidden.get_size());
+    }
+    const auto blobs = std::count_if(std::filesystem::directory_iterator(cache_dir),
+                                     std::filesystem::directory_iterator(),
+                                     [](const auto& entry) {
+                                         return entry.path().extension() == ".blob";
+                                     });
+    std::filesystem::remove_all(cache_dir);
+
+    EXPECT_EQ(blobs, 2);
+    EXPECT_NE(outputs[0], outputs[1]);
 }
 
 TEST(DFlashModelTransforms, RejectsADraftWhoseHiddenStatesDoNotFeedOnlyAMatchingFC) {
