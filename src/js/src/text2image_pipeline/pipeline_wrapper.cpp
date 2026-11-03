@@ -3,8 +3,8 @@
 
 #include "include/text2image_pipeline/pipeline_wrapper.hpp"
 
-#include "include/image_decode_worker.hpp"
-#include "include/image_generation_inference_thread.hpp"
+#include "include/image_generation/decode_worker.hpp"
+#include "include/image_generation/inference_thread.hpp"
 
 Text2ImagePipelineWrapper::Text2ImagePipelineWrapper(const Napi::CallbackInfo& info)
     : Napi::ObjectWrap<Text2ImagePipelineWrapper>(info) {}

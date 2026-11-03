@@ -3,8 +3,8 @@
 
 #include "include/inpainting_pipeline/pipeline_wrapper.hpp"
 
-#include "include/image_decode_worker.hpp"
-#include "include/image_generation_inference_thread.hpp"
+#include "include/image_generation/decode_worker.hpp"
+#include "include/image_generation/inference_thread.hpp"
 
 InpaintingPipelineWrapper::InpaintingPipelineWrapper(const Napi::CallbackInfo& info)
     : Napi::ObjectWrap<InpaintingPipelineWrapper>(info) {}

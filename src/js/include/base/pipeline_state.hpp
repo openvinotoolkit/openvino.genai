@@ -11,7 +11,13 @@
 
 #include "openvino/core/except.hpp"
 
-enum class PipelineOperation { IDLE, INITIALIZE, GENERATE, DECODE, ACCESS };
+enum class PipelineOperation {
+    IDLE,
+    INITIALIZE,
+    GENERATE,  // Holds the pipeline through generation, including image step callbacks.
+    DECODE,    // Separately tracked latent-to-image decode, allowed while idle or inside an image step callback.
+    ACCESS,    // Other exclusive calls: config, metrics, chat, embeddings and reranking.
+};
 
 struct PipelineState {
     std::mutex mutex;

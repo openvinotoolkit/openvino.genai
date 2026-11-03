@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "include/image_generation_inference_thread.hpp"
+#include "include/image_generation/inference_thread.hpp"
 
 std::function<bool(size_t, size_t, ov::Tensor&)> make_image_generation_step_callback(
     InferenceThreadContext* context,
