@@ -42,7 +42,7 @@ std::optional<AdapterController> create_vision_adapter_controller(const std::sha
     if (!adapters) {
         return std::nullopt;
     }
-    adapters.set_tensor_name_prefix(adapters.get_tensor_name_prefix().value_or(VISION_LORA_TENSOR_NAME_PREFIX));
+    adapters.set_tensor_name_prefix(VISION_LORA_TENSOR_NAME_PREFIX);
     return AdapterController(model, adapters, device);
 }
 
