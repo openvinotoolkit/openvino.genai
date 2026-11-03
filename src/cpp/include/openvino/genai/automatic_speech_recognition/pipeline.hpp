@@ -19,7 +19,7 @@
 
 namespace ov::genai {
 
-using AudioInputs = std::variant<std::vector<float>>;
+using AudioInputs = std::variant<std::vector<float>, std::vector<std::vector<float>>>;
 
 /// Time-aligned text chunk — used for both segment-level and word-level timestamps.
 /// For segments: text is the decoded segment, token_ids are the tokens in that segment.
@@ -98,6 +98,15 @@ public:
 
     ~ASRPipeline();
 
+    /**
+     * @brief Transcribes a single audio input or a batch of audio inputs.
+     *
+     * Batch results are returned in input order. The generation configuration
+     * applies to all inputs. Models without batching support accept at most
+     * one audio input per call, either directly or as a batch of one.
+     * Batches must be non-empty. Streaming is not supported for batches
+     * larger than one.
+     */
     ASRDecodedResults generate(const AudioInputs& audio_inputs,
                                const std::optional<ASRGenerationConfig>& generation_config = std::nullopt,
                                StreamerVariant streamer = std::monostate());
