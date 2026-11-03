@@ -102,11 +102,7 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
                     "DFlash draft model has no 'sampled_tokens_indices' input, so its candidate logits cannot be gathered.");
     validate_target_has_no_unmanaged_state(main_model);
     utils::dflash::expose_target_hidden_states(main_model, retained_hidden_state_locators, m_rt_info.target_layer_ids);
-    const auto target_hidden_width = main_model->output("last_hidden_state").get_partial_shape()[2];
-    const auto draft_hidden_width = draft_model->input("hidden_states").get_partial_shape()[2];
-    OPENVINO_ASSERT(target_hidden_width == draft_hidden_width,
-                    "DFlash target exports hidden states of width ", target_hidden_width,
-                    ", but the draft hidden_states input has width ", draft_hidden_width, ".");
+    utils::dflash::move_fc_from_draft_to_main(draft_model, main_model);
 
     // The budget never limits a draft window, so the scheduler never splits a bidirectional block. A draft
     // step is still bounded by the target's previous step plus one block per request.
