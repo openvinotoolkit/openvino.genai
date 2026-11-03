@@ -948,7 +948,7 @@ class TestTextToSpeechSample:
         if variant == "base":
             variant_args = ("--ref_audio_wav_path", qwen3_reference_audio_wav_path)
 
-        def run_generation(output_name: str, *sampling_args: str) -> bytes:
+        def run_generation(output_name: str, *sampling_args: str) -> np.ndarray:
             output_wav = tmp_path / f"{output_name}.wav"
             run_sample(
                 [
@@ -970,17 +970,17 @@ class TestTextToSpeechSample:
             assert sample_rate == 24000
             assert audio.ndim == 1 and audio.size > 0
             assert np.isfinite(audio).all()
-            return output_wav.read_bytes()
+            return audio
 
         greedy_args = ("--do_sample", "false", "--subtalker_dosample", "false")
-        assert run_generation("greedy_1", *greedy_args) == run_generation("greedy_2", *greedy_args), (
-            "Output must be identical when sampling is disabled"
+        np.testing.assert_array_equal(
+            run_generation("greedy_1", *greedy_args), run_generation("greedy_2", *greedy_args)
         )
 
         seeded_args = ("--do_sample", "true", "--subtalker_dosample", "true")
         seeded_first = run_generation("seed_7_1", *seeded_args, "--seed", "7")
-        assert seeded_first == run_generation("seed_7_2", *seeded_args, "--seed", "7"), (
-            "Output must be identical for the same --seed"
+        np.testing.assert_array_equal(
+            seeded_first, run_generation("seed_7_2", *seeded_args, "--seed", "7")
         )
 
         for invalid_args in (
