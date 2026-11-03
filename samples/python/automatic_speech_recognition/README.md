@@ -9,13 +9,13 @@ Install [../../export-requirements.txt](../../export-requirements.txt) to conver
 ```sh
 pip install -r ../../export-requirements.txt
 ```
+These dependencies are needed only for model export, not for running already-exported OpenVINO models.
 
 Some newer models may require the latest Optimum Intel. If needed, run:
 
 ```sh
 pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
 ```
-These dependencies are needed only for model export, not for running already-exported OpenVINO models.
 
 ### Whisper
 
