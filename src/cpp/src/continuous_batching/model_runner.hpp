@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <array>
+#include <cstring>
 #include <vector>
 #include <cstdlib>
 #include <set>

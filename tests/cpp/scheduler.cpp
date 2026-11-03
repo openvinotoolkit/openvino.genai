@@ -416,6 +416,30 @@ TEST(TestScheduler, hybrid_prefix_linear_attention_verify_retains_next_window_he
     }
 }
 
+TEST(TestScheduler, linear_attention_paging_mode_represents_history_and_step_independently) {
+    using ov::genai::detail::LinearAttentionPagingHistory;
+    using ov::genai::detail::LinearAttentionPagingMode;
+    using ov::genai::detail::LinearAttentionPagingStep;
+
+    const std::vector<LinearAttentionPagingHistory> histories{
+        LinearAttentionPagingHistory::LIVE_ONLY,
+        LinearAttentionPagingHistory::PREFIX_CHECKPOINTS,
+    };
+    const std::vector<LinearAttentionPagingStep> steps{
+        LinearAttentionPagingStep::PREFILL,
+        LinearAttentionPagingStep::DECODE,
+        LinearAttentionPagingStep::VERIFY,
+    };
+
+    for (const auto history : histories) {
+        for (const auto step : steps) {
+            const LinearAttentionPagingMode mode{history, step};
+            EXPECT_EQ(mode.history(), history);
+            EXPECT_EQ(mode.step(), step);
+        }
+    }
+}
+
 TEST(TestScheduler, hybrid_non_prefix_linear_attention_returns_aliased_read_write_blocks) {
     SchedulerConfig scheduler_config;
     scheduler_config.max_num_batched_tokens = 32;
