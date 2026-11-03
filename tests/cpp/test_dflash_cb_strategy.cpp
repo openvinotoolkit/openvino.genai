@@ -17,6 +17,7 @@
 #include "openvino/op/assign.hpp"
 #include "openvino/op/concat.hpp"
 #include "openvino/op/constant.hpp"
+#include "openvino/op/convert.hpp"
 #include "openvino/op/gather.hpp"
 #include "openvino/op/matmul.hpp"
 #include "openvino/op/multiply.hpp"
@@ -281,6 +282,125 @@ TEST(DFlashModelTransforms, RejectsReplacedRetainedLocatorWhileOriginalRemainsLi
     EXPECT_THROW(
         ov::genai::utils::dflash::expose_target_hidden_states(model, retained_locators, target_layer_ids),
         ov::Exception);
+}
+
+namespace {
+
+// A target that exports [tokens, 1, 8] hidden states: two copies of its [tokens, 1, 4] input.
+std::shared_ptr<ov::Model> make_fc_move_target_model() {
+    auto input = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{-1, 1, 4});
+    input->output(0).set_names({"target_input"});
+    auto hidden = std::make_shared<ov::op::v0::Concat>(ov::OutputVector{input, input}, 2);
+    auto hidden_result = std::make_shared<ov::op::v0::Result>(hidden);
+    hidden_result->output(0).set_names({"last_hidden_state"});
+    return std::make_shared<ov::Model>(ov::ResultVector{hidden_result}, ov::ParameterVector{input});
+}
+
+std::shared_ptr<ov::op::v0::Parameter> make_draft_hidden_states(size_t width) {
+    auto hidden_states = std::make_shared<ov::op::v0::Parameter>(ov::element::f32,
+                                                                 ov::PartialShape{-1, -1, static_cast<int64_t>(width)});
+    hidden_states->output(0).set_names({"hidden_states"});
+    return hidden_states;
+}
+
+// f16 [4, in_width] weights behind a Convert, as an exported compressed FC with transpose_b.
+std::shared_ptr<ov::op::v0::Convert> make_fc_weights(size_t in_width) {
+    std::vector<float> values(4 * in_width);
+    std::iota(values.begin(), values.end(), -16.0f);
+    auto weights = ov::op::v0::Constant::create(ov::element::f16, ov::Shape{4, in_width}, values);
+    return std::make_shared<ov::op::v0::Convert>(weights, ov::element::f32);
+}
+
+// A draft whose FC output feeds two consumers, as the exported hidden_norm does.
+std::shared_ptr<ov::Model> make_fc_move_draft_model(const std::shared_ptr<ov::op::v0::Parameter>& hidden_states,
+                                                    const ov::Output<ov::Node>& fc_weights) {
+    auto fc = std::make_shared<ov::op::v0::MatMul>(hidden_states, fc_weights, false, true);
+    auto bias = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{4}, {0.5f, -1.0f, 2.0f, -0.5f});
+    auto draft_add = std::make_shared<ov::op::v1::Add>(fc, bias);
+    auto draft_multiply = std::make_shared<ov::op::v1::Multiply>(fc, bias);
+    return std::make_shared<ov::Model>(ov::OutputVector{draft_add, draft_multiply}, ov::ParameterVector{hidden_states});
+}
+
+}  // namespace
+
+TEST(DFlashModelTransforms, MovesTheDraftFCToTheTargetAndKeepsTheDraftOutputs) {
+    auto target_model = make_fc_move_target_model();
+    auto fc_weights = make_fc_weights(8);
+    auto draft_model = make_fc_move_draft_model(make_draft_hidden_states(8), fc_weights);
+    const auto original_target = target_model->clone();
+    const auto original_draft = draft_model->clone();
+
+    ov::genai::utils::dflash::move_fc_from_draft_to_main(draft_model, target_model);
+
+    ASSERT_EQ(target_model->output("last_hidden_state").get_partial_shape(), ov::PartialShape({-1, 1, 4}));
+    ASSERT_EQ(draft_model->input("hidden_states").get_partial_shape(), ov::PartialShape({-1, -1, 4}));
+    // the weight subgraph itself moves, so its decompression markers are kept and no weights are copied
+    ASSERT_EQ(target_model->output("last_hidden_state").get_node()->get_input_node_ptr(0)->get_input_node_ptr(1),
+              fc_weights.get());
+
+    ov::Core core;
+    const ov::AnyMap properties{{ov::hint::inference_precision.name(), ov::element::f32}};
+    auto original_target_request = core.compile_model(original_target, "CPU", properties).create_infer_request();
+    auto original_draft_request = core.compile_model(original_draft, "CPU", properties).create_infer_request();
+    auto target_request = core.compile_model(target_model, "CPU", properties).create_infer_request();
+    auto draft_request = core.compile_model(draft_model, "CPU", properties).create_infer_request();
+    for (const size_t tokens : {size_t{1}, size_t{3}}) {
+        SCOPED_TRACE(tokens);
+        ov::Tensor input(ov::element::f32, {tokens, 1, 4});
+        std::iota(input.data<float>(), input.data<float>() + input.get_size(), -2.0f);
+        original_target_request.set_tensor("target_input", input);
+        original_target_request.infer();
+        original_draft_request.set_tensor("hidden_states", original_target_request.get_tensor("last_hidden_state"));
+        original_draft_request.infer();
+        target_request.set_tensor("target_input", input);
+        target_request.infer();
+        draft_request.set_tensor("hidden_states", target_request.get_tensor("last_hidden_state"));
+        draft_request.infer();
+        for (size_t output_idx = 0; output_idx < 2; ++output_idx) {
+            const auto expected = original_draft_request.get_output_tensor(output_idx);
+            const auto actual = draft_request.get_output_tensor(output_idx);
+            ASSERT_EQ(actual.get_shape(), expected.get_shape());
+            for (size_t i = 0; i < expected.get_size(); ++i) {
+                EXPECT_NEAR(actual.data<const float>()[i], expected.data<const float>()[i], 1e-5f);
+            }
+        }
+    }
+}
+
+TEST(DFlashModelTransforms, RejectsADraftWhoseHiddenStatesDoNotFeedOnlyAMatchingFC) {
+    // hidden_states also feeds a second consumer, so it cannot be resized
+    auto shared_hidden_states = make_draft_hidden_states(8);
+    auto shared_fc = std::make_shared<ov::op::v0::MatMul>(shared_hidden_states, make_fc_weights(8), false, true);
+    auto other_consumer = std::make_shared<ov::op::v1::Multiply>(
+        shared_hidden_states,
+        ov::op::v0::Constant::create(ov::element::f32, ov::Shape{1}, {2.0f}));
+    auto shared_input_draft = std::make_shared<ov::Model>(ov::OutputVector{shared_fc, other_consumer},
+                                                          ov::ParameterVector{shared_hidden_states});
+
+    // hidden_states is the MatMul's second input, not its data
+    auto weight_side_hidden_states = make_draft_hidden_states(8);
+    auto data = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{1, 2, 4}, std::vector<float>(8, 1.0f));
+    auto weight_side_matmul = std::make_shared<ov::op::v0::MatMul>(data, weight_side_hidden_states);
+    auto weight_side_draft = std::make_shared<ov::Model>(ov::OutputVector{weight_side_matmul},
+                                                         ov::ParameterVector{weight_side_hidden_states});
+
+    // the FC expects 6-wide rows, but the target exports 8
+    auto narrow_draft = make_fc_move_draft_model(make_draft_hidden_states(6), make_fc_weights(6));
+
+    const std::vector<std::pair<std::shared_ptr<ov::Model>, std::string>> cases = {
+        {shared_input_draft, "must feed only the data input"},
+        {weight_side_draft, "must feed only the data input"},
+        {narrow_draft, "exports hidden states of width 8"},
+    };
+    for (const auto& [draft_model, expected_message] : cases) {
+        SCOPED_TRACE(expected_message);
+        try {
+            ov::genai::utils::dflash::move_fc_from_draft_to_main(draft_model, make_fc_move_target_model());
+            FAIL() << "Expected the DFlash FC move to be rejected";
+        } catch (const ov::Exception& exception) {
+            EXPECT_NE(std::string(exception.what()).find(expected_message), std::string::npos) << exception.what();
+        }
+    }
 }
 
 namespace {
