@@ -3339,9 +3339,9 @@ class OmniPipeline:
         Two construction paths:
     
           - Path-based: OmniPipeline(models_path, device, **properties) loads VLM and speech
-            models from a single directory. For LFM3-Omni it sets ATTENTION_BACKEND=SDPA unless
-            given: speech output needs SDPA. With PA, generate() supports text output only and raises unless
-            return_audio is False.
+            models from a single directory. For LFM3-Omni it selects ATTENTION_BACKEND=SDPA unless the
+            property is set, because speech output needs SDPA. With PA, generate() supports text output
+            only and raises if return_audio is True.
     
           - DI: OmniPipeline(vlm_pipeline, talker) reuses an externally-loaded VLMPipeline
             and a TalkerBase subclass for independent device choices or custom backends.
@@ -3465,8 +3465,8 @@ class OmniTalkerSpeechConfig:
     
         Speech-side generation config of OmniPipeline. Qwen3-Omni speaks with a separate talker
         after the thinker text decode. LFM3-Omni emits text and speech frames in one stream: its
-        frames are sampled by a depth decoder, which the cp_* fields control, and the talker_*
-        fields and speaker are rejected. Does NOT inherit from GenerationConfig — the text decode
+        frames are sampled by a depth decoder, which is controlled by the cp_* fields, and the
+        talker_* fields and speaker are rejected. Does NOT inherit from GenerationConfig — the text decode
         is steered by a separate GenerationConfig argument to OmniPipeline.generate:
     
         :param return_audio: Enable speech output. Default True. Set False to short-circuit

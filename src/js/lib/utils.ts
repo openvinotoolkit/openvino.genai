@@ -611,9 +611,9 @@ export type OmniPipelineProperties = {
  *
  * Qwen3-Omni speaks with a separate talker (Talker + CodePredictor + Code2Wav) after the thinker
  * text decode. LFM3-Omni emits text and speech frames in one stream: its frames are sampled by a
- * depth decoder, which the `cp_*` fields control, and the `talker_*` fields and `speaker` are
- * rejected. Standalone config: the text decode is steered by a separate {@link GenerationConfig}
- * passed as `textConfig`.
+ * depth decoder, which is controlled by the `cp_*` fields, and the `talker_*` fields and
+ * `speaker` are rejected. Standalone config: the text decode is steered by a separate
+ * {@link GenerationConfig} passed as `textConfig`.
  *
  * @note This is a preview API and is subject to change in future releases.
  */

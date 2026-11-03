@@ -32,10 +32,10 @@ enum class SpeechOutputMode {
  * @brief Speech-side generation config of OmniPipeline.
  *
  * Qwen3-Omni speaks with a separate talker after the thinker text decode. LFM3-Omni emits text and
- * speech frames in one stream: its frames are sampled by a depth decoder, which the `cp_*` fields
- * control, and the `talker_*` fields and `speaker` are rejected.
+ * speech frames in one stream: its frames are sampled by a depth decoder, which is controlled by the `cp_*` fields,
+ * and the `talker_*` fields and `speaker` are rejected.
  *
- * Standalone POD struct — does NOT inherit from GenerationConfig. The text decode is steered by a
+ * Plain config struct that does not inherit from GenerationConfig. The text decode is steered by a
  * separate `GenerationConfig text_config` argument to OmniPipeline::generate; this struct only
  * carries speech fields.
  *
