@@ -19,7 +19,7 @@
 #include "visual_language/embedding_model.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/pipeline_base.hpp"
-#include "visual_language/vision_registry.hpp"
+#include "visual_language/embeddings_registry.hpp"
 #include "visual_language/vlm_chat_context.hpp"
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/vlm_utils.hpp"
@@ -85,6 +85,7 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
 
     // if True, full history will be used as prompt on each chat generation
     bool m_use_full_chat_history = false;
+    std::weak_ptr<ChatHistoryInternalState> m_active_history;
     // It stores encoded images, videos and vision count in case when m_use_full_chat_history is true
     std::vector<ov::genai::EncodedImage> m_encoded_images;
     std::vector<ov::genai::EncodedVideo> m_encoded_videos;
@@ -96,7 +97,7 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
     std::vector<std::pair<std::size_t, std::size_t>> m_history_vision_count;  // pair<video count, image count>
 
     std::string m_system_message;
-    std::shared_ptr<VisionRegistry> m_vision_registry;
+    std::shared_ptr<EmbeddingsRegistry> m_embeddings_registry;
 private:
     void finalize_initialization(
         const std::shared_ptr<ov::Model>& language_model,
@@ -117,7 +118,7 @@ private:
         m_sampler.set_tokenizer(m_tokenizer);
         m_sampler.set_seed(m_generation_config.rng_seed);
 
-        m_vision_registry = std::make_shared<VisionRegistry>();
+        m_embeddings_registry = std::make_shared<EmbeddingsRegistry>();
 
         // NPU does not support history, so use full chat history on each chat iteration.
         // Linear attention forces full KV cache reset, need to provide all image/video embeddings.
@@ -352,6 +353,7 @@ public:
     ) override {
         // Local mutable copy: setup_generation_config(...) and downstream callees mutate fields
         // (rng_seed, eos_token_id, ...). The public-base signature is const-ref by contract.
+        m_active_history.reset();
         GenerationConfig generation_config = generation_config_in;
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;
@@ -438,7 +440,8 @@ public:
                 vlm_utils::rebase_media_sequence(audio_sequence, m_audio_id);
             }
         } else {
-            m_inputs_embedder->set_apply_chat_template_status(generation_config.apply_chat_template);
+            m_inputs_embedder->set_prompt_formatting(
+                generation_config.apply_chat_template ? PromptFormatting::NeedsTemplate : PromptFormatting::Raw);
         }
 
         auto finish_info = prepare_inputs_and_generate(
@@ -472,7 +475,7 @@ public:
         if (m_is_chat_conversation) {
             // Update m_history with pruned content if pruning is enabled
             if (generation_config.pruning_ratio > 0) {
-                auto history_state = ChatHistoryInternalState::get_or_create(m_history, m_vision_registry);
+                auto history_state = ChatHistoryInternalState::get_or_create(m_history, m_embeddings_registry);
                 size_t last_user_idx = history_state->get_last_user_message_index();
 
                 // Replace the original prompt with the pruned prompt after CDPruner
@@ -622,7 +625,7 @@ public:
                                                            generation_config.relevance_weight);
 
         const auto embeddings_start_time = std::chrono::steady_clock::now();
-        VLMChatContext chat_context(history, m_vision_registry, *m_inputs_embedder);
+        VLMChatContext chat_context(history, m_embeddings_registry, *m_inputs_embedder);
 
         std::vector<ov::Tensor> single_images;
         single_images.reserve(images.size());
@@ -647,11 +650,16 @@ public:
                                processed_chat_data.audio_encoding_durations.begin(),
                                processed_chat_data.audio_encoding_durations.end());
 
-        bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history;
+        const auto history_state = ChatHistoryInternalState::get_or_create(history, m_embeddings_registry);
+        bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history ||
+                                m_active_history.lock() != history_state ||
+                                m_inputs_embedder->get_cache_state().get_state().empty();
+        m_active_history = history_state;
 
         if (use_full_history) {
             reset_language_state();
             m_language.get_tensor("attention_mask").set_shape({1, 0});
+            m_inputs_embedder->get_cache_state().reset_state();
             m_inputs_embedder->start_chat("");
         }
 
@@ -779,6 +787,7 @@ public:
     }
 
     void start_chat(const std::string& system_message) override {
+        m_active_history.reset();
         m_is_chat_conversation = true;
         m_system_message = system_message;
         m_inputs_embedder->start_chat(m_system_message);
@@ -790,6 +799,7 @@ public:
     }
 
     void finish_chat() override {
+        m_active_history.reset();
         m_is_chat_conversation = false;
         m_image_id = 0;
         m_video_id = 0;
