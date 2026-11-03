@@ -7,6 +7,7 @@
 #include <functional>
 #include "continuous_batching/pipeline_impl.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
+#include "speculative_decoding/continuous_batching/dflash_candidate_selector.hpp"
 #include "update_request_structs.hpp"
 #include "utils.hpp"
 
@@ -413,7 +414,8 @@ public:
                                             const ov::AnyMap& plugin_config,
                                             bool is_validation_mode_enabled,
                                             int64_t mask_token_id = -1,
-                                            size_t candidate_position_offset = 1)
+                                            size_t candidate_position_offset = 1,
+                                            std::shared_ptr<dflash_cb::CandidateSelector> candidate_selector = nullptr)
         : ContinuousBatchingForSpeculativeDecodingImpl(model,
                                                        tokenizer,
                                                        generation_config,
@@ -423,7 +425,7 @@ public:
                                                        is_validation_mode_enabled) {
         dflash_mode_enabled = true;
         if (!is_validation_mode_enabled) {
-            enable_dflash_draft(mask_token_id, candidate_position_offset);
+            enable_dflash_draft(mask_token_id, candidate_position_offset, std::move(candidate_selector));
         }
     }
 
@@ -436,7 +438,8 @@ public:
                                             const ov::AnyMap& plugin_config,
                                             bool is_validation_mode_enabled,
                                             int64_t mask_token_id = -1,
-                                            size_t candidate_position_offset = 1)
+                                            size_t candidate_position_offset = 1,
+                                            std::shared_ptr<dflash_cb::CandidateSelector> candidate_selector = nullptr)
         : ContinuousBatchingForSpeculativeDecodingImpl(model,
                                                        std::move(inputs_embedder),
                                                        tokenizer,
@@ -449,7 +452,7 @@ public:
         if (!is_validation_mode_enabled) {
             // The draft is a text model: sequential positions instead of the target's M-RoPE positions.
             m_model_runner->enable_mtp_draft_positions(true);
-            enable_dflash_draft(mask_token_id, candidate_position_offset);
+            enable_dflash_draft(mask_token_id, candidate_position_offset, std::move(candidate_selector));
         }
     }
 
@@ -470,12 +473,18 @@ protected:
         return true;
     }
 
-    void enable_dflash_draft(int64_t mask_token_id, size_t candidate_position_offset) {
+    // A candidate selector gives the rows the sampler drafts from.
+    void enable_dflash_draft(int64_t mask_token_id,
+                             size_t candidate_position_offset,
+                             std::shared_ptr<dflash_cb::CandidateSelector> candidate_selector) {
         m_dflash_mask_token_id = mask_token_id;
         m_dflash_candidate_position_offset = candidate_position_offset;
         m_dflash_block_may_follow_prompt_rows = m_scheduler->get_config().dynamic_split_fuse;
         m_model_runner->enable_dflash_draft(candidate_position_offset);
-        m_sampler->set_block_sampling(candidate_position_offset);
+        if (candidate_selector) {
+            candidate_selector->set_draft_request(m_model_runner->get_infer_request());
+        }
+        m_sampler->set_block_sampling(candidate_position_offset, std::move(candidate_selector));
     }
 };
 }
