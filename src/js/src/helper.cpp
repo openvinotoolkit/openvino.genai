@@ -810,6 +810,10 @@ ov::genai::OmniTalkerSpeechConfig js_to_cpp<ov::genai::OmniTalkerSpeechConfig>(c
     if (const Napi::Value field = object.Get("audio_chunk_frames"); !field.IsUndefined() && !field.IsNull()) {
         config.audio_chunk_frames = js_to_cpp<size_t>(env, field);
     }
+    if (const Napi::Value field = object.Get("audio_chunk_left_context_frames");
+        !field.IsUndefined() && !field.IsNull()) {
+        config.audio_chunk_left_context_frames = js_to_cpp<size_t>(env, field);
+    }
     if (const Napi::Value field = object.Get("max_new_tokens"); !field.IsUndefined() && !field.IsNull()) {
         config.max_new_tokens = js_to_cpp<size_t>(env, field);
     }

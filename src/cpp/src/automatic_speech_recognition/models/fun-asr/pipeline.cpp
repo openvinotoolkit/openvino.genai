@@ -3,6 +3,7 @@
 
 #include "pipeline.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 
@@ -39,15 +40,16 @@ FunASR::FunASR(const std::filesystem::path& models_path, const std::string& devi
     m_decoder = std::make_unique<Qwen3ASRDecoder>(models_path, device, properties_copy);
 
     // Qwen3-ASR EOS tokens: <|endoftext|>=151643, <|im_end|>=151645
-    // The exported model has no generation_config.json. Hardcode tokens. Algned with Qwen3-ASR
+    // The exported model has no generation_config.json. Use the same EOS tokens as Qwen3-ASR.
     m_generation_config.set_eos_token_id(151643);
     m_generation_config.stop_token_ids.insert(151645);
     m_decoder->set_seed(m_generation_config.rng_seed);
 }
 
-ASRDecodedResults FunASR::generate(const AudioInputs& audio_inputs,
+ASRDecodedResults FunASR::generate(const AudiosView& audios,
                                    const std::optional<ASRGenerationConfig>& generation_config,
                                    const std::shared_ptr<StreamerBase> streamer) {
+    const std::vector<float>& audio = get_single_audio(audios);
     auto start_time = std::chrono::steady_clock::now();
 
     const ASRGenerationConfig config = resolve_generation_config(generation_config);
@@ -56,14 +58,6 @@ ASRDecodedResults FunASR::generate(const AudioInputs& audio_inputs,
     ASRDecodedResults results;
     results.perf_metrics.load_time = m_load_time_ms;
     results.perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
-
-    const std::vector<float>& audio = std::visit(
-        ov::genai::utils::overloaded{
-            [](const std::vector<float>& input) -> const std::vector<float>& {
-                return input;
-            },
-        },
-        audio_inputs);
 
     const auto features_start_time = std::chrono::steady_clock::now();
     const ov::Tensor features = m_feature_extractor.extract(audio);
@@ -78,8 +72,10 @@ ASRDecodedResults FunASR::generate(const AudioInputs& audio_inputs,
     results.perf_metrics.raw_metrics.m_inference_durations[0] += MicroSeconds(encoder_infer_ms);
     results.perf_metrics.asr_raw_metrics.encode_inference_durations.emplace_back(encoder_infer_ms);
 
-    auto [prompt, language] =
-        build_input_ids(encoder_hidden_states.get_shape()[1], config, results.perf_metrics.raw_metrics);
+    // Match native FunASR's low-frame-rate mode: use the first ceil(LFR frames / 8) embeddings.
+    const size_t num_audio_tokens =
+        std::min((features.get_shape()[1] + 7) / 8, encoder_hidden_states.get_shape()[1]);
+    auto [prompt, language] = build_input_ids(num_audio_tokens, config, results.perf_metrics.raw_metrics);
 
     const auto encoded_results = m_decoder->generate(prompt,
                                                      encoder_hidden_states,

@@ -34,6 +34,8 @@ from utils.dataset_utils import load_dataset_via_snapshot, load_parquet_dataset_
 from utils.asr_utils.fun_asr import FUN_ASR_MODEL_ID, FunASROptimumPipeline, skip_if_fun_asr_package_is_unavailable
 from utils.asr_utils.qwen3_asr import (
     QWEN3_ASR_MODEL_ID,
+    QWEN3_ASR_SPLIT_EXPORT_SUFFIX,
+    SKIP_IF_PAGED_ATTENTION_UNAVAILABLE,
     Qwen3ASROptimumPipeline,
     save_model,
     skip_if_qwen3_asr_package_is_unavailable,
@@ -251,7 +253,7 @@ def run_genai(
     genai_config.max_new_tokens = config.max_new_tokens
     genai_config.return_timestamps = config.return_timestamps
     genai_config.task = config.task
-    genai_config.language = f"<|{config.language}|>" if config.language else None
+    genai_config.language = config.language
     genai_config.do_sample = config.do_sample
     genai_config.top_p = config.top_p
     genai_config.num_beams = config.num_beams
@@ -405,18 +407,12 @@ def make_deterministic_audio(num_samples: int) -> np.ndarray:
 QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS = [
     pytest.param(
         (QWEN3_ASR_MODEL_ID, PipelineType.ASR, {"attention_backend": "PA"}),
-        id=f"{get_model_pipeline_pair_id((QWEN3_ASR_MODEL_ID, PipelineType.ASR))}-split-PA",
-        marks=[
-            pytest.mark.qwen3_asr_split_export,
-            pytest.mark.skipif(
-                sys.platform == "darwin" and platform.machine() == "arm64",
-                reason="PagedAttention requires SVE on ARM and is unavailable on macOS arm64.",
-            ),
-        ],
+        id=f"{get_model_pipeline_pair_id((QWEN3_ASR_MODEL_ID, PipelineType.ASR))}{QWEN3_ASR_SPLIT_EXPORT_SUFFIX}-PA",
+        marks=[pytest.mark.qwen3_asr_split_export, SKIP_IF_PAGED_ATTENTION_UNAVAILABLE],
     ),
     pytest.param(
         (QWEN3_ASR_MODEL_ID, PipelineType.ASR, {"attention_backend": "SDPA"}),
-        id=f"{get_model_pipeline_pair_id((QWEN3_ASR_MODEL_ID, PipelineType.ASR))}-split-SDPA",
+        id=f"{get_model_pipeline_pair_id((QWEN3_ASR_MODEL_ID, PipelineType.ASR))}{QWEN3_ASR_SPLIT_EXPORT_SUFFIX}-SDPA",
         marks=pytest.mark.qwen3_asr_split_export,
     ),
 ]
@@ -428,18 +424,14 @@ def pipelines_fixture(request):
     options = request.param[2] if len(request.param) > 2 else {}
     model_name = model_id.split("/")[-1]
     if request.node.get_closest_marker("qwen3_asr_split_export"):
-        # Keep split and legacy exports in separate converted-model caches.
-        model_name += "-split"
+        model_name += QWEN3_ASR_SPLIT_EXPORT_SUFFIX
     model_path = get_ov_cache_converted_models_dir() / model_name
     model_id, _, hf_pipe, genai_pipe = read_asr_model((model_id, model_path), pipeline_type=pipeline_type, **options)
     return hf_pipe, genai_pipe, model_id, pipeline_type
 
 
 @pytest.mark.qwen3_asr_split_export
-@pytest.mark.skipif(
-    sys.platform == "darwin" and platform.machine() == "arm64",
-    reason="PagedAttention requires SVE on ARM and is unavailable on macOS arm64.",
-)
+@SKIP_IF_PAGED_ATTENTION_UNAVAILABLE
 @pytest.mark.parametrize(
     "pipelines_fixture",
     get_model_pipeline_pair_params([(QWEN3_ASR_MODEL_ID, PipelineType.CONTINUOUS_BATCHING)]),
@@ -720,6 +712,76 @@ def test_sensevoice_use_itn_changes_transcription(sample_from_dataset, pipelines
     text_with_itn = genai_pipe.generate(sample_from_dataset, use_itn=True).texts[0]
 
     assert text_without_itn != text_with_itn
+
+
+@pytest.mark.sensevoice
+@pytest.mark.parametrize("generate_kwargs", [{}, {"language": "en", "use_itn": True}], ids=["default", "en_itn"])
+def test_sensevoice_batch_matches_single(generate_kwargs):
+    model_id = SENSEVOICE_SMALL_TINY_MODEL_ID
+    path = get_ov_cache_converted_models_dir() / model_id.split("/")[-1]
+    _, _, hf_pipe, _ = read_asr_model((model_id, path), pipeline_type=PipelineType.ASR)
+    genai_pipe = ov_genai.ASRPipeline(path, "CPU", INFERENCE_PRECISION_HINT="f32", ENABLE_MMAP=False)
+
+    samples = get_audio_dataset(long_form=False)
+    audios = [samples[0], samples[2], samples[1]]
+
+    singles = [genai_pipe.generate(audio, **generate_kwargs) for audio in audios]
+    single_texts = [result.texts[0] for result in singles]
+    assert len(set(single_texts)) == len(audios)
+
+    batch = genai_pipe.generate(audios, **generate_kwargs)
+
+    assert batch.texts == single_texts
+    assert batch.languages == [result.languages[0] for result in singles]
+    assert batch.metadata == [result.metadata[0] for result in singles]
+    assert len(batch.scores) == len(audios)
+    assert batch.perf_metrics.get_num_generated_tokens() == sum(
+        result.perf_metrics.get_num_generated_tokens() for result in singles
+    )
+    batch_of_one = genai_pipe.generate([audios[0]], **generate_kwargs)
+    assert batch_of_one.texts == [single_texts[0]]
+    assert batch_of_one.metadata == singles[0].metadata
+
+    optimum_texts = [hf_pipe(audio, **generate_kwargs)["text"] for audio in audios]
+    if optimum_texts != single_texts and sys.platform == "darwin" and platform.machine() == "arm64":
+        pytest.xfail(
+            "Optimum runs at the default f16 inference precision on macOS arm64, "
+            "which can flip near-tied CTC tokens of the tiny random model"
+        )
+    assert single_texts == optimum_texts
+
+
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params([(SENSEVOICE_SMALL_TINY_MODEL_ID, PipelineType.ASR)]),
+    indirect=True,
+)
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+@pytest.mark.parametrize("streamer_for_test", ["streamer_callback"], indirect=True)
+def test_sensevoice_batch_streamer(sample_from_dataset, pipelines_fixture, streamer_for_test):
+    _, genai_pipe, _, _ = pipelines_fixture
+    streamer, result_handler = streamer_for_test
+
+    result = genai_pipe.generate([sample_from_dataset], streamer=streamer)
+    assert result_handler.decode(genai_pipe.get_tokenizer()) == result.texts[0]
+
+    with pytest.raises(RuntimeError, match="streamers only for a single audio input"):
+        genai_pipe.generate([sample_from_dataset, sample_from_dataset], streamer=streamer)
+
+
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params([("openai/whisper-tiny", PipelineType.ASR)]),
+    indirect=True,
+)
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+def test_asr_batch_requires_batch_capable_model(sample_from_dataset, pipelines_fixture):
+    _, genai_pipe, _, _ = pipelines_fixture
+
+    assert genai_pipe.generate([sample_from_dataset]).texts == genai_pipe.generate(sample_from_dataset).texts
+
+    with pytest.raises(RuntimeError, match="only one audio per generate"):
+        genai_pipe.generate([sample_from_dataset, sample_from_dataset])
 
 
 @pytest.mark.transformers_lower_v5(reason="CVS-185784")
