@@ -288,6 +288,71 @@ class TestVideoGenerationPipelines:
         assert np.array_equal(first_video, second_video)
         assert np.array_equal(first_audio, second_audio)
 
+    @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True)
+    @pytest.mark.parametrize(
+        ("static_shapes", "denoise_device", "vae_device"),
+        [(False, "GPU.0", "GPU.0"), (True, "GPU.0", "CPU"), (False, "CPU", "GPU.0")],
+    )
+    def test_ltx2_gpu_staged_components(
+        self, video_generation_model, static_shapes, denoise_device, vae_device, tmp_path, monkeypatch, capfd
+    ):
+        if "GPU.0" not in ov.Core().available_devices:
+            pytest.skip("GPU.0 is required for staged GPU component lifetime coverage")
+        monkeypatch.setenv("OPENVINO_LOG_LEVEL", "4")
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model)
+        if static_shapes:
+            pipe.reshape(1, 9, 32, 32, 3.0)
+        pipe.compile("GPU.0", denoise_device, vae_device, config={"CACHE_DIR": str(tmp_path / "cache")})
+
+        # Cancellation must not consume the host templates needed by the next call.
+        stopped = pipe.generate(
+            "test prompt",
+            callback=lambda step, num_steps, latent: True,
+            guidance_scale=3.0,
+            **GEN_KWARGS,
+        )
+        assert len(stopped.video.shape) == 0
+
+        def run():
+            return pipe.generate(
+                "test prompt",
+                guidance_scale=3.0,
+                generator=ov_genai.CppStdGenerator(42),
+                **GEN_KWARGS,
+            )
+
+        capfd.readouterr()
+        first = run()
+        compiled_models = [line for line in capfd.readouterr().out.splitlines() if line.startswith("Model: ")]
+        expected_models = ["Model: Gemma3 text encoder model", "Model: LTX2 text connectors model"]
+        if denoise_device == "GPU.0":
+            expected_models.append("Model: LTX2 Video Transformer 3D model")
+        if vae_device == "GPU.0":
+            expected_models.extend(
+                [
+                    "Model: Auto encoder KL LTX2 video decoder model",
+                    "Model: Auto encoder KL LTX2 audio decoder model",
+                    "Model: LTX2 vocoder model",
+                ]
+            )
+        assert compiled_models == expected_models
+        second = run()
+        config = pipe.get_generation_config()
+        passes_per_step = 2
+        passes_per_step += bool(config.stg_scale or config.audio_stg_scale)
+        passes_per_step += (config.modality_scale or 1.0) > 1.0 or (config.audio_modality_scale or 1.0) > 1.0
+        assert len(first.perf_metrics.raw_metrics.transformer_inference_durations) == (
+            GEN_KWARGS["num_inference_steps"] * passes_per_step
+        )
+        assert first.video.shape == [1, 9, 32, 32, 3]
+        assert np.array_equal(first.video.data, second.video.data)
+        assert first.audio.shape[0:2] == [1, 2]
+        assert first.audio.shape[2] > 0
+        assert first.audio_sample_rate > 0
+        assert first.audio_sample_rate == second.audio_sample_rate
+        assert np.isfinite(first.audio.data).all()
+        assert np.array_equal(first.audio.data, second.audio.data)
+
     @pytest.mark.parametrize(
         "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True
     )
@@ -661,6 +726,162 @@ class TestLTXVideoTransformer3DModel:
             assert config is not None
             assert hasattr(config, "in_channels")
             assert hasattr(config, "patch_size")
+
+
+@pytest.mark.parametrize("video_generation_model", [LTX2_3_MODEL_ID], indirect=True)
+@pytest.mark.parametrize("batch", [1, 2])
+@pytest.mark.parametrize("static_shapes", [False, True])
+def test_ltx2_singleton_timestep_matches_repeated(video_generation_model, batch, static_shapes):
+    """Compare the wrapper's singleton modulation against the real export with per-token timesteps."""
+    path = Path(video_generation_model) / "transformer"
+    graph = ov.Core().read_model(path / "openvino_model.xml")
+    rng = np.random.default_rng(42)
+    inputs = {}
+    video_length, audio_length, text_length = 6, 3, 5
+    for port in graph.inputs:
+        name = port.get_any_name()
+        shape = port.get_partial_shape()
+        if name == "timestep":
+            value = np.full((batch, video_length), 500.0, np.float32)
+        elif name == "audio_timestep":
+            value = np.full((batch,), 500.0, np.float32)
+        elif name in ("cross_modality_gate", "stg_perturbation_mask"):
+            value = np.ones(shape.to_shape(), np.float32)
+        elif "rotary_" in name:
+            length = audio_length if name.startswith("audio") else video_length
+            dims = (
+                [batch, shape[1].get_length(), length, shape[3].get_length()]
+                if len(shape) == 4
+                else [batch, length, shape[2].get_length()]
+            )
+            value = rng.standard_normal(dims).astype(np.float32)
+        elif name in ("hidden_states", "audio_hidden_states", "encoder_hidden_states", "audio_encoder_hidden_states"):
+            length = {"hidden_states": video_length, "audio_hidden_states": audio_length}.get(name, text_length)
+            value = rng.standard_normal((batch, length, shape[2].get_length())).astype(np.float32)
+        elif name in ("encoder_attention_mask", "audio_encoder_attention_mask"):
+            value = np.ones((batch, text_length), np.float32)
+        else:
+            pytest.fail(f"Uncovered transformer input: {name}")
+        inputs[name] = value.astype(port.get_element_type().to_dtype())
+
+    if static_shapes:
+        graph.reshape({name: value.shape for name, value in inputs.items()})
+    baseline = ov.Core().compile_model(graph, "CPU", {"INFERENCE_PRECISION_HINT": "f32"})
+    expected = {port.get_any_name(): value.copy() for port, value in baseline(inputs).items()}
+
+    transformer = ov_genai.LTX2VideoTransformer3DModel(path)
+    if static_shapes:
+        transformer.reshape(batch, 41, 32, 32, audio_length)
+    transformer.compile("CPU", INFERENCE_PRECISION_HINT="f32")
+    managed = {
+        "hidden_states",
+        "audio_hidden_states",
+        "timestep",
+        "audio_timestep",
+        "cross_modality_gate",
+        "stg_perturbation_mask",
+    }
+    for name, value in inputs.items():
+        if name not in managed:
+            transformer.set_hidden_states(name, ov.Tensor(value))
+    actual = transformer.infer(ov.Tensor(inputs["hidden_states"]), ov.Tensor(inputs["audio_hidden_states"]), 500.0)
+    for value, name in zip(actual, ("out_sample", "audio_out_sample")):
+        np.testing.assert_allclose(value.data, expected[name], rtol=2e-5, atol=2e-5)
+
+
+@pytest.mark.parametrize("video_generation_model", [LTX2_3_MODEL_ID], indirect=True)
+@pytest.mark.parametrize("static_shapes", [False, True])
+def test_ltx2_legacy_pipeline_microconditions(video_generation_model, static_shapes, tmp_path):
+    """Run real decoders with an interface probe, comparing bound legacy scalars against fixed constants."""
+    from openvino import opset13 as ops
+
+    source = Path(video_generation_model)
+    config = json.loads((source / "transformer/config.json").read_text())
+
+    def make_pipeline(name, scalar_inputs):
+        root = tmp_path / name
+        root.mkdir()
+        for component in source.iterdir():
+            if component.name != "transformer":
+                (root / component.name).symlink_to(component.resolve(), target_is_directory=component.is_dir())
+        transformer_dir = root / "transformer"
+        transformer_dir.mkdir()
+        (transformer_dir / "config.json").write_text(json.dumps(config))
+        parameters = {}
+
+        def parameter(name, shape, dtype=np.float32):
+            node = ops.parameter(shape, dtype, name=name)
+            node.output(0).get_tensor().set_names({name})
+            parameters[name] = node
+            return node
+
+        video = parameter("hidden_states", [-1, -1, config["in_channels"]])
+        audio = parameter("audio_hidden_states", [-1, -1, config["audio_in_channels"]])
+        parameter("timestep", [-1, -1])
+        video_coords = parameter("video_coords", [-1, 3, -1, 2])
+        audio_coords = parameter("audio_coords", [-1, 1, -1, 2])
+        parameter("encoder_hidden_states", [-1, -1, config["cross_attention_dim"]])
+        parameter("audio_encoder_hidden_states", [-1, -1, config["audio_cross_attention_dim"]])
+        parameter("encoder_attention_mask", [-1, -1])
+        parameter("audio_encoder_attention_mask", [-1, -1])
+
+        # 9 frames at 32x32 -> [2, 1, 1] video latents and 9 audio latents at 24 fps.
+        score = ops.constant(0.0, np.float32)
+        for condition, expected in {
+            "num_frames": 2,
+            "height": 1,
+            "width": 1,
+            "audio_num_frames": 9,
+            "fps": 24.0,
+        }.items():
+            value = (
+                parameter(condition, [], np.float32 if condition == "fps" else np.int64)
+                if scalar_inputs
+                else ops.constant(expected)
+            )
+            score = ops.add(score, ops.divide(ops.convert(value, "f32"), ops.constant(expected, np.float32)))
+        score = ops.multiply(score, ops.constant(0.01, np.float32))
+        results = []
+        for latent, coords, output_name in (
+            (video, video_coords, "out_sample"),
+            (audio, audio_coords, "audio_out_sample"),
+        ):
+            position = ops.multiply(ops.reduce_mean(coords, [0, 1, 2, 3], False), ops.constant(0.001, np.float32))
+            value = ops.add(ops.multiply(latent, ops.constant(0.0, np.float32)), ops.add(score, position))
+            result = ops.result(value)
+            result.output(0).get_tensor().set_names({output_name})
+            results.append(result)
+        ov.save_model(ov.Model(results, list(parameters.values())), transformer_dir / "openvino_model.xml")
+        pipe = ov_genai.Text2VideoPipeline(root)
+        generation_config = pipe.get_generation_config()
+        generation_config.max_sequence_length = 32
+        generation_config.guidance_scale = 1.0
+        generation_config.audio_guidance_scale = 1.0
+        pipe.set_generation_config(generation_config)
+        if static_shapes:
+            pipe.reshape(1, 9, 32, 32, 1.0)
+        pipe.compile("CPU", INFERENCE_PRECISION_HINT="f32")
+        return pipe
+
+    def generate(pipe):
+        result = pipe.generate(
+            "test prompt",
+            generator=ov_genai.CppStdGenerator(42),
+            frame_rate=24.0,
+            guidance_scale=1.0,
+            audio_guidance_scale=1.0,
+            stg_scale=0.0,
+            audio_stg_scale=0.0,
+            modality_scale=1.0,
+            audio_modality_scale=1.0,
+            **GEN_KWARGS,
+        )
+        return result.video.data.copy(), result.audio.data.copy()
+
+    expected = generate(make_pipeline("constant_conditions", False))
+    actual = generate(make_pipeline("legacy_conditions", True))
+    np.testing.assert_array_equal(actual[0], expected[0])
+    np.testing.assert_array_equal(actual[1], expected[1])
 
 
 class TestAutoEncoderKLLTXVideo:
