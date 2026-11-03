@@ -4060,6 +4060,51 @@ def test_qwen3_omni_audio_rejected_on_audio_token_id_mismatch(tmp_path: Path) ->
         pipe.generate("Describe", audios=[audio], generation_config=GenerationConfig(max_new_tokens=1))
 
 
+@pytest.fixture(scope="module")
+def gemma3_chat_pipeline():
+    pipeline = VLMPipeline(
+        _get_ov_model("optimum-intel-internal-testing/tiny-random-gemma3"), "CPU", ATTENTION_BACKEND="SDPA"
+    )
+    yield pipeline
+    pipeline.finish_chat()
+
+
+@pytest.mark.parametrize("interrupt_with", ["history", "string", "start_chat"])
+@pytest.mark.parametrize("cancel_replay", [False, True])
+@pytest.mark.transformers_lower_v5(
+    reason="CVS-186059: Gemma3 export fails with an eltwise shape mismatch with Transformers 5.0"
+)
+def test_vlm_sdpa_history_replay_after_interruption(gemma3_chat_pipeline, interrupt_with, cancel_replay):
+    pipeline = gemma3_chat_pipeline
+    pipeline.finish_chat()
+    image = openvino.Tensor(np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8))
+    config = GenerationConfig(max_new_tokens=16 if cancel_replay else 2, do_sample=False, ignore_eos=True)
+    history = ChatHistory([{"role": "user", "content": "Describe the image."}])
+    first = pipeline.generate(history, images=[image], generation_config=config)
+    history.append({"role": "assistant", "content": first.texts[0]})
+    history.append({"role": "user", "content": "What else can you see?"})
+    expected = pipeline.generate(history, generation_config=config)
+    if interrupt_with == "history":
+        pipeline.generate(ChatHistory([{"role": "user", "content": "Hello"}]), generation_config=config)
+    else:
+        if interrupt_with == "start_chat":
+            pipeline.start_chat()
+        pipeline.generate("Hello", generation_config=config)
+    if cancel_replay:
+        chunks = []
+
+        def cancel(chunk):
+            chunks.append(chunk)
+            return StreamingStatus.CANCEL
+
+        cancelled = pipeline.generate(history, generation_config=config, streamer=cancel)
+        assert chunks
+        assert cancelled.perf_metrics.get_num_generated_tokens() < config.max_new_tokens
+    actual = pipeline.generate(history, generation_config=config)
+    assert actual.texts == expected.texts
+    assert actual.perf_metrics.get_num_input_tokens() == expected.perf_metrics.get_num_input_tokens()
+
+
 @pytest.mark.parametrize("chat_api", ["start_chat", "ChatHistory"])
 @pytest.mark.transformers_lower_v5(
     reason="CVS-186059: Gemma3 export fails with an eltwise shape mismatch with Transformers 5.0"
