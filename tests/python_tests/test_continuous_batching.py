@@ -1099,6 +1099,50 @@ def test_qwen35_mtp_matches_main_only(qwen35_mtp_model_path: Path):
     assert mtp_result[0].m_generation_ids == main_only_texts
 
 
+
+@pytest.fixture(scope="module")
+def qwen3_dflash_model_paths() -> tuple[Path, Path]:
+    paths = []
+    for model_id, trust_remote_code in (
+        ("optimum-intel-internal-testing/tiny-random-qwen3", False),
+        ("optimum-intel-internal-testing/tiny-random-qwen3-dflash", True),
+    ):
+        model_path = get_ov_cache_converted_models_dir() / f"{sanitize_model_id(model_id)}_text-generation-with-past"
+        manager = AtomicDownloadManager(model_path)
+        manager.execute(
+            lambda temp_path, model_id=model_id, trust_remote_code=trust_remote_code: export_with_optimum_cli(
+                model_id, "text-generation-with-past", temp_path, trust_remote_code=trust_remote_code
+            )
+        )
+        paths.append(model_path)
+    return paths[0], paths[1]
+
+
+def test_dflash_long_prompt_matches_main_only(qwen3_dflash_model_paths: tuple[Path, Path]):
+    # The prompt is longer than the draft's hidden-state ingest slice and is prefilled in several chunks, so the target
+    # hidden states reach the draft in slices during prefill and at the end of it.
+    main_model_path, draft_model_path = qwen3_dflash_model_paths
+    scheduler_config = SchedulerConfig()
+    scheduler_config.enable_prefix_caching = False
+    scheduler_config.dynamic_split_fuse = True
+    scheduler_config.max_num_batched_tokens = 1024
+    generation_config = GenerationConfig(do_sample=False, max_new_tokens=20, ignore_eos=True)
+    prompt = " ".join(["OpenVINO is an open-source toolkit for optimizing and deploying AI inference."] * 250)
+
+    main_only_pipe = LLMPipeline(main_model_path, "CPU", scheduler_config=scheduler_config)
+    assert main_only_pipe.get_tokenizer().encode(prompt).input_ids.get_shape()[1] > 2048
+    main_only_text = main_only_pipe.generate([prompt], generation_config).texts[0]
+    del main_only_pipe
+    gc.collect()
+
+    dflash_pipe = LLMPipeline(
+        main_model_path, "CPU", draft_model=draft_model(draft_model_path, "CPU"), scheduler_config=scheduler_config
+    )
+    dflash_text = dflash_pipe.generate([prompt], generation_config).texts[0]
+
+    assert main_only_text
+    assert dflash_text == main_only_text
+
 def test_qwen35_mtp_extended_perf_metrics(qwen35_mtp_model_path: Path):
     mtp_pipe = create_ov_cb_pipeline(
         qwen35_mtp_model_path,

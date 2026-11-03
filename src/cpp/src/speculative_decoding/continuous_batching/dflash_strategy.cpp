@@ -555,6 +555,35 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
 
     std::map<uint64_t, size_t> draft_generated_by_request;
     const auto draft_start = std::chrono::steady_clock::now();
+    // Target hidden states are fed to the draft in slices of at most this many rows: one slice for a whole long prompt
+    // would need a multi-GB input tensor ([rows, 1, hidden_size * num_target_layers], f32).
+    constexpr size_t ingest_chunk = 2048;
+    // Feed pending target hidden states to the draft in bounded slices, keeping the last `keep_tail` rows pending.
+    // The draft persists only committed target-prefix K/V, so slice-wise ingestion is exact; slice logits are dropped.
+    auto ingest_pending = [&](RequestState& state, size_t keep_tail) {
+        const size_t total = state.pending_hidden_deltas.token_count();
+        if (total <= keep_tail) {
+            return;
+        }
+        const ov::Tensor all = materialize_pending_hidden_delta(state);
+        const auto shape = all.get_shape();
+        auto slice = [&](size_t r0, size_t r1) {
+            ov::Tensor roi(all, ov::Coordinate{r0, 0, 0}, ov::Coordinate{r1, shape[1], shape[2]});
+            ov::Tensor owned(all.get_element_type(), ov::Shape{r1 - r0, shape[1], shape[2]});
+            roi.copy_to(owned);
+            return owned;
+        };
+        const size_t ingest_rows = total - keep_tail;
+        const int64_t seed_token = state.generated_tokens.empty() ? 0 : state.generated_tokens.back();
+        for (size_t r0 = 0; r0 < ingest_rows; r0 += ingest_chunk) {
+            m_draft->infer(seed_token, slice(r0, std::min(ingest_rows, r0 + ingest_chunk)), 1);
+        }
+        ov::Tensor tail = keep_tail ? slice(ingest_rows, total) : ov::Tensor();
+        clear_pending_hidden_delta(state);
+        if (keep_tail) {
+            append_pending_hidden_delta(state, tail, false);
+        }
+    };
     for (auto& [request_id, state] : m_request_states) {
         if (state.finished) {
             clear_pending_hidden_delta(state);
@@ -562,6 +591,10 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
             continue;
         }
         if (!has_pending_hidden_delta(state) || state.generated_tokens.empty()) {
+            // Still in prefill: consume the target hidden states eagerly so they never pile up.
+            if (has_pending_hidden_delta(state) && state.pending_hidden_deltas.token_count() >= ingest_chunk) {
+                ingest_pending(state, 0);
+            }
             state.draft_generated = 0;
             continue;
         }
@@ -587,6 +620,7 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
 
         const int64_t seed_token = state.generated_tokens.back();
         validate_hidden_prefix_length(state);
+        ingest_pending(state, std::min(state.pending_hidden_deltas.token_count(), ingest_chunk));
         auto hidden_delta = materialize_pending_hidden_delta(state);
         auto draft_logits = m_draft->infer(seed_token, hidden_delta, draft_count);
         clear_pending_hidden_delta(state);
@@ -633,6 +667,13 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
             state.finished = true;
         }
     }
+    // Draft-side prompt processing belongs to prefill: ingest the rest of the prompt now, before the token is timed.
+    for (auto& [request_id, state] : m_request_states) {
+        if (!state.finished && state.generated_tokens.size() == 1 && state.pending_hidden_deltas.token_count() > 1) {
+            ingest_pending(state, 1);
+        }
+    }
+    const auto token_ready = std::chrono::steady_clock::now();
 
     for (const auto& [request_id, draft_generated] : draft_generated_by_request) {
         auto state_it = m_request_states.find(request_id);
@@ -660,7 +701,7 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
     if (num_generated_tokens > 0) {
         raw_perf_counters.m_token_infer_durations.emplace_back(step_microsec_duration);
         raw_perf_counters.m_inference_durations[0] += MicroSeconds(step_microsec_duration);
-        raw_perf_counters.m_new_token_times.emplace_back(main_end);
+        raw_perf_counters.m_new_token_times.emplace_back(token_ready);
         raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
 
         auto main_pipeline_metrics = m_main_pipeline->get_metrics();
