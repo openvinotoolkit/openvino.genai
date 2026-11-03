@@ -43,6 +43,7 @@ def main():
     # - Multilingual Whisper: "en"
     # - Qwen3-ASR: "English"
     # - Fun-ASR-Nano: "英文"
+    # config.language = "en"
 
     # Whisper-specific options
     config.task = "transcribe"  # Or "translate". Multilingual Whisper only.

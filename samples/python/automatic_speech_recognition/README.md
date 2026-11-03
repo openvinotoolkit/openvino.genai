@@ -7,7 +7,9 @@ These samples demonstrate speech recognition using `openvino_genai.ASRPipeline`,
 Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model.
 
 ```sh
-pip install -U --upgrade-strategy eager -r ../../export-requirements.txt
+pip install -r ../../export-requirements.txt
+# Some newer models may require the latest Optimum Intel:
+# pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
 ```
 These dependencies are needed only for model export, not for running already-exported OpenVINO models.
 
