@@ -1908,6 +1908,7 @@ class GenerationConfig:
         tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
         num_assistant_tokens (tree search): overall number of candidate (non-root) tokens submitted to the target model for
                                             verification. Total tree nodes = num_assistant_tokens + 1 (including root).
+                                            Must not exceed 100. Larger values are rejected by validate().
     """
     adapters: openvino_genai.py_openvino_genai.AdapterConfig | None
     apply_chat_template: bool
