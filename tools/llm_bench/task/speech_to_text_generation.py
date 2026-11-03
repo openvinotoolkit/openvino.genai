@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import time
 import datetime
+import json
 import numpy as np
 from pathlib import Path
 import hashlib
@@ -184,18 +185,14 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
             log.warning(f"[{num}] Prompt[{speech_id}]'s md5 {result_md5_list} "
                         f"is different from md5 of the {num - 1} iteration {prev_md5}")
             metrics_print.print_generated(num, warm_up=(num == 0), generated=result_text, prompt_idx=speech_id)
-            if use_case.model_type == "sense-voice":
-                log.warning(
-                    f"[{num}] SenseVoiceSmall feature extraction applies random dither from config.json, "
-                    "so its output may differ between iterations"
-                )
-            elif num == 1:
-                # if the device is CPU, throw exception
-                if args['devices'].lower().startswith('cpu') is True:
+            if use_case.model_type != "sense-voice" or input_param["dither"] == 0:
+                if num == 1:
+                    # if the device is CPU, throw exception
+                    if args["devices"].lower().startswith("cpu") is True:
+                        assert result_md5_list == prev_md5
+                else:
+                    # throw exception
                     assert (result_md5_list == prev_md5)
-            else:
-                # throw exception
-                assert (result_md5_list == prev_md5)
     else:
         metrics_print.print_generated(num, warm_up=(num == 0), generated=result_text, prompt_idx=speech_id)
 
@@ -252,6 +249,10 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
         "processor": processor,
         "use_genai": use_genai,
     }
+    if args["use_case"].model_type == "sense-voice":
+        input_param["dither"] = json.loads((Path(model_path) / "config.json").read_text(encoding="utf-8")).get(
+            "dither", 1.0
+        )
 
     if framework == "ov" and use_genai is False and args["use_case"].model_type != "sense-voice":
         asr_hook.new_text_encoder(pipe)

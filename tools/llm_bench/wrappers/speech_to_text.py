@@ -52,24 +52,25 @@ class SenseVoiceOptimumPipeline:
         generate_kwargs = kwargs.get("generate_kwargs", {})
         language = generate_kwargs.get("language", "auto")
 
-        start = time.perf_counter()
+        call_start = time.perf_counter()
         inputs = self.model.preprocess_input(
             sample,
             sampling_rate=self.SAMPLE_RATE,
             language=language,
             use_itn=generate_kwargs.get("use_itn", False),
         )
-        preprocess_time = time.perf_counter() - start
+        preprocess_time = time.perf_counter() - call_start
 
         start = time.perf_counter()
         outputs, encoder_out_lens = self.model.forward(**inputs)
         infer_time = time.perf_counter() - start
         token_ids = self.model._ctc_greedy_ids(outputs.logits[0, : int(encoder_out_lens[0])])
-        generation_time = time.perf_counter() - start
 
         start = time.perf_counter()
         text = self.model._detokenize(token_ids)
-        detokenization_time = time.perf_counter() - start
+        end = time.perf_counter()
+        detokenization_time = end - start
+        generation_time = end - call_start
         return {
             "text": text,
             "num_generated_tokens": len(token_ids),
