@@ -199,9 +199,9 @@ else:
         "qnguyen3/nanoLLaVA",
         MODEL_MINICPMV4_6,
         MODEL_DEEPSEEK_OCR2,
+        "optimum-intel-internal-testing/tiny-random-mistral3",
         *VIDEO_MODEL_IDS,
     ]
-
 
 ADD_REQUEST_MODEL_IDS = [
     MODEL_IDS[0],
@@ -218,6 +218,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-qwen3.5": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
     MODEL_GEMMA3N: lambda idx: "<image_soft_token>",
+    "optimum-intel-internal-testing/tiny-random-mistral3": lambda idx: "[IMG]",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     MODEL_DEEPSEEK_OCR2: lambda idx: "<image>",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
@@ -255,6 +256,7 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
 
 RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-gemma3": 32,
+    "optimum-intel-internal-testing/tiny-random-mistral3": 32,
     "qnguyen3/nanoLLaVA": 384,
     MODEL_MINICPMV4_6: 448,
     "optimum-intel-internal-testing/tiny-random-llava-next-video": 336,
@@ -526,6 +528,9 @@ def _get_ov_model(model_id: str) -> str:
                 pass
 
         processor.save_pretrained(temp_dir)
+        if model.config.model_type == "mistral3":
+            # Align with optimum-cli: HF repo nests image processor settings in processor_config.json only.
+            processor.image_processor.save_pretrained(temp_dir)
         model.save_pretrained(temp_dir)
 
     manager.execute(convert_to_temp)
@@ -2021,6 +2026,7 @@ else:
         ("optimum-intel-internal-testing/tiny-random-gemma4-unified-it", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-gemma4-31B", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-qwen3.5", "SDPA"),
+        ("optimum-intel-internal-testing/tiny-random-mistral3", "PA"),
     ]
 
 
@@ -4052,6 +4058,51 @@ def test_qwen3_omni_audio_rejected_on_audio_token_id_mismatch(tmp_path: Path) ->
     audio = openvino.Tensor(np.zeros(16000, dtype=np.float32))
     with pytest.raises(RuntimeError, match="does not encode <\\|audio_pad\\|> as the single token"):
         pipe.generate("Describe", audios=[audio], generation_config=GenerationConfig(max_new_tokens=1))
+
+
+@pytest.fixture(scope="module")
+def gemma3_chat_pipeline():
+    pipeline = VLMPipeline(
+        _get_ov_model("optimum-intel-internal-testing/tiny-random-gemma3"), "CPU", ATTENTION_BACKEND="SDPA"
+    )
+    yield pipeline
+    pipeline.finish_chat()
+
+
+@pytest.mark.parametrize("interrupt_with", ["history", "string", "start_chat"])
+@pytest.mark.parametrize("cancel_replay", [False, True])
+@pytest.mark.transformers_lower_v5(
+    reason="CVS-186059: Gemma3 export fails with an eltwise shape mismatch with Transformers 5.0"
+)
+def test_vlm_sdpa_history_replay_after_interruption(gemma3_chat_pipeline, interrupt_with, cancel_replay):
+    pipeline = gemma3_chat_pipeline
+    pipeline.finish_chat()
+    image = openvino.Tensor(np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8))
+    config = GenerationConfig(max_new_tokens=16 if cancel_replay else 2, do_sample=False, ignore_eos=True)
+    history = ChatHistory([{"role": "user", "content": "Describe the image."}])
+    first = pipeline.generate(history, images=[image], generation_config=config)
+    history.append({"role": "assistant", "content": first.texts[0]})
+    history.append({"role": "user", "content": "What else can you see?"})
+    expected = pipeline.generate(history, generation_config=config)
+    if interrupt_with == "history":
+        pipeline.generate(ChatHistory([{"role": "user", "content": "Hello"}]), generation_config=config)
+    else:
+        if interrupt_with == "start_chat":
+            pipeline.start_chat()
+        pipeline.generate("Hello", generation_config=config)
+    if cancel_replay:
+        chunks = []
+
+        def cancel(chunk):
+            chunks.append(chunk)
+            return StreamingStatus.CANCEL
+
+        cancelled = pipeline.generate(history, generation_config=config, streamer=cancel)
+        assert chunks
+        assert cancelled.perf_metrics.get_num_generated_tokens() < config.max_new_tokens
+    actual = pipeline.generate(history, generation_config=config)
+    assert actual.texts == expected.texts
+    assert actual.perf_metrics.get_num_input_tokens() == expected.perf_metrics.get_num_input_tokens()
 
 
 @pytest.mark.parametrize("chat_api", ["start_chat", "ChatHistory"])
