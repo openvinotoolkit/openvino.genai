@@ -8,6 +8,7 @@
 #include <optional>
 #include <random>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "openvino/genai/generation_config.hpp"
@@ -73,7 +74,7 @@ public:
     bool fill_row(size_t block, size_t position, int64_t previous_token, float* row) const override;
 
     // Microseconds the Markov head ran since the last call. The head runs during sampling, after the draft's
-    // inference timer stops, so the draft adds this to its inference duration.
+    // inference timer stops, so the draft reports this apart from its backbone and its sampling.
     float take_inference_duration();
 
 private:

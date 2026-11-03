@@ -145,6 +145,18 @@ public:
     UpdateRequestResult init_request_by_candidate(uint64_t request_id, const GeneratedSequences& candidates);
 
     RawPerfMetrics raw_perf_metrics;
+    // Parts of the draft steps of a DFlash draft, one entry per step of raw_perf_metrics, which holds their backbone
+    // forwards. The Markov head ones are recorded only for a draft with a Markov head.
+    RawPerfMetrics dflash_markov_head_perf_metrics;
+    RawPerfMetrics dflash_sampling_perf_metrics;
+
+    void reset_draft_perf_metrics() {
+        for (RawPerfMetrics* metrics :
+             {&raw_perf_metrics, &dflash_markov_head_perf_metrics, &dflash_sampling_perf_metrics}) {
+            *metrics = RawPerfMetrics{};
+            metrics->m_inference_durations = {MicroSeconds(0.0f)};
+        }
+    }
 
     ov::Any get_model_property(const std::string& name) {
         OPENVINO_ASSERT(m_model_runner, "get_model_property('", name, "') called before model runner is initialized");
