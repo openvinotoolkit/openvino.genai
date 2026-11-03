@@ -101,16 +101,7 @@ Word timestamps:
 [0.40, 0.72]: 甚
 [0.72, 0.96]: 至
 [0.96, 1.12]: 出
-[1.12, 1.52]: 现
-[1.52, 1.76]: 交
-[1.76, 2.00]: 易
-[2.00, 2.24]: 几
-[2.24, 2.48]: 乎
-[2.48, 2.72]: 停
-[2.72, 2.88]: 滞
-[2.88, 3.04]: 的
-[3.04, 3.36]: 情
-[3.36, 3.68]: 况
+...
 ```
 
 Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#speech-recognition-models) for more details.
@@ -201,15 +192,7 @@ Word timestamps:
 [1.04, 1.12]: Les
 [1.12, 1.44]: premiers
 [1.44, 1.52]: cas
-[1.52, 1.60]: de
-[1.60, 1.84]: cette
-[1.84, 2.16]: maladie
-[2.16, 2.80]: saisonnière
-[2.88, 2.96]: ont
-[2.96, 3.12]: été
-[3.28, 3.76]: déclarés
-[3.84, 4.00]: fin
-[4.00, 4.32]: juillet
+...
 ```
 
 ### Whisper-specific features
