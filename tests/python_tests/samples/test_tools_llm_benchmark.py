@@ -617,6 +617,26 @@ class TestBenchmarkLLM:
         run_sample(benchmark_py_command)
 
     @pytest.mark.samples
+    @pytest.mark.sensevoice
+    @pytest.mark.parametrize("sample_args", [["-d", "cpu", "-n", "1"], ["-d", "cpu", "-n", "1", "--optimum"]])
+    @pytest.mark.parametrize("media_file", ["3283_1447_000000.flac"])
+    @pytest.mark.parametrize("convert_model", ["tiny-random-sense-voice-small"], indirect=True)
+    @pytest.mark.parametrize("download_test_content", ["3283_1447_000.tar.gz"], indirect=True)
+    def test_python_tool_llm_benchmark_sensevoice(self, convert_model, download_test_content, media_file, sample_args):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "--media",
+            Path(download_test_content) / media_file,
+        ] + sample_args
+        result = run_sample(benchmark_py_command)
+        assert "model_type: sense-voice" in result.stdout
+        assert "Output size: " in result.stdout
+
+    @pytest.mark.samples
     @pytest.mark.parametrize("convert_model", ["bge-small-en-v1.5"], indirect=True)
     @pytest.mark.parametrize("sample_args", [
         ["-d", "cpu", "-n", "2", "--task", "text_embed"],

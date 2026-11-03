@@ -40,6 +40,48 @@ class FunASROptimumPipeline:
         }
 
 
+class SenseVoiceOptimumPipeline:
+    """Benchmark SenseVoiceSmall CTC exports with Optimum-compatible output."""
+
+    SAMPLE_RATE = 16000
+
+    def __init__(self, model):
+        self.model = model
+
+    def __call__(self, sample, **kwargs):
+        generate_kwargs = kwargs.get("generate_kwargs", {})
+        language = generate_kwargs.get("language", "auto")
+
+        start = time.perf_counter()
+        inputs = self.model.preprocess_input(
+            sample,
+            sampling_rate=self.SAMPLE_RATE,
+            language=language,
+            use_itn=generate_kwargs.get("use_itn", False),
+        )
+        preprocess_time = time.perf_counter() - start
+
+        start = time.perf_counter()
+        outputs, encoder_out_lens = self.model.forward(**inputs)
+        infer_time = time.perf_counter() - start
+        token_ids = self.model._ctc_greedy_ids(outputs.logits[0, : int(encoder_out_lens[0])])
+        generation_time = time.perf_counter() - start
+
+        start = time.perf_counter()
+        text = self.model._detokenize(token_ids)
+        detokenization_time = time.perf_counter() - start
+        return {
+            "text": text,
+            "num_generated_tokens": len(token_ids),
+            "perf_metrics": {
+                "preprocess_time": preprocess_time * 1000,
+                "infer_time": infer_time,
+                "generation_time": generation_time,
+                "detokenization_time": detokenization_time * 1000,
+            },
+        }
+
+
 class Qwen3ASROptimumPipeline:
     """Benchmark current split and legacy encoder/decoder Qwen3-ASR exports."""
 
