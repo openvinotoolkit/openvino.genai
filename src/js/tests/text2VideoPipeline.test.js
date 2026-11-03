@@ -218,13 +218,17 @@ describe("Text2VideoPipeline methods", { skip: os.platform() === "darwin" }, () 
     assert.deepStrictEqual(result.video.getShape(), [1, 9, 32, 32, 3]);
   });
 
-  it("callback receives a latent tensor that can be decoded", async () => {
+  it("allows decode but rejects another generation inside the step callback", async () => {
     let decoded;
     await pipeline.generate("a tiny robot", {
       ...CALLBACK_VIDEO,
       callback: async (step, numSteps, latent) => {
         assert.strictEqual(typeof latent.getShape, "function");
         decoded = await pipeline.decode(latent);
+        await assert.rejects(
+          pipeline.generate("another tiny robot"),
+          /generate\(\) cannot run while another generate\(\) or decode\(\) is in progress/,
+        );
         return true; // stop early, one decoded latent is enough
       },
     });
@@ -271,6 +275,18 @@ describe("Text2VideoPipeline methods", { skip: os.platform() === "darwin" }, () 
         },
       }),
       /callback failure/,
+    );
+  });
+
+  it("generate rejects when an async callback throws", async () => {
+    await assert.rejects(
+      pipeline.generate("a tiny robot", {
+        ...CALLBACK_VIDEO,
+        callback: async () => {
+          throw new Error("async callback failure");
+        },
+      }),
+      /async callback failure/,
     );
   });
 });
@@ -322,13 +338,11 @@ describe("Text2VideoPipeline concurrency", { skip: os.platform() === "darwin" },
     await decoding;
   });
 
-  it("setGenerationConfig() rejects while a generate() is in progress", async () => {
+  it("the generation config can't be accessed while a generate() is in progress", async () => {
     const original = pipeline.getGenerationConfig();
     const generating = pipeline.generate("a tiny robot", SMALL_VIDEO);
-    assert.throws(
-      () => pipeline.setGenerationConfig({ num_frames: 17 }),
-      /setGenerationConfig\(\) cannot run while generate\(\) is in progress/,
-    );
+    assert.throws(() => pipeline.getGenerationConfig(), /Pipeline is busy/);
+    assert.throws(() => pipeline.setGenerationConfig({ num_frames: 17 }), /Pipeline is busy/);
     await generating;
     pipeline.setGenerationConfig({ num_frames: 17 });
     assert.strictEqual(pipeline.getGenerationConfig().num_frames, 17);
