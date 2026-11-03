@@ -110,6 +110,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const ov::genai::GenerationConfig& generation_config
 ) : LLMPipelineImplBase(tokenizer, generation_config),
     m_sampler(m_tokenizer) {
+    ov::genai::utils::validate_llm_model_dag(model, ov::genai::utils::ModelRole::PRIMARY_LLM);
     auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
     auto [compiled, kv_desc] = utils::compile_decoder_for_npu(model, properties, kv_pos);
     m_max_prompt_len = kv_desc.max_prompt_len;

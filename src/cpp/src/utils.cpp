@@ -9,7 +9,9 @@
 #include <fstream>
 #include <map>
 #include <memory>
+#include <queue>
 #include <regex>
+#include <unordered_set>
 
 #include "openvino/runtime/properties.hpp"
 #include "openvino/op/add.hpp"
@@ -1312,6 +1314,158 @@ void patch_chat_template_multiline_strings(Tokenizer& tokenizer) {
     const std::regex multiline_string_concatenation{R"("[ \t]*\r?\n[ \t]*")"};
     chat_template = std::regex_replace(chat_template, multiline_string_concatenation, "");
     tokenizer.set_chat_template(chat_template);
+}
+
+void validate_llm_model_dag(const std::shared_ptr<ov::Model>& model, ModelRole role) {
+    OPENVINO_ASSERT(model != nullptr, "[LLMPipeline][GAP-04] LLMPipeline pre-flight validation failed: Model must not be null.");
+
+    const std::string model_name = model->get_friendly_name();
+    const auto& parameters = model->get_parameters();
+    const auto& results = model->get_results();
+    const auto& sinks = model->get_sinks();
+
+    OPENVINO_ASSERT(!parameters.empty(),
+        "[LLMPipeline][GAP-04] LLMPipeline pre-flight failed [model='", model_name, "']: "
+        "Model contains 0 input Parameters. Action: Export model with valid input tensors.");
+
+    OPENVINO_ASSERT(!results.empty() || !sinks.empty(),
+        "[LLMPipeline][GAP-04] LLMPipeline pre-flight failed [model='", model_name, "']: "
+        "Model contains 0 Results and 0 Sinks. Action: Export model with valid output tensors.");
+
+    std::vector<std::string> param_names;
+    param_names.reserve(parameters.size());
+    for (const auto& param : parameters) {
+        param_names.push_back(param->get_friendly_name());
+    }
+
+    bool has_valid_primary_input = false;
+    for (const auto& name : param_names) {
+        if (role == ModelRole::PRIMARY_LLM) {
+            if (name == "input_ids" || name.find("input_ids") != std::string::npos) {
+                has_valid_primary_input = true;
+                break;
+            }
+        } else {
+            if (name == "input_ids" || name.find("input_ids") != std::string::npos ||
+                name == "hidden_states" || name.find("hidden_states") != std::string::npos ||
+                name == "inputs_embeds" || name.find("inputs_embeds") != std::string::npos) {
+                has_valid_primary_input = true;
+                break;
+            }
+        }
+    }
+
+    if (!has_valid_primary_input) {
+        std::string found_list;
+        for (size_t i = 0; i < param_names.size(); ++i) {
+            if (i > 0) {
+                found_list += ", ";
+            }
+            found_list += "'" + param_names[i] + "'";
+        }
+        if (role == ModelRole::PRIMARY_LLM) {
+            OPENVINO_THROW("[LLMPipeline][GAP-04] LLMPipeline pre-flight failed [model='", model_name, "']: "
+                           "Required Parameter 'input_ids' not found. "
+                           "Found ", parameters.size(), " Parameter(s): [", found_list, "]. "
+                           "Action: Re-export model with tokenizer inputs retained.");
+        } else {
+            OPENVINO_THROW("[LLMPipeline][GAP-04] LLMPipeline pre-flight failed [model='", model_name, "']: "
+                           "Required Parameter ('input_ids', 'hidden_states', or 'inputs_embeds') not found for draft model. "
+                           "Found ", parameters.size(), " Parameter(s): [", found_list, "]. "
+                           "Action: Re-export draft model with appropriate input tensor.");
+        }
+    }
+
+    bool has_logits_output = false;
+    std::vector<std::string> result_names;
+    result_names.reserve(results.size());
+    for (const auto& result : results) {
+        std::string res_name = result->get_friendly_name();
+        if (result->get_input_size() > 0) {
+            const auto& tensor_names = result->input(0).get_tensor().get_names();
+            if (!tensor_names.empty()) {
+                res_name = *tensor_names.begin();
+            }
+        }
+        result_names.push_back(res_name);
+
+        if (res_name == "logits" || res_name == "lm_logits" || res_name.find("logit") != std::string::npos) {
+            has_logits_output = true;
+        }
+    }
+
+    if (!has_logits_output && results.size() == 1) {
+        const auto& partial_shape = results[0]->get_output_partial_shape(0);
+        if (partial_shape.rank().is_dynamic() || partial_shape.rank().get_length() >= 2) {
+            has_logits_output = true;
+        }
+    }
+
+    if (role != ModelRole::PRIMARY_LLM && !has_logits_output && !results.empty()) {
+        has_logits_output = true;
+    }
+
+    if (!has_logits_output) {
+        std::string found_res_list;
+        for (size_t i = 0; i < result_names.size(); ++i) {
+            if (i > 0) {
+                found_res_list += ", ";
+            }
+            found_res_list += "'" + result_names[i] + "'";
+        }
+        OPENVINO_THROW("[LLMPipeline][GAP-04] LLMPipeline pre-flight failed [model='", model_name, "']: "
+                       "Required Result 'logits' not found. "
+                       "Found ", results.size(), " Result(s): [", found_res_list, "]. "
+                       "Action: Re-export model with vocabulary logits output retained.");
+    }
+
+    std::unordered_set<const ov::Node*> visited;
+    std::queue<const ov::Node*> bfs_queue;
+
+    for (const auto& result : results) {
+        if (result) {
+            bfs_queue.push(result.get());
+            visited.insert(result.get());
+        }
+    }
+    for (const auto& sink : sinks) {
+        if (sink) {
+            bfs_queue.push(sink.get());
+            visited.insert(sink.get());
+        }
+    }
+
+    while (!bfs_queue.empty()) {
+        const ov::Node* curr = bfs_queue.front();
+        bfs_queue.pop();
+
+        const size_t input_size = curr->get_input_size();
+        for (size_t i = 0; i < input_size; ++i) {
+            const auto& source_output = curr->input(i).get_source_output();
+            const ov::Node* src_node = source_output.get_node();
+            if (src_node != nullptr && visited.find(src_node) == visited.end()) {
+                visited.insert(src_node);
+                bfs_queue.push(src_node);
+            }
+        }
+    }
+
+    for (const auto& param : parameters) {
+        const std::string& p_name = param->get_friendly_name();
+        bool is_critical = false;
+        if (role == ModelRole::PRIMARY_LLM && (p_name == "input_ids" || p_name.find("input_ids") != std::string::npos)) {
+            is_critical = true;
+        } else if (role != ModelRole::PRIMARY_LLM && (p_name == "input_ids" || p_name == "hidden_states" || p_name == "inputs_embeds" ||
+                   p_name.find("input_ids") != std::string::npos || p_name.find("hidden_states") != std::string::npos)) {
+            is_critical = true;
+        }
+
+        if (is_critical && visited.find(param.get()) == visited.end()) {
+            OPENVINO_THROW("[LLMPipeline][GAP-04] LLMPipeline pre-flight failed [model='", model_name, "']: "
+                           "Critical Parameter '", p_name, "' is topologically disconnected from graph Results and Sinks. "
+                           "Action: Ensure tensor graph connectivity is preserved during export/optimization.");
+        }
+    }
 }
 
 }  // namespace utils

@@ -473,6 +473,26 @@ ov::genai::GenerationConfig get_multinomial_config();
  */
 void patch_chat_template_multiline_strings(Tokenizer& tokenizer);
 
+enum class ModelRole {
+    PRIMARY_LLM,
+    DRAFT_MODEL,
+    EAGLE3_DRAFT
+};
+
+/**
+ * @brief Validates OpenVINO IR model DAG topology before pipeline resource allocation.
+ *
+ * @details Performs pre-flight structural verification and backward dual-root BFS traversal
+ *          from ov::Result nodes and ov::Sink nodes (Assign operators in stateful KV loops).
+ *          Guarantees model is non-null, has required inputs and outputs according to role,
+ *          and that input parameters are topologically connected to graph outputs.
+ *
+ * @param model Model to validate.
+ * @param role Structural role of the model (primary vs draft head).
+ * @throws ov::Exception if model is null, parameters/results are missing, or parameters are disconnected.
+ */
+void validate_llm_model_dag(const std::shared_ptr<ov::Model>& model, ModelRole role = ModelRole::PRIMARY_LLM);
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

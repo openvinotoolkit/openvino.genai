@@ -11,6 +11,13 @@
 #include "utils.hpp"
 #include "gguf_utils/gguf_utils.hpp"
 
+namespace {
+std::shared_ptr<ov::Model> preflight_validate(const std::shared_ptr<ov::Model>& model) {
+    ov::genai::utils::validate_llm_model_dag(model, ov::genai::utils::ModelRole::PRIMARY_LLM);
+    return model;
+}
+} // namespace
+
 namespace ov::genai {
 
 StatefulLLMPipeline::StatefulLLMPipeline(
@@ -47,7 +54,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const std::string& device,
     const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config)
-    : LLMPipelineImplBase(tokenizer, generation_config), m_sampler(m_tokenizer), m_cache_state(model) {
+    : LLMPipelineImplBase(tokenizer, generation_config), m_sampler(m_tokenizer), m_cache_state(preflight_validate(model)) {
     if (device.find("NPU") != std::string::npos) {
         m_is_npu = true;
         m_use_full_chat_history = true;
