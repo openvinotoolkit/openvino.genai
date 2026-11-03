@@ -292,11 +292,10 @@ def test_generate_matches_target(model_pair, ignore_eos):
     metrics = result.extended_perf_metrics
     assert metrics.get_num_draft_tokens() > 0
     assert metrics.get_num_accepted_tokens() <= metrics.get_num_draft_tokens()
-    assert (
-        0
-        < metrics.draft_model_metrics.get_num_generated_tokens()
-        <= config.max_new_tokens * config.num_assistant_tokens
-    )
+    num_drafted = metrics.draft_sampling_metrics.get_num_generated_tokens()
+    assert 0 < num_drafted <= config.max_new_tokens * config.num_assistant_tokens
+    # the backbone also forwards the context rows of every block
+    assert metrics.draft_model_metrics.get_num_generated_tokens() > num_drafted
 
 
 # The DeepSpec draft has candidates accepted on this prompt, and the other drafts have none.
@@ -329,7 +328,7 @@ def test_requests_drafted_together_match_target(model_pair):
     assert outputs == target_outputs
     assert results[0].extended_perf_metrics.get_num_draft_tokens() > 0
     # one draft forward and one candidate selection drafts the blocks of several requests
-    candidates_per_draft_step = results[0].extended_perf_metrics.draft_model_metrics.raw_metrics.m_batch_sizes
+    candidates_per_draft_step = results[0].extended_perf_metrics.draft_sampling_metrics.raw_metrics.m_batch_sizes
     assert max(candidates_per_draft_step) > BLOCK_NUM_ASSISTANT_TOKENS
 
     single_outputs = [_generate(pipe, [prompt], _block_config())[0][0] for prompt in _block_prompts(model_pair)]

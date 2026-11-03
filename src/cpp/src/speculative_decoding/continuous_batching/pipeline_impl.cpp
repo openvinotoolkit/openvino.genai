@@ -878,7 +878,6 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::pull_a
 
 void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::dflash_draft_multistep() {
     bool ran_forward = false;
-    float step_duration = 0.0f;
     // step() frees the requests that run out of KV cache, so their per-request inputs are cleared by id.
     std::vector<uint64_t> request_ids;
     request_ids.reserve(m_requests.size());
@@ -886,10 +885,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::d
         request_ids.push_back(request->get_request_id());
     }
     if (!m_dflash_draft_windows.empty()) {
-        const auto step_start = std::chrono::steady_clock::now();
         step();
-        step_duration = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
-        // A step that schedules nothing returns before the forward and keeps the previous inference_duration.
+        // A step that schedules nothing returns before the forward and keeps the previous step's durations.
         ran_forward = get_metrics().scheduled_requests > 0;
     }
     for (const uint64_t request_id : request_ids) {
@@ -898,6 +895,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::d
     }
 
     size_t num_candidates = 0;
+    size_t num_forwarded_rows = 0;
     for (auto& request : m_requests) {
         request->pause_generation(true);
         const auto running_sequences = request->get_running_sequences();
@@ -912,6 +910,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::d
         const size_t processed_tokens = request->get_num_processed_tokens();
         const size_t forwarded_rows =
             processed_tokens > window.committed_rows ? processed_tokens - window.committed_rows : 0;
+        num_forwarded_rows += forwarded_rows;
         const size_t first_candidate_row = window.context_rows + m_dflash_candidate_position_offset;
         if (forwarded_rows > first_candidate_row) {
             // The forward reached candidate rows, so the sampler removed every placeholder and appended the
@@ -934,10 +933,21 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::d
     const float markov_head_duration =
         m_dflash_candidate_selector ? m_dflash_candidate_selector->take_inference_duration() : 0.0f;
     if (ran_forward) {
-        raw_perf_metrics.m_durations.emplace_back(step_duration);
-        raw_perf_metrics.m_inference_durations[0] +=
-            MicroSeconds(get_metrics().inference_duration + markov_head_duration);
-        raw_perf_metrics.m_batch_sizes.emplace_back(num_candidates);
+        const auto record = [](RawPerfMetrics& metrics, float duration, size_t batch_size) {
+            metrics.m_durations.emplace_back(duration);
+            metrics.m_inference_durations[0] += MicroSeconds(duration);
+            metrics.m_batch_sizes.emplace_back(batch_size);
+        };
+        // The draft forward of step() is the step's backbone and counts the rows it ran, context rows included. Its
+        // sampler call is the sampling, which runs the Markov head, and both count the candidates the step drafted.
+        // A copy of the pipeline metrics drops the sampling duration.
+        record(raw_perf_metrics, m_pipeline_metrics.inference_duration, num_forwarded_rows);
+        if (m_dflash_candidate_selector && m_dflash_candidate_selector->has_markov_head()) {
+            record(dflash_markov_head_perf_metrics, markov_head_duration, num_candidates);
+        }
+        record(dflash_sampling_perf_metrics,
+               std::max(m_pipeline_metrics.sampling_duration - markov_head_duration, 0.0f),
+               num_candidates);
     }
 }
 
