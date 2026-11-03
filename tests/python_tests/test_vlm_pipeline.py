@@ -455,7 +455,7 @@ def _get_ov_model(model_id: str) -> str:
         return model_dir
 
     def convert_to_temp(temp_dir: Path) -> None:
-        model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+        model_cached = retry_request(lambda: snapshot_download(model_id))
         align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
         processor = retry_request(
             lambda: transformers.AutoProcessor.from_pretrained(
@@ -719,8 +719,9 @@ parametrize_one_model_npu = _parametrize_npu_models(
 
 
 @pytest.fixture(scope="module")
-def ov_continuous_batching_pipe() -> ContinuousBatchingPipeline:
-    models_path = _get_ov_model(MODEL_IDS[0])
+def ov_continuous_batching_pipe(request: pytest.FixtureRequest) -> ContinuousBatchingPipeline:
+    model_id = getattr(request, "param", MODEL_IDS[0])
+    models_path = _get_ov_model(model_id)
     return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
 
 
