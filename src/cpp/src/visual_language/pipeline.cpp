@@ -134,7 +134,7 @@ private:
         auto& properties_copy = filtered_properties.fork();
         if (m_generation_config.adapters) {
             // Forward the adapters to InputsEmbedder sub-models before the language model prefix is set below.
-            properties_copy[AdaptersProperty::name()] = *m_generation_config.adapters;
+            properties_copy[utils::FORWARDED_ADAPTERS_PROPERTY] = *m_generation_config.adapters;
         }
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
 
@@ -220,7 +220,7 @@ private:
         auto& properties_copy = filtered_properties.fork();
         if (m_generation_config.adapters) {
             // Forward the adapters to InputsEmbedder sub-models before the language model prefix is set below.
-            properties_copy[AdaptersProperty::name()] = *m_generation_config.adapters;
+            properties_copy[utils::FORWARDED_ADAPTERS_PROPERTY] = *m_generation_config.adapters;
         }
 
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties_copy);

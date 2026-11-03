@@ -34,12 +34,16 @@ namespace {
 std::optional<AdapterController> create_vision_adapter_controller(const std::shared_ptr<ov::Model>& model,
                                                                   const std::string& device,
                                                                   const ov::AnyMap& properties) {
-    std::optional<AdapterConfig> adapters;
-    if (!update_adapters_from_properties(properties, adapters) || !static_cast<bool>(*adapters)) {
+    auto forwarded = properties.find(utils::FORWARDED_ADAPTERS_PROPERTY);
+    if (forwarded == properties.end()) {
         return std::nullopt;
     }
-    adapters->set_tensor_name_prefix(adapters->get_tensor_name_prefix().value_or(VISION_LORA_TENSOR_NAME_PREFIX));
-    return AdapterController(model, *adapters, device);
+    auto adapters = forwarded->second.as<AdapterConfig>();
+    if (!adapters) {
+        return std::nullopt;
+    }
+    adapters.set_tensor_name_prefix(adapters.get_tensor_name_prefix().value_or(VISION_LORA_TENSOR_NAME_PREFIX));
+    return AdapterController(model, adapters, device);
 }
 
 std::shared_ptr<ov::Node> create_f32_nchw_input(std::shared_ptr<ov::Node> input) {

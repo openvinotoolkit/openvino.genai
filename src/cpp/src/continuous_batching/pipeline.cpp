@@ -92,7 +92,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
 
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
-        embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device, properties_without_draft_model);
+        embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device,
+                                                    forward_adapters_to_submodels(properties_without_draft_model));
     }
 
     utils::print_scheduler_config_info(scheduler_config);
@@ -159,7 +160,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
 
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
-        embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device, properties_without_draft_model);
+        embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device,
+                                                    forward_adapters_to_submodels(properties_without_draft_model));
     }
 
     utils::print_scheduler_config_info(scheduler_config);
@@ -286,7 +288,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
 
     std::shared_ptr<InputsEmbedder> embedder;
     if (!model_config_dir_path.empty() && std::filesystem::exists(model_config_dir_path / "openvino_text_embeddings_model.xml")) {
-        embedder = std::make_shared<InputsEmbedder>(model_config_dir_path, device, properties_without_draft_model);
+        embedder = std::make_shared<InputsEmbedder>(model_config_dir_path, device,
+                                                    forward_adapters_to_submodels(properties_without_draft_model));
     }
 
     utils::print_scheduler_config_info(scheduler_config);

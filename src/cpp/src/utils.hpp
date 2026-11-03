@@ -144,9 +144,14 @@ std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_p
 /// Value shape: ov::AnyMap keyed by model role (e.g. "vision_embeddings").
 extern const std::string PER_MODEL_PROPERTIES;
 
+/// @brief Key under which a pipeline forwards the adapters it already consumed to its sub-model constructors.
+/// Value shape: AdapterConfig. GenAI-internal: absent from the public API, so a user-supplied `adapters` entry
+/// is never mistaken for it and still reaches the plugin.
+extern const std::string FORWARDED_ADAPTERS_PROPERTY;
+
 /// @brief Resolve properties for @p model_role by merging three layers (priority low to high):
-///        1. global (top-level keys, excluding meta keys PER_MODEL_PROPERTIES
-///           and DEVICE_PROPERTIES if device is specified)
+///        1. global (top-level keys, excluding meta keys PER_MODEL_PROPERTIES,
+///           FORWARDED_ADAPTERS_PROPERTY and DEVICE_PROPERTIES if device is specified)
 ///        2. DEVICE_PROPERTIES[device] (only when @p device is non-empty)
 ///        3. PER_MODEL_PROPERTIES[model_role]
 ///        MODEL_PROPERTIES wins over DEVICE_PROPERTIES wins
@@ -158,10 +163,6 @@ extern const std::string PER_MODEL_PROPERTIES;
 ///        which are not bound to a specific device).
 /// @return A new ov::AnyMap with the merged result. The input map is left
 ///         untouched so callers may continue using the meta keys.
-ov::AnyMap resolve_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device = "");
-
-/// @brief Same as resolve_model_properties(), with the GenAI-only `adapters` entry removed so the
-///        result can be passed to a plugin. Use resolve_model_properties() to read the adapters.
 ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device = "");
 
 std::pair<ov::AnyMap, bool> extract_paired_input_props(const ov::AnyMap& external_properties);

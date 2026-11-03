@@ -167,7 +167,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
 
     // Resolve per-role MODEL_PROPERTIES overlay for the language model and
     // strip the GenAI-only MODEL_PROPERTIES meta key before reaching the OV plugin.
-    const auto language_model_properties = utils::resolve_model_properties(properties, "language_model", device);
+    const auto language_model_properties = utils::get_model_properties(properties, "language_model", device);
 
     // apply LoRA. Adapters passed through the properties override the ones the pipeline was constructed with.
     auto filtered_properties = extract_adapters_from_properties(language_model_properties);

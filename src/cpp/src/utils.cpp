@@ -419,13 +419,15 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 } // namespace
 
 const std::string PER_MODEL_PROPERTIES = "MODEL_PROPERTIES";
+const std::string FORWARDED_ADAPTERS_PROPERTY = "FORWARDED_ADAPTERS";
 
-ov::AnyMap resolve_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device) {
+ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device) {
     ov::AnyMap result;
     for (const auto& property : properties) {
         // Ignore MODEL_PROPERTIES as they are used only within this function
         // to construct final properties map for a given model.
-        if (property.first == PER_MODEL_PROPERTIES) {
+        // FORWARDED_ADAPTERS_PROPERTY is read by sub-model constructors and is meaningless for a plugin.
+        if (property.first == PER_MODEL_PROPERTIES || property.first == FORWARDED_ADAPTERS_PROPERTY) {
             continue;
         }
         // When a concrete device is known, DEVICE_PROPERTIES[device] is
@@ -464,13 +466,6 @@ ov::AnyMap resolve_model_properties(const ov::AnyMap& properties, const std::str
     for (const auto& property : role_it->second.as<ov::AnyMap>()) {
         result.insert_or_assign(property.first, property.second);
     }
-    return result;
-}
-
-ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device) {
-    ov::AnyMap result = resolve_model_properties(properties, model_role, device);
-    // LoRA adapters are consumed by GenAI itself and are not a plugin property.
-    result.erase(AdaptersProperty::name());
     return result;
 }
 

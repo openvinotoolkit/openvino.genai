@@ -20,6 +20,10 @@ utils::SharedOptional<const AnyMap> extract_adapters_from_properties (const AnyM
 // If `adapters` property is not found, do nothing and return false.
 bool update_adapters_from_properties (const AnyMap& properties, std::optional<AdapterConfig>& adapter_config);
 
+// Move the `adapters` property to utils::FORWARDED_ADAPTERS_PROPERTY so that sub-model constructors
+// can read the adapters while get_model_properties() keeps them away from the plugins.
+AnyMap forward_adapters_to_submodels (const AnyMap& properties);
+
 using AdapterConfigAction = std::function<std::optional<AdapterConfig>(const AdapterConfig&)>;
 using AdapterAction = std::function<Adapter(const Adapter&)>;
 

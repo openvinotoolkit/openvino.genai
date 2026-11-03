@@ -28,6 +28,15 @@ bool update_adapters_from_properties (const AnyMap& properties, std::optional<Ad
     return false;
 }
 
+AnyMap forward_adapters_to_submodels (const AnyMap& properties) {
+    std::optional<AdapterConfig> adapters;
+    AnyMap result = *extract_adapters_from_properties(properties, &adapters);
+    if (adapters) {
+        result[utils::FORWARDED_ADAPTERS_PROPERTY] = *adapters;
+    }
+    return result;
+}
+
 
 void update_adapters_in_properties(utils::SharedOptional<const AnyMap>& properties, const AdapterConfigAction& action) {
     std::optional<AdapterConfig> adapter_config;
