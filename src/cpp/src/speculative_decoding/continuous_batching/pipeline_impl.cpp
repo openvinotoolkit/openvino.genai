@@ -217,14 +217,17 @@ detail::DFlashDraftWindow detail::make_dflash_draft_window(const SequenceGroup& 
     // A block follows once the context reaches the token before the seed (the last generated token). Without
     // dynamic split fuse it also waits for a window after the prompt rows, since a step then runs either prompt or
     // generation windows; dynamic split fuse schedules the rest of the prompt and the block as one window. Near
-    // max_new_tokens only the candidates the target can still validate are sampled.
+    // max_new_tokens only the candidates the target can still validate are sampled. Every block follows at least one
+    // context row, which keeps the blocks of different requests apart in the packed block rows that the DFlash-2
+    // convolutions run over.
     const size_t num_assistant_tokens = request.get_sampling_parameters().num_assistant_tokens.value_or(0);
     const size_t generated_len = running_sequences.front()->get_generated_len();
     const size_t max_new_tokens = request.get_max_new_tokens();
     const size_t remaining_tokens = max_new_tokens > generated_len ? max_new_tokens - generated_len : 0;
     const bool starts_after_prompt = window.committed_rows >= request.get_prompt_len();
-    const bool reaches_seed = generated_len > 0 && window.committed_rows + window.context_rows ==
-                                                       request.get_prompt_len() + generated_len - 1;
+    const bool reaches_seed =
+        generated_len > 0 && window.context_rows > 0 &&
+        window.committed_rows + window.context_rows == request.get_prompt_len() + generated_len - 1;
     if (num_assistant_tokens > 0 && (starts_after_prompt || block_may_follow_prompt_rows) && reaches_seed &&
         remaining_tokens > 1) {
         window.block_rows = num_assistant_tokens + candidate_position_offset;

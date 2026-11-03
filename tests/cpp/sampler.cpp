@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <future>
 #include <numeric>
 #include <optional>
@@ -888,7 +889,7 @@ public:
         steps.push_back({position, blocks, previous_tokens});
     }
 
-    std::optional<std::vector<BlockToken>> draw(size_t, const GenerationConfig&) const override {
+    std::optional<std::vector<BlockToken>> draw(size_t, const GenerationConfig&, std::mt19937&) const override {
         if (drawn_tokens.empty()) {
             return std::nullopt;
         }
@@ -1008,6 +1009,25 @@ TEST(SamplerBlockSampling, row_source_appends_the_tokens_it_draws_for_a_whole_bl
     EXPECT_EQ(sequence->get_generated_ids(), (TokenIds{7, 21, 30}));
     EXPECT_FLOAT_EQ(sequence->get_generated_log_probs()[1], -0.5f);
     EXPECT_EQ(output.num_generated_tokens_per_request.at(0), 2);
+}
+
+TEST(SamplerBlockSampling, drawn_tokens_carry_their_proposals_when_proposals_are_collected) {
+    for (const bool collect_draft_proposals : {false, true}) {
+        Sampler sampler;
+        sampler.set_collect_draft_proposals(collect_draft_proposals);
+        auto source = std::make_shared<ChainRowSource>(false);
+        auto proposal = std::make_shared<const DraftProposal>(DraftProposal{{20, 21}, {0.25f, 0.75f}});
+        source->drawn_tokens = {{21, std::log(0.75f), proposal}, {30, 0.0f, nullptr}};
+        sampler.set_block_sampling(1, source);
+        auto group = make_dflash_draft_group(0, 4, {7, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN}, 8, 3);
+
+        sampler.sample({group}, make_candidate_logits({0, 0, 0}), false, false);
+
+        const auto sequence = group->get_running_sequences().front();
+        EXPECT_EQ(sequence->get_generated_ids(), (TokenIds{7, 21, 30}));
+        EXPECT_EQ(!sequence->get_draft_proposal(1).empty(), collect_draft_proposals);
+        EXPECT_TRUE(sequence->get_draft_proposal(2).empty());
+    }
 }
 
 namespace {

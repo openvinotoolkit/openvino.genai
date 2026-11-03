@@ -1535,6 +1535,9 @@ void Sampler::_append_block_token(const Sequence::Ptr& sequence,
     const Token sampled_token(token.log_prob, token.token);
     append_sampled_token(sampled_token, sequence, context.logit_processor);
     pause_if_unconfident(sampled_token, sequence, context.logit_processor);
+    if (m_collect_draft_proposals && token.proposal) {
+        sequence->set_draft_proposal(sequence->get_generated_len() - 1, token.proposal);
+    }
 }
 
 SequenceGroupSamplingInfo Sampler::_sample_block_from_sequence_group(const SequenceGroup::Ptr& sequence_group,
@@ -1591,7 +1594,7 @@ std::vector<SequenceGroupSamplingInfo> Sampler::_sample_blocks(const std::vector
         std::vector<std::future<size_t>> futures;
         for (size_t block = 0; block < blocks.size(); ++block) {
             futures.push_back(m_thread_pool.submit([&, block]() -> size_t {
-                if (auto tokens = m_block_row_source->draw(block, params(block))) {
+                if (auto tokens = m_block_row_source->draw(block, params(block), contexts[block]->rng_engine)) {
                     for (const auto& token : *tokens) {
                         _append_block_token(sequences[block], token, *contexts[block]);
                     }

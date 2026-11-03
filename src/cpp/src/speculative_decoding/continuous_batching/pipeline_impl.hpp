@@ -211,7 +211,7 @@ protected:
     size_t m_dflash_candidate_position_offset = 1;
     // dynamic split fuse: the window of the last prompt rows carries the first block
     bool m_dflash_block_may_follow_prompt_rows = false;
-    // the Markov head of a DSpark draft, which the sampler runs
+    // the rows the draft sampler draws the candidates from, with the Markov head the sampler runs
     std::shared_ptr<dflash_cb::CandidateSelector> m_dflash_candidate_selector;
     // Windows planned by the DFlash draft update for the next draft forward, by sequence id.
     std::map<uint64_t, detail::DFlashDraftWindow> m_dflash_draft_windows;
@@ -477,7 +477,7 @@ protected:
         return true;
     }
 
-    // A candidate selector gives the rows the sampler drafts the candidates of a draft with a Markov head from.
+    // A candidate selector gives the rows the sampler drafts from.
     void enable_dflash_draft(int64_t mask_token_id,
                              size_t candidate_position_offset,
                              std::shared_ptr<dflash_cb::CandidateSelector> candidate_selector) {
@@ -486,6 +486,9 @@ protected:
         m_dflash_candidate_selector = candidate_selector;
         m_dflash_block_may_follow_prompt_rows = m_scheduler->get_config().dynamic_split_fuse;
         m_model_runner->enable_dflash_draft(candidate_position_offset);
+        if (candidate_selector) {
+            candidate_selector->set_draft_request(m_model_runner->get_infer_request());
+        }
         m_sampler->set_block_sampling(candidate_position_offset, std::move(candidate_selector));
     }
 };
