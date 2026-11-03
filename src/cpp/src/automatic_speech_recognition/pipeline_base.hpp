@@ -40,7 +40,7 @@ public:
     virtual ~ASRPipelineImplBase() = default;
 
 protected:
-    static const std::vector<float>& get_single_audio(const AudiosView& audios) {
+    static const std::vector<float>& validate_single_audio_and_get(const AudiosView& audios) {
         OPENVINO_ASSERT(audios.size() == 1,
                         "This ASR model supports only one audio per generate, but received ",
                         audios.size(),

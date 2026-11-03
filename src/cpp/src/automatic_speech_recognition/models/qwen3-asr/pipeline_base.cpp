@@ -58,7 +58,10 @@ Qwen3ASRPipelineBase::Qwen3ASRPipelineBase(const std::filesystem::path& models_p
 ASRDecodedResults Qwen3ASRPipelineBase::generate(const AudiosView& audios,
                                                  const std::optional<ASRGenerationConfig>& generation_config,
                                                  const std::shared_ptr<StreamerBase> streamer) {
-    get_single_audio(audios);
+    OPENVINO_ASSERT(audios.size() == 1,
+                    "This ASR model supports only one audio per generate, but received ",
+                    audios.size(),
+                    ".");
     const auto start_time = std::chrono::steady_clock::now();
 
     const ASRGenerationConfig config = resolve_generation_config(generation_config);
