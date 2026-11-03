@@ -422,4 +422,10 @@ As the block grows, the accepted tokens per step rise and then plateau, while th
 
 :::warning
 DFlash currently supports greedy decoding only.
+
+With a VLM target and prefix caching, `ChatHistory` and image `add_request()` requests need `num_assistant_tokens` > 0.
+:::
+
+:::note
+DFlash drafts exported for OpenVINO GenAI 2026.4 or earlier do not load. Re-export them with optimum-intel 2.3.0 or later.
 :::
