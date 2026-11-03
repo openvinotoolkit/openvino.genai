@@ -300,7 +300,6 @@ void LLMInferWrapper::trim_kv_cache(const size_t tokens_to_remove) {
 }
 
 void LLMInferWrapper::reset_state() {
-    raw_perf_metrics.m_inference_durations =  {{ ov::genai::MicroSeconds(0.0f) }};
     return m_request.reset_state();
 }
 
@@ -457,6 +456,11 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
     auto& raw_perf_counters = m_sd_perf_metrics.raw_metrics;
     m_sd_perf_metrics.num_accepted_tokens = 0;
     m_sd_perf_metrics.num_draft_tokens = 0;
+    // Not in reset_state(): chat mode keeps the KV cache between calls, but metrics are per call.
+    m_main_request->raw_perf_metrics = RawPerfMetrics{};
+    m_main_request->raw_perf_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
+    m_draft_request->raw_perf_metrics = RawPerfMetrics{};
+    m_draft_request->raw_perf_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
     // NB: Only batch=1 is supported now.
     // NB: In the case of greedy decoding scores are filled with zeros.
     results.scores.resize(1u);
