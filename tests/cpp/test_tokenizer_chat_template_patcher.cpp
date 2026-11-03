@@ -70,10 +70,10 @@ TEST(TokenizerChatTemplatePatcher, ApplyChatTemplateUsesPatchedTemplate) {
     impl.set_chat_template("RAW");
     const ChatHistory history({{{"role", "user"}, {"content", "hi"}}});
 
-    EXPECT_EQ(impl.apply_chat_template(history, false, {}, std::nullopt, std::nullopt), "hi");
+    EXPECT_EQ(impl.apply_chat_template(history, false, {}, std::nullopt, std::nullopt, {}), "hi");
     // A per-call template goes through the same transforms without being stored.
     impl.set_chat_template("unused {{ messages[0]['content'] }}");
-    EXPECT_EQ(impl.apply_chat_template(history, false, "RAW", std::nullopt, std::nullopt), "hi");
+    EXPECT_EQ(impl.apply_chat_template(history, false, "RAW", std::nullopt, std::nullopt, {}), "hi");
     EXPECT_EQ(impl.get_chat_template(), "unused {{ messages[0]['content'] }}");
 }
 
