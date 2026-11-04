@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <optional>
 #include <string>
 
 #include "continuous_batching/cache/kv_cache_store.hpp"
@@ -22,11 +23,18 @@ namespace ov::genai {
  */
 class AbiKVCacheStore final : public IKVCacheStore {
 public:
+    /// What the provider and its `open` told the host about the store.
+    struct StoreInfo {
+        OvKVCacheCapabilities capabilities = 0;
+        std::optional<OvKVCacheContentHash> semantics_fingerprint;
+    };
+
     AbiKVCacheStore(const OvKVCacheStoreVTable* vtable,
                     void* store,
                     std::string group,
                     size_t block_size,
-                    size_t capacity_blocks);
+                    size_t capacity_blocks,
+                    StoreInfo info = {});
     ~AbiKVCacheStore() override;
 
     AbiKVCacheStore(const AbiKVCacheStore&) = delete;
@@ -36,6 +44,7 @@ public:
     std::vector<bool> has_blocks(const std::vector<size_t>& chain) const override;
     bool write_block(size_t hash, const std::vector<uint8_t>& data) override;
     bool read_block(size_t hash, std::vector<uint8_t>& data) const override;
+    std::vector<bool> read_blocks(const std::vector<size_t>& hashes, std::vector<std::vector<uint8_t>>& data) const override;
     void drop_block(size_t hash) override;
 
     size_t get_block_size() const override;
@@ -47,14 +56,31 @@ public:
         return true;
     }
 
+    /// Whether reads and writes go through the plugin's async entry points.
+    bool uses_async_io() const {
+        return m_use_async;
+    }
+
+    const StoreInfo& get_info() const {
+        return m_info;
+    }
+
 private:
     OvKVCacheBlockKey make_key(size_t hash) const;
+
+    /// Runs one batch to completion. Through the async entry points every token is waited on before this returns.
+    /// @return The batch status; per-item statuses are in @p out.
+    OvKVCacheStatus run_reads(const OvKVCacheStoreReadRequest* reqs, OvKVCacheStoreReadResult* out, size_t count) const;
+    OvKVCacheStatus run_writes(const OvKVCacheStoreWriteRequest* reqs, OvKVCacheStoreWriteResult* out, size_t count) const;
+    OvKVCacheStatus await_token(OvKVCacheAsyncToken token) const;
 
     const OvKVCacheStoreVTable* m_vtable;
     void* m_store;
     std::string m_group;
     size_t m_block_size;
     size_t m_capacity_blocks;
+    StoreInfo m_info;
+    bool m_use_async = false;
 };
 
 }  // namespace ov::genai

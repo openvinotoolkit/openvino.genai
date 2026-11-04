@@ -25,15 +25,27 @@ AbiKVCacheStore::AbiKVCacheStore(const OvKVCacheStoreVTable* vtable,
                                  void* store,
                                  std::string group,
                                  size_t block_size,
-                                 size_t capacity_blocks)
+                                 size_t capacity_blocks,
+                                 StoreInfo info)
     : m_vtable(vtable),
       m_store(store),
       m_group(std::move(group)),
       m_block_size(block_size),
-      m_capacity_blocks(capacity_blocks) {
+      m_capacity_blocks(capacity_blocks),
+      m_info(info) {
     OPENVINO_ASSERT(m_vtable != nullptr && m_store != nullptr, "ABI KV cache store must not be null");
     OPENVINO_ASSERT(m_vtable->struct_bytes >= offsetof(OvKVCacheStoreVTable, read_blocks_async),
                     "ABI store vtable is missing required synchronous entries");
+
+    if ((m_info.capabilities & OV_KVCACHE_CAP_ASYNC_IO) != 0) {
+        // submit and wait are enough for the host; cancel is optional and never needed because every token is waited on.
+        constexpr size_t async_end = offsetof(OvKVCacheStoreVTable, wait) + sizeof(OvKVCacheStoreVTable::wait);
+        m_use_async = m_vtable->struct_bytes >= async_end && m_vtable->read_blocks_async != nullptr &&
+                      m_vtable->write_blocks_async != nullptr && m_vtable->wait != nullptr;
+        if (!m_use_async) {
+            GENAI_WARN("KV cache store plugin advertises async I/O but its vtable is incomplete; using synchronous I/O");
+        }
+    }
 }
 
 AbiKVCacheStore::~AbiKVCacheStore() {
@@ -91,45 +103,108 @@ bool AbiKVCacheStore::write_block(size_t hash, const std::vector<uint8_t>& data)
     request.witness.len = sizeof(digest);
 
     OvKVCacheStoreWriteResult result{};
-    const OvKVCacheStatus status = m_vtable->write_blocks(m_store, &request, &result, 1);
+    const OvKVCacheStatus status = run_writes(&request, &result, 1);
     if (result.status == OV_KVCACHE_ERR_CAPACITY) {
         return false;
     }
-    OPENVINO_ASSERT(status == OV_KVCACHE_OK && result.status == OV_KVCACHE_OK,
+    OPENVINO_ASSERT((status == OV_KVCACHE_OK || status == OV_KVCACHE_PARTIAL) && result.status == OV_KVCACHE_OK,
                     "ABI store write_blocks failed with status ",
                     result.status);
     return true;
 }
 
 bool AbiKVCacheStore::read_block(size_t hash, std::vector<uint8_t>& data) const {
-    // Read into a scratch buffer so a not-found or failed read leaves the caller's buffer untouched.
-    std::vector<uint8_t> scratch(m_block_size, 0);
-    ContentHash returned_witness{};
-
-    OvKVCacheStoreReadRequest request{};
-    request.key = make_key(hash);
-    request.target.kind = OV_KVCACHE_TARGET_HOST;
-    request.target.base = scratch.data();
-    request.target.bytes = scratch.size();
-    request.witness_out.data = &returned_witness;
-    request.witness_out.capacity = sizeof(returned_witness);
-
-    OvKVCacheStoreReadResult result{};
-    const OvKVCacheStatus status = m_vtable->read_blocks(m_store, &request, &result, 1);
-    if (result.status == OV_KVCACHE_ERR_NOT_FOUND) {
+    std::vector<std::vector<uint8_t>> blocks;
+    if (!read_blocks({hash}, blocks)[0]) {
         return false;
     }
-    OPENVINO_ASSERT(status == OV_KVCACHE_OK && result.status == OV_KVCACHE_OK,
-                    "ABI store read_blocks failed with status ",
-                    result.status);
-    OPENVINO_ASSERT(result.bytes_read == scratch.size(), "ABI store returned a short read");
-
-    const ContentHash expected_witness = compute_content_hash(scratch.data(), scratch.size());
-    OPENVINO_ASSERT(result.witness.len == sizeof(expected_witness) &&
-                        std::memcmp(&expected_witness, &returned_witness, sizeof(expected_witness)) == 0,
-                    "ABI store witness mismatch for a read block - payload may be corrupted");
-    data = std::move(scratch);
+    data = std::move(blocks[0]);
     return true;
+}
+
+std::vector<bool> AbiKVCacheStore::read_blocks(const std::vector<size_t>& hashes,
+                                               std::vector<std::vector<uint8_t>>& data) const {
+    const size_t count = hashes.size();
+    std::vector<bool> found(count, false);
+    data.assign(count, {});
+    if (count == 0) {
+        return found;
+    }
+
+    // Read into scratch buffers so a not-found or failed read leaves nothing half filled.
+    std::vector<std::vector<uint8_t>> scratch(count, std::vector<uint8_t>(m_block_size, 0));
+    std::vector<ContentHash> returned_witnesses(count);
+    std::vector<OvKVCacheStoreReadRequest> requests(count);
+    std::vector<OvKVCacheStoreReadResult> results(count);
+    for (size_t i = 0; i < count; ++i) {
+        requests[i].key = make_key(hashes[i]);
+        requests[i].target.kind = OV_KVCACHE_TARGET_HOST;
+        requests[i].target.base = scratch[i].data();
+        requests[i].target.bytes = scratch[i].size();
+        requests[i].witness_out.data = &returned_witnesses[i];
+        requests[i].witness_out.capacity = sizeof(ContentHash);
+    }
+
+    const OvKVCacheStatus status = run_reads(requests.data(), results.data(), count);
+    const bool batch_ok = status == OV_KVCACHE_OK || status == OV_KVCACHE_PARTIAL;
+    for (size_t i = 0; i < count; ++i) {
+        if (results[i].status == OV_KVCACHE_ERR_NOT_FOUND) {
+            continue;
+        }
+        OPENVINO_ASSERT(batch_ok && results[i].status == OV_KVCACHE_OK,
+                        "ABI store read_blocks failed with status ",
+                        results[i].status);
+        OPENVINO_ASSERT(results[i].bytes_read == scratch[i].size(), "ABI store returned a short read");
+
+        const ContentHash expected_witness = compute_content_hash(scratch[i].data(), scratch[i].size());
+        OPENVINO_ASSERT(results[i].witness.len == sizeof(expected_witness) &&
+                            std::memcmp(&expected_witness, &returned_witnesses[i], sizeof(expected_witness)) == 0,
+                        "ABI store witness mismatch for a read block - payload may be corrupted");
+        data[i] = std::move(scratch[i]);
+        found[i] = true;
+    }
+    return found;
+}
+
+OvKVCacheStatus AbiKVCacheStore::await_token(OvKVCacheAsyncToken token) const {
+    OvKVCacheStatus status = OV_KVCACHE_PENDING;
+    while (status == OV_KVCACHE_PENDING) {
+        status = m_vtable->wait(m_store, token, OV_KVCACHE_WAIT_INFINITE);
+    }
+    return status;
+}
+
+OvKVCacheStatus AbiKVCacheStore::run_reads(const OvKVCacheStoreReadRequest* reqs,
+                                           OvKVCacheStoreReadResult* out,
+                                           size_t count) const {
+    if (!m_use_async) {
+        return m_vtable->read_blocks(m_store, reqs, out, count);
+    }
+    OvKVCacheAsyncToken token = 0;
+    const OvKVCacheStatus submitted = m_vtable->read_blocks_async(m_store, reqs, out, count, &token);
+    OPENVINO_ASSERT(submitted == OV_KVCACHE_OK && token != 0, "ABI store read_blocks_async failed with status ", submitted);
+    // The buffers stay untouched until the token is terminal; a failed or cancelled batch has no usable items.
+    const OvKVCacheStatus finished = await_token(token);
+    OPENVINO_ASSERT(finished == OV_KVCACHE_OK || finished == OV_KVCACHE_PARTIAL,
+                    "ABI store async read ended with status ",
+                    finished);
+    return finished;
+}
+
+OvKVCacheStatus AbiKVCacheStore::run_writes(const OvKVCacheStoreWriteRequest* reqs,
+                                            OvKVCacheStoreWriteResult* out,
+                                            size_t count) const {
+    if (!m_use_async) {
+        return m_vtable->write_blocks(m_store, reqs, out, count);
+    }
+    OvKVCacheAsyncToken token = 0;
+    const OvKVCacheStatus submitted = m_vtable->write_blocks_async(m_store, reqs, out, count, &token);
+    OPENVINO_ASSERT(submitted == OV_KVCACHE_OK && token != 0, "ABI store write_blocks_async failed with status ", submitted);
+    const OvKVCacheStatus finished = await_token(token);
+    OPENVINO_ASSERT(finished == OV_KVCACHE_OK || finished == OV_KVCACHE_PARTIAL,
+                    "ABI store async write ended with status ",
+                    finished);
+    return finished;
 }
 
 void AbiKVCacheStore::drop_block(size_t hash) {

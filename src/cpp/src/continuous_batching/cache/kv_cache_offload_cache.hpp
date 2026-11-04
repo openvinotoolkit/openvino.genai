@@ -89,6 +89,11 @@ public:
 
     bool load_into(std::size_t hash, std::size_t block_index) override;
 
+    /// Reads the blocks of @p hashes the store holds in one batch, so the load_into calls of a warm-up are served from memory.
+    void prefetch(const std::vector<std::size_t>& hashes) override;
+
+    void release_prefetched() override;
+
     /// Waits until every queued store has reached the backing file.
     void flush();
 
@@ -187,6 +192,8 @@ private:
     std::deque<QueuedStore> m_queued_stores;
     std::size_t m_max_queued_stores;
     std::vector<uint8_t> m_staging;
+    // Blocks read ahead by prefetch() and not yet consumed by load_into().
+    std::unordered_map<std::size_t, std::vector<uint8_t>> m_prefetched;
     Statistics m_statistics;
     bool m_reclamation_paused = false;
     bool m_stopping = false;

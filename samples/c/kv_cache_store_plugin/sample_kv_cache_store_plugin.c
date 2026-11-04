@@ -56,6 +56,77 @@ static void sample_mutex_unlock(sample_mutex_t* m) {
 #endif
 
 /* --------------------------------------------------------------------------
+ * Async completion. A batch's work runs inside the submit call here, so a token only carries the final batch status
+ * until the host waits on it; a real plugin would hand the batch to its own I/O threads instead and make `wait` block.
+ * Tokens come from one monotonic counter and are never reused, so a stale token can only fail with INVALID_ARG.
+ * ----------------------------------------------------------------------- */
+#define SAMPLE_MAX_TOKENS 256
+
+typedef struct SampleToken {
+    OvKVCacheAsyncToken token; /* 0 = free slot */
+    void* store;
+    OvKVCacheStatus status;
+} SampleToken;
+
+static SampleToken g_tokens[SAMPLE_MAX_TOKENS];
+static OvKVCacheAsyncToken g_next_token = 1;
+static sample_mutex_t g_token_mutex; /* initialised by ensure_registry_mutex() before any store is handed out */
+
+static OvKVCacheStatus sample_reserve_token(void* store, OvKVCacheAsyncToken* out_token) {
+    size_t i;
+    OvKVCacheStatus status = OV_KVCACHE_ERR_CAPACITY;
+    *out_token = 0;
+    sample_mutex_lock(&g_token_mutex);
+    for (i = 0; i < SAMPLE_MAX_TOKENS; ++i) {
+        if (g_tokens[i].token == 0) {
+            g_tokens[i].token = g_next_token++;
+            g_tokens[i].store = store;
+            g_tokens[i].status = OV_KVCACHE_PENDING;
+            *out_token = g_tokens[i].token;
+            status = OV_KVCACHE_OK;
+            break;
+        }
+    }
+    sample_mutex_unlock(&g_token_mutex);
+    return status;
+}
+
+static void sample_complete_token(OvKVCacheAsyncToken token, OvKVCacheStatus status) {
+    size_t i;
+    sample_mutex_lock(&g_token_mutex);
+    for (i = 0; i < SAMPLE_MAX_TOKENS; ++i) {
+        if (g_tokens[i].token == token) {
+            g_tokens[i].status = status;
+            break;
+        }
+    }
+    sample_mutex_unlock(&g_token_mutex);
+}
+
+/* Terminal OK/PARTIAL releases the token; anything else would too, so a wait never has to be repeated. */
+static OvKVCacheStatus sample_wait(void* self, OvKVCacheAsyncToken token, uint32_t timeout_ms) {
+    size_t i;
+    OvKVCacheStatus status = OV_KVCACHE_ERR_INVALID_ARG;
+    (void)timeout_ms; /* the batch has finished before its token is returned */
+    sample_mutex_lock(&g_token_mutex);
+    for (i = 0; i < SAMPLE_MAX_TOKENS; ++i) {
+        if (g_tokens[i].token == token && g_tokens[i].store == self) {
+            status = g_tokens[i].status;
+            g_tokens[i].token = 0;
+            break;
+        }
+    }
+    sample_mutex_unlock(&g_token_mutex);
+    return status;
+}
+
+static OvKVCacheStatus sample_cancel(void* self, OvKVCacheAsyncToken token) {
+    (void)self;
+    (void)token; /* nothing is ever in flight */
+    return OV_KVCACHE_OK;
+}
+
+/* --------------------------------------------------------------------------
  * A single stored block: payload + the witness the host asked us to keep verbatim, plus a copy of
  * the key's group so unrelated callers sharing one store instance (e.g. KV cache offload vs.
  * linear-attention offload) never collide on a bare hash match.
@@ -288,6 +359,32 @@ static OvKVCacheStatus store_stats(void* self, OvKVCacheStoreStats* out) {
     return OV_KVCACHE_OK;
 }
 
+static OvKVCacheStatus store_read_blocks_async(void* self,
+                                               const OvKVCacheStoreReadRequest* reqs,
+                                               OvKVCacheStoreReadResult* out,
+                                               size_t count,
+                                               OvKVCacheAsyncToken* out_token) {
+    const OvKVCacheStatus submitted = sample_reserve_token(self, out_token);
+    if (submitted != OV_KVCACHE_OK) {
+        return submitted;
+    }
+    sample_complete_token(*out_token, store_read_blocks(self, reqs, out, count));
+    return OV_KVCACHE_OK;
+}
+
+static OvKVCacheStatus store_write_blocks_async(void* self,
+                                                const OvKVCacheStoreWriteRequest* reqs,
+                                                OvKVCacheStoreWriteResult* out,
+                                                size_t count,
+                                                OvKVCacheAsyncToken* out_token) {
+    const OvKVCacheStatus submitted = sample_reserve_token(self, out_token);
+    if (submitted != OV_KVCACHE_OK) {
+        return submitted;
+    }
+    sample_complete_token(*out_token, store_write_blocks(self, reqs, out, count));
+    return OV_KVCACHE_OK;
+}
+
 static const OvKVCacheStoreVTable g_store_vtable = {
     sizeof(OvKVCacheStoreVTable),
     0,
@@ -298,10 +395,10 @@ static const OvKVCacheStoreVTable g_store_vtable = {
     &store_drop_blocks,
     &store_flush,
     &store_stats,
-    NULL, /* read_blocks_async: this sample does not advertise OV_KVCACHE_CAP_ASYNC_IO */
-    NULL, /* write_blocks_async */
-    NULL, /* wait */
-    NULL, /* cancel */
+    &store_read_blocks_async,
+    &store_write_blocks_async,
+    &sample_wait,
+    &sample_cancel,
 };
 
 /* --------------------------------------------------------------------------
@@ -345,6 +442,7 @@ static int g_registry_mutex_ready = 0;
 static void ensure_registry_mutex(void) {
     if (!g_registry_mutex_ready) {
         sample_mutex_init(&g_registry_mutex);
+        sample_mutex_init(&g_token_mutex);
         g_registry_mutex_ready = 1;
     }
 }
@@ -414,6 +512,10 @@ static OvKVCacheStatus provider_open(void* self,
 
     out->store = store;
     out->vtable = &g_store_vtable;
+    /* Identifies how this provider keeps blocks; change it whenever blocks written before would no longer be read back. */
+    out->store_semantics_fingerprint.lo = 1;
+    out->store_semantics_fingerprint.hi = 0x73616d706c652d6dull; /* "sample-m" */
+    out->has_semantics_fingerprint = 1;
     out->status = OV_KVCACHE_OK;
     return out->status;
 }
@@ -453,7 +555,7 @@ static const OvKVCacheStoreProviderVTable g_provider_vtable = {
 static const OvKVCacheStoreProviderDescriptor g_provider_descriptor = {
     &g_provider_vtable,
     NULL,
-    OV_KVCACHE_CAP_KEY_IO | OV_KVCACHE_CAP_EXISTS,
+    OV_KVCACHE_CAP_KEY_IO | OV_KVCACHE_CAP_EXISTS | OV_KVCACHE_CAP_SEMANTICS_FINGERPRINT | OV_KVCACHE_CAP_ASYNC_IO,
     "sample-in-memory",
 };
 
@@ -859,6 +961,32 @@ static OvKVCacheStatus persistent_stats(void* self, OvKVCacheStoreStats* out) {
     return OV_KVCACHE_OK;
 }
 
+static OvKVCacheStatus persistent_read_blocks_async(void* self,
+                                                    const OvKVCacheStoreReadRequest* reqs,
+                                                    OvKVCacheStoreReadResult* out,
+                                                    size_t count,
+                                                    OvKVCacheAsyncToken* out_token) {
+    const OvKVCacheStatus submitted = sample_reserve_token(self, out_token);
+    if (submitted != OV_KVCACHE_OK) {
+        return submitted;
+    }
+    sample_complete_token(*out_token, persistent_read_blocks(self, reqs, out, count));
+    return OV_KVCACHE_OK;
+}
+
+static OvKVCacheStatus persistent_write_blocks_async(void* self,
+                                                     const OvKVCacheStoreWriteRequest* reqs,
+                                                     OvKVCacheStoreWriteResult* out,
+                                                     size_t count,
+                                                     OvKVCacheAsyncToken* out_token) {
+    const OvKVCacheStatus submitted = sample_reserve_token(self, out_token);
+    if (submitted != OV_KVCACHE_OK) {
+        return submitted;
+    }
+    sample_complete_token(*out_token, persistent_write_blocks(self, reqs, out, count));
+    return OV_KVCACHE_OK;
+}
+
 static const OvKVCacheStoreVTable g_persistent_store_vtable = {
     sizeof(OvKVCacheStoreVTable),
     0,
@@ -869,10 +997,10 @@ static const OvKVCacheStoreVTable g_persistent_store_vtable = {
     &persistent_drop_blocks,
     &persistent_flush,
     &persistent_stats,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
+    &persistent_read_blocks_async,
+    &persistent_write_blocks_async,
+    &sample_wait,
+    &sample_cancel,
 };
 
 static const char* persistent_provider_name(void* self) {
@@ -955,6 +1083,9 @@ static OvKVCacheStatus persistent_provider_open(void* self,
     }
     out->store = store;
     out->vtable = &g_persistent_store_vtable;
+    out->store_semantics_fingerprint.lo = 1;
+    out->store_semantics_fingerprint.hi = 0x73616d706c652d70ull; /* "sample-p" */
+    out->has_semantics_fingerprint = 1;
     out->status = OV_KVCACHE_OK;
     return out->status;
 }
@@ -973,7 +1104,7 @@ static const OvKVCacheStoreProviderVTable g_persistent_provider_vtable = {
 static const OvKVCacheStoreProviderDescriptor g_persistent_provider_descriptor = {
     &g_persistent_provider_vtable,
     NULL,
-    OV_KVCACHE_CAP_KEY_IO | OV_KVCACHE_CAP_EXISTS,
+    OV_KVCACHE_CAP_KEY_IO | OV_KVCACHE_CAP_EXISTS | OV_KVCACHE_CAP_SEMANTICS_FINGERPRINT | OV_KVCACHE_CAP_ASYNC_IO,
     "sample-persistent-file",
 };
 

@@ -393,7 +393,11 @@ bool KVCacheOffloadCache::load_into(std::size_t hash, std::size_t block_index) {
                 return false;
             }
             GENAI_INFO("[KV_TRACE] KVCacheOffloadCache load hash=%zu source=disk physical_block=%zu", hash, block_index);
-            {
+            const auto prefetched = m_prefetched.find(hash);
+            if (prefetched != m_prefetched.end()) {
+                m_staging = std::move(prefetched->second);
+                m_prefetched.erase(prefetched);
+            } else {
                 ScopedTimer timer(m_statistics.load_disk_us);
                 if (!m_store->read_block(hash, m_staging)) {
                     m_store_hits.erase(hash);
@@ -416,6 +420,50 @@ bool KVCacheOffloadCache::load_into(std::size_t hash, std::size_t block_index) {
     // TEMPORARY diagnostics, to be removed once the GPU cost breakdown is settled.
     GENAI_INFO("[KV_TRACE] offload_load_block index=%zu", block_index);
     return true;
+}
+
+void KVCacheOffloadCache::prefetch(const std::vector<std::size_t>& hashes) {
+    // Bounds the memory a warm-up can hold before it copies the blocks into the device cache.
+    constexpr std::size_t max_prefetch_bytes = 256ull * 1024 * 1024;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const std::size_t max_blocks = std::max<std::size_t>(1, max_prefetch_bytes / std::max<std::size_t>(1, m_store->get_block_size()));
+    std::vector<std::size_t> wanted;
+    for (const std::size_t hash : hashes) {
+        if (wanted.size() >= max_blocks) {
+            break;
+        }
+        // A block still queued for writing is served from its staging copy, which is closer than the store.
+        if (m_prefetched.find(hash) != m_prefetched.end() || find_queued(hash) != nullptr) {
+            continue;
+        }
+        if (m_entries.find(hash) != m_entries.end() || m_store_hits.find(hash) != m_store_hits.end()) {
+            wanted.push_back(hash);
+        }
+    }
+    if (wanted.empty()) {
+        return;
+    }
+    try {
+        std::vector<std::vector<uint8_t>> data;
+        std::vector<bool> found;
+        {
+            ScopedTimer timer(m_statistics.load_disk_us);
+            found = m_store->read_blocks(wanted, data);
+        }
+        for (std::size_t i = 0; i < wanted.size(); ++i) {
+            if (found[i]) {
+                m_prefetched.emplace(wanted[i], std::move(data[i]));
+            }
+        }
+    } catch (const std::exception& error) {
+        // The blocks are then read one by one by load_into, which reports its own failures.
+        GENAI_WARN("KV cache offload prefetch failed: %s", error.what());
+    }
+}
+
+void KVCacheOffloadCache::release_prefetched() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_prefetched.clear();
 }
 
 bool KVCacheOffloadCache::read(std::size_t hash, std::vector<uint8_t>& block_data) const {

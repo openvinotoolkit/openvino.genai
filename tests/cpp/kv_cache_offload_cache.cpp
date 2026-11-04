@@ -853,6 +853,10 @@ public:
         m_events.push_back("read_block " + std::to_string(hash));
         return m_inner->read_block(hash, data);
     }
+    std::vector<bool> read_blocks(const std::vector<size_t>& hashes, std::vector<std::vector<uint8_t>>& data) const override {
+        m_events.push_back("read_blocks " + std::to_string(hashes.size()));
+        return m_inner->read_blocks(hashes, data);
+    }
     void drop_block(size_t hash) override {
         m_inner->drop_block(hash);
     }
@@ -988,9 +992,36 @@ TEST(TestKVCacheOffloadCache, WarmPrefixCacheProbesTheWholeChainOnceBeforeReadin
 
     EXPECT_EQ(block_manager.warm_prefix_cache(consumer, *offload_cache), num_blocks);
 
-    ASSERT_FALSE(events.empty());
-    EXPECT_EQ(events.front(), expected_probe);
-    for (size_t i = 1; i < events.size(); ++i) {
-        EXPECT_EQ(events[i].rfind("read_block", 0), 0u) << "unexpected store call after the probe: " << events[i];
+    // One probe of the whole chain, then one batched read of the blocks to load; nothing is asked block by block.
+    EXPECT_EQ(events, (std::vector<std::string>{expected_probe, "read_blocks " + std::to_string(num_blocks)}));
+}
+
+TEST(TestKVCacheOffloadCache, WarmPrefixCacheFallsBackToReadingBlocksOneByOneWhenTheBatchFails) {
+    constexpr size_t block_size = 4;
+    constexpr size_t num_blocks = 3;
+    CacheFixture fixture(num_blocks);
+
+    struct BatchFailsStore : SharedStore {
+        using SharedStore::SharedStore;
+        std::vector<bool> read_blocks(const std::vector<size_t>&, std::vector<std::vector<uint8_t>>&) const override {
+            throw std::runtime_error("batch read is down");
+        }
+    };
+    KVCacheOffloadCache offload_cache(*fixture.cache_manager,
+                                      std::make_unique<BatchFailsStore>(make_shared_file_store(fixture, num_blocks)),
+                                      /*max_queued_stores=*/8);
+    BlockManager block_manager(num_blocks, /*enable_prefix_caching=*/true, block_size, /*num_layers=*/1);
+
+    std::vector<int64_t> tokens(num_blocks * block_size + 1);
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        tokens[i] = static_cast<int64_t>(i);
     }
+    auto consumer = make_group(tokens, /*request_id=*/32);
+    const auto sequence = consumer->get_running_sequences().at(0);
+    for (size_t block = 0; block < num_blocks; ++block) {
+        fixture.fill_block(block, static_cast<uint8_t>(block + 1));
+        ASSERT_TRUE(offload_cache.persist(sequence->get_hash((block + 1) * block_size, block_size), block));
+    }
+
+    EXPECT_EQ(block_manager.warm_prefix_cache(consumer, offload_cache), num_blocks);
 }

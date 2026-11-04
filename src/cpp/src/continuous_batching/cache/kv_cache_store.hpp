@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 namespace ov::genai {
@@ -49,6 +50,21 @@ public:
 
     /// @return false if @p hash has no entry, in which case @p data is left untouched.
     virtual bool read_block(size_t hash, std::vector<uint8_t>& data) const = 0;
+
+    /**
+     * @brief Reads several blocks in one call.
+     * @param data Resized to @p hashes; entry i holds block i when it was found and is empty otherwise.
+     * @return Whether each block of @p hashes was found.
+     */
+    virtual std::vector<bool> read_blocks(const std::vector<size_t>& hashes, std::vector<std::vector<uint8_t>>& data) const {
+        std::vector<bool> found;
+        found.reserve(hashes.size());
+        data.assign(hashes.size(), {});
+        for (size_t i = 0; i < hashes.size(); ++i) {
+            found.push_back(read_block(hashes[i], data[i]));
+        }
+        return found;
+    }
 
     /// Drops the entry for @p hash, if any. Not an error when missing.
     virtual void drop_block(size_t hash) = 0;

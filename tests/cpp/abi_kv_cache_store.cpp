@@ -17,7 +17,7 @@ namespace {
 
 constexpr size_t BLOCK_SIZE = 64;
 
-std::unique_ptr<AbiKVCacheStore> open_store(size_t num_blocks) {
+std::unique_ptr<AbiKVCacheStore> open_store(size_t num_blocks, bool pass_capabilities = true) {
     const OvKVCacheStoreModuleInfo* module_info = get_file_store_provider_module_info();
     const OvKVCacheStoreProviderDescriptor* provider = module_info->get_provider(0);
 
@@ -37,7 +37,14 @@ std::unique_ptr<AbiKVCacheStore> open_store(size_t num_blocks) {
     EXPECT_NE(result.vtable, nullptr);
     EXPECT_NE(result.store, nullptr);
 
-    return std::make_unique<AbiKVCacheStore>(result.vtable, result.store, "kv", BLOCK_SIZE, num_blocks);
+    AbiKVCacheStore::StoreInfo info;
+    if (pass_capabilities) {
+        info.capabilities = provider->capabilities;
+        if (result.has_semantics_fingerprint != 0) {
+            info.semantics_fingerprint = result.store_semantics_fingerprint;
+        }
+    }
+    return std::make_unique<AbiKVCacheStore>(result.vtable, result.store, "kv", BLOCK_SIZE, num_blocks, info);
 }
 
 std::vector<uint8_t> make_block(uint8_t seed) {
@@ -85,6 +92,128 @@ TEST(TestAbiFileStoreProvider, HasBlocksAnswersForTheWholeChainInOrder) {
 
     EXPECT_EQ(store->has_blocks({1, 2, 3, 4}), (std::vector<bool>{true, false, true, false}));
     EXPECT_TRUE(store->has_blocks({}).empty());
+}
+
+TEST(TestAbiFileStoreProvider, AdvertisesAsyncIoAndASemanticsFingerprint) {
+    const OvKVCacheStoreProviderDescriptor* provider = get_file_store_provider_module_info()->get_provider(0);
+    EXPECT_NE(provider->capabilities & OV_KVCACHE_CAP_ASYNC_IO, 0u);
+    EXPECT_NE(provider->capabilities & OV_KVCACHE_CAP_SEMANTICS_FINGERPRINT, 0u);
+
+    auto store = open_store(/*num_blocks=*/2);
+    EXPECT_TRUE(store->uses_async_io());
+    EXPECT_TRUE(store->get_info().semantics_fingerprint.has_value());
+}
+
+TEST(TestAbiFileStoreProvider, StaysOnSynchronousIoWhenTheCapabilityIsNotPassed) {
+    auto store = open_store(/*num_blocks=*/2, /*pass_capabilities=*/false);
+    EXPECT_FALSE(store->uses_async_io());
+
+    ASSERT_TRUE(store->write_block(1, make_block(1)));
+    std::vector<uint8_t> actual;
+    ASSERT_TRUE(store->read_block(1, actual));
+    EXPECT_EQ(actual, make_block(1));
+}
+
+TEST(TestAbiFileStoreProvider, ReadBlocksReportsEveryBlockOfTheBatchInOrder) {
+    auto store = open_store(/*num_blocks=*/4);
+    ASSERT_TRUE(store->write_block(1, make_block(1)));
+    ASSERT_TRUE(store->write_block(3, make_block(3)));
+
+    std::vector<std::vector<uint8_t>> data;
+    EXPECT_EQ(store->read_blocks({1, 2, 3}, data), (std::vector<bool>{true, false, true}));
+    ASSERT_EQ(data.size(), 3u);
+    EXPECT_EQ(data[0], make_block(1));
+    EXPECT_TRUE(data[1].empty());
+    EXPECT_EQ(data[2], make_block(3));
+
+    EXPECT_TRUE(store->read_blocks({}, data).empty());
+    EXPECT_TRUE(data.empty());
+}
+
+namespace {
+
+/// Wraps the file provider's store vtable to count the async batches and to make every first `wait` answer PENDING.
+struct AsyncSpy {
+    static inline const OvKVCacheStoreVTable* inner = nullptr;
+    static inline size_t submitted = 0;
+    static inline size_t terminal_waits = 0;
+    static inline size_t sync_reads = 0;
+    static inline size_t sync_writes = 0;
+    static inline OvKVCacheAsyncToken pending_once = 0;
+
+    static OvKVCacheStatus read_blocks(void* self, const OvKVCacheStoreReadRequest* r, OvKVCacheStoreReadResult* o, size_t n) {
+        ++sync_reads;
+        return inner->read_blocks(self, r, o, n);
+    }
+    static OvKVCacheStatus write_blocks(void* self, const OvKVCacheStoreWriteRequest* r, OvKVCacheStoreWriteResult* o, size_t n) {
+        ++sync_writes;
+        return inner->write_blocks(self, r, o, n);
+    }
+    static OvKVCacheStatus read_async(void* self,
+                                      const OvKVCacheStoreReadRequest* r,
+                                      OvKVCacheStoreReadResult* o,
+                                      size_t n,
+                                      OvKVCacheAsyncToken* token) {
+        ++submitted;
+        return inner->read_blocks_async(self, r, o, n, token);
+    }
+    static OvKVCacheStatus write_async(void* self,
+                                       const OvKVCacheStoreWriteRequest* r,
+                                       OvKVCacheStoreWriteResult* o,
+                                       size_t n,
+                                       OvKVCacheAsyncToken* token) {
+        ++submitted;
+        return inner->write_blocks_async(self, r, o, n, token);
+    }
+    static OvKVCacheStatus wait(void* self, OvKVCacheAsyncToken token, uint32_t timeout_ms) {
+        if (pending_once != token) {
+            pending_once = token;
+            return OV_KVCACHE_PENDING;
+        }
+        pending_once = 0;
+        ++terminal_waits;
+        return inner->wait(self, token, timeout_ms);
+    }
+};
+
+}  // namespace
+
+TEST(TestAbiFileStoreProvider, EveryAsyncBatchIsWaitedOnUntilItIsTerminal) {
+    const OvKVCacheStoreProviderDescriptor* provider = get_file_store_provider_module_info()->get_provider(0);
+    const std::string block_size_str = std::to_string(BLOCK_SIZE);
+    const OvKVCacheProperty properties[] = {{"block_size_bytes", block_size_str.c_str()}};
+    OvKVCacheStoreOpenOptions options{};
+    options.capacity_bytes = BLOCK_SIZE * 4;
+    options.properties = properties;
+    options.property_count = 1;
+    OvKVCacheStoreOpenResult opened{};
+    ASSERT_EQ(provider->vtable->open(provider->self, nullptr, &options, &opened), OV_KVCACHE_OK);
+
+    AsyncSpy::inner = opened.vtable;
+    AsyncSpy::submitted = AsyncSpy::terminal_waits = AsyncSpy::sync_reads = AsyncSpy::sync_writes = 0;
+    AsyncSpy::pending_once = 0;
+    OvKVCacheStoreVTable spied = *opened.vtable;
+    spied.read_blocks = &AsyncSpy::read_blocks;
+    spied.write_blocks = &AsyncSpy::write_blocks;
+    spied.read_blocks_async = &AsyncSpy::read_async;
+    spied.write_blocks_async = &AsyncSpy::write_async;
+    spied.wait = &AsyncSpy::wait;
+
+    {
+        AbiKVCacheStore store(&spied, opened.store, "kv", BLOCK_SIZE, 4, {provider->capabilities, std::nullopt});
+        ASSERT_TRUE(store.uses_async_io());
+        ASSERT_TRUE(store.write_block(1, make_block(1)));
+        ASSERT_TRUE(store.write_block(2, make_block(2)));
+        std::vector<std::vector<uint8_t>> data;
+        EXPECT_EQ(store.read_blocks({1, 2}, data), (std::vector<bool>{true, true}));
+        EXPECT_EQ(data[1], make_block(2));
+        std::vector<uint8_t> single;
+        EXPECT_TRUE(store.read_block(1, single));
+    }
+
+    EXPECT_EQ(AsyncSpy::submitted, 4u);
+    EXPECT_EQ(AsyncSpy::terminal_waits, 4u) << "each submitted batch must be waited on until it reports a terminal status";
+    EXPECT_EQ(AsyncSpy::sync_reads + AsyncSpy::sync_writes, 0u) << "the synchronous entries are not used when async is advertised";
 }
 
 TEST(TestAbiFileStoreProvider, ReadReportsMissForUnknownHash) {

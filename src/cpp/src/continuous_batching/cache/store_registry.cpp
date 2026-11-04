@@ -150,6 +150,14 @@ std::unique_ptr<IKVCacheStore> try_open_plugin_store(const KVCacheDiskLayout& la
                    config.store_provider_name.c_str());
         return nullptr;
     }
+    // The host calls has_blocks before every read and write, so a provider without it cannot be used.
+    constexpr OvKVCacheCapabilities required_capabilities = OV_KVCACHE_CAP_KEY_IO | OV_KVCACHE_CAP_EXISTS;
+    if ((provider->capabilities & required_capabilities) != required_capabilities) {
+        GENAI_WARN("KV cache store plugin '%s' provider '%s' does not advertise key I/O and has_blocks",
+                   config.store_library_path.c_str(),
+                   provider->name != nullptr ? provider->name : "");
+        return nullptr;
+    }
 
     const std::string block_size_str = std::to_string(layout.get_slot_size());
     const OvKVCacheProperty properties[] = {{"block_size_bytes", block_size_str.c_str()}, {"device", device.c_str()}};
@@ -195,12 +203,30 @@ std::unique_ptr<IKVCacheStore> try_open_plugin_store(const KVCacheDiskLayout& la
     }
 
     const size_t capacity_blocks = layout.get_slot_size() > 0 ? config.capacity_bytes / layout.get_slot_size() : 0;
-    GENAI_INFO("[KV_TRACE] kv_cache_store plugin='%s' provider='%s' group='%s' capacity_blocks=%zu",
+
+    AbiKVCacheStore::StoreInfo info;
+    info.capabilities = provider->capabilities;
+    const bool fingerprint_advertised = (provider->capabilities & OV_KVCACHE_CAP_SEMANTICS_FINGERPRINT) != 0;
+    if (fingerprint_advertised && result.has_semantics_fingerprint != 0) {
+        info.semantics_fingerprint = result.store_semantics_fingerprint;
+    } else if (fingerprint_advertised != (result.has_semantics_fingerprint != 0)) {
+        GENAI_WARN("KV cache store plugin '%s' advertises a semantics fingerprint inconsistently with what open() reported; ignoring it",
+                   config.store_library_path.c_str());
+    }
+    GENAI_INFO("[KV_TRACE] kv_cache_store plugin='%s' provider='%s' group='%s' capacity_blocks=%zu async_io=%d semantics_fingerprint=%016llx%016llx",
                config.store_library_path.c_str(),
                provider->name != nullptr ? provider->name : "",
                group.c_str(),
-               capacity_blocks);
-    return std::make_unique<AbiKVCacheStore>(result.vtable, result.store, group, layout.get_slot_size(), capacity_blocks);
+               capacity_blocks,
+               (provider->capabilities & OV_KVCACHE_CAP_ASYNC_IO) != 0 ? 1 : 0,
+               static_cast<unsigned long long>(info.semantics_fingerprint ? info.semantics_fingerprint->hi : 0),
+               static_cast<unsigned long long>(info.semantics_fingerprint ? info.semantics_fingerprint->lo : 0));
+    return std::make_unique<AbiKVCacheStore>(result.vtable,
+                                             result.store,
+                                             group,
+                                             layout.get_slot_size(),
+                                             capacity_blocks,
+                                             info);
 }
 
 }  // namespace

@@ -23,6 +23,10 @@ namespace ov::genai {
 
 namespace {
 
+/// Identifies how this provider stores blocks (one run-scoped file, ids allocated per full 128-bit key); bump the low
+/// half whenever that changes so blocks written under other semantics are never mistaken for these.
+constexpr OvKVCacheContentHash kFileStoreSemanticsFingerprint{/*lo=*/1, /*hi=*/0x66696c6553746f72ull};
+
 /// One store instance per `open()` call. Holds the default FileKVCacheStore plus a side table for
 /// witnesses, since witnesses are host-defined/host-supplied (see kv_cache_store_provider_abi.h)
 /// and the payload-only FileKVCacheStore has no slot for them.
@@ -40,6 +44,11 @@ struct AbiFileStoreInstance {
     std::map<std::pair<uint64_t, uint64_t>, size_t> key_ids;
     size_t next_id = 0;
     std::unordered_map<size_t, std::vector<uint8_t>> witnesses;
+    /// Guards `finished_batches` and `next_token`.
+    std::mutex token_mutex;
+    /// Async batches run to completion inside submit, so a token only carries the final batch status until it is waited on.
+    std::unordered_map<OvKVCacheAsyncToken, OvKVCacheStatus> finished_batches;
+    OvKVCacheAsyncToken next_token = 1;
 };
 
 // OvKVCacheBlockKey.group is not used by this single-group default provider.
@@ -223,6 +232,49 @@ OvKVCacheStatus store_stats(void* self, OvKVCacheStoreStats* out) {
     return OV_KVCACHE_OK;
 }
 
+OvKVCacheStatus issue_token(AbiFileStoreInstance& instance, OvKVCacheStatus status, OvKVCacheAsyncToken* out_token) {
+    std::lock_guard<std::mutex> lock(instance.token_mutex);
+    const OvKVCacheAsyncToken token = instance.next_token++;
+    instance.finished_batches.emplace(token, status);
+    *out_token = token;
+    return OV_KVCACHE_OK;
+}
+
+OvKVCacheStatus store_read_blocks_async(void* self,
+                                        const OvKVCacheStoreReadRequest* reqs,
+                                        OvKVCacheStoreReadResult* out,
+                                        size_t count,
+                                        OvKVCacheAsyncToken* out_token) {
+    *out_token = 0;
+    return issue_token(*static_cast<AbiFileStoreInstance*>(self), store_read_blocks(self, reqs, out, count), out_token);
+}
+
+OvKVCacheStatus store_write_blocks_async(void* self,
+                                         const OvKVCacheStoreWriteRequest* reqs,
+                                         OvKVCacheStoreWriteResult* out,
+                                         size_t count,
+                                         OvKVCacheAsyncToken* out_token) {
+    *out_token = 0;
+    return issue_token(*static_cast<AbiFileStoreInstance*>(self), store_write_blocks(self, reqs, out, count), out_token);
+}
+
+OvKVCacheStatus store_wait(void* self, OvKVCacheAsyncToken token, uint32_t /*timeout_ms*/) {
+    auto* instance = static_cast<AbiFileStoreInstance*>(self);
+    std::lock_guard<std::mutex> lock(instance->token_mutex);
+    const auto it = instance->finished_batches.find(token);
+    if (it == instance->finished_batches.end()) {
+        return OV_KVCACHE_ERR_INVALID_ARG;
+    }
+    const OvKVCacheStatus status = it->second;
+    instance->finished_batches.erase(it);
+    return status;
+}
+
+OvKVCacheStatus store_cancel(void* /*self*/, OvKVCacheAsyncToken /*token*/) {
+    // Nothing is ever in flight: the batch has already finished when its token is returned.
+    return OV_KVCACHE_OK;
+}
+
 const OvKVCacheStoreVTable g_store_vtable = {
     sizeof(OvKVCacheStoreVTable),
     0,
@@ -233,10 +285,10 @@ const OvKVCacheStoreVTable g_store_vtable = {
     &store_drop_blocks,
     &store_flush,
     &store_stats,
-    nullptr,  // read_blocks_async: OV_KVCACHE_CAP_ASYNC_IO not advertised
-    nullptr,  // write_blocks_async
-    nullptr,  // wait
-    nullptr,  // cancel
+    &store_read_blocks_async,
+    &store_write_blocks_async,
+    &store_wait,
+    &store_cancel,
 };
 
 void destroy_provider(void* /*self*/) {}
@@ -308,6 +360,8 @@ OvKVCacheStatus provider_open(void* /*self*/,
         auto store = std::make_unique<FileKVCacheStore>(std::move(backend));
         out->store = new AbiFileStoreInstance(std::move(store), *block_size_bytes);
         out->vtable = &g_store_vtable;
+        out->store_semantics_fingerprint = kFileStoreSemanticsFingerprint;
+        out->has_semantics_fingerprint = 1;
         out->status = OV_KVCACHE_OK;
     } catch (const std::exception&) {
         out->status = OV_KVCACHE_ERR_IO;
@@ -345,7 +399,7 @@ const OvKVCacheStoreProviderVTable g_provider_vtable = {
 const OvKVCacheStoreProviderDescriptor g_provider_descriptor = {
     &g_provider_vtable,
     nullptr,
-    OV_KVCACHE_CAP_KEY_IO | OV_KVCACHE_CAP_EXISTS,
+    OV_KVCACHE_CAP_KEY_IO | OV_KVCACHE_CAP_EXISTS | OV_KVCACHE_CAP_SEMANTICS_FINGERPRINT | OV_KVCACHE_CAP_ASYNC_IO,
     "file",
 };
 

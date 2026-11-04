@@ -254,9 +254,20 @@ the baseline token-for-token.` This was run with Qwen3-8B on CPU and with the hy
 then holds one `ns_*` directory per group, `kv` and `la`). With your own plugin, run the same two commands against
 your storage.
 
-The async I/O (`OV_KVCACHE_CAP_ASYNC_IO`: `read_blocks_async`/`write_blocks_async`/`wait`/`cancel`)
-and `register_host_memory` (`OV_KVCACHE_CAP_REGISTER_HOST_MEMORY`) capabilities are part of the
-frozen ABI shape but are **not yet called by this host version** - the sample plugin does not
-implement them (its vtable entries are `NULL`), and neither scenario above exercises them. Treat
-them as reserved for a future host version, not something you need to implement or that this guide
-validates.
+The host uses the optional capabilities your provider advertises:
+
+- `OV_KVCACHE_CAP_ASYNC_IO` (`read_blocks_async`/`write_blocks_async`/`wait`): when it is set and the vtable
+  carries those entries, every read and write goes through them. The host submits one batch, then calls `wait`
+  with `OV_KVCACHE_WAIT_INFINITE` until the status is not `PENDING`, so no token is left open and `cancel` is
+  never needed. It does not overlap submissions: each batch is waited on before the next one starts. Without the
+  bit the host uses the synchronous `read_blocks`/`write_blocks`.
+- Reads of a prompt's reusable prefix are one `read_blocks` batch (async or not), not one call per block.
+- `OV_KVCACHE_CAP_SEMANTICS_FINGERPRINT`: the fingerprint `open` returns is logged at `OPENVINO_LOG_LEVEL=3` as
+  `semantics_fingerprint=` and kept on the store; the host does not compare or persist it yet.
+- A provider must advertise `OV_KVCACHE_CAP_KEY_IO` and `OV_KVCACHE_CAP_EXISTS`, or the host logs a warning and
+  falls back to the default file store.
+
+Both sample providers advertise async I/O and a fingerprint. Their async entries run the batch inside the submit
+call and `wait` only hands back its status, which is enough to show the call sequence; a real plugin would hand
+the batch to its I/O threads and block in `wait`. `register_host_memory`
+(`OV_KVCACHE_CAP_REGISTER_HOST_MEMORY`) is still not called by this host.

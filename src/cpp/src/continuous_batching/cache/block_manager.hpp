@@ -168,6 +168,14 @@ public:
      */
     virtual bool load_into(size_t hash, size_t block_index) = 0;
 
+    /**
+     * @brief Lets the source read the blocks a warm-up is about to load in one batch.
+     * @param hashes Blocks of one prompt's chain, in order; load_into() then serves them from memory. Optional.
+     */
+    virtual void prefetch(const std::vector<size_t>& /*hashes*/) {}
+
+    /// Drops whatever prefetch() read ahead that load_into() did not use.
+    virtual void release_prefetched() {}
 };
 
 /**
@@ -2822,6 +2830,35 @@ public:
         // Hold every chain block until the walk is over. A warmed block keeps the timestamp it was created
         // with, so releasing it immediately would make it the very next block the allocator overwrites.
         std::vector<BlocksPerLayer> chain;
+
+        // Read the blocks the walk is going to load in one batch, in chain order, instead of one by one.
+        std::vector<size_t> to_load;
+        const auto note_to_load = [&](size_t hash) {
+            if (!m_allocator.has_cached_block(hash, m_prefix_hash_to_cached_blocks) && available.count(hash) != 0 &&
+                m_allocator.can_allocate_blocks(to_load.size() + 1)) {
+                to_load.push_back(hash);
+            }
+        };
+        if (m_restore_latest_prefix_block_only && prompt_len > 1) {
+            note_to_load(sequence->get_hash(prompt_len - 1, m_block_size));
+        }
+        for (size_t content_len = m_block_size; content_len <= prompt_len; content_len += m_block_size) {
+            const auto hash = sequence->get_hash(content_len, m_block_size);
+            if (!m_allocator.has_cached_block(hash, m_prefix_hash_to_cached_blocks) && available.count(hash) == 0) {
+                break;
+            }
+            note_to_load(hash);
+        }
+        if (!to_load.empty()) {
+            source.prefetch(to_load);
+        }
+        struct PrefetchRelease {
+            IExternalPrefixSource& source;
+            ~PrefetchRelease() {
+                source.release_prefetched();
+            }
+        } prefetch_release{source};
+
         // @return false when the chain cannot be extended with the block ending at `content_len`.
         const auto extend_chain = [&](size_t content_len) {
             const auto hash = sequence->get_hash(content_len, m_block_size);
