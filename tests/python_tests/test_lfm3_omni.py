@@ -53,6 +53,8 @@ TEXT_TOKENS = 8
 INTERLEAVED_TEXT_SLOTS = 6
 INTERLEAVED_AUDIO_FRAMES = 12
 VIDEO_FPS = 2.0
+# ARM CPUs default to f16. Pipelines and the optimum reference run in f32 so their outputs match exactly.
+F32 = {"INFERENCE_PRECISION_HINT": "f32"}
 SKIP_PA_ON_MACOS_ARM64 = pytest.mark.skipif(
     sys.platform == "darwin" and platform.machine() == "arm64",
     reason="CVS-194249: PagedAttention needs SVE on ARM64, which macOS arm64 lacks.",
@@ -105,8 +107,7 @@ def frame_samples(lfm3_omni_model_path: Path) -> int:
 
 @pytest.fixture(scope="module")
 def omni_pipe(lfm3_omni_model_path: Path) -> ov_genai.OmniPipeline:
-    # ARM CPUs default to f16, where streamed and one-shot speech round differently.
-    return ov_genai.OmniPipeline(lfm3_omni_model_path, "CPU", INFERENCE_PRECISION_HINT="f32")
+    return ov_genai.OmniPipeline(lfm3_omni_model_path, "CPU", **F32)
 
 
 @pytest.fixture(scope="module")
@@ -122,7 +123,7 @@ def omni_pa_pipe(lfm3_omni_model_path: Path) -> ov_genai.OmniPipeline:
 
 @pytest.fixture(scope="module", params=["SDPA", pytest.param("PA", marks=SKIP_PA_ON_MACOS_ARM64)])
 def vlm_pipe(request: pytest.FixtureRequest, lfm3_omni_model_path: Path) -> ov_genai.VLMPipeline:
-    return ov_genai.VLMPipeline(lfm3_omni_model_path, "CPU", ATTENTION_BACKEND=request.param)
+    return ov_genai.VLMPipeline(lfm3_omni_model_path, "CPU", ATTENTION_BACKEND=request.param, **F32)
 
 
 @dataclass(frozen=True)
@@ -136,7 +137,9 @@ def optimum_reference(lfm3_omni_model_path: Path) -> OptimumReference:
     from optimum.intel import OVModelForMultimodalLM
 
     return OptimumReference(
-        model=OVModelForMultimodalLM.from_pretrained(lfm3_omni_model_path, device="CPU", trust_remote_code=True),
+        model=OVModelForMultimodalLM.from_pretrained(
+            lfm3_omni_model_path, device="CPU", ov_config=F32, trust_remote_code=True
+        ),
         processor=transformers.AutoProcessor.from_pretrained(lfm3_omni_model_path, trust_remote_code=True),
     )
 
