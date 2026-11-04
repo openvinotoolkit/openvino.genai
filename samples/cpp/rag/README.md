@@ -64,3 +64,37 @@ std::vector<ov::genai::EmbeddingResult> embeddings = pipeline.embed_documents(do
 ov::genai::TextRerankPipeline pipeline(models_path, device, config);
 std::vector<std::pair<size_t, float>> rerank_result = pipeline.rerank(query, documents);
 ```
+
+## Applying a prompt template
+
+Some reranker models require their chat template to be applied to the query and each document.
+`TextRerankPipeline` concatenates `query + document`, so format them yourself and set
+`padding_side = "left"` (these models read the last token).
+
+Example for `Qwen/Qwen3-Reranker-0.6B`:
+
+```c++
+#include "openvino/genai/rag/text_rerank_pipeline.hpp"
+
+const std::string prefix =
+    "<|im_start|>system\n"
+    "Judge whether the Document meets the requirements based on the Query and the Instruct "
+    "provided. Note that the answer can only be \"yes\" or \"no\".<|im_end|>\n"
+    "<|im_start|>user\n";
+const std::string suffix = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n";
+const std::string instruction = "Given a web search query, retrieve relevant passages that answer the query";
+
+std::string query = prefix + "<Instruct>: " + instruction + "\n<Query>: " + user_query + "\n";
+// Each complete query + formatted document must fit the tokenizer's effective max_length.
+// Shorten document content before formatting if needed: automatic truncation can
+// remove the required suffix, even with padding_side = "left".
+std::vector<std::string> documents;
+for (const auto& doc : user_documents) {
+    documents.push_back("<Document>: " + doc + suffix);
+}
+
+ov::genai::TextRerankPipeline::Config config;
+config.padding_side = "left";
+ov::genai::TextRerankPipeline pipeline(models_path, device, config);
+std::vector<std::pair<size_t, float>> rerank_result = pipeline.rerank(query, documents);
+```

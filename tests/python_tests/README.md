@@ -105,6 +105,10 @@ normalization weights around one (Gemma applies its own offset). MoE fixtures se
 two of four experts. The runner reloads the finalized GGUFs and independently produces
 greedy token IDs and log probabilities using llama.cpp CPU, with OpenVINO disabled in
 that build. Both sides use F32 inference/KV caches and no dynamic quantization.
+
+LFM3 conversion uses the Python converter from revision
+`604cc430239c76ff636c443e3400bf552b750421` without building another native backend.
+
 GenAI checks prefill/decode with SDPA, PA and automatic selection, plus concurrent
 PA requests with chunked prefill. Inputs include a sliding-window-boundary case.
 The fixtures have no text vocabulary, so an auxiliary tokenizer only satisfies the

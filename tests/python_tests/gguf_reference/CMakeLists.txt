@@ -12,6 +12,12 @@ FetchContent_Declare(llama_cpp
     URL_HASH SHA256=a1ea18cad07f6051b771b80f4a68a34ab11905187e642124ca93d4f9bd7d7f4c
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
 
+FetchContent_Declare(llama_converter
+    URL https://codeload.github.com/ggml-org/llama.cpp/tar.gz/604cc430239c76ff636c443e3400bf552b750421
+    URL_HASH SHA256=2a8953ce354bc1c5a4a4feb03ed39c72b03c05f39fd2c57704ba67eb8c7afda2
+    SOURCE_SUBDIR conversion
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_COMMON ON CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -25,7 +31,7 @@ set(GGML_CPU ON CACHE BOOL "" FORCE)
 foreach(backend BLAS CUDA HIP METAL MUSA OPENCL OPENVINO RPC SYCL VULKAN WEBGPU)
     set(GGML_${backend} OFF CACHE BOOL "" FORCE)
 endforeach()
-FetchContent_MakeAvailable(llama_cpp)
+FetchContent_MakeAvailable(llama_cpp llama_converter)
 
 add_executable(genai-gguf-generate generate.cpp)
 target_compile_features(genai-gguf-generate PRIVATE cxx_std_17)

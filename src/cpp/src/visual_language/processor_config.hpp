@@ -62,6 +62,9 @@ public:
     bool preserve_native_resolution = false;
     bool pad_to_target = false;
 
+    // mistral3 (pixtral) specific config params
+    size_t longest_edge = 1540;
+
     struct {
         size_t num_crops = 4;
         size_t num_img_tokens = 144;

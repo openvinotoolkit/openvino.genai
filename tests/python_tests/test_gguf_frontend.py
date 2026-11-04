@@ -109,6 +109,7 @@ TINY_GGUF_VLM_MODELS = {
     "qwen35": ("qwen3.5", "aa8ac4a953c6081e0afaa34bd95cefd9c852ddbf"),
     "qwen35moe": ("qwen3.5-moe", "3061bafacf5a42fc57e620dc54ab19fae19ad594"),
     "muse-glimmer": ("muse-glimmer", "cb70af191bbbf704a47b7d24dd5287d97dd60103"),
+    "lfm3": ("lfm3-vl", "f85d8efa6acad95eccc08cffd67775c4fb8e0fc8"),
 }
 
 
@@ -337,20 +338,67 @@ def tiny_gguf_vlm_model(request, llama_reference_tools, tmp_path_factory):
     repo = "optimum-intel-internal-testing/tiny-random-" + name
     source = Path(retry_request(lambda: snapshot_download(repo, revision=revision)))
     build = llama_reference_tools[0].parent.parent
-    converter = build / "_deps" / "llama_cpp-src" / "convert_hf_to_gguf.py"
+    converter_source = "llama_converter-src" if family == "lfm3" else "llama_cpp-src"
+    converter = build / "_deps" / converter_source / "convert_hf_to_gguf.py"
     directory = Path.home() / "gguf_models" / "genai_vlm_tests" / family
     directory.mkdir(parents=True, exist_ok=True)
-    if family.startswith("qwen35") or family == "gemma4-unified":
+    if family.startswith("qwen35") or family in ("gemma4-unified", "lfm3"):
         fixture_source = tmp_path_factory.mktemp(family)
         config = json.loads((source / "config.json").read_text(encoding="utf-8"))
         if family.startswith("qwen35"):
             # The production mRoPE default exceeds the tiny model's rotary width.
             config["text_config"]["rope_parameters"]["mrope_section"] = [1, 1, 0]
-        else:
+        elif family == "gemma4-unified":
             config["text_config"]["expert_intermediate_size"] = None
+        else:
+            # The tiny LFM3 checkpoint predates the converter's config and tensor naming.
+            config["rope_parameters"] = {
+                "full_attention": {
+                    "rope_theta": config["full_attention_rope_theta"],
+                    "partial_rotary_factor": config["partial_rotary_factor"],
+                },
+                "sliding_attention": {"rope_theta": config["sliding_attention_rope_theta"]},
+            }
+            vision = {key.removeprefix("vision_"): value for key, value in config.items() if key.startswith("vision_")}
+            vision["in_channels"] = vision.pop("num_channels")
+            vision["rope_parameters"] = {"rope_theta": vision["rope_theta"]}
+            vision["norm_eps"] = config["rms_norm_eps"]
+            vision["conv_kernel_size"] = 3
+            config["vision_config"] = vision
+            config["projector_hidden_act"] = "gelu"
+            config["projector_bias"] = True
         for path in source.iterdir():
-            if path.name != "config.json":
+            if path.name != "config.json" and not (family == "lfm3" and path.name == "model.safetensors"):
                 shutil.copy2(path, fixture_source / path.name)
+        if family == "lfm3":
+            from safetensors.torch import load_file, save_file
+
+            weights = {}
+            for name, value in load_file(source / "model.safetensors").items():
+                for prefix, replacement in (
+                    ("language_model.", "model."),
+                    ("vision_encoder.", "model.vision_tower."),
+                    ("vision_projector.", "model.multi_modal_projector."),
+                ):
+                    if name.startswith(prefix):
+                        name = replacement + name.removeprefix(prefix)
+                        break
+                if name.endswith((".spatial_conv", ".conv.conv")):
+                    name += ".weight"
+                if name.endswith(".gate_up.weight"):
+                    gate, up = value.chunk(2, dim=0)
+                    weights[name.replace(".gate_up.", ".w1.")] = gate.contiguous()
+                    weights[name.replace(".gate_up.", ".w3.")] = up.contiguous()
+                elif name.endswith(".qkv.weight"):
+                    q_width = config["num_attention_heads"] * config["head_dim"]
+                    kv_width = config["num_key_value_heads"] * config["head_dim"]
+                    for suffix, part in zip(
+                        ("q_proj", "k_proj", "v_proj"), value.split((q_width, kv_width, kv_width), dim=0)
+                    ):
+                        weights[name.replace(".qkv.", "." + suffix + ".")] = part.contiguous()
+                else:
+                    weights[name] = value
+            save_file(weights, fixture_source / "model.safetensors")
         (fixture_source / "config.json").write_text(json.dumps(config), encoding="utf-8")
         source = fixture_source
     language, projector = directory / "model.gguf", directory / "mmproj.gguf"

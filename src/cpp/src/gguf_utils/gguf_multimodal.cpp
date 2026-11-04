@@ -114,6 +114,17 @@ Configs gguf_configs(const std::string& architecture,
     }
     const auto merge = meta.integer("vision.merge");
     c.image["merge_size"] = merge;
+    if (architecture == "lfm3") {
+        c.config["model_type"] = "lfm3_vl";
+        c.config["position_ids_offset"] = 0;
+        c.image["temporal_patch_size"] = meta.integer("vision.temporal_patch_size");
+        c.image["min_pixels"] = 65536;
+        c.image["max_pixels"] = 16777216;
+        c.unsampled_video_from_image();
+        c.video["min_pixels"] = 4096;
+        c.video["max_pixels"] = 25165824;
+        return c;
+    }
     if (architecture == "muse-glimmer") {
         c.config["model_type"] = "muse_glimmer";
         c.image["preserve_native_resolution"] = true;
@@ -305,6 +316,7 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     const bool gemma4 = architecture == "gemma4" && (projector == "gemma4v" || projector == "gemma4uv");
     OPENVINO_ASSERT((architecture == "gemma3" && projector == "gemma3") ||
                         ((architecture == "qwen35" || architecture == "qwen35moe") && projector == "qwen3vl_merger") ||
+                        (architecture == "lfm3" && projector == "lfm3vl" && !meta.has("audio.projector")) ||
                         (architecture == "muse-glimmer" && projector == "muse-glimmer") || gemma4 || clip,
                     "Unsupported GGUF language/projector pair: ",
                     architecture,
@@ -338,6 +350,14 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     validate_gguf_multimodal_dimensions(result.language, vlm);
     const auto configs = gguf_configs(architecture, projector, meta, result);
     vlm.config = VLMConfig(configs.config);
+    if (architecture == "lfm3") {
+        const auto image = result.tokenizer.encode(vlm.config.image_token, add_special_tokens(false)).input_ids;
+        const auto video = result.tokenizer.encode(vlm.config.video_token, add_special_tokens(false)).input_ids;
+        OPENVINO_ASSERT(image.get_size() == 1 && video.get_size() == 1,
+                        "GGUF LFM3 requires single-token image and video placeholders");
+        vlm.config.image_token_id = image.data<const int64_t>()[0];
+        vlm.config.video_token_id = video.data<const int64_t>()[0];
+    }
     if (projector == "mlp") {
         OPENVINO_ASSERT(image_padding_id >= 0, "GGUF LLaVA requires a vocabulary padding token");
         vlm.config.image_token_id = image_padding_id;

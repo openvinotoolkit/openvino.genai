@@ -29,6 +29,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"qwen3_vl", VLMModelType::QWEN3_VL},
         {"qwen3_5", VLMModelType::QWEN3_5},
         {"qwen3_5_moe", VLMModelType::QWEN3_5_MOE},
+        {"qwen4_exp", VLMModelType::QWEN4_EXP},
         {"gemma3", VLMModelType::GEMMA3},
         {"gemma3n", VLMModelType::GEMMA3N},
         {"gemma4", VLMModelType::GEMMA4},
@@ -40,6 +41,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"deepseek_ocr2", VLMModelType::DEEPSEEK_OCR2},
         {"muse_glimmer", VLMModelType::MUSE_GLIMMER},
         {"minicpmv4_7", VLMModelType::MINICPMV4_7},
+        {"mistral3", VLMModelType::MISTRAL3},
         {"lfm3_vl", VLMModelType::LFM3_VL},
     };
 
@@ -93,6 +95,11 @@ VLMConfig::VLMConfig(const nlohmann::json& parsed) {
     // Qwen3-VL
     read_json_param(parsed, "vision_config.num_position_embeddings", vision_config_num_position_embeddings);
     read_json_param(parsed, "vision_config.deepstack_visual_indexes", vision_config_deepstack_visual_indexes);
+
+    // qwen4_exp
+    if (model_type == VLMModelType::QWEN4_EXP) {
+        read_json_param(parsed, "text_config.eos_token_id", text_config_eos_token_id);
+    }
 
     // gemma4
     read_json_param(parsed, "text_config.hidden_size_per_layer_input", hidden_size_per_layer_input);
