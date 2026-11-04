@@ -56,7 +56,7 @@ public:
 *    `llama`, `qwen2`, and `qwen3`.
 *  - `"FRONTEND"` - the OpenVINO GGUF frontend, supporting a broader range of architectures.
 *    This is a preview feature that may have limitations.
-*  - `"llama_cpp"` - reserved for the llama.cpp GGUF reader; not implemented yet.
+*  - `"llama_cpp"` - reserved for the llama.cpp GGUF reader, supporting direct model graph execution.
 *
 * The legacy reader remains the default while the frontend is a preview feature.
 * The frontend is intended to replace the legacy reader in the future.
