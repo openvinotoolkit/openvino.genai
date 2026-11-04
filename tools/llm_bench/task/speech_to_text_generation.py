@@ -167,6 +167,10 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         **perf_kwargs,
         **memory_metrics,
     )
+    if use_case.model_type == "sense-voice":
+        iter_data["throughput_token_count"] = out_token_size
+        if generation_time > 0:
+            iter_data["end_to_end_token_throughput"] = out_token_size / generation_time
     iter_data_list.append(iter_data)
     metrics_print.print_metrics(
         iter_num=num,

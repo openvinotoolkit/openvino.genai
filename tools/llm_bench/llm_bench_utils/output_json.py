@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
+from llm_bench_utils.gen_output_data import get_end_to_end_token_throughput
 from llm_bench_utils.memory_monitor import MemoryUnit, MemThreadHandler
 
 
@@ -88,6 +89,10 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             res_data["tts_sample_rate"] = int(tts_sample_rate)
         if tts_rtf is not None and tts_rtf != "":
             res_data["tts_rtf"] = round(tts_rtf, 5)
+        if "throughput_token_count" in iter_data:
+            res_data["throughput_token_count"] = iter_data["throughput_token_count"]
+        if "end_to_end_token_throughput" in iter_data:
+            res_data["end_to_end_token_throughput"] = round(iter_data["end_to_end_token_throughput"], 5)
 
         if max_rss_mem:
             res_data["max_rss_mem"] = round(max_rss_mem, 5)
@@ -134,6 +139,10 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         second_token_throughput = estimate_throughput(avg_2nd_tokens_latency, model_args["batch_size"])
         if second_token_throughput:
             results_averaged["second_token_throughput"] = second_token_throughput
+
+    end_to_end_token_throughput = get_end_to_end_token_throughput(iter_data_list)
+    if end_to_end_token_throughput is not None:
+        results_averaged["end_to_end_token_throughput"] = round(end_to_end_token_throughput, 5)
 
     output_result = {'metadata': metadata,
                      'perfdata': {'compile_time': pretrain_time,
