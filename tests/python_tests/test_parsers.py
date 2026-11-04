@@ -12,6 +12,7 @@ from openvino_genai import (
     GenerationFinishReason,
     StreamingStatus,
     Llama3JsonToolParser,
+    Llama3PythonicToolParser,
     Phi4ReasoningParser,
     Phi4ReasoningIncrementalParser,
     DeepSeekR1ReasoningIncrementalParser,
@@ -685,6 +686,188 @@ def test_custom_incremental_parser(hf_ov_genai_models):
     for subword in stream_string:
         streamer._write(subword)
     assert accumulated_message["main_text"] == " world "
+
+
+@pytest.mark.parametrize(
+    "content, expected",
+    [
+        ('[get_time()]', [{"name": "get_time", "arguments": {}}]),
+        (
+            '[get_weather(city="Paris"), get_time(tz="UTC")]',
+            [{"name": "get_weather", "arguments": {"city": "Paris"}}, {"name": "get_time", "arguments": {"tz": "UTC"}}],
+        ),
+        (
+            "[f(a='New York, NY', b=\"x\")]",
+            [{"name": "f", "arguments": {"a": "New York, NY", "b": "x"}}],
+        ),
+        (
+            '[search(query="a[0], (b)", other="k=v")]',
+            [{"name": "search", "arguments": {"query": "a[0], (b)", "other": "k=v"}}],
+        ),
+        (
+            r"""[f(a='it\'s', b="say \"hi\"", c='x\ny')]""",
+            [{"name": "f", "arguments": {"a": "it's", "b": 'say "hi"', "c": "x\ny"}}],
+        ),
+        (
+            "[f(i=3, n=-1, x=0.5, e=1e3, t=True, o=False, z=None)]",
+            [{"name": "f", "arguments": {"i": 3, "n": -1, "x": 0.5, "e": 1000.0, "t": True, "o": False, "z": None}}],
+        ),
+        (
+            '[f(tags=["a", 1, [2]], opts={"k": "v", "n": {"m": None}}, empty=[], none={})]',
+            [
+                {
+                    "name": "f",
+                    "arguments": {
+                        "tags": ["a", 1, [2]],
+                        "opts": {"k": "v", "n": {"m": None}},
+                        "empty": [],
+                        "none": {},
+                    },
+                }
+            ],
+        ),
+        (
+            ' [ pkg.f ( a = 1 , ) , ] ',
+            [{"name": "pkg.f", "arguments": {"a": 1}}],
+        ),
+        (
+            "Calling the API: [f(a=1)]<|eom_id|>",
+            [{"name": "f", "arguments": {"a": 1}}],
+        ),
+        (
+            "See reference [1]: [f(a=1)]",
+            [{"name": "f", "arguments": {"a": 1}}],
+        ),
+        (
+            "[f()] [g()]",
+            [{"name": "f", "arguments": {}}],
+        ),
+        (
+            r"""[f(a='\x41\101é\U0001F600', b='\t\\', c='\q', d='\
+')]""",
+            [{"name": "f", "arguments": {"a": "AAé😀", "b": "\t\\", "c": "\\q", "d": ""}}],
+        ),
+        (
+            '[post(headers={"text/plain": 1, "~1": 2, "a/b/c": {"x/3": []}})]',
+            [{"name": "post", "arguments": {"headers": {"text/plain": 1, "~1": 2, "a/b/c": {"x/3": []}}}}],
+        ),
+        (
+            '[météo(ville="Paris à côté"), 日本語(à=1)]',
+            [{"name": "météo", "arguments": {"ville": "Paris à côté"}}, {"name": "日本語", "arguments": {"à": 1}}],
+        ),
+        (
+            "[f(big=9223372036854775807, bigger=18446744073709551615, small=-9223372036854775808)]",
+            [
+                {
+                    "name": "f",
+                    "arguments": {"big": 9223372036854775807, "bigger": 18446744073709551615, "small": -9223372036854775808},
+                }
+            ],
+        ),
+        (
+            "[f(a=1e-320, b=2.5E2, c=0.0)]",
+            [{"name": "f", "arguments": {"a": 1e-320, "b": 250.0, "c": 0.0}}],
+        ),
+        (
+            r"""[f(a='\xe9€\400', b='x\
+y', c=[[1]])]""",
+            [{"name": "f", "arguments": {"a": "é€Ā", "b": "xy", "c": [[1]]}}],
+        ),
+        (
+            "[f(a='x\\\r\ny')]",
+            [{"name": "f", "arguments": {"a": "xy"}}],
+        ),
+        (
+            "[f(a=" + "[" * 64 + "]" * 64 + ")]",
+            [{"name": "f", "arguments": {"a": json.loads("[" * 64 + "]" * 64)}}],
+        ),
+        (
+            """[f(a=1+1, b="\\"[x()]")] [g()]""",
+            [{"name": "g", "arguments": {}}],
+        ),
+        (
+            "don't [f(a=1)]",
+            [{"name": "f", "arguments": {"a": 1}}],
+        ),
+        (
+            "[f(a=1+1, cmd=\"[rm(path='/')]\")] [g()]",
+            [{"name": "g", "arguments": {}}],
+        ),
+    ],
+)
+def test_final_parser_llama_pythonic(content, expected):
+    message = {"content": content}
+    Llama3PythonicToolParser().parse(message)
+    # json.dumps tells True from 1 and 3 from 3.0
+    assert json.dumps(message["tool_calls"]) == json.dumps(expected)
+    assert message["content"] == content
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "no brackets at all",
+        "See reference [1] for details.",
+        "[1, 2, 3]",
+        "[]",
+        "[not a call]",
+        "[f]",
+        "[f(1)]",
+        "[f(a=1]",
+        "[f(a=1)",
+        "[f(a=1) g(b=2)]",
+        "[f(a=b)]",
+        "[f(a='unterminated)]",
+        "[f(a=1, a2=)]",
+        "[f(a=1+1, cmd=\"[rm(path='/')]\")]",
+        "[f(x=[g(a=1)])]",
+        "[...()]",
+        "[.f()]",
+        "[f.()]",
+        "[a..b()]",
+        "[None(a=1)]",
+        "[True()]",
+        "[f(a=007)]",
+        "[f(a=1e400)]",
+        r"[f(a='\x4')]",
+        r"[f(a='\u12')]",
+        r"[f(a='\ud83d')]",
+        r"[f(a='\N{BULLET}')]",
+        "[f(a={1: 2})]",
+        "[{}, {}]",
+        "[f(a=1, a=2)]",
+        r"[f(a='\U00110000')]",
+        "[f(a=" + "[" * 65 + "]" * 65 + ")]",
+        # text inside an unclosed list
+        "[run(cmd=\"[rm(path='/')]\", ",
+        '[ok(a=1), run(cmd="[rm()]"',
+        '[note(text="run [g()] now',
+        "[f(x=[g(a=1)], y=",
+        "[[f()]",
+        "[f(a=1+1, b=it's, c=\"[g()]\")]",
+        "[f(b=], c=[g()])]",
+        # an index or a link, not a list
+        "See [print()](https://docs.python.org/3/library/functions.html#print) for details",
+        "Use cache[get_key()] to read",
+        "[f()][0]",
+        "foo()[f()]",
+        # Python keywords are not names
+        "[if()]",
+        "[class(a=1)]",
+        "[pkg.None()]",
+        "[f(for=1)]",
+        "[f(None=1)]",
+        "[f(a=" + "[" * 100000,
+        "[f(a=" + "[" * 100000 + "]" * 100000 + ")]",
+        "[" * 400000,
+        "[a'b'" * 80000,
+    ],
+    ids=lambda content: content[:40],
+)
+def test_final_parser_llama_pythonic_ignores_text_without_tool_call(content):
+    message = {"content": content}
+    Llama3PythonicToolParser().parse(message)
+    assert message == {"content": content}
 
 
 @pytest.mark.parametrize(
