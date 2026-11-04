@@ -97,8 +97,8 @@ private:
     std::shared_ptr<const minja::chat_template> get_cached_minja_chat_template(const std::string& chat_template) const;
 
     mutable std::mutex m_chat_template_mutex;
-    // Applied to every template set afterwards; must be stateless (tokenizer may outlive the registrant).
-    std::function<std::string(const std::string&)> m_chat_template_patcher;
+    // Applied to every template; patchers must be stateless because the tokenizer may outlive the registrant.
+    std::function<std::string(const std::string&)> m_chat_template_patcher = utils::patch_chat_template;
     mutable std::unordered_map<std::string, std::shared_ptr<const minja::chat_template>> m_minja_chat_template_cache;
 };
 

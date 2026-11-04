@@ -49,13 +49,13 @@ constexpr char pad_token_key_name[] = "pad_token";
 std::string remap_template(const std::string& chat_template) {
     for (const auto& [known, fallback] : chat_template_fallback_map) {
         if (chat_template == known) {
-            return utils::patch_chat_template(fallback);
+            return fallback;
         }
     }
-    return utils::patch_chat_template(chat_template);
+    return chat_template;
 }
 
-// Single place defining transform order: common remap first, then model-specific patch.
+// Single place defining transform order: common remap first, then registered patchers.
 std::string remap_and_patch_template(const std::string& chat_template,
                                      const std::function<std::string(const std::string&)>& patcher) {
     std::string result = remap_template(chat_template);
@@ -451,7 +451,7 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
 
         parse_chat_template_from_tokenizer(ov_tokenizer, m_chat_template);
         m_original_chat_template = m_chat_template;
-        m_chat_template = remap_template(m_chat_template);
+        m_chat_template = remap_and_patch_template(m_chat_template, m_chat_template_patcher);
 
         // Initialize tokenizer's cache to save time later.
         // Run in async mode for speed to improve TTFT
@@ -913,7 +913,14 @@ void Tokenizer::TokenizerImpl::set_chat_template(const std::string& chat_templat
 
 void Tokenizer::TokenizerImpl::set_chat_template_patcher(std::function<std::string(const std::string&)> patcher) {
     std::lock_guard<std::mutex> lock(m_chat_template_mutex);
-    m_chat_template_patcher = std::move(patcher);
+    if (patcher) {
+        m_chat_template_patcher = [patcher = std::move(patcher)](const std::string& chat_template) {
+            std::string result = utils::patch_chat_template(chat_template);
+            return patcher(result);
+        };
+    } else {
+        m_chat_template_patcher = {};
+    }
     m_chat_template = remap_and_patch_template(m_chat_template, m_chat_template_patcher);
     m_minja_chat_template_cache.clear();
 }
