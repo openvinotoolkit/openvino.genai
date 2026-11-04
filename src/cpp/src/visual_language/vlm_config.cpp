@@ -91,6 +91,11 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     read_json_param(parsed, "vision_config.num_position_embeddings", vision_config_num_position_embeddings);
     read_json_param(parsed, "vision_config.deepstack_visual_indexes", vision_config_deepstack_visual_indexes);
 
+    // qwen4_exp
+    if (model_type == VLMModelType::QWEN4_EXP) {
+        read_json_param(parsed, "text_config.eos_token_id", text_config_eos_token_id);
+    }
+
     // gemma4
     read_json_param(parsed, "text_config.hidden_size_per_layer_input", hidden_size_per_layer_input);
     read_json_param(parsed, "audio_token_id", audio_token_id);

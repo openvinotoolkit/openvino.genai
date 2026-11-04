@@ -131,7 +131,7 @@ ov::Tensor InputsEmbedderQwen4_Exp::get_inputs_embeds(
         history_vision_count
     );
 
-    const int64_t ngram_eos_token_id = m_tokenizer.get_pad_token_id();
+    const int64_t ngram_eos_token_id = m_vlm_config.text_config_eos_token_id;
     OPENVINO_ASSERT(ngram_eos_token_id > 0, "EOS token id for ngram history padding must be set.");
 
     const auto& input_shape = m_last_input_ids.get_shape();

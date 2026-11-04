@@ -155,6 +155,10 @@ public:
     /// @brief DeepStack visual indexes for Qwen3-VL model.
     std::vector<size_t> vision_config_deepstack_visual_indexes;
 
+    // qwen4_exp specific config
+    /// @brief EOS token ID for qwen4_exp model.
+    int64_t text_config_eos_token_id = -1;
+
     // Qwen3-Omni specific config
     /// @brief Whether audio output (speech) is enabled.
     bool enable_audio_output = false;
