@@ -378,6 +378,10 @@ void GenerationConfig::validate() const {
         // OPENVINO_ASSERT(length_penalty == 1.0f, "'length_penalty' is set to ", length_penalty, " (default is 1.0f), which is supported only by beam search sampling");
     }
 
+    OPENVINO_ASSERT(!num_assistant_tokens.has_value() || num_assistant_tokens.value() <= 100,
+                    "'num_assistant_tokens' must be less than or equal to 100, but got ",
+                    num_assistant_tokens.value());
+
     // tree search (EAGLE)
     if (is_tree_search()) {
         OPENVINO_ASSERT(!do_sample,

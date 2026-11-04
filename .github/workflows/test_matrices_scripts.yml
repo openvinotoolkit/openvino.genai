@@ -3,6 +3,7 @@ name: Test Matrices Scripts
 on:
   pull_request:
     paths:
+      - '.github/components.yml'
       - '.github/scripts/build_test_matrices.py'
       - '.github/scripts/tests/**'
       - '.github/workflows/test_matrices/**'
@@ -12,6 +13,7 @@ on:
       - master
       - 'releases/**'
     paths:
+      - '.github/components.yml'
       - '.github/scripts/build_test_matrices.py'
       - '.github/scripts/tests/**'
       - '.github/workflows/test_matrices/**'
