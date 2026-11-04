@@ -3730,18 +3730,24 @@ VLM_DFLASH_MAIN_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3.5"
 VLM_DFLASH_DRAFT_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3.5-dflash"
 
 
-def _get_vlm_dflash_model_paths() -> tuple[Path, Path]:
-    _maybe_skip_unsupported_model_export(VLM_DFLASH_MAIN_MODEL_ID)
-    draft_model_path = get_ov_cache_converted_models_dir() / sanitize_model_id(VLM_DFLASH_DRAFT_MODEL_ID)
+VLM_DSPARK_MAIN_MODEL_ID = "optimum-intel-internal-testing/tiny-random-minicpmv47"
+VLM_DSPARK_DRAFT_MODEL_ID = "optimum-intel-internal-testing/tiny-random-minicpmv47-dspark"
+
+
+def _get_vlm_dflash_model_paths(
+    main_model_id: str = VLM_DFLASH_MAIN_MODEL_ID, draft_model_id: str = VLM_DFLASH_DRAFT_MODEL_ID
+) -> tuple[Path, Path]:
+    _maybe_skip_unsupported_model_export(main_model_id)
+    draft_model_path = get_ov_cache_converted_models_dir() / sanitize_model_id(draft_model_id)
     AtomicDownloadManager(draft_model_path).execute(
         lambda temp_path: export_with_optimum_cli(
-            retry_request(lambda: snapshot_download(VLM_DFLASH_DRAFT_MODEL_ID)),
+            retry_request(lambda: snapshot_download(draft_model_id)),
             "text-generation-with-past",
             temp_path,
             trust_remote_code=True,
         )
     )
-    return Path(_get_ov_model(VLM_DFLASH_MAIN_MODEL_ID)), draft_model_path
+    return Path(_get_ov_model(main_model_id)), draft_model_path
 
 
 def test_vlm_dflash_prefix_caching(cat_tensor):
@@ -3845,6 +3851,38 @@ def test_vlm_dflash_sampling_on_linear_attention_target_rejects_prefix_caching(c
 
     with pytest.raises(RuntimeError, match="set enable_prefix_caching to false"):
         ov_pipe.generate(PROMPTS[2], images=[cat_tensor], generation_config=generation_config)
+
+
+def _generate_vlm_dspark(main_model_id: str, draft_model_id: str, image: openvino.Tensor, **draft_properties):
+    model_path, draft_model_path = _get_vlm_dflash_model_paths(main_model_id, draft_model_id)
+    properties = {"INFERENCE_PRECISION_HINT": openvino.Type.f32, "KV_CACHE_PRECISION": openvino.Type.f32}
+    ov_pipe = VLMPipeline(model_path, "CPU", **properties)
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, ignore_eos=True, do_sample=False)
+    reference = ov_pipe.generate(PROMPTS[2], images=[image], generation_config=generation_config)
+
+    ov_pipe_with_draft = VLMPipeline(
+        model_path,
+        "CPU",
+        draft_model=draft_model(draft_model_path, "CPU", **properties, **draft_properties),
+        **properties,
+    )
+    generation_config.num_assistant_tokens = 3
+    result = ov_pipe_with_draft.generate(PROMPTS[2], images=[image], generation_config=generation_config)
+    return result, reference
+
+
+# markov_head_top_k=0 drafts with the Markov head's dense step instead of its Top-K candidate scorer
+@pytest.mark.parametrize("draft_properties", [{}, {"markov_head_top_k": 0}], ids=["candidate_scorer", "markov_step"])
+def test_vlm_dspark_matches_main_only(cat_tensor, draft_properties):
+    model_patcher = pytest.importorskip("optimum.exporters.openvino.model_patcher")
+    if not hasattr(model_patcher, "Qwen3DSparkForCausalLM"):
+        pytest.skip("This optimum-intel version cannot export DSpark drafts (huggingface/optimum-intel#2098).")
+    result, reference = _generate_vlm_dspark(
+        VLM_DSPARK_MAIN_MODEL_ID, VLM_DSPARK_DRAFT_MODEL_ID, cat_tensor, **draft_properties
+    )
+
+    assert result.texts == reference.texts
+    assert result.extended_perf_metrics.get_num_draft_tokens() > 0
 
 
 def _run_vlm_add_request(pipe, prompt, images, config) -> list[int]:

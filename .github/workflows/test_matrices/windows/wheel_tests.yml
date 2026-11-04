@@ -292,13 +292,26 @@
 
 - name: DFlash speculative decoding tests
   cmd: |-
-    # The DFlash drafts need the export from https://github.com/huggingface/optimum-intel/pull/2096
-    python -m pip install transformers==5.2.0
-    python -m pip install -U "optimum-intel @ git+https://github.com/ofirzaf/optimum-intel.git@dflash-cb-ir"
-    python -m pytest -v ./tests/python_tests/test_continuous_batching.py ./tests/python_tests/test_vlm_pipeline.py -k "dflash"
+    # The DFlash, DFlash v2 and DSpark drafts need the export from https://github.com/huggingface/optimum-intel/pull/2098,
+    # here its head commit, which exports Qwen3.5 with transformers 5.15 or later
+    python -m pip install transformers==5.15.1
+    python -m pip install -U "optimum-intel @ git+https://github.com/imargulis/optimum-intel.git@29fa0e307d6250815b8d0849a46e39af0f013fee"
+    python -m pytest -v ./tests/python_tests/test_continuous_batching.py ./tests/python_tests/test_vlm_pipeline.py ./tests/python_tests/test_dflash_markov_head_cb.py -k "dflash"
   timeout: 90
   components:
     - speculative_decoding
+
+# Test timed out on Windows. Ticket: 198295
+# - name: DSpark speculative decoding tests (MiniCPM-V-4.7)
+#   cmd: |-
+#     # The tiny MiniCPM-V-4.7 target needs transformers 5.18 and its DSpark draft the export from
+#     # https://github.com/huggingface/optimum-intel/pull/2098, here its head commit
+#     python -m pip install transformers==5.18.0
+#     python -m pip install -U "optimum-intel @ git+https://github.com/imargulis/optimum-intel.git@29fa0e307d6250815b8d0849a46e39af0f013fee"
+#     python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -k "dspark"
+#   timeout: 30
+#   components:
+#     - speculative_decoding
 
 - name: WWB tests (nanollava)
   cmd: |-
