@@ -601,8 +601,29 @@ def test_gguf_vlm_clip_attention_backends_and_images(gguf_vlm_pipelines):
 
 
 @pytest.mark.parametrize("tiny_gguf_vlm_model", ["llava"], indirect=True)
-def test_gguf_llava_preformatted_prompt(tiny_gguf_vlm_model):
+@pytest.mark.parametrize("add_eos", [False, True])
+def test_gguf_llava_preformatted_prompt(tiny_gguf_vlm_model, add_eos):
     language, projector = tiny_gguf_vlm_model
+    if add_eos:
+        from gguf import GGUFReader, GGUFWriter
+
+        reader = GGUFReader(language)
+        modified = language.with_name("model-add-eos.gguf")
+        writer = GGUFWriter(modified, reader.fields["general.architecture"].contents(), endianess=reader.endianess)
+        for name, field in reader.fields.items():
+            if name.startswith("GGUF.") or name in {"general.architecture", "tokenizer.ggml.add_eos_token"}:
+                continue
+            writer.add_key_value(
+                name, field.contents(), field.types[0], field.types[1] if len(field.types) > 1 else None
+            )
+        writer.add_bool("tokenizer.ggml.add_eos_token", True)
+        for tensor in reader.tensors:
+            writer.add_tensor(tensor.name, tensor.data, raw_dtype=tensor.tensor_type, tensor_endianess=reader.endianess)
+        writer.write_header_to_file()
+        writer.write_kv_data_to_file()
+        writer.write_tensors_to_file()
+        writer.close()
+        language = modified
     pipelines = [
         genai.VLMPipeline(
             language,
@@ -623,6 +644,7 @@ def test_gguf_llava_preformatted_prompt(tiny_gguf_vlm_model):
         )
     )
     tokenizer = AutoTokenizer.from_pretrained(source)
+    tokenizer.add_eos_token = add_eos
     config = json.loads((Path(source) / "config.json").read_text(encoding="utf-8"))
     prefix, suffix = "USER: ", "\nDescribe. ASSISTANT:"
     expected_count = (

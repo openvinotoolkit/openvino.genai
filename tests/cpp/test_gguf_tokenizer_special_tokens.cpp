@@ -8,6 +8,7 @@
 #include "openvino/genai/gguf.hpp"
 #include "openvino/opsets/opset15.hpp"
 #include "visual_language/gemma4/classes.hpp"
+#include "visual_language/gemma3/classes.hpp"
 #include "visual_language/gemma4/audio_encoder.hpp"
 #include "visual_language/gemma4/audio_feature_extractor.hpp"
 #include "gguf_utils/gguf_multimodal.hpp"
@@ -334,6 +335,99 @@ TEST(GGUFMultimodal, LlavaUnknownTextTokensRemainTextEmbeddings) {
         const float expected = token >= prefix.get_size() && token < prefix.get_size() + 2 ? 9.f : .25f;
         for (size_t component = 0; component < 4; ++component)
             EXPECT_FLOAT_EQ(merged.data<const float>()[token * 4 + component], expected);
+    }
+}
+
+TEST(GGUFMultimodal, Gemma3LiteralPadsRemainTextAfterCacheClipping) {
+    using namespace ov::genai;
+    GGUFTokenizer tokenizer(sentencepiece_config());
+    auto models = gemma4_models();
+    models.config.model_type = VLMModelType::GEMMA3;
+    models.config.image_soft_token = "<pad>";
+    ov::Tensor pixels(ov::element::f32, {1, 2, 4});
+    for (size_t i = 0; i < pixels.get_size(); ++i)
+        pixels.data<float>()[i] = float(10 + i);
+    const std::vector<EncodedImage> images{{pixels}};
+    InputsEmbedderGemma3 normalizer(models, tokenizer, "CPU", {});
+    const auto normalized = normalizer.normalize_prompt("<pad>a<start_of_image>a<pad>", 0, images);
+    const auto ids = tokenizer.encode(normalized.unified_prompt, add_special_tokens(false)).input_ids;
+    const auto* data = ids.data<const int64_t>();
+    const auto begin = std::find(data, data + ids.get_size(), 6) - data + 1;
+    ASSERT_LT(begin + 2, ids.get_size());
+    ASSERT_EQ(data[begin], 3);
+    ASSERT_EQ(data[begin + 1], 3);
+    ASSERT_EQ(data[begin + 2], 7);
+    for (size_t skip : {size_t(0), size_t(begin), size_t(begin + 1), size_t(begin + 2)}) {
+        SCOPED_TRACE(skip);
+        InputsEmbedderGemma3 embedder(models, tokenizer, "CPU", {});
+        embedder.set_prompt_formatting(PromptFormatting::Raw);
+        embedder.set_add_special_tokens(false);
+        if (skip) {
+            embedder.start_chat("");
+            embedder.get_cache_state().get_state().assign(data, data + skip);
+        }
+        VLMPerfMetrics metrics;
+        const auto merged =
+            embedder.get_inputs_embeds(normalized.unified_prompt, images, metrics, true, normalized.images_sequence);
+        const auto& types = embedder.get_lm_extra_inputs().at("token_type_ids");
+        ASSERT_EQ(merged.get_shape(), (ov::Shape{1, ids.get_size() - skip, 4}));
+        ASSERT_EQ(types.get_shape(), (ov::Shape{1, ids.get_size() - skip}));
+        for (size_t token = skip; token < ids.get_size(); ++token) {
+            const bool vision = token >= size_t(begin) && token < size_t(begin + 2);
+            EXPECT_EQ(types.data<const int64_t>()[token - skip], int64_t(vision));
+            for (size_t component = 0; component < 4; ++component) {
+                const float expected = vision ? pixels.data<const float>()[(token - begin) * 4 + component] : .25f;
+                EXPECT_FLOAT_EQ(merged.data<const float>()[(token - skip) * 4 + component], expected);
+            }
+        }
+    }
+}
+
+TEST(GGUFMultimodal, LlavaAutomaticEosFollowsAllImageSlots) {
+    using namespace ov::genai;
+    struct TestEmbedder : InputsEmbedderLLaVA {
+        using InputsEmbedderLLaVA::apply_chat_template_tokenize;
+        using InputsEmbedderLLaVA::InputsEmbedderLLaVA;
+    };
+    for (bool add_eos : {false, true}) {
+        for (bool alias_bos_eos : {false, true}) {
+            auto parameters = sentencepiece_config();
+            ov::Tensor flag(ov::element::boolean, {});
+            flag.data<bool>()[0] = add_eos;
+            parameters.config["add_eos_token"] = flag;
+            if (alias_bos_eos)
+                parameters.config["eos_token_id"] = parameters.config.at("bos_token_id");
+            GGUFTokenizer tokenizer(parameters);
+            for (const std::string prefix : {"a", "a<eos>"}) {
+                for (int mode : {0, 1, 2}) {
+                    SCOPED_TRACE(::testing::Message()
+                                 << add_eos << ',' << alias_bos_eos << ',' << prefix << ',' << mode);
+                    auto models = gemma4_models();
+                    models.config.model_type = VLMModelType::LLAVA;
+                    models.config.image_token_id = 3;
+                    models.config.add_eos_token = add_eos;
+                    TestEmbedder embedder(models, tokenizer, "CPU", {});
+                    embedder.set_prompt_formatting(mode == 2 ? PromptFormatting::AlreadyTemplated
+                                                             : PromptFormatting::Raw);
+                    if (mode == 1)
+                        embedder.set_add_special_tokens(false);
+                    VLMPerfMetrics metrics;
+                    const auto actual = embedder.apply_chat_template_tokenize(prefix + "<image>a", metrics);
+                    std::vector<int64_t> expected;
+                    if (mode == 0)
+                        expected.push_back(1);
+                    expected.push_back(9);
+                    if (prefix == "a<eos>")
+                        expected.push_back(2);
+                    expected.insert(expected.end(), {3, 9});
+                    if (mode == 0 && add_eos)
+                        expected.push_back(alias_bos_eos ? 1 : 2);
+                    EXPECT_EQ(std::vector<int64_t>(actual.data<const int64_t>(),
+                                                   actual.data<const int64_t>() + actual.get_size()),
+                              expected);
+                }
+            }
+        }
     }
 }
 

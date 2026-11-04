@@ -180,14 +180,20 @@ ov::Tensor InputsEmbedderLLaVA::apply_chat_template_tokenize(const std::string& 
     const auto& marker = m_vlm_config.im_start;
     size_t offset = 0;
     bool first = true;
+    bool defer_eos = false;
     while (true) {
         const auto next = rendered.find(marker, offset);
         const auto text = rendered.substr(offset, next == std::string::npos ? next : next - offset);
         if (!text.empty() || first) {
             const auto encoded = m_tokenizer.encode(text, add_special_tokens(first && add_special)).input_ids;
-            tokens.insert(tokens.end(),
-                          encoded.data<const int64_t>(),
-                          encoded.data<const int64_t>() + encoded.get_size());
+            size_t encoded_size = encoded.get_size();
+            if (first && add_special && m_vlm_config.add_eos_token && m_tokenizer.get_eos_token_id() >= 0) {
+                OPENVINO_ASSERT(encoded_size > 0 &&
+                                encoded.data<const int64_t>()[encoded_size - 1] == m_tokenizer.get_eos_token_id());
+                --encoded_size;
+                defer_eos = true;
+            }
+            tokens.insert(tokens.end(), encoded.data<const int64_t>(), encoded.data<const int64_t>() + encoded_size);
             m_gguf_image_slots.resize(tokens.size(), false);
         }
         first = false;
@@ -197,6 +203,10 @@ ov::Tensor InputsEmbedderLLaVA::apply_chat_template_tokenize(const std::string& 
         tokens.push_back(m_vlm_config.image_token_id);
         m_gguf_image_slots.push_back(true);
         offset = next + marker.size();
+    }
+    if (defer_eos) {
+        tokens.push_back(m_tokenizer.get_eos_token_id());
+        m_gguf_image_slots.push_back(false);
     }
     ov::Tensor ids(ov::element::i64, {1, tokens.size()});
     std::copy(tokens.begin(), tokens.end(), ids.data<int64_t>());

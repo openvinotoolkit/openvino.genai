@@ -55,6 +55,8 @@ public:
     std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta) override;
 
 private:
+    ov::Tensor apply_chat_template_tokenize(const std::string& prompt, VLMPerfMetrics& metrics) override;
+
     /**
      * @brief Patches the original Gemma3 chat template by removing trim filters.
      *
@@ -73,6 +75,7 @@ private:
 
     // Extra inputs to pass to the language model (token_type_ids)
     std::unordered_map<std::string, ov::Tensor> m_lm_extra_inputs;
+    ov::Tensor m_vision_token_mask;
 };
 
 } // namespace ov::genai

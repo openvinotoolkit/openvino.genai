@@ -3,6 +3,8 @@
 
 #include "gguf_utils/gguf_clip_adapter.hpp"
 #include "gtest/gtest.h"
+#include "model_desc.hpp"
+#include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/openvino.hpp"
 #include "openvino/opsets/opset15.hpp"
 
@@ -19,6 +21,21 @@ std::shared_ptr<ov::Model> native_encoder() {
     return std::make_shared<ov::Model>(ov::OutputVector{features}, ov::ParameterVector{pixels});
 }
 }  // namespace
+
+TEST(GGUFClipAdapter, RejectsDraftModelBeforeLoading) {
+    for (const std::string backend : {"SDPA", "PA"}) {
+        ov::AnyMap properties{{"draft_model", ov::genai::ModelDesc{}},
+                              {"ATTENTION_BACKEND", backend},
+                              {"mmproj_path", std::string("unused.gguf")}};
+        try {
+            ov::genai::VLMPipeline pipeline("unused.gguf", "CPU", properties);
+            FAIL() << "Expected draft_model rejection";
+        } catch (const ov::Exception& error) {
+            EXPECT_NE(std::string(error.what()).find("draft_model is not supported for GGUF VLMPipeline"),
+                      std::string::npos);
+        }
+    }
+}
 
 TEST(GGUFClipAdapter, MultipleCropsMatchNativeInferenceAndPreserveSource) {
     ov::Core core;

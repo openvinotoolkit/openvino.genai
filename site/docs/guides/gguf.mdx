@@ -95,6 +95,7 @@ print(pipe.generate("Describe the image.", images=[image], max_new_tokens=64))
 
 In C++, pass `ov::genai::mmproj_path("mmproj.gguf")` to the `VLMPipeline` constructor.
 The existing image, video, audio, and chat APIs apply.
+Speculative decoding with `draft_model` is not supported for GGUF `VLMPipeline`.
 
 | Language architecture | Matching projector | Media |
 | --- | --- | --- |

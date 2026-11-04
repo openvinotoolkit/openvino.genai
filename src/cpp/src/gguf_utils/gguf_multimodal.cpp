@@ -242,6 +242,8 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
                                           const std::string& device,
                                           ov::AnyMap& properties) {
     OPENVINO_ASSERT(device == "CPU", "GGUF multimodal generation is currently qualified on CPU only");
+    OPENVINO_ASSERT(properties.count(utils::DRAFT_MODEL_ARG_NAME) == 0,
+                    "draft_model is not supported for GGUF VLMPipeline");
     const auto it = properties.find(mmproj_path.name());
     OPENVINO_ASSERT(it != properties.end(), "A language GGUF requires mmproj_path for VLMPipeline");
     const auto mmproj = it->second.as<std::string>();
@@ -277,7 +279,14 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     const auto architecture = result.language->get_rt_info<std::string>("gguf_architecture");
     const auto projector = meta.text("vision.projector");
     int64_t image_padding_id = -1;
+    bool add_eos_token = false;
     if (projector == "mlp") {
+        if (const auto it = tokenizer_metadata.find("add_eos_token"); it != tokenizer_metadata.end()) {
+            const auto flag = it->second.as<ov::Tensor>();
+            OPENVINO_ASSERT(flag.get_element_type() == ov::element::boolean && flag.get_size() == 1,
+                            "GGUF LLaVA add_eos_token must be a single boolean value");
+            add_eos_token = flag.data<const bool>()[0];
+        }
         const auto aspect_ratio =
             meta.has("clip.vision.image_aspect_ratio") ? meta.text("clip.vision.image_aspect_ratio") : "square";
         OPENVINO_ASSERT(!meta.has("clip.vision.image_grid_pinpoints") &&
@@ -361,6 +370,7 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     if (projector == "mlp") {
         OPENVINO_ASSERT(image_padding_id >= 0, "GGUF LLaVA requires a vocabulary padding token");
         vlm.config.image_token_id = image_padding_id;
+        vlm.config.add_eos_token = add_eos_token;
     }
     if (vlm.find("audio_embeddings")) {
         const auto token = result.tokenizer.encode(vlm.config.audio_token, add_special_tokens(false)).input_ids;
