@@ -191,9 +191,6 @@ Additionally, `ChatHistory` manages optional metadata for consistent chat templa
  - Tools definitions for function calling and agentic scenarios
  - Custom chat template variables (e.g. `enable_thinking` for models with extended reasoning like Qwen3)
 
-GenAI prepares chat templates before rendering, adapting adjacent string literals and `is undefined` tests to Minja syntax.
-The adapted `is undefined` test follows Minja’s existing `is defined` semantics: both an absent value and an explicit JSON `null` are treated as missing. Omit a variable to request its default behavior.
-
 <LanguageTabs>
     <TabItemPython>
         ```python showLineNumbers
