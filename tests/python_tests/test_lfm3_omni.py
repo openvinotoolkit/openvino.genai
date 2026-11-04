@@ -257,6 +257,18 @@ def test_text_matches_optimum(
     assert collector.tokens == expected
 
 
+def test_text_mode_masks_speech_tokens(vlm_pipe: ov_genai.VLMPipeline, optimum_reference: OptimumReference) -> None:
+    # Unmasked, the tiny model samples the audio placeholder at the 7th token of this prompt.
+    prompt = "aloud Perform"
+    inputs = optimum_reference.model.preprocess_inputs(text=prompt, processor=optimum_reference.processor)
+    expected = optimum_reference.model.generate(
+        **inputs, max_new_tokens=TEXT_TOKENS, do_sample=False, generation_mode="text"
+    )[0, inputs["input_ids"].shape[1] :].tolist()
+    collector = TokenCollector()
+    vlm_pipe.generate(prompt, generation_config=_text_config(TEXT_TOKENS), streamer=collector)
+    assert collector.tokens == expected
+
+
 def test_tagged_audio_matches_optimum(
     vlm_pipe: ov_genai.VLMPipeline, optimum_reference: OptimumReference, media: Media
 ) -> None:

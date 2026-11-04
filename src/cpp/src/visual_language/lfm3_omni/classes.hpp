@@ -89,8 +89,11 @@ public:
                                  const std::vector<size_t>& audios_sequence,
                                  const std::vector<std::pair<size_t, size_t>>& history_vision_count) override;
 
+    const std::set<int64_t>& get_suppressed_token_ids() const override;
+
 private:
     std::unique_ptr<AudioEncoderLFM3> m_audio_encoder;
+    std::set<int64_t> m_suppressed_token_ids;
 };
 
 }  // namespace ov::genai

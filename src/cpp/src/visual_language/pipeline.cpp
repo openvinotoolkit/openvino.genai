@@ -122,6 +122,7 @@ private:
 
         m_sampler.set_tokenizer(m_tokenizer);
         m_sampler.set_seed(m_generation_config.rng_seed);
+        m_sampler.set_suppressed_token_ids(m_inputs_embedder->get_suppressed_token_ids());
 
         m_embeddings_registry = std::make_shared<EmbeddingsRegistry>();
 

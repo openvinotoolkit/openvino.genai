@@ -340,6 +340,11 @@ const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::IInputsEmbedd
     return empty_map;
 }
 
+const std::set<int64_t>& InputsEmbedder::IInputsEmbedder::get_suppressed_token_ids() const {
+    static const std::set<int64_t> empty_set;
+    return empty_set;
+}
+
 InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
                                const std::string& device,
                                const ov::AnyMap device_config) :
@@ -502,6 +507,10 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt,
 
 const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::get_lm_extra_inputs() const {
     return m_impl->get_lm_extra_inputs();
+}
+
+const std::set<int64_t>& InputsEmbedder::get_suppressed_token_ids() const {
+    return m_impl->get_suppressed_token_ids();
 }
 
 std::function<ov::Tensor(const ov::Tensor& new_input_ids)> InputsEmbedder::get_per_layer_embeddings_callback() {

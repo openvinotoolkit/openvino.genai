@@ -1768,7 +1768,10 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
             if (m_tokenizer.m_pimpl != nullptr) {
                 structured_output_controller = m_tokenizer.m_pimpl->get_structured_output_controller(vocab_size);
             }
-            LogitProcessor lp(sampling_params, sequence_group->get_prompt_ids(), structured_output_controller);
+            LogitProcessor lp(sampling_params,
+                              sequence_group->get_prompt_ids(),
+                              structured_output_controller,
+                              m_suppressed_token_ids);
             m_request_contexts.emplace(
                 std::piecewise_construct,
                 std::forward_as_tuple(request_id),
@@ -1877,7 +1880,7 @@ void Sampler::create_logit_processor(uint64_t request_id, const GenerationConfig
     if (m_tokenizer.m_pimpl != nullptr) {
         structured_output_controller = m_tokenizer.m_pimpl->get_structured_output_controller();
     }
-    LogitProcessor lp(sampling_params, prompt, structured_output_controller);
+    LogitProcessor lp(sampling_params, prompt, structured_output_controller, m_suppressed_token_ids);
     m_request_contexts.emplace(
         std::piecewise_construct,
         std::forward_as_tuple(request_id),
