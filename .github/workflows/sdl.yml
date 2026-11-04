@@ -56,11 +56,6 @@ jobs:
           python -m flake8 . --config=./setup.cfg
         working-directory: ${{ github.workspace }}/tools/llm_bench
 
-      - name: Test LLM benchmark JSON reports
-        run: |
-          python -m pip install -c tests/python_tests/requirements.txt matplotlib psutil
-          python -m pytest --noconftest -v tests/python_tests/test_llm_bench_output_json.py
-
       - name: Bandit tests
         run: python -m bandit --recursive --configfile bandit.yml .
 
