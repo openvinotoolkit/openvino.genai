@@ -5,7 +5,7 @@ import { addon as ov } from 'openvino-node';
 import { readFile, writeFile } from 'node:fs/promises';
 import { decode, encode } from 'node-wav';
 
-function decodeFloat32WavWithDataView(wavBuffer) {
+function decodeWavWithDataView(wavBuffer) {
   const bytes = new Uint8Array(wavBuffer.buffer, wavBuffer.byteOffset, wavBuffer.byteLength);
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
@@ -61,9 +61,11 @@ function decodeFloat32WavWithDataView(wavBuffer) {
   if (!fmt || dataOffset < 0 || dataSize < 0) {
     throw new Error('WAV file must contain both fmt and data chunks.');
   }
-  if (fmt.audioFormat !== 3 || fmt.bitsPerSample !== 32) {
+  const isPcm16 = fmt.audioFormat === 1 && fmt.bitsPerSample === 16;
+  const isFloat32 = fmt.audioFormat === 3 && fmt.bitsPerSample === 32;
+  if (!isPcm16 && !isFloat32) {
     throw new Error(
-      `Fallback decoder supports only float32 WAV (format=3, bits=32), got format=${fmt.audioFormat}, bits=${fmt.bitsPerSample}.`,
+      `DataView decoder supports only PCM16 (format=1, bits=16) or float32 (format=3, bits=32), got format=${fmt.audioFormat}, bits=${fmt.bitsPerSample}.`,
     );
   }
   if (fmt.numChannels <= 0) {
@@ -78,8 +80,15 @@ function decodeFloat32WavWithDataView(wavBuffer) {
 
   for (let i = 0; i < samplesPerChannel; i += 1) {
     for (let ch = 0; ch < fmt.numChannels; ch += 1) {
-      const sampleOffset = dataOffset + (i * fmt.numChannels + ch) * 4;
-      channelData[ch][i] = view.getFloat32(sampleOffset, true);
+      const sampleIndex = i * fmt.numChannels + ch;
+      if (isFloat32) {
+        const sampleOffset = dataOffset + sampleIndex * 4;
+        channelData[ch][i] = view.getFloat32(sampleOffset, true);
+      } else {
+        const sampleOffset = dataOffset + sampleIndex * 2;
+        // Match native sample paths: signed 16-bit PCM normalized by 32768.
+        channelData[ch][i] = view.getInt16(sampleOffset, true) / 32768.0;
+      }
     }
   }
 
@@ -91,16 +100,10 @@ function decodeFloat32WavWithDataView(wavBuffer) {
 
 function decodeWavRobust(wavBuffer) {
   try {
-    return decode(wavBuffer);
+    return decodeWavWithDataView(wavBuffer);
   } catch (err) {
-    if (
-      err instanceof RangeError
-      && typeof err.message === 'string'
-      && err.message.includes('start offset of Float32Array should be a multiple of 4')
-    ) {
-      return decodeFloat32WavWithDataView(wavBuffer);
-    }
-    throw err;
+    // Fallback to node-wav for formats not covered by the DataView path.
+    return decode(Uint8Array.from(wavBuffer));
   }
 }
 
