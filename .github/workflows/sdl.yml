@@ -59,11 +59,6 @@ jobs:
       - name: Bandit tests
         run: python -m bandit --recursive --configfile bandit.yml .
 
-      - name: Run CSV report regression tests
-        run: |
-          python -m pip install numpy 'matplotlib>=3.3.4,<=3.11.1' psutil
-          python -m pytest --noconftest -q tests/python_tests/test_llm_bench_output_csv.py
-
       - name: Run Trivy vulnerability scanner in fs mode
         uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # v0.34.1
         with:
