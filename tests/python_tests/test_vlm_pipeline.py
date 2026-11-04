@@ -1297,6 +1297,35 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
 
 @pytest.mark.parametrize(
     "ov_pipe_model",
+    [("optimum-intel-internal-testing/tiny-random-minicpm-v-4_5", backend) for backend in ATTENTION_BACKEND],
+    indirect=["ov_pipe_model"],
+)
+@pytest.mark.parametrize("frame_count", [1, 7])
+def test_minicpm_mixed_media_cached_history(ov_pipe_model: VlmModelInfo, frame_count: int):
+    pipeline = ov_pipe_model.pipeline
+    generator = np.random.default_rng(42)
+    image = openvino.Tensor(generator.integers(0, 256, (1, 350, 350, 3), dtype=np.uint8))
+    video = openvino.Tensor(generator.integers(0, 256, (frame_count, 32, 32, 3), dtype=np.uint8))
+    prompt = "Compare <ov_genai_image_0> with <ov_genai_video_0>."
+    config = _setup_generation_config(pipeline, max_new_tokens=5, do_sample=False, ignore_eos=True)
+
+    direct = pipeline.generate(prompt, images=[image], videos=[video], generation_config=config)
+    history = ChatHistory([{"role": "user", "content": prompt}])
+    first = pipeline.generate(history, images=[image], videos=[video], generation_config=config)
+    history.append({"role": "assistant", "content": first.texts[0]})
+    history.append({"role": "user", "content": prompt})
+    cached = pipeline.generate(history, generation_config=config)
+    replay = pipeline.generate(
+        ChatHistory(history.get_messages()), images=[image], videos=[video], generation_config=config
+    )
+
+    assert direct.texts == first.texts
+    assert cached.texts == replay.texts
+    assert direct.perf_metrics.get_num_input_tokens() == first.perf_metrics.get_num_input_tokens()
+
+
+@pytest.mark.parametrize(
+    "ov_pipe_model",
     [
         pytest.param(
             ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"),

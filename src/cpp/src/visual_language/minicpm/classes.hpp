@@ -73,11 +73,6 @@ public:
         const std::string& device,
         const ov::AnyMap device_config);
 
-    std::vector<EncodedImage> encode_images(
-        const std::vector<ov::Tensor>& images,
-        bool has_video_inputs
-    ) override;
-
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) override;
 
     ov::Tensor get_inputs_embeds(const std::string& prompt,
@@ -92,12 +87,6 @@ public:
     std::vector<ov::genai::EncodedVideo> encode_videos(
         const std::vector<ov::Tensor>& videos,
         const std::vector<VideoMetadata>& videos_metadata = {}) override;
-
-    std::vector<ov::genai::EncodedVideo> encode_videos(
-        const std::vector<ov::Tensor>& videos,
-        const std::vector<VideoMetadata>& videos_metadata,
-        const std::vector<EncodedImage>& images
-    ) override;
 
     NormalizedPrompt normalize_prompt(
         const std::string& prompt,
