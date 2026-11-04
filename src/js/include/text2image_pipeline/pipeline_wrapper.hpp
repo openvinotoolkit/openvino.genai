@@ -3,10 +3,9 @@
 
 #pragma once
 
-#include <atomic>
-
 #include <napi.h>
 
+#include "include/base/pipeline_state.hpp"
 #include "openvino/genai/image_generation/text2image_pipeline.hpp"
 
 class Text2ImagePipelineWrapper : public Napi::ObjectWrap<Text2ImagePipelineWrapper> {
@@ -23,10 +22,5 @@ public:
 
 private:
     std::shared_ptr<ov::genai::Text2ImagePipeline> pipe = nullptr;
-    std::shared_ptr<std::atomic<bool>> is_initializing = std::make_shared<std::atomic<bool>>(false);
-    // Guards both generate() and decode(): set while either runs the shared inference request.
-    std::shared_ptr<std::atomic<bool>> is_busy = std::make_shared<std::atomic<bool>>(false);
-    // Set for the whole generate(), including while suspended in a step callback, so a nested
-    // generate() is rejected even though decode() is permitted during the callback.
-    std::shared_ptr<std::atomic<bool>> is_generating = std::make_shared<std::atomic<bool>>(false);
+    std::shared_ptr<PipelineState> state = std::make_shared<PipelineState>();
 };

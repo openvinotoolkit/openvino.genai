@@ -488,6 +488,7 @@ private:
     friend class InputsEmbedderVideoChatFlashQwen;
     friend class InputsEmbedderMuseGlimmer;
     friend class InputsEmbedderMiniCPMv4_7;
+    friend class InputsEmbedderMistral3;
     friend class InputsEmbedderLFM3VL;
 };
 

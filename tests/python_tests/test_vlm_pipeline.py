@@ -201,9 +201,9 @@ else:
         "qnguyen3/nanoLLaVA",
         MODEL_MINICPMV4_6,
         MODEL_DEEPSEEK_OCR2,
+        "optimum-intel-internal-testing/tiny-random-mistral3",
         *VIDEO_MODEL_IDS,
     ]
-
 
 ADD_REQUEST_MODEL_IDS = [
     MODEL_IDS[0],
@@ -221,6 +221,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     MODEL_QWEN38_FLASH_NEXT: lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
     MODEL_GEMMA3N: lambda idx: "<image_soft_token>",
+    "optimum-intel-internal-testing/tiny-random-mistral3": lambda idx: "[IMG]",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     MODEL_DEEPSEEK_OCR2: lambda idx: "<image>",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
@@ -259,6 +260,7 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
 
 RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-gemma3": 32,
+    "optimum-intel-internal-testing/tiny-random-mistral3": 32,
     "qnguyen3/nanoLLaVA": 384,
     MODEL_MINICPMV4_6: 448,
     "optimum-intel-internal-testing/tiny-random-llava-next-video": 336,
@@ -463,7 +465,7 @@ def _get_ov_model(model_id: str) -> str:
         return model_dir
 
     def convert_to_temp(temp_dir: Path) -> None:
-        model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+        model_cached = retry_request(lambda: snapshot_download(model_id))
         align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
         processor = retry_request(
             lambda: transformers.AutoProcessor.from_pretrained(
@@ -536,6 +538,9 @@ def _get_ov_model(model_id: str) -> str:
                 pass
 
         processor.save_pretrained(temp_dir)
+        if model.config.model_type == "mistral3":
+            # Align with optimum-cli: HF repo nests image processor settings in processor_config.json only.
+            processor.image_processor.save_pretrained(temp_dir)
         model.save_pretrained(temp_dir)
 
     manager.execute(convert_to_temp)
@@ -727,8 +732,9 @@ parametrize_one_model_npu = _parametrize_npu_models(
 
 
 @pytest.fixture(scope="module")
-def ov_continuous_batching_pipe() -> ContinuousBatchingPipeline:
-    models_path = _get_ov_model(MODEL_IDS[0])
+def ov_continuous_batching_pipe(request: pytest.FixtureRequest) -> ContinuousBatchingPipeline:
+    model_id = getattr(request, "param", MODEL_IDS[0])
+    models_path = _get_ov_model(model_id)
     return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
 
 
@@ -2035,6 +2041,7 @@ else:
         ("optimum-intel-internal-testing/tiny-random-gemma4-31B", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-qwen3.5", "SDPA"),
         (MODEL_QWEN38_FLASH_NEXT, "SDPA"),
+        ("optimum-intel-internal-testing/tiny-random-mistral3", "PA"),
     ]
 
 

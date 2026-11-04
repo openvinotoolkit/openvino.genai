@@ -42,6 +42,7 @@
   },
   "overrides": {
     "serialize-javascript": "^7.0.3",
+    "tinypool": "^2.1.1",
     "uuid": "14.0.1"
   },
   "browserslist": {
