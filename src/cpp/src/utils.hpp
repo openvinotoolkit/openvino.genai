@@ -30,6 +30,9 @@ namespace genai {
 extern const std::string PA_BACKEND;
 extern const std::string SDPA_BACKEND;
 
+/// @brief Registers a stateless transform applied to the tokenizer's current and all future chat templates.
+void set_chat_template_patcher(Tokenizer& tokenizer, std::function<std::string(const std::string&)> patcher);
+
 }  // namespace genai
 }  // namespace ov
 
