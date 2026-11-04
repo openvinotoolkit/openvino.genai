@@ -38,11 +38,7 @@ describe("Text2SpeechPipeline methods", () => {
       undefined,
       "speakerEmbedding should be undefined by default",
     );
-    assert.strictEqual(
-      result.refCodecIds,
-      undefined,
-      "refCodecIds should be undefined by default",
-    );
+    assert.strictEqual(result.refCodecIds, undefined, "refCodecIds should be undefined by default");
   });
 
   it("generate(texts) handles batch of texts", async () => {
