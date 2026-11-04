@@ -10,6 +10,60 @@ list(APPEND SOURCE_FILES "${CMAKE_CURRENT_BINARY_DIR}/version.cpp")
 
 include(FetchContent)
 
+function(openvino_genai_add_llama_cpp)
+    # Keep llama.cpp and ggml in their own shared libraries; do not link them into GenAI.
+    set(BUILD_SHARED_LIBS ON)
+    set(LLAMA_BUILD_COMMON OFF)
+    set(LLAMA_BUILD_TESTS OFF)
+    set(LLAMA_BUILD_TOOLS OFF)
+    set(LLAMA_BUILD_EXAMPLES OFF)
+    set(LLAMA_BUILD_SERVER OFF)
+    set(LLAMA_BUILD_APP OFF)
+    set(LLAMA_OPENSSL OFF)
+    set(GGML_NATIVE OFF)
+    set(GGML_BACKEND_DL OFF)
+    set(GGML_CPU ON)
+    set(GGML_OPENVINO ON)
+    foreach(backend BLAS CANN CUDA ET HIP METAL MUSA OPENCL RPC SYCL VULKAN WEBGPU)
+        set(GGML_${backend} OFF)
+    endforeach()
+
+    set(FETCHCONTENT_UPDATES_DISCONNECTED_LLAMA_CPP OFF)
+    FetchContent_Declare(llama_cpp
+        GIT_REPOSITORY https://github.com/ggml-org/llama.cpp.git
+        GIT_TAG master
+        GIT_SHALLOW TRUE
+        GIT_PROGRESS TRUE)
+    FetchContent_MakeAvailable(llama_cpp)
+
+    foreach(target llama ggml ggml-base ggml-cpu ggml-openvino)
+        if(NOT TARGET ${target})
+            message(FATAL_ERROR "The fetched llama.cpp revision did not define the required ${target} target.")
+        endif()
+    endforeach()
+    set(LLAMA_CPP_SOURCE_DIR "${llama_cpp_SOURCE_DIR}" PARENT_SCOPE)
+endfunction()
+
+openvino_genai_add_llama_cpp()
+set(LLAMA_CPP_WHEEL_TARGETS llama ggml ggml-base ggml-cpu ggml-openvino)
+set(LLAMA_CPP_WHEEL_TARGETS "${LLAMA_CPP_WHEEL_TARGETS}" PARENT_SCOPE)
+set(LLAMA_CPP_SOURCE_DIR "${LLAMA_CPP_SOURCE_DIR}" PARENT_SCOPE)
+
+set(LLAMA_CPP_GRAPH_BRIDGE "${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/cgraph_to_ov.cpp")
+list(REMOVE_ITEM SOURCE_FILES "${LLAMA_CPP_GRAPH_BRIDGE}")
+target_sources(llama PRIVATE "${LLAMA_CPP_GRAPH_BRIDGE}")
+target_include_directories(llama PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${LLAMA_CPP_SOURCE_DIR}/src"
+    "${LLAMA_CPP_SOURCE_DIR}/ggml/src"
+    "${LLAMA_CPP_SOURCE_DIR}/ggml/src/ggml-openvino"
+    "${LLAMA_CPP_SOURCE_DIR}/ggml/src/ggml-openvino/openvino")
+set_property(TARGET llama PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+    "$<BUILD_INTERFACE:${LLAMA_CPP_SOURCE_DIR}/include>"
+    "$<INSTALL_INTERFACE:runtime/include>")
+target_link_libraries(llama PRIVATE ggml-openvino openvino::runtime)
+set_target_properties(ggml-openvino PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+
 option(ENABLE_MISAKI_CPP "Enable first-party misaki_cpp integration for Kokoro TTS" ON)
 
 set(OPENVINO_GENAI_HAS_MISAKI_CPP OFF)
@@ -276,6 +330,9 @@ set_target_properties(${TARGET_NAME_OBJ} PROPERTIES
 
 add_library(${TARGET_NAME} SHARED $<TARGET_OBJECTS:${TARGET_NAME_OBJ}>)
 add_library(openvino::genai ALIAS ${TARGET_NAME})
+add_dependencies(${TARGET_NAME} ${LLAMA_CPP_WHEEL_TARGETS})
+target_link_libraries(${TARGET_NAME_OBJ} PRIVATE llama)
+target_link_libraries(${TARGET_NAME} PRIVATE llama)
 
 if(WIN32)
   add_vs_version_resource(${TARGET_NAME})
@@ -361,6 +418,11 @@ endif()
 install(TARGETS ${TARGET_NAME} EXPORT OpenVINOGenAITargets
         LIBRARY DESTINATION ${LIBRARY_DESTINATION} COMPONENT core_genai
             NAMELINK_COMPONENT core_genai_dev
+        ARCHIVE DESTINATION ${ARCHIVE_DESTINATION} COMPONENT core_genai_dev
+        RUNTIME DESTINATION ${RUNTIME_DESTINATION} COMPONENT core_genai
+        INCLUDES DESTINATION runtime/include)
+install(TARGETS ${LLAMA_CPP_WHEEL_TARGETS} EXPORT OpenVINOGenAITargets
+        LIBRARY DESTINATION ${LIBRARY_DESTINATION} COMPONENT core_genai
         ARCHIVE DESTINATION ${ARCHIVE_DESTINATION} COMPONENT core_genai_dev
         RUNTIME DESTINATION ${RUNTIME_DESTINATION} COMPONENT core_genai
         INCLUDES DESTINATION runtime/include)
