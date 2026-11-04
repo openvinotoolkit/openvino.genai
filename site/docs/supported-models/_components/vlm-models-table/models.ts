@@ -167,6 +167,18 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'Mistral3ForConditionalGeneration',
+    models: [
+      {
+        name: 'Mistral3',
+        links: [
+          'https://huggingface.co/mistralai/Ministral-3-3B-Reasoning-2512',
+        ],
+        notesLink: '#mistral3-notes',
+      },
+    ],
+  },
+  {
     architecture: 'Phi3VForCausalLM',
     models: [
       {
