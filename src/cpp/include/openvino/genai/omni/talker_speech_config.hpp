@@ -88,7 +88,8 @@ struct OPENVINO_GENAI_EXPORTS OmniTalkerSpeechConfig {
     ///
     /// For LFM3-Omni, a frame is `stft_frame_stack * stft_hop_length` samples of the codec config (1920 for
     /// LFM3-Omni-2B). The ISTFT overlap at the end of each chunk is held back until the next chunk, and the
-    /// last chunk flushes it, so all chunks together give exactly one frame of samples per frame.
+    /// last chunk flushes it, so all chunks together give exactly one frame of samples per frame. After the
+    /// speech streamer returns STOP, the held-back samples are dropped.
     std::size_t audio_chunk_frames = 4;
 
     /// @brief Number of earlier codec frames the code2wav vocoder decodes together with each

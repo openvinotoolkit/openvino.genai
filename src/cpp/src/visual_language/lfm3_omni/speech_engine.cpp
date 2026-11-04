@@ -507,6 +507,7 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
     bool speaking = false;
     bool text_done = false;
     bool finished = false;
+    bool speech_streamer_stopped = false;
     while (!finished) {
         const bool interleaving = mode == Mode::INTERLEAVED;
         ov::Tensor next_embeds;
@@ -532,6 +533,7 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
                     const StreamingStatus status = stream_up_to(frames.size(), false);
                     if (status != StreamingStatus::RUNNING) {
                         result.status = status == StreamingStatus::STOP ? GenerationStatus::STOP : GenerationStatus::CANCEL;
+                        speech_streamer_stopped = true;
                         finished = true;
                     }
                 }
@@ -608,8 +610,9 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
     if (result.status == GenerationStatus::RUNNING) {
         result.status = GenerationStatus::FINISHED;
     }
-    // STOP keeps what was generated, so the held-back samples are flushed; CANCEL drops them.
-    if (result.status != GenerationStatus::CANCEL && !frames.empty()) {
+    // A speech streamer that returned STOP or CANCEL gets no further write(). CANCEL from the text streamer drops
+    // the held-back samples too; its STOP keeps what was generated, so they are flushed.
+    if (!speech_streamer_stopped && result.status != GenerationStatus::CANCEL && !frames.empty()) {
         // With fewer frames than audio_chunk_frames the flush is the only callback, so its status counts too.
         const StreamingStatus status = stream_up_to(frames.size(), true);
         if (status == StreamingStatus::STOP) {

@@ -416,11 +416,9 @@ def test_text_streamer_ends_speech_generation(
     assert result.speech_result.waveforms == []
 
 
-@pytest.mark.parametrize(
-    "status, expected_chunks", [(ov_genai.StreamingStatus.STOP, 2), (ov_genai.StreamingStatus.CANCEL, 1)]
-)
+@pytest.mark.parametrize("status", [ov_genai.StreamingStatus.STOP, ov_genai.StreamingStatus.CANCEL])
 def test_speech_streamer_ends_speech_generation(
-    omni_pipe: ov_genai.OmniPipeline, frame_samples: int, status: ov_genai.StreamingStatus, expected_chunks: int
+    omni_pipe: ov_genai.OmniPipeline, frame_samples: int, status: ov_genai.StreamingStatus
 ) -> None:
     chunks: list[np.ndarray] = []
 
@@ -434,14 +432,11 @@ def test_speech_streamer_ends_speech_generation(
         talker_speech_config=_speech_config(10, audio_chunk_frames=2),
         speech_streamer=on_chunk,
     )
-    # STOP keeps the two frames and flushes the held-back ISTFT overlap; CANCEL drops it.
-    assert len(chunks) == expected_chunks
+    # The streamer gets no write() after it ends the stream, so the held-back ISTFT overlap is dropped.
+    assert len(chunks) == 1
     waveform = _waveform(result)
-    np.testing.assert_array_equal(np.concatenate(chunks), waveform)
-    if status == ov_genai.StreamingStatus.STOP:
-        assert waveform.size == 2 * frame_samples
-    else:
-        assert waveform.size < 2 * frame_samples
+    np.testing.assert_array_equal(chunks[0], waveform)
+    assert waveform.size < 2 * frame_samples
 
 
 def test_seed_controls_speech(omni_pipe: ov_genai.OmniPipeline) -> None:
