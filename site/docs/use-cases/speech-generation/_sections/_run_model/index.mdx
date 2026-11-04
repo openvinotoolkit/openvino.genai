@@ -2,12 +2,16 @@ import CodeExampleCPP from './_code_example_cpp.mdx';
 import CodeExampleC from './_code_example_c.mdx';
 import CodeExamplePython from './_code_example_python.mdx';
 import CodeExampleJS from './_code_example_js.mdx';
+import CodeExampleQwen3BaseReusePython from './_code_example_qwen3_base_reuse_python.mdx';
+import CodeExampleQwen3BaseReuseCpp from './_code_example_qwen3_base_reuse_cpp.mdx';
+import CodeExampleQwen3BaseReuseC from './_code_example_qwen3_base_reuse_c.mdx';
+import CodeExampleQwen3BaseReuseJS from './_code_example_qwen3_base_reuse_js.mdx';
 
 
 ## Run Model Using OpenVINO GenAI
 
 The [`Text2SpeechPipeline`](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.Text2SpeechPipeline.html) is the main object for generating speech from text.
-It automatically loads the TTS model and vocoder from the converted model directory.
+It automatically loads model assets required by the selected architecture (for example, SpeechT5 loads a vocoder).
 The output sample rate is model-dependent and is returned in the generation result.
 
 <LanguageTabs>
@@ -60,10 +64,20 @@ Use CPU or GPU as devices without any other code change.
 ## Additional Usage Options
 
 :::tip
-Check out the [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/speech_generation/text2speech.py), [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/speech_generation/text2speech.cpp), [C](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/c/speech_generation/README.md), and [Node.js](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/js/speech_generation/text2speech.js) speech generation samples. The C sample writes a WAV file; the C example above writes raw float32 samples.
+Check out the [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/speech_generation/README.md), [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/speech_generation/README.md), [C](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/c/speech_generation/README.md), and [Node.js](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/js/speech_generation/README.md) speech generation samples. The C snippets here use sample helper utilities for audio I/O.
 :::
 
-### Use Speaker Embedding File
+### Model-family options at a glance
+
+| Model family | Typical controls | Notes |
+| --- | --- | --- |
+| SpeechT5 | `speaker_embedding` | Uses an external speaker embedding file for voice identity. |
+| Kokoro | `speaker_embedding`, `language`, `speed`, `phonemize_fallback_model_dir` | Language and speed are first-class controls; fallback phonemizer model is optional. |
+| Qwen3-TTS CustomVoice | `speaker`, optional `instruct` | Built-in speaker identities; `instruct` adjusts style/tone. |
+| Qwen3-TTS VoiceDesign | `instruct` | Creates a new voice from a natural-language description. |
+| Qwen3-TTS Base | `ref_audio`, optional `ref_text`, optional `ref_codec_ids` | Supports x-vector and ICL-style cloning workflows. |
+
+### Use speaker embedding (SpeechT5 example)
 
 To generate speech using the SpeechT5 model, you can specify a target voice by providing a speaker embedding file.
 
@@ -85,9 +99,12 @@ python create_speaker_embedding.py
         import numpy as np
         import soundfile as sf
 
+        model_path = "./speecht5_tts"
+        speaker_embedding_path = "speaker_embedding.bin"
+
         pipeline = openvino_genai.Text2SpeechPipeline(model_path, "CPU")
 
-        speaker_embedding = np.fromfile(args.speaker_embedding_file_path, dtype=np.float32).reshape(1, 512)
+        speaker_embedding = np.fromfile(speaker_embedding_path, dtype=np.float32).reshape(1, 512)
         speaker_embedding = ov.Tensor(speaker_embedding)
         result = pipeline.generate("Hello OpenVINO GenAI", speaker_embedding)
 
@@ -117,8 +134,35 @@ python create_speaker_embedding.py
         ```
     </TabItemCpp>
     <TabItemC>
-        ```bash
-        text2speech_c MODEL_DIR "Hello OpenVINO GenAI" SPEAKER_EMBEDDING.bin output_audio.wav --device CPU
+        ```c
+        #include "openvino/genai/c/text2speech_pipeline.h"
+
+        int main() {
+            ov_genai_text2speech_pipeline* pipe = NULL;
+            ov_genai_speech_generation_config* cfg = NULL;
+            ov_genai_text2speech_decoded_results* result = NULL;
+            ov_tensor_t* speaker_embedding = NULL;
+
+            ov_genai_text2speech_pipeline_create("MODEL_DIR", "CPU", 0, &pipe);
+            ov_genai_text2speech_pipeline_get_generation_config(pipe, &cfg);
+
+            // Read speaker embedding tensor from SPEAKER_EMBEDDING.bin using sample helper.
+            speaker_embedding = load_speaker_embedding("SPEAKER_EMBEDDING.bin", pipe);  // Sample helper from samples/c/speech_generation/text2speech.c
+            ov_genai_text2speech_pipeline_generate(
+                pipe,
+                "Hello OpenVINO GenAI",
+                speaker_embedding,
+                cfg,
+                &result);
+
+            // Save result->speeches[0] to WAV with sample helper from samples/c/speech_generation/text2speech.c.
+
+            ov_tensor_free(speaker_embedding);
+            ov_genai_text2speech_decoded_results_free(result);
+            ov_genai_speech_generation_config_free(cfg);
+            ov_genai_text2speech_pipeline_free(pipe);
+            return 0;
+        }
         ```
     </TabItemC>
     <TabItemJS>
@@ -136,12 +180,44 @@ python create_speaker_embedding.py
             { speakerEmbedding },
         );
 
-        const sampleRate = Number(result.outputSampleRate ?? result.output_sample_rate ?? 16000);
+        const sampleRate = Number(result.outputSampleRate);
         const wavData = encode([result.speeches[0].data], { sampleRate });
         await writeFile("output_audio.wav", wavData);
         ```
     </TabItemJS>
 </LanguageTabs>
+
+### Kokoro and Qwen3-TTS workflows
+
+- For Kokoro and SpeechT5 command examples in all languages, see:
+    [samples/python/speech_generation/README.md](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/speech_generation/README.md),
+    [samples/cpp/speech_generation/README.md](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/speech_generation/README.md), and
+    [samples/c/speech_generation/README.md](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/c/speech_generation/README.md), and
+    [samples/js/speech_generation/README.md](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/js/speech_generation/README.md).
+- For Qwen3-TTS Base voice cloning, 24 kHz reference audio is required. Provide `ref_text` for ICL mode when higher style/identity fidelity is needed.
+- For repeated Qwen3 Base prompts, reuse saved speaker embedding and reference codec ids to avoid recomputing prompt extraction each run.
+
+### Qwen3-TTS Base prompt reuse pattern
+
+The first call below extracts speaker embedding and prompt codec ids from reference audio + transcript. The second call reuses
+those extracted artifacts directly, so you can skip reprocessing reference audio for each new prompt.
+
+<LanguageTabs>
+    <TabItemPython>
+        <CodeExampleQwen3BaseReusePython />
+    </TabItemPython>
+    <TabItemCpp>
+        <CodeExampleQwen3BaseReuseCpp />
+    </TabItemCpp>
+    <TabItemC>
+        <CodeExampleQwen3BaseReuseC />
+    </TabItemC>
+    <TabItemJS>
+        <CodeExampleQwen3BaseReuseJS />
+    </TabItemJS>
+</LanguageTabs>
+
+This pattern is especially useful in servers or batch jobs where many prompts reuse the same voice identity.
 
 ### Performance Metrics
 
