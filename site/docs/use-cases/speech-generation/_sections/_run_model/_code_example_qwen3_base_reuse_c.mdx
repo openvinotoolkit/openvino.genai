@@ -8,7 +8,7 @@ import CodeBlock from '@theme/CodeBlock';
  * Helper I/O utilities are omitted for brevity.
  * Reuse the same helper logic from samples/c/speech_generation/qwen3_tts.c:
  * - load_wav_as_tensor("clone.wav", 24000.0f, &ref_audio)
- * - write_f32_bin/read_f32_bin for speaker embedding
+ * - write_f32_bin/load_speaker_embedding for speaker embedding
  * - write_ref_codec_ids/read_ref_codec_ids for codec ids
  */
 
@@ -48,7 +48,7 @@ int main() {
   write_ref_codec_ids("qwen_ref_code.bin", saved_ref_codec_ids);         /* Sample helper from qwen3_tts.c */
 
   /* 2) Reuse extracted artifacts for follow-up prompts. */
-  read_f32_bin("qwen_speaker_embedding.bin", &speaker_embedding);  /* Sample helper from qwen3_tts.c */
+  speaker_embedding = load_speaker_embedding("qwen_speaker_embedding.bin", pipe);  /* Sample helper from qwen3_tts.c */
   read_ref_codec_ids("qwen_ref_code.bin", &ref_codec_ids);         /* Sample helper from qwen3_tts.c */
   ov_genai_text2speech_pipeline_get_generation_config(pipe, &second_cfg);
   ov_genai_speech_generation_config_set_ref_codec_ids(second_cfg, ref_codec_ids);

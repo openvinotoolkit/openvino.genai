@@ -147,7 +147,7 @@ python create_speaker_embedding.py
             ov_genai_text2speech_pipeline_get_generation_config(pipe, &cfg);
 
             // Read speaker embedding tensor from SPEAKER_EMBEDDING.bin using sample helper.
-            speaker_embedding = load_speaker_embedding("SPEAKER_EMBEDDING.bin", pipe);  // Sample helper from samples/c/speech_generation/text2speech.c
+            speaker_embedding = load_embedding("SPEAKER_EMBEDDING.bin", pipe);  // Sample helper from samples/c/speech_generation/text2speech.c
             ov_genai_text2speech_pipeline_generate(
                 pipe,
                 "Hello OpenVINO GenAI",
