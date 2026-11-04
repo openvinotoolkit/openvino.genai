@@ -5,6 +5,7 @@
 
 #include <vector>
 #include <list>
+#include <string>
 
 #include "openvino/runtime/tensor.hpp"
 #include "continuous_batching/cache/i_cache_manager.hpp"
@@ -21,6 +22,25 @@ class KVCacheManager : public ICacheManager {
     size_t m_num_allocated_kv_blocks = 0, m_block_size_in_bytes = 0;
     ov::InferRequest m_request;
     ov::RemoteContext m_context;
+
+    // Paged caches addressed through the KV cache page table (the Qwen Sparse Attention indexer caches): allocated,
+    // grown and copied with the KV cache, block for block.
+    struct PagedCache {
+        std::string name;
+        ov::element::Type precision;
+        ov::PartialShape shape;
+        ov::Tensor tensor;
+    };
+    std::vector<PagedCache> m_paged_caches;
+
+    static bool is_paged_cache_input(const std::string& name) {
+        for (const char* prefix : {"index_key_cache.", "index_block_rope_cache.", "block_index_keys_cache."}) {
+            if (name.find(prefix) == 0) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     static ov::Shape set_kv_blocks(ov::PartialShape pshape, size_t num_kv_blocks) {
         pshape[0] = num_kv_blocks;
@@ -89,6 +109,15 @@ public:
                     m_value_precisions.push_back(cache_precision);
                     ++kv_input_index;
                     break;
+                } else if (is_paged_cache_input(name)) {
+                    pshape = input.get_partial_shape();
+                    size_t block_bytes = cache_precision.size();
+                    for (size_t axis = 1; axis < pshape.size(); ++axis) {
+                        block_bytes *= pshape[axis].get_length();
+                    }
+                    m_block_size_in_bytes += block_bytes;
+                    m_paged_caches.push_back({name, cache_precision, pshape, ov::Tensor()});
+                    break;
                 }
             }
         }
@@ -119,7 +148,7 @@ public:
     }
 
     size_t get_num_cache_tensors() const override {
-        return m_num_layers * 2;
+        return m_num_layers * 2 + m_paged_caches.size();
     }
 
     std::string get_device() const override {
@@ -251,6 +280,26 @@ public:
                     update_request_tensor(decoder_layer_id);
                 }
             }
+
+            for (auto& cache : m_paged_caches) {
+                const ov::Shape shape = set_kv_blocks(cache.shape, num_kv_blocks);
+                ov::Tensor tensor = m_context ? ov::Tensor(m_context.create_tensor(cache.precision, shape))
+                                              : ov::Tensor(cache.precision, shape);
+                if (cache.tensor) {
+                    // copy current cache data
+                    ov::Coordinate start(shape.size(), 0);
+                    ov::Coordinate end = cache.tensor.get_shape();
+                    if (m_context) {
+                        ov::RemoteTensor dst_roi(tensor, start, end);
+                        dst_roi.copy_from(cache.tensor);
+                    } else {
+                        ov::Tensor dst_roi(tensor, start, end);
+                        cache.tensor.copy_to(dst_roi);
+                    }
+                }
+                cache.tensor = tensor;
+                m_request.set_tensor(cache.name, cache.tensor);
+            }
         }
         catch (ov::Exception& e) {
             if (std::string(e.what()).find("bad allocation") != std::string::npos) {
@@ -330,6 +379,17 @@ public:
                         value_src_cache_roi.copy_to(value_dst_cache_roi);
                     }
                 }
+
+                for (auto& cache : m_paged_caches) {
+                    const ov::Shape shape = set_kv_blocks(cache.shape, m_num_allocated_kv_blocks);
+                    ov::Coordinate src_start(shape.size(), 0), src_end = shape;
+                    ov::Coordinate dst_start(shape.size(), 0), dst_end = shape;
+                    src_end[0] = (src_start[0] = src_block_id) + 1;
+                    dst_end[0] = (dst_start[0] = dst_block_id) + 1;
+                    ov::Tensor src_roi(cache.tensor, src_start, src_end);
+                    ov::Tensor dst_roi(cache.tensor, dst_start, dst_end);
+                    src_roi.copy_to(dst_roi);
+                }
             }
         }
     }
@@ -338,6 +398,9 @@ public:
         for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_layers; ++decoder_layer_id) {
             m_key_cache[decoder_layer_id] = ov::Tensor();
             m_value_cache[decoder_layer_id] = ov::Tensor();
+        }
+        for (auto& cache : m_paged_caches) {
+            cache.tensor = ov::Tensor();
         }
         m_num_allocated_kv_blocks = 0;
     }

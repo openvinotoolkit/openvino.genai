@@ -433,6 +433,10 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     std::optional<std::vector<bool>> m_visual_pos_masks;
     
     ov::Tensor m_per_layer_inputs;
+    // n-gram embeddings of the prompt [1, tokens, num_ple_layers, ple_embed_dim] and the n-gram history after it
+    // [1, ngram_size - 1] (Qwen4Exp)
+    ov::Tensor m_ngram_embeddings;
+    ov::Tensor m_ngram_history;
 
     std::vector<float> m_prompt_log_probs;
     GenerationStream::Ptr m_generation_stream;
@@ -539,6 +543,10 @@ public:
                             "per_layer_inputs must have shape [1, tokens, num_hidden_layers, hidden_size]");
                         m_per_layer_inputs = ov::Tensor(tensor.get_element_type(), shape);
                         tensor.copy_to(m_per_layer_inputs);
+                    } else if (input_name == "ngram_embeddings" || input_name == "ngram_history") {
+                        ov::Tensor& stored = input_name == "ngram_embeddings" ? m_ngram_embeddings : m_ngram_history;
+                        stored = ov::Tensor(tensor.get_element_type(), tensor.get_shape());
+                        tensor.copy_to(stored);
                     } else if (input_name == "token_type_ids") {
                         m_token_type_ids = std::vector<int64_t>(
                             tensor.data<const int64_t>(),
@@ -861,6 +869,16 @@ public:
     const ov::Tensor& get_per_layer_inputs() const {
         OPENVINO_ASSERT(m_sequence_group_type == ov::genai::SequenceGroupType::EMBEDDINGS);
         return m_per_layer_inputs;
+    }
+
+    const ov::Tensor& get_ngram_embeddings() const {
+        OPENVINO_ASSERT(m_sequence_group_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        return m_ngram_embeddings;
+    }
+
+    const ov::Tensor& get_ngram_history() const {
+        OPENVINO_ASSERT(m_sequence_group_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        return m_ngram_history;
     }
 
     size_t get_hidden_size() const {

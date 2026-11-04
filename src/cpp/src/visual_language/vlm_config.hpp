@@ -28,6 +28,7 @@ enum class VLMModelType {
     QWEN3_VL,
     QWEN3_5,
     QWEN3_5_MOE,
+    QWEN4_EXP,
     GEMMA3,
     GEMMA3N,
     GEMMA4,

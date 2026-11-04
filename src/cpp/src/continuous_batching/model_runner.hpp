@@ -278,6 +278,98 @@ struct PerLayerInputsContext {
 };
 
 /**
+ * @brief Fills the n-gram embeddings input of Qwen4Exp: the prompt tokens take the embeddings computed with the prompt,
+ * the generated tokens compute theirs from the previous ngram_size - 1 tokens of their sequence (the n-gram history
+ * after the prompt, then the generated tokens).
+ */
+struct NGramEmbeddingsContext {
+    size_t num_layers = 0;
+    size_t embed_dim = 0;
+    size_t per_token_size = 0; // num_layers * embed_dim
+
+    std::function<ov::Tensor(const ov::Tensor& input_ids, const ov::Tensor& ngram_history)> embeds_callback;
+
+    size_t filled_tokens_offset = 0;
+    bool has_ngram_embeddings = false;
+
+    void init(
+        const ov::Tensor& prompt_ngram_embeddings,
+        const std::function<ov::Tensor(const ov::Tensor&, const ov::Tensor&)>& ngram_embeddings_callback
+    ) {
+        if (!prompt_ngram_embeddings) {
+            return;
+        }
+
+        OPENVINO_ASSERT(ngram_embeddings_callback,
+            "ngram embeddings callback is not set while ngram_embeddings are provided");
+        OPENVINO_ASSERT(prompt_ngram_embeddings.get_element_type() == ov::element::f32,
+            "ngram_embeddings must have element type f32");
+        const auto& shape = prompt_ngram_embeddings.get_shape();
+        OPENVINO_ASSERT(shape.size() == 4 && shape[0] == 1,
+            "ngram_embeddings must have shape [1, tokens, num_ple_layers, ple_embed_dim]");
+
+        num_layers = shape.at(2);
+        embed_dim = shape.at(3);
+        per_token_size = num_layers * embed_dim;
+        embeds_callback = ngram_embeddings_callback;
+        has_ngram_embeddings = true;
+    }
+
+    void fill_ngram_embeddings(
+        ov::Tensor& ngram_embeddings,
+        const SequenceGroup::CPtr& sequence_group,
+        Sequence::CPtr sequence
+    ) {
+        const size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
+        const size_t num_processed_tokens = sequence_group->get_num_processed_tokens();
+        const size_t prompt_len = sequence_group->get_prompt_len();
+
+        float* dst = ngram_embeddings.data<float>() + filled_tokens_offset * per_token_size;
+        const size_t bytes_to_copy = num_scheduled_tokens * per_token_size * sizeof(float);
+
+        // The prompt and callback embeddings are [1, tokens, num_ple_layers, ple_embed_dim], the PA model takes
+        // [total_num_tokens, 1, num_ple_layers, ple_embed_dim].
+        if (num_processed_tokens < prompt_len) {
+            const auto& prompt_ngram_embeddings = sequence_group->get_ngram_embeddings();
+            OPENVINO_ASSERT(prompt_ngram_embeddings, "ngram_embeddings not stored for sequence group in prompt phase");
+            OPENVINO_ASSERT(prompt_ngram_embeddings.get_size() >= (num_processed_tokens + num_scheduled_tokens) * per_token_size,
+                "stored ngram_embeddings is smaller than required scheduled window");
+            const float* src = prompt_ngram_embeddings.data<const float>() + num_processed_tokens * per_token_size;
+            std::memcpy(dst, src, bytes_to_copy);
+        } else {
+            const auto& prompt_ngram_history = sequence_group->get_ngram_history();
+            OPENVINO_ASSERT(prompt_ngram_history && prompt_ngram_history.get_element_type() == ov::element::i64,
+                "ngram_history not stored for sequence group in generation phase");
+            const auto& generated_ids = sequence->get_generated_ids();
+            const size_t first = num_processed_tokens - prompt_len;  // index of the first scheduled generated token
+            const size_t context_length = prompt_ngram_history.get_size();
+            const int64_t* prompt_history = prompt_ngram_history.data<const int64_t>();
+
+            ov::Tensor ngram_history(ov::element::i64, {1, context_length});
+            int64_t* history = ngram_history.data<int64_t>();
+            for (size_t i = 0; i < context_length; ++i) {
+                // the token at index first - context_length + i among [prompt history, generated tokens]
+                const size_t position = first + i;
+                history[i] = position < context_length ? prompt_history[position]
+                                                       : generated_ids[position - context_length];
+            }
+            ov::Tensor input_ids(ov::element::i64, {1, num_scheduled_tokens});
+            int64_t* input_ids_data = input_ids.data<int64_t>();
+            for (size_t i = 0; i < num_scheduled_tokens; ++i) {
+                input_ids_data[i] = generated_ids[first + i];
+            }
+            const ov::Tensor embeds = embeds_callback(input_ids, ngram_history);
+            OPENVINO_ASSERT(embeds.get_element_type() == ov::element::f32 &&
+                            embeds.get_size() >= num_scheduled_tokens * per_token_size,
+                "ngram embeddings callback output does not match the scheduled window");
+            std::memcpy(dst, embeds.data<const float>(), bytes_to_copy);
+        }
+
+        filled_tokens_offset += num_scheduled_tokens;
+    }
+};
+
+/**
  * @brief Runs the LLM infer request, parsing the continuous batching scheduler output into proper inputs in terms of OV API (e.g. token input IDs,
  * KV cache block indices etc.) and returning the logit scores for the next token to be generated for each of the currently scheduled sequences.
  */
@@ -334,6 +426,7 @@ class ModelRunner {
     ov::Tensor m_cached_deepstack_visual_embeds;
     ov::Tensor m_cached_visual_pos_masks;
     ov::Tensor m_cached_per_layer_inputs;
+    ov::Tensor m_cached_ngram_embeddings;
 public:
     /**
      * Constructs the ModelRunner.
@@ -401,6 +494,20 @@ public:
                 m_has_hidden_states_output = true;
             } else if (name == "intermediate_hidden_states") {
                 m_has_intermediate_hidden_states_output = true;
+            } else if (name == "next_hidden_states") {
+                m_has_next_hidden_states_output = true;
+            }
+        }
+
+        // The hidden state input may be wider than the token embeddings (Qwen4Exp MTP: hyper-connection streams).
+        // M-RoPE position_ids are [N, total_num_tokens] after the PA conversion.
+        for (const auto& input : compiled_model.inputs()) {
+            const auto& names = input.get_names();
+            const auto& shape = input.get_partial_shape();
+            if (names.count("hidden_states") && shape.rank().is_static() && shape[shape.size() - 1].is_static()) {
+                m_hidden_state_input_size = shape[shape.size() - 1].get_length();
+            } else if (names.count("position_ids") && shape.rank().is_static()) {
+                m_has_mrope_position_ids = shape.size() == 2;
             }
         }
     }
@@ -416,8 +523,9 @@ public:
     void enable_hidden_state_import(bool on)   { on ? m_hidden_state_flags |= HS_IMPORT   : m_hidden_state_flags &= ~HS_IMPORT; }
     void enable_hidden_state_internal(bool on) { on ? m_hidden_state_flags |= HS_INTERNAL : m_hidden_state_flags &= ~HS_INTERNAL; }
 
-    // MTP draft uses rank-1 sequential positions instead of VLM M-RoPE positions.
-    void enable_mtp_draft_positions(bool on) { m_mtp_draft_positions = on; }
+    // MTP draft uses rank-1 sequential positions instead of VLM M-RoPE positions,
+    // unless the draft model itself takes M-RoPE positions (Qwen4Exp).
+    void enable_mtp_draft_positions(bool on) { m_mtp_draft_positions = on && !m_has_mrope_position_ids; }
 
     void set_inputs_embedder(const std::shared_ptr<InputsEmbedder>& inputs_embedder) {
         m_inputs_embedder = inputs_embedder;
@@ -484,6 +592,7 @@ public:
 
         DeepstackContext deepstack_context;
         PerLayerInputsContext per_layer_inputs_context;
+        NGramEmbeddingsContext ngram_embeddings_context;
 
         OPENVINO_ASSERT(sequence_groups.size() > 0);
         auto sequence_group_type = sequence_groups[0]->get_sequence_group_type();
@@ -496,6 +605,10 @@ public:
             per_layer_inputs_context.init(
                 sequence_groups[first_sequence_groups_id]->get_per_layer_inputs(),
                 m_inputs_embedder->get_per_layer_embeddings_callback()
+            );
+            ngram_embeddings_context.init(
+                sequence_groups[first_sequence_groups_id]->get_ngram_embeddings(),
+                m_inputs_embedder->get_stateless_ngram_embeddings_callback()
             );
         }
 
@@ -534,7 +647,12 @@ public:
         ov::Tensor score_aggregation_window = _get_or_resize_tensor(m_cached_score_aggregation_window, "score_aggregation_window",
             {batch_size_in_sequences}, ov::element::i32);
 
-        ov::Tensor hidden_state_input = _prepare_hidden_state_input(total_num_tokens, hidden_size);
+        size_t hidden_state_size = m_has_next_hidden_states_output && m_hidden_state_input_size ? m_hidden_state_input_size
+                                                                                                : hidden_size;
+        ov::Tensor hidden_state_input = _prepare_hidden_state_input(total_num_tokens, hidden_state_size);
+        if (hidden_size == 0) {
+            hidden_size = hidden_state_size;
+        }
         float* hidden_state_data = nullptr;
         if (hidden_state_input) {
             hidden_state_data = hidden_state_input.data<float>();
@@ -555,6 +673,7 @@ public:
         bool *visual_pos_masks_data = nullptr;
 
         ov::Tensor per_layer_inputs;
+        ov::Tensor ngram_embeddings;
 
         ov::Tensor position_ids;
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
@@ -597,6 +716,13 @@ public:
                 // PA model expects [total_num_tokens, 1, num_hidden_layers, hidden_size] input shape
                 per_layer_inputs = _get_or_resize_tensor(m_cached_per_layer_inputs, "per_layer_inputs",
                     {total_num_tokens, 1, per_layer_inputs_context.num_hidden_layers, per_layer_inputs_context.hidden_size},
+                    ov::element::f32);
+            }
+
+            if (ngram_embeddings_context.has_ngram_embeddings) {
+                // PA model expects [total_num_tokens, 1, num_ple_layers, ple_embed_dim] input shape
+                ngram_embeddings = _get_or_resize_tensor(m_cached_ngram_embeddings, "ngram_embeddings",
+                    {total_num_tokens, 1, ngram_embeddings_context.num_layers, ngram_embeddings_context.embed_dim},
                     ov::element::f32);
             }
         } else if (sequence_group_type == SequenceGroupType::TOKENS) {
@@ -683,6 +809,10 @@ public:
                     if (per_layer_inputs_context.has_per_layer_inputs) {
                         per_layer_inputs_context.fill_per_layer_inputs(per_layer_inputs, sequence_group, sequence);
                     }
+
+                    if (ngram_embeddings_context.has_ngram_embeddings) {
+                        ngram_embeddings_context.fill_ngram_embeddings(ngram_embeddings, sequence_group, sequence);
+                    }
                 }
 
                 if (_is_hs_export()) {
@@ -703,12 +833,12 @@ public:
                     size_t stored_seq_len = stored_shape[0];
                     size_t stored_hidden_size = stored_shape[stored_shape.size() - 1];
 
-                    OPENVINO_ASSERT(stored_hidden_size == hidden_size,
+                    OPENVINO_ASSERT(stored_hidden_size == hidden_state_size,
                                     "Hidden-state import: hidden size mismatch. request_id=",
                                     sequence_group->get_request_id(),
                                     ", grouped_id=", sequence->get_grouped_id(),
                                     ", stored_hidden_size=", stored_hidden_size,
-                                    ", expected_hidden_size=", hidden_size);
+                                    ", expected_hidden_size=", hidden_state_size);
                     OPENVINO_ASSERT(stored_seq_len == num_scheduled_tokens,
                                     "Hidden-state import: seq len mismatch. request_id=",
                                     sequence_group->get_request_id(),
@@ -723,19 +853,19 @@ public:
                     if (hidden_state_data) {
                         OPENVINO_ASSERT(num_scheduled_tokens == 1,
                                         "Unexpected num_scheduled_tokens in speculative hidden-state drafting stage.");
-                        std::memset(hidden_state_data + current_token_idx * hidden_size,
+                        std::memset(hidden_state_data + current_token_idx * hidden_state_size,
                                     0,
-                                    num_scheduled_tokens * hidden_size * sizeof(float));
+                                    num_scheduled_tokens * hidden_state_size * sizeof(float));
                         auto hidden_state = running_sequences[seq_idx]->get_hidden_state();
                         if (hidden_state && hidden_state.get_size() > 0) {
                             auto shape = hidden_state.get_shape();
-                            if (shape.size() >= 2 && shape[shape.size() - 1] == hidden_size) {
+                            if (shape.size() >= 2 && shape[shape.size() - 1] == hidden_state_size) {
                                 size_t seq_len = shape[0];
                                 size_t copy_length = std::min(seq_len, num_scheduled_tokens);
 
                                 size_t src_start_idx = seq_len >= copy_length ? seq_len - copy_length : 0;
-                                auto target_shape = ov::Shape{num_scheduled_tokens, 1, hidden_size};
-                                ov::Tensor target_base(ov::element::f32, target_shape, hidden_state_data + current_token_idx * hidden_size);
+                                auto target_shape = ov::Shape{num_scheduled_tokens, 1, hidden_state_size};
+                                ov::Tensor target_base(ov::element::f32, target_shape, hidden_state_data + current_token_idx * hidden_state_size);
                                 _copy_roi_between_tensors(hidden_state, src_start_idx, copy_length, target_base, 0);
                             }
                         }
@@ -908,6 +1038,10 @@ public:
             if (per_layer_inputs_context.has_per_layer_inputs && !m_cached_per_layer_inputs) {
                 m_request.set_tensor("per_layer_inputs", per_layer_inputs);
             }
+
+            if (ngram_embeddings_context.has_ngram_embeddings && !m_cached_ngram_embeddings) {
+                m_request.set_tensor("ngram_embeddings", ngram_embeddings);
+            }
         }
         if (hidden_state_input && hidden_state_input.get_size() > 0) {
             m_request.set_tensor("hidden_states", hidden_state_input);
@@ -992,9 +1126,11 @@ public:
             // Use "hidden_states" output only when the model also exports "intermediate_hidden_states"
             // (Qwen3-Omni pattern). Otherwise prefer "last_hidden_state" to preserve existing behavior
             // for speculative decoding and other models.
+            // A model with "next_hidden_states" (Qwen4Exp MTP draft) feeds them to its next draft step instead.
             m_hidden_states = (m_has_hidden_states_output && m_has_intermediate_hidden_states_output)
                 ? m_request.get_tensor("hidden_states")
-                : m_request.get_tensor("last_hidden_state");
+                : m_has_next_hidden_states_output ? m_request.get_tensor("next_hidden_states")
+                                                  : m_request.get_tensor("last_hidden_state");
 
             // Capture intermediate hidden states if available (Qwen3-Omni talker support)
             if (m_has_intermediate_hidden_states_output) {
@@ -1116,6 +1252,12 @@ private:
     bool m_has_hidden_states_output = false;
     // Whether model has intermediate_hidden_states output (e.g., Qwen3-Omni)
     bool m_has_intermediate_hidden_states_output = false;
+    // Whether model has next_hidden_states output (Qwen4Exp MTP draft)
+    bool m_has_next_hidden_states_output = false;
+    // Width of the hidden_states input, used instead of the token embeddings width with next_hidden_states
+    size_t m_hidden_state_input_size = 0;
+    // Whether position_ids input takes M-RoPE positions [N, total_num_tokens]
+    bool m_has_mrope_position_ids = false;
     // Whether model has the Eagle3 "qq_bias_begins" input (tree-decoding query-to-query bias).
     // Guards _set_query_to_query_tensors so the HS_EXPORT flag, which Qwen3-Omni also reuses to
     // collect thinker hidden states, does not trigger an Eagle3-only tensor bind on Omni models.
