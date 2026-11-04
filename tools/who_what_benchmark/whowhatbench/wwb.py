@@ -677,6 +677,8 @@ def load_prompts(args):
             videos = [None] * len(prompts)
 
         if args.model_type in ("text-to-video", "image-to-video"):
+            if "negative_prompt" in df.columns:
+                df["negative_prompt"] = df["negative_prompt"].fillna("")
             data = df.to_dict(orient="list")
             data["prompt"] = data.pop("prompts")
             if "images" in df.columns:

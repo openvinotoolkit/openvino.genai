@@ -69,6 +69,32 @@ def _assert_timestep_conditioned_decode(
     assert not np.array_equal(no_noise, with_noise)
 
 
+@pytest.mark.parametrize("image_conditioned", [False, True], ids=["text-to-video", "image-to-video"])
+def test_pipeline_decode_timestep_changes_output_without_noise(conditioned_video_generation_model, image_conditioned):
+    pipeline_class = ov_genai.Image2VideoPipeline if image_conditioned else ov_genai.Text2VideoPipeline
+    pipe = pipeline_class(conditioned_video_generation_model, "CPU")
+    generation_args = ("test prompt",)
+    if image_conditioned:
+        image = ov.Tensor(np.zeros((1, 32, 32, 3), dtype=np.uint8))
+        generation_args = (image, *generation_args)
+
+    def generate(decode_timestep):
+        result = pipe.generate(
+            *generation_args,
+            **GEN_KWARGS,
+            decode_timestep=decode_timestep,
+            decode_noise_scale=0.0,
+            generator=ov_genai.CppStdGenerator(42),
+        )
+        return np.array(result.video.data, copy=True)
+
+    zero_timestep = generate(0.0)
+    conditioned_timestep = generate(0.5)
+    np.testing.assert_array_equal(conditioned_timestep, generate(0.5))
+    assert zero_timestep.shape == conditioned_timestep.shape
+    assert not np.array_equal(zero_timestep, conditioned_timestep)
+
+
 def _conditioned_decoder_video_shape(model_path, batch_size):
     model_path = Path(model_path)
     vae_config = ov_genai.AutoencoderKLLTXVideo(str(model_path / "vae_decoder")).get_config()
