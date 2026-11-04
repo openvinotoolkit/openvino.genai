@@ -122,7 +122,9 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
     results_averaged = {}
     for key in keys_to_average:
         values = []
-        for entry in result[1:]:
+        for entry in result:
+            if entry["iteration"] == 0:
+                continue
             value = entry.get(key, "")
             if value != "" and value is not None:
                 values.append(value)
