@@ -57,11 +57,12 @@ setup(
         ],
         "llm-test-openvino": [
             "torchaudio==2.11.0",
-            "transformers[sentencepiece]==5.0.0",
-            "sentence_transformers==5.3.0",
-            "huggingface-hub==1.22.0",
+            "transformers[sentencepiece]==5.5.4",
+            "sentence_transformers==5.6.1",
+            # Optimum Intel 2.2.0 requires huggingface-hub<1.22.
+            "huggingface-hub==1.21.0",
             "tqdm==4.70.0",
-            "optimum-intel[nncf,tests]==2.0.0",
+            "optimum-intel[nncf]==2.2.0",
         ],
         "kokoro": [
             "spacy==3.8.16",
