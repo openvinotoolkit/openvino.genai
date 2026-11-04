@@ -26,13 +26,18 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
                                                  const std::string& device,
                                                  const ov::AnyMap& properties,
                                                  const ov::PartialShape& lhs_shape,
-                                                 const bool decompose_cross_attention_spda)
-    : m_decompose_cross_attention_spda_ops(decompose_cross_attention_spda) {
+                                                 const bool decompose_cross_attention_sdpa)
+    : m_decompose_cross_attention_sdpa_ops(decompose_cross_attention_sdpa) {
     ov::Core core = utils::singleton_core();
 
     auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, std::as_const(properties));
 
     m_has_cache_position = utils::has_input(model, "cache_position");
+
+    if (m_decompose_cross_attention_sdpa_ops) {
+        ov::genai::decompose_scaled_dot_product_attention_for_whisper(model);
+        ov::genai::add_cross_attention_qk_scaled_scores_outputs_for_whisper(model);
+    }
 
     ov::CompiledModel compiled_model;
     if (device == "NPU") {
@@ -43,11 +48,6 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
         utils::KVDesc kv_desc;
         std::tie(compiled_model, kv_desc) = utils::compile_decoder_for_npu(model, properties, kv_pos, true);
     } else {
-        if (m_decompose_cross_attention_spda_ops) {
-            ov::genai::decompose_scaled_dot_product_attention_for_whisper(model);
-            ov::genai::add_cross_attention_qk_scaled_scores_outputs_for_whisper(model);
-        }
-
         utils::apply_slice_before_matmul_transformation(model);
 
         compiled_model = core.compile_model(model, device, properties);
@@ -114,7 +114,7 @@ ov::Tensor WhisperStatefullDecoder::create_host_tensor(const element::Type eleme
 
 std::vector<Tensor> WhisperStatefullDecoder::get_alignments_heads_qks(
     const std::vector<std::pair<size_t, size_t>>& alignment_heads) {
-    OPENVINO_ASSERT(m_decompose_cross_attention_spda_ops,
+    OPENVINO_ASSERT(m_decompose_cross_attention_sdpa_ops,
                     "Encoder attention heads are not decomposed. Cannot get encoder attention QKs.");
 
     return ov::genai::get_whisper_alignments_heads_qks(m_request, alignment_heads);

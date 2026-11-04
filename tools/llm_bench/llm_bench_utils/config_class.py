@@ -206,6 +206,7 @@ USE_CASES = {
                 "qwen3-5",
                 "videochat-flash-qwen",
                 "gemma4",
+                "mistral3",
             ]
         ),
         UseCaseVLM(["qwen3-omni"], ov_cls=OVModelForMultimodalLM),
@@ -301,6 +302,7 @@ USE_CASES = {
     "text_rerank": [UseCaseTextReranker(["qwen3", "bge", "bert", "albert", "roberta", "xlm-roberta"])],
     "text_to_speech": [
         UseCaseTextToSpeech(["speecht5", "kokoro"]),
+        UseCaseTextToSpeech(["qwen3-tts"], tokenizer_cls=AutoProcessor),
         UseCaseTextToSpeech(["qwen3-omni"], ov_cls=OVModelForMultimodalLM, tokenizer_cls=AutoProcessor),
     ],
 }
