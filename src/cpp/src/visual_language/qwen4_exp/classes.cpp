@@ -69,10 +69,11 @@ void InputsEmbedderQwen4_Exp::init_ngram_embeddings_model(
         "Qwen4Exp ngram_history input shape must match text_config.ngram_size - 1.");
     m_ngram_context_length = static_cast<size_t>(ngram_history_input_pshape[1].get_length());
 
+    // The exact 64-bit hash exists only in the CPU plugin, other plugins compute it wrong.
     auto compiled_model = utils::singleton_core().compile_model(
         model,
-        device,
-        utils::get_model_properties(device_config, "ngram_embeddings", device)
+        "CPU",
+        device == "CPU" ? utils::get_model_properties(device_config, "ngram_embeddings", device) : ov::AnyMap{}
     );
 
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM ngram embeddings model");
