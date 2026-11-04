@@ -470,7 +470,7 @@ ov::genai::GenerationConfig get_beam_search_config();
 ov::genai::GenerationConfig get_greedy_config();
 ov::genai::GenerationConfig get_multinomial_config();
 
-std::string patch_chat_template(const std::string& chat_template);
+std::string patch_chat_template_multiline_strings(const std::string& chat_template);
 
 }  // namespace utils
 }  // namespace genai

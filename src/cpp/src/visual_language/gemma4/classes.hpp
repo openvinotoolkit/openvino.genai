@@ -141,6 +141,7 @@ private:
     std::once_flag m_vision_token_ids_once_flag;
 
     void encode_vision_token_ids();
+    void patch_chat_template();
 
 };
 

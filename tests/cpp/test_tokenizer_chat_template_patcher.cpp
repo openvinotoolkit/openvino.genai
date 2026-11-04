@@ -71,32 +71,12 @@ TEST(TokenizerChatTemplatePatcher, ApplyChatTemplateUsesPatchedTemplate) {
     EXPECT_EQ(impl.get_chat_template(), "unused {{ messages[0]['content'] }}");
 }
 
-TEST(TokenizerChatTemplatePatcher, ClearingModelPatcherKeepsCommonPreparation) {
+TEST(TokenizerChatTemplatePatcher, ClearingModelPatcherLeavesTemplateUnchanged) {
     TokenizerImpl impl;
-    impl.set_chat_template_patcher(append_marker);
+    impl.set_chat_template_patcher(patch_raw);
     impl.set_chat_template_patcher({});
-    impl.set_chat_template("{% if missing is undefined %}{{ messages[0]['content'] }}{% endif %}");
-    const ChatHistory history({{{"role", "user"}, {"content", "hi"}}});
 
-    EXPECT_EQ(impl.apply_chat_template(history, false, {}, std::nullopt, std::nullopt, {}), "hi");
-}
-
-TEST(TokenizerChatTemplatePatcher, CommonPreparationAndModelPatchWorkTogether) {
-    const std::string chat_template =
-        "{% if missing is undefined %}[{{ messages[0]['content'] | trim }}]{{ 'first'\n\"second\" }}{% endif %}";
-    const ChatHistory history({{{"role", "user"}, {"content", "  hi  "}}});
-    TokenizerImpl impl;
-    impl.set_chat_template(chat_template);
-    impl.set_chat_template_patcher([](const std::string& text) {
-        return replace_all(text, " | trim", "");
-    });
-
-    EXPECT_EQ(impl.get_original_chat_template(), chat_template);
-    EXPECT_EQ(impl.apply_chat_template(history, false, {}, std::nullopt, std::nullopt, {}), "[  hi  ]firstsecond");
-
-    const std::string stored_template = impl.get_chat_template();
-    EXPECT_EQ(impl.apply_chat_template(history, false, "override:" + chat_template, std::nullopt, std::nullopt, {}),
-              "override:[  hi  ]firstsecond");
-    EXPECT_EQ(impl.get_chat_template(), stored_template);
-    EXPECT_EQ(impl.get_original_chat_template(), chat_template);
+    impl.set_chat_template("RAW");
+    EXPECT_EQ(impl.get_original_chat_template(), "RAW");
+    EXPECT_EQ(impl.get_chat_template(), "RAW");
 }

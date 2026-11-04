@@ -4,6 +4,8 @@
 #include "visual_language/qwen2vl/classes.hpp"
 #include "visual_language/qwen3_5/classes.hpp"
 
+#include <regex>
+
 namespace ov::genai {
 
 InputsEmbedderQwen3_5::InputsEmbedderQwen3_5(
@@ -13,6 +15,7 @@ InputsEmbedderQwen3_5::InputsEmbedderQwen3_5(
     const std::string& device,
     const ov::AnyMap device_config
 ) : InputsEmbedderQwen3VL(vlm_config, model_dir, tokenizer, device, device_config) {
+    patch_chat_template();
 }
 
 InputsEmbedderQwen3_5::InputsEmbedderQwen3_5(
@@ -23,6 +26,15 @@ InputsEmbedderQwen3_5::InputsEmbedderQwen3_5(
     const std::string& device,
     const ov::AnyMap device_config
 ) : InputsEmbedderQwen3VL(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
+    patch_chat_template();
+}
+
+void InputsEmbedderQwen3_5::patch_chat_template() {
+    set_chat_template_patcher(m_tokenizer, [](const std::string& chat_template) {
+        // Qwen3.5 uses `enable_thinking is undefined`; Minja supports `not enable_thinking is defined`.
+        const std::regex var_is_undefined_pattern{R"((\b[\w\.]+)\s+is\s+undefined)"};
+        return std::regex_replace(chat_template, var_is_undefined_pattern, "not $1 is defined");
+    });
 }
 
 std::pair<ov::Tensor, int64_t> InputsEmbedderQwen3_5::create_position_ids(

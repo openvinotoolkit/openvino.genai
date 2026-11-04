@@ -98,7 +98,7 @@ private:
 
     mutable std::mutex m_chat_template_mutex;
     // Applied to every template; patchers must be stateless because the tokenizer may outlive the registrant.
-    std::function<std::string(const std::string&)> m_chat_template_patcher = utils::patch_chat_template;
+    std::function<std::string(const std::string&)> m_chat_template_patcher;
     mutable std::unordered_map<std::string, std::shared_ptr<const minja::chat_template>> m_minja_chat_template_cache;
 };
 

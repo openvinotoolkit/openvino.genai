@@ -869,43 +869,6 @@ def test_template_priorities(tmp_path, chat_templates):
     assert tokenizer.chat_template == chat_templates.reference
 
 
-COMPATIBILITY_TEMPLATES = [
-    ("{% if missing is undefined %}{{ messages[0].content }}{% endif %}", "hello"),
-    ("{% if messages[0]['content'] is not undefined %}{{ messages[0].content }}{% endif %}", "hello"),
-    ("{{ 'first'\n\"second\" | upper }}{{ messages[0].content }}", "FIRSTSECONDhello"),
-]
-
-
-@pytest.mark.parametrize(
-    "template_source", ["rt_template", "chat_template_json", "processor_config_json", "tokenizer_config_json"]
-)
-@pytest.mark.parametrize("template,expected", COMPATIBILITY_TEMPLATES)
-def test_chat_template_compatibility_from_metadata(tmp_path, template_source, template, expected):
-    templates = dataclasses.replace(ChatTemplates(template, None, None, None, None), **{template_source: template})
-    tokenizer = generate_tokenizer(tmp_path, templates)
-    history = ChatHistory([{"role": "user", "content": "hello"}])
-    assert tokenizer.get_original_chat_template() == template
-    assert tokenizer.apply_chat_template(history, add_generation_prompt=False) == expected
-    assert tokenizer.get_original_chat_template() == template
-
-
-@pytest.mark.parametrize("path", ["setter", "override"])
-@pytest.mark.parametrize("template,expected", COMPATIBILITY_TEMPLATES)
-def test_chat_template_compatibility_from_public_api(tmp_path, path, template, expected):
-    original = "{{ messages[0].content }}"
-    tokenizer = generate_tokenizer(tmp_path, ChatTemplates(original, original, None, None, None))
-    history = ChatHistory([{"role": "user", "content": "hello"}])
-    if path == "setter":
-        tokenizer.chat_template = template
-        rendered = tokenizer.apply_chat_template(history, add_generation_prompt=False)
-        assert tokenizer.get_original_chat_template() == template
-    else:
-        rendered = tokenizer.apply_chat_template(history, add_generation_prompt=False, chat_template=template)
-        assert tokenizer.get_original_chat_template() == original
-        assert tokenizer.chat_template == original
-    assert rendered == expected
-
-
 def test_chat_template_with_empty_output(tmp_path):
     tokenizer = generate_tokenizer(
         tmp_path, 

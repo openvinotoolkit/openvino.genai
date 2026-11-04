@@ -55,7 +55,7 @@ std::string remap_template(const std::string& chat_template) {
     return chat_template;
 }
 
-// Single place defining transform order: common remap first, then registered patchers.
+// Apply model-specific patching after common remapping.
 std::string remap_and_patch_template(const std::string& chat_template,
                                      const std::function<std::string(const std::string&)>& patcher) {
     std::string result = remap_template(chat_template);
@@ -913,14 +913,7 @@ void Tokenizer::TokenizerImpl::set_chat_template(const std::string& chat_templat
 
 void Tokenizer::TokenizerImpl::set_chat_template_patcher(std::function<std::string(const std::string&)> patcher) {
     std::lock_guard<std::mutex> lock(m_chat_template_mutex);
-    if (patcher) {
-        m_chat_template_patcher = [patcher = std::move(patcher)](const std::string& chat_template) {
-            std::string result = utils::patch_chat_template(chat_template);
-            return patcher(result);
-        };
-    } else {
-        m_chat_template_patcher = utils::patch_chat_template;
-    }
+    m_chat_template_patcher = std::move(patcher);
     m_chat_template = remap_and_patch_template(m_chat_template, m_chat_template_patcher);
     m_minja_chat_template_cache.clear();
 }

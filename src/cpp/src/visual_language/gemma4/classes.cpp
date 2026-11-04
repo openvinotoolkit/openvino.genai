@@ -333,6 +333,7 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
                                            const std::string& device,
                                            const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {
+    patch_chat_template();
     m_audio_encoder = AudioEncoderGemma4::create(model_dir, vlm_config.model_type, device, device_config);
 
     // per-layer embeddings model is optional, large MOE models don't have it
@@ -360,6 +361,7 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
                                            const std::string& device,
                                            const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
+    patch_chat_template();
     m_audio_encoder =
         AudioEncoderGemma4::create(models_map, vlm_config.model_type, config_dir_path, device, device_config);
 
@@ -768,6 +770,11 @@ void InputsEmbedderGemma4::encode_vision_token_ids() {
 
 const std::unordered_map<std::string, ov::Tensor>& InputsEmbedderGemma4::get_lm_extra_inputs() const {
     return m_lm_extra_inputs;
+}
+
+void InputsEmbedderGemma4::patch_chat_template() {
+    // Gemma4 uses adjacent multiline literals, e.g. "first "\n"second", which Minja does not support.
+    set_chat_template_patcher(m_tokenizer, utils::patch_chat_template_multiline_strings);
 }
 
 }  // namespace ov::genai
