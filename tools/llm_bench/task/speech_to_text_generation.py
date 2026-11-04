@@ -102,6 +102,8 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
             "detokenization_ms": perf_metrics.get_detokenization_duration().mean,
         }
         num_generated_tokens = perf_metrics.get_num_generated_tokens()
+        if use_case.model_type == "sense-voice":
+            num_generated_tokens += result_text.metadata[0]["rich_token_count"]
         result_text = result_text.texts[0]
     else:
         asr_genai_metrics = None

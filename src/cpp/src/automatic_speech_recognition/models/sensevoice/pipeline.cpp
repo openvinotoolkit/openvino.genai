@@ -233,6 +233,7 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
         results.languages.push_back(result_language);
 
         ov::AnyMap metadata_entry;
+        metadata_entry.emplace("rich_token_count", rich_prefix.rich_token_count);
         if (rich_prefix.emotion.has_value()) {
             metadata_entry.emplace("emotion", rich_prefix.emotion.value());
         }
