@@ -109,7 +109,6 @@ void update_npu_config_whisper(ov::AnyMap& config,
     update_config(config, {"NPUW_LLM", "YES"});
     update_config(config, {"NPUW_WHISPER", "YES"});
     rename_key(config, "WHISPER_EOS_TOKEN", "NPUW_WHISPER_EOS_TOKEN");
-    rename_key(config, "WHISPER_DECOMPOSE_SDPA", "NPUW_WHISPER_DECOMPOSE_SDPA");
 
     update_config(config, {"NPUW_LLM_BATCH_DIM", kv_pos.batch});
     update_config(config, {"NPUW_LLM_SEQ_LEN_DIM", kv_pos.seq_len});
@@ -799,7 +798,8 @@ void get_npu_text_rerank_config(ov::AnyMap& properties,
                                 const TextRerankPipeline::Config& text_rerank_config) {
     const auto max_length = static_cast<uint32_t>(text_rerank_config.max_length.value_or(1024u));
     kv_desc.max_prompt_len = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(max_length);
-    kv_desc.min_response_len = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u);
+    // A reranker only prefills, so it needs no response window.
+    kv_desc.min_response_len = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(0u);
     update_npu_config(properties, kv_pos, kv_desc);
     update_config(properties, {"NPUW_TEXT_RERANK", "YES"});
 }
@@ -1306,11 +1306,9 @@ ov::genai::GenerationConfig get_multinomial_config() {
     return multinomial_config;
 }
 
-void patch_chat_template_multiline_strings(Tokenizer& tokenizer) {
-    std::string chat_template = tokenizer.get_chat_template();
+std::string patch_chat_template_multiline_strings(const std::string& chat_template) {
     const std::regex multiline_string_concatenation{R"("[ \t]*\r?\n[ \t]*")"};
-    chat_template = std::regex_replace(chat_template, multiline_string_concatenation, "");
-    tokenizer.set_chat_template(chat_template);
+    return std::regex_replace(chat_template, multiline_string_concatenation, "");
 }
 
 }  // namespace utils

@@ -83,8 +83,8 @@ ov::genai::RawSpeechInput read_wav(const std::string& filename, uint32_t expecte
     const auto channels = wav.channels;
 
     // The header's frame count, not the buffer size: an in-memory buffer also holds the header.
-    std::vector<int16_t> pcm16(wav.totalPCMFrameCount * channels);
-    const uint64_t n = drwav_read_pcm_frames_s16(&wav, wav.totalPCMFrameCount, pcm16.data());
+    std::vector<float> interleaved_pcmf32(wav.totalPCMFrameCount * channels);
+    const uint64_t n = drwav_read_pcm_frames_f32(&wav, wav.totalPCMFrameCount, interleaved_pcmf32.data());
     drwav_uninit(&wav);
 
     // convert to mono, float
@@ -92,11 +92,11 @@ ov::genai::RawSpeechInput read_wav(const std::string& filename, uint32_t expecte
     pcmf32.resize(n);
     if (channels == 1) {
         for (uint64_t i = 0; i < n; i++) {
-            pcmf32[i] = float(pcm16[i]) / 32768.0f;
+            pcmf32[i] = interleaved_pcmf32[i];
         }
     } else {
         for (uint64_t i = 0; i < n; i++) {
-            pcmf32[i] = float(pcm16[2 * i] + pcm16[2 * i + 1]) / 65536.0f;
+            pcmf32[i] = (interleaved_pcmf32[2 * i] + interleaved_pcmf32[2 * i + 1]) * 0.5f;
         }
     }
 

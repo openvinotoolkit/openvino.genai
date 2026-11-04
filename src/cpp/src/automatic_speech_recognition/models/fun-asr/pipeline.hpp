@@ -6,7 +6,7 @@
 #include <string>
 #include <utility>
 
-#include "automatic_speech_recognition/models/qwen3-asr/decoder.hpp"
+#include "automatic_speech_recognition/models/qwen3-asr/encoder_decoder/decoder.hpp"
 #include "automatic_speech_recognition/pipeline_base.hpp"
 #include "encoder.hpp"
 #include "feature_extractor.hpp"
@@ -17,7 +17,7 @@ class FunASR : public ASRPipelineImplBase {
 public:
     FunASR(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties);
 
-    ASRDecodedResults generate(const AudioInputs& audio_inputs,
+    ASRDecodedResults generate(const AudiosView& audios,
                                const std::optional<ASRGenerationConfig>& generation_config,
                                const std::shared_ptr<StreamerBase> streamer = nullptr) override;
 

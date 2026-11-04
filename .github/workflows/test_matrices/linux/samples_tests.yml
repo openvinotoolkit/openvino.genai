@@ -68,9 +68,10 @@
 
 - name: Speech generation (Qwen3 TTS)
   extra_cmd: |
-    python -m pip install transformers==4.57.3
     python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu torch==2.11.0 torchaudio==2.11.0
-    python -m pip install qwen-tts
+    python -m pip install transformers==4.57.3 accelerate==1.12.0 librosa torchaudio soundfile sox onnxruntime einops
+    # TODO(CVS-198293): Drop manual dependencies and the commit pin when Qwen supports a Gradio release with Pillow 13.
+    python -m pip install --no-deps qwen-tts==0.1.1 "gradio @ git+https://github.com/gradio-app/gradio.git@d6972ed9d1185634cea083e0263839543d5ceb8d"
   marker: speech_generation and qwen3_tts
   cmd: tests/python_tests/samples
   runner: aks-linux-4-cores-16gb
@@ -79,7 +80,7 @@
 
 - name: Video generation
   # LTX-2.3 export support landed after the optimum-intel pin in samples/export-requirements.txt
-  extra_cmd: python -m pip install -U "optimum-intel @ https://github.com/huggingface/optimum-intel/archive/a741933e8f55cf90368c19ec4b7f0a4d98c26519.tar.gz"
+  extra_cmd: python -m pip install -U "optimum-intel @ https://github.com/huggingface/optimum-intel/archive/60f8356bdf4fbf6a0f4ee350caa59b256a83d0e8.tar.gz"
   marker: video_generation
   cmd: tests/python_tests/samples
   runner: aks-linux-4-cores-16gb
