@@ -3,11 +3,9 @@
 
 #pragma once
 
-#include <atomic>
 #include <napi.h>
 
-#include <thread>
-
+#include "include/base/pipeline_state.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 
 class VLMPipelineWrapper : public Napi::ObjectWrap<VLMPipelineWrapper> {
@@ -27,6 +25,5 @@ public:
 
 private:
     std::shared_ptr<ov::genai::VLMPipeline> pipe = nullptr;
-    std::shared_ptr<std::atomic<bool>> is_initializing = std::make_shared<std::atomic<bool>>(false);
-    std::shared_ptr<std::atomic<bool>> is_generating = std::make_shared<std::atomic<bool>>(false);
+    std::shared_ptr<PipelineState> state = std::make_shared<PipelineState>();
 };

@@ -3,149 +3,10 @@
 
 #include "include/llm_pipeline/llm_pipeline_wrapper.hpp"
 
-#include <future>
-
-#include "include/addon.hpp"
-#include "include/helper.hpp"
-#include "include/llm_pipeline/finish_chat_worker.hpp"
-#include "include/llm_pipeline/init_worker.hpp"
-#include "include/llm_pipeline/start_chat_worker.hpp"
-#include "include/perf_metrics.hpp"
+#include "include/base/inference_thread.hpp"
 #include "include/tokenizer.hpp"
 
-struct TsfnContext {
-    TsfnContext(GenerateInputs inputs, std::shared_ptr<std::atomic<bool>> is_generating)
-        : inputs(inputs),
-          is_generating(is_generating) {};
-    ~TsfnContext() {};
-
-    std::thread native_thread;
-    Napi::ThreadSafeFunction generate_tsfn;
-    std::optional<Napi::ThreadSafeFunction> streamer_tsfn;
-
-    GenerateInputs inputs;
-    std::shared_ptr<std::atomic<bool>> is_generating;
-    std::shared_ptr<ov::genai::LLMPipeline> pipe = nullptr;
-    std::shared_ptr<ov::AnyMap> generation_config = nullptr;
-    std::shared_ptr<ov::AnyMap> options = nullptr;
-};
-
-void performInferenceThread(TsfnContext* context) {
-    auto report_error = [context](const std::string& message) {
-        auto status = context->generate_tsfn.BlockingCall([message](Napi::Env env, Napi::Function jsCallback) {
-            try {
-                jsCallback.Call(
-                    {Napi::Error::New(env, "performInferenceThread error. " + message).Value(), env.Null()});
-            } catch (const std::exception& err) {
-                std::cerr << "The callback failed when attempting to return an error from performInferenceThread. "
-                             "Details:\n"
-                          << err.what() << std::endl;
-                std::cerr << "Original error message:\n" << message << std::endl;
-            }
-        });
-        if (status != napi_ok) {
-            std::cerr << "The BlockingCall failed with status " << status
-                      << " when trying to return an error from performInferenceThread." << std::endl;
-            std::cerr << "Original error message:\n" << message << std::endl;
-        }
-    };
-    auto finalize = [context]() {
-        context->generate_tsfn.Release();
-        if (context->streamer_tsfn.has_value()) {
-            context->streamer_tsfn->Release();
-        }
-    };
-    std::vector<std::string> streamer_exceptions;
-    ov::genai::DecodedResults result;
-    // Run inference
-    try {
-        ov::genai::GenerationConfig config;
-        config.update_generation_config(*context->generation_config);
-
-        ov::genai::StreamerVariant streamer = std::monostate();
-        if (context->streamer_tsfn.has_value()) {
-            streamer = [context, &streamer_exceptions](std::string word) {
-                std::promise<ov::genai::StreamingStatus> resultPromise;
-                napi_status status = context->streamer_tsfn->BlockingCall(
-                    [word, &resultPromise, &streamer_exceptions](Napi::Env env, Napi::Function jsCallback) {
-                        try {
-                            auto callback_result = jsCallback.Call({Napi::String::New(env, word)});
-                            if (callback_result.IsNumber()) {
-                                resultPromise.set_value(static_cast<ov::genai::StreamingStatus>(
-                                    callback_result.As<Napi::Number>().Int32Value()));
-                            } else {
-                                resultPromise.set_value(ov::genai::StreamingStatus::RUNNING);
-                            }
-                        } catch (const std::exception& err) {
-                            streamer_exceptions.push_back(err.what());
-                            resultPromise.set_value(ov::genai::StreamingStatus::CANCEL);
-                        }
-                    });
-
-                if (status != napi_ok) {
-                    streamer_exceptions.push_back("The streamer callback BlockingCall failed with the status: " +
-                                                  status);
-                    return ov::genai::StreamingStatus::CANCEL;
-                }
-
-                return resultPromise.get_future().get();
-            };
-        }
-
-        std::visit(overloaded{[context, config, streamer, &result](ov::genai::StringInputs& inputs) {
-                                  result = context->pipe->generate(inputs, config, streamer);
-                              },
-                              [context, config, streamer, &result](ov::genai::ChatHistory& inputs) {
-                                  result = context->pipe->generate(inputs, config, streamer);
-                              },
-                              [&](auto&) {
-                                  OPENVINO_THROW("Unsupported type for generate inputs.");
-                              }},
-                   context->inputs);
-
-    } catch (const std::exception& e) {
-        *context->is_generating = false;
-        report_error(e.what());
-        finalize();
-        return;
-    }
-    // should be called right after inference to release the flag asap
-    *context->is_generating = false;
-
-    // Call callback with result or error
-    try {
-        if (!streamer_exceptions.empty()) {
-            // If there were exceptions from the streamer, report them all as a single error and finish without result
-            std::string combined_error = "Streamer exceptions occurred:\n";
-            for (size_t i = 0; i < streamer_exceptions.size(); ++i) {
-                combined_error += "[" + std::to_string(i + 1) + "] " + streamer_exceptions[i] + "\n";
-            }
-            report_error(combined_error);
-        } else {
-            // If no exceptions from streamer, call the final callback with the result
-            napi_status status =
-                context->generate_tsfn.BlockingCall([result, &report_error](Napi::Env env, Napi::Function jsCallback) {
-                    try {
-                        jsCallback.Call({
-                            env.Null(),                     // Error should be null in normal case
-                            to_decoded_result(env, result)  // Return DecodedResults as the final result
-                        });
-                    } catch (const std::exception& err) {
-                        report_error("The final callback failed. Details:\n" + std::string(err.what()));
-                    }
-                });
-
-            if (status != napi_ok) {
-                report_error("The final BlockingCall failed with status " + status);
-            }
-        }
-    } catch (const std::exception& e) {
-        report_error(e.what());
-    }
-    finalize();
-}
-
-LLMPipelineWrapper::LLMPipelineWrapper(const Napi::CallbackInfo& info) : Napi::ObjectWrap<LLMPipelineWrapper>(info) {};
+LLMPipelineWrapper::LLMPipelineWrapper(const Napi::CallbackInfo& info) : Napi::ObjectWrap<LLMPipelineWrapper>(info) {}
 
 Napi::Function LLMPipelineWrapper::get_class(Napi::Env env) {
     return DefineClass(env,
@@ -160,139 +21,101 @@ Napi::Function LLMPipelineWrapper::get_class(Napi::Env env) {
 }
 
 Napi::Value LLMPipelineWrapper::init(const Napi::CallbackInfo& info) {
-    auto env = info.Env();
-    try {
-        OPENVINO_ASSERT(!this->pipe, "Pipeline is already initialized");
-        OPENVINO_ASSERT(!*this->is_initializing, "Pipeline is already initializing");
-        VALIDATE_ARGS_COUNT(info, 4, "init()");
-        auto model_path = js_to_cpp<std::filesystem::path>(env, info[0]);
-        auto device = js_to_cpp<std::string>(env, info[1]);
-        auto properties = js_to_cpp<ov::AnyMap>(env, info[2]);
-        OPENVINO_ASSERT(info[3].IsFunction(), "init callback is not a function");
-        auto callback = info[3].As<Napi::Function>();
-
-        auto* asyncWorker = new InitWorker(callback,
-                                           this->pipe,
-                                           this->is_initializing,
-                                           std::move(model_path),
-                                           std::move(device),
-                                           std::move(properties));
-        asyncWorker->Queue();
-    } catch (const std::exception& ex) {
-        Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
-    }
-    return env.Undefined();
+    return initialize_pipeline(info, pipe, state);
 }
 
 Napi::Value LLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
-    auto env = info.Env();
-    TsfnContext* context = nullptr;
-
-    try {
-        OPENVINO_ASSERT(this->pipe, "LLMPipeline is not initialized");
-        OPENVINO_ASSERT(!*this->is_generating, "Another generation is already in progress");
-        *this->is_generating = true;
+    return with_pipeline_errors(info, [&]() -> Napi::Value {
+        const auto env = info.Env();
+        OPENVINO_ASSERT(pipe, "LLMPipeline is not initialized");
+        auto operation = std::make_shared<PipelineOperationGuard>(
+            state, PipelineOperation::GENERATE, "Another generation is already in progress");
         VALIDATE_ARGS_COUNT(info, 4, "generate()");
         auto inputs = js_to_cpp<GenerateInputs>(env, info[0]);
         auto generation_config = js_to_cpp<ov::AnyMap>(env, info[1]);
         OPENVINO_ASSERT(info[2].IsFunction() || info[2].IsUndefined(), "streamer callback is not a function");
-        auto streamer = info[2];
         OPENVINO_ASSERT(info[3].IsFunction(), "generate callback is not a function");
-        auto callback = info[3].As<Napi::Function>();
-
-        context = new TsfnContext(inputs, this->is_generating);
-        context->pipe = this->pipe;
-        context->generation_config = std::make_shared<ov::AnyMap>(generation_config);
-        // Create a ThreadSafeFunction
-        context->generate_tsfn =
-            Napi::ThreadSafeFunction::New(env,
-                                          callback,
-                                          "LLM_generate_callback",  // Name
-                                          0,                        // Unlimited queue
-                                          1,                        // Only one thread will use this initially
-                                          [context](Napi::Env) {    // Finalizer used to clean threads up
-                                              context->native_thread.join();
-                                              delete context;
-                                          });
-        if (streamer.IsFunction()) {
-            context->streamer_tsfn = Napi::ThreadSafeFunction::New(env,
-                                                                   streamer.As<Napi::Function>(),
-                                                                   "LLM_generate_streamer",  // Name
-                                                                   0,                        // Unlimited queue
-                                                                   1);  // Only one thread will use this initially
+        auto context = std::make_unique<InferenceThreadContext>(std::move(operation), "llm_inference_thread");
+        if (info[2].IsFunction()) {
+            context->streamer = std::make_unique<ThreadSafeCallback>(env, info[2].As<Napi::Function>(), "LLM_streamer");
         }
-        context->native_thread = std::thread(performInferenceThread, context);
-    } catch (const std::exception& ex) {
-        *this->is_generating = false;
-        Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
-    }
-    return env.Undefined();
+        context->run_generate = [context = context.get(),
+                                 pipe = pipe,
+                                 inputs = std::move(inputs),
+                                 properties = std::move(generation_config)]() mutable -> JsResultProducer {
+            ov::genai::GenerationConfig config;
+            config.update_generation_config(properties);
+            ov::genai::StreamerVariant streamer = std::monostate();
+            if (context->streamer) {
+                streamer = make_text_streamer(context);
+            }
+            ov::genai::DecodedResults result;
+            std::visit(overloaded{[&](ov::genai::StringInputs& prompts) {
+                                      result = pipe->generate(prompts, config, streamer);
+                                  },
+                                  [&](const ov::genai::ChatHistory& history) {
+                                      result = pipe->generate(history, config, streamer);
+                                  }},
+                       inputs);
+            return [result = std::move(result)](Napi::Env env) -> Napi::Value {
+                return to_decoded_result(env, result);
+            };
+        };
+        start_inference(info, info[3].As<Napi::Function>(), std::move(context));
+        return env.Undefined();
+    });
 }
 
 Napi::Value LLMPipelineWrapper::start_chat(const Napi::CallbackInfo& info) {
-    auto env = info.Env();
-    try {
-        OPENVINO_ASSERT(this->pipe, "LLMPipeline is not initialized");
+    return with_pipeline_errors(info, [&]() -> Napi::Value {
+        const auto env = info.Env();
+        OPENVINO_ASSERT(pipe, "LLMPipeline is not initialized");
+        auto operation =
+            std::make_shared<PipelineOperationGuard>(state, PipelineOperation::ACCESS, "Pipeline is busy");
         VALIDATE_ARGS_COUNT(info, 2, "startChat()");
         auto system_message = js_to_cpp<std::string>(env, info[0]);
         OPENVINO_ASSERT(info[1].IsFunction(), "startChat callback is not a function");
-        auto callback = info[1].As<Napi::Function>();
-
-        auto* asyncWorker = new StartChatWorker(callback, this->pipe, system_message);
-        asyncWorker->Queue();
-    } catch (const std::exception& ex) {
-        Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
-    }
-    return env.Undefined();
+        queue_pipeline_worker(info,
+                              info[1].As<Napi::Function>(),
+                              std::move(operation),
+                              [pipe = pipe, system_message = std::move(system_message)] {
+                                  pipe->start_chat(system_message);
+                                  return [](Napi::Env env) -> Napi::Value {
+                                      return env.Undefined();
+                                  };
+                              });
+        return env.Undefined();
+    });
 }
 
 Napi::Value LLMPipelineWrapper::finish_chat(const Napi::CallbackInfo& info) {
-    auto env = info.Env();
-    try {
-        OPENVINO_ASSERT(this->pipe, "LLMPipeline is not initialized");
+    return with_pipeline_errors(info, [&]() -> Napi::Value {
+        OPENVINO_ASSERT(pipe, "LLMPipeline is not initialized");
+        auto operation =
+            std::make_shared<PipelineOperationGuard>(state, PipelineOperation::ACCESS, "Pipeline is busy");
         VALIDATE_ARGS_COUNT(info, 1, "finishChat()");
         OPENVINO_ASSERT(info[0].IsFunction(), "finishChat callback is not a function");
-        auto callback = info[0].As<Napi::Function>();
-
-        FinishChatWorker* asyncWorker = new FinishChatWorker(callback, this->pipe);
-        asyncWorker->Queue();
-    } catch (const std::exception& ex) {
-        Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
-    }
-    return env.Undefined();
+        queue_pipeline_worker(info, info[0].As<Napi::Function>(), std::move(operation), [pipe = pipe] {
+            pipe->finish_chat();
+            return [](Napi::Env env) -> Napi::Value {
+                return env.Undefined();
+            };
+        });
+        return info.Env().Undefined();
+    });
 }
 
 Napi::Value LLMPipelineWrapper::get_tokenizer(const Napi::CallbackInfo& info) {
-    auto env = info.Env();
-    try {
-        OPENVINO_ASSERT(this->pipe, "LLMPipeline is not initialized");
-        auto tokenizer = this->pipe->get_tokenizer();
-        return TokenizerWrapper::wrap(env, tokenizer);
-    } catch (const std::exception& ex) {
-        Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
-    }
-    return env.Undefined();
+    return with_pipeline_errors(info, [&]() -> Napi::Value {
+        OPENVINO_ASSERT(pipe, "LLMPipeline is not initialized");
+        return TokenizerWrapper::wrap(info.Env(), pipe->get_tokenizer());
+    });
 }
 
 Napi::Value LLMPipelineWrapper::get_generation_config(const Napi::CallbackInfo& info) {
-    auto env = info.Env();
-    try {
-        OPENVINO_ASSERT(this->pipe, "LLMPipeline is not initialized");
-        return cpp_to_js<ov::genai::GenerationConfig, Napi::Value>(env, this->pipe->get_generation_config());
-    } catch (const std::exception& ex) {
-        Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
-    }
-    return env.Undefined();
+    return get_pipeline_generation_config(info, pipe, state, "LLMPipeline");
 }
 
 Napi::Value LLMPipelineWrapper::set_generation_config(const Napi::CallbackInfo& info) {
-    auto env = info.Env();
-    try {
-        OPENVINO_ASSERT(this->pipe, "LLMPipeline is not initialized");
-        VALIDATE_ARGS_COUNT(info, 1, "setGenerationConfig()");
-        this->pipe->set_generation_config(js_to_cpp<ov::genai::GenerationConfig>(env, info[0]));
-    } catch (const std::exception& ex) {
-        Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
-    }
-    return env.Undefined();
+    return set_pipeline_generation_config(info, pipe, state, "LLMPipeline");
 }
