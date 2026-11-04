@@ -6,6 +6,7 @@ from typing import Any, Union
 
 import datasets
 import pandas as pd
+from PIL import Image
 from tqdm import tqdm
 from transformers import set_seed
 import torch
@@ -53,6 +54,8 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
         gen_image_fn=None,
         seed=42,
         is_genai=False,
+        image_dir=None,
+        resolution=None,
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -70,9 +73,11 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
         self.gt_dir = os.path.dirname(gt_data)
         self.generation_fn = gen_image_fn
         self.is_genai = is_genai
-        self.resolution = None
+        self.resolution = resolution
+        self.image_dir = image_dir
 
         if base_model:
+            base_model.resolution = self.resolution
             self.gt_data = self._generate_data(
                 base_model, gen_image_fn, os.path.join(self.gt_dir, "reference")
             )
@@ -92,6 +97,9 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
             if model.__class__.__name__ in ("QwenImage21Pipeline", "OVQwenImage21Img2ImgPipeline"):
                 # Qwen Image 2.1 conditions on image tokens and does not support the img2img strength argument.
                 kwargs.pop("strength")
+            if self.resolution is not None and self.resolution[0] is not None:
+                kwargs["width"] = self.resolution[1]
+                kwargs["height"] = self.resolution[0]
             with torch.no_grad():
                 output = model(**kwargs)
             return output.images[0]
@@ -109,8 +117,10 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
                 data = pd.DataFrame.from_dict(data)
         else:
             with patched_parquet(parquet_generate_tables):
-                data = pd.DataFrame.from_dict(prepare_default_data(self.num_samples))
+                data = pd.DataFrame.from_dict(self._prepare_default_data())
 
+        if self.num_samples is not None:
+            data = data.iloc[: self.num_samples]
         prompts = data["prompts"]
         images = data["images"]
         output_images = []
@@ -124,6 +134,7 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
         ):
             set_seed(self.seed)
             rng = rng.manual_seed(self.seed)
+            image = self._resolve_conditioning_images(image)
             output = generation_fn(
                 model,
                 prompt,
@@ -139,3 +150,13 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
         df = pd.DataFrame(res_data)
 
         return df
+
+    def _prepare_default_data(self):
+        return prepare_default_data(self.num_samples)
+
+    def _resolve_conditioning_images(self, image):
+        if isinstance(image, str):
+            if not os.path.isabs(image) and self.image_dir:
+                image = os.path.join(self.image_dir, image)
+            return Image.open(image).convert("RGB")
+        return image

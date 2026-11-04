@@ -37,6 +37,8 @@ SD_GENERATION_CONFIG_SUPPORTED_KEYS = {
     "tree_depth": int,
 }
 
+DEFAULT_MULTI_IMAGE_TO_IMAGE_SIZE = 256
+
 
 def _validate_sd_config_value(key, value, expected_type):
     """Validate a value from --sd-generation-config. Reject bool/str for numeric keys."""
@@ -150,6 +152,7 @@ def parse_args():
             "visual-text-only",
             "visual-video-text",
             "image-to-image",
+            "multi-image-to-image",
             "image-inpainting",
             "text-embedding",
             "image-embedding",
@@ -169,6 +172,7 @@ def parse_args():
         "visual-video-text - for Visual Language Models with video inputs, \n"
         "text-to-image - for image generation, \n"
         "image-to-image - for image generation based on image and prompt, \n"
+        "multi-image-to-image - for image generation based on multiple images and a prompt, \n"
         "image-inpainting - for image generation based on image, mask and prompt, \n"
         "text-to-video - for video generation, \n"
         "image-to-video - for video generation conditioned on an input image and prompt, \n"
@@ -194,6 +198,7 @@ def parse_args():
         default=None,
         help="Dataset source. For non-agent model types, this is passed to datasets.load_dataset "
         "as path,name (for example wikitext,wikitext-2-v1) and must follow Hugging Face datasets semantics. "
+        "Image-to-image model types also accept a local .json/.jsonl manifest. "
         "For text-agent and visual-text-agent, this should be a local .json/.jsonl file with "
         "messages/tools records. If not provided, built-in defaults are used.",
     )
@@ -295,9 +300,10 @@ def parse_args():
     )
     parser.add_argument(
         "--image-size",
-        type=int,
+        type=positive_integer,
         default=None,
-        help="Text-to-image specific parameter that defines the image resolution.",
+        help="Defines a square image resolution for text-to-image and multi-image-to-image. "
+        f"For multi-image-to-image, the default is {DEFAULT_MULTI_IMAGE_TO_IMAGE_SIZE}.",
     )
     parser.add_argument(
         "--num-inference-steps",
@@ -423,9 +429,8 @@ def parse_args():
         "--image-dir",
         type=str,
         default=None,
-        help="Directory holding the conditioning images for image-to-video generation. Relative filenames in the "
-        "test data's 'images'/'image' column are resolved against it; when the column is absent the images are "
-        "looked up as 0.png, 1.png, ... Not needed for the default dataset.",
+        help="Directory holding conditioning images for image-to-image or image-to-video generation. Relative filenames in the "
+        "test data's 'images'/'image' column are resolved against it. Not needed for the default dataset.",
     )
     parser.add_argument(
         "--video-frames-num",
@@ -676,15 +681,44 @@ def load_prompts(args):
     looks_like_local_path = (
         candidate_path.is_absolute() or path.startswith(("./", "../", "~/")) or candidate_path.exists()
     )
+    is_image_to_image = getattr(args, "model_type", None) in ("image-to-image", "multi-image-to-image")
     if is_json_dataset_file and looks_like_local_path:
-        raise ValueError(
-            "--dataset points to a local .json/.jsonl file, which is supported only for "
-            "--model-type text-agent or --model-type visual-text-agent. "
-            "For non-agent model types, pass a Hugging Face dataset id/path[,name] instead."
+        if not is_image_to_image:
+            raise ValueError(
+                "--dataset points to a local .json/.jsonl file, which is supported only for "
+                "--model-type text-agent or --model-type visual-text-agent. "
+                "For non-agent model types, pass a Hugging Face dataset id/path[,name] instead."
+            )
+        dataset_split = args.split if args.split is not None else "train"
+        data = load_dataset("json", data_files=str(candidate_path), split=dataset_split)
+    else:
+        if not separator:
+            name = None
+        data = load_dataset(path=path, name=name, split=dataset_split)
+
+    if is_image_to_image:
+        column_names = set(data.column_names)
+        prompt_field = next((field for field in (args.dataset_field, "prompts") if field in column_names), None)
+        image_field = next(
+            (field for field in ("input_images", "images", "image") if field in column_names),
+            None,
         )
-    if not separator:
-        name = None
-    data = load_dataset(path=path, name=name, split=dataset_split)
+        if prompt_field is None or image_field is None:
+            raise ValueError(
+                "Image-to-image datasets must contain a prompt column and one of 'input_images', 'images', or 'image'"
+            )
+        if args.num_samples is not None:
+            data = data.select(range(min(args.num_samples, len(data))))
+        prompts = {"prompts": list(data[prompt_field]), "images": list(data[image_field])}
+        logger.info(
+            "Prompts source path %s split %s: prompt field %s, image field %s, count=%d",
+            path,
+            dataset_split,
+            prompt_field,
+            image_field,
+            len(prompts["prompts"]),
+        )
+        return prompts
 
     res = data[args.dataset_field]
     prompts = {"prompts": list(res)}
@@ -968,14 +1002,21 @@ def genai_gen_image(model, prompt, num_inference_steps, generator=None, empty_ad
 
 
 def genai_gen_image2image(model, prompt, image, num_inference_steps, generator=None):
-    image_data = ov.Tensor(np.array(image)[None])
-    image_tensor = model.generate(
-        prompt,
-        image=image_data,
-        num_inference_steps=num_inference_steps,
-        strength=0.8,
-        generator=generator,
-    )
+    multiple_images = isinstance(image, (list, tuple))
+    images = list(image) if multiple_images else [image]
+    image_data = [ov.Tensor(np.array(item)[None]) for item in images]
+    kwargs = {
+        "image": image_data if multiple_images else image_data[0],
+        "num_inference_steps": num_inference_steps,
+        "generator": generator,
+    }
+    if not multiple_images:
+        kwargs["strength"] = 0.8
+    resolution = getattr(model, "resolution", None)
+    if resolution is not None and resolution[0] is not None:
+        kwargs["width"] = resolution[1]
+        kwargs["height"] = resolution[0]
+    image_tensor = model.generate(prompt, **kwargs)
     return Image.fromarray(image_tensor.data[0])
 
 
@@ -1419,7 +1460,11 @@ def create_evaluator(base_model, args):
                 language=args.language,
                 long_prompt=(not args.short_prompt),
             )
-        elif task == "image-to-image":
+        elif task in ("image-to-image", "multi-image-to-image"):
+            resolution = None
+            if task == "multi-image-to-image":
+                image_size = args.image_size if args.image_size is not None else DEFAULT_MULTI_IMAGE_TO_IMAGE_SIZE
+                resolution = (image_size, image_size)
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -1429,6 +1474,8 @@ def create_evaluator(base_model, args):
                 gen_image_fn=genai_gen_image2image if args.genai else None,
                 is_genai=args.genai,
                 seed=args.seed,
+                image_dir=args.image_dir,
+                resolution=resolution,
             )
         elif task == "image-inpainting":
             return EvaluatorCLS(
