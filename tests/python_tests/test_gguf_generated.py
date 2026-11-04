@@ -137,7 +137,7 @@ def generation_config():
     return genai.GenerationConfig(max_new_tokens=NEW_TOKENS, ignore_eos=True, apply_chat_template=False)
 
 
-# (predicate, raises, reason) applied in order; the first match marks the test xfail.
+# (predicate, raises, reason[, strict]) applied in order; the first match marks the test xfail.
 BACKEND_LIMITATIONS = [
     (
         lambda arch, variant, backend: arch == "mamba2" and backend == "PA",
@@ -158,6 +158,8 @@ BACKEND_LIMITATIONS = [
         lambda arch, variant, backend: arch == "gpt-oss",
         AssertionError,
         "Generated GPT-OSS F32 logits diverge from llama.cpp CPU before decoding",
+        # Non-strict until OpenVINO nightly includes openvinotoolkit/openvino#39476.
+        False,
     ),
 ]
 
@@ -165,9 +167,11 @@ BACKEND_LIMITATIONS = [
 def mark_backend_limitation(request, arch, variant, backend):
     if arch == "qwen35" and backend != "SDPA":
         pytest.skip("Qwen3.5 recurrent state currently supports SDPA only")
-    for matches, raises, reason in BACKEND_LIMITATIONS:
+    for matches, raises, reason, *strict in BACKEND_LIMITATIONS:
         if matches(arch, variant, backend):
-            request.node.add_marker(pytest.mark.xfail(strict=True, raises=raises, reason=reason))
+            request.node.add_marker(
+                pytest.mark.xfail(strict=strict[0] if strict else True, raises=raises, reason=reason)
+            )
             return
 
 
