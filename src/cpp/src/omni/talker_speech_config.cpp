@@ -44,6 +44,7 @@ const std::vector<std::string>& omni_talker_speech_config_keys() {
                                                "speaker",
                                                "speaker_embedding",
                                                "audio_chunk_frames",
+                                               "audio_chunk_left_context_frames",
                                                "max_new_tokens",
                                                "rng_seed",
                                                "talker_temperature",
@@ -78,6 +79,7 @@ void update_omni_talker_speech_config(OmniTalkerSpeechConfig& config, const ov::
     }
 
     read_anymap_param(properties, "audio_chunk_frames", config.audio_chunk_frames);
+    read_anymap_param(properties, "audio_chunk_left_context_frames", config.audio_chunk_left_context_frames);
     read_anymap_param(properties, "max_new_tokens", config.max_new_tokens);
     read_anymap_param(properties, "rng_seed", config.rng_seed);
 
@@ -138,6 +140,11 @@ void validate_omni_talker_speech_config(const OmniTalkerSpeechConfig& config) {
     OPENVINO_ASSERT(config.audio_chunk_frames <= kAudioChunkFramesUpperBound,
                     "OmniTalkerSpeechConfig: audio_chunk_frames is unreasonably large: ",
                     config.audio_chunk_frames,
+                    ". Max allowed: ",
+                    kAudioChunkFramesUpperBound);
+    OPENVINO_ASSERT(config.audio_chunk_left_context_frames <= kAudioChunkFramesUpperBound,
+                    "OmniTalkerSpeechConfig: audio_chunk_left_context_frames is unreasonably large: ",
+                    config.audio_chunk_left_context_frames,
                     ". Max allowed: ",
                     kAudioChunkFramesUpperBound);
 }

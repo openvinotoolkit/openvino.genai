@@ -118,7 +118,7 @@ int run_base(const std::vector<std::string>& args) {
                     " (--ref_audio_wav_path <PATH.wav> | --speaker_embedding_file_path <PATH.bin>)"
                     " [--ref_text \"<TRANSCRIPT>\"] [--ref_codec_ids_file_path <PATH.bin>]"
                     " [--save_speaker_embedding_file_path <PATH.bin>] [--save_ref_codec_ids_file_path <PATH.bin>]"
-                    " [--language <LANG>] [--device <DEVICE>] [--max_new_tokens <N>] [--output_wav_path <PATH.wav>]");
+                    " [--language <LANG>] [--device <DEVICE>] [--max_new_tokens <N>] [--seed <N>] [--output_wav_path <PATH.wav>]");
 
     const std::string models_path = args[2];
     const std::string prompt = args[3];
@@ -132,6 +132,7 @@ int run_base(const std::vector<std::string>& args) {
     std::optional<std::string> ref_codec_ids_path;
     std::optional<std::string> save_speaker_embedding_path;
     std::optional<std::string> save_ref_codec_ids_path;
+    std::optional<size_t> seed;
 
     for (int arg_idx = 4; arg_idx < static_cast<int>(args.size());) {
         const std::string option = args[arg_idx++];
@@ -157,6 +158,8 @@ int run_base(const std::vector<std::string>& args) {
         } else if (option == "--max_new_tokens") {
             max_new_tokens = std::stoll(value);
             OPENVINO_ASSERT(*max_new_tokens > 0, "--max_new_tokens must be > 0");
+        } else if (option == "--seed") {
+            seed = static_cast<size_t>(std::stoull(value));
         } else if (option == "--output_wav_path") {
             output_wav_path = value;
         } else {
@@ -191,6 +194,9 @@ int run_base(const std::vector<std::string>& args) {
     }
     if (max_new_tokens.has_value()) {
         properties["max_new_tokens"] = *max_new_tokens;
+    }
+    if (seed.has_value()) {
+        properties["rng_seed"] = *seed;
     }
 
     const bool icl_mode = !ref_text.empty();
@@ -227,7 +233,7 @@ int run_customvoice(const std::vector<std::string>& args) {
     OPENVINO_ASSERT(args.size() >= 4,
                     "Usage: qwen3_tts customvoice <MODEL_DIR> \"<PROMPT>\" --speaker <NAME>"
                     " [--language <LANG>] [--instruct \"<STYLE>\"] [--device <DEVICE>]"
-                    " [--max_new_tokens <N>] [--output_wav_path <PATH.wav>]");
+                    " [--max_new_tokens <N>] [--seed <N>] [--output_wav_path <PATH.wav>]");
 
     const std::string models_path = args[2];
     const std::string prompt = args[3];
@@ -237,6 +243,7 @@ int run_customvoice(const std::vector<std::string>& args) {
     std::string language;
     std::string instruct;
     std::optional<int64_t> max_new_tokens;
+    std::optional<size_t> seed;
 
     for (int arg_idx = 4; arg_idx < static_cast<int>(args.size());) {
         const std::string option = args[arg_idx++];
@@ -254,6 +261,8 @@ int run_customvoice(const std::vector<std::string>& args) {
         } else if (option == "--max_new_tokens") {
             max_new_tokens = std::stoll(value);
             OPENVINO_ASSERT(*max_new_tokens > 0, "--max_new_tokens must be > 0");
+        } else if (option == "--seed") {
+            seed = static_cast<size_t>(std::stoull(value));
         } else if (option == "--output_wav_path") {
             output_wav_path = value;
         } else {
@@ -276,6 +285,9 @@ int run_customvoice(const std::vector<std::string>& args) {
     if (max_new_tokens.has_value()) {
         properties["max_new_tokens"] = *max_new_tokens;
     }
+    if (seed.has_value()) {
+        properties["rng_seed"] = *seed;
+    }
 
     ov::genai::Text2SpeechDecodedResults gen_speech = pipe.generate(prompt, ov::Tensor(), properties);
     write_audio_and_perf(gen_speech, output_wav_path);
@@ -285,7 +297,7 @@ int run_customvoice(const std::vector<std::string>& args) {
 int run_voice_design(const std::vector<std::string>& args) {
     OPENVINO_ASSERT(args.size() >= 4,
                     "Usage: qwen3_tts voice-design <MODEL_DIR> \"<PROMPT>\" --instruct \"<VOICE_DESCRIPTION>\""
-                    " [--language <LANG>] [--device <DEVICE>] [--max_new_tokens <N>] [--output_wav_path <PATH.wav>]");
+                    " [--language <LANG>] [--device <DEVICE>] [--max_new_tokens <N>] [--seed <N>] [--output_wav_path <PATH.wav>]");
 
     const std::string models_path = args[2];
     const std::string prompt = args[3];
@@ -294,6 +306,7 @@ int run_voice_design(const std::vector<std::string>& args) {
     std::string instruct;
     std::string language;
     std::optional<int64_t> max_new_tokens;
+    std::optional<size_t> seed;
 
     for (int arg_idx = 4; arg_idx < static_cast<int>(args.size());) {
         const std::string option = args[arg_idx++];
@@ -309,6 +322,8 @@ int run_voice_design(const std::vector<std::string>& args) {
         } else if (option == "--max_new_tokens") {
             max_new_tokens = std::stoll(value);
             OPENVINO_ASSERT(*max_new_tokens > 0, "--max_new_tokens must be > 0");
+        } else if (option == "--seed") {
+            seed = static_cast<size_t>(std::stoull(value));
         } else if (option == "--output_wav_path") {
             output_wav_path = value;
         } else {
@@ -328,6 +343,9 @@ int run_voice_design(const std::vector<std::string>& args) {
     }
     if (max_new_tokens.has_value()) {
         properties["max_new_tokens"] = *max_new_tokens;
+    }
+    if (seed.has_value()) {
+        properties["rng_seed"] = *seed;
     }
 
     ov::genai::Text2SpeechDecodedResults gen_speech = pipe.generate(prompt, ov::Tensor(), properties);

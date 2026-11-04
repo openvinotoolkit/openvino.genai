@@ -365,7 +365,8 @@ The speech-generation evaluator reports these metrics:
 ### Compare Speech-recognition models (ASR)
 
 `speech-recognition` works with native ASR models, for example
-[FunAudioLLM/Fun-ASR-Nano-2512](https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512).
+[FunAudioLLM/Fun-ASR-Nano-2512](https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512) and
+[FunAudioLLM/SenseVoiceSmall](https://huggingface.co/FunAudioLLM/SenseVoiceSmall).
 
 The metric is `similarity = max(0, 1 - error rate)` between the normalized target and `--base-model`
 transcripts, where 1 is a perfect match and 0 is completely different. WWB uses character error rate
