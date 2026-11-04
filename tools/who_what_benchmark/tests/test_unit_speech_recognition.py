@@ -313,6 +313,26 @@ def test_asr_genai_uses_asr_pipeline(monkeypatch, model_type, language, expected
     assert pipeline.generate.call_args.kwargs == expected_kwargs
 
 
+@pytest.mark.parametrize("is_multilingual, expected_language", [(False, None), (True, "en")])
+def test_genai_whisper_language_follows_model_config(is_multilingual, expected_language, monkeypatch):
+    import openvino_genai
+    from whowhatbench.speech_recognition_model_wrappers import model_wrappers
+
+    pipeline = Mock()
+    pipeline.get_generation_config.return_value = types.SimpleNamespace(is_multilingual=is_multilingual)
+    pipeline.generate.return_value = types.SimpleNamespace(texts=[" decoded "])
+    monkeypatch.setattr(openvino_genai, "ASRPipeline", Mock(return_value=pipeline))
+    monkeypatch.setattr(model_wrappers, "_get_asr_model_type", lambda _: "whisper")
+
+    transcriber = ASRGenAITranscriber.create("model_dir", "CPU", language="en")
+
+    assert transcriber.transcribe(np.zeros(160, dtype=np.float32), 32) == "decoded"
+    expected_kwargs = {"max_new_tokens": 32}
+    if expected_language:
+        expected_kwargs["language"] = expected_language
+    assert pipeline.generate.call_args.kwargs == expected_kwargs
+
+
 @pytest.mark.parametrize(
     "audio, peak",
     [

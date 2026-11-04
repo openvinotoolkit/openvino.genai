@@ -246,6 +246,10 @@ class ASRGenAIPipelineTranscriber:
         import openvino_genai
 
         self.pipeline = openvino_genai.ASRPipeline(str(model_id), device.upper(), **(ov_config or {}))
+        # English-only checkpoints reject `language`, and their language is always English
+        if model_type in WHISPER_MODEL_TYPES and language and not self.pipeline.get_generation_config().is_multilingual:
+            logger.warning("Whisper model is English-only, ignoring language '%s'", language)
+            language = ""
         self.language = language
         self.is_sense_voice = model_type == "sense_voice"
 
