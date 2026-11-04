@@ -34,11 +34,6 @@ public:
             m_unique_prompt_token_ids->insert(input_id);
         }
 
-        if (!suppressed_token_ids.empty()) {
-            m_logit_transformers.push_back(
-                std::make_shared<LogitTransformers::SuppressTokensTransform>(suppressed_token_ids));
-        }
-
         // When logprobs > 0: snapshot the full-vocab log-partition function (LSE) and copy
         // all logits to m_vector BEFORE any transform runs.  This keeps m_data pristine so
         // returned log-probabilities are normalised over the raw model output:
@@ -48,6 +43,11 @@ public:
         if ((sampling_params.is_multinomial() || sampling_params.is_greedy_decoding()) && sampling_params.logprobs > 0) {
             m_logit_transformers.push_back(std::make_shared<LogitTransformers::FullVocabLogSumExpTransform>());
             m_logit_transformers.push_back(std::make_shared<LogitTransformers::CopyLogitsToVectorTransform>());
+        }
+
+        if (!suppressed_token_ids.empty()) {
+            m_logit_transformers.push_back(
+                std::make_shared<LogitTransformers::SuppressTokensTransform>(suppressed_token_ids));
         }
 
         if (sampling_params.min_new_tokens > 0) {
