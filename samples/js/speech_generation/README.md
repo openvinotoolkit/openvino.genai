@@ -21,16 +21,20 @@ This folder contains JavaScript examples for `Text2SpeechPipeline` from `openvin
 		- `qwen3_tts.js voice-design`: create a brand-new voice from a natural-language `instruct` description.
 		- `qwen3_tts.js base`: clone a voice from a short reference recording (x-vector and ICL modes).
 
-## Download and convert the model and tokenizers
+## Export dependencies
 
-The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
+```sh
+pip install -r <GENAI_ROOT_DIR>/samples/export-requirements.txt
+```
 
-It's not required to install [../../export-requirements.txt](../../export-requirements.txt) for deployment if the model has already been exported.
+Some newer models may require the latest Optimum Intel. If needed, run:
 
+```sh
+pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
+```
 ## SpeechT5 setup
 
 ```sh
-pip install --upgrade-strategy eager -r ../../export-requirements.txt
 optimum-cli export openvino --model microsoft/speecht5_tts --model-kwargs "{\"vocoder\": \"microsoft/speecht5_hifigan\"}" speecht5_tts
 ```
 
@@ -43,7 +47,6 @@ python ../python/speech_generation/create_speaker_embedding.py
 ## Kokoro setup
 
 ```sh
-pip install --upgrade-strategy eager -r ../../export-requirements.txt
 pip install kokoro
 optimum-cli export openvino -m hexgrad/Kokoro-82M ov_Kokoro-82M --trust-remote-code
 ```
@@ -56,7 +59,6 @@ Export a Qwen3-TTS model to OpenVINO (choose the variant matching the sample you
 
 ```sh
 pip install qwen-tts transformers==4.57.3 torch==2.11.0 torchaudio==2.11.0
-pip install --upgrade-strategy eager -r ../../export-requirements.txt
 optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice --trust-remote-code qwen3_tts_customvoice_ov
 optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign --trust-remote-code qwen3_tts_voicedesign_ov
 optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-0.6B-Base --trust-remote-code qwen3_tts_base_ov
