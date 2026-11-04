@@ -919,7 +919,7 @@ void Tokenizer::TokenizerImpl::set_chat_template_patcher(std::function<std::stri
             return patcher(result);
         };
     } else {
-        m_chat_template_patcher = {};
+        m_chat_template_patcher = utils::patch_chat_template;
     }
     m_chat_template = remap_and_patch_template(m_chat_template, m_chat_template_patcher);
     m_minja_chat_template_cache.clear();

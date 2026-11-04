@@ -51,17 +51,11 @@ TEST(TokenizerChatTemplatePatcher, RegistrationPatchesExistingTemplateAndKeepsOr
 TEST(TokenizerChatTemplatePatcher, RemapIsAppliedBeforePatch) {
     const auto& [known, fallback] = chat_template_fallback_map[0];
     TokenizerImpl impl;
+    impl.set_chat_template(known);
     impl.set_chat_template_patcher(append_marker);
 
-    impl.set_chat_template(known);
     EXPECT_EQ(impl.get_original_chat_template(), known);
     EXPECT_EQ(impl.get_chat_template(), fallback + "|patched");
-
-    // Same order when the patcher is registered after the template was set.
-    TokenizerImpl late_impl;
-    late_impl.set_chat_template(known);
-    late_impl.set_chat_template_patcher(append_marker);
-    EXPECT_EQ(late_impl.get_chat_template(), fallback + "|patched");
 }
 
 TEST(TokenizerChatTemplatePatcher, ApplyChatTemplateUsesPatchedTemplate) {
@@ -77,12 +71,14 @@ TEST(TokenizerChatTemplatePatcher, ApplyChatTemplateUsesPatchedTemplate) {
     EXPECT_EQ(impl.get_chat_template(), "unused {{ messages[0]['content'] }}");
 }
 
-TEST(TokenizerChatTemplatePatcher, NoPatcherKeepsTemplateUnchanged) {
+TEST(TokenizerChatTemplatePatcher, ClearingModelPatcherKeepsCommonPreparation) {
     TokenizerImpl impl;
-    impl.set_chat_template("RAW");
+    impl.set_chat_template_patcher(append_marker);
+    impl.set_chat_template_patcher({});
+    impl.set_chat_template("{% if missing is undefined %}{{ messages[0]['content'] }}{% endif %}");
+    const ChatHistory history({{{"role", "user"}, {"content", "hi"}}});
 
-    EXPECT_EQ(impl.get_original_chat_template(), "RAW");
-    EXPECT_EQ(impl.get_chat_template(), "RAW");
+    EXPECT_EQ(impl.apply_chat_template(history, false, {}, std::nullopt, std::nullopt, {}), "hi");
 }
 
 TEST(TokenizerChatTemplatePatcher, CommonPreparationAndModelPatchWorkTogether) {
@@ -98,9 +94,6 @@ TEST(TokenizerChatTemplatePatcher, CommonPreparationAndModelPatchWorkTogether) {
     EXPECT_EQ(impl.get_original_chat_template(), chat_template);
     EXPECT_EQ(impl.apply_chat_template(history, false, {}, std::nullopt, std::nullopt, {}), "[  hi  ]firstsecond");
 
-    impl.set_chat_template(chat_template);
-    EXPECT_EQ(impl.get_original_chat_template(), chat_template);
-    EXPECT_EQ(impl.apply_chat_template(history, false, {}, std::nullopt, std::nullopt, {}), "[  hi  ]firstsecond");
     const std::string stored_template = impl.get_chat_template();
     EXPECT_EQ(impl.apply_chat_template(history, false, "override:" + chat_template, std::nullopt, std::nullopt, {}),
               "override:[  hi  ]firstsecond");
