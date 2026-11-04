@@ -16,7 +16,7 @@ public:
                                                      const std::string& device,
                                                      const ov::AnyMap& properties,
                                                      const ov::PartialShape& lhs_shape,
-                                                     const bool decompose_cross_attention_spda_ops);
+                                                     const bool decompose_cross_attention_sdpa_ops);
 
     std::pair<int64_t, float> detect_language(const Tensor& encoder_hidden_state,
                                               const WhisperGenerationConfig& config);
