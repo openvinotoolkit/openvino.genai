@@ -48,7 +48,9 @@ QWEN3 = "optimum-intel-internal-testing/tiny-random-qwen3"
 QWEN35 = "optimum-intel-internal-testing/tiny-random-qwen3.5"
 # MiniCPM-V 4.7 needs transformers>=5.18, so its pairs skip in older environments.
 MINICPMV47 = "optimum-intel-internal-testing/tiny-random-minicpmv47"
-VLM_TARGETS = {QWEN35, MINICPMV47}
+# MiniCPM-OCR needs transformers>=5.21, so its pairs skip in older environments.
+MINICPM_OCR = "optimum-intel-internal-testing/tiny-random-minicpm-ocr"
+VLM_TARGETS = {QWEN35, MINICPMV47, MINICPM_OCR}
 # The Markov head drafts with its dense step instead of its Top-K candidate scorer.
 MARKOV_STEP = {"markov_head_top_k": 0}
 
@@ -70,6 +72,31 @@ MINICPMV47_DSPARK = pytest.param(
 MINICPMV47_DSPARK_MARKOV_STEP = pytest.param(
     (MINICPMV47, "optimum-intel-internal-testing/tiny-random-minicpmv47-dspark", MARKOV_STEP),
     id="minicpmv47-dspark-markov_step",
+)
+
+
+def _exports_pruned_draft_vocabulary() -> bool:
+    try:
+        from optimum.exporters.openvino import dflash_utils
+    except ImportError:
+        return False
+    return hasattr(dflash_utils, "has_pruned_draft_vocabulary")
+
+
+# The MiniCPM-OCR DSpark draft predicts 48 of the target's tokens through its own LM head.
+PRUNED_VOCABULARY_EXPORT_SKIP = pytest.mark.skipif(
+    not _exports_pruned_draft_vocabulary(),
+    reason="This optimum-intel version cannot export drafts with a pruned vocabulary (huggingface/optimum-intel#2099).",
+)
+MINICPM_OCR_DSPARK = pytest.param(
+    (MINICPM_OCR, "optimum-intel-internal-testing/tiny-random-minicpm-ocr-dspark", {}),
+    id="minicpm-ocr-dspark",
+    marks=PRUNED_VOCABULARY_EXPORT_SKIP,
+)
+MINICPM_OCR_DSPARK_MARKOV_STEP = pytest.param(
+    (MINICPM_OCR, "optimum-intel-internal-testing/tiny-random-minicpm-ocr-dspark", MARKOV_STEP),
+    id="minicpm-ocr-dspark-markov_step",
+    marks=PRUNED_VOCABULARY_EXPORT_SKIP,
 )
 
 TEXT_TARGET_PAIRS = [QWEN3_DFLASH, QWEN3_DEEPSPEC, QWEN3_DSPARK, QWEN3_DSPARK_MARKOV_STEP]

@@ -18,6 +18,8 @@ from openvino_genai import (
 )
 
 from test_speculative_decoding import (
+    MINICPM_OCR_DSPARK,
+    MINICPM_OCR_DSPARK_MARKOV_STEP,
     MINICPMV47_DSPARK,
     MINICPMV47_DSPARK_MARKOV_STEP,
     PARITY_PROPERTIES,
@@ -131,6 +133,22 @@ def test_vlm_sampling_on_linear_attention_target_rejects_prefix_caching(model_pa
 
     with pytest.raises(RuntimeError, match="set enable_prefix_caching to false"):
         ov_pipe.generate(PROMPTS[2], images=[cat_tensor], generation_config=generation_config)
+
+
+@pytest.mark.parametrize("model_pair", [MINICPM_OCR_DSPARK, MINICPM_OCR_DSPARK_MARKOV_STEP], indirect=True)
+def test_vlm_pruned_draft_vocabulary_matches_target(model_pair, cat_tensor):
+    def generate(pipe, num_assistant_tokens=None):
+        generation_config = _setup_generation_config(pipe, max_new_tokens=20, ignore_eos=True, do_sample=False)
+        if num_assistant_tokens is not None:
+            generation_config.num_assistant_tokens = num_assistant_tokens
+        return pipe.generate(PROMPTS[2], images=[cat_tensor], generation_config=generation_config)
+
+    reference = generate(VLMPipeline(model_pair.target_path, "CPU", **PARITY_PROPERTIES))
+    draft = draft_model(model_pair.draft_path, "CPU", **PARITY_PROPERTIES, **model_pair.draft_properties)
+    result = generate(VLMPipeline(model_pair.target_path, "CPU", draft_model=draft, **PARITY_PROPERTIES), 3)
+
+    assert result.texts == reference.texts
+    assert result.extended_perf_metrics.get_num_draft_tokens() > 0
 
 
 @pytest.mark.parametrize("model_pair", [QWEN3_DFLASH], indirect=True)
