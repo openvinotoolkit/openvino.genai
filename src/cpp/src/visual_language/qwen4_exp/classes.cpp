@@ -65,14 +65,15 @@ void InputsEmbedderQwen4_Exp::init_ngram_embeddings_model(
     OPENVINO_ASSERT(ngram_history_input_pshape.rank().is_static()
         && ngram_history_input_pshape.rank().get_length() == 2
         && ngram_history_input_pshape[1].is_static(),
-        "Qwen4Exp ngram_history input shape must match text_config.ngram_size - 1.");
+        "Qwen4Exp ngram_history input must have shape [batch, ngram_size - 1] with static dim 1, got ",
+        ngram_history_input_pshape);
     m_ngram_context_length = static_cast<size_t>(ngram_history_input_pshape[1].get_length());
 
     // Exact 64-bit hash function for ngram embeddings is properly calculated only on CPU
     const std::string model_supported_device = "CPU";
     if (device != model_supported_device) {
-        GENAI_INFO("Ngram embeddings model will be executed on CPU. "
-            "Provided device (", device, ") is not currently supported.");
+        GENAI_WARN("Ngram embeddings model will be executed on CPU. Provided device (%s) is not currently supported.",
+            device.c_str());
     }
     auto compiled_model = utils::singleton_core().compile_model(
         model,
@@ -139,16 +140,17 @@ ov::Tensor InputsEmbedderQwen4_Exp::get_inputs_embeds(
         history_vision_count
     );
 
-    const int64_t ngram_eos_token_id = m_vlm_config.text_config_eos_token_id;
-    OPENVINO_ASSERT(ngram_eos_token_id > 0, "EOS token id for ngram history padding must be set.");
-
     const auto& input_shape = m_last_input_ids.get_shape();
     OPENVINO_ASSERT(input_shape.size() == 2 && input_shape[0] == 1,
         "Qwen4Exp prompt embedding currently supports batch 1.");
 
-    ov::Tensor ngram_history(ov::element::i64, {1, m_ngram_context_length});
-    int64_t* ngram_history_data = ngram_history.data<int64_t>();
-    std::fill_n(ngram_history_data, m_ngram_context_length, ngram_eos_token_id);
+    ov::Tensor ngram_history;
+    if (m_has_ngram_embeddings) {
+        const int64_t ngram_eos_token_id = m_vlm_config.text_config_eos_token_id;
+        OPENVINO_ASSERT(ngram_eos_token_id > 0, "EOS token id for ngram history padding must be set.");
+        ngram_history = ov::Tensor(ov::element::i64, {1, m_ngram_context_length});
+        std::fill_n(ngram_history.data<int64_t>(), m_ngram_context_length, ngram_eos_token_id);
+    }
 
     if (m_is_chat_conversation && !m_cache_state.needs_reset()) {
         const auto& cached_ids = m_cache_state.get_state();
@@ -166,11 +168,12 @@ ov::Tensor InputsEmbedderQwen4_Exp::get_inputs_embeds(
         if (prefix_length > 0) {
             m_rope_delta += previous_rope_delta;
         }
-        // Update ngram_history
-        const size_t context_length = std::min(prefix_length, m_ngram_context_length);
-        std::copy_n(cached_ids.begin() + prefix_length - context_length,
-                    context_length,
-                    ngram_history_data + m_ngram_context_length - context_length);
+        if (m_has_ngram_embeddings) {
+            const size_t context_length = std::min(prefix_length, m_ngram_context_length);
+            std::copy_n(cached_ids.begin() + prefix_length - context_length,
+                        context_length,
+                        ngram_history.data<int64_t>() + m_ngram_context_length - context_length);
+        }
     }
     
     if (m_has_ngram_embeddings) {
