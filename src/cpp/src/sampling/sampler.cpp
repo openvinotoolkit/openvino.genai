@@ -377,6 +377,10 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
             if (full_text.size() > 1 && full_text.size() >= m_parameters.no_repeat_ngram_size) {
                 auto tail_start = full_text.end() - ptrdiff_t(m_parameters.no_repeat_ngram_size) + 1;
                 for (int64_t banned_token : kmp_search(full_text, {tail_start, full_text.end()})) {
+                    // Negative ids are VLM image placeholders, not vocabulary tokens
+                    if (banned_token < 0) {
+                        continue;
+                    }
                     tokens[banned_token].m_log_prob = -std::numeric_limits<float>::infinity();
                 }
             }
