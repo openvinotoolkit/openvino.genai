@@ -49,6 +49,7 @@ protected:
     MtpDecodingImpl() = default;
     static GenerationConfig make_draft_generation_config(const GenerationConfig& config);
     void enable_mtp_hidden_state_pairing();
+    ov::Tensor embed_prompt_ids(const ov::Tensor& input_ids);
     void align_request_pair_processed_prefix(uint64_t request_id) override;
 };
 }  // namespace ov::genai

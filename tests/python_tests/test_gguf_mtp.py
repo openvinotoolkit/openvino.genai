@@ -140,6 +140,16 @@ def test_gguf_mtp_matches_greedy_target_and_resets(pipelines, candidates):
         assert actual.tokens == expected.tokens
 
 
+def test_gguf_mtp_token_input_matches_target(pipelines):
+    plain, mtp = pipelines
+    input_ids = plain.get_tokenizer().encode("c b a " * 12, add_special_tokens=False).input_ids
+    config = dict(max_new_tokens=12, ignore_eos=True, apply_chat_template=False)
+    expected = plain.generate(input_ids, **config)
+    actual = mtp.generate(input_ids, num_assistant_tokens=2, **config)
+    assert len(actual.tokens[0]) == 12
+    assert actual.tokens == expected.tokens
+
+
 @pytest.mark.parametrize("status", [genai.StreamingStatus.STOP, genai.StreamingStatus.CANCEL])
 def test_gguf_mtp_streaming_terminal_status(pipelines, status):
     _, mtp = pipelines
