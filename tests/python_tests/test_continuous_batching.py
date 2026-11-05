@@ -1449,6 +1449,34 @@ def test_eagle3_sampled_streaming(eagle3_model_paths: tuple[Path, Path]):
     assert 0 < metrics.get_num_accepted_tokens() <= metrics.get_num_draft_tokens()
 
 
+@pytest.mark.parametrize(
+    "config_kwargs, use_streamer",
+    [
+        pytest.param({"do_sample": True, "num_return_sequences": 2}, True, id="sampled_streaming"),
+        pytest.param({"do_sample": True, "num_return_sequences": 2}, False, id="sampled"),
+        pytest.param({"num_beams": 2}, False, id="beam_search"),
+    ],
+)
+def test_eagle3_rejects_several_sequences_per_request(
+    eagle3_model_paths: tuple[Path, Path], config_kwargs: dict, use_streamer: bool
+):
+    main_model_path, draft_model_path = eagle3_model_paths
+    sd_cb_pipe = create_ov_cb_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        draft_model_path=draft_model_path,
+    )
+    # num_assistant_tokens=0 turns drafting off, so GenerationConfig::validate() allows several sequences.
+    generation_config = GenerationConfig(max_new_tokens=8, num_assistant_tokens=0, **config_kwargs)
+    prompt = "Explain why sunsets often appear orange."
+    streamer = (lambda subword: StreamingStatus.RUNNING) if use_streamer else None
+
+    with pytest.raises(RuntimeError, match="one sequence per request"):
+        sd_cb_pipe.generate([prompt], [generation_config], streamer)
+    with pytest.raises(RuntimeError, match="one sequence per request"):
+        sd_cb_pipe.add_request(0, prompt, generation_config=generation_config)
+
+
 def test_eagle3_cb_add_request_mixed_batch_zero_assistant_tokens_matches_main_only(
     eagle3_model_paths: tuple[Path, Path],
 ):

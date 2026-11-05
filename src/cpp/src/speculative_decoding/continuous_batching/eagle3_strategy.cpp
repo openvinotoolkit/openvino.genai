@@ -28,6 +28,18 @@ ov::Tensor extract_draft_embeddings(std::optional<std::unordered_map<std::string
     return draft_embeddings;
 }
 
+// The main model's KV cache update after every step handles one sequence per request, so this holds also for a
+// request that runs the main model only.
+void validate_single_sequence(const GenerationConfig& sampling_params) {
+    OPENVINO_ASSERT(!sampling_params.is_beam_search() && sampling_params.num_return_sequences == 1,
+                    "Eagle3 speculative decoding supports one sequence per request, also with num_assistant_tokens=0; "
+                    "got num_beams=",
+                    sampling_params.num_beams,
+                    ", num_return_sequences=",
+                    sampling_params.num_return_sequences,
+                    ".");
+}
+
 }  // namespace
 
 KVUpdateWrapper::KVUpdateWrapper(const ov::genai::ModelDesc& kv_model_desc) {
@@ -313,6 +325,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
                                                                  const ov::genai::GenerationConfig& sampling_params,
                                                                  std::optional<ov::Tensor> prompt_ids,
                                                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
+    validate_single_sequence(sampling_params);
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     if (sampling_params.num_assistant_tokens.has_value() && sampling_params.num_assistant_tokens.value() == 0) {
         // No speculative draft for this request: run only the main model.
@@ -367,6 +380,7 @@ GenerationHandle
 ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
                                                                  const std::string& prompt,
                                                                  const ov::genai::GenerationConfig& sampling_params) {
+    validate_single_sequence(sampling_params);
     if (m_model_input_type == ModelInputType::EMBEDDINGS) {
         return ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(request_id, prompt, {}, sampling_params);
     }
