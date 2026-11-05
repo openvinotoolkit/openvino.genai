@@ -86,19 +86,19 @@ void update_attention_mask_with_beams(ov::Tensor&& attention_mask, std::vector<i
 namespace ov {
 namespace genai {
 
-void update_ngram_history(
+void fill_ngram_history(
     const ov::Tensor& prompt_ngram_history,
     const TokenIds& generated_ids,
-    const size_t generated_index,
+    const size_t generated_offset,
     int64_t* dst
 ) {
     OPENVINO_ASSERT(prompt_ngram_history.get_element_type() == ov::element::i64,
         "ngram_history must have element type i64, got ", prompt_ngram_history.get_element_type());
     const size_t ngram_history_size = prompt_ngram_history.get_size();
     const int64_t* prompt_ngram_history_data = prompt_ngram_history.data<const int64_t>();
-    // Window [generated_index, generated_index + ngram_history_size) of prompt_ngram_history followed by generated_ids
+    // Window [generated_offset, generated_offset + ngram_history_size) of prompt_ngram_history followed by generated_ids
     for (size_t i = 0; i < ngram_history_size; ++i) {
-        const size_t index = generated_index + i;
+        const size_t index = generated_offset + i;
         dst[i] = index < ngram_history_size
             ? prompt_ngram_history_data[index]
             : generated_ids.at(index - ngram_history_size);
@@ -284,10 +284,11 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
                 input_ids_data += num_scheduled_tokens;
 
                 if (ngram_embeddings_callback) {
-                    update_ngram_history(
+                    const size_t generated_offset_from_prompt = group_position_id - sequence_group->get_prompt_len();
+                    fill_ngram_history(
                         prompt_ngram_history,
                         sequence->get_generated_ids(),
-                        group_position_id - sequence_group->get_prompt_len(),
+                        generated_offset_from_prompt,
                         ngram_history_data
                     );
                     ngram_history_data += prompt_ngram_history.get_size();

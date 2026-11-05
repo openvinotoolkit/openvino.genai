@@ -35,10 +35,10 @@ void align_cache_and_history(const ov::Tensor& new_chat_tokens, utils::CacheStat
 
 TokenizedInputs get_chat_encoded_input(const ov::Tensor& new_chat_tokens, utils::CacheState& cache_state);
 
-void update_ngram_history(
+void fill_ngram_history(
     const ov::Tensor& prompt_ngram_history,
     const TokenIds& generated_ids,
-    size_t generated_index,
+    const size_t generated_index,
     int64_t* dst
 );
 
