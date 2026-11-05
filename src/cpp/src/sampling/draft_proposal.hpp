@@ -12,7 +12,7 @@ namespace ov::genai {
 
 // Post-filter distribution q(.) a draft token was sampled from, in the target vocabulary. It is sparse when
 // token_ids is populated, otherwise dense with probabilities indexed by token id. An empty proposal means no
-// distribution was recorded.
+// distribution was recorded. Sparse ids must be distinct.
 struct DraftProposal {
     std::vector<int64_t> token_ids;
     std::vector<float> probabilities;
