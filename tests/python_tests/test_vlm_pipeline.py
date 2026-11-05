@@ -573,9 +573,6 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     if "qwen3-vl" in ov_model and ov_backend == "SDPA":
         pytest.xfail(QWEN3_VL_SDPA_XFAIL_REASON)
 
-    if ov_model == MODEL_QWEN38_FLASH_NEXT and ov_backend == "PA":
-        pytest.xfail("Qwen3.8-Flash-Next model does not support PA backend")
-
     models_path = _get_ov_model(ov_model)
 
     pipeline_properties: dict = {"ATTENTION_BACKEND": ov_backend, "prompt_lookup": ov_prompt_lookup}
@@ -2040,7 +2037,7 @@ else:
         ("optimum-intel-internal-testing/tiny-random-gemma4-unified-it", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-gemma4-31B", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-qwen3.5", "SDPA"),
-        (MODEL_QWEN38_FLASH_NEXT, "SDPA"),
+        (MODEL_QWEN38_FLASH_NEXT, "PA"),
         ("optimum-intel-internal-testing/tiny-random-mistral3", "PA"),
     ]
 
