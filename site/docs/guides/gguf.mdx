@@ -73,3 +73,58 @@ print(pipe.generate(history, max_new_tokens=64))
 ```
 
 Chat requires a suitable template in the GGUF metadata. See [Tokenization](./tokenization.mdx) for configuring the tokenizer and [Streaming](./streaming.mdx) for streamer behavior.
+
+## Bonsai-2-27B with embedded MTP
+
+The GGUF frontend supports an embedded single-block Qwen3.5 MTP draft.
+As in llama.cpp, MTP is opt-in: set `speculative_type="mtp"` and GenAI builds the
+draft from the NextN block of the same GGUF file, then runs its existing MTP
+speculative decoder. The draft is converted from the file separately from the
+target and is compiled with the target device and properties. This requires a
+compatible OpenVINO GGUF frontend and GenAI build containing GGUF MTP support.
+
+| llama.cpp | OpenVINO GenAI |
+| --- | --- |
+| `-m model.gguf --spec-type draft-mtp` | `LLMPipeline("model.gguf", "CPU", speculative_type="mtp")` |
+| `-md draft.gguf` | `LLMPipeline(..., draft_model_path="draft.gguf")` |
+| `--spec-draft-n-max N` (default 3) | `generate(..., num_assistant_tokens=N)` (default 3 for MTP) |
+
+`speculative_type="mtp"` selects `GGUF_READER="FRONTEND"` when the reader is not
+set. `draft_model_path` also accepts a GGUF file with MTP layers, or an OpenVINO
+IR directory. Use `draft_model()` instead when the draft needs a different device
+or properties.
+
+The original Bonsai-2-27B PQ2_0 GGUF does **not** contain MTP weights.
+Use a checkpoint that explicitly includes `qwen35.nextn_predict_layers=1`
+and the NextN tensors. For example, the community checkpoint
+[`BoldingBuilds/Ternary-Bonsai-2-27B-Abliterated-v2-PQ2_0-MTP-GGUF`](https://huggingface.co/BoldingBuilds/Ternary-Bonsai-2-27B-Abliterated-v2-PQ2_0-MTP-GGUF)
+provides `Ternary-Bonsai-2-27B-Abliterated-v2-PQ2_0-MTP.gguf`.
+This is a modified community model, not the original official checkpoint.
+Check its provenance, license and model-card limitations before use.
+
+```python
+import openvino_genai as genai
+
+pipe = genai.LLMPipeline(
+    "Ternary-Bonsai-2-27B-Abliterated-v2-PQ2_0-MTP.gguf", "CPU",
+    speculative_type="mtp",
+    INFERENCE_PRECISION_HINT="f32",
+    KV_CACHE_PRECISION="f16",
+    DYNAMIC_QUANTIZATION_GROUP_SIZE=0,
+)
+print(pipe.generate("What is the capital of France?", max_new_tokens=64, do_sample=False))
+```
+
+MTP uses paged attention, greedy decoding, one returned sequence and a fixed
+positive `num_assistant_tokens`; an unset value means 3. Confidence-based drafting and tree search are
+not supported. Recurrent-state capacity must cover both live requests and MTP
+verification scratch. With a custom `scheduler_config`, set
+`num_linear_attention_blocks` to at least the number of live requests plus
+`num_assistant_tokens + 1`.
+The target and draft must share token embeddings; checkpoints with a separate
+NextN embedding table are rejected.
+Loading the draft or target with the legacy reader,
+or saving this decomposed pipeline through `ENABLE_SAVE_OV_MODEL`, is unsupported
+and raises an error. Start with string/chat inputs; no external tokenizer export
+or separate MTP IR directory is needed. MTP acceptance and speed depend on the
+checkpoint, prompt and hardware; enabling it does not guarantee a speedup.

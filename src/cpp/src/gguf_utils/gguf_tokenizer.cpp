@@ -1128,6 +1128,10 @@ void erase_gguf_tokenizer_metadata(const std::shared_ptr<ov::Model>& model) {}
 
 std::string patch_gguf_chat_template(const std::string& chat_template) {
     std::string patched_chat_template = chat_template;
+    const std::string bonsai_condition = "enable_thinking is undefined";
+    if (const auto position = patched_chat_template.find(bonsai_condition); position != std::string::npos) {
+        patched_chat_template.replace(position, bonsai_condition.size(), "enable_thinking is not defined");
+    }
     // Define the exact pattern to find in original chat_template
     // Using C++ raw string literals (R"(...)") to correctly represent the literal content,
     const std::string qwen2_5_substring_to_find = R"({{\"name\": <function-name>, \"arguments\": <args-json-object>}})";

@@ -32,6 +32,10 @@ GGUFProperties extract_gguf_properties(const ov::AnyMap& properties);
 std::shared_ptr<ov::Model> read_gguf_model(const std::filesystem::path& model_path,
                                          const GGUFProperties& properties);
 bool has_gguf_recurrent_states(const ov::Model& model);
+std::shared_ptr<ov::Model> read_gguf_mtp_model(const std::filesystem::path& model_path,
+                                               const GGUFProperties& properties);
+std::shared_ptr<ov::Model> take_text_embeddings(const std::shared_ptr<ov::Model>& model);
+bool has_gguf_mtp_layers(const std::filesystem::path& model_path);
 
 }  // namespace gguf_utils
 }  // namespace ov::genai

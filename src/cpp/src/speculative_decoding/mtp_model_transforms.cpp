@@ -113,6 +113,8 @@ void expose_last_hidden_state(const std::shared_ptr<ov::Model>& main_model) {
 }
 
 void graft_lm_head_on_mtp(std::shared_ptr<ov::Model>& mtp_model, const std::shared_ptr<ov::Model>& main_model) {
+    if (find_result_source(mtp_model, "logits").get_node())
+        return;
     const auto mtp_hidden_state = find_result_source(mtp_model, "last_hidden_state");
     OPENVINO_ASSERT(mtp_hidden_state.get_node(),
                     "Failed to locate `last_hidden_state` output in the MTP draft model for lm_head graft.");

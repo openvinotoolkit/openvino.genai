@@ -29,6 +29,16 @@ void validate_mtp_generation_config(const GenerationConfig& config) {
                     "MTP speculative decoding requires num_assistant_tokens > 0.");
 }
 
+// Matches the llama.cpp --spec-draft-n-max default.
+constexpr size_t MTP_DEFAULT_NUM_ASSISTANT_TOKENS = 3;
+
+GenerationConfig with_default_num_assistant_tokens(GenerationConfig config) {
+    if (!config.num_assistant_tokens.has_value() && config.assistant_confidence_threshold == 0.f) {
+        config.num_assistant_tokens = MTP_DEFAULT_NUM_ASSISTANT_TOKENS;
+    }
+    return config;
+}
+
 // Align hidden[t] with embed(token[t+1]).
 ov::Tensor create_draft_input_embeds(const ov::Tensor& input_embeds) {
     const auto shape = input_embeds.get_shape();
@@ -147,9 +157,10 @@ GenerationConfig ContinuousBatchingPipeline::MtpDecodingImpl::make_draft_generat
 GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     uint64_t request_id,
     const ov::Tensor& input_ids,
-    const ov::genai::GenerationConfig& sampling_params,
+    const ov::genai::GenerationConfig& user_sampling_params,
     std::optional<ov::Tensor> prompt_ids,
     std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
+    const auto sampling_params = with_default_num_assistant_tokens(user_sampling_params);
     validate_mtp_generation_config(sampling_params);
 
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
@@ -211,7 +222,8 @@ void ContinuousBatchingPipeline::MtpDecodingImpl::align_request_pair_processed_p
 GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     uint64_t request_id,
     const std::string& prompt,
-    const ov::genai::GenerationConfig& sampling_params) {
+    const ov::genai::GenerationConfig& user_sampling_params) {
+    const auto sampling_params = with_default_num_assistant_tokens(user_sampling_params);
     validate_mtp_generation_config(sampling_params);
 
     // Text-only serving path.

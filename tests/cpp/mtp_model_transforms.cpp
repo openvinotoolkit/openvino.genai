@@ -143,6 +143,17 @@ TEST(MtpModelTransforms, GraftLmHeadAddsLogitsResult) {
     EXPECT_GE(count_ops<ov::op::v0::Constant>(mtp_model), 2u);
 }
 
+TEST(MtpModelTransforms, GraftPreservesCheckpointDraftHead) {
+    std::vector<float> main_weights(VOCAB * HIDDEN, 0.1f);
+    std::vector<float> draft_weights(VOCAB * HIDDEN, 0.2f);
+    auto main_model = make_main_model(main_weights);
+    auto draft_model = make_main_model(draft_weights);
+    const auto output = draft_model->output("logits").get_node_shared_ptr();
+    graft_lm_head_on_mtp(draft_model, main_model);
+    EXPECT_EQ(draft_model->get_results().size(), 2);
+    EXPECT_EQ(draft_model->output("logits").get_node_shared_ptr(), output);
+}
+
 TEST(MtpModelTransforms, GraftedLogitsMatchTiedWeightMatmul) {
     std::vector<float> weights_data(VOCAB * HIDDEN);
     for (size_t i = 0; i < weights_data.size(); ++i) {

@@ -69,10 +69,11 @@ void assert_supported_add_request_lora_modes(const std::optional<AdapterConfig>&
 ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::path& models_path,
                                                         const SchedulerConfig& scheduler_config,
                                                         const std::string& device,
-                                                        const ov::AnyMap& properties,
+                                                        const ov::AnyMap& input_properties,
                                                         const ov::AnyMap& tokenizer_properties,
                                                         const ov::AnyMap& vision_encoder_properties) {
     auto start_time = std::chrono::steady_clock::now();
+    const auto properties = resolve_draft_model_request(models_path, device, input_properties);
     auto properties_without_draft_model = properties;
     auto draft_model_descr = ov::genai::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
@@ -83,8 +84,10 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     utils::validate_vlm_model_properties(properties_without_draft_model);
 
     utils::extract_extensions_to_core(properties_without_draft_model);
-    auto model = utils::read_model(models_path,
-        utils::get_model_properties(properties_without_draft_model, "language_model"));
+    auto model = utils::read_model(
+        models_path,
+        utils::get_model_properties(is_gguf_model(models_path) ? properties : properties_without_draft_model,
+                                    "language_model"));
     auto properties_without_draft_model_without_gguf = gguf_utils::extract_gguf_properties(properties_without_draft_model).rest;
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
     auto tokenizer = ov::genai::Tokenizer(models_path, tokenizer_properties);
@@ -94,6 +97,11 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
         auto non_adapter_properties = extract_adapters_from_properties(properties_without_draft_model);
         embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device, non_adapter_properties.fork());
+    } else if (auto embeddings = gguf_utils::take_text_embeddings(model)) {
+        embedder = std::make_shared<InputsEmbedder>(embeddings,
+                                                    tokenizer,
+                                                    device,
+                                                    properties_without_draft_model_without_gguf);
     }
 
     utils::print_scheduler_config_info(scheduler_config);
@@ -162,6 +170,11 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
         auto non_adapter_properties = extract_adapters_from_properties(properties_without_draft_model);
         embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device, non_adapter_properties.fork());
+    } else if (auto embeddings = gguf_utils::take_text_embeddings(model)) {
+        embedder = std::make_shared<InputsEmbedder>(embeddings,
+                                                    tokenizer,
+                                                    device,
+                                                    properties_without_draft_model_without_gguf);
     }
 
     utils::print_scheduler_config_info(scheduler_config);
@@ -207,8 +220,9 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     const Tokenizer& tokenizer,
     const SchedulerConfig& scheduler_config,
     const std::string& device,
-    const ov::AnyMap& properties) {
+    const ov::AnyMap& input_properties) {
     auto start_time = std::chrono::steady_clock::now();
+    const auto properties = resolve_draft_model_request(models_path, device, input_properties);
     auto properties_without_draft_model = properties;
     auto draft_model_descr = ov::genai::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
@@ -219,8 +233,10 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     utils::validate_vlm_model_properties(properties_without_draft_model);
 
     utils::extract_extensions_to_core(properties_without_draft_model);
-    auto model = utils::read_model(models_path,
-        utils::get_model_properties(properties_without_draft_model, "language_model"));
+    auto model = utils::read_model(
+        models_path,
+        utils::get_model_properties(is_gguf_model(models_path) ? properties : properties_without_draft_model,
+                                    "language_model"));
     auto properties_without_draft_model_without_gguf = gguf_utils::extract_gguf_properties(properties_without_draft_model).rest;
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
 
@@ -228,6 +244,11 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
         embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device, properties_without_draft_model_without_gguf);
+    } else if (auto embeddings = gguf_utils::take_text_embeddings(model)) {
+        embedder = std::make_shared<InputsEmbedder>(embeddings,
+                                                    tokenizer,
+                                                    device,
+                                                    properties_without_draft_model_without_gguf);
     }
 
     utils::print_scheduler_config_info(scheduler_config);
@@ -290,6 +311,11 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     if (!model_config_dir_path.empty() && std::filesystem::exists(model_config_dir_path / "openvino_text_embeddings_model.xml")) {
         auto non_adapter_properties = extract_adapters_from_properties(properties_without_draft_model);
         embedder = std::make_shared<InputsEmbedder>(model_config_dir_path, tokenizer, device, non_adapter_properties.fork());
+    } else if (auto embeddings = gguf_utils::take_text_embeddings(language_model)) {
+        embedder = std::make_shared<InputsEmbedder>(embeddings,
+                                                    tokenizer,
+                                                    device,
+                                                    properties_without_draft_model_without_gguf);
     }
 
     utils::print_scheduler_config_info(scheduler_config);
