@@ -343,6 +343,10 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum supported version is 5.18.0"
         )
+    if "minicpm-ocr" in model_id and is_transformers_version("<", "5.21.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum supported version is 5.21.0"
+        )
     if "qwen3-vl" in model_id and is_transformers_version("<", "4.57.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 4.57.0."
@@ -3732,6 +3736,8 @@ VLM_DFLASH_DRAFT_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3.5-
 
 VLM_DSPARK_MAIN_MODEL_ID = "optimum-intel-internal-testing/tiny-random-minicpmv47"
 VLM_DSPARK_DRAFT_MODEL_ID = "optimum-intel-internal-testing/tiny-random-minicpmv47-dspark"
+VLM_DSPARK_PRUNED_MAIN_MODEL_ID = "optimum-intel-internal-testing/tiny-random-minicpm-ocr"
+VLM_DSPARK_PRUNED_DRAFT_MODEL_ID = "optimum-intel-internal-testing/tiny-random-minicpm-ocr-dspark"
 
 
 def _get_vlm_dflash_model_paths(
@@ -3879,6 +3885,23 @@ def test_vlm_dspark_matches_main_only(cat_tensor, draft_properties):
         pytest.skip("This optimum-intel version cannot export DSpark drafts (huggingface/optimum-intel#2098).")
     result, reference = _generate_vlm_dspark(
         VLM_DSPARK_MAIN_MODEL_ID, VLM_DSPARK_DRAFT_MODEL_ID, cat_tensor, **draft_properties
+    )
+
+    assert result.texts == reference.texts
+    assert result.extended_perf_metrics.get_num_draft_tokens() > 0
+
+
+# The tiny MiniCPM-OCR DSpark draft predicts 48 of the target's tokens through its own LM head
+@pytest.mark.parametrize("draft_properties", [{}, {"markov_head_top_k": 0}], ids=["candidate_scorer", "markov_step"])
+def test_vlm_dspark_with_pruned_draft_vocabulary_matches_main_only(cat_tensor, draft_properties):
+    dflash_utils = pytest.importorskip("optimum.exporters.openvino.dflash_utils")
+    if not hasattr(dflash_utils, "has_pruned_draft_vocabulary"):
+        pytest.skip(
+            "This optimum-intel version cannot export DSpark drafts with a pruned vocabulary "
+            "(huggingface/optimum-intel#2099)."
+        )
+    result, reference = _generate_vlm_dspark(
+        VLM_DSPARK_PRUNED_MAIN_MODEL_ID, VLM_DSPARK_PRUNED_DRAFT_MODEL_ID, cat_tensor, **draft_properties
     )
 
     assert result.texts == reference.texts
