@@ -22,6 +22,59 @@ class KVCacheManager : public ICacheManager {
     ov::InferRequest m_request;
     ov::RemoteContext m_context;
 
+    struct QSAIndexCache {
+        std::string name;
+        ov::element::Type precision;
+        ov::PartialShape partial_shape;
+        ov::Tensor tensor;
+    };
+    std::vector<QSAIndexCache> m_qsa_index_caches;
+
+    static bool is_qsa_index_cache_input(const std::string& name) {
+        // Per-layer caches of sparse attention (PagedQSAIndexer), paged by the same block table as the KV cache.
+        for (const char* prefix : {"index_key_cache.", "index_block_rope_cache.", "block_index_keys_cache."}) {
+            if (name.find(prefix) == 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void allocate_qsa_index_caches(size_t num_kv_blocks) {
+        for (auto& qsa_index_cache : m_qsa_index_caches) {
+            const ov::Shape shape = set_kv_blocks(qsa_index_cache.partial_shape, num_kv_blocks);
+            ov::Tensor new_tensor = m_context ? m_context.create_tensor(qsa_index_cache.precision, shape)
+                                              : ov::Tensor(qsa_index_cache.precision, shape);
+            if (qsa_index_cache.tensor) {
+                // copy current cache data
+                ov::Coordinate start(shape.size(), 0);
+                ov::Coordinate end = qsa_index_cache.tensor.get_shape();
+                if (m_context) {
+                    ov::RemoteTensor dst_roi(new_tensor, start, end);
+                    dst_roi.copy_from(qsa_index_cache.tensor);
+                } else {
+                    ov::Tensor dst_roi(new_tensor, start, end);
+                    qsa_index_cache.tensor.copy_to(dst_roi);
+                }
+            }
+            qsa_index_cache.tensor = new_tensor;
+            m_request.set_tensor(qsa_index_cache.name, qsa_index_cache.tensor);
+        }
+    }
+
+    void copy_qsa_index_cache_block(size_t src_block_id, size_t dst_block_id) {
+        for (auto& qsa_index_cache : m_qsa_index_caches) {
+            const ov::Shape& shape = qsa_index_cache.tensor.get_shape();
+            ov::Coordinate src_start(shape.size(), 0), src_end = shape;
+            ov::Coordinate dst_start(shape.size(), 0), dst_end = shape;
+            src_end[0] = (src_start[0] = src_block_id) + 1;
+            dst_end[0] = (dst_start[0] = dst_block_id) + 1;
+            ov::Tensor src_roi(qsa_index_cache.tensor, src_start, src_end);
+            ov::Tensor dst_roi(qsa_index_cache.tensor, dst_start, dst_end);
+            src_roi.copy_to(dst_roi);
+        }
+    }
+
     static ov::Shape set_kv_blocks(ov::PartialShape pshape, size_t num_kv_blocks) {
         pshape[0] = num_kv_blocks;
         return pshape.get_shape();
@@ -89,6 +142,17 @@ public:
                     m_value_precisions.push_back(cache_precision);
                     ++kv_input_index;
                     break;
+                } else if (is_qsa_index_cache_input(name)) {
+                    pshape = input.get_partial_shape();
+                    size_t block_bytes = cache_precision.size();
+                    for (size_t axis = 1; axis < pshape.size(); ++axis) {
+                        OPENVINO_ASSERT(pshape[axis].is_static(),
+                                        "Sparse attention index cache ", name, " must have static dimensions except axis 0, got ", pshape);
+                        block_bytes *= pshape[axis].get_length();
+                    }
+                    m_block_size_in_bytes += block_bytes;
+                    m_qsa_index_caches.push_back({name, cache_precision, pshape, {}});
+                    break;
                 }
             }
         }
@@ -110,6 +174,20 @@ public:
         m_block_size = all_gpu_device ? ( has_xattention ? gpu_block_size_xattn : gpu_block_size ) : cpu_block_size;
         m_num_layers = m_value_precisions.size();
         OPENVINO_ASSERT(m_num_layers == m_key_precisions.size(), "Invalid case: a different number of K and V caches in a LLM model");
+
+        // Validate QSA index caches
+        for (const auto& qsa_index_cache : m_qsa_index_caches) {
+            if (qsa_index_cache.name.find("index_key_cache.") == 0) {
+                OPENVINO_ASSERT(static_cast<size_t>(qsa_index_cache.partial_shape[2].get_length()) == m_block_size,
+                    "Sparse attention index cache ", qsa_index_cache.name, " must have ", m_block_size,
+                    " tokens per block to match the KV cache, got ", qsa_index_cache.partial_shape
+                );
+            }
+        }
+    }
+
+    bool has_qsa_index_caches() const {
+        return !m_qsa_index_caches.empty();
     }
 
     // --- ICacheManager interface ---
@@ -119,7 +197,7 @@ public:
     }
 
     size_t get_num_cache_tensors() const override {
-        return m_num_layers * 2;
+        return m_num_layers * 2 + m_qsa_index_caches.size();
     }
 
     std::string get_device() const override {
@@ -251,6 +329,7 @@ public:
                     update_request_tensor(decoder_layer_id);
                 }
             }
+            allocate_qsa_index_caches(num_kv_blocks);
         }
         catch (ov::Exception& e) {
             if (std::string(e.what()).find("bad allocation") != std::string::npos) {
@@ -330,6 +409,7 @@ public:
                         value_src_cache_roi.copy_to(value_dst_cache_roi);
                     }
                 }
+                copy_qsa_index_cache_block(src_block_id, dst_block_id);
             }
         }
     }
@@ -338,6 +418,9 @@ public:
         for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_layers; ++decoder_layer_id) {
             m_key_cache[decoder_layer_id] = ov::Tensor();
             m_value_cache[decoder_layer_id] = ov::Tensor();
+        }
+        for (auto& qsa_index_cache : m_qsa_index_caches) {
+            qsa_index_cache.tensor = ov::Tensor();
         }
         m_num_allocated_kv_blocks = 0;
     }
