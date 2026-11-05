@@ -24,8 +24,6 @@ class VisionEncoderMiniCPM : public VisionEncoder {
     // VLM config
     VLMConfig m_vlm_config;
 
-    ov::Tensor resample(const ov::Tensor& encoded_image, const ImageSize& target_size, size_t pad_to_max);
-
     EncodedImage encode_features(const ov::Tensor& image,
                                  const ov::AnyMap& config_map,
                                  ov::Tensor& slices,
@@ -46,13 +44,12 @@ public:
         const ov::AnyMap device_config);
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
 
-    EncodedImage encode_video_frame(const ov::Tensor& image);
+    EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames) override;
 
-    ov::Tensor resample_image(const EncodedImage& image, size_t pad_to_max);
-
-    ov::Tensor resample_video(const std::vector<EncodedImage>& frames,
-                              const std::vector<size_t>& temporal_ids,
-                              size_t pad_to_max = 0);
+    ov::Tensor resample(const ov::Tensor& features,
+                        const ImageSize& target_size,
+                        size_t pad_to_max,
+                        const std::vector<size_t>& temporal_ids = {});
 };
 
 class InputsEmbedderMiniCPM : public InputsEmbedder::IInputsEmbedder {
