@@ -15,6 +15,7 @@
 #ifdef ENABLE_GGUF
 #    include "gguf_utils/gguf_frontend_extensions.hpp"
 #    include "openvino/frontend/extension/conversion.hpp"
+#    include "openvino/frontend/gguf/extension/genai.hpp"
 #endif
 
 using namespace ov::genai::utils;
@@ -130,10 +131,20 @@ TEST(TestAddExtensions, GGUFFrontendRetainsExtensionObjects) {
     EXPECT_TRUE(retained.expired());
 }
 
-TEST(TestAddExtensions, GGUFFrontendIgnoresSuppliedGenAIExtension) {
+TEST(TestAddExtensions, GGUFFrontendRejectsSuppliedGenAIExtension) {
     using Extension = ov::frontend::gguf::GenAIExtension;
     ov::frontend::gguf::FrontEnd frontend;
-    frontend.add_extension(std::make_shared<Extension>());
-    EXPECT_NO_THROW(ov::genai::register_gguf_extensions(frontend, {std::make_shared<Extension>()}));
+    EXPECT_THROW(ov::genai::register_gguf_extensions(frontend, {std::make_shared<Extension>()}), ov::Exception);
+}
+
+TEST(TestAddExtensions, GGUFFrontendRejectsSuppliedGenAIExtensionBeforeCoreRegistration) {
+    auto extension = std::make_shared<ov::frontend::gguf::GenAIExtension>();
+    std::weak_ptr<ov::Extension> retained = extension;
+    ov::AnyMap properties = {
+        ov::genai::extensions(std::vector<std::shared_ptr<ov::Extension>>{extension})};
+    extension.reset();
+
+    EXPECT_THROW(extract_extensions_to_core(properties, true), ov::Exception);
+    EXPECT_TRUE(retained.expired());
 }
 #endif

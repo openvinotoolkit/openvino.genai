@@ -20,9 +20,11 @@ using ExtensionList = std::vector<std::variant<std::filesystem::path, std::share
 
 /**
  * @brief Wrap paths and Extensions into an ov::AnyMap-compatible pair that can be passed to pipeline constructors
- * like LLMPipeline or VLMPipeline. Extensions are registered with the OpenVINO Core before model loading.
+ * like LLMPipeline or VLMPipeline. Core-compatible extensions are registered with OpenVINO Core before model loading.
  * When a pipeline uses the GGUF frontend, extensions are also registered on each frontend used for conversion.
  * C++ and Python callers may pass library paths or created `ov::Extension` objects.
+ * GGUF extensions are forwarded only by LLMPipeline and ContinuousBatchingPipeline when `GGUF_READER` is `FRONTEND`;
+ * the default `LEGACY` reader ignores them.
  */
 template <typename T,
           typename = std::enable_if_t<

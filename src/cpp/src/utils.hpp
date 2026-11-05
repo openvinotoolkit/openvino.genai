@@ -167,7 +167,7 @@ std::pair<ov::AnyMap, bool> extract_paired_input_props(const ov::AnyMap& externa
 
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,
                                       const ov::AnyMap& config,
-                                      const ov::AnyMap& frontend_properties = {});
+                                      const ExtensionList& frontend_extensions);
 
 void release_core_plugin(const std::string& device);
 
@@ -404,7 +404,8 @@ ExtensionList extract_extensions(ov::AnyMap& properties);
  *
  * @param properties Properties map that may contain the "extensions" key.
  */
-void extract_extensions_to_core(ov::AnyMap& properties);
+ExtensionList extract_extensions_to_core(ov::AnyMap& properties);
+ExtensionList extract_extensions_to_core(ov::AnyMap& properties, bool gguf_frontend_registers_extensions_separately);
 
 void clear_false_prompt_lookup_from_config(ov::AnyMap& properties);
 

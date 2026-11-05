@@ -82,9 +82,13 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
 
     utils::validate_vlm_model_properties(properties_without_draft_model);
 
-    utils::extract_extensions_to_core(properties_without_draft_model);
+    const bool gguf_frontend_registers_extensions_separately =
+        is_gguf_model(models_path) &&
+        !gguf_utils::extract_gguf_properties(properties_without_draft_model).use_legacy_reader();
+    const auto frontend_extensions =
+        utils::extract_extensions_to_core(properties_without_draft_model, gguf_frontend_registers_extensions_separately);
     auto model = utils::read_model(models_path,
-        utils::get_model_properties(properties_without_draft_model, "language_model"), properties);
+        utils::get_model_properties(properties_without_draft_model, "language_model"), frontend_extensions);
     auto properties_without_draft_model_without_gguf = gguf_utils::extract_gguf_properties(properties_without_draft_model).rest;
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
     auto tokenizer = ov::genai::Tokenizer(models_path, tokenizer_properties);
@@ -218,9 +222,13 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
 
     utils::validate_vlm_model_properties(properties_without_draft_model);
 
-    utils::extract_extensions_to_core(properties_without_draft_model);
+    const bool gguf_frontend_registers_extensions_separately =
+        is_gguf_model(models_path) &&
+        !gguf_utils::extract_gguf_properties(properties_without_draft_model).use_legacy_reader();
+    const auto frontend_extensions =
+        utils::extract_extensions_to_core(properties_without_draft_model, gguf_frontend_registers_extensions_separately);
     auto model = utils::read_model(models_path,
-        utils::get_model_properties(properties_without_draft_model, "language_model"), properties);
+        utils::get_model_properties(properties_without_draft_model, "language_model"), frontend_extensions);
     auto properties_without_draft_model_without_gguf = gguf_utils::extract_gguf_properties(properties_without_draft_model).rest;
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
 

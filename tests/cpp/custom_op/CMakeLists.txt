@@ -38,5 +38,6 @@ endfunction()
 
 add_test_extension(openvino_custom_add_extension custom_add.cpp ov_extension.cpp)
 if(ENABLE_GGUF)
-    add_test_extension(openvino_gguf_test_extension gguf_extension.cpp)
+    add_test_extension(openvino_gguf_test_extension gguf_throwing_extension.cpp)
+    add_test_extension(openvino_gguf_generation_extension gguf_extension.cpp)
 endif()

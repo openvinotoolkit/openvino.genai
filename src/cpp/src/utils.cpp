@@ -22,6 +22,13 @@
 #include "openvino/op/transpose.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "gguf_utils/gguf_utils.hpp"
+#include "openvino/frontend/extension/conversion.hpp"
+#include "openvino/frontend/extension/decoder_transformation.hpp"
+#include "openvino/frontend/extension/telemetry.hpp"
+#ifdef ENABLE_GGUF
+#    include "openvino/frontend/gguf/extension/architecture.hpp"
+#    include "openvino/frontend/gguf/extension/genai.hpp"
+#endif
 
 
 #include "sampling/sampler.hpp"
@@ -495,11 +502,11 @@ void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::str
 
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,
                                       const ov::AnyMap& properties,
-                                      const ov::AnyMap& frontend_properties) {
+                                      const ExtensionList& frontend_extensions) {
     const auto gguf_props = gguf_utils::extract_gguf_properties(properties);
     const ov::AnyMap& filtered_properties = gguf_props.rest;
     if (is_gguf_model(model_dir)) {
-        return gguf_utils::read_gguf_model(model_dir, gguf_props, frontend_properties);
+        return gguf_utils::read_gguf_model(model_dir, gguf_props, frontend_extensions);
     } else {
         std::filesystem::path model_path = model_dir;
 
@@ -1098,15 +1105,41 @@ ExtensionList extract_extensions(ov::AnyMap& properties) {
     return extensions;
 }
 
-void extract_extensions_to_core(ov::AnyMap& properties) {
+ExtensionList extract_extensions_to_core(ov::AnyMap& properties) {
+    return extract_extensions_to_core(properties, false);
+}
+
+ExtensionList extract_extensions_to_core(ov::AnyMap& properties, bool gguf_frontend_registers_extensions_separately) {
     ExtensionList extensions = extract_extensions(properties);
     for (const auto& extension : extensions) {
         if (std::holds_alternative<std::filesystem::path>(extension)) {
             singleton_core().add_extension(std::get<std::filesystem::path>(extension));
         } else {
-            singleton_core().add_extension(std::get<std::shared_ptr<ov::Extension>>(extension));
+            const auto& object = std::get<std::shared_ptr<ov::Extension>>(extension);
+#ifdef ENABLE_GGUF
+            const bool is_gguf_genai_extension =
+                std::dynamic_pointer_cast<ov::frontend::gguf::GenAIExtension>(object) != nullptr;
+            if (gguf_frontend_registers_extensions_separately) {
+                OPENVINO_ASSERT(!is_gguf_genai_extension,
+                                "A GenAIExtension cannot be passed through the 'extensions' property because GenAI "
+                                "registers its own GGUF GenAIExtension.");
+            }
+#endif
+            bool is_frontend_extension =
+                std::dynamic_pointer_cast<ov::frontend::ConversionExtensionBase>(object) ||
+                std::dynamic_pointer_cast<ov::frontend::DecoderTransformationExtension>(object) ||
+                std::dynamic_pointer_cast<ov::frontend::TelemetryExtension>(object);
+#ifdef ENABLE_GGUF
+            is_frontend_extension = is_frontend_extension ||
+                                    std::dynamic_pointer_cast<ov::frontend::gguf::ArchitectureExtension>(object) !=
+                                        nullptr;
+#endif
+            if (!gguf_frontend_registers_extensions_separately || !is_frontend_extension) {
+                singleton_core().add_extension(object);
+            }
         }
     }
+    return extensions;
 }
 
 void log_attention_backend(const std::string& attention_backend) {

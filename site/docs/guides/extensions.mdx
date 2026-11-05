@@ -115,9 +115,12 @@ You can pass extensions to pipeline constructors in both Python and C++.
 
 ## Use extensions with the GGUF frontend
 
-`LLMPipeline` and `ContinuousBatchingPipeline` register the supplied extensions with
-OpenVINO `Core` and with the GGUF frontend used for conversion. Pass library paths or
-extension objects using the same `extensions` property.
+`LLMPipeline` and `ContinuousBatchingPipeline` register extension libraries and
+Core-compatible extension objects with OpenVINO `Core`, and register the supplied
+extensions with the GGUF frontend used for conversion. Pass library paths or extension
+objects using the same `extensions` property.
+This forwarding is supported only when `GGUF_READER` is set to `FRONTEND`; the default
+`LEGACY` reader ignores GGUF frontend extensions.
 
 <LanguageTabs>
     <TabItemPython>
@@ -159,9 +162,12 @@ extension objects using the same `extensions` property.
 
 Frontend extensions can customize operation conversion or graph transformations.
 Build extension libraries against the OpenVINO version used by GenAI. GenAI supplies
-its own `GenAIExtension` to preserve the pipeline's input/output interface.
+its own `GenAIExtension` to preserve the pipeline's input/output interface; passing a
+`GenAIExtension` through the `extensions` property with the GGUF frontend is rejected.
 
 ## Notes
 
-- Extensions are loaded into the underlying OpenVINO `Core` before the pipeline loads the model.
+- Core-compatible extension objects are loaded into the underlying OpenVINO `Core` before
+  the pipeline loads the model. With the GGUF frontend, frontend-only extension objects are
+  registered directly with the frontend instead.
 - If you use Python custom ops, register them through `ov.OpExtension(...)` or pass the custom operation class directly where supported.

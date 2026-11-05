@@ -15,8 +15,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
-from huggingface_hub import hf_hub_download, snapshot_download
-from huggingface_hub.errors import LocalEntryNotFoundError
+from huggingface_hub import snapshot_download
 from optimum.intel import OVModelForCausalLM
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
@@ -48,17 +47,16 @@ pytestmark = [
 
 # Pinned GGUFs (1.8 / 25.5 / 4.9 / 47.2 MB) and their source tokenizer/configuration.
 # The HF model is reconstructed from the GGUF weights, not independently downloaded weights.
+GGUF_EXTENSION_MODEL = (
+    "aladar/llama-2-tiny-random-GGUF",
+    "8d5321916486e1d33c46b16990e8da6567785769",
+    "llama-2-tiny-random.gguf",
+    "yujiepan/llama-2-tiny-random",
+    "74bb065d6381fdf9fcde5896cb32267ba2c0ee0a",
+)
+
 TINY_GGUF_MODELS = [
-    pytest.param(
-        (
-            "aladar/llama-2-tiny-random-GGUF",
-            "8d5321916486e1d33c46b16990e8da6567785769",
-            "llama-2-tiny-random.gguf",
-            "yujiepan/llama-2-tiny-random",
-            "74bb065d6381fdf9fcde5896cb32267ba2c0ee0a",
-        ),
-        id="llama",
-    ),
+    pytest.param(GGUF_EXTENSION_MODEL, id="llama"),
     pytest.param(
         (
             "mradermacher/tiny-random-qwen3-GGUF",
@@ -173,56 +171,93 @@ def gguf_pipeline(tiny_gguf_model, pipeline_type):
     )
 
 
-@pytest.mark.parametrize("pipeline_class", [genai.LLMPipeline, genai.ContinuousBatchingPipeline])
-@pytest.mark.parametrize("with_tokenizer", [False, True])
-def test_gguf_frontend_extensions(gguf_extension_model, pipeline_class, with_tokenizer):
-    args = [str(gguf_extension_model)]
-    if with_tokenizer:
-        args.append(genai.Tokenizer(gguf_extension_model))
-    if pipeline_class == genai.ContinuousBatchingPipeline:
-        args.append(genai.SchedulerConfig())
-    args.append("CPU")
-    properties = {"GGUF_READER": "FRONTEND", "extensions": [get_extension_lib_path()]}
+def _raise_on_gguf_conversion(_):
+    raise RuntimeError("GGUF frontend extension was invoked")
+
+
+@pytest.mark.parametrize(
+    "build_pipeline",
+    [
+        pytest.param(
+            lambda path, properties: genai.LLMPipeline(path, "CPU", **properties),
+            id="llm-pipeline-without-tokenizer",
+        ),
+        pytest.param(
+            lambda path, properties: genai.LLMPipeline(path, genai.Tokenizer(path), "CPU", **properties),
+            id="llm-pipeline-with-tokenizer",
+        ),
+        pytest.param(
+            lambda path, properties: genai.ContinuousBatchingPipeline(
+                path, genai.SchedulerConfig(), "CPU", properties
+            ),
+            id="continuous-batching-without-tokenizer",
+        ),
+        pytest.param(
+            lambda path, properties: genai.ContinuousBatchingPipeline(
+                path, genai.Tokenizer(path), genai.SchedulerConfig(), "CPU", **properties
+            ),
+            id="continuous-batching-with-tokenizer",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "make_extension",
+    [
+        pytest.param(
+            lambda: [get_extension_lib_path("openvino_gguf_test_extension")],
+            id="library-extension",
+        ),
+        pytest.param(
+            lambda: [ov.frontend.ConversionExtension("GGML_OP_MUL_MAT", _raise_on_gguf_conversion)],
+            id="extension-object",
+        ),
+    ],
+)
+def test_gguf_frontend_extensions(gguf_extension_model, build_pipeline, make_extension):
+    properties = {"GGUF_READER": "FRONTEND", "extensions": make_extension()}
     with pytest.raises(RuntimeError, match="GGUF frontend extension was invoked"):
-        if pipeline_class == genai.ContinuousBatchingPipeline and not with_tokenizer:
-            pipeline_class(*args, properties)
-        else:
-            pipeline_class(*args, **properties)
+        build_pipeline(str(gguf_extension_model), properties)
 
 
-@pytest.mark.parametrize("pipeline_class", [genai.LLMPipeline, genai.ContinuousBatchingPipeline])
-def test_gguf_frontend_extensions_generation(gguf_extension_model, pipeline_class):
-    args = [str(gguf_extension_model)]
-    if pipeline_class == genai.ContinuousBatchingPipeline:
-        args.append(genai.SchedulerConfig())
-    args.append("CPU")
+@pytest.mark.parametrize(
+    "build_pipeline, generate",
+    [
+        pytest.param(
+            lambda path, properties: genai.LLMPipeline(
+                path, "CPU", **properties, ATTENTION_BACKEND="SDPA"
+            ),
+            lambda pipeline, config: pipeline.generate(
+                pipeline.get_tokenizer().encode("Hello").input_ids, config
+            ).tokens[0],
+            id="llm-pipeline-sdpa",
+        ),
+        pytest.param(
+            lambda path, properties: genai.ContinuousBatchingPipeline(
+                path, genai.SchedulerConfig(), "CPU", properties
+            ),
+            lambda pipeline, config: pipeline.generate(
+                [pipeline.get_tokenizer().encode("Hello").input_ids], [config]
+            )[0].m_generation_ids[0],
+            id="continuous-batching-pipeline-pa",
+        ),
+    ],
+)
+def test_gguf_frontend_extensions_generation(gguf_extension_model, build_pipeline, generate):
     config = genai.GenerationConfig(max_new_tokens=3, ignore_eos=True, do_sample=False, apply_chat_template=False)
     outputs = []
-    for extensions in ([], [get_extension_lib_path("openvino_gguf_test_extension")]):
+    for extensions in ([], [get_extension_lib_path("openvino_gguf_generation_extension")]):
         properties = {**reference_properties(), "GGUF_READER": "FRONTEND", "extensions": extensions}
-        if pipeline_class == genai.ContinuousBatchingPipeline:
-            pipeline = pipeline_class(*args, properties)
-            inputs = pipeline.get_tokenizer().encode("Hello").input_ids
-            outputs.append(pipeline.generate([inputs], [config])[0].m_generation_ids[0])
-        else:
-            pipeline = pipeline_class(*args, **properties, ATTENTION_BACKEND="SDPA")
-            inputs = pipeline.get_tokenizer().encode("Hello").input_ids
-            outputs.append(pipeline.generate(inputs, config).tokens[0])
+        pipeline = build_pipeline(str(gguf_extension_model), properties)
+        outputs.append(generate(pipeline, config))
     assert len(outputs[0]) == config.max_new_tokens
     assert outputs[1] == outputs[0]
 
 
-@pytest.fixture(scope="module", params=TINY_GGUF_MODELS)
-def gguf_extension_model(request):
-    repo, revision, filename, *_ = request.param
-    try:
-        return Path(hf_hub_download(repo, filename, revision=revision, local_files_only=True))
-    except LocalEntryNotFoundError:
-        directory = Path.home() / "gguf_models" / repo.replace("/", "_")
-        snapshot = retry_request(
-            lambda: snapshot_download(repo, revision=revision, allow_patterns=[filename], local_dir=directory)
-        )
-        return Path(snapshot) / filename
+@pytest.fixture(scope="module")
+def gguf_extension_model():
+    repo, revision, filename, *_ = GGUF_EXTENSION_MODEL
+    snapshot = retry_request(lambda: snapshot_download(repo, revision=revision, allow_patterns=[filename]))
+    return Path(snapshot) / filename
 
 
 @pytest.mark.parametrize(
