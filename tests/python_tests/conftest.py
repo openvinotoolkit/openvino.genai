@@ -83,6 +83,11 @@ IMAGE_GEN_MODELS = {
     "tiny-random-z-image-turbo": "snake7gun/tiny-random-z-image-turbo",
 }
 
+# Hub doesn't provide pipeline_tag for these models, so the export task can't be inferred automatically.
+IMAGE_GEN_MODEL_EXPORT_TASKS = {
+    "tiny-random-qwen-image-2.1": "text-to-image",
+}
+
 DEFAULT_IMAGE_GEN_MODEL_ID = "tiny-random-latent-consistency"
 
 
@@ -105,8 +110,11 @@ def image_generation_model(request):
             "--trust-remote-code",
             "--weight-format",
             "fp16",
-            str(temp_path),
         ]
+        export_task = IMAGE_GEN_MODEL_EXPORT_TASKS.get(model_id)
+        if export_task is not None:
+            command += ["--task", export_task]
+        command.append(str(temp_path))
         logger.info(f"Conversion command: {' '.join(command)}")
         retry_request(lambda: subprocess.run(command, check=True, encoding="utf-8", text=True, capture_output=True))
 

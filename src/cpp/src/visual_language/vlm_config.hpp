@@ -28,6 +28,7 @@ enum class VLMModelType {
     QWEN3_VL,
     QWEN3_5,
     QWEN3_5_MOE,
+    QWEN4_EXP,
     GEMMA3,
     GEMMA3N,
     GEMMA4,
@@ -38,6 +39,7 @@ enum class VLMModelType {
     DEEPSEEK_OCR2,
     MUSE_GLIMMER,
     MINICPMV4_7,
+    MISTRAL3,
     LFM3_VL,
 };
 
@@ -153,6 +155,10 @@ public:
     size_t vision_config_num_position_embeddings = 2304;
     /// @brief DeepStack visual indexes for Qwen3-VL model.
     std::vector<size_t> vision_config_deepstack_visual_indexes;
+
+    // qwen4_exp specific config
+    /// @brief EOS token ID for qwen4_exp model.
+    int64_t text_config_eos_token_id = -1;
 
     // Qwen3-Omni specific config
     /// @brief Whether audio output (speech) is enabled.
