@@ -114,8 +114,10 @@ def test_video_decode_parameters_treat_nan_as_missing_and_preserve_zero(
 
 @pytest.mark.parametrize("image_column", ["images", "image", None], ids=["images", "image", "image-dir"])
 def test_csv_image2video_conditioning_image_sources(monkeypatch, tmp_path, image_column):
+    image_dir = tmp_path / "images"
+    image_dir.mkdir()
     image = Image.new("RGB", (32, 32), color=(12, 34, 56))
-    image.save(tmp_path / "0.png")
+    image.save(image_dir / "0.png")
     dataset_path = tmp_path / "dataset.csv"
     if image_column is None:
         dataset_path.write_text("prompts\ntest prompt\n", encoding="utf-8")
@@ -125,7 +127,7 @@ def test_csv_image2video_conditioning_image_sources(monkeypatch, tmp_path, image
     test_data = wwb.load_prompts(SimpleNamespace(dataset=str(dataset_path), model_type="image-to-video"))
     evaluator = Image2VideoEvaluator.__new__(Image2VideoEvaluator)
     _configure_evaluator(evaluator, test_data)
-    evaluator.image_dir = str(tmp_path)
+    evaluator.image_dir = str(image_dir)
     calls = []
 
     def generate_video(_model, **kwargs):

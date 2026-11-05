@@ -638,7 +638,8 @@ def load_prompts(args):
     # This keeps VLM evaluation deterministic and independent of remote dataset
     # availability. The CSV must contain a "prompts" column and may optionally
     # contain "images" and "videos" columns (paths or None). Image paths are
-    # resolved relative to the CSV file location when not absolute.
+    # resolved relative to the CSV file location when not absolute, except for
+    # video model types, which resolve them against --image-dir.
     dataset_path = Path(args.dataset)
     if dataset_path.suffix.lower() == ".csv" and dataset_path.is_file():
         from transformers.image_utils import load_image
@@ -665,12 +666,6 @@ def load_prompts(args):
             return str(path)
 
         prompts = list(df["prompts"])
-        if "images" in df.columns:
-            images = [
-                load_image(resolved) if (resolved := _resolve_media(v)) is not None else None for v in df["images"]
-            ]
-        else:
-            images = [None] * len(prompts)
         if "videos" in df.columns:
             videos = [_resolve_media(v) for v in df["videos"]]
         else:
@@ -679,12 +674,18 @@ def load_prompts(args):
         if args.model_type in ("text-to-video", "image-to-video"):
             if "negative_prompt" in df.columns:
                 df["negative_prompt"] = df["negative_prompt"].fillna("")
+            # Image paths stay unresolved: Image2VideoEvaluator resolves them against --image-dir
             data = df.to_dict(orient="list")
             data["prompt"] = data.pop("prompts")
-            if "images" in df.columns:
-                data["images"] = images
             data["videos"] = videos
             return data
+
+        if "images" in df.columns:
+            images = [
+                load_image(resolved) if (resolved := _resolve_media(v)) is not None else None for v in df["images"]
+            ]
+        else:
+            images = [None] * len(prompts)
 
         return {"prompts": prompts, "images": images, "videos": videos}
 
