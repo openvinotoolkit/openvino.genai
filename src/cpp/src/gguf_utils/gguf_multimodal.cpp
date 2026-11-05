@@ -118,8 +118,12 @@ Configs gguf_configs(const std::string& architecture,
         c.config["model_type"] = "lfm3_vl";
         c.config["position_ids_offset"] = 0;
         c.image["temporal_patch_size"] = meta.integer("vision.temporal_patch_size");
-        c.image["min_pixels"] = 65536;
-        c.image["max_pixels"] = 16777216;
+        const auto min_pixels = meta.integer("clip.vision.image_min_pixels", 65536);
+        const auto max_pixels = meta.integer("clip.vision.image_max_pixels", 16777216);
+        OPENVINO_ASSERT(min_pixels > 0 && max_pixels >= min_pixels,
+                        "GGUF LFM3 image pixel limits must be positive and ordered");
+        c.image["min_pixels"] = min_pixels;
+        c.image["max_pixels"] = max_pixels;
         c.unsampled_video_from_image();
         c.video["min_pixels"] = 4096;
         c.video["max_pixels"] = 25165824;

@@ -527,6 +527,48 @@ def test_gguf_vlm_projector_layouts(tiny_gguf_vlm_model, backend, media):
     assert pipeline.generate("Describe.", **inputs, **options).texts == result.texts
 
 
+@pytest.mark.parametrize("tiny_gguf_vlm_model", ["lfm3"], indirect=True)
+@pytest.mark.parametrize(
+    "min_pixels,max_pixels,image_tokens",
+    [(None, None, 64), (16384, None, 16), (1024, 4096, 4), (1024, 1024, 1), (0, 4096, None), (8192, 4096, None)],
+)
+def test_gguf_lfm3_image_pixel_limits(tiny_gguf_vlm_model, min_pixels, max_pixels, image_tokens):
+    from gguf import GGUFReader, GGUFWriter
+
+    language, projector = tiny_gguf_vlm_model
+    reader = GGUFReader(projector)
+    modified = projector.with_name(f"mmproj-pixels-{min_pixels}-{max_pixels}.gguf")
+    limits = {"clip.vision.image_min_pixels": min_pixels, "clip.vision.image_max_pixels": max_pixels}
+    writer = GGUFWriter(modified, reader.fields["general.architecture"].contents(), endianess=reader.endianess)
+    for name, field in reader.fields.items():
+        if name.startswith("GGUF.") or name == "general.architecture" or name in limits:
+            continue
+        writer.add_key_value(name, field.contents(), field.types[0], field.types[1] if len(field.types) > 1 else None)
+    for name, value in limits.items():
+        if value is not None:
+            writer.add_uint32(name, value)
+    for tensor in reader.tensors:
+        writer.add_tensor(tensor.name, tensor.data, raw_dtype=tensor.tensor_type, tensor_endianess=reader.endianess)
+    writer.write_header_to_file()
+    writer.write_kv_data_to_file()
+    writer.write_tensors_to_file()
+    writer.close()
+    properties = dict(mmproj_path=str(modified), ATTENTION_BACKEND="SDPA", **reference_properties())
+    if image_tokens is None:
+        with pytest.raises(RuntimeError, match="GGUF LFM3 image pixel limits must be positive and ordered"):
+            genai.VLMPipeline(language, "CPU", **properties)
+        return
+    pipeline = genai.VLMPipeline(language, "CPU", **properties)
+    prompt = "<|vision_start|><|image|><|vision_end|>Describe."
+    text_tokens = pipeline.get_tokenizer().encode(prompt.replace("<|image|>", "")).input_ids.data.size
+    image = ov.Tensor(np.random.default_rng(0).integers(0, 256, (1, 64, 64, 3), dtype=np.uint8))
+    result = pipeline.generate(
+        prompt, images=[image], max_new_tokens=2, do_sample=False, ignore_eos=True, apply_chat_template=False
+    )
+    assert result.perf_metrics.get_num_input_tokens() == text_tokens + image_tokens
+    assert result.perf_metrics.get_num_generated_tokens() == 2
+
+
 def test_gguf_vlm_attention_backends_and_images(gguf_vlm_pipelines):
     image = ov.Tensor(np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8))
     config = genai.GenerationConfig(max_new_tokens=8, do_sample=False, ignore_eos=True)
