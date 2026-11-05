@@ -149,8 +149,12 @@ TEST(TestAddExtensions, GGUFFrontendRejectsSuppliedGenAIExtensionBeforeCoreRegis
 }
 
 TEST(TestAddExtensions, GGUFFrontendRejectsGenAIExtensionLibraryBeforeCoreRegistration) {
+    const auto executable_path = std::filesystem::absolute(testing::internal::GetArgvs().front());
+    const auto extension_path = executable_path.parent_path() / TEST_GGUF_GENAI_EXTENSION_NAME;
+    ASSERT_TRUE(std::filesystem::is_regular_file(extension_path)) << extension_path;
+
     ov::AnyMap properties = {
-        ov::genai::extensions(std::vector<std::filesystem::path>{TEST_GGUF_GENAI_EXTENSION_PATH})};
+        ov::genai::extensions(std::vector<std::filesystem::path>{extension_path})};
 
     EXPECT_THROW(extract_extensions_to_core(properties, true), ov::Exception);
 }
